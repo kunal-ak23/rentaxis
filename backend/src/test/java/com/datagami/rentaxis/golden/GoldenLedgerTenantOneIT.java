@@ -130,6 +130,7 @@ class GoldenLedgerTenantOneIT extends AbstractPostgresIT {
     private static final LocalDate LEDGER_FROM = LocalDate.of(2025, 1, 1);
     private static final LocalDate LEDGER_TO = LocalDate.of(2027, 12, 31);
 
+    @Autowired com.datagami.rentaxis.core.service.ledger.YearEndCloseService yearEnd;
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired UserRepository userRepo;
     @Autowired RenterRepository renterRepo;
@@ -309,6 +310,24 @@ class GoldenLedgerTenantOneIT extends AbstractPostgresIT {
 
         assertThat(leaseRepo.findById(leaseId).orElseThrow().getExternalContractRef())
                 .isEqualTo(CONTRACT_REF);
+    }
+
+    /**
+     * Spec 2026-09-24 §3: closing FY 2025 after the replay leaves the renter's
+     * ledger exactly as the export has it — the closing entry carries no renter,
+     * lease or unit dimension, so it never reaches the renter ledger.
+     */
+    @Test
+    void aYearEndCloseLeavesTheRenterLedgerLineForLine() {
+        replay();
+        var closed = yearEnd.close(2025, false, LocalDate.of(2026, 9, 25));
+        assertThat(closed.journalId()).as("FY 2025 has income to close").isNotNull();
+
+        Map<String, List<GoldenRow>> expected = GoldenLedgerFixture.ledgerByAccount(LEDGER);
+        Map<String, AccountLedgerDTO> actual = renterLedgerByAccount();
+        assertThat(actual.keySet()).containsExactlyInAnyOrderElementsOf(expected.keySet());
+        expected.forEach((account, rows) ->
+                LedgerDiff.assertAccountMatches(account, rows, actual.get(account)));
     }
 
     @Test

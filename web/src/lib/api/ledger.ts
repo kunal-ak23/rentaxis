@@ -69,7 +69,9 @@ export type AccountRole =
   /** F14-36: "Refunds payable – renters" — what the STL credits for a deposit refund owed. */
   | "RENTER_REFUND_PAYABLE"
   /** F14-18: periodic fees billed for the term and not yet earned (B-01-08). */
-  | "UNEARNED_CHARGES";
+  | "UNEARNED_CHARGES"
+  /** Spec 2026-09-24 §3: the year-end close's equity leaf (F-03). */
+  | "RETAINED_EARNINGS";
 
 export type JournalDocType =
   | "TCO"
@@ -87,7 +89,9 @@ export type JournalDocType =
   | "JV"
   | "VTP"
   | "BPC"
-  | "BNK";
+  | "BNK"
+  /** Spec 2026-09-24 §3: year-end close, income and expense into Retained Earnings. */
+  | "YEC";
 
 export type AccountType = "ASSET" | "LIABILITY" | "INCOME" | "EXPENSE" | "EQUITY";
 
@@ -367,7 +371,9 @@ export const ledgerApi = {
     renter: (renterId: string, q: { from?: string; to?: string }) => apiGet<AccountLedger[]>(`/finance/ledger/renter/${renterId}${qs(q)}`),
     vendor: (vendorId: string, q: { from?: string; to?: string }) => apiGet<AccountLedger>(`/finance/ledger/vendor/${vendorId}${qs(q)}`),
   },
-  trialBalance: (q: { asOf?: string; propertyId?: string }) => apiGet<TrialBalanceRow[]>(`/finance/trial-balance${qs(q)}`),
+  /** `excludeClosing`: the pre-closing TB — the year-end closing entry dated on `asOf` left out (spec §3). */
+  trialBalance: (q: { asOf?: string; propertyId?: string; excludeClosing?: boolean }) =>
+    apiGet<TrialBalanceRow[]>(`/finance/trial-balance${qs({ ...q, excludeClosing: q.excludeClosing ? "true" : undefined })}`),
   journals: {
     /** `importBatchId` narrows to the journals one cut-over batch wrote (JournalController.java:52). */
     list: (q: { docType?: JournalDocType | ""; from?: string; to?: string; propertyId?: string; leaseId?: string; importBatchId?: string; page: number; size: number }) =>
@@ -382,6 +388,49 @@ export const ledgerApi = {
     update: (body: { fiscalYearStartMonth?: number; booksStartDate?: string }) => apiSend<FiscalSettings>("PUT", "/finance/fiscal-settings", body),
     lock: (through: string) => apiSend<FiscalSettings>("POST", "/finance/fiscal-settings/lock", { through }),
   },
+  /** Spec 2026-09-24 §3: fiscal year-end close. */
+  fiscalYears: {
+    list: () => apiGet<FiscalYear[]>("/finance/fiscal-years"),
+    preview: (fy: number) => apiGet<YearClosePreview>(`/finance/fiscal-years/${fy}/close-preview`),
+    close: (fy: number, overrideWarnings: boolean) =>
+      apiSend<FiscalYear>("POST", `/finance/fiscal-years/${fy}/close`, { overrideWarnings }),
+    reopen: (fy: number, reason: string) => apiSend<FiscalYear>("POST", `/finance/fiscal-years/${fy}/reopen`, { reason }),
+  },
+};
+
+/** FiscalYearDTO. `status` is OPEN when the year was never closed. */
+export type FiscalYear = {
+  fiscalYear: number;
+  periodStart: string;
+  periodEnd: string;
+  status: "OPEN" | "CLOSED" | "REOPENED";
+  netResult: number;
+  journalId: string | null;
+  journalNumber: string | null;
+  closedAt: string | null;
+  closedBy: string | null;
+  reopenedAt: string | null;
+  reopenedBy: string | null;
+  reopenReason: string | null;
+};
+
+export type YearCloseIssue = { code: string; message: string; args: Record<string, string> };
+
+/** YearClosePreviewDTO. P&L amounts are positive for income earned and expense incurred. */
+export type YearClosePreview = {
+  fiscalYear: number;
+  periodStart: string;
+  periodEnd: string;
+  blockers: YearCloseIssue[];
+  warnings: YearCloseIssue[];
+  lines: { accountId: string; code: string; name: string; nameAr: string | null; accountType: "INCOME" | "EXPENSE";
+    propertyId: string | null; propertyName: string | null; amount: number }[];
+  income: number;
+  expense: number;
+  netResult: number;
+  retainedEarnings: { propertyId: string | null; propertyName: string | null; profit: number }[];
+  lockBefore: string | null;
+  lockAfter: string | null;
 };
 
 const nf = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

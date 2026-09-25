@@ -2,5 +2,7 @@ package com.datagami.rentaxis.domain.entity.enums;
 
 public enum JournalSourceType {
     LEASE, CHEQUE, RECOGNITION, PENALTY, SETTLEMENT, VOUCHER, OPENING_BALANCE, IMPORT, MANUAL, REVERSAL, VAT_TAX_POINT, ISSUED_CHEQUE,
-    BANK_STATEMENT
+    BANK_STATEMENT,
+    /** Spec 2026-09-24 §3: a year-end close; only YearEndCloseService writes or reverses one. */
+    YEAR_END
 }

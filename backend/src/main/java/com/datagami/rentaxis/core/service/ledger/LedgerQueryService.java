@@ -175,8 +175,20 @@ public class LedgerQueryService {
      * corruption of the books.
      */
     public List<TrialBalanceRowDTO> trialBalance(LocalDate asOf, UUID propertyId) {
+        return trialBalance(asOf, propertyId, false);
+    }
+
+    /**
+     * {@code excludeClosing}: leave out the year-end closing entry ({@code YEC}, and
+     * its mirror) dated on the as-of date — the pre-closing trial balance (spec
+     * 2026-09-24 §3). Post-closing is the default.
+     */
+    @Transactional(readOnly = true)
+    public List<TrialBalanceRowDTO> trialBalance(LocalDate asOf, UUID propertyId, boolean excludeClosing) {
         LocalDate d = asOf == null ? LocalDate.now() : asOf;
-        List<BalanceRow> balances = lines.balancesAsOf(TenantContextHolder.getTenantId(), d, propertyId);
+        List<BalanceRow> balances = excludeClosing
+                ? lines.balancesAsOfBeforeClosing(TenantContextHolder.getTenantId(), d, propertyId)
+                : lines.balancesAsOf(TenantContextHolder.getTenantId(), d, propertyId);
         if (balances.isEmpty()) return List.of();
         Map<UUID, Account> byId = accounts.findAllById(balances.stream().map(BalanceRow::getAccountId).toList())
                 .stream().collect(Collectors.toMap(Account::getId, a -> a));

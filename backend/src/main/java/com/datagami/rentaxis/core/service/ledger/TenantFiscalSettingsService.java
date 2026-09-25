@@ -152,6 +152,32 @@ public class TenantFiscalSettingsService {
     }
 
     /**
+     * The one backwards move the period lock allows (spec 2026-09-24 §3): a fiscal
+     * year re-open sets the lock to {@code date} when that is earlier. Package-private
+     * on purpose — only {@link YearEndCloseService}, in this package, may call it, and
+     * it records who and why on the close row. Returns the lock it replaced.
+     */
+    @Transactional
+    LocalDate reopenTo(LocalDate date) {
+        TenantFiscalSettings s = get();
+        entityManager.refresh(s, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        LocalDate before = s.getBooksLockedThrough();
+        if (before != null && date != null && date.isBefore(before)) {
+            s.setBooksLockedThrough(date);
+            repo.save(s);
+        }
+        return before;
+    }
+
+    /** The settings row, locked FOR UPDATE — the close and re-open serialise on it. */
+    @Transactional
+    TenantFiscalSettings lockRow() {
+        TenantFiscalSettings s = get();
+        entityManager.refresh(s, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        return s;
+    }
+
+    /**
      * Moves the day the books open.
      *
      * <p><b>Refused while an opening-balance journal is live.</b> The OB entry is

@@ -267,3 +267,5 @@ databaseChangeLog:
       file: db/changelog/changesets/129-rent-free-periods.yaml
   - include:
       file: db/changelog/changesets/130-renewal-terms.yaml
+  - include:
+      file: db/changelog/changesets/131-fiscal-year-close.yaml

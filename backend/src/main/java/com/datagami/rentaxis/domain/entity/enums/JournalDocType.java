@@ -18,5 +18,6 @@ public enum JournalDocType {
     JV,   // manual journal
     VTP,  // VAT tax point: deferred output VAT becomes due (spec 2026-09-24 §1)
     BPC,  // issued (supplier) cheque presented: Dr PDC_PAYABLE / Cr bank (finance-ops spec §2)
-    BNK   // a bank-only item booked from a statement line: charges, interest, unidentified receipt (§3)
+    BNK,  // a bank-only item booked from a statement line: charges, interest, unidentified receipt (§3)
+    YEC   // year-end close: income and expense into Retained Earnings (spec 2026-09-24 §3)
 }

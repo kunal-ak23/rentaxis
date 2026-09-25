@@ -31,13 +31,14 @@ const todayIso = () => {
 
 export default function TrialBalancePage() {
     const t = useTranslations("Ledger");
+    const tFiscal = useTranslations("FiscalYears");
     const locale = useLocale();
     const tCommon = useTranslations("Common");
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
     const allowed = hasPermission(userRole, "canAccessFinance");
 
-    const initial = { asOf: todayIso(), propertyId: "" };
+    const initial = { asOf: todayIso(), propertyId: "", excludeClosing: false };
     const [draft, setDraft] = useState(initial);
     const [applied, setApplied] = useState(initial);
     const [rows, setRows] = useState<TrialBalanceRow[]>([]);
@@ -47,11 +48,13 @@ export default function TrialBalancePage() {
     const properties = useNameLookup("properties");
 
     const load = useCallback(
-        async (q: { asOf: string; propertyId: string }) => {
+        async (q: { asOf: string; propertyId: string; excludeClosing: boolean }) => {
             setLoading(true);
             setLoadError(null);
             try {
-                setRows(await ledgerApi.trialBalance({ asOf: q.asOf, propertyId: q.propertyId || undefined }));
+                setRows(await ledgerApi.trialBalance({
+                    asOf: q.asOf, propertyId: q.propertyId || undefined, excludeClosing: q.excludeClosing,
+                }));
             } catch (err) {
                 setRows([]);
                 setLoadError(err instanceof ApiError ? err.message : tCommon("loadFailed"));
@@ -171,6 +174,16 @@ export default function TrialBalancePage() {
                             ))}
                         </select>
                     </div>
+                    {/* Spec §3: the pre-closing TB — the year-end closing entry dated on the as-of date left out. */}
+                    <label className="flex items-center gap-2 text-xs text-foreground pb-2">
+                        <input
+                            type="checkbox"
+                            data-testid="tb-exclude-closing"
+                            checked={draft.excludeClosing}
+                            onChange={ev => setDraft({ ...draft, excludeClosing: ev.target.checked })}
+                        />
+                        {tFiscal("beforeClosing")}
+                    </label>
                     <button
                         type="button"
                         onClick={() => setApplied(draft)}

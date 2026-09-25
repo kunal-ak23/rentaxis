@@ -11,6 +11,7 @@ import { ledgerApi, type FiscalSettings } from "@/lib/api/ledger";
 import { formatDate } from "@/lib/format";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { BankLocksCard } from "@/components/finance/bankrec/BankLocksCard";
+import FiscalYearsCard from "@/components/finance/FiscalYearsCard";
 
 const field =
     "w-full bg-input border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200";
@@ -229,6 +230,14 @@ export default function FiscalSettingsPage() {
                         )}
                     </div>
                 </div>
+            )}
+
+            {/* Spec 2026-09-24 §3: close and re-open fiscal years. Re-open is TENANT_ADMIN's. */}
+            {!loading && (
+                <FiscalYearsCard
+                    canReopen={userRole === "TENANT_ADMIN" || userRole === "SUPER_ADMIN"}
+                    onChanged={load}
+                />
             )}
 
             <BankLocksCard />

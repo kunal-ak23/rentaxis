@@ -169,6 +169,7 @@ public class PropertyAccountService {
         defaultIfMissing(AccountRole.BANK_SUSPENSE, "B-01-06");
         defaultIfMissing(AccountRole.RENTER_REFUND_PAYABLE, "B-01-07");
         defaultIfMissing(AccountRole.UNEARNED_CHARGES, "B-01-08");
+        defaultIfMissing(AccountRole.RETAINED_EARNINGS, "F-03");
     }
 
     /**

@@ -1,0 +1,60 @@
+# Spec 2026-09-24 §3 (#53): fiscal year-end close.
+#
+#   - fiscal_year_closes: one row per close; at most one CLOSED per tenant and year
+#     (partial unique index), a re-open leaves its row REOPENED as the audit trail.
+#   - F-03 Retained Earnings (EQUITY, system leaf) and the RETAINED_EARNINGS tenant
+#     default for every tenant whose chart has the F group. One account; the YEC's
+#     lines carry the property dimension (product decision 2026-09-24).
+databaseChangeLog:
+  - changeSet:
+      id: 131-fiscal-year-close
+      author: claude
+      changes:
+        - createTable:
+            tableName: fiscal_year_closes
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: fiscal_year, type: int, constraints: { nullable: false } }
+              - column: { name: period_start, type: date, constraints: { nullable: false } }
+              - column: { name: period_end, type: date, constraints: { nullable: false } }
+              - column: { name: status, type: varchar(12), constraints: { nullable: false } }
+              - column: { name: journal_id, type: uuid, constraints: { foreignKeyName: fk_fyc_journal, referencedTableName: journal_entries, referencedColumnNames: id } }
+              - column: { name: lock_before, type: date }
+              - column: { name: closed_by, type: uuid }
+              - column: { name: closed_at, type: timestamptz, constraints: { nullable: false } }
+              - column: { name: reopened_by, type: uuid }
+              - column: { name: reopened_at, type: timestamptz }
+              - column: { name: reopen_reason, type: varchar(500) }
+        - sql:
+            sql: |
+              ALTER TABLE fiscal_year_closes ADD CONSTRAINT ck_fyc_status CHECK (status IN ('CLOSED', 'REOPENED'));
+              CREATE UNIQUE INDEX ux_fyc_one_closed_per_year ON fiscal_year_closes (tenant_id, fiscal_year) WHERE status = 'CLOSED';
+              CREATE INDEX ix_fyc_tenant ON fiscal_year_closes (tenant_id);
+        - sql:
+            comment: F-03 Retained Earnings, for every tenant whose chart has the F group
+            sql: |
+              INSERT INTO accounts (id, tenant_id, code, name, name_en, name_ar, account_type, account_sub_type,
+                                    parent_id, description, is_system, is_group, is_active, display_order, created_at, updated_at)
+              SELECT gen_random_uuid(), g.tenant_id, 'F-03', 'Retained Earnings', 'Retained Earnings', 'الأرباح المحتجزة',
+                     'EQUITY', 'RETAINED_EARNINGS', g.id, 'Profit and loss of closed fiscal years', TRUE, FALSE, TRUE, 0,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                FROM accounts g
+               WHERE g.code = 'F' AND g.is_group
+                 AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.tenant_id = g.tenant_id AND a.code = 'F-03');
+        - sql:
+            comment: RETAINED_EARNINGS tenant default mapping onto F-03
+            sql: |
+              INSERT INTO tenant_default_account_mappings (id, tenant_id, role, account_id)
+              SELECT gen_random_uuid(), a.tenant_id, 'RETAINED_EARNINGS', a.id
+                FROM accounts a
+               WHERE a.code = 'F-03' AND a.account_type = 'EQUITY'
+                 AND NOT EXISTS (SELECT 1 FROM tenant_default_account_mappings m
+                                  WHERE m.tenant_id = a.tenant_id AND m.role = 'RETAINED_EARNINGS');
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM tenant_default_account_mappings WHERE role = 'RETAINED_EARNINGS';
+              DELETE FROM accounts a WHERE a.code = 'F-03'
+                AND NOT EXISTS (SELECT 1 FROM journal_lines l WHERE l.account_id = a.id);
+              DROP TABLE IF EXISTS fiscal_year_closes;

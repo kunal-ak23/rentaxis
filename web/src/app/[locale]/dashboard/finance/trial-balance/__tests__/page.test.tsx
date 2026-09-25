@@ -10,8 +10,11 @@ import type { TrialBalanceRow } from "@/lib/api/ledger";
 
 const locale = vi.hoisted(() => ({ current: "ar" }));
 
+// One translator for every render, as next-intl gives: a new function per render
+// would re-create the page's load callback and reload on every render.
+const tr = vi.hoisted(() => (key: string) => key);
 vi.mock("next-intl", () => ({
-    useTranslations: () => (key: string) => key,
+    useTranslations: () => tr,
     useLocale: () => locale.current,
 }));
 vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "TENANT_ADMIN" } } }) }));
@@ -75,5 +78,18 @@ describe("TrialBalancePage account names", () => {
         expect(csv).toContain("إيجارات مستحقة - مفتاح ريزيدنسز");
         expect(csv).not.toContain("Rent Receivable - Miftah Residences");
         expect(csv).toContain("Rental Income - Miftah Residences");
+    });
+});
+
+/** Spec §3: "Before closing entries" asks for the pre-closing trial balance. */
+describe("TrialBalancePage closing toggle", () => {
+    it("sends excludeClosing once ticked and applied", async () => {
+        const { ledgerApi } = await import("@/lib/api/ledger");
+        render(<TrialBalancePage />);
+        await screen.findByText("Rental Income - Miftah Residences");
+        fireEvent.click(screen.getByTestId("tb-exclude-closing"));
+        fireEvent.click(screen.getByText("apply"));
+        await vi.waitFor(() => expect(ledgerApi.trialBalance).toHaveBeenLastCalledWith(
+            expect.objectContaining({ excludeClosing: true })));
     });
 });

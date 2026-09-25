@@ -356,6 +356,9 @@ public class AccountService {
         seed(byCode, "F", "Equity", "حقوق الملكية", AccountType.EQUITY, AccountSubType.CAPITAL, null, null, true);
         seed(byCode, "F-01", "Capital Account", "حساب رأس المال", AccountType.EQUITY, AccountSubType.CAPITAL, "F", "Owner's capital account", false);
         seed(byCode, "F-02", "Opening Balance Difference", "فرق الأرصدة الافتتاحية", AccountType.EQUITY, AccountSubType.CAPITAL, "F", "Suspense for an unbalanced opening-balance import; clear with a JV", false);
+        // Spec 2026-09-24 §3: the year-end close moves profit here (role RETAINED_EARNINGS),
+        // one account with the property on each line. Changeset 131.
+        seed(byCode, "F-03", "Retained Earnings", "الأرباح المحتجزة", AccountType.EQUITY, AccountSubType.RETAINED_EARNINGS, "F", "Profit and loss of closed fiscal years", false);
 
         return repository.saveAll(byCode.values());
     }

@@ -3957,5 +3957,44 @@
     "revised": "Rent revised from {from} to {to} ({change})",
     "warnPercent": "Renewal increase notice (%)",
     "warnPercentHint": "A renewal that raises the rent by more than this shows a notice. It is not a cap; leave blank for no notice."
+  },
+  "FiscalYears": {
+    "title": "Fiscal years",
+    "description": "Closing a year moves its income and expense into Retained Earnings (one line per property) and locks it. Re-opening reverses that entry.",
+    "year": "Year",
+    "period": "Period",
+    "status": "Status",
+    "netResult": "Net result",
+    "statuses": {
+      "OPEN": "Open",
+      "CLOSED": "Closed",
+      "REOPENED": "Re-opened"
+    },
+    "close": "Close year",
+    "reopen": "Re-open",
+    "closeTitle": "Close fiscal year {year}",
+    "closeDescription": "One closing entry is posted on the year's last day and the year is locked.",
+    "override": "Close anyway",
+    "income": "Income",
+    "expense": "Expense",
+    "retainedEarnings": "Retained earnings",
+    "noProperty": "No property",
+    "credit": "Cr {amount}",
+    "debit": "Dr {amount}",
+    "lockAfter": "Books will be locked through {date}.",
+    "reopenTitle": "Re-open fiscal year {year}",
+    "reopenWarning": "This reverses the closing entry and unlocks every period after {date}. Lock the books again when you are done.",
+    "reason": "Reason",
+    "issues": {
+      "alreadyClosed": "Fiscal year {year} is already closed.",
+      "notEnded": "Fiscal year {year} ends on {end}; it can be closed from the day after.",
+      "previousOpen": "Close fiscal year {year} first; years close in order.",
+      "recognitionPending": "{count} recognition period(s) ending on or before {end} are not posted yet; run month-end recognition to year end first.",
+      "vatPending": "{count} VAT tax point(s) dated on or before {end} are not declared yet; post them first.",
+      "importDraft": "A cut-over import batch is still in draft; post or discard it first.",
+      "draftVouchers": "{count} draft voucher(s) are dated inside the year; closing will lock them out of it."
+    },
+    "beforeClosing": "Before closing entries",
+    "cancel": "Cancel"
   }
 }

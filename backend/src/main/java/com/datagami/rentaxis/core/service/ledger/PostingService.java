@@ -50,11 +50,29 @@ public class PostingService {
         this.resolver = resolver; this.numbers = numbers; this.fiscal = fiscal; this.bankLock = bankLock;
     }
 
+    /** Setter-injected so hand-built instances in unit tests need no new argument. */
+    private com.datagami.rentaxis.domain.repository.FiscalYearCloseRepository yearCloses;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setYearCloses(com.datagami.rentaxis.domain.repository.FiscalYearCloseRepository yearCloses) {
+        this.yearCloses = yearCloses;
+    }
+
     @Transactional
     public JournalEntry post(PostingRequest r) {
         validateShape(r);
-        if (r.docType() != JournalDocType.OB && r.importBatchId() == null) {
+        // YEC joins OB as a doc-type-keyed lock exemption (spec 2026-09-24 §3), with
+        // the same reachability argument as the OB note in reverse(): only
+        // YearEndCloseService produces a YEC, no request body carries a doc type, and
+        // JournalService.reverse refuses source type YEAR_END.
+        if (r.docType() != JournalDocType.OB && r.docType() != JournalDocType.YEC && r.importBatchId() == null) {
             fiscal.assertOpen(r.entryDate());
+        }
+        // The import-batch hole (§3): an import or opening-balance post bypasses the
+        // period lock, so on its own it could land income inside a closed fiscal
+        // year and leave it unclosed. Refused; re-open the year first.
+        if ((r.importBatchId() != null || r.docType() == JournalDocType.OB) && yearCloses != null) {
+            requireNotInClosedYear(r.entryDate());
         }
         Dimensions header = r.dims() == null ? Dimensions.none() : r.dims();
 
@@ -170,7 +188,13 @@ public class PostingService {
         //      screen's drill-through lists them under the batch. That is the id
         //      telling the truth — the entry really does belong to the import's
         //      history — not a bug to filter away.
-        if (original.getDocType() != JournalDocType.OB && original.getImportBatchId() == null) fiscal.assertOpen(date);
+        if (original.getDocType() != JournalDocType.OB && original.getDocType() != JournalDocType.YEC
+                && original.getImportBatchId() == null) fiscal.assertOpen(date);
+        // The same closed-year guard post() applies: an import or OB mirror dated in a
+        // closed year would change a year whose result is already in Retained Earnings.
+        if ((original.getImportBatchId() != null || original.getDocType() == JournalDocType.OB) && yearCloses != null) {
+            requireNotInClosedYear(date);
+        }
         List<JournalLine> originalLines = lines.findByEntry_IdOrderByLineNoAsc(original.getId());
         // The bank lock has no exemption: an OB or import mirror dated inside a
         // reconciled period would change it just the same (spec §4). The check is on
@@ -207,6 +231,16 @@ public class PostingService {
         original.setReversedById(saved.getId());
         entries.save(original);
         return saved;
+    }
+
+    private void requireNotInClosedYear(LocalDate date) {
+        UUID tenantId = com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId();
+        if (tenantId == null || date == null) return;
+        LocalDate closedThrough = yearCloses.latestClosedPeriodEnd(tenantId);
+        if (closedThrough != null && !date.isAfter(closedThrough)) {
+            throw new BusinessRuleViolationException("Cannot post on " + date + ": the fiscal year ending "
+                    + closedThrough + " is closed; re-open it first.");
+        }
     }
 
     private void validateShape(PostingRequest r) {

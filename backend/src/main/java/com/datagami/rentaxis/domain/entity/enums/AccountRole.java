@@ -20,14 +20,16 @@ public enum AccountRole {
     /** F14-36: deposit refunds a finalized settlement owes renters, until a payment voucher pays them (B-01-07). */
     RENTER_REFUND_PAYABLE,
     /** F14-18: periodic fees (parking, cooling, service charge) billed for the term and not yet earned (B-01-08). */
-    UNEARNED_CHARGES;
+    UNEARNED_CHARGES,
+    /** Spec 2026-09-24 §3: the year-end close's equity leaf (F-03); lines carry the property dimension. */
+    RETAINED_EARNINGS;
 
     /** Roles that are normally per-property (template rows). The rest default to tenant-level mappings. */
     public boolean isPropertyScoped() {
         return switch (this) {
             case DISCOUNT_ALLOWED, ROUNDING_OFF, CASH, OUTPUT_VAT, INPUT_VAT, OPENING_BALANCE_DIFFERENCE,
                  OUTPUT_VAT_DEFERRED, PDC_PAYABLE,
-                 BANK_CHARGES, BANK_INTEREST_INCOME, BANK_SUSPENSE, RENTER_REFUND_PAYABLE, UNEARNED_CHARGES -> false;
+                 BANK_CHARGES, BANK_INTEREST_INCOME, BANK_SUSPENSE, RENTER_REFUND_PAYABLE, UNEARNED_CHARGES, RETAINED_EARNINGS -> false;
             default -> true;
         };
     }
