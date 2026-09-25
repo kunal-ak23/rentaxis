@@ -5,7 +5,13 @@ Parses the controllers for @GetMapping paths, fills path variables with ids samp
 the seeded database by variable name, and calls each one as the given roles. A 5xx is
 printed with the endpoint; the backend log says why (grep LazyInitializationException).
 
-    python3 scripts/scale/crawl_gets.py --roles TENANT_ADMIN,PROPERTY_MANAGER,ACCOUNTANT
+    python3 scripts/scale/crawl_gets.py --roles TENANT_ADMIN,PROPERTY_MANAGER,ACCOUNTANT,ANONYMOUS
+    python3 scripts/scale/crawl_gets.py --roles RENTER,SECURITY_GUARD --user RENTER=<user id> --user SECURITY_GUARD=<user id>
+
+ANONYMOUS calls with no identity headers (the public /public/** and marketplace routes).
+The in-repo safety net is OsivOffRouteSweepIT, which seeds every screen's rows and sweeps
+every GET route for seven roles in CI; this script is the same idea against a seeded
+scale database.
 """
 import argparse
 import glob
@@ -65,6 +71,7 @@ def main():
     ap.add_argument("--roles", default="TENANT_ADMIN")
     ap.add_argument("--state", default=os.path.expanduser("~/.cache/rentaxis-scale/full.json"))
     ap.add_argument("--skip", default="/leases$,/tickets$,/maintenance-tickets$")
+    ap.add_argument("--user", action="append", default=[], help="ROLE=userId for a role the state file has no user for")
     a = ap.parse_args()
     st = json.load(open(a.state))
     tenant = st["tenantId"]
@@ -72,8 +79,10 @@ def main():
     ids = {}
     bad = 0
     counts = {}
+    users = dict(st["users"])
+    users.update(dict(u.split("=", 1) for u in a.user))
     for role in a.roles.split(","):
-        api = Api(a.base, st["users"][role], role, tenant)
+        api = Api(a.base) if role == "ANONYMOUS" else Api(a.base, users[role], role, tenant)
         for ctrl, path in endpoints():
             if any(s.search(path) for s in skip):
                 continue
