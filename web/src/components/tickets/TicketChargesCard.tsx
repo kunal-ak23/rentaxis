@@ -30,7 +30,11 @@ export default function TicketChargesCard({ ticketId }: { ticketId: string }) {
     const [busy, setBusy] = useState(false);
 
     const load = useCallback(async () => {
-        try { setData(await ticketChargesApi.get(ticketId)); } catch { setData(null); }
+        try {
+            const d = await ticketChargesApi.get(ticketId);
+            // A caller without finance access (or an old server) gets no card, not a crash.
+            setData(d && Array.isArray(d.bills) && Array.isArray(d.recharges) ? d : null);
+        } catch { setData(null); }
     }, [ticketId]);
     useEffect(() => { load(); }, [load]);
 
