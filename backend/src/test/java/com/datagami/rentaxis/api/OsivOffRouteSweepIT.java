@@ -95,15 +95,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 500). The failure only shows on a screen that has data, for the role that reaches it, so
  * this seeds one organisation with every kind of row the screens map — a posted contract
  * with cheques, a draft, a building, an amenity and a booking, a gate pass, a ticket with a
- * reply, a published listing, a vendor — and calls <b>every GET route</b> the application
- * registers, as TENANT_ADMIN, PROPERTY_MANAGER, ACCOUNTANT, SECURITY_GUARD, RENTER, a
+ * reply, a published listing, a vendor — and calls every GET route the application registers
+ * whose path variables it can fill from those rows (routes needing a row kind the seed does not
+ * create — vouchers, payment runs, staff, meetings, bank statements — are skipped and counted), as TENANT_ADMIN, PROPERTY_MANAGER, ACCOUNTANT, SECURITY_GUARD, RENTER, a
  * SUPER_ADMIN inside the organisation and an anonymous caller. Path variables are filled
  * from the seeded ids (by name, and for {@code {id}} by the path segment before it).</p>
  *
  * <p>The assertion is on the log, not the status: any "could not initialize proxy",
  * "no session" or LazyInitializationException fails it, naming the route and role. Other
- * 5xx answers are listed in the output for a reader, since a route called without its
- * required parameters or with the wrong kind of id may refuse for reasons of its own.</p>
+ * 5xx answers fail it too (none on the seeded data today); a route that legitimately refuses
+ * its call answers 4xx.</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ExtendWith(OutputCaptureExtension.class)
@@ -311,9 +312,13 @@ class OsivOffRouteSweepIT extends AbstractPostgresIT {
         List<String> lazy = new ArrayList<>();
         TreeSet<String> other5xx = new TreeSet<>();
         int called = 0;
+        int skipped = 0;
         for (String route : routes) {
             String url = fill(route);
-            if (url == null) continue;
+            if (url == null) {
+                skipped++;
+                continue;
+            }
             for (Map.Entry<String, User> caller : callers.entrySet()) {
                 int from = output.length();
                 int status = get(caller.getValue(), url);
@@ -327,9 +332,10 @@ class OsivOffRouteSweepIT extends AbstractPostgresIT {
                 }
             }
         }
-        System.out.println("OsivOffRouteSweepIT: " + routes.size() + " GET routes, " + called + " calls; other 5xx: "
-                + (other5xx.isEmpty() ? "none" : String.join("\n  ", other5xx)));
+        System.out.println("OsivOffRouteSweepIT: " + routes.size() + " GET routes (" + skipped
+                + " skipped, no seeded row for a path variable), " + called + " calls");
         assertThat(lazy).as("routes that failed to load a lazy association with open-session-in-view off").isEmpty();
+        assertThat(other5xx).as("routes answering 5xx on seeded data").isEmpty();
     }
 
     /**

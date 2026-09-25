@@ -209,7 +209,9 @@ class ScaleListEndpointsIT extends AbstractPostgresIT {
     void aManagersUnitListStopsAtTheirBuildings() {
         assertThat(names(get(pm, "/api/v1/units/paged?size=50"), "unitNumber")).doesNotContain("901").contains("07-01");
         assertThat(total(get(pm, "/api/v1/units/paged?propertyId=" + palm.getId()))).isZero();
-        assertThat(names(get(pm, "/api/v1/units/search?q=90"), null, "unitNumber")).isEmpty();
+        // Property names end in 8 random hex characters, so "90" can match the manager's own buildings
+        // by name; what matters is that Palm's 901 never shows.
+        assertThat(names(get(pm, "/api/v1/units/search?q=90"), null, "unitNumber")).doesNotContain("901");
         String ids = u0701.getId() + "," + palmUnit.getId() + "," + otherTenants0709.getId();
         assertThat(names(get(pm, "/api/v1/units/names?ids=" + ids), null, "unitNumber")).containsExactly("07-01");
         assertThat(names(get(admin, "/api/v1/units/names?ids=" + ids), null, "unitNumber"))
