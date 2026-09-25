@@ -11,6 +11,8 @@ export interface PanelGroup { id: string; label: Label | null; items: PanelItem[
 export type StatusCardKind = "booksLocked" | "chequesToDeposit";
 export interface RailSection {
     id: RailId; href: string; label: Label; tourId: string; match: string[];
+    /** A shorter label for the narrow rail when the section's name is long (defaults to `label`). */
+    railLabel: Label;
     groups: PanelGroup[]; savedViews: PanelItem[]; badge: "collection" | null; statusCard: StatusCardKind | null;
 }
 export interface NavModelContext extends NavContext { booksLive: boolean }
@@ -23,11 +25,11 @@ const one = (id: string, items: PanelItem[], label: Label | null = null, default
 const pathOf = (href: string) => href.split(/[?#]/)[0];
 
 function section(id: RailId, key: string, tourId: string, match: string[], groups: PanelGroup[],
-    extra: Partial<Pick<RailSection, "savedViews" | "badge" | "statusCard" | "href">> = {}): RailSection | null {
+    extra: Partial<Pick<RailSection, "savedViews" | "badge" | "statusCard" | "href" | "railLabel">> = {}): RailSection | null {
     const items = groups.flatMap(g => g.items);
     if (items.length === 0) return null;
     return {
-        id, label: N(key), tourId, match, groups,
+        id, label: N(key), railLabel: extra.railLabel ?? N(key), tourId, match, groups,
         href: extra.href ?? items[0].href,
         savedViews: extra.savedViews ?? [], badge: extra.badge ?? null, statusCard: extra.statusCard ?? null,
     };
@@ -74,7 +76,8 @@ export function buildNav(ctx: NavModelContext): RailSection[] {
     const tabs = buildCollectionsTabs(role);
     rail.push(section("collection", "collections", "sidebar-collections", COLLECTION_MATCH,
         one("main", tabs.map(t => pi(t.id, t.href, t.label, t.testId))),
-        { badge: tabs.some(t => t.permission === "canManageCheques") ? "collection" : null,
+        { railLabel: N("collectionShort"),
+          badge: tabs.some(t => t.permission === "canManageCheques") ? "collection" : null,
           statusCard: tabs.some(t => t.permission === "canManageCheques") ? "chequesToDeposit" : null }));
 
     const acc = buildAccountingNav(role, { booksLive });
@@ -121,21 +124,33 @@ export function flattenNav(rail: RailSection[]): string[] {
  * The section and item to light for a pathname: exact items match only
  * themselves; everything else matches whole-segment prefixes and the longest
  * match wins, so /dashboard/finance/cheques lights Collection, not Accounting.
+ * Items that share a path and differ by query (Settings' sections) are told
+ * apart by `search`: the one whose query the URL carries wins, else the first.
  */
-export function activeNav(pathname: string, rail: RailSection[]): { section: RailId | null; item: string | null } {
+export function activeNav(pathname: string, rail: RailSection[], search = ""): { section: RailId | null; item: string | null } {
     const path = pathname.replace(/^\/(en|ar)(?=\/|$)/, "") || "/";
-    let best: { section: RailId; item: string | null; len: number } | null = null;
-    const offer = (sectionId: RailId, item: string | null, prefix: string, exact: boolean) => {
+    const params = new URLSearchParams(search);
+    const queryMatches = (href: string) => {
+        const q = href.split("#")[0].split("?")[1];
+        if (!q) return false;
+        return [...new URLSearchParams(q)].every(([k, v]) => params.get(k) === v);
+    };
+    let best: { section: RailId; item: string | null; len: number; q: boolean } | null = null;
+    const offer = (sectionId: RailId, item: string | null, prefix: string, exact: boolean, q: boolean) => {
         const hit = exact ? path === prefix : path === prefix || path.startsWith(`${prefix}/`);
-        if (hit && (!best || prefix.length > best.len || (prefix.length === best.len && item && !best.item))) {
-            best = { section: sectionId, item, len: prefix.length };
+        if (!hit) return;
+        const b = best as { item: string | null; len: number; q: boolean } | null;
+        if (!b || prefix.length > b.len
+            || (prefix.length === b.len && item && !b.item)
+            || (prefix.length === b.len && item && b.item && q && !b.q)) {
+            best = { section: sectionId, item, len: prefix.length, q };
         }
     };
     for (const s of rail) {
-        for (const m of s.match) offer(s.id, null, m, m === "/dashboard");
+        for (const m of s.match) offer(s.id, null, m, m === "/dashboard", false);
         for (const g of s.groups) for (const i of g.items) {
             if (i.href.includes("#")) continue;
-            offer(s.id, i.id, pathOf(i.href), !!i.exact);
+            offer(s.id, i.id, pathOf(i.href), !!i.exact, queryMatches(i.href));
         }
     }
     const b = best as { section: RailId; item: string | null } | null;

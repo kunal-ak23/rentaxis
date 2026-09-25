@@ -1682,7 +1682,8 @@
     "booksNotLocked": "الدفاتر غير مقفلة بعد",
     "chequesToDeposit": "{count, plural, zero {لا شيكات للإيداع} one {شيك واحد للإيداع} two {شيكان للإيداع} few {# شيكات للإيداع} many {# شيكاً للإيداع} other {# شيك للإيداع}}",
     "badgeLabel": "{count} بحاجة إلى متابعة",
-    "breadcrumb": "مسار التنقل"
+    "breadcrumb": "مسار التنقل",
+    "collectionShort": "التحصيل"
   },
   "TenantSwitcher": {
     "administering": "إدارة",

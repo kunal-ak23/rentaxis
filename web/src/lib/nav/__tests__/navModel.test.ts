@@ -158,3 +158,26 @@ describe("activeNav", () => {
         expect(activeNav(path, rail)).toEqual({ section, item });
     });
 });
+
+describe("activeNav — pages that share a path and differ by query", () => {
+    const rail = buildNav(ctx("TENANT_ADMIN"));
+    it.each([
+        ["?section=payments", "payments"],
+        ["?section=rent&propertyId=p1", "rent"],
+        ["?section=users", "users"],
+        ["", "organisation"],
+        ["?section=nonsense", "organisation"],
+    ])("/en/dashboard/settings%s lights %s", (search, item) => {
+        expect(activeNav("/en/dashboard/settings", rail, search)).toEqual({ section: "settings", item });
+    });
+});
+
+describe("rail labels", () => {
+    it("gives Collection a short rail label and keeps the PACT name for its panel", () => {
+        const collection = buildNav(ctx("TENANT_ADMIN")).find(s => s.id === "collection")!;
+        expect(collection.label).toEqual({ ns: "Navigation", key: "collections" });
+        expect(collection.railLabel).toEqual({ ns: "Navigation", key: "collectionShort" });
+        expect(en.Navigation.collectionShort).toBe("Collection");
+        expect(ar.Navigation.collectionShort).toBe("التحصيل");
+    });
+});

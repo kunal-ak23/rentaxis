@@ -17,6 +17,7 @@ const role = { current: "ACCOUNTANT" };
 const path = { current: "/en/dashboard" };
 
 vi.mock("next/navigation", () => ({
+    useSearchParams: () => new URLSearchParams(),
     usePathname: () => path.current,
     useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));

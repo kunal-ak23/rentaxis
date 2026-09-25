@@ -15,6 +15,7 @@ vi.mock("next-auth/react", () => ({
     signOut: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({
+    useSearchParams: () => new URLSearchParams(),
     usePathname: () => "/ar/dashboard",
     useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));

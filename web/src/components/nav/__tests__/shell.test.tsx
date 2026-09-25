@@ -7,9 +7,10 @@ import en from "../../../../messages/en.json";
 
 const role = { current: "TENANT_ADMIN" };
 const path = { current: "/en/dashboard" };
+const search = { current: "" };
 const flags = { current: ["LISTINGS", "MEETINGS", "GATEPASS"] as string[] };
 
-vi.mock("next/navigation", () => ({ usePathname: () => path.current, useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(search.current), usePathname: () => path.current, useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 vi.mock("@/i18n/routing", () => ({
     Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => <a href={href} {...rest}>{children}</a>,
     useRouter: () => ({ push: vi.fn() }),
@@ -38,6 +39,7 @@ function renderShell(locale: "en" | "ar" = "en") {
 beforeEach(() => {
     role.current = "TENANT_ADMIN";
     path.current = "/en/dashboard";
+    search.current = "";
     flags.current = ["LISTINGS", "MEETINGS", "GATEPASS"];
     Object.defineProperty(window, "localStorage", { value: { getItem: () => null, setItem: () => {}, removeItem: () => {} }, writable: true });
 });
@@ -109,6 +111,25 @@ describe("section panel", () => {
         expect(setup).not.toBeVisible();
         fireEvent.click(screen.getByTestId("panel-group-toggle-setup"));
         expect(setup).toBeVisible();
+    });
+});
+
+describe("pages that share a path", () => {
+    it("lights the Settings section the URL names, in the panel and the rail", () => {
+        path.current = "/en/dashboard/settings";
+        search.current = "section=payments";
+        renderShell();
+        const panel = screen.getByTestId("nav-panel");
+        expect(within(panel).getByTestId("settings-nav-payments")).toHaveAttribute("aria-current", "page");
+        expect(within(panel).getByTestId("settings-nav-organisation")).not.toHaveAttribute("aria-current");
+        expect(screen.getByTestId("rail-settings")).toHaveAttribute("aria-current", "true");
+    });
+
+    it("shows the short rail label for Collection and keeps the full name as its accessible name", () => {
+        renderShell();
+        const rail = screen.getByTestId("rail-collection");
+        expect(rail).toHaveTextContent(en.Navigation.collectionShort);
+        expect(rail).toHaveAttribute("aria-label", en.Navigation.collections);
     });
 });
 

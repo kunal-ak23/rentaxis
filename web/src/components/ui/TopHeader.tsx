@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { useSession, signOut } from "next-auth/react";
 import { Link } from "@/i18n/routing";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale } from "next-intl";
 import { cn } from "@/lib/utils";
 import { notificationText, timeAgo } from "@/lib/notificationText";
@@ -49,7 +49,7 @@ export function TopHeader() {
     const label = useLabel();
     const { isEnabled, tenantSlug } = useTenantFeatures();
     const rail = buildNav({ role: userRole, isEnabled, tenantSlug, booksLive: true });
-    const here = activeNav(pathname, rail);
+    const here = activeNav(pathname, rail, useSearchParams()?.toString() ?? "");
     const hereSection = rail.find(s => s.id === here.section);
     const hereItem = hereSection?.groups.flatMap(g => g.items).find(i => i.id === here.item);
     const [isProfileOpen, setIsProfileOpen] = useState(false);

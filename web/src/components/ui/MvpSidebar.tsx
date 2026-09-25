@@ -2,7 +2,7 @@
 
 import { AlertTriangle, BookOpen, Briefcase, FileText, Home, LayoutGrid, PanelLeftClose, PanelLeftOpen, Settings, Wallet, X } from "lucide-react";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
@@ -51,12 +51,12 @@ function Rail({ rail, active, onPick, badge }: { rail: RailSection[]; active: Ra
                 const isActive = s.id === active;
                 return (
                     <Link key={s.id} href={s.href} data-rail={s.id} data-testid={`rail-${s.id}`} data-tour={s.tourId}
-                        aria-current={isActive ? "true" : undefined} title={label(s.label)}
+                        aria-current={isActive ? "true" : undefined} title={label(s.label)} aria-label={label(s.label)}
                         onClick={() => onPick(s.id)}
                         className={cn("relative flex w-14 flex-col items-center gap-0.5 rounded-[var(--radius-sm)] py-2 text-[10px] font-medium",
                             isActive ? "bg-[var(--sand-100)] text-[var(--ink-900)]" : "text-[var(--ink-600)] hover:bg-[var(--sand-100)]")}>
                         <Icon size={18} className={isActive ? "text-[var(--gold-500)]" : "text-[var(--ink-500)]"} />
-                        <span className="max-w-full truncate">{label(s.label)}</span>
+                        <span aria-hidden className="max-w-full truncate">{label(s.railLabel)}</span>
                         {s.badge === "collection" && badge !== null && badge > 0 && (
                             <span aria-label={t("badgeLabel", { count: badge })}
                                 className="absolute top-1 end-1.5 min-w-4 rounded-full bg-error px-1 text-center text-[9px] font-bold leading-4 text-white">
@@ -66,7 +66,7 @@ function Rail({ rail, active, onPick, badge }: { rail: RailSection[]; active: Ra
                     </Link>
                 );
             })}
-            <div className="mt-auto px-1 text-center font-mono text-[9px] text-[var(--ink-500)]">v{APP_VERSION}</div>
+            <div className="mt-auto max-w-full break-all px-1 text-center font-mono text-[9px] leading-tight text-[var(--ink-500)]">v{APP_VERSION}</div>
         </nav>
     );
 }
@@ -80,7 +80,8 @@ export default function MvpSidebar() {
     const counts = useNavCounts(role);
     const { drawerOpen, setDrawerOpen } = useNavShell();
     const rail = buildNav({ role, isEnabled, tenantSlug, booksLive: counts.booksLive });
-    const active = activeNav(pathname, rail);
+    const search = useSearchParams()?.toString() ?? "";
+    const active = activeNav(pathname, rail, search);
     const [picked, setPicked] = useState<RailId | null>(null);
     const [flyout, setFlyout] = useState(false);
     const [panelHidden, setPanelHidden] = useState(() => {

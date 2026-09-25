@@ -1682,7 +1682,8 @@
     "booksNotLocked": "Books not locked yet",
     "chequesToDeposit": "{count, plural, one {# cheque to deposit} other {# cheques to deposit}}",
     "badgeLabel": "{count} need attention",
-    "breadcrumb": "Breadcrumb"
+    "breadcrumb": "Breadcrumb",
+    "collectionShort": "Collection"
   },
   "TenantSwitcher": {
     "administering": "Administering",
