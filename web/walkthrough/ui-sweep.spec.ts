@@ -245,7 +245,7 @@ for (const [width, height] of [[1440, 900], [1280, 720]] as const) {
         const lb = (await list.boundingBox())!;
         const cb = (await card.boundingBox())!;
         expect(lb.y + lb.height, 'list ends above the card').toBeLessThanOrEqual(cb.y + 0.5);
-        const last = list.locator('a').last();
+        const last = list.locator('a:visible').last();
         await last.scrollIntoViewIfNeeded();
         const ib = (await last.boundingBox())!;
         expect(ib.y + ib.height, 'last item reachable above the card').toBeLessThanOrEqual(cb.y + 0.5);

@@ -15,7 +15,10 @@ export default defineConfig({
     fullyParallel: false,
     workers: 1,
     retries: 0,
-    timeout: 15 * 60_000,
+    // Each sweep takes about a minute; a wait that never resolves fails in 5 min
+    // instead of looking like a hung runner (PR #363 R1).
+    timeout: 5 * 60_000,
+    globalTimeout: 45 * 60_000,
     expect: { timeout: 20_000 },
     reporter: [['list']],
     // Its own sub-folder: Playwright empties outputDir at the start of a run,
