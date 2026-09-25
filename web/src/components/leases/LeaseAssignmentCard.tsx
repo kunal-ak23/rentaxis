@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { UserRoundCog } from "lucide-react";
 import { serverText } from "@/components/finance/bankrec/serverText";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { fmtAmount } from "@/lib/api/ledger";
 import { fmtIsoDate } from "./leaseMath";
 import { ApiError, leaseApi, type LeaseAssignment, type LeaseDetail } from "@/lib/api/leasing";
@@ -41,6 +42,8 @@ export default function LeaseAssignmentCard({ lease, canDraft, canPost, onChange
     const [takeOver, setTakeOver] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    /** Post and Delete are confirmed first, stating what they do (PR #359 R1). */
+    const [confirming, setConfirming] = useState<"post" | "delete" | null>(null);
 
     const load = useCallback(async () => {
         try {
@@ -196,13 +199,13 @@ export default function LeaseAssignmentCard({ lease, canDraft, canPost, onChange
                     <div className="flex gap-2">
                         {canPost && (
                             <button type="button" className={btn} data-testid="assignment-post" disabled={busy}
-                                    onClick={() => act(() => leaseApi.postAssignment(lease.id, draft.id, draft.takeOverOverdue))}>
+                                    onClick={() => setConfirming("post")}>
                                 {t("assignment.post")}
                             </button>
                         )}
                         {canDraft && (
                             <button type="button" className={btn} data-testid="assignment-delete" disabled={busy}
-                                    onClick={() => act(() => leaseApi.cancelAssignment(lease.id, draft.id))}>
+                                    onClick={() => setConfirming("delete")}>
                                 {t("assignment.delete")}
                             </button>
                         )}
@@ -211,6 +214,30 @@ export default function LeaseAssignmentCard({ lease, canDraft, canPost, onChange
             )}
 
             {error && <p role="alert" className="text-[11px] text-error" data-testid="assignment-error">{error}</p>}
+
+            {draft && (
+                <ConfirmDialog
+                    isOpen={confirming !== null}
+                    onClose={() => setConfirming(null)}
+                    onConfirm={async () => {
+                        const kind = confirming;
+                        setConfirming(null);
+                        await act(() => kind === "post"
+                            ? leaseApi.postAssignment(lease.id, draft.id, draft.takeOverOverdue)
+                            : leaseApi.cancelAssignment(lease.id, draft.id));
+                    }}
+                    title={confirming === "post" ? t("assignment.confirmPostTitle") : t("assignment.confirmDeleteTitle")}
+                    description={confirming === "post"
+                        ? t("assignment.confirmPost", { from: draft.fromRenterName ?? "—", to: draft.toRenterName ?? "—",
+                            date: fmtIsoDate(draft.effectiveDate, locale), count: draft.chequesMoving })
+                        : t("assignment.confirmDelete")}
+                    confirmText={confirming === "post" ? t("assignment.post") : t("assignment.delete")}
+                    cancelText={t("cancel")}
+                    isDestructive={confirming === "delete"}
+                    isLoading={busy}
+                    confirmTestId="assignment-confirm"
+                />
+            )}
         </section>
     );
 }

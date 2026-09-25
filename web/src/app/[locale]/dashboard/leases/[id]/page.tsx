@@ -628,7 +628,7 @@ export default function LeaseDetailPage() {
                                 <ArrowRightLeft size={14} /> {t("transfer.open")}
                             </button>
                         )}
-                        {(lease.status === "ACTIVE" || lease.status === "NOTICE_GIVEN") && posted && canExtend && (
+                        {(lease.status === "ACTIVE" || lease.status === "NOTICE_GIVEN") && posted && (canExtend || canRenew) && (
                             <button
                                 onClick={() => setReduceOpen(true)}
                                 data-testid="lease-reduce"
@@ -1166,6 +1166,7 @@ export default function LeaseDetailPage() {
             />
 
             <ReduceLeaseDialog
+                previewOnly={!canExtend}
                 open={reduceOpen}
                 lease={lease}
                 onClose={() => setReduceOpen(false)}

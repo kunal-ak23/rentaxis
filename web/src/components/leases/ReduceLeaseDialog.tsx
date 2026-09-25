@@ -40,6 +40,8 @@ type Props = {
     lease: LeaseDetail;
     onClose: () => void;
     onReduced: (res: AddendumResponse) => void;
+    /** PR #359 R1: a property manager may preview a reduction; only finance posts it. */
+    previewOnly?: boolean;
 };
 
 /** A line a credit addendum can cut: rent, or a fee the lease earns over the term. */
@@ -52,7 +54,7 @@ export function reducibleLines(lines: LeaseLine[]): LeaseLine[] {
     });
 }
 
-export default function ReduceLeaseDialog({ open, lease, onClose, onReduced }: Props) {
+export default function ReduceLeaseDialog({ open, lease, onClose, onReduced, previewOnly = false }: Props) {
     const t = useTranslations("Leasing");
     const tCommon = useTranslations("Common");
     const locale = useLocale();
@@ -120,7 +122,7 @@ export default function ReduceLeaseDialog({ open, lease, onClose, onReduced }: P
     const gapOk = excess === "CREDIT" || Math.abs(preview?.gap ?? 1) < 0.005;
     // Handing cheques back with no replacement is complete on its own; rows typed must be valid.
     const rowsOk = excess === "CREDIT" || cheques.length === 0 || chequeRowsAreValid(cheques.map(stripKey));
-    const confirmDisabled = !request || !preview || problems.length > 0 || !gapOk || !rowsOk;
+    const confirmDisabled = previewOnly || !request || !preview || problems.length > 0 || !gapOk || !rowsOk;
     const newRowsTarget = round2((preview?.returnedTotal ?? 0) - (preview?.creditTotal ?? 0));
 
     const submit = async () => {
@@ -154,6 +156,9 @@ export default function ReduceLeaseDialog({ open, lease, onClose, onReduced }: P
         >
             <div className="space-y-4" data-testid="reduce-dialog">
                 <p className="text-[11px] text-muted">{t("reduction.hint")}</p>
+                {previewOnly && (
+                    <p className="text-[11px] font-semibold text-warning" data-testid="reduce-preview-only">{t("reduction.previewOnly")}</p>
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                         <label className={label} htmlFor="reduce-effective-from">{t("effectiveFrom")}</label>

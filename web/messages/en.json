@@ -2155,7 +2155,8 @@
       "vatCreditNote": "VAT already declared, credited back (tax credit note)",
       "creditTotal": "Off the renter's account",
       "gap": "Still to settle by cheques",
-      "failed": "The credit addendum could not be posted."
+      "failed": "The credit addendum could not be posted.",
+      "previewOnly": "You can see what this reduction would do; an administrator or accountant posts it."
     },
     "assignment": {
       "title": "Assignment to another renter",
@@ -2178,7 +2179,11 @@
       "posted": "Assigned from {from} to {to} on {date} ({journal})",
       "failed": "The assignment could not be saved.",
       "portalOpening": "This lease came to you on {date}. Opening balance: {owed, select, owed {you owe <n>{balance}</n>} credit {in your favour <n>{balance}</n>} other {nil}}; deposit held <n>{deposit}</n>. Earlier history belongs to the previous renter.",
-      "portalHandedOver": "You handed this lease over on {date}. You can see its history up to that date."
+      "portalHandedOver": "You handed this lease over on {date}. You can see its history up to that date.",
+      "confirmPostTitle": "Post this assignment?",
+      "confirmPost": "The lease passes from {from} to {to} on {date}. One journal moves {from}'s receivable, cheques held, deposit and unearned rent on this lease to {to}, and {count} open instalment(s) are re-attributed. This cannot be undone from here.",
+      "confirmDeleteTitle": "Delete this draft assignment?",
+      "confirmDelete": "The draft is discarded. Nothing was posted, and the lease stays with the current renter."
     },
     "transfer": {
       "open": "Transfer to another unit",

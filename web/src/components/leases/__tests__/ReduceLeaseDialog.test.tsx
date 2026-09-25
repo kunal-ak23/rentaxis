@@ -120,4 +120,18 @@ describe("ReduceLeaseDialog (F14-32)", () => {
         expect(await screen.findByTestId("reduce-problems")).toHaveTextContent("المبلغ الجديد ليس أقل");
         expect(screen.getByTestId("reduce-confirm")).toBeDisabled();
     });
+
+    it("lets a property manager preview but not post (PR #359 R1)", async () => {
+        reductionPreview.mockResolvedValue(PREVIEW);
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <ReduceLeaseDialog open lease={LEASE} onClose={() => {}} onReduced={() => {}} previewOnly />
+            </NextIntlClientProvider>,
+        );
+        fireEvent.change(screen.getByTestId("reduce-effective-from"), { target: { value: "2027-03-01" } });
+        fireEvent.click(screen.getByTestId("reduce-pick-rent"));
+        await waitFor(() => expect(screen.getByTestId("reduce-total")).toHaveTextContent("6,805.48"));
+        expect(screen.getByTestId("reduce-preview-only")).toBeTruthy();
+        expect(screen.getByTestId("reduce-confirm")).toBeDisabled();
+    });
 });

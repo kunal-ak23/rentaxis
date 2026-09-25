@@ -68,6 +68,9 @@ describe("LeaseAssignmentCard (F14-39)", () => {
         expect(balances).toHaveTextContent("دائن");
         expect(balances.querySelector("bdi[dir='ltr']")?.textContent).toBe("12,750.00");
         fireEvent.click(screen.getByTestId("assignment-post"));
+        expect(api.postAssignment).not.toHaveBeenCalled();   // confirmed first
+        expect(await screen.findByText(ar.Leasing.assignment.confirmPostTitle)).toBeTruthy();
+        fireEvent.click(screen.getByTestId("assignment-confirm"));
         await waitFor(() => expect(api.postAssignment).toHaveBeenCalledWith("lease-1", "as-1", false));
         cleanup();
         renderCard("en", false);
@@ -81,6 +84,18 @@ describe("LeaseAssignmentCard (F14-39)", () => {
             args: { from: "Omar", to: "Omar's estate", count: 1, amount: "12,750.00" }, message: "x" })));
         renderCard("ar");
         fireEvent.click(await screen.findByTestId("assignment-post"));
+        fireEvent.click(await screen.findByTestId("assignment-confirm"));
         expect(await screen.findByTestId("assignment-error")).toHaveTextContent("أكّد أن Omar's estate يتحملها");
+    });
+
+    it("deletes a draft only after confirming, and says nothing was posted", async () => {
+        api.assignments.mockResolvedValue([DRAFT]);
+        api.cancelAssignment.mockResolvedValue(undefined);
+        renderCard();
+        fireEvent.click(await screen.findByTestId("assignment-delete"));
+        expect(api.cancelAssignment).not.toHaveBeenCalled();
+        expect(await screen.findByText(en.Leasing.assignment.confirmDelete)).toBeTruthy();
+        fireEvent.click(screen.getByTestId("assignment-confirm"));
+        await waitFor(() => expect(api.cancelAssignment).toHaveBeenCalledWith("lease-1", "as-1"));
     });
 });
