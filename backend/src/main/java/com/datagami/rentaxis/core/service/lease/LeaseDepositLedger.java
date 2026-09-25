@@ -134,12 +134,20 @@ public class LeaseDepositLedger {
         // LinkedHashSet, so it is the de-duplication and the ordering at once.
         Set<UUID> accounts = new LinkedHashSet<>();
         Set<UUID> visited = new HashSet<>();
+        // PR #359 R1 P1-1: a transfer to another property carries the deposit into the
+        // deposit role's leaf for *that* property, which no DEPOSIT line in the chain
+        // names. So besides the lines' own leaves, every deposit role seen along the
+        // chain is resolved for every property the chain has lived in.
+        Set<com.datagami.rentaxis.domain.entity.enums.AccountRole> roles = new LinkedHashSet<>();
+        List<UUID> properties = new java.util.ArrayList<>();
 
         Lease lease = from;
         for (int depth = 0; lease != null && depth < MAX_CHAIN_DEPTH; depth++) {
             if (!visited.add(lease.getId())) {
                 break;
             }
+            UUID property = LeasePostingService.propertyIdOf(lease);
+            if (property != null && !properties.contains(property)) properties.add(property);
             for (LeaseLine line : leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId())) {
                 if (line.getChargeType() == null
                         || line.getChargeType().getBehaviour() != ChargeBehaviour.DEPOSIT) {
@@ -149,12 +157,29 @@ public class LeaseDepositLedger {
                 if (account != null) {
                     accounts.add(account.getId());
                 }
+                if (line.getChargeType().getRole() != null) roles.add(line.getChargeType().getRole());
             }
             // Spec §2: the chain runs through transfers as well as renewals.
             UUID previousId = lease.predecessorId();
             lease = previousId == null ? null
                     : leaseRepository.findByIdScopedToTenant(previousId).orElse(null);
         }
+        if (accountResolver != null) {
+            List<UUID> resolved = new java.util.ArrayList<>();
+            for (UUID property : properties) {
+                for (var role : roles) {
+                    Account leaf = accountResolver.resolveOrNull(role, property);
+                    if (leaf != null) resolved.add(leaf.getId());
+                }
+            }
+            // The newest property's leaves first, then the lines' own.
+            Set<UUID> ordered = new LinkedHashSet<>(resolved);
+            ordered.addAll(accounts);
+            return List.copyOf(ordered);
+        }
         return List.copyOf(accounts);
     }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.core.service.ledger.AccountResolver accountResolver;
 }

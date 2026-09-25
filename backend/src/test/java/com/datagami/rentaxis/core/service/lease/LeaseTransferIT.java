@@ -69,6 +69,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class LeaseTransferIT extends AbstractPostgresIT {
 
     @Autowired LeaseTransferService transfers;
+    @Autowired LeaseTerminationService termination;
+    @Autowired com.datagami.rentaxis.core.service.SettlementService settlements;
+    @Autowired LeaseDepositLedger depositLedger;
     @Autowired LeasePostingService posting;
     @Autowired LeaseRenewalService renewal;
     @Autowired ChequeGenerationService chequeGeneration;
@@ -201,6 +204,52 @@ class LeaseTransferIT extends AbstractPostgresIT {
         assertThat(balanceOf(AccountRole.PDC_RECEIVABLE, b, other)).isEqualByComparingTo("33780.82");
         assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, b, other)).isZero();
         assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, a, fixtures.property())).isZero();
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * PR #359 R1 P1-1, the spec's missing test: the renter moves across properties,
+     * then leaves the new unit. The deposit ledger follows the carried deposit to B's
+     * property's leaf, the settlement refunds it once, and the liability is nil on
+     * both properties. Same-property below.
+     */
+    @Test
+    void theCarriedDepositIsRefundedOnceWhenTheNewLeaseEnds_acrossProperties() {
+        UUID a = leaseA(true);
+        Property other = tx.execute(s -> fixtures.createProperty("OTH"));
+        Unit target = tx.execute(s -> fixtures.createUnit(other, "B-302"));
+        UUID b = draftB(a, target, "41589.04");
+        posting.post(b);
+        endAndSettle(b, fixtures.property(), other);
+    }
+
+    @Test
+    void theCarriedDepositIsRefundedOnceWhenTheNewLeaseEnds_sameProperty() {
+        UUID a = leaseA(true);
+        Unit target = tx.execute(s -> fixtures.createUnit(fixtures.property(), "A-206"));
+        UUID b = draftB(a, target, "41589.04");
+        posting.post(b);
+        endAndSettle(b, fixtures.property(), fixtures.property());
+    }
+
+    private void endAndSettle(UUID b, Property from, Property to) {
+        BigDecimal held = tx.execute(s -> depositLedger.depositHeld(leaseRepo.findById(b).orElseThrow()));
+        assertThat(held)
+                .as("the ledger sees the carried deposit on B").isEqualByComparingTo("3000");
+        LocalDate end = LocalDate.of(2026, 6, 30);
+        termination.terminate(b, new com.datagami.rentaxis.api.dto.lease.TerminateLeaseRequest(end, null, null, null), null);
+        var settled = settlements.finalizeSettlement(b,
+                new com.datagami.rentaxis.api.dto.settlement.FinalizeSettlementRequest(end, null, true), null);
+        assertThat(settled.getDepositsHeld()).isEqualByComparingTo("3000");
+        UUID sdFrom = leaf(AccountRole.SECURITY_DEPOSIT, from);
+        UUID sdTo = leaf(AccountRole.SECURITY_DEPOSIT, to);
+        assertThat(jdbc.queryForObject("select coalesce(sum(debit - credit), 0) from journal_lines where account_id = ?",
+                BigDecimal.class, sdFrom)).as("deposit liability on the old property").isZero();
+        assertThat(jdbc.queryForObject("select coalesce(sum(debit - credit), 0) from journal_lines where account_id = ?",
+                BigDecimal.class, sdTo)).as("deposit liability on the new property").isZero();
+        assertThat(jdbc.queryForObject("select coalesce(sum(l.debit), 0) from journal_lines l join journal_entries e"
+                + " on e.id = l.journal_entry_id where e.doc_type = 'STL' and l.account_id = ?", BigDecimal.class, sdTo))
+                .as("released once").isEqualByComparingTo("3000");
         assertTrialBalanceBalances();
     }
 
