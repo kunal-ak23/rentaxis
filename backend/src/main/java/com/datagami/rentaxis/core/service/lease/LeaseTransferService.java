@@ -407,8 +407,10 @@ public class LeaseTransferService {
                             LeaseChequeRegistrar.crReceivable(b, amount).withDims(dimsB).withNarration(narration))
                     : PostingRequest.pair(LeaseChequeRegistrar.drReceivable(b, amount).withDims(dimsB).withNarration(narration),
                             LeaseChequeRegistrar.crReceivable(a, amount).withDims(dimsA).withNarration(narration));
+            // F15-11: across properties the pair spans two; a clearing leg in each keeps
+            // both properties' trial balances at zero.
             postingService.post(PostingRequest.ofPairs(JournalDocType.JV, t.plusDays(1), narration, dimsB,
-                    JournalSourceType.LEASE, b.getId(), null, List.of(pair)));
+                    JournalSourceType.LEASE, b.getId(), null, List.of(pair)).withInterPropertyClearing());
         }
 
         // The carried instruments, re-registered with B's grid when B posts.
@@ -471,6 +473,12 @@ public class LeaseTransferService {
             } else if (LeaseTransferCheque.RETURN.equals(d)) {
                 leaving.add(c);
             }
+        }
+        // F15-07: the post refuses a fee charged on both leases; the review says so first.
+        try {
+            requireNoFeeChargedTwice(a, b, t);
+        } catch (BusinessRuleViolationException e) {
+            problems.add(e.getMessage());
         }
         LeaseTerminationService.TransferEnd end = termination.previewForTransfer(a, t, leaving);
         BigDecimal c = end.receivableAfter().subtract(bouncedTotal(register)).setScale(2, RoundingMode.HALF_UP);

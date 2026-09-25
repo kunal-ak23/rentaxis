@@ -11,6 +11,7 @@ import {
     type PostLeaseResponse,
 } from "@/lib/api/leasing";
 import { fmtAmount } from "@/lib/api/ledger";
+import { serverText } from "@/components/finance/bankrec/serverText";
 
 /**
  * The review step in front of the Post button.
@@ -34,6 +35,7 @@ type Props = {
 
 export default function PostLeaseDialog({ open, lease, onClose, onPosted }: Props) {
     const t = useTranslations("Leasing");
+    const tCommon = useTranslations("Common");
     const [dry, setDry] = useState<PostLeaseDryRunResponse | null>(null);
     const [loading, setLoading] = useState(false);
     const [posting, setPosting] = useState(false);
@@ -71,7 +73,8 @@ export default function PostLeaseDialog({ open, lease, onClose, onPosted }: Prop
             const res = await leaseApi.post(lease.id);
             onPosted(res);
         } catch (e) {
-            setError(e instanceof ApiError ? e.message : t("postFailed"));
+            // F15-07: a coded refusal (e.g. a fee charged on both leases) in the user's language.
+            setError(e instanceof ApiError ? serverText(tCommon, e) || e.message : t("postFailed"));
         } finally {
             setPosting(false);
         }

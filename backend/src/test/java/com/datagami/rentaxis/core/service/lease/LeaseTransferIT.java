@@ -200,6 +200,22 @@ class LeaseTransferIT extends AbstractPostgresIT {
         assertThat(balanceOf(AccountRole.ADVANCE_RENT, b, fixtures.property())).isZero();
     }
 
+    /** F15-07: every remaining cheque carried, nothing of B's own — the review is clean and the post goes through. */
+    @Test
+    void aFullyCarriedTransferIsReadyToPostWithNoRowsOfItsOwn() {
+        UUID a = leaseA(true);
+        Property other = tx.execute(s -> fixtures.createProperty("FC"));
+        Unit target = tx.execute(s -> fixtures.createUnit(other, "C-101"));
+        UUID b = transfers.draft(a, request(T, target.getId(), List.of(line("RENT", "37808.22"))), posting).getId();
+        assertThat(register(b)).isEmpty();
+        var dry = posting.dryRun(b);
+        assertThat(dry.errors()).isEmpty();
+        assertThat(dry.ok()).isTrue();
+        posting.post(b);
+        assertThat(lease(b).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+        assertTrialBalanceBalances();
+    }
+
     @Test
     void acrossPropertiesTheDepositAndPdcsMoveBetweenTheLeaves() {
         UUID a = leaseA(true);
@@ -367,6 +383,8 @@ class LeaseTransferIT extends AbstractPostgresIT {
         LeaseDTO byHand = transfers.draft(a, request(T, target.getId(),
                 List.of(line("RENT", "41589.04"), line("PARKING_FEE", "2304.66"))), posting);
         chequeGeneration.saveRows(byHand.getId(), List.of(row("630050", B_START, B_START, "6085.48")));
+        // F15-07: the review lists the refusal the post will raise.
+        assertThat(posting.dryRun(byHand.getId()).errors()).anyMatch(e -> e.contains("was charged on the old lease"));
         assertThatThrownBy(() -> posting.post(byHand.getId()))
                 .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.transferFeeChargedTwice");
         assertThat(lease(a).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
@@ -520,5 +538,18 @@ class LeaseTransferIT extends AbstractPostgresIT {
         BigDecimal debit = rows.stream().map(TrialBalanceRowDTO::debit).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal credit = rows.stream().map(TrialBalanceRowDTO::credit).reduce(BigDecimal.ZERO, BigDecimal::add);
         assertThat(debit).as("trial balance").isEqualByComparingTo(credit);
+        // F15-11: every property's own trial balance (lines carrying the property) nets to zero,
+        // and the inter-property clearing leaves net to zero company-wide.
+        List<UUID> props = jdbc.queryForList("select id from properties where tenant_id = ?", UUID.class, fixtures.tenantId());
+        for (UUID p : props) {
+            List<TrialBalanceRowDTO> pr = tx.execute(s -> ledger.trialBalance(LocalDate.of(2030, 1, 1), p));
+            BigDecimal d = pr.stream().map(TrialBalanceRowDTO::debit).reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal c = pr.stream().map(TrialBalanceRowDTO::credit).reduce(BigDecimal.ZERO, BigDecimal::add);
+            assertThat(d).as("trial balance of property " + p).isEqualByComparingTo(c);
+        }
+        assertThat(jdbc.queryForObject("""
+                select coalesce(sum(l.debit - l.credit), 0) from journal_lines l join accounts a on a.id = l.account_id
+                where l.tenant_id = ? and (a.code like 'A-02-06%' or a.report_line = 'INTERPROPERTY_CLEARING')""", BigDecimal.class, fixtures.tenantId()))
+                .as("inter-property clearing nets to zero").isZero();
     }
 }
