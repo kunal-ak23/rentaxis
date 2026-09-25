@@ -13,7 +13,7 @@ vi.mock("next-intl/middleware", () => ({
 }));
 vi.mock("@/i18n/routing", () => ({ routing: {} }));
 
-import middleware, { frameOptionsFor } from "../proxy";
+import middleware, { config, frameOptionsFor } from "../proxy";
 
 function makeRequest(path: string, headers: Record<string, string> = {}) {
   return new NextRequest(`http://localhost:3000${path}`, {
@@ -291,4 +291,37 @@ describe("proxy middleware — X-Frame-Options", () => {
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(res.headers.get("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
   });
+});
+
+describe("proxy middleware — moved dashboard routes", () => {
+    const get = (path: string) => new NextRequest(`http://localhost:3000${path}`, { method: "GET" });
+
+    it("answers a moved route with a permanent 308 that keeps locale and query", async () => {
+        const res = await middleware(get("/ar/dashboard/settings/rent-settings?propertyId=p1"));
+        expect(res.status).toBe(308);
+        const loc = new URL(res.headers.get("location")!);
+        expect(loc.pathname).toBe("/ar/dashboard/settings");
+        expect(loc.searchParams.get("propertyId")).toBe("p1");
+        expect(loc.searchParams.get("section")).toBe("rent");
+    });
+
+    it("keeps a ?tab= deep link through the redirect", async () => {
+        const res = await middleware(get("/en/dashboard/settings/fiscal?tab=close"));
+        expect(res.status).toBe(308);
+        expect(new URL(res.headers.get("location")!).search).toBe("?tab=close");
+    });
+
+    it("still sets the security headers on the redirect", async () => {
+        const res = await middleware(get("/en/dashboard/settings/gateway"));
+        expect(res.headers.get("X-Frame-Options")).toBe("DENY");
+    });
+
+    it("leaves a route that did not move to next-intl", async () => {
+        const res = await middleware(get("/en/dashboard/leases"));
+        expect(res.status).toBe(200);
+    });
+
+    it("matches unprefixed dashboard paths so old unprefixed links redirect too", () => {
+        expect(config.matcher).toContain("/dashboard/:path*");
+    });
 });
