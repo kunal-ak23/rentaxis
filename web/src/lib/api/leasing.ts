@@ -1047,6 +1047,8 @@ export type PostLeaseDryRunResponse = {
   chequeTotal: number;
   depositCarriedForward: number;
   journals: { tco: number; tcoLines: number; pdr: number };
+  /** F15-13: a transfer's carried cheques, re-registered on this grid when it posts. */
+  carriedCheques?: { seqNo: number; chequeNumber: string | null; chequeDate: string | null; amount: number }[];
 };
 
 /** ChequeActionRequest — the shared shape for deposit/clear/receive/bounce/cancel. */

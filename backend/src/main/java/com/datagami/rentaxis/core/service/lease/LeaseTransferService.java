@@ -442,7 +442,11 @@ public class LeaseTransferService {
     }
 
     /** Spec §2: what the dry run of B needs, estimated with nothing written. */
-    public record Estimate(BigDecimal carriedBalance, BigDecimal carriedTotal, List<String> problems) {
+    public record Estimate(BigDecimal carriedBalance, BigDecimal carriedTotal, List<String> problems,
+                           List<Cheque> carried) {
+        public Estimate(BigDecimal carriedBalance, BigDecimal carriedTotal, List<String> problems) {
+            this(carriedBalance, carriedTotal, problems, List.of());
+        }
     }
 
     @Transactional(readOnly = true)
@@ -463,12 +467,14 @@ public class LeaseTransferService {
         for (LeaseTransferCheque p : plans.findBySuccessorLeaseId(b.getId())) plan.put(p.getChequeId(), p.getDisposition());
         List<Cheque> register = chequeRepository.findByLease_IdOrderBySeqNoAsc(a.getId());
         List<Cheque> leaving = new ArrayList<>();
+        List<Cheque> carriedRows = new ArrayList<>();
         BigDecimal carried = BigDecimal.ZERO;
         for (Cheque c : register) {
             if (!UNCLEARED.contains(c.getStatus())) continue;
             String d = plan.getOrDefault(c.getId(), LeaseTransferCheque.KEEP);
             if (LeaseTransferCheque.CARRY.equals(d) && c.getStatus() == ChequeStatus.REGISTERED) {
                 leaving.add(c);
+                carriedRows.add(c);
                 carried = carried.add(c.getAmount());
             } else if (LeaseTransferCheque.RETURN.equals(d)) {
                 leaving.add(c);
@@ -482,7 +488,7 @@ public class LeaseTransferService {
         }
         LeaseTerminationService.TransferEnd end = termination.previewForTransfer(a, t, leaving);
         BigDecimal c = end.receivableAfter().subtract(bouncedTotal(register)).setScale(2, RoundingMode.HALF_UP);
-        return new Estimate(c, carried, problems);
+        return new Estimate(c, carried, problems, carriedRows);
     }
 
     /**

@@ -113,7 +113,23 @@ export default function PostLeaseDialog({ open, lease, onClose, onPosted }: Prop
                             {dry.depositCarriedForward > 0 && (
                                 <Row label={t("depositCarriedForward")} value={fmtAmount(dry.depositCarriedForward)} />
                             )}
+                            {!!dry.carriedCheques?.length && (
+                                <Row label={t("carriedChequesTotal", { count: dry.carriedCheques.length })}
+                                     value={fmtAmount(dry.carriedCheques.reduce((sum, c) => sum + c.amount, 0))} testId="post-carried-total" />
+                            )}
                         </dl>
+                        {/* F15-13: the carried instruments the post registers on this lease. */}
+                        {!!dry.carriedCheques?.length && (
+                            <ul className="space-y-0.5 text-muted" data-testid="post-carried-cheques">
+                                {dry.carriedCheques.map(c => (
+                                    <li key={`${c.seqNo}-${c.chequeNumber}`} className="flex gap-2">
+                                        <span>{t("carriedCheque", { number: c.chequeNumber ?? String(c.seqNo) })}</span>
+                                        <bdi dir="ltr">{c.chequeDate ?? ""}</bdi>
+                                        <span className="ms-auto tabular-nums"><bdi dir="ltr">{fmtAmount(c.amount)}</bdi></span>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
                         <p className="text-muted" data-testid="post-journals">
                             {t("dryRunJournals", {
                                 tco: dry.journals.tco,

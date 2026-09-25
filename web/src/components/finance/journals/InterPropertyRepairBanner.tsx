@@ -6,6 +6,7 @@ import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { ApiError } from "@/lib/api/facilities";
 import { ledgerApi } from "@/lib/api/ledger";
 import { serverText } from "@/components/finance/bankrec/serverText";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 /**
  * F15-11: journals posted before every journal had to balance per property (a
@@ -20,6 +21,7 @@ export default function InterPropertyRepairBanner() {
     const [busy, setBusy] = useState(false);
     const [done, setDone] = useState<number | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [confirming, setConfirming] = useState(false);
 
     const load = useCallback(async () => {
         try {
@@ -32,12 +34,12 @@ export default function InterPropertyRepairBanner() {
     useEffect(() => { load(); }, [load]);
 
     const repair = async () => {
-        if (!window.confirm(t("interPropertyRepairConfirm", { count: count ?? 0 }))) return;
         setBusy(true);
         setError(null);
         try {
             const r = await ledgerApi.journals.interPropertyRepair();
             setDone(r.repaired.length);
+            setConfirming(false);
             await load();
         } catch (e) {
             setError(e instanceof ApiError ? serverText(tCommon, e) || e.message : tCommon("loadFailed"));
@@ -60,11 +62,23 @@ export default function InterPropertyRepairBanner() {
                 <AlertTriangle size={16} className="shrink-0 mt-0.5 text-warning" />
                 {t("interPropertyUnbalanced", { count })}
             </span>
-            <button type="button" disabled={busy} onClick={repair} data-testid="ip-repair-run"
+            <button type="button" disabled={busy} onClick={() => setConfirming(true)} data-testid="ip-repair-run"
                     className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-bold disabled:opacity-50">
                 {t("interPropertyRepair")}
             </button>
             {error && <p className="w-full text-xs text-error">{error}</p>}
+            {/* F15-14: the app's dialog, not window.confirm. */}
+            <ConfirmDialog
+                isOpen={confirming}
+                onClose={() => setConfirming(false)}
+                onConfirm={repair}
+                isLoading={busy}
+                title={t("interPropertyRepair")}
+                description={t("interPropertyRepairConfirm", { count: count ?? 0 })}
+                confirmText={t("interPropertyRepair")}
+                cancelText={t("interPropertyRepairCancel")}
+                confirmTestId="ip-repair-confirm"
+            />
         </div>
     );
 }

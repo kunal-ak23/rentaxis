@@ -1803,6 +1803,7 @@
     "TENANT_USER": "Tenant"
   },
   "Ledger": {
+    "interPropertyRepairCancel": "Cancel",
     "interPropertyUnbalanced": "{count, plural, one {# journal does} other {# journals do}} not balance per property, so a property's trial balance is out. Post a clearing journal for each.",
     "interPropertyRepair": "Post clearing journals",
     "interPropertyRepairConfirm": "Post an inter-property clearing journal for each of the {count} journals? Each is dated the original's date, or the first open day when that date is locked.",
@@ -1927,6 +1928,8 @@
     "chargeTypes": "Charge types"
   },
   "Leasing": {
+    "carriedChequesTotal": "Carried cheques ({count})",
+    "carriedCheque": "Cheque {number}",
     "noticeGivenBy": "Given by",
     "noticeParty": {
       "RENTER": "Renter",

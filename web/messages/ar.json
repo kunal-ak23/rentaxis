@@ -1803,6 +1803,7 @@
     "TENANT_USER": "مستخدم المؤسسة"
   },
   "Ledger": {
+    "interPropertyRepairCancel": "إلغاء",
     "interPropertyUnbalanced": "{count, plural, one {قيد واحد غير متوازن} other {# قيود غير متوازنة}} لكل عقار، لذلك ميزان مراجعة العقار غير متوازن. رحّل قيد مقاصة لكل منها.",
     "interPropertyRepair": "ترحيل قيود المقاصة",
     "interPropertyRepairConfirm": "ترحيل قيد مقاصة بين العقارات لكل من القيود الـ {count}؟ يؤرَّخ كل قيد بتاريخ القيد الأصلي، أو بأول يوم مفتوح إذا كان التاريخ مقفلًا.",
@@ -1927,6 +1928,8 @@
     "chargeTypes": "أنواع الرسوم"
   },
   "Leasing": {
+    "carriedChequesTotal": "الشيكات المنقولة ({count})",
+    "carriedCheque": "شيك {number}",
     "noticeGivenBy": "مقدَّم من",
     "noticeParty": {
       "RENTER": "المستأجر",

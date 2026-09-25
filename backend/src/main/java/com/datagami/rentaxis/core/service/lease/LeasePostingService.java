@@ -416,9 +416,13 @@ public class LeasePostingService {
         // balance the move will leave (estimated from the ledger as it stands).
         PostingPlan plan;
         List<String> transferProblems = new ArrayList<>();
+        List<PostLeaseDryRunResponse.CarriedCheque> carried = List.of();
         if (lease.getTransferredFromLeaseId() != null && lease.getStatus() == LeaseStatus.DRAFT) {
             LeaseTransferService.Estimate est = transfers.estimateForDryRun(lease);
             transferProblems.addAll(est.problems());
+            // F15-13: the review lists the instruments the post re-registers on this grid.
+            carried = est.carried().stream().map(c -> new PostLeaseDryRunResponse.CarriedCheque(c.getSeqNo(),
+                    c.getChequeNumber(), c.getChequeDate(), c.getAmount())).toList();
             // The carried instruments are not on B's grid yet: B's own rows must cover
             // the contract plus C less what the carried ones already pay.
             plan = validate(lease, lines, cheques, Preconditions.FOR_POST, Set.of(),
@@ -452,7 +456,8 @@ public class LeasePostingService {
                 plan.contractValueInclVat(),
                 plan.chequeTotal(),
                 depositCarryForward.total(lease),
-                new PostLeaseDryRunResponse.JournalPlan(1, plan.pairs().size() * 2, cheques.size()));
+                new PostLeaseDryRunResponse.JournalPlan(1, plan.pairs().size() * 2, cheques.size() + carried.size()),
+                carried);
     }
 
     /**

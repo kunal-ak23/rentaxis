@@ -211,6 +211,9 @@ class LeaseTransferIT extends AbstractPostgresIT {
         var dry = posting.dryRun(b);
         assertThat(dry.errors()).isEmpty();
         assertThat(dry.ok()).isTrue();
+        // F15-13: the review lists the carried cheques the post registers, and counts their PDRs.
+        assertThat(dry.carriedCheques()).isNotEmpty();
+        assertThat(dry.journals().pdr()).isEqualTo(dry.carriedCheques().size());
         posting.post(b);
         assertThat(lease(b).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
         assertTrialBalanceBalances();

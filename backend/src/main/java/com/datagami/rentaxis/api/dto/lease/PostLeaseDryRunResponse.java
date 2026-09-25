@@ -32,7 +32,18 @@ public record PostLeaseDryRunResponse(boolean ok,
                                       BigDecimal contractValueInclVat,
                                       BigDecimal chequeTotal,
                                       BigDecimal depositCarriedForward,
-                                      JournalPlan journals) {
+                                      JournalPlan journals,
+                                      /* F15-13: the instruments a transfer brings onto this grid when it posts. */
+                                      List<CarriedCheque> carriedCheques) {
+
+    public PostLeaseDryRunResponse(boolean ok, List<String> errors, BigDecimal contractValue, BigDecimal contractValueInclVat,
+                                   BigDecimal chequeTotal, BigDecimal depositCarriedForward, JournalPlan journals) {
+        this(ok, errors, contractValue, contractValueInclVat, chequeTotal, depositCarriedForward, journals, List.of());
+    }
+
+    /** F15-13: one carried cheque — the old lease's row, re-registered on the new grid at posting. */
+    public record CarriedCheque(int seqNo, String chequeNumber, java.time.LocalDate chequeDate, BigDecimal amount) {
+    }
 
     /** The journals the post would write: one TCO of {@code tcoLines} lines, and {@code pdr} PDRs. */
     public record JournalPlan(int tco, int tcoLines, int pdr) {
