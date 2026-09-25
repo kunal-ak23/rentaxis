@@ -19,6 +19,15 @@ public class LeaseDTO {
     private UUID renterId;
     private String unitIdentifier;
     private String renterName;
+    /**
+     * PR #359 R1 (renter portal after an assignment): for the incoming renter, the date the
+     * lease came to them and what came with it as one opening line (receivable, debit
+     * positive, and deposit held); for the outgoing renter, the date their access ends.
+     */
+    private java.time.LocalDate assignedToYouOn;
+    private java.math.BigDecimal openingReceivable;
+    private java.math.BigDecimal openingDeposit;
+    private java.time.LocalDate yourAccessEndedOn;
     private LocalDate startDate;
     private LocalDate endDate;
     private LeaseStatus status;

@@ -104,6 +104,8 @@ public class RentReceiptService {
         // Before the status check: "this cleared" and "this did not" are both facts
         // about someone else's tenancy when the caller is not entitled to the lease.
         leaseAccessPolicy.requireReadable(lease);
+        // PR #359 R1: after an assignment the rows are split by renter; each sees their own.
+        leaseAccessPolicy.requireRentersOwnCheque(cheque);
 
         if (cheque.getStatus() != ChequeStatus.CLEARED) {
             throw new BusinessRuleViolationException("Receipt can only be generated for cleared payments");

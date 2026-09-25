@@ -62,6 +62,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class LeaseAssignmentIT extends AbstractPostgresIT {
 
     @Autowired LeaseAssignmentService assignments;
+    @Autowired com.datagami.rentaxis.core.service.ContractGenerationService contracts;
+    @Autowired com.datagami.rentaxis.core.service.LeaseAttachmentService attachmentService;
+    @Autowired com.datagami.rentaxis.core.service.RentReceiptService receipts;
+    @Autowired com.datagami.rentaxis.domain.repository.LeaseDocumentRepository documentRepo;
+    @Autowired com.datagami.rentaxis.domain.repository.LeaseAttachmentRepository attachmentRepo;
     @Autowired LeaseRenewalService renewal;
     @Autowired LeaseTransferService transfers;
     @Autowired LeasePostingService posting;
@@ -238,6 +243,100 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
         assertThatThrownBy(() -> transfers.draft(leaseId, new com.datagami.rentaxis.api.dto.lease.TransferLeaseRequest(
                 ON, unit.getId(), null, null, null, null), posting))
                 .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.assignmentPending");
+    }
+
+    /**
+     * PR #359 R1 (privacy): after the assignment the incoming renter sees only what is
+     * from the effective date on — documents, attachments, their own cheques — with
+     * what came across as one opening line; the outgoing renter keeps their own
+     * history up to that date and nothing after.
+     */
+    @Test
+    void eachRenterSeesTheirOwnSideOfTheAssignment() {
+        UUID leaseId = lease(true);
+        Renter a = fixtures.renter();
+        Renter b = fixtures.createRenter("Estate");
+        LeaseAssignmentDTO draft = assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON, "Death of the tenant", null));
+        assignments.post(leaseId, draft.id(), null);
+        // No stored contract: a rendered one would name B over A's term — neither portal gets it.
+        asRenter(a);
+        assertThatThrownBy(() -> tx.execute(s -> contracts.currentContractPdf(leaseId)))
+                .isInstanceOf(NotFoundException.class).hasMessageContaining("No contract has been issued");
+        asRenter(b);
+        assertThatThrownBy(() -> tx.execute(s -> contracts.currentContractPdf(leaseId)))
+                .isInstanceOf(NotFoundException.class).hasMessageContaining("No contract has been issued");
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        UUID before = document(leaseId, java.time.Instant.parse("2026-09-20T00:00:00Z"));
+        UUID after = document(leaseId, java.time.Instant.parse("2027-02-10T00:00:00Z"));
+        UUID attBefore = attachment(leaseId, java.time.Instant.parse("2026-09-20T00:00:00Z"));
+        UUID attAfter = attachment(leaseId, java.time.Instant.parse("2027-02-10T00:00:00Z"));
+        Cheque january = chequeOn(leaseId, RENT_2);       // cleared by A
+        Cheque april = chequeOn(leaseId, RENT_3);
+        chequeService.deposit(april.getId(), ChequeActionRequest.on(RENT_3));
+        chequeService.clear(april.getId(), ChequeActionRequest.on(RENT_3));   // cleared under B
+
+        asRenter(a);
+        var aLeases = tx.execute(s -> leaseService.getLeasesForRenterUser(a.getUserId()));
+        assertThat(aLeases).singleElement().satisfies(l -> {
+            assertThat(l.getYourAccessEndedOn()).isEqualTo(ON);
+            assertThat(l.getRenterName()).isEqualTo(a.getNameEn());
+        });
+        assertThat(documentIds(leaseId)).containsExactly(before);
+        assertThat(attachmentIds(leaseId)).containsExactly(attBefore);
+        assertThatThrownBy(() -> tx.execute(s -> contracts.getDocumentContent(after))).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> tx.execute(s -> attachmentService.downloadAttachment(attAfter))).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> tx.execute(s -> receipts.generateReceipt(april.getId()))).isInstanceOf(NotFoundException.class);
+
+        asRenter(b);
+        var bLeases = tx.execute(s -> leaseService.getLeasesForRenterUser(b.getUserId()));
+        assertThat(bLeases).singleElement().satisfies(l -> {
+            assertThat(l.getAssignedToYouOn()).isEqualTo(ON);
+            assertThat(l.getOpeningDeposit()).isEqualByComparingTo("3000");
+            assertThat(l.getOpeningReceivable()).isEqualByComparingTo("0");
+            assertThat(l.getYourAccessEndedOn()).isNull();
+        });
+        assertThat(documentIds(leaseId)).containsExactly(after);
+        assertThat(attachmentIds(leaseId)).containsExactly(attAfter);
+        assertThatThrownBy(() -> tx.execute(s -> contracts.getDocumentContent(before))).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> tx.execute(s -> attachmentService.downloadAttachment(attBefore))).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> tx.execute(s -> receipts.generateReceipt(january.getId()))).isInstanceOf(NotFoundException.class);
+    }
+
+    private void asRenter(Renter r) {
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                r.getUserId().toString(), null, List.of(new SimpleGrantedAuthority("ROLE_RENTER"))));
+    }
+
+    private List<UUID> documentIds(UUID leaseId) {
+        List<com.datagami.rentaxis.api.dto.LeaseDocumentDTO> docs = tx.execute(s -> contracts.getDocuments(leaseId));
+        return docs.stream().map(com.datagami.rentaxis.api.dto.LeaseDocumentDTO::getId).toList();
+    }
+
+    private List<UUID> attachmentIds(UUID leaseId) {
+        List<com.datagami.rentaxis.api.dto.LeaseAttachmentDTO> att = tx.execute(s -> attachmentService.getAttachments(leaseId));
+        return att.stream().map(com.datagami.rentaxis.api.dto.LeaseAttachmentDTO::getId).toList();
+    }
+
+    private UUID document(UUID leaseId, java.time.Instant at) {
+        return tx.execute(s -> {
+            var d = new com.datagami.rentaxis.domain.entity.LeaseDocument();
+            d.setLease(leaseRepo.findById(leaseId).orElseThrow());
+            d.setDocumentUrl("/tmp/none.pdf");
+            d.setType(com.datagami.rentaxis.domain.entity.enums.DocumentType.CONTRACT);
+            d.setCreatedAt(at);
+            return documentRepo.save(d).getId();
+        });
+    }
+
+    private UUID attachment(UUID leaseId, java.time.Instant at) {
+        return tx.execute(s -> {
+            var d = new com.datagami.rentaxis.domain.entity.LeaseAttachment();
+            d.setLease(leaseRepo.findById(leaseId).orElseThrow());
+            d.setName("x");
+            d.setFileUrl("x");
+            d.setUploadedAt(at);
+            return attachmentRepo.save(d).getId();
+        });
     }
 
     @Test

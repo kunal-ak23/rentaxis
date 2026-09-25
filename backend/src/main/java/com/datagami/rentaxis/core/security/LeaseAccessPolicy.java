@@ -108,6 +108,54 @@ public class LeaseAccessPolicy {
         return !currentCaller().seesEverything();
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.domain.repository.LeaseAssignmentRepository assignments;
+
+    /**
+     * PR #359 R1 (F14-39 privacy): the part of a lease's life a renter caller may see
+     * after it changed hands — from the date it was assigned to them, until the date
+     * they handed it over. Null bounds are open; null for a non-renter caller.
+     */
+    public record RenterWindow(java.time.LocalDate from, java.time.LocalDate until) {
+        public boolean contains(java.time.LocalDate day) {
+            return day != null && (from == null || !day.isBefore(from)) && (until == null || day.isBefore(until));
+        }
+
+        public boolean bounded() {
+            return from != null || until != null;
+        }
+    }
+
+    public RenterWindow renterWindow(Lease lease) {
+        Caller caller = currentCaller();
+        if (!caller.isRenter() || caller.renterId() == null || lease == null || assignments == null) return null;
+        java.time.LocalDate from = null, until = null;
+        for (var a : assignments.findByLeaseIdAndStatusOrderByEffectiveDateAsc(lease.getId(),
+                com.datagami.rentaxis.domain.entity.LeaseAssignment.POSTED)) {
+            if (caller.renterId().equals(a.getToRenterId())) from = a.getEffectiveDate();
+            if (caller.renterId().equals(a.getFromRenterId()) && until == null) until = a.getEffectiveDate();
+        }
+        return new RenterWindow(from, until);
+    }
+
+    /** Refuses (as "not found") a lease document or attachment made outside the caller's window. */
+    public void requireInRenterWindow(Lease lease, java.time.Instant madeAt) {
+        RenterWindow w = renterWindow(lease);
+        if (w == null || !w.bounded()) return;
+        java.time.LocalDate day = madeAt == null ? null : madeAt.atZone(java.time.ZoneOffset.UTC).toLocalDate();
+        if (!w.contains(day)) throw new com.datagami.rentaxis.api.exception.NotFoundException("Document not found");
+    }
+
+    /** A renter reads a cheque (its receipt) only when it is theirs: after an assignment the rows are split by renter. */
+    public void requireRentersOwnCheque(com.datagami.rentaxis.domain.entity.Cheque cheque) {
+        Caller caller = currentCaller();
+        if (!caller.isRenter()) return;
+        UUID owner = cheque.getRenter() != null ? cheque.getRenter().getId() : null;
+        if (owner == null || !owner.equals(caller.renterId())) {
+            throw new com.datagami.rentaxis.api.exception.NotFoundException("Payment not found");
+        }
+    }
+
     public boolean canRead(Lease lease) {
         Caller caller = currentCaller();
         return caller.seesEverything() || canRead(lease, caller);
@@ -208,7 +256,12 @@ public class LeaseAccessPolicy {
         }
         if (caller.isRenter()) {
             UUID renterId = lease.getRenter() != null ? lease.getRenter().getId() : null;
-            return renterId != null && renterId.equals(caller.renterId());
+            if (renterId != null && renterId.equals(caller.renterId())) return true;
+            // PR #359 R1: a renter who handed the lease over keeps their own history.
+            return caller.renterId() != null && assignments != null && lease.getId() != null
+                    && assignments.findByLeaseIdAndStatusOrderByEffectiveDateAsc(lease.getId(),
+                            com.datagami.rentaxis.domain.entity.LeaseAssignment.POSTED).stream()
+                    .anyMatch(a -> caller.renterId().equals(a.getFromRenterId()));
         }
         // Unrecognised role, or no authentication at all: fail closed.
         return false;

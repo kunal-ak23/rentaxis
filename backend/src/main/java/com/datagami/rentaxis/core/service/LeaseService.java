@@ -1348,6 +1348,20 @@ public class LeaseService {
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.datagami.rentaxis.domain.repository.LeaseAddendumRepository addendumRepository;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.domain.repository.LeaseAssignmentRepository assignmentRepository;
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager em;
+
+    /** The assignment JV's lines for the incoming renter on accounts of one sub-type (debit − credit). */
+    private BigDecimal openingOf(com.datagami.rentaxis.domain.entity.LeaseAssignment a, UUID renterId, String subType) {
+        if (a.getJournalId() == null) return BigDecimal.ZERO;
+        Object v = em.createQuery("select coalesce(sum(l.debit), 0) - coalesce(sum(l.credit), 0) from JournalLine l"
+                        + " where l.entry.id = :j and l.renterId = :r and cast(l.account.accountSubType as string) = :t")
+                .setParameter("j", a.getJournalId()).setParameter("r", renterId).setParameter("t", subType)
+                .getSingleResult();
+        return v == null ? BigDecimal.ZERO : new BigDecimal(v.toString()).setScale(2, java.math.RoundingMode.HALF_UP);
+    }
 
     /**
      * The object-level guard on its own, for a lease sub-resource served by a
@@ -1876,9 +1890,36 @@ public class LeaseService {
     public List<LeaseDTO> getLeasesForRenterUser(UUID userId) {
         Renter renter = renterRepository.findByUserId(userId)
                 .orElseThrow(() -> new NotFoundException("No renter profile linked to this user"));
-        return leaseRepository.findByRenterId(renter.getId()).stream()
+        List<LeaseDTO> out = leaseRepository.findByRenterId(renter.getId()).stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
+        if (assignmentRepository == null) return out;
+        // PR #359 R1: the lease that came by assignment opens with what came with it.
+        for (LeaseDTO dto : out) {
+            assignmentRepository.findByLeaseIdAndStatusOrderByEffectiveDateAsc(dto.getId(),
+                    com.datagami.rentaxis.domain.entity.LeaseAssignment.POSTED).stream()
+                    .filter(a -> renter.getId().equals(a.getToRenterId())).reduce((x, y) -> y)
+                    .ifPresent(a -> {
+                        dto.setAssignedToYouOn(a.getEffectiveDate());
+                        dto.setOpeningReceivable(openingOf(a, renter.getId(), "RECEIVABLE"));
+                        dto.setOpeningDeposit(openingOf(a, renter.getId(), "DEPOSIT_HELD").negate());
+                    });
+        }
+        // …and a lease handed over stays visible to the renter who left it, up to that date.
+        java.util.Set<UUID> seen = out.stream().map(LeaseDTO::getId).collect(Collectors.toSet());
+        for (var a : assignmentRepository.findByFromRenterIdAndStatus(renter.getId(),
+                com.datagami.rentaxis.domain.entity.LeaseAssignment.POSTED)) {
+            if (!seen.add(a.getLeaseId())) continue;
+            leaseRepository.findByIdScopedToTenant(a.getLeaseId()).ifPresent(l -> {
+                LeaseDTO dto = mapToDTO(l);
+                dto.setRenterId(renter.getId());
+                dto.setRenterName(renter.getNameEn());
+                dto.setYourAccessEndedOn(a.getEffectiveDate());
+                dto.setCurrentRentAmount(null);
+                out.add(dto);
+            });
+        }
+        return out;
     }
 
     /**

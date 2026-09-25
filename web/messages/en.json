@@ -2176,7 +2176,9 @@
       "post": "Post assignment",
       "delete": "Delete draft",
       "posted": "Assigned from {from} to {to} on {date} ({journal})",
-      "failed": "The assignment could not be saved."
+      "failed": "The assignment could not be saved.",
+      "portalOpening": "This lease came to you on {date}. Opening balance: {owed, select, owed {you owe <n>{balance}</n>} credit {in your favour <n>{balance}</n>} other {nil}}; deposit held <n>{deposit}</n>. Earlier history belongs to the previous renter.",
+      "portalHandedOver": "You handed this lease over on {date}. You can see its history up to that date."
     },
     "transfer": {
       "open": "Transfer to another unit",
