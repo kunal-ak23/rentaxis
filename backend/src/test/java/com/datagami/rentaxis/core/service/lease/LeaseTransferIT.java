@@ -334,6 +334,82 @@ class LeaseTransferIT extends AbstractPostgresIT {
         assertThat(b.getTransferMoveDate()).isEqualTo(T);
     }
 
+    /**
+     * PR #359 R2: a lease posted under the at-posting rule (every lease before #358,
+     * and every cut-over) charged its annual parking fee for the whole term at posting;
+     * that charge reaches B through C. B's default lines leave the fee out, and a fee
+     * line added to B by hand is refused at post (refused rather than warned: posting
+     * it would bill the renter twice).
+     */
+    @Test
+    void aFeeChargedAtPostingIsNotChargedAgainOnTheNewLease() {
+        UUID a = fixtures.draftLease(CONTRACT, START, END,
+                List.of(line("RENT", "60000"), line("SECURITY_DEPOSIT", "3000"), line("PARKING_FEE", "3650")));
+        jdbc.update("update leases set fee_timing = 'AT_POSTING' where id = ?", a);
+        chequeGeneration.saveRows(a, List.of(
+                row("630040", CONTRACT, CONTRACT, "3000"),
+                row("630041", CONTRACT, JAN, "18650"),
+                row("630042", CONTRACT, APR, "15000"),
+                row("630043", CONTRACT, JUL, "15000"),
+                row("630044", CONTRACT, OCT, "15000")));
+        posting.post(a);
+        for (LocalDate d : List.of(CONTRACT, JAN, APR)) {
+            Cheque c = chequeOn(a, d);
+            chequeService.deposit(c.getId(), ChequeActionRequest.on(d));
+            chequeService.clear(c.getId(), ChequeActionRequest.on(d));
+        }
+        Unit target = tx.execute(s -> fixtures.createUnit(fixtures.property(), "A-207"));
+        LeaseDTO byDefault = transfers.draft(a, request(T, target.getId(), null), posting);
+        List<com.datagami.rentaxis.api.dto.lease.LeaseLineDTO> lines = tx.execute(s -> leaseService.getLines(byDefault.getId()));
+        assertThat(lines).extracting(com.datagami.rentaxis.api.dto.lease.LeaseLineDTO::chargeTypeCode).containsExactly("RENT");
+        tx.executeWithoutResult(st -> leaseService.deleteDraftLease(byDefault.getId()));
+
+        LeaseDTO byHand = transfers.draft(a, request(T, target.getId(),
+                List.of(line("RENT", "41589.04"), line("PARKING_FEE", "2304.66"))), posting);
+        chequeGeneration.saveRows(byHand.getId(), List.of(row("630050", B_START, B_START, "6085.48")));
+        assertThatThrownBy(() -> posting.post(byHand.getId()))
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.transferFeeChargedTwice");
+        assertThat(lease(a).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+    }
+
+    /**
+     * PR #359 R2: a parking deposit carried across properties twice stays a parking
+     * deposit, and the third lease's ledger still sees it.
+     */
+    @Test
+    void aParkingDepositStaysAParkingDepositOverTwoCrossPropertyTransfers() {
+        UUID a = fixtures.draftLease(CONTRACT, START, END, List.of(line("RENT", "60000"), line("PARKING_DEPOSIT", "500")));
+        chequeGeneration.saveRows(a, List.of(
+                row("640040", CONTRACT, CONTRACT, "500"),
+                row("640041", CONTRACT, JAN, "15000"),
+                row("640042", CONTRACT, APR, "15000"),
+                row("640043", CONTRACT, JUL, "15000"),
+                row("640044", CONTRACT, OCT, "15000")));
+        posting.post(a);
+        for (LocalDate d : List.of(CONTRACT, JAN, APR)) {
+            Cheque c = chequeOn(a, d);
+            chequeService.deposit(c.getId(), ChequeActionRequest.on(d));
+            chequeService.clear(c.getId(), ChequeActionRequest.on(d));
+        }
+        Property p2 = tx.execute(s -> fixtures.createProperty("P2"));
+        UUID b = draftB(a, tx.execute(s -> fixtures.createUnit(p2, "P2-1")), "41589.04");
+        posting.post(b);
+        Property p3 = tx.execute(s -> fixtures.createProperty("P3"));
+        LocalDate t2 = LocalDate.of(2026, 6, 30);
+        LeaseDTO c = transfers.draft(b, new TransferLeaseRequest(t2, tx.execute(s -> fixtures.createUnit(p3, "P3-1")).getId(),
+                null, null, List.of(line("RENT", "60000")), null), posting);
+        UUID cId = c.getId();
+        var est = tx.execute(s -> transfers.estimateForDryRun(leaseRepo.findById(cId).orElseThrow()));
+        BigDecimal ownRows = new BigDecimal("60000").add(est.carriedBalance()).subtract(est.carriedTotal());
+        chequeGeneration.saveRows(cId, List.of(row("640050", t2.plusDays(1), t2.plusDays(1), ownRows.toPlainString())));
+        posting.post(cId);
+        assertThat(balanceOf(AccountRole.PARKING_DEPOSIT, cId, p3)).isEqualByComparingTo("-500");
+        assertThat(balanceOf(AccountRole.SECURITY_DEPOSIT, cId, p3)).isZero();
+        BigDecimal held = tx.execute(s -> depositLedger.depositHeld(leaseRepo.findById(cId).orElseThrow()));
+        assertThat(held).isEqualByComparingTo("500");
+        assertTrialBalanceBalances();
+    }
+
     @Test
     void refusals() {
         UUID a = leaseA(true);

@@ -99,7 +99,9 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
     private static final LocalDate RENT_2 = LocalDate.of(2027, 1, 2);
     private static final LocalDate RENT_3 = LocalDate.of(2027, 4, 2);
     private static final LocalDate RENT_4 = LocalDate.of(2027, 7, 2);
-    private static final LocalDate ON = LocalDate.of(2027, 2, 1);
+    /** PR #359 R2: an assignment takes effect no later than today. */
+    private static final LocalDate ON = LocalDate.now().isAfter(LocalDate.of(2027, 9, 22))
+            ? LocalDate.of(2027, 9, 22) : LocalDate.now();
 
     @BeforeEach
     void setUp() {
@@ -182,17 +184,28 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
 
     @Test
     void overdueItemsAreRefusedUnlessTheIncomingRenterTakesThemOn() {
-        UUID leaseId = lease(false);   // the deposit is banked; October's cheque is still in the drawer on 01/12
+        // Nothing banked: the deposit cheque of 16/09/2026 is past its date and grace
+        // on the effective date (overdue is judged on that date, not on "now").
+        UUID leaseId = leaseNothingCleared();
         Renter b = fixtures.createRenter("Novated Co LLC");
-        LocalDate december = LocalDate.of(2026, 12, 1);
-        assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), december, "Novation", null)))
+        assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON, "Novation", null)))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.assignmentOverdue");
-        LeaseAssignmentDTO draft = assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), december, "Novation", true));
-        assertThat(draft.overdue()).extracting(LeaseAssignmentDTO.Overdue::chequeDate).containsExactly(RENT_1);
+        LeaseAssignmentDTO draft = assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON, "Novation", true));
+        assertThat(draft.overdue()).extracting(LeaseAssignmentDTO.Overdue::chequeDate).containsExactly(CONTRACT_DATE);
         assignments.post(leaseId, draft.id(), null);
-        assertThat(chequeOn(leaseId, RENT_1).getRenter().getId()).isEqualTo(b.getId());
+        assertThat(chequeOn(leaseId, CONTRACT_DATE).getRenter().getId()).isEqualTo(b.getId());
         assertTrialBalanceBalances();
+    }
+
+    /** PR #359 R2: a hand-over dated after today is refused. */
+    @Test
+    void anAssignmentCannotTakeEffectAfterToday() {
+        UUID leaseId = lease(true);
+        Renter b = fixtures.createRenter("Heir");
+        assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(b.getId(),
+                LocalDate.now().plusDays(1), "Heir", null)))
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.assignmentFuture");
     }
 
     @Test
@@ -204,7 +217,7 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
                 .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.assignmentSameRenter");
         assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON, " ", null)))
                 .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.assignmentReason");
-        assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), END.plusDays(1), "x", null)))
+        assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), START.minusDays(1), "x", null)))
                 .hasMessageContaining("within the tenancy");
         LeaseAssignmentDTO draft = assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON, "Heir", null));
         assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON, "Heir", null)))
@@ -351,6 +364,19 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
     }
 
     // ------------------------------------------------------------------
+
+    private UUID leaseNothingCleared() {
+        UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END,
+                List.of(line("RENT", "51000"), line("SECURITY_DEPOSIT", "3000")));
+        chequeGeneration.saveRows(leaseId, List.of(
+                row("510040", CONTRACT_DATE, CONTRACT_DATE, "3000"),
+                row("510041", CONTRACT_DATE, RENT_1, "12750"),
+                row("510042", CONTRACT_DATE, RENT_2, "12750"),
+                row("510043", CONTRACT_DATE, RENT_3, "12750"),
+                row("510044", CONTRACT_DATE, RENT_4, "12750")));
+        posting.post(leaseId);
+        return leaseId;
+    }
 
     private UUID lease(boolean clearFirstTwo) {
         UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END,

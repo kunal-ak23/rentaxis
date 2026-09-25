@@ -192,6 +192,9 @@ public class LeaseTransferService {
             ChargeBehaviour b = type.getBehaviour();
             if (b == ChargeBehaviour.DEPOSIT) continue;
             if (b == ChargeBehaviour.FEE && (type.getRecognition() == null || !type.getRecognition().recurs())) continue;
+            // PR #359 R2: a fee A took to income at posting (the old at-posting rule, a
+            // cut-over) was charged for the whole term and is carried to B in C.
+            if (b == ChargeBehaviour.FEE && l.getPostedRecognition() == com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.ONE_OFF) continue;
             LocalDate from = l.getPeriodStart() != null ? l.getPeriodStart() : a.getStartDate();
             LocalDate to = l.getPeriodEnd() != null ? l.getPeriodEnd() : a.getEndDate();
             if (from.isAfter(a.getStartDate())) continue;   // an extension's window
@@ -243,6 +246,29 @@ public class LeaseTransferService {
         for (UUID id : chosen.keySet()) {
             if (!uncleared.contains(id)) {
                 throw new BusinessRuleViolationException("The plan names a cheque that is not an uncleared row of this lease.");
+            }
+        }
+    }
+
+    /**
+     * PR #359 R2: refused (not warned) — a fee line on B whose charge type A took to
+     * income at posting for A's whole term (window still running after T) would charge
+     * the renter twice: A's full-term charge reaches B through C.
+     */
+    private void requireNoFeeChargedTwice(Lease a, Lease b, LocalDate t) {
+        java.util.Set<UUID> chargedOnA = new java.util.HashSet<>();
+        for (LeaseLine l : leaseLineRepository.findByLease_IdOrderBySeqNoAsc(a.getId())) {
+            if (l.getChargeType() == null || l.getChargeType().getBehaviour() != ChargeBehaviour.FEE) continue;
+            if (l.getPostedRecognition() != com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.ONE_OFF) continue;
+            if (l.getChargeType().getRecognition() == null || !l.getChargeType().getRecognition().recurs()) continue;
+            LocalDate to = l.getPeriodEnd() != null ? l.getPeriodEnd() : a.getEndDate();
+            if (to.isAfter(t)) chargedOnA.add(l.getChargeType().getId());
+        }
+        for (LeaseLine l : leaseLineRepository.findByLease_IdOrderBySeqNoAsc(b.getId())) {
+            if (l.getChargeType() != null && chargedOnA.contains(l.getChargeType().getId())) {
+                throw new BusinessRuleViolationException(l.getChargeType().getNameEn() + " was charged on the old lease"
+                        + " for its whole term and is carried in the balance; remove it from the new lease.",
+                        "lease.transferFeeChargedTwice", Map.of("charge", l.getChargeType().getNameEn()));
             }
         }
     }
@@ -363,6 +389,8 @@ public class LeaseTransferService {
             if (LeaseTransferCheque.CARRY.equals(d) && c.getStatus() == ChequeStatus.REGISTERED) toCarry.add(c);
             else if (LeaseTransferCheque.RETURN.equals(d)) toReturn.add(c);
         }
+
+        requireNoFeeChargedTwice(a, b, t);
 
         String note = "Transferred to " + unitNumber(b);
         UUID tcrId = termination.endForTransfer(a, t, toReturn, toCarry, note);

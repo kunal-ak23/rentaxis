@@ -86,9 +86,9 @@ public class LeaseEffectiveTerms {
         return line == null ? null : lines.stream().filter(e -> e.line().getId().equals(line.getId())).findFirst().orElse(null);
     }
 
-    /** Σ RENT lines' effective amounts: the rent the renter pays now. */
+    /** Σ RENT lines' effective amounts: the rent the renter pays today (a reduction from a later date is not yet in it). */
     public BigDecimal currentRent(Lease lease) {
-        return effectiveLines(lease, null).stream()
+        return effectiveLines(lease, LocalDate.now()).stream()
                 .filter(e -> e.line().getChargeType() != null
                         && e.line().getChargeType().getBehaviour() == ChargeBehaviour.RENT)
                 .map(EffectiveLine::amount).reduce(BigDecimal.ZERO, BigDecimal::add);

@@ -209,6 +209,16 @@ public class DepositCarryForward {
         UUID fromProperty = LeasePostingService.propertyIdOf(predecessor);
         UUID toProperty = LeasePostingService.propertyIdOf(successor);
         if (java.util.Objects.equals(fromProperty, toProperty)) return predecessorLeaf;
+        // PR #359 R2: the leaf's own role on the predecessor's property first — after a
+        // transfer the predecessor has no deposit line naming it (a parking deposit
+        // carried twice must stay a parking deposit).
+        for (var candidate : List.of(com.datagami.rentaxis.domain.entity.enums.AccountRole.SECURITY_DEPOSIT,
+                com.datagami.rentaxis.domain.entity.enums.AccountRole.PARKING_DEPOSIT)) {
+            var leaf = accountResolver.resolveOrNull(candidate, fromProperty);
+            if (leaf != null && leaf.getId().equals(predecessorLeaf)) {
+                return accountResolver.resolve(candidate, toProperty).getId();
+            }
+        }
         com.datagami.rentaxis.domain.entity.enums.AccountRole role = leaseLines
                 .findByLease_IdOrderBySeqNoAsc(predecessor.getId()).stream()
                 .filter(l -> l.getCreditAccount() != null && predecessorLeaf.equals(l.getCreditAccount().getId())

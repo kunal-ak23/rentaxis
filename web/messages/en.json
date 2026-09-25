@@ -2482,7 +2482,9 @@
         "renewHasTransfer": "This lease is being transferred; delete that draft, or renew the new lease instead.",
         "assignmentSuccessorDraft": "This lease has a draft {kind, select, transfer {transfer} other {renewal}} in the current renter's name; delete it before assigning the lease.",
         "assignmentPending": "This lease has a draft assignment to another renter; post or delete it first.",
-        "successorRenterMismatch": "This contract continues a lease that now belongs to {renter}; the new contract must be in that renter's name."
+        "successorRenterMismatch": "This contract continues a lease that now belongs to {renter}; the new contract must be in that renter's name.",
+        "assignmentFuture": "An assignment cannot take effect after today; post it on or after {date}.",
+        "transferFeeChargedTwice": "{charge} was charged on the old lease for its whole term and is carried in the balance; remove it from the new lease."
       }
     },
     "paginationShowing": "Showing {start}-{end} of {total}",

@@ -359,6 +359,16 @@ public class LeaseService {
         List<Lease> relevant = new java.util.ArrayList<>(leaseRepository.coveringOn(day));
         relevant.addAll(leaseRepository.upcomingAfter(day));
         for (Lease l : relevant) {
+            // PR #359 R2: a credit addendum dated ahead takes effect in the stored
+            // current rent (unit rent, dashboard) on its date.
+            if (effectiveTerms != null && addendumRepository != null && addendumRepository.existsByLease_IdAndKind(
+                    l.getId(), com.datagami.rentaxis.domain.entity.LeaseAddendum.KIND_CREDIT)) {
+                BigDecimal now = effectiveTerms.currentRent(l);
+                if (l.getCurrentRentAmount() == null || now.compareTo(l.getCurrentRentAmount()) != 0) {
+                    l.setCurrentRentAmount(now);
+                    leaseRepository.save(l);
+                }
+            }
             units.putIfAbsent(l.getUnit().getId(), l.getUnit());
             byUnit.computeIfAbsent(l.getUnit().getId(), k -> new java.util.ArrayList<>()).add(l);
         }
@@ -2096,6 +2106,12 @@ public class LeaseService {
         dto.setRenterAcceptedAt(lease.getRenterAcceptedAt());
         dto.setRenewedFromLeaseId(lease.getRenewedFromLeaseId());
         dto.setCurrentRentAmount(lease.getCurrentRentAmount() != null ? lease.getCurrentRentAmount() : lease.getRentAmount());
+        // PR #359 R2: live on read, so a reduction from a later date shows on that date.
+        if (effectiveTerms != null && addendumRepository != null && lease.getPostedAt() != null
+                && addendumRepository.existsByLease_IdAndKind(lease.getId(),
+                        com.datagami.rentaxis.domain.entity.LeaseAddendum.KIND_CREDIT)) {
+            dto.setCurrentRentAmount(effectiveTerms.currentRent(lease));
+        }
         dto.setTransferredFromLeaseId(lease.getTransferredFromLeaseId());
         dto.setTransferMoveDate(lease.getTransferMoveDate());
         if (lease.getId() != null && lease.getPostedAt() != null) {

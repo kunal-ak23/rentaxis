@@ -272,6 +272,14 @@ public class LeaseAssignmentService {
         if (r.reason() == null || r.reason().isBlank()) {
             throw new BusinessRuleViolationException("Say why the lease changes hands.", "lease.assignmentReason", Map.of());
         }
+        // PR #359 R2: the renter, the open cheques and the portal move at once, so the
+        // hand-over cannot be dated ahead of today (instalments before it would be
+        // collected and invoiced in the new renter's name).
+        if (r.effectiveDate().isAfter(LocalDate.now())) {
+            throw new BusinessRuleViolationException("An assignment cannot take effect after today; post it on or after "
+                    + r.effectiveDate() + ".", "lease.assignmentFuture", Map.of("date",
+                    r.effectiveDate().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))));
+        }
         LocalDate end = lease.getTerminatedOn() != null ? lease.getTerminatedOn() : lease.getEndDate();
         if (r.effectiveDate().isBefore(lease.getStartDate()) || r.effectiveDate().isAfter(end)) {
             throw new BusinessRuleViolationException("The assignment must take effect within the tenancy ("

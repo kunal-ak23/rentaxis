@@ -322,7 +322,8 @@ class LeaseReductionIT extends AbstractPostgresIT {
         assertThat(up.newRent()).isEqualByComparingTo("40950");
         var dto = tx.execute(s -> leaseService.getLeaseById(leaseId));
         assertThat(dto.getRentAmount()).isEqualByComparingTo("51000");
-        assertThat(dto.getCurrentRentAmount()).isEqualByComparingTo("39000");
+        // PR #359 R2: the cut takes effect on 01/03/2027 — until then the rent charged is the contract's.
+        assertThat(dto.getCurrentRentAmount()).isEqualByComparingTo(LocalDate.now().isBefore(E) ? "51000" : "39000");
         assertThat(dto.getLines()).filteredOn(l -> "RENT".equals(l.chargeTypeCode())).singleElement()
                 .satisfies(l -> assertThat(l.currentAmount()).isEqualByComparingTo("39000"));
     }
