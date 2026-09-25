@@ -34,3 +34,5 @@ databaseChangeLog:
                WHERE c.id = l.charge_type_id
                  AND le.id = l.lease_id
                  AND le.posted_at IS NOT NULL
+      rollback:
+        - dropColumn: { tableName: lease_lines, columnName: posted_recognition }
