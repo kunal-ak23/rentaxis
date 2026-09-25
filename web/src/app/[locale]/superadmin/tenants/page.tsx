@@ -113,13 +113,13 @@ export default function SuperAdminTenantsPage() {
             } else {
                 setLoadError(
                     res.status === 401 || res.status === 403
-                        ? "You don't have permission to view organizations, or your session expired."
-                        : "Failed to load organizations. Please try again."
+                        ? tSa("orgLoadDenied")
+                        : tSa("orgLoadFailed")
                 );
             }
         } catch (e) {
             console.error(e);
-            setLoadError("Network error. Please check your connection and try again.");
+            setLoadError(tSa("orgNetworkError"));
         } finally {
             setLoading(false);
         }
@@ -146,17 +146,17 @@ export default function SuperAdminTenantsPage() {
                 const data = await res.json().catch(() => ({}));
                 const fallback =
                     res.status === 401 || res.status === 403
-                        ? "You don't have permission to do this, or your session expired. Please sign in again."
+                        ? tSa("orgSaveDenied")
                         : res.status === 404
-                            ? "This organization no longer exists. Close the dialog and refresh the list."
+                            ? tSa("orgGone")
                             : res.status === 400
-                                ? "Invalid organization details. Organization name is required."
-                                : "Failed to save the organization. Please try again.";
+                                ? tSa("orgInvalid")
+                                : tSa("orgSaveFailed");
                 setFormError(data.message || data.error || fallback);
             }
         } catch (e) {
             console.error(e);
-            setFormError("Network error. Please check your connection and try again.");
+            setFormError(tSa("orgNetworkError"));
         } finally {
             setSubmitting(false);
         }
@@ -229,17 +229,18 @@ export default function SuperAdminTenantsPage() {
             <div className="flex items-center justify-between mb-8">
                 <div>
                     <h1 className="mb-1">{tSa("organisationsTitle")}</h1>
-                    <p className="text-sm text-muted">System-wide infrastructure and data isolation control.</p>
+                    <p className="text-sm text-muted">{tSa("orgSubtitle")}</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <div className="relative">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                        <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted" />
                         <input
                             type="text"
-                            placeholder="Search..."
+                            placeholder={tSa("orgSearch")}
+                            aria-label={tSa("orgSearch")}
                             value={searchQuery}
                             onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                            className="pl-9 pr-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
+                            className="ps-9 pe-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
                         />
                     </div>
                     <button
@@ -247,7 +248,7 @@ export default function SuperAdminTenantsPage() {
                         className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer"
                     >
                         <Plus size={14} />
-                        Provision New Organization
+                        {tSa("orgProvision")}
                     </button>
                 </div>
             </div>
@@ -258,17 +259,17 @@ export default function SuperAdminTenantsPage() {
                     <div className="bg-surface rounded-xl p-8 max-w-md w-full shadow-2xl border border-border relative">
                         <button
                             onClick={resetForm}
-                            aria-label="Close"
-                            className="absolute right-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 cursor-pointer rounded-lg"
+                            aria-label={tSa("orgClose")}
+                            className="absolute end-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 cursor-pointer rounded-lg"
                         >
                             <X size={18} />
                         </button>
 
                         <h2 className="text-lg font-bold mb-1 text-foreground">
-                            {editingTenant ? "Edit Organization" : "Provision New Organization"}
+                            {editingTenant ? tSa("orgEdit") : tSa("orgProvision")}
                         </h2>
                         <p className="text-xs text-muted mb-6 font-medium">
-                            {editingTenant ? "Update organization details." : "Register a new client entity onto the platform."}
+                            {editingTenant ? tSa("orgEditHint") : tSa("orgProvisionHint")}
                         </p>
 
                         {formError && (
@@ -281,43 +282,43 @@ export default function SuperAdminTenantsPage() {
                         <form onSubmit={handleSubmit} className="space-y-4">
                             {/* Logo Upload */}
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">Organization Logo</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgLogo")}</label>
                                 <FileUpload
                                     value={formData.logoUrl}
                                     onChange={(url) => setFormData({ ...formData, logoUrl: url })}
                                     onRemove={() => setFormData({ ...formData, logoUrl: "" })}
                                     folder="assets"
-                                    label="Upload Company Logo"
+                                    label={tSa("orgUploadLogo")}
                                     hint="PNG, JPG or SVG. Max 2MB. Drag & drop or click to browse."
                                 />
                             </div>
 
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">Organization Name</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgName")}</label>
                                 <input
                                     required
                                     name="name"
                                     data-testid="org-name"
-                                    placeholder="e.g. Al Futtaim Properties"
+                                    placeholder={tSa("orgNamePlaceholder")}
                                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                                     value={formData.name}
                                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">Address</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgAddress")}</label>
                                 <textarea
                                     rows={2}
-                                    placeholder="Office address (shown on receipts)"
+                                    placeholder={tSa("orgAddressPlaceholder")}
                                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none"
                                     value={formData.address}
                                     onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">TRN (Tax Registration Number)</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgTrn")}</label>
                                 <input
-                                    placeholder="e.g. 100XXXXXXXXX"
+                                    placeholder={tSa("orgTrnPlaceholder")}
                                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                                     value={formData.trn}
                                     onChange={(e) => setFormData({ ...formData, trn: e.target.value })}
@@ -325,7 +326,7 @@ export default function SuperAdminTenantsPage() {
                             </div>
                             {/* Phone */}
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1 flex items-center gap-1"><Phone size={10} /> Phone</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1 flex items-center gap-1"><Phone size={10} /> {tSa("orgPhone")}</label>
                                 <input
                                     type="tel"
                                     placeholder="+971 50 123 4567"
@@ -337,21 +338,21 @@ export default function SuperAdminTenantsPage() {
                             </div>
                             {editingTenant && (
                                 <div>
-                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">Status</label>
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgStatus")}</label>
                                     <select
                                         value={formData.status}
                                         onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                                         className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all cursor-pointer"
                                     >
-                                        <option value="ACTIVE">Active</option>
-                                        <option value="INACTIVE">Inactive</option>
+                                        <option value="ACTIVE">{tSa("orgStatusACTIVE")}</option>
+                                        <option value="INACTIVE">{tSa("orgStatusINACTIVE")}</option>
                                     </select>
                                 </div>
                             )}
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider">Ticket Closure OTP</label>
-                                    <p className="text-[9px] text-muted mt-0.5">Require renters to share OTP to close tickets</p>
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider">{tSa("orgTicketOtp")}</label>
+                                    <p className="text-[9px] text-muted mt-0.5">{tSa("orgTicketOtpHint")}</p>
                                 </div>
                                 <button
                                     type="button"
@@ -367,7 +368,7 @@ export default function SuperAdminTenantsPage() {
                                     onClick={resetForm}
                                     className="bg-surface text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-input transition-all cursor-pointer"
                                 >
-                                    Cancel
+                                    {tSa("cancel")}
                                 </button>
                                 <button
                                     type="submit"
@@ -375,7 +376,7 @@ export default function SuperAdminTenantsPage() {
                                     className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer disabled:opacity-50 flex items-center gap-2"
                                 >
                                     {submitting && <Loader2 size={14} className="animate-spin" />}
-                                    {editingTenant ? "Save Changes" : "Create Organization"}
+                                    {editingTenant ? tSa("orgSave") : tSa("orgCreate")}
                                 </button>
                             </div>
                         </form>
@@ -395,14 +396,14 @@ export default function SuperAdminTenantsPage() {
                 </div>
             ) : (
             <div className="bg-surface rounded-xl border border-border overflow-hidden">
-                <table className="w-full text-left">
+                <table className="w-full text-start">
                     <thead>
                         <tr className="bg-input/50">
-                            <th className="px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">Organization Name</th>
-                            <th className="px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">Address</th>
-                            <th className="px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">TRN</th>
-                            <th className="px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">Status</th>
-                            <th className="px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider text-right">Actions</th>
+                            <th className="px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{tSa("orgName")}</th>
+                            <th className="px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{tSa("orgAddress")}</th>
+                            <th className="px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{tSa("orgTrnShort")}</th>
+                            <th className="px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{tSa("orgStatus")}</th>
+                            <th className="px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider text-end">{tSa("orgActions")}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -421,7 +422,8 @@ export default function SuperAdminTenantsPage() {
                                                     setTimeout(() => setCopiedId(null), 2000);
                                                 }}
                                                 className="p-0.5 rounded text-muted hover:text-foreground transition-colors cursor-pointer"
-                                                title="Copy ID"
+                                                title={tSa("orgCopyId")}
+                                                aria-label={tSa("orgCopyId")}
                                             >
                                                 {copiedId === tenant.id ? <Check size={10} className="text-success" /> : <Copy size={10} />}
                                             </button>
@@ -439,14 +441,15 @@ export default function SuperAdminTenantsPage() {
                                         "px-2.5 py-1 rounded-lg text-[10px] font-semibold",
                                         tenant.status === 'ACTIVE' ? 'bg-success/10 text-success' : 'bg-input text-muted'
                                     )}>
-                                        {tenant.status || 'ACTIVE'}
+                                        {tenant.status === 'INACTIVE' ? tSa("orgStatusINACTIVE") : tSa("orgStatusACTIVE")}
                                     </span>
                                 </td>
-                                <td className="px-5 py-3.5 text-right">
+                                <td className="px-5 py-3.5 text-end">
                                     <div className="inline-flex items-center gap-1">
                                         <button
                                             onClick={() => openFeaturesDrawer(tenant)}
-                                            title="Feature Toggles"
+                                            title={t("featureToggles")}
+                                            aria-label={t("featureToggles")}
                                             className="p-1.5 rounded hover:bg-neutral-100 text-neutral-500 hover:text-blue-600 transition-colors cursor-pointer"
                                         >
                                             <Zap size={15} />
@@ -456,7 +459,7 @@ export default function SuperAdminTenantsPage() {
                                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/10 rounded-lg transition-colors cursor-pointer"
                                         >
                                             <Pencil size={12} />
-                                            Edit
+                                            {tSa("orgEditButton")}
                                         </button>
                                         <button
                                             onClick={() => openDelete(tenant)}
@@ -481,14 +484,14 @@ export default function SuperAdminTenantsPage() {
                             {loadError ? <XCircle size={32} /> : <ShieldCheck size={32} />}
                         </div>
                         <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">
-                            {loadError || "No organizations provisioned yet."}
+                            {loadError || tSa("orgEmpty")}
                         </p>
                         {loadError && (
                             <button
                                 onClick={fetchTenants}
                                 className="mt-4 text-xs font-semibold text-primary hover:underline cursor-pointer"
                             >
-                                Retry
+                                {tSa("orgRetry")}
                             </button>
                         )}
                     </div>
@@ -526,7 +529,7 @@ export default function SuperAdminTenantsPage() {
                   <div className="p-5">
                     {featuresLoading ? (
                       <div className="flex items-center justify-center py-8 text-neutral-400">
-                        <Loader2 size={20} className="animate-spin mr-2" /> {t("loading")}
+                        <Loader2 size={20} className="animate-spin me-2" /> {t("loading")}
                       </div>
                     ) : features.length === 0 ? (
                       <p className="text-sm text-neutral-500 text-center py-6">{t("noFeaturesAvailable")}</p>
