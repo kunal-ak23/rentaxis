@@ -7,7 +7,6 @@ import { useTranslations } from "next-intl";
 import { ShieldCheck, Users } from "lucide-react";
 import LedgerFilters, { defaultLedgerRange } from "@/components/finance/LedgerFilters";
 import LedgerTable from "@/components/finance/LedgerTable";
-import { narrowLedgersToLease } from "@/components/finance/narrowLedger";
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
@@ -57,8 +56,13 @@ export default function TenantLedgerPage() {
             setLoading(true);
             setLoadError(null);
             try {
-                const all = await ledgerApi.ledger.renter(q.renterId, { from: q.from, to: q.to });
-                setLedgers(narrowLedgersToLease(all, q.leaseId));
+                // One contract: the general ledger filtered on the renter AND the lease,
+                // so the server's balance brought forward and running balance are that
+                // contract's own (PR #365 R1). Narrowing the renter ledger client-side
+                // had to zero the opening balance.
+                setLedgers(q.leaseId
+                    ? await ledgerApi.ledger.general({ renterId: q.renterId, leaseId: q.leaseId, from: q.from, to: q.to })
+                    : await ledgerApi.ledger.renter(q.renterId, { from: q.from, to: q.to }));
             } catch (err) {
                 setLedgers([]);
                 setLoadError(err instanceof ApiError ? err.message : tCommon("loadFailed"));
