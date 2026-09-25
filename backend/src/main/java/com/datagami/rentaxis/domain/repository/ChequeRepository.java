@@ -284,6 +284,25 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
                                @Param("unrestricted") boolean unrestricted,
                                @Param("propertyIds") Collection<UUID> propertyIds);
 
+    /** {@link #findPostDated}, a page at a time (scale P1-3); the caller's page carries the order. */
+    @Query(value = """
+        select c from Cheque c
+        where c.status in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED,
+                           com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED,
+                           com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING)
+          and c.chequeDate >= :from and c.chequeDate <= :to
+          and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
+                                     com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
+          and (cast(:propertyId as java.util.UUID) is null or c.property.id = :propertyId)
+          and (:unrestricted = true or c.property.id in :propertyIds)
+        """)
+    Page<Cheque> findPostDatedPaged(@Param("propertyId") UUID propertyId,
+                                    @Param("from") LocalDate from,
+                                    @Param("to") LocalDate to,
+                                    @Param("unrestricted") boolean unrestricted,
+                                    @Param("propertyIds") Collection<UUID> propertyIds,
+                                    Pageable pageable);
+
     /**
      * Count and value per status for the register's summary tiles, in one pass over
      * the index rather than one query per tile.
@@ -326,6 +345,19 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
     List<Cheque> findRegisterRowsForLeases(@Param("leaseIds") Collection<UUID> leaseIds);
 
     /**
+     * {@link #findRegisterRowsForLeases} with draft and awaiting-signature contracts too
+     * (scale #14: the renter page's tiles cover every contract). A draft contract's grid
+     * rows are still DRAFT and still left out — they are proposals, not instruments.
+     */
+    @Query("""
+        select c from Cheque c
+        where c.lease.id in :leaseIds
+          and c.status <> com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DRAFT
+        order by c.lease.id asc, c.seqNo asc
+        """)
+    List<Cheque> findRegisterRowsForLeasesIncludingDrafts(@Param("leaseIds") Collection<UUID> leaseIds);
+
+    /**
      * Value of the rows in these statuses maturing in {@code [from, toExclusive)} —
      * what the dashboard means by "expected this month".
      */
@@ -351,7 +383,7 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
      * feed cannot narrate another building's collections.
      */
     @Query("""
-        select c from Cheque c
+        select c from Cheque c left join fetch c.unit left join fetch c.property
         where c.statusChangedAt is not null
           and c.status <> com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DRAFT
           and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
@@ -522,6 +554,27 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
         """)
     List<Cheque> findAllDue(@Param("today") LocalDate today);
 
+    /**
+     * {@link #findAllDue} for one organisation, a slice at a time (scale P1-1): the daily
+     * reminder job pages through it instead of loading every due row of every tenant.
+     * The lease is fetched for its grace period; order is by id so pages do not overlap.
+     */
+    @Query("""
+        select c from Cheque c join fetch c.lease l
+        where c.tenantId = :tenantId
+          and ((c.status in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED,
+                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED,
+                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING)
+                and c.chequeDate <= :today)
+               or c.status = com.datagami.rentaxis.domain.entity.enums.ChequeStatus.BOUNCED)
+          and l.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
+                               com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
+        order by c.id
+        """)
+    org.springframework.data.domain.Slice<Cheque> findAllDue(@Param("tenantId") UUID tenantId,
+                                                            @Param("today") LocalDate today,
+                                                            Pageable pageable);
+
     /** The property statement's register rows (finance-ops spec §1, sections 2 and 4). Tenant-filtered: call inside a transaction. */
     List<Cheque> findByProperty_IdAndChequeDateBetweenOrderByChequeDateAsc(UUID propertyId, LocalDate from, LocalDate to);
 
@@ -562,4 +615,120 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
     List<Cheque> findLiveNumberedOnOtherLeases(@org.springframework.data.repository.query.Param("renterId") UUID renterId,
                                                @org.springframework.data.repository.query.Param("numbers") java.util.Collection<String> numbers,
                                                @org.springframework.data.repository.query.Param("leaseId") UUID leaseId);
+
+    /**
+     * {@link #findDue}'s rows with what of each is still open, in SQL (scale P1-9 / P1-10).
+     *
+     * <p>The due predicate is {@link #findDue}'s word for word: REGISTERED / DEPOSITED /
+     * ONLINE_PENDING dated on or before today, or BOUNCED whatever its date, on a lease past
+     * signature, in the caller's properties. {@code open_amount} is {@code BouncedDebt}'s rule:
+     * a bounced row counts only for the debt the lease's rent receivable still carries
+     * (Σdebit − Σcredit on the lease dimension, floored at zero), allocated newest bounce
+     * first; every other row is open in full. The receivable is the lease's own account, else
+     * the property's RENT_RECEIVABLE mapping, else the organisation default
+     * ({@code AccountResolver}). {@code overdue} is {@code ChequeDueRules.overdue}:
+     * {@code chequeDate + grace < today}.</p>
+     *
+     * <p>Native, so the tenant is bound here rather than by the Hibernate filter: every row
+     * and every correlated read (ledger, mappings) is the row's own organisation's.
+     * {@code allTenants} is for a SUPER_ADMIN with no organisation selected only, who read
+     * across organisations before this was SQL and still does; everyone else passes their
+     * tenant. {@code propertyIds} must not be empty (callers pass a sentinel when unrestricted).</p>
+     */
+    String OPEN_DUE_CTE = """
+        with due as (
+            select c.id, c.tenant_id, c.lease_id, coalesce(c.amount, 0) as amount, c.status, c.cheque_date, c.bounced_at,
+                   c.property_id, c.unit_id, c.renter_id, c.cheque_number, c.seq_no,
+                   c.cheque_date + coalesce(l.grace_period_days, 0) as grace_end,
+                   l.receivable_account_id, u.property_id as unit_property_id
+            from cheques c
+                 join leases l on l.id = c.lease_id
+                 left join units u on u.id = l.unit_id
+            where (:allTenants = true or c.tenant_id = :tenantId)
+              and ((c.status in ('REGISTERED', 'DEPOSITED', 'ONLINE_PENDING') and c.cheque_date <= :today)
+                   or c.status = 'BOUNCED')
+              and l.status not in ('DRAFT', 'PENDING_SIGNATURE')
+              and (cast(:propertyId as uuid) is null or c.property_id = :propertyId)
+              and (:unrestricted = true or c.property_id in (:propertyIds))
+        ),
+        bounced as (
+            select d.id, d.lease_id,
+                   coalesce(sum(d.amount) over (partition by d.lease_id
+                        order by d.bounced_at desc nulls last, d.cheque_date desc nulls last, d.id
+                        rows between unbounded preceding and 1 preceding), 0) as before_amount
+            from due d where d.status = 'BOUNCED'
+        ),
+        balances as (
+            select bl.lease_id,
+                   greatest(coalesce((select sum(jl.debit) - sum(jl.credit) from journal_lines jl
+                                      where jl.tenant_id = bl.tenant_id and jl.lease_id = bl.lease_id
+                                        and jl.account_id = coalesce(bl.receivable_account_id,
+                                            (select m.account_id from property_account_mappings m
+                                                 join accounts a on a.id = m.account_id
+                                             where m.tenant_id = bl.tenant_id and m.property_id = bl.unit_property_id
+                                               and m.role = 'RENT_RECEIVABLE' and a.is_active and not a.is_group
+                                             limit 1),
+                                            (select m.account_id from tenant_default_account_mappings m
+                                                 join accounts a on a.id = m.account_id
+                                             where m.tenant_id = bl.tenant_id and m.role = 'RENT_RECEIVABLE'
+                                               and a.is_active and not a.is_group
+                                             limit 1))), 0), 0) as balance
+            from (select distinct d.tenant_id, d.lease_id, d.receivable_account_id, d.unit_property_id
+                  from due d where d.status = 'BOUNCED') bl
+        ),
+        open_due as (
+            select d.*,
+                   case when d.status = 'BOUNCED'
+                        then greatest(0, least(d.amount, bal.balance - b.before_amount))
+                        else d.amount end as open_amount,
+                   d.grace_end < :today as overdue,
+                   greatest(0, :today - d.grace_end) as days_overdue
+            from due d
+                 left join bounced b on b.id = d.id
+                 left join balances bal on bal.lease_id = d.lease_id
+        )
+        """;
+
+    /** Due and overdue totals over {@link #OPEN_DUE_CTE}: rows with nothing open are not counted. */
+    interface DueTotals {
+        long getDueCount(); BigDecimal getDueAmount(); long getOverdueCount(); BigDecimal getOverdueAmount();
+    }
+
+    @Query(value = OPEN_DUE_CTE + """
+        select count(*) as dueCount, coalesce(sum(o.open_amount), 0) as dueAmount,
+               count(*) filter (where o.overdue) as overdueCount,
+               coalesce(sum(o.open_amount) filter (where o.overdue), 0) as overdueAmount
+        from open_due o where o.open_amount > 0
+        """, nativeQuery = true)
+    DueTotals dueTotals(@Param("tenantId") UUID tenantId,
+                        @Param("allTenants") boolean allTenants,
+                        @Param("today") LocalDate today,
+                        @Param("propertyId") UUID propertyId,
+                        @Param("unrestricted") boolean unrestricted,
+                        @Param("propertyIds") Collection<UUID> propertyIds);
+
+    /** One aging-report row: a due row with something still open. */
+    interface OpenDueRow {
+        UUID getChequeId(); UUID getLeaseId(); String getRenterName(); String getPropertyName();
+        String getUnitNumber(); String getChequeNumber(); LocalDate getChequeDate();
+        BigDecimal getOpenAmount(); boolean getOverdue(); int getDaysOverdue();
+    }
+
+    @Query(value = OPEN_DUE_CTE + """
+        select o.id as chequeId, o.lease_id as leaseId, r.name_en as renterName, p.name_en as propertyName,
+               u.unit_number as unitNumber, o.cheque_number as chequeNumber, o.cheque_date as chequeDate,
+               o.open_amount as openAmount, o.overdue as overdue, o.days_overdue as daysOverdue
+        from open_due o
+             left join renters r on r.id = o.renter_id
+             left join properties p on p.id = o.property_id
+             left join units u on u.id = o.unit_id
+        where o.open_amount > 0
+        order by o.cheque_date, o.seq_no, o.id
+        """, nativeQuery = true)
+    List<OpenDueRow> openDueRows(@Param("tenantId") UUID tenantId,
+                                 @Param("allTenants") boolean allTenants,
+                                 @Param("today") LocalDate today,
+                                 @Param("propertyId") UUID propertyId,
+                                 @Param("unrestricted") boolean unrestricted,
+                                 @Param("propertyIds") Collection<UUID> propertyIds);
 }

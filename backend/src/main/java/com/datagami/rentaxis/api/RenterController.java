@@ -29,6 +29,33 @@ public class RenterController {
         return ResponseEntity.ok(renterService.getAllRenters());
     }
 
+    /** Scale P1-3: searched (name, phone, email) and paged in the database. */
+    @GetMapping("/paged")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
+    public ResponseEntity<org.springframework.data.domain.Page<RenterDTO>> getRentersPaged(
+            @RequestParam(required = false) String q,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "25") int size) {
+        return ResponseEntity.ok(renterService.searchPaged(q, page, size));
+    }
+
+    /** Scale P1-6: the async renter picker. */
+    @GetMapping("/search")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
+    public ResponseEntity<List<com.datagami.rentaxis.api.dto.lookup.RenterOptionDTO>> searchRenters(
+            @RequestParam(required = false) String q,
+            @RequestParam(defaultValue = "20") int limit) {
+        return ResponseEntity.ok(renterService.search(q, limit));
+    }
+
+    /** Scale P1-6: labels for a handful of renter ids (at most 200). */
+    @GetMapping("/names")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
+    public ResponseEntity<List<com.datagami.rentaxis.api.dto.lookup.RenterOptionDTO>> renterNames(
+            @RequestParam List<UUID> ids) {
+        return ResponseEntity.ok(renterService.names(ids));
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
     public ResponseEntity<RenterDTO> getRenterById(@PathVariable UUID id) {

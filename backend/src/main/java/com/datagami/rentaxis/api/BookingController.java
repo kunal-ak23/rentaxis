@@ -111,6 +111,7 @@ public class BookingController {
     // ----------------------------------------------------------------- admin
 
     @GetMapping("/bookings")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)   // maps lazy associations (OSIV is off)
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
     public ResponseEntity<Page<BookingRequestDTO>> list(
             @RequestParam(required = false) UUID propertyId,
@@ -135,6 +136,7 @@ public class BookingController {
     }
 
     @GetMapping("/bookings/{id}")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)   // maps lazy associations (OSIV is off)
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
     public ResponseEntity<BookingDetailDTO> get(@PathVariable UUID id) {
         BookingRequest booking = bookingService.get(tenantId(), id);
@@ -190,6 +192,7 @@ public class BookingController {
      * per-resource, regardless of how many units/leases the renter has.
      */
     @GetMapping("/facilities/my")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)   // maps lazy associations (OSIV is off)
     @PreAuthorize("hasRole('RENTER')")
     public ResponseEntity<MyFacilitiesDTO> myFacilities() {
         UUID tenantId = tenantId();
@@ -261,6 +264,7 @@ public class BookingController {
     }
 
     @GetMapping("/bookings/my")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)   // maps lazy associations (OSIV is off)
     @PreAuthorize("hasRole('RENTER')")
     public List<BookingRequestDTO> mine() {
         return toDTOs(bookingService.listMine(tenantId(), currentUserId()));

@@ -29,6 +29,16 @@ public class VendorService {
         return repository.findAllByOrderByNameEnAsc();
     }
 
+    /** {@code GET /vendors/paged} (scale P1-3): searched (names, TRN, email, phone, contact) and paged, by name. */
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<Vendor> searchPaged(String q, int page, int size) {
+        return repository.searchPaged(com.datagami.rentaxis.core.util.Search.requireTenant(),
+                com.datagami.rentaxis.core.util.Search.like(q),
+                com.datagami.rentaxis.core.util.Search.page(page, size, org.springframework.data.domain.Sort.by(
+                        org.springframework.data.domain.Sort.Order.asc("nameEn"),
+                        org.springframework.data.domain.Sort.Order.asc("id"))));
+    }
+
     @Transactional(readOnly = true)
     public Vendor getVendorById(UUID id) {
         return repository.findById(id)

@@ -6,8 +6,9 @@ import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.RentCollectionSettings;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
-import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
+import com.datagami.rentaxis.domain.entity.LandlordOrg;
+import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.OnlinePaymentRepository;
 import com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository;
@@ -15,7 +16,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -50,9 +52,19 @@ public class NotificationScheduler {
     private final NotificationService notificationService;
     private final RentCollectionSettingsRepository rentSettingsRepository;
     private final OnlinePaymentRepository onlinePaymentRepository;
+    private final LandlordOrgRepository orgRepository;
+    private final PlatformTransactionManager transactionManager;
 
+    /** Due rows read per transaction by the overdue check. */
+    static final int DUE_PAGE = 500;
+
+    /**
+     * No transaction around the whole run (scale P1-1): each organisation's rows are read a
+     * page at a time in a read-only transaction of their own, turned into {@link Reminder}s,
+     * and sent after that transaction ends, each notification in its own. The old run held
+     * one read-only transaction over every due row of every tenant and sent from inside it.
+     */
     @Scheduled(cron = "0 0 8 * * *") // 8 AM daily
-    @Transactional(readOnly = true)
     public void sendDailyNotifications() {
         log.info("Running daily notification check...");
         checkPaymentDueReminders();
@@ -66,7 +78,7 @@ public class NotificationScheduler {
         LocalDate today = LocalDate.now();
 
         // Get all rent collection settings to find reminder day configurations
-        List<RentCollectionSettings> allSettings = rentSettingsRepository.findAll();
+        List<RentCollectionSettings> allSettings = readOnly().execute(s -> rentSettingsRepository.findAll());
 
         // Collect all unique reminder day offsets across all properties
         Set<Integer> reminderDays = new java.util.HashSet<>();
@@ -94,27 +106,27 @@ public class NotificationScheduler {
         // in the database and filtered in Java, once per configured offset.
         for (int daysBefore : reminderDays) {
             LocalDate targetDate = today.plusDays(daysBefore);
-            List<Cheque> maturing = chequeRepository.findRegisteredMaturingOn(targetDate);
+            List<Reminder> maturing = readOnly().execute(s -> chequeRepository.findRegisteredMaturingOn(targetDate)
+                    .stream().map(Reminder::of).toList());
 
-            for (Cheque cheque : maturing) {
+            for (Reminder cheque : maturing) {
                 try {
-                    java.util.UUID renterUserId = renterUserId(cheque);
-                    if (renterUserId != null) {
+                    if (cheque.renterUserId() != null) {
                         notificationService.notify(
-                                cheque.getTenantId(),
-                                renterUserId,
+                                cheque.tenantId(),
+                                cheque.renterUserId(),
                                 "PAYMENT_DUE",
                                 "Payment Due Reminder",
-                                "Installment #" + cheque.getSeqNo() + " of "
-                                        + cheque.getAmount() + " is due in " + daysBefore + " day(s).",
+                                "Installment #" + cheque.seqNo() + " of "
+                                        + cheque.amount() + " is due in " + daysBefore + " day(s).",
                                 "CHEQUE",
-                                cheque.getId(),
-                                NotificationMessage.of("PAYMENT_DUE", "seq", cheque.getSeqNo(),
-                                        "amount", cheque.getAmount(), "days", daysBefore,
-                                        "chequeNo", cheque.getChequeNumber()));
+                                cheque.id(),
+                                NotificationMessage.of("PAYMENT_DUE", "seq", cheque.seqNo(),
+                                        "amount", cheque.amount(), "days", daysBefore,
+                                        "chequeNo", cheque.chequeNumber()));
                     }
                 } catch (Exception e) {
-                    log.warn("Failed to send payment reminder for cheque {}", cheque.getId(), e);
+                    log.warn("Failed to send payment reminder for cheque {}", cheque.id(), e);
                 }
             }
 
@@ -195,43 +207,59 @@ public class NotificationScheduler {
 
         int sent = 0;
         Instant now = Instant.now();
-        for (Cheque cheque : chequeRepository.findAllDue(today)) {
-            Lease lease = cheque.getLease();
-            int graceDays = lease == null ? 0 : lease.getGracePeriodDays();
-            if (!ChequeDueRules.overdue(cheque, graceDays, today)) {
-                continue;
-            }
-            // A row the renter is in the middle of paying online is owed but not yet
-            // worth chasing. Asked only for the one status it can be true of, so the
-            // ordinary due row costs no query.
-            if (cheque.getStatus() == ChequeStatus.ONLINE_PENDING
-                    && !chaseable(cheque.getStatus(),
-                            onlinePaymentRepository.latestOpenCheckoutStartedAt(cheque.getId()), now)) {
-                continue;
-            }
-            int daysOverdue = ChequeDueRules.daysOverdue(cheque, graceDays, today);
-            if (!shouldRemind(daysOverdue)) {
-                continue;
-            }
-            try {
-                java.util.UUID renterUserId = renterUserId(cheque);
-                if (renterUserId != null) {
-                    notificationService.notify(
-                            cheque.getTenantId(),
-                            renterUserId,
-                            "PAYMENT_OVERDUE",
-                            "Payment Overdue",
-                            "Installment #" + cheque.getSeqNo() + " of "
-                                    + cheque.getAmount() + " is " + daysOverdue + " day(s) overdue.",
-                            "CHEQUE",
-                            cheque.getId(),
-                            NotificationMessage.of("PAYMENT_OVERDUE", "seq", cheque.getSeqNo(),
-                                    "amount", cheque.getAmount(), "days", daysOverdue,
-                                    "chequeNo", cheque.getChequeNumber()));
-                    sent++;
+        for (java.util.UUID tenantId : orgIds()) {
+            int page = 0;
+            boolean more = true;
+            while (more) {
+                int p = page++;
+                // Read a page, decide in the read transaction (the lease's grace and any open
+                // checkout are there), then send outside it.
+                List<Reminder> batch = new java.util.ArrayList<>();
+                more = Boolean.TRUE.equals(readOnly().execute(s -> {
+                    org.springframework.data.domain.Slice<Cheque> slice = chequeRepository.findAllDue(tenantId, today,
+                            org.springframework.data.domain.PageRequest.of(p, DUE_PAGE));
+                    for (Cheque cheque : slice) {
+                        Lease lease = cheque.getLease();
+                        int graceDays = lease == null ? 0 : lease.getGracePeriodDays();
+                        if (!ChequeDueRules.overdue(cheque, graceDays, today)) {
+                            continue;
+                        }
+                        // A row the renter is in the middle of paying online is owed but not yet
+                        // worth chasing. Asked only for the one status it can be true of, so the
+                        // ordinary due row costs no query.
+                        if (cheque.getStatus() == ChequeStatus.ONLINE_PENDING
+                                && !chaseable(cheque.getStatus(),
+                                        onlinePaymentRepository.latestOpenCheckoutStartedAt(cheque.getId()), now)) {
+                            continue;
+                        }
+                        int daysOverdue = ChequeDueRules.daysOverdue(cheque, graceDays, today);
+                        if (shouldRemind(daysOverdue)) {
+                            batch.add(Reminder.of(cheque).withDays(daysOverdue));
+                        }
+                    }
+                    return slice.hasNext();
+                }));
+                for (Reminder cheque : batch) {
+                    try {
+                        if (cheque.renterUserId() != null) {
+                            notificationService.notify(
+                                    cheque.tenantId(),
+                                    cheque.renterUserId(),
+                                    "PAYMENT_OVERDUE",
+                                    "Payment Overdue",
+                                    "Installment #" + cheque.seqNo() + " of "
+                                            + cheque.amount() + " is " + cheque.days() + " day(s) overdue.",
+                                    "CHEQUE",
+                                    cheque.id(),
+                                    NotificationMessage.of("PAYMENT_OVERDUE", "seq", cheque.seqNo(),
+                                            "amount", cheque.amount(), "days", cheque.days(),
+                                            "chequeNo", cheque.chequeNumber()));
+                            sent++;
+                        }
+                    } catch (Exception e) {
+                        log.warn("Failed to send overdue notification for cheque {}", cheque.id(), e);
+                    }
                 }
-            } catch (Exception e) {
-                log.warn("Failed to send overdue notification for cheque {}", cheque.getId(), e);
             }
         }
 
@@ -246,33 +274,62 @@ public class NotificationScheduler {
         for (int daysBefore : daysBeforeExpiry) {
             LocalDate expiryDate = today.plusDays(daysBefore);
 
-            // Find active leases ending on the target date
-            List<Lease> expiringLeases = leaseRepository.findAll().stream()
-                    .filter(l -> l.getStatus() == LeaseStatus.ACTIVE || l.getStatus() == LeaseStatus.NOTICE_GIVEN)
-                    .filter(l -> l.getEndDate().equals(expiryDate))
-                    .toList();
+            // Live contracts ending on the target date, one bounded query per organisation
+            // (scale P1-1: this was leaseRepository.findAll(), every tenant's every year,
+            // three times a run).
+            List<Object[]> expiringLeases = new java.util.ArrayList<>();
+            for (java.util.UUID tenantId : orgIds()) {
+                expiringLeases.addAll(readOnly().execute(s -> leaseRepository.findLiveEndingOn(tenantId, expiryDate)
+                        .stream()
+                        .map(l -> new Object[]{l.getId(), l.getTenantId(), l.getEndDate(),
+                                l.getRenter() == null ? null : l.getRenter().getUserId()})
+                        .toList()));
+            }
 
-            for (Lease lease : expiringLeases) {
+            for (Object[] lease : expiringLeases) {
                 try {
                     // Notify the renter
-                    if (lease.getRenter() != null && lease.getRenter().getUserId() != null) {
+                    if (lease[3] != null) {
                         notificationService.notify(
-                                lease.getTenantId(),
-                                lease.getRenter().getUserId(),
+                                (java.util.UUID) lease[1],
+                                (java.util.UUID) lease[3],
                                 "LEASE_EXPIRING",
                                 "Lease Expiring Soon",
-                                "Your lease expires in " + daysBefore + " days on " + lease.getEndDate() + ".",
+                                "Your lease expires in " + daysBefore + " days on " + lease[2] + ".",
                                 "LEASE",
-                                lease.getId(),
+                                (java.util.UUID) lease[0],
                                 NotificationMessage.of("LEASE_EXPIRING", "days", daysBefore,
-                                        "date", lease.getEndDate()));
+                                        "date", lease[2]));
                     }
                 } catch (Exception e) {
-                    log.warn("Failed to send lease expiry notification for lease {}", lease.getId(), e);
+                    log.warn("Failed to send lease expiry notification for lease {}", lease[0], e);
                 }
             }
 
             log.info("Sent {} lease expiry notifications for {} days before expiry", expiringLeases.size(), daysBefore);
+        }
+    }
+
+    private List<java.util.UUID> orgIds() {
+        return readOnly().execute(s -> orgRepository.findAll().stream().map(LandlordOrg::getId).toList());
+    }
+
+    private TransactionTemplate readOnly() {
+        TransactionTemplate t = new TransactionTemplate(transactionManager);
+        t.setReadOnly(true);
+        return t;
+    }
+
+    /** What a reminder needs from a cheque row, read inside the transaction and sent after it. */
+    record Reminder(java.util.UUID id, java.util.UUID tenantId, java.util.UUID renterUserId, Integer seqNo,
+                    java.math.BigDecimal amount, String chequeNumber, int days) {
+        static Reminder of(Cheque c) {
+            return new Reminder(c.getId(), c.getTenantId(), NotificationScheduler.renterUserId(c), c.getSeqNo(), c.getAmount(),
+                    c.getChequeNumber(), 0);
+        }
+
+        Reminder withDays(int d) {
+            return new Reminder(id, tenantId, renterUserId, seqNo, amount, chequeNumber, d);
         }
     }
 

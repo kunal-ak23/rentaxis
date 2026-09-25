@@ -134,6 +134,18 @@ public class ChequeController {
         return queryService.postDated(propertyId, parseMonth(month));
     }
 
+    /** The post-dated book, paged (scale P1-3); {@code from}/{@code to} override {@code month}. */
+    @GetMapping("/post-dated/paged")
+    @PreAuthorize(STAFF)
+    public Page<ChequeDTO> postDatedPaged(@RequestParam(required = false) UUID propertyId,
+                                          @RequestParam(required = false) String month,
+                                          @RequestParam(required = false) LocalDate from,
+                                          @RequestParam(required = false) LocalDate to,
+                                          @RequestParam(defaultValue = "0") int page,
+                                          @RequestParam(defaultValue = "50") int size) {
+        return queryService.postDatedPaged(propertyId, parseMonth(month), from, to, page, size);
+    }
+
     @GetMapping("/summary")
     @PreAuthorize(STAFF)
     public ChequeSummaryDTO summary(@RequestParam(required = false) UUID propertyId,
@@ -155,8 +167,9 @@ public class ChequeController {
      */
     @PostMapping("/stats-by-leases")
     @PreAuthorize(STAFF)
-    public List<LeaseChequeStatsDTO> statsByLeases(@RequestBody List<UUID> leaseIds) {
-        return queryService.statsByLeases(leaseIds, null);
+    public List<LeaseChequeStatsDTO> statsByLeases(@RequestBody List<UUID> leaseIds,
+                                                   @RequestParam(defaultValue = "false") boolean includeDrafts) {
+        return queryService.statsByLeases(leaseIds, null, includeDrafts);
     }
 
     @GetMapping("/{id}")

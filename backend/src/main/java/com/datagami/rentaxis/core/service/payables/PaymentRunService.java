@@ -119,6 +119,17 @@ public class PaymentRunService {
         return runs.findAllByOrderByCreatedAtAsc().stream().map(this::dto).toList();
     }
 
+    /** {@code GET /payment-runs/paged} (scale P1-3): by status and payment date, oldest first, a page at a time. */
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<PaymentRunDTO> listPaged(PaymentRun.Status status, LocalDate from,
+                                                                        LocalDate to, int page, int size) {
+        UUID t = requireTenant();
+        return runs.searchPaged(t, status, from, to, com.datagami.rentaxis.core.util.Search.page(page, size,
+                        org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Order.asc("createdAt"),
+                                org.springframework.data.domain.Sort.Order.asc("id"))))
+                .map(this::dto);
+    }
+
     @Transactional(readOnly = true)
     public PaymentRunDTO get(UUID id) {
         requireTenant();

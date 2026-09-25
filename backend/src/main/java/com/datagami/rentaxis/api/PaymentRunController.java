@@ -44,6 +44,18 @@ public class PaymentRunController {
         return ResponseEntity.ok(runs.list());
     }
 
+    /** Scale P1-3: filtered by status and payment date, paged. */
+    @GetMapping("/paged")
+    public ResponseEntity<org.springframework.data.domain.Page<PaymentRunDTO>> listPaged(
+            @RequestParam(required = false) com.datagami.rentaxis.domain.entity.PaymentRun.Status status,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "25") int size) {
+        requireTenantSelected();
+        return ResponseEntity.ok(runs.listPaged(status, from, to, page, size));
+    }
+
     @GetMapping("/candidates")
     public ResponseEntity<PaymentRunCandidatesDTO> candidates(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dueBefore,

@@ -2,6 +2,9 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.CreateRenterDTO;
 import com.datagami.rentaxis.api.dto.RenterDTO;
+import com.datagami.rentaxis.api.dto.lookup.RenterOptionDTO;
+import com.datagami.rentaxis.core.security.PropertyScope;
+import com.datagami.rentaxis.core.util.Search;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.User;
@@ -26,6 +29,64 @@ public class RenterService {
     private final RenterRepository renterRepository;
     private final UserService userService;
     private final UserRepository userRepository;
+
+    /** Narrows a property manager's lists; absent in unit tests that build the service by hand. */
+    private PropertyScope propertyScope;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setPropertyScope(PropertyScope propertyScope) {
+        this.propertyScope = propertyScope;
+    }
+
+    /** The caller's property ids when they are a property manager, else {@code null}. */
+    private List<UUID> scoped() {
+        return propertyScope == null ? null : propertyScope.scopedPropertyIds();
+    }
+
+    private static final org.springframework.data.domain.Sort BY_NAME = org.springframework.data.domain.Sort.by(
+            org.springframework.data.domain.Sort.Order.asc("nameEn"), org.springframework.data.domain.Sort.Order.asc("id"));
+
+    /**
+     * {@code GET /renters/paged} (scale P1-3): searched on name, phone and email in the
+     * database, a page at a time, by name. A property manager sees the renters with a
+     * contract in their buildings and the renters with none yet.
+     */
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<RenterDTO> searchPaged(String q, int page, int size) {
+        UUID tenantId = Search.requireTenant();
+        List<UUID> scoped = scoped();
+        org.springframework.data.domain.Page<Renter> rows = renterRepository.searchPaged(tenantId, Search.like(q),
+                scoped == null, Search.scopeIds(scoped), Search.page(page, size, BY_NAME));
+        Map<UUID, User> users = new HashMap<>();
+        List<UUID> userIds = rows.getContent().stream().map(Renter::getUserId).filter(java.util.Objects::nonNull).toList();
+        if (!userIds.isEmpty() && tenantId != null) {
+            userRepository.findByTenantIdAndIdIn(tenantId, userIds).forEach(u -> users.put(u.getId(), u));
+        }
+        return rows.map(r -> mapToDTO(r, r.getUserId() == null ? null : users.get(r.getUserId())));
+    }
+
+    /** {@code GET /renters/search} (scale P1-6): the first {@code limit} matches, by name. */
+    @Transactional(readOnly = true)
+    public List<RenterOptionDTO> search(String q, int limit) {
+        List<UUID> scoped = scoped();
+        return renterRepository.searchPaged(Search.requireTenant(), Search.like(q), scoped == null,
+                        Search.scopeIds(scoped), org.springframework.data.domain.PageRequest.of(0, Search.limit(limit), BY_NAME))
+                .getContent().stream().map(RenterService::option).toList();
+    }
+
+    /** {@code GET /renters/names} (scale P1-6): the named renters the caller may see, at most 200 ids. */
+    @Transactional(readOnly = true)
+    public List<RenterOptionDTO> names(List<UUID> ids) {
+        List<UUID> wanted = Search.names(ids);
+        if (wanted.isEmpty()) return List.of();
+        List<UUID> scoped = scoped();
+        return renterRepository.findNamed(Search.requireTenant(), wanted, scoped == null, Search.scopeIds(scoped))
+                .stream().map(RenterService::option).toList();
+    }
+
+    private static RenterOptionDTO option(Renter r) {
+        return new RenterOptionDTO(r.getId(), r.getNameEn(), r.getNameAr(), r.getPhone(), r.getEmail());
+    }
 
     @Transactional(readOnly = true)
     public List<RenterDTO> getAllRenters() {

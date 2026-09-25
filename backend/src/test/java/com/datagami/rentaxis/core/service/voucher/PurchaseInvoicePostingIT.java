@@ -110,8 +110,12 @@ class PurchaseInvoicePostingIT extends AbstractPostgresIT {
      * gross 5,100.00. Every figure asserted below is re-derived from this fixture.
      */
     private Voucher draftTwoLineInvoice() {
+        return draftTwoLineInvoice("EMR-4471");
+    }
+
+    private Voucher draftTwoLineInvoice(String supplierInvoiceNo) {
         return vouchers.createDraft(new VoucherService.VoucherInput(
-                VoucherType.PISR, LocalDate.of(2026, 10, 15), vendor.getId(), "EMR-4471",
+                VoucherType.PISR, LocalDate.of(2026, 10, 15), vendor.getId(), supplierInvoiceNo,
                 "Pest control and lifeguard — October", propertyId, null, null, null, null,
                 List.of(new VoucherService.VoucherLineInput(pestControl.getId(), "Pest control AMC",
                                 new BigDecimal("2000.00"), new BigDecimal("5"), propertyId, null),
@@ -455,6 +459,60 @@ class PurchaseInvoicePostingIT extends AbstractPostgresIT {
 
         assertThat(voucherJournals(voucherId)).as("journals after the refused second post")
                 .extracting(JournalEntry::getId).containsExactly(firstJournalId);
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * Scale P1-12: posting invoices in parallel used to answer 77 of 2,000 posts with a 500
+     * (an NPE in Hibernate's follow-on locking inside {@code lockForWrite}). Eight threads
+     * post forty distinct drafts and, at the same time, race each other on one shared draft:
+     * every distinct post succeeds, the shared one posts exactly once, and every refusal is a
+     * business answer (already posted / being posted — a 409 or 422), never anything else.
+     */
+    @Test
+    void eightThreadsPostingAtOnceNeverFailWithAnUnexpectedError() throws Exception {
+        List<UUID> drafts = new java.util.ArrayList<>();
+        for (int i = 0; i < 40; i++) drafts.add(draftTwoLineInvoice("EMR-" + i).getId());
+        UUID shared = draftTwoLineInvoice("EMR-SHARED").getId();
+
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(8);
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        List<java.util.concurrent.Future<Object>> results = new java.util.ArrayList<>();
+        List<UUID> work = new java.util.ArrayList<>(drafts);
+        for (int i = 0; i < 16; i++) work.add(shared);
+        java.util.Collections.shuffle(work, new java.util.Random(7));
+        for (UUID id : work) {
+            results.add(pool.submit(() -> {
+                TenantContextHolder.setTenantId(tenantId);
+                try {
+                    start.await();
+                    return vouchers.post(id);
+                } catch (Exception e) {
+                    return e;
+                } finally {
+                    TenantContextHolder.clear();
+                }
+            }));
+        }
+        start.countDown();
+        pool.shutdown();
+        assertThat(pool.awaitTermination(120, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+
+        int sharedPosted = 0;
+        for (int i = 0; i < work.size(); i++) {
+            Object r = results.get(i).get();
+            if (work.get(i).equals(shared)) {
+                if (r instanceof Voucher) sharedPosted++;
+                else assertThat(r).as("a racing post of the same draft is refused as a business rule")
+                        .isInstanceOfAny(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class,
+                                com.datagami.rentaxis.api.exception.RowLockedException.class);
+            } else {
+                assertThat(r).as("distinct draft %s", work.get(i)).isInstanceOf(Voucher.class);
+            }
+        }
+        assertThat(sharedPosted).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from vouchers where tenant_id = ? and status = 'POSTED'",
+                Long.class, tenantId)).isEqualTo(41L);
         assertTrialBalanceBalances();
     }
 }

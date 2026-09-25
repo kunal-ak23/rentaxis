@@ -870,13 +870,13 @@ public class VoucherService {
      * leave one journal, not two: the status check is read-then-act, so it is only
      * a guard while the row it read cannot move underneath it.</p>
      *
-     * <p>{@code find} then {@code refresh(…, PESSIMISTIC_WRITE)} rather than a
-     * {@code @Lock} finder, for the reason documented at
-     * {@code ChequeService#lockLease}: a locking JPQL query hands back the
-     * first-level-cache instance with its <em>stale</em> state, so the loser of the
-     * race would take the lock and then decide on the pre-lock status — exactly the
-     * bug the lock exists to prevent. {@code refresh} is defined as "overwrite this
-     * instance from the database", so it both takes the lock and re-reads.</p>
+     * <p>A native {@code SELECT … FOR UPDATE} on the row (tenant bound), then {@code find}
+     * and a plain {@code refresh}, rather than a {@code @Lock} finder, for the reason
+     * documented at {@code ChequeService#lockLease}: a locking JPQL query hands back the
+     * first-level-cache instance with its <em>stale</em> state, so the loser of the race
+     * would take the lock and then decide on the pre-lock status. The refresh re-reads it
+     * once the row is ours. (It used to be {@code refresh(…, PESSIMISTIC_WRITE)}, whose
+     * follow-on locking threw under concurrent posts — scale P1-12.)</p>
      *
      * <p><b>The explicit tenant comparison below is the only guard on this path —
      * do not delete it as redundant.</b> {@code BaseTenantEntity} does set
@@ -909,16 +909,33 @@ public class VoucherService {
      * Nothing is half-written. {@code VoucherAllocationDeadlockIT} pins that.</p>
      */
     private Voucher lockForWrite(UUID voucherId) {
-        Voucher v = entityManager.find(Voucher.class, voucherId);
-        if (v == null) throw new NotFoundException("Voucher not found");
+        // Scale P1-12: the row lock is a plain SELECT ... FOR UPDATE on the vouchers row,
+        // taken before the entity is read. It used to be refresh(v, PESSIMISTIC_WRITE),
+        // whose Hibernate follow-on locking (the voucher's lines are a joined
+        // collection) threw an NPE in TableLock.applyLoadedState under concurrent posts:
+        // 77 of 2,000 posts at 8 threads answered 500. The tenant is bound in the lock
+        // query itself, so another organisation's id locks nothing and is "not found".
+        UUID tenantId = TenantContextHolder.getTenantId();
+        List<?> locked;
         try {
-            entityManager.refresh(v, LockModeType.PESSIMISTIC_WRITE);
+            jakarta.persistence.Query lock = entityManager.createNativeQuery(
+                            "select id from vouchers where id = :id"
+                                    + (tenantId != null ? " and tenant_id = :tenantId" : "")
+                                    + " for update")
+                    .setParameter("id", voucherId);
+            if (tenantId != null) lock.setParameter("tenantId", tenantId);
+            locked = lock.getResultList();
         } catch (PessimisticLockingFailureException | PessimisticLockException | LockTimeoutException e) {
             // Three types for one event: an EntityManager call is not put through
             // Spring Data's exception translation, so JPA's own types get out.
             throw new RowLockedException("This voucher is being posted right now; try again");
         }
-        UUID tenantId = TenantContextHolder.getTenantId();
+        if (locked.isEmpty()) throw new NotFoundException("Voucher not found");
+        Voucher v = entityManager.find(Voucher.class, voucherId);
+        if (v == null) throw new NotFoundException("Voucher not found");
+        // Already in this session from an earlier read: re-read it now that the row is
+        // ours, so the checks below see what the last committed writer left.
+        entityManager.refresh(v);
         if (tenantId != null && !tenantId.equals(v.getTenantId())) {
             throw new NotFoundException("Voucher not found");
         }

@@ -122,6 +122,20 @@ public class IssuedChequeService {
         return dtos(rows);
     }
 
+    /** {@code GET /issued-cheques/paged} (scale P1-3): {@link #list}'s filters in the database, a page at a time. */
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<IssuedChequeDTO> listPaged(IssuedCheque.Status status, UUID bankAccountId,
+            LocalDate from, LocalDate to, boolean duePresentOnly, int page, int size) {
+        UUID t = requireTenant();
+        org.springframework.data.domain.Pageable pageable = com.datagami.rentaxis.core.util.Search.page(page, size,
+                org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Order.asc("chequeDate"),
+                        org.springframework.data.domain.Sort.Order.asc("createdAt"),
+                        org.springframework.data.domain.Sort.Order.asc("id")));
+        org.springframework.data.domain.Page<IssuedCheque> rows = cheques.searchPaged(t, status, bankAccountId, from, to,
+                duePresentOnly, today(), IssuedCheque.Status.ISSUED, pageable);
+        return new org.springframework.data.domain.PageImpl<>(dtos(rows.getContent()), pageable, rows.getTotalElements());
+    }
+
     @Transactional(readOnly = true)
     public IssuedChequeDTO get(UUID id) {
         requireTenant();

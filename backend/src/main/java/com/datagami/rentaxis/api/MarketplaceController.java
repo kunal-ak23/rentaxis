@@ -67,6 +67,7 @@ public class MarketplaceController {
     }
 
     @GetMapping("/{tenantSlug}/listings")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)   // maps lazy associations (OSIV is off)
     public ResponseEntity<Page<UnitListingSummaryDTO>> listListings(
             @PathVariable String tenantSlug,
             @RequestParam(required = false) Integer minBedrooms,
@@ -89,6 +90,7 @@ public class MarketplaceController {
     }
 
     @GetMapping("/{tenantSlug}/listings/{slug}")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)   // maps lazy associations (OSIV is off)
     public ResponseEntity<UnitListingDTO> getBySlug(
             @PathVariable String tenantSlug,
             @PathVariable String slug) {
@@ -120,6 +122,7 @@ public class MarketplaceController {
     }
 
     @GetMapping("/me/wishlist")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)   // maps lazy associations (OSIV is off)
     public ResponseEntity<List<UnitListingSummaryDTO>> wishlist() {
         // No checkEnabled() here: wishlist is intentionally cross-tenant (a renter may
         // have wishlisted listings from multiple landlords). A per-tenant feature gate

@@ -414,4 +414,57 @@ class DashboardServiceScopingIT extends AbstractPostgresIT {
                 new UsernamePasswordAuthenticationToken(userId.toString(), null,
                         List.of(new SimpleGrantedAuthority("ROLE_PROPERTY_MANAGER"))));
     }
+
+    @Autowired com.datagami.rentaxis.core.service.cheque.BouncedDebt bouncedDebt;
+
+    /**
+     * Scale P1-9/P1-10: the overdue total, the register's due tiles and the aging report are
+     * one SQL statement now. They must equal the per-row rule they replaced — findDue, then
+     * {@code BouncedDebt} (a bounced row counts only for the debt the receivable still
+     * carries, newest bounce first), then {@code ChequeDueRules.overdue} — on a lease with two
+     * bounces, a matured registered row and a receipt that pays part of the bounced debt.
+     */
+    @Test
+    void theSqlOverdueEqualsThePerRowRuleWithBouncesAndAPartPayment() {
+        List<Cheque> mine = register(mineLeaseId);
+        chequeService.deposit(mine.get(0).getId(), ChequeActionRequest.on(LocalDate.of(2026, 2, 2)));
+        chequeService.bounce(mine.get(0).getId(), ChequeActionRequest.on(LocalDate.of(2026, 2, 5)));
+        chequeService.deposit(mine.get(1).getId(), ChequeActionRequest.on(LocalDate.of(2026, 5, 2)));
+        chequeService.bounce(mine.get(1).getId(), ChequeActionRequest.on(LocalDate.of(2026, 5, 5)));
+        chequeService.cashReceipt(mineLeaseId, new com.datagami.rentaxis.api.dto.lease.ChequeRowInput(
+                null, null, LocalDate.now(), null, LocalDate.now(), null, null, null, new BigDecimal("5000"),
+                "part payment", com.datagami.rentaxis.domain.entity.enums.ChequeMode.TRANSFER));
+
+        LocalDate today = LocalDate.now();
+        BigDecimal[] expected = tx.execute(s -> {
+            List<Cheque> due = chequeRepo.findDue(null, today, true, List.of(),
+                    org.springframework.data.domain.Pageable.unpaged()).getContent();
+            java.util.Map<UUID, BigDecimal> open = bouncedDebt.openAmounts(due);
+            BigDecimal overdue = BigDecimal.ZERO, dueAmount = BigDecimal.ZERO;
+            for (Cheque c : due) {
+                BigDecimal amt = open.get(c.getId());
+                if (amt.signum() <= 0) continue;
+                dueAmount = dueAmount.add(amt);
+                if (com.datagami.rentaxis.core.service.cheque.ChequeDueRules.overdue(
+                        c, c.getLease().getGracePeriodDays(), today)) overdue = overdue.add(amt);
+            }
+            BigDecimal bouncedOpen = open.get(mine.get(0).getId()).add(open.get(mine.get(1).getId()));
+            return new BigDecimal[]{overdue, dueAmount, bouncedOpen};
+        });
+        // The part payment really is partial: the bounced debt is neither whole nor gone.
+        BigDecimal face = mine.get(0).getAmount().add(mine.get(1).getAmount());
+        assertThat(expected[2]).isGreaterThan(BigDecimal.ZERO).isLessThan(face);
+
+        assertThat(dashboard.getSummary().getOverdueAmount()).isEqualByComparingTo(expected[0]);
+        ChequeSummaryDTO summary = query.summary(null, today);
+        assertThat(summary.overdueAmount()).isEqualByComparingTo(expected[0]);
+        assertThat(summary.dueAmount()).isEqualByComparingTo(expected[1]);
+        var aging = query.aging(null, today);
+        assertThat(aging.totalOutstanding()).isEqualByComparingTo(expected[1]);
+
+        // The other building's manager sees none of it.
+        asPropertyManagerFor(theirProperty.getId());
+        assertThat(query.aging(null, today).buckets()).flatExtracting(b -> b.rows())
+                .extracting(r -> r.leaseId()).doesNotContain(mineLeaseId).isNotEmpty();
+    }
 }

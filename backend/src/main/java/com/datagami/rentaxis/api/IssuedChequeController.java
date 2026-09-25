@@ -45,6 +45,20 @@ public class IssuedChequeController {
         return ResponseEntity.ok(cheques.list(status, bankAccountId, from, to, duePresent));
     }
 
+    /** Scale P1-3: {@code GET /issued-cheques} filtered and paged in the database. */
+    @GetMapping("/paged")
+    public ResponseEntity<org.springframework.data.domain.Page<IssuedChequeDTO>> listPaged(
+            @RequestParam(required = false) IssuedCheque.Status status,
+            @RequestParam(required = false) UUID bankAccountId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "false") boolean duePresent,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "25") int size) {
+        requireTenantSelected();
+        return ResponseEntity.ok(cheques.listPaged(status, bankAccountId, from, to, duePresent, page, size));
+    }
+
     @GetMapping("/summary")
     public ResponseEntity<IssuedChequeSummaryDTO> summary() {
         requireTenantSelected();

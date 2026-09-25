@@ -280,6 +280,22 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
     @Query("SELECT l FROM Lease l WHERE l.transferredFromLeaseId = :leaseId")
     List<Lease> findByTransferredFromLeaseId(@Param("leaseId") UUID leaseId);
 
+    /** {@link #findByTransferredFromLeaseId} for a page of leases, the successor's unit fetched. */
+    @Query("SELECT l FROM Lease l LEFT JOIN FETCH l.unit WHERE l.transferredFromLeaseId IN :leaseIds")
+    List<Lease> findByTransferredFromLeaseIdIn(@Param("leaseIds") java.util.Collection<UUID> leaseIds);
+
+    /**
+     * One organisation's live contracts (ACTIVE or NOTICE_GIVEN) ending on {@code endDate},
+     * renter fetched — the expiry reminder's list (scale P1-1), served by
+     * {@code idx_leases_tenant_status_end}.
+     */
+    @Query("""
+        SELECT l FROM Lease l LEFT JOIN FETCH l.renter
+        WHERE l.tenantId = :tenantId AND l.endDate = :endDate
+          AND l.status IN (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.ACTIVE,
+                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.NOTICE_GIVEN)""")
+    List<Lease> findLiveEndingOn(@Param("tenantId") UUID tenantId, @Param("endDate") java.time.LocalDate endDate);
+
     @Query("SELECT COALESCE(MAX(l.contractNumber), 0) FROM Lease l WHERE l.tenantId = :tenantId")
     Long findMaxContractNumberForTenant(@Param("tenantId") UUID tenantId);
 

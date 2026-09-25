@@ -23,5 +23,8 @@ public record LeaseChequeStatsDTO(UUID leaseId,
                                   long bounced,
                                   BigDecimal totalAmount,
                                   BigDecimal clearedAmount,
-                                  BigDecimal dueAmount) {
+                                  BigDecimal dueAmount,
+                                  BigDecimal unclearedAmount,
+                                  long liveCount,
+                                  BigDecimal liveAmount) {
 }

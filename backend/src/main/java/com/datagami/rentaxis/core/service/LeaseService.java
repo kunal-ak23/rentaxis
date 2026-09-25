@@ -136,9 +136,7 @@ public class LeaseService {
         // Tenant scoping alone let a PROPERTY_MANAGER assigned to one building
         // read every lease in the organisation. PropertyService already enforces
         // the assignment model on properties; this applies the same model here.
-        return leaseAccessPolicy.filterReadable(leaseRepository.findByTenantId(tenantId)).stream()
-                .map(this::mapToDTO)
-                .collect(Collectors.toList());
+        return mapAll(leaseAccessPolicy.filterReadable(leaseRepository.findByTenantId(tenantId)));
     }
 
     @Transactional(readOnly = true)
@@ -178,13 +176,11 @@ public class LeaseService {
         String normalizedSearch = search == null ? null : search.trim();
 
         if ((normalizedSearch == null || normalizedSearch.isEmpty()) && !leaseAccessPolicy.isRestricted()) {
-            return leaseRepository.search(tenantId, status, propertyId, pageable).map(this::mapToDTO);
+            return mapPage(leaseRepository.search(tenantId, status, propertyId, pageable));
         }
 
-        List<LeaseDTO> readable = leaseAccessPolicy
-                .filterReadable(leaseRepository.searchList(tenantId, status, propertyId)).stream()
-                .map(this::mapToDTO)
-                .collect(Collectors.toList());
+        List<LeaseDTO> readable = mapAll(leaseAccessPolicy
+                .filterReadable(leaseRepository.searchList(tenantId, status, propertyId)));
 
         if (normalizedSearch == null || normalizedSearch.isEmpty()) {
             return pageOf(readable, pageable);
@@ -211,10 +207,7 @@ public class LeaseService {
 
     @Transactional(readOnly = true)
     public List<LeaseDTO> getLeasesByPropertyId(UUID propertyId) {
-        return leaseAccessPolicy
-                .filterReadable(leaseRepository.findByUnitPropertyId(propertyId)).stream()
-                .map(this::mapToDTO)
-                .collect(Collectors.toList());
+        return mapAll(leaseAccessPolicy.filterReadable(leaseRepository.findByUnitPropertyId(propertyId)));
     }
 
     @Transactional(readOnly = true)
@@ -1344,9 +1337,14 @@ public class LeaseService {
 
     /** PR #359 R1 P2-1: each credited line's current amount, for the renew and extend dialogs. */
     private List<LeaseLineDTO> withCurrentAmounts(Lease lease, List<LeaseLineDTO> dtos) {
-        if (effectiveTerms == null || lease.getPostedAt() == null || addendumRepository == null
-                || !addendumRepository.existsByLease_IdAndKind(lease.getId(),
-                        com.datagami.rentaxis.domain.entity.LeaseAddendum.KIND_CREDIT)) {
+        return withCurrentAmounts(lease, dtos, addendumRepository != null
+                && addendumRepository.existsByLease_IdAndKind(lease.getId(),
+                        com.datagami.rentaxis.domain.entity.LeaseAddendum.KIND_CREDIT));
+    }
+
+    /** {@code credited}: the lease carries a credit addendum (looked up by the caller, once per page). */
+    private List<LeaseLineDTO> withCurrentAmounts(Lease lease, List<LeaseLineDTO> dtos, boolean credited) {
+        if (effectiveTerms == null || lease.getPostedAt() == null || !credited) {
             return dtos;
         }
         java.util.Map<UUID, BigDecimal> current = new java.util.HashMap<>();
@@ -1899,20 +1897,17 @@ public class LeaseService {
         List<Lease> own = leaseRepository.findByRenterId(renter.getId()).stream()
                 .filter(l -> tenantId.equals(l.getTenantId()))
                 .toList();
-        return leaseAccessPolicy.filterReadable(own).stream()
+        return mapAll(leaseAccessPolicy.filterReadable(own).stream()
                 .sorted(java.util.Comparator.comparing(Lease::getStartDate,
                         java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
-                .map(this::mapToDTO)
-                .collect(Collectors.toList());
+                .toList());
     }
 
     @Transactional(readOnly = true)
     public List<LeaseDTO> getLeasesForRenterUser(UUID userId) {
         Renter renter = renterRepository.findByUserId(userId)
                 .orElseThrow(() -> new NotFoundException("No renter profile linked to this user"));
-        List<LeaseDTO> out = leaseRepository.findByRenterId(renter.getId()).stream()
-                .map(this::mapToDTO)
-                .collect(Collectors.toList());
+        List<LeaseDTO> out = mapAll(leaseRepository.findByRenterId(renter.getId()));
         if (assignmentRepository == null) return out;
         // PR #359 R1: the lease that came by assignment opens with what came with it.
         for (LeaseDTO dto : out) {
@@ -2073,7 +2068,74 @@ public class LeaseService {
         leaseEventRepository.save(event);
     }
 
+    /**
+     * What {@link #mapToDTO} reads besides the lease row itself, loaded once for a whole
+     * page of leases (scale P1-2). Mapping a row used to cost five or six queries of its
+     * own — addendum Ejari, documents, the credit-addendum check, the transfer successor,
+     * the lines and the rent-free periods — so the unbounded list ran ~160k statements.
+     */
+    private record MapContext(java.util.Map<UUID, List<String>> addendumEjari,
+                              java.util.Map<UUID, List<LeaseDocument>> documents,
+                              java.util.Set<UUID> credited,
+                              java.util.Map<UUID, Lease> successors,
+                              java.util.Map<UUID, List<LeaseLine>> lines,
+                              java.util.Map<UUID, List<com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod>> rentFree) {
+    }
+
+    /** IN lists are cut at this size so an unbounded list stays within Postgres' bind limit. */
+    private static final int MAP_CHUNK = 1000;
+
+    private MapContext contextFor(java.util.Collection<Lease> leases) {
+        List<UUID> ids = leases.stream().map(Lease::getId).filter(java.util.Objects::nonNull).distinct().toList();
+        java.util.Map<UUID, List<String>> ejari = new java.util.HashMap<>();
+        java.util.Map<UUID, List<LeaseDocument>> docs = new java.util.HashMap<>();
+        java.util.Set<UUID> credited = new java.util.HashSet<>();
+        java.util.Map<UUID, Lease> successors = new java.util.HashMap<>();
+        java.util.Map<UUID, List<LeaseLine>> lines = new java.util.HashMap<>();
+        java.util.Map<UUID, List<com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod>> rentFree = new java.util.HashMap<>();
+        for (int i = 0; i < ids.size(); i += MAP_CHUNK) {
+            List<UUID> chunk = ids.subList(i, Math.min(ids.size(), i + MAP_CHUNK));
+            for (Object[] row : leaseAddendumRepository.findRegisteredEjariLatestFirst(chunk)) {
+                ejari.computeIfAbsent((UUID) row[0], k -> new java.util.ArrayList<>()).add((String) row[1]);
+            }
+            for (LeaseDocument d : leaseDocumentRepository.findByLeaseIdIn(chunk)) {
+                docs.computeIfAbsent(d.getLease().getId(), k -> new java.util.ArrayList<>()).add(d);
+            }
+            if (effectiveTerms != null && addendumRepository != null) {
+                credited.addAll(addendumRepository.leaseIdsWithKind(chunk,
+                        com.datagami.rentaxis.domain.entity.LeaseAddendum.KIND_CREDIT));
+            }
+            for (Lease b : leaseRepository.findByTransferredFromLeaseIdIn(chunk)) {
+                successors.putIfAbsent(b.getTransferredFromLeaseId(), b);
+            }
+            for (LeaseLine l : leaseLineRepository.findByLeaseIdsOrderBySeqNo(chunk)) {
+                lines.computeIfAbsent(l.getLease().getId(), k -> new java.util.ArrayList<>()).add(l);
+            }
+            if (rentFreePeriods != null) {
+                for (var p : rentFreePeriods.findByLease_IdInOrderByFromDateAsc(chunk)) {
+                    rentFree.computeIfAbsent(p.getLease().getId(), k -> new java.util.ArrayList<>()).add(p);
+                }
+            }
+        }
+        return new MapContext(ejari, docs, credited, successors, lines, rentFree);
+    }
+
+    /** A page (or list) of leases mapped with one batch of side queries, in the order given. */
+    private List<LeaseDTO> mapAll(List<Lease> leases) {
+        if (leases.isEmpty()) return new java.util.ArrayList<>();
+        MapContext ctx = contextFor(leases);
+        return leases.stream().map(l -> mapToDTO(l, ctx)).collect(Collectors.toList());
+    }
+
+    private Page<LeaseDTO> mapPage(Page<Lease> page) {
+        return new PageImpl<>(mapAll(page.getContent()), page.getPageable(), page.getTotalElements());
+    }
+
     private LeaseDTO mapToDTO(Lease lease) {
+        return mapToDTO(lease, contextFor(List.of(lease)));
+    }
+
+    private LeaseDTO mapToDTO(Lease lease, MapContext ctx) {
         LeaseDTO dto = new LeaseDTO();
         dto.setId(lease.getId());
         dto.setUnitId(lease.getUnit().getId());
@@ -2087,7 +2149,7 @@ public class LeaseService {
         dto.setDepositAmount(lease.getDepositAmount());
         dto.setEjariNumber(lease.getEjariNumber());
         // F14-33: the latest registered addendum's Ejari, else the contract's own.
-        List<String> addendumEjari = leaseAddendumRepository.findRegisteredEjariLatestFirst(lease.getId());
+        List<String> addendumEjari = ctx.addendumEjari().getOrDefault(lease.getId(), List.of());
         dto.setCurrentEjari(addendumEjari.isEmpty() ? lease.getEjariNumber() : addendumEjari.get(0));
         dto.setPaymentTerms(lease.getPaymentTerms());
         dto.setInstallmentDistribution(lease.getInstallmentDistribution());
@@ -2098,7 +2160,7 @@ public class LeaseService {
         dto.setPropertyId(property.getId());
         dto.setPropertyName(property.getNameEn());
         dto.setPropertyCode(property.getCode());
-        List<LeaseDocument> documents = leaseDocumentRepository.findByLeaseId(lease.getId());
+        List<LeaseDocument> documents = ctx.documents().getOrDefault(lease.getId(), List.of());
         dto.setHasContract(!documents.isEmpty());
         dto.setContractDocumentId(currentContractDocumentId(documents));
         dto.setContractNumber(lease.getContractNumber());
@@ -2117,19 +2179,19 @@ public class LeaseService {
         dto.setRenewedFromLeaseId(lease.getRenewedFromLeaseId());
         dto.setCurrentRentAmount(lease.getCurrentRentAmount() != null ? lease.getCurrentRentAmount() : lease.getRentAmount());
         // PR #359 R2: live on read, so a reduction from a later date shows on that date.
-        if (effectiveTerms != null && addendumRepository != null && lease.getPostedAt() != null
-                && addendumRepository.existsByLease_IdAndKind(lease.getId(),
-                        com.datagami.rentaxis.domain.entity.LeaseAddendum.KIND_CREDIT)) {
+        boolean credited = ctx.credited().contains(lease.getId());
+        if (effectiveTerms != null && lease.getPostedAt() != null && credited) {
             dto.setCurrentRentAmount(effectiveTerms.currentRent(lease));
         }
         dto.setTransferredFromLeaseId(lease.getTransferredFromLeaseId());
         dto.setTransferMoveDate(lease.getTransferMoveDate());
         if (lease.getId() != null && lease.getPostedAt() != null) {
-            leaseRepository.findByTransferredFromLeaseId(lease.getId()).stream().findFirst().ifPresent(b -> {
+            Lease b = ctx.successors().get(lease.getId());
+            if (b != null) {
                 dto.setTransferredToLeaseId(b.getId());
                 dto.setTransferredToUnit(b.getUnit() != null ? b.getUnit().getUnitNumber() : null);
                 dto.setTransferredToStatus(b.getStatus() != null ? b.getStatus().name() : null);
-            });
+            }
         }
         dto.setChainId(lease.getChainId());
         dto.setReceivableAccountId(lease.getReceivableAccountId());
@@ -2143,10 +2205,11 @@ public class LeaseService {
         dto.setNoticeGivenBy(lease.getNoticeGivenBy());
         dto.setIntendedMoveOutDate(lease.getIntendedMoveOutDate());
 
-        List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
+        List<LeaseLine> lines = ctx.lines().getOrDefault(lease.getId(), List.of());
         dto.setLines(new java.util.ArrayList<>(withCurrentAmounts(lease,
-                lines.stream().map(LeaseService::toLineDTO).collect(Collectors.toList()))));
-        dto.setRentFreePeriods(rentFreePeriodDTOs(lease, lines));
+                lines.stream().map(LeaseService::toLineDTO).collect(Collectors.toList()), credited)));
+        dto.setRentFreePeriods(rentFreePeriodDTOs(lease, lines,
+                ctx.rentFree().getOrDefault(lease.getId(), List.of())));
         dto.setRenewalPreviousRent(lease.getRenewalPreviousRent());
         dto.setRenewalChangePercent(lease.getRenewalChangePercent());
         dto.setContractValue(contractValueOf(lines));
@@ -2169,7 +2232,11 @@ public class LeaseService {
 
     /** Spec §4b: the periods with the concession each one carries, for the lease page and the contract. */
     public List<com.datagami.rentaxis.api.dto.lease.RentFreePeriodDTO> rentFreePeriodDTOs(Lease lease, List<LeaseLine> lines) {
-        List<com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod> periods = rentFreePeriodsOf(lease.getId());
+        return rentFreePeriodDTOs(lease, lines, rentFreePeriodsOf(lease.getId()));
+    }
+
+    private List<com.datagami.rentaxis.api.dto.lease.RentFreePeriodDTO> rentFreePeriodDTOs(Lease lease, List<LeaseLine> lines,
+            List<com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod> periods) {
         if (periods.isEmpty()) return List.of();
         LeaseLine rent = contractRentLine(lease, lines);
         BigDecimal headline = rent == null ? BigDecimal.ZERO : rent.getGrossAmount();

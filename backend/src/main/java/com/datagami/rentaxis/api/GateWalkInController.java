@@ -53,6 +53,7 @@ public class GateWalkInController {
 
     @GetMapping("/walk-in/destinations")
     @PreAuthorize("hasRole('SECURITY_GUARD')")
+    @Transactional(readOnly = true)   // maps each unit's building (OSIV is off)
     public List<Destination> destinations(@RequestParam UUID propertyId) {
         requireAssignedProperty(propertyId);
         return unitRepository.findByPropertyId(propertyId).stream()

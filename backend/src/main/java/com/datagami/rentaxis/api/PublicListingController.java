@@ -58,6 +58,7 @@ public class PublicListingController {
     }
 
     @GetMapping("/{tenantSlug}")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)   // maps lazy associations (OSIV is off)
     public ResponseEntity<Page<PublicListingDTO>> listPublicListings(
             @PathVariable String tenantSlug,
             @RequestParam(required = false) Integer minBedrooms,
@@ -75,6 +76,7 @@ public class PublicListingController {
     }
 
     @GetMapping("/{tenantSlug}/{unitSlug}")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)   // maps lazy associations (OSIV is off)
     public ResponseEntity<PublicListingDTO> getPublicListing(
             @PathVariable String tenantSlug,
             @PathVariable String unitSlug) {
@@ -84,6 +86,7 @@ public class PublicListingController {
     }
 
     @GetMapping(value = "/{tenantSlug}/sitemap.xml", produces = MediaType.APPLICATION_XML_VALUE)
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)   // maps lazy associations (OSIV is off)
     public ResponseEntity<String> sitemap(@PathVariable String tenantSlug) {
         UUID tenantId = marketplaceService.resolveTenantSlug(tenantSlug);
         checkEnabled(tenantId);

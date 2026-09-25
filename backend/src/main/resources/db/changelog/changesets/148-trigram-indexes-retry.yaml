@@ -1,0 +1,45 @@
+# PR #366 review P2-2: changeset 146 skips the pg_trgm search indexes when the extension
+# cannot be created, and a changeset that has run never runs again, so an environment that
+# allow-lists pg_trgm later would never get them. This one runs on every start and is
+# idempotent: it tries the extension again and creates whichever trigram index is missing.
+# Each CREATE INDEX runs only when to_regclass finds the index missing, so a start with the
+# indexes in place is catalogue lookups only and takes no lock on renters/units (CREATE INDEX
+# IF NOT EXISTS would lock the table before checking). TrigramIndexCheck logs a WARN at
+# startup while they are missing.
+databaseChangeLog:
+  - changeSet:
+      id: 148-trigram-indexes-retry
+      author: claude
+      runAlways: true
+      runOnChange: true
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              DO $$
+              BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm') THEN
+                  BEGIN
+                    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+                  EXCEPTION WHEN OTHERS THEN
+                    RAISE NOTICE 'pg_trgm still not available (%)', SQLERRM;
+                  END;
+                END IF;
+                IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm') THEN
+                  IF to_regclass('public.idx_renters_name_en_trgm') IS NULL THEN
+                    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_renters_name_en_trgm ON renters USING gin (lower(name_en) gin_trgm_ops)';
+                  END IF;
+                  IF to_regclass('public.idx_renters_phone_trgm') IS NULL THEN
+                    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_renters_phone_trgm ON renters USING gin (lower(phone) gin_trgm_ops)';
+                  END IF;
+                  IF to_regclass('public.idx_renters_email_trgm') IS NULL THEN
+                    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_renters_email_trgm ON renters USING gin (lower(email) gin_trgm_ops)';
+                  END IF;
+                  IF to_regclass('public.idx_units_unit_number_trgm') IS NULL THEN
+                    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_units_unit_number_trgm ON units USING gin (lower(unit_number) gin_trgm_ops)';
+                  END IF;
+                END IF;
+              END $$;
+      rollback:
+        - sql:
+            sql: SELECT 1;

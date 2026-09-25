@@ -447,7 +447,10 @@ public class GatePassController {
                 .filter(l -> l.getRenter().getId().equals(renter.getId()))
                 .findFirst()
                 .orElseThrow(() -> new NotFoundException("Unit is not on an active lease of yours"));
-        return lease.getUnit();
+        // The row, not the lease's proxy: this runs outside a transaction (OSIV off), so
+        // the proxy could not load its property afterwards.
+        return unitRepository.findById(lease.getUnit().getId())
+                .orElseThrow(() -> new NotFoundException("Unit is not on an active lease of yours"));
     }
 
     /** Creator-only read. 404 on a foreign pass so a renter cannot probe for pass ids. */

@@ -41,6 +41,40 @@ public class UnitController {
         return ResponseEntity.ok(service.getAllUnits());
     }
 
+    /**
+     * Scale P1-3: {@code GET /units} filtered and paged in the database. {@code floor} is the
+     * unit-number prefix a floor's units share ("07" for 07-01, 07-02 ...).
+     */
+    @GetMapping("/paged")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
+    public ResponseEntity<org.springframework.data.domain.Page<Unit>> getUnitsPaged(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) java.util.UUID propertyId,
+            @RequestParam(required = false) UnitStatus status,
+            @RequestParam(required = false) String floor,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "25") int size) {
+        return ResponseEntity.ok(service.searchPaged(q, propertyId, status, floor, page, size));
+    }
+
+    /** Scale P1-6: the async unit picker. */
+    @GetMapping("/search")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
+    public ResponseEntity<List<com.datagami.rentaxis.api.dto.lookup.UnitOptionDTO>> searchUnits(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) java.util.UUID propertyId,
+            @RequestParam(defaultValue = "20") int limit) {
+        return ResponseEntity.ok(service.search(q, propertyId, limit));
+    }
+
+    /** Scale P1-6: labels for a handful of unit ids (at most 200). */
+    @GetMapping("/names")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
+    public ResponseEntity<List<com.datagami.rentaxis.api.dto.lookup.UnitOptionDTO>> unitNames(
+            @RequestParam List<java.util.UUID> ids) {
+        return ResponseEntity.ok(service.names(ids));
+    }
+
     @GetMapping("/property/{propertyId}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
     public ResponseEntity<List<Unit>> getUnitsByProperty(@PathVariable UUID propertyId) {

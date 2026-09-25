@@ -10,4 +10,7 @@ import java.util.UUID;
 @Repository
 public interface LeaseDocumentRepository extends JpaRepository<LeaseDocument, UUID> {
     List<LeaseDocument> findByLeaseId(UUID leaseId);
+
+    /** {@link #findByLeaseId} for a page of leases. */
+    List<LeaseDocument> findByLeaseIdIn(java.util.Collection<UUID> leaseIds);
 }
