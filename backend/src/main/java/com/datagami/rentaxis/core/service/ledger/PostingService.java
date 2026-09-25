@@ -65,6 +65,14 @@ public class PostingService {
         this.clearingAccounts = clearingAccounts;
     }
 
+    /** #55: setter-injected like the year closes, so hand-built instances in unit tests need no new argument. */
+    private com.datagami.rentaxis.core.service.vat.VatPeriodLock vatLock;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setVatLock(com.datagami.rentaxis.core.service.vat.VatPeriodLock vatLock) {
+        this.vatLock = vatLock;
+    }
+
     @Transactional
     public JournalEntry post(PostingRequest r) {
         validateShape(r);
@@ -135,6 +143,10 @@ public class PostingService {
         // entry number, so a posting waiting on a finalize (FOR SHARE against its
         // FOR UPDATE) never holds the number sequence while it waits.
         bankLock.assertOpen(tenantOf(e), e.getLines().stream().map(l -> l.getAccount().getId()).toList(), r.entryDate());
+        // #55: a filed VAT return locks VAT dated in its period, whatever posts it.
+        if (vatLock != null) {
+            vatLock.assertOpen(tenantOf(e), e.getLines().stream().map(l -> l.getAccount().getId()).toList(), r.entryDate());
+        }
         e.setEntryNumber(numbers.next(r.docType(), r.entryDate()));
         linkContraAccounts(pairs);
         return entries.save(e);
@@ -215,6 +227,9 @@ public class PostingService {
         // reconciled period would change it just the same (spec §4). The check is on
         // the MIRROR's date — a September entry reversed in October is allowed.
         bankLock.assertOpen(original.getTenantId(), originalLines.stream().map(l -> l.getAccount().getId()).toList(), date);
+        if (vatLock != null) {
+            vatLock.assertOpen(original.getTenantId(), originalLines.stream().map(l -> l.getAccount().getId()).toList(), date);
+        }
 
         JournalEntry rev = new JournalEntry();
         rev.setDocType(original.getDocType() == JournalDocType.TCO ? JournalDocType.TCR : original.getDocType());

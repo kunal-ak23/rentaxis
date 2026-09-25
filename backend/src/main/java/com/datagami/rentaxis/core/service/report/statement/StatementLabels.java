@@ -173,6 +173,38 @@ public final class StatementLabels {
         put("cpl.change", "Change", "التغير");
         put("cpl.changePct", "Change %", "نسبة التغير");
         put("cpl.result", "Net result", "صافي النتيجة");
+
+        // #55: VAT return (FTA VAT 201 boxes a landlord uses)
+        put("vat.title", "VAT return", "الإقرار الضريبي لضريبة القيمة المضافة");
+        put("vat.period", "Tax period", "الفترة الضريبية");
+        put("vat.status.OPEN", "Not filed", "غير مقدم");
+        put("vat.status.FILED", "Filed", "مقدم");
+        put("vat.status.REOPENED", "Re-opened", "أعيد فتحه");
+        put("vat.filedAt", "Filed", "تاريخ التقديم");
+        put("vat.reference", "FTA reference", "مرجع الهيئة");
+        put("vat.box", "Box", "الخانة");
+        put("vat.description", "Description", "البيان");
+        put("vat.amount", "Amount (AED)", "المبلغ (درهم)");
+        put("vat.vat", "VAT (AED)", "الضريبة (درهم)");
+        put("vat.standard.ABU_DHABI", "Standard rated supplies in Abu Dhabi", "التوريدات الخاضعة للنسبة الأساسية في أبوظبي");
+        put("vat.standard.DUBAI", "Standard rated supplies in Dubai", "التوريدات الخاضعة للنسبة الأساسية في دبي");
+        put("vat.standard.SHARJAH", "Standard rated supplies in Sharjah", "التوريدات الخاضعة للنسبة الأساسية في الشارقة");
+        put("vat.standard.AJMAN", "Standard rated supplies in Ajman", "التوريدات الخاضعة للنسبة الأساسية في عجمان");
+        put("vat.standard.UMM_AL_QUWAIN", "Standard rated supplies in Umm Al Quwain", "التوريدات الخاضعة للنسبة الأساسية في أم القيوين");
+        put("vat.standard.RAS_AL_KHAIMAH", "Standard rated supplies in Ras Al Khaimah", "التوريدات الخاضعة للنسبة الأساسية في رأس الخيمة");
+        put("vat.standard.FUJAIRAH", "Standard rated supplies in Fujairah", "التوريدات الخاضعة للنسبة الأساسية في الفجيرة");
+        put("vat.standard.UNKNOWN", "Standard rated supplies, emirate not set", "توريدات خاضعة للنسبة الأساسية، الإمارة غير محددة");
+        put("vat.zeroRated", "Zero rated supplies", "التوريدات الخاضعة للنسبة الصفرية");
+        put("vat.exempt", "Exempt supplies (residential rent)", "التوريدات المعفاة (إيجار سكني)");
+        put("vat.totalSupplies", "Totals (supplies)", "الإجمالي (التوريدات)");
+        put("vat.standardExpenses", "Standard rated expenses", "النفقات الخاضعة للنسبة الأساسية");
+        put("vat.totalExpenses", "Totals (expenses)", "الإجمالي (النفقات)");
+        put("vat.dueTax", "Total value of due tax for the period", "إجمالي الضريبة المستحقة عن الفترة");
+        put("vat.recoverableTax", "Total value of recoverable tax for the period", "إجمالي الضريبة القابلة للاسترداد عن الفترة");
+        put("vat.netPayable", "Payable tax for the period (negative: refundable)", "صافي الضريبة المستحقة الدفع (السالب: قابل للاسترداد)");
+        put("vat.outputCheckOk", "Output VAT per documents ties to the Output VAT account", "ضريبة المخرجات حسب المستندات مطابقة لحساب ضريبة المخرجات");
+        put("vat.outputCheckBad", "Output VAT per documents differs from the Output VAT account by", "ضريبة المخرجات حسب المستندات تختلف عن حساب ضريبة المخرجات بمقدار");
+        put("vat.commercialWithoutVat", "Rent on commercial units without VAT (check the lease VAT flag; not in any box)", "إيجار وحدات تجارية بدون ضريبة (راجع إعداد الضريبة في العقد؛ غير مدرج في أي خانة)");
     }
 
     /** The label in {@code lang} ("ar" or anything else for English); the key itself when unknown. */

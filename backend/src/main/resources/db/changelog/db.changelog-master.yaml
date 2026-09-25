@@ -283,3 +283,5 @@ databaseChangeLog:
       file: db/changelog/changesets/137-lease-document-created-at.yaml
   - include:
       file: db/changelog/changesets/138-interproperty-clearing.yaml
+  - include:
+      file: db/changelog/changesets/139-vat-returns.yaml

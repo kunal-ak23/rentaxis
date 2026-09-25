@@ -2430,6 +2430,7 @@
     "notOnStatement": "This entry is not on the imported statement",
     "postAnyway": "Post anyway",
     "errors": {
+      "vat": {"periodFiled": "The VAT return for {from} – {to} is filed, so VAT dated {date} cannot change. Date the correction on or after {next}.", "periodStart": "A VAT period starts on the first day of a month.", "periodNotEnded": "A VAT period can be filed once it has ended.", "alreadyFiled": "This VAT period is already filed.", "periodOverlaps": "This VAT period overlaps one already filed.", "reopenReason": "Give a reason for re-opening the VAT return.", "notFiled": "This VAT return is not filed."},
       "ledger": {"propertyUnbalanced": "This journal does not balance per property (out by {amount}); a journal spanning properties needs an inter-property clearing leg in each."},
       "bank": {
         "statementCovers": "A statement for {bank} covering {from} to {to} is already imported. {when, select, before {An entry dated {date} is before the statement starts ({from}), so it changes the balance the statement opens with: confirm that it is not on the statement to post it.} other {An entry dated {date} is inside the statement period ({from} to {to}): record it from its statement line in Bank reconciliation, or confirm that it is not on the statement.}}"
@@ -4148,5 +4149,40 @@
     "beforeClosing": "Before closing entries",
     "cancel": "Cancel",
     "broughtForward": "Brought forward from earlier years (not yet closed)"
+  },
+  "VatReturn": {
+    "boxes": {"standard_ABU_DHABI": "Standard rated supplies in Abu Dhabi", "standard_DUBAI": "Standard rated supplies in Dubai", "standard_SHARJAH": "Standard rated supplies in Sharjah", "standard_AJMAN": "Standard rated supplies in Ajman", "standard_UMM_AL_QUWAIN": "Standard rated supplies in Umm Al Quwain", "standard_RAS_AL_KHAIMAH": "Standard rated supplies in Ras Al Khaimah", "standard_FUJAIRAH": "Standard rated supplies in Fujairah", "standard_UNKNOWN": "Standard rated supplies, emirate not set", "zeroRated": "Zero rated supplies", "exempt": "Exempt supplies (residential rent)", "totalSupplies": "Totals (supplies)", "standardExpenses": "Standard rated expenses", "totalExpenses": "Totals (expenses)", "dueTax": "Total value of due tax for the period", "recoverableTax": "Total value of recoverable tax for the period", "netPayable": "Payable tax for the period (negative: refundable)"},
+    "title": "VAT return",
+    "desc": "The quarter in the FTA VAT 201 layout, built from tax invoices, credit notes, rent and purchase invoices; each box opens its documents.",
+    "accessDenied": "The VAT return is for finance roles.",
+    "quarter": "Quarter from",
+    "box": "Box",
+    "description": "Description",
+    "amount": "Amount (AED)",
+    "vat": "VAT (AED)",
+    "document": "Document",
+    "date": "Date",
+    "party": "Customer / supplier",
+    "documentsOf": "Documents behind box {box}",
+    "noDocuments": "No documents.",
+    "noTaxInvoice": "no tax invoice",
+    "creditNote": "credit note",
+    "close": "Close",
+    "pdfEn": "PDF (English)",
+    "pdfAr": "PDF (Arabic)",
+    "csv": "CSV",
+    "statusOPEN": "Not filed",
+    "statusFILED": "Filed",
+    "statusREOPENED": "Re-opened",
+    "checkOk": "Output VAT ties to the ledger",
+    "checkDiff": "Output VAT differs from the ledger by {amount}",
+    "commercialWithoutVat": "Rent of {amount} on commercial units carries no VAT and is in no box; check those leases' VAT setting.",
+    "lockNote": "Marking the quarter filed keeps these figures and locks VAT dated in it; a later correction is dated in an open quarter and shows on that return.",
+    "reference": "FTA submission reference (optional)",
+    "markFiled": "Mark as filed",
+    "fileConfirm": "Mark this quarter as filed? VAT dated in it will be locked.",
+    "reopen": "Re-open",
+    "reopenPrompt": "Why is the filed return being re-opened?",
+    "history": "Filing history"
   }
 }
