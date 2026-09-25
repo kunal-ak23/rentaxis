@@ -171,7 +171,7 @@ describe("RenewLeaseDialog renewal terms (§4a, §4d)", () => {
             skippedOneOffLines: [], warnPercent: null, exceedsWarn: false, droppedDiscount: 5000 });
         renderTerms();
         expect(await screen.findByTestId("renew-dropped-discount"))
-            .toHaveTextContent("Discount 5,000.00 on the current lease does not renew");
+            .toHaveTextContent("Discount 5,000.00 on the current contract does not renew");
         const preview = await screen.findByTestId("renew-rent-preview");
         expect(Array.from(preview.querySelectorAll("bdi[dir='ltr']")).map(b => b.textContent))
             .toEqual(["80,000.00", "86,400.00", "+8.00%"]);

@@ -10,7 +10,7 @@ export const adminOnboardingTour: TourDef = {
       id: 'welcome',
       target: '[data-tour="dashboard-header"]',
       title: 'Welcome to RentAxis!',
-      text: 'This is your dashboard — it shows key metrics about your properties, leases, and finances at a glance.',
+      text: 'This is your home page — the numbers that matter and today\'s work.',
       position: 'bottom',
     },
     {
@@ -30,15 +30,15 @@ export const adminOnboardingTour: TourDef = {
     {
       id: 'sidebar-leases',
       target: '[data-tour="sidebar-leases"]',
-      title: 'Leases',
-      text: 'Create and manage leases, link renters to units, and track payment schedules.',
+      title: 'Tenancy Contracts',
+      text: 'Create and manage tenancy contracts, link tenants to units, and track cheque schedules.',
       position: 'right',
     },
     {
       id: 'sidebar-finance',
       target: '[data-tour="sidebar-finance"]',
-      title: 'Finance',
-      text: 'Track income, expenses, and generate financial reports for your properties.',
+      title: 'Accounting',
+      text: 'Journal vouchers, registers, receipts & payments and final reports live behind this one door.',
       position: 'right',
     },
     {

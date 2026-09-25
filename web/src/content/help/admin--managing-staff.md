@@ -16,13 +16,13 @@ Add team members to your organization and assign them appropriate roles.
 2. Click **Add Staff Member**
 3. Enter their details:
    - Name and email
-   - Role (Property Manager or Tenant User)
+   - Role (Property Manager or Company User)
    - Assign to specific properties if applicable
 
 ### Role Assignment
 
 - **Property Manager** — Can view properties, manage units, and handle tickets
-- **Tenant User** — Limited access, can view assigned unit information
+- **Company User** — Limited access, can view assigned unit information
 
 ### Managing Existing Staff
 

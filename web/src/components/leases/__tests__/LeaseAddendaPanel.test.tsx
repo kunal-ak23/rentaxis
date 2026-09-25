@@ -104,7 +104,7 @@ describe("LeaseAddendaPanel credit addenda (F14-32)", () => {
                 newLineAmount: 39000, remainingBefore: 28923.29, remainingAfter: 22117.81, creditAmount: 6805.48, vatAmount: 0 }] };
         renderPanel(false, vi.fn(), [CREDIT]);
         expect(screen.getByTestId("addendum-credit-a4")).toHaveTextContent("Credit");
-        expect(screen.getByText(/Rent · Leave it on the renter's account/)).toBeInTheDocument();
+        expect(screen.getByText(/Rent · Leave it on the tenant's account/)).toBeInTheDocument();
         expect(screen.getByText("-6,805.48")).toBeInTheDocument();
     });
 });

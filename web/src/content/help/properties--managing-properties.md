@@ -32,7 +32,7 @@ The properties page shows all your properties in a table view with:
 ### Property Detail View
 
 Click on any property to see its detail page, which includes:
-- **Overview** — Key metrics (occupancy, revenue, lease status)
+- **Overview** — Key metrics (occupancy, revenue, contract status)
 - **Units** — All units with their status (Vacant/Occupied)
 - **Buildings** — Building breakdown if applicable
 

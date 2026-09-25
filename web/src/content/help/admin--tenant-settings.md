@@ -24,7 +24,7 @@ Configure online payment collection:
 2. Enter your Razorpay API credentials
 3. Enable or disable the gateway configuration
 
-> **Note:** Online payment initiation is not yet available in the renter portal — renters currently track their payment schedule and download receipts there.
+> **Note:** Online payment initiation is not yet available in the tenant portal — tenants currently track their payment schedule and download receipts there.
 
 ### Rent Settings
 
