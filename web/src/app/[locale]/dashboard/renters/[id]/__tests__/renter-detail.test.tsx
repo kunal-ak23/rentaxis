@@ -1,6 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { chequeSummary } from "@/components/renters/chequeSummary";
 
 // #8: the staff renter-detail page — profile, contracts (linked), cheques and
 // their summary, tickets, the ledger link and Resend invite.
@@ -45,6 +44,11 @@ const tickets = [
 let renterStatus = 200;
 let leasesStatus = 200;
 let chequesStatus = 200;
+let statsStatus = 200;
+const statsOf: Record<string, { leaseId: string; total: number; cleared: number; uncleared: number; bounced: number; totalAmount: number; clearedAmount: number; dueAmount: number }> = {
+    L1: { leaseId: "L1", total: 2, cleared: 1, uncleared: 1, bounced: 0, totalAmount: 60000, clearedAmount: 30000, dueAmount: 30000 },
+    L2: { leaseId: "L2", total: 1, cleared: 0, uncleared: 0, bounced: 1, totalAmount: 55000, clearedAmount: 0, dueAmount: 0 },
+};
 let ticketsStatus = 200;
 const twoLeases = [
     ...leases,
@@ -59,10 +63,15 @@ beforeEach(() => {
     renterStatus = 200;
     leasesStatus = 200;
     chequesStatus = 200;
+    statsStatus = 200;
     ticketsStatus = 200;
     leaseRows = leases;
-    global.fetch = vi.fn(async (url: unknown) => {
+    global.fetch = vi.fn(async (url: unknown, init?: RequestInit) => {
         const u = String(url);
+        if (u.endsWith("/cheques/stats-by-leases")) {
+            const ids: string[] = JSON.parse(String(init?.body ?? "[]"));
+            return res(statsStatus, ids.map(id => statsOf[id]).filter(Boolean));
+        }
         if (u.endsWith("/v1/renters/r1")) return res(renterStatus, renter);
         if (u.endsWith("/v1/renters/r1/leases")) return res(leasesStatus, leaseRows);
         if (u.includes("/resend-invite")) return jsonRes({});
@@ -86,7 +95,7 @@ describe("RenterDetailPage", () => {
         render(<RenterDetailPage />);
 
         expect(await screen.findByText("Ahmed Al Mansoori")).toBeTruthy();
-        expect(screen.getByText("TCO-26/1").closest("a")?.getAttribute("href")).toBe("/dashboard/leases/L1");
+        expect(screen.getByRole("link", { name: "TCO-26/1" }).getAttribute("href")).toBe("/dashboard/leases/L1");
         await waitFor(() => expect(screen.getByText("000102")).toBeTruthy());
         expect(screen.getByText("Leaking tap")).toBeTruthy();
         expect(screen.getByText("AC noise")).toBeTruthy();
@@ -180,27 +189,42 @@ describe("RenterDetailPage", () => {
         expect(await screen.findByText("Ahmed Al Mansoori")).toBeTruthy();
     });
 
-    it("hides the cheque totals and says so when one contract's cheques fail to load", async () => {
+    it("reads every contract's cheque figures in one batched call, not one call per contract (scale #14)", async () => {
         leaseRows = twoLeases;
-        chequesStatus = 500;
         render(<RenterDetailPage />);
+        await waitFor(() => expect(screen.getByTestId("renter-summary").textContent).toContain("30,000"));
+        const calls = (global.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+        const urls = calls.map(c => String(c[0]));
+        expect(urls.filter(u => u.endsWith("/cheques/stats-by-leases"))).toHaveLength(1);
+        const body = JSON.parse(String((calls.find(c => String(c[0]).endsWith("/stats-by-leases"))![1] as RequestInit).body));
+        expect(body).toEqual(["L1", "L2"]);
+        // Two contracts: rows wait until one is opened.
+        expect(urls.some(u => u.includes("/leases/L1/cheques") || u.includes("/leases/L2/cheques"))).toBe(false);
+        const tiles = screen.getByTestId("renter-summary").textContent!;
+        expect(tiles).toContain("30,000"); // cleared, and due now
+        expect(tiles).toContain("1"); // bounced
+        fireEvent.click(screen.getByTestId("renter-cheques-toggle-L1"));
+        expect(await screen.findByText("000102")).toBeTruthy();
+        expect((global.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.map(c => String(c[0])).filter(u => u.includes("/cheques") && u.includes("/leases/"))).toEqual(["/api/proxy/v1/leases/L1/cheques"]);
+    });
 
+    it("hides the cheque figures and says so when the stats call fails", async () => {
+        statsStatus = 500;
+        render(<RenterDetailPage />);
         expect(await screen.findByText("chequesLoadFailed")).toBeTruthy();
-        // The cheques that did load are listed, but no total pretends to be complete.
-        expect(screen.getByText("000102")).toBeTruthy();
         const tiles = screen.getByTestId("renter-summary");
-        expect(tiles.textContent).not.toContain("60,000");
         expect(tiles.textContent).not.toContain("30,000");
         expect(tiles.textContent).toContain("—");
     });
 
-    it("shows the totals when every cheque call succeeds", async () => {
+    it("keeps the figures when one contract's rows fail to load, and offers a retry there", async () => {
         leaseRows = twoLeases;
+        chequesStatus = 500;
         render(<RenterDetailPage />);
-
-        await waitFor(() => expect(screen.getByText("000102")).toBeTruthy());
+        await waitFor(() => expect(screen.getByTestId("renter-summary").textContent).toContain("30,000"));
+        fireEvent.click(screen.getByTestId("renter-cheques-toggle-L2"));
+        expect(await screen.findByText("contractChequesFailed")).toBeTruthy();
         expect(screen.queryByText("chequesLoadFailed")).toBeNull();
-        expect(screen.getByTestId("renter-summary").textContent).toContain("60,000");
     });
 
     it("says the contracts failed to load instead of 'no contracts'", async () => {
@@ -218,19 +242,5 @@ describe("RenterDetailPage", () => {
 
         expect(await screen.findByText("ticketsLoadFailed")).toBeTruthy();
         expect(screen.queryByText("noTickets")).toBeNull();
-    });
-});
-
-describe("chequeSummary", () => {
-    it("leaves draft, cancelled and replaced cheques out of every figure", () => {
-        const s = chequeSummary([
-            { amount: 100, status: "CLEARED" },
-            { amount: 50, status: "DEPOSITED" },
-            { amount: 25, status: "BOUNCED" },
-            { amount: 999, status: "DRAFT" },
-            { amount: 999, status: "CANCELLED" },
-            { amount: 999, status: "REPLACED" },
-        ] as never);
-        expect(s).toEqual({ count: 3, total: 175, cleared: 100, outstanding: 50, bounced: 1 });
     });
 });
