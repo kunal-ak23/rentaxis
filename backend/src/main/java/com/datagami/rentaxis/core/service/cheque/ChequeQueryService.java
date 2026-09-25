@@ -14,6 +14,7 @@ import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -180,23 +181,15 @@ public class ChequeQueryService {
                 month.atDay(1), month.plusMonths(1).atDay(1),
                 propertyId, scope.unrestricted(), scope.propertyIds()));
 
-        long dueCount = 0;
-        BigDecimal dueAmount = ZERO;
-        long overdueCount = 0;
-        BigDecimal overdueAmount = ZERO;
-        List<Cheque> due = dueRows(propertyId, on, scope);
-        // F14-08: a bounced row counts only for the debt the ledger still carries.
-        Map<UUID, BigDecimal> open = bouncedDebt.openAmounts(due);
-        for (Cheque c : due) {
-            BigDecimal amt = open.get(c.getId());
-            if (amt.signum() <= 0) continue;
-            dueCount++;
-            dueAmount = dueAmount.add(amt);
-            if (ChequeDueRules.overdue(c, graceOf(c.getLease()), on)) {
-                overdueCount++;
-                overdueAmount = overdueAmount.add(amt);
-            }
-        }
+        // F14-08 and the lateness rules, in one aggregate (scale P1-10): a bounced row
+        // counts only for the debt the ledger still carries, and a row with nothing
+        // open is not counted at all.
+        ChequeRepository.DueTotals t = chequeRepository.dueTotals(TenantContextHolder.getTenantId(), on,
+                propertyId, scope.unrestricted(), nonEmpty(scope.propertyIds()));
+        long dueCount = t.getDueCount();
+        BigDecimal dueAmount = amount(t.getDueAmount());
+        long overdueCount = t.getOverdueCount();
+        BigDecimal overdueAmount = amount(t.getOverdueAmount());
 
         Totals registered = byStatus.getOrDefault(ChequeStatus.REGISTERED, Totals.NONE);
         Totals deposited = byStatus.getOrDefault(ChequeStatus.DEPOSITED, Totals.NONE);
@@ -237,16 +230,16 @@ public class ChequeQueryService {
         BigDecimal total = ZERO;
         long totalCount = 0;
         if (!scope.blocked()) {
-            List<Cheque> due = dueRows(propertyId, on, scope);
-            Map<UUID, BigDecimal> open = bouncedDebt.openAmounts(due);
-            for (Cheque c : due) {
-                BigDecimal amt = open.get(c.getId());
-                if (amt.signum() <= 0) continue; // F14-08: closed on the ledger
-                int days = ChequeDueRules.overdue(c, graceOf(c.getLease()), on)
-                        ? ChequeDueRules.daysOverdue(c, graceOf(c.getLease()), on)
-                        : 0;
+            // One statement: the due rows with what of each is still open (F14-08),
+            // their lateness and the names the report prints (scale P1-10).
+            for (ChequeRepository.OpenDueRow r : chequeRepository.openDueRows(TenantContextHolder.getTenantId(), on,
+                    propertyId, scope.unrestricted(), nonEmpty(scope.propertyIds()))) {
+                BigDecimal amt = r.getOpenAmount();
+                int days = r.getOverdue() ? r.getDaysOverdue() : 0;
                 BucketDef bucket = defs.stream().filter(d -> d.holds(days)).findFirst().orElse(defs.getLast());
-                rowsByBucket.get(bucket.label()).add(row(c, days, amt));
+                rowsByBucket.get(bucket.label()).add(new AgingReportDTO.Row(r.getChequeId(), r.getLeaseId(),
+                        r.getRenterName(), r.getPropertyName(), r.getUnitNumber(), r.getChequeNumber(),
+                        r.getChequeDate(), amt, days));
                 amountByBucket.merge(bucket.label(), amt, BigDecimal::add);
                 total = total.add(amt);
                 totalCount++;
@@ -316,18 +309,6 @@ public class ChequeQueryService {
 
     /** Leases one {@code stats-by-leases} call may name. */
     static final int MAX_STATS_LEASES = 200;
-
-    /**
-     * The due rows behind the tiles and the aging report.
-     *
-     * <p>Unpaged because both callers fold every row into a total; the query is
-     * bounded by the due predicate and by the caller's properties, which is what
-     * keeps it from being a scan.</p>
-     */
-    private List<Cheque> dueRows(UUID propertyId, LocalDate today, Scope scope) {
-        return chequeRepository.findDue(propertyId, today, scope.unrestricted(), scope.propertyIds(),
-                Pageable.unpaged()).getContent();
-    }
 
     /**
      * Who the caller is, resolved once.
@@ -401,22 +382,6 @@ public class ChequeQueryService {
         }
     }
 
-    private AgingReportDTO.Row row(Cheque c, int daysOverdue, BigDecimal openAmount) {
-        Unit unit = c.getUnit();
-        Property property = c.getProperty();
-        Renter renter = c.getRenter();
-        return new AgingReportDTO.Row(
-                c.getId(),
-                c.getLease() != null ? c.getLease().getId() : null,
-                renter != null ? renter.getNameEn() : null,
-                property != null ? property.getNameEn() : null,
-                unit != null ? unit.getUnitNumber() : null,
-                c.getChequeNumber(),
-                c.getChequeDate(),
-                openAmount,
-                daysOverdue);
-    }
-
     /**
      * The register's own order when the request carries none.
      *
@@ -455,6 +420,14 @@ public class ChequeQueryService {
     }
 
     /** Grace comes from the row's own lease; a detached row is treated as having none. */
+    /**
+     * A native {@code in (:ids)} cannot take an empty list; an unrestricted caller's list is
+     * empty and ignored by the query, so it gets a sentinel no property has.
+     */
+    public static Collection<UUID> nonEmpty(Collection<UUID> ids) {
+        return ids == null || ids.isEmpty() ? List.of(new UUID(0L, 0L)) : ids;
+    }
+
     private static int graceOf(Lease lease) {
         return lease == null ? 0 : lease.getGracePeriodDays();
     }

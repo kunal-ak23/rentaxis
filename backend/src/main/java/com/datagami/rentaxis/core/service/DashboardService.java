@@ -3,9 +3,9 @@ package com.datagami.rentaxis.core.service;
 import com.datagami.rentaxis.api.dto.DashboardSummaryDTO;
 import com.datagami.rentaxis.api.dto.MonthlyCollectionDTO;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
-import com.datagami.rentaxis.core.service.cheque.ChequeDueRules;
+import com.datagami.rentaxis.core.service.cheque.ChequeQueryService;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Cheque;
-import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
@@ -50,7 +50,6 @@ public class DashboardService {
     private final LeaseRepository leaseRepository;
     private final ChequeRepository chequeRepository;
     private final LeaseAccessPolicy leaseAccessPolicy;
-    private final com.datagami.rentaxis.core.service.cheque.BouncedDebt bouncedDebt;
 
     /**
      * The whole dashboard, for whoever is asking.
@@ -172,18 +171,13 @@ public class DashboardService {
         // Overdue is ChequeDueRules over the register's due rows, not "past its
         // date": grace is a per-lease number and a dashboard that ignored it would
         // show a renter as late days before their own contract says they are.
+        // Summed in SQL (scale P1-9): the per-row walk loaded every due cheque, its
+        // lease and each bounced lease's ledger — ~9,500 statements at 8,000 units.
         BigDecimal overdueAmount = BigDecimal.ZERO;
         if (!scope.blocked()) {
-            List<Cheque> due = chequeRepository.findDue(null, today, scope.unrestricted(), scope.propertyIds(),
-                    org.springframework.data.domain.Pageable.unpaged()).getContent();
-            // F14-08: a bounced row counts only for the debt the ledger still carries.
-            Map<java.util.UUID, BigDecimal> open = bouncedDebt.openAmounts(due);
-            for (Cheque c : due) {
-                Lease lease = c.getLease();
-                if (ChequeDueRules.overdue(c, lease == null ? 0 : lease.getGracePeriodDays(), today)) {
-                    overdueAmount = overdueAmount.add(open.get(c.getId()));
-                }
-            }
+            ChequeRepository.DueTotals totals = chequeRepository.dueTotals(TenantContextHolder.getTenantId(), today,
+                    null, scope.unrestricted(), ChequeQueryService.nonEmpty(scope.propertyIds()));
+            overdueAmount = totals == null ? BigDecimal.ZERO : nz(totals.getOverdueAmount());
         }
         summary.setOverdueAmount(overdueAmount);
 

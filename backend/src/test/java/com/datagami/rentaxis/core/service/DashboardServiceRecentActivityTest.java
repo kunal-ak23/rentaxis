@@ -12,7 +12,6 @@ import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.domain.Page;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -46,14 +45,12 @@ class DashboardServiceRecentActivityTest {
         when(unitRepository.findAll()).thenReturn(List.of());
         when(leaseRepository.findAll()).thenReturn(List.of());
         when(chequeRepository.totalsByStatus(any(), anyBoolean(), any())).thenReturn(List.of());
-        when(chequeRepository.findDue(any(), any(), anyBoolean(), any(), any())).thenReturn(Page.empty());
         when(chequeRepository.sumClearedBetween(any(), any(), any(), anyBoolean(), any()))
                 .thenReturn(BigDecimal.ZERO);
         LeaseAccessPolicy leaseAccessPolicy = mock(LeaseAccessPolicy.class);
         when(leaseAccessPolicy.visiblePropertyIds()).thenReturn(null);
         service = new DashboardService(propertyRepository, unitRepository, leaseRepository,
-                chequeRepository, leaseAccessPolicy,
-                new com.datagami.rentaxis.core.service.cheque.BouncedDebt(null));
+                chequeRepository, leaseAccessPolicy);
     }
 
     private static Cheque cheque(int seqNo, String number) {
