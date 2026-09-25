@@ -124,6 +124,27 @@ public class UnitListingController {
         return ResponseEntity.noContent().build();
     }
 
+    /** F14-51: the enquiry becomes a draft lease (renter record created if new, no login). */
+    @PostMapping("/{id}/interests/{interestId}/lease")
+    public ResponseEntity<com.datagami.rentaxis.api.dto.LeaseDTO> createLease(@PathVariable UUID id, @PathVariable UUID interestId) {
+        checkEnabled();
+        requireListingInScope(id);
+        return ResponseEntity.ok(listingLeases.createLease(TenantContextHolder.getTenantId(), id, interestId));
+    }
+
+    public record RepublishRequest(boolean on) { }
+
+    /** F14-51: publish again when the unit becomes vacant (opt-in). */
+    @PutMapping("/{id}/republish-when-vacant")
+    public ResponseEntity<UnitListingDTO> republishWhenVacant(@PathVariable UUID id, @RequestBody RepublishRequest r) {
+        checkEnabled();
+        requireListingInScope(id);
+        return ResponseEntity.ok(toDetail(service.setRepublishWhenVacant(TenantContextHolder.getTenantId(), id, r.on())));
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.datagami.rentaxis.core.service.ListingLeaseService listingLeases;
+
     @GetMapping("/{id}/interests")
     public ResponseEntity<Page<InterestDTO>> interests(
             @PathVariable UUID id,
@@ -244,7 +265,7 @@ public class UnitListingController {
                 tenantSlug, l.getSlug(), l.getSeoTitle(), l.getSeoDescription(), l.getSeoKeywords(), l.getOgImageUrl(),
                 l.getLat(), l.getLng(),
                 l.getPublishedAt(), l.getCreatedAt(), l.getUpdatedAt(),
-                amenities, media
+                amenities, media, l.isRepublishWhenVacant(), l.getUnpublishedForLeaseId()
         );
     }
 }

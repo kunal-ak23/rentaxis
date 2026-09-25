@@ -46,8 +46,47 @@ public record UnitListingDTO(
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
         List<AmenityEntry> amenities,
-        List<UnitListingMediaDTO> media
-) {
+        List<UnitListingMediaDTO> media,
+        /* F14-51 */ boolean republishWhenVacant,
+        UUID unpublishedForLeaseId) {
+    public UnitListingDTO(UUID id,
+        UUID unitId,
+        ListingStatus status,
+        String titleEn,
+        String titleAr,
+        String descriptionEn,
+        String descriptionAr,
+        Integer bedrooms,
+        Integer bathrooms,
+        BigDecimal sizeSqft,
+        Integer floor,
+        Integer parkingSpaces,
+        Furnishing furnishing,
+        ViewType viewType,
+        BigDecimal annualRent,
+        BigDecimal securityDeposit,
+        Integer minLeaseMonths,
+        Integer chequesAccepted,
+        Boolean dewaIncluded,
+        Boolean chillerIncluded,
+        BigDecimal utilitiesEstimate,
+        LocalDate availableFrom,
+        String tenantSlug,
+        String slug,
+        String seoTitle,
+        String seoDescription,
+        String seoKeywords,
+        String ogImageUrl,
+        BigDecimal lat,
+        BigDecimal lng,
+        LocalDateTime publishedAt,
+        LocalDateTime createdAt,
+        LocalDateTime updatedAt,
+        List<AmenityEntry> amenities,
+        List<UnitListingMediaDTO> media) {
+        this(id, unitId, status, titleEn, titleAr, descriptionEn, descriptionAr, bedrooms, bathrooms, sizeSqft, floor, parkingSpaces, furnishing, viewType, annualRent, securityDeposit, minLeaseMonths, chequesAccepted, dewaIncluded, chillerIncluded, utilitiesEstimate, availableFrom, tenantSlug, slug, seoTitle, seoDescription, seoKeywords, ogImageUrl, lat, lng, publishedAt, createdAt, updatedAt, amenities, media, false, null);
+    }
+
     public record AmenityEntry(ListingAmenity amenity, String customLabel) {
     }
 }

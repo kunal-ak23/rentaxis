@@ -198,6 +198,8 @@ public class UnitListingService {
      * (unit available immediately, e.g. after termination).
      */
     public void syncAvailableFrom(UUID unitId, LocalDate date) {
+        // F14-51: "available now" is the unit becoming vacant.
+        if (date == null) onUnitVacant(unitId);
         listingRepository.findByUnitId(unitId).ifPresent(listing -> {
             listing.setAvailableFrom(date);
             listingRepository.save(listing);
@@ -226,6 +228,48 @@ public class UnitListingService {
                 }
             }
         });
+    }
+
+    /**
+     * F14-51: a lease was posted on this unit. A live listing (PUBLISHED or UPCOMING)
+     * is unpublished — the marketplace must not advertise an occupied unit — and its
+     * availability moves to the day after the lease ends.
+     */
+    public void onLeasePosted(UUID unitId, UUID leaseId, LocalDate leaseEnd) {
+        listingRepository.findByUnitId(unitId).ifPresent(listing -> {
+            if (listing.getStatus() != ListingStatus.PUBLISHED && listing.getStatus() != ListingStatus.UPCOMING) return;
+            listing.setStatus(ListingStatus.UNLISTED);
+            listing.setUnpublishedForLeaseId(leaseId);
+            listing.setAvailableFrom(leaseEnd == null ? null : leaseEnd.plusDays(1));
+            listingRepository.save(listing);
+            eventPublisher.publishEvent(new ListingUnlistedEvent(listing.getId(), listing.getTenantId()));
+        });
+    }
+
+    /**
+     * F14-51: the unit is vacant again. A listing the posting unpublished is published
+     * again only when the user opted in; otherwise it stays unlisted.
+     */
+    public void onUnitVacant(UUID unitId) {
+        listingRepository.findByUnitId(unitId).ifPresent(listing -> {
+            if (listing.getStatus() != ListingStatus.UNLISTED || listing.getUnpublishedForLeaseId() == null) return;
+            listing.setUnpublishedForLeaseId(null);
+            if (listing.isRepublishWhenVacant()) {
+                listing.setStatus(ListingStatus.PUBLISHED);
+                listing.setPublishedAt(LocalDateTime.now());
+                listingRepository.save(listing);
+                eventPublisher.publishEvent(new ListingPublishedEvent(listing.getId(), listing.getTenantId()));
+            } else {
+                listingRepository.save(listing);
+            }
+        });
+    }
+
+    /** F14-51: opt in or out of re-publishing when the unit becomes vacant. */
+    public UnitListing setRepublishWhenVacant(UUID tenantId, UUID id, boolean on) {
+        UnitListing listing = get(tenantId, id);
+        listing.setRepublishWhenVacant(on);
+        return listingRepository.save(listing);
     }
 
     public UnitListing update(UUID tenantId, UUID id, UnitListingUpdateRequest req) {

@@ -720,6 +720,9 @@
     "staffCount": "Total Staff"
   },
   "Listings": {
+    "createLease": "Create lease",
+    "createLeaseFailed": "The lease could not be created.",
+    "republishWhenVacant": "Publish again when the unit becomes vacant (posting a lease unpublishes the listing)",
     "title": "Listings",
     "subtitle": "Manage your property listings for the marketplace.",
     "newListing": "New Listing",
@@ -2447,6 +2450,7 @@
     "notOnStatement": "This entry is not on the imported statement",
     "postAnyway": "Post anyway",
     "errors": {
+      "listing": {"interestConverted": "This enquiry already has a draft lease."},
       "booking": {"feeType": "Unknown fee type {type}.", "feeAmount": "A fee needs an amount greater than zero.", "noLease": "The renter has no live lease on this unit to charge the booking fee to.", "slotStarted": "The booking's slot has started; it can no longer be cancelled."},
       "ticket": {"billNotLinkable": "Only a posted purchase invoice not linked to another ticket can be linked.", "noLease": "This ticket's unit has no live lease to recharge.", "rechargeAmount": "Enter the amount to recharge."},
       "badDebt": {"itemNotOpen": "Instalment {row} is {status}; only an unpaid or bounced item can be written off.", "vatNotDeclared": "Instalment {row} carries VAT not declared yet; post the VAT tax points through its date first.", "itemsChanged": "The items have changed since the write-off was proposed; reject it and propose again.", "nothingOpen": "This lease has nothing open to write off.", "recoveredCannotReverse": "Money was recovered on this write-off; it cannot be reversed.", "reverseBeforeWriteOff": "A reversal cannot be dated before the write-off ({date}).", "recoveryTooMuch": "Only {left} of this write-off is left to recover.", "recoveryAccount": "Choose the bank or cash account the money went into.", "wrongStatus": "This write-off is {status}.", "reasonRequired": "Give a reason."},

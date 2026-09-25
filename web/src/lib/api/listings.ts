@@ -267,3 +267,24 @@ export async function fetchInterests(
   if (!res.ok) throw new Error(`Failed to fetch interests: ${res.status}`)
   return res.json()
 }
+
+/** F14-51: the enquiry becomes a draft lease (renter record created if new, no login). Returns the draft. */
+export async function createLeaseFromInterest(listingId: string, interestId: string, token?: string): Promise<{ id: string }> {
+  const headers: HeadersInit = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const res = await fetch(`${BASE}/${listingId}/interests/${interestId}/lease`, { method: 'POST', headers })
+  if (!res.ok) {
+    let message = `Failed to create the lease: ${res.status}`
+    try { const b = await res.json(); if (b?.message) message = b.message } catch { /* keep the status */ }
+    throw new Error(message)
+  }
+  return res.json()
+}
+
+/** F14-51: publish the listing again when the unit becomes vacant (opt-in). */
+export async function setRepublishWhenVacant(listingId: string, on: boolean, token?: string): Promise<void> {
+  const headers: HeadersInit = { 'Content-Type': 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const res = await fetch(`${BASE}/${listingId}/republish-when-vacant`, { method: 'PUT', headers, body: JSON.stringify({ on }) })
+  if (!res.ok) throw new Error(`Failed to save: ${res.status}`)
+}

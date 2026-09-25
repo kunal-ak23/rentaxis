@@ -1,0 +1,24 @@
+# F14-51: listing → lease. Posting a lease on a listed unit unpublishes the listing
+# (unpublished_for_lease_id remembers why); it is published again when the unit
+# becomes vacant only when republish_when_vacant is set. Interests get a CONVERTED
+# status and the lease they became.
+databaseChangeLog:
+  - changeSet:
+      id: 144-listing-lease
+      author: claude
+      changes:
+        - addColumn:
+            tableName: unit_listings
+            columns:
+              - column: { name: republish_when_vacant, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
+              - column: { name: unpublished_for_lease_id, type: uuid }
+        - addColumn:
+            tableName: unit_listing_interests
+            columns:
+              - column: { name: lease_id, type: uuid }
+      rollback:
+        - sql:
+            sql: |
+              ALTER TABLE unit_listing_interests DROP COLUMN IF EXISTS lease_id;
+              ALTER TABLE unit_listings DROP COLUMN IF EXISTS unpublished_for_lease_id;
+              ALTER TABLE unit_listings DROP COLUMN IF EXISTS republish_when_vacant;

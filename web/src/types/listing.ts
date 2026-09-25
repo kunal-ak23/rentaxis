@@ -2,7 +2,7 @@ export type ListingStatus = 'DRAFT' | 'PUBLISHED' | 'UNLISTED' | 'UPCOMING'
 export type Furnishing = 'UNFURNISHED' | 'SEMI_FURNISHED' | 'FULLY_FURNISHED'
 export type ViewType = 'SEA' | 'CITY' | 'POOL' | 'GARDEN' | 'STREET' | 'COMMUNITY' | 'OTHER'
 export type ListingMediaType = 'PHOTO' | 'FLOOR_PLAN' | 'VIDEO_URL' | 'TOUR_360_URL'
-export type InterestStatus = 'ACTIVE' | 'NOTIFIED' | 'WITHDRAWN'
+export type InterestStatus = 'ACTIVE' | 'NOTIFIED' | 'WITHDRAWN' | 'CONVERTED'
 export type ListingAmenity =
   'POOL' | 'GYM' | 'SAUNA' | 'STEAM_ROOM' | 'JACUZZI' | 'KIDS_PLAY_AREA' | 'KIDS_POOL' |
   'BBQ_AREA' | 'GARDEN' | 'ROOFTOP_LOUNGE' | 'SECURITY_24_7' | 'CCTV' | 'CONCIERGE' |
@@ -32,6 +32,8 @@ export interface UnitListingDTO {
   minLeaseMonths: number | null; chequesAccepted: number | null
   dewaIncluded: boolean | null; chillerIncluded: boolean | null
   utilitiesEstimate: number | null; availableFrom: string | null
+  /** F14-51: published again when the unit becomes vacant; the lease whose posting unpublished it. */
+  republishWhenVacant?: boolean; unpublishedForLeaseId?: string | null
   tenantSlug: string | null; slug: string; seoTitle: string | null; seoDescription: string | null
   seoKeywords: string | null; ogImageUrl: string | null
   lat: number | null; lng: number | null
