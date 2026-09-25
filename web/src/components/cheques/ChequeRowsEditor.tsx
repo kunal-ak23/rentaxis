@@ -8,6 +8,9 @@ import { fmtAmount } from "@/lib/api/ledger";
 import { round2, todayIso } from "@/components/leases/leaseMath";
 import { TYPEABLE_MODES, chequeRowsErrors } from "@/components/cheques/chequeRowRules";
 import type { ChequeMode, ChequeRowInput } from "@/lib/api/leasing";
+import { chequeGridHandlers, type GridField } from "./chequeGridKeys";
+
+const GRID_FIELDS: GridField[] = ["postingDate", "chequeNumber", "chequeDate", "payeeBank", "debitAccountId", "amount", "mode"];
 
 /**
  * The cheque rows that pay for a charge added to a posted lease — an
@@ -63,11 +66,17 @@ export default function ChequeRowsEditor({ rows, onChange, propertyId, expectedT
     const shown = errors.map((errs, i) => (rows[i]?.amount ? errs : errs.filter(e => e.code !== "amountPositive")));
     const patch = (key: number, next: Partial<ChequeDraft>) =>
         onChange(rows.map(c => (c.key === key ? { ...c, ...next } : c)));
+    const nextKey = () => rows.reduce((m, c) => Math.max(m, c.key), -1) + 1;
+    // Keyboard-first entry (scale #19); a pasted block longer than the grid adds rows.
+    const gridKeys = chequeGridHandlers<ChequeDraft>({
+        rows, fields: GRID_FIELDS, onChange, modeLabel: m => t(`mode.${m}`),
+        addRow: i => blankChequeRow(nextKey() + i),
+    });
 
     return (
         <>
             <div className="bg-surface border border-border rounded-xl overflow-x-auto">
-                <table className="w-full min-w-[720px]" data-testid={`${testIdPrefix}-cheque-grid`}>
+                <table className="w-full min-w-[720px]" data-testid={`${testIdPrefix}-cheque-grid`} onKeyDown={gridKeys.onKeyDown} onPaste={gridKeys.onPaste}>
                     <thead>
                         <tr className="bg-input/50">
                             <th className={`${td} text-start text-[10px] font-semibold text-muted uppercase`}>{t("sno")}</th>
@@ -83,9 +92,9 @@ export default function ChequeRowsEditor({ rows, onChange, propertyId, expectedT
                     </thead>
                     <tbody>
                         {rows.map((c, i) => (
-                            <tr key={c.key} className="border-t border-border">
+                            <tr key={c.key} data-grid-row={i} className="border-t border-border">
                                 <td className={`${td} text-muted`}>{i + 1}</td>
-                                <td className={td}>
+                                <td className={td} data-grid-field="postingDate">
                                     <input
                                         type="date"
                                         aria-label={`${t("postingDate")} ${i + 1}`}
@@ -94,7 +103,7 @@ export default function ChequeRowsEditor({ rows, onChange, propertyId, expectedT
                                         onChange={e => patch(c.key, { postingDate: e.target.value })}
                                     />
                                 </td>
-                                <td className={td}>
+                                <td className={td} data-grid-field="chequeNumber">
                                     <input
                                         aria-label={`${t("chequeNo")} ${i + 1}`}
                                         className={field}
@@ -102,7 +111,7 @@ export default function ChequeRowsEditor({ rows, onChange, propertyId, expectedT
                                         onChange={e => patch(c.key, { chequeNumber: e.target.value })}
                                     />
                                 </td>
-                                <td className={td}>
+                                <td className={td} data-grid-field="chequeDate">
                                     <input
                                         type="date"
                                         aria-label={`${t("chequeDate")} ${i + 1}`}
@@ -111,7 +120,7 @@ export default function ChequeRowsEditor({ rows, onChange, propertyId, expectedT
                                         onChange={e => patch(c.key, { chequeDate: e.target.value })}
                                     />
                                 </td>
-                                <td className={td}>
+                                <td className={td} data-grid-field="payeeBank">
                                     <input
                                         aria-label={`${t("payeeBank")} ${i + 1}`}
                                         className={field}
@@ -119,7 +128,7 @@ export default function ChequeRowsEditor({ rows, onChange, propertyId, expectedT
                                         onChange={e => patch(c.key, { payeeBank: e.target.value })}
                                     />
                                 </td>
-                                <td className={td}>
+                                <td className={td} data-grid-field="debitAccountId">
                                     <SettlementAccountPicker
                                         value={c.debitAccountId ?? null}
                                         onChange={id => patch(c.key, { debitAccountId: id })}
@@ -127,7 +136,7 @@ export default function ChequeRowsEditor({ rows, onChange, propertyId, expectedT
                                         placeholder={t("debitAccount")}
                                     />
                                 </td>
-                                <td className={`${td} text-end`}>
+                                <td className={`${td} text-end`} data-grid-field="amount">
                                     <NumberInput
                                         aria-label={`${t("amount")} ${i + 1}`}
                                         min={0}
@@ -137,7 +146,7 @@ export default function ChequeRowsEditor({ rows, onChange, propertyId, expectedT
                                         onChange={v => patch(c.key, { amount: v })}
                                     />
                                 </td>
-                                <td className={td}>
+                                <td className={td} data-grid-field="mode">
                                     <select
                                         aria-label={`${t("chequeMode")} ${i + 1}`}
                                         className={field}
@@ -165,6 +174,7 @@ export default function ChequeRowsEditor({ rows, onChange, propertyId, expectedT
                         ))}
                     </tbody>
                 </table>
+                <p className="px-3 pt-2 text-[10.5px] text-muted" data-testid={`${testIdPrefix}-grid-keys-hint`}>{tc("gridKeysHint")}</p>
                 <div className="px-3 py-2 border-t border-border flex items-center justify-between gap-3">
                     <button
                         type="button"

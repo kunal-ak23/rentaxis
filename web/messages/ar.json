@@ -2508,7 +2508,8 @@
     "bounceFlowProposeFee": "اقتراح الرسوم",
     "bounceFlowFeeProposed": "تم اقتراح رسوم بقيمة {amount}.",
     "bounceFlowDone": "تم",
-    "bounceFlowLater": "لاحقاً"
+    "bounceFlowLater": "لاحقاً",
+    "gridKeysHint": "Enter أو مفاتيح الأسهم للتنقل بين الخلايا · Ctrl+D لنسخ الخلية العليا · الصق الصفوف مباشرة من Excel"
   },
   "Common": {
     "notOnStatement": "هذا القيد غير موجود في كشف الحساب المستورد",

@@ -158,3 +158,27 @@ describe("ChequeGrid VAT column", () => {
         expect(screen.getByTestId("cheque-grid-vat-match")).toHaveTextContent("مجموع الضريبة");
     });
 });
+
+describe("ChequeGrid keyboard entry (scale #19)", () => {
+    it("pastes cheque numbers and amounts from Excel down the rows, clearing each pasted row's VAT", () => {
+        const onChange = vi.fn();
+        renderGrid({ cheques: four, editable: true, onChange, contractValueInclVat: 126000, contractVat: 6000 });
+        const no1 = screen.getByLabelText(`${en.Leasing.chequeNo} 1`);
+        fireEvent.paste(no1, { clipboardData: { getData: () => "200001\t01/06/2026\tDIB\t\t32,000\n200002\t01/09/2026\tDIB\t\t30,000" } });
+        const next: Cheque[] = onChange.mock.calls[0][0];
+        expect(next.map(c => [c.chequeNumber, c.chequeDate, c.payeeBank, c.amount, c.vatAmount])).toEqual([
+            ["200001", "2026-06-01", "DIB", 32000, null],
+            ["200002", "2026-09-01", "DIB", 30000, null],
+            ["000101", "2026-05-01", "ENBD", 31500, 1500],
+            ["000101", "2026-05-01", "ENBD", 31500, 1500],
+        ]);
+    });
+
+    it("moves to the next row's same cell on Enter", () => {
+        renderGrid({ cheques: four, editable: true, onChange: vi.fn(), contractValueInclVat: 126000 });
+        const bank1 = screen.getByLabelText(`${en.Leasing.payeeBank} 1`);
+        bank1.focus();
+        fireEvent.keyDown(bank1, { key: "Enter" });
+        expect(document.activeElement).toBe(screen.getByLabelText(`${en.Leasing.payeeBank} 2`));
+    });
+});

@@ -2508,7 +2508,8 @@
     "bounceFlowProposeFee": "Propose fee",
     "bounceFlowFeeProposed": "Fee of {amount} proposed.",
     "bounceFlowDone": "Done",
-    "bounceFlowLater": "Later"
+    "bounceFlowLater": "Later",
+    "gridKeysHint": "Enter or the arrow keys move between cells · Ctrl+D copies the cell above · paste rows straight from Excel"
   },
   "Common": {
     "notOnStatement": "This entry is not on the imported statement",

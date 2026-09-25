@@ -5,6 +5,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { CheckCircle2, Hash, Loader2, TriangleAlert, Wand2 } from "lucide-react";
 import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
+import { chequeGridHandlers, type GridField } from "@/components/cheques/chequeGridKeys";
 import { cn } from "@/lib/utils";
 import { fmtAmount } from "@/lib/api/ledger";
 import type {
@@ -184,6 +185,18 @@ export default function ChequeGrid({
 
     const patch = (id: string, next: Partial<Cheque>) =>
         onChange?.(cheques.map(c => (c.id === id ? { ...c, ...next } : c)));
+
+    // Keyboard-first entry (scale #19): Enter/arrows move, Ctrl/⌘+D fills down,
+    // rows pasted from Excel fill the grid from the focused cell.
+    const gridFields: GridField[] = ["postingDate", "chequeNumber", "chequeDate", "payeeBank", "debitAccountId", "amount",
+        ...(showVat ? (["vatAmount"] as GridField[]) : []), "narration", "mode"];
+    const gridKeys = editable && onChange
+        ? chequeGridHandlers<Cheque>({
+            rows: cheques, fields: gridFields, onChange, modeLabel: m => t(`mode.${m}`),
+            // A new amount clears the row's VAT, so the server re-spreads it pro rata on save.
+            withValue: (row, field, value) => (field === "amount" ? { ...row, amount: value as number, vatAmount: null } : { ...row, [field]: value }),
+        })
+        : null;
 
     /**
      * What `ChequeRowRules` would refuse, said here rather than as a 400 after
@@ -384,8 +397,11 @@ export default function ChequeGrid({
                 </div>
             )}
 
+            {gridKeys && cheques.length > 0 && (
+                <p className="px-4 py-1.5 text-[10.5px] text-muted border-b border-border" data-testid="cheque-grid-keys-hint">{tc("gridKeysHint")}</p>
+            )}
             <div className="overflow-x-auto">
-                <table className="w-full min-w-[960px]">
+                <table className="w-full min-w-[960px]" onKeyDown={gridKeys?.onKeyDown} onPaste={gridKeys?.onPaste}>
                     <thead>
                         <tr className="bg-input/50">
                             <th className={th}>{t("sno")}</th>
@@ -404,9 +420,9 @@ export default function ChequeGrid({
                     </thead>
                     <tbody>
                         {cheques.map((c, i) => (
-                            <tr key={c.id} data-testid={`cheque-row-${i}`} className="border-t border-border hover:bg-input/20">
+                            <tr key={c.id} data-testid={`cheque-row-${i}`} data-grid-row={i} className="border-t border-border hover:bg-input/20">
                                 <td className={`${td} text-muted tabular-nums`}>{c.seqNo ?? i + 1}</td>
-                                <td className={td}>
+                                <td className={td} data-grid-field="postingDate">
                                     {editable ? (
                                         <input
                                             type="date"
@@ -419,7 +435,7 @@ export default function ChequeGrid({
                                         fmtIsoDate(c.postingDate, locale)
                                     )}
                                 </td>
-                                <td className={td}>
+                                <td className={td} data-grid-field="chequeNumber">
                                     {editable ? (
                                         <input
                                             aria-label={`${t("chequeNo")} ${i + 1}`}
@@ -431,7 +447,7 @@ export default function ChequeGrid({
                                         c.chequeNumber || "—"
                                     )}
                                 </td>
-                                <td className={td}>
+                                <td className={td} data-grid-field="chequeDate">
                                     {editable ? (
                                         <input
                                             type="date"
@@ -444,7 +460,7 @@ export default function ChequeGrid({
                                         fmtIsoDate(c.chequeDate, locale)
                                     )}
                                 </td>
-                                <td className={td}>
+                                <td className={td} data-grid-field="payeeBank">
                                     {editable ? (
                                         <input
                                             aria-label={`${t("payeeBank")} ${i + 1}`}
@@ -456,7 +472,7 @@ export default function ChequeGrid({
                                         c.payeeBank || "—"
                                     )}
                                 </td>
-                                <td className={td}>
+                                <td className={td} data-grid-field="debitAccountId">
                                     {editable ? (
                                         <SettlementAccountPicker
                                             value={c.debitAccountId}
@@ -468,7 +484,7 @@ export default function ChequeGrid({
                                         c.debitAccountName || "—"
                                     )}
                                 </td>
-                                <td className={tdNum}>
+                                <td className={tdNum} data-grid-field="amount">
                                     {editable ? (
                                         <NumberInput
                                             aria-label={`${t("amount")} ${i + 1}`}
@@ -485,7 +501,7 @@ export default function ChequeGrid({
                                     )}
                                 </td>
                                 {showVat && (
-                                    <td className={tdNum} data-testid={`cheque-vat-${i}`}>
+                                    <td className={tdNum} data-testid={`cheque-vat-${i}`} data-grid-field="vatAmount">
                                         {editable && c.status === "DRAFT" ? (
                                             <NumberInput
                                                 // Remounted when the row flips between "auto" and a
@@ -507,7 +523,7 @@ export default function ChequeGrid({
                                         )}
                                     </td>
                                 )}
-                                <td className={td}>
+                                <td className={td} data-grid-field="narration">
                                     {editable ? (
                                         <input
                                             aria-label={`${t("narration")} ${i + 1}`}
@@ -519,7 +535,7 @@ export default function ChequeGrid({
                                         <span className="text-muted">{c.narration || "—"}</span>
                                     )}
                                 </td>
-                                <td className={td}>
+                                <td className={td} data-grid-field="mode">
                                     {editable ? (
                                         <select
                                             aria-label={`${t("chequeMode")} ${i + 1}`}
