@@ -10,6 +10,11 @@
 #   behind the paged lists and the async pickers. Guarded: an environment where the
 #   extension cannot be created (not allow-listed, no privilege) logs a notice and skips the
 #   trigram indexes; the searches still work, as sequential scans.
+# Lock time: plain CREATE INDEX (not CONCURRENTLY) holds a SHARE lock that blocks writes to
+# the table while the index builds. At today's production size that is seconds (measured
+# locally: journal_lines 1.2M rows ~ 3 s). On a large production database, build these
+# CONCURRENTLY instead: a changeset with runInTransaction: false and
+# CREATE INDEX CONCURRENTLY IF NOT EXISTS ..., one statement per sql change.
 databaseChangeLog:
   - changeSet:
       id: 146-scale-indexes

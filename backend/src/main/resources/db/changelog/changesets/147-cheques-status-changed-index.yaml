@@ -1,6 +1,11 @@
 # Scale PR A (P1-9): the dashboard's recent-activity feed is the ten newest status changes
 # (ChequeRepository.findRecentlyChanged). Without an index it sorted every cheque of the
 # organisation: ~200 ms of a ~440 ms dashboard at 158k cheques; with it, ~2 ms.
+# Lock time: plain CREATE INDEX (not CONCURRENTLY) holds a SHARE lock that blocks writes to
+# the table while the index builds. At today's production size that is seconds (measured
+# locally: journal_lines 1.2M rows ~ 3 s). On a large production database, build these
+# CONCURRENTLY instead: a changeset with runInTransaction: false and
+# CREATE INDEX CONCURRENTLY IF NOT EXISTS ..., one statement per sql change.
 databaseChangeLog:
   - changeSet:
       id: 147-cheques-status-changed-index
