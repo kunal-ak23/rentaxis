@@ -162,6 +162,14 @@ Doc No · Particular · Debit · Credit · Balance · Unit · Tower (property) �
 view with **Account Code · Account Name · Account Type** columns. If an existing endpoint does not return a field
 needed for a column (e.g. tenant name on GL lines), that column is omitted — no backend change.
 
+**Ledger reports load on demand (client feedback 2026-09-25, scale to 1000s of buildings):** General Ledger
+opens with an **account picker** (searchable by code/name, multi-select up to 20, optional property/tower filter)
+and loads nothing until an account is chosen; Tenant Ledger opens with a **tenant picker**. Default period is the
+**last 12 months ending today** (editable). Each account section starts with the **balance brought forward** at the
+period start so the running Dr/Cr balance is right. Uses the existing `/finance/ledger?accountIds=&from=&to=&propertyId=`
+and `/finance/ledger/renter/{id}` parameters — frontend only. The picker/period are kept in the URL so a view can
+be bookmarked. For a whole-company view the user goes to Trial Balance.
+
 PACT reports we don't have (Book Case Income, Daily Vacant Flat Report, Floor Wise Expiry) are **not** added —
 they would need backend work, which is out of scope.
 

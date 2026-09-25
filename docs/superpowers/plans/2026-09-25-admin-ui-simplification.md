@@ -2995,6 +2995,15 @@ BODY
 
 # PR 2 — Cheque / Cash Collection hub + Accounting (ledger layout)
 
+> **Amendment 2026-09-25 (client feedback) — applies to the PR 2 ledger task:** General Ledger must NOT load all
+> accounts. Open with a searchable account picker (code/name, multi-select ≤ 20, optional property filter); fetch
+> only after a pick via `/finance/ledger?accountIds=…&from=…&to=…&propertyId=…`; default period = last 12 months to
+> today; show balance brought forward per account at the period start (from the DTO's opening balance if present,
+> otherwise computed from a from=null…to=start-1 call for the same accounts); keep picks + period in the URL.
+> Tenant Ledger: tenant picker first, same default period. Tests: nothing fetched before a pick; request carries
+> accountIds + default dates; brought-forward row + running Dr/Cr correct; > 20 picks refused in the UI.
+
+
 The Accounting menu itself shipped in PR 1 as the Accounting section panel (spec §1a replaces the top tab bar), including the One-time setup group that collapses once the books are live and the renamed "Cut-over reconciliation". PR 2 builds the Collection hub and the PACT ledger layout.
 
 ### Task 17: Branch; cheque and penalty pages become embeddable panels
