@@ -81,7 +81,8 @@ export function buildAccountingNav(role: UserRole | undefined, opts: { booksLive
         .map(g => ({
             id: g.id,
             label: { ns: "AccountingNav", key: g.key },
-            items: g.items.filter(i => hasPermission(role, i.allow)).map(({ allow: _allow, ...rest }) => rest),
+            items: g.items.filter(i => hasPermission(role, i.allow))
+                .map(({ id, href, label, testId, crossLink }) => ({ id, href, label, testId, ...(crossLink ? { crossLink } : {}) })),
             defaultOpen: g.id === "setup" && !opts.booksLive,
         }))
         .filter(g => g.items.some(i => !i.crossLink));

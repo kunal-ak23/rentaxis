@@ -25,6 +25,9 @@ vi.mock("@/i18n/routing", () => ({
     useRouter: () => ({ push: vi.fn() }),
 }));
 vi.mock("../GlobalSearch", () => ({ default: () => <div /> }));
+vi.mock("@/hooks/useTenantFeatures", () => ({
+    useTenantFeatures: () => ({ isEnabled: () => true, tenantSlug: "acme", features: {}, loading: false }),
+}));
 
 import { TopHeader } from "../TopHeader";
 

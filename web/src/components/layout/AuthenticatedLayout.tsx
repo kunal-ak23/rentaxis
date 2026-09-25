@@ -10,6 +10,7 @@ import { Loader2 } from "lucide-react";
 import { TopHeader } from "@/components/ui/TopHeader";
 import TourProvider from "@/components/tour/TourProvider";
 import HelpFAB from "@/components/help/HelpFAB";
+import { NavShellProvider } from "@/components/nav/NavShellContext";
 import type { UserRole } from "@/lib/rbac";
 
 export default function AuthenticatedLayout({
@@ -42,6 +43,7 @@ export default function AuthenticatedLayout({
 
     return (
         <TourProvider role={session?.user?.role as UserRole | undefined}>
+            <NavShellProvider>
             <div className="flex h-screen overflow-hidden bg-background">
                 <MvpSidebar />
                 <div className="flex flex-col flex-1 min-w-0">
@@ -63,6 +65,7 @@ export default function AuthenticatedLayout({
                     </main>
                 </div>
             </div>
+            </NavShellProvider>
             <HelpFAB />
         </TourProvider>
     );

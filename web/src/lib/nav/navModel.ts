@@ -1,5 +1,5 @@
 // src/lib/nav/navModel.ts
-import { hasPermission, type Permission, type UserRole } from "../rbac";
+import { hasPermission, type Permission } from "../rbac";
 import { accountingHome, buildAccountingNav } from "./accountingNav";
 import { buildCollectionsTabs } from "./collectionsModel";
 import { buildSettingsSections } from "./settingsModel";

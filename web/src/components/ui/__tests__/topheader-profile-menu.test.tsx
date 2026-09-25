@@ -30,8 +30,12 @@ vi.mock("@/i18n/routing", () => ({
 }));
 vi.mock("next-intl", async () => (await import("@/test/intlMock")).englishIntl());
 vi.mock("../GlobalSearch", () => ({ default: () => <div /> }));
+vi.mock("@/hooks/useTenantFeatures", () => ({
+    useTenantFeatures: () => ({ isEnabled: () => true, tenantSlug: "acme", features: {}, loading: false }),
+}));
 
 import { TopHeader } from "../TopHeader";
+import { NavShellProvider } from "@/components/nav/NavShellContext";
 
 beforeEach(() => {
     signOut.mockReset();
@@ -42,14 +46,14 @@ afterEach(cleanup);
 
 describe("TopHeader profile menu", () => {
     it("hides Logout until the profile menu is opened", () => {
-        render(<TopHeader />);
+        render(<NavShellProvider><TopHeader /></NavShellProvider>);
 
         expect(screen.getByTestId("profile-menu")).toBeTruthy();
         expect(screen.queryByTestId("logout")).toBeNull();
     });
 
     it("reveals a Logout entry that signs the user out", () => {
-        render(<TopHeader />);
+        render(<NavShellProvider><TopHeader /></NavShellProvider>);
 
         fireEvent.click(screen.getByTestId("profile-menu"));
 
@@ -58,5 +62,10 @@ describe("TopHeader profile menu", () => {
 
         fireEvent.click(logout);
         expect(signOut).toHaveBeenCalledTimes(1);
+    });
+
+    it("links Help from the header", () => {
+        render(<NavShellProvider><TopHeader /></NavShellProvider>);
+        expect(screen.getByTestId("header-help")).toHaveAttribute("href", "/dashboard/help");
     });
 });

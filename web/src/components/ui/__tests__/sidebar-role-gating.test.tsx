@@ -5,29 +5,12 @@ import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../messages/en.json";
 
 /**
- * Which sidebar links each role is offered.
- *
- * <p>The finance group used to be one gate — `canAccessFinance`, which admits
- * ACCOUNTANT. But Vendors, Bank Accounts and Staff sit behind
- * VendorController / BankAccountController / StaffController, none of which
- * granted ACCOUNTANT, so an accountant was shown links that 403'd on arrival.
- * The ledger pages (chart of accounts, journals, general ledger, tenant
- * ledger, trial balance) are the ones that actually admit the role, and they
- * stay on `canAccessFinance`; Bank Accounts/Staff moved to
- * `canAccessFinanceOps`.
- *
- * <p>Finance-ops audit S1 (P0): VendorController now admits ACCOUNTANT too
- * (an accountant enters the PISR/BPV vouchers that reference vendors), so
- * Vendors moved to its own gate, `canManageVendors`, rather than either of the
- * two above — Bank Accounts and Staff still refuse the role.
- *
- * <p>The cheque register replaced Payments and moved to its own gate,
- * `canManageCheques` — `ChequeController`'s STAFF group admits SA/TA/
- * ACCOUNTANT/PROPERTY_MANAGER, unlike the old Payments link which sat behind
- * `canAccessFinanceOps` (SA/TA only) because `PaymentScheduleController`
- * refused both. An accountant and a property manager now both see the
- * register; only cancelling a cheque (a separate, narrower permission) stays
- * off PROPERTY_MANAGER's plate.
+ * The shell's per-role links. The finance-gating assertions that used to live
+ * here (which ledger/ops/report links each role is offered, and why) moved to
+ * the pure models: src/lib/nav/__tests__/models.test.ts (buildAccountingNav)
+ * and navModel.test.ts (buildNav), and the whole-sidebar before/after check to
+ * rbacParity.test.ts. What stays here renders the real shell: the renter's Home
+ * panel and the active-item rule (M-9).
  */
 
 const role = { current: "ACCOUNTANT" };
@@ -49,7 +32,10 @@ vi.mock("next-auth/react", () => ({
     }),
 }));
 vi.mock("@/hooks/useTenantFeatures", () => ({
-    useTenantFeatures: () => ({ isEnabled: () => true, features: {}, loading: false }),
+    useTenantFeatures: () => ({ isEnabled: () => true, features: {}, loading: false, tenantSlug: "acme" }),
+}));
+vi.mock("@/components/nav/useNavCounts", () => ({
+    useNavCounts: () => ({ collectionBadge: null, chequesToDeposit: null, booksLockedThrough: null, booksLive: true }),
 }));
 vi.mock("framer-motion", () => ({
     motion: new Proxy({}, {
@@ -62,12 +48,13 @@ vi.mock("next/image", () => ({
 }));
 
 import MvpSidebar, { activeNavHref } from "../MvpSidebar";
+import { NavShellProvider } from "@/components/nav/NavShellContext";
 
 function renderAs(userRole: string) {
     role.current = userRole;
     return render(
         <NextIntlClientProvider locale="en" messages={en}>
-            <MvpSidebar />
+            <NavShellProvider><MvpSidebar /></NavShellProvider>
         </NextIntlClientProvider>,
     );
 }
@@ -90,128 +77,6 @@ afterEach(() => {
     vi.clearAllMocks();
 });
 
-describe("sidebar finance gating", () => {
-    it("offers an accountant the ledger pages and the cheque register", () => {
-        const { container } = renderAs("ACCOUNTANT");
-        const links = hrefs(container);
-
-        expect(links).toEqual(expect.arrayContaining([
-            "/dashboard/finance/accounts",
-            "/dashboard/finance/journals",
-            // VoucherController is SA/TA/ACCOUNTANT, like the ledger pages —
-            // not SA/TA like Vendors and Bank Accounts below.
-            "/dashboard/finance/vouchers",
-            // ImportBatchController is SA/TA/ACCOUNTANT, like the ledger pages.
-            "/dashboard/finance/import-batches",
-            // OpeningBalanceController is SA/TA/ACCOUNTANT on its own annotation.
-            "/dashboard/finance/opening-balances",
-            "/dashboard/finance/reconciliation",
-            "/dashboard/finance/general-ledger",
-            "/dashboard/finance/tenant-ledger",
-            "/dashboard/finance/trial-balance",
-            "/dashboard/finance/cheques",
-            "/dashboard/finance/cheques/collection",
-            "/dashboard/finance/cheques/return-replace",
-            "/dashboard/finance/cheques/post-dated",
-            "/dashboard/settings/account-template",
-            "/dashboard/settings/fiscal",
-            // VendorController is SA/TA/ACCOUNTANT too (finance-ops audit S1).
-            "/dashboard/finance/vendors",
-        ]));
-    });
-
-    it("offers an accountant NO link whose controller refuses the role", () => {
-        const { container } = renderAs("ACCOUNTANT");
-        const links = hrefs(container);
-
-        for (const href of [
-            "/dashboard/finance/bank-accounts",
-            "/dashboard/staff",
-            "/dashboard/settings/gateway",
-        ]) {
-            expect(links, `${href} 403s for ACCOUNTANT and must not be offered`).not.toContain(href);
-        }
-    });
-
-    it("still offers a tenant admin the operational pages", () => {
-        const { container } = renderAs("TENANT_ADMIN");
-        const links = hrefs(container);
-
-        expect(links).toEqual(expect.arrayContaining([
-            "/dashboard/finance/accounts",
-            "/dashboard/finance/vouchers",
-            "/dashboard/finance/import-batches",
-            "/dashboard/finance/opening-balances",
-            "/dashboard/finance/reconciliation",
-            "/dashboard/finance/cheques",
-            "/dashboard/finance/vendors",
-            "/dashboard/finance/bank-accounts",
-            "/dashboard/staff",
-        ]));
-    });
-
-    /** ChequeController's STAFF group admits PROPERTY_MANAGER, unlike the old
-     *  Payments link — pinned by walkthrough 13 for the OTHER finance pages,
-     *  which still refuse a property manager outright. The penalty queue is
-     *  the one deliberate exception: PenaltyAssessmentController#list/#propose
-     *  admits PROPERTY_MANAGER too (canProposePenalties) — spotting that a
-     *  renter should be fined is part of running a building, even though
-     *  deciding one is not. Finance → Reports is the other: PropertyReportController
-     *  admits PROPERTY_MANAGER read-only, narrowed server-side to assigned
-     *  properties with no tenant-wide Unassigned / Total (finance-ops spec §1).
-     *  Payables aging likewise (spec §2): PayablesReportController admits a
-     *  manager for the property-filtered view of an assigned property only. */
-    it("offers a property manager the cheque register, the penalty queue, the property reports and payables aging, but no other finance or staff link", () => {
-        const { container } = renderAs("PROPERTY_MANAGER");
-        const links = hrefs(container);
-
-        expect(links).toEqual(expect.arrayContaining([
-            "/dashboard/finance/cheques",
-            "/dashboard/finance/cheques/collection",
-            "/dashboard/finance/cheques/return-replace",
-            "/dashboard/finance/cheques/post-dated",
-            "/dashboard/finance/penalties",
-            "/dashboard/finance/reports/property-pl",
-            "/dashboard/finance/reports/property-statement",
-            // F14-10: the balance sheet admits a manager, scoped to assigned properties.
-            "/dashboard/finance/reports/balance-sheet",
-            "/dashboard/finance/payables/aging",
-        ]));
-        expect(
-            links.filter(h =>
-                h.startsWith("/dashboard/finance/") &&
-                !h.startsWith("/dashboard/finance/cheques") &&
-                !h.startsWith("/dashboard/finance/reports/property-") &&
-                h !== "/dashboard/finance/reports/balance-sheet" &&
-                h !== "/dashboard/finance/payables/aging" &&
-                h !== "/dashboard/finance/penalties",
-            ),
-        ).toEqual([]);
-        // The opening-items grid is PayablesController, which refuses a manager.
-        expect(links).not.toContain("/dashboard/finance/payables/opening-items");
-        // Payment runs and issued cheques: finance roles only (PR 3b).
-        expect(links).not.toContain("/dashboard/finance/payables/payment-runs");
-        expect(links).not.toContain("/dashboard/finance/payables/issued-cheques");
-        expect(links).not.toContain("/dashboard/staff");
-    });
-
-    it("offers an accountant payment runs and the issued-cheques register", () => {
-        const links = hrefs(renderAs("ACCOUNTANT").container);
-        expect(links).toEqual(expect.arrayContaining([
-            "/dashboard/finance/payables/payment-runs",
-            "/dashboard/finance/payables/issued-cheques",
-        ]));
-    });
-
-    it("renders the group heading only when the group has items", () => {
-        const { container } = renderAs("SECURITY_GUARD");
-        expect(hrefs(container).some(h => h.startsWith("/dashboard/finance/"))).toBe(false);
-        cleanup();
-        renderAs("ACCOUNTANT");
-        expect(screen.getByText(en.Ledger.journals)).toBeInTheDocument();
-    });
-});
-
 describe("sidebar renter portal", () => {
     /** Gap #39: `/dashboard/renter-portal/penalties` worked, but nothing linked to it. */
     it("offers a renter the penalties page next to leases and payments", () => {
@@ -222,6 +87,7 @@ describe("sidebar renter portal", () => {
             "/dashboard/renter-portal/penalties",
         ]));
         expect(screen.getByText(en.Navigation.myPenalties)).toBeInTheDocument();
+        expect(screen.getByTestId("sidebar-my-penalties")).toHaveAttribute("href", "/dashboard/renter-portal/penalties");
     });
 });
 
