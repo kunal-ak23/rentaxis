@@ -299,3 +299,5 @@ databaseChangeLog:
       file: db/changelog/changesets/145-bad-debt-item-amounts.yaml
   - include:
       file: db/changelog/changesets/146-scale-indexes.yaml
+  - include:
+      file: db/changelog/changesets/147-cheques-status-changed-index.yaml

@@ -1,0 +1,13 @@
+# Scale PR A (P1-9): the dashboard's recent-activity feed is the ten newest status changes
+# (ChequeRepository.findRecentlyChanged). Without an index it sorted every cheque of the
+# organisation: ~200 ms of a ~440 ms dashboard at 158k cheques; with it, ~2 ms.
+databaseChangeLog:
+  - changeSet:
+      id: 147-cheques-status-changed-index
+      author: claude
+      changes:
+        - sql:
+            sql: CREATE INDEX IF NOT EXISTS idx_cheques_tenant_status_changed ON cheques (tenant_id, status_changed_at);
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_cheques_tenant_status_changed;
