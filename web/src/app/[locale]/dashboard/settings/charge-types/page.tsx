@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { Loader2, ShieldCheck, Tags } from "lucide-react";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
+import { serverText } from "@/components/finance/bankrec/serverText";
 import { chargeTypeApi, type ChargeRecognition, type ChargeType } from "@/lib/api/leasing";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 
@@ -59,7 +60,8 @@ export default function ChargeTypesPage() {
             const saved = await chargeTypeApi.update(row.id, { ...row, recognition });
             setRows(prev => prev.map(r => (r.id === saved.id ? saved : r)));
         } catch (err) {
-            setRowError({ id: row.id, message: err instanceof ApiError ? err.message : tCommon("loadFailed") });
+            // #99: a type used by a posted lease keeps its rule (coded chargeType.ruleInUse).
+            setRowError({ id: row.id, message: err instanceof ApiError ? serverText(tCommon, err) || err.message : tCommon("loadFailed") });
         } finally {
             setSavingId(null);
         }

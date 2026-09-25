@@ -235,6 +235,21 @@ describe("LeaseLinesGrid", () => {
      * `creditAccountNameAr` on Arabic, and falls back sensibly when a line
      * predates those fields.
      */
+    describe("posted recognition label (#99)", () => {
+        it("labels a fee line with the recognition it was posted with, in EN and AR", () => {
+            const lines = [
+                row({ key: 0, chargeTypeId: "ct-rent", grossAmount: 60000, recognition: "RENT_LIKE" }),
+                row({ key: 1, chargeTypeId: "ct-fee", grossAmount: 1000, recognition: "ONE_OFF" }),
+            ];
+            renderReadOnly(lines);
+            expect(screen.queryByTestId("lease-line-recognition-0")).toBeNull();
+            expect(screen.getByTestId("lease-line-recognition-1")).toHaveTextContent(en.ChargeTypes.recognitions.ONE_OFF);
+            cleanup();
+            renderReadOnlyAr(lines);
+            expect(screen.getByTestId("lease-line-recognition-1")).toHaveTextContent(ar.ChargeTypes.recognitions.ONE_OFF);
+        });
+    });
+
     describe("Arabic charge and account names (F14-15)", () => {
         it("shows the line's own Arabic charge and account names on /ar", () => {
             renderReadOnlyAr([

@@ -28,9 +28,12 @@ import java.util.UUID;
 public class ChargeTypeService {
 
     private final ChargeTypeRepository repo;
+    private final com.datagami.rentaxis.domain.repository.LeaseLineRepository leaseLines;
 
-    public ChargeTypeService(ChargeTypeRepository repo) {
+    public ChargeTypeService(ChargeTypeRepository repo,
+                             com.datagami.rentaxis.domain.repository.LeaseLineRepository leaseLines) {
         this.repo = repo;
+        this.leaseLines = leaseLines;
     }
 
     /**
@@ -256,8 +259,27 @@ public class ChargeTypeService {
             throw new BusinessRuleViolationException("A charge type's code cannot be changed (" + e.getCode() + ")");
         }
         validate(e.getCode(), dto.nameEn(), dto.role(), dto.behaviour());
+        refuseRuleChangeWhenInUse(e, dto);
         apply(e, dto);
         return toDTO(repo.save(e));
+    }
+
+    /**
+     * #99: once a lease past DRAFT carries a line of this type, the type's
+     * behaviour and recognition decided how that lease hit the books (TCO credit,
+     * deferral, schedule). Changing them would make the catalogue disagree with the
+     * ledger, so it is refused; a new rule goes on a new charge type.
+     */
+    private void refuseRuleChangeWhenInUse(ChargeType e, ChargeTypeDTO dto) {
+        boolean behaviourChanged = dto.behaviour() != null && dto.behaviour() != e.getBehaviour();
+        boolean recognitionChanged = dto.recognition() != null && dto.recognition() != e.getRecognition();
+        if (!behaviourChanged && !recognitionChanged) return;
+        long used = leaseLines.countNonDraftLeasesUsing(e.getId());
+        if (used == 0) return;
+        throw new BusinessRuleViolationException(
+                e.getCode() + " is on " + used + " lease(s) already past draft; its kind and how it is earned "
+                        + "cannot change. Create a new charge type for the new rule.",
+                "chargeType.ruleInUse", Map.of("code", e.getCode(), "count", used));
     }
 
     /**

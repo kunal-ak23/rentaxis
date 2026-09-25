@@ -2010,7 +2010,7 @@ public class LeaseService {
                 l.getAddendumId(),
                 type != null ? type.getNameAr() : null,
                 credit != null ? credit.getNameAr() : null,
-                type != null && type.getRecognition() != null ? type.getRecognition().name() : null,
+                l.effectiveRecognition() != null ? l.effectiveRecognition().name() : null,
                 l.getRentFreeAmount());
     }
 

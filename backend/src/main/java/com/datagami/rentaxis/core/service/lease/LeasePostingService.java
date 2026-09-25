@@ -353,6 +353,10 @@ public class LeasePostingService {
         markPredecessorRenewed(lease, tco.getEntryNumber());
 
         lease.setPostingJournalId(tco.getId());
+        // #99: each line remembers the recognition it was posted with (overwritten,
+        // so a cut-over lease reverted to draft and re-posted takes today's rule).
+        lines.forEach(l -> l.setPostedRecognition(
+                l.getChargeType() != null ? l.getChargeType().getRecognition() : null));
         lease.setPostedAt(Instant.now());
         if (lease.getVatTiming() == VatTiming.INSTALMENT && InstalmentVat.contractVat(lines).signum() > 0) {
             // What the tax invoices fall back to if the TRN is cleared later.
@@ -872,11 +876,11 @@ public class LeasePostingService {
         // Utilities expense leaf (the line's account) as it is recovered, so a year's
         // expense is offset only by that year's recovery and an early exit refunds the
         // rest. It is still never income.
+        ChargeRecognition r = line.effectiveRecognition();
         return lease.getFeeTiming() == FeeTiming.OVER_TERM
                 && type != null
                 && type.getBehaviour() == ChargeBehaviour.FEE
-                && (type.getRecognition() == ChargeRecognition.RENT_LIKE
-                    || type.getRecognition() == ChargeRecognition.PASS_THROUGH);
+                && (r == ChargeRecognition.RENT_LIKE || r == ChargeRecognition.PASS_THROUGH);
     }
 
     private static boolean passThrough(ChargeType type) {

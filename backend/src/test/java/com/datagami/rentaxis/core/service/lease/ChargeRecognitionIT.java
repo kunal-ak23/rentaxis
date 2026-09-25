@@ -228,6 +228,57 @@ class ChargeRecognitionIT extends AbstractPostgresIT {
         assertThat(lease.getSkippedOneOffLines()).isNull();
     }
 
+    /**
+     * #99: a charge type a posted lease uses keeps its behaviour and recognition,
+     * and each posted line is labelled with the recognition it was posted with.
+     */
+    @Test
+    void aChargeTypeInUseKeepsItsRuleAndLinesKeepTheirSnapshot() {
+        UUID draftOnly = fixtures.draftLease(CONTRACT_DATE, START, END, List.of(line("RENT", "51000"), line("COOLING", "1200")));
+        UUID leaseId = posted();
+        // Every posted line is stamped; the draft's lines are not.
+        assertThat(jdbc.queryForObject("select count(*) from lease_lines where lease_id = ? and posted_recognition is null",
+                Long.class, leaseId)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from lease_lines where lease_id = ? and posted_recognition is not null",
+                Long.class, draftOnly)).isZero();
+
+        var parking = tx.execute(s -> chargeTypeService.list(false)).stream()
+                .filter(t -> t.code().equals("PARKING_FEE")).findFirst().orElseThrow();
+        var toOneOff = new com.datagami.rentaxis.api.dto.lease.ChargeTypeDTO(parking.id(), "PARKING_FEE", parking.nameEn(),
+                parking.nameAr(), parking.role(), parking.behaviour(), parking.vatApplicableDefault(), true,
+                parking.displayOrder(), com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.ONE_OFF);
+        assertThatThrownBy(() -> tx.execute(s -> chargeTypeService.update(parking.id(), toOneOff)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("PARKING_FEE is on 1 lease(s) already past draft")
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("chargeType.ruleInUse");
+        var admin = tx.execute(s -> chargeTypeService.list(false)).stream()
+                .filter(t -> t.code().equals("ADMIN_FEE")).findFirst().orElseThrow();
+        var toDeposit = new com.datagami.rentaxis.api.dto.lease.ChargeTypeDTO(admin.id(), "ADMIN_FEE", admin.nameEn(),
+                admin.nameAr(), AccountRole.SECURITY_DEPOSIT, com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour.DEPOSIT,
+                false, true, admin.displayOrder(), com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.RENT_LIKE);
+        assertThatThrownBy(() -> tx.execute(s -> chargeTypeService.update(admin.id(), toDeposit)))
+                .hasMessageContaining("ADMIN_FEE is on 1 lease(s)");
+        // A rename is not a rule change; a type only a draft uses may change its rule.
+        var renamed = new com.datagami.rentaxis.api.dto.lease.ChargeTypeDTO(parking.id(), "PARKING_FEE", "Covered parking",
+                parking.nameAr(), parking.role(), parking.behaviour(), parking.vatApplicableDefault(), true,
+                parking.displayOrder(), parking.recognition());
+        assertThat(tx.execute(s -> chargeTypeService.update(parking.id(), renamed)).nameEn()).isEqualTo("Covered parking");
+        var cooling = tx.execute(s -> chargeTypeService.list(false)).stream()
+                .filter(t -> t.code().equals("COOLING")).findFirst().orElseThrow();
+        var coolingPassThrough = new com.datagami.rentaxis.api.dto.lease.ChargeTypeDTO(cooling.id(), "COOLING",
+                cooling.nameEn(), cooling.nameAr(), cooling.role(), cooling.behaviour(), false, true,
+                cooling.displayOrder(), com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.PASS_THROUGH);
+        assertThat(tx.execute(s -> chargeTypeService.update(cooling.id(), coolingPassThrough)).recognition())
+                .isEqualTo(com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.PASS_THROUGH);
+
+        // The line is labelled with its snapshot, not the catalogue's current value.
+        jdbc.update("update lease_lines l set posted_recognition = 'ONE_OFF' from charge_types c "
+                + "where c.id = l.charge_type_id and c.code = 'PARKING_FEE' and l.lease_id = ?", leaseId);
+        List<LeaseLineDTO> lines = tx.execute(s -> leaseService.getLines(leaseId));
+        assertThat(lines).filteredOn(l -> "PARKING_FEE".equals(l.chargeTypeCode()))
+                .extracting(LeaseLineDTO::recognition).containsExactly("ONE_OFF");
+    }
+
     // ------------------------------------------------------------------
 
     private Account leaf(AccountRole role) {

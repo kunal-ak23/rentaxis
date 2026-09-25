@@ -64,6 +64,17 @@ describe("Charge types settings", () => {
             .toBe("PASS_THROUGH"));
     });
 
+    it("explains in Arabic why a type used by a posted lease keeps its rule (#99)", async () => {
+        const { ApiError } = await import("@/lib/api/facilities");
+        api.update.mockRejectedValue(new ApiError(400, "COOLING is on 2 lease(s) already past draft",
+            JSON.stringify({ code: "chargeType.ruleInUse", args: { code: "COOLING", count: 2 }, message: "COOLING is on 2 lease(s)" })));
+        renderPage("ar");
+        const select = await screen.findByTestId("charge-type-recognition-COOLING");
+        fireEvent.change(select, { target: { value: "PASS_THROUGH" } });
+        const alert = await screen.findByRole("alert");
+        expect(alert).toHaveTextContent("يُستخدم COOLING في 2");
+    });
+
     it("reads in Arabic", async () => {
         renderPage("ar");
         await screen.findByTestId("charge-types-table");

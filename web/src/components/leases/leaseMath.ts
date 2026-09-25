@@ -10,7 +10,7 @@
  * against the tenancy, not consideration for a supply.
  */
 
-import type { ChargeBehaviour, ChargeType, LeaseLine, LeaseLineInput } from "@/lib/api/leasing";
+import type { ChargeBehaviour, ChargeRecognition, ChargeType, LeaseLine, LeaseLineInput } from "@/lib/api/leasing";
 
 /** UAE standard rate. Not configurable: a change is a tax event, not a setting. */
 export const VAT_RATE = 0.05;
@@ -61,6 +61,8 @@ export type LineRow = {
      * Read-only and never sent — the server re-derives it from the lease's periods.
      */
     rentFreeAmount?: number;
+    /** #99: the recognition the server reports for a persisted line (its posted snapshot once posted). Read-only. */
+    recognition?: ChargeRecognition | null;
     /**
      * The operator ticked or unticked this row's VAT box by hand (#54 review
      * M-3). A touched RENT row keeps its choice when the header's "Rent carries
@@ -102,6 +104,7 @@ export function toRow(line: LeaseLine, key: number): LineRow {
         periodEnd: line.periodEnd ?? null,
         addendumId: line.addendumId ?? null,
         rentFreeAmount: line.rentFreeAmount ?? 0,
+        recognition: line.recognition ?? null,
     };
 }
 

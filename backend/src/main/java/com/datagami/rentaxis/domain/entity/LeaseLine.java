@@ -92,4 +92,31 @@ public class LeaseLine extends BaseTenantEntity {
     /** The addendum that charged this line; null for the contract's own lines and an extension's. */
     @Column(name = "addendum_id")
     private UUID addendumId;
+
+    /**
+     * #99: the charge type's recognition when this line went on the books — what
+     * the TCO and the recognition schedule actually did with it. Null while the
+     * lease is a draft; stamped when the lease posts, and on any line written to a
+     * posted lease afterwards (amend, addendum, extension).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "posted_recognition", length = 16)
+    private com.datagami.rentaxis.domain.entity.enums.ChargeRecognition postedRecognition;
+
+    /** The recognition this line follows: its snapshot once posted, else its charge type's. */
+    public com.datagami.rentaxis.domain.entity.enums.ChargeRecognition effectiveRecognition() {
+        if (postedRecognition != null) return postedRecognition;
+        return chargeType != null ? chargeType.getRecognition() : null;
+    }
+
+    /** Stamps {@link #postedRecognition} from the charge type if it is not stamped yet. */
+    public void snapshotRecognition() {
+        if (postedRecognition == null && chargeType != null) postedRecognition = chargeType.getRecognition();
+    }
+
+    @PrePersist
+    @PreUpdate
+    void snapshotWhenPosted() {
+        if (lease != null && lease.getPostedAt() != null) snapshotRecognition();
+    }
 }

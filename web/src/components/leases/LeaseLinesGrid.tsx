@@ -72,6 +72,7 @@ export default function LeaseLinesGrid({
     rentVat,
 }: Props) {
     const t = useTranslations("Leasing");
+    const tTypes = useTranslations("ChargeTypes");
     const locale = useLocale();
     const totals = totalsOf(lines, chargeTypes);
     const { bySeq } = splitLineErrors(errors ?? []);
@@ -155,11 +156,22 @@ export default function LeaseLinesGrid({
                                                 ))}
                                             </select>
                                         ) : (
-                                            <span className="text-foreground">
-                                                {locale === "ar"
-                                                    ? row.chargeTypeNameAr || row.chargeTypeName || type?.nameAr || type?.nameEn || "—"
-                                                    : row.chargeTypeName || type?.nameEn || "—"}
-                                            </span>
+                                            <>
+                                                <span className="text-foreground">
+                                                    {locale === "ar"
+                                                        ? row.chargeTypeNameAr || row.chargeTypeName || type?.nameAr || type?.nameEn || "—"
+                                                        : row.chargeTypeName || type?.nameEn || "—"}
+                                                </span>
+                                                {/* #99: a fee line shows the recognition it was posted with. */}
+                                                {behaviour === "FEE" && row.recognition && (
+                                                    <span
+                                                        className="block text-[10px] text-muted"
+                                                        data-testid={`lease-line-recognition-${i}`}
+                                                    >
+                                                        {tTypes(`recognitions.${row.recognition}`)}
+                                                    </span>
+                                                )}
+                                            </>
                                         )}
                                     </td>
                                     <td className={td}>

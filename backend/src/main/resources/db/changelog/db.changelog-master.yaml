@@ -269,3 +269,5 @@ databaseChangeLog:
       file: db/changelog/changesets/130-renewal-terms.yaml
   - include:
       file: db/changelog/changesets/131-fiscal-year-close.yaml
+  - include:
+      file: db/changelog/changesets/132-lease-line-posted-recognition.yaml

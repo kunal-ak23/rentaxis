@@ -1,0 +1,27 @@
+# #99: a lease line remembers the recognition it was posted with, so the lease
+# page labels it by what the books did rather than by today's catalogue, and a
+# charge type used by a lease past DRAFT can no longer change its behaviour or
+# recognition (ChargeTypeService). Existing posted lines are backfilled from their
+# charge type; the guard means that value has not changed since changeset 128
+# introduced it, except for a type edited between 128 and now — the backfill is
+# the best record there is.
+databaseChangeLog:
+  - changeSet:
+      id: 132-lease-line-posted-recognition
+      author: claude
+      changes:
+        - addColumn:
+            tableName: lease_lines
+            columns:
+              - column:
+                  name: posted_recognition
+                  type: varchar(16)
+        - sql:
+            comment: Backfill posted leases' lines from their charge type
+            sql: |
+              UPDATE lease_lines l
+                 SET posted_recognition = c.recognition
+                FROM charge_types c, leases le
+               WHERE c.id = l.charge_type_id
+                 AND le.id = l.lease_id
+                 AND le.posted_at IS NOT NULL

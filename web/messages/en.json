@@ -2361,6 +2361,9 @@
       },
       "account": {
         "deactivateWithBalance": "Account {account} still has a balance of {balance}; move the balance (or close the fiscal year) before deactivating it."
+      },
+      "chargeType": {
+        "ruleInUse": "{code} is on {count} lease(s) already past draft, so its kind and how it is earned cannot change. Create a new charge type for the new rule."
       }
     },
     "paginationShowing": "Showing {start}-{end} of {total}",
@@ -3917,7 +3920,7 @@
     "renewalCopied": "Copied",
     "renewalSkipped": "Not copied (one-off)",
     "renewalDeposit": "Carried or re-collected",
-    "appliesToNewLeases": "A change applies to leases posted afterwards. Leases already on the books are not restated."
+    "appliesToNewLeases": "A fee already used on a lease past draft keeps how it is earned, and each posted line shows the rule it was posted with. For a different rule, create a new charge type."
   },
   "RentFree": {
     "title": "Rent-free periods",
