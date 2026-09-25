@@ -323,6 +323,8 @@ public class LeasePostingService {
             // here so no cut-over path can defer a fee.
             lease.setFeeTiming(FeeTiming.AT_POSTING);
         }
+        // PR #358 R1 P2-2: the rent-free concession the renter signed for is fixed now.
+        leaseService.freezeRentFree(lease);
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
         List<Cheque> cheques = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
         allocateVatIfNeverAllocated(lease, lines, cheques);
@@ -865,10 +867,16 @@ public class LeasePostingService {
      */
     public static boolean earnedOverTerm(Lease lease, LeaseLine line) {
         ChargeType type = line.getChargeType();
+        // PR #358 R1: a utility recovered at cost follows the same schedule — held in
+        // UNEARNED_CHARGES at posting and released month by month to the property's
+        // Utilities expense leaf (the line's account) as it is recovered, so a year's
+        // expense is offset only by that year's recovery and an early exit refunds the
+        // rest. It is still never income.
         return lease.getFeeTiming() == FeeTiming.OVER_TERM
                 && type != null
                 && type.getBehaviour() == ChargeBehaviour.FEE
-                && type.getRecognition() == ChargeRecognition.RENT_LIKE;
+                && (type.getRecognition() == ChargeRecognition.RENT_LIKE
+                    || type.getRecognition() == ChargeRecognition.PASS_THROUGH);
     }
 
     private static boolean passThrough(ChargeType type) {

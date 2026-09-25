@@ -13,8 +13,10 @@ package com.datagami.rentaxis.domain.entity.enums;
  *   <li>{@link #ONE_OFF} — earned when charged (admin fee, renewal fee): credited to
  *       income at posting, exactly as every fee was before. Not copied on renewal.</li>
  *   <li>{@link #PASS_THROUGH} — a utility recovered at cost (DEWA, chiller at cost):
- *       never income; the line credits the property's Utilities expense leaf, the
- *       account the landlord paid the utility from. Copied on renewal.</li>
+ *       never income. Held in {@code UNEARNED_CHARGES} at posting and released month
+ *       by month, like rent, to the property's Utilities expense leaf (the line's
+ *       account) as it is recovered (PR #358 R1); on a lease posted under the old
+ *       rule it credits that leaf at posting. Copied on renewal.</li>
  * </ul>
  *
  * <p>RENT and DEPOSIT charge types always carry {@code RENT_LIKE}: rent is

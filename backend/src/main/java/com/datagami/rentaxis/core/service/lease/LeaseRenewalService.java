@@ -200,8 +200,8 @@ public class LeaseRenewalService {
      * What a renewal will draft (spec §4a, §4c, §4d): the lines, the rent before and
      * after, the one-off lines not copied, and the property's notice threshold.
      *
-     * @param baseRent      the predecessor's contract RENT line headline (gross, before
-     *                      discount and rent-free concession); null when it has none
+     * @param baseRent      what the predecessor's contract RENT line charges: headline less
+     *                      discount (before any rent-free concession); null when it has none
      * @param newRent       the successor's headline rent
      * @param changePercent (new − base) ÷ base × 100 at 3 dp; null when unchanged by request
      * @param warnPercent   the property's notice threshold, or null
@@ -209,7 +209,9 @@ public class LeaseRenewalService {
      */
     public record RenewalPlan(BigDecimal baseRent, BigDecimal newRent, BigDecimal changePercent, boolean changed,
                               List<LeaseLineInput> lines, List<LeaseLine> copiedSources,
-                              List<LeaseLine> skippedOneOff, BigDecimal warnPercent, boolean exceedsWarn) {
+                              List<LeaseLine> skippedOneOff, BigDecimal warnPercent, boolean exceedsWarn,
+                              /* PR #358 R1 P2-3: the predecessor's rent discount, which does not renew. */
+                              BigDecimal droppedDiscount) {
     }
 
     /** The renewal a request would draft, with nothing written (the preview endpoint). */
@@ -229,7 +231,7 @@ public class LeaseRenewalService {
         }
         return new com.datagami.rentaxis.api.dto.lease.RenewalPreviewDTO(plan.baseRent(), plan.newRent(),
                 plan.changePercent(), lines, plan.skippedOneOff().stream().map(LeaseService::toLineDTO).toList(),
-                plan.warnPercent(), plan.exceedsWarn());
+                plan.warnPercent(), plan.exceedsWarn(), plan.droppedDiscount());
     }
 
     /** The plan itself, for tests and the preview. */
@@ -256,6 +258,7 @@ public class LeaseRenewalService {
         List<LeaseLine> sources;
         List<LeaseLine> skipped;
         BigDecimal base = null;
+        BigDecimal dropped = BigDecimal.ZERO;
         BigDecimal newRent = null;
         BigDecimal percent = null;
         if (r.lines() != null) {
@@ -271,7 +274,11 @@ public class LeaseRenewalService {
                     leaseLineRepository.findByLease_IdOrderBySeqNoAsc(predecessor.getId()));
             int rentIndex = contractRent == null ? -1 : sources.indexOf(contractRent);
             if (rentIndex >= 0) {
-                base = contractRent.getGrossAmount();
+                // PR #358 R1 P2-3: the base is what the renter pays — headline less the
+                // discount — because the discount does not renew. A NONE renewal keeps
+                // that rent; a percentage and the notice are measured net to net.
+                dropped = contractRent.getDiscountAmount() == null ? BigDecimal.ZERO : contractRent.getDiscountAmount();
+                base = contractRent.getGrossAmount().subtract(dropped);
                 newRent = switch (mode) {
                     case NONE -> base;
                     case AMOUNT -> {
@@ -321,7 +328,7 @@ public class LeaseRenewalService {
         boolean changed = mode != RenewLeaseRequest.RentChange.Mode.NONE;
         boolean exceeds = warn != null && percent != null && percent.compareTo(warn) > 0;
         return new RenewalPlan(base, newRent, changed ? percent : null, changed, List.copyOf(lines), sources,
-                skipped, warn, exceeds);
+                skipped, warn, exceeds, dropped);
     }
 
     /** Same length in whole calendar months and days: 24/09→23/09 and 01/10→30/09 are both 12 months. */
@@ -431,7 +438,7 @@ public class LeaseRenewalService {
             // F14-18: a periodic fee an extension charged is dated to its window,
             // exactly like the extension's rent, and is left behind the same way.
             boolean periodic = behaviour == ChargeBehaviour.FEE && type.getRecognition() != null
-                    && type.getRecognition() == com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.RENT_LIKE;
+                    && type.getRecognition().recurs();
             if (line.getAddendumId() != null || ((rent || periodic) && isExtensionLine(line, predecessor))) {
                 continue;
             }

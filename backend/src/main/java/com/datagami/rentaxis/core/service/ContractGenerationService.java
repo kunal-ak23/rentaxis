@@ -477,11 +477,13 @@ public class ContractGenerationService {
         if (rent == null) return;
         BigDecimal pct = lease.getRenewalChangePercent() == null ? BigDecimal.ZERO : lease.getRenewalChangePercent();
         String signed = (pct.signum() >= 0 ? "+" : "") + pct.setScale(2, RoundingMode.HALF_UP).toPlainString() + "%";
+        // Net to net (PR #358 R1 P2-3): the previous rent is what the renter paid.
+        BigDecimal now = rent.getGrossAmount().subtract(nz(rent.getDiscountAmount()));
         appendNoteRow(sb,
                 "Rent revised from AED " + formatAmount(lease.getRenewalPreviousRent()) + " to AED "
-                        + formatAmount(rent.getGrossAmount()) + " (" + signed + ")",
+                        + formatAmount(now) + " (" + signed + ")",
                 "تم تعديل الإيجار من " + formatAmount(lease.getRenewalPreviousRent()) + " درهم إلى "
-                        + formatAmount(rent.getGrossAmount()) + " درهم (" + signed + ")");
+                        + formatAmount(now) + " درهم (" + signed + ")");
     }
 
     private com.datagami.rentaxis.domain.repository.LeaseRentFreePeriodRepository rentFreePeriods;
@@ -501,7 +503,7 @@ public class ContractGenerationService {
         if (periods.isEmpty()) return;
         LeaseLine rent = com.datagami.rentaxis.core.service.LeaseService.contractRentLine(lease, lines);
         if (rent == null) return;
-        long termDays = java.time.temporal.ChronoUnit.DAYS.between(lease.getStartDate(), lease.getEndDate()) + 1;
+        long termDays = com.datagami.rentaxis.core.service.LeaseService.rentWindowDays(lease, rent);
         // Numeric dates: the same text reads correctly in the Arabic line.
         java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
         for (var p : periods) {

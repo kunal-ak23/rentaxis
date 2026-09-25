@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -149,6 +150,54 @@ public class TenantFiscalSettingsService {
                 });
         s.setBooksLockedThrough(date);
         return repo.save(s);
+    }
+
+    /**
+     * PR #358 R1 (close race): a posting dated in an earlier fiscal year than today's
+     * holds the settings row FOR SHARE until it commits. A year-end close takes the
+     * same row FOR UPDATE ({@link #lockRow}) before it reads the balances, so a
+     * concurrent post either commits first and is inside the closing entry, or waits
+     * for the close and then meets the moved lock. Posts dated in the current year
+     * — every ordinary one — take no lock: a year that has not ended cannot be closed.
+     * A native lock, so the managed settings entity is not refreshed underneath a
+     * caller that has changed it in this transaction.
+     */
+    @Transactional
+    public void shareLockIfPastYear(LocalDate date) {
+        lockedThroughSharingIfPastYear(date);
+    }
+
+    /**
+     * The posting path's check. For a date in an earlier fiscal year the lock is read
+     * FOR SHARE straight from the row — the latest committed value, not the
+     * persistence context's copy, which may predate a close that committed while this
+     * transaction waited for the row.
+     */
+    @Transactional
+    public void assertOpenForPosting(LocalDate date) {
+        java.util.Optional<LocalDate> locked = lockedThroughSharingIfPastYear(date);
+        if (locked == null) {
+            assertOpen(date);
+            return;
+        }
+        if (locked.isPresent() && !date.isAfter(locked.get())) {
+            throw new BusinessRuleViolationException(
+                    "Cannot post on " + date + ": books are locked through " + locked.get());
+        }
+    }
+
+    /** null when no lock was taken (current year, no tenant or date); else the committed lock. */
+    private java.util.Optional<LocalDate> lockedThroughSharingIfPastYear(LocalDate date) {
+        if (date == null) return null;
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId == null) return null;
+        if (fiscalYearOf(date) >= fiscalYearOf(LocalDate.now())) return null;
+        List<?> rows = entityManager.createNativeQuery(
+                        "select books_locked_through from tenant_fiscal_settings where tenant_id = :t for share")
+                .setParameter("t", tenantId).getResultList();
+        Object v = rows.isEmpty() ? null : rows.get(0);
+        if (v == null) return java.util.Optional.empty();
+        return java.util.Optional.of(v instanceof java.sql.Date d ? d.toLocalDate() : (LocalDate) v);
     }
 
     /**

@@ -66,7 +66,9 @@ public class PostingService {
         // YearEndCloseService produces a YEC, no request body carries a doc type, and
         // JournalService.reverse refuses source type YEAR_END.
         if (r.docType() != JournalDocType.OB && r.docType() != JournalDocType.YEC && r.importBatchId() == null) {
-            fiscal.assertOpen(r.entryDate());
+            fiscal.assertOpenForPosting(r.entryDate());
+        } else if (r.docType() != JournalDocType.YEC) {
+            fiscal.shareLockIfPastYear(r.entryDate());
         }
         // The import-batch hole (§3): an import or opening-balance post bypasses the
         // period lock, so on its own it could land income inside a closed fiscal
@@ -100,7 +102,12 @@ public class PostingService {
             }
             Account account = resolveAccount(l.account(), d.propertyId());
             if (account.isGroup()) throw new BusinessRuleViolationException("Cannot post to group account " + account.getCode());
-            if (!account.isActive()) throw new BusinessRuleViolationException("Cannot post to inactive account " + account.getCode());
+            // PR #358 R1 P2-1: the year-end closing entry (and its re-open mirror, which
+            // is itself a YEC) must zero every income/expense balance, a retired leaf's
+            // included. Keyed on the doc type only YearEndCloseService produces.
+            if (!account.isActive() && r.docType() != JournalDocType.YEC) {
+                throw new BusinessRuleViolationException("Cannot post to inactive account " + account.getCode());
+            }
 
             JournalLine jl = new JournalLine();
             jl.setAccount(account);
@@ -189,7 +196,7 @@ public class PostingService {
         //      telling the truth — the entry really does belong to the import's
         //      history — not a bug to filter away.
         if (original.getDocType() != JournalDocType.OB && original.getDocType() != JournalDocType.YEC
-                && original.getImportBatchId() == null) fiscal.assertOpen(date);
+                && original.getImportBatchId() == null) fiscal.assertOpenForPosting(date);
         // The same closed-year guard post() applies: an import or OB mirror dated in a
         // closed year would change a year whose result is already in Retained Earnings.
         if ((original.getImportBatchId() != null || original.getDocType() == JournalDocType.OB) && yearCloses != null) {

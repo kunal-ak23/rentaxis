@@ -230,6 +230,23 @@ public class AccountService {
         return Long.toString(code);
     }
 
+    /**
+     * PR #358 R1 P2-1: an account still carrying a balance cannot be deactivated —
+     * posting refuses inactive leaves, so its balance could never be cleared (and an
+     * income or expense leaf could only be closed by the year-end entry's exemption).
+     * Close the year, or move the balance with a journal, first.
+     */
+    private void requireNoBalance(Account account) {
+        java.math.BigDecimal balance = journalLineRepository.accountBalance(
+                com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId(), account.getId());
+        if (balance != null && balance.signum() != 0) {
+            String shown = balance.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
+            throw new BusinessRuleViolationException("Account " + account.getCode() + " still has a balance of "
+                    + shown + "; move the balance (or close the fiscal year) before deactivating it.",
+                    "account.deactivateWithBalance", java.util.Map.of("account", account.getCode(), "balance", shown));
+        }
+    }
+
     @Transactional
     public Account updateAccount(UUID id, AccountUpdate updates) {
         Account existing = getAccountById(id);
@@ -243,6 +260,9 @@ public class AccountService {
         existing.setDescription(updates.description());
         existing.setAccountSubType(updates.accountSubType());
         if (updates.active() != null) {
+            if (!updates.active() && existing.isActive()) {
+                requireNoBalance(existing);
+            }
             existing.setActive(updates.active());
         }
         if (updates.displayOrder() != null) {

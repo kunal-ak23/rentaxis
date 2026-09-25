@@ -142,6 +142,13 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
         """, nativeQuery = true)
     List<BalanceRow> balancesAsOf(@Param("tenantId") UUID tenantId, @Param("asOf") LocalDate asOf, @Param("propertyId") UUID propertyId);
 
+    /** Σ(debit − credit) of one account over all time (PR #358 R1 P2-1). Native: binds the tenant. */
+    @Query(value = """
+        select coalesce(sum(l.debit),0) - coalesce(sum(l.credit),0) from journal_lines l
+        where l.tenant_id = :tenantId and l.account_id = :accountId
+        """, nativeQuery = true)
+    BigDecimal accountBalance(@Param("tenantId") UUID tenantId, @Param("accountId") UUID accountId);
+
     /** {@link #balancesAsOf} without the year-end closing entries dated on {@code asOf} (spec 2026-09-24 §3). */
     @Query(value = """
         select l.account_id as accountId, coalesce(sum(l.debit),0) as debit, coalesce(sum(l.credit),0) as credit

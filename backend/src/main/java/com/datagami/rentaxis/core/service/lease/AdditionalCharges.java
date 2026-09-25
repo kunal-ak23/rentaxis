@@ -81,7 +81,7 @@ class AdditionalCharges {
                         + " cannot charge a deposit — the tenancy's deposit is already held.");
             }
             boolean periodic = type.getBehaviour() == ChargeBehaviour.FEE
-                    && type.getRecognition() == com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.RENT_LIKE;
+                    && type.getRecognition() != null && type.getRecognition().recurs();
             if (type.getBehaviour() != ChargeBehaviour.RENT && !periodic) {
                 // A one-off fee carries no period; it is charged for the act itself.
                 out.add(in);

@@ -123,21 +123,25 @@ class ChargeRecognitionIT extends AbstractPostgresIT {
         FeeTiming timing = tx.execute(s -> leaseRepo.findById(leaseId).orElseThrow().getFeeTiming());
         assertThat(timing).isEqualTo(FeeTiming.OVER_TERM);
 
-        // The TCO: parking parked in Unearned charges; the admin fee is income now;
-        // DEWA passes through the property's Utilities expense leaf, never income.
+        // The TCO: parking and the DEWA recovery are parked in Unearned charges; the
+        // admin fee is income now. DEWA is released to the Utilities expense leaf as it
+        // is recovered (PR #358 R1) — never to income.
         UUID tcoId = tx.execute(s -> leaseRepo.findById(leaseId).orElseThrow().getPostingJournalId());
         List<JournalLine> tco = tx.execute(s -> journalLines.findByEntry_IdOrderByLineNoAsc(tcoId));
-        assertThat(credit(tco, leaf(AccountRole.UNEARNED_CHARGES).getId())).isEqualByComparingTo("3650");
+        assertThat(credit(tco, leaf(AccountRole.UNEARNED_CHARGES).getId())).isEqualByComparingTo("4300");
         assertThat(credit(tco, leaf(AccountRole.PARKING_INCOME).getId())).isEqualByComparingTo("0");
         assertThat(credit(tco, leaf(AccountRole.ADMIN_FEE).getId())).isEqualByComparingTo("1000");
         Account utilities = utilitiesLeaf();
         assertThat(utilities.getAccountType()).isEqualTo(com.datagami.rentaxis.domain.entity.enums.AccountType.EXPENSE);
-        assertThat(credit(tco, utilities.getId())).isEqualByComparingTo("650");
+        assertThat(credit(tco, utilities.getId())).isEqualByComparingTo("0");
 
-        // Two segments: rent, and parking with its own two leaves.
+        // Three segments: rent, parking and the utility recovery, each fee with its own two leaves.
         List<RentSegment> segs = tx.execute(s -> segments.findByLease_IdOrderByFromDateAsc(leaseId));
-        assertThat(segs).hasSize(2);
-        RentSegment parking = segs.stream().filter(sg -> sg.getIncomeAccountId() != null).findFirst().orElseThrow();
+        assertThat(segs).hasSize(3);
+        RentSegment dewa = segs.stream().filter(sg -> utilities.getId().equals(sg.getIncomeAccountId())).findFirst().orElseThrow();
+        assertThat(dewa.getAmount()).isEqualByComparingTo("650");
+        RentSegment parking = segs.stream().filter(sg -> leaf(AccountRole.PARKING_INCOME).getId().equals(sg.getIncomeAccountId()))
+                .findFirst().orElseThrow();
         assertThat(parking.getAmount()).isEqualByComparingTo("3650");
         assertThat(parking.getFromDate()).isEqualTo(START);
         assertThat(parking.getToDate()).isEqualTo(END);
@@ -156,7 +160,11 @@ class ChargeRecognitionIT extends AbstractPostgresIT {
         // The month-end run releases Sep + Oct to parking income.
         recognition.runTo(LocalDate.of(2026, 10, 31), false);
         assertThat(balanceOf(leaf(AccountRole.PARKING_INCOME).getId(), leaseId)).isEqualByComparingTo("-380");
-        assertThat(balanceOf(leaf(AccountRole.UNEARNED_CHARGES).getId(), leaseId)).isEqualByComparingTo("-3270");
+        BigDecimal dewaRecovered = posted(leaseId, "UTILITIES");
+        assertThat(dewaRecovered).isPositive().isLessThan(new BigDecimal("80"));
+        assertThat(balanceOf(utilities.getId(), leaseId)).isEqualByComparingTo(dewaRecovered.negate());
+        assertThat(balanceOf(leaf(AccountRole.UNEARNED_CHARGES).getId(), leaseId))
+                .isEqualByComparingTo(new BigDecimal("-3920").add(dewaRecovered));
     }
 
     /** F14-37's deferred piece: an early exit hands the unearned part of the fee back. */
@@ -166,15 +174,17 @@ class ChargeRecognitionIT extends AbstractPostgresIT {
         recognition.runTo(LocalDate.of(2027, 1, 31), false);
 
         TerminationPreviewDTO preview = termination.preview(leaseId, T);
-        // Rent unearned 30,739.73 (LeaseTerminationServiceIT's figure) plus parking:
-        // earned 24/09 → 15/02 = 145 days = 1,450, unearned 2,200.
-        assertThat(preview.unearnedRent()).isEqualByComparingTo("32939.73");
+        // Rent unearned 30,739.73 (LeaseTerminationServiceIT's figure) plus parking
+        // (earned 24/09 → 15/02 = 145 days = 1,450, unearned 2,200) plus the DEWA
+        // recovery not yet due: 650 − 650 × 145 ÷ 365 = 391.78.
+        assertThat(preview.unearnedRent()).isEqualByComparingTo("33331.51");
 
         termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, "Early exit"), null);
         recognition.runTo(LocalDate.of(2027, 2, 28), false);
 
         assertThat(balanceOf(leaf(AccountRole.PARKING_INCOME).getId(), leaseId)).isEqualByComparingTo("-1450");
         assertThat(balanceOf(leaf(AccountRole.UNEARNED_CHARGES).getId(), leaseId)).isEqualByComparingTo("0");
+        assertThat(posted(leaseId, "UTILITIES")).isEqualByComparingTo("258.22");
         // The one-off admin fee stays earned.
         assertThat(balanceOf(leaf(AccountRole.ADMIN_FEE).getId(), leaseId)).isEqualByComparingTo("-1000");
         assertThat(recognition.scheduleFor(leaseId).stream()
@@ -222,6 +232,12 @@ class ChargeRecognitionIT extends AbstractPostgresIT {
 
     private Account leaf(AccountRole role) {
         return tx.execute(s -> resolver.resolve(role, fixtures.property().getId()));
+    }
+
+    private BigDecimal posted(UUID leaseId, String code) {
+        return recognition.scheduleFor(leaseId).stream()
+                .filter(r -> code.equals(r.chargeCode()) && r.status() == RecognitionStatus.POSTED)
+                .map(RecognitionEntryDTO::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private Account utilitiesLeaf() {

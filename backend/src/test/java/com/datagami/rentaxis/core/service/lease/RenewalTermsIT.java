@@ -46,7 +46,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Renewal terms (spec 2026-09-24 §4a escalation, §4c one-off skip, §4d renewal
- * charges). Ahmed's lease: 85,000 of rent (a 1,000 discount) and a 1,500 admin
+ * charges). Ahmed's lease: 85,000 of rent less a 5,000 discount (he pays 80,000) and a 1,500 admin
  * fee over 02/10/2026 → 01/10/2027, renewed for the next 12 months.
  */
 @SpringBootTest
@@ -97,7 +97,7 @@ class RenewalTermsIT extends AbstractPostgresIT {
 
     private UUID ahmed() {
         return fixtures.postedLease(CONTRACT, START, END,
-                List.of(line("RENT", "85000", "1000"), line("ADMIN_FEE", "1500")), 4, null).lease().getId();
+                List.of(line("RENT", "85000", "5000"), line("ADMIN_FEE", "1500")), 4, null).lease().getId();
     }
 
     private static RenewLeaseRequest request(RentChange change, String ejari, List<LeaseLineInput> extra) {
@@ -113,33 +113,34 @@ class RenewalTermsIT extends AbstractPostgresIT {
     }
 
     @Test
-    void eightPercentOn85000Is91800AndTheDiscountDoesNotRenew() {
+    void eightPercentIsMeasuredOnWhatTheRenterPays() {
         UUID first = ahmed();
         LeaseDTO successor = renewal.renew(first, request(percent("8"), null, null));
 
         List<LeaseLineDTO> copied = lines(successor.getId());
         assertThat(copied).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT");
-        assertThat(copied.get(0).grossAmount()).isEqualByComparingTo("91800");
+        // PR #358 R1 P2-3: net to net — 80,000 × 1.08 = 86,400; the discount does not renew.
+        assertThat(copied.get(0).grossAmount()).isEqualByComparingTo("86400");
         assertThat(copied.get(0).discountAmount()).isEqualByComparingTo("0");
-        assertThat(copied.get(0).netAmount()).isEqualByComparingTo("91800");
-        assertThat(successor.getRenewalPreviousRent()).isEqualByComparingTo("85000");
+        assertThat(copied.get(0).netAmount()).isEqualByComparingTo("86400");
+        assertThat(successor.getRenewalPreviousRent()).isEqualByComparingTo("80000");
         assertThat(successor.getRenewalChangePercent()).isEqualByComparingTo("8.000");
         assertThat(successor.getSkippedOneOffLines()).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("ADMIN_FEE");
 
         // Read back from the database, and printed on the contract in both languages.
         LeaseDTO reread = tx.execute(s -> leaseService.getLeaseById(successor.getId()));
-        assertThat(reread.getRenewalPreviousRent()).isEqualByComparingTo("85000");
+        assertThat(reread.getRenewalPreviousRent()).isEqualByComparingTo("80000");
         String rows = tx.execute(s -> contracts.buildSection3Rows(leaseRepo.findById(successor.getId()).orElseThrow()));
-        assertThat(rows).contains("Rent revised from AED 85,000.00 to AED 91,800.00 (+8.00%)")
+        assertThat(rows).contains("Rent revised from AED 80,000.00 to AED 86,400.00 (+8.00%)")
                 .contains("تم تعديل الإيجار");
     }
 
     @Test
     void aPercentageRoundsToWholeDirhams() {
         UUID first = ahmed();
-        // 85,000 × 1.0333 = 87,830.50 → 87,831
-        LeaseDTO successor = renewal.renew(first, request(percent("3.33"), null, null));
-        assertThat(lines(successor.getId()).get(0).grossAmount()).isEqualByComparingTo("87831");
+        // 80,000 × 1.0333333 = 82,666.664 → 82,667
+        LeaseDTO successor = renewal.renew(first, request(percent("3.33333"), null, null));
+        assertThat(lines(successor.getId()).get(0).grossAmount()).isEqualByComparingTo("82667");
     }
 
     @Test
@@ -153,7 +154,7 @@ class RenewalTermsIT extends AbstractPostgresIT {
         LeaseDTO successor = renewal.renew(first, new RenewLeaseRequest(R_CONTRACT, R_START, R_END.plusMonths(6), null,
                 false, new RentChange(RentChange.Mode.AMOUNT, null, new BigDecimal("130000")), null, null));
         assertThat(lines(successor.getId()).get(0).grossAmount()).isEqualByComparingTo("130000");
-        assertThat(successor.getRenewalChangePercent()).isEqualByComparingTo("52.941");
+        assertThat(successor.getRenewalChangePercent()).isEqualByComparingTo("62.500");
     }
 
     @Test
@@ -196,8 +197,9 @@ class RenewalTermsIT extends AbstractPostgresIT {
         rentSettings.saveSettings(fixtures.property().getId(), settings);
 
         RenewalPreviewDTO preview = renewal.preview(first, request(percent("8"), null, null));
-        assertThat(preview.baseRent()).isEqualByComparingTo("85000");
-        assertThat(preview.newRent()).isEqualByComparingTo("91800");
+        assertThat(preview.baseRent()).isEqualByComparingTo("80000");
+        assertThat(preview.newRent()).isEqualByComparingTo("86400");
+        assertThat(preview.droppedDiscount()).isEqualByComparingTo("5000");
         assertThat(preview.changePercent()).isEqualByComparingTo("8");
         assertThat(preview.warnPercent()).isEqualByComparingTo("5");
         assertThat(preview.exceedsWarn()).isTrue();
@@ -207,6 +209,32 @@ class RenewalTermsIT extends AbstractPostgresIT {
         assertThat(leaseRepo.findByRenewedFromLeaseId(first)).isEmpty();
 
         assertThat(renewal.preview(first, request(percent("4"), null, null)).exceedsWarn()).isFalse();
+    }
+
+    /**
+     * PR #358 R1 P2-3: "no change" keeps what the renter pays. The headline becomes
+     * 80,000 with no discount, the preview names the 5,000 discount that does not
+     * renew, and nothing reads as an increase.
+     */
+    @Test
+    void noChangeKeepsWhatTheRenterPaysAndNamesTheDroppedDiscount() {
+        UUID first = ahmed();
+        RentCollectionSettingsDTO settings = new RentCollectionSettingsDTO();
+        settings.setRenewalIncreaseWarnPercent(new BigDecimal("5"));
+        rentSettings.saveSettings(fixtures.property().getId(), settings);
+
+        RenewalPreviewDTO preview = renewal.preview(first, request(null, null, null));
+        assertThat(preview.baseRent()).isEqualByComparingTo("80000");
+        assertThat(preview.newRent()).isEqualByComparingTo("80000");
+        assertThat(preview.changePercent()).isNull();
+        assertThat(preview.droppedDiscount()).isEqualByComparingTo("5000");
+        assertThat(preview.exceedsWarn()).isFalse();
+
+        LeaseDTO successor = renewal.renew(first, request(null, null, null));
+        LeaseLineDTO rent = lines(successor.getId()).get(0);
+        assertThat(rent.grossAmount()).isEqualByComparingTo("80000");
+        assertThat(rent.discountAmount()).isEqualByComparingTo("0");
+        assertThat(successor.getRenewalChangePercent()).isNull();
     }
 
     @Test

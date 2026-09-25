@@ -852,7 +852,7 @@ public class LeaseService {
                 throw new BusinessRuleViolationException(
                         "A rent-free period needs the contract's rent line; add the rent first.");
             }
-            long termDays = ChronoUnit.DAYS.between(lease.getStartDate(), lease.getEndDate()) + 1;
+            long termDays = rentWindowDays(lease, rent);
             for (var p : periods) concession = concession.add(concessionOf(p, rent.getGrossAmount(), termDays));
         }
         for (LeaseLine line : lines) {
@@ -869,6 +869,40 @@ public class LeaseService {
             leaseLineRepository.save(line);
         }
         leaseLineRepository.flush();
+    }
+
+    /**
+     * PR #358 R1 P2-2: the days the contract's RENT line covers — its own window,
+     * else the lease term. An extension moves the lease's end but never this line's
+     * window, so a computed concession is not diluted by the extension's days.
+     */
+    public static long rentWindowDays(Lease lease, LeaseLine rent) {
+        LocalDate from = rent != null && rent.getPeriodStart() != null ? rent.getPeriodStart() : lease.getStartDate();
+        LocalDate to = rent != null && rent.getPeriodEnd() != null ? rent.getPeriodEnd() : lease.getEndDate();
+        return ChronoUnit.DAYS.between(from, to) + 1;
+    }
+
+    /**
+     * PR #358 R1 P2-2: at posting, each computed concession is frozen as the
+     * period's own figure. After that an amend or an extension re-applies exactly
+     * what the contract said; nothing re-derives it from a changed rent or term.
+     */
+    @Transactional
+    public void freezeRentFree(Lease lease) {
+        if (rentFreePeriods == null) return;
+        List<com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod> periods =
+                rentFreePeriods.findByLease_IdOrderByFromDateAsc(lease.getId());
+        if (periods.isEmpty()) return;
+        List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
+        LeaseLine rent = contractRentLine(lease, lines);
+        if (rent == null) return;
+        long termDays = rentWindowDays(lease, rent);
+        for (var p : periods) {
+            if (p.getConcessionOverride() == null) {
+                p.setConcessionOverride(concessionOf(p, rent.getGrossAmount(), termDays));
+                rentFreePeriods.save(p);
+            }
+        }
     }
 
     /** Inside the term, not overlapping, and not the whole term (spec §4b rules). */
@@ -1946,8 +1980,7 @@ public class LeaseService {
         if (periods.isEmpty()) return List.of();
         LeaseLine rent = contractRentLine(lease, lines);
         BigDecimal headline = rent == null ? BigDecimal.ZERO : rent.getGrossAmount();
-        long termDays = lease.getStartDate() == null || lease.getEndDate() == null ? 1
-                : ChronoUnit.DAYS.between(lease.getStartDate(), lease.getEndDate()) + 1;
+        long termDays = lease.getStartDate() == null || lease.getEndDate() == null ? 1 : rentWindowDays(lease, rent);
         return periods.stream().map(p -> new com.datagami.rentaxis.api.dto.lease.RentFreePeriodDTO(p.getId(),
                 p.getFromDate(), p.getToDate(), p.getConcessionOverride(), p.getNote(),
                 concessionOf(p, headline, termDays),

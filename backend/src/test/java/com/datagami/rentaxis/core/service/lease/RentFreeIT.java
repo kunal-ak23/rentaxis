@@ -50,6 +50,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class RentFreeIT extends AbstractPostgresIT {
 
     @Autowired RentFreeService rentFree;
+    @Autowired LeaseRenewalService renewal;
     @Autowired LeasePostingService posting;
     @Autowired ChequeGenerationService chequeGeneration;
     @Autowired RecognitionService recognition;
@@ -65,6 +66,7 @@ class RentFreeIT extends AbstractPostgresIT {
     @Autowired UserRepository userRepo;
     @Autowired RenterRepository renterRepo;
     @Autowired TransactionTemplate tx;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private LeaseTestFixtures fixtures;
 
@@ -175,6 +177,61 @@ class RentFreeIT extends AbstractPostgresIT {
                 new RentFreePeriodDTO(null, START, LocalDate.of(2026, 6, 30), new BigDecimal("80000"), null, null, null))))
                 .isInstanceOf(BusinessRuleViolationException.class).hasMessageContaining("more than the rent");
         assertThat(rentLine(leaseId).netAmount()).isEqualByComparingTo("72000");
+    }
+
+    /**
+     * PR #358 R1 P2-2: the concession is frozen at posting. An extension adds its own
+     * term with no free period, and a later amend — even one that changes the rent —
+     * re-applies the contract's concession instead of re-deriving it.
+     */
+    @Test
+    void theConcessionIsFrozenAtPostingThroughAnExtensionAndAnAmend() {
+        UUID leaseId = draft();
+        rentFree.replace(leaseId, List.of(new RentFreePeriodDTO(null, START, LocalDate.of(2026, 6, 30), null, null, null, null)));
+        fixtures.generateGrid(leaseId, 4, START);
+        posting.post(leaseId);
+        assertThat(rentLine(leaseId).rentFreeAmount()).isEqualByComparingTo("5917.81");
+
+        renewal.extend(leaseId, new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(LocalDate.of(2027, 8, 31),
+                LocalDate.of(2027, 5, 1), List.of(line("RENT", "18000")),
+                List.of(LeaseTestFixtures.chequeRow("18000", LocalDate.of(2027, 6, 1)))));
+        List<LeaseLineDTO> afterExtension = tx.execute(s -> leaseService.getLines(leaseId));
+        assertThat(afterExtension.stream().filter(l -> "RENT".equals(l.chargeTypeCode())).map(LeaseLineDTO::rentFreeAmount).toList())
+                .extracting(BigDecimal::toPlainString).containsExactly("5917.81", "0.00");
+
+        // Amend: the contract rent raised by 1,000 and the deposit lowered by 1,000,
+        // so the cheques still cover the contract only if the concession is unchanged.
+        List<LeaseLineInput> resent = afterExtension.stream().map(l -> new LeaseLineInput(l.chargeTypeId(), null,
+                l.seqNo() == 1 ? l.grossAmount().add(new BigDecimal("1000"))
+                        : "SECURITY_DEPOSIT".equals(l.chargeTypeCode()) ? l.grossAmount().subtract(new BigDecimal("1000"))
+                        : l.grossAmount(), l.discountAmount(),
+                l.narration(), l.vatApplicable(), l.creditAccountId(), l.periodStart(), l.periodEnd(), l.addendumId()))
+                .toList();
+        posting.amendLines(leaseId, resent, "Rent corrected");
+        LeaseLineDTO rent = rentLine(leaseId);
+        assertThat(rent.grossAmount()).isEqualByComparingTo("73000");
+        assertThat(rent.rentFreeAmount()).isEqualByComparingTo("5917.81");
+        assertThat(rent.netAmount()).isEqualByComparingTo("67082.19");
+    }
+
+    /** PR #358 R1: a monthly lease with a free first month gets one cheque per charged month, never two on a date. */
+    @Test
+    void aMonthlyGridSkipsTheFreeMonthWithOneChequePerChargedMonth() {
+        UUID leaseId = draft();
+        rentFree.replace(leaseId, List.of(JUNE_EXACT));
+        jdbc.update("update leases set payment_terms = 12 where id = ?", leaseId);
+        List<ChequeDTO> grid = chequeGeneration.generate(leaseId,
+                new GenerateChequesRequest(null, null, null, "Emirates NBD", null, false, null));
+        List<LocalDate> rentDates = grid.stream().filter(c -> c.amount().compareTo(new BigDecimal("5000")) != 0)
+                .map(ChequeDTO::chequeDate).toList();
+        assertThat(rentDates).hasSize(11).doesNotHaveDuplicates().startsWith(LocalDate.of(2026, 7, 1))
+                .endsWith(LocalDate.of(2027, 5, 1));
+        assertThat(grid.stream().filter(c -> c.amount().compareTo(new BigDecimal("5000")) != 0)
+                .map(ChequeDTO::amount).reduce(BigDecimal.ZERO, BigDecimal::add)).isEqualByComparingTo("66000");
+        // An explicit count above the charged months is refused rather than doubled up.
+        assertThatThrownBy(() -> chequeGeneration.generate(leaseId,
+                new GenerateChequesRequest(12, null, null, "Emirates NBD", null, false, null)))
+                .isInstanceOf(BusinessRuleViolationException.class).hasMessageContaining("11 charged month");
     }
 
     @Test

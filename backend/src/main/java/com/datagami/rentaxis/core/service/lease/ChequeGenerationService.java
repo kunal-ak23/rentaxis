@@ -500,11 +500,51 @@ public class ChequeGenerationService {
         // after it.
         List<LeaseRentFreePeriod> free = rentFreePeriods == null ? List.of()
                 : rentFreePeriods.findByLease_IdOrderByFromDateAsc(leaseId);
+        if (free.isEmpty()) {
+            return buildRows(rent, rentVat, rentTaxable, extras, n, lease.getContractDate(), firstDueDate,
+                    lease.getEndDate(), distribution, fold);
+        }
+        // PR #358 R1: one instalment per charged month, never two on one date. The
+        // month anchors are the usual ones with each free-window anchor moved to the
+        // day after the window (duplicates dropped); the instalments spread over them
+        // as they would over plain months. A monthly lease (no explicit count) gets
+        // one instalment per charged month; an explicit count above it is refused.
+        List<LocalDate> anchors = chargedAnchors(firstDueDate, lease.getEndDate(), free);
+        int m = anchors.size();
+        if (n > m) {
+            if (r.installments() != null) {
+                throw new BusinessRuleViolationException("The term has " + m + " charged month(s) after its rent-free"
+                        + " period(s); use at most " + m + " instalment(s).");
+            }
+            n = m;
+        }
         List<Row> rows = buildRows(rent, rentVat, rentTaxable, extras, n, lease.getContractDate(), firstDueDate,
                 lease.getEndDate(), distribution, fold);
-        if (free.isEmpty()) return rows;
-        return rows.stream().map(row -> new Row(row.seqNo(), row.postingDate(), outOfFree(row.chequeDate(), free),
-                row.amount(), row.narration(), row.vat(), row.taxable(), row.kind())).toList();
+        List<Row> out = new ArrayList<>(rows.size());
+        int rentIndex = 0;
+        for (Row row : rows) {
+            boolean rentRow = row.kind() == ChequeRowKind.RENT || row.kind() == ChequeRowKind.MIXED;
+            LocalDate due = rentRow && rentIndex < n
+                    ? anchors.get((int) Math.floor((double) (rentIndex++) * m / n))
+                    : outOfFree(row.chequeDate(), free);
+            out.add(new Row(row.seqNo(), row.postingDate(), due, row.amount(), row.narration(), row.vat(),
+                    row.taxable(), row.kind()));
+        }
+        return out;
+    }
+
+    /** Each month's due date from {@code first}, moved out of any rent-free window, distinct and in order. */
+    static List<LocalDate> chargedAnchors(LocalDate first, LocalDate end, List<LeaseRentFreePeriod> free) {
+        long months = com.datagami.rentaxis.core.util.DateMath.monthsInclusive(first, end);
+        List<LocalDate> anchors = new ArrayList<>();
+        for (long k = 0; k < months; k++) {
+            LocalDate a = outOfFree(first.plusMonths(k), free);
+            if (a.isAfter(end)) continue;
+            if (!anchors.isEmpty() && !a.isAfter(anchors.get(anchors.size() - 1))) continue;
+            anchors.add(a);
+        }
+        if (anchors.isEmpty()) anchors.add(outOfFree(first, free));
+        return anchors;
     }
 
     /** The day itself, or the day after the rent-free window it falls in (windows sorted by start). */

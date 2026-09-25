@@ -15,7 +15,9 @@ public record RenewalPreviewDTO(BigDecimal baseRent,
                                 List<Line> copiedLines,
                                 List<LeaseLineDTO> skippedOneOffLines,
                                 BigDecimal warnPercent,
-                                boolean exceedsWarn) {
+                                boolean exceedsWarn,
+                                /* PR #358 R1 P2-3: the current lease's discount, which the renewal does not carry. */
+                                BigDecimal droppedDiscount) {
 
     /** One copied line as the successor will carry it. */
     public record Line(UUID chargeTypeId, String chargeTypeCode, String chargeTypeName, String chargeTypeNameAr,

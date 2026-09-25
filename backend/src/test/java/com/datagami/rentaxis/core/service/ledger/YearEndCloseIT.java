@@ -73,6 +73,8 @@ class YearEndCloseIT extends AbstractPostgresIT {
     @Autowired UserRepository userRepo;
     @Autowired RenterRepository renterRepo;
     @Autowired TransactionTemplate tx;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @Autowired com.datagami.rentaxis.domain.repository.AccountRepository accountRepo;
 
     private LeaseTestFixtures fixtures;
     private static final LocalDate TODAY = LocalDate.of(2026, 9, 25);
@@ -113,6 +115,12 @@ class YearEndCloseIT extends AbstractPostgresIT {
         UUID id = tx.execute(s -> resolver.resolve(role, fixtures.property().getId()).getId());
         return tx.execute(s -> ledger.trialBalance(asOf, null, excludeClosing)).stream()
                 .filter(r -> r.accountId().equals(id)).map(TrialBalanceRowDTO::balance)
+                .findFirst().orElse(BigDecimal.ZERO);
+    }
+
+    private BigDecimal balanceOf(UUID accountId, LocalDate asOf) {
+        return tx.execute(s -> ledger.trialBalance(asOf, null, false)).stream()
+                .filter(r -> r.accountId().equals(accountId)).map(TrialBalanceRowDTO::balance)
                 .findFirst().orElse(BigDecimal.ZERO);
     }
 
@@ -243,6 +251,124 @@ class YearEndCloseIT extends AbstractPostgresIT {
         assertThat(closed.journalId()).isNotNull();
         assertThat(lock()).isEqualTo(LocalDate.of(2025, 1, 31));
         assertThat(balance(FY24_END, AccountRole.RETAINED_EARNINGS, false)).isEqualByComparingTo("-19200");
+    }
+
+    /**
+     * PR #358 R1 P2-1: a leaf retired before this change still holds its balance; the
+     * closing entry zeroes it anyway (doc-type exemption), and re-open reverses it.
+     */
+    @Test
+    void theCloseZeroesAnInactiveLeafAndReopenReversesIt() {
+        twoYears(true);
+        UUID rental = tx.execute(s -> resolver.resolve(AccountRole.RENTAL_INCOME, fixtures.property().getId()).getId());
+        jdbc.update("update accounts set is_active = false where id = ?", rental);
+        closes.close(2024, false, TODAY);
+        assertThat(balanceOf(rental, FY24_END)).isEqualByComparingTo("0");
+        closes.reopen(2024, "Correction", TODAY);
+        assertThat(balanceOf(rental, FY24_END)).isEqualByComparingTo("-18400");
+        // Any other document still cannot post to it.
+        assertThatThrownBy(() -> posting.post(new PostingRequest(JournalDocType.JV, LocalDate.of(2026, 9, 1), "x",
+                PostingRequest.Dimensions.none(), JournalSourceType.MANUAL, null, null, List.of(
+                PostingRequest.dr(AccountRole.CASH, new BigDecimal("1")),
+                PostingRequest.cr(rental, new BigDecimal("1"))))))
+                .isInstanceOf(BusinessRuleViolationException.class).hasMessageContaining("inactive account");
+    }
+
+    /** PR #358 R1 P2-1: an account with a balance cannot be deactivated; once closed out it can. */
+    @Test
+    void anAccountWithABalanceCannotBeDeactivated() {
+        twoYears(true);
+        UUID rental = tx.execute(s -> resolver.resolve(AccountRole.RENTAL_INCOME, fixtures.property().getId()).getId());
+        var a = tx.execute(s -> accountRepo.findById(rental).orElseThrow());
+        AccountService.AccountUpdate off = new AccountService.AccountUpdate(a.getName(), a.getNameEn(), a.getNameAr(),
+                a.getAlias(), a.getDescription(), a.getAccountSubType(), false, a.getDisplayOrder(),
+                a.getProperty() == null ? null : a.getProperty().getId());
+        assertThatThrownBy(() -> accountService.updateAccount(rental, off))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("still has a balance of -36500.00")
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode())
+                .isEqualTo("account.deactivateWithBalance");
+        closes.close(2024, false, TODAY);
+        closes.close(2025, false, TODAY);
+        assertThat(accountService.updateAccount(rental, off).isActive()).isFalse();
+    }
+
+    // ------------------------------------------------------------------
+    // PR #358 R1: a post racing the close
+    // ------------------------------------------------------------------
+
+    private <T> java.util.concurrent.Future<T> inTenant(java.util.concurrent.ExecutorService pool,
+                                                        java.util.concurrent.Callable<T> work) {
+        UUID tenant = fixtures.tenantId();
+        return pool.submit(() -> {
+            TenantContextHolder.setTenantId(tenant);
+            LeaseTestFixtures.authenticateAsTenantAdmin();
+            try {
+                return work.call();
+            } finally {
+                TenantContextHolder.clear();
+                LeaseTestFixtures.clearAuth();
+            }
+        });
+    }
+
+    /** A backdated post still in flight when Close is pressed: the close waits for it and includes it. */
+    @Test
+    void aPostInFlightIsInsideTheClose() throws Exception {
+        twoYears(true);
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        var posted = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        try {
+            var post = inTenant(pool, () -> tx.execute(s -> {
+                expense(LocalDate.of(2024, 12, 20), "100");
+                posted.countDown();
+                try { release.await(20, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException e) { throw new RuntimeException(e); }
+                return null;
+            }));
+            assertThat(posted.await(20, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            var close = inTenant(pool, () -> closes.close(2024, false, TODAY));
+            Thread.sleep(700);
+            assertThat(close.isDone()).as("the close waits for the post in flight").isFalse();
+            release.countDown();
+            post.get(20, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(close.get(20, java.util.concurrent.TimeUnit.SECONDS).netResult()).isEqualByComparingTo("19100");
+            assertThat(balance(FY24_END, AccountRole.RETAINED_EARNINGS, false)).isEqualByComparingTo("-19100");
+            assertThat(pnlTotal(FY24_END, false)).isEqualByComparingTo("0");
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    /** A backdated post arriving while the close is committing: it waits, then meets the lock. */
+    @Test
+    void aPostDuringTheCloseIsRefusedAfterIt() throws Exception {
+        twoYears(true);
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        var closed = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        try {
+            var close = inTenant(pool, () -> tx.execute(s -> {
+                FiscalYearDTO y = closes.close(2024, false, TODAY);
+                closed.countDown();
+                try { release.await(20, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException e) { throw new RuntimeException(e); }
+                return y;
+            }));
+            assertThat(closed.await(20, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            var post = inTenant(pool, () -> { expense(LocalDate.of(2024, 12, 20), "100"); return null; });
+            Thread.sleep(700);
+            assertThat(post.isDone()).as("the post waits for the close").isFalse();
+            release.countDown();
+            close.get(20, java.util.concurrent.TimeUnit.SECONDS);
+            assertThatThrownBy(() -> post.get(20, java.util.concurrent.TimeUnit.SECONDS))
+                    .hasRootCauseInstanceOf(BusinessRuleViolationException.class)
+                    .rootCause().hasMessageContaining("locked");
+            assertThat(balance(FY24_END, AccountRole.RETAINED_EARNINGS, false)).isEqualByComparingTo("-19200");
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
     }
 
     @Test
