@@ -73,6 +73,7 @@ class YearEndCloseIT extends AbstractPostgresIT {
     @Autowired UserRepository userRepo;
     @Autowired RenterRepository renterRepo;
     @Autowired TransactionTemplate tx;
+    @Autowired com.datagami.rentaxis.core.service.report.BalanceSheetService balanceSheets;
     @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     @Autowired com.datagami.rentaxis.domain.repository.AccountRepository accountRepo;
 
@@ -401,5 +402,56 @@ class YearEndCloseIT extends AbstractPostgresIT {
         JournalEntry yec = tx.execute(s -> entries.findById(closed.journalId()).orElseThrow());
         assertThat(yec.getDocType()).isEqualTo(JournalDocType.YEC);
         assertThat(yec.getEntryDate()).isEqualTo(FY24_END);
+    }
+
+    /**
+     * F15-15 / PR #362 P2-2: a legacy line on a property's expense leaf with no property
+     * dimension (against tenant-level cash) is Unassigned, as in the trial balance and
+     * the balance sheet. The close zeroes every property's P&L under that attribution,
+     * and Retained Earnings per property is what the balance sheet shows.
+     */
+    @Test
+    void aLineWithoutAPropertyDimensionClosesIntoUnassignedRetainedEarnings() {
+        twoYears(true);
+        UUID property = fixtures.property().getId();
+        UUID leaf = tx.execute(st -> accountRepo.findAll().stream()
+                .filter(a -> fixtures.tenantId().equals(a.getTenantId()) && property.equals(a.getPropertyId())
+                        && !a.isGroup() && a.getAccountType() == com.datagami.rentaxis.domain.entity.enums.AccountType.EXPENSE)
+                .map(com.datagami.rentaxis.domain.entity.Account::getId).findFirst().orElseThrow());
+        posting.post(new PostingRequest(JournalDocType.JV, LocalDate.of(2024, 11, 5), "legacy bill", PostingRequest.Dimensions.none(),
+                JournalSourceType.MANUAL, null, null, List.of(
+                PostingRequest.dr(leaf, new BigDecimal("2800")), PostingRequest.cr(AccountRole.CASH, new BigDecimal("2800")))));
+
+        YearClosePreviewDTO preview = closes.preview(2024, TODAY);
+        assertThat(preview.lines()).filteredOn(l -> l.accountId().equals(leaf))
+                .singleElement().satisfies(l -> assertThat(l.propertyId()).isNull());
+        assertThat(preview.retainedEarnings()).anySatisfy(r -> {
+            assertThat(r.propertyId()).isEqualTo(property);
+            assertThat(r.profit()).isEqualByComparingTo("19200");
+        }).anySatisfy(r -> {
+            assertThat(r.propertyId()).isNull();
+            assertThat(r.profit()).isEqualByComparingTo("-2800");
+        });
+
+        closes.close(2024, false, TODAY);
+
+        // Every property's P&L (line property, as the trial balance) is zero after the close.
+        List<java.util.Map<String, Object>> left = jdbc.queryForList("""
+                select l.property_id, sum(l.debit - l.credit) as net from journal_lines l
+                join journal_entries e on e.id = l.journal_entry_id join accounts a on a.id = l.account_id
+                where l.tenant_id = ? and e.entry_date <= ? and a.account_type in ('INCOME', 'EXPENSE')
+                group by l.property_id having sum(l.debit - l.credit) <> 0""", fixtures.tenantId(), FY24_END);
+        assertThat(left).as("P&L left open per property").isEmpty();
+
+        // Retained Earnings per property on the balance sheet = the close's split.
+        var bs = tx.execute(st -> balanceSheets.balanceSheet(FY24_END, null, null));
+        var re = tx.execute(st -> resolver.resolve(AccountRole.RETAINED_EARNINGS, null));
+        String reKey = re.getReportLine() != null ? re.getReportLine() : re.getId().toString();
+        var cells = bs.sections().stream().flatMap(x -> x.groups().stream()).flatMap(g -> g.rows().stream())
+                .filter(r -> r.key().equals(reKey)).findFirst().orElseThrow().cells();
+        assertThat(cells.get(property.toString()).amount()).isEqualByComparingTo("19200");
+        assertThat(cells.get(com.datagami.rentaxis.api.dto.report.PropertyPnlDTO.UNASSIGNED).amount()).isEqualByComparingTo("-2800");
+        assertThat(bs.check().get(property.toString()).amount()).isEqualByComparingTo("0");
+        assertThat(bs.check().get(com.datagami.rentaxis.api.dto.report.PropertyPnlDTO.UNASSIGNED).amount()).isEqualByComparingTo("0");
     }
 }
