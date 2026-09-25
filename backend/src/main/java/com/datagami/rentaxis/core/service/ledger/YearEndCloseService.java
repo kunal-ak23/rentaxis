@@ -292,19 +292,19 @@ public class YearEndCloseService {
 
     /**
      * Cumulative income and expense balances through {@code end}, by account and
-     * effective property (the line's, else the account's) — the P&L report's own
+     * the line's property dimension (F15-15) — the P&L report's own
      * rule, so the property split of Retained Earnings matches the property P&L.
      */
     private List<Group> closingGroups(UUID tenant, LocalDate end) {
         return jdbc.query("""
-                select l.account_id as account_id, coalesce(l.property_id, a.property_id) as property_id,
+                select l.account_id as account_id, l.property_id as property_id,
                        coalesce(sum(l.debit), 0) - coalesce(sum(l.credit), 0) as net
                 from journal_lines l
                      join journal_entries e on e.id = l.journal_entry_id
                      join accounts a on a.id = l.account_id
                 where l.tenant_id = :t and e.tenant_id = :t and e.entry_date <= :end
                   and a.account_type in ('INCOME', 'EXPENSE')
-                group by l.account_id, coalesce(l.property_id, a.property_id)
+                group by l.account_id, l.property_id
                 having coalesce(sum(l.debit), 0) - coalesce(sum(l.credit), 0) <> 0
                 order by 1, 2""",
                 params(tenant).addValue("end", end),
@@ -358,14 +358,14 @@ public class YearEndCloseService {
     private List<PnlLine> pnlLines(UUID tenant, LocalDate start, LocalDate end) {
         List<PnlLine> raw = jdbc.query("""
                 select a.id as account_id, a.code, a.name, a.name_ar, a.account_type,
-                       coalesce(l.property_id, a.property_id) as property_id,
+                       l.property_id as property_id,
                        coalesce(sum(l.debit), 0) - coalesce(sum(l.credit), 0) as net
                 from journal_lines l
                      join journal_entries e on e.id = l.journal_entry_id
                      join accounts a on a.id = l.account_id
                 where l.tenant_id = :t and e.tenant_id = :t and e.entry_date between :start and :end
                   and a.account_type in ('INCOME', 'EXPENSE') and e.doc_type <> 'YEC'
-                group by a.id, a.code, a.name, a.name_ar, a.account_type, coalesce(l.property_id, a.property_id)
+                group by a.id, a.code, a.name, a.name_ar, a.account_type, l.property_id
                 having coalesce(sum(l.debit), 0) - coalesce(sum(l.credit), 0) <> 0
                 order by a.code""",
                 params(tenant).addValue("start", start).addValue("end", end),

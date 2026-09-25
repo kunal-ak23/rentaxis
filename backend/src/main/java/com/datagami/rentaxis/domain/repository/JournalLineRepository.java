@@ -164,9 +164,13 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
 
     // ---- property P&L and statement pack (finance-ops spec §1) ----
     //
-    // Effective property of a line = coalesce(line dimension, account's property):
-    // an expense posted to "Cleaning - Marina Tower" without a line dimension still
-    // belongs to Marina Tower. Null on both sides is Unassigned. Reversed entries
+    // Property of a line in the company P&L and balance sheet = the line's own
+    // property dimension, the per-property trial balance's rule (F15-15): the
+    // account's property was a fallback for one side of an entry only (a Marina
+    // Tower leaf without a dimension, against a tenant-level vendor), which left a
+    // property column of the balance sheet off by the entry. No dimension is
+    // Unassigned, for both sides alike. (The statement pack below still reads the
+    // effective property.) Reversed entries
     // and their mirrors both count, as in the trial balance. YEC (the year-end close
     // entry, not built yet) is excluded so a closed year still shows its P&L. Every
     // query takes tenantId explicitly: native SQL bypasses the tenant filter.
@@ -176,7 +180,7 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
     }
 
     @Query(value = """
-        select coalesce(l.property_id, a.property_id) as propertyId, l.account_id as accountId,
+        select l.property_id as propertyId, l.account_id as accountId,
                coalesce(sum(l.debit),0) as debit, coalesce(sum(l.credit),0) as credit,
                count(*) filter (where l.property_id is not null and a.property_id is not null
                                       and l.property_id <> a.property_id) as mismatchLines
@@ -186,7 +190,7 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
           and e.entry_date between :from and :to
           and a.account_type in ('INCOME', 'EXPENSE')
           and e.doc_type <> 'YEC'
-        group by coalesce(l.property_id, a.property_id), l.account_id
+        group by l.property_id, l.account_id
         """, nativeQuery = true)
     List<PnlCellRow> pnlCells(@Param("tenantId") UUID tenantId, @Param("from") LocalDate from, @Param("to") LocalDate to);
 
@@ -225,10 +229,10 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
           and a.account_type in ('INCOME', 'EXPENSE') and e.doc_type <> 'YEC'
           and (:allAccounts or l.account_id in (:accountIds))
           and (:mode = 'ALL'
-               or (:mode = 'UNASSIGNED' and coalesce(l.property_id, a.property_id) is null)
-               or (:mode = 'PROPERTY' and coalesce(l.property_id, a.property_id) = cast(:propertyId as uuid))
-               or (:mode = 'SCOPE' and (coalesce(l.property_id, a.property_id) is null
-                                        or coalesce(l.property_id, a.property_id) in (:scopeIds))))
+               or (:mode = 'UNASSIGNED' and l.property_id is null)
+               or (:mode = 'PROPERTY' and l.property_id = cast(:propertyId as uuid))
+               or (:mode = 'SCOPE' and (l.property_id is null
+                                        or l.property_id in (:scopeIds))))
         order by e.entry_date, e.created_at, e.entry_number, l.line_no
         limit :limit
         """, nativeQuery = true)
@@ -248,8 +252,8 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
              join accounts a on a.id = l.account_id
         where l.tenant_id = :tenantId and e.entry_date between :from and :to
           and a.account_type in ('INCOME', 'EXPENSE') and e.doc_type <> 'YEC'
-          and (coalesce(l.property_id, a.property_id) is null
-               or coalesce(l.property_id, a.property_id) in (:propertyIds))
+          and (l.property_id is null
+               or l.property_id in (:propertyIds))
         """, nativeQuery = true)
     BigDecimal pnlNetMovementFor(@Param("tenantId") UUID tenantId, @Param("from") LocalDate from, @Param("to") LocalDate to,
                                  @Param("propertyIds") Collection<UUID> propertyIds);
@@ -257,7 +261,7 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
     /** Whether this tenant has any journal line whose effective property is this id (a deleted property's column). */
     @Query(value = """
         select exists (select 1 from journal_lines l join accounts a on a.id = l.account_id
-                       where l.tenant_id = :tenantId and coalesce(l.property_id, a.property_id) = :propertyId)
+                       where l.tenant_id = :tenantId and l.property_id = :propertyId)
         """, nativeQuery = true)
     boolean hasLinesForProperty(@Param("tenantId") UUID tenantId, @Param("propertyId") UUID propertyId);
 
@@ -316,13 +320,13 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
      * before them).
      */
     @Query(value = """
-        select coalesce(l.property_id, a.property_id) as propertyId, l.account_id as accountId,
+        select l.property_id as propertyId, l.account_id as accountId,
                coalesce(sum(l.debit),0) as debit, coalesce(sum(l.credit),0) as credit, cast(0 as bigint) as mismatchLines
         from journal_lines l join journal_entries e on e.id = l.journal_entry_id
              join accounts a on a.id = l.account_id
         where l.tenant_id = :tenantId and e.tenant_id = :tenantId and a.tenant_id = :tenantId
           and e.entry_date between :from and :to
-        group by coalesce(l.property_id, a.property_id), l.account_id
+        group by l.property_id, l.account_id
         """, nativeQuery = true)
     List<PnlCellRow> balanceCells(@Param("tenantId") UUID tenantId, @Param("from") LocalDate from, @Param("to") LocalDate to);
 

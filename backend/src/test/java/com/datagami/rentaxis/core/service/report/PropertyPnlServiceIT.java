@@ -150,26 +150,29 @@ class PropertyPnlServiceIT extends AbstractPostgresIT {
         assertThat(r.dataQuality().lineAccountPropertyMismatches()).isEqualTo(1);
         assertThat(r.check().ok()).isTrue();
 
-        // A leaf with no line dimension still belongs to its property (the coalesce).
+        // F15-15: a leaf with no line dimension is Unassigned, where the per-property trial
+        // balance and the balance sheet have it (its cash side is Unassigned too).
         posting.post(new PostingRequest(JournalDocType.JV, LocalDate.of(2026, 9, 21), "no dimension", Dimensions.none(),
                 JournalSourceType.MANUAL, null, null, List.of(dr(marinaCleaning, new BigDecimal("10.00")),
                 cr(AccountRole.CASH, new BigDecimal("10.00")))));
         PropertyPnlDTO again = service.pnl(SEP_1, SEP_30, null, Compare.NONE, Basis.NONE);
-        assertThat(row(again, "EXP_CLEANING", fx.p1.getId().toString()).amount()).isEqualByComparingTo("3010.00");
-        assertThat(again.noi().get("UNASSIGNED").amount()).isEqualByComparingTo("70.00");
+        assertThat(row(again, "EXP_CLEANING", fx.p1.getId().toString()).amount()).isEqualByComparingTo("3000.00");
+        assertThat(row(again, "EXP_CLEANING", "UNASSIGNED").amount()).isEqualByComparingTo("10.00");
+        assertThat(again.noi().get("UNASSIGNED").amount()).isEqualByComparingTo("60.00");
     }
 
     @Test
     void theDrillDownListsEveryLineTheCellSums() {
         List<UUID> cleaning = List.of(fx.leaf(fx.p1, "EXP_CLEANING"), fx.leaf(fx.p2, "EXP_CLEANING"));
-        // A line on Marina's leaf with no dimension: the line-only GL filter misses it, the effective one does not.
+        // F15-15: a line on Marina's leaf with no dimension is not Marina's in the P&L — the
+        // line-only rule, as the trial balance and the line-only GL filter.
         posting.post(new PostingRequest(JournalDocType.JV, LocalDate.of(2026, 9, 21), "no dimension", Dimensions.none(),
                 JournalSourceType.MANUAL, null, null, List.of(dr(cleaning.getFirst(), new BigDecimal("10.00")),
                 cr(AccountRole.CASH, new BigDecimal("10.00")))));
 
         PnlLinesDTO lines = service.lines(SEP_1, SEP_30, fx.p1.getId().toString(), "EXP_CLEANING", null, null);
-        assertThat(lines.lines()).hasSize(2);
-        assertThat(lines.totalDebit().subtract(lines.totalCredit())).isEqualByComparingTo("3010.00");
+        assertThat(lines.lines()).hasSize(1);
+        assertThat(lines.totalDebit().subtract(lines.totalCredit())).isEqualByComparingTo("3000.00");
 
         LedgerFilter lineOnly = new LedgerFilter(SEP_1, SEP_30, fx.p1.getId(), null, null, null, false);
         LedgerFilter effective = new LedgerFilter(SEP_1, SEP_30, fx.p1.getId(), null, null, null, true);
@@ -180,15 +183,15 @@ class PropertyPnlServiceIT extends AbstractPostgresIT {
         assertThat(wide.totalDebit()).isEqualByComparingTo("3010.00");
         assertThat(ledger.generalLedger(List.of(), effective)).extracting(AccountLedgerDTO::accountId).contains(cleaning.getFirst());
 
-        // NOI of Unassigned (no key): the two shared bank items.
+        // NOI of Unassigned (no key): the two shared bank items and the undimensioned 10.00.
         PnlLinesDTO unassigned = service.lines(SEP_1, SEP_30, "UNASSIGNED", null, null, null);
-        assertThat(unassigned.lines()).hasSize(2);
+        assertThat(unassigned.lines()).hasSize(3);
         assertThat(service.lines(SEP_1, SEP_30, "TOTAL", "EXP_CLEANING", null, null).lines()).hasSize(2);
-        // A group subtotal, by group id: Direct Expense in September is AN-311, DEWA and the 10.00.
+        // A group subtotal, by group id: Direct Expense in September is AN-311 and DEWA (the 10.00 is Unassigned).
         PropertyPnlDTO r = service.pnl(SEP_1, SEP_30, null, Compare.NONE, Basis.NONE);
         UUID directExpense = r.groups().stream().filter(g -> g.code().equals("D-01")).findFirst().orElseThrow().groupId();
         PnlLinesDTO group = service.lines(SEP_1, SEP_30, fx.p1.getId().toString(), null, directExpense, null);
-        assertThat(group.totalDebit().subtract(group.totalCredit())).isEqualByComparingTo("7210.00");
+        assertThat(group.totalDebit().subtract(group.totalCredit())).isEqualByComparingTo("7200.00");
     }
 
     @Test
