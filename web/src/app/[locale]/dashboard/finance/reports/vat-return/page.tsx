@@ -10,6 +10,7 @@ import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount } from "@/lib/api/ledger";
+import { formatDate } from "@/lib/format";
 import { lastQuarterStart, vatReturnsApi, type VatFiling, type VatReturn } from "@/lib/api/vatReturns";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 
@@ -118,7 +119,7 @@ export default function VatReturnPage() {
                 <label className="flex flex-col gap-1 text-[11px] font-semibold text-muted">
                     {t("quarter")}
                     <select className={input} value={periodStart} onChange={e => setPeriodStart(e.target.value)} data-testid="vat-quarter">
-                        {quarters.map(q => <option key={q} value={q}>{q}</option>)}
+                        {quarters.map(q => <option key={q} value={q}>{formatDate(q)}</option>)}
                     </select>
                 </label>
                 {data && (
@@ -127,7 +128,8 @@ export default function VatReturnPage() {
                               data.status === "FILED" ? "bg-success/10 text-success border-success/30" : "bg-input text-muted border-border"}`}>
                         {data.status === "FILED" ? <Lock size={13} /> : <Unlock size={13} />}
                         {t(`status${data.status}`)}
-                        {data.filedAt && <> · <bdi dir="ltr">{data.filedAt.slice(0, 10)}</bdi></>}
+                        {data.filedAt && <> · <bdi dir="ltr">{formatDate(data.filedAt.slice(0, 10))}</bdi></>}
+                        {data.filedByName && <> · {t("filedBy", { name: data.filedByName })}</>}
                         {data.filingReference && <> · <bdi dir="ltr">{data.filingReference}</bdi></>}
                     </span>
                 )}
@@ -219,7 +221,9 @@ export default function VatReturnPage() {
                     <ul className="text-xs space-y-1" data-testid="vat-history">
                         {filings.map(f => (
                             <li key={f.id}>
-                                <bdi dir="ltr">{f.periodStart} – {f.periodEnd}</bdi> · {t(`status${f.status}`)}
+                                <bdi dir="ltr">{formatDate(f.periodStart)} – {formatDate(f.periodEnd)}</bdi> · {t(`status${f.status}`)}
+                                {f.filedAt && <> · <bdi dir="ltr">{formatDate(f.filedAt.slice(0, 10))}</bdi></>}
+                                {f.filedByName && <> · {t("filedBy", { name: f.filedByName })}</>}
                                 {f.netVat != null && <> · <bdi dir="ltr">{fmtAmount(f.netVat)}</bdi></>}
                                 {f.reopenReason && <> · {f.reopenReason}</>}
                             </li>

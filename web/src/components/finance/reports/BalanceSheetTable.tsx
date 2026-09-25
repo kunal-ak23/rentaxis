@@ -3,6 +3,7 @@
 import { Fragment } from "react";
 import { useTranslations } from "next-intl";
 import { fmtAmount } from "@/lib/api/ledger";
+import { formatDate } from "@/lib/format";
 import { TOTAL, UNASSIGNED, type BalanceSheet, type PnlAmount, type PnlColumn } from "@/lib/api/propertyReports";
 
 const th = "px-3 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider whitespace-nowrap";
@@ -94,7 +95,7 @@ export default function BalanceSheetTable({ data, locale }: { data: BalanceSheet
                                         {cells(data.earlierYearsResult, "eyr")}
                                     </tr>
                                     <tr className="border-b border-border/50" data-testid="current-year-result">
-                                        <td className={`${td} ps-6`}>{t("bsCurrentYearResult", { from: data.fiscalYearStart })}</td>
+                                        <td className={`${td} ps-6`}>{t("bsCurrentYearResult", { from: formatDate(data.fiscalYearStart) })}</td>
                                         {cells(data.currentYearResult, "cyr")}
                                     </tr>
                                 </>

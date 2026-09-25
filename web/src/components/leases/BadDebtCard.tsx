@@ -1,14 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Ban } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { serverText } from "@/components/finance/bankrec/serverText";
 import { ApiError } from "@/lib/api/facilities";
-import { fmtAmount, ledgerApi, type Account } from "@/lib/api/ledger";
-import { badDebtsApi, type BadDebtItem, type BadDebtWriteOff } from "@/lib/api/badDebts";
+import { fmtAmount } from "@/lib/api/ledger";
+import { formatDate } from "@/lib/format";
+import { badDebtsApi, type BadDebtItem, type BadDebtWriteOff, type RecoveryAccount } from "@/lib/api/badDebts";
 
+const label = "block text-[11px] font-semibold text-muted mb-1";
 const field = "bg-input border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none";
 const btn = "px-3 py-1.5 rounded-lg text-xs font-semibold border border-border hover:bg-input disabled:opacity-50";
 const today = () => new Date().toISOString().slice(0, 10);
@@ -24,17 +26,20 @@ type Pending = { kind: "approve" | "reject" | "reverse" | "recover"; w: BadDebtW
 export default function BadDebtCard({ leaseId, canApprove }: { leaseId: string; canApprove: boolean }) {
     const t = useTranslations("BadDebts");
     const tCommon = useTranslations("Common");
+    const locale = useLocale();
     const [items, setItems] = useState<BadDebtItem[]>([]);
     const [writeOffs, setWriteOffs] = useState<BadDebtWriteOff[]>([]);
     const [picked, setPicked] = useState<Set<string>>(new Set());
     const [reason, setReason] = useState("");
     const [date, setDate] = useState(today());
     const [error, setError] = useState<string | null>(null);
+    // F15-22: a refusal of a dialog's action is shown in the dialog, not on the card behind it.
+    const [dialogError, setDialogError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [pending, setPending] = useState<Pending>(null);
     const [note, setNote] = useState("");
     const [recovery, setRecovery] = useState({ amount: 0, date: today(), accountId: "" });
-    const [banks, setBanks] = useState<Account[]>([]);
+    const [banks, setBanks] = useState<RecoveryAccount[]>([]);
 
     const load = useCallback(async () => {
         try {
@@ -48,9 +53,10 @@ export default function BadDebtCard({ leaseId, canApprove }: { leaseId: string; 
 
     useEffect(() => { load(); }, [load]);
 
-    const run = async (fn: () => Promise<unknown>) => {
+    const run = async (fn: () => Promise<unknown>, inDialog = false) => {
         setBusy(true);
         setError(null);
+        setDialogError(null);
         try {
             await fn();
             setPending(null);
@@ -59,21 +65,27 @@ export default function BadDebtCard({ leaseId, canApprove }: { leaseId: string; 
             setReason("");
             await load();
         } catch (e) {
-            setError(e instanceof ApiError ? serverText(tCommon, e) || e.message : tCommon("loadFailed"));
+            const text = e instanceof ApiError ? serverText(tCommon, e) || e.message : tCommon("loadFailed");
+            if (inDialog) setDialogError(text); else setError(text);
         } finally {
             setBusy(false);
         }
     };
 
+    const openDialog = (next: Pending) => {
+        setDialogError(null);
+        setNote("");
+        setPending(next);
+    };
+
+    // F15-21: only the accounts a receipt for this lease's property may land in.
     const openRecover = async (w: BadDebtWriteOff) => {
-        if (banks.length === 0) {
-            try {
-                setBanks((await ledgerApi.accounts.list()).filter(a => !a.group && a.accountType === "ASSET"
-                    && (a.accountSubType === "BANK" || a.accountSubType === "CASH")));
-            } catch { /* the select stays empty */ }
-        }
-        setRecovery({ amount: w.amount - w.recovered, date: today(), accountId: "" });
-        setPending({ kind: "recover", w });
+        setBanks([]);
+        try {
+            setBanks(await badDebtsApi.recoveryAccounts(w.id));
+        } catch { /* the select stays empty */ }
+        setRecovery({ amount: Math.round((w.amount - w.recovered) * 100) / 100, date: today(), accountId: "" });
+        openDialog({ kind: "recover", w });
     };
 
     if (items.length === 0 && writeOffs.length === 0) return null;
@@ -93,14 +105,14 @@ export default function BadDebtCard({ leaseId, canApprove }: { leaseId: string; 
                                        if (e.target.checked) next.add(i.chequeId); else next.delete(i.chequeId);
                                        setPicked(next);
                                    }} />
-                            <span>#{i.seqNo} · <bdi dir="ltr">{i.date}</bdi> · {t(`itemStatus.${i.status === "BOUNCED" ? "BOUNCED" : "UNPAID"}`)}</span>
+                            <span>#{i.seqNo} · <bdi dir="ltr">{formatDate(i.date)}</bdi> · {t(`itemStatus.${i.status === "BOUNCED" ? "BOUNCED" : "UNPAID"}`)}</span>
                             <span className="ms-auto tabular-nums"><bdi dir="ltr">{fmtAmount(i.amount)}</bdi></span>
                         </label>
                     ))}
                     <div className="flex flex-wrap items-end gap-2 pt-2">
                         <input className={`${field} flex-1 min-w-[12rem]`} placeholder={t("reason")} value={reason}
-                               onChange={e => setReason(e.target.value)} data-testid="bd-reason" />
-                        <input type="date" className={field} value={date} onChange={e => setDate(e.target.value)} />
+                               aria-label={t("reason")} onChange={e => setReason(e.target.value)} data-testid="bd-reason" />
+                        <input type="date" className={field} value={date} aria-label={t("date")} onChange={e => setDate(e.target.value)} />
                         <button type="button" className={btn} disabled={busy || picked.size === 0 || !reason.trim()} data-testid="bd-propose"
                                 onClick={() => run(() => badDebtsApi.propose({ leaseId, chequeIds: [...picked], date, reason }))}>
                             {t("propose", { amount: fmtAmount(total) })}
@@ -115,23 +127,37 @@ export default function BadDebtCard({ leaseId, canApprove }: { leaseId: string; 
                             <div className="flex flex-wrap items-center gap-2">
                                 <span className="font-semibold">{t(`status.${w.status}`)}</span>
                                 <span className="tabular-nums"><bdi dir="ltr">{fmtAmount(w.amount)}</bdi></span>
-                                <span className="text-muted"><bdi dir="ltr">{w.writeOffDate}</bdi> · {w.reason}</span>
+                                <span className="text-muted"><bdi dir="ltr">{formatDate(w.writeOffDate)}</bdi> · {w.reason}</span>
+                                {w.journalNumber && <span className="font-mono text-muted" data-testid="bd-journal"><bdi dir="ltr">{w.journalNumber}</bdi></span>}
+                                {w.reversalJournalNumber && (
+                                    <span className="font-mono text-muted">{t("reversedBy")} <bdi dir="ltr">{w.reversalJournalNumber}</bdi></span>
+                                )}
                                 {w.recovered > 0 && <span className="text-success">{t("recovered", { amount: fmtAmount(w.recovered) })}</span>}
                                 <span className="ms-auto flex gap-2">
                                     {canApprove && w.status === "PROPOSED" && (
                                         <>
-                                            <button type="button" className={btn} data-testid="bd-approve" onClick={() => setPending({ kind: "approve", w })}>{t("approve")}</button>
-                                            <button type="button" className={btn} onClick={() => setPending({ kind: "reject", w })}>{t("reject")}</button>
+                                            <button type="button" className={btn} data-testid="bd-approve" onClick={() => openDialog({ kind: "approve", w })}>{t("approve")}</button>
+                                            <button type="button" className={btn} onClick={() => openDialog({ kind: "reject", w })}>{t("reject")}</button>
                                         </>
                                     )}
                                     {w.status === "WRITTEN_OFF" && w.recovered < w.amount && (
                                         <button type="button" className={btn} onClick={() => openRecover(w)}>{t("recover")}</button>
                                     )}
                                     {canApprove && w.status === "WRITTEN_OFF" && w.recovered === 0 && (
-                                        <button type="button" className={btn} onClick={() => setPending({ kind: "reverse", w })}>{t("reverse")}</button>
+                                        <button type="button" className={btn} onClick={() => openDialog({ kind: "reverse", w })}>{t("reverse")}</button>
                                     )}
                                 </span>
                             </div>
+                            {w.recoveries.length > 0 && (
+                                <ul className="mt-1 space-y-0.5 text-muted" data-testid="bd-recoveries">
+                                    {w.recoveries.map(r => (
+                                        <li key={r.id}>
+                                            <bdi dir="ltr">{formatDate(r.recoveredOn)}</bdi> · <bdi dir="ltr">{fmtAmount(r.amount)}</bdi>
+                                            {r.journalNumber && <> · <span className="font-mono"><bdi dir="ltr">{r.journalNumber}</bdi></span></>}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
                             {w.vatLease && <p className="mt-1 text-warning">{t("vatNote")}</p>}
                         </li>
                     ))}
@@ -154,27 +180,46 @@ export default function BadDebtCard({ leaseId, canApprove }: { leaseId: string; 
                 onConfirm={() => {
                     if (!pending) return;
                     const w = pending.w;
-                    if (pending.kind === "approve") run(() => badDebtsApi.approve(w.id, note));
-                    if (pending.kind === "reject") run(() => badDebtsApi.reject(w.id, note));
-                    if (pending.kind === "reverse") run(() => badDebtsApi.reverse(w.id, today(), note));
-                    if (pending.kind === "recover") run(() => badDebtsApi.recover(w.id, recovery));
+                    if (pending.kind === "approve") run(() => badDebtsApi.approve(w.id, note.trim() || undefined), true);
+                    if (pending.kind === "reject") run(() => badDebtsApi.reject(w.id, note), true);
+                    if (pending.kind === "reverse") run(() => badDebtsApi.reverse(w.id, today(), note), true);
+                    if (pending.kind === "recover") run(() => badDebtsApi.recover(w.id, recovery), true);
                 }}
             >
                 {pending?.kind === "recover" ? (
                     <div className="grid gap-2">
-                        <input type="number" className={field} value={recovery.amount} min={0} step={0.01}
-                               onChange={e => setRecovery({ ...recovery, amount: Number(e.target.value) })} aria-label={t("amount")} />
-                        <input type="date" className={field} value={recovery.date} onChange={e => setRecovery({ ...recovery, date: e.target.value })} />
-                        <select className={field} value={recovery.accountId} onChange={e => setRecovery({ ...recovery, accountId: e.target.value })}
-                                aria-label={t("account")}>
-                            <option value="">{t("account")}</option>
-                            {banks.map(b => <option key={b.id} value={b.id}>{b.code} · {b.name}</option>)}
-                        </select>
+                        <div>
+                            <label className={label} htmlFor="bd-rec-amount">{t("amount")}</label>
+                            <input id="bd-rec-amount" type="number" className={`${field} w-full`} value={recovery.amount} min={0} step={0.01}
+                                   onChange={e => setRecovery({ ...recovery, amount: Number(e.target.value) })} />
+                        </div>
+                        <div>
+                            <label className={label} htmlFor="bd-rec-date">{t("date")}</label>
+                            <input id="bd-rec-date" type="date" className={`${field} w-full`} value={recovery.date}
+                                   onChange={e => setRecovery({ ...recovery, date: e.target.value })} />
+                        </div>
+                        <div>
+                            <label className={label} htmlFor="bd-rec-account">{t("account")}</label>
+                            <select id="bd-rec-account" className={`${field} w-full`} value={recovery.accountId} data-testid="bd-rec-account"
+                                    onChange={e => setRecovery({ ...recovery, accountId: e.target.value })}>
+                                <option value="">{t("chooseAccount")}</option>
+                                {banks.map(b => (
+                                    <option key={b.id} value={b.id}>
+                                        {[b.code, locale === "ar" && b.nameAr ? b.nameAr : b.name, b.bankAccount].filter(Boolean).join(" · ")}
+                                    </option>
+                                ))}
+                            </select>
+                            {banks.length === 0 && <p className="mt-1 text-[11px] text-muted">{t("noRecoveryAccounts")}</p>}
+                        </div>
                     </div>
                 ) : (
-                    <input className={`${field} w-full`} placeholder={t("note")} value={note} onChange={e => setNote(e.target.value)}
-                           data-testid="bd-note" />
+                    <div>
+                        <label className={label} htmlFor="bd-note">{pending?.kind === "approve" ? t("noteOptional") : t("note")}</label>
+                        <input id="bd-note" className={`${field} w-full`} value={note} onChange={e => setNote(e.target.value)}
+                               data-testid="bd-note" />
+                    </div>
                 )}
+                {dialogError && <p className="text-xs text-error" role="alert" data-testid="bd-dialog-error">{dialogError}</p>}
             </ConfirmDialog>
         </div>
     );

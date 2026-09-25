@@ -74,8 +74,9 @@ export default function TicketChargesCard({ ticketId }: { ticketId: string }) {
                 </ul>
             )}
             {data.candidates.length > 0 && (
-                <div className="flex gap-2 mb-3">
-                    <select className={`${field} flex-1`} value={pick} onChange={e => setPick(e.target.value)} data-testid="ticket-bill-pick">
+                // F15-23: the select may shrink (min-w-0) so the Link button stays inside the card.
+                <div className="flex items-center gap-2 mb-3 min-w-0">
+                    <select className={`${field} flex-1 min-w-0 w-full truncate`} value={pick} onChange={e => setPick(e.target.value)} data-testid="ticket-bill-pick">
                         <option value="">{t("pickBill")}</option>
                         {data.candidates.map(b => (
                             <option key={b.voucherId} value={b.voucherId}>
@@ -83,7 +84,7 @@ export default function TicketChargesCard({ ticketId }: { ticketId: string }) {
                             </option>
                         ))}
                     </select>
-                    <button type="button" className={btn} disabled={!pick || busy} data-testid="ticket-bill-link"
+                    <button type="button" className={`${btn} shrink-0`} disabled={!pick || busy} data-testid="ticket-bill-link"
                             onClick={() => run(() => ticketChargesApi.link(ticketId, pick))}>{t("link")}</button>
                 </div>
             )}

@@ -1180,6 +1180,8 @@ export type PenaltyAssessment = {
   /** F14-30: VAT on top of `amount`; the renter owes amount + vatAmount. */
   vatable?: boolean;
   vatAmount?: number;
+  /** F15-18: the VAT the charge carries — posted, or what approval will add while proposed. */
+  expectedVat?: number;
   /** F14-49 / F14-50: what raised the charge. */
   sourceType?: "TICKET" | "BOOKING" | null;
   sourceId?: string | null;

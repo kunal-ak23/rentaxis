@@ -9,6 +9,7 @@ import PnlTable, { type DrillTarget } from "@/components/finance/reports/PnlTabl
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount } from "@/lib/api/ledger";
+import { formatDate } from "@/lib/format";
 import { lastMonth, propertyReportsApi, TOTAL, type Compare, type PropertyPnl } from "@/lib/api/propertyReports";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 
@@ -135,7 +136,7 @@ export default function CompanyPlPage() {
             {loadError && <LoadErrorBanner message={loadError} onRetry={() => load(applied)} />}
 
             {data?.priorFrom && data.priorTo && (
-                <p className="text-xs text-muted mb-2">{t("priorPeriod", { from: data.priorFrom, to: data.priorTo })}</p>
+                <p className="text-xs text-muted mb-2">{t("priorPeriod", { from: formatDate(data.priorFrom), to: formatDate(data.priorTo) })}</p>
             )}
 
             {loading ? (
