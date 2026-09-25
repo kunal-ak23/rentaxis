@@ -71,7 +71,9 @@ export type AccountRole =
   /** F14-18: periodic fees billed for the term and not yet earned (B-01-08). */
   | "UNEARNED_CHARGES"
   /** Spec 2026-09-24 §3: the year-end close's equity leaf (F-03). */
-  | "RETAINED_EARNINGS";
+  | "RETAINED_EARNINGS"
+  /** F15-11: inter-property clearing (A-02-06), one leaf per property. */
+  | "INTERPROPERTY_CLEARING";
 
 export type JournalDocType =
   | "TCO"
@@ -382,6 +384,12 @@ export const ledgerApi = {
     postManual: (body: ManualJournalBody) => apiSend<JournalEntry>("POST", "/finance/journals", body),
     reverse: (id: string, body: { date: string; reason: string }) => apiSend<JournalEntry>("POST", `/finance/journals/${id}/reverse`, body),
     docTypes: () => apiGet<JournalDocType[]>("/finance/journals/doc-types"),
+    /** F15-11: journals that do not balance per property and have no clearing repair yet (admins). */
+    interPropertyUnbalanced: () => apiGet<string[]>("/finance/journals/interproperty-repair"),
+    /** F15-11: one clearing journal per such journal; idempotent. */
+    interPropertyRepair: () =>
+      apiSend<{ examined: number; repaired: { originalNumber: string; repairNumber: string; repairDate: string; amount: number }[] }>(
+        "POST", "/finance/journals/interproperty-repair", {}),
   },
   fiscal: {
     get: () => apiGet<FiscalSettings>("/finance/fiscal-settings"),

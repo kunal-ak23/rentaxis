@@ -37,8 +37,27 @@ public class JournalController {
     private static final int MAX_PAGE_SIZE = 200;
 
     private final JournalService service;
+    private final com.datagami.rentaxis.core.service.ledger.InterPropertyRepairService repair;
 
-    public JournalController(JournalService service) { this.service = service; }
+    public JournalController(JournalService service,
+                             com.datagami.rentaxis.core.service.ledger.InterPropertyRepairService repair) {
+        this.service = service;
+        this.repair = repair;
+    }
+
+    /** F15-11: the journals that do not balance per property and have no repair yet. */
+    @GetMapping("/interproperty-repair")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<List<UUID>> interPropertyUnbalanced() {
+        return ResponseEntity.ok(repair.unbalanced());
+    }
+
+    /** F15-11: posts one clearing journal per such journal; idempotent (a second run posts nothing). */
+    @PostMapping("/interproperty-repair")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<com.datagami.rentaxis.core.service.ledger.InterPropertyRepairService.Result> interPropertyRepair() {
+        return ResponseEntity.ok(repair.repair());
+    }
 
     @GetMapping
     public ResponseEntity<Page<JournalEntryDTO>> list(

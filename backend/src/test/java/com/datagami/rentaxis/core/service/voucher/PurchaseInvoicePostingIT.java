@@ -241,11 +241,14 @@ class PurchaseInvoicePostingIT extends AbstractPostgresIT {
 
         List<Row> rows = journalRows(vouchers.post(v.getId()).getJournalId());
         assertThat(rows).extracting(Row::accountId, Row::propertyId)
-                .containsExactly(
+                .startsWith(
                         tuple(pestControl.getId(), propertyId),
                         tuple(lifeguard.getId(), otherPropertyId),
                         tuple(inputVat.getId(), null),
                         tuple(vendor.getPayableAccount().getId(), null));
+        // F15-11: the invoice spans two buildings and head office, so it clears per property.
+        assertThat(rows.subList(4, rows.size())).extracting(Row::propertyId)
+                .containsExactlyInAnyOrder(propertyId, otherPropertyId, null);
         assertTrialBalanceBalances();
     }
 

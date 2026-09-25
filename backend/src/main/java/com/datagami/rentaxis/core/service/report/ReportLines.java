@@ -80,6 +80,7 @@ public final class ReportLines {
         role(AccountRole.RENTER_REFUND_PAYABLE, "Refunds payable – renters", "مبالغ مستردة مستحقة للمستأجرين");
         role(AccountRole.UNEARNED_CHARGES, "Unearned charges", "رسوم غير مكتسبة");
         role(AccountRole.RETAINED_EARNINGS, "Retained earnings", "الأرباح المحتجزة");
+        role(AccountRole.INTERPROPERTY_CLEARING, "Inter-property clearing", "مقاصة بين العقارات");
         for (ExpenseCategory c : DIRECT_EXPENSE_CATEGORIES) {
             LABELS.put(c.reportLine(), new String[]{c.nameEn(), c.nameAr()});
         }
@@ -102,7 +103,7 @@ public final class ReportLines {
             case RENTAL_INCOME, ADMIN_FEE, PARKING_INCOME, COOLING_CHARGES, MAINTENANCE_CHARGES, RENT_PENALTY,
                  CHEQUE_RETURN_PENALTY, OTHER_INCOME, FORFEITED_INCOME, BANK_INTEREST_INCOME -> AccountType.INCOME;
             case DISCOUNT_ALLOWED, ROUNDING_OFF, BANK_CHARGES -> AccountType.EXPENSE;
-            case RENT_RECEIVABLE, PDC_RECEIVABLE, BANK, CASH, INPUT_VAT -> AccountType.ASSET;
+            case RENT_RECEIVABLE, PDC_RECEIVABLE, BANK, CASH, INPUT_VAT, INTERPROPERTY_CLEARING -> AccountType.ASSET;
             case ADVANCE_RENT, SECURITY_DEPOSIT, PARKING_DEPOSIT, OUTPUT_VAT, OUTPUT_VAT_DEFERRED, PDC_PAYABLE,
                  BANK_SUSPENSE, RENTER_REFUND_PAYABLE, UNEARNED_CHARGES -> AccountType.LIABILITY;
             case OPENING_BALANCE_DIFFERENCE, RETAINED_EARNINGS -> AccountType.EQUITY;

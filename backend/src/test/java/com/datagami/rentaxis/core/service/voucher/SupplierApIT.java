@@ -76,6 +76,12 @@ class SupplierApIT extends AbstractPostgresIT {
     @Autowired UserRepository userRepo;
     @Autowired UserPropertyAssignmentRepository assignmentRepo;
 
+    /** F15-11: the tenant-level clearing leaf a chart without A-02-06 is given on first use. */
+    private UUID clearing() {
+        return jdbc.queryForObject("select id from accounts where tenant_id = ? and code = 'A-02-06-001'", UUID.class,
+                com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId());
+    }
+
     static final LocalDate AUG_1 = LocalDate.of(2026, 8, 1);
     static final LocalDate AUG_15 = LocalDate.of(2026, 8, 15);
     static final LocalDate AUG_20 = LocalDate.of(2026, 8, 20);
@@ -221,7 +227,10 @@ class SupplierApIT extends AbstractPostgresIT {
         assertThat(journal(pcn)).extracting(Row::accountId, Row::debit, Row::credit).containsExactlyInAnyOrder(
                 org.assertj.core.api.Assertions.tuple(rmP1.getId(), new BigDecimal("0.00"), new BigDecimal("200.00")),
                 org.assertj.core.api.Assertions.tuple(inputVat.getId(), new BigDecimal("0.00"), new BigDecimal("10.00")),
-                org.assertj.core.api.Assertions.tuple(gulf.getPayableAccount().getId(), new BigDecimal("210.00"), new BigDecimal("0.00")));
+                org.assertj.core.api.Assertions.tuple(gulf.getPayableAccount().getId(), new BigDecimal("210.00"), new BigDecimal("0.00")),
+                // F15-11: the note's expense is on P1, its payable and VAT on head office — cleared per property.
+                org.assertj.core.api.Assertions.tuple(clearing(), new BigDecimal("200.00"), new BigDecimal("0.00")),
+                org.assertj.core.api.Assertions.tuple(clearing(), new BigDecimal("0.00"), new BigDecimal("200.00")));
         OpenItemDTO open = item(payables.vendorItems(gulf.getId()), "GC-R14-0905");
         assertThat(open.open()).isEqualByComparingTo("3990.00");
         PayablesAgingDTO.Figures f = row(payables.aging(SEP_10, gulf.getId(), null), gulf).figures();

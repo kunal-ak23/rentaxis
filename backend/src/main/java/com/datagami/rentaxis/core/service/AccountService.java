@@ -332,6 +332,11 @@ public class AccountService {
         seed(byCode, "A-02-04-001", "Input VAT on Purchases", "ضريبة المدخلات على المشتريات", AccountType.ASSET, AccountSubType.OTHER_ASSET, "A-02-04", null, false);
         seed(byCode, "A-02-05", "Cash Group", "النقد", AccountType.ASSET, AccountSubType.CASH, "A-02", "Cash in hand and petty cash", true);
         seed(byCode, "A-02-05-001", "Cash Account", "حساب النقد", AccountType.ASSET, AccountSubType.CASH, "A-02-05", null, false);
+        // F15-11: inter-property clearing (role INTERPROPERTY_CLEARING), one leaf per
+        // property from the template; A-02-06-001 is the tenant-level leaf (head office).
+        // Changeset 138 adds them to charts seeded before they existed.
+        seed(byCode, "A-02-06", "Inter-property clearing", "مقاصة بين العقارات", AccountType.ASSET, AccountSubType.OTHER_ASSET, "A-02", "Balances a journal that spans properties, one leaf per property", true);
+        seed(byCode, "A-02-06-001", "Inter-property clearing – head office", "مقاصة بين العقارات – المكتب الرئيسي", AccountType.ASSET, AccountSubType.OTHER_ASSET, "A-02-06", null, false);
 
         seed(byCode, "B", "Liability", "الالتزامات", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, null, "All liabilities", true);
         seed(byCode, "B-01", "Current Liability", "الالتزامات المتداولة", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, "B", null, true);

@@ -109,6 +109,41 @@ public record PostingRequest(
         return new PostingRequest(docType, entryDate, narration, dims, sourceType, sourceId, importBatchId, List.copyOf(flat));
     }
 
+    /**
+     * F15-11: this request with an inter-property clearing leg per property its lines
+     * leave unbalanced, so each property nets to zero (a property's trial balance
+     * reads the line's own property). A property-less remainder clears on the
+     * tenant-level leaf. The legs carry only the property; the lines are unchanged.
+     * Effective properties are worked out as {@code PostingService} does: a line's
+     * dims over the header's, or exactly its own when {@code ownProperty}.
+     */
+    public PostingRequest withInterPropertyClearing() {
+        java.util.Map<UUID, BigDecimal> net = new java.util.LinkedHashMap<>();
+        Dimensions header = dims == null ? Dimensions.none() : dims;
+        for (Line l : lines) {
+            UUID p = propertyOf(l, header);
+            BigDecimal a = l.amount().setScale(2, java.math.RoundingMode.HALF_UP);
+            net.merge(p, l.side() == Side.DR ? a : a.negate(), BigDecimal::add);
+        }
+        if (net.size() < 2) return this;
+        List<Line> out = new ArrayList<>(lines);
+        for (java.util.Map.Entry<UUID, BigDecimal> e : net.entrySet()) {
+            BigDecimal n = e.getValue();
+            if (n.signum() == 0) continue;
+            Line leg = new Line(new ByRole(AccountRole.INTERPROPERTY_CLEARING), n.signum() > 0 ? Side.CR : Side.DR,
+                    n.abs(), Dimensions.ofProperty(e.getKey()), "Inter-property clearing", NO_PAIR, true);
+            out.add(leg);
+        }
+        return new PostingRequest(docType, entryDate, narration, dims, sourceType, sourceId, importBatchId, List.copyOf(out));
+    }
+
+    /** The property a line posts under: PostingService's own merge. */
+    static UUID propertyOf(Line l, Dimensions header) {
+        if (l.ownProperty()) return l.dims() == null ? null : l.dims().propertyId();
+        Dimensions d = l.dims() == null ? header : l.dims().mergedOver(header);
+        return d == null ? null : d.propertyId();
+    }
+
     public static Line dr(AccountRole role, BigDecimal amount) { return new Line(new ByRole(role), Side.DR, amount, null, null); }
     public static Line cr(AccountRole role, BigDecimal amount) { return new Line(new ByRole(role), Side.CR, amount, null, null); }
     public static Line dr(UUID accountId, BigDecimal amount) { return new Line(new ById(accountId), Side.DR, amount, null, null); }

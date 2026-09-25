@@ -281,3 +281,5 @@ databaseChangeLog:
       file: db/changelog/changesets/136-lease-current-rent.yaml
   - include:
       file: db/changelog/changesets/137-lease-document-created-at.yaml
+  - include:
+      file: db/changelog/changesets/138-interproperty-clearing.yaml

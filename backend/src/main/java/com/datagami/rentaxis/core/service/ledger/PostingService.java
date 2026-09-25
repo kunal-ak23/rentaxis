@@ -58,6 +58,13 @@ public class PostingService {
         this.yearCloses = yearCloses;
     }
 
+    private InterPropertyClearingAccounts clearingAccounts;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setClearingAccounts(InterPropertyClearingAccounts clearingAccounts) {
+        this.clearingAccounts = clearingAccounts;
+    }
+
     @Transactional
     public JournalEntry post(PostingRequest r) {
         validateShape(r);
@@ -123,6 +130,7 @@ public class PostingService {
         if (dr.compareTo(cr) != 0) {
             throw new BusinessRuleViolationException("Journal entry is not balanced: debit " + dr + " vs credit " + cr);
         }
+        requireBalancedPerProperty(r, e.getLines());
         // Finance-ops spec §4: the bank lock, no doc-type exemptions. Before the
         // entry number, so a posting waiting on a finalize (FOR SHARE against its
         // FOR UPDATE) never holds the number sequence while it waits.
@@ -240,6 +248,34 @@ public class PostingService {
         return saved;
     }
 
+    /**
+     * F15-11: every journal balances per property — a property's trial balance reads
+     * the lines carrying it, so a journal that leaves a property's lines net of zero
+     * puts that property's TB out. A journal that spans properties posts a clearing
+     * leg in each ({@link PostingRequest#withInterPropertyClearing()}).
+     *
+     * <p>Exempt: an opening balance ({@code OB} — a property's imported opening TB is
+     * what it is; its difference goes to Opening Balance Difference) and the
+     * F15-11 repair journal, which balances an old journal and is cross-property by
+     * construction. A reversal mirrors its original and is not checked.</p>
+     */
+    static void requireBalancedPerProperty(PostingRequest r, List<JournalLine> ls) {
+        if (r.docType() == JournalDocType.OB || r.sourceType() == JournalSourceType.INTERPROPERTY_REPAIR) return;
+        Map<UUID, BigDecimal> net = new java.util.LinkedHashMap<>();
+        for (JournalLine l : ls) {
+            if (l.getPropertyId() == null) continue;
+            net.merge(l.getPropertyId(), l.getDebit().subtract(l.getCredit()), BigDecimal::add);
+        }
+        for (Map.Entry<UUID, BigDecimal> e : net.entrySet()) {
+            if (e.getValue().signum() != 0) {
+                throw new BusinessRuleViolationException("Journal entry does not balance per property: property "
+                        + e.getKey() + " is out by " + e.getValue().toPlainString()
+                        + ". A journal spanning properties needs an inter-property clearing leg in each.",
+                        "ledger.propertyUnbalanced", Map.of("amount", e.getValue().toPlainString()));
+            }
+        }
+    }
+
     private void requireNotInClosedYear(LocalDate date) {
         UUID tenantId = com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId();
         if (tenantId == null || date == null) return;
@@ -260,7 +296,15 @@ public class PostingService {
     }
 
     private Account resolveAccount(AccountRef ref, UUID propertyId) {
-        if (ref instanceof ByRole br) return resolver.resolve(br.role(), propertyId);
+        if (ref instanceof ByRole br) {
+            if (br.role() == com.datagami.rentaxis.domain.entity.enums.AccountRole.INTERPROPERTY_CLEARING
+                    && clearingAccounts != null) {
+                // F15-11: never refuse a spanning journal over the account that balances it.
+                Account a = resolver.resolveOrNull(br.role(), propertyId);
+                return a != null ? a : clearingAccounts.ensureDefault();
+            }
+            return resolver.resolve(br.role(), propertyId);
+        }
         UUID id = ((ById) ref).accountId();
         return accounts.findById(id).orElseThrow(() -> new NotFoundException("Account not found: " + id));
     }
