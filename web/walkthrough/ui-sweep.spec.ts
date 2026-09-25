@@ -255,3 +255,51 @@ for (const [width, height] of [[1440, 900], [1280, 720]] as const) {
         await sa.close();
     });
 }
+
+// UI PR 2: the Cheque / Cash Collection hub's pills and the ledgers opened with a
+// pick (they load nothing without one), for the three roles, EN and AR, laptop and phone.
+const HUB_TABS = ['deposit', 'due', 'overdue', 'returned', 'post-dated', 'penalties', 'all'] as const;
+for (const { role } of ROLES) {
+    for (const locale of LOCALES) {
+        test(`collection + ledgers ${role} ${locale}`, async ({ browser }) => {
+            const { creds, renterId, journalId, leaseId } = fixture();
+            const me = await api<{ id: string; role: string; tenantId: string }>(null, 'POST', '/api/auth/login', creds[role]);
+            const actor: Actor = { id: me.id, role: me.role, tenantId: fixture().tenantId };
+            const failures: string[] = [];
+            for (const viewport of WIDTHS) {
+                const context = await browser.newContext({ baseURL: BASE_URL, viewport, storageState: path.join(STATE_DIR, `${role}.json`) });
+                const page = await context.newPage();
+                const hub = DASHBOARD_ROUTES.find(r => r.path === '/dashboard/collections')!;
+                if (routeAllows(hub, role)) {
+                    for (const tab of HUB_TABS) {
+                        await check(page, `/${locale}/dashboard/collections?tab=${tab}`, role, failures);
+                        await expect(page.getByTestId(`collections-pill-${tab}`), `${tab} pill`).toHaveAttribute('aria-current', 'page');
+                    }
+                    // The posted contract's matured cheques are waiting to be deposited: the pill counts them.
+                    await page.goto(`/${locale}/dashboard/collections?tab=deposit`);
+                    await expect(page.getByTestId('collections-count-deposit')).toHaveText(/^[1-9]/);
+                    // An old register bookmark lands on the register with its filters.
+                    await page.goto(`/${locale}/dashboard/finance/cheques?status=REGISTERED&leaseId=${leaseId}`);
+                    expect(new URL(page.url()).pathname).toBe(`/${locale}/dashboard/collections`);
+                    await expect(page.getByTestId('collections-pill-all')).toHaveAttribute('aria-current', 'page');
+                    await expect(page.getByTestId('cheque-status-filter')).toHaveValue('REGISTERED');
+                }
+                const gl = DASHBOARD_ROUTES.find(r => r.path === '/dashboard/finance/general-ledger')!;
+                if (routeAllows(gl, role)) {
+                    await check(page, `/${locale}/dashboard/finance/general-ledger`, role, failures);
+                    await expect(page.getByTestId('ledger-pick-prompt')).toBeVisible();
+                    const journal = await api<{ lines: { accountId: string }[] }>(actor, 'GET', `/api/v1/finance/journals/${journalId}`);
+                    const picks = [...new Set(journal.lines.map(l => l.accountId))].slice(0, 2);
+                    await check(page, `/${locale}/dashboard/finance/general-ledger?accountIds=${picks.join(',')}&from=2026-01-01&to=2026-12-31`, role, failures);
+                    await expect(page.getByTestId(`ledger-bf-${picks[0]}`)).toBeVisible();
+                    await expect(page.getByTestId('ledger-report-total')).toBeVisible();
+                    await expect(page.getByTestId('ledger-col-tower')).toBeVisible();
+                    await check(page, `/${locale}/dashboard/finance/tenant-ledger?renterId=${renterId}`, role, failures);
+                    await expect(page.getByTestId('ledger-report-total')).toBeVisible();
+                }
+                await context.close();
+            }
+            expect(failures).toEqual([]);
+        });
+    }
+}

@@ -15,9 +15,15 @@ for (const [mod, id] of [
     ["@/components/settings/GatewaySettings", "probe-gateway"], ["@/components/settings/OnlinePaymentSwitch", "probe-online-switch"],
     ["@/components/settings/OrganisationSection", "probe-organisation"], ["@/components/staff/StaffManager", "probe-staff"],
     ["@/components/users/UsersManager", "probe-users"],
+    ["@/components/collections/ToDepositPanel", "panel-deposit"], ["@/components/collections/ReturnReplacePanel", "panel-returned"],
+    ["@/components/collections/PostDatedPanel", "panel-post-dated"], ["@/components/collections/PenaltiesPanel", "panel-penalties"],
+    ["@/components/collections/ChequeRegisterPanel", "panel-all"],
 ] as const) {
     vi.doMock(mod, () => ({ default: () => <div data-testid={id} /> }));
 }
+
+vi.doMock("@/components/collections/DueChequesPanel", () => ({ default: ({ overdueOnly }: { overdueOnly: boolean }) => <div data-testid={overdueOnly ? "panel-overdue" : "panel-due"} /> }));
+vi.doMock("@/components/finance/useNameLookup", () => ({ useNameLookup: () => ({ options: [], name: () => "", loading: false }) }));
 
 async function renderLocation(loc: ActionLocation): Promise<HTMLElement> {
     global.fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => [] })) as unknown as typeof fetch;
@@ -25,6 +31,17 @@ async function renderLocation(loc: ActionLocation): Promise<HTMLElement> {
         query.current = `section=${loc.split(".")[1]}`;
         const { default: Page } = await import("@/app/[locale]/dashboard/settings/page");
         return render(<Page />).container;
+    }
+    if (loc.startsWith("collections.")) {
+        query.current = `tab=${loc.split(".")[1]}`;
+        const { default: Page } = await import("@/app/[locale]/dashboard/collections/page");
+        return render(<Page />).container;
+    }
+    if (loc === "ledger.general") {
+        const { default: LedgerTable } = await import("@/components/finance/LedgerTable");
+        const ledger = { accountId: "a", accountCode: "1100", accountName: "A", accountType: "ASSET", openingBalance: 0, rows: [],
+            totalDebit: 0, totalCredit: 0, closingBalance: 0, truncated: false };
+        return render(<LedgerTable ledgers={[ledger]} />).container;
     }
     if (loc === "operations.staff") {
         const { default: Page } = await import("@/app/[locale]/dashboard/staff/page");

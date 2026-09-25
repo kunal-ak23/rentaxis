@@ -350,10 +350,10 @@ When a contract is created, RentAxis automatically generates monthly payment ent
 
 ### Managing Payments
 
-1. Go to **Cheque / Cash Collection** from the left rail
-2. View all payment schedules across contracts
-3. Update payment status as you collect rent
-4. For cheque payments, track the deposit and clearance process
+1. Go to **Cheque / Cash Collection** on the left rail
+2. Pick a status pill — **To deposit**, **Due**, **Overdue**, **Returned / replace**, **Post-dated** or **Penalties** — or open the **Cheque register** for every cheque; each pill shows how many are waiting
+3. Narrow any view to one property, or search a cheque number, tenant or unit (the search opens the register)
+4. When a cheque bounces, the same dialog lets you replace it and charge the bounce fee
 `);
 
 // ─── Finance ────────────────────────────────────────────────────────────────

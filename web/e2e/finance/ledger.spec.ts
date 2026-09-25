@@ -137,7 +137,7 @@ test.describe('Ledger core', () => {
     test('the general ledger shows the entry and the trial balance balances', async ({ page }) => {
         await page.goto('/en/dashboard/finance/general-ledger');
 
-        await pickAccount(page.locator('div').filter({ has: page.getByLabel('All accounts with activity') }).last(), BANK_LEAF);
+        await pickAccount(page.locator('div').filter({ has: page.getByLabel('Search account code or name') }).last(), BANK_LEAF);
         await page.getByRole('button', { name: 'Apply' }).click();
 
         await expect(page.getByText(`Name :: ${BANK_LEAF}`)).toBeVisible();
@@ -179,7 +179,7 @@ test.describe('Ledger core', () => {
         await expect(page.getByText('Reversed', { exact: true }).first()).toBeVisible();
 
         await page.goto('/en/dashboard/finance/general-ledger');
-        await pickAccount(page.locator('div').filter({ has: page.getByLabel('All accounts with activity') }).last(), BANK_LEAF);
+        await pickAccount(page.locator('div').filter({ has: page.getByLabel('Search account code or name') }).last(), BANK_LEAF);
         await page.getByRole('button', { name: 'Apply' }).click();
         const subTotal = page.locator('tr').filter({ hasText: 'Sub Total' }).first();
         await expect(subTotal).toContainText('0.00');

@@ -6,7 +6,7 @@
  * its own and as the role that owns the books. This one keeps the check that
  * was always its real reason for existing: cheque collection is a
  * PROPERTY_MANAGER job in the product
- * (web/src/app/[locale]/dashboard/finance/cheques/collection/page.tsx), so a
+ * (web/src/components/collections/ToDepositPanel.tsx, the hub's To deposit pill), so a
  * PM-only restriction on ChequeController has to surface somewhere, and a
  * spec that banks cheques as an admin would never see it.
  *
