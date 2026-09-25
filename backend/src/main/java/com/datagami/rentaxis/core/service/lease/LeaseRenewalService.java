@@ -165,6 +165,15 @@ public class LeaseRenewalService {
                             + " (" + existing.getStatus() + "); delete that draft or renew the successor instead.");
         }
 
+        // Spec §2: a lease with a transfer (drafted or posted) is not renewed; the
+        // transfer's lease is, once it is on the books.
+        Lease transfer = leaseRepository.findByTransferredFromLeaseId(leaseId).stream().findFirst().orElse(null);
+        if (transfer != null) {
+            throw new BusinessRuleViolationException("This lease is being transferred to lease " + transfer.getId()
+                    + " (" + transfer.getStatus() + "); delete that draft, or renew the new lease instead.",
+                    "lease.renewHasTransfer", java.util.Map.of());
+        }
+
         RenewalPlan plan = plan(predecessor, r);
         CreateLeaseDTO dto = successorHeader(predecessor, r);
         dto.setLines(plan.lines());

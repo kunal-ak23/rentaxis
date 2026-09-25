@@ -1,0 +1,70 @@
+# Spec 2026-09-24 §2 (#52): unit transfer. B (the successor on the new unit) points
+# back at A with transferred_from_lease_id and records the move date (the last
+# night in the old unit). lease_transfer_cheques is the draft's cheque plan: every
+# uncleared row of A in exactly one bucket (CARRY | KEEP | RETURN). A carried
+# instrument keeps one physical identity across two rows: the old row on A becomes
+# TRANSFERRED (transferred_to_id) and the new row on B names it (transferred_from_id).
+# ChequeStatus TRANSFERRED needs no DDL (varchar, no check).
+databaseChangeLog:
+  - changeSet:
+      id: 135-unit-transfer
+      author: claude
+      changes:
+        - addColumn:
+            tableName: leases
+            columns:
+              - column: { name: transferred_from_lease_id, type: uuid, constraints: { foreignKeyName: fk_leases_transferred_from, referencedTableName: leases, referencedColumnNames: id } }
+              - column: { name: transfer_move_date, type: date }
+        - addColumn:
+            tableName: cheques
+            columns:
+              - column: { name: transferred_from_id, type: uuid, constraints: { foreignKeyName: fk_cheques_transferred_from, referencedTableName: cheques, referencedColumnNames: id } }
+              - column: { name: transferred_to_id, type: uuid, constraints: { foreignKeyName: fk_cheques_transferred_to, referencedTableName: cheques, referencedColumnNames: id } }
+        - createTable:
+            tableName: lease_transfer_cheques
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: successor_lease_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_ltc_successor, referencedTableName: leases, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: cheque_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_ltc_cheque, referencedTableName: cheques, referencedColumnNames: id } }
+              - column: { name: disposition, type: varchar(8), constraints: { nullable: false } }
+        - addUniqueConstraint:
+            tableName: lease_transfer_cheques
+            columnNames: successor_lease_id, cheque_id
+            constraintName: uq_ltc_successor_cheque
+        - sql:
+            sql: ALTER TABLE lease_transfer_cheques ADD CONSTRAINT ck_ltc_disposition CHECK (disposition IN ('CARRY', 'KEEP', 'RETURN'))
+        - createIndex:
+            tableName: leases
+            indexName: ix_leases_transferred_from
+            columns:
+              - column: { name: transferred_from_lease_id }
+      rollback:
+        - dropTable: { tableName: lease_transfer_cheques }
+        - sql:
+            sql: >-
+              ALTER TABLE cheques DROP COLUMN IF EXISTS transferred_from_id, DROP COLUMN IF EXISTS transferred_to_id;
+              ALTER TABLE leases DROP COLUMN IF EXISTS transferred_from_lease_id, DROP COLUMN IF EXISTS transfer_move_date;
+  # At most one successor per lease across renewal and transfer. Separate and
+  # guarded: a database that already holds two successors of one lease skips it
+  # (the service check still holds under the lease row lock) and retries next deploy.
+  - changeSet:
+      id: 135-one-successor-per-lease
+      author: claude
+      preConditions:
+        - onFail: CONTINUE
+        - sqlCheck:
+            expectedResult: 0
+            sql: >-
+              SELECT count(*) FROM (SELECT coalesce(renewed_from_lease_id, transferred_from_lease_id) p
+                FROM leases WHERE coalesce(renewed_from_lease_id, transferred_from_lease_id) IS NOT NULL
+               GROUP BY 1 HAVING count(*) > 1) d
+      changes:
+        - sql:
+            sql: >-
+              CREATE UNIQUE INDEX ux_leases_one_successor ON leases
+                ((coalesce(renewed_from_lease_id, transferred_from_lease_id)))
+               WHERE coalesce(renewed_from_lease_id, transferred_from_lease_id) IS NOT NULL
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS ux_leases_one_successor

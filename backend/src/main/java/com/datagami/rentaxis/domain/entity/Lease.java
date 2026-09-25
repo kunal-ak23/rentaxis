@@ -210,6 +210,19 @@ public class Lease extends BaseTenantEntity {
     @Column(name = "renewed_from_lease_id")
     private UUID renewedFromLeaseId;
 
+    /** Spec §2 (#52): the lease this one continues on another unit (a transfer). */
+    @Column(name = "transferred_from_lease_id")
+    private UUID transferredFromLeaseId;
+
+    /** Spec §2: the last night in the old unit; this lease starts the day after. */
+    @Column(name = "transfer_move_date")
+    private LocalDate transferMoveDate;
+
+    /** The lease this one follows in its chain, by renewal or by transfer. */
+    public UUID predecessorId() {
+        return renewedFromLeaseId != null ? renewedFromLeaseId : transferredFromLeaseId;
+    }
+
     /**
      * Every lease in a renewal chain shares this id; the first lease's chain id is
      * its own id. Reports that ask "how long has this renter been here" walk the

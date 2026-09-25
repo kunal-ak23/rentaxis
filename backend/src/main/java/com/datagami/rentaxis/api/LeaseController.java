@@ -78,6 +78,7 @@ public class LeaseController {
     private final com.datagami.rentaxis.core.service.lease.RentFreeService rentFreeService;
     private final com.datagami.rentaxis.core.service.lease.LeaseReductionService leaseReductionService;
     private final com.datagami.rentaxis.core.service.lease.LeaseAssignmentService leaseAssignmentService;
+    private final com.datagami.rentaxis.core.service.lease.LeaseTransferService leaseTransferService;
 
     /**
      * ACCOUNTANT on every read below.
@@ -471,6 +472,30 @@ public class LeaseController {
     public ResponseEntity<AddendumResponse> reduce(@PathVariable UUID id,
             @RequestBody com.datagami.rentaxis.api.dto.lease.ReduceLeaseRequest request) {
         return ResponseEntity.ok(leaseReductionService.reduce(id, request));
+    }
+
+    // --- Spec 2026-09-24 §2: unit transfer ----------------------------------
+
+    /**
+     * Draft the transfer: B on the target unit from the day after the move date,
+     * with the cheque plan. Writes nothing to the ledger; posting B completes it
+     * (POST /{B}/post, finance roles). Manageable, like a renewal draft.
+     */
+    @PostMapping("/{id}/transfer")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<LeaseDTO> transferLease(@PathVariable UUID id,
+            @RequestBody com.datagami.rentaxis.api.dto.lease.TransferLeaseRequest request) {
+        return ResponseEntity.ok(leaseTransferService.draft(id, request, leasePostingService));
+    }
+
+    @GetMapping("/{id}/transfer/preview")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<com.datagami.rentaxis.api.dto.lease.TransferPreviewDTO> previewTransfer(
+            @PathVariable UUID id,
+            @RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) LocalDate moveDate,
+            @RequestParam UUID targetUnitId,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        return ResponseEntity.ok(leaseTransferService.preview(id, moveDate, targetUnitId, endDate));
     }
 
     // --- F14-39: assignment to another renter -----------------------------

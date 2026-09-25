@@ -150,7 +150,8 @@ public class LeaseDepositLedger {
                     accounts.add(account.getId());
                 }
             }
-            UUID previousId = lease.getRenewedFromLeaseId();
+            // Spec §2: the chain runs through transfers as well as renewals.
+            UUID previousId = lease.predecessorId();
             lease = previousId == null ? null
                     : leaseRepository.findByIdScopedToTenant(previousId).orElse(null);
         }

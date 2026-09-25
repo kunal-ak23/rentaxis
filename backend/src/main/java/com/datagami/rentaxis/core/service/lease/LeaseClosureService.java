@@ -210,6 +210,37 @@ public class LeaseClosureService {
      * has been settled", in the class that owns what settlement means for a
      * lease's life.</p>
      */
+    /**
+     * Spec §2: a lease left by a unit transfer with nothing behind it — no bounced
+     * or kept instrument, receivable, PDCs and deposit all flat — needs no
+     * settlement: it closes as "settled by transfer". Anything left, and the
+     * ordinary settlement screen lists just that.
+     */
+    @Transactional
+    public boolean closeSettledByTransfer(Lease lease, String successorLabel) {
+        if (lease == null || lease.getStatus() != LeaseStatus.TERMINATED) return false;
+        boolean open = cheques.findByLease_IdOrderBySeqNoAsc(lease.getId()).stream().anyMatch(c ->
+                c.getStatus() == ChequeStatus.REGISTERED || c.getStatus() == ChequeStatus.DEPOSITED
+                        || c.getStatus() == ChequeStatus.BOUNCED || c.getStatus() == ChequeStatus.ONLINE_PENDING
+                        || c.getStatus() == ChequeStatus.DRAFT);
+        if (open || receivableBalance(lease).signum() != 0 || instrumentBalance(lease).signum() != 0
+                || depositLedger.depositHeld(lease).signum() != 0) {
+            return false;
+        }
+        LeaseStatus previous = lease.getStatus();
+        lease.setStatus(LeaseStatus.CLOSED);
+        leases.save(lease);
+        LeaseEvent event = new LeaseEvent();
+        event.setLease(lease);
+        event.setTenantId(lease.getTenantId());
+        event.setPreviousState(previous);
+        event.setNewState(LeaseStatus.CLOSED);
+        event.setNotes("Closed: settled by transfer to " + successorLabel);
+        event.setCreatedAt(Instant.now());
+        leaseEvents.save(event);
+        return true;
+    }
+
     @Transactional(readOnly = true)
     public boolean isSettlementFinalized(UUID leaseId) {
         return settlements.findByLeaseId(leaseId)

@@ -101,7 +101,7 @@ public class DepositCarryForward {
     @Transactional(readOnly = true)
     public Map<UUID, BigDecimal> plan(Lease successor) {
         if (successor == null || !successor.isCarryDepositForward()
-                || successor.getRenewedFromLeaseId() == null) {
+                || successor.predecessorId() == null) {
             return Map.of();
         }
         // Checked here and not only inside LeaseDepositLedger: without a tenant the
@@ -112,7 +112,7 @@ public class DepositCarryForward {
             throw new IllegalStateException(
                     "No tenant in context; a deposit cannot be carried forward without one");
         }
-        Lease predecessor = leaseRepository.findByIdScopedToTenant(successor.getRenewedFromLeaseId()).orElse(null);
+        Lease predecessor = leaseRepository.findByIdScopedToTenant(successor.predecessorId()).orElse(null);
         if (predecessor == null) {
             return Map.of();
         }
@@ -158,7 +158,7 @@ public class DepositCarryForward {
         if (amounts.isEmpty()) {
             return null;
         }
-        Lease predecessor = leaseRepository.findByIdScopedToTenant(successor.getRenewedFromLeaseId()).orElseThrow();
+        Lease predecessor = leaseRepository.findByIdScopedToTenant(successor.predecessorId()).orElseThrow();
         String narration = "Security deposit carried forward from " + contractLabel(predecessor);
 
         PostingRequest.Dimensions from = LeaseChequeRegistrar.dimensions(predecessor, null);
@@ -168,7 +168,8 @@ public class DepositCarryForward {
         for (Map.Entry<UUID, BigDecimal> e : amounts.entrySet()) {
             pairs.add(PostingRequest.pair(
                     PostingRequest.dr(e.getKey(), e.getValue()).withDims(from).withNarration(narration),
-                    PostingRequest.cr(e.getKey(), e.getValue()).withDims(to).withNarration(narration)));
+                    PostingRequest.cr(creditLeafFor(e.getKey(), predecessor, successor), e.getValue())
+                            .withDims(to).withNarration(narration)));
         }
 
         // Header dimensions are the successor's: the entry belongs to the lease it
@@ -193,6 +194,35 @@ public class DepositCarryForward {
      * is written into the journal, so this only improves carry-forwards posted from
      * now on; posted lines are immutable.
      */
+    /**
+     * Spec §2: the leaf the deposit lands in on the successor. A renewal (same
+     * unit) keeps the predecessor's leaf. A transfer to another property resolves
+     * the role of the predecessor's deposit line (SECURITY_DEPOSIT or
+     * PARKING_DEPOSIT) for the successor's property, so the liability moves
+     * between the two properties' deposit leaves; for the same property the
+     * answer is the same leaf.
+     */
+    private UUID creditLeafFor(UUID predecessorLeaf, Lease predecessor, Lease successor) {
+        if (successor.getTransferredFromLeaseId() == null || accountResolver == null || leaseLines == null) {
+            return predecessorLeaf;
+        }
+        UUID fromProperty = LeasePostingService.propertyIdOf(predecessor);
+        UUID toProperty = LeasePostingService.propertyIdOf(successor);
+        if (java.util.Objects.equals(fromProperty, toProperty)) return predecessorLeaf;
+        com.datagami.rentaxis.domain.entity.enums.AccountRole role = leaseLines
+                .findByLease_IdOrderBySeqNoAsc(predecessor.getId()).stream()
+                .filter(l -> l.getCreditAccount() != null && predecessorLeaf.equals(l.getCreditAccount().getId())
+                        && l.getChargeType() != null)
+                .map(l -> l.getChargeType().getRole())
+                .findFirst().orElse(com.datagami.rentaxis.domain.entity.enums.AccountRole.SECURITY_DEPOSIT);
+        return accountResolver.resolve(role, toProperty).getId();
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.core.service.ledger.AccountResolver accountResolver;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.domain.repository.LeaseLineRepository leaseLines;
+
     static String contractLabel(Lease lease) {
         StringBuilder label = new StringBuilder();
         if (lease.getUnit() != null && lease.getUnit().getUnitNumber() != null) {

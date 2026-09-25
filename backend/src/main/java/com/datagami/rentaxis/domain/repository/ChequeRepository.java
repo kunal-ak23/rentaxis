@@ -554,7 +554,8 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
           and c.status not in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DRAFT,
                                com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REPLACED,
                                com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CANCELLED,
-                               com.datagami.rentaxis.domain.entity.enums.ChequeStatus.RETURNED)
+                               com.datagami.rentaxis.domain.entity.enums.ChequeStatus.RETURNED,
+                               com.datagami.rentaxis.domain.entity.enums.ChequeStatus.TRANSFERRED)
         """)
     /** {@code numbers} with every space removed; stored numbers are compared the same way. */
     List<Cheque> findLiveNumberedOnOtherLeases(@org.springframework.data.repository.query.Param("renterId") UUID renterId,

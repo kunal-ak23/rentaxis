@@ -325,11 +325,19 @@ public class LeasePostingService {
         }
         // PR #358 R1 P2-2: the rent-free concession the renter signed for is fixed now.
         leaseService.freezeRentFree(lease);
+        // Spec §2: a transfer successor ends its predecessor first (CARRY rows, the
+        // recognition cut, the TCR, the balance carried as C) and brings the carried
+        // instruments onto its own grid — all in this transaction, so a refusal below
+        // rolls the whole transfer back.
+        BigDecimal carried = BigDecimal.ZERO;
+        if (lease.getTransferredFromLeaseId() != null && checks != Preconditions.FOR_IMPORT_POST) {
+            carried = transfers.completeForPosting(lease, this).carriedBalance();
+        }
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
         List<Cheque> cheques = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
         allocateVatIfNeverAllocated(lease, lines, cheques);
 
-        PostingPlan plan = validate(lease, lines, cheques, checks, numberExempt);
+        PostingPlan plan = validate(lease, lines, cheques, checks, numberExempt, carried);
         plan.throwIfRefused(propertyIdOf(lease));
 
         JournalEntry tco = postTco(lease, plan.pairs(), lease.getContractDate(), contractNarration(lease),
@@ -347,6 +355,10 @@ public class LeasePostingService {
         // renewal that went on the books without the deposit that paid for it
         // would leave the money on a lease nothing will ever settle.
         depositCarryForward.carry(lease, importBatchId);
+        if (lease.getTransferredFromLeaseId() != null && checks != Preconditions.FOR_IMPORT_POST) {
+            // Spec §2: the lease left behind needs no settlement when nothing is on it.
+            transfers.closeIfSettledByTransfer(lease);
+        }
 
         // The predecessor is retired *before* the successor goes ACTIVE, and while
         // the successor's own row is still untouched — see markPredecessorRenewed.
@@ -391,10 +403,23 @@ public class LeasePostingService {
                 .orElseThrow(() -> new NotFoundException("Lease not found"));
         leaseAccessPolicy.requireReadable(lease);
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
-        List<Cheque> cheques = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
+        List<Cheque> cheques = new ArrayList<>(chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId));
 
-        PostingPlan plan = validate(lease, lines, cheques);
-        List<String> errors = new ArrayList<>();
+        // Spec §2: a transfer successor is judged with the rows it will carry and the
+        // balance the move will leave (estimated from the ledger as it stands).
+        PostingPlan plan;
+        List<String> transferProblems = new ArrayList<>();
+        if (lease.getTransferredFromLeaseId() != null && lease.getStatus() == LeaseStatus.DRAFT) {
+            LeaseTransferService.Estimate est = transfers.estimateForDryRun(lease);
+            transferProblems.addAll(est.problems());
+            // The carried instruments are not on B's grid yet: B's own rows must cover
+            // the contract plus C less what the carried ones already pay.
+            plan = validate(lease, lines, cheques, Preconditions.FOR_POST, Set.of(),
+                    est.carriedBalance().subtract(est.carriedTotal()));
+        } else {
+            plan = validate(lease, lines, cheques);
+        }
+        List<String> errors = new ArrayList<>(transferProblems);
         // First, because it is the only one of these that is not about the contract's
         // own contents: no amount of fixing the grid makes this door the right one.
         draftImportBatchProblem(leaseId).ifPresent(errors::add);
@@ -684,6 +709,16 @@ public class LeasePostingService {
 
     private PostingPlan validate(Lease lease, List<LeaseLine> lines, List<Cheque> cheques, Preconditions checks,
                                  Set<UUID> numberExempt) {
+        return validate(lease, lines, cheques, checks, numberExempt, BigDecimal.ZERO);
+    }
+
+    /**
+     * @param carried spec §2: C, the balance a transfer carries from the lease left
+     *                behind (negative when prepaid): the rows must total the contract
+     *                incl. VAT plus C
+     */
+    private PostingPlan validate(Lease lease, List<LeaseLine> lines, List<Cheque> cheques, Preconditions checks,
+                                 Set<UUID> numberExempt, BigDecimal carried) {
         // Errors about the accounts this posting would use — a line's credit account
         // or the lease's receivable override. They rank above the role-level
         // complaint, which is usually the same gap seen from further away.
@@ -758,7 +793,14 @@ public class LeasePostingService {
                 otherErrors.add("Cheque " + label(c) + " has no posting date.");
             }
         }
-        if (!cheques.isEmpty() && chequeTotal.compareTo(gross) != 0) {
+        BigDecimal expected = gross.add(carried == null ? BigDecimal.ZERO : carried);
+        if (!cheques.isEmpty() && carried != null && carried.signum() != 0 && chequeTotal.compareTo(expected) != 0) {
+            BigDecimal gap = expected.subtract(chequeTotal);
+            otherErrors.add("Cheque grid totals " + money(chequeTotal) + " but the new contract incl. VAT is "
+                    + money(gross) + " and the balance carried from the old lease is " + money(carried)
+                    + ", so the rows must total " + money(expected) + " (" + money(gap.abs())
+                    + (gap.signum() > 0 ? " still to collect)." : " too much)."));
+        } else if (!cheques.isEmpty() && chequeTotal.compareTo(expected) != 0) {
             otherErrors.add("Cheque grid totals " + money(chequeTotal)
                     + " but contract value" + (gross.compareTo(net) == 0 ? " is " : " incl. VAT is ")
                     + money(gross) + ".");
@@ -1254,6 +1296,11 @@ public class LeasePostingService {
      */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.datagami.rentaxis.domain.repository.LeaseAddendumRepository addendumRepository;
+
+    /** Spec §2: lazy, because the transfer reuses the termination core, which posts through this class. */
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private LeaseTransferService transfers;
 
     Lease lockLease(UUID leaseId) {
         Lease lease;

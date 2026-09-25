@@ -21,7 +21,13 @@ public enum ChequeStatus {
     REPLACED,
     CANCELLED,
     RETURNED,
-    ONLINE_PENDING;
+    ONLINE_PENDING,
+    /**
+     * Spec §2 (#52): terminal. The renter moved unit and this instrument went with
+     * them: its PDR was reversed here and the successor lease's row (named by
+     * {@code transferredToId}) holds it now.
+     */
+    TRANSFERRED;
 
     /** Money the landlord is still waiting on: registered, banked, or in flight online. */
     public boolean isUncleared() {

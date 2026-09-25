@@ -700,6 +700,66 @@ public class LeaseService {
         return mapToDTO(savedLease);
     }
 
+    /**
+     * Spec §2 (#52): the successor B of a unit transfer — the same renter on another
+     * unit from the day after the move date, in A's chain, with the deposit carried
+     * forward. Drafted like any lease (line validation, account resolution, derived
+     * totals); {@code LeaseTransferService} owns whether A may be transferred.
+     */
+    @Transactional
+    public LeaseDTO createTransferDraft(CreateLeaseDTO dto, Lease from, LocalDate moveDate) {
+        if (from == null || moveDate == null) throw new IllegalArgumentException("A transfer needs its lease and move date");
+        Unit unit = unitRepository.findById(dto.getUnitId())
+                .filter(u -> from.getTenantId().equals(u.getTenantId()))
+                .orElseThrow(() -> new NotFoundException("Unit not found"));
+        requireUnitFreeFor(unit, dto.getStartDate(), dto.getEndDate(), null, null,
+                "Cannot create lease. Unit is not vacant.");
+        Lease lease = new Lease();
+        lease.setUnit(unit);
+        lease.setRenter(from.getRenter());
+        applyHeader(lease, dto, unit);
+        lease.setStatus(LeaseStatus.DRAFT);
+        lease.setTransferredFromLeaseId(from.getId());
+        lease.setTransferMoveDate(moveDate);
+        lease.setChainId(from.getChainId() != null ? from.getChainId() : from.getId());
+        lease.setCarryDepositForward(true);
+        Lease saved = leaseRepository.save(lease);
+        applyLines(saved, dto.getLines());
+        syncDerivedTotals(saved);
+        saved = leaseRepository.save(saved);
+        recordEvent(saved, null, LeaseStatus.DRAFT, "Lease drafted as a transfer from " + unitLabel(from)
+                + ", move date " + moveDate);
+        return mapToDTO(saved);
+    }
+
+    /**
+     * Spec §2: A ends on the move date because the renter moved to B — TERMINATED
+     * through {@code t} (the unit is released after it), with no exit fee and no
+     * termination notice to the renter, who has not left the landlord.
+     */
+    @Transactional
+    public void markTransferredOut(Lease lease, LocalDate t, Lease successor, UUID tcrId) {
+        leaseAccessPolicy.requireManageable(lease);
+        LeaseStatus previous = lease.getStatus();
+        lease.setStatus(LeaseStatus.TERMINATED);
+        lease.setTerminatedOn(t);
+        lease.setTerminationNotes("Transferred to " + unitLabel(successor));
+        lease.setTerminationJournalId(tcrId);
+        releaseUnitIfNoOtherActiveLease(lease);
+        Lease saved = leaseRepository.save(lease);
+        recordEvent(saved, previous, LeaseStatus.TERMINATED, "Transferred to " + unitLabel(successor) + " on " + t);
+        try {
+            unitListingService.syncAvailableFrom(saved.getUnit().getId(), null);
+        } catch (Exception e) {
+            // Non-critical, as on termination.
+        }
+    }
+
+    private static String unitLabel(Lease lease) {
+        return lease.getUnit() != null && lease.getUnit().getUnitNumber() != null
+                ? lease.getUnit().getUnitNumber() : String.valueOf(lease.getId());
+    }
+
     @Transactional
     public LeaseDTO updateDraftLease(UUID leaseId, CreateLeaseDTO dto) {
         Lease lease = findLeaseWithTenantCheck(leaseId);
@@ -1951,6 +2011,15 @@ public class LeaseService {
         dto.setFirstDueDate(lease.getFirstDueDate());
         dto.setRenterAcceptedAt(lease.getRenterAcceptedAt());
         dto.setRenewedFromLeaseId(lease.getRenewedFromLeaseId());
+        dto.setTransferredFromLeaseId(lease.getTransferredFromLeaseId());
+        dto.setTransferMoveDate(lease.getTransferMoveDate());
+        if (lease.getId() != null && lease.getPostedAt() != null) {
+            leaseRepository.findByTransferredFromLeaseId(lease.getId()).stream().findFirst().ifPresent(b -> {
+                dto.setTransferredToLeaseId(b.getId());
+                dto.setTransferredToUnit(b.getUnit() != null ? b.getUnit().getUnitNumber() : null);
+                dto.setTransferredToStatus(b.getStatus() != null ? b.getStatus().name() : null);
+            });
+        }
         dto.setChainId(lease.getChainId());
         dto.setReceivableAccountId(lease.getReceivableAccountId());
         dto.setIncomeAccountId(lease.getIncomeAccountId());

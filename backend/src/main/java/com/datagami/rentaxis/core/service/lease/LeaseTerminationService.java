@@ -206,6 +206,57 @@ public class LeaseTerminationService {
         return leaseService.markTerminated(leaseId, t, r.notes(), tcrId, byUser);
     }
 
+    // ------------------------------------------------------------------
+    // unit transfer (spec 2026-09-24 §2)
+    // ------------------------------------------------------------------
+
+    /** What ending A on {@code t} for a transfer does, with nothing written. */
+    record TransferEnd(BigDecimal earnedThrough, BigDecimal unearned, BigDecimal unearnedVat,
+                       BigDecimal receivableAfter) {
+    }
+
+    /**
+     * @param leaving the rows that leave A's PDCs (CARRY and RETURN): their PDRs are
+     *                reversed, so their amounts come back onto A's receivable
+     */
+    TransferEnd previewForTransfer(Lease lease, LocalDate t, List<Cheque> leaving) {
+        validate(lease, t);
+        RecognitionService.TerminationRecognition plan = recognitionService.previewTermination(lease.getId(), t);
+        return new TransferEnd(plan.earnedThrough(), plan.unearned(), plan.unearnedVat(),
+                receivableAfter(lease, leaving, plan.unearned().add(plan.unearnedVat())));
+    }
+
+    /**
+     * Spec §2: the termination core, for a transfer. The same cheque split (with
+     * the CARRY bucket: PDR reversed, row TRANSFERRED), the same recognition cut and
+     * the same TCR with its VAT pairs — and <b>no exit fee, no settlement
+     * deduction</b>. The status change is the caller's ({@code markTransferredOut}).
+     *
+     * @return the TCR's id, or null when nothing was unearned
+     */
+    UUID endForTransfer(Lease lease, LocalDate t, List<Cheque> toReturn, List<Cheque> toCarry, String note) {
+        validate(lease, t);
+        requireOpenPeriod(recognitionService.previewTermination(lease.getId(), t).latestPostingDate(), t);
+        for (Cheque cheque : toCarry) {
+            chequeService.transferOut(cheque.getId(), t, note);
+        }
+        for (Cheque cheque : toReturn) {
+            if (cheque.getStatus() == ChequeStatus.ONLINE_PENDING) {
+                chequeService.revertOnlinePending(cheque.getId());
+            }
+            chequeService.returnToTenant(cheque.getId(), t, note);
+        }
+        RecognitionService.TerminationRecognition plan = recognitionService.truncateForTermination(lease.getId(), t);
+        VatTaxPointService.TerminationVat vat = vatTaxPoints.settleForTermination(lease, t, plan.unearnedVat());
+        return postUnearnedReversal(lease, plan, vat, t);
+    }
+
+    /** A's rent receivable on the lease as the ledger has it now (debit positive). */
+    BigDecimal receivableBalance(Lease lease) {
+        return ledgerQueryService.accountLedger(receivableAccountOf(lease),
+                new LedgerQueryService.LedgerFilter(null, null, null, null, lease.getId(), null)).closingBalance();
+    }
+
     /**
      * One {@code TCR} handing the unearned advance rent — and the VAT charged on
      * it — back to the receivable.

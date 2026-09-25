@@ -83,6 +83,12 @@ public class LeaseDTO {
 
     // ---- renewal chain ----
     private UUID renewedFromLeaseId;
+    /** Spec §2: B → A for a unit transfer, the move date, and (on A) the lease it moved to. */
+    private UUID transferredFromLeaseId;
+    private java.time.LocalDate transferMoveDate;
+    private UUID transferredToLeaseId;
+    private String transferredToUnit;
+    private String transferredToStatus;
     private UUID chainId;
 
     // ---- posting ----

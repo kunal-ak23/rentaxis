@@ -276,6 +276,10 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
     @Query("SELECT l FROM Lease l WHERE l.renewedFromLeaseId = :leaseId")
     List<Lease> findByRenewedFromLeaseId(@Param("leaseId") UUID leaseId);
 
+    /** Spec §2: the successor on another unit, drafted or posted. */
+    @Query("SELECT l FROM Lease l WHERE l.transferredFromLeaseId = :leaseId")
+    List<Lease> findByTransferredFromLeaseId(@Param("leaseId") UUID leaseId);
+
     @Query("SELECT COALESCE(MAX(l.contractNumber), 0) FROM Lease l WHERE l.tenantId = :tenantId")
     Long findMaxContractNumberForTenant(@Param("tenantId") UUID tenantId);
 
