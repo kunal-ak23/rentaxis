@@ -273,3 +273,5 @@ databaseChangeLog:
       file: db/changelog/changesets/132-lease-line-posted-recognition.yaml
   - include:
       file: db/changelog/changesets/133-lease-credit-addendum.yaml
+  - include:
+      file: db/changelog/changesets/134-lease-assignment.yaml

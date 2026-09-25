@@ -77,6 +77,7 @@ public class LeaseController {
     private final LeaseVariationService leaseVariationService;
     private final com.datagami.rentaxis.core.service.lease.RentFreeService rentFreeService;
     private final com.datagami.rentaxis.core.service.lease.LeaseReductionService leaseReductionService;
+    private final com.datagami.rentaxis.core.service.lease.LeaseAssignmentService leaseAssignmentService;
 
     /**
      * ACCOUNTANT on every read below.
@@ -470,6 +471,39 @@ public class LeaseController {
     public ResponseEntity<AddendumResponse> reduce(@PathVariable UUID id,
             @RequestBody com.datagami.rentaxis.api.dto.lease.ReduceLeaseRequest request) {
         return ResponseEntity.ok(leaseReductionService.reduce(id, request));
+    }
+
+    // --- F14-39: assignment to another renter -----------------------------
+
+    /** Draft an assignment: writes nothing to the ledger. Manageable, like a renewal draft. */
+    @PostMapping("/{id}/assignments")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<com.datagami.rentaxis.api.dto.lease.LeaseAssignmentDTO> draftAssignment(
+            @PathVariable UUID id, @RequestBody com.datagami.rentaxis.api.dto.lease.AssignLeaseRequest request) {
+        return ResponseEntity.ok(leaseAssignmentService.draft(id, request));
+    }
+
+    @GetMapping("/{id}/assignments")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<List<com.datagami.rentaxis.api.dto.lease.LeaseAssignmentDTO>> listAssignments(@PathVariable UUID id) {
+        return ResponseEntity.ok(leaseAssignmentService.list(id));
+    }
+
+    /** Post it: one journal moves the outgoing renter's balances. Finance roles, like Post. */
+    @PostMapping("/{id}/assignments/{assignmentId}/post")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<com.datagami.rentaxis.api.dto.lease.LeaseAssignmentDTO> postAssignment(
+            @PathVariable UUID id, @PathVariable UUID assignmentId,
+            @RequestBody(required = false) Map<String, Boolean> body) {
+        return ResponseEntity.ok(leaseAssignmentService.post(id, assignmentId,
+                body == null ? null : body.get("takeOverOverdue")));
+    }
+
+    @DeleteMapping("/{id}/assignments/{assignmentId}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<Void> cancelAssignment(@PathVariable UUID id, @PathVariable UUID assignmentId) {
+        leaseAssignmentService.cancel(id, assignmentId);
+        return ResponseEntity.noContent().build();
     }
 
     /** Fill in the Ejari a variation was re-registered under; blank until then ("Ejari pending"). */

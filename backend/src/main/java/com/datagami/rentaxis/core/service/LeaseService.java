@@ -473,6 +473,18 @@ public class LeaseService {
      * second copy of "is anybody else living here" is how a unit comes to read
      * VACANT with a renter in it.
      */
+    /**
+     * F14-39: re-settle the lease's unit today — after an assignment the holder's
+     * name on the unit is the incoming renter's. Same rule as the nightly sync.
+     */
+    @Transactional
+    public void resettleUnitOf(Lease lease) {
+        Unit unit = unitRepository.findByIdForUpdate(lease.getUnit().getId()).orElse(lease.getUnit());
+        if (settleUnit(unit, holdingLeases(unit.getId()), LocalDate.now())) {
+            unitRepository.save(unit);
+        }
+    }
+
     @Transactional
     public void releaseUnitIfNoOtherLiveLease(Lease lease) {
         releaseUnitIfNoOtherActiveLease(lease);
