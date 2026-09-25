@@ -132,8 +132,10 @@ export default function MvpSidebar() {
                     <div data-testid="nav-drawer" role="dialog" aria-modal="true" aria-label={t("openMenu")} className="absolute inset-y-0 start-0 flex max-w-full bg-surface shadow-xl">
                         <Rail rail={rail} active={active.section} onPick={id => setPicked(id)} badge={counts.collectionBadge} />
                         {panel}
-                        <button type="button" onClick={() => setDrawerOpen(false)} aria-label={t("closeMenu")} className="absolute top-2 end-2 p-1 cursor-pointer"><X size={16} /></button>
                     </div>
+                    {/* On the backdrop beside the drawer (rail 64 + panel 240), clear of the org switcher. */}
+                    <button type="button" onClick={() => setDrawerOpen(false)} aria-label={t("closeMenu")} data-testid="nav-drawer-close"
+                        className="absolute top-3 start-[316px] rounded-full bg-surface p-2 shadow-md cursor-pointer"><X size={16} /></button>
                 </div>
             )}
         </>
