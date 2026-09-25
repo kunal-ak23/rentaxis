@@ -46,7 +46,7 @@ export function TopHeader() {
     const userRole = session?.user?.role as UserRole | undefined;
     // Phone drawer + breadcrumb ("Leasing › Tenancy Contracts") from the same
     // nav model the rail renders, so the two can never disagree.
-    const { setDrawerOpen } = useNavShell();
+    const { setDrawerOpen, inlinePanel } = useNavShell();
     const label = useLabel();
     const { isEnabled, tenantSlug } = useTenantFeatures();
     const rail = buildNav({ role: userRole, isEnabled, tenantSlug, booksLive: true });
@@ -155,10 +155,13 @@ export function TopHeader() {
                 {/* Right Side */}
                 <div className="flex items-center gap-2 md:gap-3">{/* (org, locale, help, bell, profile) */}
 
-                    {/* The one organisation switcher, at every width (PR #363 R1). */}
-                    <div data-testid="header-org-switcher" className="shrink-0 xl:w-[220px]">
-                        <TenantSwitcher isCollapsed={false} responsive />
-                    </div>
+                    {/* The one organisation control: here only while the section panel is not
+                        inline (< 1280 px, or the panel hidden); otherwise it tops the panel. */}
+                    {!inlinePanel && (
+                        <div data-testid="header-org-switcher" className="shrink-0">
+                            <TenantSwitcher isCollapsed={false} responsive />
+                        </div>
+                    )}
 
                     {/* Locale Switcher */}
                     <div className="flex items-center bg-[var(--sand-100)] rounded-[var(--radius)] p-0.5 border border-border">
@@ -255,9 +258,11 @@ export function TopHeader() {
                                 onClick={() => setIsProfileOpen(!isProfileOpen)}
                                 className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-primary/20 rounded-lg p-1 -m-1"
                             >
-                                <div className="flex flex-col items-end">
-                                    <span className="text-sm font-semibold text-foreground">{session.user.name || tNav("userFallback")}</span>
-                                    <span className="text-[10px] font-medium text-muted tracking-wider">
+                                {/* One line each, truncated with a tooltip; below xl only the avatar shows. */}
+                                <div data-testid="header-user-name" className="hidden xl:flex min-w-0 max-w-[160px] flex-col items-end leading-tight">
+                                    <span className="max-w-full truncate whitespace-nowrap text-sm font-semibold text-foreground"
+                                        title={session.user.name || tNav("userFallback")}>{session.user.name || tNav("userFallback")}</span>
+                                    <span className="max-w-full truncate whitespace-nowrap text-[10px] font-medium text-muted tracking-wider">
                                         {userRole ? roleLabel(userRole) : ''}
                                     </span>
                                 </div>

@@ -174,10 +174,11 @@ describe("organisation switcher", () => {
         expect(orgCalls()).toBe(1);
     });
 
-    it("shows the organisation's name, read-only, in the panel", async () => {
+    it("puts no org block in the flyout (the header already has it)", () => {
         render(<Shell />);
         fireEvent.click(screen.getByTestId("rail-accounting"));
-        expect(await within(screen.getByTestId("nav-flyout")).findByText("Acme Holdings")).toBeInTheDocument();
+        expect(within(screen.getByTestId("nav-flyout")).queryByTestId("panel-org")).toBeNull();
+        expect(screen.getAllByTestId("org-switcher-button")).toHaveLength(1);
     });
 });
 
@@ -200,5 +201,60 @@ describe("phone drawer focus (PR #363 R1 P3)", () => {
         act(() => { within(drawer).getByTestId("rail-accounting").dispatchEvent(click); });
         expect(click.defaultPrevented).toBe(true);
         expect(within(screen.getByTestId("nav-drawer")).getByTestId("sidebar-journals")).toBeInTheDocument();
+    });
+});
+
+/**
+ * PR #363 R1 ruling (user feedback): one org control at a time. At ≥ 1280 px it
+ * tops the inline panel (the switcher for roles that can switch, the plain
+ * name otherwise) and the header has none; below, the header has it.
+ */
+describe("one organisation control, placed by breakpoint", () => {
+    const orgNames = () => screen.queryAllByText("Acme Holdings").length;
+
+    it("1440 px, super admin: the switcher tops the panel, none in the header, and it opens", async () => {
+        wide.current = true;
+        role.current = "SUPER_ADMIN";
+        render(<Shell />);
+        expect(screen.queryByTestId("header-org-switcher")).toBeNull();
+        const buttons = screen.getAllByTestId("org-switcher-button");
+        expect(buttons).toHaveLength(1);
+        expect(within(screen.getByTestId("panel-org")).getByTestId("org-switcher-button")).toBe(buttons[0]);
+        await waitFor(() => expect(orgNames()).toBe(1));
+        fireEvent.click(buttons[0]);
+        expect(await screen.findByRole("button", { name: /Bayview Estates/ })).toBeInTheDocument();
+    });
+
+    it("1440 px, a role that cannot switch: the plain name in the panel, once", async () => {
+        wide.current = true;
+        role.current = "PROPERTY_MANAGER";
+        render(<Shell />);
+        await waitFor(() => expect(screen.getByTestId("panel-org-name")).toHaveTextContent("Acme Holdings"));
+        expect(screen.queryAllByTestId("org-switcher-button")).toHaveLength(0);
+        expect(screen.queryByTestId("header-org-switcher")).toBeNull();
+        expect(orgNames()).toBe(1);
+    });
+
+    it("1024 px, super admin: the switcher is in the header, once, even with the flyout open", async () => {
+        role.current = "SUPER_ADMIN";
+        render(<Shell />);
+        fireEvent.click(screen.getByTestId("rail-accounting"));
+        const buttons = screen.getAllByTestId("org-switcher-button");
+        expect(buttons).toHaveLength(1);
+        expect(within(screen.getByTestId("header-org-switcher")).getByTestId("org-switcher-button")).toBe(buttons[0]);
+        await waitFor(() => expect(orgNames()).toBe(1));
+        fireEvent.click(buttons[0]);
+        expect(await screen.findByRole("button", { name: /Bayview Estates/ })).toBeInTheDocument();
+    });
+
+    it("still reads /auth/me/tenants once when the width crosses the breakpoint", async () => {
+        wide.current = true;
+        const { rerender } = render(<Shell />);
+        await waitFor(() => expect(orgNames()).toBe(1));
+        wide.current = false;
+        fireEvent.click(screen.getByTestId("rail-home")); // any render; the store snapshot is re-read
+        rerender(<Shell />);
+        await new Promise(r => setTimeout(r, 0));
+        expect(orgCalls()).toBe(1);
     });
 });

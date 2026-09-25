@@ -219,7 +219,7 @@ export default function GlobalSearch({ role, locale }: { role?: UserRole; locale
                 className="hidden lg:flex w-full items-center gap-2 px-3 h-9 bg-[var(--sand-100)] border border-border rounded-[var(--radius)] hover:border-primary/40 transition-colors cursor-pointer"
             >
                 <Search size={14} className="text-[var(--ink-500)] shrink-0" />
-                <span className="text-[13px] text-[var(--ink-500)] flex-1 text-left">{placeholder}</span>
+                <span className="text-[13px] text-[var(--ink-500)] flex-1 min-w-0 truncate whitespace-nowrap text-start">{placeholder}</span>
                 <kbd className="text-[11px] text-[var(--ink-500)] px-1.5 py-0.5 border border-border rounded font-mono">⌘K</kbd>
             </button>
 

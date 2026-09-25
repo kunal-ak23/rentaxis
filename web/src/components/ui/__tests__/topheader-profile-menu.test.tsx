@@ -69,4 +69,16 @@ describe("TopHeader profile menu", () => {
         render(<NavShellProvider><TopHeader /></NavShellProvider>);
         expect(screen.getByTestId("header-help")).toHaveAttribute("href", "/dashboard/help");
     });
+
+    it("keeps the user's name on one line with a tooltip, and hides name and role below xl (PR #363 R1)", () => {
+        render(<NavShellProvider><TopHeader /></NavShellProvider>);
+        const block = screen.getByTestId("header-user-name");
+        expect(block.className).toMatch(/(^|\s)hidden(\s|$)/);
+        expect(block.className).toMatch(/xl:flex/);
+        const [name, role] = Array.from(block.querySelectorAll("span"));
+        expect(name.className).toMatch(/truncate/);
+        expect(name.className).toMatch(/whitespace-nowrap/);
+        expect(name).toHaveAttribute("title", name.textContent ?? "");
+        expect(role.className).toMatch(/truncate/);
+    });
 });

@@ -5,7 +5,7 @@ import Image from "next/image";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/lib/rbac";
@@ -15,19 +15,6 @@ import { useLabel } from "@/lib/nav/useLabel";
 import { useNavShell } from "@/components/nav/NavShellContext";
 import { useNavCounts } from "@/components/nav/useNavCounts";
 import { SectionPanel } from "@/components/nav/SectionPanel";
-
-/** ≥ 1280 px: the section panel sits inline beside the rail (Tailwind `xl`). */
-const WIDE_QUERY = "(min-width: 1280px)";
-function subscribeWide(onChange: () => void) {
-    if (typeof window === "undefined" || !window.matchMedia) return () => {};
-    const mq = window.matchMedia(WIDE_QUERY);
-    mq.addEventListener?.("change", onChange);
-    return () => mq.removeEventListener?.("change", onChange);
-}
-const wideNow = () => (typeof window === "undefined" || !window.matchMedia ? true : window.matchMedia(WIDE_QUERY).matches);
-function useIsWide(): boolean {
-    return useSyncExternalStore(subscribeWide, wideNow, () => true);
-}
 
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || '0.6.0.dev';
 
@@ -105,23 +92,17 @@ export default function MvpSidebar() {
     const role = session?.user?.role as UserRole | undefined;
     const { isEnabled, tenantSlug } = useTenantFeatures();
     const counts = useNavCounts(role, pathname);
-    const { drawerOpen, setDrawerOpen } = useNavShell();
+    const { drawerOpen, setDrawerOpen, panelHidden, setPanelHidden, inlinePanel } = useNavShell();
     const rail = buildNav({ role, isEnabled, tenantSlug, booksLive: counts.booksLive });
     const search = useSearchParams()?.toString() ?? "";
     const active = activeNav(pathname, rail, search);
-    const isWide = useIsWide();
     const [picked, setPicked] = useState<RailId | null>(null);
     const [flyoutOpen, setFlyoutOpen] = useState(false);
-    const [panelHidden, setPanelHidden] = useState(() => {
-        try { return typeof window !== "undefined" && localStorage.getItem("sidebar_collapsed") === "true"; } catch { return false; }
-    });
-    const inlinePanel = isWide && !panelHidden;
     const flyout = flyoutOpen && !inlinePanel;
     const asideRef = useRef<HTMLElement>(null);
     const drawerRef = useRef<HTMLDivElement>(null);
     const drawerCloseRef = useRef<HTMLButtonElement>(null);
 
-    useEffect(() => { try { localStorage.setItem("sidebar_collapsed", String(panelHidden)); } catch { /* private mode */ } }, [panelHidden]);
     // A navigation with no flyout open returns the panel to the page's own
     // section (state adjusted during render, React's "reset state on prop
     // change" pattern). An open flyout keeps its section: that is the point.
@@ -172,7 +153,8 @@ export default function MvpSidebar() {
         setFlyoutOpen(true);
     };
     const onDrawerRailClick = (id: RailId, e: React.MouseEvent) => { e.preventDefault(); setPicked(id); };
-    const panel = shown && <SectionPanel key={shown.id} section={shown} activeItem={shown.id === active.section ? active.item : null} counts={counts} />;
+    const panelFor = (showOrg: boolean) => shown &&
+        <SectionPanel key={shown.id} section={shown} activeItem={shown.id === active.section ? active.item : null} counts={counts} showOrg={showOrg} />;
 
     return (
         <>
@@ -180,10 +162,11 @@ export default function MvpSidebar() {
             <aside ref={asideRef} className="relative sticky top-0 z-40 hidden h-screen shrink-0 md:flex">
                 <Rail rail={rail} active={active.section} onRailClick={onAsideRailClick} badge={counts.collectionBadge} />
                 {/* Rendered only when it is the visible copy, so tour targets and test ids are unique. */}
-                {inlinePanel && <div className="hidden h-full xl:flex">{panel}</div>}
+                {inlinePanel && <div className="hidden h-full xl:flex">{panelFor(true)}</div>}
                 {flyout && (
                     <div data-testid="nav-flyout" className="absolute top-0 start-16 z-50 flex h-full shadow-lg">
-                        {panel}
+                        {/* No org block: below the inline width the header carries the one org control. */}
+                        {panelFor(false)}
                         <button type="button" onClick={() => { setFlyoutOpen(false); setPicked(null); }} aria-label={t("closeMenu")}
                             data-testid="nav-flyout-close"
                             className="absolute top-2 -end-10 rounded-full border border-border bg-surface p-1.5 shadow-md cursor-pointer"><X size={14} /></button>
@@ -201,7 +184,7 @@ export default function MvpSidebar() {
                     <button type="button" tabIndex={-1} aria-hidden onClick={() => setDrawerOpen(false)} className="absolute inset-0 bg-black/30" />
                     <div data-testid="nav-drawer" role="dialog" aria-modal="true" aria-label={t("openMenu")} className="absolute inset-y-0 start-0 flex max-w-full bg-surface shadow-xl">
                         <Rail rail={rail} active={active.section} onRailClick={onDrawerRailClick} badge={counts.collectionBadge} />
-                        {panel}
+                        {panelFor(false)}
                     </div>
                     {/* On the backdrop beside the drawer (rail 64 + panel 240). */}
                     <button ref={drawerCloseRef} type="button" onClick={() => setDrawerOpen(false)} aria-label={t("closeMenu")} data-testid="nav-drawer-close"

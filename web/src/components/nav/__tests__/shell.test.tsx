@@ -87,14 +87,14 @@ describe("icon rail", () => {
 });
 
 describe("section panel", () => {
-    it("shows the active section's pages, the org name (read-only) and the status card", () => {
+    it("shows the active section's pages, the org name (read-only for a non-switching role) and the status card", () => {
+        role.current = "ACCOUNTANT";
         path.current = "/en/dashboard/finance/journals";
         renderShell();
         const panel = screen.getByTestId("nav-panel");
         // The switcher is the header's (one instance); the panel only names the organisation.
         expect(within(panel).getByTestId("panel-org-name")).toHaveTextContent("Acme Holdings");
         expect(within(panel).queryByTestId("org-switcher")).toBeNull();
-        expect(within(panel).queryByRole("button", { name: en.TenantSwitcher.switchOrganization })).toBeNull();
         expect(within(panel).getByText(en.AccountingNav.groupJournalEntries)).toBeInTheDocument();
         expect(within(panel).getByTestId("sidebar-journals")).toHaveAttribute("aria-current", "page");
         expect(within(panel).getByTestId("nav-status-card")).toHaveTextContent("2025");
