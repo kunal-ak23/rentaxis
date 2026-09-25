@@ -5,13 +5,14 @@ import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
-import { ArrowLeft, BookOpen, ChevronDown, Loader2, Mail, Phone, Languages } from "lucide-react";
+import { ArrowLeft, BookOpen, Loader2, Mail, Phone, Languages } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { formatCurrency } from "@/lib/format";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { ResendInviteButton } from "@/components/users/ResendInviteButton";
-import { ApiError, chequeApi, leaseApi, type Cheque, type LeaseChequeStats, type LeaseStatus } from "@/lib/api/leasing";
+import { ApiError, leaseApi, type Cheque, type LeaseStatus } from "@/lib/api/leasing";
+import { chequeSummary } from "@/components/renters/chequeSummary";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 
 /**
@@ -20,21 +21,9 @@ import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
  *
  * Built on `GET /renters/{id}`, `GET /renters/{id}/leases` (tenant-scoped, and
  * narrowed to a property manager's own buildings by LeaseAccessPolicy),
- * one `POST /cheques/stats-by-leases` for every contract's cheque figures (scale
- * spec #14 — it used to read `GET /leases/{id}/cheques` for every contract up
- * front), and `GET /tickets?renterId=`, the caller's own ticket scope narrowed
- * to this renter on the server. A contract's cheque rows load when opened.
+ * `GET /leases/{id}/cheques` per contract, and `GET /tickets?renterId=`, the
+ * caller's own ticket scope narrowed to this renter on the server.
  */
-
-/** The stats endpoint takes at most this many leases per call (ChequeQueryService.MAX_STATS_LEASES). */
-const STATS_CHUNK = 200;
-
-async function statsFor(leaseIds: string[]): Promise<Map<string, LeaseChequeStats>> {
-    const chunks: string[][] = [];
-    for (let i = 0; i < leaseIds.length; i += STATS_CHUNK) chunks.push(leaseIds.slice(i, i + STATS_CHUNK));
-    const parts = await Promise.all(chunks.map(c => chequeApi.statsByLeases(c)));
-    return new Map(parts.flat().map(s => [s.leaseId, s]));
-}
 
 type Renter = {
     id: string;
@@ -91,6 +80,7 @@ export default function RenterDetailPage() {
     const locale = useLocale();
     const t = useTranslations("RenterDetail");
     const tLeasing = useTranslations("Leasing");
+    const tCheques = useTranslations("Cheques");
     const tInv = useTranslations("Invites");
     const { data: session, status: sessionStatus } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
@@ -100,7 +90,7 @@ export default function RenterDetailPage() {
 
     const [renter, setRenter] = useState<Renter | null>(null);
     const [leases, setLeases] = useState<RenterLease[]>([]);
-    const [stats, setStats] = useState<Map<string, LeaseChequeStats>>(new Map());
+    const [cheques, setCheques] = useState<Cheque[]>([]);
     const [tickets, setTickets] = useState<Ticket[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -176,18 +166,12 @@ export default function RenterDetailPage() {
                 if (cancelled) return;
                 setLeases(ls);
 
-                if (ls.length > 0) {
-                    try {
-                        const byLease = await statsFor(ls.map(l => l.id));
-                        if (!cancelled) setStats(byLease);
-                    } catch {
-                        if (!cancelled) {
-                            setStats(new Map());
-                            setChequesFailed(true);
-                        }
-                    }
-                } else if (!cancelled) {
-                    setStats(new Map());
+                const perLease = await Promise.all(
+                    ls.map(l => leaseApi.cheques(l.id).then(cs => ({ ok: true, cs }), () => ({ ok: false, cs: [] as Cheque[] }))),
+                );
+                if (!cancelled) {
+                    setCheques(perLease.flatMap(p => p.cs));
+                    setChequesFailed(perLease.some(p => !p.ok));
                 }
 
                 // Filtered server-side (web review I3): tickets this renter
@@ -216,12 +200,8 @@ export default function RenterDetailPage() {
         };
     }, [renterId, userRole, canView, sessionStatus, t, reloadKey]);
 
-    const summary = useMemo(() => {
-        const all = [...stats.values()];
-        const sum = (f: (s: LeaseChequeStats) => number) => Math.round(all.reduce((a, s) => a + (f(s) ?? 0), 0) * 100) / 100;
-        return { count: sum(s => s.total), cleared: sum(s => s.clearedAmount), due: sum(s => s.dueAmount), bounced: sum(s => s.bounced) };
-    }, [stats]);
-    const leasesWithCheques = leases.filter(l => (stats.get(l.id)?.total ?? 0) > 0);
+    const summary = useMemo(() => chequeSummary(cheques), [cheques]);
+    const unitOf = useMemo(() => new Map(leases.map(l => [l.id, l.unitIdentifier ?? "—"])), [leases]);
     const activeLeases = leases.filter(l => l.status === "ACTIVE" || l.status === "NOTICE_GIVEN").length;
 
     if (userRole && !canView) {
@@ -309,11 +289,12 @@ export default function RenterDetailPage() {
             {/* Numbers and references are isolated LTR in a <bdi> while their cells
                 and tiles keep the page direction, so in Arabic they still line up
                 with their headers (web review I4). */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="renter-summary">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3" data-testid="renter-summary">
                 {[
                     { label: t("activeContracts"), value: leasesFailed ? "—" : String(activeLeases) },
+                    { label: t("chequesTotal"), value: chequeFiguresIncomplete ? "—" : formatCurrency(summary.total) },
                     { label: t("chequesCleared"), value: chequeFiguresIncomplete ? "—" : formatCurrency(summary.cleared) },
-                    { label: t("chequesDueNow"), value: chequeFiguresIncomplete ? "—" : formatCurrency(summary.due) },
+                    { label: t("chequesOutstanding"), value: chequeFiguresIncomplete ? "—" : formatCurrency(summary.outstanding) },
                     { label: t("chequesBounced"), value: chequeFiguresIncomplete ? "—" : String(summary.bounced) },
                 ].map(k => (
                     <div key={k.label} className="bg-surface border border-border rounded-xl p-4">
@@ -375,16 +356,32 @@ export default function RenterDetailPage() {
                 {chequeFiguresIncomplete && (
                     <LoadErrorBanner message={t("chequesLoadFailed")} onRetry={retry} className="mb-3" />
                 )}
-                {leasesWithCheques.length === 0 ? (
+                {cheques.length === 0 ? (
                     !chequeFiguresIncomplete && (
                         <p className="text-xs text-muted bg-surface border border-dashed border-border rounded-xl p-6 text-center">{t("noCheques")}</p>
                     )
                 ) : (
-                    <div className="space-y-2" data-testid="renter-cheques">
-                        {leasesWithCheques.map(l => (
-                            <ContractCheques key={l.id} lease={l} stats={stats.get(l.id)!}
-                                initiallyOpen={leasesWithCheques.length === 1} />
-                        ))}
+                    <div className="bg-surface rounded-xl border border-border overflow-x-auto">
+                        <table className="w-full" data-testid="renter-cheques">
+                            <thead><tr className="bg-input/50">
+                                <th className={th}>{t("unit")}</th>
+                                <th className={th}>{t("chequeNumber")}</th>
+                                <th className={th}>{t("chequeDate")}</th>
+                                <th className={th}>{t("status")}</th>
+                                <th className={cn(th, "text-end")}>{t("amount")}</th>
+                            </tr></thead>
+                            <tbody>
+                                {cheques.map(c => (
+                                    <tr key={c.id} className="border-b border-border">
+                                        <td className={td}>{unitOf.get(c.leaseId) ?? "—"}</td>
+                                        <td className={td}><bdi dir="ltr">{c.chequeNumber ?? "—"}</bdi></td>
+                                        <td className={td}>{fmtIsoDate(c.chequeDate, locale)}</td>
+                                        <td className={td}>{tCheques.has(`status.${c.status}`) ? tCheques(`status.${c.status}`) : c.status}</td>
+                                        <td className={cn(td, "text-end tabular-nums")}><bdi dir="ltr">{formatCurrency(c.amount)}</bdi></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 )}
             </section>
@@ -425,80 +422,6 @@ export default function RenterDetailPage() {
                     </div>
                 )}
             </section>
-        </div>
-    );
-}
-
-/**
- * One contract's cheques inside the renter page: its figures from the batched
- * stats, its rows fetched only when opened (one contract → opened at once).
- */
-function ContractCheques({ lease, stats, initiallyOpen }: { lease: RenterLease; stats: LeaseChequeStats; initiallyOpen: boolean }) {
-    const t = useTranslations("RenterDetail");
-    const tCheques = useTranslations("Cheques");
-    const locale = useLocale();
-    const [open, setOpen] = useState(initiallyOpen);
-    const [rows, setRows] = useState<Cheque[] | null>(null);
-    const [failed, setFailed] = useState(false);
-    const [attempt, setAttempt] = useState(0);
-
-    useEffect(() => {
-        if (!open || rows !== null) return;
-        let alive = true;
-        leaseApi.cheques(lease.id)
-            .then(cs => { if (alive) { setRows(cs); setFailed(false); } })
-            .catch(() => { if (alive) setFailed(true); });
-        return () => { alive = false; };
-    }, [open, rows, lease.id, attempt]);
-
-    const th = "px-4 py-2.5 text-start text-[11px] font-semibold text-muted uppercase tracking-wider";
-    const td = "px-4 py-2.5 text-sm text-foreground";
-    return (
-        <div className="bg-surface rounded-xl border border-border" data-testid={`renter-cheques-${lease.id}`}>
-            <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
-                data-testid={`renter-cheques-toggle-${lease.id}`}
-                className="w-full flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-start cursor-pointer hover:bg-input/30 rounded-xl">
-                <span className="text-sm font-semibold">
-                    {lease.unitIdentifier ?? "—"}
-                    <span className="ms-2 text-[11px] font-medium text-muted"><bdi dir="ltr">{lease.displayContractNumber || lease.id.slice(0, 8)}</bdi></span>
-                </span>
-                <span className="flex items-center gap-3 text-[11px] text-muted">
-                    <span>{t("contractChequeStats", { cleared: stats.cleared, total: stats.total })}</span>
-                    {stats.dueAmount > 0 && <span className="text-warning">{t("chequesDueNow")}: <bdi dir="ltr">{formatCurrency(stats.dueAmount)}</bdi></span>}
-                    <span className="text-primary font-semibold">{open ? t("hideCheques") : t("showCheques")}</span>
-                    <ChevronDown size={14} className={cn("transition-transform", open && "rotate-180")} />
-                </span>
-            </button>
-            {open && (
-                failed ? (
-                    <div className="px-4 pb-3">
-                        <LoadErrorBanner message={t("contractChequesFailed")} onRetry={() => { setFailed(false); setAttempt(a => a + 1); }} className="mb-0" />
-                    </div>
-                ) : rows === null ? (
-                    <div className="flex justify-center py-4"><Loader2 className="w-4 h-4 animate-spin text-muted" /></div>
-                ) : (
-                    <div className="overflow-x-auto border-t border-border">
-                        <table className="w-full">
-                            <thead><tr className="bg-input/50">
-                                <th className={th}>{t("chequeNumber")}</th>
-                                <th className={th}>{t("chequeDate")}</th>
-                                <th className={th}>{t("status")}</th>
-                                <th className={cn(th, "text-end")}>{t("amount")}</th>
-                            </tr></thead>
-                            <tbody>
-                                {rows.map(c => (
-                                    <tr key={c.id} className="border-b border-border last:border-b-0">
-                                        <td className={td}><bdi dir="ltr">{c.chequeNumber ?? "—"}</bdi></td>
-                                        <td className={td}>{fmtIsoDate(c.chequeDate, locale)}</td>
-                                        <td className={td}>{tCheques.has(`status.${c.status}`) ? tCheques(`status.${c.status}`) : c.status}</td>
-                                        <td className={cn(td, "text-end tabular-nums")}><bdi dir="ltr">{formatCurrency(c.amount)}</bdi></td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )
-            )}
         </div>
     );
 }

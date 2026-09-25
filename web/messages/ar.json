@@ -3317,12 +3317,7 @@
     "ticketTitle": "العنوان",
     "reported": "تاريخ البلاغ",
     "view": "عرض",
-    "ticketStatus": {"OPEN": "مفتوحة", "ASSIGNED": "مُسندة", "IN_PROGRESS": "قيد التنفيذ", "RESOLVED": "تم الحل", "CLOSED": "مغلقة", "REOPENED": "أعيد فتحها"},
-    "chequesDueNow": "مستحقة الآن",
-    "contractChequeStats": "{cleared} من {total} محصّلة",
-    "showCheques": "عرض الشيكات",
-    "hideCheques": "إخفاء الشيكات",
-    "contractChequesFailed": "تعذّر تحميل شيكات هذا العقد."
+    "ticketStatus": {"OPEN": "مفتوحة", "ASSIGNED": "مُسندة", "IN_PROGRESS": "قيد التنفيذ", "RESOLVED": "تم الحل", "CLOSED": "مغلقة", "REOPENED": "أعيد فتحها"}
   },
   "Notifications": {
     "title": "الإشعارات",

@@ -3317,12 +3317,7 @@
     "ticketTitle": "Title",
     "reported": "Reported",
     "view": "View",
-    "ticketStatus": {"OPEN": "Open", "ASSIGNED": "Assigned", "IN_PROGRESS": "In progress", "RESOLVED": "Resolved", "CLOSED": "Closed", "REOPENED": "Reopened"},
-    "chequesDueNow": "Due now",
-    "contractChequeStats": "{cleared} of {total} cleared",
-    "showCheques": "Show cheques",
-    "hideCheques": "Hide cheques",
-    "contractChequesFailed": "Could not load this contract's cheques."
+    "ticketStatus": {"OPEN": "Open", "ASSIGNED": "Assigned", "IN_PROGRESS": "In progress", "RESOLVED": "Resolved", "CLOSED": "Closed", "REOPENED": "Reopened"}
   },
   "Notifications": {
     "title": "Notifications",
