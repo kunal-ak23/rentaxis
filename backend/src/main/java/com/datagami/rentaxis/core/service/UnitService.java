@@ -105,7 +105,7 @@ public class UnitService {
         }
         List<UUID> scoped = propertyScope.scopedPropertyIds();
         org.springframework.data.domain.Page<Unit> rows = repository.searchPaged(
-                com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId(), propertyId, status,
+                com.datagami.rentaxis.core.util.Search.requireTenant(), propertyId, status,
                 floor == null || floor.isBlank() ? null : floor.trim() + "%",
                 com.datagami.rentaxis.core.util.Search.like(q), scoped == null,
                 com.datagami.rentaxis.core.util.Search.scopeIds(scoped), pageable);
@@ -120,7 +120,7 @@ public class UnitService {
             return List.of();
         }
         List<UUID> scoped = propertyScope.scopedPropertyIds();
-        return repository.searchPaged(com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId(), propertyId,
+        return repository.searchPaged(com.datagami.rentaxis.core.util.Search.requireTenant(), propertyId,
                         null, null, com.datagami.rentaxis.core.util.Search.like(q), scoped == null,
                         com.datagami.rentaxis.core.util.Search.scopeIds(scoped),
                         org.springframework.data.domain.PageRequest.of(0, com.datagami.rentaxis.core.util.Search.limit(limit), UNIT_ORDER))
@@ -133,7 +133,7 @@ public class UnitService {
         List<UUID> wanted = com.datagami.rentaxis.core.util.Search.names(ids);
         if (wanted.isEmpty()) return List.of();
         List<UUID> scoped = propertyScope.scopedPropertyIds();
-        return repository.findNamed(com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId(), wanted,
+        return repository.findNamed(com.datagami.rentaxis.core.util.Search.requireTenant(), wanted,
                         scoped == null, com.datagami.rentaxis.core.util.Search.scopeIds(scoped))
                 .stream().map(UnitService::option).toList();
     }

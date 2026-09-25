@@ -73,6 +73,38 @@ public final class Search {
         return distinct;
     }
 
+    /**
+     * The organisation a paged / search / names endpoint answers for. They bind it in SQL,
+     * so a caller with none — a SUPER_ADMIN who has not picked an organisation — is told to
+     * pick one (400) rather than handed an empty page that looks like "nothing matches".
+     */
+    public static UUID requireTenant() {
+        UUID t = com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId();
+        if (t == null) {
+            throw new BusinessRuleViolationException("Select an organisation first");
+        }
+        return t;
+    }
+
+    /** The tenant for the register's SQL reads: the caller's, or none only for a SUPER_ADMIN (all organisations). */
+    public record TenantScope(UUID tenantId, boolean allTenants) {
+    }
+
+    /**
+     * {@link #requireTenant}, except that a SUPER_ADMIN with no organisation selected keeps
+     * reading across organisations — what the dashboard, register tiles and aging did before
+     * they were SQL. Any other caller without a tenant is refused.
+     */
+    public static TenantScope tenantOrSuperAdmin() {
+        UUID t = com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId();
+        if (t != null) return new TenantScope(t, false);
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        boolean superAdmin = auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_SUPER_ADMIN".equals(a.getAuthority()));
+        if (!superAdmin) throw new BusinessRuleViolationException("Select an organisation first");
+        return new TenantScope(new UUID(0L, 0L), true);
+    }
+
     /** A JPQL {@code in :ids} list for "unrestricted": ignored by the query, but never empty. */
     public static Collection<UUID> scopeIds(List<UUID> scoped) {
         return scoped == null || scoped.isEmpty() ? List.of(new UUID(0L, 0L)) : scoped;

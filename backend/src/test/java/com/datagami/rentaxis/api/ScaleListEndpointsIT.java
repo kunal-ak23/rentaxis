@@ -305,6 +305,41 @@ class ScaleListEndpointsIT extends AbstractPostgresIT {
         assertThat(get(pm, "/api/v1/properties")).hasSize(1);
     }
 
+    // ------------------------------------------------------------------ super admin, no organisation
+
+    /**
+     * PR #366 review P2-3. A SUPER_ADMIN with no organisation selected: the new paged /
+     * search / names endpoints refuse (400, "Select an organisation first") rather than
+     * answer an empty page; the dashboard, register tiles and aging keep reading across
+     * organisations, as they did before their overdue figures moved to SQL.
+     */
+    @Test
+    void aSuperAdminWithNoOrganisationIsToldToPickOneOnTheNewListsAndKeepsTheOldTotals() {
+        User sa = new User();
+        sa.setEmail("sa-" + UUID.randomUUID() + "@t.io");
+        sa.setName("SA");
+        sa.setRole(UserRole.SUPER_ADMIN);
+        sa.setStatus(UserStatus.ACTIVE);
+        sa.setPasswordHash("x");
+        sa = userRepo.save(sa);
+        for (String path : List.of("/api/v1/renters/paged", "/api/v1/renters/search?q=a", "/api/v1/units/paged",
+                "/api/v1/units/names?ids=" + u0701.getId(), "/api/v1/tickets/paged", "/api/v1/vendors/paged")) {
+            assertThat(noTenant(sa, path).getStatusCode().value()).as(path).isEqualTo(400);
+        }
+        ResponseEntity<String> dash = noTenant(sa, "/api/v1/dashboard/summary");
+        assertThat(dash.getStatusCode().is2xxSuccessful()).as(dash.getBody()).isTrue();
+        assertThat(noTenant(sa, "/api/v1/cheques/aging").getStatusCode().is2xxSuccessful()).isTrue();
+        JsonNode summary = read(noTenant(sa, "/api/v1/cheques/summary").getBody());
+        assertThat(summary.get("registeredCount").asLong()).isGreaterThanOrEqualTo(4);
+    }
+
+    private ResponseEntity<String> noTenant(User caller, String path) {
+        return RestClient.builder().baseUrl("http://localhost:" + port).build().method(HttpMethod.GET).uri(path)
+                .header("X-User-Id", caller.getId().toString())
+                .header("X-User-Role", caller.getRole().name())
+                .retrieve().onStatus(s -> true, (req, res) -> { }).toEntity(String.class);
+    }
+
     // ------------------------------------------------------------------ helpers
 
     private LeaseTestFixtures fixtures() {

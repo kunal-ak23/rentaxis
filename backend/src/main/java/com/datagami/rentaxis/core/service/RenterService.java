@@ -53,7 +53,7 @@ public class RenterService {
      */
     @Transactional(readOnly = true)
     public org.springframework.data.domain.Page<RenterDTO> searchPaged(String q, int page, int size) {
-        UUID tenantId = TenantContextHolder.getTenantId();
+        UUID tenantId = Search.requireTenant();
         List<UUID> scoped = scoped();
         org.springframework.data.domain.Page<Renter> rows = renterRepository.searchPaged(tenantId, Search.like(q),
                 scoped == null, Search.scopeIds(scoped), Search.page(page, size, BY_NAME));
@@ -69,7 +69,7 @@ public class RenterService {
     @Transactional(readOnly = true)
     public List<RenterOptionDTO> search(String q, int limit) {
         List<UUID> scoped = scoped();
-        return renterRepository.searchPaged(TenantContextHolder.getTenantId(), Search.like(q), scoped == null,
+        return renterRepository.searchPaged(Search.requireTenant(), Search.like(q), scoped == null,
                         Search.scopeIds(scoped), org.springframework.data.domain.PageRequest.of(0, Search.limit(limit), BY_NAME))
                 .getContent().stream().map(RenterService::option).toList();
     }
@@ -80,7 +80,7 @@ public class RenterService {
         List<UUID> wanted = Search.names(ids);
         if (wanted.isEmpty()) return List.of();
         List<UUID> scoped = scoped();
-        return renterRepository.findNamed(TenantContextHolder.getTenantId(), wanted, scoped == null, Search.scopeIds(scoped))
+        return renterRepository.findNamed(Search.requireTenant(), wanted, scoped == null, Search.scopeIds(scoped))
                 .stream().map(RenterService::option).toList();
     }
 

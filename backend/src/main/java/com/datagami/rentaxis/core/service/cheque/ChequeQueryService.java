@@ -205,7 +205,7 @@ public class ChequeQueryService {
         // F14-08 and the lateness rules, in one aggregate (scale P1-10): a bounced row
         // counts only for the debt the ledger still carries, and a row with nothing
         // open is not counted at all.
-        ChequeRepository.DueTotals t = chequeRepository.dueTotals(TenantContextHolder.getTenantId(), on,
+        ChequeRepository.DueTotals t = chequeRepository.dueTotals(tenantScope().tenantId(), tenantScope().allTenants(), on,
                 propertyId, scope.unrestricted(), nonEmpty(scope.propertyIds()));
         long dueCount = t.getDueCount();
         BigDecimal dueAmount = amount(t.getDueAmount());
@@ -253,7 +253,7 @@ public class ChequeQueryService {
         if (!scope.blocked()) {
             // One statement: the due rows with what of each is still open (F14-08),
             // their lateness and the names the report prints (scale P1-10).
-            for (ChequeRepository.OpenDueRow r : chequeRepository.openDueRows(TenantContextHolder.getTenantId(), on,
+            for (ChequeRepository.OpenDueRow r : chequeRepository.openDueRows(tenantScope().tenantId(), tenantScope().allTenants(), on,
                     propertyId, scope.unrestricted(), nonEmpty(scope.propertyIds()))) {
                 BigDecimal amt = r.getOpenAmount();
                 int days = r.getOverdue() ? r.getDaysOverdue() : 0;
@@ -459,7 +459,6 @@ public class ChequeQueryService {
         return value == null ? BigDecimal.ZERO : value;
     }
 
-    /** Grace comes from the row's own lease; a detached row is treated as having none. */
     /**
      * A native {@code in (:ids)} cannot take an empty list; an unrestricted caller's list is
      * empty and ignored by the query, so it gets a sentinel no property has.
@@ -468,6 +467,7 @@ public class ChequeQueryService {
         return ids == null || ids.isEmpty() ? List.of(new UUID(0L, 0L)) : ids;
     }
 
+    /** Grace comes from the row's own lease; a detached row is treated as having none. */
     private static int graceOf(Lease lease) {
         return lease == null ? 0 : lease.getGracePeriodDays();
     }
@@ -503,5 +503,10 @@ public class ChequeQueryService {
         java.util.Set<UUID> out = new java.util.HashSet<>();
         bouncedDebt.openAmounts(bounced).forEach((id, open) -> { if (open.signum() <= 0) out.add(id); });
         return out;
+    }
+
+    /** Whose rows the register's SQL reads: the caller's organisation, or all of them for a SUPER_ADMIN with none selected. */
+    private static com.datagami.rentaxis.core.util.Search.TenantScope tenantScope() {
+        return com.datagami.rentaxis.core.util.Search.tenantOrSuperAdmin();
     }
 }

@@ -476,7 +476,7 @@ public class MaintenanceTicketService {
         }
         List<UUID> scoped = propertyScope.scopedPropertyIds();
         org.springframework.data.domain.Page<MaintenanceTicket> rows = ticketRepository.searchPaged(
-                TenantContextHolder.getTenantId(), propertyId, status, priority, from, to,
+                com.datagami.rentaxis.core.util.Search.requireTenant(), propertyId, status, priority, from, to,
                 com.datagami.rentaxis.core.util.Search.like(q), scoped == null,
                 com.datagami.rentaxis.core.util.Search.scopeIds(scoped), pageable);
         List<MaintenanceTicketDTO> dtos = mapAll(rows.getContent(), userId);

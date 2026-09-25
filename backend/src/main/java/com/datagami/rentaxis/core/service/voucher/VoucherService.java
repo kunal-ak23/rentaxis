@@ -870,13 +870,13 @@ public class VoucherService {
      * leave one journal, not two: the status check is read-then-act, so it is only
      * a guard while the row it read cannot move underneath it.</p>
      *
-     * <p>{@code find} then {@code refresh(…, PESSIMISTIC_WRITE)} rather than a
-     * {@code @Lock} finder, for the reason documented at
-     * {@code ChequeService#lockLease}: a locking JPQL query hands back the
-     * first-level-cache instance with its <em>stale</em> state, so the loser of the
-     * race would take the lock and then decide on the pre-lock status — exactly the
-     * bug the lock exists to prevent. {@code refresh} is defined as "overwrite this
-     * instance from the database", so it both takes the lock and re-reads.</p>
+     * <p>A native {@code SELECT … FOR UPDATE} on the row (tenant bound), then {@code find}
+     * and a plain {@code refresh}, rather than a {@code @Lock} finder, for the reason
+     * documented at {@code ChequeService#lockLease}: a locking JPQL query hands back the
+     * first-level-cache instance with its <em>stale</em> state, so the loser of the race
+     * would take the lock and then decide on the pre-lock status. The refresh re-reads it
+     * once the row is ours. (It used to be {@code refresh(…, PESSIMISTIC_WRITE)}, whose
+     * follow-on locking threw under concurrent posts — scale P1-12.)</p>
      *
      * <p><b>The explicit tenant comparison below is the only guard on this path —
      * do not delete it as redundant.</b> {@code BaseTenantEntity} does set

@@ -36,8 +36,15 @@ class DashboardServicePendingThisMonthTest {
     private LeaseAccessPolicy leaseAccessPolicy;
     private DashboardService service;
 
+    @org.junit.jupiter.api.AfterEach
+    void clearTenant() {
+        com.datagami.rentaxis.core.tenant.TenantContextHolder.clear();
+    }
+
     @BeforeEach
     void setUp() {
+        // The overdue tile's SQL binds the organisation; a caller always has one here.
+        com.datagami.rentaxis.core.tenant.TenantContextHolder.setTenantId(java.util.UUID.randomUUID());
         PropertyRepository propertyRepository = mock(PropertyRepository.class);
         UnitRepository unitRepository = mock(UnitRepository.class);
         LeaseRepository leaseRepository = mock(LeaseRepository.class);

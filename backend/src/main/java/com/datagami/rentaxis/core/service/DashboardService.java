@@ -175,7 +175,7 @@ public class DashboardService {
         // lease and each bounced lease's ledger — ~9,500 statements at 8,000 units.
         BigDecimal overdueAmount = BigDecimal.ZERO;
         if (!scope.blocked()) {
-            ChequeRepository.DueTotals totals = chequeRepository.dueTotals(TenantContextHolder.getTenantId(), today,
+            ChequeRepository.DueTotals totals = chequeRepository.dueTotals(tenantScope().tenantId(), tenantScope().allTenants(), today,
                     null, scope.unrestricted(), ChequeQueryService.nonEmpty(scope.propertyIds()));
             overdueAmount = totals == null ? BigDecimal.ZERO : nz(totals.getOverdueAmount());
         }
@@ -333,5 +333,10 @@ public class DashboardService {
 
     private static BigDecimal nz(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    /** Whose rows the register's SQL reads: the caller's organisation, or all of them for a SUPER_ADMIN with none selected. */
+    private static com.datagami.rentaxis.core.util.Search.TenantScope tenantScope() {
+        return com.datagami.rentaxis.core.util.Search.tenantOrSuperAdmin();
     }
 }

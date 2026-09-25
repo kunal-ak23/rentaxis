@@ -629,19 +629,22 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
      * ({@code AccountResolver}). {@code overdue} is {@code ChequeDueRules.overdue}:
      * {@code chequeDate + grace < today}.</p>
      *
-     * <p>Native, so the tenant is bound here rather than by the Hibernate filter.
-     * {@code propertyIds} must not be empty (callers pass a sentinel when unrestricted).</p>
+     * <p>Native, so the tenant is bound here rather than by the Hibernate filter: every row
+     * and every correlated read (ledger, mappings) is the row's own organisation's.
+     * {@code allTenants} is for a SUPER_ADMIN with no organisation selected only, who read
+     * across organisations before this was SQL and still does; everyone else passes their
+     * tenant. {@code propertyIds} must not be empty (callers pass a sentinel when unrestricted).</p>
      */
     String OPEN_DUE_CTE = """
         with due as (
-            select c.id, c.lease_id, coalesce(c.amount, 0) as amount, c.status, c.cheque_date, c.bounced_at,
+            select c.id, c.tenant_id, c.lease_id, coalesce(c.amount, 0) as amount, c.status, c.cheque_date, c.bounced_at,
                    c.property_id, c.unit_id, c.renter_id, c.cheque_number, c.seq_no,
                    c.cheque_date + coalesce(l.grace_period_days, 0) as grace_end,
                    l.receivable_account_id, u.property_id as unit_property_id
             from cheques c
                  join leases l on l.id = c.lease_id
                  left join units u on u.id = l.unit_id
-            where c.tenant_id = :tenantId
+            where (:allTenants = true or c.tenant_id = :tenantId)
               and ((c.status in ('REGISTERED', 'DEPOSITED', 'ONLINE_PENDING') and c.cheque_date <= :today)
                    or c.status = 'BOUNCED')
               and l.status not in ('DRAFT', 'PENDING_SIGNATURE')
@@ -658,19 +661,19 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
         balances as (
             select bl.lease_id,
                    greatest(coalesce((select sum(jl.debit) - sum(jl.credit) from journal_lines jl
-                                      where jl.tenant_id = :tenantId and jl.lease_id = bl.lease_id
+                                      where jl.tenant_id = bl.tenant_id and jl.lease_id = bl.lease_id
                                         and jl.account_id = coalesce(bl.receivable_account_id,
                                             (select m.account_id from property_account_mappings m
                                                  join accounts a on a.id = m.account_id
-                                             where m.tenant_id = :tenantId and m.property_id = bl.unit_property_id
+                                             where m.tenant_id = bl.tenant_id and m.property_id = bl.unit_property_id
                                                and m.role = 'RENT_RECEIVABLE' and a.is_active and not a.is_group
                                              limit 1),
                                             (select m.account_id from tenant_default_account_mappings m
                                                  join accounts a on a.id = m.account_id
-                                             where m.tenant_id = :tenantId and m.role = 'RENT_RECEIVABLE'
+                                             where m.tenant_id = bl.tenant_id and m.role = 'RENT_RECEIVABLE'
                                                and a.is_active and not a.is_group
                                              limit 1))), 0), 0) as balance
-            from (select distinct d.lease_id, d.receivable_account_id, d.unit_property_id
+            from (select distinct d.tenant_id, d.lease_id, d.receivable_account_id, d.unit_property_id
                   from due d where d.status = 'BOUNCED') bl
         ),
         open_due as (
@@ -698,6 +701,7 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
         from open_due o where o.open_amount > 0
         """, nativeQuery = true)
     DueTotals dueTotals(@Param("tenantId") UUID tenantId,
+                        @Param("allTenants") boolean allTenants,
                         @Param("today") LocalDate today,
                         @Param("propertyId") UUID propertyId,
                         @Param("unrestricted") boolean unrestricted,
@@ -722,6 +726,7 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
         order by o.cheque_date, o.seq_no, o.id
         """, nativeQuery = true)
     List<OpenDueRow> openDueRows(@Param("tenantId") UUID tenantId,
+                                 @Param("allTenants") boolean allTenants,
                                  @Param("today") LocalDate today,
                                  @Param("propertyId") UUID propertyId,
                                  @Param("unrestricted") boolean unrestricted,
