@@ -185,7 +185,10 @@ public class YearEndCloseService {
         List<PnlLine> lines = pnlLines(tenant, p.start(), p.end());
         BigDecimal income = sum(lines, "INCOME");
         BigDecimal expense = sum(lines, "EXPENSE");
-        List<RetainedLine> retained = retainedByProperty(closingGroups(tenant, p.end()));
+        // F15-01: the year's own result per property, and what earlier open years
+        // bring forward, apart — never one cumulative figure beside the year's lines.
+        List<RetainedLine> retained = retainedByProperty(closingGroups(tenant, p.end()),
+                closingGroups(tenant, p.start().minusDays(1)));
         LocalDate lockBefore = settings.getBooksLockedThrough();
         LocalDate lockAfter = lockBefore != null && lockBefore.isAfter(p.end()) ? lockBefore : p.end();
         return new YearClosePreviewDTO(p.fiscalYear(), p.start(), p.end(), blockers, warnings, lines,
@@ -330,14 +333,23 @@ public class YearEndCloseService {
         return lines;
     }
 
-    private List<RetainedLine> retainedByProperty(List<Group> groups) {
-        Map<UUID, BigDecimal> profit = new LinkedHashMap<>();
-        for (Group g : groups) profit.merge(g.propertyId(), g.net().negate(), BigDecimal::add);
-        Map<UUID, String> names = propertyNames(profit.keySet());
-        return profit.entrySet().stream()
-                .filter(e -> e.getValue().signum() != 0)
-                .map(e -> new RetainedLine(e.getKey(), e.getKey() == null ? null : names.get(e.getKey()),
-                        e.getValue().setScale(2, java.math.RoundingMode.HALF_UP)))
+    private List<RetainedLine> retainedByProperty(List<Group> throughEnd, List<Group> beforeStart) {
+        Map<UUID, BigDecimal> cumulative = new LinkedHashMap<>();
+        for (Group g : throughEnd) cumulative.merge(g.propertyId(), g.net().negate(), BigDecimal::add);
+        Map<UUID, BigDecimal> earlier = new LinkedHashMap<>();
+        for (Group g : beforeStart) earlier.merge(g.propertyId(), g.net().negate(), BigDecimal::add);
+        java.util.Set<UUID> keys = new java.util.LinkedHashSet<>(cumulative.keySet());
+        keys.addAll(earlier.keySet());
+        Map<UUID, String> names = propertyNames(keys);
+        return keys.stream()
+                .map(k -> {
+                    BigDecimal all = cumulative.getOrDefault(k, BigDecimal.ZERO);
+                    BigDecimal bf = earlier.getOrDefault(k, BigDecimal.ZERO);
+                    return new RetainedLine(k, k == null ? null : names.get(k),
+                            all.subtract(bf).setScale(2, java.math.RoundingMode.HALF_UP),
+                            bf.setScale(2, java.math.RoundingMode.HALF_UP));
+                })
+                .filter(r -> r.profit().signum() != 0 || r.broughtForward().signum() != 0)
                 .sorted(Comparator.comparing(r -> r.propertyName() == null ? "" : r.propertyName()))
                 .toList();
     }

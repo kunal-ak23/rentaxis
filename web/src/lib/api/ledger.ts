@@ -428,7 +428,8 @@ export type YearClosePreview = {
   income: number;
   expense: number;
   netResult: number;
-  retainedEarnings: { propertyId: string | null; propertyName: string | null; profit: number }[];
+  /** F15-01: `profit` is the year's own result; `broughtForward` an earlier open year's (absent on an older server). */
+  retainedEarnings: { propertyId: string | null; propertyName: string | null; profit: number; broughtForward?: number }[];
   lockBefore: string | null;
   lockAfter: string | null;
 };

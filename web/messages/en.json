@@ -4010,6 +4010,7 @@
       "draftVouchers": "{count} draft voucher(s) are dated inside the year; closing will lock them out of it."
     },
     "beforeClosing": "Before closing entries",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "broughtForward": "Brought forward from earlier years (not yet closed)"
   }
 }

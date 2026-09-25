@@ -35,7 +35,7 @@ import RaisePenaltyDialog from "@/components/penalties/RaisePenaltyDialog";
 import GiveNoticeDialog from "@/components/leases/GiveNoticeDialog";
 import RecognitionScheduleTab from "@/components/leases/RecognitionScheduleTab";
 import VatScheduleTab from "@/components/leases/VatScheduleTab";
-import { fmtIsoDate, toRows, totalsOf } from "@/components/leases/leaseMath";
+import { defaultInstallmentsFor, fmtIsoDate, toRows, totalsOf } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi, settlementApi, terminationApi,
     type ChargeType, type Cheque, type GiveNoticeInput, type LeaseAddendum, type LeaseDetail, type LeaseStatus, type SettlementResponse,
@@ -799,7 +799,9 @@ export default function LeaseDetailPage() {
                                         propertyId={lease.propertyId}
                                         contractValueInclVat={totals.inclVat}
                                         contractVat={totals.vat}
-                                        defaultInstallments={lease.paymentTerms ?? 4}
+                                        // F15-04: capped at the charged months when the term has rent-free windows.
+                                        defaultInstallments={defaultInstallmentsFor(lease.paymentTerms,
+                                            lease.firstDueDate ?? lease.startDate, lease.endDate, lease.rentFreePeriods)}
                                         defaultFirstDueDate={lease.firstDueDate ?? lease.startDate}
                                         defaultDistribution={lease.installmentDistribution}
                                         busy={chequeBusy}

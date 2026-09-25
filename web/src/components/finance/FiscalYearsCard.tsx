@@ -234,9 +234,20 @@ export default function FiscalYearsCard({ canReopen, onChanged }: Props) {
                                 <div className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">{t("retainedEarnings")}</div>
                                 <ul className="space-y-0.5 tabular-nums" data-testid="fiscal-close-retained">
                                     {preview.retainedEarnings.map(r => (
-                                        <li key={r.propertyId ?? "none"} className="flex justify-between gap-3">
-                                            <span>{r.propertyName ?? t("noProperty")}</span>
-                                            <span>{r.profit >= 0 ? t.rich("credit", { amount: fmtAmount(r.profit), ...bdi }) : t.rich("debit", { amount: fmtAmount(-r.profit), ...bdi })}</span>
+                                        <li key={r.propertyId ?? "none"}>
+                                            <div className="flex justify-between gap-3">
+                                                <span>{r.propertyName ?? t("noProperty")}</span>
+                                                <span>{r.profit >= 0 ? t.rich("credit", { amount: fmtAmount(r.profit), ...bdi }) : t.rich("debit", { amount: fmtAmount(-r.profit), ...bdi })}</span>
+                                            </div>
+                                            {/* F15-01: an earlier open year's result, apart from this year's. */}
+                                            {(r.broughtForward ?? 0) !== 0 && (
+                                                <div className="flex justify-between gap-3 text-muted" data-testid="fiscal-close-brought-forward">
+                                                    <span>{t("broughtForward")}</span>
+                                                    <span>{(r.broughtForward ?? 0) >= 0
+                                                        ? t.rich("credit", { amount: fmtAmount(r.broughtForward ?? 0), ...bdi })
+                                                        : t.rich("debit", { amount: fmtAmount(-(r.broughtForward ?? 0)), ...bdi })}</span>
+                                                </div>
+                                            )}
                                         </li>
                                     ))}
                                 </ul>

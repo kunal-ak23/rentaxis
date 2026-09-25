@@ -421,3 +421,83 @@ export function clampIso(iso: string, min?: string | null, max?: string | null):
     if (max && iso > max) return max;
     return iso;
 }
+
+// ---- F15-04: instalments on a term with rent-free windows ----
+
+type Ymd = { y: number; m: number; d: number };
+const ymd = (iso: string): Ymd => {
+    const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+    return { y, m, d };
+};
+const iso = ({ y, m, d }: Ymd) => `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+const daysIn = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+function plusMonths(date: string, k: number): string {
+    const { y, m, d } = ymd(date);
+    const total = y * 12 + (m - 1) + k;
+    const ny = Math.floor(total / 12);
+    const nm = (total % 12) + 1;
+    return iso({ y: ny, m: nm, d: Math.min(d, daysIn(ny, nm)) });
+}
+function plusDays(date: string, k: number): string {
+    const { y, m, d } = ymd(date);
+    const t = new Date(Date.UTC(y, m - 1, d + k));
+    return iso({ y: t.getUTCFullYear(), m: t.getUTCMonth() + 1, d: t.getUTCDate() });
+}
+/** java.time's MONTHS.between: whole months from a to b. */
+function monthsBetween(a: string, b: string): number {
+    const x = ymd(a);
+    const z = ymd(b);
+    let months = (z.y * 12 + z.m) - (x.y * 12 + x.m);
+    const days = z.d - x.d;
+    if (months > 0 && days < 0) months--;
+    else if (months < 0 && days > 0) months++;
+    return months;
+}
+function outOfFree(day: string, free: { fromDate: string; toDate: string }[]): string {
+    let d = day;
+    for (const p of free) if (d >= p.fromDate && d <= p.toDate) d = plusDays(p.toDate, 1);
+    return d;
+}
+
+/**
+ * How many instalments a term with rent-free windows can take — one per charged
+ * month, the server's `ChequeGenerationService.chargedAnchors`: each month's due
+ * date from the first, moved out of any free window, distinct and within the term.
+ */
+export function chargedMonths(firstDue: string, end: string, free: { fromDate: string; toDate: string }[]): number {
+    const windows = [...free].sort((a, b) => a.fromDate.localeCompare(b.fromDate));
+    const months = Math.max(monthsBetween(firstDue, plusDays(end, 1)), 1);
+    const anchors: string[] = [];
+    for (let k = 0; k < months; k++) {
+        const a = outOfFree(plusMonths(firstDue, k), windows);
+        if (a > end) continue;
+        if (anchors.length && a <= anchors[anchors.length - 1]) continue;
+        anchors.push(a);
+    }
+    return Math.max(anchors.length, 1);
+}
+
+/** F15-04: the Generate form's instalment count — the lease's terms, capped at the charged months. */
+export function defaultInstallmentsFor(
+    paymentTerms: number | null | undefined,
+    firstDue: string | null | undefined,
+    end: string | null | undefined,
+    free: { fromDate: string; toDate: string }[] | null | undefined,
+): number {
+    const n = paymentTerms ?? 4;
+    if (!free?.length || !firstDue || !end) return n;
+    return Math.min(n, chargedMonths(firstDue, end, free));
+}
+
+/**
+ * F15-05: the end of a term as long as the current one, starting on {@code newStart} —
+ * the server's `LeaseRenewalService.sameTermLength` (java.time Period: whole months,
+ * then days), so a renewal by percent is accepted as proposed.
+ */
+export function sameTermEnd(oldStart: string, oldEnd: string, newStart: string): string {
+    const afterOld = plusDays(oldEnd, 1);
+    const months = monthsBetween(oldStart, afterOld);
+    const anchor = plusMonths(oldStart, months);
+    const days = Math.round((Date.parse(afterOld) - Date.parse(anchor)) / 86_400_000);
+    return plusDays(plusDays(plusMonths(newStart, months), days), -1);
+}

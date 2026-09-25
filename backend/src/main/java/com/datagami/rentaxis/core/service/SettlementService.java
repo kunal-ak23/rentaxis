@@ -569,7 +569,17 @@ public class SettlementService {
         requireSettleable(lease);
         requireUsableDate(lease, settlementDate);
         if (existing == null) {
-            throw new NotFoundException("No settlement found for this lease");
+            // F15-03: Finalize on a fresh settlement page, with nothing saved. The
+            // statement the page showed is the one with no lines of the user's own,
+            // so the draft is created from exactly that: an empty grid, no notes.
+            existing = new LeaseSettlement();
+            existing.setLeaseId(leaseId);
+            existing.setStatus(SettlementStatus.DRAFT);
+            existing.setDepositAmount(BigDecimal.ZERO);
+            existing.setTotalDeductions(BigDecimal.ZERO);
+            existing.setTotalAdditions(BigDecimal.ZERO);
+            existing.setRefundAmount(BigDecimal.ZERO);
+            existing = leaseSettlementRepository.saveAndFlush(existing);
         }
         LeaseSettlement settlement = existing;
 

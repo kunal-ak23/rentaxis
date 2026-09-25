@@ -5,7 +5,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { Plus, Trash2 } from "lucide-react";
 import LeaseDialog from "./LeaseDialog";
 import LeaseLinesGrid from "./LeaseLinesGrid";
-import { isOneOff, linesAreValid, renewalRows, splitLineErrors, toInputs, todayIso, withCarriedDeposit, type LineRow } from "./leaseMath";
+import { isOneOff, linesAreValid, renewalRows, sameTermEnd, splitLineErrors, toInputs, todayIso, withCarriedDeposit, type LineRow } from "./leaseMath";
 import {
     ApiError, leaseApi, type ChargeType, type LeaseDetail, type LeaseLine, type LeaseLineInput,
     type RenewalPreview, type RentChangeMode,
@@ -105,7 +105,8 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
         const start = dayAfter(lease.endDate);
         setContractDate(todayIso());
         setStartDate(start);
-        setEndDate(yearFrom(start));
+        // F15-05: as long as the current term, so "By percent" works as proposed.
+        setEndDate(lease.startDate && lease.endDate ? sameTermEnd(lease.startDate, lease.endDate, start) : yearFrom(start));
         setCopyLines(true);
         setCarryDeposit(true);
         setRows(renewalRows(lease.lines, lease.startDate, { carryDepositForward: true }));

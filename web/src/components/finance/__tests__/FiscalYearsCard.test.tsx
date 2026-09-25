@@ -53,12 +53,24 @@ describe("FiscalYearsCard", () => {
         expect(await screen.findByTestId("fiscal-close-net")).toHaveTextContent("17,800.00");
         expect(screen.getByTestId("fiscal-close-retained")).toHaveTextContent("Marina Heights");
         expect(screen.getByTestId("fiscal-close-retained").querySelector("bdi[dir='ltr']")?.textContent).toBe("17,800.00");
+        expect(screen.queryByTestId("fiscal-close-brought-forward")).toBeNull();
         expect(screen.getByText("2 draft voucher(s) are dated inside the year; closing will lock them out of it.")).toBeTruthy();
         const confirm = screen.getByTestId("fiscal-close-confirm");
         expect(confirm).toBeDisabled();
         fireEvent.click(screen.getByTestId("fiscal-close-override"));
         fireEvent.click(confirm);
         await waitFor(() => expect(api.close).toHaveBeenCalledWith(2025, true));
+    });
+
+    it("shows an earlier open year's result apart from the year's own (F15-01)", async () => {
+        api.preview.mockResolvedValue({ ...PREVIEW,
+            retainedEarnings: [{ propertyId: "p", propertyName: "Marina Heights", profit: 17800, broughtForward: 19200 }] });
+        renderCard(true, "ar");
+        fireEvent.click(await screen.findByTestId("fiscal-year-close-2025"));
+        const bf = await screen.findByTestId("fiscal-close-brought-forward");
+        expect(bf).toHaveTextContent(ar.FiscalYears.broughtForward);
+        expect(bf.querySelector("bdi[dir='ltr']")?.textContent).toBe("19,200.00");
+        expect(screen.getByTestId("fiscal-close-retained").querySelector("bdi[dir='ltr']")?.textContent).toBe("17,800.00");
     });
 
     it("shows blockers and never lets them be overridden", async () => {
