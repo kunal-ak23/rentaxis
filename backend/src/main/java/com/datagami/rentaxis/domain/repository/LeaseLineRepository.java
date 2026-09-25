@@ -36,4 +36,11 @@ public interface LeaseLineRepository extends JpaRepository<LeaseLine, UUID> {
              WHERE l.chargeType.id = :chargeTypeId
                AND l.lease.status <> com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT""")
     long countNonDraftLeasesUsing(@org.springframework.data.repository.query.Param("chargeTypeId") UUID chargeTypeId);
+
+    /** {@link #findByLease_IdOrderBySeqNoAsc} for a page of leases, credit account fetched. */
+    @org.springframework.data.jpa.repository.Query("""
+            select l from LeaseLine l left join fetch l.creditAccount
+            where l.lease.id in :leaseIds order by l.seqNo asc""")
+    List<LeaseLine> findByLeaseIdsOrderBySeqNo(
+            @org.springframework.data.repository.query.Param("leaseIds") java.util.Collection<UUID> leaseIds);
 }

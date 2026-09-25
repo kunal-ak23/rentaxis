@@ -27,4 +27,18 @@ public interface LeaseAddendumRepository extends JpaRepository<LeaseAddendum, UU
             where a.lease.id = :leaseId and a.ejariNumber is not null and trim(a.ejariNumber) <> ''
             order by a.createdAt desc, a.id desc""")
     List<String> findRegisteredEjariLatestFirst(@org.springframework.data.repository.query.Param("leaseId") UUID leaseId);
+
+    /** {@link #findRegisteredEjariLatestFirst} for a page of leases: (leaseId, ejari), latest first per lease. */
+    @org.springframework.data.jpa.repository.Query("""
+            select a.lease.id, a.ejariNumber from LeaseAddendum a
+            where a.lease.id in :leaseIds and a.ejariNumber is not null and trim(a.ejariNumber) <> ''
+            order by a.createdAt desc, a.id desc""")
+    List<Object[]> findRegisteredEjariLatestFirst(
+            @org.springframework.data.repository.query.Param("leaseIds") java.util.Collection<UUID> leaseIds);
+
+    /** The leases of {@code leaseIds} carrying at least one addendum of {@code kind}. */
+    @org.springframework.data.jpa.repository.Query("""
+            select distinct a.lease.id from LeaseAddendum a where a.lease.id in :leaseIds and a.kind = :kind""")
+    List<UUID> leaseIdsWithKind(@org.springframework.data.repository.query.Param("leaseIds") java.util.Collection<UUID> leaseIds,
+                                @org.springframework.data.repository.query.Param("kind") String kind);
 }
