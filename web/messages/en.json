@@ -3916,5 +3916,20 @@
     "renewalSkipped": "Not copied (one-off)",
     "renewalDeposit": "Carried or re-collected",
     "appliesToNewLeases": "A change applies to leases posted afterwards. Leases already on the books are not restated."
+  },
+  "RentFree": {
+    "title": "Rent-free periods",
+    "hint": "The rent line keeps its headline for the whole term; the concession comes off what the renter pays. Income is spread evenly over the whole term, free months included. Saving drops the draft cheque grid so it can be regenerated.",
+    "from": "From",
+    "to": "To",
+    "override": "Concession (optional)",
+    "note": "Note",
+    "remove": "Remove period",
+    "add": "Add rent-free period",
+    "save": "Save periods",
+    "saveFailed": "The rent-free periods could not be saved.",
+    "days": "{days} days",
+    "concession": "concession {amount}",
+    "summary": "Headline rent {headline} − concession {concession} = payable {payable}"
   }
 }

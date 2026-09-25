@@ -116,4 +116,7 @@ public class LeaseDTO {
      * silently. Null elsewhere.
      */
     private List<LeaseLineDTO> skippedOneOffLines;
+
+    /** Spec §4b: the contract's rent-free windows and their concessions; empty when none. */
+    private List<com.datagami.rentaxis.api.dto.lease.RentFreePeriodDTO> rentFreePeriods;
 }

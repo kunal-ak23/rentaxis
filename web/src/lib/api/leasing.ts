@@ -192,6 +192,22 @@ export type LeaseLine = {
   addendumId?: string | null;
   /** F14-18: the charge type's recognition; absent on an older server. */
   recognition?: ChargeRecognition | null;
+  /** Spec §4b: the rent-free concession on the contract's RENT line; 0 elsewhere. */
+  rentFreeAmount?: number | null;
+};
+
+/** Spec §4b: a rent-free window, as read back (concession, days) and as sent. */
+export type RentFreePeriod = {
+  id?: string | null;
+  fromDate: string;
+  toDate: string;
+  /** The operator's exact concession; null = headline × days ÷ term days. */
+  concessionOverride?: number | null;
+  note?: string | null;
+  /** Read-only: the concession in force. */
+  concession?: number | null;
+  /** Read-only: inclusive day count. */
+  days?: number | null;
 };
 
 /** LeaseLineInput — one line as the caller submits it (create, update, renew, extend, amend). */
@@ -290,6 +306,8 @@ export type LeaseDetail = {
   lines: LeaseLine[];
   /** Spec §4c: on a renewal's response only — the one-off lines not copied. */
   skippedOneOffLines?: LeaseLine[] | null;
+  /** Spec §4b: the contract's rent-free windows; absent/empty when none. */
+  rentFreePeriods?: RentFreePeriod[] | null;
 };
 
 /** AmendLeaseLinesRequest. */
@@ -1172,6 +1190,9 @@ export const leaseApi = {
     ),
   createDraft: (body: DraftLeaseInput) => send<LeaseDetail>("POST", "/leases", body),
   updateDraft: (id: string, body: DraftLeaseInput) => send<LeaseDetail>("PUT", `/leases/${id}`, body),
+  /** Spec §4b: replace a DRAFT's rent-free periods; returns the lease with the concession applied. */
+  setRentFreePeriods: (id: string, periods: RentFreePeriod[]) =>
+    send<LeaseDetail>("PUT", `/leases/${id}/rent-free-periods`, periods),
   post: (id: string) => send<PostLeaseResponse>("POST", `/leases/${id}/post`),
   /** `?dryRun=true` — every validation a post would run, nothing written. */
   dryRunPost: (id: string) => send<PostLeaseDryRunResponse>("POST", `/leases/${id}/post${qs({ dryRun: true })}`),

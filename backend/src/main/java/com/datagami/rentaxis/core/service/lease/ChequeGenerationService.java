@@ -18,6 +18,7 @@ import com.datagami.rentaxis.domain.entity.ChargeType;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseLine;
+import com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
@@ -494,8 +495,33 @@ public class ChequeGenerationService {
         }
         int n = installments(r, lease);
         LocalDate firstDueDate = firstNonNull(r.firstDueDate(), lease.getFirstDueDate(), lease.getStartDate());
-        return buildRows(rent, rentVat, rentTaxable, extras, n, lease.getContractDate(), firstDueDate,
+        // Spec §4b: the renter pays nothing during a rent-free window: an instalment
+        // that lands inside one (the first, on a free first month) moves to the day
+        // after it.
+        List<LeaseRentFreePeriod> free = rentFreePeriods == null ? List.of()
+                : rentFreePeriods.findByLease_IdOrderByFromDateAsc(leaseId);
+        List<Row> rows = buildRows(rent, rentVat, rentTaxable, extras, n, lease.getContractDate(), firstDueDate,
                 lease.getEndDate(), distribution, fold);
+        if (free.isEmpty()) return rows;
+        return rows.stream().map(row -> new Row(row.seqNo(), row.postingDate(), outOfFree(row.chequeDate(), free),
+                row.amount(), row.narration(), row.vat(), row.taxable(), row.kind())).toList();
+    }
+
+    /** The day itself, or the day after the rent-free window it falls in (windows sorted by start). */
+    static LocalDate outOfFree(LocalDate day, List<LeaseRentFreePeriod> free) {
+        if (day == null) return null;
+        LocalDate d = day;
+        for (LeaseRentFreePeriod p : free) {
+            if (!d.isBefore(p.getFromDate()) && !d.isAfter(p.getToDate())) d = p.getToDate().plusDays(1);
+        }
+        return d;
+    }
+
+    private com.datagami.rentaxis.domain.repository.LeaseRentFreePeriodRepository rentFreePeriods;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setRentFreePeriods(com.datagami.rentaxis.domain.repository.LeaseRentFreePeriodRepository repo) {
+        this.rentFreePeriods = repo;
     }
 
     /**

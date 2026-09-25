@@ -38,5 +38,7 @@ public record LeaseLineDTO(UUID id,
                            String chargeTypeNameAr,
                            String creditAccountNameAr,
                            /* F14-18 / §4c: the charge type's recognition (RENT_LIKE | ONE_OFF | PASS_THROUGH). */
-                           String recognition) {
+                           String recognition,
+                           /* Spec §4b: the rent-free concession on this line (0 unless it is the contract's rent). */
+                           BigDecimal rentFreeAmount) {
 }

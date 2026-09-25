@@ -57,6 +57,11 @@ export type LineRow = {
      */
     addendumId?: string | null;
     /**
+     * Spec §4b: the rent-free concession the server put on the contract's RENT line.
+     * Read-only and never sent — the server re-derives it from the lease's periods.
+     */
+    rentFreeAmount?: number;
+    /**
      * The operator ticked or unticked this row's VAT box by hand (#54 review
      * M-3). A touched RENT row keeps its choice when the header's "Rent carries
      * VAT" flag changes; an untouched one follows the header. Picking a new
@@ -96,6 +101,7 @@ export function toRow(line: LeaseLine, key: number): LineRow {
         periodStart: line.periodStart ?? null,
         periodEnd: line.periodEnd ?? null,
         addendumId: line.addendumId ?? null,
+        rentFreeAmount: line.rentFreeAmount ?? 0,
     };
 }
 
@@ -234,7 +240,7 @@ export function behaviourOf(row: LineRow, chargeTypes: ChargeType[]): ChargeBeha
 
 /** What the line actually charges, before tax. */
 export function netOf(row: LineRow): number {
-    return round2((row.grossAmount || 0) - (row.discountAmount || 0));
+    return round2((row.grossAmount || 0) - (row.discountAmount || 0) - (row.rentFreeAmount || 0));
 }
 
 /** VAT on the line — zero when not applicable, and always zero on a deposit. */

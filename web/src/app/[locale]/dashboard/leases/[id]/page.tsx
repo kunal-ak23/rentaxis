@@ -17,6 +17,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import LeaseMetadataEditor from "../LeaseMetadataEditor";
 import LeaseInteractionsPanel from "@/components/leases/LeaseInteractionsPanel";
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
+import RentFreePeriodsCard from "@/components/leases/RentFreePeriodsCard";
 import ChequeGrid, { draftRowsAreValid, toChequeRows } from "@/components/leases/ChequeGrid";
 import ChequeActionDialog, { type ChequeAction } from "@/components/cheques/ChequeActionDialog";
 import { chequeApi } from "@/lib/api/leasing";
@@ -766,6 +767,13 @@ export default function LeaseDetailPage() {
 
                             <div className="lg:col-span-2 space-y-6 min-w-0">
                                 <LeaseLinesGrid lines={lineRows} chargeTypes={chargeTypes} editable={false} />
+
+                                {/* Spec §4b: rent-free windows — editable on a DRAFT. */}
+                                <RentFreePeriodsCard
+                                    lease={lease}
+                                    editable={lease.status === "DRAFT" && canDraft}
+                                    onSaved={async () => { await loadLease(); }}
+                                />
 
                                 <div className="space-y-2">
                                     <ChequeGrid

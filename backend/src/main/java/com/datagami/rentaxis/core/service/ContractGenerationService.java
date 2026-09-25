@@ -461,10 +461,54 @@ public class ContractGenerationService {
     public String buildSection3Rows(Lease lease) {
         StringBuilder sb = new StringBuilder();
         int sNo = 1;
-        for (LeaseLine l : chargeLines(lease)) {
+        List<LeaseLine> lines = chargeLines(lease);
+        for (LeaseLine l : lines) {
             sNo = appendSection3Row(sb, sNo, labelOf(l), l.getNetAmount(), vatOn(l));
         }
+        appendRentFreeRows(sb, lease, lines);
         return sb.toString();
+    }
+
+    private com.datagami.rentaxis.domain.repository.LeaseRentFreePeriodRepository rentFreePeriods;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setRentFreePeriods(com.datagami.rentaxis.domain.repository.LeaseRentFreePeriodRepository repo) {
+        this.rentFreePeriods = repo;
+    }
+
+    /**
+     * Spec §4b: each rent-free window, its days and the concession, under the
+     * charges — the rent row above already shows the payable rent. EN and AR.
+     */
+    private void appendRentFreeRows(StringBuilder sb, Lease lease, List<LeaseLine> lines) {
+        if (rentFreePeriods == null) return;
+        var periods = rentFreePeriods.findByLease_IdOrderByFromDateAsc(lease.getId());
+        if (periods.isEmpty()) return;
+        LeaseLine rent = com.datagami.rentaxis.core.service.LeaseService.contractRentLine(lease, lines);
+        if (rent == null) return;
+        long termDays = java.time.temporal.ChronoUnit.DAYS.between(lease.getStartDate(), lease.getEndDate()) + 1;
+        // Numeric dates: the same text reads correctly in the Arabic line.
+        java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        for (var p : periods) {
+            long days = java.time.temporal.ChronoUnit.DAYS.between(p.getFromDate(), p.getToDate()) + 1;
+            BigDecimal concession = com.datagami.rentaxis.core.service.LeaseService.concessionOf(p, rent.getGrossAmount(), termDays);
+            String en = "Rent-free period " + p.getFromDate().format(dmy) + " – " + p.getToDate().format(dmy)
+                    + " (" + days + " days): AED " + formatAmount(concession)
+                    + " off the headline rent of AED " + formatAmount(rent.getGrossAmount());
+            String ar = "فترة إعفاء من الإيجار " + p.getFromDate().format(dmy) + " – " + p.getToDate().format(dmy)
+                    + " (" + days + " يوماً): خصم " + formatAmount(concession)
+                    + " درهم من الإيجار الأساسي البالغ " + formatAmount(rent.getGrossAmount()) + " درهم";
+            appendNoteRow(sb, en, ar);
+        }
+    }
+
+    /** A full-width explanatory row in Section 3, English then Arabic. */
+    private void appendNoteRow(StringBuilder sb, String en, String ar) {
+        sb.append("<tr>")
+                .append("<td class=\"center\"></td>")
+                .append("<td colspan=\"5\" style=\"font-size:9px;\">").append(escapeUserText(en))
+                .append("<br/><span dir=\"rtl\">").append(escapeUserText(ar)).append("</span></td>")
+                .append("</tr>");
     }
 
     /**

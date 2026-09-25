@@ -263,3 +263,5 @@ databaseChangeLog:
       file: db/changelog/changesets/127-lease-ejari-from-latest-addendum.yaml
   - include:
       file: db/changelog/changesets/128-charge-recognition.yaml
+  - include:
+      file: db/changelog/changesets/129-rent-free-periods.yaml
