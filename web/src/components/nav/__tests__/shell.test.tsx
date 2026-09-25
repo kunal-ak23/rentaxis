@@ -100,9 +100,11 @@ describe("section panel", () => {
         expect(within(panel).getByTestId("nav-status-card")).toHaveTextContent("2025");
     });
 
-    it("lights Collection, not Accounting, on a cheque page", () => {
-        path.current = "/en/dashboard/finance/cheques/collection";
+    it("lights Collection and the hub's pill in the panel", () => {
+        path.current = "/en/dashboard/collections";
+        search.current = "tab=overdue";
         renderShell();
+        expect(within(screen.getByTestId("nav-panel")).getByTestId("collections-tab-overdue")).toHaveAttribute("aria-current", "page");
         expect(screen.getByTestId("rail-collection")).toHaveAttribute("aria-current", "true");
         expect(screen.getByTestId("rail-accounting")).not.toHaveAttribute("aria-current");
     });

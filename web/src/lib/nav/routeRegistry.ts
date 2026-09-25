@@ -1,5 +1,6 @@
 // src/lib/nav/routeRegistry.ts
 import { hasPermission, type Permission, type UserRole } from "../rbac";
+import { buildCollectionsTabs } from "./collectionsModel";
 import { buildSettingsSections } from "./settingsModel";
 
 export type RouteAllow = "authenticated" | Permission | ((role: UserRole) => boolean);
@@ -37,9 +38,7 @@ export const DASHBOARD_ROUTES: RouteEntry[] = [
     r(`${F}/import-batches`, "canManageImportBatches"),
     r(`${F}/opening-balances`, "canManageOpeningBalances"), r(`${F}/reconciliation`, "canManageOpeningBalances"),
     r(`${F}/recognition`, "canRunRecognition"),
-    r(`${F}/cheques`, "canManageCheques"), r(`${F}/cheques/collection`, "canManageCheques"),
-    r(`${F}/cheques/return-replace`, "canManageCheques"), r(`${F}/cheques/post-dated`, "canManageCheques"),
-    r(`${F}/penalties`, "canProposePenalties"),
+    r(`${D}/collections`, role => buildCollectionsTabs(role).length > 0),
     r(`${F}/vendors`, "canManageVendors"), r(`${F}/vendors/[id]`, "canManageVendors"),
     r(`${F}/bank-accounts`, "canAccessFinanceOps"),
     r(`${F}/bank-reconciliation`, "canReconcileBank"), r(`${F}/bank-reconciliation/[id]`, "canReconcileBank"),

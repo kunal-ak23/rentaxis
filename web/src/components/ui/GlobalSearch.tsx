@@ -131,7 +131,7 @@ export default function GlobalSearch({ role, locale }: { role?: UserRole; locale
                         : t("installment", { number: cheque.seqNo }),
                     subtitle: [cheque.renterName, cheque.unitIdentifier, cheque.status]
                         .filter(Boolean).join(" · "),
-                    href: `/${locale}/dashboard/finance/cheques?search=${encoded}`,
+                    href: `/${locale}/dashboard/collections?tab=all&search=${encoded}`,
                 });
             }
 

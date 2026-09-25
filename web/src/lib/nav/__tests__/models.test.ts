@@ -94,8 +94,12 @@ describe("isBooksLive", () => {
 describe("buildCollectionsTabs", () => {
     it("gives cheque roles the cheque tabs and the penalty queue", () => {
         for (const role of ["TENANT_ADMIN", "ACCOUNTANT", "PROPERTY_MANAGER", "SUPER_ADMIN"] as UserRole[]) {
-            expect(buildCollectionsTabs(role).map(t => t.id), role).toEqual(["deposit", "returned", "post-dated", "penalties", "all"]);
+            expect(buildCollectionsTabs(role).map(t => t.id), role).toEqual(["deposit", "due", "overdue", "returned", "post-dated", "penalties", "all"]);
         }
+    });
+    it("points every tab at the hub", () => {
+        expect(buildCollectionsTabs("TENANT_ADMIN").map(t => t.href)).toEqual(
+            ["deposit", "due", "overdue", "returned", "post-dated", "penalties", "all"].map(id => `/dashboard/collections?tab=${id}`));
     });
     it("gives everyone else nothing", () => {
         for (const role of ["TENANT_USER", "RENTER", "SECURITY_GUARD"] as UserRole[]) {

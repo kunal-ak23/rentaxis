@@ -389,7 +389,7 @@ export default function DashboardPage() {
           />
         </div>
         <Link
-          href="/dashboard/finance/cheques"
+          href="/dashboard/collections?tab=overdue"
           aria-label={t("viewOverduePayments")}
           className="block rounded-[var(--radius-lg)] transition-all hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/30 [&>div]:hover:border-primary"
         >

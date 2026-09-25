@@ -26,6 +26,12 @@ export const ROUTE_MOVES: RouteMove[] = [
     { from: "/dashboard/settings/fines", to: "/dashboard/settings", query: { section: "rent" } },
     { from: "/dashboard/settings/rent-settings", to: "/dashboard/settings", query: { section: "rent" } },
     { from: "/dashboard/settings/gateway", to: "/dashboard/settings", query: { section: "payments" } },
+    // Cheque / Cash Collection hub (spec §2): each old cheque page is a pill.
+    { from: "/dashboard/finance/cheques", to: "/dashboard/collections", query: { tab: "all" } },
+    { from: "/dashboard/finance/cheques/collection", to: "/dashboard/collections", query: { tab: "deposit" } },
+    { from: "/dashboard/finance/cheques/return-replace", to: "/dashboard/collections", query: { tab: "returned" } },
+    { from: "/dashboard/finance/cheques/post-dated", to: "/dashboard/collections", query: { tab: "post-dated" } },
+    { from: "/dashboard/finance/penalties", to: "/dashboard/collections", query: { tab: "penalties" } },
     // /dashboard/staff does NOT move: Operations › Staff keeps linking to it, and
     // Settings › Users & staff embeds the same StaffManager component.
 ];

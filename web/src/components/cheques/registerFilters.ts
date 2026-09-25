@@ -3,7 +3,7 @@ import type { ChequeMode, ChequeStatus } from "@/lib/api/leasing";
 /**
  * The cheque register's filters and the URL query that carries them (#85).
  *
- * A link from the dashboard or a notification — `/finance/cheques?status=BOUNCED`
+ * A link from the dashboard or a notification — `/collections?tab=all&status=BOUNCED`
  * — has to open a filtered register, and a filtered register has to be a URL a
  * user can copy. Values the register cannot ask for (a DRAFT status, a typo) are
  * dropped rather than sent: the server would never answer them, and a register

@@ -126,7 +126,7 @@ export function TopHeader() {
             const routes: Record<string, string> = {
                 TICKET: `/dashboard/tickets/${n.referenceId}`,
                 LEASE: `/dashboard/leases/${n.referenceId}`,
-                PAYMENT: `/dashboard/finance/cheques`,
+                PAYMENT: `/dashboard/collections?tab=all`,
             };
             const route = routes[n.referenceType];
             if (route) {

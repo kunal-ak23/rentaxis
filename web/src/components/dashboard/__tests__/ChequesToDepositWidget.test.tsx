@@ -43,7 +43,7 @@ describe("ChequesToDepositWidget", () => {
     expect(screen.getByText(/#100123/)).toBeTruthy();
     expect(screen.getByText(/Omar R/).closest("a")).toHaveAttribute("href", "/dashboard/leases/l1");
     expect(toDeposit).toHaveBeenCalledWith({ page: 0, size: 5 });
-    expect(screen.getByRole("link", { name: /view all/i })).toHaveAttribute("href", "/dashboard/finance/cheques/collection");
+    expect(screen.getByRole("link", { name: /view all/i })).toHaveAttribute("href", "/dashboard/collections?tab=deposit");
   });
 
   it("shows an empty state when nothing is due for deposit", async () => {
