@@ -5,7 +5,7 @@ import Image from "next/image";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/lib/rbac";
@@ -15,6 +15,19 @@ import { useLabel } from "@/lib/nav/useLabel";
 import { useNavShell } from "@/components/nav/NavShellContext";
 import { useNavCounts } from "@/components/nav/useNavCounts";
 import { SectionPanel } from "@/components/nav/SectionPanel";
+
+/** ≥ 1280 px: the section panel sits inline beside the rail (Tailwind `xl`). */
+const WIDE_QUERY = "(min-width: 1280px)";
+function subscribeWide(onChange: () => void) {
+    if (typeof window === "undefined" || !window.matchMedia) return () => {};
+    const mq = window.matchMedia(WIDE_QUERY);
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
+}
+const wideNow = () => (typeof window === "undefined" || !window.matchMedia ? true : window.matchMedia(WIDE_QUERY).matches);
+function useIsWide(): boolean {
+    return useSyncExternalStore(subscribeWide, wideNow, () => true);
+}
 
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || '0.6.0.dev';
 
@@ -38,7 +51,10 @@ export function activeNavHref(pathname: string, hrefs: string[]): string | null 
     return best;
 }
 
-function Rail({ rail, active, onPick, badge }: { rail: RailSection[]; active: RailId | null; onPick: (id: RailId) => void; badge: number | null }) {
+function Rail({ rail, active, onRailClick, badge }: {
+    rail: RailSection[]; active: RailId | null; badge: number | null;
+    onRailClick: (id: RailId, e: React.MouseEvent) => void;
+}) {
     const label = useLabel();
     const t = useTranslations("Navigation");
     return (
@@ -52,7 +68,7 @@ function Rail({ rail, active, onPick, badge }: { rail: RailSection[]; active: Ra
                 return (
                     <Link key={s.id} href={s.href} data-rail={s.id} data-testid={`rail-${s.id}`} data-tour={s.tourId}
                         aria-current={isActive ? "true" : undefined} title={label(s.label)} aria-label={label(s.label)}
-                        onClick={() => onPick(s.id)}
+                        onClick={e => onRailClick(s.id, e)}
                         className={cn("relative flex w-14 flex-col items-center gap-0.5 rounded-[var(--radius-sm)] py-2 text-[10px] font-medium",
                             isActive ? "bg-[var(--sand-100)] text-[var(--ink-900)]" : "text-[var(--ink-600)] hover:bg-[var(--sand-100)]")}>
                         <Icon size={18} className={isActive ? "text-[var(--gold-500)]" : "text-[var(--ink-500)]"} />
@@ -71,53 +87,107 @@ function Rail({ rail, active, onPick, badge }: { rail: RailSection[]; active: Ra
     );
 }
 
+/**
+ * The shell (spec §1a; flyout ruling PR #363 R1):
+ * - ≥ 1280 px with the panel shown: a rail click navigates to the section and
+ *   the inline panel follows the page.
+ * - 768–1279 px (or the panel hidden): a rail click opens that section's panel
+ *   as a flyout WITHOUT navigating. The flyout stays open across navigations
+ *   (pick page after page) and closes on outside click, Esc, the same rail
+ *   item again, or its close button.
+ * - < 768 px: the header's menu button opens a drawer (rail + panel); a rail
+ *   click there swaps the panel, a page click navigates and closes it.
+ */
 export default function MvpSidebar() {
     const t = useTranslations("Navigation");
     const pathname = usePathname();
     const { data: session } = useSession();
     const role = session?.user?.role as UserRole | undefined;
     const { isEnabled, tenantSlug } = useTenantFeatures();
-    const counts = useNavCounts(role);
+    const counts = useNavCounts(role, pathname);
     const { drawerOpen, setDrawerOpen } = useNavShell();
     const rail = buildNav({ role, isEnabled, tenantSlug, booksLive: counts.booksLive });
     const search = useSearchParams()?.toString() ?? "";
     const active = activeNav(pathname, rail, search);
+    const isWide = useIsWide();
     const [picked, setPicked] = useState<RailId | null>(null);
-    const [flyout, setFlyout] = useState(false);
+    const [flyoutOpen, setFlyoutOpen] = useState(false);
     const [panelHidden, setPanelHidden] = useState(() => {
         try { return typeof window !== "undefined" && localStorage.getItem("sidebar_collapsed") === "true"; } catch { return false; }
     });
+    const inlinePanel = isWide && !panelHidden;
+    const flyout = flyoutOpen && !inlinePanel;
+    const asideRef = useRef<HTMLElement>(null);
+    const drawerRef = useRef<HTMLDivElement>(null);
+    const drawerCloseRef = useRef<HTMLButtonElement>(null);
 
     useEffect(() => { try { localStorage.setItem("sidebar_collapsed", String(panelHidden)); } catch { /* private mode */ } }, [panelHidden]);
-    // A navigation resets the picked section and closes the flyout (state
-    // adjusted during render, React's "reset state on prop change" pattern)…
+    // A navigation with no flyout open returns the panel to the page's own
+    // section (state adjusted during render, React's "reset state on prop
+    // change" pattern). An open flyout keeps its section: that is the point.
     const [seenPath, setSeenPath] = useState(pathname);
     if (seenPath !== pathname) {
         setSeenPath(pathname);
-        setPicked(null);
-        setFlyout(false);
+        if (!flyout) setPicked(null);
     }
-    // …and closes the phone drawer, whose state lives in the shell context.
+    // The phone drawer closes on navigation; its state lives in the shell context.
     useEffect(() => { setDrawerOpen(false); }, [pathname, setDrawerOpen]);
     useEffect(() => {
-        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setFlyout(false); setDrawerOpen(false); } };
+        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setFlyoutOpen(false); setDrawerOpen(false); } };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
     }, [setDrawerOpen]);
+    // Outside click closes the flyout (the rail and the flyout are inside <aside>).
+    useEffect(() => {
+        if (!flyout) return;
+        const onDown = (e: MouseEvent) => {
+            if (asideRef.current && !asideRef.current.contains(e.target as Node)) setFlyoutOpen(false);
+        };
+        document.addEventListener("mousedown", onDown);
+        return () => document.removeEventListener("mousedown", onDown);
+    }, [flyout]);
+    // Drawer focus: into the drawer on open, back to the menu button on close.
+    const wasDrawerOpen = useRef(false);
+    useEffect(() => {
+        if (drawerOpen) drawerCloseRef.current?.focus();
+        else if (wasDrawerOpen.current) document.querySelector<HTMLElement>('[data-testid="header-menu"]')?.focus();
+        wasDrawerOpen.current = drawerOpen;
+    }, [drawerOpen]);
+    const trapFocus = (e: React.KeyboardEvent) => {
+        if (e.key !== "Tab" || !drawerRef.current) return;
+        const items = Array.from(drawerRef.current.querySelectorAll<HTMLElement>("a[href], button:not([disabled]):not([tabindex=\"-1\"])"));
+        if (items.length === 0) return;
+        const first = items[0], last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
 
     const shownId = picked ?? active.section ?? rail[0]?.id ?? null;
     const shown = rail.find(s => s.id === shownId) ?? null;
-    const pick = (id: RailId) => { setPicked(id); setFlyout(true); };
+    const onAsideRailClick = (id: RailId, e: React.MouseEvent) => {
+        if (inlinePanel) { setPicked(null); return; } // navigate; the inline panel follows the page
+        e.preventDefault();
+        if (flyout && shownId === id) { setFlyoutOpen(false); setPicked(null); return; }
+        setPicked(id);
+        setFlyoutOpen(true);
+    };
+    const onDrawerRailClick = (id: RailId, e: React.MouseEvent) => { e.preventDefault(); setPicked(id); };
     const panel = shown && <SectionPanel key={shown.id} section={shown} activeItem={shown.id === active.section ? active.item : null} counts={counts} />;
 
     return (
         <>
             {/* ≥ 768 px: rail always; ≥ 1280 px: panel beside it unless hidden. */}
-            <aside className="relative sticky top-0 z-40 hidden h-screen shrink-0 md:flex">
-                <Rail rail={rail} active={active.section} onPick={pick} badge={counts.collectionBadge} />
-                <div className={cn("hidden h-full", !panelHidden && "xl:flex")}>{panel}</div>
+            <aside ref={asideRef} className="relative sticky top-0 z-40 hidden h-screen shrink-0 md:flex">
+                <Rail rail={rail} active={active.section} onRailClick={onAsideRailClick} badge={counts.collectionBadge} />
+                {/* Rendered only when it is the visible copy, so tour targets and test ids are unique. */}
+                {inlinePanel && <div className="hidden h-full xl:flex">{panel}</div>}
                 {flyout && (
-                    <div data-testid="nav-flyout" className="absolute top-0 start-16 z-50 h-full shadow-lg xl:hidden">{panel}</div>
+                    <div data-testid="nav-flyout" className="absolute top-0 start-16 z-50 flex h-full shadow-lg">
+                        {panel}
+                        <button type="button" onClick={() => { setFlyoutOpen(false); setPicked(null); }} aria-label={t("closeMenu")}
+                            data-testid="nav-flyout-close"
+                            className="absolute top-2 -end-10 rounded-full border border-border bg-surface p-1.5 shadow-md cursor-pointer"><X size={14} /></button>
+                    </div>
                 )}
                 <button type="button" onClick={() => setPanelHidden(h => !h)} aria-label={panelHidden ? t("showPanel") : t("hidePanel")}
                     className="absolute top-12 -end-3 z-50 hidden rounded-full border border-border bg-surface p-1.5 shadow-sm hover:bg-[var(--sand-100)] xl:block cursor-pointer">
@@ -127,14 +197,14 @@ export default function MvpSidebar() {
 
             {/* < 768 px: drawer. */}
             {drawerOpen && (
-                <div className="fixed inset-0 z-50 md:hidden">
-                    <button type="button" aria-label={t("closeMenu")} onClick={() => setDrawerOpen(false)} className="absolute inset-0 bg-black/30" />
+                <div className="fixed inset-0 z-50 md:hidden" ref={drawerRef} onKeyDown={trapFocus}>
+                    <button type="button" tabIndex={-1} aria-hidden onClick={() => setDrawerOpen(false)} className="absolute inset-0 bg-black/30" />
                     <div data-testid="nav-drawer" role="dialog" aria-modal="true" aria-label={t("openMenu")} className="absolute inset-y-0 start-0 flex max-w-full bg-surface shadow-xl">
-                        <Rail rail={rail} active={active.section} onPick={id => setPicked(id)} badge={counts.collectionBadge} />
+                        <Rail rail={rail} active={active.section} onRailClick={onDrawerRailClick} badge={counts.collectionBadge} />
                         {panel}
                     </div>
-                    {/* On the backdrop beside the drawer (rail 64 + panel 240), clear of the org switcher. */}
-                    <button type="button" onClick={() => setDrawerOpen(false)} aria-label={t("closeMenu")} data-testid="nav-drawer-close"
+                    {/* On the backdrop beside the drawer (rail 64 + panel 240). */}
+                    <button ref={drawerCloseRef} type="button" onClick={() => setDrawerOpen(false)} aria-label={t("closeMenu")} data-testid="nav-drawer-close"
                         className="absolute top-3 start-[316px] rounded-full bg-surface p-2 shadow-md cursor-pointer"><X size={16} /></button>
                 </div>
             )}

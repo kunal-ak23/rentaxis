@@ -1,4 +1,3 @@
-// src/components/nav/__tests__/shell.test.tsx
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
@@ -23,6 +22,7 @@ vi.mock("@/components/nav/useNavCounts", () => ({
     useNavCounts: () => ({ collectionBadge: 7, chequesToDeposit: 3, booksLockedThrough: "2025-12-31", booksLive: true }),
 }));
 vi.mock("@/components/ui/TenantSwitcher", () => ({ TenantSwitcher: () => <div data-testid="org-switcher" /> }));
+vi.mock("@/components/nav/orgStore", () => ({ useMyOrgs: () => ({ orgs: [{ id: "t1", name: "Acme Holdings" }], active: { id: "t1", name: "Acme Holdings" } }) }));
 vi.mock("next/image", () => ({ default: ({ alt }: { alt: string }) => <img alt={alt} /> }));
 
 import MvpSidebar from "@/components/ui/MvpSidebar";
@@ -87,11 +87,14 @@ describe("icon rail", () => {
 });
 
 describe("section panel", () => {
-    it("shows the active section's pages, the org switcher and the status card", () => {
+    it("shows the active section's pages, the org name (read-only) and the status card", () => {
         path.current = "/en/dashboard/finance/journals";
         renderShell();
         const panel = screen.getByTestId("nav-panel");
-        expect(within(panel).getByTestId("org-switcher")).toBeInTheDocument();
+        // The switcher is the header's (one instance); the panel only names the organisation.
+        expect(within(panel).getByTestId("panel-org-name")).toHaveTextContent("Acme Holdings");
+        expect(within(panel).queryByTestId("org-switcher")).toBeNull();
+        expect(within(panel).queryByRole("button", { name: en.TenantSwitcher.switchOrganization })).toBeNull();
         expect(within(panel).getByText(en.AccountingNav.groupJournalEntries)).toBeInTheDocument();
         expect(within(panel).getByTestId("sidebar-journals")).toHaveAttribute("aria-current", "page");
         expect(within(panel).getByTestId("nav-status-card")).toHaveTextContent("2025");

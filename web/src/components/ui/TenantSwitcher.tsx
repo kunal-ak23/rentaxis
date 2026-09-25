@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
 import Cookies from "js-cookie";
 import { useRouter, usePathname } from "next/navigation";
@@ -8,10 +8,17 @@ import { useTranslations } from "next-intl";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { useMyOrgs } from "@/components/nav/orgStore";
 
 type Tenant = { id: string; name: string };
 
-export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
+/**
+ * The organisation switcher. Since PR #363 R1 it is ONE instance, in the top
+ * header at every width (`responsive`: the name shows from xl up, the
+ * initials alone below, and the menu opens either way). Its list comes from
+ * the session-wide cache in orgStore, shared with the panel's read-only name.
+ */
+export function TenantSwitcher({ isCollapsed, responsive = false }: { isCollapsed: boolean; responsive?: boolean }) {
     // The switcher had no useTranslations at all, so its entire UI — including
     // the organization name row shown on every dashboard page — stayed English
     // in the Arabic locale.
@@ -19,54 +26,30 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
     const { data: session } = useSession();
     const router = useRouter();
     const pathname = usePathname();
-    const [tenants, setTenants] = useState<Tenant[]>([]);
     const [isOpen, setIsOpen] = useState(false);
-    const [activeTenant, setActiveTenant] = useState<Tenant | null>(null);
     const [tenantQuery, setTenantQuery] = useState("");
+    const { orgs, active } = useMyOrgs();
+    const tenants: Tenant[] = orgs ?? [];
+    // An explicit pick (incl. SA's global view) wins until the hard reload it triggers.
+    const [picked, setPicked] = useState<{ tenant: Tenant | null } | null>(null);
+    const activeTenant = picked ? picked.tenant : active;
 
     const userExt = session?.user;
     const userRole = userExt?.role as UserRole | undefined;
     const canSwitch = hasPermission(userRole, 'canSwitchTenants');
 
-    const fetchTenants = useCallback(async () => {
-        try {
-            // Use the /me/tenants endpoint which is role-aware
-            const res = await fetch("/api/proxy/auth/me/tenants");
-            if (res.ok) {
-                const data = await res.json();
-                setTenants(data);
-
-                // Prefer the saved context, then the signed-in user's tenant,
-                // and finally the first role-authorized membership.
-                const preferredTenantId = Cookies.get("active_tenant_id") || userExt?.tenantId;
-                const selected = data.find((t: Tenant) => t.id === preferredTenantId) || data[0];
-                if (selected) {
-                    setActiveTenant(selected);
-                    if (Cookies.get("active_tenant_id") !== selected.id) {
-                        Cookies.set("active_tenant_id", selected.id, { path: "/" });
-                        router.refresh();
-                    }
-                }
-            }
-        } catch (e) {
-            console.error(e);
-        }
-    }, [router, userExt]);
-
+    // Persist the resolved organisation as the request context once, as the
+    // old per-mount fetch did (the proxy reads the cookie).
     useEffect(() => {
-        // The tenant endpoint is role-aware: super admins receive the full
-        // switchable list, while managers and renters receive their own
-        // membership. Fetch it for every authenticated role so the footer can
-        // display the active organisation instead of a generic placeholder.
-        if (!userExt) return;
-        const timer = window.setTimeout(() => {
-            void fetchTenants();
-        }, 0);
-        return () => window.clearTimeout(timer);
-    }, [fetchTenants, userExt]);
+        if (!active) return;
+        if (Cookies.get("active_tenant_id") !== active.id) {
+            Cookies.set("active_tenant_id", active.id, { path: "/" });
+            router.refresh();
+        }
+    }, [active, router]);
 
     const handleSelect = (tenant: Tenant | null) => {
-        setActiveTenant(tenant);
+        setPicked({ tenant });
         if (tenant) {
             Cookies.set("active_tenant_id", tenant.id, { path: "/" });
         } else {
@@ -89,7 +72,12 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
     const openDropdown = () => {
         if (!canSwitch) return;
         if (buttonRef.current) {
-            const rect = buttonRef.current.getBoundingClientRect();
+            const r = buttonRef.current.getBoundingClientRect();
+            // At least 260px wide (the header button can be just the initials),
+            // kept inside the viewport in both directions.
+            const width = Math.max(r.width, 260);
+            const left = Math.min(Math.max(8, r.left), Math.max(8, window.innerWidth - width - 8));
+            const rect = { top: r.top, bottom: r.bottom, left, width };
             // Estimate dropdown height: max-h-[200px] + 1px borders + 4px padding ≈ 210px.
             // If there isn't room below, anchor by `bottom` so the menu grows upward.
             const ESTIMATED_HEIGHT = 220;
@@ -135,14 +123,18 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
             <button
                 ref={buttonRef}
                 onClick={openDropdown}
+                data-tour="tenant-switcher"
+                data-testid="org-switcher-button"
+                aria-expanded={canSwitch ? isOpen : undefined}
                 aria-label={canSwitch ? t("switchOrganization") : t("currentOrganization")}
                 className={cn(
                     "w-full flex items-center justify-between gap-2 p-2 rounded-[var(--radius)] border border-border bg-[var(--sand-100)] transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[var(--gold-500)]/30",
-                    isCollapsed ? "justify-center" : "",
+                    isCollapsed && !responsive ? "justify-center" : "",
+                    responsive && "p-1 xl:p-2",
                     canSwitch ? "cursor-pointer hover:bg-[var(--sand-200)]" : "cursor-default"
                 )}
             >
-                {isCollapsed ? (
+                {isCollapsed && !responsive ? (
                     <div
                         className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-semibold"
                         style={{ background: 'var(--ink-900)', color: 'var(--gold-500)' }}
@@ -157,7 +149,7 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                         >
                             {orgInitials}
                         </div>
-                        <div className="flex flex-col items-start text-left flex-1 min-w-0 leading-tight">
+                        <div className={cn("flex-col items-start text-start flex-1 min-w-0 leading-tight", responsive ? "hidden xl:flex" : "flex")}>
                             <span className="text-[12px] font-semibold text-[var(--ink-900)] truncate w-full">
                                 {orgName}
                             </span>
@@ -169,12 +161,12 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                 )}
 
                 {!isCollapsed && canSwitch && (
-                    <ChevronsUpDown size={14} className="text-[var(--ink-500)] shrink-0" />
+                    <ChevronsUpDown size={14} className={cn("text-[var(--ink-500)] shrink-0", responsive && "hidden xl:block")} />
                 )}
             </button>
 
             {/* Dropdown Menu */}
-            {isOpen && canSwitch && !isCollapsed && (
+            {isOpen && canSwitch && (!isCollapsed || responsive) && (
                 <>
                     <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
                     <div
@@ -208,7 +200,7 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                                             !activeTenant ? "bg-primary/5 text-primary" : "text-foreground hover:bg-input"
                                         )}
                                     >
-                                        Global System View
+                                        {t("globalView")}
                                         {!activeTenant && <Check size={14} className="text-primary" />}
                                     </button>
                                     <div className="h-px bg-border my-1 mx-2" />

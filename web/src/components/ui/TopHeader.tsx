@@ -11,6 +11,7 @@ import { notificationText, timeAgo } from "@/lib/notificationText";
 import { LogOut, User, ChevronDown, Bell, HelpCircle, Menu as MenuIcon } from "lucide-react";
 import { getRoleLabel, getRoleLabelKey, type UserRole } from "@/lib/rbac";
 import GlobalSearch from "./GlobalSearch";
+import { TenantSwitcher } from "./TenantSwitcher";
 import { useNavShell } from "@/components/nav/NavShellContext";
 import { activeNav, buildNav } from "@/lib/nav/navModel";
 import { useLabel } from "@/lib/nav/useLabel";
@@ -152,7 +153,12 @@ export function TopHeader() {
                 </div>
 
                 {/* Right Side */}
-                <div className="flex items-center gap-3">{/* (locale, bell, profile) */}
+                <div className="flex items-center gap-2 md:gap-3">{/* (org, locale, help, bell, profile) */}
+
+                    {/* The one organisation switcher, at every width (PR #363 R1). */}
+                    <div data-testid="header-org-switcher" className="shrink-0 xl:w-[220px]">
+                        <TenantSwitcher isCollapsed={false} responsive />
+                    </div>
 
                     {/* Locale Switcher */}
                     <div className="flex items-center bg-[var(--sand-100)] rounded-[var(--radius)] p-0.5 border border-border">

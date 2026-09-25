@@ -7,7 +7,7 @@ import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import type { RailSection } from "@/lib/nav/navModel";
 import { useLabel } from "@/lib/nav/useLabel";
-import { TenantSwitcher } from "@/components/ui/TenantSwitcher";
+import { OrgName } from "./OrgName";
 import type { NavCounts } from "./useNavCounts";
 
 function fmtDate(iso: string, locale: string) {
@@ -25,7 +25,7 @@ export function SectionPanel({ section, activeItem, counts }: { section: RailSec
     return (
         <div data-testid="nav-panel" aria-label={t("sectionPanel", { name: label(section.label) })}
             className="flex h-full w-[240px] flex-col border-e border-border bg-surface">
-            <div className="border-b border-border p-3"><TenantSwitcher isCollapsed={false} /></div>
+            <div className="border-b border-border p-3"><OrgName /></div>
             <div className="flex-1 overflow-y-auto thinscroll px-3 py-3 space-y-3">
                 <div className="px-2 text-[15px] font-semibold text-foreground">{label(section.label)}</div>
                 {section.groups.map(g => {
