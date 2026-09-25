@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
 import { BookOpen, Download, Loader2, ShieldCheck } from "lucide-react";
-import LedgerFilters, { defaultLedgerRange } from "@/components/finance/LedgerFilters";
+import LedgerFilters, { defaultLedgerRange, MAX_LEDGER_ACCOUNTS } from "@/components/finance/LedgerFilters";
 import LedgerTable from "@/components/finance/LedgerTable";
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
@@ -13,6 +13,7 @@ import { ApiError } from "@/lib/api/facilities";
 import { downloadCsv, toCsv } from "@/lib/csv";
 import { accountName, fmtAmount, fmtBalance, ledgerApi, type AccountLedger, type LedgerQuery } from "@/lib/api/ledger";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { Link } from "@/i18n/routing";
 
 /**
  * `useSearchParams` opts the tree into client rendering, which `next build`
@@ -62,14 +63,24 @@ function GeneralLedger() {
     const [draft, setDraft] = useState<LedgerQuery>(initial);
     const [applied, setApplied] = useState<LedgerQuery>(initial);
     const [ledgers, setLedgers] = useState<AccountLedger[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
     const [loadError, setLoadError] = useState<string | null>(null);
 
     const units = useNameLookup("units");
     const renters = useNameLookup("renters");
+    const towers = useNameLookup("properties");
+
+    // Loads on demand (client feedback 2026-09-25): at 1000s of buildings an
+    // "every account" ledger is years of rows, so nothing is fetched until an
+    // account is picked (or a vendor / drill-down link names them).
+    const picked = !!vendorId || (applied.accountIds?.length ?? 0) > 0;
 
     const load = useCallback(
         async (q: LedgerQuery) => {
+            if (!vendorId && !(q.accountIds?.length)) {
+                setLedgers([]);
+                return;
+            }
             setLoading(true);
             setLoadError(null);
             try {
@@ -88,19 +99,29 @@ function GeneralLedger() {
     );
 
     useEffect(() => {
-        if (!allowed) {
-            setLoading(false);
-            return;
-        }
+        if (!allowed) return;
         load(applied);
     }, [allowed, applied, load]);
+
+    /** Apply the bar and keep the picks and period in the URL, so the view can be bookmarked. */
+    const apply = () => {
+        setApplied(draft);
+        if (typeof window === "undefined") return;
+        const q = new URLSearchParams(window.location.search);
+        q.delete("accountId");
+        const set = (k: string, v: string | undefined) => (v ? q.set(k, v) : q.delete(k));
+        set("accountIds", draft.accountIds?.length ? draft.accountIds.join(",") : undefined);
+        set("from", draft.from);
+        set("to", draft.to);
+        set("propertyId", draft.propertyId);
+        const qs = q.toString();
+        window.history.replaceState(window.history.state, "", window.location.pathname + (qs ? `?${qs}` : ""));
+    };
 
     const exportCsv = () => {
         const rows: (string | number)[][] = [];
         for (const l of ledgers) {
-            if (l.openingBalance !== 0) {
-                rows.push([l.accountCode, accountName(l, locale), "", "", t("openingBalance"), "", "", fmtBalance(l.openingBalance), "", "", ""]);
-            }
+            rows.push([l.accountCode, accountName(l, locale), applied.from ?? "", "", t("broughtForward"), "", "", fmtBalance(l.openingBalance), "", "", "", ""]);
             for (const r of l.rows) {
                 rows.push([
                     l.accountCode,
@@ -112,18 +133,19 @@ function GeneralLedger() {
                     r.credit ? fmtAmount(r.credit) : "",
                     fmtBalance(r.balance),
                     units.name(r.unitId),
+                    towers.name(r.propertyId),
                     renters.name(r.renterId),
                     r.narration,
                 ]);
             }
             rows.push([
                 l.accountCode, accountName(l, locale), "", "", t("subTotal"),
-                fmtAmount(l.totalDebit), fmtAmount(l.totalCredit), fmtBalance(l.closingBalance), "", "", "",
+                fmtAmount(l.totalDebit), fmtAmount(l.totalCredit), fmtBalance(l.closingBalance), "", "", "", "",
             ]);
         }
         const headers = [
             t("code"), t("name"), t("docDate"), t("docNo"), t("particular"),
-            t("debit"), t("credit"), t("balance"), t("unit"), t("tenant"), t("narration"),
+            t("debit"), t("credit"), t("balance"), t("unit"), t("tower"), t("tenant"), t("narration"),
         ];
         downloadCsv(`general-ledger-${applied.from ?? ""}-${applied.to ?? ""}.csv`, toCsv(headers, rows));
     };
@@ -148,7 +170,12 @@ function GeneralLedger() {
                         <BookOpen size={20} className="text-primary" />
                         {vendorId ? t("vendorLedger") : t("generalLedger")}
                     </h1>
-                    <p className="text-xs text-muted font-medium">{t("generalLedgerDesc")}</p>
+                    <p className="text-xs text-muted font-medium">
+                        {t("generalLedgerDesc")}
+                        {picked && applied.from && applied.to && (
+                            <span className="ms-2 tabular-nums" data-testid="ledger-period">{t("periodLabel", { from: applied.from, to: applied.to })}</span>
+                        )}
+                    </p>
                 </div>
                 <button
                     type="button"
@@ -166,13 +193,23 @@ function GeneralLedger() {
             <LedgerFilters
                 value={draft}
                 onChange={setDraft}
-                onApply={() => setApplied(draft)}
+                onApply={apply}
                 busy={loading}
                 showAccounts={!vendorId}
                 showProperty={!vendorId}
+                maxAccounts={MAX_LEDGER_ACCOUNTS}
             />
 
-            {loading ? (
+            {!picked ? (
+                <div data-testid="ledger-pick-prompt" className="text-center py-20 bg-background border border-dashed border-border rounded-xl flex flex-col items-center gap-2">
+                    <div className="w-16 h-16 bg-surface rounded-xl flex items-center justify-center text-muted shadow-sm mb-4">
+                        <BookOpen size={28} />
+                    </div>
+                    <h3 className="text-sm font-bold text-foreground">{t("pickAccountsPrompt", { max: MAX_LEDGER_ACCOUNTS })}</h3>
+                    <p className="text-xs text-muted max-w-md">{t("pickAccountsHint")}</p>
+                    <Link href="/dashboard/finance/trial-balance" className="text-xs font-semibold text-primary hover:underline">{t("openTrialBalance")}</Link>
+                </div>
+            ) : loading ? (
                 <div className="space-y-3 animate-pulse">
                     {[1, 2, 3, 4].map(i => (
                         <div key={i} className="bg-input rounded-xl h-16" />
@@ -186,7 +223,7 @@ function GeneralLedger() {
                     <h3 className="text-sm font-bold text-foreground mb-1">{t("noRows")}</h3>
                 </div>
             ) : (
-                <LedgerTable ledgers={ledgers} />
+                <LedgerTable ledgers={ledgers} broughtForward />
             )}
         </div>
     );

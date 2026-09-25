@@ -1956,7 +1956,15 @@
     "removeFilter": "Remove this filter",
     "accountCodeLabel": "Account Code",
     "accountNameLabel": "Name",
-    "chargeTypes": "Charge types"
+    "chargeTypes": "Charge types",
+    "broughtForward": "Balance brought forward",
+    "pickAccountsPrompt": "Pick up to {max} accounts to see their ledger.",
+    "pickAccountsHint": "Nothing loads until you pick an account. For the whole company, open the Trial Balance.",
+    "openTrialBalance": "Open Trial Balance",
+    "pickAccountsPlaceholder": "Search account code or name",
+    "accountsPicked": "{count} of {max} accounts",
+    "tooManyAccounts": "You can pick up to {max} accounts at a time. Remove one to add another.",
+    "periodLabel": "{from} to {to}"
   },
   "Leasing": {
     "chargeRaisedBanner": "{type} proposed. It appears in the Penalties tab for finance to approve.",

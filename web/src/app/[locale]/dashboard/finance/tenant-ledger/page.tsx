@@ -30,8 +30,10 @@ export default function TenantLedgerPage() {
     // and the accountant re-picked, by hand, the tenant they had just clicked
     // away from.
     const searchParams = useSearchParams();
+    const range = defaultLedgerRange();
     const initial: LedgerQuery = {
-        ...defaultLedgerRange(),
+        from: searchParams?.get("from") || range.from,
+        to: searchParams?.get("to") || range.to,
         renterId: searchParams?.get("renterId") ?? undefined,
         leaseId: searchParams?.get("leaseId") ?? undefined,
     };
@@ -71,6 +73,23 @@ export default function TenantLedgerPage() {
         if (allowed) load(applied);
     }, [allowed, applied, load]);
 
+    /** Apply the bar and keep the tenant and period in the URL, so the view can be bookmarked. */
+    const apply = () => {
+        // Another tenant is another statement: a contract narrowing stays only while its tenant does.
+        const next = draft.renterId === applied.renterId ? draft : { ...draft, leaseId: undefined };
+        setApplied(next);
+        setDraft(next);
+        if (typeof window === "undefined") return;
+        const q = new URLSearchParams(window.location.search);
+        const set = (k: string, v: string | undefined) => (v ? q.set(k, v) : q.delete(k));
+        set("renterId", next.renterId);
+        set("leaseId", next.leaseId);
+        set("from", next.from);
+        set("to", next.to);
+        const qs = q.toString();
+        window.history.replaceState(window.history.state, "", window.location.pathname + (qs ? `?${qs}` : ""));
+    };
+
     if (userRole && !allowed) {
         return (
             <div className="max-w-4xl">
@@ -95,7 +114,7 @@ export default function TenantLedgerPage() {
 
             {loadError && <LoadErrorBanner message={loadError} onRetry={() => load(applied)} />}
 
-            <LedgerFilters value={draft} onChange={setDraft} onApply={() => setApplied(draft)} busy={loading} showRenter />
+            <LedgerFilters value={draft} onChange={setDraft} onApply={apply} busy={loading} showRenter />
 
             {loading ? (
                 <div className="space-y-3 animate-pulse">
@@ -113,7 +132,7 @@ export default function TenantLedgerPage() {
                     </h3>
                 </div>
             ) : (
-                <LedgerTable ledgers={ledgers} showTenantColumns subBand={tenantName || undefined} />
+                <LedgerTable ledgers={ledgers} showTenantColumns broughtForward subBand={tenantName || undefined} />
             )}
         </div>
     );

@@ -1956,7 +1956,15 @@
     "removeFilter": "إزالة هذا المرشّح",
     "accountCodeLabel": "رمز الحساب",
     "accountNameLabel": "الاسم",
-    "chargeTypes": "أنواع الرسوم"
+    "chargeTypes": "أنواع الرسوم",
+    "broughtForward": "الرصيد المرحّل",
+    "pickAccountsPrompt": "اختر حتى {max} حساباً لعرض دفتر الأستاذ الخاص بها.",
+    "pickAccountsHint": "لا يتم تحميل أي شيء حتى تختار حساباً. لعرض الشركة بالكامل، افتح ميزان المراجعة.",
+    "openTrialBalance": "فتح ميزان المراجعة",
+    "pickAccountsPlaceholder": "ابحث برمز الحساب أو اسمه",
+    "accountsPicked": "{count} من {max} حساب",
+    "tooManyAccounts": "يمكنك اختيار حتى {max} حساباً في المرة الواحدة. أزل حساباً لإضافة آخر.",
+    "periodLabel": "من {from} إلى {to}"
   },
   "Leasing": {
     "chargeRaisedBanner": "اقتُرحت رسوم ({type}). تظهر في تبويب الغرامات ليعتمدها قسم المالية.",
