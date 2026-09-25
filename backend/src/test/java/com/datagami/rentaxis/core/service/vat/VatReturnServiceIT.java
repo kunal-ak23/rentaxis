@@ -50,6 +50,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class VatReturnServiceIT extends AbstractPostgresIT {
 
     @Autowired VatReturnService service;
+    @Autowired com.datagami.rentaxis.core.service.ledger.PostingService postingService;
     @Autowired com.datagami.rentaxis.core.service.lease.LeaseTerminationService termination;
     @Autowired VatTaxPointService vatTaxPoints;
     @Autowired RecognitionService recognition;
@@ -217,5 +218,35 @@ class VatReturnServiceIT extends AbstractPostgresIT {
         invoice(LocalDate.of(2026, 6, 11), "GC-4", "100.00", "5");
         assertThat(service.get(Q2).status()).isEqualTo("OPEN");
         assertThat(service.filings()).extracting(VatReturnDTO.Filing::status).containsExactly("REOPENED");
+    }
+
+    /**
+     * PR #361 R1 P2-1 / P2-3: an opening balance carrying Input VAT (the cut-over quarter) is a check
+     * line, not box 9; a purchase on a residential-only property stays in box 9 with a warning line.
+     */
+    @Test
+    void cutOverInputVatIsACheckLineAndInputVatOnExemptPropertiesIsFlagged() {
+        var d = com.datagami.rentaxis.core.service.ledger.PostingRequest.Dimensions.none();
+        postingService.post(new com.datagami.rentaxis.core.service.ledger.PostingRequest(
+                com.datagami.rentaxis.domain.entity.enums.JournalDocType.OB, LocalDate.of(2026, 4, 1), "opening", d,
+                com.datagami.rentaxis.domain.entity.enums.JournalSourceType.OPENING_BALANCE, null, null, List.of(
+                com.datagami.rentaxis.core.service.ledger.PostingRequest.dr(
+                        com.datagami.rentaxis.domain.entity.enums.AccountRole.INPUT_VAT, new BigDecimal("800")),
+                com.datagami.rentaxis.core.service.ledger.PostingRequest.cr(
+                        com.datagami.rentaxis.domain.entity.enums.AccountRole.OPENING_BALANCE_DIFFERENCE, new BigDecimal("800")))));
+        // A purchase on the (residential-only) property: 1,000 + 50 VAT.
+        UUID repairs = accountService.getAccountByCode("D-02-003").getId();
+        UUID id = vouchers.createDraft(new VoucherService.VoucherInput(VoucherType.PISR, LocalDate.of(2026, 5, 20), vendor.getId(),
+                "GC-9", "AC", fixtures.property().getId(), null, null, null, null, List.of(new VoucherService.VoucherLineInput(
+                repairs, "ac", new BigDecimal("1000"), new BigDecimal("5"), fixtures.property().getId(), null)))).getId();
+        vouchers.post(id);
+        // A head-office cost (no property): recoverable, not flagged.
+        invoice(LocalDate.of(2026, 5, 21), "GC-10", "100.00", "5");
+        VatReturnDTO r = service.get(Q2);
+        assertThat(box(r, "9").vat()).isEqualByComparingTo("55.00");
+        assertThat(r.inputVatOther()).isEqualByComparingTo("800.00");
+        assertThat(service.documents(Q2, "INPUT_OTHER")).singleElement().satisfies(x -> assertThat(x.kind()).isEqualTo("OB"));
+        assertThat(r.inputVatOnExempt()).isEqualByComparingTo("50.00");
+        assertThat(box(r, "14").vat()).isEqualByComparingTo("-55.00");
     }
 }

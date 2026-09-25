@@ -115,11 +115,12 @@ public class VatReturnService {
             List<Box> asFiled = readBoxes(filed.getBoxes());
             return new VatReturnDTO(filed.getId(), periodStart, end, VatReturn.FILED, filed.getFiledAt(),
                     nameOf(filed.getFiledBy()), filed.getFilingReference(), asFiled == null ? live.boxes : asFiled,
-                    filed.getNetVat(), live.check, live.commercialWithoutVat, false, "vat.alreadyFiled");
+                    filed.getNetVat(), live.check, live.commercialWithoutVat, live.inputOther, live.inputExempt, false,
+                    "vat.alreadyFiled");
         }
         String reason = cannotFile(periodStart, end);
         return new VatReturnDTO(null, periodStart, end, "OPEN", null, null, null, live.boxes, live.net, live.check,
-                live.commercialWithoutVat, reason == null, reason);
+                live.commercialWithoutVat, live.inputOther, live.inputExempt, reason == null, reason);
     }
 
     @Transactional(readOnly = true)
@@ -211,6 +212,8 @@ public class VatReturnService {
             case "5" -> rentDocuments(t, periodStart, end, true);
             case "COMMERCIAL_NO_VAT" -> rentDocuments(t, periodStart, end, false);
             case "9" -> inputDocuments(t, periodStart, end);
+            case "INPUT_OTHER" -> inputOtherDocuments(t, periodStart, end);
+            case "INPUT_EXEMPT" -> inputExemptDocuments(t, periodStart, end);
             case "OUTPUT_LEDGER" -> outputLedgerEntries(t, periodStart, end);
             default -> throw new BusinessRuleViolationException("No documents behind box " + box);
         };
@@ -218,7 +221,8 @@ public class VatReturnService {
 
     // ------------------------------------------------------------------ computing
 
-    private record Computed(List<Box> boxes, BigDecimal net, OutputCheck check, BigDecimal commercialWithoutVat) { }
+    private record Computed(List<Box> boxes, BigDecimal net, OutputCheck check, BigDecimal commercialWithoutVat,
+                            BigDecimal inputOther, BigDecimal inputExempt) { }
 
     private record OutDoc(UUID id, String kind, String number, LocalDate date, String party, String partyAr,
                           BigDecimal taxable, BigDecimal vat, BigDecimal rate, UUID journalId, String entryNumber,
@@ -271,7 +275,9 @@ public class VatReturnService {
         BigDecimal diff = ledger.subtract(money(due));
         OutputCheck check = new OutputCheck(money(due), ledger, diff, diff.signum() == 0);
         BigDecimal commercial = sum(rentDocuments(t, from, to, false));
-        return new Computed(boxes, net, check, commercial);
+        BigDecimal other = money(inputOtherDocuments(t, from, to).stream().map(Document::vat).reduce(BigDecimal.ZERO, BigDecimal::add));
+        BigDecimal exemptInput = money(inputExemptDocuments(t, from, to).stream().map(Document::vat).reduce(BigDecimal.ZERO, BigDecimal::add));
+        return new Computed(boxes, net, check, commercial, other, exemptInput);
     }
 
     static String boxOfEmirate(String emirate) {
@@ -335,11 +341,35 @@ public class VatReturnService {
                 rs.getString("entry_number"), rs.getObject("lease_id", UUID.class)));
     }
 
-    /** Every entry dated in the period that moves Input VAT: the VAT, and the expense or asset it carried. */
+    /**
+     * PR #361 R1 P2-1: the purchase side of box 9 — purchase invoices, supplier
+     * credit notes (and their reversals, which keep the doc type) and bank charges
+     * booked from a statement. Anything else that moves Input VAT (an opening
+     * balance, a cut-over import, a manual JV) is not a purchase of this period.
+     */
+    static final List<String> PURCHASE_DOCS = List.of("PISR", "PCN", "BNK");
+
+    /** Box 9: every purchase document dated in the period that moves Input VAT, with the expense or asset it carried. */
     private List<Document> inputDocuments(UUID t, LocalDate from, LocalDate to) {
+        return inputEntries(t, from, to, true, false);
+    }
+
+    /** P2-1: Input VAT moved in the period by anything but a purchase document — a check line, not in box 9. */
+    private List<Document> inputOtherDocuments(UUID t, LocalDate from, LocalDate to) {
+        return inputEntries(t, from, to, false, false);
+    }
+
+    /** P2-3: box 9's entries whose Input VAT sits on a property whose units are all residential (exempt supplies). */
+    private List<Document> inputExemptDocuments(UUID t, LocalDate from, LocalDate to) {
+        return inputEntries(t, from, to, true, true);
+    }
+
+    private List<Document> inputEntries(UUID t, LocalDate from, LocalDate to, boolean purchases, boolean exemptOnly) {
         List<UUID> vat = inputVatAccounts(t);
         if (vat.isEmpty()) return List.of();
-        MapSqlParameterSource p = params(t, from, to).addValue("vat", vat);
+        MapSqlParameterSource p = params(t, from, to).addValue("vat", vat).addValue("docs", PURCHASE_DOCS)
+                .addValue("purchases", purchases).addValue("exemptOnly", exemptOnly)
+                .addValue("res", List.copyOf(RESIDENTIAL));
         return jdbc.query("""
                 select e.id as entry_id, e.entry_number, e.entry_date, e.doc_type,
                        coalesce(v.invoice_number, e.entry_number) as number,
@@ -355,8 +385,16 @@ public class VatReturnService {
                 left join vouchers v on v.id = e.source_id and v.tenant_id = :t
                 left join vendors vd on vd.id = v.vendor_id
                 where l.tenant_id = :t and e.entry_date between :from and :to
+                  and ((e.doc_type in (:docs)) = :purchases)
                   and exists (select 1 from journal_lines x where x.journal_entry_id = e.id and x.tenant_id = :t
                                 and x.account_id in (:vat))
+                  and (not :exemptOnly or exists (
+                        select 1 from journal_lines x join units u on u.property_id = coalesce(x.property_id, e.property_id)
+                        where x.journal_entry_id = e.id and x.tenant_id = :t and x.account_id in (:vat))
+                      and not exists (
+                        select 1 from journal_lines x join units u on u.property_id = coalesce(x.property_id, e.property_id)
+                        where x.journal_entry_id = e.id and x.tenant_id = :t and x.account_id in (:vat)
+                          and coalesce(u.type, 'BHK1') not in (:res)))
                 group by e.id, e.entry_number, e.entry_date, e.doc_type, v.invoice_number, vd.name_en, vd.name_ar
                 having sum(case when l.account_id in (:vat) then l.debit - l.credit else 0 end) <> 0
                 order by e.entry_date, e.entry_number

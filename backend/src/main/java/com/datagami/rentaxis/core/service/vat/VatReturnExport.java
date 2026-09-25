@@ -47,6 +47,12 @@ public final class VatReturnExport {
         if (r.commercialWithoutVat() != null && r.commercialWithoutVat().signum() != 0) {
             notes.add(lbl("vat.commercialWithoutVat", lang) + ": " + FinancialReportExport.money(r.commercialWithoutVat()));
         }
+        if (r.inputVatOther() != null && r.inputVatOther().signum() != 0) {
+            notes.add(lbl("vat.inputVatOther", lang) + ": " + FinancialReportExport.money(r.inputVatOther()));
+        }
+        if (r.inputVatOnExempt() != null && r.inputVatOnExempt().signum() != 0) {
+            notes.add(lbl("vat.inputVatOnExempt", lang) + ": " + FinancialReportExport.money(r.inputVatOnExempt()));
+        }
         ReportPdf.Table t = new ReportPdf.Table(null,
                 List.of(lbl("vat.box", lang), lbl("vat.description", lang), lbl("vat.amount", lang), lbl("vat.vat", lang)),
                 List.of(false, false, true, true), rows);
@@ -62,6 +68,8 @@ public final class VatReturnExport {
             out.add(List.of(b.code(), lbl("vat." + b.key(), lang), plain(b.amount()), plain(b.vat())));
         }
         if (r.outputCheck() != null) out.add(List.of("", lbl("vat.outputCheckBad", lang), plain(r.outputCheck().difference())));
+        out.add(List.of("", lbl("vat.inputVatOther", lang), plain(r.inputVatOther())));
+        out.add(List.of("", lbl("vat.inputVatOnExempt", lang), plain(r.inputVatOnExempt())));
         return ReportCsv.encode(out);
     }
 

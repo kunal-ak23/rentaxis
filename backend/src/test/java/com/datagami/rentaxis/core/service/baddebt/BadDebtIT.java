@@ -47,6 +47,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class BadDebtIT extends AbstractPostgresIT {
 
     @Autowired BadDebtService service;
+    @Autowired com.datagami.rentaxis.core.service.penalty.PenaltyAssessmentService penalties;
     @Autowired LeasePostingService posting;
     @Autowired ChequeGenerationService chequeGeneration;
     @Autowired LeaseService leaseService;
@@ -160,5 +161,25 @@ class BadDebtIT extends AbstractPostgresIT {
         assertThat(v.vatLease()).isTrue();
         assertThatThrownBy(() -> service.approve(v.id(), null))
                 .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("badDebt.vatNotDeclared"));
+    }
+
+    /** PR #361 R1 P1-1 / P2-2: a written-off charge cannot be reversed and leaves the outstanding total; the write-off's reversal restores it once. */
+    @Test
+    void aWrittenOffChargeCannotBeReversedAndIsCountedOnceAfterTheWriteOffIsReversed() {
+        UUID leaseId = lease();
+        var charge = penalties.approve(penalties.propose(new com.datagami.rentaxis.api.dto.penalty.ProposePenaltyRequest(
+                leaseId, null, com.datagami.rentaxis.domain.entity.enums.PenaltyReason.DAMAGE, new BigDecimal("400"),
+                "broken door", LocalDate.of(2026, 8, 10), null), null).id(), LocalDate.of(2026, 8, 10));
+        assertThat(penalties.outstandingForLease(leaseId)).isEqualByComparingTo("400");
+        WriteOffDTO w = service.approve(service.propose(new ProposeRequest(leaseId, List.of(charge.collectionChequeId()),
+                ON, "absconded")).id(), null);
+        assertThat(penalties.statusOf(charge.id()).name()).isEqualTo("WRITTEN_OFF");
+        assertThat(penalties.outstandingForLease(leaseId)).isZero();
+        assertThatThrownBy(() -> penalties.reverse(charge.id(), ON, "error"))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("penalty.writtenOff"));
+
+        service.reverse(w.id(), ON.plusDays(1), "came back");
+        assertThat(penalties.statusOf(charge.id()).name()).isEqualTo("APPROVED");
+        assertThat(penalties.outstandingForLease(leaseId)).isEqualByComparingTo("400");
     }
 }

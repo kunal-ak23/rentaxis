@@ -305,8 +305,8 @@ public class UnitListingService {
     @Transactional(readOnly = true)
     public Page<InterestDTO> listInterests(UUID tenantId, UUID listingId, Pageable pageable) {
         get(tenantId, listingId);
-        Page<UnitListingInterest> page = interestRepository.findByListingIdAndStatus(
-                listingId, InterestStatus.ACTIVE, pageable);
+        Page<UnitListingInterest> page = interestRepository.findByListingIdAndStatusIn(
+                listingId, java.util.List.of(InterestStatus.ACTIVE, InterestStatus.CONVERTED), pageable);
 
         List<UUID> renterIds = page.getContent().stream()
                 .map(UnitListingInterest::getRenterUserId)
@@ -329,7 +329,8 @@ public class UnitListingService {
                     user == null ? null : user.getPhoneNumber(),
                     interest.getNote(),
                     interest.getStatus(),
-                    interest.getCreatedAt()
+                    interest.getCreatedAt(),
+                    interest.getLeaseId()
             );
         });
     }

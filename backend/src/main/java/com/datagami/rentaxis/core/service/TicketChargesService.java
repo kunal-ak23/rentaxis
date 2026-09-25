@@ -86,7 +86,10 @@ public class TicketChargesService {
                 update vouchers set maintenance_ticket_id = :ticket
                 where tenant_id = :t and id = :v and doc_type = 'PISR' and status = 'POSTED'
                   and (maintenance_ticket_id is null or maintenance_ticket_id = :ticket)
-                """, params().addValue("ticket", t.getId()).addValue("v", voucherId));
+                  and (property_id = :property or exists (select 1 from voucher_lines x
+                        where x.voucher_id = vouchers.id and x.property_id = :property))
+                """, params().addValue("ticket", t.getId()).addValue("v", voucherId)
+                .addValue("property", t.getProperty() == null ? new UUID(0, 0) : t.getProperty().getId()));
         if (n == 0) {
             throw new BusinessRuleViolationException("Only a posted purchase invoice not linked to another ticket can be"
                     + " linked.", "ticket.billNotLinkable", Map.of());

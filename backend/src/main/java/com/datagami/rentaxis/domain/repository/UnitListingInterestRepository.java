@@ -21,6 +21,10 @@ public interface UnitListingInterestRepository extends JpaRepository<UnitListing
 
     Page<UnitListingInterest> findByListingIdAndStatus(UUID listingId, InterestStatus status, Pageable pageable);
 
+    /** PR #361 R1: the drawer lists live and converted enquiries. */
+    Page<UnitListingInterest> findByListingIdAndStatusIn(UUID listingId, java.util.Collection<InterestStatus> statuses,
+                                                         Pageable pageable);
+
     long countByListingIdAndStatus(UUID listingId, InterestStatus status);
 
     @Query("""

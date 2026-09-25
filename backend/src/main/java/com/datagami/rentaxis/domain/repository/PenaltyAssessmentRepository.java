@@ -124,4 +124,7 @@ public interface PenaltyAssessmentRepository extends JpaRepository<PenaltyAssess
 
     /** F14-49 / F14-50: the charges raised by a ticket or a booking. */
     java.util.List<PenaltyAssessment> findBySourceTypeAndSourceIdOrderByProposedAtAsc(String sourceType, UUID sourceId);
+
+    /** PR #361 R1 P1-1: the charges whose collection rows these are. */
+    java.util.List<PenaltyAssessment> findByCollectionCheque_IdIn(java.util.Collection<UUID> chequeIds);
 }

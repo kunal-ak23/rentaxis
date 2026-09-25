@@ -45,6 +45,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class BookingFeeIT extends AbstractPostgresIT {
 
     @Autowired BookingService bookings;
+    @Autowired com.datagami.rentaxis.core.service.baddebt.BadDebtService badDebts;
+    @Autowired com.datagami.rentaxis.domain.repository.PenaltyAssessmentRepository assessments;
     @Autowired FacilityService facilities;
     @Autowired LeasePostingService posting;
     @Autowired ChequeGenerationService chequeGeneration;
@@ -128,5 +130,20 @@ class BookingFeeIT extends AbstractPostgresIT {
                 .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("booking.feeAmount"));
         PropertyAmenity hall = amenity("Hall", "PER_BOOKING", "300");
         assertThat(book(hall, LocalDate.now().plusDays(5)).getFeeAmount()).isEqualByComparingTo("300.00");
+    }
+
+    /** PR #361 R1 P1-1: a booking whose fee was written off as a bad debt can no longer be cancelled. */
+    @Test
+    void aBookingWhoseFeeWasWrittenOffCannotBeCancelled() {
+        PropertyAmenity hall = amenity("Hall", "PER_BOOKING", "300");
+        BookingRequest b = book(hall, LocalDate.now().plusDays(10));
+        BookingRequest approved = tx.execute(s -> bookings.approve(fixtures.tenantId(), b.getId(), UUID.randomUUID(), null));
+        UUID row = assessments.findById(approved.getChargeId()).orElseThrow().getCollectionCheque().getId();
+        UUID leaseId = assessments.findById(approved.getChargeId()).orElseThrow().getLease().getId();
+        var w = badDebts.propose(new com.datagami.rentaxis.core.service.baddebt.BadDebtService.ProposeRequest(leaseId,
+                List.of(row), LocalDate.now(), "gone"));
+        badDebts.approve(w.id(), null);
+        assertThatThrownBy(() -> tx.executeWithoutResult(s -> bookings.cancel(fixtures.tenantId(), b.getId(), renterUser)))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("booking.feeWrittenOff"));
     }
 }

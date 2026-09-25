@@ -112,6 +112,11 @@ public class BookingFeeService {
     public void reverseOnCancel(BookingRequest b, LocalDate on) {
         if (b.getChargeId() == null) return;
         PenaltyAssessmentStatus status = charges.statusOf(b.getChargeId());
+        // PR #361 R1 P1-1: the fee was written off as a bad debt — the booking stands.
+        if (status == PenaltyAssessmentStatus.WRITTEN_OFF) {
+            throw new BusinessRuleViolationException("This booking's fee was written off as a bad debt; it can no longer be"
+                    + " cancelled.", "booking.feeWrittenOff", Map.of());
+        }
         if (status == PenaltyAssessmentStatus.APPROVED) {
             charges.reverseBySystem(b.getChargeId(), on, "Booking cancelled before its slot");
         }

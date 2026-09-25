@@ -26,6 +26,7 @@ import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
 import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
+import com.datagami.rentaxis.domain.entity.enums.PenaltyAssessmentStatus;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.BadDebtRecoveryRepository;
 import com.datagami.rentaxis.domain.repository.BadDebtWriteOffRepository;
@@ -102,6 +103,13 @@ public class BadDebtService {
     private final LeaseAccessPolicy access;
     private final LeaseLineRepository leaseLines;
     private final AccountRepository accounts;
+
+    private com.datagami.rentaxis.core.service.penalty.PenaltyAssessmentService charges;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setCharges(com.datagami.rentaxis.core.service.penalty.PenaltyAssessmentService charges) {
+        this.charges = charges;
+    }
 
     public BadDebtService(BadDebtWriteOffRepository writeOffs, BadDebtRecoveryRepository recoveries,
                           LeaseRepository leases, ChequeRepository cheques, ChequeService chequeService,
@@ -183,6 +191,9 @@ public class BadDebtService {
         }
         String narration = "Bad debt written off: " + w.getReason();
         for (Cheque c : items) chequeService.closeForWriteOff(c.getId(), w.getWriteOffDate(), narration);
+        // PR #361 R1 P1-1: a charge whose collection row is written off cannot be reversed any more.
+        charges.markByCollectionRows(items.stream().map(Cheque::getId).toList(),
+                PenaltyAssessmentStatus.APPROVED, PenaltyAssessmentStatus.WRITTEN_OFF);
         JournalEntry bdw = posting.post(PostingRequest.ofPairs(JournalDocType.BDW, w.getWriteOffDate(), narration,
                 LeaseChequeRegistrar.dimensions(lease, null), JournalSourceType.BAD_DEBT, w.getId(), null,
                 List.of(PostingRequest.pair(
@@ -229,6 +240,7 @@ public class BadDebtService {
         JournalEntry rev = posting.reverse(w.getJournalId(), on, "Write-off reversed: " + reason);
         chequeService.addCollectionRow(lease.getId(), new ChequeRowInput(null, null, on, null, on, null, null, null,
                 w.getAmount(), "Bad debt write-off reversed", ChequeMode.CASH));
+        charges.markByCollectionRows(itemIds(w), PenaltyAssessmentStatus.WRITTEN_OFF, PenaltyAssessmentStatus.APPROVED);
         w.setReversalJournalId(rev.getId());
         w.setStatus(Status.REVERSED);
         w.setDecisionNote(reason);

@@ -204,6 +204,10 @@ public final class StatementLabels {
         put("vat.netPayable", "Payable tax for the period (negative: refundable)", "صافي الضريبة المستحقة الدفع (السالب: قابل للاسترداد)");
         put("vat.outputCheckOk", "Output VAT per documents ties to the Output VAT account", "ضريبة المخرجات حسب المستندات مطابقة لحساب ضريبة المخرجات");
         put("vat.outputCheckBad", "Output VAT per documents differs from the Output VAT account by", "ضريبة المخرجات حسب المستندات تختلف عن حساب ضريبة المخرجات بمقدار");
+        put("vat.inputVatOther", "Input VAT moved by an opening balance, import or journal (not in box 9; check)",
+                "ضريبة مدخلات من رصيد افتتاحي أو استيراد أو قيد يومية (غير مدرجة في الخانة 9؛ للمراجعة)");
+        put("vat.inputVatOnExempt", "Input VAT on costs of exempt (residential) properties — may not be recoverable, review with your tax agent",
+                "ضريبة مدخلات على تكاليف عقارات معفاة (سكنية) — قد لا تكون قابلة للاسترداد، راجعها مع وكيلك الضريبي");
         put("vat.commercialWithoutVat", "Rent on commercial units without VAT (check the lease VAT flag; not in any box)", "إيجار وحدات تجارية بدون ضريبة (راجع إعداد الضريبة في العقد؛ غير مدرج في أي خانة)");
     }
 

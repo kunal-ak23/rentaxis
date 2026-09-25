@@ -207,6 +207,21 @@ public class PenaltyAssessmentService {
         return dto(repository.save(a));
     }
 
+    /**
+     * F14-38 (PR #361 R1 P1-1): a write-off took (or gave back) the collection rows
+     * of these charges — APPROVED ↔ WRITTEN_OFF. Only charges in {@code from} move.
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public void markByCollectionRows(java.util.Collection<UUID> chequeIds, PenaltyAssessmentStatus from,
+                                     PenaltyAssessmentStatus to) {
+        if (chequeIds == null || chequeIds.isEmpty()) return;
+        for (PenaltyAssessment a : repository.findByCollectionCheque_IdIn(chequeIds)) {
+            if (a.getStatus() != from) continue;
+            a.setStatus(to);
+            repository.save(a);
+        }
+    }
+
     /** F14-49 / F14-50: the charges a document raised. */
     @Transactional(readOnly = true)
     public List<PenaltyAssessmentDTO> forSource(String sourceType, UUID sourceId) {
@@ -490,6 +505,12 @@ public class PenaltyAssessmentService {
     private PenaltyAssessmentDTO reverse(UUID id, LocalDate date, String note, boolean checkAccess) {
         PenaltyAssessment a = lock(id);
         if (checkAccess) leaseAccessPolicy.requireManageable(a.getLease());
+        // PR #361 R1 P1-1: a written-off charge's receivable is already credited by the
+        // BDW; reversing it too would credit it twice (and hand VAT back on a credit note).
+        if (a.getStatus() == PenaltyAssessmentStatus.WRITTEN_OFF) {
+            throw new BusinessRuleViolationException("This charge was written off as a bad debt; reverse the write-off first.",
+                    "penalty.writtenOff", java.util.Map.of());
+        }
         requireStatus(a, "reverse", PenaltyAssessmentStatus.APPROVED);
         if (a.getJournalId() == null) {
             throw new BusinessRuleViolationException("This penalty has no journal to reverse");

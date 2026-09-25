@@ -26,6 +26,10 @@ public record VatReturnDTO(
         BigDecimal netVat,
         OutputCheck outputCheck,
         BigDecimal commercialWithoutVat,
+        /* PR #361 R1 P2-1: Input VAT moved by anything but a purchase document (OB, cut-over import, JV) — not in box 9. */
+        BigDecimal inputVatOther,
+        /* PR #361 R1 P2-3: box 9's VAT on costs of residential-only (exempt) properties — may not be recoverable. */
+        BigDecimal inputVatOnExempt,
         boolean canFile,
         String cannotFileReason) {
 

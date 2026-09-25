@@ -64,6 +64,9 @@ public class ListingLeaseService {
             throw new BusinessRuleViolationException("This enquiry already has a draft lease.",
                     "listing.interestConverted", Map.of());
         }
+        if (interest.getStatus() == InterestStatus.WITHDRAWN) {
+            throw new BusinessRuleViolationException("This enquiry was withdrawn.", "listing.interestWithdrawn", Map.of());
+        }
         User enquirer = users.findById(interest.getRenterUserId())
                 .orElseThrow(() -> new NotFoundException("The enquirer's account is gone"));
 

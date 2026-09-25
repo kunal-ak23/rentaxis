@@ -911,8 +911,11 @@ public class ChequeService {
     public BigDecimal closeForWriteOff(UUID chequeId, LocalDate date, String note) {
         Cheque cheque = lock(chequeId);
         Lease lease = cheque.getLease();
-        if (cheque.getStatus() == ChequeStatus.REGISTERED) {
+        // PR #361 R1 P3: a bounced row can carry undeclared VAT too.
+        if (cheque.getStatus() == ChequeStatus.REGISTERED || cheque.getStatus() == ChequeStatus.BOUNCED) {
             vatTaxPoints.beforeWriteOff(cheque);
+        }
+        if (cheque.getStatus() == ChequeStatus.REGISTERED) {
             reversePdr(cheque, date, note);
         } else if (cheque.getStatus() != ChequeStatus.BOUNCED) {
             throw new BusinessRuleViolationException("Instalment " + cheque.getSeqNo() + " is " + cheque.getStatus()

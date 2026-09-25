@@ -110,6 +110,13 @@ class ListingLeaseIT extends AbstractPostgresIT {
         assertThat(renter.getNameEn()).isEqualTo("Twin Tariq");
         assertThat(renter.getUserId()).as("renter record only, no login").isNull();
         assertThat(interestRepo.findById(interestId).orElseThrow().getStatus()).isEqualTo(InterestStatus.CONVERTED);
+        // PR #361 R1: the drawer still lists the converted enquiry, with its lease.
+        var listed = tx.execute(s -> listings.listInterests(fixtures.tenantId(), listingId,
+                org.springframework.data.domain.PageRequest.of(0, 10))).getContent();
+        assertThat(listed).singleElement().satisfies(i -> {
+            assertThat(i.status()).isEqualTo(InterestStatus.CONVERTED);
+            assertThat(i.leaseId()).isEqualTo(draft.getId());
+        });
         java.util.List<com.datagami.rentaxis.api.dto.lease.LeaseLineDTO> lines = tx.execute(s -> leaseService.getLines(draft.getId()));
         assertThat(lines)
                 .anySatisfy(l -> {
