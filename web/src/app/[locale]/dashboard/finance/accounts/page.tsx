@@ -609,6 +609,7 @@ export default function AccountsPage() {
                     </div>
 
                     <div className="flex items-center gap-2 flex-shrink-0">
+                        <span data-testid="coa-row-type" className="hidden sm:inline text-[11px] text-muted">{typeLabel(account.accountType)}</span>
                         {account.accountSubType && (
                             <span className="text-[9px] font-bold text-muted uppercase hidden md:inline">
                                 {subTypeLabel(account.accountSubType)}
@@ -942,10 +943,11 @@ export default function AccountsPage() {
                     {/* Table header */}
                     <div className="flex items-center justify-between px-5 py-3.5 border-b border-border bg-input/30">
                         <div className="flex items-center gap-6">
-                            <span className="text-[11px] font-semibold text-muted uppercase tracking-wider">{t("code")}</span>
+                            <span className="text-[11px] font-semibold text-muted uppercase tracking-wider">{tl("accountCodeLabel")}</span>
                             <span className="text-[11px] font-semibold text-muted uppercase tracking-wider">{t("accountName")}</span>
                         </div>
                         <div className="flex items-center gap-4">
+                            <span className="text-[11px] font-semibold text-muted uppercase tracking-wider hidden sm:inline">{t("accountType")}</span>
                             <span className="text-[11px] font-semibold text-muted uppercase tracking-wider hidden md:inline">{t("subType")}</span>
                             <span className="text-[11px] font-semibold text-muted uppercase tracking-wider">{t("actions")}</span>
                         </div>

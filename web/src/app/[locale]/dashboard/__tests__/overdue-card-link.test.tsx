@@ -45,6 +45,6 @@ describe("DashboardPage overdue card", () => {
         );
 
         const link = await screen.findByRole("link", { name: /view overdue payments/i });
-        expect(link).toHaveAttribute("href", "/dashboard/finance/cheques");
+        expect(link).toHaveAttribute("href", "/dashboard/collections?tab=overdue");
     });
 });

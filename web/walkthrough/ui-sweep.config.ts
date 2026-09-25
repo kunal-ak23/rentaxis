@@ -20,7 +20,9 @@ export default defineConfig({
     timeout: 5 * 60_000,
     globalTimeout: 45 * 60_000,
     expect: { timeout: 20_000 },
-    reporter: [['list']],
+    // The JSON report is the run's summary on disk: the list reporter's last lines can
+    // be lost when a long run is watched through a pipe (PR #363 follow-up).
+    reporter: [['list'], ['json', { outputFile: path.join(__dirname, 'raw', 'ui-sweep-report.json') }]],
     // Its own sub-folder: Playwright empties outputDir at the start of a run,
     // and walkthrough/raw is shared with the recording configs.
     outputDir: path.join(__dirname, 'raw', 'ui-sweep'),

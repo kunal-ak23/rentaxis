@@ -31,7 +31,8 @@ const FAILURE_REASONS: ChequeFailureReason[] = ["BOUNCE", "SIGNATURE_MISMATCH", 
 type Props = {
     cheque: Cheque | null;
     onClose: () => void;
-    onDone: () => void;
+    /** Called with the bounce date the server recorded. */
+    onDone: (date: string) => void;
 };
 
 export default function BounceChequeDialog({ cheque, onClose, onDone }: Props) {
@@ -63,7 +64,7 @@ export default function BounceChequeDialog({ cheque, onClose, onDone }: Props) {
                 notes: notes || null,
                 failureReason,
             });
-            onDone();
+            onDone(date);
         } catch (e) {
             setError(e instanceof ApiError ? e.message : t("actionFailed"));
         } finally {

@@ -134,7 +134,7 @@ export default function AccountTemplatePage() {
                         <div className="flex items-center justify-between gap-4 px-5 py-4 border-b border-border">
                             <div>
                                 <h2 className="text-sm font-semibold text-foreground">{t("accountTemplate")}</h2>
-                                <p className="text-[11px] text-muted mt-0.5">{t("patternHint")}</p>
+                                <p className="text-[11px] text-muted mt-0.5">{t("patternHint", { property: "{property}" })}</p>
                             </div>
                             <div className="flex items-center gap-3">
                                 {templateSaved && (

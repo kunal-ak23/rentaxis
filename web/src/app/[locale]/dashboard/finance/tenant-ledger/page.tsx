@@ -7,7 +7,6 @@ import { useTranslations } from "next-intl";
 import { ShieldCheck, Users } from "lucide-react";
 import LedgerFilters, { defaultLedgerRange } from "@/components/finance/LedgerFilters";
 import LedgerTable from "@/components/finance/LedgerTable";
-import { narrowLedgersToLease } from "@/components/finance/narrowLedger";
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
@@ -30,8 +29,10 @@ export default function TenantLedgerPage() {
     // and the accountant re-picked, by hand, the tenant they had just clicked
     // away from.
     const searchParams = useSearchParams();
+    const range = defaultLedgerRange();
     const initial: LedgerQuery = {
-        ...defaultLedgerRange(),
+        from: searchParams?.get("from") || range.from,
+        to: searchParams?.get("to") || range.to,
         renterId: searchParams?.get("renterId") ?? undefined,
         leaseId: searchParams?.get("leaseId") ?? undefined,
     };
@@ -55,8 +56,13 @@ export default function TenantLedgerPage() {
             setLoading(true);
             setLoadError(null);
             try {
-                const all = await ledgerApi.ledger.renter(q.renterId, { from: q.from, to: q.to });
-                setLedgers(narrowLedgersToLease(all, q.leaseId));
+                // One contract: the general ledger filtered on the renter AND the lease,
+                // so the server's balance brought forward and running balance are that
+                // contract's own (PR #365 R1). Narrowing the renter ledger client-side
+                // had to zero the opening balance.
+                setLedgers(q.leaseId
+                    ? await ledgerApi.ledger.general({ renterId: q.renterId, leaseId: q.leaseId, from: q.from, to: q.to })
+                    : await ledgerApi.ledger.renter(q.renterId, { from: q.from, to: q.to }));
             } catch (err) {
                 setLedgers([]);
                 setLoadError(err instanceof ApiError ? err.message : tCommon("loadFailed"));
@@ -70,6 +76,23 @@ export default function TenantLedgerPage() {
     useEffect(() => {
         if (allowed) load(applied);
     }, [allowed, applied, load]);
+
+    /** Apply the bar and keep the tenant and period in the URL, so the view can be bookmarked. */
+    const apply = () => {
+        // Another tenant is another statement: a contract narrowing stays only while its tenant does.
+        const next = draft.renterId === applied.renterId ? draft : { ...draft, leaseId: undefined };
+        setApplied(next);
+        setDraft(next);
+        if (typeof window === "undefined") return;
+        const q = new URLSearchParams(window.location.search);
+        const set = (k: string, v: string | undefined) => (v ? q.set(k, v) : q.delete(k));
+        set("renterId", next.renterId);
+        set("leaseId", next.leaseId);
+        set("from", next.from);
+        set("to", next.to);
+        const qs = q.toString();
+        window.history.replaceState(window.history.state, "", window.location.pathname + (qs ? `?${qs}` : ""));
+    };
 
     if (userRole && !allowed) {
         return (
@@ -95,7 +118,7 @@ export default function TenantLedgerPage() {
 
             {loadError && <LoadErrorBanner message={loadError} onRetry={() => load(applied)} />}
 
-            <LedgerFilters value={draft} onChange={setDraft} onApply={() => setApplied(draft)} busy={loading} showRenter />
+            <LedgerFilters value={draft} onChange={setDraft} onApply={apply} busy={loading} showRenter />
 
             {loading ? (
                 <div className="space-y-3 animate-pulse">
@@ -113,7 +136,7 @@ export default function TenantLedgerPage() {
                     </h3>
                 </div>
             ) : (
-                <LedgerTable ledgers={ledgers} showTenantColumns subBand={tenantName || undefined} />
+                <LedgerTable ledgers={ledgers} showTenantColumns broughtForward subBand={tenantName || undefined} />
             )}
         </div>
     );

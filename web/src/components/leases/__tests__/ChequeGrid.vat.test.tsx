@@ -158,3 +158,50 @@ describe("ChequeGrid VAT column", () => {
         expect(screen.getByTestId("cheque-grid-vat-match")).toHaveTextContent("مجموع الضريبة");
     });
 });
+
+describe("ChequeGrid keyboard entry (scale #19)", () => {
+    it("pastes cheque numbers and amounts from Excel down the rows, clearing each pasted row's VAT", () => {
+        const onChange = vi.fn();
+        renderGrid({ cheques: four, editable: true, onChange, contractValueInclVat: 126000, contractVat: 6000 });
+        const no1 = screen.getByLabelText(`${en.Leasing.chequeNo} 1`);
+        fireEvent.paste(no1, { clipboardData: { getData: () => "200001\t01/06/2026\tDIB\t\t32,000\n200002\t01/09/2026\tDIB\t\t30,000" } });
+        const next: Cheque[] = onChange.mock.calls[0][0];
+        expect(next.map(c => [c.chequeNumber, c.chequeDate, c.payeeBank, c.amount, c.vatAmount])).toEqual([
+            ["200001", "2026-06-01", "DIB", 32000, null],
+            ["200002", "2026-09-01", "DIB", 30000, null],
+            ["000101", "2026-05-01", "ENBD", 31500, 1500],
+            ["000101", "2026-05-01", "ENBD", 31500, 1500],
+        ]);
+    });
+
+    it("reports rows past the end and adds them only when asked; added rows go to the server without an id", () => {
+        let rows = four.slice(0, 1);
+        const onChange = vi.fn((next: Cheque[]) => { rows = next; });
+        const { rerender } = renderGrid({ cheques: rows, editable: true, onChange, contractValueInclVat: 126000 });
+        fireEvent.paste(screen.getByLabelText(`${en.Leasing.chequeNo} 1`), { clipboardData: { getData: () => "A1\t\t\t\t100\nA2\t\t\t\t200\nA3\t\t\t\t300" } });
+        expect(rows).toHaveLength(1);
+        expect(rows[0].chequeNumber).toBe("A1");
+        expect(screen.getByTestId("cheque-grid-paste-report-rows")).toHaveTextContent("2 pasted rows are past the end of the grid.");
+        fireEvent.click(screen.getByTestId("cheque-grid-paste-report-add-rows"));
+        expect(rows.map(r => [r.chequeNumber, r.amount, r.status])).toEqual([["A1", 100, "DRAFT"], ["A2", 200, "DRAFT"], ["A3", 300, "DRAFT"]]);
+        rerender(<NextIntlClientProvider locale="en" messages={en}><ChequeGrid cheques={rows} editable onChange={onChange} contractValueInclVat={126000} /></NextIntlClientProvider>);
+        expect(screen.getByTestId("cheque-grid-paste-report-added")).toHaveTextContent("2 rows added for the paste.");
+        expect(toChequeRows(rows).map(r => r.id)).toEqual(["c1", null, null]);
+    });
+
+    it("flags a pasted cell it could not read instead of keeping the old value silently", () => {
+        renderGrid({ cheques: four, editable: true, onChange: vi.fn(), contractValueInclVat: 126000 });
+        fireEvent.paste(screen.getByLabelText(`${en.Leasing.chequeDate} 1`), { clipboardData: { getData: () => "09/25/2026\tDIB\n01/10/2026\tDIB" } });
+        expect(screen.getByTestId("cheque-grid-paste-report-cells")).toHaveTextContent("row 1 Date “09/25/2026”");
+        expect(screen.getByLabelText(`${en.Leasing.chequeDate} 1`).closest("td")).toHaveAttribute("data-paste-invalid", "true");
+        expect(screen.getByLabelText(`${en.Leasing.chequeDate} 2`).closest("td")).not.toHaveAttribute("data-paste-invalid");
+    });
+
+    it("moves to the next row's same cell on Enter", () => {
+        renderGrid({ cheques: four, editable: true, onChange: vi.fn(), contractValueInclVat: 126000 });
+        const bank1 = screen.getByLabelText(`${en.Leasing.payeeBank} 1`);
+        bank1.focus();
+        fireEvent.keyDown(bank1, { key: "Enter" });
+        expect(document.activeElement).toBe(screen.getByLabelText(`${en.Leasing.payeeBank} 2`));
+    });
+});

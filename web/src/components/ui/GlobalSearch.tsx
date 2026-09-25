@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Building2, FileText, Loader2, ReceiptText, Search, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { chequeApi } from "@/lib/api/leasing";
 import type { UserRole } from "@/lib/rbac";
+
+const noopSubscribe = () => () => {};
 
 type SearchResult = {
     id: string;
@@ -71,9 +73,9 @@ export default function GlobalSearch({ role, locale }: { role?: UserRole; locale
         requestAnimationFrame(() => inputRef.current?.focus());
     }, [open]);
 
-    // The overlay is portalled to <body>, which only exists after mount.
-    const [mounted, setMounted] = useState(false);
-    useEffect(() => setMounted(true), []);
+    // The overlay is portalled to <body>, which only exists on the client: false
+    // on the server snapshot, true once hydrated (no setState in an effect).
+    const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
 
     useEffect(() => {
         const token = query.trim().toLowerCase();
@@ -131,7 +133,7 @@ export default function GlobalSearch({ role, locale }: { role?: UserRole; locale
                         : t("installment", { number: cheque.seqNo }),
                     subtitle: [cheque.renterName, cheque.unitIdentifier, cheque.status]
                         .filter(Boolean).join(" · "),
-                    href: `/${locale}/dashboard/finance/cheques?search=${encoded}`,
+                    href: `/${locale}/dashboard/collections?tab=all&search=${encoded}`,
                 });
             }
 

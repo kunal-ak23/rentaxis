@@ -28,7 +28,7 @@ describe("useNavCounts (PR #363 R1 P3): badges refresh within a session", () => 
 
         toDeposit.mockResolvedValue({ totalElements: 1 });
         now += NAV_COUNTS_MAX_AGE_MS + 1;
-        rerender({ path: "/en/dashboard/finance/cheques/collection" });
+        rerender({ path: "/en/dashboard/collections" });
         await waitFor(() => expect(result.current.collectionBadge).toBe(3));
         expect(toDeposit).toHaveBeenCalledTimes(2);
     });

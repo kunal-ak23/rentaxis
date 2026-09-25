@@ -19,7 +19,7 @@ describe("buildNav — rail sections and panel items per role (all flags on)", (
         expect(shape(rail)).toEqual([
             ["home", ["today", "unit-status"]],
             ["leasing", ["contracts", "tenants", "properties", "enquiry"]],
-            ["collection", ["deposit", "returned", "post-dated", "penalties", "all"]],
+            ["collection", ["deposit", "due", "overdue", "returned", "post-dated", "penalties", "all"]],
             ["accounting", ["accounts", "opening-balances", "vouchers", "payment-runs", "issued-cheques", "journals", "credit-note",
                 "general-ledger", "tenant-ledger", "trial-balance", "cheque-registers", "aging", "opening-items", "vendors",
                 "recognition", "penalties", "bank-accounts", "bank-reconciliation", "balance-sheet", "company-pl", "property-pl",
@@ -42,7 +42,7 @@ describe("buildNav — rail sections and panel items per role (all flags on)", (
         expect(shape(buildNav(ctx("PROPERTY_MANAGER")))).toEqual([
             ["home", ["today", "unit-status"]],
             ["leasing", ["contracts", "tenants", "properties", "enquiry"]],
-            ["collection", ["deposit", "returned", "post-dated", "penalties", "all"]],
+            ["collection", ["deposit", "due", "overdue", "returned", "post-dated", "penalties", "all"]],
             ["accounting", ["aging", "penalties", "balance-sheet", "property-pl", "property-statement"]],
             ["operations", ["tickets", "bookings"]],
             ["more", ["meetings", "gatepass"]],
@@ -150,12 +150,22 @@ describe("activeNav", () => {
         ["/en/dashboard", "home", "today"],
         ["/ar/dashboard/leases/abc", "leasing", "contracts"],
         ["/en/dashboard/finance/journals/new", "accounting", "journals"],
-        ["/en/dashboard/finance/cheques/collection", "collection", "deposit"],
-        ["/en/dashboard/finance/cheques", "collection", "all"],
+        ["/en/dashboard/collections", "collection", "deposit"],
         ["/en/dashboard/staff", "operations", "staff"],
         ["/en/dashboard/notifications", null, null],
     ])("%s → %s / %s", (path, section, item) => {
         expect(activeNav(path, rail)).toEqual({ section, item });
+    });
+});
+
+describe("activeNav — the Collection hub's pills", () => {
+    const rail = buildNav(ctx("TENANT_ADMIN"));
+    it.each([["?tab=overdue", "overdue"], ["?tab=all&status=BOUNCED", "all"], ["?tab=penalties", "penalties"], ["", "deposit"]])(
+        "/ar/dashboard/collections%s lights %s", (search, item) => {
+            expect(activeNav("/ar/dashboard/collections", rail, search)).toEqual({ section: "collection", item });
+        });
+    it("offers Overdue as a saved view", () => {
+        expect(buildNav(ctx("TENANT_ADMIN")).find(s => s.id === "collection")!.savedViews.map(v => v.href)).toEqual(["/dashboard/collections?tab=overdue"]);
     });
 });
 

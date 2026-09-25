@@ -34,7 +34,7 @@ export const financeOverviewTour: TourDef = {
       id: 'cheques-link',
       target: '[data-tour="sidebar-cheques-register"]',
       title: 'Cheque registers',
-      text: 'Deposit, clear, bounce and replace tenants\' cheques as they move through collection.',
+      text: 'Cheque registers open Cheque / Cash Collection: deposit, clear, bounce and replace tenants\' cheques, with a pill for each status.',
       position: 'right',
     },
   ],

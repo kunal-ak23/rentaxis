@@ -16,7 +16,7 @@ export function OrgName() {
     const name = active?.name ?? (isSuperAdmin ? t("globalView") : "—");
     return (
         <div data-testid="panel-org-name" className="min-w-0 px-1 leading-tight">
-            <div className="truncate text-[12px] font-semibold text-[var(--ink-900)]">{name}</div>
+            <div className="truncate text-[12px] font-semibold text-[var(--ink-900)]" title={name}>{name}</div>
             <div className="truncate text-[10px] text-[var(--ink-500)]">{isSuperAdmin ? t("administering") : t("organization")}</div>
         </div>
     );

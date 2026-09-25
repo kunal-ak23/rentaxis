@@ -8,18 +8,23 @@ export interface CollectionsTab { id: CollectionsTabId; href: string; label: Lab
 const tab = (id: CollectionsTabId, href: string, key: string, permission: Permission): CollectionsTab =>
     ({ id, href, label: { ns: "Collections", key }, testId: `collections-tab-${id}`, permission });
 
+/** A hub pill's URL: every Collection view is a tab of `/dashboard/collections`. */
+export const collectionsHref = (id: CollectionsTabId) => `/dashboard/collections?tab=${id}`;
+
 /**
- * The Cheque / Cash Collection views. PR 1 points at today's pages; PR 2
- * (Task 18) points every tab at the hub (`/dashboard/collections?tab=…`) and
- * adds Due and Overdue. Gates are the pages' own: the cheque register's
- * canManageCheques and the penalty queue's canProposePenalties.
+ * The Cheque / Cash Collection hub's pills (spec §2), in the client's order.
+ * Gates are the old pages' own: the cheque register's canManageCheques and
+ * the penalty queue's canProposePenalties. Due and Overdue read the same
+ * cheque data the register shows (GET /cheques/due), under the same gate.
  */
 const TABS: CollectionsTab[] = [
-    tab("deposit", "/dashboard/finance/cheques/collection", "tabDeposit", "canManageCheques"),
-    tab("returned", "/dashboard/finance/cheques/return-replace", "tabReturned", "canManageCheques"),
-    tab("post-dated", "/dashboard/finance/cheques/post-dated", "tabPostDated", "canManageCheques"),
-    tab("penalties", "/dashboard/finance/penalties", "tabPenalties", "canProposePenalties"),
-    tab("all", "/dashboard/finance/cheques", "tabAll", "canManageCheques"),
+    tab("deposit", collectionsHref("deposit"), "tabDeposit", "canManageCheques"),
+    tab("due", collectionsHref("due"), "tabDue", "canManageCheques"),
+    tab("overdue", collectionsHref("overdue"), "tabOverdue", "canManageCheques"),
+    tab("returned", collectionsHref("returned"), "tabReturned", "canManageCheques"),
+    tab("post-dated", collectionsHref("post-dated"), "tabPostDated", "canManageCheques"),
+    tab("penalties", collectionsHref("penalties"), "tabPenalties", "canProposePenalties"),
+    tab("all", collectionsHref("all"), "tabAll", "canManageCheques"),
 ];
 
 export function buildCollectionsTabs(role: UserRole | undefined): CollectionsTab[] {

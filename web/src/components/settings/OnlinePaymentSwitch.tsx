@@ -45,16 +45,20 @@ export default function OnlinePaymentSwitch() {
     const toggle = async () => {
         if (!settings || !loadedForSelected) return;
         const next = { ...settings, onlinePaymentEnabled: !settings.onlinePaymentEnabled };
+        // A save still in flight when another property is picked must not land on
+        // that property's row (PR #363 follow-up): the reply is for `seq` only.
+        const seq = requestSeq.current;
         setStatus("saving");
         try {
             const res = await fetch(`/api/proxy/v1/rent-settings/${propertyId}`, {
                 method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(toRentSettingsBody(next)),
             });
             if (!res.ok) throw new Error(String(res.status));
+            if (seq !== requestSeq.current) return;
             setSettings(next);
             setStatus("saved");
         } catch {
-            setStatus("error");
+            if (seq === requestSeq.current) setStatus("error");
         }
     };
 

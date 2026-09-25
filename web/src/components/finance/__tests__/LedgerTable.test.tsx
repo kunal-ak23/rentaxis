@@ -8,7 +8,7 @@ import LedgerTable from "../LedgerTable";
 import type { AccountLedger } from "@/lib/api/ledger";
 
 vi.mock("../useNameLookup", () => ({
-  useNameLookup: () => ({ name: (id: string | null) => id ?? "", options: [], loading: false }),
+  useNameLookup: (kind: string) => ({ name: (id: string | null) => (kind === "properties" && id ? "برج ١" : id ?? ""), options: [], loading: false }),
 }));
 
 // next-intl's locale-aware Link pulls in next/navigation, which vitest cannot
@@ -23,7 +23,7 @@ const ledgers: AccountLedger[] = [{
   accountId: "a", accountCode: "166269", accountName: "Rent Receivable - L'Olivier", accountType: "ASSET",
   openingBalance: 0, totalDebit: 64500, totalCredit: 13700, closingBalance: 50800, truncated: false,
   rows: [
-    { entryId: "e1", entryNumber: "TCO-26/15", entryDate: "2026-09-11", docType: "TCO", particular: "Advance Rent - L'Olivier / Security Deposit L'Olivier", narration: "", debit: 64500, credit: 0, balance: 64500, propertyId: null, unitId: "u1", leaseId: null, renterId: "r1", chequeId: null },
+    { entryId: "e1", entryNumber: "TCO-26/15", entryDate: "2026-09-11", docType: "TCO", particular: "Advance Rent - L'Olivier / Security Deposit L'Olivier", narration: "", debit: 64500, credit: 0, balance: 64500, propertyId: "p1", unitId: "u1", leaseId: null, renterId: "r1", chequeId: null },
     { entryId: "e2", entryNumber: "PDR-26/75", entryDate: "2026-09-11", docType: "PDR", particular: "PDC Receivable L'Olivier", narration: "Rent - 1st Installment", debit: 0, credit: 13700, balance: 50800, propertyId: null, unitId: "u1", leaseId: null, renterId: "r1", chequeId: null },
   ],
 }];
@@ -71,6 +71,35 @@ describe("LedgerTable", () => {
     expect(screen.queryByRole("columnheader", { name: "Tenant" })).not.toBeInTheDocument();
     // Every row still spans the header's column count.
     expect(screen.getAllByRole("columnheader")).toHaveLength(7);
+  });
+
+  it("orders the tenant columns Unit · Tower · Tenant, Narration last", () => {
+    render(<NextIntlClientProvider locale="en" messages={en}><LedgerTable ledgers={ledgers} /></NextIntlClientProvider>);
+    const headers = screen.getAllByRole("columnheader").map(h => h.textContent);
+    expect(headers).toEqual([en.Ledger.docDate, en.Ledger.docNo, en.Ledger.particular, en.Ledger.debit, en.Ledger.credit, en.Ledger.balance,
+      en.Ledger.unit, en.Ledger.tower, en.Ledger.tenant, en.Ledger.narration]);
+    expect(screen.getByText("برج ١")).toBeInTheDocument();
+  });
+
+  it("opens every account with its balance brought forward in a period report, even at zero", () => {
+    const two: AccountLedger[] = [ledgers[0], { ...ledgers[0], accountId: "b", accountCode: "125620", openingBalance: -51000,
+      rows: [{ ...ledgers[0].rows[0], entryId: "e9", debit: 5241.67, credit: 0, balance: -45758.33 }], totalDebit: 5241.67, totalCredit: 0, closingBalance: -45758.33 }];
+    render(<NextIntlClientProvider locale="en" messages={en}><LedgerTable ledgers={two} broughtForward /></NextIntlClientProvider>);
+    expect(screen.getByTestId("ledger-bf-a")).toHaveTextContent(`${en.Ledger.broughtForward}0.00`);
+    expect(screen.getByTestId("ledger-bf-b")).toHaveTextContent("51,000.00 Cr");
+    expect(screen.getByTestId("ledger-subtotal-b")).toHaveTextContent("5,241.67");
+    expect(screen.getByTestId("ledger-subtotal-b")).toHaveTextContent("45,758.33 Cr");
+    // Accounts in code order: 125620 before 166269.
+    const bands = screen.getAllByText(/^(125620|166269)$/).map(b => b.textContent);
+    expect(bands).toEqual(["125620", "166269"]);
+    // Report total = Σ sub-totals: 50,800 Dr + 45,758.33 Cr = 5,041.67 Dr.
+    expect(screen.getByTestId("ledger-report-total")).toHaveTextContent("5,041.67 Dr");
+  });
+
+  it("sums a sub-total from its rows, not from the server's account totals", () => {
+    const off = [{ ...ledgers[0], totalDebit: 1, totalCredit: 1, closingBalance: 1 }];
+    render(<NextIntlClientProvider locale="en" messages={en}><LedgerTable ledgers={off} /></NextIntlClientProvider>);
+    expect(screen.getByTestId("ledger-subtotal-a")).toHaveTextContent("64,500.0013,700.0050,800.00 Dr");
   });
 
   it("names the tenant in the sub-band with PACT's literal 'Tenant Name : ' label", () => {

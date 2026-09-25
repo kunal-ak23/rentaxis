@@ -5,6 +5,8 @@ import { useLocale, useTranslations } from "next-intl";
 import { CheckCircle2, Hash, Loader2, TriangleAlert, Wand2 } from "lucide-react";
 import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
+import { chequeGridHandlers, pasteIntoRows, type GridField, type PasteRequest } from "@/components/cheques/chequeGridKeys";
+import PasteReport, { usePasteReport } from "@/components/cheques/PasteReport";
 import { cn } from "@/lib/utils";
 import { fmtAmount } from "@/lib/api/ledger";
 import type {
@@ -127,6 +129,9 @@ type Props = {
     notice?: string | null;
 };
 
+/** Ids of rows added on the grid before they are saved. */
+export const NEW_ROW_PREFIX = "new-";
+
 export default function ChequeGrid({
     cheques,
     editable,
@@ -184,6 +189,35 @@ export default function ChequeGrid({
 
     const patch = (id: string, next: Partial<Cheque>) =>
         onChange?.(cheques.map(c => (c.id === id ? { ...c, ...next } : c)));
+
+    // Keyboard-first entry (scale #19): Enter/arrows move, Ctrl/⌘+D fills down,
+    // rows pasted from Excel fill the grid from the focused cell. What a paste
+    // cannot write is reported and highlighted; rows past the end are offered
+    // as new rows rather than dropped (PR #365 R1).
+    const gridFields: GridField[] = ["postingDate", "chequeNumber", "chequeDate", "payeeBank", "debitAccountId", "amount",
+        ...(showVat ? (["vatAmount"] as GridField[]) : []), "narration", "mode"];
+    const paste = usePasteReport();
+    const modeLabel = (m: ChequeMode) => t(`mode.${m}`);
+    // A new amount clears the row's VAT, so the server re-spreads it pro rata on save.
+    const withValue = (row: Cheque, field: GridField, value: unknown): Cheque =>
+        field === "amount" ? { ...row, amount: value as number, vatAmount: null } : { ...row, [field]: value };
+    const gridKeys = editable && onChange
+        ? chequeGridHandlers<Cheque>({ rows: cheques, fields: gridFields, onChange, modeLabel, withValue, onPasted: paste.onPasted })
+        : null;
+    /** The user agreed to add the pasted rows past the end: re-apply the paste with new draft rows. */
+    const addPastedRows = (req: PasteRequest) => {
+        if (!onChange || cheques.length === 0) return;
+        const last = cheques[cheques.length - 1];
+        const blank = (i: number): Cheque => ({
+            ...last, id: `${NEW_ROW_PREFIX}${i}-${Date.now()}`, seqNo: (last.seqNo ?? cheques.length) + (i - cheques.length) + 1,
+            chequeNumber: null, chequeDate: null, payeeBank: null, amount: 0, vatAmount: null, narration: null, status: "DRAFT",
+            depositedAt: null, clearedAt: null, bouncedAt: null, returnedAt: null, replacesId: null, replacedById: null,
+        });
+        const outcome = pasteIntoRows(cheques, req.grid, req.startRow, req.startField, gridFields, modeLabel, blank, withValue);
+        onChange(outcome.rows);
+        paste.onPasted(outcome, req);
+    };
+    const flag = (i: number, f: GridField) => (paste.isBad(i, f) ? " ring-2 ring-warning" : "");
 
     /**
      * What `ChequeRowRules` would refuse, said here rather than as a 400 after
@@ -384,8 +418,13 @@ export default function ChequeGrid({
                 </div>
             )}
 
+            {gridKeys && <PasteReport report={paste.report} onDismiss={paste.dismiss} onAddRows={addPastedRows} testId="cheque-grid-paste-report" />}
+            {gridKeys && cheques.length > 0 && (
+                <p className="px-4 py-1.5 text-[10.5px] text-muted border-b border-border" data-testid="cheque-grid-keys-hint">{tc("gridKeysHint")}</p>
+            )}
             <div className="overflow-x-auto">
-                <table className="w-full min-w-[960px]">
+                <table className="w-full min-w-[960px]" onKeyDown={gridKeys?.onKeyDown} onPaste={gridKeys?.onPaste}
+                    onInput={gridKeys ? paste.clearEdited : undefined} onChange={gridKeys ? paste.clearEdited : undefined}>
                     <thead>
                         <tr className="bg-input/50">
                             <th className={th}>{t("sno")}</th>
@@ -404,9 +443,9 @@ export default function ChequeGrid({
                     </thead>
                     <tbody>
                         {cheques.map((c, i) => (
-                            <tr key={c.id} data-testid={`cheque-row-${i}`} className="border-t border-border hover:bg-input/20">
+                            <tr key={c.id} data-testid={`cheque-row-${i}`} data-grid-row={i} className="border-t border-border hover:bg-input/20">
                                 <td className={`${td} text-muted tabular-nums`}>{c.seqNo ?? i + 1}</td>
-                                <td className={td}>
+                                <td className={`${td}${flag(i, "postingDate")}`} data-grid-field="postingDate" data-paste-invalid={paste.isBad(i, "postingDate") || undefined}>
                                     {editable ? (
                                         <input
                                             type="date"
@@ -419,7 +458,7 @@ export default function ChequeGrid({
                                         fmtIsoDate(c.postingDate, locale)
                                     )}
                                 </td>
-                                <td className={td}>
+                                <td className={`${td}${flag(i, "chequeNumber")}`} data-grid-field="chequeNumber" data-paste-invalid={paste.isBad(i, "chequeNumber") || undefined}>
                                     {editable ? (
                                         <input
                                             aria-label={`${t("chequeNo")} ${i + 1}`}
@@ -431,7 +470,7 @@ export default function ChequeGrid({
                                         c.chequeNumber || "—"
                                     )}
                                 </td>
-                                <td className={td}>
+                                <td className={`${td}${flag(i, "chequeDate")}`} data-grid-field="chequeDate" data-paste-invalid={paste.isBad(i, "chequeDate") || undefined}>
                                     {editable ? (
                                         <input
                                             type="date"
@@ -444,7 +483,7 @@ export default function ChequeGrid({
                                         fmtIsoDate(c.chequeDate, locale)
                                     )}
                                 </td>
-                                <td className={td}>
+                                <td className={`${td}${flag(i, "payeeBank")}`} data-grid-field="payeeBank" data-paste-invalid={paste.isBad(i, "payeeBank") || undefined}>
                                     {editable ? (
                                         <input
                                             aria-label={`${t("payeeBank")} ${i + 1}`}
@@ -456,7 +495,7 @@ export default function ChequeGrid({
                                         c.payeeBank || "—"
                                     )}
                                 </td>
-                                <td className={td}>
+                                <td className={`${td}${flag(i, "debitAccountId")}`} data-grid-field="debitAccountId" data-paste-invalid={paste.isBad(i, "debitAccountId") || undefined}>
                                     {editable ? (
                                         <SettlementAccountPicker
                                             value={c.debitAccountId}
@@ -468,7 +507,7 @@ export default function ChequeGrid({
                                         c.debitAccountName || "—"
                                     )}
                                 </td>
-                                <td className={tdNum}>
+                                <td className={`${tdNum}${flag(i, "amount")}`} data-grid-field="amount" data-paste-invalid={paste.isBad(i, "amount") || undefined}>
                                     {editable ? (
                                         <NumberInput
                                             aria-label={`${t("amount")} ${i + 1}`}
@@ -485,7 +524,7 @@ export default function ChequeGrid({
                                     )}
                                 </td>
                                 {showVat && (
-                                    <td className={tdNum} data-testid={`cheque-vat-${i}`}>
+                                    <td className={`${tdNum}${flag(i, "vatAmount")}`} data-testid={`cheque-vat-${i}`} data-grid-field="vatAmount" data-paste-invalid={paste.isBad(i, "vatAmount") || undefined}>
                                         {editable && c.status === "DRAFT" ? (
                                             <NumberInput
                                                 // Remounted when the row flips between "auto" and a
@@ -507,7 +546,7 @@ export default function ChequeGrid({
                                         )}
                                     </td>
                                 )}
-                                <td className={td}>
+                                <td className={`${td}${flag(i, "narration")}`} data-grid-field="narration" data-paste-invalid={paste.isBad(i, "narration") || undefined}>
                                     {editable ? (
                                         <input
                                             aria-label={`${t("narration")} ${i + 1}`}
@@ -519,7 +558,7 @@ export default function ChequeGrid({
                                         <span className="text-muted">{c.narration || "—"}</span>
                                     )}
                                 </td>
-                                <td className={td}>
+                                <td className={`${td}${flag(i, "mode")}`} data-grid-field="mode" data-paste-invalid={paste.isBad(i, "mode") || undefined}>
                                     {editable ? (
                                         <select
                                             aria-label={`${t("chequeMode")} ${i + 1}`}
@@ -679,7 +718,8 @@ export function draftRowsAreValid(cheques: Cheque[]): boolean {
 /** The wire shape of the grid as it stands, for `PUT /leases/{id}/cheques`. */
 export function toChequeRows(cheques: Cheque[]): ChequeRowInput[] {
     return cheques.map(c => ({
-        id: c.id,
+        // A row added on the grid (e.g. from a paste) has no server id yet; the save creates it.
+        id: c.id.startsWith(NEW_ROW_PREFIX) ? null : c.id,
         seqNo: c.seqNo,
         postingDate: c.postingDate || null,
         chequeNumber: c.chequeNumber || null,

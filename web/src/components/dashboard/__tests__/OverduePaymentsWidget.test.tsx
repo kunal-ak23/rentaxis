@@ -49,7 +49,7 @@ describe("OverduePaymentsWidget", () => {
     expect(rowLink).toHaveAttribute("href", "/dashboard/leases/l1");
     // "View all" links to the cheque register
     expect(screen.getByRole("link", { name: /view all/i }))
-      .toHaveAttribute("href", "/dashboard/finance/cheques");
+      .toHaveAttribute("href", "/dashboard/collections?tab=overdue");
   });
 
   it("shows an empty state when there are no overdue payments", async () => {

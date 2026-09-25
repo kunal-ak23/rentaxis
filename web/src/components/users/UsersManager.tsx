@@ -14,7 +14,7 @@ import { ResendInviteButton } from "@/components/users/ResendInviteButton";
 // Derived from PROVISIONABLE_ROLES rather than hand-listed: a hand-written copy
 // is how ACCOUNTANT came to be grantable by the API but absent from this form.
 // Labels come from the Roles catalogue at render time (roleLabel below), so the
-// picker says what the rest of the app says ("Company user", not "Tenant").
+// picker says what the rest of the app says ("Company User", not "Tenant").
 const ALL_ROLE_VALUES: UserRole[] = PROVISIONABLE_ROLES;
 
 type User = {

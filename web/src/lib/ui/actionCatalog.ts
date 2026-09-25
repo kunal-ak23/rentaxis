@@ -8,7 +8,9 @@
  */
 export type ActionLocation =
     | "settings.organisation" | "settings.users" | "settings.rent" | "settings.payments"
-    | "operations.staff" | "header";
+    | "operations.staff" | "header"
+    | "collections.deposit" | "collections.due" | "collections.overdue" | "collections.returned"
+    | "collections.post-dated" | "collections.penalties" | "collections.all" | "ledger.general";
 
 export interface CatalogEntry { id: string; was: string; location: ActionLocation; probe: string }
 
@@ -23,4 +25,13 @@ export const ACTION_CATALOG: CatalogEntry[] = [
     { id: "org.info", was: "(new, read-only)", location: "settings.organisation", probe: "probe-organisation" },
     { id: "help", was: "sidebar Help & Guides", location: "header", probe: "header-help" },
     { id: "notifications", was: "header bell", location: "header", probe: "header-notifications" },
+    // UI PR 2: the cheque and penalty pages are the Cheque / Cash Collection hub's pills.
+    { id: "cheques.depositBatch", was: "/finance/cheques/collection", location: "collections.deposit", probe: "panel-deposit" },
+    { id: "cheques.due", was: "(new view of GET /cheques/due)", location: "collections.due", probe: "panel-due" },
+    { id: "cheques.overdue", was: "Home overdue widget", location: "collections.overdue", probe: "panel-overdue" },
+    { id: "cheques.replace", was: "/finance/cheques/return-replace", location: "collections.returned", probe: "panel-returned" },
+    { id: "cheques.postDated", was: "/finance/cheques/post-dated", location: "collections.post-dated", probe: "panel-post-dated" },
+    { id: "penalties.queue", was: "/finance/penalties", location: "collections.penalties", probe: "panel-penalties" },
+    { id: "cheques.register", was: "/finance/cheques (deposit, receive, details, cancel, clear, bounce, replace, receipt, cash receipt, clear batch)", location: "collections.all", probe: "panel-all" },
+    { id: "ledger.tower", was: "(PACT column)", location: "ledger.general", probe: "ledger-col-tower" },
 ];

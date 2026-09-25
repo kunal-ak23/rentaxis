@@ -7,9 +7,9 @@ import type { LeaseDetail } from "@/lib/api/leasing";
 /**
  * Posting a batch of drafts from the list.
  *
- * Sequential, and every row's outcome reported: each post writes journals and
- * takes an entry number from one tenant-wide sequence, so they cannot go out
- * together, and one refusal must not stop the rest from being attempted.
+ * Three at a time (scale #23), every row's outcome reported in the order
+ * selected; a post that loses a lock race is retried once, and one refusal
+ * must not stop the rest from being attempted.
  * "3 of 7 posted" with no word on which three is not an answer an accountant
  * can act on.
  */
@@ -105,7 +105,67 @@ describe("Leases list — renter acceptance (#79)", () => {
 });
 
 describe("Leases list — bulk post", () => {
-    it("posts each selected draft in turn and lists every outcome", async () => {
+    it("posts several drafts at once, never more than three, and lists outcomes in the order selected", async () => {
+        const many = Array.from({ length: 7 }, (_, i) => lease({ id: `d${i}`, unitIdentifier: `B-${i}` }));
+        api.paged.mockImplementation(async () => ({ content: many, totalElements: 7, totalPages: 1, number: 0, size: 25 }));
+        let inFlight = 0, peak = 0;
+        api.post.mockImplementation(async (id: string) => {
+            inFlight++; peak = Math.max(peak, inFlight);
+            // Later rows answer first, so completion order differs from selection order.
+            await new Promise(r => setTimeout(r, 30 - Number(id.slice(1)) * 3));
+            inFlight--;
+            return { lease: many[0], tcoJournalId: "j", tcoEntryNumber: `TCO-${id}`, cheques: [] };
+        });
+        renderPage();
+        for (let i = 0; i < 7; i++) fireEvent.click(await screen.findByTestId(`bulk-post-select-d${i}`));
+        fireEvent.click(screen.getByTestId("bulk-post"));
+        await waitFor(() => expect(screen.getByTestId("bulk-post-results")).toBeInTheDocument());
+        expect(peak).toBe(3);
+        expect(api.post).toHaveBeenCalledTimes(7);
+        const order = [...screen.getByTestId("bulk-post-results").querySelectorAll("[data-testid^='bulk-post-result-']")].map(e => e.getAttribute("data-testid"));
+        expect(order).toEqual(many.map(l => `bulk-post-result-${l.id}`));
+    });
+
+    it("retries a contended post once, then lists it as failed and carries on; Retry failed sends only the failures again", async () => {
+        const { ApiError } = await import("@/lib/api/leasing");
+        const calls: string[] = [];
+        let secondRun = false;
+        api.post.mockImplementation(async (id: string) => {
+            calls.push(id);
+            if (id === "l2" && !secondRun) throw new ApiError(500, "Internal error", '{"message":"could not obtain lock on row"}');
+            return { lease: ROWS[0], tcoJournalId: "j", tcoEntryNumber: `TCO-${id}`, cheques: [] };
+        });
+        renderPage();
+        fireEvent.click(await screen.findByTestId("bulk-post-select-l1"));
+        fireEvent.click(screen.getByTestId("bulk-post-select-l2"));
+        fireEvent.click(screen.getByTestId("bulk-post"));
+        await waitFor(() => expect(screen.getByTestId("bulk-post-results")).toBeInTheDocument(), { timeout: 5000 });
+        // l2: first try + one retry, then failed with its message; l1 posted.
+        expect(calls.filter(c => c === "l2")).toHaveLength(2);
+        expect(screen.getByTestId("bulk-post-result-l1")).toHaveAttribute("data-ok", "true");
+        expect(screen.getByTestId("bulk-post-result-l2")).toHaveAttribute("data-ok", "false");
+        expect(screen.getByTestId("bulk-post-result-l2")).toHaveTextContent("Internal error");
+
+        secondRun = true;
+        calls.length = 0;
+        fireEvent.click(screen.getByTestId("bulk-post-retry-failed"));
+        await waitFor(() => expect(screen.getByTestId("bulk-post-result-l2")).toHaveAttribute("data-ok", "true"), { timeout: 5000 });
+        expect(calls).toEqual(["l2"]);
+        expect(screen.getByTestId("bulk-post-result-l1")).toHaveAttribute("data-ok", "true");
+        expect(screen.queryByTestId("bulk-post-retry-failed")).toBeNull();
+    });
+
+    it("does not retry a refusal on the merits (400)", async () => {
+        const { ApiError } = await import("@/lib/api/leasing");
+        api.post.mockRejectedValue(new ApiError(400, "credit account 400100 is inactive."));
+        renderPage();
+        fireEvent.click(await screen.findByTestId("bulk-post-select-l1"));
+        fireEvent.click(screen.getByTestId("bulk-post"));
+        await waitFor(() => expect(screen.getByTestId("bulk-post-results")).toBeInTheDocument());
+        expect(api.post).toHaveBeenCalledTimes(1);
+    });
+
+    it("posts each selected draft and lists every outcome", async () => {
         api.post
             .mockResolvedValueOnce({ lease: ROWS[0], tcoJournalId: "j1", tcoEntryNumber: "TCO-26/15", cheques: [] })
             .mockRejectedValueOnce(

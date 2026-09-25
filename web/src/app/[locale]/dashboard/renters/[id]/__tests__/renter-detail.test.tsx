@@ -234,3 +234,38 @@ describe("chequeSummary", () => {
         expect(s).toEqual({ count: 3, total: 175, cleared: 100, outstanding: 50, bounced: 1 });
     });
 });
+
+// PR #365 R1 (P1): the renter page keeps its own per-contract cheque loading and
+// the Cheques total / Outstanding tiles exactly as on main, draft contracts included.
+describe("RenterDetailPage — cheque tiles (PR #365 R1)", () => {
+    it("computes Cheques total and Outstanding from every contract's live rows, and lists a draft contract's cheques", async () => {
+        leaseRows = [
+            ...leases,
+            { id: "L2", unitIdentifier: "102", propertyName: "Tower", startDate: "2027-01-01", endDate: "2027-12-31", status: "DRAFT", rentAmount: 55000, displayContractNumber: null },
+        ] as typeof twoLeases;
+        const mixed = [
+            { id: "m1", leaseId: "L1", chequeNumber: "000201", chequeDate: "2026-01-01", amount: 10000, status: "CLEARED" },
+            { id: "m2", leaseId: "L1", chequeNumber: "000202", chequeDate: "2026-04-01", amount: 20000, status: "REGISTERED" },
+            { id: "m3", leaseId: "L1", chequeNumber: "000203", chequeDate: "2026-07-01", amount: 7000, status: "REPLACED" },
+            { id: "m4", leaseId: "L1", chequeNumber: "000204", chequeDate: "2026-07-01", amount: 7000, status: "DEPOSITED" },
+            { id: "m5", leaseId: "L1", chequeNumber: "000205", chequeDate: "2026-10-01", amount: 3000, status: "CANCELLED" },
+        ];
+        const draftRows = [{ id: "d1", leaseId: "L2", chequeNumber: "DRAFT01", chequeDate: "2027-01-01", amount: 99999, status: "DRAFT" }];
+        const base = global.fetch;
+        global.fetch = vi.fn(async (url: unknown, init?: RequestInit) => {
+            const u = String(url);
+            if (u.includes("/leases/L1/cheques")) return jsonRes(mixed);
+            if (u.includes("/leases/L2/cheques")) return jsonRes(draftRows);
+            return (base as unknown as (u: unknown, i?: RequestInit) => Promise<Response>)(url, init);
+        }) as unknown as typeof fetch;
+        render(<RenterDetailPage />);
+        expect(await screen.findByText("DRAFT01")).toBeTruthy();
+        const tiles = [...screen.getByTestId("renter-summary").querySelectorAll("div > p:last-child")].map(p => p.textContent);
+        // Total 10,000 + 20,000 + 7,000 (replaced, cancelled, draft left out); outstanding 20,000 + 7,000; cleared 10,000.
+        const expected = chequeSummary(mixed.concat(draftRows) as never);
+        expect(expected).toEqual({ count: 3, total: 37000, cleared: 10000, outstanding: 27000, bounced: 0 });
+        expect(tiles.join("|")).toContain("37,000");
+        expect(tiles.join("|")).toContain("27,000");
+        expect(screen.getByText("000203")).toBeTruthy();
+    });
+});

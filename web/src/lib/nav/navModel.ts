@@ -77,6 +77,8 @@ export function buildNav(ctx: NavModelContext): RailSection[] {
     rail.push(section("collection", "collections", "sidebar-collections", COLLECTION_MATCH,
         one("main", tabs.map(t => pi(t.id, t.href, t.label, t.testId))),
         { railLabel: N("collectionShort"),
+          savedViews: tabs.some(t => t.id === "overdue")
+              ? [pi("saved-overdue", "/dashboard/collections?tab=overdue", { ns: "Collections", key: "tabOverdue" }, "saved-overdue")] : [],
           badge: tabs.some(t => t.permission === "canManageCheques") ? "collection" : null,
           statusCard: tabs.some(t => t.permission === "canManageCheques") ? "chequesToDeposit" : null }));
 
@@ -113,8 +115,7 @@ export function buildNav(ctx: NavModelContext): RailSection[] {
     return rail.filter((s): s is RailSection => s !== null);
 }
 
-/** PR 1: the cheque/penalty pages; Task 18 (PR 2) replaces this with ["/dashboard/collections"]. */
-const COLLECTION_MATCH = ["/dashboard/finance/cheques", "/dashboard/finance/penalties"];
+const COLLECTION_MATCH = ["/dashboard/collections"];
 
 export function flattenNav(rail: RailSection[]): string[] {
     return [...new Set(rail.flatMap(s => [...s.groups.flatMap(g => g.items.map(i => i.href)), ...s.savedViews.map(v => v.href)]))];
@@ -123,7 +124,7 @@ export function flattenNav(rail: RailSection[]): string[] {
 /**
  * The section and item to light for a pathname: exact items match only
  * themselves; everything else matches whole-segment prefixes and the longest
- * match wins, so /dashboard/finance/cheques lights Collection, not Accounting.
+ * match wins, so /dashboard/finance/journals/new lights Journals.
  * Items that share a path and differ by query (Settings' sections) are told
  * apart by `search`: the one whose query the URL carries wins, else the first.
  */

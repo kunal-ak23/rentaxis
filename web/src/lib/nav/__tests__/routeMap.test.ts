@@ -16,6 +16,11 @@ const CASES: [string, string][] = [
     ["/en/dashboard/settings/fines", "/en/dashboard/settings?section=rent"],
     ["/en/dashboard/settings/rent-settings", "/en/dashboard/settings?section=rent"],
     ["/en/dashboard/settings/gateway", "/en/dashboard/settings?section=payments"],
+    ["/en/dashboard/finance/cheques", "/en/dashboard/collections?tab=all"],
+    ["/en/dashboard/finance/cheques/collection", "/en/dashboard/collections?tab=deposit"],
+    ["/en/dashboard/finance/cheques/return-replace", "/en/dashboard/collections?tab=returned"],
+    ["/en/dashboard/finance/cheques/post-dated", "/en/dashboard/collections?tab=post-dated"],
+    ["/en/dashboard/finance/penalties", "/en/dashboard/collections?tab=penalties"],
 ];
 
 describe("legacyRedirect", () => {
@@ -49,6 +54,17 @@ describe("legacyRedirect", () => {
 
     it("lets the new home's own parameter win over the same incoming key", () => {
         expect(redirectOf("/en/dashboard/settings/gateway?section=users")).toBe("/en/dashboard/settings?section=payments");
+    });
+
+    it("keeps a register bookmark's filters and lease", () => {
+        const out = legacyRedirect(new URL("http://x/ar/dashboard/finance/cheques?status=BOUNCED&leaseId=l1&propertyId=p1"))!;
+        expect(out.pathname).toBe("/ar/dashboard/collections");
+        expect(Object.fromEntries(out.searchParams)).toEqual({ status: "BOUNCED", leaseId: "l1", propertyId: "p1", tab: "all" });
+    });
+
+    it("does not move the cheque pages that stay (a lease's issued cheques, payables)", () => {
+        expect(redirectOf("/en/dashboard/finance/payables/issued-cheques")).toBeNull();
+        expect(redirectOf("/en/dashboard/collections?tab=all")).toBeNull();
     });
 
     it("returns null for routes that did not move", () => {

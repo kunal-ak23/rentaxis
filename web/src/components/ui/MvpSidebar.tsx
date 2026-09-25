@@ -5,7 +5,7 @@ import Image from "next/image";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/lib/rbac";
@@ -111,22 +111,46 @@ export default function MvpSidebar() {
         setSeenPath(pathname);
         if (!flyout) setPicked(null);
     }
+    // Crossing to the inline width ends any flyout and forgets its section, so a
+    // narrow → wide → narrow resize neither reopens it nor leaves the inline panel
+    // on a section that is not the page's (PR #363 follow-up).
+    const [seenInline, setSeenInline] = useState(inlinePanel);
+    if (seenInline !== inlinePanel) {
+        setSeenInline(inlinePanel);
+        if (inlinePanel) { setFlyoutOpen(false); setPicked(null); }
+    }
+    // Flyout focus: into its first link on open; back to the rail item that opened
+    // it when it is closed from the keyboard or its close button (an outside click
+    // leaves focus where the user clicked).
+    const openerRef = useRef<RailId | null>(null);
+    const restoreFocus = useRef(false);
+    const closeFlyout = useCallback((restore: boolean) => { restoreFocus.current = restore; setFlyoutOpen(false); setPicked(null); }, []);
+    const wasFlyout = useRef(false);
+    useEffect(() => {
+        if (flyout && !wasFlyout.current) {
+            asideRef.current?.querySelector<HTMLElement>('[data-testid="nav-flyout"] a[href]')?.focus();
+        } else if (!flyout && wasFlyout.current && restoreFocus.current && openerRef.current) {
+            asideRef.current?.querySelector<HTMLElement>(`[data-testid="rail-${openerRef.current}"]`)?.focus();
+        }
+        if (!flyout) restoreFocus.current = false;
+        wasFlyout.current = flyout;
+    }, [flyout]);
     // The phone drawer closes on navigation; its state lives in the shell context.
     useEffect(() => { setDrawerOpen(false); }, [pathname, setDrawerOpen]);
     useEffect(() => {
-        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setFlyoutOpen(false); setDrawerOpen(false); } };
+        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { closeFlyout(true); setDrawerOpen(false); } };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, [setDrawerOpen]);
+    }, [setDrawerOpen, closeFlyout]);
     // Outside click closes the flyout (the rail and the flyout are inside <aside>).
     useEffect(() => {
         if (!flyout) return;
         const onDown = (e: MouseEvent) => {
-            if (asideRef.current && !asideRef.current.contains(e.target as Node)) setFlyoutOpen(false);
+            if (asideRef.current && !asideRef.current.contains(e.target as Node)) closeFlyout(false);
         };
         document.addEventListener("mousedown", onDown);
         return () => document.removeEventListener("mousedown", onDown);
-    }, [flyout]);
+    }, [flyout, closeFlyout]);
     // Drawer focus: into the drawer on open, back to the menu button on close.
     const wasDrawerOpen = useRef(false);
     useEffect(() => {
@@ -145,14 +169,18 @@ export default function MvpSidebar() {
 
     const shownId = picked ?? active.section ?? rail[0]?.id ?? null;
     const shown = rail.find(s => s.id === shownId) ?? null;
+    /** A modified click (new tab / window) is the browser's, at every width. */
+    const modified = (e: React.MouseEvent) => e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button === 1;
     const onAsideRailClick = (id: RailId, e: React.MouseEvent) => {
+        if (modified(e)) return;
         if (inlinePanel) { setPicked(null); return; } // navigate; the inline panel follows the page
         e.preventDefault();
-        if (flyout && shownId === id) { setFlyoutOpen(false); setPicked(null); return; }
+        if (flyout && shownId === id) { closeFlyout(false); return; }
+        openerRef.current = id;
         setPicked(id);
         setFlyoutOpen(true);
     };
-    const onDrawerRailClick = (id: RailId, e: React.MouseEvent) => { e.preventDefault(); setPicked(id); };
+    const onDrawerRailClick = (id: RailId, e: React.MouseEvent) => { if (modified(e)) return; e.preventDefault(); setPicked(id); };
     const panelFor = (showOrg: boolean) => shown &&
         <SectionPanel key={shown.id} section={shown} activeItem={shown.id === active.section ? active.item : null} counts={counts} showOrg={showOrg} />;
 
@@ -167,7 +195,7 @@ export default function MvpSidebar() {
                     <div data-testid="nav-flyout" className="absolute top-0 start-16 z-50 flex h-full shadow-lg">
                         {/* No org block: below the inline width the header carries the one org control. */}
                         {panelFor(false)}
-                        <button type="button" onClick={() => { setFlyoutOpen(false); setPicked(null); }} aria-label={t("closeMenu")}
+                        <button type="button" onClick={() => closeFlyout(true)} aria-label={t("closeMenu")}
                             data-testid="nav-flyout-close"
                             className="absolute top-2 -end-10 rounded-full border border-border bg-surface p-1.5 shadow-md cursor-pointer"><X size={14} /></button>
                     </div>
@@ -186,9 +214,10 @@ export default function MvpSidebar() {
                         <Rail rail={rail} active={active.section} onRailClick={onDrawerRailClick} badge={counts.collectionBadge} />
                         {panelFor(false)}
                     </div>
-                    {/* On the backdrop beside the drawer (rail 64 + panel 240). */}
+                    {/* On the backdrop beside the drawer (rail 64 + panel 240); on a phone narrower
+                        than that it stays on screen, over the panel's top corner. */}
                     <button ref={drawerCloseRef} type="button" onClick={() => setDrawerOpen(false)} aria-label={t("closeMenu")} data-testid="nav-drawer-close"
-                        className="absolute top-3 start-[316px] rounded-full bg-surface p-2 shadow-md cursor-pointer"><X size={16} /></button>
+                        className="absolute top-3 start-[min(316px,calc(100vw-3rem))] rounded-full bg-surface p-2 shadow-md cursor-pointer"><X size={16} /></button>
                 </div>
             )}
         </>

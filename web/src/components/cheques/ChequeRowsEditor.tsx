@@ -8,6 +8,10 @@ import { fmtAmount } from "@/lib/api/ledger";
 import { round2, todayIso } from "@/components/leases/leaseMath";
 import { TYPEABLE_MODES, chequeRowsErrors } from "@/components/cheques/chequeRowRules";
 import type { ChequeMode, ChequeRowInput } from "@/lib/api/leasing";
+import { chequeGridHandlers, type GridField } from "./chequeGridKeys";
+import PasteReport, { usePasteReport } from "./PasteReport";
+
+const GRID_FIELDS: GridField[] = ["postingDate", "chequeNumber", "chequeDate", "payeeBank", "debitAccountId", "amount", "mode"];
 
 /**
  * The cheque rows that pay for a charge added to a posted lease — an
@@ -63,11 +67,21 @@ export default function ChequeRowsEditor({ rows, onChange, propertyId, expectedT
     const shown = errors.map((errs, i) => (rows[i]?.amount ? errs : errs.filter(e => e.code !== "amountPositive")));
     const patch = (key: number, next: Partial<ChequeDraft>) =>
         onChange(rows.map(c => (c.key === key ? { ...c, ...next } : c)));
+    const nextKey = () => rows.reduce((m, c) => Math.max(m, c.key), -1) + 1;
+    // Keyboard-first entry (scale #19); a pasted block longer than the grid adds rows.
+    const paste = usePasteReport();
+    const gridKeys = chequeGridHandlers<ChequeDraft>({
+        rows, fields: GRID_FIELDS, onChange, modeLabel: m => t(`mode.${m}`),
+        addRow: i => blankChequeRow(nextKey() + i),
+        onPasted: paste.onPasted,
+    });
+    const flag = (i: number, f: GridField) => (paste.isBad(i, f) ? " ring-2 ring-warning rounded-lg" : "");
 
     return (
         <>
             <div className="bg-surface border border-border rounded-xl overflow-x-auto">
-                <table className="w-full min-w-[720px]" data-testid={`${testIdPrefix}-cheque-grid`}>
+                <PasteReport report={paste.report} onDismiss={paste.dismiss} testId={`${testIdPrefix}-paste-report`} />
+                <table className="w-full min-w-[720px]" data-testid={`${testIdPrefix}-cheque-grid`} onKeyDown={gridKeys.onKeyDown} onPaste={gridKeys.onPaste} onInput={paste.clearEdited} onChange={paste.clearEdited}>
                     <thead>
                         <tr className="bg-input/50">
                             <th className={`${td} text-start text-[10px] font-semibold text-muted uppercase`}>{t("sno")}</th>
@@ -83,9 +97,9 @@ export default function ChequeRowsEditor({ rows, onChange, propertyId, expectedT
                     </thead>
                     <tbody>
                         {rows.map((c, i) => (
-                            <tr key={c.key} className="border-t border-border">
+                            <tr key={c.key} data-grid-row={i} className="border-t border-border">
                                 <td className={`${td} text-muted`}>{i + 1}</td>
-                                <td className={td}>
+                                <td className={`${td}${flag(i, "postingDate")}`} data-grid-field="postingDate" data-paste-invalid={paste.isBad(i, "postingDate") || undefined}>
                                     <input
                                         type="date"
                                         aria-label={`${t("postingDate")} ${i + 1}`}
@@ -94,7 +108,7 @@ export default function ChequeRowsEditor({ rows, onChange, propertyId, expectedT
                                         onChange={e => patch(c.key, { postingDate: e.target.value })}
                                     />
                                 </td>
-                                <td className={td}>
+                                <td className={`${td}${flag(i, "chequeNumber")}`} data-grid-field="chequeNumber" data-paste-invalid={paste.isBad(i, "chequeNumber") || undefined}>
                                     <input
                                         aria-label={`${t("chequeNo")} ${i + 1}`}
                                         className={field}
@@ -102,7 +116,7 @@ export default function ChequeRowsEditor({ rows, onChange, propertyId, expectedT
                                         onChange={e => patch(c.key, { chequeNumber: e.target.value })}
                                     />
                                 </td>
-                                <td className={td}>
+                                <td className={`${td}${flag(i, "chequeDate")}`} data-grid-field="chequeDate" data-paste-invalid={paste.isBad(i, "chequeDate") || undefined}>
                                     <input
                                         type="date"
                                         aria-label={`${t("chequeDate")} ${i + 1}`}
@@ -111,7 +125,7 @@ export default function ChequeRowsEditor({ rows, onChange, propertyId, expectedT
                                         onChange={e => patch(c.key, { chequeDate: e.target.value })}
                                     />
                                 </td>
-                                <td className={td}>
+                                <td className={`${td}${flag(i, "payeeBank")}`} data-grid-field="payeeBank" data-paste-invalid={paste.isBad(i, "payeeBank") || undefined}>
                                     <input
                                         aria-label={`${t("payeeBank")} ${i + 1}`}
                                         className={field}
@@ -119,7 +133,7 @@ export default function ChequeRowsEditor({ rows, onChange, propertyId, expectedT
                                         onChange={e => patch(c.key, { payeeBank: e.target.value })}
                                     />
                                 </td>
-                                <td className={td}>
+                                <td className={`${td}${flag(i, "debitAccountId")}`} data-grid-field="debitAccountId" data-paste-invalid={paste.isBad(i, "debitAccountId") || undefined}>
                                     <SettlementAccountPicker
                                         value={c.debitAccountId ?? null}
                                         onChange={id => patch(c.key, { debitAccountId: id })}
@@ -127,7 +141,7 @@ export default function ChequeRowsEditor({ rows, onChange, propertyId, expectedT
                                         placeholder={t("debitAccount")}
                                     />
                                 </td>
-                                <td className={`${td} text-end`}>
+                                <td className={`${td} text-end${flag(i, "amount")}`} data-grid-field="amount" data-paste-invalid={paste.isBad(i, "amount") || undefined}>
                                     <NumberInput
                                         aria-label={`${t("amount")} ${i + 1}`}
                                         min={0}
@@ -137,7 +151,7 @@ export default function ChequeRowsEditor({ rows, onChange, propertyId, expectedT
                                         onChange={v => patch(c.key, { amount: v })}
                                     />
                                 </td>
-                                <td className={td}>
+                                <td className={`${td}${flag(i, "mode")}`} data-grid-field="mode" data-paste-invalid={paste.isBad(i, "mode") || undefined}>
                                     <select
                                         aria-label={`${t("chequeMode")} ${i + 1}`}
                                         className={field}
@@ -165,6 +179,7 @@ export default function ChequeRowsEditor({ rows, onChange, propertyId, expectedT
                         ))}
                     </tbody>
                 </table>
+                <p className="px-3 pt-2 text-[10.5px] text-muted" data-testid={`${testIdPrefix}-grid-keys-hint`}>{tc("gridKeysHint")}</p>
                 <div className="px-3 py-2 border-t border-border flex items-center justify-between gap-3">
                     <button
                         type="button"

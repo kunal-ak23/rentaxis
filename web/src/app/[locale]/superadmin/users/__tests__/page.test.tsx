@@ -210,7 +210,7 @@ describe("SuperAdminUsersPage", () => {
 });
 
 describe("labels (PR #363 R1): the org is the Organisation, the role picker speaks the app's terms", () => {
-    it("offers TENANT_USER as 'Company user', never as 'Tenant', and names the org column and field Organisation", async () => {
+    it("offers TENANT_USER as 'Company User', never as 'Tenant', and names the org column and field Organisation", async () => {
         global.fetch = vi.fn(async (input: RequestInfo | URL) => {
             const url = String(input);
             const body = url.includes("/admin/users") ? [pmUser] : [];
@@ -221,7 +221,7 @@ describe("labels (PR #363 R1): the org is the Organisation, the role picker spea
         expect(screen.queryByText("Tenant ID")).toBeNull();
         fireEvent.click(screen.getByText(en.UsersAdmin.newUser));
         const options = Array.from(document.querySelectorAll("option")).map(o => o.textContent);
-        expect(options).toContain("Company user");
+        expect(options).toContain("Company User");
         expect(options).not.toContain("Tenant");
         expect(screen.getByText(en.UsersAdmin.organisation)).toBeTruthy();
         expect(screen.queryByText("Tenant (Organization)")).toBeNull();

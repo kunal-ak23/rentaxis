@@ -28,7 +28,7 @@ export default function ChequesToDepositWidget() {
         </h3>
         {count > 0 && (
           <Link
-            href="/dashboard/finance/cheques/collection"
+            href="/dashboard/collections?tab=deposit"
             className="text-[11px] font-medium text-primary hover:underline"
           >
             {t("viewAll")}

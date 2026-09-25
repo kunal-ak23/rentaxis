@@ -39,7 +39,7 @@ export default function OverduePaymentsWidget() {
         </h3>
         {count > 0 && (
           <Link
-            href="/dashboard/finance/cheques"
+            href="/dashboard/collections?tab=overdue"
             className="text-[11px] font-medium text-primary hover:underline"
           >
             {t("viewAll")}

@@ -63,7 +63,7 @@ const FINANCE_NAV: [string, string][] = [
     ['Trial Balance', '/dashboard/finance/trial-balance'],
     // 'Payments' was the v1 register; plan 2 replaced it with Cheques.
     // The register lives in Cheque / Cash Collection; Accounting › Registers links to it.
-    ['Cheque registers', '/dashboard/finance/cheques'],
+    ['Cheque registers', '/dashboard/collections?tab=all'],
     ['Vendors', '/dashboard/finance/vendors'],
     ['Bank Accounts', '/dashboard/finance/bank-accounts'],
 ];
@@ -605,7 +605,7 @@ test('09 the general ledger and the trial balance agree with the voucher', async
     const { page, close } = await recorded(browser, '09-general-ledger-and-trial-balance');
     try {
         await page.goto('/en/dashboard/finance/general-ledger');
-        await pickAccount(page.locator('body'), 'All accounts with activity', BANK_LEAF);
+        await pickAccount(page.locator('body'), 'Search account code or name', BANK_LEAF);
         await page.getByRole('button', { name: 'Apply' }).click();
 
         await expect(page.getByText(`Name :: ${BANK_LEAF}`)).toBeVisible();
@@ -655,7 +655,7 @@ test('10 reversing the voucher leaves the original in place and the balance at z
         await expect(page.getByRole('link', { name: /Reversed by JV-/ })).toBeVisible();
 
         await page.goto('/en/dashboard/finance/general-ledger');
-        await pickAccount(page.locator('body'), 'All accounts with activity', BANK_LEAF);
+        await pickAccount(page.locator('body'), 'Search account code or name', BANK_LEAF);
         await page.getByRole('button', { name: 'Apply' }).click();
         const subTotal = page.locator('tr').filter({ hasText: 'Sub Total' }).first();
         await expect(subTotal, 'the reversal must take the account back to nil').toContainText('0.00');
@@ -774,7 +774,7 @@ test('14 the ledger reads right-to-left in Arabic', async ({ browser }) => {
         await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
         await expect(page.getByRole('heading', { name: 'دفتر الأستاذ العام' })).toBeVisible();
 
-        await pickAccount(page.locator('body'), 'كل الحسابات ذات الحركة', BANK_LEAF);
+        await pickAccount(page.locator('body'), 'ابحث برمز الحساب أو اسمه', BANK_LEAF);
         await page.getByRole('button', { name: 'تطبيق' }).click();
         await expect(page.getByText(`Name :: ${BANK_LEAF}`)).toBeVisible();
         // Amounts stay in Western digits with the same grouping — a ledger that

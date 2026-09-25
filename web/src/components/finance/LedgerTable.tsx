@@ -2,7 +2,8 @@
 
 import { Link } from "@/i18n/routing";
 import { useLocale, useTranslations } from "next-intl";
-import { accountName, fmtAmount, fmtBalance, type AccountLedger } from "@/lib/api/ledger";
+import { accountName, fmtAmount, type AccountLedger } from "@/lib/api/ledger";
+import { buildLedgerReport, drCr, type LedgerGroup } from "@/lib/finance/ledgerReport";
 import { useNameLookup } from "./useNameLookup";
 
 const th = "text-start px-3 py-2 text-[11px] font-semibold text-muted uppercase tracking-wider";
@@ -23,8 +24,14 @@ function fmtDate(iso: string, locale: string): string {
 
 type Props = {
     ledgers: AccountLedger[];
-    /** Unit and Tenant columns. Off for account-centric reports that don't need them. */
+    /** Unit, Tower and Tenant columns. Off for account-centric reports that don't need them. */
     showTenantColumns?: boolean;
+    /**
+     * Always open each account with its balance brought forward (the balance
+     * before the period), even when it is zero — the General and Tenant Ledger
+     * reports run over a period. Off: the row shows only when non-zero.
+     */
+    broughtForward?: boolean;
     /**
      * PACT prints a second, yellow band under each account header naming the
      * party the report was run for. The tenant ledger passes the renter's name.
@@ -33,22 +40,23 @@ type Props = {
 };
 
 /**
- * The ledger in PACT's layout: an orange band per account, its rows, a Sub Total
+ * The ledger in PACT's layout: an orange band per account, its balance brought
+ * forward, its rows (Doc Date · Doc No · Particular · Debit · Credit · Balance ·
+ * Unit · Tower · Tenant · Narration), a Sub Total
  * per account and one Report Total across all of them. One `<table>` for the lot
  * so the columns line up across accounts — a table per account would let each
  * one size its columns independently and the report would look ragged.
  */
-export default function LedgerTable({ ledgers, showTenantColumns = true, subBand }: Props) {
+export default function LedgerTable({ ledgers, showTenantColumns = true, subBand, broughtForward = false }: Props) {
     const t = useTranslations("Ledger");
     const locale = useLocale();
     const units = useNameLookup("units", showTenantColumns);
     const renters = useNameLookup("renters", showTenantColumns);
-    const cols = showTenantColumns ? 9 : 7;
-
-    const grand = ledgers.reduce(
-        (a, l) => ({ dr: a.dr + l.totalDebit, cr: a.cr + l.totalCredit, bal: a.bal + l.closingBalance }),
-        { dr: 0, cr: 0, bal: 0 },
-    );
+    const towers = useNameLookup("properties", showTenantColumns);
+    const cols = showTenantColumns ? 10 : 7;
+    // Sub-totals and the report total are summed here from the rows (PACT
+    // layout, spec "Terminology — Ledger report layout").
+    const report = buildLedgerReport(ledgers);
 
     return (
         <div className="bg-surface border border-border rounded-xl overflow-x-auto shadow-sm">
@@ -64,6 +72,7 @@ export default function LedgerTable({ ledgers, showTenantColumns = true, subBand
                         {showTenantColumns && (
                             <>
                                 <th className={th}>{t("unit")}</th>
+                                <th className={th} data-testid="ledger-col-tower">{t("tower")}</th>
                                 <th className={th}>{t("tenant")}</th>
                             </>
                         )}
@@ -71,14 +80,14 @@ export default function LedgerTable({ ledgers, showTenantColumns = true, subBand
                     </tr>
                 </thead>
                 <tbody>
-                    {ledgers.map(l => (
-                        <LedgerBlock key={l.accountId} ledger={l} />
+                    {report.groups.map(g => (
+                        <LedgerBlock key={g.accountId} group={g} />
                     ))}
-                    <tr className="bg-warning/10 font-bold border-t-2 border-border">
-                        <td className={td} colSpan={3}>{t("reportTotal")}</td>
-                        <td className={num}>{fmtAmount(grand.dr)}</td>
-                        <td className={num}>{fmtAmount(grand.cr)}</td>
-                        <td className={num}>{fmtBalance(grand.bal)}</td>
+                    <tr className="bg-warning/10 font-bold border-t-2 border-border" data-testid="ledger-report-total">
+                        <td className={`${td} uppercase`} colSpan={3}>{t("reportTotal")}</td>
+                        <td className={num}>{fmtAmount(report.total.debit)}</td>
+                        <td className={num}>{fmtAmount(report.total.credit)}</td>
+                        <td className={num}>{drCr(report.total.balance)}</td>
                         <td className={td} colSpan={cols - 6} />
                     </tr>
                 </tbody>
@@ -86,7 +95,8 @@ export default function LedgerTable({ ledgers, showTenantColumns = true, subBand
         </div>
     );
 
-    function LedgerBlock({ ledger: l }: { ledger: AccountLedger }) {
+    function LedgerBlock({ group: g }: { group: LedgerGroup }) {
+        const l = g.ledger;
         return (
             <>
                 <tr>
@@ -101,12 +111,12 @@ export default function LedgerTable({ ledgers, showTenantColumns = true, subBand
                         </td>
                     </tr>
                 )}
-                {l.openingBalance !== 0 && (
-                    <tr className="bg-input/30">
-                        <td className={td} colSpan={3}>{t("openingBalance")}</td>
+                {(broughtForward || g.opening !== 0) && (
+                    <tr className="bg-input/30" data-testid={`ledger-bf-${l.accountId}`}>
+                        <td className={td} colSpan={3}>{broughtForward ? t("broughtForward") : t("openingBalance")}</td>
                         <td className={num} />
                         <td className={num} />
-                        <td className={num}>{fmtBalance(l.openingBalance)}</td>
+                        <td className={num}>{drCr(g.opening)}</td>
                         <td colSpan={cols - 6} />
                     </tr>
                 )}
@@ -121,10 +131,11 @@ export default function LedgerTable({ ledgers, showTenantColumns = true, subBand
                         <td className={td}>{r.particular}</td>
                         <td className={num}>{r.debit ? fmtAmount(r.debit) : ""}</td>
                         <td className={num}>{r.credit ? fmtAmount(r.credit) : ""}</td>
-                        <td className={num}>{fmtBalance(r.balance)}</td>
+                        <td className={num}>{drCr(r.balance)}</td>
                         {showTenantColumns && (
                             <>
                                 <td className={td}>{units.name(r.unitId)}</td>
+                                <td className={td}>{towers.name(r.propertyId)}</td>
                                 <td className={td}>{renters.name(r.renterId)}</td>
                             </>
                         )}
@@ -136,11 +147,11 @@ export default function LedgerTable({ ledgers, showTenantColumns = true, subBand
                         <td colSpan={cols} className={`${td} text-warning`}>{t("truncated", { n: l.rows.length })}</td>
                     </tr>
                 )}
-                <tr className="bg-input/40 font-semibold border-t border-border">
+                <tr className="bg-input/40 font-semibold border-t border-border" data-testid={`ledger-subtotal-${l.accountId}`}>
                     <td className={td} colSpan={3}>{t("subTotal")}</td>
-                    <td className={num}>{fmtAmount(l.totalDebit)}</td>
-                    <td className={num}>{fmtAmount(l.totalCredit)}</td>
-                    <td className={num}>{fmtBalance(l.closingBalance)}</td>
+                    <td className={num}>{fmtAmount(g.subTotal.debit)}</td>
+                    <td className={num}>{fmtAmount(g.subTotal.credit)}</td>
+                    <td className={num}>{drCr(g.subTotal.balance)}</td>
                     <td colSpan={cols - 6} />
                 </tr>
             </>

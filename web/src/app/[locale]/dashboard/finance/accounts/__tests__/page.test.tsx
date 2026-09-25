@@ -149,6 +149,18 @@ afterEach(() => {
 });
 
 describe("AccountsPage", () => {
+    it("heads the tree Account Code · Account Name · Account Type and types every row", async () => {
+        accountsFixture = seededTree;
+        render(<AccountsPage />);
+        await screen.findByText("Capital Account");
+        expect(screen.getByText("accountCodeLabel")).toBeTruthy();
+        expect(screen.getByText("accountName")).toBeTruthy();
+        expect(screen.getByText("accountType")).toBeTruthy();
+        const types = screen.getAllByTestId("coa-row-type").map(e => e.textContent);
+        expect(types.length).toBeGreaterThan(0);
+        for (const ty of types) expect(ty).toMatch(/^(ASSET|LIABILITY|EQUITY|INCOME|EXPENSE)$/);
+    });
+
     it("opens an already-seeded chart expanded, not on five collapsed roots", async () => {
         accountsFixture = seededTree;
         render(<AccountsPage />);
