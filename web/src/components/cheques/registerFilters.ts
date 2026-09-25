@@ -22,7 +22,7 @@ export const EMPTY_REGISTER_FILTERS: RegisterFilters = { status: "", mode: "", p
 
 /** Draft rows never enter the register, so DRAFT is not a filter. */
 export const REGISTER_STATUSES: ChequeStatus[] = [
-    "REGISTERED", "DEPOSITED", "CLEARED", "BOUNCED", "REPLACED", "CANCELLED", "RETURNED", "ONLINE_PENDING",
+    "REGISTERED", "DEPOSITED", "CLEARED", "BOUNCED", "REPLACED", "CANCELLED", "RETURNED", "ONLINE_PENDING", "TRANSFERRED",
 ];
 export const REGISTER_MODES: ChequeMode[] = ["PDC", "CASH", "TRANSFER", "ONLINE"];
 

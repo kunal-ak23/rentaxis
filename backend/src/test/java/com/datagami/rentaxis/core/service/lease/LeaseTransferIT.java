@@ -181,6 +181,15 @@ class LeaseTransferIT extends AbstractPostgresIT {
         // Units flipped.
         assertThat(unit(fixtures.unit().getId()).getStatus()).isEqualTo(UnitStatus.VACANT);
         assertThat(unit(target.getId()).getStatus()).isEqualTo(UnitStatus.OCCUPIED);
+        // PR #359 R1 P2-2: a carried cheque is live once, on B — the dashboard's expected
+        // collection for July and the owner statement's instalments count it once.
+        List<Object[]> july = tx.execute(s -> chequeRepo.aggregateMonthly(JUL, JUL.plusMonths(1), true, List.of(UUID.randomUUID())));
+        assertThat(july).singleElement().satisfies(r -> assertThat((BigDecimal) r[1]).isEqualByComparingTo("15000"));
+        var instalments = tx.execute(s -> new com.datagami.rentaxis.core.service.report.statement.StandardStatementSections
+                .InstalmentsDue(chequeRepo).build(new com.datagami.rentaxis.core.service.report.statement.StatementContext(
+                        fixtures.tenantId(), fixtures.property(), JUL, OCT)));
+        assertThat(instalments.figures()).filteredOn(f -> f.key().equals("gross")).singleElement()
+                .satisfies(f -> assertThat(f.amount()).isEqualByComparingTo("30000"));
         LeaseDTO aDto = tx.execute(s -> leaseService.getLeaseById(a));
         assertThat(aDto.getTransferredToLeaseId()).isEqualTo(b);
         assertTrialBalanceBalances();

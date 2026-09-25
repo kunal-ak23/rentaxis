@@ -480,7 +480,8 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
           and c.status not in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DRAFT,
                                com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CANCELLED,
                                com.datagami.rentaxis.domain.entity.enums.ChequeStatus.RETURNED,
-                               com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REPLACED)
+                               com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REPLACED,
+                               com.datagami.rentaxis.domain.entity.enums.ChequeStatus.TRANSFERRED)
           and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
                                      com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
           and (:unrestricted = true or c.property.id in :propertyIds)

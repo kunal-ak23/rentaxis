@@ -9,7 +9,7 @@ const OUTSTANDING = new Set(["REGISTERED", "DEPOSITED", "ONLINE_PENDING"]);
  * or has paid, so they are left out of every total.
  */
 export function chequeSummary(cheques: Pick<Cheque, "amount" | "status">[]) {
-    const live = cheques.filter(c => !["DRAFT", "CANCELLED", "REPLACED"].includes(c.status));
+    const live = cheques.filter(c => !["DRAFT", "CANCELLED", "REPLACED", "TRANSFERRED"].includes(c.status));
     const sum = (xs: typeof live) => Math.round(xs.reduce((s, c) => s + (c.amount ?? 0), 0) * 100) / 100;
     return {
         count: live.length,

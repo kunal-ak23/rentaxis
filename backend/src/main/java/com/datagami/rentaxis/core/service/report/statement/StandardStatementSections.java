@@ -91,7 +91,9 @@ public final class StandardStatementSections {
 
     /** Statuses that are not live instalments: never banked, withdrawn, or superseded by a replacement row. */
     static final Set<ChequeStatus> NOT_LIVE = EnumSet.of(ChequeStatus.DRAFT, ChequeStatus.CANCELLED,
-            ChequeStatus.RETURNED, ChequeStatus.REPLACED);
+            ChequeStatus.RETURNED, ChequeStatus.REPLACED,
+            // PR #359 R1: carried to the successor lease; the copy there is the live row.
+            ChequeStatus.TRANSFERRED);
 
     /** 2. Instalments due in the period, from the register. */
     @Component

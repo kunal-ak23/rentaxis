@@ -640,7 +640,8 @@ public class ContractGenerationService {
                     ? c.getStatus() == ChequeStatus.DRAFT
                     : c.getStatus() != ChequeStatus.CANCELLED
                         && c.getStatus() != ChequeStatus.RETURNED
-                        && c.getStatus() != ChequeStatus.REPLACED;
+                        && c.getStatus() != ChequeStatus.REPLACED
+                        && c.getStatus() != ChequeStatus.TRANSFERRED;
             if (include) printable.add(c);
         }
         printable.sort(Comparator.comparingInt(Cheque::getSeqNo)
