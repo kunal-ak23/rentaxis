@@ -9,6 +9,7 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 import { fmtIsoDate, todayIso } from "@/components/leases/leaseMath";
 import LeaseDialog from "@/components/leases/LeaseDialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
+import { Pagination } from "@/components/ui/Pagination";
 import {
     ApiError,
     penaltyApi,
@@ -59,6 +60,11 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
 
     const [tab, setTab] = useState<PenaltyAssessmentStatus>(status ?? "PROPOSED");
     const [rows, setRows] = useState<PenaltyAssessment[]>([]);
+    // Paged on the server (scale spec #10): the old single read of 200 rows
+    // silently hid a longer backlog.
+    const [pageIndex, setPageIndex] = useState(0);
+    const [size, setSize] = useState(25);
+    const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
@@ -74,15 +80,23 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
         setLoading(true);
         setLoadError(null);
         try {
-            const page = await penaltyApi.list({ leaseId, propertyId, status: tab, size: 200 });
-            setRows(page.content ?? []);
+            const page = await penaltyApi.list({ leaseId, propertyId, status: tab, page: pageIndex, size });
+            const content = page.content ?? [];
+            // A decision can empty the last page; step back rather than show an empty page.
+            if (content.length === 0 && pageIndex > 0 && (page.totalElements ?? 0) > 0) {
+                setPageIndex(Math.max(0, Math.ceil((page.totalElements ?? 0) / size) - 1));
+                return;
+            }
+            setRows(content);
+            setTotal(page.totalElements ?? content.length);
         } catch (e) {
             setRows([]);
+            setTotal(0);
             setLoadError(e instanceof ApiError ? e.message : tl("journalsFailed"));
         } finally {
             setLoading(false);
         }
-    }, [leaseId, propertyId, tab, tl]);
+    }, [leaseId, propertyId, tab, pageIndex, size, tl]);
 
     useEffect(() => {
         load();
@@ -134,7 +148,7 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                         key={s}
                         type="button"
                         data-testid={`penalty-tab-${s}`}
-                        onClick={() => setTab(s)}
+                        onClick={() => { setTab(s); setPageIndex(0); }}
                         className={cn(
                             "px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30",
                             tab === s
@@ -293,6 +307,17 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                             </tbody>
                         </table>
                     </div>
+                    {total > 0 && (
+                        <div className="px-3" data-testid="penalty-pagination">
+                            <Pagination
+                                currentPage={pageIndex + 1}
+                                totalItems={total}
+                                itemsPerPage={size}
+                                onPageChange={p => setPageIndex(p - 1)}
+                                onItemsPerPageChange={n => { setSize(n); setPageIndex(0); }}
+                            />
+                        </div>
+                    )}
                 </div>
             )}
 
