@@ -77,3 +77,32 @@ describe("OnlinePaymentSwitch — a late response for the previous property (PR 
         expect(screen.queryByRole("switch")).toBeNull();
     });
 });
+
+describe("OnlinePaymentSwitch — a save still in flight when another property is picked (PR #363 follow-up)", () => {
+    it("keeps B's switch on screen when A's save answers after B was picked", async () => {
+        let finishSave: () => void = () => {};
+        global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            if (url.endsWith("/v1/properties")) {
+                return Promise.resolve({ ok: true, status: 200, json: async () => [
+                    { property: { id: "pA", nameEn: "Alpha" } }, { property: { id: "pB", nameEn: "Bravo" } }] } as unknown as Response);
+            }
+            if (init?.method === "POST") {
+                return new Promise(resolve => { finishSave = () => resolve({ ok: true, status: 200, json: async () => ({}) } as unknown as Response); });
+            }
+            const id = url.split("/").pop()!;
+            return Promise.resolve({ ok: true, status: 200, json: async () => ({ propertyId: id, onlinePaymentEnabled: id === "pB", dueDayOfMonth: 1, penaltyType: "NONE", penaltyAmount: 0 }) } as unknown as Response);
+        }) as unknown as typeof fetch;
+
+        render(<OnlinePaymentSwitch />);
+        await screen.findByText("Bravo");
+        fireEvent.change(screen.getByRole("combobox"), { target: { value: "pA" } });
+        fireEvent.click(await screen.findByRole("switch"));
+        fireEvent.change(screen.getByRole("combobox"), { target: { value: "pB" } });
+        await waitFor(() => expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "true"));
+        finishSave();
+        await new Promise(r => setTimeout(r, 0));
+        expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "true");
+        expect(screen.queryByRole("status")).toBeNull();
+    });
+});

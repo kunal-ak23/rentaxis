@@ -127,6 +127,8 @@ export function TenantSwitcher({ isCollapsed, responsive = false }: { isCollapse
                 data-testid="org-switcher-button"
                 aria-expanded={canSwitch ? isOpen : undefined}
                 aria-label={canSwitch ? t("switchOrganization") : t("currentOrganization")}
+                // Below xl the button shows initials only; the name is still readable on hover (PR #363 follow-up).
+                title={orgName}
                 className={cn(
                     "w-full flex items-center justify-between gap-2 p-2 rounded-[var(--radius)] border border-border bg-[var(--sand-100)] transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[var(--gold-500)]/30",
                     isCollapsed && !responsive ? "justify-center" : "",

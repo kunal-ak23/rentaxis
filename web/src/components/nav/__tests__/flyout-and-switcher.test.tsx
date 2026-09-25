@@ -258,3 +258,60 @@ describe("one organisation control, placed by breakpoint", () => {
         expect(orgCalls()).toBe(1);
     });
 });
+
+describe("PR #363 follow-ups", () => {
+    it("moves focus into the flyout on open and back to its rail item on Esc and on its close button", async () => {
+        render(<Shell />);
+        fireEvent.click(screen.getByTestId("rail-accounting"));
+        await waitFor(() => expect(screen.getByTestId("nav-flyout").contains(document.activeElement)).toBe(true));
+        expect(document.activeElement?.tagName).toBe("A");
+        fireEvent.keyDown(window, { key: "Escape" });
+        await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("rail-accounting")));
+        fireEvent.click(screen.getByTestId("rail-leasing"));
+        await waitFor(() => expect(screen.getByTestId("nav-flyout").contains(document.activeElement)).toBe(true));
+        fireEvent.click(screen.getByTestId("nav-flyout-close"));
+        await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("rail-leasing")));
+    });
+
+    it("leaves focus alone when an outside click closes the flyout", async () => {
+        render(<Shell />);
+        fireEvent.click(screen.getByTestId("rail-accounting"));
+        const body = screen.getByTestId("page-body");
+        body.tabIndex = -1;
+        body.focus();
+        fireEvent.mouseDown(body);
+        await waitFor(() => expect(screen.queryByTestId("nav-flyout")).toBeNull());
+        expect(document.activeElement).toBe(body);
+    });
+
+    it.each([["metaKey"], ["ctrlKey"], ["shiftKey"]])("lets a %s-click on a rail item reach the browser (new tab), with no flyout", key => {
+        render(<Shell />);
+        const ev = fireEvent.click(screen.getByTestId("rail-accounting"), { [key]: true });
+        expect(ev).toBe(true); // not prevented
+        expect(screen.queryByTestId("nav-flyout")).toBeNull();
+    });
+
+    it("does not bring the flyout back after a narrow → wide → narrow resize", () => {
+        const { rerender } = render(<Shell />);
+        fireEvent.click(screen.getByTestId("rail-accounting"));
+        expect(screen.getByTestId("nav-flyout")).toBeInTheDocument();
+        wide.current = true;
+        rerender(<Shell />);
+        expect(within(screen.getByTestId("nav-panel")).getByText(en.Navigation.today)).toBeInTheDocument();
+        wide.current = false;
+        rerender(<Shell />);
+        expect(screen.queryByTestId("nav-flyout")).toBeNull();
+    });
+
+    it("keeps the drawer's close button on screen on a 320 px phone", () => {
+        render(<Shell />);
+        fireEvent.click(screen.getByTestId("header-menu"));
+        expect(screen.getByTestId("nav-drawer-close").className).toContain("start-[min(316px,calc(100vw-3rem))]");
+    });
+
+    it("names the organisation on the header control's hover for a role that cannot switch", async () => {
+        role.current = "PROPERTY_MANAGER";
+        render(<Shell />);
+        await waitFor(() => expect(within(screen.getByTestId("header-org-switcher")).getByTestId("org-switcher-button")).toHaveAttribute("title", "Acme Holdings"));
+    });
+});
