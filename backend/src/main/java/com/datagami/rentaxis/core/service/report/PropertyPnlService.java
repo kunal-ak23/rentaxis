@@ -340,7 +340,7 @@ public class PropertyPnlService {
         return found.getFirst();
     }
 
-    private List<Property> columnProperties(UUID tenantId, Collection<UUID> named, boolean scoped) {
+    List<Property> columnProperties(UUID tenantId, Collection<UUID> named, boolean scoped) {
         List<Property> out;
         if (named != null && !named.isEmpty()) {
             for (UUID id : named) requireProperty(tenantId, id);
@@ -355,7 +355,7 @@ public class PropertyPnlService {
     }
 
     /** A column for a property whose row is gone but whose lines remain. */
-    private static Property placeholder(UUID id) {
+    static Property placeholder(UUID id) {
         Property p = new Property();
         p.setId(id);
         String shortId = id.toString().substring(0, 8);
@@ -389,7 +389,7 @@ public class PropertyPnlService {
                     : Math.max(0, LINE_ORDER.indexOf(m.reportLine)))
             .thenComparing(m -> Objects.toString(m.label, m.key), String.CASE_INSENSITIVE_ORDER);
 
-    private static String rowKey(Account a) {
+    static String rowKey(Account a) {
         return a.getReportLine() != null ? a.getReportLine() : a.getId().toString();
     }
 
@@ -539,7 +539,7 @@ public class PropertyPnlService {
 
     // ------------------------------------------------------------------ chart helpers
 
-    private Map<UUID, Account> accountsById(UUID tenantId) {
+    Map<UUID, Account> accountsById(UUID tenantId) {
         return accounts.findAll().stream()
                 .filter(a -> tenantId.equals(a.getTenantId()))
                 .collect(Collectors.toMap(Account::getId, a -> a));

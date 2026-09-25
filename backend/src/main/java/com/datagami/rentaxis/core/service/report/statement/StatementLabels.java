@@ -143,6 +143,36 @@ public final class StatementLabels {
         put("pnl.check", "Check: ledger movement less report total", "التحقق: حركة الدفتر ناقص إجمالي التقرير");
         put("pnl.UNASSIGNED", "Unassigned", "غير مخصص");
         put("pnl.TOTAL", "Total", "الإجمالي");
+        put("pnl.periodLabel", "Period", "الفترة");
+        put("pnl.priorPeriod", "Compared with", "مقارنة مع");
+        put("pnl.checkOk", "Check: ties to the ledger", "التحقق: مطابق لدفتر الأستاذ");
+        put("pnl.compareInCsv", "The comparison columns are in the CSV export.", "أعمدة المقارنة متوفرة في ملف CSV.");
+
+        // F14-10: balance sheet and company P&L
+        put("bs.title", "Balance sheet", "الميزانية العمومية");
+        put("bs.asAt", "As at", "كما في");
+        put("bs.compareAt", "Compared with", "مقارنة مع");
+        put("bs.ASSET", "Assets", "الأصول");
+        put("bs.LIABILITY", "Liabilities", "الالتزامات");
+        put("bs.EQUITY", "Equity", "حقوق الملكية");
+        put("bs.total.ASSET", "Total assets", "إجمالي الأصول");
+        put("bs.total.LIABILITY", "Total liabilities", "إجمالي الالتزامات");
+        put("bs.total.EQUITY", "Total equity", "إجمالي حقوق الملكية");
+        put("bs.currentYearResult", "Current year result", "نتيجة السنة الحالية");
+        put("bs.earlierYearsResult", "Result of earlier years not yet closed", "نتيجة سنوات سابقة غير مقفلة");
+        put("bs.liabilitiesAndEquity", "Total liabilities and equity", "إجمالي الالتزامات وحقوق الملكية");
+        put("bs.check", "Check: assets − (liabilities + equity)", "التحقق: الأصول − (الالتزامات + حقوق الملكية)");
+        put("bs.checkOk", "Balanced: assets = liabilities + equity", "متوازنة: الأصول = الالتزامات + حقوق الملكية");
+        put("bs.checkBad", "Out of balance", "غير متوازنة");
+        put("bs.fiscalYearStart", "Fiscal year from", "السنة المالية من");
+        put("bs.propertyNote", "A property column balances only when each entry stays inside the property; the rest sits in Unassigned.",
+                "يتوازن عمود العقار فقط عندما يبقى كل قيد داخل العقار؛ والباقي يظهر في غير مخصص.");
+        put("cpl.title", "Company P&L", "قائمة دخل الشركة");
+        put("cpl.current", "This period", "الفترة الحالية");
+        put("cpl.prior", "Prior period", "الفترة السابقة");
+        put("cpl.change", "Change", "التغير");
+        put("cpl.changePct", "Change %", "نسبة التغير");
+        put("cpl.result", "Net result", "صافي النتيجة");
     }
 
     /** The label in {@code lang} ("ar" or anything else for English); the key itself when unknown. */

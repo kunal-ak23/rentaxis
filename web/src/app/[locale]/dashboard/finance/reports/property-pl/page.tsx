@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
-import { AlertTriangle, CheckCircle2, Download, Filter, Info, PieChart, ShieldCheck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, FileText, Filter, Info, PieChart, ShieldCheck } from "lucide-react";
 import DrillDrawer from "@/components/finance/reports/DrillDrawer";
 import PnlControls, { type PnlControlsValue } from "@/components/finance/reports/PnlControls";
 import PnlTable, { type DrillTarget } from "@/components/finance/reports/PnlTable";
@@ -107,6 +107,21 @@ export default function PropertyPlPage() {
                                 : t("checkDiff", { amount: fmtAmount(data.check.difference) })}
                         </span>
                     )}
+                    {(["en", "ar"] as const).map(lang => (
+                        <a
+                            key={lang}
+                            data-testid={`pl-pdf-${lang}`}
+                            href={propertyReportsApi.pnlPdfUrl({
+                                from: applied.from, to: applied.to, propertyIds: applied.propertyIds, compare: applied.compare,
+                            }, lang)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-surface text-foreground border border-border text-xs font-bold hover:bg-input transition-all focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                        >
+                            <FileText size={13} />
+                            {t(lang === "en" ? "pdfEn" : "pdfAr")}
+                        </a>
+                    ))}
                     <a
                         href={csvHref}
                         className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-surface text-foreground border border-border text-xs font-bold hover:bg-input transition-all focus:ring-2 focus:ring-primary/20 focus:outline-none"

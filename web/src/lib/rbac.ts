@@ -176,6 +176,11 @@ export const PERMISSIONS = {
     // a manager is narrowed to assigned properties on the server and never sees
     // the tenant-wide Unassigned / Total columns.
     canViewPropertyReports: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
+    // F14-10: the company P&L is tenant-wide; the balance sheet admits a manager (scoped server-side).
+    canViewCompanyReports: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // #55: the VAT return; filing a quarter is TENANT_ADMIN / SUPER_ADMIN (canFileVatReturn).
+    canViewVatReturn: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    canFileVatReturn: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
 
     // ---- accounting-v2 plan 4: vouchers ----
     //
