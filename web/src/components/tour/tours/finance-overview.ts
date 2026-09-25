@@ -33,7 +33,7 @@ export const financeOverviewTour: TourDef = {
     {
       id: 'cheques-link',
       target: '[data-tour="sidebar-cheques-register"]',
-      title: 'Cheque / Cash Collection',
+      title: 'Cheque registers',
       text: 'Deposit, clear, bounce and replace tenants\' cheques as they move through collection.',
       position: 'right',
     },

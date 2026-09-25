@@ -4351,7 +4351,8 @@
     "onlinePaymentsHint": "فعّل أو أوقف دفع الإيجار إلكترونياً لكل عقار.",
     "selectProperty": "اختر عقاراً",
     "onlineSaved": "تم الحفظ.",
-    "onlineSaveFailed": "تعذر حفظ إعداد الدفع الإلكتروني."
+    "onlineSaveFailed": "تعذر حفظ إعداد الدفع الإلكتروني.",
+    "orgNoneSelected": "لم يتم اختيار مؤسسة. اختر مؤسسة من مبدّل المؤسسات أعلى الصفحة."
   },
   "UsersAdmin": {
     "genericError": "حدث خطأ ما. يرجى المحاولة مرة أخرى.",

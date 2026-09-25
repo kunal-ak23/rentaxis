@@ -1,4 +1,3 @@
-// src/components/settings/OrganisationSection.tsx
 "use client";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -15,6 +14,11 @@ export default function OrganisationSection() {
             .catch(() => setFailed(true));
     }, []);
     if (failed) return <p className="text-xs text-error" role="alert">{t("orgLoadFailed")}</p>;
+    // The endpoint answers an empty name/slug when no organisation is in
+    // context (a system admin who has not picked one): say so, not "failed".
+    if (info && !info.name && !info.slug) {
+        return <p className="text-sm text-muted bg-surface rounded-xl border border-border p-5" data-testid="organisation-none-selected">{t("orgNoneSelected")}</p>;
+    }
     return (
         <dl className="bg-surface rounded-xl border border-border p-5 grid grid-cols-1 sm:grid-cols-2 gap-4" data-testid="organisation-section">
             <div><dt className="text-[11px] text-muted">{t("orgName")}</dt><dd className="text-sm font-semibold">{info?.name ?? "—"}</dd></div>

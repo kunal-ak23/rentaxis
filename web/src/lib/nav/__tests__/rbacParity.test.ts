@@ -32,8 +32,8 @@ function canonical(href: string, role: UserRole): string {
 const pathOnly = (h: string) => h.split("?")[0];
 const HUBS = new Set(["/dashboard/settings", "/dashboard/collections"]);
 
-function reachable(role: UserRole): Set<string> {
-    const rail = buildNav({ role, isEnabled: () => true, tenantSlug: "acme", booksLive: false });
+function reachable(role: UserRole, isEnabled: (f: string) => boolean = () => true): Set<string> {
+    const rail = buildNav({ role, isEnabled, tenantSlug: "acme", booksLive: false });
     return new Set([...flattenNav(rail), ...HEADER].map(h => canonical(h.split("#")[0], role)));
 }
 
@@ -58,5 +58,26 @@ describe("RBAC parity — every role reaches exactly what it reached before", ()
             return true;
         });
         expect(gained).toEqual([]);
+    });
+});
+
+/**
+ * PR #363 R1 (P3): the same parity with every tenant feature flag OFF. The old
+ * sidebar gated Listings (and the renter's marketplace link) on LISTINGS and
+ * Meetings on MEETINGS; Gate pass was role-only and stays so.
+ */
+const FLAG_GATED = new Set(["/dashboard/listings", "/dashboard/meetings", "/marketplace/acme"]);
+
+describe("RBAC parity with every feature flag off", () => {
+    it.each(ROLES)("%s reaches the same destinations as the old sidebar did", role => {
+        const before = new Set([...LEGACY_NAV[role].filter(h => !FLAG_GATED.has(h)), ...HEADER].map(h => canonical(h, role)));
+        const after = reachable(role, () => false);
+        expect([...before].filter(h => !after.has(h)), "lost").toEqual([]);
+        const gained = [...after].filter(h => {
+            if (before.has(h)) return false;
+            const why = NEW_DESTINATIONS[h];
+            return !(why && before.has(canonical(why, role)));
+        });
+        expect(gained, "gained").toEqual([]);
     });
 });

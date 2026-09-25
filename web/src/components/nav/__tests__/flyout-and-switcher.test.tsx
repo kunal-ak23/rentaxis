@@ -180,3 +180,25 @@ describe("organisation switcher", () => {
         expect(await within(screen.getByTestId("nav-flyout")).findByText("Acme Holdings")).toBeInTheDocument();
     });
 });
+
+describe("phone drawer focus (PR #363 R1 P3)", () => {
+    it("moves focus into the drawer on open and back to the menu button on close", async () => {
+        render(<Shell />);
+        const menu = screen.getByTestId("header-menu");
+        menu.focus();
+        fireEvent.click(menu);
+        await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("nav-drawer-close")));
+        fireEvent.keyDown(window, { key: "Escape" });
+        await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("header-menu")));
+    });
+
+    it("swaps the drawer's panel on a rail click without navigating", () => {
+        render(<Shell />);
+        fireEvent.click(screen.getByTestId("header-menu"));
+        const drawer = screen.getByTestId("nav-drawer");
+        const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+        act(() => { within(drawer).getByTestId("rail-accounting").dispatchEvent(click); });
+        expect(click.defaultPrevented).toBe(true);
+        expect(within(screen.getByTestId("nav-drawer")).getByTestId("sidebar-journals")).toBeInTheDocument();
+    });
+});

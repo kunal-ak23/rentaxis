@@ -4351,7 +4351,8 @@
     "onlinePaymentsHint": "Turn online rent payment on or off for each property.",
     "selectProperty": "Choose a property",
     "onlineSaved": "Saved.",
-    "onlineSaveFailed": "Could not save the online-payment setting."
+    "onlineSaveFailed": "Could not save the online-payment setting.",
+    "orgNoneSelected": "No organisation is selected. Pick one in the organisation switcher at the top of the page."
   },
   "UsersAdmin": {
     "genericError": "Something went wrong. Please try again.",
