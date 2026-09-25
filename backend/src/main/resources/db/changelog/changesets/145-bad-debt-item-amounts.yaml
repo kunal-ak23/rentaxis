@@ -1,0 +1,17 @@
+# F15-19 / F15-20: a write-off item is written off for what the ledger still
+# carries on it (a bounced row partly paid by a settlement is capped at the
+# lease's open receivable), so the amount per item is kept to restore exactly
+# that on a reversal. Comma-separated, in the order of item_ids; null on
+# write-offs made before this column (their items were taken at face value).
+databaseChangeLog:
+  - changeSet:
+      id: 145-bad-debt-item-amounts
+      author: claude
+      changes:
+        - addColumn:
+            tableName: bad_debt_write_offs
+            columns:
+              - column: { name: item_amounts, type: text }
+      rollback:
+        - sql:
+            sql: ALTER TABLE bad_debt_write_offs DROP COLUMN IF EXISTS item_amounts;

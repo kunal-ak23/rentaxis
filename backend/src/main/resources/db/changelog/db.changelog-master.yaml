@@ -295,3 +295,5 @@ databaseChangeLog:
       file: db/changelog/changesets/143-booking-fees.yaml
   - include:
       file: db/changelog/changesets/144-listing-lease.yaml
+  - include:
+      file: db/changelog/changesets/145-bad-debt-item-amounts.yaml

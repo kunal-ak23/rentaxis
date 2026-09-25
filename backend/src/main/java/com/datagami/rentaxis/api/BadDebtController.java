@@ -67,6 +67,12 @@ public class BadDebtController {
         return service.reverse(id, r == null ? null : r.date(), r == null ? null : r.note());
     }
 
+    /** F15-21: the bank and cash accounts a recovery on this write-off may be banked in. */
+    @GetMapping("/{id}/recovery-accounts")
+    public List<com.datagami.rentaxis.core.service.bank.OwnedBankLeaf.Option> recoveryAccounts(@PathVariable UUID id) {
+        return service.recoveryAccounts(id);
+    }
+
     @PostMapping("/{id}/recoveries")
     public WriteOffDTO recover(@PathVariable UUID id, @RequestBody RecoveryRequest r) {
         return service.recover(id, r);

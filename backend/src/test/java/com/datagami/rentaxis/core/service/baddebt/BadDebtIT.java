@@ -63,6 +63,10 @@ class BadDebtIT extends AbstractPostgresIT {
     @Autowired RenterRepository renterRepo;
     @Autowired UnitRepository unitRepo;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.datagami.rentaxis.domain.repository.BankAccountRepository bankAccounts;
+    @Autowired com.datagami.rentaxis.core.service.bank.BankAccountLedgerService bankLedgers;
+    @Autowired org.springframework.transaction.support.TransactionTemplate tx;
+    @Autowired com.datagami.rentaxis.core.service.DashboardService dashboard;
 
     private LeaseTestFixtures fixtures;
     private static final LocalDate CONTRACT = LocalDate.of(2026, 4, 20);
@@ -100,6 +104,18 @@ class BadDebtIT extends AbstractPostgresIT {
                 BigDecimal.class, account);
     }
 
+    /** A bank account owning {@code leaf}: the receipts rule's bank leaf (F15-21). */
+    private void bankAccountOwning(UUID leaf) {
+        UUID id = tx.execute(st -> {
+            var b = new com.datagami.rentaxis.domain.entity.BankAccount();
+            b.setBankName("Emirates Islamic");
+            b.setAccountNumber("0012-" + UUID.randomUUID().toString().substring(0, 6));
+            b.setTenantId(fixtures.tenantId());
+            return bankAccounts.save(b).getId();
+        });
+        bankLedgers.setLeaves(id, List.of(leaf));
+    }
+
     @Test
     void theUnpaidRowsAreWrittenOffRecoveredInPartAndClosed() {
         UUID leaseId = lease();
@@ -122,8 +138,11 @@ class BadDebtIT extends AbstractPostgresIT {
                 Integer.class, w.journalId())).isOne();
 
         UUID bank = resolver.resolve(AccountRole.BANK, fixtures.property().getId()).getId();
+        bankAccountOwning(bank);
+        assertThat(w.journalNumber()).startsWith("BDW");
         WriteOffDTO r = service.recover(w.id(), new RecoveryRequest(new BigDecimal("5000"), ON.plusDays(10), bank, "cheque"));
         assertThat(r.recovered()).isEqualByComparingTo("5000.00");
+        assertThat(r.recoveries()).singleElement().satisfies(x -> assertThat(x.journalNumber()).startsWith("BDR"));
         assertThat(onAccount(AccountRole.BAD_DEBT_RECOVERED)).isEqualByComparingTo("-5000.00");
         assertThatThrownBy(() -> service.recover(w.id(), new RecoveryRequest(new BigDecimal("25000.01"), ON, bank, null)))
                 .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("badDebt.recoveryTooMuch"));
@@ -221,6 +240,54 @@ class BadDebtIT extends AbstractPostgresIT {
         assertThatThrownBy(() -> penalties.reverse(admin.id(), paid, "error"))
                 .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("penalty.collectionClosed"));
         assertThat(creditNotes(leaseId)).isEqualTo(notesBefore);
+    }
+
+    /**
+     * F15-21: a recovery lands only where a receipt for the lease's property may —
+     * a cash leaf or a leaf a bank account owns, tenant-wide or this property's.
+     * Another property's leaf, or a bank leaf no bank account owns, is refused.
+     */
+    @Test
+    void aRecoveryIsBankedOnlyInAnAccountOfTheLeasesProperty() {
+        UUID leaseId = lease();
+        WriteOffDTO w = service.approve(service.propose(new ProposeRequest(leaseId, null, ON, "gone")).id(), null);
+        UUID ownBank = resolver.resolve(AccountRole.BANK, fixtures.property().getId()).getId();
+        var other = fixtures.createProperty("OTH");
+        propertyAccountService.generateMissing(other.getId());
+        UUID otherBank = resolver.resolve(AccountRole.BANK, other.getId()).getId();
+        assertThat(otherBank).isNotEqualTo(ownBank);
+        bankAccountOwning(otherBank);
+
+        assertThatThrownBy(() -> service.recover(w.id(), new RecoveryRequest(new BigDecimal("100"), ON, ownBank, null)))
+                .as("a bank leaf no bank account owns")
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("badDebt.recoveryAccountProperty"));
+        assertThatThrownBy(() -> service.recover(w.id(), new RecoveryRequest(new BigDecimal("100"), ON, otherBank, null)))
+                .as("another property's leaf")
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("badDebt.recoveryAccountProperty"));
+        assertThat(service.recoveryAccounts(w.id())).noneMatch(o -> o.id().equals(otherBank) || o.id().equals(ownBank));
+
+        bankAccountOwning(ownBank);
+        assertThat(service.recoveryAccounts(w.id())).anyMatch(o -> o.id().equals(ownBank));
+        assertThat(service.recover(w.id(), new RecoveryRequest(new BigDecimal("100"), ON, ownBank, null)).recovered())
+                .isEqualByComparingTo("100.00");
+    }
+
+    /**
+     * F15-20: reversing a write-off restores each row on its original due date, so
+     * the dashboard's overdue is what it was before the write-off.
+     */
+    @Test
+    void aReversedWriteOffIsOverdueAgainFromItsOriginalDate() {
+        UUID leaseId = lease();
+        var first = service.candidates(leaseId, ON).getFirst();
+        BigDecimal before = dashboard.getSummary().getOverdueAmount();
+        WriteOffDTO w = service.approve(service.propose(new ProposeRequest(leaseId, List.of(first.chequeId()), ON, "gone")).id(), null);
+        assertThat(dashboard.getSummary().getOverdueAmount()).isEqualByComparingTo(before.subtract(first.amount()));
+
+        service.reverse(w.id(), ON.plusDays(20), "renter came back");
+        assertThat(jdbc.queryForObject("select cheque_date from cheques where lease_id = ? and status = 'REGISTERED'"
+                + " and narration like 'Bad debt write-off reversed%'", LocalDate.class, leaseId)).isEqualTo(first.date());
+        assertThat(dashboard.getSummary().getOverdueAmount()).isEqualByComparingTo(before);
     }
 
     private com.datagami.rentaxis.api.dto.penalty.PenaltyAssessmentDTO charge(UUID leaseId,

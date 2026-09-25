@@ -82,13 +82,16 @@ public class BadDebtService {
                        ChequeStatus status, ChequeMode mode, String narration) { }
 
     public record RecoveryDTO(UUID id, BigDecimal amount, LocalDate recoveredOn, UUID accountId, String note,
-                              UUID journalId) { }
+                              UUID journalId, String journalNumber) { }
 
     public record WriteOffDTO(UUID id, UUID leaseId, UUID renterId, BigDecimal amount, LocalDate writeOffDate,
                               String reason, Status status, boolean vatLease, List<UUID> itemIds, UUID proposedBy,
                               Instant proposedAt, UUID decidedBy, Instant decidedAt, String decisionNote,
                               UUID journalId, UUID reversalJournalId, BigDecimal recovered,
-                              List<RecoveryDTO> recoveries) { }
+                              List<RecoveryDTO> recoveries, String journalNumber, String reversalJournalNumber) { }
+
+    /** One item picked for a write-off, with what the ledger still carries on it (F15-19). */
+    private record Picked(Cheque cheque, BigDecimal amount) { }
 
     public record ProposeRequest(UUID leaseId, List<UUID> chequeIds, LocalDate date, String reason) { }
 
@@ -103,6 +106,9 @@ public class BadDebtService {
     private final LeaseAccessPolicy access;
     private final LeaseLineRepository leaseLines;
     private final AccountRepository accounts;
+    private final com.datagami.rentaxis.core.service.cheque.BouncedDebt bouncedDebt;
+    private final com.datagami.rentaxis.core.service.bank.OwnedBankLeaf ownedBankLeaf;
+    private final com.datagami.rentaxis.domain.repository.JournalEntryRepository journals;
 
     private com.datagami.rentaxis.core.service.penalty.PenaltyAssessmentService charges;
 
@@ -114,7 +120,9 @@ public class BadDebtService {
     public BadDebtService(BadDebtWriteOffRepository writeOffs, BadDebtRecoveryRepository recoveries,
                           LeaseRepository leases, ChequeRepository cheques, ChequeService chequeService,
                           PostingService posting, LeaseAccessPolicy access, LeaseLineRepository leaseLines,
-                          AccountRepository accounts) {
+                          AccountRepository accounts, com.datagami.rentaxis.core.service.cheque.BouncedDebt bouncedDebt,
+                          com.datagami.rentaxis.core.service.bank.OwnedBankLeaf ownedBankLeaf,
+                          com.datagami.rentaxis.domain.repository.JournalEntryRepository journals) {
         this.writeOffs = writeOffs;
         this.recoveries = recoveries;
         this.leases = leases;
@@ -124,20 +132,40 @@ public class BadDebtService {
         this.access = access;
         this.leaseLines = leaseLines;
         this.accounts = accounts;
+        this.bouncedDebt = bouncedDebt;
+        this.ownedBankLeaf = ownedBankLeaf;
+        this.journals = journals;
     }
 
     // ------------------------------------------------------------------ reads
 
-    /** The items a write-off can take: bounced rows and unpaid rows dated on or before {@code on}. */
+    /**
+     * The items a write-off can take: bounced rows and unpaid rows dated on or before
+     * {@code on}, each for what the ledger still carries on it (F15-19: the F14-08
+     * derivation — a bounced row a settlement or replacement has paid is not a debt).
+     */
     @Transactional(readOnly = true)
     public List<Item> candidates(UUID leaseId, LocalDate on) {
         Lease lease = lease(leaseId);
         access.requireReadable(lease);
         LocalDate d = on != null ? on : LocalDate.now();
         Set<UUID> pending = pendingItems(leaseId);
-        return cheques.findByLease_IdOrderBySeqNoAsc(leaseId).stream()
-                .filter(c -> open(c, d) && !pending.contains(c.getId()))
-                .map(BadDebtService::item).toList();
+        List<Cheque> all = cheques.findByLease_IdOrderBySeqNoAsc(leaseId);
+        Map<UUID, BigDecimal> carried = carried(all, d);
+        return all.stream()
+                .filter(c -> open(c, d) && !pending.contains(c.getId()) && carried.get(c.getId()).signum() > 0)
+                .map(c -> item(c, carried.get(c.getId()))).toList();
+    }
+
+    /** The recovery accounts for this write-off: where a receipt for the lease's property may land (F15-21). */
+    @Transactional(readOnly = true)
+    public List<com.datagami.rentaxis.core.service.bank.OwnedBankLeaf.Option> recoveryAccounts(UUID id) {
+        BadDebtWriteOff w = writeOffs.findById(id).orElseThrow(() -> new NotFoundException("Write-off not found"));
+        UUID t = TenantContextHolder.getTenantId();
+        if (t != null && !t.equals(w.getTenantId())) throw new NotFoundException("Write-off not found");
+        Lease lease = lease(w.getLeaseId());
+        access.requireReadable(lease);
+        return ownedBankLeaf.optionsFor(propertyOf(lease));
     }
 
     @Transactional(readOnly = true)
@@ -158,7 +186,7 @@ public class BadDebtService {
         }
         String reason = requireReason(r.reason());
         LocalDate date = r.date() != null ? r.date() : LocalDate.now();
-        List<Cheque> items = pick(lease, r.chequeIds(), date);
+        List<Picked> items = pick(lease, r.chequeIds(), date);
         BadDebtWriteOff w = new BadDebtWriteOff();
         w.setTenantId(lease.getTenantId());
         w.setLeaseId(lease.getId());
@@ -168,7 +196,8 @@ public class BadDebtService {
         w.setAmount(sum(items));
         w.setWriteOffDate(date);
         w.setReason(reason);
-        w.setItemIds(String.join(",", items.stream().map(c -> c.getId().toString()).toList()));
+        w.setItemIds(String.join(",", items.stream().map(i -> i.cheque().getId().toString()).toList()));
+        w.setItemAmounts(String.join(",", items.stream().map(i -> i.amount().toPlainString()).toList()));
         w.setVatLease(LeaseVat.isVatLease(lease, leaseLines));
         w.setStatus(Status.PROPOSED);
         w.setProposedBy(currentUserId());
@@ -183,16 +212,16 @@ public class BadDebtService {
         Lease lease = lease(w.getLeaseId());
         access.requireManageable(lease);
         requireStatus(w, Status.PROPOSED);
-        List<Cheque> items = pick(lease, itemIds(w), w.getWriteOffDate());
+        List<Picked> items = pick(lease, itemIds(w), w.getWriteOffDate());
         BigDecimal amount = sum(items);
         if (amount.compareTo(w.getAmount()) != 0) {
             throw new BusinessRuleViolationException("The items have changed since the write-off was proposed;"
                     + " reject it and propose again.", "badDebt.itemsChanged", Map.of());
         }
         String narration = "Bad debt written off: " + w.getReason();
-        for (Cheque c : items) chequeService.closeForWriteOff(c.getId(), w.getWriteOffDate(), narration);
+        for (Picked i : items) chequeService.closeForWriteOff(i.cheque().getId(), w.getWriteOffDate(), narration);
         // PR #361 R1 P1-1: a charge whose collection row is written off cannot be reversed any more.
-        charges.markByCollectionRows(items.stream().map(Cheque::getId).toList(),
+        charges.markByCollectionRows(items.stream().map(i -> i.cheque().getId()).toList(),
                 PenaltyAssessmentStatus.APPROVED, PenaltyAssessmentStatus.WRITTEN_OFF);
         JournalEntry bdw = posting.post(PostingRequest.ofPairs(JournalDocType.BDW, w.getWriteOffDate(), narration,
                 LeaseChequeRegistrar.dimensions(lease, null), JournalSourceType.BAD_DEBT, w.getId(), null,
@@ -240,10 +269,17 @@ public class BadDebtService {
         JournalEntry rev = posting.reverse(w.getJournalId(), on, "Write-off reversed: " + reason);
         // PR #361 R2 B1: one live collection row per item written off, so a restored
         // charge is re-linked to its own row (split, not one lump for the whole amount).
-        for (UUID itemId : itemIds(w)) {
+        // F15-20: each restored row keeps its item's original due date, so it is as
+        // overdue as it was and ages from that date, not from the reversal.
+        List<UUID> ids = itemIds(w);
+        List<BigDecimal> amounts = itemAmounts(w);
+        for (int k = 0; k < ids.size(); k++) {
+            UUID itemId = ids.get(k);
             Cheque old = cheques.findById(itemId).orElseThrow(() -> new NotFoundException("Instalment not found"));
-            var row = chequeService.addCollectionRow(lease.getId(), new ChequeRowInput(null, null, on, null, on, null,
-                    null, null, old.getAmount(), "Bad debt write-off reversed"
+            BigDecimal restored = amounts.size() == ids.size() ? amounts.get(k) : old.getAmount();
+            LocalDate due = old.getChequeDate() != null ? old.getChequeDate() : on;
+            var row = chequeService.addCollectionRow(lease.getId(), new ChequeRowInput(null, null, on, null, due, null,
+                    null, null, restored, "Bad debt write-off reversed"
                     + (old.getNarration() == null ? "" : " – " + old.getNarration()), ChequeMode.CASH));
             charges.restoreAfterWriteOff(itemId, row.id());
         }
@@ -266,8 +302,9 @@ public class BadDebtService {
         BigDecimal amount = r.amount().setScale(2, RoundingMode.HALF_UP);
         BigDecimal left = w.getAmount().subtract(recovered(w));
         if (amount.compareTo(left) > 0) {
-            throw new BusinessRuleViolationException("Only " + left.toPlainString() + " of this write-off is left to recover.",
-                    "badDebt.recoveryTooMuch", Map.of("left", left.toPlainString()));
+            String shown = String.format(java.util.Locale.ENGLISH, "%,.2f", left);
+            throw new BusinessRuleViolationException("Only " + shown + " of this write-off is left to recover.",
+                    "badDebt.recoveryTooMuch", Map.of("left", shown));
         }
         Account bank = r.accountId() == null ? null : accounts.findById(r.accountId())
                 .filter(a -> lease.getTenantId().equals(a.getTenantId())).orElse(null);
@@ -275,6 +312,15 @@ public class BadDebtService {
                 || (bank.getAccountSubType() != AccountSubType.BANK && bank.getAccountSubType() != AccountSubType.CASH)) {
             throw new BusinessRuleViolationException("Choose the bank or cash account the money went into.",
                     "badDebt.recoveryAccount", Map.of());
+        }
+        // F15-21: the receipts rule — a cash leaf or a leaf a bank account owns, tenant-wide
+        // or the lease's property's. Another property's leaf would put this property's
+        // money in that property's balance sheet and bank reconciliation.
+        UUID property = propertyOf(lease);
+        if (ownedBankLeaf.optionsFor(property).stream().noneMatch(o -> o.id().equals(bank.getId()))) {
+            throw new BusinessRuleViolationException("That account cannot take money for this lease's property;"
+                    + " choose one of its bank or cash accounts.", "badDebt.recoveryAccountProperty",
+                    Map.of("account", bank.getCode() == null ? bank.getName() : bank.getCode()));
         }
         LocalDate on = r.date() != null ? r.date() : LocalDate.now();
         String narration = "Bad debt recovered" + (r.note() == null || r.note().isBlank() ? "" : ": " + r.note().trim());
@@ -305,11 +351,24 @@ public class BadDebtService {
                 && ChequeDueRules.due(c, on);
     }
 
-    private List<Cheque> pick(Lease lease, List<UUID> ids, LocalDate on) {
+    /** What the ledger still carries on each row (F14-08): a bounced row shares the lease's receivable. */
+    private Map<UUID, BigDecimal> carried(List<Cheque> all, LocalDate on) {
+        List<Cheque> open = all.stream().filter(c -> open(c, on)).toList();
+        Map<UUID, BigDecimal> out = new java.util.HashMap<>();
+        for (Cheque c : all) out.put(c.getId(), BigDecimal.ZERO);
+        out.putAll(bouncedDebt.openAmounts(new ArrayList<>(open)));
+        out.replaceAll((k, v) -> v.setScale(2, RoundingMode.HALF_UP));
+        return out;
+    }
+
+    private List<Picked> pick(Lease lease, List<UUID> ids, LocalDate on) {
         List<Cheque> all = cheques.findByLease_IdOrderBySeqNoAsc(lease.getId());
-        List<Cheque> out = new ArrayList<>();
+        Map<UUID, BigDecimal> carried = carried(all, on);
+        List<Picked> out = new ArrayList<>();
         if (ids == null || ids.isEmpty()) {
-            for (Cheque c : all) if (open(c, on)) out.add(c);
+            for (Cheque c : all) {
+                if (open(c, on) && carried.get(c.getId()).signum() > 0) out.add(new Picked(c, carried.get(c.getId())));
+            }
         } else {
             Set<UUID> want = new LinkedHashSet<>(ids);
             for (Cheque c : all) {
@@ -319,7 +378,15 @@ public class BadDebtService {
                             + " on " + on.format(DMY) + ".", "badDebt.itemNotOpen",
                             Map.of("row", String.valueOf(c.getSeqNo()), "status", c.getStatus().name()));
                 }
-                out.add(c);
+                // F15-19: a bounced row the ledger no longer carries (a settlement or a
+                // replacement paid it) is not a debt; writing it off would post Dr bad
+                // debts / Cr receivable on a lease that owes nothing.
+                if (carried.get(c.getId()).signum() <= 0) {
+                    throw new BusinessRuleViolationException("Instalment " + c.getSeqNo() + " has been settled in the"
+                            + " books (the lease's receivable no longer carries it); it cannot be written off.",
+                            "badDebt.itemSettled", Map.of("row", String.valueOf(c.getSeqNo())));
+                }
+                out.add(new Picked(c, carried.get(c.getId())));
             }
             if (!want.isEmpty()) throw new NotFoundException("Instalment not found on this lease");
         }
@@ -343,9 +410,23 @@ public class BadDebtService {
         return Arrays.stream(w.getItemIds().split(",")).map(String::trim).map(UUID::fromString).toList();
     }
 
-    private static BigDecimal sum(List<Cheque> items) {
-        return items.stream().map(Cheque::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add)
+    private static List<BigDecimal> itemAmounts(BadDebtWriteOff w) {
+        if (w.getItemAmounts() == null || w.getItemAmounts().isBlank()) return List.of();
+        return Arrays.stream(w.getItemAmounts().split(",")).map(String::trim).map(BigDecimal::new).toList();
+    }
+
+    private static BigDecimal sum(List<Picked> items) {
+        return items.stream().map(Picked::amount).reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static UUID propertyOf(Lease lease) {
+        return lease.getUnit() == null || lease.getUnit().getProperty() == null ? null
+                : lease.getUnit().getProperty().getId();
+    }
+
+    private String journalNumber(UUID journalId) {
+        return journalId == null ? null : journals.findById(journalId).map(JournalEntry::getEntryNumber).orElse(null);
     }
 
     private BigDecimal recovered(BadDebtWriteOff w) {
@@ -353,20 +434,20 @@ public class BadDebtService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    private static Item item(Cheque c) {
-        return new Item(c.getId(), c.getSeqNo(), c.getChequeNumber(), c.getChequeDate(), c.getAmount(), c.getStatus(),
+    private static Item item(Cheque c, BigDecimal amount) {
+        return new Item(c.getId(), c.getSeqNo(), c.getChequeNumber(), c.getChequeDate(), amount, c.getStatus(),
                 c.getMode(), c.getNarration());
     }
 
     private WriteOffDTO dto(BadDebtWriteOff w) {
         List<RecoveryDTO> recs = recoveries.findByWriteOffIdOrderByRecoveredOnAsc(w.getId()).stream()
                 .map(r -> new RecoveryDTO(r.getId(), r.getAmount(), r.getRecoveredOn(), r.getAccountId(), r.getNote(),
-                        r.getJournalId())).toList();
+                        r.getJournalId(), journalNumber(r.getJournalId()))).toList();
         BigDecimal recovered = recs.stream().map(RecoveryDTO::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
         return new WriteOffDTO(w.getId(), w.getLeaseId(), w.getRenterId(), w.getAmount(), w.getWriteOffDate(),
                 w.getReason(), w.getStatus(), w.isVatLease(), itemIds(w), w.getProposedBy(), w.getProposedAt(),
                 w.getDecidedBy(), w.getDecidedAt(), w.getDecisionNote(), w.getJournalId(), w.getReversalJournalId(),
-                recovered, recs);
+                recovered, recs, journalNumber(w.getJournalId()), journalNumber(w.getReversalJournalId()));
     }
 
     private BadDebtWriteOff lock(UUID id) {
