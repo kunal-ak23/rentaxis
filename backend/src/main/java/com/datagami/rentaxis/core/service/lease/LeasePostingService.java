@@ -353,10 +353,9 @@ public class LeasePostingService {
         markPredecessorRenewed(lease, tco.getEntryNumber());
 
         lease.setPostingJournalId(tco.getId());
-        // #99: each line remembers the recognition it was posted with (overwritten,
+        // #99 / F15-06: each line remembers what this post did with it (overwritten,
         // so a cut-over lease reverted to draft and re-posted takes today's rule).
-        lines.forEach(l -> l.setPostedRecognition(
-                l.getChargeType() != null ? l.getChargeType().getRecognition() : null));
+        lines.forEach(LeaseLine::snapshotRecognition);
         lease.setPostedAt(Instant.now());
         if (lease.getVatTiming() == VatTiming.INSTALMENT && InstalmentVat.contractVat(lines).signum() > 0) {
             // What the tax invoices fall back to if the TRN is cleared later.
@@ -526,6 +525,14 @@ public class LeasePostingService {
         List<JournalEntry> contractEntries = postedContractEntries(leaseId);
         if (contractEntries.isEmpty()) {
             throw new BusinessRuleViolationException("This lease has no posting journal to amend");
+        }
+        // F14-32: a credit addendum's TCC and its re-cut schedule are not reposted by
+        // an amendment, which rebuilds recognition from the lines alone.
+        if (addendumRepository != null && addendumRepository.existsByLease_IdAndKind(leaseId,
+                com.datagami.rentaxis.domain.entity.LeaseAddendum.KIND_CREDIT)) {
+            throw new BusinessRuleViolationException("This lease has a credit addendum (a mid-term reduction), so its"
+                    + " lines can no longer be amended; post a further addendum instead.",
+                    "lease.amendAfterCredit", java.util.Map.of());
         }
 
         List<Cheque> cheques = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
@@ -876,7 +883,7 @@ public class LeasePostingService {
         // Utilities expense leaf (the line's account) as it is recovered, so a year's
         // expense is offset only by that year's recovery and an early exit refunds the
         // rest. It is still never income.
-        ChargeRecognition r = line.effectiveRecognition();
+        ChargeRecognition r = type == null ? null : type.getRecognition();
         return lease.getFeeTiming() == FeeTiming.OVER_TERM
                 && type != null
                 && type.getBehaviour() == ChargeBehaviour.FEE
@@ -1245,6 +1252,9 @@ public class LeasePostingService {
      * <p>A NOWAIT conflict is a 400 that says "try again", not a 500: the other
      * caller is almost certainly the same accountant double-clicking Post.</p>
      */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.domain.repository.LeaseAddendumRepository addendumRepository;
+
     Lease lockLease(UUID leaseId) {
         Lease lease;
         try {

@@ -271,3 +271,5 @@ databaseChangeLog:
       file: db/changelog/changesets/131-fiscal-year-close.yaml
   - include:
       file: db/changelog/changesets/132-lease-line-posted-recognition.yaml
+  - include:
+      file: db/changelog/changesets/133-lease-credit-addendum.yaml

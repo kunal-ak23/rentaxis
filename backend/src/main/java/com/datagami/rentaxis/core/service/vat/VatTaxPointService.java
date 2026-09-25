@@ -623,6 +623,175 @@ public class VatTaxPointService {
     }
 
     // ------------------------------------------------------------------
+    // mid-term reduction (F14-32)
+    // ------------------------------------------------------------------
+
+    /**
+     * What a credit addendum does to the lease's VAT.
+     *
+     * @param fromDeferred the part of the credit's VAT not yet declared, taken off the
+     *                     planned tax points: {@code Dr OUTPUT_VAT_DEFERRED / Cr RENT_RECEIVABLE}
+     * @param creditNote   the part already declared: {@code Dr OUTPUT_VAT / Cr RENT_RECEIVABLE},
+     *                     documented by a tax credit note
+     * @param creditNoteTaxable the net the credit note is on
+     */
+    public record ReductionVat(BigDecimal fromDeferred, BigDecimal creditNote, BigDecimal creditNoteTaxable) {
+        public static ReductionVat none() {
+            BigDecimal z = BigDecimal.ZERO.setScale(2);
+            return new ReductionVat(z, z, z);
+        }
+    }
+
+    /** The arithmetic {@link #applyReduction} performs, with nothing written. */
+    @Transactional(readOnly = true)
+    public ReductionVat previewReduction(UUID leaseId, BigDecimal vat, BigDecimal taxable) {
+        Lease lease = lease(leaseId);
+        if (vat == null || vat.signum() <= 0) return ReductionVat.none();
+        if (lease.getVatTiming() != VatTiming.INSTALMENT) return new ReductionVat(s2(BigDecimal.ZERO), s2(vat), s2(taxable));
+        BigDecimal planned = BigDecimal.ZERO;
+        for (VatTaxPoint p : points.findByLeaseIdAndStatusOrderByTaxPointDateAsc(leaseId, VatTaxPointStatus.PLANNED)) {
+            planned = planned.add(p.getVatAmount());
+        }
+        return split(vat, taxable, planned);
+    }
+
+    private static ReductionVat split(BigDecimal vat, BigDecimal taxable, BigDecimal planned) {
+        BigDecimal fromDeferred = planned.min(vat);
+        BigDecimal credit = vat.subtract(fromDeferred);
+        BigDecimal creditTaxable = credit.signum() == 0 ? BigDecimal.ZERO
+                : nz(taxable).multiply(credit).divide(vat, 2, RoundingMode.HALF_UP);
+        return new ReductionVat(s2(fromDeferred), s2(credit), s2(creditTaxable));
+    }
+
+    /**
+     * Takes a credit addendum's VAT off the lease's schedule (F14-32). On a
+     * CONTRACT lease every fils of it was declared at the TCO, so all of it is a
+     * credit note. On an INSTALMENT lease it comes off what is still to be declared:
+     * <ol>
+     *   <li>instalments handed back with the addendum lose their planned points;</li>
+     *   <li>if they carried more VAT than the credit removes, the rest moves onto the
+     *       replacement rows (by amount), or onto the latest instalment still to be
+     *       declared when there are none;</li>
+     *   <li>if they carried less, the latest planned points are cut, latest first;</li>
+     *   <li>whatever the planned points cannot absorb was declared already and is
+     *       credited back with a tax credit note.</li>
+     * </ol>
+     * The rows' own VAT columns move with their points. New rows get their points
+     * from {@link #buildForLease} once they are registered.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public ReductionVat applyReduction(Lease lease, BigDecimal vat, BigDecimal taxable,
+                                       List<Cheque> returned, List<Cheque> newRows) {
+        if (vat == null || vat.signum() <= 0) {
+            for (Cheque c : newRows) { c.setVatAmount(BigDecimal.ZERO); c.setVatTaxableAmount(BigDecimal.ZERO); }
+            return ReductionVat.none();
+        }
+        if (lease.getVatTiming() != VatTiming.INSTALMENT) {
+            for (Cheque c : newRows) { c.setVatAmount(BigDecimal.ZERO); c.setVatTaxableAmount(BigDecimal.ZERO); }
+            return new ReductionVat(s2(BigDecimal.ZERO), s2(vat), s2(taxable));
+        }
+        List<VatTaxPoint> planned = lockAllInIdOrder(
+                points.findByLeaseIdAndStatusOrderByTaxPointDateAsc(lease.getId(), VatTaxPointStatus.PLANNED))
+                .stream().filter(p -> p.getStatus() == VatTaxPointStatus.PLANNED).toList();
+        BigDecimal plannedTotal = planned.stream().map(VatTaxPoint::getVatAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        ReductionVat result = split(vat, taxable, plannedTotal);
+
+        java.util.Set<UUID> returnedIds = returned.stream().map(Cheque::getId).collect(java.util.stream.Collectors.toSet());
+        BigDecimal freed = BigDecimal.ZERO;
+        List<VatTaxPoint> kept = new ArrayList<>();
+        for (VatTaxPoint p : planned) {
+            if (p.getChequeId() != null && returnedIds.contains(p.getChequeId())) {
+                freed = freed.add(p.getVatAmount());
+                p.setStatus(VatTaxPointStatus.CANCELLED);
+                points.save(p);
+                cheques.findById(p.getChequeId()).ifPresent(c -> {
+                    c.setVatAmount(BigDecimal.ZERO);
+                    c.setVatTaxableAmount(BigDecimal.ZERO);
+                    cheques.save(c);
+                });
+            } else {
+                kept.add(p);
+            }
+        }
+        points.flush();
+        BigDecimal toCut = result.fromDeferred().subtract(freed);
+        for (Cheque c : newRows) { c.setVatAmount(BigDecimal.ZERO); c.setVatTaxableAmount(BigDecimal.ZERO); }
+        if (toCut.signum() < 0) {
+            BigDecimal surplus = toCut.negate();
+            List<Cheque> vatRows = newRows.stream()
+                    .filter(c -> c.getRowKind() != com.datagami.rentaxis.domain.entity.enums.ChequeRowKind.DEPOSIT).toList();
+            if (!vatRows.isEmpty()) {
+                List<BigDecimal> shares = com.datagami.rentaxis.core.service.lease.LeaseVat.allocate(surplus,
+                        vatRows.stream().map(c -> nz(c.getAmount())).toList());
+                for (int i = 0; i < vatRows.size(); i++) {
+                    vatRows.get(i).setVatAmount(shares.get(i));
+                    vatRows.get(i).setVatTaxableAmount(taxableOfVat(shares.get(i)));
+                }
+            } else if (!kept.isEmpty()) {
+                VatTaxPoint last = kept.get(kept.size() - 1);
+                adjust(last, surplus);
+            } else {
+                throw new BusinessRuleViolationException("The instalments handed back carry VAT of " + s2(freed)
+                        + " but the credit removes only " + s2(result.fromDeferred()) + ", and no instalment is left"
+                        + " to carry the rest. Add a replacement row.");
+            }
+        } else if (toCut.signum() > 0) {
+            for (int i = kept.size() - 1; i >= 0 && toCut.signum() > 0; i--) {
+                VatTaxPoint p = kept.get(i);
+                BigDecimal cut = p.getVatAmount().min(toCut);
+                adjust(p, cut.negate());
+                toCut = toCut.subtract(cut);
+            }
+        }
+        points.flush();
+        return result;
+    }
+
+    /** Moves a planned point's VAT (and its row's) by {@code delta}; a point left at zero is cancelled. */
+    private void adjust(VatTaxPoint p, BigDecimal delta) {
+        BigDecimal vat = p.getVatAmount().add(delta);
+        p.setVatAmount(vat);
+        p.setTaxableAmount(taxableOfVat(vat));
+        if (vat.signum() == 0) p.setStatus(VatTaxPointStatus.CANCELLED);
+        points.save(p);
+        if (p.getChequeId() != null) {
+            cheques.findById(p.getChequeId()).ifPresent(c -> {
+                c.setVatAmount(vat);
+                c.setVatTaxableAmount(taxableOfVat(vat));
+                cheques.save(c);
+            });
+        }
+    }
+
+    private static BigDecimal taxableOfVat(BigDecimal vat) {
+        return nz(vat).divide(com.datagami.rentaxis.core.service.lease.LeaseVat.RATE, 2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * The POSTED {@code REDUCTION} point for the VAT a credit addendum credited back,
+     * with its tax credit note. On a CONTRACT lease only when the contract's own tax
+     * invoice is ours to correct (the termination rule, F14-11).
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void recordReductionCreditNote(Lease lease, LocalDate date, ReductionVat vat, UUID journalId) {
+        if (vat == null || vat.creditNote().signum() <= 0) return;
+        if (lease.getVatTiming() != VatTiming.INSTALMENT && !contractDocumented(lease.getId())) return;
+        VatTaxPoint p = new VatTaxPoint();
+        p.setTenantId(lease.getTenantId());
+        p.setLeaseId(lease.getId());
+        stampWhere(p, lease);
+        p.setKind(VatTaxPointKind.REDUCTION);
+        p.setTaxPointDate(date);
+        p.setVatAmount(vat.creditNote().negate());
+        p.setTaxableAmount(vat.creditNoteTaxable().negate());
+        p.setStatus(VatTaxPointStatus.POSTED);
+        p.setJournalId(journalId);
+        p.setPostedAt(Instant.now());
+        p = points.saveAndFlush(p);
+        taxInvoices.issueFor(p, lease, null);
+    }
+
+    // ------------------------------------------------------------------
     // running
     // ------------------------------------------------------------------
 

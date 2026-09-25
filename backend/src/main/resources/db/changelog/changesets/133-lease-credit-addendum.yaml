@@ -1,0 +1,54 @@
+# F14-32: a mid-term reduction is a numbered credit addendum. lease_addenda gains
+# its kind (CHARGE, the existing additive addendum, or CREDIT) and, for a credit,
+# where the excess went (CHEQUES: uncleared instalments handed back / replaced;
+# CREDIT: left on the renter's receivable as a credit). tco_journal_id keeps naming
+# the addendum's journal (a TCC for a credit). lease_addendum_credits holds one row
+# per line the addendum cut: the line's remaining value from the effective date
+# before and after, the credit and its VAT. VAT tax points gain kind REDUCTION for
+# the part of a credit's VAT already declared (credited back with a TCN).
+databaseChangeLog:
+  - changeSet:
+      id: 133-lease-credit-addendum
+      author: claude
+      changes:
+        - addColumn:
+            tableName: lease_addenda
+            columns:
+              - column: { name: kind, type: varchar(12), defaultValue: CHARGE, constraints: { nullable: false } }
+              - column: { name: excess, type: varchar(12) }
+        - createTable:
+            tableName: lease_addendum_credits
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: addendum_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_lac_addendum, referencedTableName: lease_addenda, referencedColumnNames: id } }
+              - column: { name: lease_line_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_lac_line, referencedTableName: lease_lines, referencedColumnNames: id } }
+              - column: { name: new_line_amount, type: "decimal(14,2)", constraints: { nullable: false } }
+              - column: { name: remaining_before, type: "decimal(14,2)", constraints: { nullable: false } }
+              - column: { name: remaining_after, type: "decimal(14,2)", constraints: { nullable: false } }
+              - column: { name: credit_amount, type: "decimal(14,2)", constraints: { nullable: false } }
+              - column: { name: vat_amount, type: "decimal(14,2)", constraints: { nullable: false } }
+        - createIndex:
+            tableName: lease_addendum_credits
+            indexName: ix_lac_addendum
+            columns:
+              - column: { name: addendum_id }
+        - createIndex:
+            tableName: lease_addendum_credits
+            indexName: ix_lac_line
+            columns:
+              - column: { name: lease_line_id }
+        - sql:
+            sql: >-
+              ALTER TABLE vat_tax_points DROP CONSTRAINT IF EXISTS ck_vtp_kind;
+              ALTER TABLE vat_tax_points ADD CONSTRAINT ck_vtp_kind
+                CHECK (kind IN ('INSTALMENT', 'TERMINATION_ADJUSTMENT', 'CONTRACT', 'SETTLEMENT', 'REDUCTION'))
+      rollback:
+        - sql:
+            sql: >-
+              ALTER TABLE vat_tax_points DROP CONSTRAINT IF EXISTS ck_vtp_kind;
+              ALTER TABLE vat_tax_points ADD CONSTRAINT ck_vtp_kind
+                CHECK (kind IN ('INSTALMENT', 'TERMINATION_ADJUSTMENT', 'CONTRACT', 'SETTLEMENT'));
+              DROP TABLE IF EXISTS lease_addendum_credits;
+              ALTER TABLE lease_addenda DROP COLUMN IF EXISTS excess;
+              ALTER TABLE lease_addenda DROP COLUMN IF EXISTS kind;

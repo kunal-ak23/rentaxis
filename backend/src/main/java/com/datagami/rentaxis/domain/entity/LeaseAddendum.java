@@ -62,4 +62,15 @@ public class LeaseAddendum extends BaseTenantEntity {
 
     @Column(name = "created_by")
     private UUID createdBy;
+
+    /** F14-32: CHARGE (adds lines and a TCO) or CREDIT (a mid-term reduction; a TCC). */
+    @Column(name = "kind", nullable = false, length = 12)
+    private String kind = KIND_CHARGE;
+
+    /** For a CREDIT: CHEQUES (instalments handed back / replaced) or CREDIT (left on the receivable). */
+    @Column(name = "excess", length = 12)
+    private String excess;
+
+    public static final String KIND_CHARGE = "CHARGE";
+    public static final String KIND_CREDIT = "CREDIT";
 }

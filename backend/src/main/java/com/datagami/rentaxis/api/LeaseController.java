@@ -76,6 +76,7 @@ public class LeaseController {
     private final LeaseTerminationService leaseTerminationService;
     private final LeaseVariationService leaseVariationService;
     private final com.datagami.rentaxis.core.service.lease.RentFreeService rentFreeService;
+    private final com.datagami.rentaxis.core.service.lease.LeaseReductionService leaseReductionService;
 
     /**
      * ACCOUNTANT on every read below.
@@ -450,6 +451,25 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<List<LeaseAddendumDTO>> listAddenda(@PathVariable UUID id) {
         return ResponseEntity.ok(leaseVariationService.list(id));
+    }
+
+    /**
+     * F14-32: what a mid-term reduction (credit addendum) would do, with nothing
+     * written. Readable, like the termination preview.
+     */
+    @PostMapping("/{id}/reductions/preview")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<com.datagami.rentaxis.api.dto.lease.ReductionPreviewDTO> previewReduction(
+            @PathVariable UUID id, @RequestBody com.datagami.rentaxis.api.dto.lease.ReduceLeaseRequest request) {
+        return ResponseEntity.ok(leaseReductionService.preview(id, request));
+    }
+
+    /** F14-32: post a mid-term reduction as a numbered credit addendum. Finance roles, like /addenda. */
+    @PostMapping("/{id}/reductions")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<AddendumResponse> reduce(@PathVariable UUID id,
+            @RequestBody com.datagami.rentaxis.api.dto.lease.ReduceLeaseRequest request) {
+        return ResponseEntity.ok(leaseReductionService.reduce(id, request));
     }
 
     /** Fill in the Ejari a variation was re-registered under; blank until then ("Ejari pending"). */

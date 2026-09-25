@@ -31,5 +31,16 @@ public record LeaseAddendumDTO(UUID id,
                                UUID tcoJournalId,
                                String tcoEntryNumber,
                                boolean superseded,
-                               Instant createdAt) {
+                               Instant createdAt,
+                               /* F14-32: CHARGE or CREDIT; for a credit, where the excess went and the lines it cut. */
+                               String kind,
+                               String excess,
+                               java.util.List<LeaseAddendumCreditDTO> credits) {
+
+    public LeaseAddendumDTO(UUID id, String addendumNumber, LocalDate effectiveFrom, LocalDate contractDate,
+                            String ejariNumber, boolean ejariPending, String reason, BigDecimal value,
+                            UUID tcoJournalId, String tcoEntryNumber, boolean superseded, Instant createdAt) {
+        this(id, addendumNumber, effectiveFrom, contractDate, ejariNumber, ejariPending, reason, value,
+                tcoJournalId, tcoEntryNumber, superseded, createdAt, "CHARGE", null, java.util.List.of());
+    }
 }
