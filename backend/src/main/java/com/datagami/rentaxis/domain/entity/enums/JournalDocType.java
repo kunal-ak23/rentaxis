@@ -20,5 +20,7 @@ public enum JournalDocType {
     BPC,  // issued (supplier) cheque presented: Dr PDC_PAYABLE / Cr bank (finance-ops spec §2)
     BNK,  // a bank-only item booked from a statement line: charges, interest, unidentified receipt (§3)
     YEC,  // year-end close: income and expense into Retained Earnings (spec 2026-09-24 §3)
-    TCC   // tenancy contract credit: a mid-term reduction's credit addendum (F14-32)
+    TCC,  // tenancy contract credit: a mid-term reduction's credit addendum (F14-32)
+    BDW,  // bad-debt write-off: Dr bad debts / Cr rent receivable (F14-38)
+    BDR   // bad debt recovered: Dr bank / Cr bad debts recovered (F14-38)
 }

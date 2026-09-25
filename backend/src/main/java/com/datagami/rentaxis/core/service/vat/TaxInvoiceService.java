@@ -178,6 +178,7 @@ public class TaxInvoiceService {
                     ? new LocalDate[]{start, t}
                     : new LocalDate[]{t.plusDays(1), end};
         }
+        if (point.getKind() == VatTaxPointKind.CHARGE) return new LocalDate[]{point.getTaxPointDate(), point.getTaxPointDate()};
         if (point.getKind() == VatTaxPointKind.CONTRACT) return new LocalDate[]{start, end};
         if (point.getKind() == VatTaxPointKind.REDUCTION) return new LocalDate[]{point.getTaxPointDate(), end};
         if (cheque == null || cheque.getChequeDate() == null) return new LocalDate[]{start, end};
@@ -239,6 +240,10 @@ public class TaxInvoiceService {
         }
         if (point.getKind() == VatTaxPointKind.SETTLEMENT) {
             return "Recharges deducted at move-out (damage, cleaning, keys)";
+        }
+        if (point.getKind() == VatTaxPointKind.CHARGE) {
+            return point.getVatAmount().signum() >= 0 ? "Charge raised on the tenancy (service, fee or recharge)"
+                    : "Charge raised on the tenancy, reversed";
         }
         if (point.getKind() == VatTaxPointKind.REDUCTION) {
             return "Charge reduced for the rest of the term (credit addendum)" + span;

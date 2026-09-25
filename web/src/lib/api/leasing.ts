@@ -61,9 +61,11 @@ export type ChequeStatus =
 
 export type ChequeFailureReason = "BOUNCE" | "SIGNATURE_MISMATCH" | "ACCOUNT_CLOSED" | "STOPPED_PAYMENT" | "TECHNICAL_RETURN";
 
-export type PenaltyReason = "CHEQUE_RETURN" | "LATE_PAYMENT" | "OTHER";
+export type PenaltyReason = "CHEQUE_RETURN" | "LATE_PAYMENT" | "OTHER"
+  /* F14-30: consideration for a supply — 5 % VAT on a VAT lease by default. */
+  | "SERVICE_RECHARGE" | "ADMIN_FEE" | "DAMAGE" | "MAINTENANCE_RECHARGE" | "BOOKING_FEE";
 
-export type PenaltyAssessmentStatus = "PROPOSED" | "APPROVED" | "WAIVED" | "REVERSED";
+export type PenaltyAssessmentStatus = "PROPOSED" | "APPROVED" | "WAIVED" | "REVERSED" | "WRITTEN_OFF";
 
 /** Not carried on any DTO the web reads today; kept for the i18n labels and for later tasks. */
 export type OnlinePaymentStatus = "CREATED" | "CAPTURED" | "CAPTURED_UNAPPLIED" | "FAILED" | "REFUNDED";
@@ -1045,6 +1047,8 @@ export type PostLeaseDryRunResponse = {
   chequeTotal: number;
   depositCarriedForward: number;
   journals: { tco: number; tcoLines: number; pdr: number };
+  /** F15-13: a transfer's carried cheques, re-registered on this grid when it posts. */
+  carriedCheques?: { seqNo: number; chequeNumber: string | null; chequeDate: string | null; amount: number }[];
 };
 
 /** ChequeActionRequest — the shared shape for deposit/clear/receive/bounce/cancel. */
@@ -1173,6 +1177,12 @@ export type PenaltyAssessment = {
   resolutionNote: string | null;
   /** F14-28: set once POST /penalties/{id}/reduce has lowered a PROPOSED row's amount. */
   proposedAmount?: number | null;
+  /** F14-30: VAT on top of `amount`; the renter owes amount + vatAmount. */
+  vatable?: boolean;
+  vatAmount?: number;
+  /** F14-49 / F14-50: what raised the charge. */
+  sourceType?: "TICKET" | "BOOKING" | null;
+  sourceId?: string | null;
 };
 
 /** ProposePenaltyRequest. */
@@ -1184,6 +1194,8 @@ export type ProposePenaltyInput = {
   description?: string | null;
   /** yyyy-MM-dd, Asia/Dubai; defaults to today server-side and may not be in the future. */
   incidentDate?: string | null;
+  /** F14-30: null = the reason's default on a VAT lease; true is refused on a lease without VAT. */
+  vatable?: boolean | null;
 };
 
 /** RenterChequeDTO — a row of the renter's own "my payments" screen. */

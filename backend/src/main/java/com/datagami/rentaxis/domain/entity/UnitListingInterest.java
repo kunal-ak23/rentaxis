@@ -45,4 +45,8 @@ public class UnitListingInterest extends BaseTenantEntity {
             this.createdAt = LocalDateTime.now();
         }
     }
+
+    /** F14-51: the draft lease this interest became. */
+    @Column(name = "lease_id")
+    private UUID leaseId;
 }

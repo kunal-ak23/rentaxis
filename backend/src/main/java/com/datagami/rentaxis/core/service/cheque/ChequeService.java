@@ -899,6 +899,36 @@ public class ChequeService {
     }
 
     /**
+     * F14-38: closes an open item a bad-debt write-off takes over — the row drops out
+     * of every due / overdue list. A REGISTERED row's PDR is reversed first (the debt
+     * goes back to rent receivable, which the write-off then credits); a BOUNCED row's
+     * debt is already there. Undeclared VAT on the row is refused: run the VAT tax
+     * points first (the declared VAT stays as it is — no automatic bad-debt relief).
+     *
+     * @return the amount the row carried
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public BigDecimal closeForWriteOff(UUID chequeId, LocalDate date, String note) {
+        Cheque cheque = lock(chequeId);
+        Lease lease = cheque.getLease();
+        // PR #361 R1 P3: a bounced row can carry undeclared VAT too.
+        if (cheque.getStatus() == ChequeStatus.REGISTERED || cheque.getStatus() == ChequeStatus.BOUNCED) {
+            vatTaxPoints.beforeWriteOff(cheque);
+        }
+        if (cheque.getStatus() == ChequeStatus.REGISTERED) {
+            reversePdr(cheque, date, note);
+        } else if (cheque.getStatus() != ChequeStatus.BOUNCED) {
+            throw new BusinessRuleViolationException("Instalment " + cheque.getSeqNo() + " is " + cheque.getStatus()
+                    + "; only an unpaid or bounced item can be written off.", "badDebt.itemNotOpen",
+                    java.util.Map.of("row", String.valueOf(cheque.getSeqNo()), "status", cheque.getStatus().name()));
+        }
+        moveTo(cheque, ChequeStatus.CANCELLED, note);
+        chequeRepository.save(cheque);
+        recordLeaseEvent(lease, cheque, "written off as a bad debt — " + note);
+        return cheque.getAmount();
+    }
+
+    /**
      * The same cancellation, moving the row's undeclared VAT onto another pending
      * instalment of the lease ({@code moveVatToChequeId}). A row carrying PLANNED VAT
      * cannot be cancelled without naming one: its share would be stranded in the
@@ -906,12 +936,26 @@ public class ChequeService {
      */
     @Transactional
     public ChequeDTO cancel(UUID chequeId, ChequeActionRequest request, UUID moveVatToChequeId) {
+        return cancel(chequeId, request, moveVatToChequeId, true);
+    }
+
+    /**
+     * F14-50: a booking fee's collection row, cancelled because the renter withdrew
+     * the booking before its slot. The booking's own rules authorised that; the
+     * renter does not manage the lease.
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public ChequeDTO cancelBySystem(UUID chequeId, ChequeActionRequest request) {
+        return cancel(chequeId, request, null, false);
+    }
+
+    private ChequeDTO cancel(UUID chequeId, ChequeActionRequest request, UUID moveVatToChequeId, boolean checkAccess) {
         ChequeActionRequest r = request == null ? ChequeActionRequest.empty() : request;
         // Both rows are claimed in id order, so two cancels that move VAT onto each
         // other's row cannot cross (re-review N3).
         if (moveVatToChequeId != null && moveVatToChequeId.compareTo(chequeId) < 0) lock(moveVatToChequeId);
         Cheque cheque = lock(chequeId);
-        Lease lease = managedLeaseOf(cheque);
+        Lease lease = checkAccess ? managedLeaseOf(cheque) : requireCollectable(cheque.getLease());
         requireStatus(cheque, "cancel", ChequeStatus.REGISTERED);
         requireSettlementUndisturbed(lease, cheque);
         vatTaxPoints.beforeCancel(cheque, moveVatToChequeId);

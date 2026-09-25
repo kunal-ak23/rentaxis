@@ -73,7 +73,10 @@ export type AccountRole =
   /** Spec 2026-09-24 §3: the year-end close's equity leaf (F-03). */
   | "RETAINED_EARNINGS"
   /** F15-11: inter-property clearing (A-02-06), one leaf per property. */
-  | "INTERPROPERTY_CLEARING";
+  | "INTERPROPERTY_CLEARING"
+  /** F14-38: bad debts written off (D-02-004) and recovered (C-02-002). */
+  | "BAD_DEBT"
+  | "BAD_DEBT_RECOVERED";
 
 export type JournalDocType =
   | "TCO"

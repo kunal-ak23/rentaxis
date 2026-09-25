@@ -11,5 +11,15 @@ public record ParkingSpotUpdateRequest(
         @Size(max = 32) String level,
         Boolean covered,
         Boolean active,
+        List<UUID> buildingIds,
+        /* F14-50 */ String feeType,
+        java.math.BigDecimal feeAmount) {
+    public ParkingSpotUpdateRequest(@Size(max = 32) String spotNumber,
+        @Size(max = 32) String level,
+        Boolean covered,
+        Boolean active,
         List<UUID> buildingIds) {
+        this(spotNumber, level, covered, active, buildingIds, null, null);
+    }
+
 }

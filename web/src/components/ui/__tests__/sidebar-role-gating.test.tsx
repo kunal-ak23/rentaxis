@@ -173,6 +173,8 @@ describe("sidebar finance gating", () => {
             "/dashboard/finance/penalties",
             "/dashboard/finance/reports/property-pl",
             "/dashboard/finance/reports/property-statement",
+            // F14-10: the balance sheet admits a manager, scoped to assigned properties.
+            "/dashboard/finance/reports/balance-sheet",
             "/dashboard/finance/payables/aging",
         ]));
         expect(
@@ -180,6 +182,7 @@ describe("sidebar finance gating", () => {
                 h.startsWith("/dashboard/finance/") &&
                 !h.startsWith("/dashboard/finance/cheques") &&
                 !h.startsWith("/dashboard/finance/reports/property-") &&
+                h !== "/dashboard/finance/reports/balance-sheet" &&
                 h !== "/dashboard/finance/payables/aging" &&
                 h !== "/dashboard/finance/penalties",
             ),

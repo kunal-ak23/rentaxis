@@ -118,7 +118,7 @@ describe("Raise penalty", () => {
 
         await waitFor(() => expect(api.propose).toHaveBeenCalledWith({
             leaseId: "lease-1", reason: "OTHER", amount: 750, incidentDate: "2026-09-01",
-            description: "Damaged lobby door",
+            description: "Damaged lobby door", vatable: null,
         }));
         expect(await screen.findByText(en.Leasing.penaltyRaisedBanner)).toBeInTheDocument();
     });

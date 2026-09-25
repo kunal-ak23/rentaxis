@@ -12,5 +12,16 @@ public record AmenityUpdateRequest(
         String description,
         Boolean bookable,
         Boolean active,
+        List<UUID> buildingIds,
+        /* F14-50 */ String feeType,
+        java.math.BigDecimal feeAmount) {
+    public AmenityUpdateRequest(@Size(max = 160) String nameEn,
+        @Size(max = 160) String nameAr,
+        String description,
+        Boolean bookable,
+        Boolean active,
         List<UUID> buildingIds) {
+        this(nameEn, nameAr, description, bookable, active, buildingIds, null, null);
+    }
+
 }

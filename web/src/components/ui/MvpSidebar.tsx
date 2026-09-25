@@ -234,6 +234,14 @@ export default function MvpSidebar() {
         ...(hasPermission(userRole, 'canViewPropertyReports') ? [
             { name: tReports("propertyPl"), href: "/dashboard/finance/reports/property-pl", icon: PieChart, tourId: 'sidebar-property-pl' },
             { name: tReports("propertyStatement"), href: "/dashboard/finance/reports/property-statement", icon: FileSpreadsheet, tourId: 'sidebar-property-statement' },
+            { name: tReports("balanceSheet"), href: "/dashboard/finance/reports/balance-sheet", icon: Scale, tourId: 'sidebar-balance-sheet' },
+        ] : []),
+        // F14-10 / #55: tenant-wide reports, finance roles only.
+        ...(hasPermission(userRole, 'canViewCompanyReports') ? [
+            { name: tReports("companyPl"), href: "/dashboard/finance/reports/company-pl", icon: Building2, tourId: 'sidebar-company-pl' },
+        ] : []),
+        ...(hasPermission(userRole, 'canViewVatReturn') ? [
+            { name: tReports("vatReturn"), href: "/dashboard/finance/reports/vat-return", icon: Receipt, tourId: 'sidebar-vat-return' },
         ] : []),
         // Finance → Payables (finance-ops spec §2). Aging admits a property
         // manager (property-filtered, server-side); opening items do not.

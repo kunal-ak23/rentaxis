@@ -113,7 +113,7 @@ public interface PenaltyAssessmentRepository extends JpaRepository<PenaltyAssess
      * {@code c.unit}.</p>
      */
     @Query("""
-        select coalesce(sum(p.amount), 0) from PenaltyAssessment p
+        select coalesce(sum(p.amount + p.vatAmount), 0) from PenaltyAssessment p
         left join p.collectionCheque collection
         where p.lease.id = :leaseId
           and p.status = com.datagami.rentaxis.domain.entity.enums.PenaltyAssessmentStatus.APPROVED
@@ -121,4 +121,10 @@ public interface PenaltyAssessmentRepository extends JpaRepository<PenaltyAssess
                or collection.status <> com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CLEARED)
         """)
     BigDecimal sumOutstandingForLease(@Param("leaseId") UUID leaseId);
+
+    /** F14-49 / F14-50: the charges raised by a ticket or a booking. */
+    java.util.List<PenaltyAssessment> findBySourceTypeAndSourceIdOrderByProposedAtAsc(String sourceType, UUID sourceId);
+
+    /** PR #361 R1 P1-1: the charges whose collection rows these are. */
+    java.util.List<PenaltyAssessment> findByCollectionCheque_IdIn(java.util.Collection<UUID> chequeIds);
 }

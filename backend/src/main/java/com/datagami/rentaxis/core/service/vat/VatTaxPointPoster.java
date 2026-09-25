@@ -70,6 +70,13 @@ public class VatTaxPointPoster {
         this.entityManager = entityManager;
     }
 
+    private VatPeriodLock vatLock;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setVatLock(VatPeriodLock vatLock) {
+        this.vatLock = vatLock;
+    }
+
     /**
      * Post in a transaction of its own — the nightly run's entry point. The run read
      * its candidates without a lock, so what they said is checked again under the
@@ -106,6 +113,11 @@ public class VatTaxPointPoster {
                 .orElseThrow(() -> new NotFoundException("Lease not found"));
         Cheque cheque = point.getChequeId() == null ? null : cheques.findById(point.getChequeId()).orElse(null);
         String narration = "VAT on " + (cheque == null ? "instalment" : LeaseChequeRegistrar.narrationOf(cheque));
+        // #55: a tax point falling in a filed VAT period is declared in the first open
+        // one — the correction lands on that period's return, the filed one stays as filed.
+        if (vatLock != null && vatLock.isFiled(lease.getTenantId(), point.getTaxPointDate())) {
+            point.setTaxPointDate(vatLock.firstOpenDate(lease.getTenantId(), point.getTaxPointDate()));
+        }
 
         JournalEntry vtp = postingService.post(PostingRequest.ofPairs(
                 JournalDocType.VTP,

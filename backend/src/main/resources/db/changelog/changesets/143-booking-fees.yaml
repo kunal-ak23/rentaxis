@@ -1,0 +1,41 @@
+# F14-50: amenity and parking bookings can carry a fee.
+#
+#   - property_amenities / parking_spots: fee_type FREE | PER_BOOKING | PER_HOUR
+#     (parking: FREE or PER_BOOKING) and fee_amount.
+#   - booking_requests.fee_amount: the fee quoted when the renter asked (what the
+#     portal showed); charge_id: the BOOKING_FEE charge raised on approval.
+databaseChangeLog:
+  - changeSet:
+      id: 143-booking-fees
+      author: claude
+      changes:
+        - addColumn:
+            tableName: property_amenities
+            columns:
+              - column: { name: fee_type, type: varchar(12), defaultValue: FREE, constraints: { nullable: false } }
+              - column: { name: fee_amount, type: "numeric(14,2)", defaultValueNumeric: 0, constraints: { nullable: false } }
+        - addColumn:
+            tableName: parking_spots
+            columns:
+              - column: { name: fee_type, type: varchar(12), defaultValue: FREE, constraints: { nullable: false } }
+              - column: { name: fee_amount, type: "numeric(14,2)", defaultValueNumeric: 0, constraints: { nullable: false } }
+        - addColumn:
+            tableName: booking_requests
+            columns:
+              - column: { name: fee_amount, type: "numeric(14,2)", defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: charge_id, type: uuid }
+        - sql:
+            sql: |
+              ALTER TABLE property_amenities ADD CONSTRAINT ck_amenity_fee CHECK (fee_type IN ('FREE', 'PER_BOOKING', 'PER_HOUR') AND fee_amount >= 0);
+              ALTER TABLE parking_spots ADD CONSTRAINT ck_spot_fee CHECK (fee_type IN ('FREE', 'PER_BOOKING') AND fee_amount >= 0);
+      rollback:
+        - sql:
+            sql: |
+              ALTER TABLE booking_requests DROP COLUMN IF EXISTS charge_id;
+              ALTER TABLE booking_requests DROP COLUMN IF EXISTS fee_amount;
+              ALTER TABLE parking_spots DROP CONSTRAINT IF EXISTS ck_spot_fee;
+              ALTER TABLE parking_spots DROP COLUMN IF EXISTS fee_amount;
+              ALTER TABLE parking_spots DROP COLUMN IF EXISTS fee_type;
+              ALTER TABLE property_amenities DROP CONSTRAINT IF EXISTS ck_amenity_fee;
+              ALTER TABLE property_amenities DROP COLUMN IF EXISTS fee_amount;
+              ALTER TABLE property_amenities DROP COLUMN IF EXISTS fee_type;

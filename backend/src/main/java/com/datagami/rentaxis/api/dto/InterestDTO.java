@@ -14,6 +14,12 @@ public record InterestDTO(
         String renterPhone,
         String note,
         InterestStatus status,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        /* F14-51 (PR #361 R1): the draft lease a CONVERTED enquiry became. */
+        UUID leaseId
 ) {
+    public InterestDTO(UUID id, UUID listingId, UUID renterUserId, String renterName, String renterEmail,
+                       String renterPhone, String note, InterestStatus status, LocalDateTime createdAt) {
+        this(id, listingId, renterUserId, renterName, renterEmail, renterPhone, note, status, createdAt, null);
+    }
 }

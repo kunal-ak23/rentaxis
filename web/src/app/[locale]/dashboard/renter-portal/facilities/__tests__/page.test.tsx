@@ -191,4 +191,16 @@ describe("RenterFacilitiesPage stale-state resync", () => {
         // The Request button is now disabled — no more guaranteed-409 retries.
         expect(screen.getByRole("button", { name: "request" })).toBeDisabled();
     });
+
+    it("shows each amenity's fee before booking (F14-50)", async () => {
+        api.fetchMyFacilities.mockResolvedValue({
+            ...facilitiesWithSpot(false),
+            amenities: [{ id: "pool", propertyId: "prop-1", propertyName: "Belle Vue", nameEn: "Pool", nameAr: null,
+                description: null, photoUrls: [], bookable: true, pendingCount: 0, feeType: "PER_HOUR", feeAmount: 50 }],
+        } as unknown as MyFacilitiesDTO);
+        api.fetchMyBookings.mockResolvedValue([]);
+        render(<RenterFacilitiesPage />);
+        await waitFor(() => expect(screen.getByTestId("amenity-fee-pool")).toHaveTextContent("feePerHour"));
+        expect(screen.getByTestId("spot-fee-spot-1")).toHaveTextContent("feeFree");
+    });
 });

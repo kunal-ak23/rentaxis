@@ -240,6 +240,21 @@ class PenaltyRuleEngineTest {
         verifyNoInteractions(assessmentService);
     }
 
+    /** PR #361 R2: a charge written off as a bad debt still stands — a re-bounce raises no fresh proposal. */
+    @Test
+    void aChequeWhoseChargeWasWrittenOffIsNotProposedAgain() {
+        fineConfig(cfg(2, true, false));
+        bouncesOnThisLease(3);
+        when(assessments.existsByCheque_IdAndReasonAndStatusIn(any(), eq(PenaltyReason.CHEQUE_RETURN),
+                org.mockito.ArgumentMatchers.argThat(c -> c != null
+                        && c.contains(com.datagami.rentaxis.domain.entity.enums.PenaltyAssessmentStatus.WRITTEN_OFF))))
+                .thenReturn(true);
+
+        engine.onBounce(cheque("100041", "12750", LocalDate.of(2026, 11, 2), ChequeFailureReason.BOUNCE));
+
+        verifyNoInteractions(assessmentService);
+    }
+
     @Test
     void autoProposalTurnedOffProposesNothingHoweverManyBounced() {
         fineConfig(cfg(2, false, false));

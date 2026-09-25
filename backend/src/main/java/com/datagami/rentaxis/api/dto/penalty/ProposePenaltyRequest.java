@@ -25,11 +25,19 @@ public record ProposePenaltyRequest(@NotNull UUID leaseId,
                                     @NotNull PenaltyReason reason,
                                     @NotNull @DecimalMin(value = "0.00", inclusive = false) BigDecimal amount,
                                     String description,
-                                    LocalDate incidentDate) {
+                                    LocalDate incidentDate,
+                                    /* F14-30: VAT on this charge; null = the reason's default on a VAT lease. */
+                                    Boolean vatable) {
 
     /** The shape before #12, for callers that have no incident date to give. */
     public ProposePenaltyRequest(UUID leaseId, UUID chequeId, PenaltyReason reason, BigDecimal amount,
                                  String description) {
-        this(leaseId, chequeId, reason, amount, description, null);
+        this(leaseId, chequeId, reason, amount, description, null, null);
+    }
+
+    /** The shape before F14-30: VAT follows the reason and the lease. */
+    public ProposePenaltyRequest(UUID leaseId, UUID chequeId, PenaltyReason reason, BigDecimal amount,
+                                 String description, LocalDate incidentDate) {
+        this(leaseId, chequeId, reason, amount, description, incidentDate, null);
     }
 }

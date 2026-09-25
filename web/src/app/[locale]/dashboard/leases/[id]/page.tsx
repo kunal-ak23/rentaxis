@@ -30,6 +30,7 @@ import ExtendLeaseDialog from "@/components/leases/ExtendLeaseDialog";
 import AddChargeDialog from "@/components/leases/AddChargeDialog";
 import ReduceLeaseDialog from "@/components/leases/ReduceLeaseDialog";
 import LeaseAssignmentCard from "@/components/leases/LeaseAssignmentCard";
+import BadDebtCard from "@/components/leases/BadDebtCard";
 import TransferLeaseDialog from "@/components/leases/TransferLeaseDialog";
 import LeaseAddendaPanel from "@/components/leases/LeaseAddendaPanel";
 import LeaseJournalsTab from "@/components/leases/LeaseJournalsTab";
@@ -890,6 +891,10 @@ export default function LeaseDetailPage() {
                         )}
                         {/* F14-39: hand the lease to another renter. */}
                         <LeaseAssignmentCard lease={lease} canDraft={canRenew} canPost={canPost} onChanged={loadLease} />
+                        {/* F14-38: write off what the renter cannot pay. */}
+                        {hasPermission(userRole, "canAccessFinance") && lease.status !== "DRAFT" && (
+                            <BadDebtCard leaseId={lease.id} canApprove={hasPermission(userRole, "canAccessFinanceOps")} />
+                        )}
                     </div>
                 )}
 

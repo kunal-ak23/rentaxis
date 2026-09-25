@@ -1,8 +1,11 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.api.dto.report.BalanceSheetDTO;
 import com.datagami.rentaxis.api.dto.report.PnlLinesDTO;
 import com.datagami.rentaxis.api.dto.report.PropertyPnlDTO;
 import com.datagami.rentaxis.api.dto.report.PropertyStatementDTO;
+import com.datagami.rentaxis.core.service.report.BalanceSheetService;
+import com.datagami.rentaxis.core.service.report.FinancialReportExport;
 import com.datagami.rentaxis.core.service.report.PnlAllocation;
 import com.datagami.rentaxis.core.service.report.PnlPeriods;
 import com.datagami.rentaxis.core.service.report.PropertyPnlService;
@@ -50,13 +53,16 @@ public class PropertyReportController {
     private final PropertyStatementService statements;
     private final PropertyStatementPdfRenderer pdf;
     private final UserRepository users;
+    private final BalanceSheetService balanceSheet;
 
     public PropertyReportController(PropertyPnlService pnl, PropertyStatementService statements,
-                                    PropertyStatementPdfRenderer pdf, UserRepository users) {
+                                    PropertyStatementPdfRenderer pdf, UserRepository users,
+                                    BalanceSheetService balanceSheet) {
         this.pnl = pnl;
         this.statements = statements;
         this.pdf = pdf;
         this.users = users;
+        this.balanceSheet = balanceSheet;
     }
 
     /** accountType: the only account type the line may be set on. */
@@ -91,6 +97,81 @@ public class PropertyReportController {
             @RequestParam(defaultValue = "en") String lang) {
         byte[] body = ReportCsv.pnl(pnl.pnl(from, to, propertyId, compare, allocate), lang);
         return file(body, CSV, "property-pl-" + from + "-" + to + ".csv");
+    }
+
+    @GetMapping("/property-pl.pdf")
+    public ResponseEntity<byte[]> propertyPlPdf(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) List<UUID> propertyId,
+            @RequestParam(defaultValue = "NONE") PnlPeriods.Compare compare,
+            @RequestParam(defaultValue = "en") String lang) {
+        byte[] body = FinancialReportExport.pnlPdf(pnl.pnl(from, to, propertyId, compare, PnlAllocation.Basis.NONE), lang, false);
+        return file(body, MediaType.APPLICATION_PDF, "property-pl-" + from + "-" + to + "-" + lang(lang) + ".pdf");
+    }
+
+    // ------------------------------------------------------------------ F14-10: company P&L
+
+    /** The company P&L is the property P&L's Total column: tenant-wide, so not for a property manager. */
+    @GetMapping("/company-pl")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public PropertyPnlDTO companyPl(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "PREVIOUS") PnlPeriods.Compare compare) {
+        return pnl.pnl(from, to, null, compare, PnlAllocation.Basis.NONE);
+    }
+
+    @GetMapping("/company-pl.pdf")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<byte[]> companyPlPdf(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "PREVIOUS") PnlPeriods.Compare compare,
+            @RequestParam(defaultValue = "en") String lang) {
+        byte[] body = FinancialReportExport.pnlPdf(companyPl(from, to, compare), lang, true);
+        return file(body, MediaType.APPLICATION_PDF, "company-pl-" + from + "-" + to + "-" + lang(lang) + ".pdf");
+    }
+
+    @GetMapping("/company-pl.csv")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<byte[]> companyPlCsv(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "PREVIOUS") PnlPeriods.Compare compare,
+            @RequestParam(defaultValue = "en") String lang) {
+        byte[] body = FinancialReportExport.companyPnlCsv(companyPl(from, to, compare), lang);
+        return file(body, CSV, "company-pl-" + from + "-" + to + ".csv");
+    }
+
+    // ------------------------------------------------------------------ F14-10: balance sheet
+
+    @GetMapping("/balance-sheet")
+    public BalanceSheetDTO balanceSheet(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asAt,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate compareAt,
+            @RequestParam(required = false) List<UUID> propertyId) {
+        return balanceSheet.balanceSheet(asAt, compareAt, propertyId);
+    }
+
+    @GetMapping("/balance-sheet.pdf")
+    public ResponseEntity<byte[]> balanceSheetPdf(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asAt,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate compareAt,
+            @RequestParam(required = false) List<UUID> propertyId,
+            @RequestParam(defaultValue = "en") String lang) {
+        byte[] body = FinancialReportExport.balanceSheetPdf(balanceSheet.balanceSheet(asAt, compareAt, propertyId), lang);
+        return file(body, MediaType.APPLICATION_PDF, "balance-sheet-" + asAt + "-" + lang(lang) + ".pdf");
+    }
+
+    @GetMapping("/balance-sheet.csv")
+    public ResponseEntity<byte[]> balanceSheetCsv(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asAt,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate compareAt,
+            @RequestParam(required = false) List<UUID> propertyId,
+            @RequestParam(defaultValue = "en") String lang) {
+        byte[] body = FinancialReportExport.balanceSheetCsv(balanceSheet.balanceSheet(asAt, compareAt, propertyId), lang);
+        return file(body, CSV, "balance-sheet-" + asAt + ".csv");
     }
 
     /**

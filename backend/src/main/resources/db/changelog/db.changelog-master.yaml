@@ -283,3 +283,15 @@ databaseChangeLog:
       file: db/changelog/changesets/137-lease-document-created-at.yaml
   - include:
       file: db/changelog/changesets/138-interproperty-clearing.yaml
+  - include:
+      file: db/changelog/changesets/139-vat-returns.yaml
+  - include:
+      file: db/changelog/changesets/140-charge-vat.yaml
+  - include:
+      file: db/changelog/changesets/141-bad-debts.yaml
+  - include:
+      file: db/changelog/changesets/142-ticket-vendor-bill.yaml
+  - include:
+      file: db/changelog/changesets/143-booking-fees.yaml
+  - include:
+      file: db/changelog/changesets/144-listing-lease.yaml

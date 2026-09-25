@@ -1,5 +1,7 @@
 package com.datagami.rentaxis.core.service.penalty;
 
+import com.datagami.rentaxis.core.service.lease.LeaseVat;
+
 import com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
@@ -90,7 +92,10 @@ public class PenaltyAssessmentService {
 
     /** Statuses that mean "this proposal is still live", for the duplicate guard. */
     static final Set<PenaltyAssessmentStatus> OPEN =
-            EnumSet.of(PenaltyAssessmentStatus.PROPOSED, PenaltyAssessmentStatus.APPROVED);
+            // PR #361 R2: a written-off charge still stands for the incident — a re-bounce of
+            // the same cheque must not raise a fresh proposal.
+            EnumSet.of(PenaltyAssessmentStatus.PROPOSED, PenaltyAssessmentStatus.APPROVED,
+                    PenaltyAssessmentStatus.WRITTEN_OFF);
 
     /**
      * A lease a penalty may still be charged against — the same set the register
@@ -176,7 +181,72 @@ public class PenaltyAssessmentService {
             throw new BusinessRuleViolationException(
                     "A penalty cannot be raised for a date before the contract (" + floor + ")");
         }
-        return dto(save(lease, cheque, r.reason(), r.amount(), r.description(), incident, byUser));
+        PenaltyAssessment saved = save(lease, cheque, r.reason(), r.amount(), r.description(), incident, byUser);
+        saved.setVatable(vatableFor(lease, r.reason(), r.vatable()));
+        return dto(repository.save(saved));
+    }
+
+    /**
+     * F14-49 / F14-50: a charge raised by another document (a maintenance ticket, an
+     * amenity booking) — the same proposal, remembering its source. {@code system}
+     * skips the manage-the-lease check: the caller already authorised the act that
+     * raised it (a booking approval, possibly by the renter's manager).
+     */
+    @Transactional
+    public PenaltyAssessmentDTO proposeFromSource(ProposePenaltyRequest r, UUID byUser, String sourceType, UUID sourceId,
+                                                 boolean system) {
+        PenaltyAssessment a;
+        if (system) {
+            Lease lease = leaseRepository.findById(r.leaseId()).orElseThrow(() -> new NotFoundException("Lease not found"));
+            requireChargeable(lease);
+            a = save(lease, null, r.reason(), r.amount(), r.description(),
+                    r.incidentDate() != null ? r.incidentDate() : LocalDate.now(), byUser);
+            a.setVatable(vatableFor(lease, r.reason(), r.vatable()));
+        } else {
+            a = repository.findById(propose(r, byUser).id()).orElseThrow();
+        }
+        a.setSourceType(sourceType);
+        a.setSourceId(sourceId);
+        return dto(repository.save(a));
+    }
+
+    /**
+     * F14-38 (PR #361 R1 P1-1): a write-off took (or gave back) the collection rows
+     * of these charges — APPROVED ↔ WRITTEN_OFF. Only charges in {@code from} move.
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public void markByCollectionRows(java.util.Collection<UUID> chequeIds, PenaltyAssessmentStatus from,
+                                     PenaltyAssessmentStatus to) {
+        if (chequeIds == null || chequeIds.isEmpty()) return;
+        for (PenaltyAssessment a : repository.findByCollectionCheque_IdIn(chequeIds)) {
+            if (a.getStatus() != from) continue;
+            a.setStatus(to);
+            repository.save(a);
+        }
+    }
+
+    /**
+     * PR #361 R2 B1: a write-off was reversed — the charge whose collection row it
+     * took is APPROVED again and collected through {@code newRowId}, its own live row.
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public void restoreAfterWriteOff(UUID oldRowId, UUID newRowId) {
+        for (PenaltyAssessment a : repository.findByCollectionCheque_IdIn(List.of(oldRowId))) {
+            if (a.getStatus() != PenaltyAssessmentStatus.WRITTEN_OFF) continue;
+            Cheque row = chequeRepository.findById(newRowId)
+                    .orElseThrow(() -> new IllegalStateException("Collection row vanished after it was created"));
+            row.setPenaltyAssessmentId(a.getId());
+            chequeRepository.save(row);
+            a.setCollectionCheque(row);
+            a.setStatus(PenaltyAssessmentStatus.APPROVED);
+            repository.save(a);
+        }
+    }
+
+    /** F14-49 / F14-50: the charges a document raised. */
+    @Transactional(readOnly = true)
+    public List<PenaltyAssessmentDTO> forSource(String sourceType, UUID sourceId) {
+        return repository.findBySourceTypeAndSourceIdOrderByProposedAtAsc(sourceType, sourceId).stream().map(this::dto).toList();
     }
 
     /**
@@ -208,6 +278,7 @@ public class PenaltyAssessmentService {
                                              String descriptionCode, java.util.Map<String, String> args) {
         PenaltyAssessment a = save(lease, cheque, reason, amount, description,
                 incidentDate != null ? incidentDate : LocalDate.now(), null);
+        a.setVatable(vatableFor(lease, reason, null));
         if (descriptionCode != null) {
             a.setDescriptionCode(descriptionCode);
             a.setDescriptionArgs(args);
@@ -265,9 +336,34 @@ public class PenaltyAssessmentService {
      */
     @Transactional
     public PenaltyAssessmentDTO approve(UUID id, LocalDate date) {
+        return approve(id, date, true);
+    }
+
+    /**
+     * F14-50: the booking-fee door. The booking's approval was authorised by whoever
+     * decided it (a manager of the property, not necessarily of the lease), so the
+     * manage-the-lease check is not repeated.
+     */
+    @Transactional
+    public PenaltyAssessmentDTO approveBySystem(UUID id, LocalDate date) {
+        return approve(id, date, false);
+    }
+
+    /** F14-50: a booking cancelled before its slot reverses its fee — possibly at the renter's request. */
+    @Transactional
+    public PenaltyAssessmentDTO reverseBySystem(UUID id, LocalDate date, String note) {
+        return reverse(id, date, note, false);
+    }
+
+    @Transactional(readOnly = true)
+    public PenaltyAssessmentStatus statusOf(UUID id) {
+        return repository.findById(id).map(PenaltyAssessment::getStatus).orElse(null);
+    }
+
+    private PenaltyAssessmentDTO approve(UUID id, LocalDate date, boolean checkAccess) {
         PenaltyAssessment a = lock(id);
         Lease lease = a.getLease();
-        leaseAccessPolicy.requireManageable(lease);
+        if (checkAccess) leaseAccessPolicy.requireManageable(lease);
         requireStatus(a, "approve", PenaltyAssessmentStatus.PROPOSED);
         // Up front, before a single line is posted. A proposal can outlive the
         // contract it was raised on — a cheque bounces in March, the lease
@@ -280,6 +376,21 @@ public class PenaltyAssessmentService {
         UUID chequeId = a.getCheque() != null ? a.getCheque().getId() : null;
         String narration = narrationFor(a);
 
+        // F14-30: a charge that is consideration for a supply carries 5 % VAT on top,
+        // declared on the PEN itself (tax point = the charge date) with its tax invoice.
+        BigDecimal vat = a.isVatable() ? LeaseVat.vatOfNet(amount) : BigDecimal.ZERO;
+        BigDecimal owed = amount.add(vat);
+        List<PostingRequest.Pair> pairs = new java.util.ArrayList<>();
+        pairs.add(PostingRequest.pair(
+                LeaseChequeRegistrar.drReceivable(lease, amount).withNarration(narration),
+                PostingRequest.cr(a.getReason().incomeRole(), amount).withNarration(narration)));
+        if (vat.signum() > 0) {
+            String vatNarration = "VAT on " + narration;
+            pairs.add(PostingRequest.pair(
+                    LeaseChequeRegistrar.drReceivable(lease, vat).withNarration(vatNarration),
+                    PostingRequest.cr(com.datagami.rentaxis.domain.entity.enums.AccountRole.OUTPUT_VAT, vat)
+                            .withNarration(vatNarration)));
+        }
         JournalEntry pen = postingService.post(PostingRequest.ofPairs(
                 JournalDocType.PEN,
                 on,
@@ -288,9 +399,11 @@ public class PenaltyAssessmentService {
                 JournalSourceType.PENALTY,
                 a.getId(),
                 null,
-                List.of(PostingRequest.pair(
-                        LeaseChequeRegistrar.drReceivable(lease, amount).withNarration(narration),
-                        PostingRequest.cr(a.getReason().incomeRole(), amount).withNarration(narration)))));
+                pairs));
+        a.setVatAmount(vat);
+        if (vat.signum() > 0 && vatTaxPoints != null) {
+            vatTaxPoints.recordChargeVat(lease, on, pen.getId(), amount, vat);
+        }
 
         // Through ChequeService, not by hand: the row has to be validated, numbered
         // and registered by exactly the code every other row goes through, or the
@@ -303,7 +416,7 @@ public class PenaltyAssessmentService {
         // reason: the amount is not the caller's to choose, the debt it collects was
         // raised in the ledger a line above, and no user typed it.
         ChequeDTO row = chequeService.addCollectionRow(lease.getId(), new ChequeRowInput(
-                null, null, on, null, on, null, null, null, amount,
+                null, null, on, null, on, null, null, null, owed,
                 "Penalty - " + a.getReason().label(), ChequeMode.CASH));
 
         // Set on the entity rather than widened into ChequeRowInput: the link is a
@@ -407,17 +520,34 @@ public class PenaltyAssessmentService {
      */
     @Transactional
     public PenaltyAssessmentDTO reverse(UUID id, LocalDate date, String note) {
+        return reverse(id, date, note, true);
+    }
+
+    private PenaltyAssessmentDTO reverse(UUID id, LocalDate date, String note, boolean checkAccess) {
         PenaltyAssessment a = lock(id);
-        leaseAccessPolicy.requireManageable(a.getLease());
+        if (checkAccess) leaseAccessPolicy.requireManageable(a.getLease());
+        // PR #361 R1 P1-1: a written-off charge's receivable is already credited by the
+        // BDW; reversing it too would credit it twice (and hand VAT back on a credit note).
+        if (a.getStatus() == PenaltyAssessmentStatus.WRITTEN_OFF) {
+            throw new BusinessRuleViolationException("This charge was written off as a bad debt; reverse the write-off first.",
+                    "penalty.writtenOff", java.util.Map.of());
+        }
         requireStatus(a, "reverse", PenaltyAssessmentStatus.APPROVED);
         if (a.getJournalId() == null) {
             throw new BusinessRuleViolationException("This penalty has no journal to reverse");
         }
 
         Cheque collection = a.getCollectionCheque();
+        // PR #361 R2 B1: a cancelled collection row means the charge's debt left the
+        // register (a write-off took it, or it was carried elsewhere): reversing the
+        // charge now would credit the receivable a second time.
+        if (collection != null && collection.getStatus() == ChequeStatus.CANCELLED) {
+            throw new BusinessRuleViolationException("This charge's collection row is closed; it cannot be reversed.",
+                    "penalty.collectionClosed", java.util.Map.of());
+        }
         if (collection != null && collection.getStatus() == ChequeStatus.CLEARED) {
             throw new BusinessRuleViolationException(
-                    "Penalty was already collected; issue a refund/credit instead");
+                    "Penalty was already collected; issue a refund/credit instead", "penalty.collected", java.util.Map.of());
         }
 
         // F14-28: every decision on a charged amount carries a reason, as a waiver does.
@@ -435,12 +565,17 @@ public class PenaltyAssessmentService {
                     java.util.Map.of("charged", pen.getEntryDate().format(dmy), "date", on.format(dmy)));
         }
         String reason = note.trim();
-        postingService.reverse(a.getJournalId(), on, reason);
+        com.datagami.rentaxis.domain.entity.JournalEntry rev = postingService.reverse(a.getJournalId(), on, reason);
+        // F14-30: the VAT a tax invoice declared goes back on a tax credit note.
+        if (a.getVatAmount() != null && a.getVatAmount().signum() > 0 && vatTaxPoints != null) {
+            vatTaxPoints.recordChargeVat(a.getLease(), on, rev.getId(), a.getAmount().negate(), a.getVatAmount().negate());
+        }
 
         // Only from REGISTERED: a row that was cancelled or returned already had its
         // PDR reversed, and reversing it twice is refused by PostingService anyway.
         if (collection != null && collection.getStatus() == ChequeStatus.REGISTERED) {
-            chequeService.cancel(collection.getId(), new ChequeActionRequest(on, reason, null, null));
+            if (checkAccess) chequeService.cancel(collection.getId(), new ChequeActionRequest(on, reason, null, null));
+            else chequeService.cancelBySystem(collection.getId(), new ChequeActionRequest(on, reason, null, null));
         }
 
         a.setStatus(PenaltyAssessmentStatus.REVERSED);
@@ -515,6 +650,37 @@ public class PenaltyAssessmentService {
     // ------------------------------------------------------------------
     // guards and plumbing
     // ------------------------------------------------------------------
+
+    private com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints;
+
+    /** Setter-injected: hand-built instances in unit tests need no new argument. */
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setVatTaxPoints(com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints) {
+        this.vatTaxPoints = vatTaxPoints;
+    }
+
+    /**
+     * F14-30: whether a new charge carries VAT. Only on a VAT-registered lease (its
+     * rent carries VAT); there, the caller's choice, else the reason's default —
+     * a penalty (bounce, late payment) is out of scope, a service / admin / damage
+     * / booking charge is standard-rated.
+     */
+    boolean vatableFor(Lease lease, PenaltyReason reason, Boolean requested) {
+        boolean vatLease = LeaseVat.isVatLease(lease, leaseLines);
+        if (Boolean.TRUE.equals(requested) && !vatLease) {
+            throw new BusinessRuleViolationException("This lease carries no VAT, so the charge cannot either.",
+                    "penalty.vatOnNonVatLease", java.util.Map.of());
+        }
+        if (!vatLease) return false;
+        return requested != null ? requested : reason.vatableByDefault();
+    }
+
+    private com.datagami.rentaxis.domain.repository.LeaseLineRepository leaseLines;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setLeaseLines(com.datagami.rentaxis.domain.repository.LeaseLineRepository leaseLines) {
+        this.leaseLines = leaseLines;
+    }
 
     /**
      * The row, locked, tenant-checked.
@@ -619,6 +785,7 @@ public class PenaltyAssessmentService {
                 a.getResolutionNote(),
                 code,
                 args,
-                a.getProposedAmount());
+                a.getProposedAmount(),
+                a.isVatable(), a.getVatAmount(), a.getSourceType(), a.getSourceId());
     }
 }

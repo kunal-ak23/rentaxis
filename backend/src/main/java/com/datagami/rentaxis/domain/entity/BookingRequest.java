@@ -86,4 +86,12 @@ public class BookingRequest extends BaseTenantEntity {
     public void onPreUpdate() {
         this.updatedAt = Instant.now();
     }
+
+    /** F14-50: the fee quoted when the renter asked (what the portal showed them). */
+    @Column(name = "fee_amount", nullable = false, precision = 14, scale = 2)
+    private java.math.BigDecimal feeAmount = java.math.BigDecimal.ZERO;
+
+    /** F14-50: the BOOKING_FEE charge raised on approval. */
+    @Column(name = "charge_id")
+    private UUID chargeId;
 }

@@ -23,6 +23,7 @@ import {
   uploadMedia,
   deleteMedia,
   reorderMedia,
+  setRepublishWhenVacant,
 } from "@/lib/api/listings";
 import type {
   UnitListingDTO,
@@ -713,6 +714,23 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
                 className={inputClass}
               />
             </div>
+
+            {/* F14-51: posting a lease on the unit unpublishes the listing; opt in to re-publish when vacant. */}
+            {listing && (
+              <label className="flex items-center gap-2 text-xs font-semibold text-foreground cursor-pointer">
+                <input
+                  type="checkbox"
+                  data-testid="listing-republish"
+                  checked={!!listing.republishWhenVacant}
+                  onChange={async e => {
+                    const on = e.target.checked;
+                    await setRepublishWhenVacant(listing.id, on, token);
+                    setListing({ ...listing, republishWhenVacant: on });
+                  }}
+                />
+                {t('republishWhenVacant')}
+              </label>
+            )}
           </div>
         </div>
       )}

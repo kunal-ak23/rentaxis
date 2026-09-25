@@ -1,0 +1,22 @@
+# F14-49: a maintenance ticket carries its vendor bill(s). A purchase invoice names the
+# ticket it paid for; the recharge to the renter is a charge (penalty_assessments
+# source TICKET, changeset 140).
+databaseChangeLog:
+  - changeSet:
+      id: 142-ticket-vendor-bill
+      author: claude
+      changes:
+        - addColumn:
+            tableName: vouchers
+            columns:
+              - column: { name: maintenance_ticket_id, type: uuid }
+        - sql:
+            sql: |
+              ALTER TABLE vouchers ADD CONSTRAINT fk_vouchers_ticket FOREIGN KEY (maintenance_ticket_id)
+                REFERENCES maintenance_tickets (id) ON DELETE SET NULL;
+              CREATE INDEX ix_vouchers_ticket ON vouchers (tenant_id, maintenance_ticket_id) WHERE maintenance_ticket_id IS NOT NULL;
+      rollback:
+        - sql:
+            sql: |
+              DROP INDEX IF EXISTS ix_vouchers_ticket;
+              ALTER TABLE vouchers DROP COLUMN IF EXISTS maintenance_ticket_id;

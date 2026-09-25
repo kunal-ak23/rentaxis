@@ -123,4 +123,19 @@ public class PenaltyAssessment extends BaseTenantEntity {
     /** Why it was waived, or why an approval was reversed. */
     @Column(name = "resolution_note", columnDefinition = "text")
     private String resolutionNote;
+
+    /** F14-30: the charge carries 5 % VAT on top of {@code amount} (net) and a tax invoice. Fixed at proposal. */
+    @Column(name = "vatable", nullable = false)
+    private boolean vatable;
+
+    /** F14-30: the VAT charged at approval (0 when not vatable); the renter owes amount + vatAmount. */
+    @Column(name = "vat_amount", nullable = false, precision = 14, scale = 2)
+    private BigDecimal vatAmount = BigDecimal.ZERO;
+
+    /** F14-49 / F14-50: what raised the charge — TICKET (a maintenance recharge) or BOOKING (a booking fee). */
+    @Column(name = "source_type", length = 20)
+    private String sourceType;
+
+    @Column(name = "source_id")
+    private UUID sourceId;
 }

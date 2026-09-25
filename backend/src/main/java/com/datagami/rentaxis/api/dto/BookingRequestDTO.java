@@ -32,5 +32,34 @@ public record BookingRequestDTO(
         String adminNote,
         UUID decidedByUserId,
         Instant decidedAt,
+        Instant createdAt,
+        /* F14-50: the fee quoted, and the charge raised on approval */ java.math.BigDecimal feeAmount,
+        UUID chargeId) {
+    public BookingRequestDTO(UUID id,
+        BookingResourceType resourceType,
+        UUID amenityId,
+        UUID parkingSpotId,
+        String resourceName,
+        UUID propertyId,
+        String propertyNameEn,
+        String propertyNameAr,
+        UUID unitId,
+        String unitNumber,
+        UUID renterUserId,
+        String renterName,
+        String renterEmail,
+        String renterPhone,
+        String note,
+        LocalDate preferredDate,
+        LocalDate preferredEndDate,
+        LocalTime preferredStartTime,
+        LocalTime preferredEndTime,
+        BookingRequestStatus status,
+        String adminNote,
+        UUID decidedByUserId,
+        Instant decidedAt,
         Instant createdAt) {
+        this(id, resourceType, amenityId, parkingSpotId, resourceName, propertyId, propertyNameEn, propertyNameAr, unitId, unitNumber, renterUserId, renterName, renterEmail, renterPhone, note, preferredDate, preferredEndDate, preferredStartTime, preferredEndTime, status, adminNote, decidedByUserId, decidedAt, createdAt, java.math.BigDecimal.ZERO, null);
+    }
+
 }

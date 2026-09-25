@@ -113,6 +113,11 @@ public class FacilityService {
         // primitive entity field instead of relying on ternary auto-unboxing.
         amenity.setBookable(req.bookable() == null || req.bookable());
         amenity.setActive(true);
+        // F14-50: free, a fee per booking or per hour.
+        BookingFeeService.validate(req.feeType(), req.feeAmount(), false);
+        amenity.setFeeType(req.feeType() == null ? "FREE" : req.feeType());
+        amenity.setFeeAmount("FREE".equals(amenity.getFeeType()) || req.feeAmount() == null
+                ? java.math.BigDecimal.ZERO : req.feeAmount());
         PropertyAmenity saved = amenityRepository.save(amenity);
 
         // Freshly created — no existing scope rows to replace, so insert directly
@@ -135,6 +140,11 @@ public class FacilityService {
         if (req.description() != null) amenity.setDescription(req.description());
         if (req.bookable() != null) amenity.setBookable(req.bookable());
         if (req.active() != null) amenity.setActive(req.active());
+        if (req.feeType() != null) {
+            BookingFeeService.validate(req.feeType(), req.feeAmount(), false);
+            amenity.setFeeType(req.feeType());
+            amenity.setFeeAmount("FREE".equals(req.feeType()) ? java.math.BigDecimal.ZERO : req.feeAmount());
+        }
         PropertyAmenity saved = amenityRepository.save(amenity);
         if (req.buildingIds() != null) {
             replaceAmenityScopes(tenantId, saved, req.buildingIds());
@@ -247,6 +257,11 @@ public class FacilityService {
         if (req.level() != null) spot.setLevel(req.level());
         if (req.covered() != null) spot.setCovered(req.covered());
         if (req.active() != null) spot.setActive(req.active());
+        if (req.feeType() != null) {
+            BookingFeeService.validate(req.feeType(), req.feeAmount(), true);
+            spot.setFeeType(req.feeType());
+            spot.setFeeAmount("FREE".equals(req.feeType()) ? java.math.BigDecimal.ZERO : req.feeAmount());
+        }
         ParkingSpot saved = spotRepository.save(spot);
         if (req.buildingIds() != null) {
             replaceSpotScopes(tenantId, saved, req.buildingIds());

@@ -238,6 +238,9 @@ export default function RenterFacilitiesPage() {
         }
     };
 
+    const feeLabel = (type?: string, amount?: number | null) =>
+        !type || type === "FREE" || !amount ? t("feeFree")
+            : t(type === "PER_HOUR" ? "feePerHour" : "feePerBooking", { amount: amount.toFixed(2) });
     const amenityName = (nameEn: string, nameAr: string | null) =>
         locale === "ar" && nameAr ? nameAr : nameEn;
 
@@ -339,7 +342,11 @@ export default function RenterFacilitiesPage() {
                             return (
                             <div key={a.id} className="bg-surface rounded-xl p-4 border border-border hover:shadow-md transition-all duration-200 flex flex-col gap-2">
                                 <div className="flex items-start justify-between gap-2">
-                                    <p className="text-sm font-bold text-foreground">{amenityName(a.nameEn, a.nameAr)}</p>
+                                    <div>
+                                        <p className="text-sm font-bold text-foreground">{amenityName(a.nameEn, a.nameAr)}</p>
+                                        {/* F14-50: the fee, shown before the renter books. */}
+                                        <p className="text-[11px] text-muted" data-testid={`amenity-fee-${a.id}`}>{feeLabel(a.feeType, a.feeAmount)}</p>
+                                    </div>
                                     {myOpen ? (
                                         <span className={cn(
                                             "px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest rounded-md shrink-0",
@@ -387,7 +394,10 @@ export default function RenterFacilitiesPage() {
                             return (
                             <div key={s.id} className="bg-surface rounded-xl p-4 border border-border hover:shadow-md transition-all duration-200 flex flex-col gap-2">
                                 <div className="flex items-start justify-between gap-2">
-                                    <p className="text-sm font-bold text-foreground" dir="ltr">{s.spotNumber}</p>
+                                    <div>
+                                        <p className="text-sm font-bold text-foreground" dir="ltr">{s.spotNumber}</p>
+                                        <p className="text-[11px] text-muted" data-testid={`spot-fee-${s.id}`}>{feeLabel(s.feeType, s.feeAmount)}</p>
+                                    </div>
                                     {/* The held gate itself is unchanged (a PENDING
                                         own-request doesn't block a spot the way it
                                         blocks an amenity — see mobile's `_SpotCard`).

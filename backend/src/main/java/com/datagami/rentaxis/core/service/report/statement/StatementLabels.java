@@ -143,6 +143,72 @@ public final class StatementLabels {
         put("pnl.check", "Check: ledger movement less report total", "التحقق: حركة الدفتر ناقص إجمالي التقرير");
         put("pnl.UNASSIGNED", "Unassigned", "غير مخصص");
         put("pnl.TOTAL", "Total", "الإجمالي");
+        put("pnl.periodLabel", "Period", "الفترة");
+        put("pnl.priorPeriod", "Compared with", "مقارنة مع");
+        put("pnl.checkOk", "Check: ties to the ledger", "التحقق: مطابق لدفتر الأستاذ");
+        put("pnl.compareInCsv", "The comparison columns are in the CSV export.", "أعمدة المقارنة متوفرة في ملف CSV.");
+
+        // F14-10: balance sheet and company P&L
+        put("bs.title", "Balance sheet", "الميزانية العمومية");
+        put("bs.asAt", "As at", "كما في");
+        put("bs.compareAt", "Compared with", "مقارنة مع");
+        put("bs.ASSET", "Assets", "الأصول");
+        put("bs.LIABILITY", "Liabilities", "الالتزامات");
+        put("bs.EQUITY", "Equity", "حقوق الملكية");
+        put("bs.total.ASSET", "Total assets", "إجمالي الأصول");
+        put("bs.total.LIABILITY", "Total liabilities", "إجمالي الالتزامات");
+        put("bs.total.EQUITY", "Total equity", "إجمالي حقوق الملكية");
+        put("bs.currentYearResult", "Current year result", "نتيجة السنة الحالية");
+        put("bs.earlierYearsResult", "Result of earlier years not yet closed", "نتيجة سنوات سابقة غير مقفلة");
+        put("bs.liabilitiesAndEquity", "Total liabilities and equity", "إجمالي الالتزامات وحقوق الملكية");
+        put("bs.check", "Check: assets − (liabilities + equity)", "التحقق: الأصول − (الالتزامات + حقوق الملكية)");
+        put("bs.checkOk", "Balanced: assets = liabilities + equity", "متوازنة: الأصول = الالتزامات + حقوق الملكية");
+        put("bs.checkBad", "Out of balance", "غير متوازنة");
+        put("bs.fiscalYearStart", "Fiscal year from", "السنة المالية من");
+        put("bs.propertyNote", "A property column balances only when each entry stays inside the property; the rest sits in Unassigned.",
+                "يتوازن عمود العقار فقط عندما يبقى كل قيد داخل العقار؛ والباقي يظهر في غير مخصص.");
+        put("cpl.title", "Company P&L", "قائمة دخل الشركة");
+        put("cpl.current", "This period", "الفترة الحالية");
+        put("cpl.prior", "Prior period", "الفترة السابقة");
+        put("cpl.change", "Change", "التغير");
+        put("cpl.changePct", "Change %", "نسبة التغير");
+        put("cpl.result", "Net result", "صافي النتيجة");
+
+        // #55: VAT return (FTA VAT 201 boxes a landlord uses)
+        put("vat.title", "VAT return", "الإقرار الضريبي لضريبة القيمة المضافة");
+        put("vat.period", "Tax period", "الفترة الضريبية");
+        put("vat.status.OPEN", "Not filed", "غير مقدم");
+        put("vat.status.FILED", "Filed", "مقدم");
+        put("vat.status.REOPENED", "Re-opened", "أعيد فتحه");
+        put("vat.filedAt", "Filed", "تاريخ التقديم");
+        put("vat.reference", "FTA reference", "مرجع الهيئة");
+        put("vat.box", "Box", "الخانة");
+        put("vat.description", "Description", "البيان");
+        put("vat.amount", "Amount (AED)", "المبلغ (درهم)");
+        put("vat.vat", "VAT (AED)", "الضريبة (درهم)");
+        put("vat.standard.ABU_DHABI", "Standard rated supplies in Abu Dhabi", "التوريدات الخاضعة للنسبة الأساسية في أبوظبي");
+        put("vat.standard.DUBAI", "Standard rated supplies in Dubai", "التوريدات الخاضعة للنسبة الأساسية في دبي");
+        put("vat.standard.SHARJAH", "Standard rated supplies in Sharjah", "التوريدات الخاضعة للنسبة الأساسية في الشارقة");
+        put("vat.standard.AJMAN", "Standard rated supplies in Ajman", "التوريدات الخاضعة للنسبة الأساسية في عجمان");
+        put("vat.standard.UMM_AL_QUWAIN", "Standard rated supplies in Umm Al Quwain", "التوريدات الخاضعة للنسبة الأساسية في أم القيوين");
+        put("vat.standard.RAS_AL_KHAIMAH", "Standard rated supplies in Ras Al Khaimah", "التوريدات الخاضعة للنسبة الأساسية في رأس الخيمة");
+        put("vat.standard.FUJAIRAH", "Standard rated supplies in Fujairah", "التوريدات الخاضعة للنسبة الأساسية في الفجيرة");
+        put("vat.standard.UNKNOWN", "Standard rated supplies, emirate not set", "توريدات خاضعة للنسبة الأساسية، الإمارة غير محددة");
+        put("vat.zeroRated", "Zero rated supplies", "التوريدات الخاضعة للنسبة الصفرية");
+        put("vat.exempt", "Exempt supplies (residential rent)", "التوريدات المعفاة (إيجار سكني)");
+        put("vat.totalSupplies", "Totals (supplies)", "الإجمالي (التوريدات)");
+        put("vat.standardExpenses", "Standard rated expenses", "النفقات الخاضعة للنسبة الأساسية");
+        put("vat.totalExpenses", "Totals (expenses)", "الإجمالي (النفقات)");
+        put("vat.dueTax", "Total value of due tax for the period", "إجمالي الضريبة المستحقة عن الفترة");
+        put("vat.recoverableTax", "Total value of recoverable tax for the period", "إجمالي الضريبة القابلة للاسترداد عن الفترة");
+        put("vat.netPayable", "Payable tax for the period (negative: refundable)", "صافي الضريبة المستحقة الدفع (السالب: قابل للاسترداد)");
+        put("vat.outputCheckOk", "Output VAT per documents ties to the Output VAT account", "ضريبة المخرجات حسب المستندات مطابقة لحساب ضريبة المخرجات");
+        put("vat.outputCheckBad", "Output VAT per documents differs from the Output VAT account by", "ضريبة المخرجات حسب المستندات تختلف عن حساب ضريبة المخرجات بمقدار");
+        put("vat.inputVatOther", "Input VAT moved by an opening balance, import or journal (not in box 9; check)",
+                "ضريبة مدخلات من رصيد افتتاحي أو استيراد أو قيد يومية (غير مدرجة في الخانة 9؛ للمراجعة)");
+        put("vat.inputVatOnExempt", "Input VAT on costs of exempt (residential) properties — may not be recoverable, review with your tax agent",
+                "ضريبة مدخلات على تكاليف عقارات معفاة (سكنية) — قد لا تكون قابلة للاسترداد، راجعها مع وكيلك الضريبي");
+        put("vat.commercialWithoutVat", "Rent on commercial units without VAT (check the lease VAT flag; not in any box)", "إيجار وحدات تجارية بدون ضريبة (راجع إعداد الضريبة في العقد؛ غير مدرج في أي خانة)");
     }
 
     /** The label in {@code lang} ("ar" or anything else for English); the key itself when unknown. */

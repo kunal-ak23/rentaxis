@@ -40,5 +40,11 @@ public record PenaltyAssessmentDTO(UUID id,
                                    String descriptionCode,
                                    java.util.Map<String, String> descriptionArgs,
                                    /* F14-28: the amount first proposed, when it was reduced. */
-                                   BigDecimal proposedAmount) {
+                                   BigDecimal proposedAmount,
+                                   /* F14-30: VAT on top of amount; the renter owes amount + vatAmount. */
+                                   boolean vatable,
+                                   BigDecimal vatAmount,
+                                   /* F14-49 / F14-50: TICKET or BOOKING, and its id. */
+                                   String sourceType,
+                                   UUID sourceId) {
 }

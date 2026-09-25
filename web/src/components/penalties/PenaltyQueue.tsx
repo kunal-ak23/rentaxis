@@ -29,7 +29,8 @@ import {
  * merely see the queue.
  */
 
-const TAB_ORDER: PenaltyAssessmentStatus[] = ["PROPOSED", "APPROVED", "WAIVED", "REVERSED"];
+// PR #361 R2: charges taken by a bad-debt write-off are listed too.
+const TAB_ORDER: PenaltyAssessmentStatus[] = ["PROPOSED", "APPROVED", "WAIVED", "REVERSED", "WRITTEN_OFF"];
 
 const th = "text-start px-3 py-2 text-[10px] font-semibold text-muted uppercase tracking-wider whitespace-nowrap";
 const td = "px-3 py-2 text-xs";
@@ -220,6 +221,11 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                                         </td>
                                         <td className={`${td} text-end tabular-nums font-semibold`}>
                                             {fmtAmount(p.amount)}
+                                            {!!p.vatAmount && p.vatAmount > 0 && (
+                                                <span className="block text-[10px] font-normal text-muted" data-testid={`penalty-vat-${i}`}>
+                                                    {t("plusVat", { amount: fmtAmount(p.vatAmount) })}
+                                                </span>
+                                            )}
                                             {p.proposedAmount != null && (
                                                 <span className="block text-[10px] font-normal text-muted" data-testid={`penalty-reduced-from-${i}`}>
                                                     {t("reducedFrom", { amount: fmtAmount(p.proposedAmount) })}

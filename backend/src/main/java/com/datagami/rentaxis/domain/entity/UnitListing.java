@@ -125,4 +125,12 @@ public class UnitListing extends BaseTenantEntity {
     public void onPreUpdate() {
         this.updatedAt = LocalDateTime.now();
     }
+
+    /** F14-51: publish the listing again when the unit becomes vacant (off by default). */
+    @Column(name = "republish_when_vacant", nullable = false)
+    private boolean republishWhenVacant = false;
+
+    /** F14-51: the lease whose posting unpublished the listing. */
+    @Column(name = "unpublished_for_lease_id")
+    private UUID unpublishedForLeaseId;
 }

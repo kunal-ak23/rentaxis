@@ -112,6 +112,35 @@ export type PropertyStatement = {
   footer: { isFinal: boolean; booksLockedThrough: string | null; generatedAt: string; generatedBy: string | null };
 };
 
+/** F14-10: the balance sheet as at a date; amounts read positive on their natural side. */
+export type BalanceSheetGroup = Omit<PnlGroup, "accountType"> & { accountType: "ASSET" | "LIABILITY" | "EQUITY" };
+export type BalanceSheet = {
+  asAt: string;
+  compareAt: string | null;
+  fiscalYearStart: string;
+  scoped: boolean;
+  columns: PnlColumn[];
+  sections: { type: "ASSET" | "LIABILITY" | "EQUITY"; groups: BalanceSheetGroup[]; total: Record<string, PnlAmount> }[];
+  currentYearResult: Record<string, PnlAmount>;
+  earlierYearsResult: Record<string, PnlAmount>;
+  liabilitiesAndEquity: Record<string, PnlAmount>;
+  /** Assets − (liabilities + equity) per column. */
+  check: Record<string, PnlAmount>;
+  ok: boolean;
+  ledgerImbalance: number | null;
+};
+
+export type BalanceSheetQuery = { asAt: string; compareAt?: string | null; propertyIds?: string[] };
+
+function bsQuery(q: BalanceSheetQuery, extra: Record<string, string> = {}): string {
+  const sp = new URLSearchParams();
+  sp.set("asAt", q.asAt);
+  if (q.compareAt) sp.set("compareAt", q.compareAt);
+  for (const id of q.propertyIds ?? []) sp.append("propertyId", id);
+  for (const [k, v] of Object.entries(extra)) sp.set(k, v);
+  return `?${sp.toString()}`;
+}
+
 export type ReportLineOption = { key: string; labelEn: string; labelAr: string | null; accountType: string };
 
 /**
@@ -152,7 +181,8 @@ function pnlQuery(q: PnlQuery, extra: Record<string, string> = {}): string {
   return `?${sp.toString()}`;
 }
 
-const PROXY = "/api/proxy/v1";
+/** The Next.js proxy prefix for file downloads (never the backend origin). */
+export const PROXY = "/api/proxy/v1";
 
 export const propertyReportsApi = {
   pnl: (q: PnlQuery) => apiGet<PropertyPnl>(`/finance/reports/property-pl${pnlQuery(q)}`),
@@ -165,6 +195,17 @@ export const propertyReportsApi = {
   statementCsvUrl: (q: { propertyId: string; from: string; to: string; lang: string }) =>
     `${PROXY}/finance/reports/property-statement.csv${qs(q)}`,
   reportLines: () => apiGet<ReportLineOption[]>("/finance/reports/report-lines"),
+  pnlPdfUrl: (q: PnlQuery, lang: string) =>
+    `${PROXY}/finance/reports/property-pl.pdf${pnlQuery({ ...q, allocate: "NONE" }, { lang })}`,
+  companyPnl: (q: { from: string; to: string; compare: Compare }) =>
+    apiGet<PropertyPnl>(`/finance/reports/company-pl${qs(q)}`),
+  companyPnlPdfUrl: (q: { from: string; to: string; compare: Compare; lang: string }) =>
+    `${PROXY}/finance/reports/company-pl.pdf${qs(q)}`,
+  companyPnlCsvUrl: (q: { from: string; to: string; compare: Compare; lang: string }) =>
+    `${PROXY}/finance/reports/company-pl.csv${qs(q)}`,
+  balanceSheet: (q: BalanceSheetQuery) => apiGet<BalanceSheet>(`/finance/reports/balance-sheet${bsQuery(q)}`),
+  balanceSheetPdfUrl: (q: BalanceSheetQuery, lang: string) => `${PROXY}/finance/reports/balance-sheet.pdf${bsQuery(q, { lang })}`,
+  balanceSheetCsvUrl: (q: BalanceSheetQuery, lang: string) => `${PROXY}/finance/reports/balance-sheet.csv${bsQuery(q, { lang })}`,
 };
 
 // ---- periods ----

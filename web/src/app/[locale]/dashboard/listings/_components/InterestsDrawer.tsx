@@ -3,9 +3,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { useSession } from "next-auth/react";
+
 import { X, Download, Loader2, ChevronLeft, ChevronRight, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { fetchInterests } from "@/lib/api/listings";
+import { createLeaseFromInterest, fetchInterests } from "@/lib/api/listings";
+import { ApiError } from "@/lib/api/facilities";
+import { serverText } from "@/components/finance/bankrec/serverText";
+import { Link, useRouter } from "@/i18n/routing";
 import type { InterestDTO, InterestStatus } from "@/types/listing";
 
 interface InterestsDrawerProps {
@@ -19,6 +23,7 @@ function getInterestStatusClass(status: InterestStatus) {
     case 'ACTIVE':    return 'bg-success/10 text-success border border-success/20';
     case 'NOTIFIED':  return 'bg-blue-50 text-blue-600 border border-blue-200';
     case 'WITHDRAWN': return 'bg-input text-muted border border-border';
+    case 'CONVERTED': return 'bg-success/10 text-success border border-success/30';
     default:          return 'bg-input text-muted border border-border';
   }
 }
@@ -32,8 +37,24 @@ function getInitials(name: string | null): string {
 
 export function InterestsDrawer({ listingId, listingTitle, onClose }: InterestsDrawerProps) {
   const t = useTranslations('Listings');
+  const tCommon = useTranslations('Common');
   const { data: session } = useSession();
   const token = (session?.user as { accessToken?: string })?.accessToken;
+  const router = useRouter();
+  const [creating, setCreating] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const createLease = async (interestId: string) => {
+    setCreating(interestId);
+    setCreateError(null);
+    try {
+      const lease = await createLeaseFromInterest(listingId, interestId, token);
+      router.push(`/dashboard/leases/${lease.id}`);
+    } catch (e) {
+      setCreateError(e instanceof ApiError ? serverText(tCommon, e) || e.message : t('createLeaseFailed'));
+    } finally {
+      setCreating(null);
+    }
+  };
   const [interests, setInterests] = useState<InterestDTO[]>([]);
   const [totalElements, setTotalElements] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
@@ -103,6 +124,7 @@ export function InterestsDrawer({ listingId, listingTitle, onClose }: InterestsD
       case 'ACTIVE':    return t('interestStatusActive');
       case 'NOTIFIED':  return t('interestStatusNotified');
       case 'WITHDRAWN': return t('interestStatusWithdrawn');
+      case 'CONVERTED': return t('interestStatusConverted');
       default:          return status;
     }
   }
@@ -171,6 +193,7 @@ export function InterestsDrawer({ listingId, listingTitle, onClose }: InterestsD
             </div>
           ) : (
             <div className="divide-y divide-border">
+              {createError && <p role="alert" className="px-6 py-2 text-xs text-error">{createError}</p>}
               {interests.map(interest => (
                 <div key={interest.id} className="px-6 py-4 hover:bg-input/30 transition-colors">
                   <div className="flex items-start gap-3">
@@ -210,6 +233,24 @@ export function InterestsDrawer({ listingId, listingTitle, onClose }: InterestsD
                       <p className="text-[10px] text-muted mt-1.5">
                         {new Date(interest.createdAt).toLocaleDateString()}
                       </p>
+                      {/* F14-51: turn the enquiry into a draft lease. */}
+                      {interest.status === 'CONVERTED' && interest.leaseId && (
+                        <Link href={`/dashboard/leases/${interest.leaseId}`} data-testid={`interest-lease-${interest.id}`}
+                              className="mt-2 inline-block text-xs font-semibold text-primary hover:underline">
+                          {t('leaseCreated')}
+                        </Link>
+                      )}
+                      {interest.status !== 'WITHDRAWN' && interest.status !== 'CONVERTED' && (
+                        <button
+                          type="button"
+                          data-testid={`interest-create-lease-${interest.id}`}
+                          disabled={creating === interest.id}
+                          onClick={() => createLease(interest.id)}
+                          className="mt-2 px-3 py-1.5 rounded-lg text-xs font-semibold border border-border hover:bg-input disabled:opacity-50"
+                        >
+                          {t('createLease')}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

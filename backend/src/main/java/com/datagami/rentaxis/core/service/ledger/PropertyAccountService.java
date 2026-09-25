@@ -173,6 +173,8 @@ public class PropertyAccountService {
         defaultIfMissing(AccountRole.UNEARNED_CHARGES, "B-01-08");
         defaultIfMissing(AccountRole.RETAINED_EARNINGS, "F-03");
         defaultIfMissing(AccountRole.INTERPROPERTY_CLEARING, "A-02-06-001");
+        defaultIfMissing(AccountRole.BAD_DEBT, "D-02-004");
+        defaultIfMissing(AccountRole.BAD_DEBT_RECOVERED, "C-02-002");
     }
 
     /**

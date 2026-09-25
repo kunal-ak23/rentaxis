@@ -309,4 +309,28 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
     List<ExpenseEntryRow> expenseEntriesForProperty(@Param("tenantId") UUID tenantId, @Param("propertyId") UUID propertyId,
                                                     @Param("from") LocalDate from, @Param("to") LocalDate to,
                                                     @Param("inputVatAccountIds") Collection<UUID> inputVatAccountIds);
+    /**
+     * F14-10: balances by effective property and account over entries dated
+     * {@code from}..{@code to}, every account type, year-end closes included (the
+     * balance sheet reads Retained Earnings after them and the unclosed result
+     * before them).
+     */
+    @Query(value = """
+        select coalesce(l.property_id, a.property_id) as propertyId, l.account_id as accountId,
+               coalesce(sum(l.debit),0) as debit, coalesce(sum(l.credit),0) as credit, cast(0 as bigint) as mismatchLines
+        from journal_lines l join journal_entries e on e.id = l.journal_entry_id
+             join accounts a on a.id = l.account_id
+        where l.tenant_id = :tenantId and e.tenant_id = :tenantId and a.tenant_id = :tenantId
+          and e.entry_date between :from and :to
+        group by coalesce(l.property_id, a.property_id), l.account_id
+        """, nativeQuery = true)
+    List<PnlCellRow> balanceCells(@Param("tenantId") UUID tenantId, @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    /** F14-10: Σ debit − Σ credit over every line through a date; zero on a balanced ledger (the balance sheet's own check). */
+    @Query(value = """
+        select coalesce(sum(l.debit),0) - coalesce(sum(l.credit),0)
+        from journal_lines l join journal_entries e on e.id = l.journal_entry_id
+        where l.tenant_id = :tenantId and e.tenant_id = :tenantId and e.entry_date <= :asAt
+        """, nativeQuery = true)
+    BigDecimal ledgerImbalance(@Param("tenantId") UUID tenantId, @Param("asAt") LocalDate asAt);
 }

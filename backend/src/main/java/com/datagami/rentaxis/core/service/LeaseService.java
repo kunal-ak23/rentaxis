@@ -1623,6 +1623,10 @@ public class LeaseService {
                     buildLeasePayload(savedLease),
                     "LEASE_ACTIVATED:" + savedLease.getId()));
         }
+        // F14-51: the unit is let — a live listing of it comes off the marketplace.
+        if (unitListingService != null && savedLease.getUnit() != null) {
+            unitListingService.onLeasePosted(savedLease.getUnit().getId(), savedLease.getId(), savedLease.getEndDate());
+        }
 
         return savedLease;
     }

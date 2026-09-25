@@ -237,13 +237,14 @@ public class BookingController {
         List<MyFacilitiesDTO.RenterAmenityDTO> amenityDTOs = amenitiesById.values().stream()
                 .map(a -> new MyFacilitiesDTO.RenterAmenityDTO(a.getId(), a.getPropertyId(),
                         propertyNameByAmenity.get(a.getId()), a.getNameEn(), a.getNameAr(),
-                        a.getDescription(), photoUrls(a.getPhotoUrls()), a.isBookable(), amenityPending.getOrDefault(a.getId(), 0L)))
+                        a.getDescription(), photoUrls(a.getPhotoUrls()), a.isBookable(), amenityPending.getOrDefault(a.getId(), 0L),
+                        a.getFeeType(), a.getFeeAmount()))
                 .toList();
         List<MyFacilitiesDTO.RenterParkingSpotDTO> spotDTOs = spotsById.values().stream()
                 .map(s -> new MyFacilitiesDTO.RenterParkingSpotDTO(s.getId(), s.getPropertyId(),
                         propertyNameBySpot.get(s.getId()), s.getSpotNumber(), s.getLevel(),
                         photoUrls(s.getPhotoUrls()), s.isCovered(), spotHeld.getOrDefault(s.getId(), 0L) > 0,
-                        spotPending.getOrDefault(s.getId(), 0L)))
+                        spotPending.getOrDefault(s.getId(), 0L), s.getFeeType(), s.getFeeAmount()))
                 .toList();
 
         return ResponseEntity.ok(new MyFacilitiesDTO(amenityDTOs, spotDTOs));
@@ -369,7 +370,7 @@ public class BookingController {
                 renter == null ? null : renter.getPhoneNumber(),
                 b.getNote(), b.getPreferredDate(), b.getPreferredEndDate(), b.getPreferredStartTime(),
                 b.getPreferredEndTime(), b.getStatus(), b.getAdminNote(),
-                b.getDecidedByUserId(), b.getDecidedAt(), b.getCreatedAt());
+                b.getDecidedByUserId(), b.getDecidedAt(), b.getCreatedAt(), b.getFeeAmount(), b.getChargeId());
     }
 
     private Map<UUID, String> unitNumbers(List<BookingRequest> bookings) {

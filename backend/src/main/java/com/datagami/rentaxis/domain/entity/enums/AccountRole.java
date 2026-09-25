@@ -28,14 +28,19 @@ public enum AccountRole {
      * lines span properties posts a clearing leg in each, so every property's trial
      * balance nets to zero and the clearing leaves net to zero company-wide.
      */
-    INTERPROPERTY_CLEARING;
+    INTERPROPERTY_CLEARING,
+    /** F14-38: a renter's unrecoverable balance written off (D-02-004); lines carry the property. */
+    BAD_DEBT,
+    /** F14-38: money later recovered on a written-off debt, other income (C-02-002); lines carry the property. */
+    BAD_DEBT_RECOVERED;
 
     /** Roles that are normally per-property (template rows). The rest default to tenant-level mappings. */
     public boolean isPropertyScoped() {
         return switch (this) {
             case DISCOUNT_ALLOWED, ROUNDING_OFF, CASH, OUTPUT_VAT, INPUT_VAT, OPENING_BALANCE_DIFFERENCE,
                  OUTPUT_VAT_DEFERRED, PDC_PAYABLE,
-                 BANK_CHARGES, BANK_INTEREST_INCOME, BANK_SUSPENSE, RENTER_REFUND_PAYABLE, UNEARNED_CHARGES, RETAINED_EARNINGS -> false;
+                 BANK_CHARGES, BANK_INTEREST_INCOME, BANK_SUSPENSE, RENTER_REFUND_PAYABLE, UNEARNED_CHARGES, RETAINED_EARNINGS,
+                 BAD_DEBT, BAD_DEBT_RECOVERED -> false;
             default -> true;
         };
     }

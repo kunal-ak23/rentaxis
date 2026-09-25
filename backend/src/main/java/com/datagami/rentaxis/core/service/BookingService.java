@@ -112,6 +112,8 @@ public class BookingService {
             booking.setAmenityId(amenity.getId());
             // propertyId always derives from the resource, never from the client.
             booking.setPropertyId(amenity.getPropertyId());
+            // F14-50: the fee the renter was shown, fixed now.
+            booking.setFeeAmount(BookingFeeService.quote(amenity, booking));
         } else {
             ParkingSpot spot = facilityService.getParkingSpot(tenantId, req.resourceId());
             if (!spot.isActive() || !facilityService.parkingSpotVisibleToUnit(spot, unit)) {
@@ -128,6 +130,7 @@ public class BookingService {
             }
             booking.setParkingSpotId(spot.getId());
             booking.setPropertyId(spot.getPropertyId());
+            booking.setFeeAmount(BookingFeeService.quote(spot, booking));
         }
 
         return saveNewBooking(tenantId, booking);
@@ -262,6 +265,8 @@ public class BookingService {
                         booking.getParkingSpotId(), BookingRequestStatus.APPROVED)) {
             throw new SlotConflictException("Parking spot is already assigned to another renter", null);
         }
+        // F14-50: the fee becomes a charge on the renter's lease, posted with the approval.
+        if (bookingFees != null) bookingFees.chargeOnApproval(booking, resourceLabel(booking), java.time.LocalDate.now());
         return decide(booking, BookingRequestStatus.APPROVED, adminUserId, adminNote);
     }
 
@@ -271,15 +276,48 @@ public class BookingService {
         return decide(booking, BookingRequestStatus.REJECTED, adminUserId, adminNote);
     }
 
-    /** Renter withdraws their own PENDING request. 404 on someone else's — no probing. */
+    /**
+     * Renter withdraws their own PENDING request, or (F14-50) an APPROVED amenity
+     * booking whose slot has not started — its fee is reversed. 404 on someone
+     * else's — no probing.
+     */
     public BookingRequest cancel(UUID tenantId, UUID id, UUID renterUserId) {
         BookingRequest booking = getForUpdate(tenantId, id);
         if (!renterUserId.equals(booking.getRenterUserId())) {
             throw new NotFoundException("Booking not found");
         }
-        requirePending(booking);
+        if (booking.getStatus() == BookingRequestStatus.APPROVED
+                && booking.getResourceType() == BookingResourceType.AMENITY) {
+            if (!BookingFeeService.beforeSlot(booking, java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Dubai")))) {
+                throw new BusinessRuleViolationException("The booking's slot has started; it can no longer be cancelled.",
+                        "booking.slotStarted", java.util.Map.of());
+            }
+            if (bookingFees != null) bookingFees.reverseOnCancel(booking, java.time.LocalDate.now());
+        } else {
+            requirePending(booking);
+        }
         booking.setStatus(BookingRequestStatus.CANCELLED);
         return bookingRepository.saveAndFlush(booking);
+    }
+
+    private BookingFeeService bookingFees;
+
+    /** Setter-injected: hand-built instances in unit tests need no new argument. */
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setBookingFees(BookingFeeService bookingFees) {
+        this.bookingFees = bookingFees;
+    }
+
+    private String resourceLabel(BookingRequest b) {
+        try {
+            if (b.getAmenityId() != null) return facilityService.getAmenity(b.getTenantId(), b.getAmenityId()).getNameEn();
+            if (b.getParkingSpotId() != null) {
+                return "parking " + facilityService.getParkingSpot(b.getTenantId(), b.getParkingSpotId()).getSpotNumber();
+            }
+        } catch (RuntimeException e) {
+            // A label is a courtesy; the charge still posts.
+        }
+        return "booking";
     }
 
     /** APPROVED parking only. actorIsAdmin=false enforces the renter-owner rule. */

@@ -1,0 +1,87 @@
+# F14-38: bad-debt write-offs.
+#
+#   - bad_debt_write_offs: proposed by finance, approved by an organisation admin
+#     (BDW: Dr bad debts / Cr rent receivable), reversible with a reason;
+#     item_ids lists the register rows it closed.
+#   - bad_debt_recoveries: money received later (BDR: Dr bank / Cr bad debts recovered).
+#   - D-02-004 "Bad debts written off" and C-02-002 "Bad debts recovered" with their
+#     BAD_DEBT / BAD_DEBT_RECOVERED tenant defaults; lines carry the property.
+databaseChangeLog:
+  - changeSet:
+      id: 141-bad-debts
+      author: claude
+      changes:
+        - createTable:
+            tableName: bad_debt_write_offs
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: lease_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bdw_lease, referencedTableName: leases, referencedColumnNames: id } }
+              - column: { name: renter_id, type: uuid }
+              - column: { name: property_id, type: uuid }
+              - column: { name: amount, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: write_off_date, type: date, constraints: { nullable: false } }
+              - column: { name: reason, type: varchar(500), constraints: { nullable: false } }
+              - column: { name: item_ids, type: text }
+              - column: { name: vat_lease, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
+              - column: { name: status, type: varchar(12), constraints: { nullable: false } }
+              - column: { name: proposed_by, type: uuid }
+              - column: { name: proposed_at, type: timestamptz, constraints: { nullable: false } }
+              - column: { name: decided_by, type: uuid }
+              - column: { name: decided_at, type: timestamptz }
+              - column: { name: decision_note, type: varchar(500) }
+              - column: { name: journal_id, type: uuid }
+              - column: { name: reversal_journal_id, type: uuid }
+        - createTable:
+            tableName: bad_debt_recoveries
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: write_off_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bdr_write_off, referencedTableName: bad_debt_write_offs, referencedColumnNames: id } }
+              - column: { name: amount, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: recovered_on, type: date, constraints: { nullable: false } }
+              - column: { name: account_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: note, type: varchar(500) }
+              - column: { name: journal_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: created_by, type: uuid }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false } }
+        - sql:
+            sql: |
+              ALTER TABLE bad_debt_write_offs ADD CONSTRAINT ck_bdw_status CHECK (status IN ('PROPOSED', 'WRITTEN_OFF', 'REJECTED', 'REVERSED'));
+              ALTER TABLE bad_debt_write_offs ADD CONSTRAINT ck_bdw_amount CHECK (amount > 0);
+              ALTER TABLE bad_debt_recoveries ADD CONSTRAINT ck_bdr_amount CHECK (amount > 0);
+              CREATE INDEX ix_bdw_tenant_lease ON bad_debt_write_offs (tenant_id, lease_id);
+              CREATE INDEX ix_bdr_write_off ON bad_debt_recoveries (tenant_id, write_off_id);
+        - sql:
+            comment: D-02-004 and C-02-002 for every chart with the D-02 / C-02 groups, and their defaults
+            sql: |
+              INSERT INTO accounts (id, tenant_id, code, name, name_en, name_ar, account_type, account_sub_type,
+                                    parent_id, is_system, is_group, is_active, display_order, created_at, updated_at)
+              SELECT gen_random_uuid(), g.tenant_id, 'D-02-004', 'Bad debts written off', 'Bad debts written off',
+                     'ديون معدومة مشطوبة', 'EXPENSE', 'OTHER_EXPENSE', g.id, TRUE, FALSE, TRUE, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                FROM accounts g
+               WHERE g.code = 'D-02' AND g.is_group
+                 AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.tenant_id = g.tenant_id AND a.code = 'D-02-004');
+              INSERT INTO accounts (id, tenant_id, code, name, name_en, name_ar, account_type, account_sub_type,
+                                    parent_id, is_system, is_group, is_active, display_order, created_at, updated_at)
+              SELECT gen_random_uuid(), g.tenant_id, 'C-02-002', 'Bad debts recovered', 'Bad debts recovered',
+                     'ديون معدومة مستردة', 'INCOME', 'OTHER_INCOME', g.id, TRUE, FALSE, TRUE, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                FROM accounts g
+               WHERE g.code = 'C-02' AND g.is_group
+                 AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.tenant_id = g.tenant_id AND a.code = 'C-02-002');
+              INSERT INTO tenant_default_account_mappings (id, tenant_id, role, account_id)
+              SELECT gen_random_uuid(), a.tenant_id, 'BAD_DEBT', a.id FROM accounts a
+               WHERE a.code = 'D-02-004' AND a.account_type = 'EXPENSE'
+                 AND NOT EXISTS (SELECT 1 FROM tenant_default_account_mappings m WHERE m.tenant_id = a.tenant_id AND m.role = 'BAD_DEBT');
+              INSERT INTO tenant_default_account_mappings (id, tenant_id, role, account_id)
+              SELECT gen_random_uuid(), a.tenant_id, 'BAD_DEBT_RECOVERED', a.id FROM accounts a
+               WHERE a.code = 'C-02-002' AND a.account_type = 'INCOME'
+                 AND NOT EXISTS (SELECT 1 FROM tenant_default_account_mappings m WHERE m.tenant_id = a.tenant_id AND m.role = 'BAD_DEBT_RECOVERED');
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM tenant_default_account_mappings WHERE role IN ('BAD_DEBT', 'BAD_DEBT_RECOVERED');
+              DELETE FROM accounts a WHERE a.code IN ('D-02-004', 'C-02-002')
+                AND NOT EXISTS (SELECT 1 FROM journal_lines l WHERE l.account_id = a.id);
+              DROP TABLE IF EXISTS bad_debt_recoveries;
+              DROP TABLE IF EXISTS bad_debt_write_offs;

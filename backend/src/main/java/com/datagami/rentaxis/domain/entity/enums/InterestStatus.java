@@ -3,5 +3,7 @@ package com.datagami.rentaxis.domain.entity.enums;
 public enum InterestStatus {
     ACTIVE,
     NOTIFIED,
-    WITHDRAWN
+    WITHDRAWN,
+    /** F14-51: the interest became a draft lease. */
+    CONVERTED
 }

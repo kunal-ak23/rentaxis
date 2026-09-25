@@ -35,10 +35,12 @@ describe("InterPropertyRepairBanner", () => {
     it("offers the repair, runs it once confirmed and reports the result", async () => {
         unbalanced.mockResolvedValueOnce(["a", "b"]).mockResolvedValue([]);
         repair.mockResolvedValue({ examined: 2, repaired: [{}, {}] });
-        vi.spyOn(window, "confirm").mockReturnValue(true);
         renderIn("en");
         expect(await screen.findByText(/2 journals do not balance per property/)).toBeTruthy();
         fireEvent.click(screen.getByTestId("ip-repair-run"));
+        // F15-14: the app's confirm dialog, not window.confirm.
+        expect(repair).not.toHaveBeenCalled();
+        fireEvent.click(await screen.findByTestId("ip-repair-confirm"));
         expect(await screen.findByTestId("ip-repair-done")).toBeTruthy();
         expect(repair).toHaveBeenCalledTimes(1);
     });
