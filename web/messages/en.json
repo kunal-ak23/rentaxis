@@ -4339,6 +4339,16 @@
     "sectionOrganisation": "Organisation",
     "sectionUsers": "Users & staff",
     "sectionRent": "Rent & fines",
-    "sectionPayments": "Payments"
+    "sectionPayments": "Payments",
+    "orgName": "Organisation name",
+    "orgSlug": "Portal address",
+    "orgLoadFailed": "Could not load organisation details.",
+    "noAccessTitle": "No settings for your role",
+    "noAccessBody": "Ask a company admin to change organisation settings.",
+    "onlinePaymentsHeading": "Online payments by property",
+    "onlinePaymentsHint": "Turn online rent payment on or off for each property.",
+    "selectProperty": "Choose a property",
+    "onlineSaved": "Saved.",
+    "onlineSaveFailed": "Could not save the online-payment setting."
   }
 }

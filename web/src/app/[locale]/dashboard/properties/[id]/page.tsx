@@ -235,7 +235,7 @@ export default function PropertyDetailPage() {
                     </div>
                     {canManageRentSettings && (
                         <Link
-                            href="/dashboard/settings/rent-settings"
+                            href="/dashboard/settings?section=rent"
                             className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border border-border text-muted hover:bg-background hover:text-foreground transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
                             <Settings size={14} />

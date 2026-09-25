@@ -4339,6 +4339,16 @@
     "sectionOrganisation": "المؤسسة",
     "sectionUsers": "المستخدمون والموظفون",
     "sectionRent": "الإيجار والغرامات",
-    "sectionPayments": "المدفوعات"
+    "sectionPayments": "المدفوعات",
+    "orgName": "اسم المؤسسة",
+    "orgSlug": "عنوان البوابة",
+    "orgLoadFailed": "تعذر تحميل بيانات المؤسسة.",
+    "noAccessTitle": "لا توجد إعدادات لدورك",
+    "noAccessBody": "اطلب من مدير المؤسسة تغيير إعدادات المؤسسة.",
+    "onlinePaymentsHeading": "الدفع الإلكتروني حسب العقار",
+    "onlinePaymentsHint": "فعّل أو أوقف دفع الإيجار إلكترونياً لكل عقار.",
+    "selectProperty": "اختر عقاراً",
+    "onlineSaved": "تم الحفظ.",
+    "onlineSaveFailed": "تعذر حفظ إعداد الدفع الإلكتروني."
   }
 }
