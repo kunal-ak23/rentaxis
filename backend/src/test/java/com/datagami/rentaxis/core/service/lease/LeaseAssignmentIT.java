@@ -62,6 +62,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class LeaseAssignmentIT extends AbstractPostgresIT {
 
     @Autowired LeaseAssignmentService assignments;
+    @Autowired LeaseRenewalService renewal;
+    @Autowired LeaseTransferService transfers;
     @Autowired LeasePostingService posting;
     @Autowired ChequeGenerationService chequeGeneration;
     @Autowired ChequeService chequeService;
@@ -205,6 +207,37 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
         assignments.cancel(leaseId, draft.id());
         assertThatThrownBy(() -> assignments.post(leaseId, draft.id(), null)).hasMessageContaining("CANCELLED");
         assertThat(renterOf(leaseId)).isEqualTo(a.getId());
+    }
+
+    /**
+     * PR #359 R1 P2-3: a renewal or transfer drafted in the outgoing renter's name and
+     * an assignment cannot both be pending; a successor posted after the renter
+     * changed is refused.
+     */
+    @Test
+    void assignmentAndSuccessorDraftsExcludeEachOther() {
+        UUID leaseId = lease(true);
+        Renter b = fixtures.createRenter("Heir");
+        var renewalRequest = new com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest(null,
+                LocalDate.of(2027, 9, 24), LocalDate.of(2028, 9, 23), null, true);
+        UUID successor = renewal.renew(leaseId, renewalRequest).getId();
+        assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON, "Heir", null)))
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.assignmentSuccessorDraft");
+
+        // The renter changed under the draft (as an assignment would): the draft cannot post.
+        jdbc.update("update leases set renter_id = ? where id = ?", b.getId(), leaseId);
+        assertThatThrownBy(() -> posting.post(successor))
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.successorRenterMismatch");
+        jdbc.update("update leases set renter_id = ? where id = ?", fixtures.renter().getId(), leaseId);
+        tx.executeWithoutResult(st -> leaseService.deleteDraftLease(successor));
+
+        assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON, "Heir", null));
+        assertThatThrownBy(() -> renewal.renew(leaseId, renewalRequest))
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.assignmentPending");
+        var unit = tx.execute(s -> fixtures.createUnit(fixtures.property(), "T-1"));
+        assertThatThrownBy(() -> transfers.draft(leaseId, new com.datagami.rentaxis.api.dto.lease.TransferLeaseRequest(
+                ON, unit.getId(), null, null, null, null), posting))
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.assignmentPending");
     }
 
     @Test

@@ -323,6 +323,11 @@ public class LeasePostingService {
             // here so no cut-over path can defer a fee.
             lease.setFeeTiming(FeeTiming.AT_POSTING);
         }
+        if (lease.predecessorId() != null && checks != Preconditions.FOR_IMPORT_POST) {
+            // PR #359 R1 P2-3: refused before anything is written (coded for the web).
+            leaseRepository.findByIdScopedToTenant(lease.predecessorId())
+                    .ifPresent(p -> LeaseService.requireSameRenter(p, lease.getRenter().getId()));
+        }
         // PR #358 R1 P2-2: the rent-free concession the renter signed for is fixed now.
         leaseService.freezeRentFree(lease);
         // Spec §2: a transfer successor ends its predecessor first (CARRY rows, the
@@ -743,6 +748,17 @@ public class LeasePostingService {
         }
         if (lease.getContractDate() == null) {
             otherErrors.add("The lease has no contract date.");
+        }
+        // PR #359 R1 P2-3: a renewal or transfer drafted before the lease was assigned
+        // is in the outgoing renter's name.
+        if (lease.predecessorId() != null && checks != Preconditions.FOR_IMPORT_POST) {
+            leaseRepository.findByIdScopedToTenant(lease.predecessorId()).ifPresent(p -> {
+                try {
+                    LeaseService.requireSameRenter(p, lease.getRenter().getId());
+                } catch (BusinessRuleViolationException e) {
+                    otherErrors.add(e.getMessage());
+                }
+            });
         }
         if (lines.isEmpty()) {
             accountErrors.add("The lease has no charged lines.");

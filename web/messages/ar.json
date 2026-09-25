@@ -2470,7 +2470,10 @@
         "transferExists": "لهذا العقد نقل بالفعل.",
         "transferHasRenewal": "لهذا العقد تجديد؛ احذف مسودة التجديد أولًا.",
         "transferCarryNotRegistered": "الشيك {row} حالته {status}؛ لا يمكن نقل إلا شيك ما زال في الدرج.",
-        "renewHasTransfer": "هذا العقد قيد النقل؛ احذف تلك المسودة أو جدّد العقد الجديد بدلًا من ذلك."
+        "renewHasTransfer": "هذا العقد قيد النقل؛ احذف تلك المسودة أو جدّد العقد الجديد بدلًا من ذلك.",
+        "assignmentSuccessorDraft": "لهذا العقد مسودة {kind, select, transfer {نقل} other {تجديد}} باسم المستأجر الحالي؛ احذفها قبل التنازل عن العقد.",
+        "assignmentPending": "لهذا العقد مسودة تنازل لمستأجر آخر؛ رحّلها أو احذفها أولًا.",
+        "successorRenterMismatch": "هذا العقد يستكمل عقدًا أصبح باسم {renter}؛ يجب أن يكون العقد الجديد باسم هذا المستأجر."
       }
     },
     "paginationShowing": "عرض {start}-{end} من {total}",

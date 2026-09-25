@@ -165,6 +165,8 @@ public class LeaseRenewalService {
                             + " (" + existing.getStatus() + "); delete that draft or renew the successor instead.");
         }
 
+        requireNoAssignmentPending(leaseId);
+
         // Spec §2: a lease with a transfer (drafted or posted) is not renewed; the
         // transfer's lease is, once it is on the books.
         Lease transfer = leaseRepository.findByTransferredFromLeaseId(leaseId).stream().findFirst().orElse(null);
@@ -199,6 +201,18 @@ public class LeaseRenewalService {
         // Spec §4c: shown to the operator — "Not copied: Admin Fee 1,500 (one-off)".
         draft.setSkippedOneOffLines(plan.skippedOneOff().stream().map(LeaseService::toLineDTO).toList());
         return draft;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.domain.repository.LeaseAssignmentRepository assignmentRepository;
+
+    /** PR #359 R1 P2-3: a lease whose renter is about to change is not renewed or transferred first. */
+    void requireNoAssignmentPending(UUID leaseId) {
+        if (assignmentRepository != null && assignmentRepository.existsByLeaseIdAndStatus(leaseId,
+                com.datagami.rentaxis.domain.entity.LeaseAssignment.DRAFT)) {
+            throw new BusinessRuleViolationException("This lease has a draft assignment to another renter; post or"
+                    + " delete it first.", "lease.assignmentPending", java.util.Map.of());
+        }
     }
 
     /** The lines a renewal copies, the contract rent among them, and the one-off lines left behind (spec §4c). */

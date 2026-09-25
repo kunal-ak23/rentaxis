@@ -129,6 +129,7 @@ public class LeaseTransferService {
         Lease a = posting.lockLease(leaseId);
         leaseAccessPolicy.requireManageable(a);
         requireTransferable(a, r == null ? null : r.moveDate());
+        renewalService.requireNoAssignmentPending(leaseId);
         Unit target = targetUnit(a, r.targetUnitId());
         LocalDate t = r.moveDate();
         LocalDate start = t.plusDays(1);
@@ -306,6 +307,8 @@ public class LeaseTransferService {
 
     @org.springframework.beans.factory.annotation.Autowired
     private com.datagami.rentaxis.domain.repository.ChargeTypeRepository chargeTypes;
+    @org.springframework.beans.factory.annotation.Autowired
+    private LeaseRenewalService renewalService;
 
     private boolean chargeTypeRent(UUID id) {
         return chargeTypes.findById(id).map(ct -> ct.getBehaviour() == ChargeBehaviour.RENT).orElse(false);

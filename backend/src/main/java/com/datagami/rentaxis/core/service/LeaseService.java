@@ -636,6 +636,19 @@ public class LeaseService {
         return createDraft(dto, predecessor, carryDepositForward);
     }
 
+    /**
+     * PR #359 R1 P2-3: a successor (renewal or transfer) must be in the name of the
+     * predecessor's current renter; after an assignment that is the new renter.
+     */
+    public static void requireSameRenter(Lease predecessor, UUID successorRenterId) {
+        UUID current = predecessor.getRenter() == null ? null : predecessor.getRenter().getId();
+        if (current != null && !current.equals(successorRenterId)) {
+            throw new BusinessRuleViolationException("This contract continues a lease that now belongs to "
+                    + predecessor.getRenter().getNameEn() + "; the new contract must be in that renter's name.",
+                    "lease.successorRenterMismatch", java.util.Map.of("renter", predecessor.getRenter().getNameEn()));
+        }
+    }
+
     private LeaseDTO createDraft(CreateLeaseDTO dto, Lease predecessor, boolean carryDepositForward) {
         Unit unit = unitRepository.findById(dto.getUnitId())
                 .orElseThrow(() -> new NotFoundException("Unit not found"));
@@ -654,6 +667,7 @@ public class LeaseService {
 
         Renter renter = renterRepository.findById(dto.getRenterId())
                 .orElseThrow(() -> new NotFoundException("Renter not found"));
+        if (predecessor != null) requireSameRenter(predecessor, renter.getId());
 
         Lease lease = new Lease();
         lease.setUnit(unit);
@@ -786,6 +800,11 @@ public class LeaseService {
                 unitChanged ? "Cannot assign lease. Unit is not vacant." : "Cannot update lease. Unit is not vacant.");
         if (unitChanged) lease.setUnit(targetUnit);
 
+        // PR #359 R1 P2-3: a renewal or transfer continues its predecessor's renter.
+        UUID predecessorId = lease.predecessorId();
+        if (predecessorId != null && dto.getRenterId() != null) {
+            leaseRepository.findByIdScopedToTenant(predecessorId).ifPresent(p -> requireSameRenter(p, dto.getRenterId()));
+        }
         // If renter changed
         if (!lease.getRenter().getId().equals(dto.getRenterId())) {
             Renter renter = renterRepository.findById(dto.getRenterId())

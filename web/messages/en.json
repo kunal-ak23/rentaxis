@@ -2470,7 +2470,10 @@
         "transferExists": "This lease already has a transfer.",
         "transferHasRenewal": "This lease has a renewal; delete the draft renewal first.",
         "transferCarryNotRegistered": "Cheque {row} is {status}; only a cheque still in the drawer can be carried.",
-        "renewHasTransfer": "This lease is being transferred; delete that draft, or renew the new lease instead."
+        "renewHasTransfer": "This lease is being transferred; delete that draft, or renew the new lease instead.",
+        "assignmentSuccessorDraft": "This lease has a draft {kind, select, transfer {transfer} other {renewal}} in the current renter's name; delete it before assigning the lease.",
+        "assignmentPending": "This lease has a draft assignment to another renter; post or delete it first.",
+        "successorRenterMismatch": "This contract continues a lease that now belongs to {renter}; the new contract must be in that renter's name."
       }
     },
     "paginationShowing": "Showing {start}-{end} of {total}",

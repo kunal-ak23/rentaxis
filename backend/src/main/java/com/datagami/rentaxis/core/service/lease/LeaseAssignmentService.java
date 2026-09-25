@@ -249,6 +249,17 @@ public class LeaseAssignmentService {
             throw new BusinessRuleViolationException("Only a posted ACTIVE or NOTICE_GIVEN lease can be assigned;"
                     + " this one is " + lease.getStatus() + ".");
         }
+        // PR #359 R1 P2-3: a draft renewal or transfer was drawn up in the outgoing
+        // renter's name; posted after the assignment it would hand everything back.
+        java.util.List<Lease> successors = new java.util.ArrayList<>(leaseRepository.findByRenewedFromLeaseId(lease.getId()));
+        successors.addAll(leaseRepository.findByTransferredFromLeaseId(lease.getId()));
+        for (Lease s : successors) {
+            if (s.getStatus() == LeaseStatus.DRAFT || s.getStatus() == LeaseStatus.PENDING_SIGNATURE) {
+                throw new BusinessRuleViolationException("This lease has a draft " + (s.getTransferredFromLeaseId() != null
+                        ? "transfer" : "renewal") + " in the current renter's name; delete it before assigning the lease.",
+                        "lease.assignmentSuccessorDraft", Map.of("kind", s.getTransferredFromLeaseId() != null ? "transfer" : "renewal"));
+            }
+        }
     }
 
     private Renter validate(Lease lease, AssignLeaseRequest r) {
