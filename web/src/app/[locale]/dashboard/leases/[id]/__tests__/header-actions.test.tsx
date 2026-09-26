@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../../../../messages/en.json";
 import type { Cheque, LeaseDetail, LeaseStatus } from "@/lib/api/leasing";
-import { ApiError } from "@/lib/api/facilities";
 
 /**
  * Spec §5: the contract header shows at most three primary buttons by status;

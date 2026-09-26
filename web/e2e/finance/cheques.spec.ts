@@ -218,7 +218,7 @@ test.describe('Cheque register lifecycle', () => {
 
     // ── propose + approve a CHEQUE_RETURN penalty for the late return ──────
     await page.goto(`/en/dashboard/leases/${draft.id}`);
-    await page.getByTestId('lease-tab-penalties').click();
+    await page.getByTestId('lease-tab-payments').click();
     await page.getByTestId('penalty-propose-open').click();
     // The tab opens RaisePenaltyDialog (#12). Its fields are addressed by `id`,
     // not by testid — they carry `htmlFor` labels and nothing else. The

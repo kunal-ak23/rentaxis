@@ -562,7 +562,8 @@ test('01 a contract whose term began three months ago — the schedule is cut by
 
         await page.goto(`/en/dashboard/leases/${leaseMainId}`);
         await expect(page.getByTestId('lease-status')).toHaveText(/active/i, { timeout: 20_000 });
-        await page.getByTestId('lease-tab-recognition').click();
+        await page.getByTestId('lease-tab-payments').click();
+        await page.getByTestId('lease-section-toggle-recognition').click();
         await expect(page.getByTestId('recognition-schedule')).toBeVisible({ timeout: 20_000 });
 
         // Twelve calendar-month slices, Σ = the contract's RENT (the fee and
@@ -863,6 +864,8 @@ test('05 amending the lines rebuilds the schedule — the old rows are reversed,
 
         await page.goto(`/en/dashboard/leases/${leaseAmendId}`);
         await expect(page.getByTestId('lease-status')).toHaveText(/active/i, { timeout: 20_000 });
+        // Spec §5: everything but the status's primary buttons sits under More actions.
+        await page.getByTestId('lease-more-actions').click();
         await page.getByTestId('lease-amend').click();
         await expect(page.getByTestId('amend-blocked')).toHaveCount(0);
 
@@ -887,7 +890,8 @@ test('05 amending the lines rebuilds the schedule — the old rows are reversed,
 
         // The schedule: every old row retired, a fresh one planned for the new rent.
         await page.reload();
-        await page.getByTestId('lease-tab-recognition').click();
+        await page.getByTestId('lease-tab-payments').click();
+        await page.getByTestId('lease-section-toggle-recognition').click();
         await expect(page.getByTestId('recognition-schedule')).toBeVisible({ timeout: 20_000 });
 
         const after = await scheduleOf(leaseAmendId);
@@ -937,6 +941,8 @@ test('06 extending appends a second segment and leaves the first one alone', asy
 
         await page.goto(`/en/dashboard/leases/${leaseAmendId}`);
         await expect(page.getByTestId('lease-status')).toHaveText(/active/i, { timeout: 20_000 });
+        // Spec §5: everything but the status's primary buttons sits under More actions.
+        await page.getByTestId('lease-more-actions').click();
         await page.getByTestId('lease-extend').click();
 
         const end = parseIso(currentEnd);
@@ -966,7 +972,8 @@ test('06 extending appends a second segment and leaves the first one alone', asy
         record('journal', extended.tcoJournalId, 'TCO — LEASE_AMEND extension');
 
         await page.reload();
-        await page.getByTestId('lease-tab-recognition').click();
+        await page.getByTestId('lease-tab-payments').click();
+        await page.getByTestId('lease-section-toggle-recognition').click();
         await expect(page.getByTestId('recognition-schedule')).toBeVisible({ timeout: 20_000 });
 
         const after = await scheduleOf(leaseAmendId);
@@ -1013,6 +1020,8 @@ test('07 pricing a termination: four figures, and the receivable moves as a cheq
         }>('GET', `/api/v1/leases/${leaseMainId}/terminate/preview?date=${TERMINATION_DATE}`);
 
         await page.goto(`/en/dashboard/leases/${leaseMainId}`);
+        // Spec §5: everything but the status's primary buttons sits under More actions.
+        await page.getByTestId('lease-more-actions').click();
         await page.getByTestId('lease-terminate').click();
         await page.waitForURL(/\/terminate$/, { timeout: 20_000 });
 
@@ -1502,7 +1511,8 @@ test('12 the four new screens read right-to-left in Arabic', async ({ browser })
         // The recognition tab on a contract that still has a live schedule.
         await page.goto(`/ar/dashboard/leases/${leaseAmendId}`);
         await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-        await page.getByTestId('lease-tab-recognition').click();
+        await page.getByTestId('lease-tab-payments').click();
+        await page.getByTestId('lease-section-toggle-recognition').click();
         await expect(page.getByTestId('recognition-schedule')).toBeVisible({ timeout: 20_000 });
         await expect(page.locator('body')).toContainText(ar.Recognition.schedule);
         await expect(page.locator('body')).toContainText(ar.Recognition.scheduleTotal);

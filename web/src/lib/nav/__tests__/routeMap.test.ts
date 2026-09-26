@@ -1,6 +1,6 @@
 // src/lib/nav/__tests__/routeMap.test.ts
 import { describe, expect, it } from "vitest";
-import { ROUTE_MOVES, canonicalHref, legacyRedirect, matchRoute } from "../routeMap";
+import { LEGACY_LEASE_TABS, ROUTE_MOVES, canonicalHref, legacyRedirect, matchRoute, resolveLeaseTab } from "../routeMap";
 
 const redirectOf = (href: string): string | null => {
     const out = legacyRedirect(new URL(href, "http://localhost:3000"));
@@ -90,5 +90,29 @@ describe("canonicalHref", () => {
     it("drops the locale, follows moves and sorts the query", () => {
         expect(canonicalHref("/ar/dashboard/settings/gateway?b=2&a=1")).toBe("/dashboard/settings?a=1&b=2&section=payments");
         expect(canonicalHref("/dashboard/leases")).toBe("/dashboard/leases");
+    });
+});
+
+
+describe("contract ?tab= deep links", () => {
+    it.each([
+        ["journals", "payments", "journals"], ["recognition", "payments", "recognition"], ["vat", "payments", "vat"],
+        ["penalties", "payments", "penalties"], ["contract", "documents", "contract"], ["documents", "documents", "attachments"],
+        ["maintenance", "activity", "maintenance"], ["interactions", "activity", "interactions"], ["overview", "overview", null],
+        ["payments", "payments", null], ["activity", "activity", null], [null, "overview", null], ["nonsense", "overview", null],
+        ["constructor", "overview", null], ["__proto__", "overview", null],
+    ])("?tab=%s → %s / %s", (tab, want, section) => {
+        expect(resolveLeaseTab(tab, null)).toEqual({ tab: want, section });
+    });
+    it("lets ?section= pick the section inside a new tab", () => {
+        expect(resolveLeaseTab("payments", "vat")).toEqual({ tab: "payments", section: "vat" });
+        expect(resolveLeaseTab("documents", "addenda")).toEqual({ tab: "documents", section: "addenda" });
+        expect(resolveLeaseTab("payments", "bogus")).toEqual({ tab: "payments", section: null });
+        expect(resolveLeaseTab("payments", "contract")).toEqual({ tab: "payments", section: null });
+    });
+    it("covers every one of the nine old tabs", () => {
+        for (const old of ["overview", "journals", "recognition", "vat", "penalties", "contract", "maintenance", "documents", "interactions"]) {
+            expect(LEGACY_LEASE_TABS[old], old).toBeTruthy();
+        }
     });
 });
