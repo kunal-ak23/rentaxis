@@ -82,6 +82,8 @@ class AmendmentAsAtIT extends AbstractPostgresIT {
     @Autowired ChequeGenerationService chequeGeneration;
     @Autowired LeasePostingService posting;
     @Autowired RecognitionService recognition;
+    @Autowired com.datagami.rentaxis.core.service.lease.LeaseTerminationService termination;
+    @Autowired com.datagami.rentaxis.core.service.lease.LeaseReductionService reductions;
     @Autowired VatReturnService vatReturns;
     @Autowired LedgerQueryService ledger;
     @Autowired AccountResolver resolver;
@@ -98,6 +100,7 @@ class AmendmentAsAtIT extends AbstractPostgresIT {
     @Autowired com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService fiscal;
 
     private LeaseTestFixtures fixtures;
+    private com.datagami.rentaxis.api.dto.lease.PostLeaseResponse lastResponse;
 
     static final LocalDate CONTRACT = LocalDate.of(2026, 1, 5);
     static final LocalDate START = LocalDate.of(2026, 1, 10);
@@ -173,6 +176,81 @@ class AmendmentAsAtIT extends AbstractPostgresIT {
     @Test
     void anUnpostedLockedMonthIsTakenByTheCatchUp() {
         run(false, "43800", "2335", true, LocalDate.of(2026, 5, 31));
+        // #372 review P3-1: said on the amendment and on the catch-up's own journal.
+        assertThat(lastResponse.notices()).singleElement().asString()
+                .contains("1 month(s) of recognition inside the locked period (3,000.00)");
+        assertThat(jdbc.queryForObject("select narration from journal_entries where tenant_id = ? and doc_type = 'CIL'"
+                + " and narration like 'Recognition catch-up%'", String.class, fixtures.tenantId()))
+                .contains("includes 1 locked month(s) never recognised (3000.00)");
+    }
+
+    /** Amends the rent to 43,800 on 27/09 (the fixed clock) after recognising through 31/08. */
+    private UUID amendedLease() {
+        UUID leaseId = lease(false);
+        recognition.runTo(AUG_31, false);
+        List<LeaseLineInput> amended = new ArrayList<>();
+        for (LeaseLineDTO l : tx.execute(s -> leaseService.getLines(leaseId))) {
+            amended.add(new LeaseLineInput(l.chargeTypeId(), null,
+                    new BigDecimal("RENT".equals(l.chargeTypeCode()) ? "43800" : "2335"), l.discountAmount(),
+                    l.narration(), l.vatApplicable(), l.creditAccountId(), l.periodStart(), l.periodEnd(), l.addendumId()));
+        }
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        posting.amendLines(leaseId, amended, "Rent corrected");
+        return leaseId;
+    }
+
+    /**
+     * #372 review P2-1 (probe E): the tenant left on 15/09, the rent correction was entered
+     * on 27/09. Ending the lease before the amendment would leave its catch-up counting
+     * days the tenancy never ran — refused, naming the date, in the preview's problems and
+     * by the termination itself; a credit addendum likewise. On or after the date it works.
+     */
+    @Test
+    void aTerminationOrReductionBeforeTheLatestAmendmentIsRefused() {
+        UUID leaseId = amendedLease();
+        LocalDate before = LocalDate.of(2026, 9, 15);
+        assertThat(tx.execute(s -> termination.preview(leaseId, before)).problems())
+                .anySatisfy(p -> assertThat(p).contains("amended on 27/09/2026"));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> termination.terminate(leaseId,
+                        new com.datagami.rentaxis.api.dto.lease.TerminateLeaseRequest(before, null, null, null), null))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class)
+                .hasMessageContaining("amended on 27/09/2026").hasMessageContaining("on or after 27/09/2026");
+
+        UUID rentLine = tx.execute(s -> leaseService.getLines(leaseId)).stream()
+                .filter(l -> "RENT".equals(l.chargeTypeCode())).map(LeaseLineDTO::id).findFirst().orElseThrow();
+        com.datagami.rentaxis.api.dto.lease.ReduceLeaseRequest cut = new com.datagami.rentaxis.api.dto.lease.ReduceLeaseRequest(
+                before, before, "Rent renegotiated", null,
+                List.of(new com.datagami.rentaxis.api.dto.lease.ReduceLeaseRequest.LineReduction(rentLine, new BigDecimal("40000"))),
+                "CREDIT", List.of(), List.of());
+        assertThat(tx.execute(s -> reductions.preview(leaseId, cut)).problems())
+                .anySatisfy(p -> assertThat(p.message()).contains("amended on 27/09/2026"));
+
+        termination.terminate(leaseId, new com.datagami.rentaxis.api.dto.lease.TerminateLeaseRequest(
+                LocalDate.of(2026, 9, 30), null, null, null), null);
+    }
+
+    /**
+     * #372 review P3-2: a CONTRACT lease of ours posted before contracts were invoiced has
+     * no invoice to cite; the amendment's credit note names the contract instead.
+     */
+    @Test
+    void aPreRuleLeasesAmendmentCreditNoteNamesTheContract() {
+        UUID leaseId = fixtures.draftLease(CONTRACT, START, END,
+                List.of(vatLine("RENT", "36500"), line("ADMIN_FEE", "10000")));
+        fixtures.generateGrid(leaseId, 4, START);
+        posting.post(leaseId);   // INSTALMENT at posting: no contract invoice
+        jdbc.update("update leases set vat_timing = 'CONTRACT' where id = ?", leaseId);   // changeset 108's pre-rule shape
+        List<LeaseLineInput> amended = new ArrayList<>();
+        for (LeaseLineDTO l : tx.execute(s -> leaseService.getLines(leaseId))) {
+            amended.add(new LeaseLineInput(l.chargeTypeId(), null,
+                    new BigDecimal("RENT".equals(l.chargeTypeCode()) ? "29200" : "17665"), l.discountAmount(),
+                    l.narration(), l.vatApplicable(), l.creditAccountId(), l.periodStart(), l.periodEnd(), l.addendumId()));
+        }
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        posting.amendLines(leaseId, amended, "Rent corrected");
+        assertThat(jdbc.queryForObject("select reference_note from tax_invoices where lease_id = ? and kind = 'CREDIT_NOTE'",
+                String.class, leaseId)).startsWith("Tenancy contract").contains("dated 05/01/2026")
+                .contains("no tax invoice issued in this system");
     }
 
     private void run(boolean cutOver, String newRent, String newFee, boolean lock, LocalDate recognisedThrough) {
@@ -194,7 +272,7 @@ class AmendmentAsAtIT extends AbstractPostgresIT {
                     l.narration(), l.vatApplicable(), l.creditAccountId(), l.periodStart(), l.periodEnd(), l.addendumId()));
         }
         LeaseTestFixtures.authenticateAsTenantAdmin();
-        posting.amendLines(leaseId, amended, "Rent corrected");
+        lastResponse = posting.amendLines(leaseId, amended, "Rent corrected");
         // The runner catches up everything due to date (the month holding 27/09 was re-cut at 26/09).
         recognition.runTo(TODAY.minusDays(1), false);
 

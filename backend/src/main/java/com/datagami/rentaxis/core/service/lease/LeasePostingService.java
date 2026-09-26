@@ -150,6 +150,11 @@ public class LeasePostingService {
     @org.springframework.beans.factory.annotation.Autowired
     private java.time.Clock clock = java.time.Clock.systemDefaultZone();
 
+    /** #372 review P3-1: what an amendment's catch-up will fold in. Lazy: recognition sits below posting. */
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private com.datagami.rentaxis.core.service.recognition.RecognitionService recognitionService;
+
     public LeasePostingService(LeaseRepository leaseRepository,
                                LeaseLineRepository leaseLineRepository,
                                ChequeRepository chequeRepository,
@@ -643,6 +648,16 @@ public class LeasePostingService {
         vatTaxPoints.cancelPlanned(leaseId);
 
         LocalDate reversedOn = LocalDate.now(clock);
+        // #372 review P3-1: months the lock closed before anybody recognised them are
+        // folded into the recognition catch-up; the amendment says so.
+        com.datagami.rentaxis.core.service.recognition.RecognitionService.LockedUnrecognised folded =
+                recognitionService.lockedUnrecognised(leaseId);
+        List<String> notices = new ArrayList<>();
+        if (folded.months() > 0) {
+            notices.add(folded.months() + " month(s) of recognition inside the locked period (" + money(folded.amount())
+                    + ") were never posted; the amendment's catch-up dated " + reversedOn
+                    + " recognises them instead.");
+        }
         // Collected as they are reversed, so the event names exactly the entries this
         // amendment unwound — the contract's own TCO and one per extension.
         List<UUID> reversedJournalIds = new ArrayList<>(contractEntries.size());
@@ -668,10 +683,12 @@ public class LeasePostingService {
         leaseRepository.save(lease);
         leaseService.recordLeaseEvent(lease, LeaseStatus.ACTIVE, LeaseStatus.ACTIVE,
                 "Lines amended, reposted as " + tco.getEntryNumber()
-                        + (reason == null || reason.isBlank() ? "" : ": " + reason));
+                        + (reason == null || reason.isBlank() ? "" : ": " + reason)
+                        + (notices.isEmpty() ? "" : ". " + String.join(" ", notices)));
         events.publishEvent(new LeaseAmendedEvent(lease.getTenantId(), lease.getId(), reversedJournalIds, tco.getId()));
 
-        return response(lease, tco, cheques);
+        PostLeaseResponse done = response(lease, tco, cheques);
+        return new PostLeaseResponse(done.lease(), done.tcoJournalId(), done.tcoEntryNumber(), done.cheques(), notices);
     }
 
     /** Convenience overload for the controller's request body. */
@@ -1219,6 +1236,34 @@ public class LeasePostingService {
             }
         }
         return errors;
+    }
+
+    /**
+     * #372 review P2-1: the date of this lease's latest amendment — the day its
+     * contract was last reversed and re-posted (the reversal's date) — or null when it
+     * was never amended. An amendment's recognition keeps what was earned through the
+     * day before and restates the elapsed period in one catch-up dated that day, so a
+     * termination or a reduction may not take effect before it.
+     */
+    public LocalDate latestAmendmentDate(UUID leaseId) {
+        LocalDate latest = null;
+        for (JournalEntry e : journalEntryRepository.findBySourceTypeAndSourceIdOrderByEntryDateAscCreatedAtAsc(
+                JournalSourceType.LEASE, leaseId)) {
+            if (e.getDocType() != JournalDocType.TCO || e.getReversedById() == null) continue;
+            LocalDate reversedOn = journalEntryRepository.findById(e.getReversedById())
+                    .map(JournalEntry::getEntryDate).orElse(null);
+            if (reversedOn != null && (latest == null || reversedOn.isAfter(latest))) latest = reversedOn;
+        }
+        return latest;
+    }
+
+    /** #372 review P2-1: the refusal for an act effective before the lease's latest amendment, or null. */
+    public String beforeAmendmentProblem(UUID leaseId, LocalDate effective, String act) {
+        LocalDate amended = effective == null ? null : latestAmendmentDate(leaseId);
+        if (amended == null || !effective.isBefore(amended)) return null;
+        String day = amended.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+        return "This lease's lines were amended on " + day + ", and its recognition was restated from that day; "
+                + act + " cannot take effect before it. Date it on or after " + day + ".";
     }
 
     /** S16-04: whether a tax invoice for this lease can name its supplier's TRN. */

@@ -291,6 +291,10 @@ public class RecognitionService {
                 cancelWholeSegment(seg, d, reason);
             } else if (!seg.getToDate().isBefore(d)) {
                 truncateSegment(seg, d.minusDays(1), d, reason);
+                // Back to ACTIVE although it now ends at d − 1 (as reduceFrom does): a later
+                // amendment must still find it and count what it kept, and a termination never
+                // cuts it — a termination is refused before the amendment date (#372 P2-1), and
+                // from d on this window has simply run its course.
                 seg.setStatus(SegmentStatus.ACTIVE);
                 segments.save(seg);
             }
@@ -301,6 +305,8 @@ public class RecognitionService {
         // cancelled and left to the catch-up below.
         LocalDate locked = booksLockedThrough();
         Map<List<UUID>, BigDecimal> kept = new java.util.LinkedHashMap<>();
+        Map<List<UUID>, BigDecimal> folded = new java.util.LinkedHashMap<>();
+        Map<List<UUID>, Integer> foldedMonths = new java.util.LinkedHashMap<>();
         for (RecognitionEntry e : entries.findByLease_IdOrderByPeriodStartAsc(leaseId)) {
             List<UUID> key = keyOfSegment.get(e.getSegment().getId());
             if (key == null) continue;
@@ -310,6 +316,8 @@ public class RecognitionService {
                 if (row.getStatus() == RecognitionStatus.PLANNED) {
                     row.setStatus(RecognitionStatus.CANCELLED);
                     entries.save(row);
+                    folded.merge(key, row.getAmount(), BigDecimal::add);
+                    foldedMonths.merge(key, 1, Integer::sum);
                     continue;
                 }
                 status = row.getStatus();
@@ -349,7 +357,13 @@ public class RecognitionService {
             BigDecimal diff = newEarned.getOrDefault(key, BigDecimal.ZERO)
                     .subtract(kept.getOrDefault(key, BigDecimal.ZERO)).setScale(2, RoundingMode.HALF_UP);
             if (diff.signum() == 0) continue;
-            postCatchUp(lease, key, lineOfKey.get(key), fromOfKey.get(key), d, diff, reason);
+            // #372 review P3-1: say so when the catch-up takes months the lock closed
+            // before anybody recognised them.
+            String why = foldedMonths.containsKey(key)
+                    ? reason + "; includes " + foldedMonths.get(key) + " locked month(s) never recognised ("
+                            + folded.get(key).setScale(2, RoundingMode.HALF_UP).toPlainString() + ")"
+                    : reason;
+            postCatchUp(lease, key, lineOfKey.get(key), fromOfKey.get(key), d, diff, why);
         }
     }
 
@@ -357,6 +371,23 @@ public class RecognitionService {
     @Transactional(readOnly = true)
     public LocalDate entryDateOf(UUID journalId) {
         return journalId == null ? null : journals.findById(journalId).map(JournalEntry::getEntryDate).orElse(null);
+    }
+
+    /**
+     * #372 review P3-1: the lease's months still PLANNED inside the period lock — never
+     * to be posted by the runner — which an amendment folds into its catch-up: how many
+     * and how much. Asked before the amendment so its response can say so.
+     */
+    public record LockedUnrecognised(int months, BigDecimal amount) { }
+
+    @Transactional(readOnly = true)
+    public LockedUnrecognised lockedUnrecognised(UUID leaseId) {
+        LocalDate locked = booksLockedThrough();
+        if (locked == null) return new LockedUnrecognised(0, BigDecimal.ZERO);
+        List<RecognitionEntry> rows = entries.findByLease_IdOrderByPeriodStartAsc(leaseId).stream()
+                .filter(e -> e.getStatus() == RecognitionStatus.PLANNED && !e.getPeriodEnd().isAfter(locked)).toList();
+        return new LockedUnrecognised(rows.size(), rows.stream().map(RecognitionEntry::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP));
     }
 
     /** A line's recognition window and value, or null when it has nothing to recognise. */

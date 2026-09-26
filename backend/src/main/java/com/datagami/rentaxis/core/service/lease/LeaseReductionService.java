@@ -375,6 +375,13 @@ public class LeaseReductionService {
         if (r.lines() == null || r.lines().isEmpty()) {
             throw new BusinessRuleViolationException("Choose at least one charge to reduce or remove.");
         }
+        // #372 review P2-1: the schedule before the latest amendment is the old contract's
+        // (its months kept, the difference in one catch-up dated the amendment day).
+        String amended = leasePostingService.beforeAmendmentProblem(lease.getId(), e, "a credit addendum");
+        if (amended != null) {
+            throw new BusinessRuleViolationException(amended, "lease.beforeAmendment",
+                    java.util.Map.of("date", leasePostingService.latestAmendmentDate(lease.getId()).toString()));
+        }
     }
 
     private List<LinePlan> plan(Lease lease, ReduceLeaseRequest r) {
