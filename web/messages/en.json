@@ -4489,5 +4489,40 @@
     "deleteTitle": "Delete User",
     "deleteDescription": "Are you sure you want to delete this user? This action cannot be undone and will permanently remove the user from the system.",
     "deleteConfirm": "Delete User"
+  },
+  "ListActions": {
+    "actions": "Actions",
+    "rowActions": "Actions for {name}",
+    "filters": "Filters",
+    "removeFilter": "Remove filter: {name}",
+    "more": "More",
+    "allProperties": "All properties",
+    "search": "Search",
+    "view": "View"
+  },
+  "LeaseActions": {
+    "moreActions": "More actions",
+    "recordPayment": "Record payment",
+    "edit": "Edit",
+    "assignment": "Assignment",
+    "writeOff": "Write off",
+    "close": "Close",
+    "assignmentEmpty": "This contract has no assignments, and it can only be assigned while it is active or under notice.",
+    "writeOffEmpty": "Nothing on this contract can be written off right now.",
+    "tabOverview": "General",
+    "tabPayments": "Cheques",
+    "tabDocuments": "Attachments",
+    "tabActivity": "Activities",
+    "tabsLabel": "Contract sections",
+    "sectionCheques": "Cheques",
+    "sectionPenalties": "Penalties",
+    "sectionJournals": "Journal Vouchers",
+    "sectionRecognition": "Revenue recognition",
+    "sectionVat": "Vat",
+    "sectionContract": "Contract",
+    "sectionAttachments": "Attachments",
+    "sectionAddenda": "Addenda & Ejari",
+    "sectionInteractions": "Notes",
+    "sectionMaintenance": "Maintenance"
   }
 }

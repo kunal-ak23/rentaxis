@@ -4489,5 +4489,40 @@
     "deleteTitle": "حذف المستخدم",
     "deleteDescription": "هل أنت متأكد من حذف هذا المستخدم؟ لا يمكن التراجع عن هذا الإجراء وسيُزال المستخدم نهائياً من النظام.",
     "deleteConfirm": "حذف المستخدم"
+  },
+  "ListActions": {
+    "actions": "الإجراءات",
+    "rowActions": "إجراءات {name}",
+    "filters": "عوامل التصفية",
+    "removeFilter": "إزالة عامل التصفية: {name}",
+    "more": "المزيد",
+    "allProperties": "كل العقارات",
+    "search": "بحث",
+    "view": "عرض"
+  },
+  "LeaseActions": {
+    "moreActions": "إجراءات أخرى",
+    "recordPayment": "تسجيل دفعة",
+    "edit": "تعديل",
+    "assignment": "التنازل",
+    "writeOff": "شطب",
+    "close": "إغلاق",
+    "assignmentEmpty": "لا توجد تنازلات على هذا العقد، ولا يمكن التنازل عنه إلا وهو نشط أو تحت الإشعار.",
+    "writeOffEmpty": "لا يوجد على هذا العقد ما يمكن شطبه حالياً.",
+    "tabOverview": "عام",
+    "tabPayments": "الشيكات",
+    "tabDocuments": "المرفقات",
+    "tabActivity": "الأنشطة",
+    "tabsLabel": "أقسام العقد",
+    "sectionCheques": "الشيكات",
+    "sectionPenalties": "الغرامات",
+    "sectionJournals": "سندات القيد",
+    "sectionRecognition": "الاعتراف بالإيراد",
+    "sectionVat": "ضريبة القيمة المضافة",
+    "sectionContract": "العقد",
+    "sectionAttachments": "المرفقات",
+    "sectionAddenda": "الملاحق وإيجاري",
+    "sectionInteractions": "الملاحظات",
+    "sectionMaintenance": "الصيانة"
   }
 }
