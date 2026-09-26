@@ -282,6 +282,8 @@ export default function DashboardPage() {
     collectedNote = t("collectedAdvanceOnly", { amount: money(tile.advance) });
   }
   const collectedSpark = monthly.map((m) => m.collected);
+  // One "expiring" figure on the page: the pipeline's 60 days (the summary counts 30) once it has loaded.
+  const expiringCount = pipeline?.find(s => s.id === "expiring")?.count ?? summary.expiringLeases;
 
   return (
     <div className="flex flex-col gap-5">
@@ -290,7 +292,7 @@ export default function DashboardPage() {
           <p className="text-[12.5px] text-[var(--ink-500)] mb-1">{dayLabel}</p>
           <h1 className="font-serif text-[28px] font-semibold tracking-tight m-0">{t(greetingKey, { name: firstName })}</h1>
           <p className="text-[13.5px] text-[var(--ink-600)] mt-1">
-            <span className="text-[var(--gold-700)] font-semibold">{t("expiringLeasesCount", { count: summary.expiringLeases })}</span>
+            <span className="text-[var(--gold-700)] font-semibold">{t("expiringLeasesCount", { count: expiringCount })}</span>
             {summary.overdueAmount > 0 ? <span className="text-[var(--red-600)] font-semibold ml-1.5">· {t("overdueSuffix", { amount: formatCurrencyCompact(summary.overdueAmount) })}</span> : null}
           </p>
         </div>
@@ -334,7 +336,7 @@ export default function DashboardPage() {
             unit="%"
             sub={tToday("unitStatusLine", {
               occupied: summary.occupiedUnits,
-              expiring: pipeline?.find(s => s.id === "expiring")?.count ?? summary.expiringLeases,
+              expiring: expiringCount,
               vacant: summary.vacantUnits,
             })}
             note={[

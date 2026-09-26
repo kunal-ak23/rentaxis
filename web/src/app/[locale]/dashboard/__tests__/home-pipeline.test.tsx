@@ -62,6 +62,8 @@ describe("Home (spec §1a, §6)", () => {
         }
         // The expiring figure on Unit Status is the pipeline's, not the summary's older count.
         expect(screen.getByTestId("kpi-unit-status")).toHaveTextContent("7 occupied · 1 expiring · 2 vacant");
+        // …and the greeting line says the same (the summary's own count is a 30-day one: 9 here).
+        expect(screen.getByText("1 expiring contract")).toBeInTheDocument();
         expect(pagedCalls.every(u => /size=(1|50|100)\b/.test(u))).toBe(true);
     });
 
