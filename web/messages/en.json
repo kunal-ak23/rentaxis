@@ -4576,5 +4576,19 @@
     "contractStatus": "Status",
     "openContract": "Open contract",
     "openUnits": "All units of this property"
+  },
+  "ContractList": {
+    "pillAll": "All",
+    "pillDraft": "Draft",
+    "pillActive": "Active",
+    "pillExpiring": "Expiring",
+    "pillNotice": "Notice",
+    "pillEnded": "Ended",
+    "pillsLabel": "Contract status",
+    "savedExpiring": "Expiring in 60 days",
+    "savedDrafts": "Drafts to post",
+    "statusFilter": "Status",
+    "expiringCapped": "Showing the {count} contracts found among the first 100 active contracts by end date.",
+    "expiringNote": "Active contracts ending within 60 days, soonest first."
   }
 }

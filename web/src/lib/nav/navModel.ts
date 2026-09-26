@@ -71,7 +71,13 @@ export function buildNav(ctx: NavModelContext): RailSection[] {
         ...(ops ? [pi("tenants", "/dashboard/renters", { ns: "MasterData", key: "renters" }, "sidebar-renters")] : []),
         ...(ops ? [pi("properties", "/dashboard/properties", N("propertiesAndUnits"), "sidebar-properties")] : []),
         ...(ops && isEnabled("LISTINGS") ? [pi("enquiry", "/dashboard/listings", N("enquiry"), "sidebar-listings")] : []),
-    ])));
+    ]), {
+        // Spec §1a: pinned views, filters on the contract list every such role already reaches.
+        savedViews: can("canViewLeases") ? [
+            pi("saved-expiring", "/dashboard/leases?view=expiring", { ns: "ContractList", key: "savedExpiring" }, "saved-expiring"),
+            pi("saved-drafts", "/dashboard/leases?status=DRAFT", { ns: "ContractList", key: "savedDrafts" }, "saved-drafts"),
+        ] : [],
+    }));
 
     const tabs = buildCollectionsTabs(role);
     rail.push(section("collection", "collections", "sidebar-collections", COLLECTION_MATCH,

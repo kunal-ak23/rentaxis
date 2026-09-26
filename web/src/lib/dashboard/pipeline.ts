@@ -59,6 +59,13 @@ function bounded(page: Page<LeaseDetail>, qualifies: (l: LeaseDetail) => boolean
     return { hits, capped: !exact };
 }
 
+/** Active contracts in force today that end within 60 days, from one page sorted by end date (and whether that count may be short). */
+export function expiringFrom(page: Page<LeaseDetail>, today: string): { rows: LeaseDetail[]; capped: boolean } {
+    const horizon = plusDays(today, EXPIRING_DAYS);
+    const r = bounded(page, l => l.startDate <= today && l.endDate <= horizon, l => l.endDate, "asc");
+    return { rows: r.hits, capped: r.capped };
+}
+
 /**
  * Draft → Upcoming → Active → Expiring ≤ 60 d → Notice → Settlement due.
  * Status totals come straight from /leases/paged; Upcoming (posted, not yet
@@ -68,9 +75,9 @@ function bounded(page: Page<LeaseDetail>, qualifies: (l: LeaseDetail) => boolean
  * contract to CLOSED.
  */
 export function buildPipeline(i: PipelineInput, today: string): PipelineStage[] {
-    const horizon = plusDays(today, EXPIRING_DAYS);
     const up = bounded(i.activeByStart, l => l.startDate > today, l => l.startDate, "desc");
-    const exp = bounded(i.activeByEnd, l => l.startDate <= today && l.endDate <= horizon, l => l.endDate, "asc");
+    const e = expiringFrom(i.activeByEnd, today);
+    const exp = { hits: e.rows, capped: e.capped };
     const settlementOldest = earliest([...i.terminated.content, ...i.expired.content], l => l.endDate);
     return [
         { id: "draft", count: i.draft.totalElements, capped: false, oldest: earliest(i.draft.content, l => l.startDate), href: "/dashboard/leases?status=DRAFT" },

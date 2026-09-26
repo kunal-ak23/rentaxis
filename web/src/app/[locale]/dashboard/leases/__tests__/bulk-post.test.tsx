@@ -74,6 +74,8 @@ function renderPage() {
 }
 
 beforeEach(() => {
+    // The list keeps its filters in the URL, and jsdom keeps the URL between tests.
+    window.history.replaceState(null, "", "/");
     role = "ACCOUNTANT";
     // A real server, filtering by `status` when the list sends it — so a test
     // that flips the filter and finds one row proves the param made the round

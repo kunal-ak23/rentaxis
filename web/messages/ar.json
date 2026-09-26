@@ -4576,5 +4576,19 @@
     "contractStatus": "الحالة",
     "openContract": "فتح العقد",
     "openUnits": "كل وحدات هذا العقار"
+  },
+  "ContractList": {
+    "pillAll": "الكل",
+    "pillDraft": "مسودة",
+    "pillActive": "نشطة",
+    "pillExpiring": "تنتهي قريباً",
+    "pillNotice": "إشعار",
+    "pillEnded": "منتهية",
+    "pillsLabel": "حالة العقد",
+    "savedExpiring": "تنتهي خلال 60 يوماً",
+    "savedDrafts": "مسودات للترحيل",
+    "statusFilter": "الحالة",
+    "expiringCapped": "عرض {count} عقداً من أول 100 عقد نشط حسب تاريخ الانتهاء.",
+    "expiringNote": "العقود النشطة التي تنتهي خلال 60 يوماً، الأقرب أولاً."
   }
 }
