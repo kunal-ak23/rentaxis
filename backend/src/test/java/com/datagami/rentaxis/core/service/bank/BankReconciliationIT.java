@@ -95,6 +95,7 @@ class BankReconciliationIT extends AbstractPostgresIT {
     @Autowired JdbcTemplate jdbc;
     @Autowired org.springframework.transaction.support.TransactionTemplate tx;
     @Autowired com.datagami.rentaxis.core.service.LandlordOrgService orgService;
+    @Autowired com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService fiscal;
 
     static final LocalDate AUG_1 = LocalDate.of(2026, 8, 1);
     static final LocalDate AUG_15 = LocalDate.of(2026, 8, 15);
@@ -492,6 +493,36 @@ class BankReconciliationIT extends AbstractPostgresIT {
         assertThatThrownBy(() -> jdbc.update("insert into bank_match_book_items (tenant_id, match_id, journal_line_id) values (?, ?, ?)",
                 tenantId, other, jl)).isInstanceOf(DataIntegrityViolationException.class);
         assertThat(a).isNotNull();
+    }
+
+    /**
+     * sim4y S16-01: once the month holding a BNK match is locked, the workspace must still
+     * open (read-only), offering today as the reversal date. It used to 500 with
+     * UnexpectedRollbackException: the lock check threw inside the workspace's transaction
+     * and was caught, but the throw had already marked the shared transaction rollback-only.
+     */
+    @Test
+    void theWorkspaceOpensAfterTheMonthHoldingABankEntryIsLocked() {
+        imports.saveProfile(ei.getId(), enbdProfile());
+        importText("""
+                x
+                Transaction Date,Value Date,Narration,Reference,Debit,Credit,Running Balance
+                07/09/2026,07/09/2026,SMS ALERT FEE,,25.00,,-25.00
+                28/09/2026,28/09/2026,SMS ALERT FEE,,25.00,,-50.00
+                """);
+        List<BankRecDTOs.StatementLine> lines = ws().statementLines();
+        BankRecDTOs.ActionResult early = actions.post(new BankRecDTOs.PostLinesInput(List.of(lines.get(0).id()), "CHARGE",
+                false, null, null, marinaBank.getId(), true, null, new BigDecimal("25.00"), BigDecimal.ZERO));
+        BankRecDTOs.ActionResult late = actions.post(new BankRecDTOs.PostLinesInput(List.of(lines.get(1).id()), "CHARGE",
+                false, null, null, marinaBank.getId(), true, null, new BigDecimal("25.00"), BigDecimal.ZERO));
+        fiscal.lockThrough(LocalDate.of(2026, 9, 10));
+
+        BankRecDTOs.Workspace w = ws();
+        Map<UUID, LocalDate> reverseOn = new java.util.HashMap<>();
+        w.matches().forEach(m -> reverseOn.put(m.id(), m.reverseOnDefault()));
+        assertThat(reverseOn.get(early.matchId())).as("a locked entry reverses today").isEqualTo(TODAY);
+        assertThat(reverseOn.get(late.matchId())).as("an open entry reverses on its own date").isEqualTo(SEP_28);
+        assertThat(matches.workspace(ei.getId(), SEP_1, SEP_10, "ALL").statementLines()).hasSize(1);
     }
 
     @Test

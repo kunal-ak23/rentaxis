@@ -84,10 +84,12 @@ public class VendorService {
         requireNoDuplicate(vendor, null);
         vendor.setPaymentTermsDays(requireTerms(vendor.getPaymentTermsDays()));
         if (vendor.getPayableAccount() == null) {
-            try {
-                Account vendorsGroup = accountService.getAccountByCode("B-01-04");
+            // Looked up, not caught: a NotFoundException out of AccountService would mark
+            // this transaction rollback-only and fail the create at commit.
+            Account vendorsGroup = accountService.findAccountByCode("B-01-04").orElse(null);
+            if (vendorsGroup != null) {
                 vendor.setPayableAccount(accountService.createLeaf(vendor.getNameEn(), vendor.getNameAr(), vendorsGroup, null));
-            } catch (NotFoundException e) {
+            } else {
                 log.warn("No Vendors account group (B-01-04) for tenant; creating vendor without a ledger account");
             }
         }

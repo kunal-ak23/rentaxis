@@ -88,6 +88,15 @@ class TenantFiscalSettingsServiceTest {
     }
 
     @Test
+    void isOpenAnswersTheSameQuestionWithoutThrowing() {
+        when(repo.findById(tenant)).thenReturn(Optional.of(settings(1, LocalDate.of(2026, 8, 31))));
+        assertThat(service.isOpen(LocalDate.of(2026, 8, 31))).isFalse();
+        assertThat(service.isOpen(LocalDate.of(2026, 9, 1))).isTrue();
+        when(repo.findById(tenant)).thenReturn(Optional.of(settings(1, null)));
+        assertThat(service.isOpen(LocalDate.of(2000, 1, 1))).isTrue();
+    }
+
+    @Test
     void setBooksStartDateClosesEverythingBeforeItButLeavesAnExistingLockAlone() {
         when(repo.findById(tenant)).thenReturn(Optional.of(settings(1, null)));
         TenantFiscalSettings opened = service.setBooksStartDate(LocalDate.of(2026, 4, 1));
