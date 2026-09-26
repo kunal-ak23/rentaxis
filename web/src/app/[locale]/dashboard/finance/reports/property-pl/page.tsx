@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
 import { AlertTriangle, Building2, CheckCircle2, Download, FileText, Filter, Info, PieChart, ShieldCheck } from "lucide-react";
@@ -53,19 +53,26 @@ export default function PropertyPlPage() {
     const [buildingLoading, setBuildingLoading] = useState(false);
     const [buildingError, setBuildingError] = useState<string | null>(null);
 
+    // R1 P3-1: a request counter — switching the property/period quickly must
+    // not let an older, slower read land after a newer one and overwrite it.
+    const loadSeq = useRef(0);
     const load = useCallback(
         async (q: PnlControlsValue) => {
+            const seq = ++loadSeq.current;
             setLoading(true);
             setLoadError(null);
             try {
-                setData(await propertyReportsApi.pnl({
+                const result = await propertyReportsApi.pnl({
                     from: q.from, to: q.to, propertyIds: q.propertyIds, compare: q.compare, allocate: q.allocate,
-                }));
+                });
+                if (seq !== loadSeq.current) return;
+                setData(result);
             } catch (err) {
+                if (seq !== loadSeq.current) return;
                 setData(null);
                 setLoadError(err instanceof ApiError ? err.message : tCommon("loadFailed"));
             } finally {
-                setLoading(false);
+                if (seq === loadSeq.current) setLoading(false);
             }
         },
         [tCommon],
@@ -86,19 +93,26 @@ export default function PropertyPlPage() {
         if (!singlePropertyId || !hasBuildings) setByTower(false);
     }, [singlePropertyId, hasBuildings]);
 
+    // R1 P3-1: same guard as `load`, for the by-tower read (a property or
+    // period change while it is in flight).
+    const loadBuildingSeq = useRef(0);
     const loadBuilding = useCallback(async () => {
         if (!singlePropertyId) return;
+        const seq = ++loadBuildingSeq.current;
         setBuildingLoading(true);
         setBuildingError(null);
         try {
-            setBuildingData(await propertyReportsApi.pnlByBuilding({
+            const result = await propertyReportsApi.pnlByBuilding({
                 propertyId: singlePropertyId, from: applied.from, to: applied.to, compare: applied.compare,
-            }));
+            });
+            if (seq !== loadBuildingSeq.current) return;
+            setBuildingData(result);
         } catch (err) {
+            if (seq !== loadBuildingSeq.current) return;
             setBuildingData(null);
             setBuildingError(err instanceof ApiError ? err.message : tCommon("loadFailed"));
         } finally {
-            setBuildingLoading(false);
+            if (seq === loadBuildingSeq.current) setBuildingLoading(false);
         }
     }, [singlePropertyId, applied.from, applied.to, applied.compare, tCommon]);
 
