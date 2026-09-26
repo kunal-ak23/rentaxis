@@ -945,8 +945,9 @@ export default function LeasesPage() {
             {!loading && viewMode === 'table' && leases.length > 0 && (() => {
                 return (
                     <>
-                        <div className="bg-surface rounded-xl border border-border overflow-hidden">
-                            <table className="w-full">
+                        {/* Scrolls sideways on a phone rather than clipping the row menu column. */}
+                        <div className="bg-surface rounded-xl border border-border overflow-x-auto">
+                            <table className="w-full min-w-[860px]">
                                 <thead>
                                     <tr className="bg-input/50">
                                         {canPostLeases && (

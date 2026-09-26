@@ -61,6 +61,34 @@ describe("ActionsMenu", () => {
         expect(empty.container).toBeEmptyDOMElement();
     });
 
+    it("places the open panel with fixed coordinates at the trigger's end, flipping or opening upward to stay on screen", () => {
+        const rect = (r: Partial<DOMRect>) => () => ({ x: 0, y: 0, width: 32, height: 28, top: 0, left: 0, right: 0, bottom: 0, toJSON: () => ({}), ...r }) as DOMRect;
+        Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+        Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
+        render(<ActionsMenu label="x" items={items()} testId="m" triggerTestId="t" />);
+        const t = screen.getByTestId("t");
+        // A row menu at the end of a row: the panel's right edge meets the trigger's.
+        t.getBoundingClientRect = rect({ left: 340, right: 372, top: 100, bottom: 128 });
+        fireEvent.click(t);
+        expect(screen.getByTestId("m").style.position).toBe("fixed");
+        expect(screen.getByTestId("m").style.right).toBe("18px");
+        expect(screen.getByTestId("m").style.top).toBe("132px");
+        fireEvent.click(t);
+        // A trigger near the start edge: 200px to its left would leave the screen, so it opens rightward.
+        t.getBoundingClientRect = rect({ left: 16, right: 130, top: 760, bottom: 788 });
+        fireEvent.click(t);
+        expect(screen.getByTestId("m").style.left).toBe("16px");
+        // …and near the bottom it opens upward.
+        expect(screen.getByTestId("m").style.bottom).toBe("44px");
+    });
+
+    it("closes when the page scrolls under it", () => {
+        render(<ActionsMenu label="x" items={items()} testId="m" triggerTestId="t" />);
+        fireEvent.click(screen.getByTestId("t"));
+        fireEvent.scroll(window);
+        expect(screen.getByTestId("m")).not.toBeVisible();
+    });
+
     it("labels the icon trigger for screen readers", () => {
         render(<ActionsMenu label="Actions for A-101" items={items()} testId="m" triggerTestId="t" variant="icon" />);
         expect(screen.getByTestId("t")).toHaveAttribute("aria-label", "Actions for A-101");

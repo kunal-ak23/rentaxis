@@ -19,8 +19,7 @@ export interface ActionsMenuItem {
  * One "More actions" / ⋯ menu. Items are always mounted and the panel is
  * `hidden` while closed, so hidden items stay out of the accessibility tree
  * but tests (and the action-coverage catalog) can still find them by test id.
- * The panel opens toward the inline end of its trigger (`end-0`, RTL-safe) and
- * flips to the other side when that would push it off the screen.
+ * See `measure` for where the open panel goes.
  */
 export default function ActionsMenu({ label, items, testId, triggerTestId, variant = "button" }: {
     label: string;
@@ -30,7 +29,8 @@ export default function ActionsMenu({ label, items, testId, triggerTestId, varia
     variant?: "button" | "icon";
 }) {
     const [open, setOpen] = useState(false);
-    const [flip, setFlip] = useState(false);
+    // Where the open panel sits, in viewport coordinates (null: not measured, e.g. in tests).
+    const [place, setPlace] = useState<React.CSSProperties | null>(null);
     const root = useRef<HTMLDivElement>(null);
     const panel = useRef<HTMLDivElement>(null);
     const trigger = useRef<HTMLButtonElement>(null);
@@ -40,26 +40,49 @@ export default function ActionsMenu({ label, items, testId, triggerTestId, varia
         const onDown = (e: MouseEvent) => {
             if (root.current && !root.current.contains(e.target as Node)) setOpen(false);
         };
+        // The panel is placed against the trigger when it opens; a scroll or resize
+        // moves the trigger, so the menu closes rather than float off it.
+        const onMove = (e: Event) => {
+            if (panel.current && e.target instanceof Node && panel.current.contains(e.target)) return;
+            setOpen(false);
+        };
         document.addEventListener("mousedown", onDown);
-        return () => document.removeEventListener("mousedown", onDown);
+        window.addEventListener("scroll", onMove, true);
+        window.addEventListener("resize", onMove);
+        return () => {
+            document.removeEventListener("mousedown", onDown);
+            window.removeEventListener("scroll", onMove, true);
+            window.removeEventListener("resize", onMove);
+        };
     }, [open]);
 
     /**
-     * Keep the panel on screen: a trigger near the start edge (a wrapped header
-     * row on a phone) would otherwise open a 200px panel past that edge. Decided
-     * from the trigger's box when opening, so no effect has to re-render it.
+     * The panel is `position: fixed`, placed from the trigger's box when it opens,
+     * so a row menu inside a scrolling or clipped table is never cut off. It
+     * lines up with the trigger's inline end (right in English, left in Arabic),
+     * flips to the start edge when that would leave the screen, and opens upward
+     * near the bottom of the viewport.
      */
-    const decideFlip = () => {
+    const measure = (): React.CSSProperties | null => {
         const el = trigger.current;
-        if (!el || typeof window === "undefined") return false;
+        if (!el || typeof window === "undefined") return null;
         const r = el.getBoundingClientRect();
-        if (r.width === 0) return false;
+        if (r.width === 0 && r.height === 0) return null;
+        const vw = window.innerWidth, vh = window.innerHeight;
         const rtl = getComputedStyle(el).direction === "rtl";
         const need = 208;
-        return rtl ? r.left + need > window.innerWidth - 4 : r.right - need < 4;
+        const endFits = rtl ? r.left + need <= vw - 4 : r.right - need >= 4;
+        const alignRight = rtl ? !endFits : endFits; // anchor the panel's right edge to the trigger's right edge
+        const estimate = items.length * 34 + 10;
+        const up = r.bottom + 4 + estimate > vh - 4 && r.top - 4 - estimate >= 4;
+        return {
+            position: "fixed",
+            ...(alignRight ? { right: Math.max(4, vw - r.right) } : { left: Math.max(4, r.left) }),
+            ...(up ? { bottom: vh - r.top + 4 } : { top: r.bottom + 4 }),
+        };
     };
     const openMenu = () => {
-        setFlip(decideFlip());
+        setPlace(measure());
         setOpen(true);
     };
 
@@ -127,9 +150,11 @@ export default function ActionsMenu({ label, items, testId, triggerTestId, varia
                 data-testid={testId}
                 hidden={!open}
                 onKeyDown={onKeyDown}
+                style={place ?? undefined}
                 className={cn(
-                    "absolute top-full z-50 mt-1 min-w-[200px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg",
-                    flip ? "start-0" : "end-0",
+                    "z-50 min-w-[200px] max-w-[calc(100vw-2rem)] max-h-[70vh] overflow-y-auto rounded-lg border border-border bg-surface py-1 shadow-lg",
+                    // Unmeasured (server render, tests): hang below the trigger at its inline end.
+                    !place && "absolute top-full end-0 mt-1",
                 )}
             >
                 {items.map(item => {
