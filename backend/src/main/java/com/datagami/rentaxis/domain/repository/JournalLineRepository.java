@@ -258,6 +258,70 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
     BigDecimal pnlNetMovementFor(@Param("tenantId") UUID tenantId, @Param("from") LocalDate from, @Param("to") LocalDate to,
                                  @Param("propertyIds") Collection<UUID> propertyIds);
 
+    /**
+     * S16-13: {@link #pnlCells} for named properties and the unassigned lines (no
+     * property) only — what a P&L of selected properties shows. Two branches, so
+     * each uses the property index instead of scanning the tenant's whole period
+     * (the property statement ran the tenant-wide query twice per pack).
+     */
+    @Query(value = """
+        select l.property_id as propertyId, l.account_id as accountId,
+               coalesce(sum(l.debit),0) as debit, coalesce(sum(l.credit),0) as credit,
+               count(*) filter (where a.property_id is not null and l.property_id <> a.property_id) as mismatchLines
+        from journal_lines l join journal_entries e on e.id = l.journal_entry_id
+             join accounts a on a.id = l.account_id
+        where l.tenant_id = :tenantId and e.tenant_id = :tenantId and l.property_id in (:propertyIds)
+          and e.entry_date between :from and :to
+          and a.account_type in ('INCOME', 'EXPENSE')
+          and e.doc_type <> 'YEC'
+        group by l.property_id, l.account_id
+        union all
+        select cast(null as uuid) as propertyId, l.account_id as accountId,
+               coalesce(sum(l.debit),0) as debit, coalesce(sum(l.credit),0) as credit, cast(0 as bigint) as mismatchLines
+        from journal_lines l join journal_entries e on e.id = l.journal_entry_id
+             join accounts a on a.id = l.account_id
+        where l.tenant_id = :tenantId and e.tenant_id = :tenantId and l.property_id is null
+          and e.entry_date between :from and :to
+          and a.account_type in ('INCOME', 'EXPENSE')
+          and e.doc_type <> 'YEC'
+        group by l.account_id
+        """, nativeQuery = true)
+    List<PnlCellRow> pnlCellsFor(@Param("tenantId") UUID tenantId, @Param("from") LocalDate from, @Param("to") LocalDate to,
+                                 @Param("propertyIds") Collection<UUID> propertyIds);
+
+    /**
+     * S16-02: one property's P&L cells by tower — the Building of the unit each line
+     * carries (null: a property-level line, or a unit in no tower), returned in the
+     * {@code propertyId} slot so the P&L fold can bucket it. The building is derived
+     * through {@code units}, both sides bound to the tenant.
+     */
+    @Query(value = """
+        select u.building_id as propertyId, l.account_id as accountId,
+               coalesce(sum(l.debit),0) as debit, coalesce(sum(l.credit),0) as credit, cast(0 as bigint) as mismatchLines
+        from journal_lines l join journal_entries e on e.id = l.journal_entry_id
+             join accounts a on a.id = l.account_id
+             left join units u on u.id = l.unit_id and u.tenant_id = :tenantId
+        where l.tenant_id = :tenantId and e.tenant_id = :tenantId and l.property_id = :propertyId
+          and e.entry_date between :from and :to
+          and a.account_type in ('INCOME', 'EXPENSE')
+          and e.doc_type <> 'YEC'
+        group by u.building_id, l.account_id
+        """, nativeQuery = true)
+    List<PnlCellRow> pnlCellsByBuilding(@Param("tenantId") UUID tenantId, @Param("propertyId") UUID propertyId,
+                                        @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    /** S16-02: one property's net income-statement movement, credit-positive (the building P&L's check row). */
+    @Query(value = """
+        select coalesce(sum(l.credit),0) - coalesce(sum(l.debit),0)
+        from journal_lines l join journal_entries e on e.id = l.journal_entry_id
+             join accounts a on a.id = l.account_id
+        where l.tenant_id = :tenantId and e.entry_date between :from and :to
+          and a.account_type in ('INCOME', 'EXPENSE') and e.doc_type <> 'YEC'
+          and l.property_id = :propertyId
+        """, nativeQuery = true)
+    BigDecimal pnlNetMovementForProperty(@Param("tenantId") UUID tenantId, @Param("from") LocalDate from,
+                                         @Param("to") LocalDate to, @Param("propertyId") UUID propertyId);
+
     /** Whether this tenant has any journal line whose effective property is this id (a deleted property's column). */
     @Query(value = """
         select exists (select 1 from journal_lines l join accounts a on a.id = l.account_id
@@ -329,6 +393,37 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
         group by l.property_id, l.account_id
         """, nativeQuery = true)
     List<PnlCellRow> balanceCells(@Param("tenantId") UUID tenantId, @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    /**
+     * S16-13: every line of the tenant, by property and account, whatever its date —
+     * one pass over {@code journal_lines} with no join. The balance sheet takes
+     * {@link #cellsDated} for the entries after its date away from this, which is
+     * almost nothing for "as at today", instead of joining every line to its entry.
+     * No join to {@code accounts} either: the caller keeps the tenant's own accounts.
+     */
+    @Query(value = """
+        select l.property_id as propertyId, l.account_id as accountId,
+               coalesce(sum(l.debit),0) as debit, coalesce(sum(l.credit),0) as credit, cast(0 as bigint) as mismatchLines
+        from journal_lines l
+        where l.tenant_id = :tenantId
+        group by l.property_id, l.account_id
+        """, nativeQuery = true)
+    List<PnlCellRow> cellsAllDates(@Param("tenantId") UUID tenantId);
+
+    /**
+     * S16-13: {@link #balanceCells} without the join to {@code accounts}, driven from the
+     * entries in the date range (the {@code (tenant_id, entry_date)} index), so a short
+     * range — the fiscal year, or the entries after "as at" — reads only its own lines.
+     */
+    @Query(value = """
+        select l.property_id as propertyId, l.account_id as accountId,
+               coalesce(sum(l.debit),0) as debit, coalesce(sum(l.credit),0) as credit, cast(0 as bigint) as mismatchLines
+        from journal_entries e join journal_lines l on l.journal_entry_id = e.id
+        where e.tenant_id = :tenantId and l.tenant_id = :tenantId
+          and e.entry_date between :from and :to
+        group by l.property_id, l.account_id
+        """, nativeQuery = true)
+    List<PnlCellRow> cellsDated(@Param("tenantId") UUID tenantId, @Param("from") LocalDate from, @Param("to") LocalDate to);
 
     /** F14-10: Σ debit − Σ credit over every line through a date; zero on a balanced ledger (the balance sheet's own check). */
     @Query(value = """
