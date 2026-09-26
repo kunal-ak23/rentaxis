@@ -254,6 +254,11 @@ public class BookingController {
     }
 
     @PostMapping("/bookings")
+    // One transaction for the lease check, the create and the mapping: the unit comes
+    // from the lease as a lazy proxy, and BookingService reads its property and building
+    // (FacilityService.amenityVisibleToUnit). With OSIV off a proxy loaded here outside a
+    // transaction could not initialise there (sim4y S16-05: every renter booking 500'd).
+    @org.springframework.transaction.annotation.Transactional
     @PreAuthorize("hasRole('RENTER')")
     public ResponseEntity<BookingRequestDTO> create(@Valid @RequestBody BookingCreateRequest req) {
         UUID tenantId = tenantId();
