@@ -38,6 +38,8 @@ const KNOWN_CONSOLE: { url: RegExp; text: RegExp; why: string; roles?: UserRole[
       why: 'GET /leases/{id}/settlement is 404 until a settlement exists; the swept contract is active, not ending' },
     { url: /\/dashboard\/listings$/, text: /status of 404/,
       why: 'GET /listings is 404 while the organisation has the LISTINGS feature off (a fresh organisation does); the page is swept by URL anyway' },
+    { url: /\/leases\/[^/]+\?tab=journals$/, text: /status of 403/, roles: ['PROPERTY_MANAGER'],
+      why: 'the Journal Vouchers section (the old Journals tab, open to every role before PR 3 too) reads GET /leases/{id}/journals and the renter ledger, which the backend refuses a property manager; the section shows its error' },
     { url: /\/finance\/(opening-balances|reconciliation)$/, text: /status of 400/,
       why: 'GET /finance/opening-balances is 400 until the cut-over (books-start) date is set, which a fresh organisation has not done' },
 ];
