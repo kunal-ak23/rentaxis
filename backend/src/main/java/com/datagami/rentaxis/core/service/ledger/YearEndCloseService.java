@@ -105,10 +105,23 @@ public class YearEndCloseService {
         for (FiscalYearClose c : closes.findAllByOrderByFiscalYearDescClosedAtDesc()) {
             latest.putIfAbsent(c.getFiscalYear(), c);
         }
+        // S16-07: a year that ended before the books start is closed by the first close
+        // after it (the YEC closes cumulative balances), so it is listed as closed, with
+        // that close's journal — until that close is re-opened.
+        LocalDate booksStart = fiscal.booksStartDate();
+        List<FiscalYearClose> closedRows = latest.values().stream()
+                .filter(c -> c.getStatus() == FiscalYearCloseStatus.CLOSED)
+                .sorted(Comparator.comparingInt(FiscalYearClose::getFiscalYear)).toList();
         List<FiscalYearDTO> out = new ArrayList<>();
         for (int fy = to; fy >= from; fy--) {
             Period p = periodOf(fy);
             FiscalYearClose c = latest.get(fy);
+            if ((c == null || c.getStatus() != FiscalYearCloseStatus.CLOSED)
+                    && booksStart != null && p.end().isBefore(booksStart)) {
+                final int year = fy;
+                FiscalYearClose covering = closedRows.stream().filter(x -> x.getFiscalYear() > year).findFirst().orElse(null);
+                if (covering != null) c = covering;
+            }
             List<PnlLine> pnl = pnlLines(tenant, p.start(), p.end());
             BigDecimal result = sum(pnl, "INCOME").subtract(sum(pnl, "EXPENSE"));
             String number = c == null || c.getJournalId() == null ? null

@@ -39,9 +39,21 @@ class NightlyJobSwitchesIT extends AbstractPostgresIT {
     @MockitoSpyBean UnitListingRepository listingRepo;
     @MockitoSpyBean LeaseRepository leaseRepo;
 
+    @org.springframework.beans.factory.annotation.Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
+
     @BeforeEach
     void reset() {
         clearInvocations(orgs, rentSettings, listingRepo, leaseRepo);
+    }
+
+    /**
+     * The ShedLock aspect takes 'lease-expiration' (lockAtLeastFor one minute) before
+     * the switch is read; left in the shared database it would make LeaseExpirationJobIT's
+     * scheduled entry point skip its sweep.
+     */
+    @org.junit.jupiter.api.AfterEach
+    void releaseTheLock() {
+        jdbc.update("delete from shedlock where name = 'lease-expiration'");
     }
 
     @Test

@@ -236,6 +236,11 @@ class YearEndCloseIT extends AbstractPostgresIT {
         assertThat(pnlTotal(LocalDate.of(2025, 12, 31), false)).isEqualByComparingTo("0");
         assertThatThrownBy(() -> closes.close(2024, false, TODAY))
                 .isInstanceOf(BusinessRuleViolationException.class).hasMessageContaining("its close covers 2024");
+        // Listed as closed by 2025's close, and open again once that close is re-opened.
+        assertThat(year(2024).status()).isEqualTo("CLOSED");
+        assertThat(year(2024).journalId()).isEqualTo(year(2025).journalId());
+        closes.reopen(2025, "Audit adjustment", TODAY);
+        assertThat(year(2024).status()).isEqualTo("OPEN");
     }
 
     @Test
