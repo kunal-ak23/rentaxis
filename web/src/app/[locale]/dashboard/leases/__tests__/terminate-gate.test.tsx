@@ -84,6 +84,8 @@ async function showCards() {
 }
 
 beforeEach(() => {
+    // The list keeps its filters in the URL, and jsdom keeps the URL between tests.
+    window.history.replaceState(null, "", "/");
     role = "ACCOUNTANT";
     api.paged.mockImplementation(async (q: { status?: string } = {}) => {
         const content = q.status ? ROWS.filter(l => l.status === q.status) : ROWS;

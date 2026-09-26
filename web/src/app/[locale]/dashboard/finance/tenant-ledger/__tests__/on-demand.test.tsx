@@ -38,19 +38,36 @@ describe("Tenant Ledger — on demand", () => {
 
     it("reads one contract through the general ledger filtered on tenant and contract, so brought forward is that contract's", async () => {
         query.current = "renterId=r1&leaseId=l1&from=2026-01-01&to=2026-06-30";
-        general.mockResolvedValue([{ accountId: "a", accountCode: "1200", accountName: "Rent Receivable", accountType: "ASSET", openingBalance: 4500,
-            rows: [{ entryId: "e", entryNumber: "CIL-1", entryDate: "2026-02-01", docType: "CIL", particular: "Rent", narration: "", debit: 1000, credit: 0, balance: 5500,
-                propertyId: null, unitId: null, leaseId: "l1", renterId: "r1", chequeId: null }],
-            totalDebit: 1000, totalCredit: 0, closingBalance: 5500, truncated: false }]);
+        // The renter ledger only says which accounts the tenant carries (renter-wide figures, never shown here).
+        renter.mockResolvedValue([
+            { accountId: "a", openingBalance: 9999, rows: [] },
+            { accountId: "dep", openingBalance: -8000, rows: [] },
+            { accountId: "other", openingBalance: 100, rows: [] },
+        ]);
+        const row = { entryId: "e", entryNumber: "CIL-1", entryDate: "2026-02-01", docType: "CIL", particular: "Rent", narration: "", debit: 1000, credit: 0, balance: 5500,
+            propertyId: null, unitId: null, leaseId: "l1", renterId: "r1", chequeId: null };
+        general.mockResolvedValue([
+            { accountId: "a", accountCode: "1200", accountName: "Rent Receivable", accountType: "ASSET", openingBalance: 4500,
+              rows: [row], totalDebit: 1000, totalCredit: 0, closingBalance: 5500, truncated: false },
+            // #104: a deposit held — brought forward, no movement in the window — stays on the statement.
+            { accountId: "dep", accountCode: "2300", accountName: "Security Deposit", accountType: "LIABILITY", openingBalance: -5000,
+              rows: [], totalDebit: 0, totalCredit: 0, closingBalance: -5000, truncated: false },
+            // Another contract's account: nothing for this one, so it is left out.
+            { accountId: "other", accountCode: "1300", accountName: "Other", accountType: "ASSET", openingBalance: 0,
+              rows: [], totalDebit: 0, totalCredit: 0, closingBalance: 0, truncated: false },
+        ]);
         render(<Page />);
-        await waitFor(() => expect(general).toHaveBeenCalledWith({ renterId: "r1", leaseId: "l1", from: "2026-01-01", to: "2026-06-30" }));
-        expect(renter).not.toHaveBeenCalled();
+        await waitFor(() => expect(general).toHaveBeenCalledWith({ accountIds: ["a", "dep", "other"], renterId: "r1", leaseId: "l1", from: "2026-01-01", to: "2026-06-30" }));
+        expect(renter).toHaveBeenCalledWith("r1", { from: "2026-01-01", to: "2026-06-30" });
         expect(await screen.findByTestId("ledger-bf-a")).toHaveTextContent("4,500.00 Dr");
         expect(screen.getByTestId("ledger-subtotal-a")).toHaveTextContent("5,500.00 Dr");
+        expect(screen.getByTestId("ledger-bf-dep")).toHaveTextContent("5,000.00 Cr");
+        expect(screen.queryByTestId("ledger-bf-other")).toBeNull();
     });
 
     it("drops the contract narrowing when another tenant is picked", async () => {
         query.current = "renterId=r1&leaseId=l1";
+        renter.mockResolvedValueOnce([{ accountId: "a", openingBalance: 0, rows: [] }]);
         render(<Page />);
         await waitFor(() => expect(general).toHaveBeenCalledTimes(1));
         fireEvent.change(screen.getByLabelText("Tenant"), { target: { value: "r2" } });

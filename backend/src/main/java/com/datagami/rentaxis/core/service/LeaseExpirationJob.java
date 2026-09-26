@@ -6,6 +6,7 @@ import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -64,6 +65,17 @@ public class LeaseExpirationJob {
      */
     private final Clock clock;
 
+    /**
+     * S16-12: kill switch for the midnight sweep, same style as
+     * {@code rentaxis.recognition.job.enabled}. Default true — a deployment that
+     * forgets the variable must still end its tenancies. Off for a migration
+     * rehearsal or a back-dated replay, where the real midnight would flip every
+     * replayed lease past its end to EXPIRED. {@link #runFor(LocalDate)} is not
+     * gated, so an operator can still drive a sweep by hand.
+     */
+    @Value("${rentaxis.lease-expiry.job.enabled:true}")
+    private boolean enabled = true;
+
     public LeaseExpirationJob(LandlordOrgRepository orgs, LeaseService leaseService, Clock clock) {
         this.orgs = orgs;
         this.leaseService = leaseService;
@@ -88,6 +100,10 @@ public class LeaseExpirationJob {
     @Scheduled(cron = "0 0 0 * * ?")
     @SchedulerLock(name = "lease-expiration", lockAtMostFor = "PT30M", lockAtLeastFor = "PT1M")
     public void evaluateExpiredLeases() {
+        if (!enabled) {
+            log.info("Lease expiry is disabled (rentaxis.lease-expiry.job.enabled=false); skipping tonight's sweep");
+            return;
+        }
         runFor(LocalDate.now(clock));
     }
 

@@ -136,7 +136,7 @@ export default function ChequeRowsEditor({ rows, onChange, propertyId, expectedT
                                 <td className={`${td}${flag(i, "debitAccountId")}`} data-grid-field="debitAccountId" data-paste-invalid={paste.isBad(i, "debitAccountId") || undefined}>
                                     <SettlementAccountPicker
                                         value={c.debitAccountId ?? null}
-                                        onChange={id => patch(c.key, { debitAccountId: id })}
+                                        onChange={id => { patch(c.key, { debitAccountId: id }); paste.clear(i, "debitAccountId"); }}
                                         propertyId={propertyId}
                                         placeholder={t("debitAccount")}
                                     />

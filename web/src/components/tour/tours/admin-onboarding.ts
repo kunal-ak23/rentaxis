@@ -10,7 +10,7 @@ export const adminOnboardingTour: TourDef = {
       id: 'welcome',
       target: '[data-tour="dashboard-header"]',
       title: 'Welcome to RentAxis!',
-      text: 'This is your home page — the numbers that matter and today\'s work.',
+      text: 'This is your home page: the contract pipeline, what needs you now, Unit Status and the numbers that matter.',
       position: 'bottom',
     },
     {

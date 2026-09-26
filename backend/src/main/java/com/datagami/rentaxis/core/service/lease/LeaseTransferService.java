@@ -342,6 +342,8 @@ public class LeaseTransferService {
     private LeaseRenewalService renewalService;
     @org.springframework.beans.factory.annotation.Autowired
     private LeaseEffectiveTerms effectiveTerms;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.datagami.rentaxis.core.service.penalty.PenaltyLapse penaltyLapse;
 
     private boolean chargeTypeRent(UUID id) {
         return chargeTypes.findById(id).map(ct -> ct.getBehaviour() == ChargeBehaviour.RENT).orElse(false);
@@ -438,6 +440,8 @@ public class LeaseTransferService {
         }
 
         leaseService.markTransferredOut(a, t, b, tcrId);
+        // R1 P3-5: A takes no charges any more; a fine still proposed on it lapses.
+        penaltyLapse.lapse(a.getId(), t, com.datagami.rentaxis.core.service.penalty.PenaltyLapse.End.TRANSFERRED, unitNumber(b));
         return new Completed(c, copies);
     }
 
@@ -487,6 +491,12 @@ public class LeaseTransferService {
             problems.add(e.getMessage());
         }
         LeaseTerminationService.TransferEnd end = termination.previewForTransfer(a, t, leaving);
+        // R1 P3-3: the post ends A with a credit note for its unearned VAT; the dry run says so first.
+        try {
+            termination.requireTrnForCreditNote(a, end.unearnedVat());
+        } catch (BusinessRuleViolationException e) {
+            problems.add(e.getMessage());
+        }
         BigDecimal c = end.receivableAfter().subtract(bouncedTotal(register)).setScale(2, RoundingMode.HALF_UP);
         return new Estimate(c, carried, problems, carriedRows);
     }

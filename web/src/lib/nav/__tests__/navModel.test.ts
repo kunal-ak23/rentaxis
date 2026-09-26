@@ -166,6 +166,9 @@ describe("activeNav — the Collection hub's pills", () => {
         });
     it("offers Overdue as a saved view", () => {
         expect(buildNav(ctx("TENANT_ADMIN")).find(s => s.id === "collection")!.savedViews.map(v => v.href)).toEqual(["/dashboard/collections?tab=overdue"]);
+        expect(buildNav(ctx("TENANT_ADMIN")).find(s => s.id === "leasing")!.savedViews.map(v => v.id)).toEqual(["saved-expiring", "saved-drafts"]);
+        expect(buildNav(ctx("PROPERTY_MANAGER")).find(s => s.id === "leasing")!.savedViews.map(v => v.href))
+            .toEqual(["/dashboard/leases?view=expiring", "/dashboard/leases?view=draft"]);
     });
 });
 

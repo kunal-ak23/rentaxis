@@ -27,6 +27,7 @@ vi.mock("@/components/ui/Pagination", () => ({ Pagination: () => null }));
 vi.mock("@/components/ui/confirm-dialog", () => ({ ConfirmDialog: () => null }));
 
 import PropertiesPage from "../page";
+// Spec §7: Add project, Import property and Import portfolio sit under the header's More menu.
 import en from "../../../../../../messages/en.json";
 
 const SAMPLE_STATS = [
@@ -110,7 +111,8 @@ afterEach(() => {
 
 async function openImportModalAndSubmit() {
     render(<PropertiesPage />);
-    fireEvent.click(await screen.findByRole("button", { name: /Import Property/ }));
+    fireEvent.click(await screen.findByTestId("properties-more"));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Import Property/ }));
     const fileInput = document.querySelector('input[type="file"][accept=".csv"]')!;
     fireEvent.change(fileInput, {
         target: { files: [new File(["BuildingName,UnitNumber\nA,101\n"], "units.csv", { type: "text/csv" })] },
@@ -169,7 +171,8 @@ describe("PropertiesPage import result", () => {
 describe("PropertiesPage enum options", () => {
     it("offers only valid PropertyType values in the Add Project form", async () => {
         render(<PropertiesPage />);
-        fireEvent.click(await screen.findByRole("button", { name: en.MasterData.addProject }));
+        fireEvent.click(await screen.findByTestId("properties-more"));
+        fireEvent.click(screen.getByRole("menuitem", { name: en.MasterData.addProject }));
 
         // Labelled options, valued with the backend's enum names.
         expect((screen.getByRole("option", { name: "Residential" }) as HTMLOptionElement).value).toBe("RESIDENTIAL");
@@ -199,7 +202,8 @@ describe("PropertiesPage portfolio import", () => {
 
     async function openPortfolioModalAndUpload() {
         render(<PropertiesPage />);
-        fireEvent.click(await screen.findByRole("button", { name: /Import Portfolio/ }));
+        fireEvent.click(await screen.findByTestId("properties-more"));
+        fireEvent.click(screen.getByRole("menuitem", { name: /Import Portfolio/ }));
         const fileInput = document.querySelector('input[type="file"][accept=".xlsx"]')!;
         fireEvent.change(fileInput, {
             target: { files: [new File(["stub"], "portfolio.xlsx")] },
@@ -252,7 +256,8 @@ describe("PropertiesPage portfolio import", () => {
         portfolioTemplateResponse = jsonStub(false, {}, 500);
 
         render(<PropertiesPage />);
-        fireEvent.click(await screen.findByRole("button", { name: /Import Portfolio/ }));
+        fireEvent.click(await screen.findByTestId("properties-more"));
+        fireEvent.click(screen.getByRole("menuitem", { name: /Import Portfolio/ }));
         const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click");
         fireEvent.click(screen.getByRole("button", { name: /Download Template/ }));
 
@@ -269,7 +274,8 @@ describe("PropertiesPage create project errors", () => {
         });
 
         render(<PropertiesPage />);
-        fireEvent.click(await screen.findByRole("button", { name: en.MasterData.addProject }));
+        fireEvent.click(await screen.findByTestId("properties-more"));
+        fireEvent.click(screen.getByRole("menuitem", { name: en.MasterData.addProject }));
         fireEvent.change(screen.getByPlaceholderText("Project Name (EN)"), {
             target: { value: "Marina Tower" },
         });

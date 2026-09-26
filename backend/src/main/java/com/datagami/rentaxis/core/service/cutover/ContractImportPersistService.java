@@ -103,6 +103,7 @@ public class ContractImportPersistService {
     private final ChequeGenerationService chequeGenerationService;
     private final PropertyAccountService propertyAccounts;
     private final ImportBatchService batches;
+    private final CutoverRenterMatcher renterMatcher;
 
     private static final ObjectMapper JOB_DETAILS_MAPPER = new ObjectMapper();
 
@@ -136,7 +137,9 @@ public class ContractImportPersistService {
 
         Properties properties = writeProperties(wb, accountsByName, warnings, batch);
         Units units = writeUnits(wb, properties.byName(), batch);
-        Map<String, Renter> rentersByEmail = writeRenters(wb, batch);
+        RentersWritten renters = writeRenters(wb, batch);
+        Map<String, Renter> rentersByEmail = renters.byEmail();
+        int rentersCreated = renters.created();
         Contracts contracts = writeContracts(wb, properties.byName(), units.byKey(), rentersByEmail,
                 accountsByName, batch);
         int chequesCreated = writeCheques(wb, contracts, accountsByName);
@@ -150,7 +153,7 @@ public class ContractImportPersistService {
         job.setPropertiesCreated(properties.byName().size());
         job.setBuildingsCreated(units.buildings());
         job.setUnitsCreated(units.byKey().size());
-        job.setRentersCreated(rentersByEmail.size());
+        job.setRentersCreated(rentersCreated);
         job.setLeasesCreated(contracts.byNumber().size());
         // The column is still called schedules_created; what it counts is the cheque
         // rows the import wrote, which is what the controller reports it as.
@@ -170,7 +173,7 @@ public class ContractImportPersistService {
         importJobRepository.save(job);
 
         return new ContractImportSummary(batch.getId(), properties.byName().size(), units.buildings(),
-                units.byKey().size(), rentersByEmail.size(), contracts.byNumber().size(),
+                units.byKey().size(), rentersCreated, contracts.byNumber().size(),
                 chequesCreated, properties.mappingsCreated(), warnings);
     }
 
@@ -327,12 +330,36 @@ public class ContractImportPersistService {
     // 3. Renters
     // ------------------------------------------------------------------
 
-    private Map<String, Renter> writeRenters(Workbook wb, ImportBatch batch) {
+    /**
+     * S16-10 / PR #369 R1 P2-2: the organisation's renter the validator matched for this
+     * email and name ({@link CutoverRenterMatcher}, the rule the validator applied), or
+     * null when it has none. A matched renter is not linked to the batch, so discarding or
+     * reversing it never touches them. A match the matcher refuses cannot reach here — the
+     * validator refused the workbook — and is refused again rather than guessed.
+     */
+    private Renter existingRenter(String email, String name) {
+        CutoverRenterMatcher.Match m = renterMatcher.match(TenantContextHolder.getTenantId(), email, name);
+        if (m == null) return null;
+        if (!m.reusable()) throw new IllegalStateException(m.problem());
+        return renterRepository.findById(m.renterId()).orElseThrow();
+    }
+
+    /** The sheet's renters by email (new and matched), and how many were created. */
+    private record RentersWritten(Map<String, Renter> byEmail, int created) {}
+
+    private RentersWritten writeRenters(Workbook wb, ImportBatch batch) {
         Sheet sheet = wb.getSheet("Renters");
         Map<String, Renter> byEmail = new LinkedHashMap<>();
+        int created = 0;
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i);
             if (row == null || SheetCells.isRowEmpty(row)) continue;
+            // S16-10: listed again by a later workbook — the same person, one record.
+            Renter existing = existingRenter(SheetCells.getCellString(row, 2), SheetCells.getCellString(row, 0));
+            if (existing != null) {
+                byEmail.put(SheetCells.getCellString(row, 2).trim().toLowerCase(Locale.ROOT), existing);
+                continue;
+            }
             Renter r = new Renter();
             r.setNameEn(SheetCells.getCellString(row, 0));
             r.setNameAr(blankToNull(SheetCells.getCellString(row, 1)));
@@ -341,8 +368,9 @@ public class ContractImportPersistService {
             Renter saved = renterRepository.save(r);
             batches.linkEntity(batch.getId(), ImportedEntityType.RENTER, saved.getId());
             byEmail.put(saved.getEmail().toLowerCase(Locale.ROOT), saved);
+            created++;
         }
-        return byEmail;
+        return new RentersWritten(byEmail, created);
     }
 
     // ------------------------------------------------------------------
@@ -436,8 +464,13 @@ public class ContractImportPersistService {
         String buildingName = SheetCells.cell(row, hi, "BuildingName");
         String unitNumber = SheetCells.cell(row, hi, "UnitNumber");
         Unit unit = unitByKey.get(ContractImportValidator.unitKey(propertyName, buildingName, unitNumber));
-        Renter renter = renterByEmail.get(
-                SheetCells.cell(row, hi, "RenterEmail").trim().toLowerCase(Locale.ROOT));
+        String renterEmail = SheetCells.cell(row, hi, "RenterEmail").trim();
+        Renter renter = renterByEmail.get(renterEmail.toLowerCase(Locale.ROOT));
+        if (renter == null) {
+            // S16-10: a renter an earlier workbook created, named only on Contracts.
+            renter = existingRenter(renterEmail, SheetCells.cell(row, hi, "RenterName"));
+            if (renter != null) renterByEmail.put(renterEmail.toLowerCase(Locale.ROOT), renter);
+        }
 
         Lease lease = new Lease();
         lease.setUnit(unit);

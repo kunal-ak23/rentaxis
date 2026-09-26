@@ -86,3 +86,44 @@ export function canonicalHref(href: string): string {
     const qs = new URLSearchParams(sorted).toString();
     return (moved.pathname.slice(prefix.length) || "/") + (qs ? `?${qs}` : "");
 }
+
+/* ── Contract page tabs (spec §5, PR 3) ─────────────────────────────────── */
+
+export type LeaseTab = "overview" | "payments" | "documents" | "activity";
+export type LeaseSectionId =
+    | "cheques" | "penalties" | "journals" | "recognition" | "vat"
+    | "contract" | "attachments" | "addenda" | "interactions" | "maintenance";
+
+/**
+ * The contract page's nine old tabs (and the four new ones) → the new tab and
+ * the section to open in it, so a bookmarked `?tab=journals` still lands on the
+ * journals. Tab ids stay `overview|payments|documents|activity`; their labels are
+ * PACT's General · Cheques · Attachments · Activities.
+ */
+export const LEGACY_LEASE_TABS: Record<string, { tab: LeaseTab; section: LeaseSectionId | null }> = {
+    overview: { tab: "overview", section: null },
+    payments: { tab: "payments", section: null },
+    documents: { tab: "documents", section: "attachments" },
+    activity: { tab: "activity", section: null },
+    journals: { tab: "payments", section: "journals" },
+    recognition: { tab: "payments", section: "recognition" },
+    vat: { tab: "payments", section: "vat" },
+    penalties: { tab: "payments", section: "penalties" },
+    contract: { tab: "documents", section: "contract" },
+    maintenance: { tab: "activity", section: "maintenance" },
+    interactions: { tab: "activity", section: "interactions" },
+};
+
+export const LEASE_SECTIONS_BY_TAB: Record<LeaseTab, LeaseSectionId[]> = {
+    overview: [],
+    payments: ["cheques", "penalties", "journals", "recognition", "vat"],
+    documents: ["contract", "attachments", "addenda"],
+    activity: ["interactions", "maintenance"],
+};
+
+/** `?tab=` (old or new) plus an optional `?section=` → the tab to show and the section to open. */
+export function resolveLeaseTab(tab: string | null | undefined, section: string | null | undefined): { tab: LeaseTab; section: LeaseSectionId | null } {
+    const base = (tab && Object.prototype.hasOwnProperty.call(LEGACY_LEASE_TABS, tab) ? LEGACY_LEASE_TABS[tab] : null) ?? LEGACY_LEASE_TABS.overview;
+    const explicit = LEASE_SECTIONS_BY_TAB[base.tab].find(s => s === section) ?? null;
+    return { tab: base.tab, section: explicit ?? base.section };
+}

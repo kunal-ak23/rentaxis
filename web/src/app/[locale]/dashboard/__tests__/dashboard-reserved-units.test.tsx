@@ -13,8 +13,8 @@ vi.mock("@/i18n/routing", () => ({
     ),
 }));
 vi.mock("@/components/dashboard/FollowUpsWidget", () => ({ default: () => null }));
-vi.mock("@/components/dashboard/OverduePaymentsWidget", () => ({ default: () => null }));
-vi.mock("@/components/dashboard/ChequesToDepositWidget", () => ({ default: () => null }));
+vi.mock("@/components/dashboard/TodayList", () => ({ default: () => null }));
+vi.mock("@/components/dashboard/UnitStatusBoard", () => ({ default: () => null }));
 
 import DashboardPage from "../page";
 
@@ -69,23 +69,18 @@ function renderEn() {
 }
 
 describe("dashboard reserved units (F14-01a)", () => {
-    it("shows a reserved sub-line on the Occupancy tile", async () => {
+    it("shows the reserved count on the Unit Status tile", async () => {
         renderEn();
-        await waitFor(() => expect(screen.getByText("2 units reserved")).toBeInTheDocument());
-    });
-
-    it("lists the reserved count in the portfolio snapshot", async () => {
-        renderEn();
-        await waitFor(() => expect(screen.getByText("Reserved units")).toBeInTheDocument());
-        const label = screen.getByText("Reserved units");
-        const row = label.closest("div.flex") as HTMLElement;
-        expect(row.textContent).toContain("2");
+        await waitFor(() => expect(screen.getByTestId("kpi-unit-status")).toHaveTextContent("2 units reserved"));
+        // Everything the removed portfolio-snapshot card listed is still on the tile.
+        expect(screen.getByTestId("kpi-unit-status")).toHaveTextContent("6 occupied · 0 expiring · 2 vacant");
+        expect(screen.getByTestId("kpi-unit-status")).toHaveTextContent("1 properties · 8 active contracts");
     });
 
     it("omits the reserved sub-line when nothing is reserved", async () => {
         summary = { ...BASE_SUMMARY, reservedUnits: 0, vacantUnits: 4 };
         renderEn();
-        await waitFor(() => expect(screen.getByText("Occupancy")).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByTestId("kpi-unit-status")).toBeInTheDocument());
         expect(screen.queryByText(/units reserved/)).toBeNull();
     });
 });

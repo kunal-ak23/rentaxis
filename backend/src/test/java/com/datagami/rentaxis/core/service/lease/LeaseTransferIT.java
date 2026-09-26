@@ -94,6 +94,8 @@ class LeaseTransferIT extends AbstractPostgresIT {
     @Autowired RenterRepository renterRepo;
     @Autowired TransactionTemplate tx;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints;
+    @Autowired com.datagami.rentaxis.core.service.penalty.PenaltyAssessmentService penalties;
 
     private LeaseTestFixtures fixtures;
 
@@ -216,6 +218,106 @@ class LeaseTransferIT extends AbstractPostgresIT {
         assertThat(dry.journals().pdr()).isEqualTo(dry.carriedCheques().size());
         posting.post(b);
         assertThat(lease(b).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * S16-06: the carried rows do not cover the new contract plus C and B has no row
+     * of its own. The dry run used to drop "no cheque grid" and skip the balance
+     * check, so it said ok and the post refused with the gap; it now refuses with
+     * the post's own message.
+     */
+    @Test
+    void aDryRunRefusesWhatThePostRefusesWhenTheCarriedRowsLeaveABalanceToCollect() {
+        UUID a = leaseA(true);
+        Unit target = tx.execute(s -> fixtures.createUnit(fixtures.property(), "A-211"));
+        UUID b = transfers.draft(a, request(T, target.getId(), List.of(line("RENT", "41589.04"))), posting).getId();
+        assertThat(register(b)).isEmpty();
+
+        PostLeaseDryRunResponse dry = posting.dryRun(b);
+        assertThat(dry.ok()).isFalse();
+        assertThat(dry.chequeTotal()).as("the carried rows count in the grid, as on post").isEqualByComparingTo("30000");
+        String gap = "the rows must total 33,780.82 (3,780.82 still to collect)";
+        assertThat(String.join(" ", dry.errors())).contains(gap);
+        assertThatThrownBy(() -> posting.post(b)).isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining(gap);
+        assertThat(lease(a).getStatus()).as("rolled back").isEqualTo(LeaseStatus.ACTIVE);
+    }
+
+    /**
+     * S16-11: the renter paid the whole year up front (one cleared cheque). The
+     * carried balance pays the new term in full, so B posts with no grid of its
+     * own — the dry run and the post agree — and nothing is owed on either lease.
+     */
+    @Test
+    void aFullyPrepaidTenancyTransfersWithNoGrid() {
+        UUID a = prepaidLeaseA(line("RENT", "60000"), "60000");
+        Property other = tx.execute(s -> fixtures.createProperty("PP"));
+        Unit target = tx.execute(s -> fixtures.createUnit(other, "P-101"));
+        TransferPreviewDTO preview = transfers.preview(a, T, target.getId(), null);
+        assertThat(preview.balanceCarried()).isEqualByComparingTo("-37808.22");
+        assertThat(preview.gapToCollect()).isEqualByComparingTo("0");
+
+        UUID b = transfers.draft(a, request(T, target.getId(), List.of(line("RENT", "37808.22"))), posting).getId();
+        PostLeaseDryRunResponse dry = posting.dryRun(b);
+        assertThat(dry.errors()).isEmpty();
+        assertThat(dry.ok()).isTrue();
+        posting.post(b);
+
+        assertThat(lease(b).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+        assertThat(register(b)).isEmpty();
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, a, fixtures.property())).isZero();
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, b, other)).isZero();
+        assertThat(lease(a).getStatus()).isEqualTo(LeaseStatus.CLOSED);
+        assertTrialBalanceBalances();
+    }
+
+    /** R1 P3-5: a fine still proposed on the lease left behind lapses with the transfer (it can no longer be charged). */
+    @Test
+    void aProposedPenaltyOnTheLeaseLeftBehindLapsesWithTheTransfer() {
+        UUID a = prepaidLeaseA(line("RENT", "60000"), "60000");
+        var proposed = penalties.propose(new com.datagami.rentaxis.api.dto.penalty.ProposePenaltyRequest(a, null,
+                com.datagami.rentaxis.domain.entity.enums.PenaltyReason.LATE_PAYMENT, new BigDecimal("500"), "Late"), null);
+        Unit target = tx.execute(s -> fixtures.createUnit(fixtures.property(), "A-214"));
+        UUID b = transfers.draft(a, request(T, target.getId(), List.of(line("RENT", "37808.22"))), posting).getId();
+        posting.post(b);
+        String row = jdbc.queryForObject("select status || '|' || resolution_note from penalty_assessments where id = ?",
+                String.class, proposed.id());
+        assertThat(row).startsWith("WAIVED|Lapsed: not decided before the tenancy moved to A-214 on 15/05/2026");
+    }
+
+    /** S16-11: a prepaid renter moving to a cheaper term keeps the surplus as a credit on the new lease. */
+    @Test
+    void aPrepaidTransferToACheaperTermLeavesTheSurplusAsACredit() {
+        UUID a = prepaidLeaseA(line("RENT", "60000"), "60000");
+        Unit target = tx.execute(s -> fixtures.createUnit(fixtures.property(), "A-212"));
+        UUID b = transfers.draft(a, request(T, target.getId(), List.of(line("RENT", "30000"))), posting).getId();
+        assertThat(posting.dryRun(b).ok()).isTrue();
+        posting.post(b);
+        assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, b, fixtures.property())).isEqualByComparingTo("-7808.22");
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * S16-11 with VAT: an instalment-VAT lease paid up front. B has no instalment to
+     * carry a tax point, and the consideration was received in advance, so B's VAT is
+     * declared on its contract with a tax invoice (CONTRACT timing).
+     */
+    @Test
+    void aPrepaidVatTransferDeclaresTheNewTermsVatOnItsContract() {
+        UUID a = prepaidLeaseA(com.datagami.rentaxis.testsupport.LeaseTestFixtures.vatLine("RENT", "60000"), "63000");
+        Unit target = tx.execute(s -> fixtures.createUnit(fixtures.property(), "A-213"));
+        UUID b = transfers.draft(a, request(T, target.getId(),
+                List.of(com.datagami.rentaxis.testsupport.LeaseTestFixtures.vatLine("RENT", "37000"))), posting).getId();
+        PostLeaseDryRunResponse dry = posting.dryRun(b);
+        assertThat(dry.errors()).isEmpty();
+        assertThat(dry.notices()).singleElement().asString().contains("declared on the contract date");
+        posting.post(b);
+        assertThat(lease(b).getVatTiming()).isEqualTo(com.datagami.rentaxis.domain.entity.enums.VatTiming.CONTRACT);
+        Boolean documented = tx.execute(s -> vatTaxPoints.contractDocumented(b));
+        assertThat(documented).as("tax invoice issued").isTrue();
+        assertThat(jdbc.queryForObject("select coalesce(sum(vat_amount),0) from vat_tax_points where lease_id = ? and status = 'POSTED'",
+                BigDecimal.class, b)).isEqualByComparingTo("1850.00");
         assertTrialBalanceBalances();
     }
 
@@ -473,6 +575,17 @@ class LeaseTransferIT extends AbstractPostgresIT {
             chequeService.deposit(c.getId(), ChequeActionRequest.on(d));
             chequeService.clear(c.getId(), ChequeActionRequest.on(d));
         }
+        return leaseId;
+    }
+
+    /** A year paid up front: one cheque on 1 Jan for the whole year, cleared. */
+    private UUID prepaidLeaseA(LeaseLineInput rent, String cheque) {
+        UUID leaseId = fixtures.draftLease(CONTRACT, START, END, List.of(rent));
+        chequeGeneration.saveRows(leaseId, List.of(row("610050", CONTRACT, JAN, cheque)));
+        posting.post(leaseId);
+        Cheque c = chequeOn(leaseId, JAN);
+        chequeService.deposit(c.getId(), ChequeActionRequest.on(JAN));
+        chequeService.clear(c.getId(), ChequeActionRequest.on(JAN));
         return leaseId;
     }
 

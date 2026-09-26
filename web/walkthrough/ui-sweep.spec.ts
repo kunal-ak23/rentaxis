@@ -38,6 +38,8 @@ const KNOWN_CONSOLE: { url: RegExp; text: RegExp; why: string; roles?: UserRole[
       why: 'GET /leases/{id}/settlement is 404 until a settlement exists; the swept contract is active, not ending' },
     { url: /\/dashboard\/listings$/, text: /status of 404/,
       why: 'GET /listings is 404 while the organisation has the LISTINGS feature off (a fresh organisation does); the page is swept by URL anyway' },
+    { url: /\/leases\/[^/]+\?tab=journals$/, text: /status of 403/, roles: ['PROPERTY_MANAGER'],
+      why: 'the Journal Vouchers section (the old Journals tab, open to every role before PR 3 too) reads GET /leases/{id}/journals and the renter ledger, which the backend refuses a property manager; the section shows its error' },
     { url: /\/finance\/(opening-balances|reconciliation)$/, text: /status of 400/,
       why: 'GET /finance/opening-balances is 400 until the cut-over (books-start) date is set, which a fresh organisation has not done' },
 ];
@@ -296,6 +298,103 @@ for (const { role } of ROLES) {
                     await expect(page.getByTestId('ledger-col-tower')).toBeVisible();
                     await check(page, `/${locale}/dashboard/finance/tenant-ledger?renterId=${renterId}`, role, failures);
                     await expect(page.getByTestId('ledger-report-total')).toBeVisible();
+                }
+                await context.close();
+            }
+            expect(failures).toEqual([]);
+        });
+    }
+}
+
+// UI PR 3: the contract page (four tabs, ≤ 3 primary buttons + More actions, the old
+// ?tab= links), Home (pipeline, Needs you now, Unit Status board and its side panel),
+// the contract list (pills, row menus) and the Properties More menu — three roles,
+// EN and AR, laptop and phone. Every menu and panel must open inside the viewport.
+async function inView(page: Page, testId: string, width: number, failures: string[], what: string) {
+    const box = await page.getByTestId(testId).boundingBox();
+    if (!box) { failures.push(`${what}: ${testId} has no box`); return; }
+    if (box.x < -0.5 || box.x + box.width > width + 0.5) failures.push(`${what}: ${testId} spills out of the ${width}px viewport (${Math.round(box.x)}..${Math.round(box.x + box.width)})`);
+}
+
+for (const { role } of ROLES) {
+    for (const locale of LOCALES) {
+        test(`contract + home + lists ${role} ${locale}`, async ({ browser }) => {
+            const { creds, leaseId } = fixture();
+            const me = await api<{ id: string; role: string }>(null, 'POST', '/api/auth/login', creds.TENANT_ADMIN);
+            const admin: Actor = { id: me.id, role: me.role, tenantId: fixture().tenantId };
+            const lease = await api<{ unitId: string }>(admin, 'GET', `/api/v1/leases/${leaseId}`);
+            const failures: string[] = [];
+            for (const viewport of WIDTHS) {
+                const context = await browser.newContext({ baseURL: BASE_URL, viewport, storageState: path.join(STATE_DIR, `${role}.json`) });
+                // The first-visit welcome tour (TourProvider) opens a modal overlay 1.5 s after load
+                // that would sit over every click below; mark it seen, as a returning user has it.
+                await context.addInitScript(() => localStorage.setItem('rentaxis_tours_completed', JSON.stringify(['admin-onboarding'])));
+                const page = await context.newPage();
+                const at = `${role} ${locale} ${viewport.width}px`;
+
+                // The contract page.
+                await check(page, `/${locale}/dashboard/leases/${leaseId}`, role, failures);
+                await expect(page.getByRole('tab')).toHaveCount(4);
+                expect(await page.getByTestId('lease-actions-primary').locator('[data-testid]').count(), `${at} primary buttons`).toBeLessThanOrEqual(3);
+                if (await page.getByTestId('lease-more-actions').count()) {
+                    await page.getByTestId('lease-more-actions').click();
+                    await expect(page.getByTestId('lease-more-actions-menu')).toBeVisible();
+                    await inView(page, 'lease-more-actions-menu', viewport.width, failures, `${at} contract menu`);
+                    await page.keyboard.press('Escape');
+                    await expect(page.getByTestId('lease-more-actions-menu')).toBeHidden();
+                }
+                for (const [old, tab, section] of [['journals', 'payments', 'journals'], ['contract', 'documents', 'contract'], ['interactions', 'activity', 'interactions']] as const) {
+                    await check(page, `/${locale}/dashboard/leases/${leaseId}?tab=${old}`, role, failures);
+                    await expect(page.getByTestId(`lease-tab-${tab}`), `${at} ?tab=${old}`).toHaveAttribute('aria-selected', 'true');
+                    await expect(page.getByTestId(`lease-section-${section}`), `${at} ?tab=${old}`).toHaveAttribute('open', '');
+                }
+
+                // Home. DashboardController does not admit an accountant (see KNOWN_CONSOLE).
+                await check(page, `/${locale}/dashboard`, role, failures);
+                if (role !== 'ACCOUNTANT') {
+                    await expect(page.getByTestId('contract-pipeline')).toBeVisible();
+                    await expect(page.getByTestId('pipeline-active')).toContainText(/[1-9]/);
+                    await expect(page.getByTestId('today-list')).toBeVisible();
+                    await expect(page.getByTestId('kpi-unit-status')).toBeVisible();
+                    const tile = page.getByTestId(`unit-tile-${lease.unitId}`);
+                    await expect(tile).toBeVisible();
+                    await expect(tile).toHaveAttribute('data-status', /OCCUPIED|EXPIRING/);
+                    await tile.click();
+                    await expect(page.getByTestId('unit-board-drawer')).toBeVisible();
+                    await inView(page, 'unit-board-drawer', viewport.width, failures, `${at} unit panel`);
+                    await expect(page.getByTestId('unit-board-open-contract')).toHaveAttribute('href', new RegExp(`/leases/${leaseId}$`));
+                    await page.keyboard.press('Escape');
+                    await expect(page.getByTestId('unit-board-drawer')).toHaveCount(0);
+                }
+
+                // The contract list: pills, then one menu per row.
+                await check(page, `/${locale}/dashboard/leases`, role, failures);
+                await expect(page.getByTestId('contract-pills').getByRole('button')).toHaveCount(6);
+                await page.getByTestId('contract-pill-active').click();
+                await expect(page).toHaveURL(/status=ACTIVE/);
+                // The pill re-reads the list (the table shows a skeleton meanwhile); let that land first.
+                await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => {});
+                await expect(page.getByTestId(`lease-row-${leaseId}`)).toBeVisible();
+                await page.getByTestId(`lease-actions-menu-${leaseId}`).click();
+                await expect(page.getByTestId(`lease-actions-menu-panel-${leaseId}`)).toBeVisible();
+                await inView(page, `lease-actions-menu-panel-${leaseId}`, viewport.width, failures, `${at} row menu`);
+                await page.keyboard.press('Escape');
+                // The Filters panel (the all-status select) opens inside the screen too (R1 P2-1).
+                await page.getByTestId('filters-button').click();
+                await expect(page.getByTestId('filters-panel')).toBeVisible();
+                await inView(page, 'filters-panel', viewport.width, failures, `${at} filters panel`);
+                await page.getByTestId('filters-button').click();
+                await check(page, `/${locale}/dashboard/leases?view=expiring`, role, failures);
+                await expect(page.getByTestId('contract-pill-expiring')).toHaveAttribute('aria-pressed', 'true');
+
+                // Properties: Add property up front, the rest under More (admins only create).
+                if (role === 'TENANT_ADMIN') {
+                    await check(page, `/${locale}/dashboard/properties`, role, failures);
+                    await expect(page.getByTestId('properties-add-property')).toBeVisible();
+                    await page.getByTestId('properties-more').click();
+                    await expect(page.getByTestId('properties-more-menu')).toBeVisible();
+                    await inView(page, 'properties-more-menu', viewport.width, failures, `${at} properties menu`);
+                    await page.keyboard.press('Escape');
                 }
                 await context.close();
             }

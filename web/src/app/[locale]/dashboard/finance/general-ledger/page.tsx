@@ -11,6 +11,7 @@ import { useNameLookup } from "@/components/finance/useNameLookup";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
 import { downloadCsv, toCsv } from "@/lib/csv";
+import { buildLedgerReport } from "@/lib/finance/ledgerReport";
 import { accountName, fmtAmount, fmtBalance, ledgerApi, type AccountLedger, type LedgerQuery } from "@/lib/api/ledger";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { Link } from "@/i18n/routing";
@@ -127,7 +128,8 @@ function GeneralLedger() {
 
     const exportCsv = () => {
         const rows: (string | number)[][] = [];
-        for (const l of ledgers) {
+        // Same order and Sub Totals as the table on screen (#104: the CSV used to follow the server's order).
+        for (const { ledger: l, subTotal } of buildLedgerReport(ledgers).groups) {
             rows.push([l.accountCode, accountName(l, locale), applied.from ?? "", "", t("broughtForward"), "", "", fmtBalance(l.openingBalance), "", "", "", ""]);
             for (const r of l.rows) {
                 rows.push([
@@ -147,7 +149,7 @@ function GeneralLedger() {
             }
             rows.push([
                 l.accountCode, accountName(l, locale), "", "", t("subTotal"),
-                fmtAmount(l.totalDebit), fmtAmount(l.totalCredit), fmtBalance(l.closingBalance), "", "", "", "",
+                fmtAmount(subTotal.debit), fmtAmount(subTotal.credit), fmtBalance(subTotal.balance), "", "", "", "",
             ]);
         }
         const headers = [
@@ -187,6 +189,7 @@ function GeneralLedger() {
                 <button
                     type="button"
                     onClick={exportCsv}
+                    data-testid="ledger-export-csv"
                     disabled={ledgers.length === 0}
                     className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-surface text-foreground border border-border text-xs font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:bg-input transition-all focus:ring-2 focus:ring-primary/20 focus:outline-none"
                 >

@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect, useSyncExternalStore } from "react";
+import { useSearchParams } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { Plus, X, FileText, Calendar, DollarSign, Home, CheckCircle, Ban, AlertCircle, LayoutGrid, Columns3, Download, Sparkles, Loader2, RefreshCw, Pencil, List, Eye, Search, Upload, Trash2 } from "lucide-react";
 import LeaseWizard from "./LeaseWizard";
-import { Link, useRouter } from "@/i18n/routing";
+import { useRouter } from "@/i18n/routing";
 import { Pagination } from "@/components/ui/Pagination";
 import { useSession } from "next-auth/react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
@@ -19,6 +20,15 @@ import {
     ApiError, chequeApi, leaseApi,
     type LeaseChequeStats, type LeaseDetail, type LeaseStatus,
 } from "@/lib/api/leasing";
+import ActionsMenu, { type ActionsMenuItem } from "@/components/ui/ActionsMenu";
+import { FilterChip, FiltersButton } from "@/components/ui/FiltersButton";
+import { useNameLookup } from "@/components/finance/useNameLookup";
+import { businessTodayIso } from "@/lib/businessDate";
+import { expiringFrom, upcomingFrom } from "@/lib/dashboard/pipeline";
+import {
+    CONTRACT_VIEWS, ENDED, TO_POST, contractRead, parseContractView, segmentReads, statusQuery, viewQuery, viewStatuses,
+    type ContractRead, type ContractView,
+} from "@/lib/leases/contractListView";
 
 type Lease = LeaseDetail;
 
@@ -72,9 +82,51 @@ const BOARD_COLUMNS = [
     { key: "closed", labelKey: "closed", statuses: ["RENEWED", "TERMINATED", "EXPIRED", "CLOSED"], color: "bg-error" },
 ];
 
+/**
+ * The list's filters live in the URL (spec §1a: pills, property, search are
+ * bookmarkable, and Home's pipeline links here). A tiny store over
+ * `location.search`: read with useSyncExternalStore (the server snapshot is
+ * empty, so hydration matches), written with history.replaceState.
+ */
+const urlListeners = new Set<() => void>();
+function subscribeUrl(cb: () => void) {
+    urlListeners.add(cb);
+    window.addEventListener("popstate", cb);
+    return () => {
+        urlListeners.delete(cb);
+        window.removeEventListener("popstate", cb);
+    };
+}
+function setUrlQuery(changes: Record<string, string | null>) {
+    const url = new URL(window.location.href);
+    for (const [k, v] of Object.entries(changes)) {
+        if (v) url.searchParams.set(k, v);
+        else url.searchParams.delete(k);
+    }
+    window.history.replaceState(window.history.state, "", url.toString());
+    urlListeners.forEach(l => l());
+}
+const PILL_LABEL: Record<ContractView, string> = {
+    all: "pillAll", draft: "pillDraft", active: "pillActive", expiring: "pillExpiring", notice: "pillNotice", ended: "pillEnded",
+};
+/**
+ * `useSearchParams` makes Next re-render this page when a link (a pinned view in
+ * the side panel) changes the query on the same route; it also needs a Suspense
+ * boundary for `next build`.
+ */
 export default function LeasesPage() {
+    return (
+        <Suspense fallback={null}>
+            <LeasesList />
+        </Suspense>
+    );
+}
+
+function LeasesList() {
     const t = useTranslations("MasterData");
     const tl = useTranslations("Leasing");
+    const tList = useTranslations("ListActions");
+    const tc = useTranslations("ContractList");
     const locale = useLocale();
     const [leases, setLeases] = useState<Lease[]>([]);
     const [units, setUnits] = useState<Unit[]>([]);
@@ -84,9 +136,28 @@ export default function LeasesPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(25);
     const [totalItems, setTotalItems] = useState(0);
-    const [searchQuery, setSearchQuery] = useState("");
-    const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
-    const [statusFilter, setStatusFilter] = useState<LeaseStatus | "">("");
+    // Read so a same-route link (a pinned view) re-renders the page; the URL itself is read below.
+    useSearchParams();
+    const urlSearch = useSyncExternalStore(subscribeUrl, () => window.location.search, () => "");
+    const listState = parseContractView(new URLSearchParams(urlSearch));
+    const view = listState.view;
+    const subset = listState.subset;
+    const statusFilter = listState.status;
+    const propertyFilter = listState.propertyId;
+    // The URL is the one source of truth for the search (R1 P3-1). While typing, the
+    // box shows the draft; once the URL's search moves (the debounce wrote it, or a
+    // link replaced it) the box shows the URL again.
+    const [draftSearch, setDraftSearch] = useState<{ base: string; text: string } | null>(null);
+    const debouncedSearchQuery = listState.search;
+    const typing = draftSearch !== null && draftSearch.base === debouncedSearchQuery;
+    const searchQuery = typing ? draftSearch.text : debouncedSearchQuery;
+    const setSearchQuery = (v: string) => setDraftSearch({ base: debouncedSearchQuery, text: v });
+    const setStatusFilter = (status: LeaseStatus | "") => setUrlQuery(statusQuery(status));
+    const selectView = (v: ContractView) => setUrlQuery(viewQuery(v));
+    const setPropertyFilter = (id: string) => setUrlQuery({ propertyId: id || null });
+    const properties = useNameLookup("properties");
+    const [pillCounts, setPillCounts] = useState<{ key: string; counts: Partial<Record<ContractView, string>> }>({ key: "", counts: {} });
+    const [boundedCapped, setBoundedCapped] = useState(false);
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [postResults, setPostResults] = useState<PostResult[] | null>(null);
     /** The drafts the last bulk run tried, so "Retry failed" can send them again. */
@@ -147,11 +218,17 @@ export default function LeasesPage() {
     }, [canManageLeases]);
 
     useEffect(() => {
+        if (!typing) return;
         const timer = setTimeout(() => {
-            setDebouncedSearchQuery(searchQuery.trim());
+            const next = draftSearch.text.trim();
+            if (next === debouncedSearchQuery) return;
+            // The draft now belongs to the search it wrote (a trailing space being typed
+            // survives); a link that changes the search leaves it behind.
+            setDraftSearch({ base: next, text: draftSearch.text });
+            setUrlQuery({ search: next || null });
         }, 350);
         return () => clearTimeout(timer);
-    }, [searchQuery]);
+    }, [typing, draftSearch, debouncedSearchQuery]);
 
     useEffect(() => {
         setCurrentPage(1);
@@ -159,7 +236,33 @@ export default function LeasesPage() {
 
     useEffect(() => {
         fetchLeases();
-    }, [currentPage, itemsPerPage, debouncedSearchQuery, statusFilter]);
+    }, [currentPage, itemsPerPage, debouncedSearchQuery, statusFilter, view, subset, propertyFilter]);
+
+    // Pill counts (spec §1a), from GET /leases/paged totals — size=1 each, plus the
+    // bounded Expiring read the Home pipeline uses. The endpoint filters one status
+    // at a time, so Ended is the four ended statuses summed.
+    useEffect(() => {
+        if (!canViewLeases) return;
+        let alive = true;
+        const key = propertyFilter;
+        const propertyId = propertyFilter || undefined;
+        const total = (status?: LeaseStatus) => leaseApi.paged({ status, propertyId, size: 1 }).then(p => p.totalElements ?? 0);
+        const put = (v: ContractView, n: string) => {
+            if (alive) setPillCounts(prev => ({ key, counts: { ...(prev.key === key ? prev.counts : {}), [v]: n } }));
+        };
+        total().then(n => put("all", String(n))).catch(() => {});
+        Promise.all(TO_POST.map(st => total(st))).then(ns => put("draft", String(ns.reduce((a, b) => a + b, 0)))).catch(() => {});
+        total("ACTIVE").then(n => put("active", String(n))).catch(() => {});
+        total("NOTICE_GIVEN").then(n => put("notice", String(n))).catch(() => {});
+        Promise.all(ENDED.map(st => total(st))).then(ns => put("ended", String(ns.reduce((a, b) => a + b, 0)))).catch(() => {});
+        leaseApi.paged({ status: "ACTIVE", propertyId, sort: "endDate,asc", size: 100 })
+            .then(page => {
+                const e = expiringFrom(page, businessTodayIso());
+                put("expiring", e.capped ? `${e.rows.length}+` : String(e.rows.length));
+            })
+            .catch(() => {});
+        return () => { alive = false; };
+    }, [propertyFilter, canViewLeases]);
 
     useEffect(() => {
         if (leases.length > 0) {
@@ -172,19 +275,34 @@ export default function LeasesPage() {
     useEffect(() => {
         setCurrentPage(1);
         setSelected(new Set());
-    }, [statusFilter]);
+    }, [statusFilter, view, subset, propertyFilter]);
 
     const fetchLeases = async () => {
         setLoading(true);
         try {
-            const data = await leaseApi.paged({
-                search: debouncedSearchQuery || undefined,
-                status: statusFilter || undefined,
-                page: Math.max(currentPage - 1, 0),
-                size: itemsPerPage,
-            });
-            setLeases(data.content ?? []);
-            setTotalItems(data.totalElements ?? 0);
+            const read = contractRead(listState);
+            const common = { search: debouncedSearchQuery || undefined, propertyId: propertyFilter || undefined };
+            if (read.kind === "bounded") {
+                // One bounded page sorted by date, narrowed to the stage (Expiring / Upcoming).
+                const data = await leaseApi.paged({ ...common, status: read.status, sort: read.sort, page: 0, size: read.size });
+                const cut = (read.which === "expiring" ? expiringFrom : upcomingFrom)(data, businessTodayIso());
+                setLeases(cut.rows);
+                setTotalItems(cut.rows.length);
+                setBoundedCapped(cut.capped);
+            } else if (read.kind === "multi") {
+                // The endpoint filters one status at a time: read each status's total, then
+                // the rows of this page from the statuses listed back to back (R1 P2-2).
+                const totals = await Promise.all(read.statuses.map(st =>
+                    leaseApi.paged({ ...common, status: st, size: 1 }).then(p => p.totalElements ?? 0)));
+                const reads = segmentReads(read.statuses, totals, Math.max(currentPage - 1, 0), itemsPerPage);
+                const pages = await Promise.all(reads.map(r => leaseApi.paged({ ...common, status: r.status, page: r.page, size: r.size })));
+                setLeases(pages.flatMap((p, i) => (p.content ?? []).slice(reads[i].skip, reads[i].skip + reads[i].take)));
+                setTotalItems(totals.reduce((x, y) => x + y, 0));
+            } else {
+                const data = await leaseApi.paged({ ...common, status: read.status, page: Math.max(currentPage - 1, 0), size: itemsPerPage });
+                setLeases(data.content ?? []);
+                setTotalItems(data.totalElements ?? 0);
+            }
         } catch (err) {
             console.error(err);
         } finally {
@@ -516,6 +634,45 @@ export default function LeasesPage() {
         );
     };
 
+    /**
+     * Spec §7: a row's actions in one ⋯ menu, each behind the gate it had as a
+     * button (the conditions below are the old ones, unchanged). View stays the
+     * row's own click and the menu's first entry. Test ids: the ones that had
+     * one keep it (lease-card-edit-, lease-list-terminate-, lease-card-terminate-);
+     * the rest are lease-action-{action}-{id} (table) and lease-card-{action}-{id}
+     * (cards) — not lease-row-…, which the list's tests read as "a row".
+     */
+    const leaseMenuItems = (lease: Lease, surface: "row" | "card"): ActionsMenuItem[] => {
+        const id = (action: string) => `lease-${surface === "card" ? "card" : "action"}-${action}-${lease.id}`;
+        const items: ActionsMenuItem[] = [
+            { id: "view", label: t("view"), testId: id("view"), href: `/dashboard/leases/${lease.id}`, icon: Eye },
+        ];
+        if (lease.status === 'DRAFT' && canManageLeases) {
+            items.push({ id: "edit", label: t("edit"), testId: surface === "card" ? `lease-card-edit-${lease.id}` : id("edit"), icon: Pencil, onSelect: () => handleEditDraft(lease) });
+        }
+        if (lease.status === 'DRAFT' && !lease.hasContract && canManageLeases) {
+            items.push({ id: "generate", label: surface === "card" ? t("generateContract") : t("generate"), testId: id("generate"), icon: Sparkles, onSelect: () => handleGenerateContract(lease.id) });
+        }
+        if ((lease.status === 'DRAFT' || lease.status === 'PENDING_SIGNATURE') && canPostLeases) {
+            items.push({ id: "post", label: tl("postLease"), testId: id("post"), icon: CheckCircle, href: `/dashboard/leases/${lease.id}` });
+        }
+        if (lease.status === 'PENDING_SIGNATURE' && canManageLeases) {
+            items.push({ id: "pdf", label: surface === "card" ? t("downloadContract") : "PDF", testId: id("pdf"), icon: Download, onSelect: () => handleDownloadContract(lease.id) });
+            if (surface === "card") {
+                items.push({ id: "regenerate", label: t("regenerateContract"), testId: id("regenerate"), icon: RefreshCw, onSelect: () => handleGenerateContract(lease.id) });
+            }
+        }
+        if (TERMINABLE.includes(lease.status) && canPreviewTermination) {
+            items.push({ id: "terminate", label: t("terminate"), testId: surface === "card" ? `lease-card-terminate-${lease.id}` : `lease-list-terminate-${lease.id}`, icon: Ban, onSelect: () => handleTerminate(lease.id), destructive: true });
+        }
+        items.push({ id: "docs", label: t("docs"), testId: id("docs"), icon: FileText, onSelect: () => openDocsModal(lease.id) });
+        if (lease.status === 'DRAFT' && canManageLeases) {
+            items.push({ id: "delete", label: t("deleteDraft"), testId: id("delete"), icon: Trash2, onSelect: () => handleDeleteDraft(lease.id), destructive: true });
+        }
+        return items;
+    };
+    const busyFor = (leaseId: string) => !!actionLoading && actionLoading.endsWith(`-${leaseId}`);
+
     const renderSkeletonCard = (compact = false) => (
         <div className={cn("bg-surface rounded-xl p-6 border border-border animate-pulse", compact && "p-4")}>
             <div className="flex items-center gap-3 mb-4">
@@ -606,86 +763,16 @@ export default function LeasesPage() {
               Post, which belongs to canPostLeases. Each button now carries its
               own gate and the bar shows when any of them would.
             */}
-            {(canManageLeases || canPostLeases || canPreviewTermination) && (
-                <div onClick={(e) => e.stopPropagation()} className={cn("flex gap-2 border-t border-border mt-auto", compact ? "pt-3 flex-wrap" : "pt-4")}>
-                    {lease.status === 'DRAFT' && canManageLeases && (
-                        <button
-                            data-testid={`lease-card-edit-${lease.id}`}
-                            onClick={() => handleEditDraft(lease)}
-                            className="flex items-center justify-center gap-2 bg-input text-foreground hover:bg-input/80 py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
-                        >
-                            <Pencil size={14} />
-                            {t("edit")}
-                        </button>
-                    )}
-                    {lease.status === 'DRAFT' && canManageLeases && (
-                        <button
-                            onClick={() => handleDeleteDraft(lease.id)}
-                            disabled={actionLoading === `delete-${lease.id}`}
-                            title={t("deleteDraft")}
-                            className="flex items-center justify-center gap-2 bg-error/10 text-error hover:bg-error/20 py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-error/30 focus:outline-none disabled:opacity-50"
-                        >
-                            {actionLoading === `delete-${lease.id}` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                        </button>
-                    )}
-                    {lease.status === 'DRAFT' && !lease.hasContract && canManageLeases && (
-                        <button
-                            onClick={() => handleGenerateContract(lease.id)}
-                            disabled={actionLoading === `generate-${lease.id}`}
-                            className="flex-1 flex items-center justify-center gap-2 bg-blue-50 text-blue-700 hover:bg-blue-100 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50"
-                        >
-                            {actionLoading === `generate-${lease.id}` ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                            {t("generateContract")}
-                        </button>
-                    )}
-                    {(lease.status === 'DRAFT' || lease.status === 'PENDING_SIGNATURE') && canPostLeases && (
-                        <button
-                            onClick={() => router.push(`/dashboard/leases/${lease.id}`)}
-                            className="flex-1 flex items-center justify-center gap-2 bg-green-50 text-green-700 hover:bg-green-100 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
-                        >
-                            <CheckCircle size={14} />
-                            {tl("postLease")}
-                        </button>
-                    )}
-                    {lease.status === 'PENDING_SIGNATURE' && canManageLeases && (
-                        <>
-                            <button
-                                onClick={() => handleDownloadContract(lease.id)}
-                                disabled={actionLoading === `download-${lease.id}`}
-                                className="flex-1 flex items-center justify-center gap-2 bg-blue-50 text-blue-700 hover:bg-blue-100 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50"
-                            >
-                                {actionLoading === `download-${lease.id}` ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-                                {t("downloadContract")}
-                            </button>
-                            <button
-                                onClick={() => handleGenerateContract(lease.id)}
-                                disabled={actionLoading === `generate-${lease.id}`}
-                                className="flex items-center justify-center gap-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50"
-                                title={t("regenerateContract")}
-                            >
-                                {actionLoading === `generate-${lease.id}` ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                            </button>
-                        </>
-                    )}
-                    {TERMINABLE.includes(lease.status) && canPreviewTermination && (
-                        <button
-                            data-testid={`lease-card-terminate-${lease.id}`}
-                            onClick={() => handleTerminate(lease.id)}
-                            className="flex-1 flex items-center justify-center gap-2 bg-red-50 text-red-600 hover:bg-red-100 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
-                        >
-                            <Ban size={14} />
-                            {t("terminate")}
-                        </button>
-                    )}
-                    <button
-                        onClick={() => openDocsModal(lease.id)}
-                        className="flex-1 flex items-center justify-center gap-2 bg-input text-foreground hover:bg-border py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer"
-                    >
-                        <FileText size={14} />
-                        {t("docs")}
-                    </button>
-                </div>
-            )}
+            <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} className={cn("flex items-center justify-end gap-2 border-t border-border mt-auto", compact ? "pt-2" : "pt-3")}>
+                {busyFor(lease.id) && <Loader2 size={14} className="animate-spin text-muted" />}
+                <ActionsMenu
+                    variant="icon"
+                    label={tList("rowActions", { name: `${t("unit")} ${lease.unitIdentifier ?? ""}`.trim() })}
+                    testId={`lease-card-menu-panel-${lease.id}`}
+                    triggerTestId={`lease-card-menu-${lease.id}`}
+                    items={leaseMenuItems(lease, "card")}
+                />
+            </div>
         </div>
     );
 
@@ -704,6 +791,10 @@ export default function LeasesPage() {
     // `leases` is already the server's filtered page — `status` rode along on
     // the request above, so there is nothing left to filter client-side.
     const filteredLeases = leases;
+    const listRead: ContractRead = contractRead(listState);
+    const listBounded = listRead.kind === "bounded";
+    // A status the Filters select narrowed a multi-status pill (or All) to, shown as a chip.
+    const narrowed = statusFilter && (view === "all" || viewStatuses(listState).length > 1) ? statusFilter : "";
     const selectableDrafts = filteredLeases.filter(l => l.status === "DRAFT");
 
     return (
@@ -717,30 +808,88 @@ export default function LeasesPage() {
                         {t("manageLeases")}
                     </p>
                 </div>
+                {/* Spec §1a: status pills with counts, then the property filter and the search box. */}
+                <nav aria-label={tc("pillsLabel")} className="flex flex-wrap gap-1.5" data-testid="contract-pills">
+                    {CONTRACT_VIEWS.map(v => (
+                        <button
+                            key={v}
+                            type="button"
+                            data-testid={`contract-pill-${v}`}
+                            aria-pressed={view === v}
+                            onClick={() => selectView(v)}
+                            className={cn(
+                                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium cursor-pointer transition-colors",
+                                view === v ? "border-[var(--ink-900)] bg-[var(--ink-900)] text-white" : "border-border bg-surface text-foreground hover:bg-input",
+                            )}
+                        >
+                            {tc(PILL_LABEL[v])}
+                            {pillCounts.key === propertyFilter && pillCounts.counts[v] !== undefined && (
+                                <span className={cn("rounded-full px-1.5 text-[10.5px] tabular-nums", view === v ? "bg-white/20" : "bg-input text-muted")}>
+                                    {pillCounts.counts[v]}
+                                </span>
+                            )}
+                        </button>
+                    ))}
+                </nav>
                 <div className="flex flex-col md:flex-row md:flex-wrap md:items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2 min-w-0">
+                    <select
+                        aria-label={t("property")}
+                        data-testid="lease-property-filter"
+                        value={propertyFilter}
+                        onChange={(e) => setPropertyFilter(e.target.value)}
+                        className="max-w-[14rem] bg-surface border border-border rounded-lg px-3 py-2 text-xs text-foreground cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                    >
+                        <option value="">{tList("allProperties")}</option>
+                        {properties.options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                    </select>
                     <div className="relative">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                        <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted" />
                         <input
                             type="text"
                             placeholder={t("search")}
+                            aria-label={tList("search")}
+                            data-testid="lease-search"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="pl-9 pr-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
+                            className="ps-9 pe-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 max-w-full transition-all"
                         />
                     </div>
+                    <FiltersButton label={tList("filters")} activeCount={narrowed ? 1 : 0}>
+                        <label className="block text-[11px] font-semibold text-muted">
+                            {tc("statusFilter")}
+                            <select
+                                aria-label={t("status")}
+                                data-testid="lease-status-filter"
+                                value={statusFilter}
+                                onChange={(e) => setStatusFilter(e.target.value as LeaseStatus | "")}
+                                className="mt-1 block w-full bg-surface border border-border rounded-lg px-3 py-2 text-xs text-foreground cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                            >
+                                <option value="">{tl("allStatuses")}</option>
+                                {STATUSES.map((st) => (
+                                    <option key={st} value={st}>{tl(`leaseStatus.${st}`)}</option>
+                                ))}
+                            </select>
+                        </label>
+                    </FiltersButton>
+                    {narrowed && (
+                        <FilterChip
+                            testId="lease-filter-chip-status"
+                            label={tl(`leaseStatus.${narrowed}`)}
+                            removeLabel={tList("removeFilter", { name: tl(`leaseStatus.${narrowed}`) })}
+                            onRemove={() => (subset ? setUrlQuery({ status: null }) : selectView(view))}
+                        />
+                    )}
+                    {subset && (
+                        <FilterChip
+                            testId={`lease-filter-chip-${subset}`}
+                            label={tc(subset === "settlement" ? "chipSettlement" : "chipUpcoming")}
+                            removeLabel={tList("removeFilter", { name: tc(subset === "settlement" ? "chipSettlement" : "chipUpcoming") })}
+                            onRemove={() => selectView(view)}
+                        />
+                    )}
+                    </div>
                     <div className="flex flex-wrap items-center gap-3">
-                    <select
-                        aria-label={t("status")}
-                        data-testid="lease-status-filter"
-                        value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value as LeaseStatus | "")}
-                        className="bg-surface border border-border rounded-lg px-3 py-2 text-xs text-foreground cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
-                    >
-                        <option value="">{tl("allStatuses")}</option>
-                        {STATUSES.map((st) => (
-                            <option key={st} value={st}>{tl(`leaseStatus.${st}`)}</option>
-                        ))}
-                    </select>
                     <div className="flex items-center bg-input rounded-lg p-0.5 border border-border">
                         <button
                             data-testid="lease-view-table"
@@ -791,6 +940,7 @@ export default function LeasesPage() {
                     )}
                     {canManageLeases && (
                         <button
+                            data-testid="lease-new"
                             onClick={() => { setEditingLeaseId(null); setWizardOpen(true); }}
                             className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:opacity-90 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
@@ -813,6 +963,14 @@ export default function LeasesPage() {
             )}
 
 
+            {listRead.kind === "bounded" && !loading && (
+                <p className={cn("mb-3 text-[12px]", boundedCapped ? "text-warning" : "text-muted")} data-testid="lease-expiring-note" data-capped={boundedCapped || undefined}>
+                    {listRead.which === "expiring"
+                        ? (boundedCapped ? tc("expiringCapped", { count: leases.length }) : tc("expiringNote"))
+                        : (boundedCapped ? tc("upcomingCapped", { count: leases.length }) : tc("upcomingNote"))}
+                </p>
+            )}
+
             {/* Skeleton Loading */}
             {loading && (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -826,8 +984,9 @@ export default function LeasesPage() {
             {!loading && viewMode === 'table' && leases.length > 0 && (() => {
                 return (
                     <>
-                        <div className="bg-surface rounded-xl border border-border overflow-hidden">
-                            <table className="w-full">
+                        {/* Scrolls sideways on a phone rather than clipping the row menu column. */}
+                        <div className="bg-surface rounded-xl border border-border overflow-x-auto">
+                            <table className="w-full min-w-[860px]">
                                 <thead>
                                     <tr className="bg-input/50">
                                         {canPostLeases && (
@@ -845,10 +1004,10 @@ export default function LeasesPage() {
                                             </th>
                                         )}
                                         <th className="text-start px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("unit")}</th>
-                                        <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("renter")}</th>
-                                        <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("property")}</th>
-                                        <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("startDate")}</th>
-                                        <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("endDate")}</th>
+                                        <th className="text-start px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("renter")}</th>
+                                        <th className="text-start px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("property")}</th>
+                                        <th className="text-start px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("startDate")}</th>
+                                        <th className="text-start px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("endDate")}</th>
                                         <th className="text-end px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{tl("contractValue")}</th>
                                         <th className="text-start px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{tl("chain")}</th>
                                         <th className="text-center px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("status")}</th>
@@ -897,71 +1056,14 @@ export default function LeasesPage() {
                                                 </td>
                                                 <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                                                     <div className="flex items-center justify-center gap-1.5">
-                                                        {lease.status === 'DRAFT' && canManageLeases && (
-                                                            <button
-                                                                onClick={() => handleEditDraft(lease)}
-                                                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-input text-foreground hover:bg-input/80 transition-colors cursor-pointer"
-                                                            >
-                                                                <Pencil size={11} /> {t("edit")}
-                                                            </button>
-                                                        )}
-                                                        {lease.status === 'DRAFT' && canManageLeases && (
-                                                            <button
-                                                                onClick={() => handleDeleteDraft(lease.id)}
-                                                                disabled={actionLoading === `delete-${lease.id}`}
-                                                                title={t("deleteDraft")}
-                                                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-error/10 text-error hover:bg-error/20 transition-colors cursor-pointer disabled:opacity-50"
-                                                            >
-                                                                {actionLoading === `delete-${lease.id}` ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
-                                                            </button>
-                                                        )}
-                                                        {lease.status === 'DRAFT' && !lease.hasContract && canManageLeases && (
-                                                            <button
-                                                                onClick={() => handleGenerateContract(lease.id)}
-                                                                disabled={actionLoading === `generate-${lease.id}`}
-                                                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors cursor-pointer disabled:opacity-50"
-                                                            >
-                                                                {actionLoading === `generate-${lease.id}` ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} {t("generate")}
-                                                            </button>
-                                                        )}
-                                                        {(lease.status === 'DRAFT' || lease.status === 'PENDING_SIGNATURE') && canPostLeases && (
-                                                            <Link
-                                                                href={`/dashboard/leases/${lease.id}`}
-                                                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-green-50 text-green-700 hover:bg-green-100 transition-colors"
-                                                            >
-                                                                <CheckCircle size={11} /> {tl("postLease")}
-                                                            </Link>
-                                                        )}
-                                                        {lease.status === 'PENDING_SIGNATURE' && canManageLeases && (
-                                                            <button
-                                                                onClick={() => handleDownloadContract(lease.id)}
-                                                                disabled={actionLoading === `download-${lease.id}`}
-                                                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors cursor-pointer disabled:opacity-50"
-                                                            >
-                                                                {actionLoading === `download-${lease.id}` ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />} PDF
-                                                            </button>
-                                                        )}
-                                                        {TERMINABLE.includes(lease.status) && canPreviewTermination && (
-                                                            <button
-                                                                data-testid={`lease-list-terminate-${lease.id}`}
-                                                                onClick={() => handleTerminate(lease.id)}
-                                                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-red-50 text-red-600 hover:bg-red-100 transition-colors cursor-pointer"
-                                                            >
-                                                                <Ban size={11} /> {t("terminate")}
-                                                            </button>
-                                                        )}
-                                                        <button
-                                                            onClick={() => openDocsModal(lease.id)}
-                                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-input text-foreground hover:bg-border transition-colors cursor-pointer"
-                                                        >
-                                                            <FileText size={11} /> {t("docs")}
-                                                        </button>
-                                                        <Link
-                                                            href={`/dashboard/leases/${lease.id}`}
-                                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium text-primary hover:bg-primary/10 transition-colors"
-                                                        >
-                                                            {t("view")}
-                                                        </Link>
+                                                        {busyFor(lease.id) && <Loader2 size={12} className="animate-spin text-muted" />}
+                                                        <ActionsMenu
+                                                            variant="icon"
+                                                            label={tList("rowActions", { name: `${t("unit")} ${lease.unitIdentifier ?? ""}`.trim() })}
+                                                            testId={`lease-actions-menu-panel-${lease.id}`}
+                                                            triggerTestId={`lease-actions-menu-${lease.id}`}
+                                                            items={leaseMenuItems(lease, "row")}
+                                                        />
                                                     </div>
                                                 </td>
                                             </tr>
@@ -970,13 +1072,13 @@ export default function LeasesPage() {
                                 </tbody>
                             </table>
                         </div>
-                        <Pagination
+                        {!listBounded && <Pagination
                             currentPage={currentPage}
                             totalItems={totalItems}
                             itemsPerPage={itemsPerPage}
                             onPageChange={setCurrentPage}
                             onItemsPerPageChange={(n) => { setItemsPerPage(n); setCurrentPage(1); }}
-                        />
+                        />}
                     </>
                 );
             })()}
@@ -988,13 +1090,13 @@ export default function LeasesPage() {
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                             {filteredLeases.map(lease => renderLeaseCard(lease))}
                         </div>
-                        <Pagination
+                        {!listBounded && <Pagination
                             currentPage={currentPage}
                             totalItems={totalItems}
                             itemsPerPage={itemsPerPage}
                             onPageChange={setCurrentPage}
                             onItemsPerPageChange={(n) => { setItemsPerPage(n); setCurrentPage(1); }}
-                        />
+                        />}
                     </>
                 );
             })()}
@@ -1024,13 +1126,13 @@ export default function LeasesPage() {
                             );
                         })}
                     </div>
-                    <Pagination
+                    {!listBounded && <Pagination
                         currentPage={currentPage}
                         totalItems={totalItems}
                         itemsPerPage={itemsPerPage}
                         onPageChange={setCurrentPage}
                         onItemsPerPageChange={(n) => { setItemsPerPage(n); setCurrentPage(1); }}
-                    />
+                    />}
                 </>
             )}
 

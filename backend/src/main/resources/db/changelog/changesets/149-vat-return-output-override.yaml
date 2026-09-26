@@ -1,0 +1,14 @@
+# S16-04: a VAT return whose output check fails (Output VAT per tax invoices / credit notes
+# differs from the Output VAT account's movement) is refused unless the filer acknowledges
+# the difference with a reason. The acknowledged difference and the reason are kept on the
+# filed row as the audit trail.
+databaseChangeLog:
+  - changeSet:
+      id: 149-vat-return-output-override
+      author: claude
+      changes:
+        - addColumn:
+            tableName: vat_returns
+            columns:
+              - column: { name: output_difference, type: "numeric(14,2)" }
+              - column: { name: output_override_reason, type: varchar(500) }

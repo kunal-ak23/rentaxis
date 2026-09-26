@@ -22,8 +22,9 @@ test.describe('Properties CRUD', () => {
       return;
     }
 
-    // Click Add Project button
-    const addBtn = page.getByRole('button', { name: /add project|new project/i });
+    // Add Project sits under the header's More menu (spec §7).
+    await page.getByTestId('properties-more').click();
+    const addBtn = page.getByRole('menuitem', { name: /add project|new project/i });
     await expect(addBtn).toBeVisible();
     await addBtn.click();
 
@@ -105,6 +106,7 @@ test.describe('Properties CRUD', () => {
     }
 
     // Should NOT see Add Project or Add Unit buttons
+    await expect(page.getByTestId('properties-more')).toBeHidden();
     await expect(page.getByRole('button', { name: /add project/i })).toBeHidden();
     await expect(page.getByRole('button', { name: /add unit/i })).toBeHidden();
   });

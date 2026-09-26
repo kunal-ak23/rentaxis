@@ -423,6 +423,8 @@ export type FiscalYear = {
   reopenedAt: string | null;
   reopenedBy: string | null;
   reopenReason: string | null;
+  /** PR #369 R1: a pre-books year closed by this later year's close (re-open that one). */
+  coveredBy?: number | null;
 };
 
 export type YearCloseIssue = { code: string; message: string; args: Record<string, string> };

@@ -100,6 +100,8 @@ class ContractImportPostIT extends AbstractPostgresIT {
     @Autowired AccountRepository accountRepo;
     @Autowired PostingService posting;
     @Autowired ContractImportPersistService contractPersist;
+    @Autowired ContractImportValidator contractValidator;
+    @Autowired com.datagami.rentaxis.domain.repository.RenterRepository renterRepo;
     @Autowired ContractImportPostService postService;
     @Autowired ImportBatchService batches;
     @Autowired ChequeService chequeService;
@@ -381,9 +383,96 @@ class ContractImportPostIT extends AbstractPostgresIT {
     }
 
     /**
+     * S16-10: a cut-over split into two workbooks. The second one's contracts name
+     * both renters the first (posted) one created — renter one listed again on its
+     * Renters sheet, renter two only on Contracts. Both are matched by email to the
+     * existing records: no validation error, no second renter, one ledger per person.
+     */
+    @Test
+    void aSecondWorkbookAttachesContractsToRentersTheFirstOneCreated() throws Exception {
+        UUID first = importTheTemplate();
+        UUID renterOne = tx.execute(s -> leaseOf("SAMPLE-0001").getRenter().getId());
+        UUID renterTwo = tx.execute(s -> leaseOf("SAMPLE-0002").getRenter().getId());
+
+        try (Workbook wb = secondWorkbook()) {
+            // While the first batch is still a DRAFT its renters are not reused: that is
+            // the same data loaded twice, and discarding it would pull them away.
+            var early = tx.execute(s -> contractValidator.validate(wb));
+            assertThat(early.errors()).extracting(com.datagami.rentaxis.api.dto.ImportErrorDTO::getField)
+                    .contains("RenterEmail", "Email");
+            assertThat(postService.post(first).leasesFailed()).isZero();
+
+            var outcome = tx.execute(s -> contractValidator.validate(wb));
+            assertThat(outcome.errors()).as("validation errors").isEmpty();
+            UUID second = contractPersist.persist(wb, fixture.newJob()).batchId();
+            assertThat(postService.post(second).leasesFailed()).isZero();
+        }
+        long renterCount = tx.execute(s -> renterRepo.findAll().stream()
+                .filter(r -> tenantId.equals(r.getTenantId())).count());
+        assertThat(renterCount).as("no duplicate renters").isEqualTo(2);
+        UUID wb2One = tx.execute(s -> leaseOf("WB2-0001").getRenter().getId());
+        UUID wb2Two = tx.execute(s -> leaseOf("WB2-0002").getRenter().getId());
+        assertThat(wb2One).isEqualTo(renterOne);
+        assertThat(wb2Two).isEqualTo(renterTwo);
+    }
+
+    /**
+     * The template as a second workbook: its own property, contracts and cheques;
+     * renter one listed again (email in another case — matched case-insensitively),
+     * renter two only on Contracts, named by the optional RenterName column.
+     */
+    private Workbook secondWorkbook() throws Exception {
+        Workbook wb = fixture.template();
+        for (org.apache.poi.ss.usermodel.Sheet sheet : wb) {
+            for (org.apache.poi.ss.usermodel.Row row : sheet) {
+                for (org.apache.poi.ss.usermodel.Cell cell : row) {
+                    if (cell.getCellType() != org.apache.poi.ss.usermodel.CellType.STRING) continue;
+                    String v = cell.getStringCellValue();
+                    String w = v.replace("Sample Tower", "Second Tower").replace("SAMPLE-000", "WB2-000")
+                            .replace("EJ-2026-", "EJ2-2026-").replace("10000", "20000");
+                    if (!w.equals(v)) cell.setCellValue(w);
+                }
+            }
+        }
+        org.apache.poi.ss.usermodel.Sheet renters = wb.getSheet("Renters");
+        renters.getRow(1).getCell(2).setCellValue("Sample.Renter.ONE@example.com");
+        renters.removeRow(renters.getRow(2));
+        org.apache.poi.ss.usermodel.Sheet contracts = wb.getSheet("Contracts");
+        contracts.getRow(0).createCell(17).setCellValue("RenterName");
+        contracts.getRow(3).createCell(17).setCellValue("sample renter two");
+        return wb;
+    }
+
+    /**
+     * R1 P2-2: renters.email is not unique. When two renters of the organisation share
+     * the email a later workbook names, the contract is refused — never attached to
+     * whichever row the database returns first.
+     */
+    @Test
+    void aSharedEmailIsRefusedRatherThanGuessed() throws Exception {
+        UUID first = importTheTemplate();
+        assertThat(postService.post(first).leasesFailed()).isZero();
+        tx.executeWithoutResult(s -> {
+            com.datagami.rentaxis.domain.entity.Renter twin = new com.datagami.rentaxis.domain.entity.Renter();
+            twin.setNameEn("Sample Renter Two Holdings");
+            twin.setEmail("SAMPLE.renter.two@example.com ");
+            renterRepo.save(twin);
+        });
+        try (Workbook wb = secondWorkbook()) {
+            var outcome = tx.execute(s -> contractValidator.validate(wb));
+            assertThat(outcome.errors()).anySatisfy(e -> {
+                assertThat(e.getField()).isEqualTo("RenterEmail");
+                assertThat(e.getMessage()).contains("2 renters").contains("Sample Renter Two Holdings");
+            });
+        }
+    }
+
+    /**
      * And terminating it later takes the legacy path: the TCR credits the VAT on the
-     * unearned rent straight back out of Output VAT, with no deferred-VAT settlement,
-     * no tax points and no credit note.
+     * unearned rent straight back out of Output VAT, with no deferred-VAT settlement
+     * and no instalment tax points. S16-04: the VAT handed back carries its tax credit
+     * note (the one TERMINATION_ADJUSTMENT point), naming the previous system's
+     * contract invoice — undocumented, it broke the VAT return's output check.
      */
     @Test
     void aCutOverVatContractTerminatesOnTheLegacyPath() throws Exception {
@@ -406,7 +495,11 @@ class ContractImportPostIT extends AbstractPostgresIT {
         assertThat(tcr).isNotNull();
         assertThat(debitOnRole(tcr, AccountRole.OUTPUT_VAT)).isEqualByComparingTo(preview.unearnedVat());
         assertThat(debitOnRole(tcr, AccountRole.OUTPUT_VAT_DEFERRED)).isEqualByComparingTo("0.00");
-        assertNoInstalmentVat(batchId, second);
+        assertThat(batchJournals(batchId)).noneMatch(e -> e.getDocType() == JournalDocType.VTP);
+        assertThat(jdbc.queryForList("select kind from vat_tax_points where lease_id = ?", String.class, second))
+                .containsExactly("TERMINATION_ADJUSTMENT");
+        assertThat(jdbc.queryForList("select kind || ' ' || vat_amount || ' ' || issue_date from tax_invoices where lease_id = ?",
+                String.class, second)).containsExactly("CREDIT_NOTE " + preview.unearnedVat().setScale(2) + " " + t);
     }
 
     private void assertNoInstalmentVat(UUID batchId, UUID leaseId) {

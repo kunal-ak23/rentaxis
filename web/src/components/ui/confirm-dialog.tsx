@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2 } from "lucide-react";
 
@@ -45,6 +47,20 @@ export function ConfirmDialog({
     confirmDisabled = false,
     children,
 }: ConfirmDialogProps) {
+    const dialogRef = useRef<HTMLDivElement>(null);
+    // Esc closes the dialog on top — this one when it is, never a drawer it was opened from.
+    useEffect(() => {
+        if (!isOpen) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key !== "Escape" || e.defaultPrevented) return;
+            const modals = document.querySelectorAll('[aria-modal="true"]');
+            if (modals[modals.length - 1] !== dialogRef.current) return;
+            e.preventDefault();
+            if (!isLoading) onClose();
+        };
+        window.addEventListener("keydown", onKey, true);
+        return () => window.removeEventListener("keydown", onKey, true);
+    }, [isOpen, isLoading, onClose]);
     return (
         <AnimatePresence>
             {isOpen && (
@@ -58,6 +74,10 @@ export function ConfirmDialog({
                         onClick={isLoading ? undefined : onClose}
                     />
                     <motion.div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label={title}
+                        ref={dialogRef}
                         initial={{ opacity: 0, scale: 0.95, y: 10 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 10 }}

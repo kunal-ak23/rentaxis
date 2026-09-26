@@ -6,6 +6,7 @@ import { Plus, MapPin, Building2, Hash, ArrowRight, X, Users, DollarSign, PieCha
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import ActionsMenu from "@/components/ui/ActionsMenu";
 import { useSession } from "next-auth/react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
@@ -60,6 +61,7 @@ function getOccupancyTextColor(pct: number) {
 
 export default function PropertiesPage() {
     const t = useTranslations("MasterData");
+    const tList = useTranslations("ListActions");
     const e = useTranslations("Emirates");
     const tCommon = useTranslations("Common");
     // Enum codes to labels; an unknown code falls back to its readable form.
@@ -477,7 +479,7 @@ export default function PropertiesPage() {
                             className="ps-9 pe-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
                         />
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                     <div className="flex items-center bg-input rounded-lg p-0.5 border border-border">
                         <button
                             onClick={() => setViewMode("table")}
@@ -501,13 +503,6 @@ export default function PropertiesPage() {
                     {canCreate && (
                         <>
                             <button
-                                onClick={() => { setProjectFormError(null); setShowProjectForm(true); }}
-                                className="cursor-pointer flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:opacity-90 transition-all duration-200 active:scale-95 focus:ring-2 focus:ring-primary/30 focus:outline-none"
-                            >
-                                <Plus size={14} />
-                                {t("addProject")}
-                            </button>
-                            <button
                                 onClick={() => {
                                     if (stats.length === 0) {
                                         setConfirmDialog({
@@ -524,25 +519,23 @@ export default function PropertiesPage() {
                                     setShowPropertyForm(true);
                                 }}
                                 data-tour="add-property-btn"
-                                className="cursor-pointer flex items-center gap-2 bg-surface text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-background transition-all duration-200 active:scale-95 focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                data-testid="properties-add-property"
+                                className="cursor-pointer flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:opacity-90 transition-all duration-200 active:scale-95 focus:ring-2 focus:ring-primary/30 focus:outline-none"
                             >
                                 <Plus size={14} />
                                 {t("addProperty")}
                             </button>
-                            <button
-                                onClick={() => setShowImportForm(true)}
-                                className="cursor-pointer flex items-center gap-2 bg-surface text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-background transition-all duration-200 active:scale-95 focus:ring-2 focus:ring-primary/30 focus:outline-none"
-                            >
-                                <Upload size={14} />
-                                {t("importProperty")}
-                            </button>
-                            <button
-                                onClick={() => setShowPortfolioImport(true)}
-                                className="cursor-pointer flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all duration-200 active:scale-95 focus:ring-2 focus:ring-primary/30 focus:outline-none"
-                            >
-                                <FileSpreadsheet size={14} />
-                                {t("importPortfolio")}
-                            </button>
+                            {/* Spec §7: one primary create action; the rarer ones under More. */}
+                            <ActionsMenu
+                                label={tList("more")}
+                                testId="properties-more-menu"
+                                triggerTestId="properties-more"
+                                items={[
+                                    { id: "project", label: t("addProject"), testId: "properties-add-project", icon: Plus, onSelect: () => { setProjectFormError(null); setShowProjectForm(true); } },
+                                    { id: "import", label: t("importProperty"), testId: "properties-import", icon: Upload, onSelect: () => setShowImportForm(true) },
+                                    { id: "portfolio", label: t("importPortfolio"), testId: "properties-import-portfolio", icon: FileSpreadsheet, onSelect: () => setShowPortfolioImport(true) },
+                                ]}
+                            />
                         </>
                     )}
                     </div>

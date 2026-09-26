@@ -14,6 +14,7 @@ import com.datagami.rentaxis.domain.repository.OnlinePaymentRepository;
 import com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -55,6 +56,15 @@ public class NotificationScheduler {
     private final LandlordOrgRepository orgRepository;
     private final PlatformTransactionManager transactionManager;
 
+    /**
+     * S16-12: kill switch for the 08:00 run (payment-due reminders, overdue notices,
+     * expiring-lease notices), same style as {@code rentaxis.recognition.job.enabled}.
+     * Default true. Off for a staging replay or migration rehearsal, whose renters
+     * must not be messaged about back-dated cheques.
+     */
+    @Value("${rentaxis.notifications.daily-job.enabled:true}")
+    private boolean enabled = true;
+
     /** Due rows read per transaction by the overdue check. */
     static final int DUE_PAGE = 500;
 
@@ -66,6 +76,10 @@ public class NotificationScheduler {
      */
     @Scheduled(cron = "0 0 8 * * *") // 8 AM daily
     public void sendDailyNotifications() {
+        if (!enabled) {
+            log.info("Daily notifications are disabled (rentaxis.notifications.daily-job.enabled=false); skipping today's run");
+            return;
+        }
         log.info("Running daily notification check...");
         checkPaymentDueReminders();
         checkOverduePayments();

@@ -78,6 +78,21 @@ rentaxis:
       # RevenueRecognitionJob.runFor(...) — the manual close and the cut-over
       # catch-up — keeps working either way.
       enabled: ${RENTAXIS_RECOGNITION_JOB_ENABLED:true}
+  # S16-12: the remaining nightly jobs get the same switch, so a migration
+  # rehearsal or a back-dated replay can run with every scheduler off. Default
+  # true everywhere.
+  lease-expiry:
+    job:
+      # 00:00 sweep that moves leases past their end date to EXPIRED.
+      enabled: ${RENTAXIS_LEASE_EXPIRY_JOB_ENABLED:true}
+  notifications:
+    daily-job:
+      # 08:00 payment-due / overdue / expiring-lease notifications.
+      enabled: ${RENTAXIS_NOTIFICATIONS_DAILY_JOB_ENABLED:true}
+  listing:
+    upcoming-job:
+      # 02:00 promotion of listings to UPCOMING when the lease ends within 30 days.
+      enabled: ${RENTAXIS_LISTING_UPCOMING_JOB_ENABLED:true}
 
 azure:
   storage:

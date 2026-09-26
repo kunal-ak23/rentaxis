@@ -99,3 +99,20 @@ describe("LeaseAssignmentCard (F14-39)", () => {
         await waitFor(() => expect(api.cancelAssignment).toHaveBeenCalledWith("lease-1", "as-1"));
     });
 });
+
+describe("LeaseAssignmentCard in the contract drawer (PR #368 R1 P3-5)", () => {
+    it("says it is loading until the first read lands, instead of flashing the empty state", async () => {
+        let resolve: (v: LeaseAssignment[]) => void = () => {};
+        api.assignments.mockReturnValueOnce(new Promise<LeaseAssignment[]>(r => { resolve = r; }));
+        const ended = { ...LEASE, status: "EXPIRED" } as LeaseDetail;
+        const { container } = render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <LeaseAssignmentCard lease={ended} canDraft canPost onChanged={() => {}} loadingText="Loading…" />
+            </NextIntlClientProvider>,
+        );
+        expect(screen.getByTestId("lease-assignment-loading")).toHaveTextContent("Loading…");
+        resolve([]);
+        // An expired contract with no assignments renders nothing, so the drawer's empty line can show.
+        await waitFor(() => expect(container).toBeEmptyDOMElement());
+    });
+});

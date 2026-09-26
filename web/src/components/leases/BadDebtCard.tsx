@@ -23,7 +23,7 @@ type Pending = { kind: "approve" | "reject" | "reverse" | "recover"; w: BadDebtW
  * admin approves (the items close; Dr bad debts / Cr receivable), rejects or
  * reverses; money recovered later is recorded against the write-off.
  */
-export default function BadDebtCard({ leaseId, canApprove }: { leaseId: string; canApprove: boolean }) {
+export default function BadDebtCard({ leaseId, canApprove, loadingText }: { leaseId: string; canApprove: boolean; loadingText?: string }) {
     const t = useTranslations("BadDebts");
     const tCommon = useTranslations("Common");
     const locale = useLocale();
@@ -41,6 +41,7 @@ export default function BadDebtCard({ leaseId, canApprove }: { leaseId: string; 
     const [recovery, setRecovery] = useState({ amount: 0, date: today(), accountId: "" });
     const [banks, setBanks] = useState<RecoveryAccount[]>([]);
 
+    const [loaded, setLoaded] = useState(false);
     const load = useCallback(async () => {
         try {
             const [c, w] = await Promise.all([badDebtsApi.candidates(leaseId, date), badDebtsApi.forLease(leaseId)]);
@@ -48,6 +49,8 @@ export default function BadDebtCard({ leaseId, canApprove }: { leaseId: string; 
             setWriteOffs(w);
         } catch {
             setItems([]);
+        } finally {
+            setLoaded(true);
         }
     }, [leaseId, date]);
 
@@ -88,6 +91,7 @@ export default function BadDebtCard({ leaseId, canApprove }: { leaseId: string; 
         openDialog({ kind: "recover", w });
     };
 
+    if (!loaded && loadingText) return <p className="text-xs text-muted" data-testid="bad-debt-loading">{loadingText}</p>;
     if (items.length === 0 && writeOffs.length === 0) return null;
     const total = items.filter(i => picked.has(i.chequeId)).reduce((s, i) => s + i.amount, 0);
 

@@ -23,7 +23,7 @@ Depending on your role, you'll have access to different features:
 
 ### Quick Start
 
-1. **Explore the Dashboard** — Your home screen shows key metrics, recent activity, and quick links
+1. **Start on Home** — the **Contract pipeline** (draft to settlement), **Needs you now** (today's work), **Unit Status** with a floor-by-floor board of each property, one collections chart, and recent activity
 2. **Check the Navigation** — Pick a section on the left rail, then a page in the panel beside it
 3. **Use Help Anytime** — Click the floating **?** button on any page for contextual guidance
 

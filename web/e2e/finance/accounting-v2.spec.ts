@@ -171,6 +171,7 @@ test.describe('Accounting v2 — a contract from draft to a balanced trial balan
         // inside cheque 1. Unfolded, the deposit is an instrument of its own — a
         // row the register can deposit and clear separately, which is what the
         // scenario below needs.
+        await page.getByTestId('lease-tab-payments').click(); // the cheque grid lives in the Cheques tab (spec §5)
         await page.getByTestId('cheque-grid-generate').click();
         const genForm = page.getByTestId('cheque-generate-form');
         await genForm.getByLabel('Installments', { exact: true }).fill('2');
@@ -210,7 +211,8 @@ test.describe('Accounting v2 — a contract from draft to a balanced trial balan
         // The tab renders the entry list AND the renter's ledger narrowed to this
         // lease; the counts below are about the entry list, so they are scoped to
         // its table rather than to the whole tab.
-        await page.getByTestId('lease-tab-journals').click();
+        await page.getByTestId('lease-tab-payments').click();
+        await page.getByTestId('lease-section-toggle-journals').click();
         const journals = page.getByTestId('lease-journals-tab').locator('table').first().locator('tbody tr');
         await expect(journals.filter({ hasText: 'TCO' })).toHaveCount(1, { timeout: 20_000 });
         await expect(journals.filter({ hasText: 'PDR' }), 'one PDR per cheque').toHaveCount(3);
@@ -353,7 +355,8 @@ test.describe('Accounting v2 — a contract from draft to a balanced trial balan
         const latest = posted[posted.length - 1];
 
         await page.goto(leaseHref);
-        await page.getByTestId('lease-tab-recognition').click();
+        await page.getByTestId('lease-tab-payments').click();
+        await page.getByTestId('lease-section-toggle-recognition').click();
         await expect(page.getByTestId('recognition-schedule')).toBeVisible({ timeout: 20_000 });
 
         // And on the register of entries, where the accountant would look for it.

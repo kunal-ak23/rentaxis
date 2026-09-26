@@ -21,7 +21,7 @@ The properties page shows all your properties in a table view with:
 
 ### Adding a Property
 
-1. Click **Add Property** on the properties page
+1. Click **Add Property** on the properties page (**Add Project**, **Import Property** and **Import Portfolio** are under **More**)
 2. Fill in the required fields:
    - **Name** — A descriptive name for the property
    - **Type** — Residential, Commercial, or Mixed Use

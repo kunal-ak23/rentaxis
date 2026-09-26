@@ -36,6 +36,10 @@ export function usePasteReport() {
                 setBad(prev => { const n = new Set(prev); n.delete(`${row}:${field}`); return n; });
             }
         },
+        /** A cell changed by something other than typing (the account picker fires no input event). */
+        clear: (row: number, field: GridField) => {
+            if (bad.has(`${row}:${field}`)) setBad(prev => { const n = new Set(prev); n.delete(`${row}:${field}`); return n; });
+        },
         dismiss: () => { setReport(null); setBad(new Set()); },
     };
 }

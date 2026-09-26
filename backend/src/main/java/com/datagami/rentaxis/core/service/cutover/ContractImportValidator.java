@@ -121,6 +121,8 @@ public class ContractImportValidator {
     private final ImportBatchEntityRepository batchEntities;
     private final ImportBatchRepository batchRepository;
     private final PropertyAccountService propertyAccounts;
+    private final CutoverRenterMatcher renterMatcher;
+    private final com.datagami.rentaxis.domain.repository.LandlordOrgRepository orgs;
 
     /**
      * {@code @Autowired} is load-bearing, not decoration: there are two
@@ -134,7 +136,11 @@ public class ContractImportValidator {
                                    ImportBatchLeaseRepository batchLeases,
                                    ImportBatchEntityRepository batchEntities,
                                    ImportBatchRepository batchRepository,
-                                   PropertyAccountService propertyAccounts) {
+                                   PropertyAccountService propertyAccounts,
+                                   CutoverRenterMatcher renterMatcher,
+                                   com.datagami.rentaxis.domain.repository.LandlordOrgRepository orgs) {
+        this.renterMatcher = renterMatcher;
+        this.orgs = orgs;
         this.chargeTypes = chargeTypes;
         this.accounts = accounts;
         this.properties = properties;
@@ -153,7 +159,7 @@ public class ContractImportValidator {
      * this way; {@link #validate(Workbook)} would dereference null repositories.
      */
     ContractImportValidator() {
-        this(null, null, null, null, null, null, null, null, null, null);
+        this(null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     // ------------------------------------------------------------------
@@ -201,6 +207,20 @@ public class ContractImportValidator {
 
         /** The same, for a renter's email. */
         String existingRenter(String email);
+
+        /**
+         * S16-10 / PR #369 R1 P2-2: the organisation's existing renter for this email and
+         * the name the workbook gives them — {@link CutoverRenterMatcher}'s answer (the
+         * same one the persist phase acts on), or null when the organisation has none.
+         */
+        default CutoverRenterMatcher.Match renterMatch(String email, String name) {
+            return null;
+        }
+
+        /** PR #369 R1 P3-3: whether the organisation has a TRN (its VAT documents need one). */
+        default boolean organisationHasTrn() {
+            return true;
+        }
 
         /** Who is already living there, phrased for an error message — or null when nobody is. */
         String liveLeaseOn(String propertyName, String buildingName, String unitNumber);
@@ -262,6 +282,7 @@ public class ContractImportValidator {
                 validateContracts(contractsSheet, propertyNames, unitKeys, renterEmails, lk, errors,
                         brokenContracts);
         validateCheques(chequesSheet, contracts, brokenContracts, lk, errors, warnings);
+        vatWithoutTrn(contractsSheet, lk, warnings);
 
         return new PortfolioImportService.ValidationOutcome(errors, warnings);
     }
@@ -444,17 +465,38 @@ public class ContractImportValidator {
                 errors.add(new ImportErrorDTO("Renters", rowNum, "Email", "Duplicate email: " + email));
             } else {
                 // Same reason as the property rule: a second renter row for a person
-                // the organisation already has would split their history in two.
-                String existing = lk.existingRenter(email);
-                if (existing != null) {
-                    errors.add(new ImportErrorDTO("Renters", rowNum, "Email",
-                            "A renter with email '" + email + "' already exists in this organisation ("
-                                    + existing + "). Discard that batch first, or correct its draft"
-                                    + " leases instead of re-importing."));
+                // the organisation already has would split their history in two — so an
+                // existing renter is either matched unambiguously (S16-10) or refused.
+                CutoverRenterMatcher.Match m = lk.renterMatch(email, SheetCells.getCellString(row, 0));
+                if (m != null && !m.reusable()) {
+                    errors.add(new ImportErrorDTO("Renters", rowNum, m.nameProblem() ? "Name" : "Email", m.problem()));
                 }
             }
         }
         return emails;
+    }
+
+    /**
+     * PR #369 R1 P3-3: a cut-over contract that charges VAT is posted on the contract
+     * model, and ending it early, reducing it or adding a VAT charge later issues a tax
+     * credit note / invoice — which needs the organisation's TRN. Said at import, once,
+     * on the first VAT line, as a warning: the contracts import and post, but those later
+     * acts will be refused until the TRN is added.
+     */
+    private void vatWithoutTrn(Sheet sheet, Lookups lk, List<ImportErrorDTO> warnings) {
+        if (lk.organisationHasTrn()) return;
+        SheetCells.HeaderIndex hi = new SheetCells.HeaderIndex(sheet);
+        for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+            Row row = sheet.getRow(i);
+            if (row == null || SheetCells.isRowEmpty(row)) continue;
+            if (Boolean.TRUE.equals(boolOrNull(SheetCells.cell(row, hi, "VatApplicable")))) {
+                warnings.add(new ImportErrorDTO("Contracts", i + 1, "VatApplicable",
+                        "This workbook has contracts that charge VAT and the organisation has no TRN. They import,"
+                                + " but ending, reducing or adding a VAT charge to them issues tax credit notes and"
+                                + " invoices, which will be refused until the TRN is added to the organisation's details."));
+                return;
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -486,7 +528,7 @@ public class ContractImportValidator {
      */
     static final List<String> HEADER_COLUMNS = List.of(
             "EjariNumber", "PropertyName", "BuildingName", "UnitNumber", "RenterEmail",
-            "ContractDate", "StartDate", "EndDate", "GracePeriodDays");
+            "ContractDate", "StartDate", "EndDate", "GracePeriodDays", "RenterName");
 
     private Map<String, ContractSummary> validateContracts(Sheet sheet, Set<String> propertyNames,
                                                            Set<String> unitKeys, Set<String> renterEmails,
@@ -652,8 +694,18 @@ public class ContractImportValidator {
                 }
             }
             if (!renterEmails.contains(renterEmail.toLowerCase(Locale.ROOT))) {
-                errors.add(new ImportErrorDTO("Contracts", rowNum, "RenterEmail",
-                        "Renter email '" + renterEmail + "' is not on the Renters sheet"));
+                // S16-10 / R1 P2-2: a renter an earlier (posted) workbook created may be named
+                // here without being listed again — only on an unambiguous match, named by
+                // the optional RenterName column.
+                CutoverRenterMatcher.Match m = renterEmail.isEmpty() ? null
+                        : lk.renterMatch(renterEmail, SheetCells.cell(row, hi, "RenterName"));
+                if (m == null) {
+                    errors.add(new ImportErrorDTO("Contracts", rowNum, "RenterEmail",
+                            "Renter email '" + renterEmail + "' is not on the Renters sheet and is not a renter of this organisation"));
+                } else if (!m.reusable()) {
+                    errors.add(new ImportErrorDTO("Contracts", rowNum, "RenterEmail",
+                            "Renter email '" + renterEmail + "' is not on the Renters sheet. " + m.problem()));
+                }
             }
 
             dateCell(SheetCells.cell(row, hi, "ContractDate"), true, "Contracts", rowNum, "ContractDate", errors);
@@ -1102,6 +1154,14 @@ public class ContractImportValidator {
             var held = renters.findByTenantIdAndEmailIn(tenantId, List.of(email));
             if (held.isEmpty()) return null;
             return madeBy(ImportedEntityType.RENTER, held.get(0).getId(), "created outside any import");
+        }
+
+        @Override public CutoverRenterMatcher.Match renterMatch(String email, String name) {
+            return renterMatcher.match(tenantId, email, name);
+        }
+
+        @Override public boolean organisationHasTrn() {
+            return orgs.findById(tenantId).map(o -> o.getTrn() != null && !o.getTrn().isBlank()).orElse(false);
         }
 
         /** Which batch made this row, phrased for the accountant, or {@code otherwise}. */

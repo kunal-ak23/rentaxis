@@ -126,6 +126,8 @@ public class LeaseLine extends BaseTenantEntity {
 
     /** Stamps {@link #postedRecognition} with what posting does with this line. */
     public void snapshotRecognition() {
+        // PR #369 R1 P3-6: an addendum's line keeps the rule it was written under.
+        if (addendumId != null && postedRecognition != null) return;
         postedRecognition = postingRecognition(lease, chargeType);
     }
 

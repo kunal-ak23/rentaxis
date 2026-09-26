@@ -111,11 +111,20 @@ class ChargeVatIT extends AbstractPostgresIT {
                   and taxable_amount = 200.00 and vat_amount = 10.00""", Integer.class, a.journalId())).isOne();
         assertThat(service.outstandingForLease(lease)).isEqualByComparingTo("210.00");
 
+        // A second charge of ours on the lease: the credit note below must not name it.
+        service.approve(raise(lease, PenaltyReason.SERVICE_RECHARGE, "300.00", null).id(), ON);
+
         // Reversed: the VAT goes back on a credit note.
         PenaltyAssessmentDTO r = service.reverse(a.id(), ON, "raised in error");
         assertThat(jdbc.queryForObject("select count(*) from tax_invoices where lease_id = ? and kind = 'CREDIT_NOTE'",
                 Integer.class, lease)).isOne();
         assertThat(r.status().name()).isEqualTo("REVERSED");
+        // PR #369 R1 P3-1: the credit note corrects the charge's own tax invoice, and names only it.
+        String charged = jdbc.queryForObject("select invoice_number from tax_invoices where journal_id = ? and kind = 'TAX_INVOICE'",
+                String.class, a.journalId());
+        String reference = jdbc.queryForObject("select reference_note from tax_invoices where lease_id = ? and kind = 'CREDIT_NOTE'",
+                String.class, lease);
+        assertThat(reference).startsWith(charged + " (").doesNotContain("previous system").doesNotContain(",");
     }
 
     @Test

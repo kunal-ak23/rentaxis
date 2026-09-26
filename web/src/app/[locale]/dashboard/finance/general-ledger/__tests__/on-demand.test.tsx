@@ -17,6 +17,11 @@ vi.mock("@/lib/api/ledger", async orig => {
     const m = await orig<typeof import("@/lib/api/ledger")>();
     return { ...m, ledgerApi: { ...m.ledgerApi, accounts: { ...m.ledgerApi.accounts, list: () => Promise.resolve(accounts) }, ledger: { ...m.ledgerApi.ledger, general } } };
 });
+const csv = vi.hoisted(() => ({ rows: [] as (string | number)[][] }));
+vi.mock("@/lib/csv", async orig => {
+    const m = await orig<typeof import("@/lib/csv")>();
+    return { ...m, downloadCsv: vi.fn(), toCsv: (_h: string[], rows: (string | number)[][]) => { csv.rows = rows; return ""; } };
+});
 import Page from "../page";
 import { defaultLedgerRange } from "@/components/finance/LedgerFilters";
 
@@ -97,5 +102,19 @@ describe("General Ledger — on demand", () => {
         await waitFor(() => expect(general).toHaveBeenCalled());
         expect(general.mock.calls[0][0].accountIds).toHaveLength(25);
         expect(screen.queryByTestId("ledger-url-capped")).toBeNull();
+    });
+
+    it("exports the CSV in the table's order (account code), with the table's Sub Totals (#104)", async () => {
+        query.current = "accountIds=a0,a1";
+        const second = { ...ledger, accountId: "a1", accountCode: "1050", accountName: "Acct 1", openingBalance: 0,
+            rows: [{ ...ledger.rows[0], entryId: "e2", debit: 50, balance: 50 }], totalDebit: 999, closingBalance: 999 };
+        general.mockResolvedValue([ledger, second]);
+        render(<Page />);
+        await screen.findByTestId("ledger-bf-a1");
+        fireEvent.click(screen.getByTestId("ledger-export-csv"));
+        const codes = csv.rows.map(r => r[0]);
+        expect(codes.indexOf("1050")).toBeLessThan(codes.indexOf("1100"));
+        const sub1050 = csv.rows.find(r => r[0] === "1050" && r[4] === "Sub Total")!;
+        expect(sub1050[5]).toBe("50.00");
     });
 });

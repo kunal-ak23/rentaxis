@@ -73,10 +73,13 @@ describe("RBAC parity with every feature flag off", () => {
         const before = new Set([...LEGACY_NAV[role].filter(h => !FLAG_GATED.has(h)), ...HEADER].map(h => canonical(h, role)));
         const after = reachable(role, () => false);
         expect([...before].filter(h => !after.has(h)), "lost").toEqual([]);
+        const beforePaths = new Set([...before].map(pathOnly));
         const gained = [...after].filter(h => {
             if (before.has(h)) return false;
             const why = NEW_DESTINATIONS[h];
-            return !(why && before.has(canonical(why, role)));
+            if (why && before.has(canonical(why, role))) return false;
+            // Same rule as above: a saved view filters a page the role already had (PR 3's Leasing views).
+            return !(!HUBS.has(pathOnly(h)) && beforePaths.has(pathOnly(h)));
         });
         expect(gained, "gained").toEqual([]);
     });

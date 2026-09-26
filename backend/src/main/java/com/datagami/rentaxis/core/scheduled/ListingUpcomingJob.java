@@ -8,6 +8,7 @@ import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,9 +35,20 @@ public class ListingUpcomingJob {
     private final LeaseRepository leaseRepository;
     private final UnitListingRepository listingRepository;
 
+    /**
+     * S16-12: kill switch for the 02:00 pass, same style as
+     * {@code rentaxis.recognition.job.enabled}. Default true.
+     */
+    @Value("${rentaxis.listing.upcoming-job.enabled:true}")
+    private boolean enabled = true;
+
     @Scheduled(cron = "0 0 2 * * *")
     @Transactional
     public void run() {
+        if (!enabled) {
+            log.info("ListingUpcomingJob is disabled (rentaxis.listing.upcoming-job.enabled=false); skipping tonight's pass");
+            return;
+        }
         LocalDate today = LocalDate.now();
         LocalDate horizon = today.plusDays(UPCOMING_WINDOW_DAYS);
 

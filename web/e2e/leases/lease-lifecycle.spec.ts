@@ -43,8 +43,8 @@ async function draftLineAndPost(
   opts: { unitNumber: string; renterName: string; rentAmount: string },
 ) {
   await page.goto('/en/dashboard/leases');
-  await expect(page.getByTestId('lease-status-filter')).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('button', { name: /add|create|new|draft/i }).first().click();
+  await expect(page.getByTestId('contract-pills')).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId('lease-new').click();
 
   // Step 1: parties. Each picker's dropdown closes on selection, so the
   // second trigger is back at its normal index (1) once the first closes.
@@ -90,7 +90,7 @@ test.describe('Lease Lifecycle', () => {
     // caller never reads stays in flight for ever in Chromium, so the idle
     // state never arrives. Wait for a control the page itself renders.
     await page.goto('/en/dashboard/leases');
-    await expect(page.getByTestId('lease-status-filter')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('contract-pills')).toBeVisible({ timeout: 15_000 });
   });
 
   test('generate contract on DRAFT lease', async ({ page, testContext }, testInfo) => {
@@ -101,7 +101,7 @@ test.describe('Lease Lifecycle', () => {
     }
 
     await page.goto(`/en/dashboard/leases/${testContext.leaseId}`);
-    await page.getByTestId('lease-tab-contract').click();
+    await page.getByTestId('lease-tab-documents').click();
 
     // Only SA/TA may generate a contract (canGenerateContract); a wizard
     // draft with no lines yet may also refuse — either way this stays
@@ -133,6 +133,8 @@ test.describe('Lease Lifecycle', () => {
     await expect(page.getByTestId('lease-banner')).toBeVisible();
     // Post is gone once posted; the ledger link and amend/renew/extend take its place.
     await expect(page.getByTestId('lease-post')).toHaveCount(0);
+    // Spec §5: everything but the status's primary buttons sits under More actions.
+    await page.getByTestId('lease-more-actions').click();
     await expect(page.getByTestId('lease-ledger')).toBeVisible();
   });
 
@@ -158,6 +160,8 @@ test.describe('Lease Lifecycle', () => {
     // Asserted rather than probed: both roles this test runs under
     // (super-admin, tenant-admin) are in `canPreviewTermination`, so a missing
     // button is a regression, not a role.
+    // Spec §5: everything but the status's primary buttons sits under More actions.
+    await page.getByTestId('lease-more-actions').click();
     const terminateLink = page.getByTestId('lease-terminate');
     await expect(terminateLink).toBeVisible({ timeout: 10_000 });
     await terminateLink.click();

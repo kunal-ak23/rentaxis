@@ -456,8 +456,8 @@ class VatPerInstalmentIT extends AbstractPostgresIT {
         assertThatThrownBy(() -> posting.amendLines(leaseId,
                 List.of(vatLine("RENT", "110000"), vatLine("PARKING_FEE", "10000")), "re-split"))
                 .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("VAT already declared on instalment")
-                .hasMessageContaining("use an addendum");
+                .hasMessageContaining("VAT is already declared on instalment")
+                .hasMessageContaining("change them with an addendum");
     }
 
     @Test
