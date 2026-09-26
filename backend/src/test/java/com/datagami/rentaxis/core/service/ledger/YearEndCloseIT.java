@@ -217,6 +217,27 @@ class YearEndCloseIT extends AbstractPostgresIT {
                 .isInstanceOf(BusinessRuleViolationException.class).hasMessageContaining("later closed year first");
     }
 
+    /**
+     * S16-07: a year that ended before the books start (only a cut-over's replay lives
+     * there) need not be closed first; the first close after the books start sweeps it,
+     * and it cannot be closed again afterwards.
+     */
+    @Test
+    void aYearBeforeTheBooksStartIsSweptByTheFirstCloseAfterIt() {
+        twoYears(true);
+        jdbc.update("update tenant_fiscal_settings set books_start_date = ? where tenant_id = ?",
+                LocalDate.of(2025, 1, 1), fixtures.tenantId());
+        YearClosePreviewDTO preview = closes.preview(2025, TODAY);
+        assertThat(preview.blockers()).isEmpty();
+        assertThat(preview.retainedEarnings()).singleElement()
+                .satisfies(r -> assertThat(r.broughtForward()).isEqualByComparingTo("19200"));
+        closes.close(2025, false, TODAY);
+        assertThat(balance(LocalDate.of(2025, 12, 31), AccountRole.RETAINED_EARNINGS, false)).isEqualByComparingTo("-37000");
+        assertThat(pnlTotal(LocalDate.of(2025, 12, 31), false)).isEqualByComparingTo("0");
+        assertThatThrownBy(() -> closes.close(2024, false, TODAY))
+                .isInstanceOf(BusinessRuleViolationException.class).hasMessageContaining("its close covers 2024");
+    }
+
     @Test
     void reopeningRestoresTheTrialBalanceAndTheLockAndAReCloseIsFresh() {
         twoYears(true);

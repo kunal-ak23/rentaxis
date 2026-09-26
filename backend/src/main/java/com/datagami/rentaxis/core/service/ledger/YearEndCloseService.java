@@ -148,11 +148,26 @@ public class YearEndCloseService {
         // Years close in order. A previous year with no income or expense on or
         // before its end has nothing to close (e.g. one holding only an opening
         // balance of balance-sheet accounts), so it does not have to be closed first.
+        //
+        // S16-07: except a year that ended before the books start. It holds only what a
+        // cut-over replayed (and the opening balance) — years the organisation never
+        // kept in the product. The first close after the books start sweeps them with
+        // its own (the YEC closes cumulative balances; the preview shows them apart as
+        // brought forward), instead of making the accountant close each replayed year.
         LocalDate previousEnd = p.start().minusDays(1);
-        if (hasPnlThrough(tenant, previousEnd) && closes.findClosed(p.fiscalYear() - 1).isEmpty()) {
+        LocalDate booksStart = settings.getBooksStartDate();
+        boolean previousBeforeBooks = booksStart != null && previousEnd.isBefore(booksStart);
+        if (!previousBeforeBooks && hasPnlThrough(tenant, previousEnd) && closes.findClosed(p.fiscalYear() - 1).isEmpty()) {
             blockers.add(issue("previousOpen", "Close fiscal year " + (p.fiscalYear() - 1) + " first; years close in order.",
                     Map.of("year", String.valueOf(p.fiscalYear() - 1))));
         }
+        // S16-07: a later close already swept this year's balances; a second YEC would close them twice.
+        closes.findAllByOrderByFiscalYearDescClosedAtDesc().stream()
+                .filter(c -> c.getStatus() == FiscalYearCloseStatus.CLOSED && c.getFiscalYear() > p.fiscalYear())
+                .findFirst()
+                .ifPresent(c -> blockers.add(issue("laterClosed", "Fiscal year " + c.getFiscalYear()
+                        + " is already closed and its close covers " + fy + ".",
+                        Map.of("year", fy, "closed", String.valueOf(c.getFiscalYear())))));
         long planned = count("""
                 select count(*) from recognition_entries
                 where tenant_id = :t and status = 'PLANNED' and period_end <= :end""", tenant, p.end());
