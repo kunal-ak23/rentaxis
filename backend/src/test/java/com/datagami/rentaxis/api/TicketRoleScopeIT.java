@@ -145,6 +145,25 @@ class TicketRoleScopeIT extends AbstractPostgresIT {
                 .isEqualTo(HttpStatus.OK);
     }
 
+    /** The paged list's search matches the description too (the web list moved to this endpoint). */
+    @Test
+    void thePagedSearchMatchesTheDescription() {
+        ResponseEntity<String> made = call(admin, HttpMethod.POST, "/api/v1/tickets", Map.of("propertyId",
+                property.getId().toString(), "title", "Kitchen", "description", "Water dripping from the CEILING"));
+        assertThat(made.getStatusCode().is2xxSuccessful()).as(made.getBody()).isTrue();
+        String id = body(made).get("id").asText();
+        assertThat(pagedIds("ceiling")).containsExactly(id);
+        assertThat(pagedIds("nothing-like-it")).isEmpty();
+    }
+
+    private List<String> pagedIds(String q) {
+        ResponseEntity<String> res = call(admin, HttpMethod.GET, "/api/v1/tickets/paged?q=" + q, null);
+        assertThat(res.getStatusCode()).as(res.getBody()).isEqualTo(HttpStatus.OK);
+        List<String> out = new ArrayList<>();
+        body(res).get("content").forEach(n -> out.add(n.get("id").asText()));
+        return out;
+    }
+
     @Test
     void aGuardSeesNoTickets() {
         TenantContextHolder.setTenantId(tenantId);
