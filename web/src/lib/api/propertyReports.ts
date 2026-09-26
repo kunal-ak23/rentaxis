@@ -15,7 +15,8 @@ export const TOTAL = "TOTAL";
 export type PnlColumn = {
   key: string;
   propertyId: string | null;
-  kind: "PROPERTY" | "UNASSIGNED" | "TOTAL";
+  /** "BUILDING"/"NO_BUILDING" only from the by-tower endpoint (S16-02). */
+  kind: "PROPERTY" | "UNASSIGNED" | "TOTAL" | "BUILDING" | "NO_BUILDING";
   name: string;
   nameAr: string | null;
 };

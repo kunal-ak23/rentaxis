@@ -158,6 +158,13 @@ function LeasesList() {
     const selectView = (v: ContractView) => setUrlQuery(viewQuery(v));
     const setPropertyFilter = (id: string) => setUrlQuery({ propertyId: id || null, buildingId: null });
     const setBuildingFilter = (id: string) => setUrlQuery({ buildingId: id || null });
+    // R1 P2-2: once the Tower select reports it isn't showing (no towers, or
+    // GET /buildings/property/{id} refuses this role, e.g. ACCOUNTANT), any
+    // buildingId left in the URL is dropped — an active filter must always
+    // have a control that can clear it.
+    const onTowerAvailability = (available: boolean) => {
+        if (!available && buildingFilter) setBuildingFilter("");
+    };
     const properties = useNameLookup("properties");
     const [pillCounts, setPillCounts] = useState<{ key: string; counts: Partial<Record<ContractView, string>> }>({ key: "", counts: {} });
     const [boundedCapped, setBoundedCapped] = useState(false);
@@ -847,7 +854,7 @@ function LeasesList() {
                         <option value="">{tList("allProperties")}</option>
                         {properties.options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
                     </select>
-                    <TowerSelect propertyId={propertyFilter} value={buildingFilter} onChange={setBuildingFilter} testId="lease-building-filter" />
+                    <TowerSelect propertyId={propertyFilter} value={buildingFilter} onChange={setBuildingFilter} testId="lease-building-filter" onAvailabilityChange={onTowerAvailability} />
                     <div className="relative">
                         <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted" />
                         <input

@@ -1,9 +1,9 @@
 "use client";
 
-import { Suspense, useState, useEffect, use, useSyncExternalStore } from "react";
+import { Suspense, useState, useEffect, useRef, use, useSyncExternalStore } from "react";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Plus, X, Building, Info, LayoutList, Ruler, Hash, Users, CreditCard, ArrowLeft, Activity } from "lucide-react";
+import { Plus, X, Building, Info, LayoutList, Ruler, Hash, Users, CreditCard, ArrowLeft, Activity, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import CardFlip from "@/components/ui/card-flip";
 import { Link } from "@/i18n/routing";
@@ -94,8 +94,19 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
         urlListeners.forEach(l => l());
     };
     const [units, setUnits] = useState<Unit[]>([]);
+    // R1 P3-1: `loading` gates only the very first load's skeleton — the grid
+    // (from the last successful read) stays on screen through every refetch
+    // after that, since a tower/property change no longer needs to blank it.
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
     const [loadError, setLoadError] = useState<string | null>(null);
+    // R1 P2-2: once the Tower select reports it isn't showing (no towers, or
+    // GET /buildings/property/{id} refuses this role, e.g. ACCOUNTANT), any
+    // buildingId left in the URL is dropped — an active filter must always
+    // have a control that can clear it.
+    const onTowerAvailability = (available: boolean) => {
+        if (!available && buildingFilter) setBuildingFilter("");
+    };
     const [showForm, setShowForm] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
@@ -110,6 +121,10 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
         property: { id: propertyId }
     });
 
+    // R1 P3-1: a request counter, so a tower/property change that reorders
+    // responses never lets a stale page overwrite what a newer one already set.
+    const fetchSeq = useRef(0);
+
     useEffect(() => {
         fetchUnits();
         // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchUnits reads propertyId/buildingFilter directly
@@ -120,7 +135,9 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
     // unpaged /units/property/{id} did — the loop just avoids ever asking the
     // server for an unbounded page).
     const fetchUnits = async () => {
-        setLoading(true);
+        const seq = ++fetchSeq.current;
+        const isCurrent = () => seq === fetchSeq.current;
+        (units.length === 0 ? setLoading : setRefreshing)(true);
         try {
             const rows: Unit[] = [];
             let truncated = false;
@@ -128,6 +145,7 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
                 const sp = new URLSearchParams({ propertyId, page: String(page), size: String(UNITS_PAGE_SIZE) });
                 if (buildingFilter) sp.set("buildingId", buildingFilter);
                 const res = await fetch(`/api/proxy/v1/units/paged?${sp.toString()}`);
+                if (!isCurrent()) return;
                 if (!res.ok) {
                     // A non-2xx used to leave the state at its initial empty
                     // value, so a failed request rendered as "nothing here".
@@ -139,12 +157,13 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
                 if (page + 1 >= (data.totalPages ?? 1)) break;
                 if (page + 1 >= UNITS_MAX_PAGES) truncated = true;
             }
+            if (!isCurrent()) return;
             setUnits(rows);
             if (truncated) console.warn(`Units list truncated at ${rows.length} rows for property ${propertyId}`);
         } catch (err) {
             console.error(err);
         } finally {
-            setLoading(false);
+            if (isCurrent()) { setLoading(false); setRefreshing(false); }
         }
     };
 
@@ -197,7 +216,8 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
                     <p className="text-xs text-muted font-medium tracking-tight">Manage individual properties within this project.</p>
                 </div>
                 <div className="flex items-center gap-2 self-start">
-                    <TowerSelect propertyId={propertyId} value={buildingFilter} onChange={setBuildingFilter} testId="units-building-filter" />
+                    <TowerSelect propertyId={propertyId} value={buildingFilter} onChange={setBuildingFilter} testId="units-building-filter" onAvailabilityChange={onTowerAvailability} />
+                    {refreshing && <Loader2 size={14} className="animate-spin text-muted" data-testid="units-refreshing" />}
                     <button
                         onClick={() => { setFormError(null); setShowForm(true); }}
                         className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
