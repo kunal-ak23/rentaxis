@@ -64,7 +64,13 @@ export default function StatementView({ data, locale }: { data: PropertyStatemen
                         </dl>
                     )}
                     {s.tables.filter(tb => tb.rows.length > 0).map(tb => (
-                        <div key={tb.key} className="overflow-x-auto mt-2">
+                        <div key={tb.key} className="overflow-x-auto mt-2" data-testid={`table-${tb.key}`}>
+                            {/* S16-02: the per-building NOI table is a distinct table
+                                inside the P&L section, given its own caption so it does
+                                not read as a continuation of the report-line table. */}
+                            {tb.key === "buildings" && (
+                                <h3 className="text-[11px] font-semibold text-muted uppercase tracking-wider mb-1">{t("buildingsTable")}</h3>
+                            )}
                             <table className="w-full min-w-[480px]">
                                 <thead>
                                     <tr className="bg-input/50">
