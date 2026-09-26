@@ -309,13 +309,16 @@ public class BookingService {
     }
 
     private String resourceLabel(BookingRequest b) {
-        try {
-            if (b.getAmenityId() != null) return facilityService.getAmenity(b.getTenantId(), b.getAmenityId()).getNameEn();
-            if (b.getParkingSpotId() != null) {
-                return "parking " + facilityService.getParkingSpot(b.getTenantId(), b.getParkingSpotId()).getSpotNumber();
-            }
-        } catch (RuntimeException e) {
-            // A label is a courtesy; the charge still posts.
+        // A label is a courtesy; the charge still posts. Looked up rather than caught:
+        // a NotFoundException out of FacilityService would mark the approval's
+        // transaction rollback-only, and the approval would fail at commit.
+        if (b.getAmenityId() != null) {
+            return facilityService.findAmenity(b.getTenantId(), b.getAmenityId())
+                    .map(PropertyAmenity::getNameEn).orElse("booking");
+        }
+        if (b.getParkingSpotId() != null) {
+            return facilityService.findParkingSpot(b.getTenantId(), b.getParkingSpotId())
+                    .map(sp -> "parking " + sp.getSpotNumber()).orElse("booking");
         }
         return "booking";
     }

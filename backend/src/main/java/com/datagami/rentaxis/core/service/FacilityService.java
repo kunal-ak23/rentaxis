@@ -85,12 +85,17 @@ public class FacilityService {
 
     @Transactional(readOnly = true)
     public PropertyAmenity getAmenity(UUID tenantId, UUID id) {
-        PropertyAmenity amenity = amenityRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("Amenity not found"));
-        if (!Objects.equals(amenity.getTenantId(), tenantId)) {
-            throw new NotFoundException("Amenity not found");
-        }
-        return amenity;
+        return findAmenity(tenantId, id).orElseThrow(() -> new NotFoundException("Amenity not found"));
+    }
+
+    /**
+     * {@link #getAmenity} without the refusal, for callers to whom a missing row is an
+     * ordinary outcome: catching getAmenity's NotFoundException inside a transaction does
+     * not help, the throw has already marked that transaction rollback-only.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<PropertyAmenity> findAmenity(UUID tenantId, UUID id) {
+        return amenityRepository.findById(id).filter(a -> Objects.equals(a.getTenantId(), tenantId));
     }
 
     public PropertyAmenity createAmenity(UUID tenantId, AmenityCreateRequest req) {
@@ -178,12 +183,13 @@ public class FacilityService {
 
     @Transactional(readOnly = true)
     public ParkingSpot getParkingSpot(UUID tenantId, UUID id) {
-        ParkingSpot spot = spotRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("Parking spot not found"));
-        if (!Objects.equals(spot.getTenantId(), tenantId)) {
-            throw new NotFoundException("Parking spot not found");
-        }
-        return spot;
+        return findParkingSpot(tenantId, id).orElseThrow(() -> new NotFoundException("Parking spot not found"));
+    }
+
+    /** {@link #getParkingSpot} without the refusal (see {@link #findAmenity}). */
+    @Transactional(readOnly = true)
+    public java.util.Optional<ParkingSpot> findParkingSpot(UUID tenantId, UUID id) {
+        return spotRepository.findById(id).filter(sp -> Objects.equals(sp.getTenantId(), tenantId));
     }
 
     public ParkingSpot createParkingSpot(UUID tenantId, ParkingSpotCreateRequest req) {

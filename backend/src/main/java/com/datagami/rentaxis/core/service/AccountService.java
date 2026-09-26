@@ -136,6 +136,17 @@ public class AccountService {
                 .orElseThrow(() -> new NotFoundException("Account not found with code: " + code));
     }
 
+    /**
+     * {@link #getAccountByCode} for a caller to whom a missing code is an ordinary outcome.
+     * Such a caller must not catch getAccountByCode's NotFoundException: it leaves this
+     * proxied bean and marks the caller's transaction rollback-only, so the caller's commit
+     * fails anyway ("Transaction silently rolled back", sim4y S16-01's class).
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<Account> findAccountByCode(String code) {
+        return repository.findByCode(code);
+    }
+
     @Transactional(readOnly = true)
     public Account getAccountById(UUID id) {
         return repository.findById(id)

@@ -4,7 +4,6 @@ import com.datagami.rentaxis.api.dto.BankAccountRequest;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.ledger.AccountResolver;
-import com.datagami.rentaxis.core.service.ledger.UnmappedAccountRoleException;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.BankAccount;
@@ -136,27 +135,26 @@ public class BankAccountService {
     @Transactional
     public BankAccount createBankAccount(BankAccount bankAccount) {
         if (bankAccount.getCoaAccount() == null) {
-            try {
-                if (bankAccount.getProperty() != null) {
-                    try {
-                        bankAccount.setCoaAccount(resolver.resolve(AccountRole.BANK, bankAccount.getProperty().getId()));
-                    } catch (UnmappedAccountRoleException e) {
-                        // fall through to own leaf
-                    }
-                }
-                if (bankAccount.getCoaAccount() == null) {
+            // Both fallbacks are looked up, not caught: an exception out of the resolver
+            // or AccountService marks this transaction rollback-only and the create then
+            // fails at commit ("Transaction silently rolled back", sim4y S16-01's class).
+            if (bankAccount.getProperty() != null) {
+                bankAccount.setCoaAccount(resolver.resolveOrNull(AccountRole.BANK, bankAccount.getProperty().getId()));
+            }
+            if (bankAccount.getCoaAccount() == null) {
+                Account bankGroup = accountService.findAccountByCode("A-02-02").orElse(null);
+                if (bankGroup == null) {
+                    log.warn("No Bank account group (A-02-02) for tenant; creating bank account without a ledger account");
+                } else {
                     // accountNumber is optional on the entity, so this fallback has to
                     // tolerate a null one rather than NPE the whole create.
                     String accountNumber = bankAccount.getAccountNumber();
                     String last4 = accountNumber == null || accountNumber.isBlank() ? null
                             : accountNumber.length() > 4
                                     ? accountNumber.substring(accountNumber.length() - 4) : accountNumber;
-                    Account bankGroup = accountService.getAccountByCode("A-02-02");
                     String leafName = last4 == null ? bankAccount.getBankName() : bankAccount.getBankName() + " - " + last4;
                     bankAccount.setCoaAccount(accountService.createLeaf(leafName, bankGroup, null));
                 }
-            } catch (NotFoundException e) {
-                log.warn("No Bank account group (A-02-02) for tenant; creating bank account without a ledger account");
             }
         }
         // R2 ruling (b): the first bank account is the default one, and only one is.
