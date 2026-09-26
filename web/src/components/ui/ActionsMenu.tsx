@@ -46,11 +46,19 @@ export default function ActionsMenu({ label, items, testId, triggerTestId, varia
             if (panel.current && e.target instanceof Node && panel.current.contains(e.target)) return;
             setOpen(false);
         };
+        // Esc closes it wherever focus is (the trigger keeps focus after a mouse click).
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key !== "Escape") return;
+            setOpen(false);
+            trigger.current?.focus();
+        };
         document.addEventListener("mousedown", onDown);
+        document.addEventListener("keydown", onKey);
         window.addEventListener("scroll", onMove, true);
         window.addEventListener("resize", onMove);
         return () => {
             document.removeEventListener("mousedown", onDown);
+            document.removeEventListener("keydown", onKey);
             window.removeEventListener("scroll", onMove, true);
             window.removeEventListener("resize", onMove);
         };

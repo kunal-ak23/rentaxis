@@ -82,6 +82,13 @@ describe("ActionsMenu", () => {
         expect(screen.getByTestId("m").style.bottom).toBe("44px");
     });
 
+    it("closes on Escape with focus still on the trigger", () => {
+        render(<ActionsMenu label="x" items={items()} testId="m" triggerTestId="t" />);
+        fireEvent.click(screen.getByTestId("t"));
+        fireEvent.keyDown(document.body, { key: "Escape" });
+        expect(screen.getByTestId("m")).not.toBeVisible();
+    });
+
     it("closes when the page scrolls under it", () => {
         render(<ActionsMenu label="x" items={items()} testId="m" triggerTestId="t" />);
         fireEvent.click(screen.getByTestId("t"));
