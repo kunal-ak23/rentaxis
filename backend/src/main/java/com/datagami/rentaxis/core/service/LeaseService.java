@@ -884,10 +884,22 @@ public class LeaseService {
         }
         requireAddendaAllowed(lease, inputs, mayNameAddendum, 0);
 
+        // #369 R1-P3-1: an addendum's line keeps the recognition rule it was written
+        // under across the delete and re-insert (a post-go-live addendum on a cut-over
+        // lease is new-rule; an older one stays as it was stamped). Keyed by addendum and
+        // charge type; a re-sent addendum line with no earlier stamp takes the new-lease rule.
+        java.util.Map<String, com.datagami.rentaxis.domain.entity.enums.ChargeRecognition> addendumStamps =
+                new java.util.HashMap<>();
+        for (LeaseLine old : leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId())) {
+            if (old.getAddendumId() != null && old.getChargeType() != null && old.getPostedRecognition() != null) {
+                addendumStamps.putIfAbsent(old.getAddendumId() + "|" + old.getChargeType().getId(), old.getPostedRecognition());
+            }
+        }
+
         leaseLineRepository.deleteByLease_Id(lease.getId());
         leaseLineRepository.flush();
 
-        insertLines(lease, inputs, 0);
+        insertLines(lease, inputs, 0, addendumStamps);
         // Spec §4b: the lease's rent-free periods outlive a re-sent set of lines.
         applyRentFree(lease);
     }
@@ -1100,6 +1112,11 @@ public class LeaseService {
      *                    replacement, the last existing position for an append.
      */
     private List<LeaseLine> insertLines(Lease lease, List<LeaseLineInput> inputs, int startingSeq) {
+        return insertLines(lease, inputs, startingSeq, java.util.Map.of());
+    }
+
+    private List<LeaseLine> insertLines(Lease lease, List<LeaseLineInput> inputs, int startingSeq,
+            java.util.Map<String, com.datagami.rentaxis.domain.entity.enums.ChargeRecognition> addendumStamps) {
         UUID propertyId = lease.getUnit() != null && lease.getUnit().getProperty() != null
                 ? lease.getUnit().getProperty().getId() : null;
 
@@ -1143,6 +1160,12 @@ public class LeaseService {
             // Validated by requireAddendaAllowed before this point: null except on
             // an amend, where it names an addendum of this very lease.
             line.setAddendumId(in.addendumId());
+            if (in.addendumId() != null && lease.getPostedAt() != null) {
+                // #369 R1-P3-1: set before the save, so @PrePersist does not stamp the
+                // lease's (legacy, on a cut-over) rule over it.
+                line.setPostedRecognition(addendumStamps.getOrDefault(in.addendumId() + "|" + type.getId(),
+                        LeaseLine.postingRecognition(null, type)));
+            }
             line.setVatApplicable(vatApplicableFor(in, type, lease.isRentVatApplicable()));
             line.setCreditAccount(resolveCreditAccount(in, type, propertyId, seqNo));
 

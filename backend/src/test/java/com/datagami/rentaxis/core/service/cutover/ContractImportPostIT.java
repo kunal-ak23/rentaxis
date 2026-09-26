@@ -468,6 +468,34 @@ class ContractImportPostIT extends AbstractPostgresIT {
     }
 
     /**
+     * #369 R1 nit: if the organisation's renters change between validation and persist
+     * (here: a second renter takes the email after the workbook validated), persist
+     * refuses that row as a row error — never attaches to a guess, never fails the job
+     * with a stack trace.
+     */
+    @Test
+    void aMatchThatChangedSinceValidationIsThatRowsError() throws Exception {
+        UUID first = importTheTemplate();
+        assertThat(postService.post(first).leasesFailed()).isZero();
+        try (Workbook wb = secondWorkbook()) {
+            assertThat(tx.execute(s -> contractValidator.validate(wb)).errors()).isEmpty();
+            tx.executeWithoutResult(s -> {
+                com.datagami.rentaxis.domain.entity.Renter twin = new com.datagami.rentaxis.domain.entity.Renter();
+                twin.setNameEn("Sample Renter Two Holdings");
+                twin.setEmail("sample.renter.two@example.com");
+                renterRepo.save(twin);
+            });
+            assertThatThrownBy(() -> contractPersist.persist(wb, fixture.newJob()))
+                    .isInstanceOfSatisfying(ImportRowRefusedException.class, e -> {
+                        assertThat(e.row().getSheet()).isEqualTo("Contracts");
+                        assertThat(e.row().getField()).isEqualTo("RenterEmail");
+                        assertThat(e.row().getRow()).isEqualTo(4);
+                        assertThat(e.row().getMessage()).contains("2 renters");
+                    });
+        }
+    }
+
+    /**
      * And terminating it later takes the legacy path: the TCR credits the VAT on the
      * unearned rent straight back out of Output VAT, with no deferred-VAT settlement
      * and no instalment tax points. S16-04: the VAT handed back carries its tax credit

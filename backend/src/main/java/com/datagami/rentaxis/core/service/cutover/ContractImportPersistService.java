@@ -337,10 +337,13 @@ public class ContractImportPersistService {
      * reversing it never touches them. A match the matcher refuses cannot reach here — the
      * validator refused the workbook — and is refused again rather than guessed.
      */
-    private Renter existingRenter(String email, String name) {
+    private Renter existingRenter(String email, String name, String sheet, int rowNum, String field) {
         CutoverRenterMatcher.Match m = renterMatcher.match(TenantContextHolder.getTenantId(), email, name);
         if (m == null) return null;
-        if (!m.reusable()) throw new IllegalStateException(m.problem());
+        if (!m.reusable()) {
+            // #369 R1 nit: the organisation's renters changed since validation — that row's error.
+            throw new ImportRowRefusedException(new ImportErrorDTO(sheet, rowNum, field, m.problem()));
+        }
         return renterRepository.findById(m.renterId()).orElseThrow();
     }
 
@@ -355,7 +358,8 @@ public class ContractImportPersistService {
             Row row = sheet.getRow(i);
             if (row == null || SheetCells.isRowEmpty(row)) continue;
             // S16-10: listed again by a later workbook — the same person, one record.
-            Renter existing = existingRenter(SheetCells.getCellString(row, 2), SheetCells.getCellString(row, 0));
+            Renter existing = existingRenter(SheetCells.getCellString(row, 2), SheetCells.getCellString(row, 0),
+                    "Renters", i + 1, "Email");
             if (existing != null) {
                 byEmail.put(SheetCells.getCellString(row, 2).trim().toLowerCase(Locale.ROOT), existing);
                 continue;
@@ -468,7 +472,8 @@ public class ContractImportPersistService {
         Renter renter = renterByEmail.get(renterEmail.toLowerCase(Locale.ROOT));
         if (renter == null) {
             // S16-10: a renter an earlier workbook created, named only on Contracts.
-            renter = existingRenter(renterEmail, SheetCells.cell(row, hi, "RenterName"));
+            renter = existingRenter(renterEmail, SheetCells.cell(row, hi, "RenterName"),
+                    "Contracts", row.getRowNum() + 1, "RenterEmail");
             if (renter != null) renterByEmail.put(renterEmail.toLowerCase(Locale.ROOT), renter);
         }
 

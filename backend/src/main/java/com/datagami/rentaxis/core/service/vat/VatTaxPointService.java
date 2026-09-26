@@ -379,7 +379,7 @@ public class VatTaxPointService {
         for (VatTaxPoint p : points.findByLeaseIdAndStatusOrderByTaxPointDateAsc(leaseId, VatTaxPointStatus.POSTED)) {
             // A CONTRACT lease's own tax point is the contract's; an amendment
             // re-posts the contract and records the VAT delta (recordContractVat).
-            if (p.getKind() == VatTaxPointKind.CONTRACT) continue;
+            if (p.getKind() == VatTaxPointKind.CONTRACT || p.getKind() == VatTaxPointKind.AMENDMENT) continue;
             // PR #369 R1 P3-2: said by what declared it — an instalment, or a charge / addendum /
             // termination document of this lease.
             String which = p.getChequeId() != null
@@ -605,6 +605,45 @@ public class VatTaxPointService {
         p.setPostedAt(Instant.now());
         p = points.saveAndFlush(p);
         taxInvoices.issueFor(p, lease, null);
+    }
+
+    /**
+     * #369 R1-P3-3: an amendment of a cut-over CONTRACT-VAT lease reverses its contract
+     * entries and re-posts them, moving Output VAT by the difference between the lines'
+     * VAT before and after. The contract's own invoice was the previous system's, so there
+     * is no CONTRACT point of ours to adjust ({@link #recordContractVat} does nothing): the
+     * difference is its own POSTED AMENDMENT point, documented by a tax invoice (VAT up) or
+     * a credit note (VAT down), dated on the amendment. A lease of ours with its contract
+     * invoice is {@code recordContractVat}'s; nothing here.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void recordCutoverAmendment(Lease lease, LocalDate date, UUID tcoJournalId,
+                                       BigDecimal vatBefore, BigDecimal taxableBefore) {
+        if (lease.getVatTiming() != VatTiming.CONTRACT || contractDocumented(lease.getId())
+                || !taxInvoices.cutOverContract(lease)) return;
+        List<com.datagami.rentaxis.domain.entity.LeaseLine> lines = leaseLines.findByLease_IdOrderBySeqNoAsc(lease.getId());
+        BigDecimal vat = com.datagami.rentaxis.core.service.lease.InstalmentVat.contractVat(lines).subtract(nz(vatBefore));
+        BigDecimal taxable = com.datagami.rentaxis.core.service.lease.InstalmentVat.contractTaxable(lines).subtract(nz(taxableBefore));
+        if (vat.signum() == 0) return;
+        VatTaxPoint p = new VatTaxPoint();
+        p.setTenantId(lease.getTenantId());
+        p.setLeaseId(lease.getId());
+        stampWhere(p, lease);
+        p.setKind(VatTaxPointKind.AMENDMENT);
+        p.setTaxPointDate(date);
+        p.setVatAmount(vat);
+        p.setTaxableAmount(taxable);
+        p.setStatus(VatTaxPointStatus.POSTED);
+        p.setJournalId(tcoJournalId);
+        p.setPostedAt(Instant.now());
+        p = points.saveAndFlush(p);
+        taxInvoices.issueFor(p, lease, null);
+    }
+
+    /** Whether the lease's contract came from a cut-over import (any of its TCOs carries an import batch). */
+    @Transactional(readOnly = true)
+    public boolean cutOverContract(Lease lease) {
+        return taxInvoices.cutOverContract(lease);
     }
 
     /** Whether this lease's contract VAT carries a tax invoice of ours (a POSTED CONTRACT point). */

@@ -604,6 +604,12 @@ public class LeasePostingService {
         // corrected by an addendum's delta, never rewritten (spec 2026-09-24 §1).
         vatTaxPoints.requireNothingDeclared(leaseId);
 
+        // #369 R1-P3-3: the contract's VAT before the amendment — on a cut-over CONTRACT
+        // lease the difference is documented on its own tax invoice / credit note.
+        List<LeaseLine> linesBefore = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
+        BigDecimal vatBefore = InstalmentVat.contractVat(linesBefore);
+        BigDecimal taxableBefore = InstalmentVat.contractTaxable(linesBefore);
+
         leaseService.applyAmendedLines(lease, newLines);
         leaseService.syncDerivedTotals(lease);
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
@@ -620,6 +626,12 @@ public class LeasePostingService {
         // post, so the status rule is checked above and skipped here.
         PostingPlan plan = validate(lease, lines, cheques, Preconditions.FOR_AMEND);
         plan.throwIfRefused(propertyIdOf(lease));
+        if (lease.getVatTiming() == VatTiming.CONTRACT
+                && InstalmentVat.contractVat(lines).compareTo(vatBefore) != 0 && !hasSupplierTrn(lease)) {
+            throw new BusinessRuleViolationException("This amendment changes the contract's VAT, so it issues a tax"
+                    + " invoice or credit note, and the organisation has no TRN. Add the TRN to the organisation's"
+                    + " details first.");
+        }
 
         // Nothing declared, so every point is PLANNED: cancelled here, and the
         // amended event rebuilds the schedule from the re-spread rows. The TCO
@@ -634,10 +646,18 @@ public class LeasePostingService {
             postingService.reverse(contract.getId(), reversedOn, reason);
             reversedJournalIds.add(contract.getId());
         }
-        JournalEntry tco = postTco(lease, plan.pairs());
+        // #369 R1-P3-3: a cut-over contract is re-posted on the amendment date, not its
+        // contract date — that date sits in the replayed period before the books start (locked
+        // in practice), and on the same day as the reversal the Output VAT moves by exactly the
+        // difference the AMENDMENT document below carries. Nothing before today changes.
+        boolean cutOver = vatTaxPoints.cutOverContract(lease);
+        JournalEntry tco = cutOver
+                ? postTco(lease, plan.pairs(), reversedOn, contractNarration(lease))
+                : postTco(lease, plan.pairs());
         // F14-11: a CONTRACT lease that already carries its contract tax invoice gets
         // a TI (or TCN) for the VAT the amendment moved.
         vatTaxPoints.recordContractVat(lease, reversedOn, tco.getId(), false);
+        vatTaxPoints.recordCutoverAmendment(lease, reversedOn, tco.getId(), vatBefore, taxableBefore);
 
         lease.setPostingJournalId(tco.getId());
         leaseRepository.save(lease);

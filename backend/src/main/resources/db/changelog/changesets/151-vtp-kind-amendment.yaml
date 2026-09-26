@@ -1,0 +1,19 @@
+# #369 R1-P3-3: vat_tax_points kind AMENDMENT — the VAT an amendment of a cut-over
+# CONTRACT-VAT lease moves (its contract invoice was issued by the previous system, so
+# there is no CONTRACT point of ours to adjust), documented by a tax invoice or credit note.
+databaseChangeLog:
+  - changeSet:
+      id: 151-vtp-kind-amendment
+      author: claude
+      changes:
+        - sql:
+            sql: |
+              ALTER TABLE vat_tax_points DROP CONSTRAINT IF EXISTS ck_vtp_kind;
+              ALTER TABLE vat_tax_points ADD CONSTRAINT ck_vtp_kind
+                CHECK (kind IN ('INSTALMENT', 'TERMINATION_ADJUSTMENT', 'CONTRACT', 'SETTLEMENT', 'REDUCTION', 'CHARGE', 'AMENDMENT'));
+      rollback:
+        - sql:
+            sql: |
+              ALTER TABLE vat_tax_points DROP CONSTRAINT IF EXISTS ck_vtp_kind;
+              ALTER TABLE vat_tax_points ADD CONSTRAINT ck_vtp_kind
+                CHECK (kind IN ('INSTALMENT', 'TERMINATION_ADJUSTMENT', 'CONTRACT', 'SETTLEMENT', 'REDUCTION', 'CHARGE'));

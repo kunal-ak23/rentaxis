@@ -63,7 +63,9 @@ public record TerminationPreviewDTO(LocalDate terminationDate,
                                     List<ChequeDTO> chequesToKeep,
                                     List<ChequeDTO> bouncedOutstanding,
                                     BigDecimal receivableAfter,
-                                    VatSettlement vatSettlement) {
+                                    VatSettlement vatSettlement,
+                                    /* #369 R1 nit: what terminate would refuse (e.g. no TRN for the credit note), listed rather than thrown. */
+                                    List<String> problems) {
 
     /** See {@code VatTaxPointService.TerminationVat}; amounts are positive. */
     public record VatSettlement(BigDecimal dueByTerminationDate,

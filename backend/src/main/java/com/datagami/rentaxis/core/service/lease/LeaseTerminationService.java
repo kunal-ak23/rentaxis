@@ -148,7 +148,13 @@ public class LeaseTerminationService {
 
         Split split = defaultSplit(chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId), t);
         RecognitionService.TerminationRecognition plan = recognitionService.previewTermination(leaseId, t);
-        requireTrnForCreditNote(lease, plan.unearnedVat());
+        // #369 R1 nit: listed for the review screen; terminate refuses it with the same words.
+        List<String> problems = new java.util.ArrayList<>();
+        try {
+            requireTrnForCreditNote(lease, plan.unearnedVat());
+        } catch (BusinessRuleViolationException e) {
+            problems.add(e.getMessage());
+        }
         VatTaxPointService.TerminationVat vat = vatTaxPoints.previewTermination(leaseId, t, plan.unearnedVat());
         return new TerminationPreviewDTO(
                 t,
@@ -161,7 +167,8 @@ public class LeaseTerminationService {
                 dtos(split.bounced(), lease),
                 receivableAfter(lease, split.toReturn(), plan.unearned().add(plan.unearnedVat())),
                 new TerminationPreviewDTO.VatSettlement(vat.dueByT(), vat.pending(), vat.reversedFromDeferred(),
-                        vat.declaredAtT(), vat.creditedBack()));
+                        vat.declaredAtT(), vat.creditedBack()),
+                problems);
     }
 
     // ------------------------------------------------------------------

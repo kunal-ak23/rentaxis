@@ -17,5 +17,11 @@ public enum VatTaxPointKind {
     /** F14-32: VAT credited back by a credit addendum (mid-term reduction) beyond what was still to be declared. */
     REDUCTION,
     /** F14-30: VAT on a charge raised on the lease (service recharge, admin fee, damage, booking fee); posted on its PEN. */
-    CHARGE
+    CHARGE,
+    /**
+     * #369 R1-P3-3: the VAT an amendment of a cut-over CONTRACT-VAT lease moves — its
+     * contract invoice was the previous system's, so the difference is documented on its
+     * own (a tax invoice when it rises, a credit note when it falls).
+     */
+    AMENDMENT
 }
