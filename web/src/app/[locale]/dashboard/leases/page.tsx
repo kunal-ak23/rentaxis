@@ -22,6 +22,7 @@ import {
 } from "@/lib/api/leasing";
 import ActionsMenu, { type ActionsMenuItem } from "@/components/ui/ActionsMenu";
 import { FilterChip, FiltersButton } from "@/components/ui/FiltersButton";
+import { TowerSelect } from "@/components/ui/TowerSelect";
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import { businessTodayIso } from "@/lib/businessDate";
 import { expiringFrom, upcomingFrom } from "@/lib/dashboard/pipeline";
@@ -144,6 +145,7 @@ function LeasesList() {
     const subset = listState.subset;
     const statusFilter = listState.status;
     const propertyFilter = listState.propertyId;
+    const buildingFilter = listState.buildingId;
     // The URL is the one source of truth for the search (R1 P3-1). While typing, the
     // box shows the draft; once the URL's search moves (the debounce wrote it, or a
     // link replaced it) the box shows the URL again.
@@ -154,7 +156,8 @@ function LeasesList() {
     const setSearchQuery = (v: string) => setDraftSearch({ base: debouncedSearchQuery, text: v });
     const setStatusFilter = (status: LeaseStatus | "") => setUrlQuery(statusQuery(status));
     const selectView = (v: ContractView) => setUrlQuery(viewQuery(v));
-    const setPropertyFilter = (id: string) => setUrlQuery({ propertyId: id || null });
+    const setPropertyFilter = (id: string) => setUrlQuery({ propertyId: id || null, buildingId: null });
+    const setBuildingFilter = (id: string) => setUrlQuery({ buildingId: id || null });
     const properties = useNameLookup("properties");
     const [pillCounts, setPillCounts] = useState<{ key: string; counts: Partial<Record<ContractView, string>> }>({ key: "", counts: {} });
     const [boundedCapped, setBoundedCapped] = useState(false);
@@ -236,7 +239,7 @@ function LeasesList() {
 
     useEffect(() => {
         fetchLeases();
-    }, [currentPage, itemsPerPage, debouncedSearchQuery, statusFilter, view, subset, propertyFilter]);
+    }, [currentPage, itemsPerPage, debouncedSearchQuery, statusFilter, view, subset, propertyFilter, buildingFilter]);
 
     // Pill counts (spec §1a), from GET /leases/paged totals — size=1 each, plus the
     // bounded Expiring read the Home pipeline uses. The endpoint filters one status
@@ -244,9 +247,10 @@ function LeasesList() {
     useEffect(() => {
         if (!canViewLeases) return;
         let alive = true;
-        const key = propertyFilter;
+        const key = `${propertyFilter}|${buildingFilter}`;
         const propertyId = propertyFilter || undefined;
-        const total = (status?: LeaseStatus) => leaseApi.paged({ status, propertyId, size: 1 }).then(p => p.totalElements ?? 0);
+        const buildingId = buildingFilter || undefined;
+        const total = (status?: LeaseStatus) => leaseApi.paged({ status, propertyId, buildingId, size: 1 }).then(p => p.totalElements ?? 0);
         const put = (v: ContractView, n: string) => {
             if (alive) setPillCounts(prev => ({ key, counts: { ...(prev.key === key ? prev.counts : {}), [v]: n } }));
         };
@@ -255,14 +259,14 @@ function LeasesList() {
         total("ACTIVE").then(n => put("active", String(n))).catch(() => {});
         total("NOTICE_GIVEN").then(n => put("notice", String(n))).catch(() => {});
         Promise.all(ENDED.map(st => total(st))).then(ns => put("ended", String(ns.reduce((a, b) => a + b, 0)))).catch(() => {});
-        leaseApi.paged({ status: "ACTIVE", propertyId, sort: "endDate,asc", size: 100 })
+        leaseApi.paged({ status: "ACTIVE", propertyId, buildingId, sort: "endDate,asc", size: 100 })
             .then(page => {
                 const e = expiringFrom(page, businessTodayIso());
                 put("expiring", e.capped ? `${e.rows.length}+` : String(e.rows.length));
             })
             .catch(() => {});
         return () => { alive = false; };
-    }, [propertyFilter, canViewLeases]);
+    }, [propertyFilter, buildingFilter, canViewLeases]);
 
     useEffect(() => {
         if (leases.length > 0) {
@@ -275,13 +279,13 @@ function LeasesList() {
     useEffect(() => {
         setCurrentPage(1);
         setSelected(new Set());
-    }, [statusFilter, view, subset, propertyFilter]);
+    }, [statusFilter, view, subset, propertyFilter, buildingFilter]);
 
     const fetchLeases = async () => {
         setLoading(true);
         try {
             const read = contractRead(listState);
-            const common = { search: debouncedSearchQuery || undefined, propertyId: propertyFilter || undefined };
+            const common = { search: debouncedSearchQuery || undefined, propertyId: propertyFilter || undefined, buildingId: buildingFilter || undefined };
             if (read.kind === "bounded") {
                 // One bounded page sorted by date, narrowed to the stage (Expiring / Upcoming).
                 const data = await leaseApi.paged({ ...common, status: read.status, sort: read.sort, page: 0, size: read.size });
@@ -823,7 +827,7 @@ function LeasesList() {
                             )}
                         >
                             {tc(PILL_LABEL[v])}
-                            {pillCounts.key === propertyFilter && pillCounts.counts[v] !== undefined && (
+                            {pillCounts.key === `${propertyFilter}|${buildingFilter}` && pillCounts.counts[v] !== undefined && (
                                 <span className={cn("rounded-full px-1.5 text-[10.5px] tabular-nums", view === v ? "bg-white/20" : "bg-input text-muted")}>
                                     {pillCounts.counts[v]}
                                 </span>
@@ -843,6 +847,7 @@ function LeasesList() {
                         <option value="">{tList("allProperties")}</option>
                         {properties.options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
                     </select>
+                    <TowerSelect propertyId={propertyFilter} value={buildingFilter} onChange={setBuildingFilter} testId="lease-building-filter" />
                     <div className="relative">
                         <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted" />
                         <input

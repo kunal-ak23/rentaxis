@@ -9,9 +9,24 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { businessTodayIso } from "@/lib/businessDate";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
+import type { Page } from "@/lib/api/ledger";
+import { TowerSelect } from "@/components/ui/TowerSelect";
 import {
     Plus, X, Search, Loader2, Eye, Upload, Wrench, BarChart3,
 } from "lucide-react";
+
+/**
+ * S16-02/S16-03: staff (SA/TA/PM/ACCOUNTANT) read `GET /tickets/paged` — search,
+ * property, tower (buildingId), status and priority filtered and paged on the
+ * server. A staff user (TENANT_USER) and a renter are not admitted to that
+ * endpoint (`MaintenanceTicketController#listTicketsPaged`'s `@PreAuthorize`);
+ * they keep the plain `GET /tickets`, already scoped server-side to what they
+ * reported and — for a maintenance-team TENANT_USER (S16-03) — what is
+ * assigned to them, filtered and paged here in the browser.
+ */
+function canUsePagedTickets(role: UserRole | undefined): boolean {
+    return role === "SUPER_ADMIN" || role === "TENANT_ADMIN" || role === "PROPERTY_MANAGER" || role === "ACCOUNTANT";
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -30,6 +45,8 @@ type Ticket = {
     unitNumber: string;
     reporterName: string;
     assigneeName: string | null;
+    /** S16-03: the staff user id it is assigned to, for the "My tickets" filter. */
+    assignedTo?: string | null;
     onBehalfOf: string | null;
     /** #19: the renter the ticket was logged for; null on legacy free-text rows. */
     onBehalfOfRenterId?: string | null;
@@ -90,12 +107,14 @@ const CATEGORIES = [
 
 export default function TicketsPage() {
     const t = useTranslations("Tickets");
+    const tTowers = useTranslations("Towers");
     const locale = useLocale();
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
 
     // Data
     const [tickets, setTickets] = useState<Ticket[]>([]);
+    const [pagedTotal, setPagedTotal] = useState(0);
     const [properties, setProperties] = useState<Property[]>([]);
     const [units, setUnits] = useState<Unit[]>([]);
     const [loading, setLoading] = useState(true);
@@ -104,6 +123,12 @@ export default function TicketsPage() {
     const [searchQuery, setSearchQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState("ALL");
     const [priorityFilter, setPriorityFilter] = useState("ALL");
+    // S16-02: property + tower (buildingId), for staff's server-paged list.
+    const [propertyFilter, setPropertyFilter] = useState("");
+    const [buildingFilter, setBuildingFilter] = useState("");
+    // S16-03: a maintenance-team TENANT_USER's own worklist vs. everything they
+    // can see (also what they reported).
+    const [myOnly, setMyOnly] = useState(false);
 
     // Pagination
     const [currentPage, setCurrentPage] = useState(1);
@@ -126,6 +151,8 @@ export default function TicketsPage() {
     const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
     const [renterLeases, setRenterLeases] = useState<{ id: string; propertyId: string; propertyName: string; unitId: string; unitIdentifier: string }[]>([]);
     const isRenter = userRole === "RENTER";
+    const isStaffUser = userRole === "TENANT_USER";
+    const canPage = canUsePagedTickets(userRole);
     // Status, priority and category arrive as enum codes; an unknown code falls
     // back to its readable form rather than a raw key path.
     const enumLabel = (group: "status" | "priority" | "category", code: string | null | undefined) =>
@@ -133,12 +160,33 @@ export default function TicketsPage() {
 
     // ── Fetch data ──────────────────────────────────────────────────────
 
+    // S16-02: staff read the server-paged, server-filtered list; a staff user
+    // (TENANT_USER) and a renter are not admitted to /tickets/paged, so they
+    // keep the plain endpoint (already scoped server-side) and are filtered
+    // and paged here.
     const fetchTickets = useCallback(async () => {
         try {
-            const res = await fetch("/api/proxy/v1/tickets");
-            if (res.ok) setTickets(await res.json());
+            if (canPage) {
+                const sp = new URLSearchParams();
+                if (searchQuery) sp.set("q", searchQuery);
+                if (propertyFilter) sp.set("propertyId", propertyFilter);
+                if (buildingFilter) sp.set("buildingId", buildingFilter);
+                if (statusFilter !== "ALL") sp.set("status", statusFilter);
+                if (priorityFilter !== "ALL") sp.set("priority", priorityFilter);
+                sp.set("page", String(currentPage - 1));
+                sp.set("size", String(itemsPerPage));
+                const res = await fetch(`/api/proxy/v1/tickets/paged?${sp.toString()}`);
+                if (res.ok) {
+                    const page: Page<Ticket> = await res.json();
+                    setTickets(page.content ?? []);
+                    setPagedTotal(page.totalElements ?? 0);
+                }
+            } else {
+                const res = await fetch("/api/proxy/v1/tickets");
+                if (res.ok) setTickets(await res.json());
+            }
         } catch { /* ignore */ }
-    }, []);
+    }, [canPage, searchQuery, propertyFilter, buildingFilter, statusFilter, priorityFilter, currentPage, itemsPerPage]);
 
     const fetchProperties = useCallback(async () => {
         if (isRenter) return; // Renters use their leases instead
@@ -186,12 +234,30 @@ export default function TicketsPage() {
     }, [isRenter]);
 
     useEffect(() => {
-        Promise.all([fetchTickets(), fetchProperties(), fetchUnits(), fetchRenterLeases(), fetchRenters()]).finally(() => setLoading(false));
-    }, [fetchTickets, fetchProperties, fetchUnits, fetchRenterLeases, fetchRenters]);
+        Promise.all([fetchProperties(), fetchUnits(), fetchRenterLeases(), fetchRenters()]).finally(() => {});
+    }, [fetchProperties, fetchUnits, fetchRenterLeases, fetchRenters]);
+
+    useEffect(() => {
+        setLoading(true);
+        fetchTickets().finally(() => setLoading(false));
+    }, [fetchTickets]);
+
+    // A filter narrows the page, so the page number it was chosen on is stale.
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery, propertyFilter, buildingFilter, statusFilter, priorityFilter, itemsPerPage]);
+
+    // Clearing the property clears the tower filter with it (S16-02).
+    useEffect(() => {
+        setBuildingFilter("");
+    }, [propertyFilter]);
 
     // ── Filtering ───────────────────────────────────────────────────────
 
-    const filtered = tickets.filter((t) => {
+    // Staff's list is already filtered and paged server-side; a TENANT_USER's
+    // and a renter's plain list is narrowed and paged here in the browser.
+    const filtered = canPage ? tickets : tickets.filter((t) => {
+        if (isStaffUser && myOnly && t.assignedTo !== session?.user?.id) return false;
         if (statusFilter !== "ALL" && t.status !== statusFilter) return false;
         if (priorityFilter !== "ALL" && t.priority !== priorityFilter) return false;
         if (searchQuery) {
@@ -208,8 +274,8 @@ export default function TicketsPage() {
         return true;
     });
 
-    const totalItems = filtered.length;
-    const paginated = filtered.slice(
+    const totalItems = canPage ? pagedTotal : filtered.length;
+    const paginated = canPage ? filtered : filtered.slice(
         (currentPage - 1) * itemsPerPage,
         currentPage * itemsPerPage,
     );
@@ -330,6 +396,50 @@ export default function TicketsPage() {
                             className="w-full ps-9 pe-3 py-2 border border-border rounded-lg bg-surface text-xs text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                         />
                     </div>
+
+                    {/* S16-02: property + tower — staff's server-paged list only; a
+                        TENANT_USER's and a renter's list is already their own scope. */}
+                    {canPage && (
+                        <>
+                            <select
+                                aria-label={t("property")}
+                                data-testid="ticket-property-filter"
+                                value={propertyFilter}
+                                onChange={(e) => setPropertyFilter(e.target.value)}
+                                className="border border-border rounded-lg bg-surface px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
+                            >
+                                <option value="">{t("allProperties")}</option>
+                                {properties.map((p) => (
+                                    <option key={p.property.id} value={p.property.id}>{p.property.nameEn}</option>
+                                ))}
+                            </select>
+                            <TowerSelect propertyId={propertyFilter} value={buildingFilter} onChange={setBuildingFilter} testId="ticket-building-filter" />
+                        </>
+                    )}
+
+                    {/* S16-03: a maintenance-team TENANT_USER's own worklist vs. everything they can see. */}
+                    {isStaffUser && (
+                        <div className="flex items-center bg-input rounded-lg p-0.5 border border-border" role="group" aria-label={t("myTicketsToggleLabel")}>
+                            <button
+                                type="button"
+                                data-testid="ticket-filter-all"
+                                onClick={() => setMyOnly(false)}
+                                className={cn("px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer",
+                                    !myOnly ? "bg-surface text-foreground shadow-sm border border-border" : "text-muted hover:text-foreground")}
+                            >
+                                {tTowers("allTickets")}
+                            </button>
+                            <button
+                                type="button"
+                                data-testid="ticket-filter-mine"
+                                onClick={() => setMyOnly(true)}
+                                className={cn("px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer",
+                                    myOnly ? "bg-surface text-foreground shadow-sm border border-border" : "text-muted hover:text-foreground")}
+                            >
+                                {tTowers("myTickets")}
+                            </button>
+                        </div>
+                    )}
 
                     {/* Status filter */}
                     <select

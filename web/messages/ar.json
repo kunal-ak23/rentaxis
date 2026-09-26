@@ -3170,6 +3170,8 @@
     "selectYourUnit": "اختر وحدتك",
     "property": "العقار",
     "selectProperty": "اختر العقار",
+    "allProperties": "كل العقارات",
+    "myTicketsToggleLabel": "التذاكر المعروضة",
     "unit": "الوحدة",
     "selectUnit": "اختر الوحدة",
     "categoryLabel": "الفئة",
@@ -3510,6 +3512,11 @@
     "generatedBy": "أُنشئ في {at} بواسطة {name}",
     "reportLine": "بند التقرير",
     "reportLineNone": "بند مستقل",
+    "byTowerToggleLabel": "عرض الربح والخسارة",
+    "byProperty": "حسب العقار",
+    "byTower": "حسب المبنى",
+    "byTowerNote": "عمود لكل مبنى في هذا العقار، والإجمالي مرتبط بربح وخسارة العقار. يتبع كل بند المبنى الحالي لوحدته.",
+    "buildingsTable": "صافي الدخل التشغيلي حسب المبنى",
     "section": {
       "pnl": "الإيرادات والمصروفات وصافي الدخل التشغيلي",
       "instalments": "الأقساط المستحقة",
@@ -4607,5 +4614,11 @@
     "chipUpcoming": "قادمة (لم تبدأ)",
     "upcomingNote": "عقود مرحّلة لم تبدأ بعد، الأحدث بدءاً أولاً.",
     "upcomingCapped": "محدود: عرض {count} من بين آخر 100 عقد نشط بدءاً."
+  },
+  "Towers": {
+    "label": "المبنى",
+    "all": "كل المباني",
+    "myTickets": "تذاكري",
+    "allTickets": "كل التذاكر"
   }
 }

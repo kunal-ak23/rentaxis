@@ -1344,15 +1344,16 @@ export const chargeTypeApi = {
 export const leaseApi = {
   get: (id: string) => get<LeaseDetail>(`/leases/${id}`),
   /**
-   * The leases list. `status` and `propertyId` are filters, not hints: they
-   * narrow the page the server hands back (`LeaseController#getAllLeasesPaged`,
-   * single-valued `status` — not a CSV). A client-side filter over the page
-   * already fetched hid every match outside that one page. `sort` is Spring's
-   * `field,dir` (the endpoint's Pageable); omitted, the server's default applies.
+   * The leases list. `status`, `propertyId` and `buildingId` (S16-02: the tower,
+   * a Building id) are filters, not hints: they narrow the page the server
+   * hands back (`LeaseController#getAllLeasesPaged`, single-valued `status` —
+   * not a CSV). A client-side filter over the page already fetched hid every
+   * match outside that one page. `sort` is Spring's `field,dir` (the endpoint's
+   * Pageable); omitted, the server's default applies.
    */
-  paged: (q: { search?: string; status?: LeaseStatus; propertyId?: string; page?: number; size?: number; sort?: string } = {}) =>
+  paged: (q: { search?: string; status?: LeaseStatus; propertyId?: string; buildingId?: string; page?: number; size?: number; sort?: string } = {}) =>
     get<Page<LeaseDetail>>(
-      `/leases/paged${qs({ search: q.search, status: q.status, propertyId: q.propertyId, page: q.page ?? 0, size: q.size ?? 25, sort: q.sort })}`,
+      `/leases/paged${qs({ search: q.search, status: q.status, propertyId: q.propertyId, buildingId: q.buildingId, page: q.page ?? 0, size: q.size ?? 25, sort: q.sort })}`,
     ),
   createDraft: (body: DraftLeaseInput) => send<LeaseDetail>("POST", "/leases", body),
   updateDraft: (id: string, body: DraftLeaseInput) => send<LeaseDetail>("PUT", `/leases/${id}`, body),

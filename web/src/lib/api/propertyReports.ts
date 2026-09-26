@@ -184,8 +184,24 @@ function pnlQuery(q: PnlQuery, extra: Record<string, string> = {}): string {
 /** The Next.js proxy prefix for file downloads (never the backend origin). */
 export const PROXY = "/api/proxy/v1";
 
+/** S16-02: one property's P&L by tower (Building) — a column per building, "No building" and Total. */
+export type BuildingPnlQuery = { propertyId: string; from: string; to: string; compare?: Compare };
+
+function buildingPnlQuery(q: BuildingPnlQuery): string {
+  const sp = new URLSearchParams();
+  sp.set("propertyId", q.propertyId);
+  sp.set("from", q.from);
+  sp.set("to", q.to);
+  if (q.compare && q.compare !== "NONE") sp.set("compare", q.compare);
+  return `?${sp.toString()}`;
+}
+
+/** The building-P&L column key the backend uses for lines no tower carries (`PropertyPnlService.NO_BUILDING`). */
+export const NO_BUILDING = "NO_BUILDING";
+
 export const propertyReportsApi = {
   pnl: (q: PnlQuery) => apiGet<PropertyPnl>(`/finance/reports/property-pl${pnlQuery(q)}`),
+  pnlByBuilding: (q: BuildingPnlQuery) => apiGet<PropertyPnl>(`/finance/reports/property-pl/buildings${buildingPnlQuery(q)}`),
   pnlCsvUrl: (q: PnlQuery, lang: string) => `${PROXY}/finance/reports/property-pl.csv${pnlQuery(q, { lang })}`,
   lines: (q: LinesQuery) => apiSend<PnlLines>("POST", "/finance/reports/property-pl/lines", q),
   statement: (q: { propertyId: string; from: string; to: string }) =>

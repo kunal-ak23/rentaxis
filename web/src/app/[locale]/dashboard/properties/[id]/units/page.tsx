@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { Suspense, useState, useEffect, use, useSyncExternalStore } from "react";
+import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Plus, X, Building, Info, LayoutList, Ruler, Hash, Users, CreditCard, ArrowLeft, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -10,6 +11,23 @@ import { formatCurrency, formatCurrencyCompact, formatDate } from "@/lib/format"
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { NumberInput } from "@/components/ui/NumberInput";
+import { TowerSelect } from "@/components/ui/TowerSelect";
+import type { Page } from "@/lib/api/ledger";
+
+/** The units page's own page size, for the pages-loop below (S16-02). */
+const UNITS_PAGE_SIZE = 200;
+const UNITS_MAX_PAGES = 25;
+
+/** S16-02: the tower (buildingId) filter's tiny URL store (see the Contracts list). */
+const urlListeners = new Set<() => void>();
+function subscribeUrl(cb: () => void) {
+    urlListeners.add(cb);
+    window.addEventListener("popstate", cb);
+    return () => {
+        urlListeners.delete(cb);
+        window.removeEventListener("popstate", cb);
+    };
+}
 
 type UnitOccupancy = "OCCUPIED" | "RESERVED" | "VACANT" | "MAINTENANCE";
 
@@ -49,9 +67,32 @@ function occupancyLabel(u: Unit, t: (key: string, values?: Record<string, string
 }
 
 export default function UnitsPage({ params }: { params: Promise<{ id: string }> }) {
+    return (
+        <Suspense fallback={null}>
+            <UnitsPageInner params={params} />
+        </Suspense>
+    );
+}
+
+function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
     const { id: propertyId } = use(params);
     const t = useTranslations("MasterData");
     const tCommon = useTranslations("Common");
+    // S16-02: the tower (Building) filter, in the URL so a link/bookmark keeps
+    // it — same pattern as the Contracts list's URL-persisted filters:
+    // `useSearchParams` re-renders this page on a same-route navigation (a
+    // link changing the query); the value itself is read from `location.search`
+    // (empty on the server, so hydration matches) and written with
+    // `history.replaceState`, no full navigation.
+    useSearchParams();
+    const urlSearch = useSyncExternalStore(subscribeUrl, () => window.location.search, () => "");
+    const buildingFilter = new URLSearchParams(urlSearch).get("buildingId") ?? "";
+    const setBuildingFilter = (id: string) => {
+        const url = new URL(window.location.href);
+        if (id) url.searchParams.set("buildingId", id); else url.searchParams.delete("buildingId");
+        window.history.replaceState(window.history.state, "", url.toString());
+        urlListeners.forEach(l => l());
+    };
     const [units, setUnits] = useState<Unit[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
@@ -71,19 +112,35 @@ export default function UnitsPage({ params }: { params: Promise<{ id: string }> 
 
     useEffect(() => {
         fetchUnits();
-    }, [propertyId]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchUnits reads propertyId/buildingFilter directly
+    }, [propertyId, buildingFilter]);
 
+    // S16-02: GET /units/paged?propertyId=&buildingId=, a page at a time (the
+    // card grid below still shows every unit of the property/tower, as the old
+    // unpaged /units/property/{id} did — the loop just avoids ever asking the
+    // server for an unbounded page).
     const fetchUnits = async () => {
+        setLoading(true);
         try {
-            const res = await fetch(`/api/proxy/v1/units/property/${propertyId}`);
-            if (res.ok) {
-                const data = await res.json();
-                setUnits(data);
-            } else {
-                // A non-2xx used to leave the state at its initial empty
-                // value, so a failed request rendered as "nothing here".
-                setLoadError(tCommon("loadFailedUnits"));
+            const rows: Unit[] = [];
+            let truncated = false;
+            for (let page = 0; page < UNITS_MAX_PAGES; page++) {
+                const sp = new URLSearchParams({ propertyId, page: String(page), size: String(UNITS_PAGE_SIZE) });
+                if (buildingFilter) sp.set("buildingId", buildingFilter);
+                const res = await fetch(`/api/proxy/v1/units/paged?${sp.toString()}`);
+                if (!res.ok) {
+                    // A non-2xx used to leave the state at its initial empty
+                    // value, so a failed request rendered as "nothing here".
+                    setLoadError(tCommon("loadFailedUnits"));
+                    return;
+                }
+                const data: Page<Unit> = await res.json();
+                rows.push(...(data.content ?? []));
+                if (page + 1 >= (data.totalPages ?? 1)) break;
+                if (page + 1 >= UNITS_MAX_PAGES) truncated = true;
             }
+            setUnits(rows);
+            if (truncated) console.warn(`Units list truncated at ${rows.length} rows for property ${propertyId}`);
         } catch (err) {
             console.error(err);
         } finally {
@@ -139,13 +196,16 @@ export default function UnitsPage({ params }: { params: Promise<{ id: string }> 
                     <h1 className="text-xl font-bold text-foreground tracking-tight mb-1">{t("properties")}</h1>
                     <p className="text-xs text-muted font-medium tracking-tight">Manage individual properties within this project.</p>
                 </div>
-                <button
-                    onClick={() => { setFormError(null); setShowForm(true); }}
-                    className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 active:scale-95 self-start cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
-                >
-                    <Plus size={14} />
-                    {t("addProperty")}
-                </button>
+                <div className="flex items-center gap-2 self-start">
+                    <TowerSelect propertyId={propertyId} value={buildingFilter} onChange={setBuildingFilter} testId="units-building-filter" />
+                    <button
+                        onClick={() => { setFormError(null); setShowForm(true); }}
+                        className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                    >
+                        <Plus size={14} />
+                        {t("addProperty")}
+                    </button>
+                </div>
             </div>
 
             {showForm && (

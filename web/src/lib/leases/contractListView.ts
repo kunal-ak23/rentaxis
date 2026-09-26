@@ -19,20 +19,23 @@ export interface ContractListState {
     /** One status the Filters select narrowed to ("" = the view's own set). */
     status: LeaseStatus | "";
     propertyId: string;
+    /** S16-02: the tower (Building) filter, narrowed to `propertyId`'s buildings. */
+    buildingId: string;
     search: string;
 }
 
 /**
  * The list's state lives in the URL (`?view=`, `?status=`, `?propertyId=`,
- * `?search=`) so a view can be bookmarked and Home's pipeline links to it. A
- * pill lists exactly the statuses its count adds up (R1 P2-2): Draft is DRAFT +
- * PENDING_SIGNATURE, Ended the four ended statuses, Settlement due TERMINATED +
- * EXPIRED. `?status=` alone picks the pill that holds that status, narrowed to it.
+ * `?buildingId=`, `?search=`) so a view can be bookmarked and Home's pipeline
+ * links to it. A pill lists exactly the statuses its count adds up (R1 P2-2):
+ * Draft is DRAFT + PENDING_SIGNATURE, Ended the four ended statuses,
+ * Settlement due TERMINATED + EXPIRED. `?status=` alone picks the pill that
+ * holds that status, narrowed to it.
  */
 export function parseContractView(sp: URLSearchParams): ContractListState {
     const raw = (sp.get("status") ?? "").toUpperCase();
     const status = (ALL_STATUSES as string[]).includes(raw) ? (raw as LeaseStatus) : "";
-    const base = { propertyId: sp.get("propertyId") ?? "", search: sp.get("search") ?? "" };
+    const base = { propertyId: sp.get("propertyId") ?? "", buildingId: sp.get("buildingId") ?? "", search: sp.get("search") ?? "" };
     const v = sp.get("view");
     if (v === "expiring") return { ...base, view: "expiring", subset: null, status: "" };
     if (v === "upcoming") return { ...base, view: "active", subset: "upcoming", status: "" };
