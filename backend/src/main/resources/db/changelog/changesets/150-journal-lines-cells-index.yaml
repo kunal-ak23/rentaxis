@@ -1,0 +1,17 @@
+# S16-13: the balance sheet's cumulative cells are every line of the tenant grouped by
+# property and account (JournalLineRepository.cellsAllDates). A covering index turns that
+# into an index-only scan in group order: 230 ms -> 125 ms on 1.1M lines of one tenant
+# (2.2M in the table). Numbered 150: 149 is taken by the VAT-return override on
+# fix/sim4y-money (#369), which merges independently of this branch.
+# Lock time as for 146/147: plain CREATE INDEX holds a SHARE lock while it builds
+# (seconds at today's size); build it CONCURRENTLY on a large database.
+databaseChangeLog:
+  - changeSet:
+      id: 150-journal-lines-cells-index
+      author: claude
+      changes:
+        - sql:
+            sql: CREATE INDEX IF NOT EXISTS idx_jl_tenant_cells ON journal_lines (tenant_id, property_id, account_id) INCLUDE (debit, credit);
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_jl_tenant_cells;
