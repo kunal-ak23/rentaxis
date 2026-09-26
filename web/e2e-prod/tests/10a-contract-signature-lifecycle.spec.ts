@@ -80,7 +80,9 @@ test('renter rejects regenerated contract and then accepts the replacement', asy
     { data: {}, failOnStatusCode: false },
   );
   await expectOk(accepted, 'renter acceptance');
-  expect((await accepted.json()).status).toBe('ACTIVE');
+  // Accounting v2: a renter's acceptance is recorded as an event but the lease
+  // stays PENDING_SIGNATURE; only posting (the accountant's act) makes it ACTIVE.
+  expect((await accepted.json()).status).toBe('PENDING_SIGNATURE');
 
   const events = await api.getLeaseEvents(adminCtx, ctx.contractLease.id);
   expect(events.some((event) => event.notes.includes('rejected by renter'))).toBeTruthy();
