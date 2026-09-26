@@ -548,7 +548,10 @@ for (const { role } of ROLES) {
                     await inView(page, 'pl-by-tower-table', viewport.width, failures, `${at} by-tower table`);
                     const towerName = locale === 'ar' ? `برج أ ${SUFFIX}` : `Tower A ${SUFFIX}`;
                     await expect(table.getByText(towerName), `${at} tower column`).toBeVisible();
-                    await expect(table.getByText(msgs.PropertyReports.total), `${at} total column`).toBeVisible();
+                    // Not `getByText`: "Total" is also a substring of the group
+                    // subtotal rows ("Subtotal — Direct Income" etc.), which
+                    // made this a strict-mode violation in English.
+                    await expect(table.getByTestId('col-TOTAL'), `${at} total column`).toBeVisible();
 
                     await page.getByTestId('pl-view-property').click();
                     await expect(page.getByTestId('pl-by-tower-table')).toHaveCount(0);
