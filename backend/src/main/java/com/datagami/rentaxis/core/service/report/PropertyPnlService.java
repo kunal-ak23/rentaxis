@@ -213,6 +213,12 @@ public class PropertyPnlService {
                 noi -> null, () -> lines.pnlNetMovementForProperty(tenantId, from, to, propertyId), 0);
     }
 
+    /** S16-02: whether the property has any tower (the statement skips the per-building table when not). */
+    public boolean hasBuildings(UUID propertyId) {
+        UUID tenantId = requireTenant();
+        return buildings.findByPropertyId(propertyId).stream().anyMatch(b -> tenantId.equals(b.getTenantId()));
+    }
+
     /** S16-02: the building P&L's column for lines no tower carries. */
     public static final String NO_BUILDING = "NO_BUILDING";
 

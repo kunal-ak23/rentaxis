@@ -94,9 +94,9 @@ public final class StandardStatementSections {
      * NOI with the "no building" row (property-level lines).
      */
     static Table buildings(StatementContext ctx, PropertyPnlService pnl) {
-        PropertyPnlDTO b = pnl.buildingPnl(ctx.propertyId(), ctx.from(), ctx.to(), PnlPeriods.Compare.PREVIOUS);
         List<List<Object>> rows = new ArrayList<>();
-        if (b.columns().stream().anyMatch(c -> "BUILDING".equals(c.kind()))) {
+        if (pnl.hasBuildings(ctx.propertyId())) {
+            PropertyPnlDTO b = pnl.buildingPnl(ctx.propertyId(), ctx.from(), ctx.to(), PnlPeriods.Compare.PREVIOUS);
             for (PropertyPnlDTO.Column c : b.columns()) {
                 if (PropertyPnlDTO.TOTAL.equals(c.key())) continue;
                 PropertyPnlDTO.Amount a = b.noi().get(c.key());
