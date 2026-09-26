@@ -7,13 +7,16 @@ import { useLocale, useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/routing";
 import {
     ArrowLeft, Ban, Banknote, BellRing, BookOpen, CalendarClock, CheckCircle, Download,
-    ArrowRightLeft, FileText, Gavel, Loader2, Mail, MinusCircle, Phone, PlusCircle, RefreshCw, Save, Sparkles, Trash2, Upload, User, Wrench, X,
+    ArrowRightLeft, CircleSlash, FileText, Gavel, Loader2, Mail, MinusCircle, Pencil, Phone, PlusCircle, RefreshCw, Save, Sparkles, Trash2, Upload, User, UserCog, Wrench, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasPermission, hasRole, type UserRole } from "@/lib/rbac";
 import { formatCurrency } from "@/lib/format";
 import { fmtAmount } from "@/lib/api/ledger";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import ActionsMenu from "@/components/ui/ActionsMenu";
+import SideDrawer from "@/components/ui/SideDrawer";
+import { availableLeaseActions, leasePermsFor, splitLeaseActions, type LeaseActionId } from "@/lib/leases/leaseActions";
 import LeaseMetadataEditor from "../LeaseMetadataEditor";
 import LeaseInteractionsPanel from "@/components/leases/LeaseInteractionsPanel";
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
@@ -95,20 +98,10 @@ function looksLikeMissingRouteSegment(id: string): boolean {
     return id.trim().toLowerCase() === "new";
 }
 
-/**
- * `LeaseRenewalService.RENEWABLE`
- * (backend/src/main/java/com/datagami/rentaxis/core/service/lease/LeaseRenewalService.java:74-75),
- * checked at :136. Wider than Amend and Extend, which really are ACTIVE-only:
- * renewal-after-expiry is the ordinary case in this domain, and NOTICE_GIVEN is
- * a renter who said they were leaving and changed their mind.
- */
-const RENEWABLE: LeaseStatus[] = ["ACTIVE", "EXPIRED", "NOTICE_GIVEN"];
-
-/**
- * `LeaseTerminationService.TERMINABLE` (:83) — and `LeaseService.giveNotice`
- * (:1016) is ACTIVE alone, one step earlier in the same lifecycle.
- */
-const TERMINABLE: LeaseStatus[] = ["ACTIVE", "NOTICE_GIVEN"];
+// Which statuses offer Renew, Terminate, Give notice, Raise penalty and the
+// rest now lives in `src/lib/leases/leaseActions.ts`, with the service sets
+// each mirrors (LeaseRenewalService.RENEWABLE, LeaseTerminationService.TERMINABLE,
+// PenaltyAssessmentService.CHARGEABLE, SettlementService.SETTLEABLE).
 
 const STATUS_COLORS: Record<string, string> = {
     ACTIVE: "bg-success/10 text-success border-success/20",
@@ -131,13 +124,6 @@ const TABS = ["overview", "journals", "recognition", "vat", "penalties", "contra
 type Tab = typeof TABS[number];
 
 const DRAFTING: LeaseStatus[] = ["DRAFT", "PENDING_SIGNATURE"];
-
-/**
- * `PenaltyAssessmentService.CHARGEABLE` — the statuses a penalty may be raised
- * and approved against (#12). A terminated or closed contract is settled, not
- * fined.
- */
-const PENALTY_CHARGEABLE: LeaseStatus[] = ["ACTIVE", "NOTICE_GIVEN", "EXPIRED", "RENEWED"];
 
 /**
  * What the recognition schedule has to add back to.
@@ -168,6 +154,7 @@ export default function LeaseDetailPage() {
     const tBulkUpload = useTranslations("bulkChequeUpload");
     const tSettlement = useTranslations("Settlement");
     const tRenewal = useTranslations("Renewal");
+    const tA = useTranslations("LeaseActions");
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
 
@@ -178,21 +165,10 @@ export default function LeaseDetailPage() {
     const canExtend = hasPermission(userRole, "canExtendLeases");
     const canCheques = hasPermission(userRole, "canManageCheques");
     const canCancelCheques = hasPermission(userRole, "canCancelCheques");
-    // The link opens the termination page, which prices the move-out before
-    // anything is written — a property manager may do that on their own
-    // buildings (`LeaseController#previewTermination`). The page itself hides
-    // the button that posts the journals from them (`canTerminateLeases`).
-    const canPreviewTermination = hasPermission(userRole, "canPreviewTermination");
-    // One role wider than terminating, and its own key: taking a notice writes
-    // no journal (`LeaseController` :250-251).
-    const canGiveNotice = hasPermission(userRole, "canGiveNotice");
-    const canViewSettlement = hasPermission(userRole, "canViewSettlement");
     const canSeeBadDebts = hasPermission(userRole, "canAccessFinance");
     const canGenerateContract = hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN"]);
-    // #12: the header's Raise penalty is finance's (the roles that decide
-    // penalties). A property manager still proposes from the Penalties tab,
-    // which PenaltyAssessmentController allows by design.
-    const canRaisePenalty = hasPermission(userRole, "canApprovePenalties");
+    // The header's own gates (Terminate, Give notice, Settlement, Raise penalty…)
+    // are read in `leasePermsFor` (src/lib/leases/leaseActions.ts).
 
     const [lease, setLease] = useState<LeaseDetail | null>(null);
     const [cheques, setCheques] = useState<Cheque[]>([]);
@@ -231,6 +207,8 @@ export default function LeaseDetailPage() {
     const [chequeBusy, setChequeBusy] = useState(false);
     const [chequeError, setChequeError] = useState<string | null>(null);
     const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
+    const [drawer, setDrawer] = useState<"assignment" | "writeOff" | null>(null);
+    const closeDrawer = useCallback(() => setDrawer(null), []);
 
     const [docName, setDocName] = useState("");
     const [uploadingDoc, setUploadingDoc] = useState(false);
@@ -493,6 +471,46 @@ export default function LeaseDetailPage() {
     const lineRows = toRows(lease.lines);
     const totals = totalsOf(lineRows, chargeTypes);
 
+    const facts = { status: lease.status, posted, hasContract: !!lease.hasContract, transferredOut: !!lease.transferredToLeaseId };
+    const { primary, menu } = splitLeaseActions(availableLeaseActions(facts, leasePermsFor(userRole)), lease.status);
+    // Each label is the expression the old header button rendered.
+    type ActionSpec = { label: string; testId: string; icon: React.ElementType; onSelect?: () => void; href?: string; destructive?: boolean };
+    const SPEC: Record<LeaseActionId, ActionSpec> = {
+        edit: {
+            label: tA("edit"), testId: "lease-edit", icon: Pencil,
+            onSelect: () => {
+                setTab("overview");
+                requestAnimationFrame(() => document.getElementById("lease-metadata-editor")?.scrollIntoView?.({ behavior: "smooth", block: "start" }));
+            },
+        },
+        post: { label: t("postLease"), testId: "lease-post", icon: CheckCircle, onSelect: () => setPostOpen(true) },
+        recordPayment: {
+            label: tA("recordPayment"), testId: "lease-record-payment", icon: Banknote,
+            href: `/dashboard/collections?tab=all&leaseId=${lease.id}&receive=1`,
+        },
+        renew: { label: t("renew"), testId: "lease-renew", icon: Sparkles, onSelect: () => setRenewOpen(true) },
+        settlement: { label: tSettlement("title"), testId: "lease-settle", icon: Banknote, href: `/dashboard/leases/${leaseId}/settlement` },
+        extend: { label: t("extend"), testId: "lease-extend", icon: CalendarClock, onSelect: () => setExtendOpen(true) },
+        amend: { label: t("amendLines"), testId: "lease-amend", icon: RefreshCw, onSelect: () => setAmendOpen(true) },
+        addCharge: { label: t("addCharge"), testId: "lease-add-charge", icon: PlusCircle, onSelect: () => setAddChargeOpen(true) },
+        transfer: { label: t("transfer.open"), testId: "lease-transfer", icon: ArrowRightLeft, onSelect: () => setTransferOpen(true) },
+        assignment: { label: tA("assignment"), testId: "lease-assignment", icon: UserCog, onSelect: () => setDrawer("assignment") },
+        reduce: { label: t("reduction.open"), testId: "lease-reduce", icon: MinusCircle, onSelect: () => setReduceOpen(true) },
+        raisePenalty: { label: t("raisePenalty"), testId: "lease-raise-penalty", icon: Gavel, onSelect: () => setPenaltyOpen(true) },
+        giveNotice: {
+            label: t("giveNotice"), testId: "lease-give-notice", icon: BellRing,
+            onSelect: () => { setNoticeError(null); setNoticeOpen(true); },
+        },
+        terminate: { label: t("terminate"), testId: "lease-terminate", icon: Ban, href: `/dashboard/leases/${leaseId}/terminate`, destructive: true },
+        writeOff: { label: tA("writeOff"), testId: "lease-write-off", icon: CircleSlash, onSelect: () => setDrawer("writeOff") },
+        downloadContract: {
+            label: tMaster("downloadContract"), testId: "lease-download-contract", icon: Download,
+            onSelect: () => downloadBlob(`/api/proxy/v1/leases/${leaseId}/documents`, `contract-${leaseId.slice(0, 8)}.pdf`),
+        },
+        ledger: { label: t("ledger"), testId: "lease-ledger", icon: BookOpen, href: `/dashboard/finance/tenant-ledger?renterId=${lease.renterId}&leaseId=${lease.id}` },
+        delete: { label: t("deleteDraft"), testId: "lease-delete", icon: Trash2, onSelect: () => setDeleteOpen(true), destructive: true },
+    };
+
     return (
         <>
             <div className="flex flex-col gap-[18px]">
@@ -564,155 +582,38 @@ export default function LeaseDetailPage() {
                     </div>
 
                     {/* ── Action bar ─────────────────────────────────── */}
+                    {/*
+                      Spec §5: at most three primary buttons, picked by status
+                      (leaseActions.ts), and everything else under More actions.
+                      Every action keeps the gate and the test id it had as a
+                      header button; the parity matrix in leaseActions.test.ts
+                      pins that nothing a role could reach was dropped.
+                    */}
                     <div className="flex items-center gap-2 flex-wrap" data-testid="lease-actions">
-                        {drafting && canPost && (
-                            <button
-                                onClick={() => setPostOpen(true)}
-                                data-testid="lease-post"
-                                className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:brightness-110 transition-all cursor-pointer"
-                            >
-                                <CheckCircle size={14} /> {t("postLease")}
-                            </button>
-                        )}
+                        <div className="flex items-center gap-2 flex-wrap" data-testid="lease-actions-primary">
+                            {primary.map((id, i) => {
+                                const s = SPEC[id];
+                                const Icon = s.icon;
+                                const cls = i === 0
+                                    ? "flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer"
+                                    : "flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all cursor-pointer";
+                                const body = <><Icon size={14} /> {s.label}</>;
+                                return s.href
+                                    ? <Link key={id} href={s.href} data-testid={s.testId} className={cls}>{body}</Link>
+                                    : <button key={id} type="button" data-testid={s.testId} onClick={s.onSelect} className={cls}>{body}</button>;
+                            })}
+                        </div>
                         {drafting && !canPost && (
                             <span className="text-[11px] text-muted" data-testid="lease-needs-accountant">
                                 {t("savedAsDraftNeedsAccountant")}
                             </span>
                         )}
-                        {lease.status === "ACTIVE" && canPost && (
-                            <button
-                                onClick={() => setAmendOpen(true)}
-                                data-testid="lease-amend"
-                                className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all cursor-pointer"
-                            >
-                                <RefreshCw size={14} /> {t("amendLines")}
-                            </button>
-                        )}
-                        {/*
-                          Renew is wider than Amend and Extend on purpose:
-                          `LeaseRenewalService.RENEWABLE` is {ACTIVE, EXPIRED,
-                          NOTICE_GIVEN}. Renewal after a contract has run to
-                          term is the ordinary case here — the nightly
-                          `LeaseExpirationJob` turns it EXPIRED and
-                          `RENEWABLE_PREDECESSOR` exists to retire it when the
-                          successor posts.
-                        */}
-                        {RENEWABLE.includes(lease.status) && canRenew && (
-                            <button
-                                onClick={() => setRenewOpen(true)}
-                                data-testid="lease-renew"
-                                className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all cursor-pointer"
-                            >
-                                <Sparkles size={14} /> {t("renew")}
-                            </button>
-                        )}
-                        {lease.status === "ACTIVE" && canExtend && (
-                            <button
-                                onClick={() => setExtendOpen(true)}
-                                data-testid="lease-extend"
-                                className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all cursor-pointer"
-                            >
-                                <CalendarClock size={14} /> {t("extend")}
-                            </button>
-                        )}
-                        {lease.status === "ACTIVE" && canExtend && (
-                            <button
-                                onClick={() => setAddChargeOpen(true)}
-                                data-testid="lease-add-charge"
-                                className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all cursor-pointer"
-                            >
-                                <PlusCircle size={14} /> {t("addCharge")}
-                            </button>
-                        )}
-                        {(lease.status === "ACTIVE" || lease.status === "NOTICE_GIVEN") && posted && canRenew
-                            && !lease.transferredToLeaseId && (
-                            <button
-                                onClick={() => setTransferOpen(true)}
-                                data-testid="lease-transfer"
-                                className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all cursor-pointer"
-                            >
-                                <ArrowRightLeft size={14} /> {t("transfer.open")}
-                            </button>
-                        )}
-                        {(lease.status === "ACTIVE" || lease.status === "NOTICE_GIVEN") && posted && (canExtend || canRenew) && (
-                            <button
-                                onClick={() => setReduceOpen(true)}
-                                data-testid="lease-reduce"
-                                className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all cursor-pointer"
-                            >
-                                <MinusCircle size={14} /> {t("reduction.open")}
-                            </button>
-                        )}
-                        {posted && (
-                            <Link
-                                href={`/dashboard/finance/tenant-ledger?renterId=${lease.renterId}&leaseId=${lease.id}`}
-                                data-testid="lease-ledger"
-                                className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all"
-                            >
-                                <BookOpen size={14} /> {t("ledger")}
-                            </Link>
-                        )}
-                        {lease.hasContract && (
-                            <button
-                                onClick={() => downloadBlob(`/api/proxy/v1/leases/${leaseId}/documents`, `contract-${leaseId.slice(0, 8)}.pdf`)}
-                                className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer"
-                            >
-                                <Download size={14} /> {tMaster("downloadContract")}
-                            </button>
-                        )}
-                        {/*
-                          Terminate and settle are two acts now (spec §9.1, §9.2), so
-                          they are two links. Terminate opens the priced termination
-                          page; the deposit is settled afterwards, from the receivable
-                          the termination leaves behind — which is why Settle appears
-                          only once the contract has ended (`SettlementService.SETTLEABLE`).
-                        */}
-                        {PENALTY_CHARGEABLE.includes(lease.status) && canRaisePenalty && (
-                            <button
-                                onClick={() => setPenaltyOpen(true)}
-                                data-testid="lease-raise-penalty"
-                                className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all cursor-pointer"
-                            >
-                                <Gavel size={14} /> {t("raisePenalty")}
-                            </button>
-                        )}
-                        {lease.status === "ACTIVE" && canGiveNotice && (
-                            <button
-                                onClick={() => { setNoticeError(null); setNoticeOpen(true); }}
-                                data-testid="lease-give-notice"
-                                className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all cursor-pointer"
-                            >
-                                <BellRing size={14} /> {t("giveNotice")}
-                            </button>
-                        )}
-                        {TERMINABLE.includes(lease.status) && canPreviewTermination && (
-                            <Link
-                                href={`/dashboard/leases/${leaseId}/terminate`}
-                                data-testid="lease-terminate"
-                                className="flex items-center gap-2 bg-error text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-error/90 transition-all"
-                            >
-                                <Ban size={14} /> {t("terminate")}
-                            </Link>
-                        )}
-                        {HAS_SETTLEMENT.includes(lease.status) && canViewSettlement && (
-                            <Link
-                                href={`/dashboard/leases/${leaseId}/settlement`}
-                                data-testid="lease-settle"
-                                className="flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all"
-                            >
-                                <Banknote size={14} /> {tSettlement("title")}
-                            </Link>
-                        )}
-                        {drafting && canDraft && (
-                            <button
-                                onClick={() => setDeleteOpen(true)}
-                                data-testid="lease-delete"
-                                title={t("deleteDraft")}
-                                className="flex items-center gap-2 bg-error/10 text-error border border-error/30 px-3 py-2 rounded-lg text-xs font-semibold hover:bg-error/20 transition-all cursor-pointer"
-                            >
-                                <Trash2 size={14} />
-                            </button>
-                        )}
+                        <ActionsMenu
+                            label={tA("moreActions")}
+                            testId="lease-more-actions-menu"
+                            triggerTestId="lease-more-actions"
+                            items={menu.map(id => ({ id, ...SPEC[id] }))}
+                        />
                     </div>
                 </div>
 
@@ -773,13 +674,15 @@ export default function LeaseDetailPage() {
                 {tab === "overview" && (
                     <div className="space-y-6">
                         {drafting && canDraft && !readOnly && (
-                            <LeaseMetadataEditor
-                                lease={lease}
-                                chargeTypes={chargeTypes}
-                                onSaved={async () => {
-                                    await loadLease();
-                                }}
-                            />
+                            <div id="lease-metadata-editor" className="scroll-mt-4">
+                                <LeaseMetadataEditor
+                                    lease={lease}
+                                    chargeTypes={chargeTypes}
+                                    onSaved={async () => {
+                                        await loadLease();
+                                    }}
+                                />
+                            </div>
                         )}
 
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-w-0">
@@ -893,12 +796,6 @@ export default function LeaseDetailPage() {
 
                         {(addenda.length > 0 || canExtend) && (
                             <LeaseAddendaPanel leaseId={lease.id} addenda={addenda} canRecordEjari={canExtend} onChanged={loadLease} />
-                        )}
-                        {/* F14-39: hand the lease to another renter. */}
-                        <LeaseAssignmentCard lease={lease} canDraft={canRenew} canPost={canPost} onChanged={loadLease} />
-                        {/* F14-38: write off what the renter cannot pay. */}
-                        {hasPermission(userRole, "canAccessFinance") && lease.status !== "DRAFT" && (
-                            <BadDebtCard leaseId={lease.id} canApprove={hasPermission(userRole, "canAccessFinanceOps")} />
                         )}
                     </div>
                 )}
@@ -1119,6 +1016,20 @@ export default function LeaseDetailPage() {
                     </div>
                 )}
             </div>
+
+            {/* F14-39 / F14-38: the assignment and bad-debt cards, opened from More actions. */}
+            <SideDrawer open={drawer === "assignment"} onClose={closeDrawer} title={tA("assignment")} closeLabel={tA("close")} testId="lease-assignment-drawer">
+                <div className="peer">
+                    <LeaseAssignmentCard lease={lease} canDraft={canRenew} canPost={canPost} onChanged={loadLease} />
+                </div>
+                <p className="hidden peer-empty:block text-xs text-muted" data-testid="lease-assignment-empty">{tA("assignmentEmpty")}</p>
+            </SideDrawer>
+            <SideDrawer open={drawer === "writeOff"} onClose={closeDrawer} title={tA("writeOff")} closeLabel={tA("close")} testId="lease-write-off-drawer">
+                <div className="peer">
+                    <BadDebtCard leaseId={lease.id} canApprove={hasPermission(userRole, "canAccessFinanceOps")} />
+                </div>
+                <p className="hidden peer-empty:block text-xs text-muted" data-testid="lease-write-off-empty">{tA("writeOffEmpty")}</p>
+            </SideDrawer>
 
             {/* ── Dialogs ────────────────────────────────────────────── */}
             <PostLeaseDialog

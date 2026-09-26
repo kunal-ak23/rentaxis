@@ -24,8 +24,17 @@ export function leasePermsFor(role: UserRole | undefined): LeasePerms {
         canRenew: hasPermission(role, "canRenewLeases"),
         canExtend: hasPermission(role, "canExtendLeases"),
         canCheques: hasPermission(role, "canManageCheques"),
+        // #12: Raise penalty is finance's (the roles that decide penalties). A
+        // property manager still proposes from the Penalties section, which
+        // PenaltyAssessmentController allows by design.
         canRaisePenalty: hasPermission(role, "canApprovePenalties"),
+        // One role wider than terminating, and its own key: taking a notice
+        // writes no journal (`LeaseController` :250-251).
         canGiveNotice: hasPermission(role, "canGiveNotice"),
+        // Terminate opens the termination page, which prices the move-out before
+        // anything is written — a property manager may do that on their own
+        // buildings (`LeaseController#previewTermination`). That page hides the
+        // button that posts the journals from them (`canTerminateLeases`).
         canPreviewTermination: hasPermission(role, "canPreviewTermination"),
         canViewSettlement: hasPermission(role, "canViewSettlement"),
         canSeeBadDebts: hasPermission(role, "canAccessFinance"),
