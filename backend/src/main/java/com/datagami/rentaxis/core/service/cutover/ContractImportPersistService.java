@@ -103,6 +103,7 @@ public class ContractImportPersistService {
     private final ChequeGenerationService chequeGenerationService;
     private final PropertyAccountService propertyAccounts;
     private final ImportBatchService batches;
+    private final CutoverRenterMatcher renterMatcher;
 
     private static final ObjectMapper JOB_DETAILS_MAPPER = new ObjectMapper();
 
@@ -330,16 +331,17 @@ public class ContractImportPersistService {
     // ------------------------------------------------------------------
 
     /**
-     * S16-10: the organisation's renter with this email, or null — matched by email
-     * (see {@link ContractImportValidator.Lookups#reusableRenterName}). A matched
-     * renter is not linked to the batch, so discarding or reversing it never touches
-     * the renter. Scoped to the tenant explicitly.
+     * S16-10 / PR #369 R1 P2-2: the organisation's renter the validator matched for this
+     * email and name ({@link CutoverRenterMatcher}, the rule the validator applied), or
+     * null when it has none. A matched renter is not linked to the batch, so discarding or
+     * reversing it never touches them. A match the matcher refuses cannot reach here — the
+     * validator refused the workbook — and is refused again rather than guessed.
      */
-    private Renter existingRenter(String email) {
-        if (email == null || email.isBlank()) return null;
-        List<Renter> held = renterRepository.findByTenantIdAndEmailIn(TenantContextHolder.getTenantId(),
-                List.of(email.trim()));
-        return held.isEmpty() ? null : held.get(0);
+    private Renter existingRenter(String email, String name) {
+        CutoverRenterMatcher.Match m = renterMatcher.match(TenantContextHolder.getTenantId(), email, name);
+        if (m == null) return null;
+        if (!m.reusable()) throw new IllegalStateException(m.problem());
+        return renterRepository.findById(m.renterId()).orElseThrow();
     }
 
     /** The sheet's renters by email (new and matched), and how many were created. */
@@ -353,9 +355,9 @@ public class ContractImportPersistService {
             Row row = sheet.getRow(i);
             if (row == null || SheetCells.isRowEmpty(row)) continue;
             // S16-10: listed again by a later workbook — the same person, one record.
-            Renter existing = existingRenter(SheetCells.getCellString(row, 2));
+            Renter existing = existingRenter(SheetCells.getCellString(row, 2), SheetCells.getCellString(row, 0));
             if (existing != null) {
-                byEmail.put(existing.getEmail().toLowerCase(Locale.ROOT), existing);
+                byEmail.put(SheetCells.getCellString(row, 2).trim().toLowerCase(Locale.ROOT), existing);
                 continue;
             }
             Renter r = new Renter();
@@ -466,7 +468,7 @@ public class ContractImportPersistService {
         Renter renter = renterByEmail.get(renterEmail.toLowerCase(Locale.ROOT));
         if (renter == null) {
             // S16-10: a renter an earlier workbook created, named only on Contracts.
-            renter = existingRenter(renterEmail);
+            renter = existingRenter(renterEmail, SheetCells.cell(row, hi, "RenterName"));
             if (renter != null) renterByEmail.put(renterEmail.toLowerCase(Locale.ROOT), renter);
         }
 

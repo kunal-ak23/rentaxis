@@ -394,21 +394,7 @@ class ContractImportPostIT extends AbstractPostgresIT {
         UUID renterOne = tx.execute(s -> leaseOf("SAMPLE-0001").getRenter().getId());
         UUID renterTwo = tx.execute(s -> leaseOf("SAMPLE-0002").getRenter().getId());
 
-        try (Workbook wb = fixture.template()) {
-            for (org.apache.poi.ss.usermodel.Sheet sheet : wb) {
-                for (org.apache.poi.ss.usermodel.Row row : sheet) {
-                    for (org.apache.poi.ss.usermodel.Cell cell : row) {
-                        if (cell.getCellType() != org.apache.poi.ss.usermodel.CellType.STRING) continue;
-                        String v = cell.getStringCellValue();
-                        String w = v.replace("Sample Tower", "Second Tower").replace("SAMPLE-000", "WB2-000")
-                                .replace("EJ-2026-", "EJ2-2026-").replace("10000", "20000");
-                        if (!w.equals(v)) cell.setCellValue(w);
-                    }
-                }
-            }
-            org.apache.poi.ss.usermodel.Sheet renters = wb.getSheet("Renters");
-            renters.removeRow(renters.getRow(2));
-
+        try (Workbook wb = secondWorkbook()) {
             // While the first batch is still a DRAFT its renters are not reused: that is
             // the same data loaded twice, and discarding it would pull them away.
             var early = tx.execute(s -> contractValidator.validate(wb));
@@ -428,6 +414,57 @@ class ContractImportPostIT extends AbstractPostgresIT {
         UUID wb2Two = tx.execute(s -> leaseOf("WB2-0002").getRenter().getId());
         assertThat(wb2One).isEqualTo(renterOne);
         assertThat(wb2Two).isEqualTo(renterTwo);
+    }
+
+    /**
+     * The template as a second workbook: its own property, contracts and cheques;
+     * renter one listed again (email in another case — matched case-insensitively),
+     * renter two only on Contracts, named by the optional RenterName column.
+     */
+    private Workbook secondWorkbook() throws Exception {
+        Workbook wb = fixture.template();
+        for (org.apache.poi.ss.usermodel.Sheet sheet : wb) {
+            for (org.apache.poi.ss.usermodel.Row row : sheet) {
+                for (org.apache.poi.ss.usermodel.Cell cell : row) {
+                    if (cell.getCellType() != org.apache.poi.ss.usermodel.CellType.STRING) continue;
+                    String v = cell.getStringCellValue();
+                    String w = v.replace("Sample Tower", "Second Tower").replace("SAMPLE-000", "WB2-000")
+                            .replace("EJ-2026-", "EJ2-2026-").replace("10000", "20000");
+                    if (!w.equals(v)) cell.setCellValue(w);
+                }
+            }
+        }
+        org.apache.poi.ss.usermodel.Sheet renters = wb.getSheet("Renters");
+        renters.getRow(1).getCell(2).setCellValue("Sample.Renter.ONE@example.com");
+        renters.removeRow(renters.getRow(2));
+        org.apache.poi.ss.usermodel.Sheet contracts = wb.getSheet("Contracts");
+        contracts.getRow(0).createCell(17).setCellValue("RenterName");
+        contracts.getRow(3).createCell(17).setCellValue("sample renter two");
+        return wb;
+    }
+
+    /**
+     * R1 P2-2: renters.email is not unique. When two renters of the organisation share
+     * the email a later workbook names, the contract is refused — never attached to
+     * whichever row the database returns first.
+     */
+    @Test
+    void aSharedEmailIsRefusedRatherThanGuessed() throws Exception {
+        UUID first = importTheTemplate();
+        assertThat(postService.post(first).leasesFailed()).isZero();
+        tx.executeWithoutResult(s -> {
+            com.datagami.rentaxis.domain.entity.Renter twin = new com.datagami.rentaxis.domain.entity.Renter();
+            twin.setNameEn("Sample Renter Two Holdings");
+            twin.setEmail("SAMPLE.renter.two@example.com ");
+            renterRepo.save(twin);
+        });
+        try (Workbook wb = secondWorkbook()) {
+            var outcome = tx.execute(s -> contractValidator.validate(wb));
+            assertThat(outcome.errors()).anySatisfy(e -> {
+                assertThat(e.getField()).isEqualTo("RenterEmail");
+                assertThat(e.getMessage()).contains("2 renters").contains("Sample Renter Two Holdings");
+            });
+        }
     }
 
     /**
