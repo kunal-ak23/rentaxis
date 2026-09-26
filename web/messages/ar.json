@@ -4404,7 +4404,8 @@
     "searchPlaceholder": "ابحث برقم الشيك أو المستأجر أو الوحدة",
     "searchLabel": "البحث في سجل الشيكات",
     "loadMore": "تحميل المزيد",
-    "overdueScanned": "تم العثور على {shown} متأخرة في أول {scanned} من {total} شيكاً مستحقاً، الأقدم أولاً."
+    "overdueScanned": "تم العثور على {shown} متأخرة في أول {scanned} من {total} شيكاً مستحقاً، الأقدم أولاً.",
+    "searchHint": "يبحث البحث في سجل الشيكات ويفتحه بالنتائج."
   },
   "AccountingNav": {
     "label": "أقسام المحاسبة",

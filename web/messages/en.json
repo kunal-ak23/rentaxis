@@ -4404,7 +4404,8 @@
     "searchPlaceholder": "Search cheque no, tenant or unit",
     "searchLabel": "Search the cheque register",
     "loadMore": "Load more",
-    "overdueScanned": "{shown} overdue found in the first {scanned} of {total} due cheques, oldest first."
+    "overdueScanned": "{shown} overdue found in the first {scanned} of {total} due cheques, oldest first.",
+    "searchHint": "Search looks through the cheque register and opens it with the results."
   },
   "AccountingNav": {
     "label": "Accounting sections",

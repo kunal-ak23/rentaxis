@@ -81,6 +81,17 @@ describe("Cheque / Cash Collection hub", () => {
         expect(router.replace).toHaveBeenCalledWith("/dashboard/collections?tab=all&status=BOUNCED&propertyId=p1");
     });
 
+    it("says that search opens the cheque register, except on the register itself (#104)", () => {
+        query.current = "tab=penalties";
+        const { unmount } = render(<Page />);
+        expect(screen.getByTestId("collections-search-hint")).toHaveTextContent("Search looks through the cheque register");
+        expect(screen.getByTestId("collections-search")).toHaveAttribute("aria-describedby", "collections-search-hint");
+        unmount();
+        query.current = "tab=all";
+        render(<Page />);
+        expect(screen.queryByTestId("collections-search-hint")).toBeNull();
+    });
+
     it("sends a search to the cheque register, keeping the property", () => {
         query.current = "tab=due&propertyId=p1";
         render(<Page />);

@@ -60,9 +60,21 @@ export default function TenantLedgerPage() {
                 // so the server's balance brought forward and running balance are that
                 // contract's own (PR #365 R1). Narrowing the renter ledger client-side
                 // had to zero the opening balance.
-                setLedgers(q.leaseId
-                    ? await ledgerApi.ledger.general({ renterId: q.renterId, leaseId: q.leaseId, from: q.from, to: q.to })
-                    : await ledgerApi.ledger.renter(q.renterId, { from: q.from, to: q.to }));
+                if (q.leaseId) {
+                    // Which accounts: every one the tenant carries at the end of the window
+                    // (the renter ledger's F14-07 rule), so an account with a balance brought
+                    // forward and no movement — a deposit held — stays on the contract's
+                    // statement (#104). The general ledger picks only accounts that moved.
+                    const carried = await ledgerApi.ledger.renter(q.renterId, { from: q.from, to: q.to });
+                    const accountIds = carried.map(l => l.accountId);
+                    const own = accountIds.length
+                        ? await ledgerApi.ledger.general({ accountIds, renterId: q.renterId, leaseId: q.leaseId, from: q.from, to: q.to })
+                        : [];
+                    // An account this contract never touched has nothing brought forward and no rows.
+                    setLedgers(own.filter(l => l.rows.length > 0 || Math.abs(l.openingBalance ?? 0) >= 0.005));
+                } else {
+                    setLedgers(await ledgerApi.ledger.renter(q.renterId, { from: q.from, to: q.to }));
+                }
             } catch (err) {
                 setLedgers([]);
                 setLoadError(err instanceof ApiError ? err.message : tCommon("loadFailed"));
