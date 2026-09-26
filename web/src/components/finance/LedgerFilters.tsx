@@ -83,6 +83,20 @@ export default function LedgerFilters({
         onChange({ ...value, accountIds: next.length ? next : undefined });
     };
 
+    /**
+     * A new property scopes the account picker to it, so picks that belong to
+     * another property's accounts are dropped with it (#104); organisation-wide
+     * accounts (no property) and picks not yet known stay.
+     */
+    const withProperty = (propertyId: string | undefined): LedgerQuery => {
+        if (!propertyId || selected.length === 0) return { ...value, propertyId };
+        const keep = selected.filter(id => {
+            const a = accounts.find(x => x.id === id);
+            return !a || a.propertyId == null || a.propertyId === propertyId;
+        });
+        return { ...value, propertyId, accountIds: keep.length ? keep : undefined };
+    };
+
     const chipLabel = (id: string) => {
         const a = accounts.find(x => x.id === id);
         return a ? `${a.code} — ${a.name}` : id;
@@ -119,7 +133,7 @@ export default function LedgerFilters({
                             id="ledger-property"
                             className={`${field} min-w-[12rem]`}
                             value={value.propertyId ?? ""}
-                            onChange={ev => onChange({ ...value, propertyId: ev.target.value || undefined })}
+                            onChange={ev => onChange(withProperty(ev.target.value || undefined))}
                         >
                             <option value="">{t("selectProperty")}</option>
                             {properties.options.map(p => (

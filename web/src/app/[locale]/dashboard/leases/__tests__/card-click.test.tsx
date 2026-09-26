@@ -39,6 +39,8 @@ const LEASE = {
 const DETAIL_PATH = "/dashboard/leases/lease-123";
 
 beforeEach(() => {
+    // The list keeps its filters in the URL, and jsdom keeps the URL between tests.
+    window.history.replaceState(null, "", "/");
     push.mockClear();
     global.fetch = vi.fn(async (url: unknown) => {
         const u = String(url);
@@ -83,8 +85,11 @@ describe("Leases list click-through", () => {
         await screen.findByText(/A-101/);
 
         push.mockClear();
-        // "Docs" opens a modal, never navigates — stopPropagation must keep the card from firing.
-        fireEvent.click(screen.getByRole("button", { name: /docs/i }));
+        // Opening the card's ⋯ menu and choosing "Docs" (a modal) never navigates —
+        // stopPropagation must keep the card from firing on either click.
+        fireEvent.click(screen.getByTestId("lease-card-menu-lease-123"));
+        expect(push).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole("menuitem", { name: /docs/i }));
         expect(push).not.toHaveBeenCalled();
     });
 });

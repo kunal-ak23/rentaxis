@@ -15,6 +15,12 @@ import type { Cheque } from "@/lib/api/leasing";
 vi.mock("@/components/finance/AccountPicker", () => ({
     default: () => <div data-testid="account-picker" />,
 }));
+// The account cell's picker, reduced to "pick an account" (it fires no input event of its own).
+vi.mock("@/components/finance/SettlementAccountPicker", () => ({
+    default: ({ onChange }: { onChange: (id: string) => void }) => (
+        <button type="button" data-testid="settlement-picker" onClick={() => onChange("acc-9")}>pick</button>
+    ),
+}));
 
 function cheque(over: Partial<Cheque> & { id: string; seqNo: number }): Cheque {
     return {
@@ -181,12 +187,43 @@ describe("ChequeGrid keyboard entry (scale #19)", () => {
         fireEvent.paste(screen.getByLabelText(`${en.Leasing.chequeNo} 1`), { clipboardData: { getData: () => "A1\t\t\t\t100\nA2\t\t\t\t200\nA3\t\t\t\t300" } });
         expect(rows).toHaveLength(1);
         expect(rows[0].chequeNumber).toBe("A1");
+        rerender(<NextIntlClientProvider locale="en" messages={en}><ChequeGrid cheques={rows} editable onChange={onChange} contractValueInclVat={126000} /></NextIntlClientProvider>);
         expect(screen.getByTestId("cheque-grid-paste-report-rows")).toHaveTextContent("2 pasted rows are past the end of the grid.");
         fireEvent.click(screen.getByTestId("cheque-grid-paste-report-add-rows"));
         expect(rows.map(r => [r.chequeNumber, r.amount, r.status])).toEqual([["A1", 100, "DRAFT"], ["A2", 200, "DRAFT"], ["A3", 300, "DRAFT"]]);
         rerender(<NextIntlClientProvider locale="en" messages={en}><ChequeGrid cheques={rows} editable onChange={onChange} contractValueInclVat={126000} /></NextIntlClientProvider>);
         expect(screen.getByTestId("cheque-grid-paste-report-added")).toHaveTextContent("2 rows added for the paste.");
         expect(toChequeRows(rows).map(r => r.id)).toEqual(["c1", null, null]);
+    });
+
+    it("adds only the rows past the end, blank of kind, and keeps edits made since the paste (#104)", () => {
+        let rows = [cheque({ id: "c1", seqNo: 1, rowKind: "DEPOSIT" })];
+        const onChange = vi.fn((next: Cheque[]) => { rows = next; });
+        const view = (r: Cheque[]) => <NextIntlClientProvider locale="en" messages={en}><ChequeGrid cheques={r} editable onChange={onChange} contractValueInclVat={126000} /></NextIntlClientProvider>;
+        const { rerender } = render(view(rows));
+        fireEvent.paste(screen.getByLabelText(`${en.Leasing.chequeNo} 1`), { clipboardData: { getData: () => "A1\t\t\t\t100\nA2\t\t\t\t200" } });
+        rerender(view(rows));
+        // The accountant corrects row 1 after pasting, then agrees to add the rest.
+        fireEvent.change(screen.getByLabelText(`${en.Leasing.chequeNo} 1`), { target: { value: "A1-fixed" } });
+        rerender(view(rows));
+        fireEvent.click(screen.getByTestId("cheque-grid-paste-report-add-rows"));
+        expect(rows.map(r => r.chequeNumber)).toEqual(["A1-fixed", "A2"]);
+        expect(rows.map(r => r.rowKind ?? null)).toEqual(["DEPOSIT", null]);
+    });
+
+    it("clears an account cell's flag when an account is picked (#104)", () => {
+        let rows = four.slice(0, 2);
+        const onChange = vi.fn((next: Cheque[]) => { rows = next; });
+        const view = (r: Cheque[]) => <NextIntlClientProvider locale="en" messages={en}><ChequeGrid cheques={r} editable onChange={onChange} contractValueInclVat={126000} /></NextIntlClientProvider>;
+        const { rerender } = render(view(rows));
+        // Pasting from Payee Bank across into the account column: the account is reported, not applied.
+        fireEvent.paste(screen.getByLabelText(`${en.Leasing.payeeBank} 1`), { clipboardData: { getData: () => "DIB\tBank 2" } });
+        rerender(view(rows));
+        const cell = screen.getAllByTestId("settlement-picker")[0].closest("td")!;
+        expect(cell).toHaveAttribute("data-paste-invalid", "true");
+        fireEvent.click(screen.getAllByTestId("settlement-picker")[0]);
+        rerender(view(rows));
+        expect(screen.getAllByTestId("settlement-picker")[0].closest("td")).not.toHaveAttribute("data-paste-invalid");
     });
 
     it("flags a pasted cell it could not read instead of keeping the old value silently", () => {

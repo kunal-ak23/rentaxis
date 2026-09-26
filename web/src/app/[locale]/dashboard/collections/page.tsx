@@ -100,9 +100,13 @@ function CollectionsHub() {
                     <label className="sr-only" htmlFor="collections-search">{t("searchLabel")}</label>
                     <input id="collections-search" type="search" name="search" key={search} defaultValue={search}
                         placeholder={t("searchPlaceholder")} data-testid="collections-search"
-                        className={`${field} w-full ps-8`} />
+                        className={`${field} w-full ps-8`} aria-describedby={active !== "all" ? "collections-search-hint" : undefined} />
                 </div>
             </form>
+            {active !== "all" && (
+                // #104: search always opens the cheque register, whatever pill is showing — say so.
+                <p id="collections-search-hint" data-testid="collections-search-hint" className="-mt-3 text-[11.5px] text-muted">{t("searchHint")}</p>
+            )}
             <div key={`${active}-${propertyId}-${search}`}>
                 {active === "deposit" && <ToDepositPanel embedded propertyId={propertyId} />}
                 {active === "due" && <DueChequesPanel overdueOnly={false} propertyId={propertyId} />}

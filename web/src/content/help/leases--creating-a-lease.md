@@ -14,7 +14,7 @@ Tenancy Contracts are the core of RentAxis — they link a tenant to a unit with
 ### Creating a New Tenancy Contract
 
 1. Go to **Leasing › Tenancy Contracts**
-2. Click **Create Tenancy Contract**
+2. Click **Draft Tenancy Contract** (Home's **New Contract** opens the same form)
 3. Fill in the contract details:
    - **Property & Unit** — Select from your existing properties and vacant units
    - **Tenant** — Choose an existing tenant or create a new one
@@ -31,10 +31,11 @@ When you create a contract, RentAxis automatically generates a payment schedule 
 - Selected payment method
 - Pro-rata calculation for the first partial month (if applicable)
 
-You can review and edit the payment schedule before activating the contract.
+You can review and edit the payment schedule before posting the contract.
 
-### Activating the Tenancy Contract
+### Posting the Tenancy Contract
 
-1. Review the contract details and payment schedule
-2. Change the status from **Draft** to **Active**
-3. The unit will automatically be marked as **Occupied**
+1. Open the draft — the **Draft & to sign** pill on the contract list, or **Contracts to post** in the side panel, lists drafts and contracts awaiting the tenant's signature
+2. Review the contract details and the cheques (the **Cheques** tab)
+3. Click **Post Contract**; a dry run checks it first, then its journal is written
+4. The unit shows as **Occupied** from the start date (or **Reserved** until then)

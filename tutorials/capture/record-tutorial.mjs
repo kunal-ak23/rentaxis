@@ -590,7 +590,8 @@ const scenarios = {
   ],
   '06': [
     routeScene('/en/dashboard/properties', 'Property portfolio', 'Projects and properties provide the foundation for units, leases, operations, and reporting.', async (page) => {
-      await page.getByRole('button', { name: 'Add Project', exact: true }).click();
+      await page.getByTestId('properties-more').click();
+      await page.getByTestId('properties-add-project').click();
       await page.getByText('Create a new Project (Portfolio Group).', { exact: true }).waitFor({ state: 'visible' });
     }),
     routeScene(`/en/dashboard/properties/${towerId}`, 'Prepared residential tower', 'Review bilingual identity, address, emirate, portfolio type, and operational summary.'),
@@ -630,12 +631,14 @@ const scenarios = {
   ],
   '08': [
     routeScene('/en/dashboard/properties', 'Portfolio import', 'Use the current workbook template for controlled onboarding and migration.', async (page) => {
-      await page.getByRole('button', { name: 'Import Portfolio', exact: true }).click();
+      await page.getByTestId('properties-more').click();
+      await page.getByTestId('properties-import-portfolio').click();
       await page.getByText('Import Portfolio', { exact: true }).last().waitFor({ state: 'visible' });
       await page.getByText('Download Template', { exact: true }).click();
     }),
     routeScene('/en/dashboard/properties', 'Validate before import', 'Review required sheets, reference values, and row-level validation errors before creating records.', async (page) => {
-      await page.getByRole('button', { name: 'Import Portfolio', exact: true }).click();
+      await page.getByTestId('properties-more').click();
+      await page.getByTestId('properties-import-portfolio').click();
       await page.getByText('Import Portfolio', { exact: true }).last().waitFor({ state: 'visible' });
     }),
     routeScene('/en/dashboard/properties', 'Verify imported records', 'After a successful job, reconcile counts and inspect representative properties, units, renters, leases, and installments.'),
@@ -649,7 +652,7 @@ const scenarios = {
   ],
   '10': [
     routeScene('/en/dashboard/leases', 'Lease workspace', 'Start from a vacant unit and a verified renter, then preview the draft-lease wizard without saving a new record.', async (page) => {
-      await page.getByRole('button', { name: 'Draft Lease', exact: true }).click();
+      await page.getByTestId('lease-new').click();
     }),
     routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Pending-signature lease', 'Review rent, deposit, dates, payment method, and installment distribution before activation.', async (page) => {
       await page.evaluate(() => { document.body.style.zoom = '85%'; });
@@ -662,10 +665,10 @@ const scenarios = {
   '11': [
     routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Contract-ready lease', 'Confirm the renter, unit, dates, rent, deposit, and payment plan before reviewing the contract.'),
     routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Contract workspace', 'Use the authenticated Preview Contract control or its new-tab fallback to inspect the current agreement without changing the lease state.', async (page) => {
-      await page.getByRole('button', { name: 'Contract', exact: true }).click();
+      await page.getByTestId('lease-tab-documents').click();
     }),
     routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Signature state', 'Pending Signature keeps the agreement awaiting renter action; review the current document before any acceptance or rejection.', async (page) => {
-      await page.getByRole('button', { name: 'Contract', exact: true }).click();
+      await page.getByTestId('lease-tab-documents').click();
     }),
   ],
   '12': [
@@ -674,10 +677,10 @@ const scenarios = {
       await page.getByRole('button', { name: 'Payment schedule', exact: true }).click();
     }),
     routeScene(`/en/dashboard/leases/${ahmedLeaseId}`, 'Documents', 'Keep approved tenancy attachments with the lease audit trail.', async (page) => {
-      await page.getByRole('button', { name: 'Documents', exact: true }).click();
+      await page.getByTestId('lease-tab-documents').click();
     }),
     routeScene(`/en/dashboard/leases/${ahmedLeaseId}`, 'Interactions', 'Record relevant renter communication without storing passwords or unrelated personal notes.', async (page) => {
-      await page.getByRole('button', { name: 'Interactions', exact: true }).click();
+      await page.getByTestId('lease-tab-activity').click();
       await page.getByText(/Loading/).waitFor({ state: 'detached', timeout: 10000 });
       await page.getByRole('button', { name: /Log interaction/i }).click();
     }),
@@ -686,7 +689,8 @@ const scenarios = {
     routeScene('/en/dashboard/leases', 'Lease lifecycle queue', 'Use status and date filters to identify renewal, extension, termination, and settlement work.'),
     routeScene(`/en/dashboard/leases/${ahmedLeaseId}`, 'Renew or extend', 'Review current terms and renter intent before changing the lease end date or renewal state.'),
     routeScene(`/en/dashboard/leases/${seed.leases?.rajesh}`, 'Terminate and settle', 'Open the settlement preview to review outstanding balances, deductions, deposit application, and the final settlement before closing.', async (page) => {
-      await page.getByRole('link', { name: 'Terminate', exact: true }).click();
+      await page.getByTestId('lease-more-actions').click();
+      await page.getByTestId('lease-terminate').click();
       await page.waitForURL(/\/settlement/, { waitUntil: 'domcontentloaded', timeout: 15000 });
       await page.getByRole('heading', { name: 'Settlement', exact: true }).waitFor({ state: 'visible', timeout: 15000 });
       await page.evaluate(() => { document.body.style.zoom = '85%'; });
@@ -697,7 +701,7 @@ const scenarios = {
     routeScene('/en/dashboard/settings/fines', 'Fine configuration', 'Configure supported cheque-failure reasons and penalty amounts before processing failures.'),
     routeScene('/en/dashboard/finance/payments', 'Cheque failure workflow', 'Choose the exact failure reason so the correct auditable penalty is generated.'),
     routeScene(`/en/dashboard/leases/${ahmedLeaseId}`, 'Lease penalties', 'Review assessed penalties, payment state, receipts, and related installment history.', async (page) => {
-      await page.getByRole('button', { name: 'Penalties', exact: true }).click();
+      await page.getByTestId('lease-tab-payments').click();
     }),
   ],
   '15': [
@@ -948,6 +952,7 @@ const scenarios = {
       'The grid records every cheque the renter handed over. It has to add up to the contract value or the contract will not post.', {
       weight: 60,
       afterNavigation: async (page) => {
+        await page.getByTestId('lease-tab-payments').click();
         await page.getByTestId('cheque-grid').waitFor({ state: 'visible', timeout: 20_000 });
         await page.getByTestId('cheque-grid-match').waitFor({ state: 'visible' });
       },
@@ -968,7 +973,8 @@ const scenarios = {
       'One tenancy contract journal, and one post-dated cheque journal for every row of the grid.', {
       weight: 40,
       afterNavigation: async (page) => {
-        await page.getByTestId('lease-tab-journals').click();
+        await page.getByTestId('lease-tab-payments').click();
+        await page.getByTestId('lease-section-toggle-journals').click();
         await page.getByTestId('lease-journals-tab').locator('table').first()
           .locator('tbody tr').filter({ hasText: 'TCO' }).first()
           .waitFor({ state: 'visible', timeout: 20_000 });
@@ -978,7 +984,8 @@ const scenarios = {
       'The rent is already divided across the term by its real day count. None of it is posted yet.', {
       weight: 30,
       afterNavigation: async (page) => {
-        await page.getByTestId('lease-tab-recognition').click();
+        await page.getByTestId('lease-tab-payments').click();
+        await page.getByTestId('lease-section-toggle-recognition').click();
         await page.getByTestId('recognition-schedule').waitFor({ state: 'visible', timeout: 20_000 });
       },
     }),
@@ -1081,7 +1088,8 @@ const scenarios = {
       'The term is divided by its real day count to get a daily rate, then multiplied by the real number of days in each month.', {
       weight: 75,
       afterNavigation: async (page) => {
-        await page.getByTestId('lease-tab-recognition').click();
+        await page.getByTestId('lease-tab-payments').click();
+        await page.getByTestId('lease-section-toggle-recognition').click();
         await page.getByTestId('recognition-schedule').waitFor({ state: 'visible', timeout: 20_000 });
       },
     }),
@@ -1089,7 +1097,8 @@ const scenarios = {
       'A contract that starts mid month opens short and closes short, and the last row absorbs the rounding so the schedule adds up exactly.', {
       weight: 50,
       afterNavigation: async (page) => {
-        await page.getByTestId('lease-tab-recognition').click();
+        await page.getByTestId('lease-tab-payments').click();
+        await page.getByTestId('lease-section-toggle-recognition').click();
         await page.getByTestId('recognition-schedule').waitFor({ state: 'visible', timeout: 20_000 });
         await page.getByTestId('recognition-schedule').locator('tbody tr').last().scrollIntoViewIfNeeded();
       },

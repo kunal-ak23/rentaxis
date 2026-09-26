@@ -1,7 +1,7 @@
 // src/lib/ui/__tests__/action-coverage.test.tsx
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ACTION_CATALOG, type ActionLocation } from "../actionCatalog";
+import { ACTION_CATALOG, V3_LOCATION, type ActionLocation } from "../actionCatalog";
 
 vi.mock("next-intl", async () => (await import("@/test/intlMock")).englishIntl());
 const query = { current: "" };
@@ -58,7 +58,8 @@ describe("action coverage — every inventoried action is still reachable", () =
     const byLocation = new Map<ActionLocation, typeof ACTION_CATALOG>();
     for (const e of ACTION_CATALOG) byLocation.set(e.location, [...(byLocation.get(e.location) ?? []), e]);
 
-    it.each([...byLocation.keys()])("%s", async loc => {
+    // PR 3's locations (contract page, lists, Home) are drawn by action-coverage-v3.test.tsx.
+    it.each([...byLocation.keys()].filter(l => !V3_LOCATION(l)))("%s", async loc => {
         const container = await renderLocation(loc);
         const missing = byLocation.get(loc)!.filter(e => !container.querySelector(`[data-testid="${e.probe}"]`));
         expect(missing.map(e => `${e.id} (was: ${e.was})`)).toEqual([]);

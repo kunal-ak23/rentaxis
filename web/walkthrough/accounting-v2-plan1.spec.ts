@@ -402,7 +402,8 @@ test('03 creating a property generates its account set', async ({ browser }) => 
     const { page, close } = await recorded(browser, '03-property-creates-account-set');
     try {
         await page.goto('/en/dashboard/properties');
-        await page.getByRole('button', { name: 'Add Project' }).first().click();
+        await page.getByTestId('properties-more').click();
+        await page.getByTestId('properties-add-project').click();
         const form = page.locator('div.fixed.inset-0').filter({ hasText: 'Add Project' }).first();
         await form.locator('input[placeholder="Project Name (EN)"]').fill(PROPERTY);
         await form.locator('input[placeholder="Building name, street, area"]').fill('1 Ledger Street, Dubai');

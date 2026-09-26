@@ -332,7 +332,7 @@ test('01 draft a lease with lines through the wizard', async ({ browser }) => {
         const unit = await makeUnit(`WT2-${SUFFIX}-A`, 12_000);
 
         await page.goto('/en/dashboard/leases');
-        await page.getByRole('button', { name: /add|create|new|draft/i }).first().click();
+        await page.getByTestId('lease-new').click();
 
         // Step 1: parties.
         // Scoped to the wizard: the leases page behind the modal has a status
@@ -388,6 +388,7 @@ test('02 generate the cheque grid — rent split evenly, the deposit its own row
         await page.goto(`/en/dashboard/leases/${leaseMainId}`);
         await expect(page.getByTestId('lease-status')).toBeVisible();
 
+        await page.getByTestId('lease-tab-payments').click(); // the cheque grid lives in the Cheques tab (spec §5)
         await page.getByTestId('cheque-grid-generate').click();
         await expect(page.getByTestId('cheque-generate-form')).toBeVisible();
         // Installments already defaults to the lease's own paymentTerms (4).
@@ -474,6 +475,7 @@ test('03 a dry run reports validation errors and writes nothing', async ({ brows
         await adminApi('PUT', `/api/v1/leases/${draft.id}/cheques`, rows);
 
         await page.goto(`/en/dashboard/leases/${draft.id}`);
+        await page.getByTestId('lease-tab-payments').click(); // the cheque grid lives in the Cheques tab (spec §5)
         await expect(page.getByTestId('cheque-grid-match')).toHaveAttribute('data-match', 'false');
         await page.getByTestId('lease-post').click();
         await expect(page.getByTestId('post-dry-run-errors')).toBeVisible({ timeout: 10_000 });
@@ -692,7 +694,7 @@ test('09 propose, approve and collect a penalty for the bounce', async ({ browse
     const { page, close } = await recorded(browser, '09-penalty-propose-approve-collect');
     try {
         await page.goto(`/en/dashboard/leases/${leaseMainId}`);
-        await page.getByTestId('lease-tab-penalties').click();
+        await page.getByTestId('lease-tab-payments').click();
         await page.getByTestId('penalty-propose-open').click();
         // The tab opens RaisePenaltyDialog (#12), whose fields carry plain
         // `id`s, not data-testids — #raise-penalty-reason/-amount/-narration.
@@ -844,6 +846,8 @@ test('12 extend LEASE_MAIN — a fresh TCO for the extension period alone', asyn
     const { page, close } = await recorded(browser, '12-extend-lease');
     try {
         await page.goto(`/en/dashboard/leases/${leaseMainId}`);
+        // Spec §5: everything but the status's primary buttons sits under More actions.
+        await page.getByTestId('lease-more-actions').click();
         await page.getByTestId('lease-extend').click();
 
         const d = new Date(plusYear());
@@ -897,6 +901,8 @@ test('13 amend lines — blocked once a cheque has left REGISTERED, otherwise it
         // 05-08 — amendBlockedBy (AmendLinesDialog.tsx) refuses the moment any
         // cheque is not REGISTERED.
         await page.goto(`/en/dashboard/leases/${leaseMainId}`);
+        // Spec §5: everything but the status's primary buttons sits under More actions.
+        await page.getByTestId('lease-more-actions').click();
         await page.getByTestId('lease-amend').click();
         await expect(page.getByTestId('amend-blocked')).toBeVisible({ timeout: 10_000 });
         await expect(page.getByTestId('amend-lines-confirm')).toBeDisabled();
@@ -923,6 +929,8 @@ test('13 amend lines — blocked once a cheque has left REGISTERED, otherwise it
 
         await page.goto(`/en/dashboard/leases/${posted.lease.id}`);
 
+        // Spec §5: everything but the status's primary buttons sits under More actions.
+        await page.getByTestId('lease-more-actions').click();
         await page.getByTestId('lease-amend').click();
         await expect(page.getByTestId('amend-blocked')).toHaveCount(0);
 
@@ -1099,6 +1107,8 @@ test('15 an accountant may post/extend a lease; a property manager may not', asy
         await expect(page.getByTestId('lease-post')).toBeVisible();
 
         await page.goto(`/en/dashboard/leases/${leaseMainId}`);
+        // Spec §5: everything but the status's primary buttons sits under More actions.
+        await page.getByTestId('lease-more-actions').click();
         await expect(page.getByTestId('lease-extend')).toBeVisible();
         await expect(page.getByTestId('lease-renew')).toBeVisible();
         await hold(page, 1200);

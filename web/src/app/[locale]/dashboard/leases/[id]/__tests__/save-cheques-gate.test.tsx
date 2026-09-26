@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../../../../messages/en.json";
@@ -77,12 +77,15 @@ vi.mock("@/lib/api/leasing", async orig => {
 
 import LeaseDetailPage from "../page";
 
-function renderPage() {
-    return render(
+/** The cheque grid lives in the Cheques tab (spec §5), so each case opens it. */
+async function renderPage() {
+    const out = render(
         <NextIntlClientProvider locale="en" messages={en}>
             <LeaseDetailPage />
         </NextIntlClientProvider>,
     );
+    fireEvent.click(await screen.findByTestId("lease-tab-payments"));
+    return out;
 }
 
 beforeEach(() => {
@@ -98,14 +101,14 @@ afterEach(() => {
 describe("Save cheque grid gate on a draft contract", () => {
     it("saves a complete grid", async () => {
         api.cheques.mockImplementation(async () => [draftCheque({})]);
-        renderPage();
+        await renderPage();
         await waitFor(() => expect(screen.getByTestId("lease-save-cheques")).toBeEnabled());
         expect(screen.queryByTestId("cheque-grid-row-errors")).not.toBeInTheDocument();
     });
 
     it("refuses to save a dateless PDC row, and says which row and why", async () => {
         api.cheques.mockImplementation(async () => [draftCheque({ chequeDate: null })]);
-        renderPage();
+        await renderPage();
         await waitFor(() => expect(screen.getByTestId("lease-save-cheques")).toBeDisabled());
         expect(screen.getByTestId("cheque-grid-row-errors")).toHaveTextContent(
             "Row 1: a post-dated cheque needs the date written on it",
@@ -114,7 +117,7 @@ describe("Save cheque grid gate on a draft contract", () => {
 
     it("refuses to save a row with no amount", async () => {
         api.cheques.mockImplementation(async () => [draftCheque({ amount: 0 })]);
-        renderPage();
+        await renderPage();
         await waitFor(() => expect(screen.getByTestId("lease-save-cheques")).toBeDisabled());
         expect(screen.getByTestId("cheque-grid-row-errors")).toHaveTextContent(
             "Row 1: amount must be greater than zero",

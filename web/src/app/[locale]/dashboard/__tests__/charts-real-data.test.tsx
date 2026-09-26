@@ -14,8 +14,8 @@ vi.mock("@/i18n/routing", () => ({
 }));
 // Child widgets fetch on their own — stub them out so this test only covers the charts.
 vi.mock("@/components/dashboard/FollowUpsWidget", () => ({ default: () => null }));
-vi.mock("@/components/dashboard/OverduePaymentsWidget", () => ({ default: () => null }));
-vi.mock("@/components/dashboard/ChequesToDepositWidget", () => ({ default: () => null }));
+vi.mock("@/components/dashboard/TodayList", () => ({ default: () => null }));
+vi.mock("@/components/dashboard/UnitStatusBoard", () => ({ default: () => null }));
 
 import DashboardPage from "../page";
 
@@ -73,16 +73,20 @@ describe("DashboardPage charts use real data", () => {
         expect(screen.getByText("Due this month, unpaid")).toBeTruthy();
     });
 
-    it("renders the occupancy donut with real occupied/vacant counts", async () => {
+    it("shows occupancy on the Unit Status card (spec §6: one chart, no donut)", async () => {
         render(
             <NextIntlClientProvider locale="en" messages={en}>
                 <DashboardPage />
             </NextIntlClientProvider>,
         );
         await waitFor(() => expect(screen.getByText("12-month performance")).toBeTruthy());
-        expect(screen.getByText("Occupied")).toBeTruthy();
-        expect(screen.getByText("Vacant")).toBeTruthy(); // legend label (distinct from "Vacant units" totals row)
-        expect(screen.getByText("80%")).toBeTruthy();
+        const card = screen.getByTestId("kpi-unit-status");
+        expect(card).toHaveTextContent("Unit Status");
+        expect(card).toHaveTextContent("80.0");
+        expect(card).toHaveTextContent("8 occupied · 0 expiring · 2 vacant");
+        expect(card).toHaveTextContent("1 properties · 8 active contracts");
+        expect(document.querySelectorAll("svg[viewBox='0 0 600 200']")).toHaveLength(1);
+        expect(screen.queryByText("80%")).toBeNull();
     });
 
     it("heads the collected card by due date, not by cash received this month (gap #59)", async () => {

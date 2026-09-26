@@ -204,18 +204,27 @@ export default function ChequeGrid({
     const gridKeys = editable && onChange
         ? chequeGridHandlers<Cheque>({ rows: cheques, fields: gridFields, onChange, modeLabel, withValue, onPasted: paste.onPasted })
         : null;
-    /** The user agreed to add the pasted rows past the end: re-apply the paste with new draft rows. */
+    /**
+     * The user agreed to add the pasted rows past the end. Only those rows are
+     * written — the rows already in the grid keep any edit made since the paste
+     * (#104) — and a new row starts blank rather than inheriting the last row's
+     * kind (a FEE or DEPOSIT row would make every added row one, #104).
+     */
     const addPastedRows = (req: PasteRequest) => {
         if (!onChange || cheques.length === 0) return;
         const last = cheques[cheques.length - 1];
         const blank = (i: number): Cheque => ({
             ...last, id: `${NEW_ROW_PREFIX}${i}-${Date.now()}`, seqNo: (last.seqNo ?? cheques.length) + (i - cheques.length) + 1,
             chequeNumber: null, chequeDate: null, payeeBank: null, amount: 0, vatAmount: null, narration: null, status: "DRAFT",
+            rowKind: null,
             depositedAt: null, clearedAt: null, bouncedAt: null, returnedAt: null, replacesId: null, replacedById: null,
         });
-        const outcome = pasteIntoRows(cheques, req.grid, req.startRow, req.startField, gridFields, modeLabel, blank, withValue);
+        const firstNew = Math.max(0, cheques.length - req.startRow);
+        const outcome = pasteIntoRows(cheques, req.grid.slice(firstNew), cheques.length, req.startField, gridFields, modeLabel, blank, withValue);
         onChange(outcome.rows);
-        paste.onPasted(outcome, req);
+        // The earlier cells the first paste could not write are still reported while still flagged.
+        const earlier = (paste.report?.issues ?? []).filter(x => x.row < cheques.length && paste.isBad(x.row, x.field));
+        paste.onPasted({ ...outcome, issues: [...earlier, ...outcome.issues], extraColumns: Math.max(outcome.extraColumns, paste.report?.extraColumns ?? 0) }, req);
     };
     const flag = (i: number, f: GridField) => (paste.isBad(i, f) ? " ring-2 ring-warning" : "");
 
@@ -499,7 +508,7 @@ export default function ChequeGrid({
                                     {editable ? (
                                         <SettlementAccountPicker
                                             value={c.debitAccountId}
-                                            onChange={id => patch(c.id, { debitAccountId: id })}
+                                            onChange={id => { patch(c.id, { debitAccountId: id }); paste.clear(i, "debitAccountId"); }}
                                             propertyId={propertyId}
                                             placeholder={t("debitAccount")}
                                         />

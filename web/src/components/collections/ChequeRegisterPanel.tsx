@@ -380,7 +380,8 @@ export default function ChequeRegisterPanel({ embedded = false }: { embedded?: b
                             ))}
                         </select>
                     </div>
-                    <div>
+                    {/* Embedded in the hub, the hub's property filter (same `propertyId` in the URL) is the one shown (#104). */}
+                    <div hidden={embedded}>
                         <label className={label} htmlFor="cq-property">{tLedger("propertyFilter")}</label>
                         <select
                             id="cq-property"

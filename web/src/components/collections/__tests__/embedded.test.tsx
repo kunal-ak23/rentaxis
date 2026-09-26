@@ -77,6 +77,14 @@ describe("embedded collection panels", () => {
         expect(container.querySelector('a[href="/dashboard/finance/cheques/collection"]')).not.toBeNull();
     });
 
+    it("show one property filter in the hub: the register's own is hidden when embedded (#104)", () => {
+        wrap(<ChequeRegisterPanel embedded />);
+        expect(screen.getByTestId("cheque-property-filter")).not.toBeVisible();
+        cleanup();
+        wrap(<ChequeRegisterPanel />);
+        expect(screen.getByTestId("cheque-property-filter")).toBeVisible();
+    });
+
     it("open the cash receipt straight away for ?receive=1", async () => {
         wrap(<ChequeRegisterPanel embedded />);
         expect(await screen.findByTestId("cash-dialog-open")).toBeInTheDocument();
