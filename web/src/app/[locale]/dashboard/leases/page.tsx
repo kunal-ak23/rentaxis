@@ -903,6 +903,7 @@ export default function LeasesPage() {
                     )}
                     {canManageLeases && (
                         <button
+                            data-testid="lease-new"
                             onClick={() => { setEditingLeaseId(null); setWizardOpen(true); }}
                             className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:opacity-90 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >

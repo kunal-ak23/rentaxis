@@ -332,7 +332,7 @@ test('01 draft a lease with lines through the wizard', async ({ browser }) => {
         const unit = await makeUnit(`WT2-${SUFFIX}-A`, 12_000);
 
         await page.goto('/en/dashboard/leases');
-        await page.getByRole('button', { name: /add|create|new|draft/i }).first().click();
+        await page.getByTestId('lease-new').click();
 
         // Step 1: parties.
         // Scoped to the wizard: the leases page behind the modal has a status

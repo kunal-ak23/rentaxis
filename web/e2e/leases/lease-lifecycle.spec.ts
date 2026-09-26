@@ -43,8 +43,8 @@ async function draftLineAndPost(
   opts: { unitNumber: string; renterName: string; rentAmount: string },
 ) {
   await page.goto('/en/dashboard/leases');
-  await expect(page.getByTestId('lease-status-filter')).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('button', { name: /add|create|new|draft/i }).first().click();
+  await expect(page.getByTestId('contract-pills')).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId('lease-new').click();
 
   // Step 1: parties. Each picker's dropdown closes on selection, so the
   // second trigger is back at its normal index (1) once the first closes.
@@ -90,7 +90,7 @@ test.describe('Lease Lifecycle', () => {
     // caller never reads stays in flight for ever in Chromium, so the idle
     // state never arrives. Wait for a control the page itself renders.
     await page.goto('/en/dashboard/leases');
-    await expect(page.getByTestId('lease-status-filter')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('contract-pills')).toBeVisible({ timeout: 15_000 });
   });
 
   test('generate contract on DRAFT lease', async ({ page, testContext }, testInfo) => {

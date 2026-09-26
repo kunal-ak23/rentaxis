@@ -29,7 +29,7 @@ Depending on your role, you'll have access to different features:
 
 ### Quick Start
 
-1. **Explore the Dashboard** — Your home screen shows key metrics, recent activity, and quick links
+1. **Start on Home** — the **Contract pipeline** (draft to settlement), **Needs you now** (today's work), **Unit Status** with a floor-by-floor board of each property, one collections chart, and recent activity
 2. **Check the Navigation** — Pick a section on the left rail, then a page in the panel beside it
 3. **Use Help Anytime** — Click the floating **?** button on any page for contextual guidance
 
@@ -170,7 +170,7 @@ The properties page shows all your properties in a table view with:
 
 ### Adding a Property
 
-1. Click **Add Property** on the properties page
+1. Click **Add Property** on the properties page (**Add Project**, **Import Property** and **Import Portfolio** are under **More**)
 2. Fill in the required fields:
    - **Name** — A descriptive name for the property
    - **Type** — Residential, Commercial, or Mixed Use
@@ -258,7 +258,7 @@ Tenancy Contracts are the core of RentAxis — they link a tenant to a unit with
 ### Creating a New Tenancy Contract
 
 1. Go to **Leasing › Tenancy Contracts**
-2. Click **Create Tenancy Contract**
+2. Click **Draft Tenancy Contract** (Home's **New Contract** opens the same form)
 3. Fill in the contract details:
    - **Property & Unit** — Select from your existing properties and vacant units
    - **Tenant** — Choose an existing tenant or create a new one
@@ -275,13 +275,14 @@ When you create a contract, RentAxis automatically generates a payment schedule 
 - Selected payment method
 - Pro-rata calculation for the first partial month (if applicable)
 
-You can review and edit the payment schedule before activating the contract.
+You can review and edit the payment schedule before posting the contract.
 
-### Activating the Tenancy Contract
+### Posting the Tenancy Contract
 
-1. Review the contract details and payment schedule
-2. Change the status from **Draft** to **Active**
-3. The unit will automatically be marked as **Occupied**
+1. Open the draft — the **Draft** pill on the contract list, or **Drafts to post** in the side panel, lists them
+2. Review the contract details and the cheques (the **Cheques** tab)
+3. Click **Post Contract**; a dry run checks it first, then its journal is written
+4. The unit shows as **Occupied** from the start date (or **Reserved** until then)
 `);
 
 registerArticle('leases--lease-lifecycle', `---
@@ -312,10 +313,23 @@ DRAFT → PENDING_SIGNATURE → ACTIVE → NOTICE_GIVEN → TERMINATED/EXPIRED �
 
 ### Key Actions
 
-- **Activate** — Move from Draft to Active (requires all fields complete)
-- **Give Notice** — Mark that notice has been given with a notice date
-- **Terminate** — End the contract early
-- **Close** — Settle remaining balances and archive
+The buttons at the top of a contract show the next step for its status: **Edit** and **Post Contract** for a draft; **Record payment** and **Renew** for an active contract (or one under notice); **Settlement** once it has ended. Everything else is under **More actions**: Extend Contract, Amend lines, Add charge, Transfer, Assignment, Reduce, Raise penalty, Give notice, Terminate, Write off, Download contract, Ledger, and Delete for a draft. Which actions you see depends on your role.
+
+- **Post Contract** — Checks the contract (a dry run), then writes its journal; this is how a draft becomes active
+- **Give notice** — Records that notice has been given, with a notice date
+- **Terminate** — Prices the move-out on its own page, then ends the contract
+- **Settlement** — Settles the deposit and remaining balances once the contract has ended
+
+### The Contract Page
+
+A contract has four tabs:
+
+- **General** — the contract and tenant details, the Particulars and any rent-free periods
+- **Cheques** — the cheque grid, then Penalties, Journal Vouchers, Revenue recognition and, when the contract charges VAT, Vat — each a section you can open or close
+- **Attachments** — the contract document, supporting documents, and Addenda & Ejari
+- **Activities** — Notes and Maintenance
+
+A link to one of the old tabs (for example "?tab=journals") opens the tab that holds it now, with that section open.
 `);
 
 registerArticle('leases--payment-schedules', `---

@@ -26,7 +26,20 @@ DRAFT → PENDING_SIGNATURE → ACTIVE → NOTICE_GIVEN → TERMINATED/EXPIRED �
 
 ### Key Actions
 
-- **Activate** — Move from Draft to Active (requires all fields complete)
-- **Give Notice** — Mark that notice has been given with a notice date
-- **Terminate** — End the contract early
-- **Close** — Settle remaining balances and archive
+The buttons at the top of a contract show the next step for its status: **Edit** and **Post Contract** for a draft; **Record payment** and **Renew** for an active contract (or one under notice); **Settlement** once it has ended. Everything else is under **More actions**: Extend Contract, Amend lines, Add charge, Transfer, Assignment, Reduce, Raise penalty, Give notice, Terminate, Write off, Download contract, Ledger, and Delete for a draft. Which actions you see depends on your role.
+
+- **Post Contract** — Checks the contract (a dry run), then writes its journal; this is how a draft becomes active
+- **Give notice** — Records that notice has been given, with a notice date
+- **Terminate** — Prices the move-out on its own page, then ends the contract
+- **Settlement** — Settles the deposit and remaining balances once the contract has ended
+
+### The Contract Page
+
+A contract has four tabs:
+
+- **General** — the contract and tenant details, the Particulars and any rent-free periods
+- **Cheques** — the cheque grid, then Penalties, Journal Vouchers, Revenue recognition and, when the contract charges VAT, Vat — each a section you can open or close
+- **Attachments** — the contract document, supporting documents, and Addenda & Ejari
+- **Activities** — Notes and Maintenance
+
+A link to one of the old tabs (for example "?tab=journals") opens the tab that holds it now, with that section open.

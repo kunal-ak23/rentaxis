@@ -25,7 +25,7 @@ test.describe('Leases CRUD', () => {
     // `networkidle` it cannot be defeated by a non-2xx whose body the caller
     // never reads, which keeps a request in flight for ever.
     await page.goto('/en/dashboard/leases');
-    await expect(page.getByTestId('lease-status-filter')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('contract-pills')).toBeVisible({ timeout: 15_000 });
   });
 
   test('leases page loads', async ({ page }, testInfo) => {
@@ -67,7 +67,7 @@ test.describe('Leases CRUD', () => {
       email: `crud-${suffix}@test.com`,
     });
 
-    await page.getByRole('button', { name: /add|create|new|draft/i }).first().click();
+    await page.getByTestId('lease-new').click();
     await pickSearchable(page, 0, unit.unitNumber);
     await pickSearchable(page, 1, `CRUD Renter ${suffix}`);
     await page.getByTestId('wizard-next').click();
@@ -139,7 +139,7 @@ test.describe('Leases CRUD', () => {
     });
 
     await page.reload();
-    await page.getByTestId('lease-status-filter').selectOption('DRAFT');
+    await page.getByTestId('contract-pill-draft').click(); // spec §1a: status pills (the all-status select sits behind Filters)
 
     const selectAll = page.getByTestId('bulk-post-select-all');
     await expect(selectAll).toBeEnabled({ timeout: 15_000 });

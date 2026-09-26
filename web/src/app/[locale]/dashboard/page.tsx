@@ -285,7 +285,7 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-end justify-between">
+      <div className="flex flex-wrap items-end justify-between gap-3" data-tour="dashboard-header">
         <div>
           <p className="text-[12.5px] text-[var(--ink-500)] mb-1">{dayLabel}</p>
           <h1 className="font-serif text-[28px] font-semibold tracking-tight m-0">{t(greetingKey, { name: firstName })}</h1>
