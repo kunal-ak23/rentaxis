@@ -47,7 +47,8 @@ public class RecognitionEventListener {
      */
     @EventListener
     public void onLeaseAmended(LeaseAmendedEvent event) {
-        recognition.rebuildAfterAmend(event.leaseId(), LocalDate.now());
+        // The amendment's own date: the day its re-posted contract is dated on.
+        recognition.rebuildAfterAmend(event.leaseId(), recognition.entryDateOf(event.newJournalId()));
     }
 
     @EventListener

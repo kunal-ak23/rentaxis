@@ -790,11 +790,12 @@ class LeasePostingServiceIT extends AbstractPostgresIT {
         assertThat(tcr.getDocType()).isEqualTo(JournalDocType.TCR);
         assertThat(tcr.getEntryNumber()).isEqualTo("TCR-26/1");
 
-        // And a fresh TCO carries the contract date, not today's.
+        // And a fresh TCO dated the amendment day — the same day as the reversal, so the
+        // two net on one date and no earlier period changes (#371 review, amendment-date design).
         assertThat(amended.tcoJournalId()).isNotEqualTo(originalTcoId);
         JournalEntry reposted = tx.execute(s -> entries.findById(amended.tcoJournalId()).orElseThrow());
         assertThat(reposted.getDocType()).isEqualTo(JournalDocType.TCO);
-        assertThat(reposted.getEntryDate()).isEqualTo(CONTRACT_DATE);
+        assertThat(reposted.getEntryDate()).isEqualTo(tcr.getEntryDate());
         assertThat(linesOf(reposted.getId()).get(3).getAccountId()).isEqualTo(otherIncome.getId());
         assertThat(reread(leaseId).getPostingJournalId()).isEqualTo(amended.tcoJournalId());
 

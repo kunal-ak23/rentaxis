@@ -79,8 +79,26 @@ import static org.assertj.core.api.Assertions.tuple;
  * <p><b>Transactions.</b> {@code TenantAspect} enables the Hibernate tenant
  * filter only inside one, so every read-back goes through {@link #tx}.</p>
  */
+/*
+ * An amendment is dated the day it is made (#371 review), from the Clock bean: here the
+ * lease's first day, so a rebuild restates the whole term — the mechanics these tests are
+ * about (reversal of posted rows, races, extensions). AmendmentAsAtIT covers amendments
+ * made mid-term. A context of its own (#372 review P3-3), not a clock swapped on a shared bean.
+ */
 @SpringBootTest
+@org.springframework.context.annotation.Import(RecognitionServiceIT.FixedClockConfig.class)
 class RecognitionServiceIT extends AbstractPostgresIT {
+
+    @org.springframework.boot.test.context.TestConfiguration
+    static class FixedClockConfig {
+        @org.springframework.context.annotation.Bean
+        @org.springframework.context.annotation.Primary
+        java.time.Clock fixedClock() {
+            return java.time.Clock.fixed(java.time.LocalDate.of(2026, 9, 24).atTime(10, 0)
+                    .atZone(java.time.ZoneId.of("Asia/Dubai")).toInstant(), java.time.ZoneId.of("Asia/Dubai"));
+        }
+    }
+
 
     @Autowired RecognitionService recognition;
     @Autowired RecognitionPoster poster;

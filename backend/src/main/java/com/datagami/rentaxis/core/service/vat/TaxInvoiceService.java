@@ -255,7 +255,17 @@ public class TaxInvoiceService {
                     + (ref == null ? "" : " " + ref)
                     + (lease.getContractDate() == null ? "" : " (" + DAY.format(lease.getContractDate()) + ")"));
         }
-        return refs.isEmpty() ? null : String.join(", ", refs);
+        if (refs.isEmpty()) {
+            // #372 review P3-2: a lease of ours posted before contracts were invoiced — the
+            // credit note still names the contract it corrects.
+            String ref = lease.getExternalContractRef() != null && !lease.getExternalContractRef().isBlank()
+                    ? lease.getExternalContractRef().trim()
+                    : lease.getContractNumber() != null ? String.valueOf(lease.getContractNumber()) : null;
+            return "Tenancy contract" + (ref == null ? "" : " " + ref)
+                    + (lease.getContractDate() == null ? "" : " dated " + DAY.format(lease.getContractDate()))
+                    + " (no tax invoice issued in this system)";
+        }
+        return String.join(", ", refs);
     }
 
     /** The addendum whose contract journal this CHARGE point is, or null. */

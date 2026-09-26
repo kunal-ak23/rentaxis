@@ -146,6 +146,15 @@ public class LeasePostingService {
     private final VatTaxPointService vatTaxPoints;
     private final com.datagami.rentaxis.core.service.cheque.ChequeNumberClash numberClash;
 
+    /** The amendment date ("today") from the bean, so a test can fix it. */
+    @org.springframework.beans.factory.annotation.Autowired
+    private java.time.Clock clock = java.time.Clock.systemDefaultZone();
+
+    /** #372 review P3-1: what an amendment's catch-up will fold in. Lazy: recognition sits below posting. */
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private com.datagami.rentaxis.core.service.recognition.RecognitionService recognitionService;
+
     public LeasePostingService(LeaseRepository leaseRepository,
                                LeaseLineRepository leaseLineRepository,
                                ChequeRepository chequeRepository,
@@ -638,7 +647,17 @@ public class LeasePostingService {
         // reversal below carries the deferred credit away with it.
         vatTaxPoints.cancelPlanned(leaseId);
 
-        LocalDate reversedOn = LocalDate.now();
+        LocalDate reversedOn = LocalDate.now(clock);
+        // #372 review P3-1: months the lock closed before anybody recognised them are
+        // folded into the recognition catch-up; the amendment says so.
+        com.datagami.rentaxis.core.service.recognition.RecognitionService.LockedUnrecognised folded =
+                recognitionService.lockedUnrecognised(leaseId);
+        List<String> notices = new ArrayList<>();
+        if (folded.months() > 0) {
+            notices.add(folded.months() + " month(s) of recognition inside the locked period (" + money(folded.amount())
+                    + ") were never posted; the amendment's catch-up dated " + reversedOn
+                    + " recognises them instead.");
+        }
         // Collected as they are reversed, so the event names exactly the entries this
         // amendment unwound — the contract's own TCO and one per extension.
         List<UUID> reversedJournalIds = new ArrayList<>(contractEntries.size());
@@ -646,27 +665,30 @@ public class LeasePostingService {
             postingService.reverse(contract.getId(), reversedOn, reason);
             reversedJournalIds.add(contract.getId());
         }
-        // #369 R1-P3-3: a cut-over contract is re-posted on the amendment date, not its
-        // contract date — that date sits in the replayed period before the books start (locked
-        // in practice), and on the same day as the reversal the Output VAT moves by exactly the
-        // difference the AMENDMENT document below carries. Nothing before today changes.
-        boolean cutOver = vatTaxPoints.cutOverContract(lease);
-        JournalEntry tco = cutOver
-                ? postTco(lease, plan.pairs(), reversedOn, contractNarration(lease))
-                : postTco(lease, plan.pairs());
+        // #371 review (amendment-date design): every contract — ours and cut-over — is
+        // re-posted on the amendment date, the same day as the reversal. The two net on one
+        // date, so no earlier period changes (a balance or P&L as at any past month-end is
+        // what it was), and the Output VAT moves by exactly the difference the document below
+        // carries. Recognition follows the same rule (RecognitionService.rebuildAfterAmend:
+        // posted months kept, one catch-up dated today, the rest planned from today).
+        JournalEntry tco = postTco(lease, plan.pairs(), reversedOn, contractNarration(lease));
         // F14-11: a CONTRACT lease that already carries its contract tax invoice gets
-        // a TI (or TCN) for the VAT the amendment moved.
+        // a TI (or TCN) for the VAT the amendment moved, dated today; one without an
+        // invoice of ours (a cut-over, or a lease posted before the rule) gets the
+        // difference as an AMENDMENT document dated today.
         vatTaxPoints.recordContractVat(lease, reversedOn, tco.getId(), false);
-        vatTaxPoints.recordCutoverAmendment(lease, reversedOn, tco.getId(), vatBefore, taxableBefore);
+        vatTaxPoints.recordAmendmentVat(lease, reversedOn, tco.getId(), vatBefore, taxableBefore);
 
         lease.setPostingJournalId(tco.getId());
         leaseRepository.save(lease);
         leaseService.recordLeaseEvent(lease, LeaseStatus.ACTIVE, LeaseStatus.ACTIVE,
                 "Lines amended, reposted as " + tco.getEntryNumber()
-                        + (reason == null || reason.isBlank() ? "" : ": " + reason));
+                        + (reason == null || reason.isBlank() ? "" : ": " + reason)
+                        + (notices.isEmpty() ? "" : ". " + String.join(" ", notices)));
         events.publishEvent(new LeaseAmendedEvent(lease.getTenantId(), lease.getId(), reversedJournalIds, tco.getId()));
 
-        return response(lease, tco, cheques);
+        PostLeaseResponse done = response(lease, tco, cheques);
+        return new PostLeaseResponse(done.lease(), done.tcoJournalId(), done.tcoEntryNumber(), done.cheques(), notices);
     }
 
     /** Convenience overload for the controller's request body. */
@@ -908,7 +930,13 @@ public class LeasePostingService {
         }
 
         if (checks.periodLockApplies()) {
-            otherErrors.addAll(periodLockErrors(lease, cheques));
+            // #371 review (amendment-date design): an amendment writes only on its own
+            // date — the reversal, the re-posted contract and the recognition catch-up —
+            // and touches no cheque, so that date is the one the lock is asked about. A
+            // contract date inside a locked month does not block it, and nothing posts there.
+            otherErrors.addAll(checks == Preconditions.FOR_AMEND
+                    ? periodLockErrors(LocalDate.now(clock), List.of())
+                    : periodLockErrors(lease, cheques));
         }
 
         return new PostingPlan(pairs, net, gross, chequeTotal, missingRoles, accountErrors, otherErrors);
@@ -1208,6 +1236,34 @@ public class LeasePostingService {
             }
         }
         return errors;
+    }
+
+    /**
+     * #372 review P2-1: the date of this lease's latest amendment — the day its
+     * contract was last reversed and re-posted (the reversal's date) — or null when it
+     * was never amended. An amendment's recognition keeps what was earned through the
+     * day before and restates the elapsed period in one catch-up dated that day, so a
+     * termination or a reduction may not take effect before it.
+     */
+    public LocalDate latestAmendmentDate(UUID leaseId) {
+        LocalDate latest = null;
+        for (JournalEntry e : journalEntryRepository.findBySourceTypeAndSourceIdOrderByEntryDateAscCreatedAtAsc(
+                JournalSourceType.LEASE, leaseId)) {
+            if (e.getDocType() != JournalDocType.TCO || e.getReversedById() == null) continue;
+            LocalDate reversedOn = journalEntryRepository.findById(e.getReversedById())
+                    .map(JournalEntry::getEntryDate).orElse(null);
+            if (reversedOn != null && (latest == null || reversedOn.isAfter(latest))) latest = reversedOn;
+        }
+        return latest;
+    }
+
+    /** #372 review P2-1: the refusal for an act effective before the lease's latest amendment, or null. */
+    public String beforeAmendmentProblem(UUID leaseId, LocalDate effective, String act) {
+        LocalDate amended = effective == null ? null : latestAmendmentDate(leaseId);
+        if (amended == null || !effective.isBefore(amended)) return null;
+        String day = amended.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+        return "This lease's lines were amended on " + day + ", and its recognition was restated from that day; "
+                + act + " cannot take effect before it. Date it on or after " + day + ".";
     }
 
     /** S16-04: whether a tax invoice for this lease can name its supplier's TRN. */

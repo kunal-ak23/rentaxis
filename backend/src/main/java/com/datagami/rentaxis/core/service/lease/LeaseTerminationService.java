@@ -144,12 +144,15 @@ public class LeaseTerminationService {
     public TerminationPreviewDTO preview(UUID leaseId, LocalDate t) {
         Lease lease = lease(leaseId);
         leaseAccessPolicy.requireReadable(lease);
-        validate(lease, t);
+        validate(lease, t, false);
 
         Split split = defaultSplit(chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId), t);
         RecognitionService.TerminationRecognition plan = recognitionService.previewTermination(leaseId, t);
         // #369 R1 nit: listed for the review screen; terminate refuses it with the same words.
         List<String> problems = new java.util.ArrayList<>();
+        // #372 review P2-1: listed here, refused by terminate with the same words.
+        String amended = leasePostingService.beforeAmendmentProblem(leaseId, t, "a termination");
+        if (amended != null) problems.add(amended);
         try {
             requireTrnForCreditNote(lease, plan.unearnedVat());
         } catch (BusinessRuleViolationException e) {
@@ -483,6 +486,18 @@ public class LeaseTerminationService {
     // ------------------------------------------------------------------
 
     private void validate(Lease lease, LocalDate t) {
+        validate(lease, t, true);
+    }
+
+    private void validate(Lease lease, LocalDate t, boolean amendment) {
+        if (amendment && t != null) {
+            // #372 review P2-1: an amendment restated the elapsed period in one catch-up
+            // dated its own day; ending the lease before that day would leave the catch-up
+            // counting days the tenancy never ran. (A transfer ends the lease the same way.)
+            String problem = leasePostingService.beforeAmendmentProblem(lease.getId(), t, "a termination or transfer");
+            if (problem != null) throw new BusinessRuleViolationException(problem, "lease.beforeAmendment",
+                    java.util.Map.of("date", leasePostingService.latestAmendmentDate(lease.getId()).toString()));
+        }
         if (t == null) {
             throw new BusinessRuleViolationException("A termination needs a date");
         }

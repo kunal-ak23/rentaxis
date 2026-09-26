@@ -21,5 +21,11 @@ import java.util.UUID;
 public record PostLeaseResponse(LeaseDTO lease,
                                 UUID tcoJournalId,
                                 String tcoEntryNumber,
-                                List<ChequeDTO> cheques) {
+                                List<ChequeDTO> cheques,
+                                /* #372 review P3-1: what the post or amendment did that the accountant should know (not an error). */
+                                List<String> notices) {
+
+    public PostLeaseResponse(LeaseDTO lease, UUID tcoJournalId, String tcoEntryNumber, List<ChequeDTO> cheques) {
+        this(lease, tcoJournalId, tcoEntryNumber, cheques, List.of());
+    }
 }
