@@ -4,7 +4,10 @@ import path from 'node:path';
 import { DASHBOARD_ROUTES, routeAllows } from '../src/lib/nav/routeRegistry';
 import { ROUTE_MOVES } from '../src/lib/nav/routeMap';
 import type { UserRole } from '../src/lib/rbac';
-import { createLease, createProperty, createRenter, createUnit, generateCheques, postLease } from '../e2e/helpers/api-client';
+import {
+    assignTicket, createBuilding, createLease, createProperty, createRenter, createTicket, createUnit,
+    generateCheques, postLease,
+} from '../e2e/helpers/api-client';
 
 const BACKEND = process.env.WT_BACKEND_URL || 'http://localhost:8081';
 const BASE_URL = process.env.WT_BASE_URL || 'http://localhost:3001';
@@ -34,6 +37,10 @@ const KNOWN_CONSOLE: { url: RegExp; text: RegExp; why: string; roles?: UserRole[
       why: 'DashboardController (summary, monthly collections) does not admit ACCOUNTANT; the home page shows its empty state' },
     { url: /\/leases\/[^/]+$/, text: /status of 403/, roles: ['ACCOUNTANT'],
       why: 'GET /leases/{id}/attachments does not admit ACCOUNTANT; the contract page shows no attachments' },
+    { url: /\/(properties\/[^/]+\/units|dashboard\/leases|dashboard\/tickets)$/, text: /status of 403/, roles: ['ACCOUNTANT'],
+      why: 'S16-02: GET /buildings/property/{id} does not admit ACCOUNTANT (BuildingController); the Tower filter degrades to hidden' },
+    { url: /\/dashboard\/tickets$/, text: /status of 403/, roles: ['TENANT_USER'],
+      why: 'the list also loads GET /properties, /units and /renters for the create-ticket form (SA/TA/PM/ACCOUNTANT only); a TENANT_USER never opens that form but the background reads still run and fail quietly' },
     { url: /\/leases\/[^/]+\/settlement$/, text: /status of 404/,
       why: 'GET /leases/{id}/settlement is 404 until a settlement exists; the swept contract is active, not ending' },
     { url: /\/dashboard\/listings$/, text: /status of 404/,
@@ -45,7 +52,13 @@ const KNOWN_CONSOLE: { url: RegExp; text: RegExp; why: string; roles?: UserRole[
 ];
 
 type Actor = { id: string; role: string; tenantId: string | null };
-type Fx = { tenantId: string; creds: Record<string, { email: string; password: string }>; propertyId: string; renterId: string; leaseId: string; journalId: string };
+type Fx = {
+    tenantId: string; creds: Record<string, { email: string; password: string }>; propertyId: string; renterId: string;
+    leaseId: string; journalId: string;
+    // S16-02/S16-03: a tower of the property, a unit inside it, a staff user
+    // (TENANT_USER) and a ticket assigned to them.
+    buildingId: string; towerUnitId: string; staffUserId: string; ticketId: string;
+};
 let fx: Fx | undefined;
 /** The organisation test 00 provisioned (read back from disk in a restarted worker). */
 function fixture(): Fx {
@@ -149,8 +162,31 @@ test('00 provision an organisation, the three roles and a posted contract', asyn
         chequeDate: c.chequeDate ?? c.dueDate ?? c.postingDate, payeeBank: c.payeeBank ?? 'Emirates NBD', payerName: c.payerName,
     })));
     const posted = await postLease(admin.id, admin.role, tenant.id, draft.id);
-    fx = { tenantId: tenant.id, creds, propertyId: property.id, renterId: renter.id, leaseId: draft.id, journalId: posted.tcoJournalId };
+
+    // S16-02: a tower of the property, and a second unit inside it — the
+    // original leased unit stays outside any tower, so the sweep also covers
+    // the "No building" column/row a property with towers still carries.
+    const building = await createBuilding(admin.id, admin.role, tenant.id, { propertyId: property.id, nameEn: `Tower A ${SUFFIX}`, nameAr: `برج أ ${SUFFIX}` });
+    const towerUnit = await createUnit(admin.id, admin.role, tenant.id, {
+        propertyId: property.id, unitNumber: `SW-TW-${SUFFIX}`, expectedRent: 40_000, buildingId: building.id,
+    });
+
+    // S16-03: a staff user (TENANT_USER, the maintenance team) and a ticket
+    // assigned to them, reported against the original (non-tower) unit.
+    const staffEmail = `sweep-staff-${SUFFIX}@example.invalid`;
+    const staff = await api<{ id: string }>(scoped, 'POST', '/api/admin/users', {
+        name: `Sweep staff`, email: staffEmail, password, role: 'TENANT_USER', tenantId: tenant.id,
+    });
+    creds.TENANT_USER = { email: staffEmail, password };
+    const ticket = await createTicket(admin.id, admin.role, tenant.id, { propertyId: property.id, unitId: unit.id, title: `Sweep ticket ${SUFFIX}` });
+    await assignTicket(admin.id, admin.role, tenant.id, ticket.id, staff.id);
+
+    fx = {
+        tenantId: tenant.id, creds, propertyId: property.id, renterId: renter.id, leaseId: draft.id, journalId: posted.tcoJournalId,
+        buildingId: building.id, towerUnitId: towerUnit.id, staffUserId: staff.id, ticketId: ticket.id,
+    };
     for (const { role } of ROLES) await bankSession(browser, creds[role].email, creds[role].password, path.join(STATE_DIR, `${role}.json`));
+    await bankSession(browser, staffEmail, password, path.join(STATE_DIR, 'TENANT_USER.json'));
     // The dev bootstrap system admin (DataInitializer), for the header switcher check.
     await bankSession(browser, 'admin@rentaxis.com', 'admin123', path.join(STATE_DIR, 'SUPER_ADMIN.json'));
     fs.writeFileSync(path.join(STATE_DIR, 'fixture.json'), JSON.stringify(fx, null, 2));
@@ -401,4 +437,194 @@ for (const { role } of ROLES) {
             expect(failures).toEqual([]);
         });
     }
+}
+
+// PR #370 web follow-up (towers): the Units, Contracts and Tickets pages'
+// Tower/Building filter — hidden until a property with towers is picked, then
+// narrows the list, URL-persisted, EN and AR, laptop and phone.
+for (const { role } of ROLES) {
+    for (const locale of LOCALES) {
+        test(`tower filter ${role} ${locale}`, async ({ browser }) => {
+            const { propertyId, buildingId, leaseId } = fixture();
+            const failures: string[] = [];
+            for (const viewport of WIDTHS) {
+                const context = await browser.newContext({ baseURL: BASE_URL, viewport, storageState: path.join(STATE_DIR, `${role}.json`) });
+                const page = await context.newPage();
+                const at = `${role} ${locale} ${viewport.width}px`;
+
+                // GET /buildings/property/{id} does not admit ACCOUNTANT (BuildingController): the
+                // select degrades to hidden for them rather than erroring, on all three lists.
+                const buildingsScoped = role !== 'ACCOUNTANT';
+
+                // Units (route-scoped to the property already; the select is the tower).
+                await check(page, `/${locale}/dashboard/properties/${propertyId}/units`, role, failures);
+                const unitsTower = page.getByTestId('units-building-filter');
+                if (buildingsScoped) {
+                    await expect(unitsTower, `${at} units tower select`).toBeVisible();
+                    expect(await unitsTower.locator('option').count(), `${at} units tower options`).toBe(2);
+                    await expect(page.getByText(`SW-${SUFFIX}`), `${at} original unit card before filter`).toBeVisible();
+                    await expect(page.getByText(`SW-TW-${SUFFIX}`), `${at} tower unit card before filter`).toBeVisible();
+                    await unitsTower.selectOption(buildingId);
+                    await expect(page.getByText(`SW-TW-${SUFFIX}`), `${at} tower unit card after filter`).toBeVisible();
+                    expect(new URL(page.url()).searchParams.get('buildingId'), `${at} units URL`).toBe(buildingId);
+                    await unitsTower.selectOption('');
+                    await expect(page.getByText(`SW-${SUFFIX}`), `${at} original unit card after clearing`).toBeVisible();
+                } else {
+                    await expect(unitsTower, `${at} units tower select hidden for ACCOUNTANT`).toHaveCount(0);
+                    await expect(page.getByText(`SW-${SUFFIX}`), `${at} original unit card, no filter`).toBeVisible();
+                    await expect(page.getByText(`SW-TW-${SUFFIX}`), `${at} tower unit card, no filter`).toBeVisible();
+                }
+
+                // Contracts (leases list): property, then tower.
+                await check(page, `/${locale}/dashboard/leases`, role, failures);
+                await page.getByTestId('lease-property-filter').selectOption(propertyId);
+                await expect(page.getByTestId(`lease-row-${leaseId}`), `${at} leased row before tower filter`).toBeVisible();
+                const leaseTower = page.getByTestId('lease-building-filter');
+                if (buildingsScoped) {
+                    await expect(leaseTower, `${at} lease tower select`).toBeVisible();
+                    await leaseTower.selectOption(buildingId);
+                    await expect(page.getByTestId(`lease-row-${leaseId}`), `${at} leased row after tower filter (its unit is not in the tower)`).toHaveCount(0);
+                    expect(new URL(page.url()).searchParams.get('buildingId'), `${at} leases URL`).toBe(buildingId);
+                    await leaseTower.selectOption('');
+                    await expect(page.getByTestId(`lease-row-${leaseId}`), `${at} leased row after clearing`).toBeVisible();
+                } else {
+                    await expect(leaseTower, `${at} lease tower select hidden for ACCOUNTANT`).toHaveCount(0);
+                }
+
+                // Tickets (staff-facing paged list — the three sweep roles all reach it).
+                await check(page, `/${locale}/dashboard/tickets`, role, failures);
+                await page.getByTestId('ticket-property-filter').selectOption(propertyId);
+                await expect(page.getByText(`Sweep ticket ${SUFFIX}`), `${at} ticket before tower filter`).toBeVisible();
+                const ticketTower = page.getByTestId('ticket-building-filter');
+                if (buildingsScoped) {
+                    await expect(ticketTower, `${at} ticket tower select`).toBeVisible();
+                    await ticketTower.selectOption(buildingId);
+                    await expect(page.getByText(`Sweep ticket ${SUFFIX}`), `${at} ticket after tower filter (its unit is not in the tower)`).toHaveCount(0);
+                    await ticketTower.selectOption('');
+                    await expect(page.getByText(`Sweep ticket ${SUFFIX}`), `${at} ticket after clearing`).toBeVisible();
+                } else {
+                    await expect(ticketTower, `${at} ticket tower select hidden for ACCOUNTANT`).toHaveCount(0);
+                }
+
+                await context.close();
+            }
+            expect(failures).toEqual([]);
+        });
+    }
+}
+
+// PR #370 web follow-up (towers): the property P&L's "By tower" view — one
+// column per Building, a "No building" column, a Total tied to the property
+// P&L; EN and AR, laptop and phone.
+for (const { role } of ROLES) {
+    for (const locale of LOCALES) {
+        test(`by-tower P&L ${role} ${locale}`, async ({ browser }) => {
+            const failures: string[] = [];
+            for (const viewport of WIDTHS) {
+                const context = await browser.newContext({ baseURL: BASE_URL, viewport, storageState: path.join(STATE_DIR, `${role}.json`) });
+                const page = await context.newPage();
+                const at = `${role} ${locale} ${viewport.width}px`;
+                const msgs = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'messages', `${locale}.json`), 'utf8'));
+
+                await check(page, `/${locale}/dashboard/finance/reports/property-pl`, role, failures);
+                await page.getByTestId('property-multiselect').locator('summary').click();
+                await page.getByRole('checkbox').first().check();
+                await page.locator('#pnl-period').selectOption('custom');
+                await page.locator('#pnl-from').fill('2026-01-01');
+                await page.locator('#pnl-to').fill('2026-12-31');
+                await page.getByRole('button', { name: msgs.PropertyReports.apply }).click();
+                await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => {});
+
+                const towerToggle = page.getByTestId('pl-view-tower');
+                if (role === 'ACCOUNTANT') {
+                    // GET /buildings/property/{id} does not admit ACCOUNTANT: the toggle
+                    // degrades to hidden (same as the tower filters) rather than erroring.
+                    await expect(towerToggle, `${at} By tower toggle hidden for ACCOUNTANT`).toHaveCount(0);
+                } else {
+                    await expect(towerToggle, `${at} By tower toggle`).toBeVisible();
+                    await towerToggle.click();
+                    const table = page.getByTestId('pl-by-tower-table');
+                    await expect(table, `${at} by-tower table`).toBeVisible();
+                    await inView(page, 'pl-by-tower-table', viewport.width, failures, `${at} by-tower table`);
+                    const towerName = locale === 'ar' ? `برج أ ${SUFFIX}` : `Tower A ${SUFFIX}`;
+                    await expect(table.getByText(towerName), `${at} tower column`).toBeVisible();
+                    // Not `getByText`: "Total" is also a substring of the group
+                    // subtotal rows ("Subtotal — Direct Income" etc.), which
+                    // made this a strict-mode violation in English.
+                    await expect(table.getByTestId('col-TOTAL'), `${at} total column`).toBeVisible();
+
+                    await page.getByTestId('pl-view-property').click();
+                    await expect(page.getByTestId('pl-by-tower-table')).toHaveCount(0);
+                }
+
+                await context.close();
+            }
+            expect(failures).toEqual([]);
+        });
+    }
+}
+
+// PR #370 web follow-up (towers/S16-03): a maintenance-team TENANT_USER sees
+// the assignee picker's staff option, then the ticket in their own list and
+// can move its status — nothing an admin/PM-only action (assign, close with a
+// code, set an ETA) is offered. EN and AR, laptop and phone.
+for (const locale of LOCALES) {
+    test(`staff ticket assignment ${locale}`, async ({ browser }) => {
+        const { ticketId } = fixture();
+        const failures: string[] = [];
+
+        // The admin sees the staff user among the assignees (S16-03: staff are now
+        // assignable) — opens the "Assign To…" dropdown, not "Assign to Me" (its
+        // sibling button, which would reassign the ticket away from the fixture's staff).
+        const adminMsgs = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'messages', `${locale}.json`), 'utf8'));
+        const admin = await browser.newContext({ baseURL: BASE_URL, storageState: path.join(STATE_DIR, 'TENANT_ADMIN.json') });
+        // The first-visit welcome tour opens a modal overlay 1.5 s after load that
+        // would sit over every click below; mark it seen, as a returning user has it.
+        await admin.addInitScript(() => localStorage.setItem('rentaxis_tours_completed', JSON.stringify(['admin-onboarding'])));
+        const adminPage = await admin.newPage();
+        await check(adminPage, `/${locale}/dashboard/tickets/${ticketId}`, 'TENANT_ADMIN', failures);
+        await adminPage.getByText(adminMsgs.Tickets.assignTo, { exact: true }).click();
+        await expect(adminPage.getByRole('button', { name: /Sweep staff/ })).toBeVisible();
+        await admin.close();
+
+        const msgs = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'messages', `${locale}.json`), 'utf8'));
+        // The ticket's status is shared backend state across both viewport passes below,
+        // and across the EN and AR runs of this test (same fixture ticket) — so which of
+        // Start Work / Mark Resolved is on screen depends on how far an earlier pass took
+        // it. Read whichever is actually there; drive the transition only once (Start
+        // Work → In Progress), wherever this pass finds it still at that stage.
+
+        for (const viewport of WIDTHS) {
+            const context = await browser.newContext({ baseURL: BASE_URL, viewport, storageState: path.join(STATE_DIR, 'TENANT_USER.json') });
+            await context.addInitScript(() => localStorage.setItem('rentaxis_tours_completed', JSON.stringify(['admin-onboarding'])));
+            const page = await context.newPage();
+            const at = `TENANT_USER ${locale} ${viewport.width}px`;
+
+            await check(page, `/${locale}/dashboard/tickets`, 'TENANT_USER', failures);
+            const mine = page.getByTestId('ticket-filter-mine');
+            const all = page.getByTestId('ticket-filter-all');
+            await expect(mine, `${at} My tickets toggle`).toBeVisible();
+            await expect(page.getByText(`Sweep ticket ${SUFFIX}`), `${at} ticket in All`).toBeVisible();
+            await mine.click();
+            await expect(page.getByText(`Sweep ticket ${SUFFIX}`), `${at} ticket in My tickets`).toBeVisible();
+            await all.click();
+
+            await check(page, `/${locale}/dashboard/tickets/${ticketId}`, 'TENANT_USER', failures);
+            // A status action is offered — PUT /status, which the backend now admits
+            // for the assignee — whichever stage the ticket is actually at.
+            const startBtn = page.getByText(msgs.Tickets.startWork);
+            const resolveBtn = page.getByText(msgs.Tickets.markResolved);
+            await expect(startBtn.or(resolveBtn), `${at} a status action offered to the assignee`).toBeVisible();
+            expect(await page.getByText(msgs.Tickets.assignToMe).count(), `${at} no Assign to Me`).toBe(0);
+            expect(await page.getByText(msgs.Tickets.assignTo, { exact: true }).count(), `${at} no Assign To…`).toBe(0);
+            expect(await page.getByText(msgs.Tickets.setEstimatedHours).count(), `${at} no ETA control`).toBe(0);
+            if (await startBtn.count() > 0) {
+                await startBtn.click();
+                await expect(resolveBtn, `${at} status moved to In Progress`).toBeVisible();
+            }
+
+            await context.close();
+        }
+        expect(failures).toEqual([]);
+    });
 }

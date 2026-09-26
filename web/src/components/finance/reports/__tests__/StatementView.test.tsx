@@ -77,6 +77,30 @@ describe("StatementView", () => {
         expect(within(s7).getByText("Supplier payments not yet allocated (not included)")).toBeTruthy();
     });
 
+    // S16-02: the property statement's P&L section renders the per-building
+    // NOI table the backend adds for a property with towers, with its own
+    // caption so it does not read as a continuation of the report-line table.
+    it("renders the per-building NOI table under the pnl section, captioned", () => {
+        const withBuildings: PropertyStatement = {
+            ...statement,
+            sections: statement.sections.map(s => s.key !== "pnl" ? s : {
+                ...s,
+                tables: [...s.tables, {
+                    key: "buildings", columns: ["line", "lineAr", "amount", "prior", "delta"],
+                    rows: [["Tower A — net operating income", "برج أ — صافي الدخل التشغيلي", 40000, 38000, 2000]],
+                }],
+            }),
+        };
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <StatementView data={withBuildings} locale="en" />
+            </NextIntlClientProvider>,
+        );
+        const table = screen.getByTestId("table-buildings");
+        expect(within(table).getByText("NOI by tower")).toBeTruthy();
+        expect(within(table).getByText("Tower A — net operating income")).toBeTruthy();
+    });
+
     it("prints the Arabic line label under ar, with LTR amounts", () => {
         renderView("ar");
         const pnl = screen.getByTestId("section-pnl");

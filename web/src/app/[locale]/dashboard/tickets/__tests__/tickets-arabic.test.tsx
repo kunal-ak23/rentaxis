@@ -16,7 +16,7 @@ const session = vi.hoisted(() => ({ role: "TENANT_ADMIN" }));
 vi.mock("next-auth/react", () => ({
     useSession: () => ({ data: { user: { role: session.role, id: "me-1" } } }),
 }));
-vi.mock("next/navigation", () => ({ useParams: () => ({ id: "t-1" }) }));
+vi.mock("next/navigation", () => ({ useParams: () => ({ id: "t-1" }), useSearchParams: () => new URLSearchParams() }));
 vi.mock("@/i18n/routing", () => ({
     Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
         <a href={href} {...rest}>{children}</a>
@@ -50,7 +50,10 @@ beforeEach(() => {
     current = { ...ticket };
     global.fetch = vi.fn(async (url: unknown) => {
         const u = String(url);
-        if (u.endsWith("/v1/tickets")) return json([current, { ...current, id: "t-2", reference: "TKT-26/15", status: "REOPENED", priority: "LOW", category: "HVAC" }]);
+        const rows = [current, { ...current, id: "t-2", reference: "TKT-26/15", status: "REOPENED", priority: "LOW", category: "HVAC" }];
+        // TENANT_ADMIN (this test's role) reads the server-paged list (S16-02).
+        if (u.includes("/v1/tickets/paged")) return json({ content: rows, totalElements: rows.length, totalPages: 1, number: 0, size: 25 });
+        if (u.endsWith("/v1/tickets")) return json(rows);
         if (u.endsWith("/v1/tickets/reports")) {
             return json({
                 totalTickets: 2, openCount: 1, resolvedCount: 1, closedCount: 0, avgResolutionHours: 3.5,

@@ -25,6 +25,11 @@ describe("contract list view", () => {
         expect(p("propertyId=p1&search=olv")).toMatchObject({ propertyId: "p1", search: "olv" });
     });
 
+    it("keeps the tower (buildingId) filter (S16-02)", () => {
+        expect(p("propertyId=p1&buildingId=b1")).toMatchObject({ propertyId: "p1", buildingId: "b1" });
+        expect(p("")).toMatchObject({ buildingId: "" });
+    });
+
     it("round-trips every pill and every Filters status through the URL", () => {
         for (const v of CONTRACT_VIEWS) expect(p(apply(viewQuery(v))).view, v).toBe(v);
         expect(p(apply(statusQuery("RENEWED")))).toMatchObject({ view: "ended", status: "RENEWED" });

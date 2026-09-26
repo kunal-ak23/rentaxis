@@ -166,7 +166,18 @@ export default function UnitStatusBoard() {
                     {current.truncated && <p className="text-[12px] text-warning" data-testid="unit-board-truncated">{t("truncated", { count: current.units.length })}</p>}
                     {groups.map(g => (
                         <div key={g.buildingId ?? "none"} data-testid={`unit-board-building-${g.buildingId ?? "none"}`}>
-                            {showBuildings && <h3 className="text-[12px] font-semibold uppercase tracking-wider text-[var(--ink-600)] mb-2">{buildingName(g.buildingId)}</h3>}
+                            {showBuildings && (
+                                g.buildingId ? (
+                                    // S16-02: the tower heading opens that tower's units, buildingId-filtered.
+                                    <Link href={`/dashboard/properties/${propertyId}/units?buildingId=${g.buildingId}`}
+                                        data-testid={`unit-board-building-link-${g.buildingId}`}
+                                        className="block text-[12px] font-semibold uppercase tracking-wider text-[var(--ink-600)] mb-2 hover:text-primary hover:underline w-fit">
+                                        {buildingName(g.buildingId)}
+                                    </Link>
+                                ) : (
+                                    <h3 className="text-[12px] font-semibold uppercase tracking-wider text-[var(--ink-600)] mb-2">{buildingName(g.buildingId)}</h3>
+                                )
+                            )}
                             <div className="space-y-2">
                                 {g.floors.map(f => {
                                     const cells = only ? f.cells.filter(c => c.status === only) : f.cells;
@@ -253,7 +264,10 @@ function UnitPanel({ cell, propertyId }: { cell: BoardCell; propertyId: string }
                     </Link>
                 </div>
             )}
-            <Link href={`/dashboard/properties/${propertyId}/units`} data-testid="unit-board-open-units" className="text-xs font-semibold text-primary hover:underline">
+            {/* S16-02: carries the unit's own tower, so "All units of this property" from a
+                tower's tile opens that tower already filtered. */}
+            <Link href={`/dashboard/properties/${propertyId}/units${unit.building?.id ? `?buildingId=${unit.building.id}` : ""}`}
+                data-testid="unit-board-open-units" className="text-xs font-semibold text-primary hover:underline">
                 {t("openUnits")}
             </Link>
         </div>

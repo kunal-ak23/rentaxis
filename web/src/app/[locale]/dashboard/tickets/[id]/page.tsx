@@ -388,6 +388,12 @@ export default function TicketDetailPage() {
     const isAdmin = hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN"]);
     const isPM = hasRole(userRole, ["PROPERTY_MANAGER"]);
     const canManage = isAdmin || isPM;
+    // S16-03: a maintenance-team TENANT_USER can move only the tickets
+    // assigned to them (`MaintenanceTicketService#updateStatus`'s
+    // AccessDeniedException otherwise) — never assign, close with a code, set
+    // an ETA, or see the vendor-bill card, which stay admin/PM only.
+    const isStaffAssignee = userRole === "TENANT_USER" && !!ticket.assignedTo && ticket.assignedTo === userId;
+    const canChangeStatus = canManage || isStaffAssignee;
 
     // ── Render ──────────────────────────────────────────────────────────
 
@@ -607,7 +613,7 @@ export default function TicketDetailPage() {
                     </div>
 
                     {/* Action buttons */}
-                    {canManage && (
+                    {canChangeStatus && (
                         <div className="bg-surface rounded-xl border border-border p-5 space-y-3">
                             <h3 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">{t("actions")}</h3>
                             {actionError && (
@@ -652,7 +658,7 @@ export default function TicketDetailPage() {
                                     {actionLoading === "status" && <Loader2 size={12} className="animate-spin" />} <CheckCircle size={12} /> {t("markResolved")}
                                 </button>
                             )}
-                            {ticket.status === "RESOLVED" && ticket.closableWithoutOtp && (
+                            {canManage && ticket.status === "RESOLVED" && ticket.closableWithoutOtp && (
                                 confirmingClose ? (
                                     <div className="space-y-2 rounded-lg border border-warning/30 bg-warning/5 p-3" role="alertdialog" aria-labelledby="close-without-otp-title">
                                         <p id="close-without-otp-title" className="text-xs font-semibold text-foreground">{t("closeTicketConfirmTitle")}</p>
@@ -672,12 +678,12 @@ export default function TicketDetailPage() {
                                     </button>
                                 )
                             )}
-                            {ticket.status === "RESOLVED" && !ticket.closableWithoutOtp && ticket.otpLocked && (
+                            {canManage && ticket.status === "RESOLVED" && !ticket.closableWithoutOtp && ticket.otpLocked && (
                                 <p className="text-xs text-warning font-medium">{t("otpLockedStaffHint")}</p>
                             )}
                             {ticket.status === "RESOLVED" && (
                                 <>
-                                    {!ticket.closableWithoutOtp && !ticket.otpLocked && (
+                                    {canManage && !ticket.closableWithoutOtp && !ticket.otpLocked && (
                                     <>
                                     <div className="space-y-2">
                                         <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider">{t("closeWithOtp")}</label>
@@ -707,7 +713,7 @@ export default function TicketDetailPage() {
                                     {actionLoading === "reopen" && <Loader2 size={12} className="animate-spin" />} {t("reopenTicket")}
                                 </button>
                             )}
-                            {(ticket.status === "ASSIGNED" || ticket.status === "IN_PROGRESS" || ticket.status === "REOPENED") && (
+                            {canManage && (ticket.status === "ASSIGNED" || ticket.status === "IN_PROGRESS" || ticket.status === "REOPENED") && (
                                 <div className="space-y-2 pt-2 border-t border-border">
                                     <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider">{t("setEstimatedHours")}</label>
                                     <div className="flex items-center gap-2">

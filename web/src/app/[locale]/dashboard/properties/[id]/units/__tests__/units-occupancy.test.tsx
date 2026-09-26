@@ -41,7 +41,13 @@ const UNITS = [
 ];
 
 beforeEach(() => {
-    global.fetch = vi.fn(async () => ({ ok: true, json: async () => UNITS }) as unknown as Response) as unknown as typeof fetch;
+    global.fetch = vi.fn(async (url: unknown) => {
+        const u = String(url);
+        if (u.includes("/v1/buildings/property/")) return { ok: true, json: async () => [] } as unknown as Response;
+        // S16-02: the units page reads GET /units/paged now (a Page<Unit>), not the
+        // old unpaged /units/property/{id}.
+        return { ok: true, json: async () => ({ content: UNITS, totalElements: UNITS.length, totalPages: 1, number: 0, size: 200 }) } as unknown as Response;
+    }) as unknown as typeof fetch;
 });
 
 afterEach(() => {

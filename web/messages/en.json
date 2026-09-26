@@ -3159,6 +3159,7 @@
     "view": "View",
     "noTickets": "No tickets found.",
     "noTicketsHint": "Create a new ticket to get started.",
+    "loadFailed": "Couldn't load tickets. Please try again.",
     "createFailed": "Failed to create ticket",
     "fieldTitle": "Title",
     "titlePlaceholder": "Brief summary of the issue",
@@ -3170,6 +3171,8 @@
     "selectYourUnit": "Select your unit",
     "property": "Property",
     "selectProperty": "Select property",
+    "allProperties": "All properties",
+    "myTicketsToggleLabel": "Tickets shown",
     "unit": "Unit",
     "selectUnit": "Select unit",
     "categoryLabel": "Category",
@@ -3510,6 +3513,11 @@
     "generatedBy": "Generated {at} by {name}",
     "reportLine": "Report line",
     "reportLineNone": "Own row",
+    "byTowerToggleLabel": "P&L view",
+    "byProperty": "By property",
+    "byTower": "By tower",
+    "byTowerNote": "One column per tower of this property, and a Total tied to the property P&L. A line follows its unit's current tower.",
+    "buildingsTable": "NOI by tower",
     "section": {
       "pnl": "Income, expenses and NOI",
       "instalments": "Instalments due",
@@ -4607,5 +4615,11 @@
     "chipUpcoming": "Upcoming (not started)",
     "upcomingNote": "Posted contracts that have not started yet, latest start first.",
     "upcomingCapped": "Capped: showing the {count} found among the 100 active contracts that start last."
+  },
+  "Towers": {
+    "label": "Tower",
+    "all": "All towers",
+    "myTickets": "My tickets",
+    "allTickets": "All tickets"
   }
 }

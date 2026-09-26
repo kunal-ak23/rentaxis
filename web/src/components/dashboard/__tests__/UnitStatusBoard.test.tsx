@@ -87,6 +87,17 @@ describe("Unit status board", () => {
         expect(within(panel).getByTestId("unit-board-panel-status")).toHaveTextContent("Expiring");
         expect(within(panel).getByTestId("unit-board-panel-lease")).toHaveTextContent("Leaving Soon");
         expect(within(panel).getByTestId("unit-board-open-contract")).toHaveAttribute("href", "/dashboard/leases/l3");
-        expect(within(panel).getByTestId("unit-board-open-units")).toHaveAttribute("href", "/dashboard/properties/p1/units");
+        // S16-02: u3 is in tower bA, so "All units of this property" opens that tower already filtered.
+        expect(within(panel).getByTestId("unit-board-open-units")).toHaveAttribute("href", "/dashboard/properties/p1/units?buildingId=bA");
+    });
+
+    // S16-02: the tower heading opens that tower's units, buildingId-filtered; a unit with
+    // no tower (falls under "no building") keeps the plain, unfiltered link.
+    it("the tower heading and a no-tower unit's panel link both carry the right buildingId", async () => {
+        renderBoard();
+        expect(await screen.findByTestId("unit-board-building-link-bA")).toHaveAttribute("href", "/dashboard/properties/p1/units?buildingId=bA");
+        fireEvent.click(screen.getByTestId("unit-tile-u4"));
+        const panel = await screen.findByTestId("unit-board-drawer");
+        expect(within(panel).getByTestId("unit-board-open-units")).toHaveAttribute("href", "/dashboard/properties/p1/units?buildingId=bB");
     });
 });

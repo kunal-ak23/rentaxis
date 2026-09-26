@@ -53,10 +53,21 @@ beforeEach(() => {
         if (u.endsWith("/v1/properties")) {
             return { ok: true, status: 200, json: async () => [{ property: { id: "p1", nameEn: "Tower" } }] } as unknown as Response;
         }
-        const body = u.endsWith("/v1/tickets")
-            ? [ticket("aaaaaaaa-1111", "TKT-26/14", "Leaking tap"), ticket("bbbbbbbb-2222", "TKT-26/15", "Lift stuck"),
-               ticket("cccccccc-3333", null, "Legacy row")]
-            : [];
+        const all = [ticket("aaaaaaaa-1111", "TKT-26/14", "Leaking tap"), ticket("bbbbbbbb-2222", "TKT-26/15", "Lift stuck"),
+            ticket("cccccccc-3333", null, "Legacy row")];
+        // TENANT_ADMIN (this test's role) reads the server-paged list
+        // (S16-02): the `q` param narrows by title/reference, same as before.
+        if (u.includes("/v1/tickets/paged")) {
+            const q = new URL(u, "http://x").searchParams.get("q")?.toLowerCase() ?? "";
+            const content = q
+                ? all.filter(t => t.title.toLowerCase().includes(q) || (t.reference ?? "").toLowerCase().includes(q))
+                : all;
+            return {
+                ok: true, status: 200,
+                json: async () => ({ content, totalElements: content.length, totalPages: 1, number: 0, size: 25 }),
+            } as unknown as Response;
+        }
+        const body = u.endsWith("/v1/tickets") ? all : [];
         return { ok: true, status: 200, json: async () => body } as unknown as Response;
     }) as unknown as typeof fetch;
 });
@@ -86,8 +97,10 @@ describe("Tickets list — reference", () => {
 
         fireEvent.change(screen.getByPlaceholderText("Search tickets..."), { target: { value: "26/15" } });
 
+        // "Lift stuck" is already on screen from the unfiltered first read, so
+        // wait for the debounced, filtered fetch by the row that must go away.
+        await waitFor(() => expect(screen.queryByText("Leaking tap")).toBeNull());
         expect(screen.getByText("Lift stuck")).toBeTruthy();
-        expect(screen.queryByText("Leaking tap")).toBeNull();
     });
 
     // #19: "on behalf of" is a renter picked from the org's renters, sent by id.

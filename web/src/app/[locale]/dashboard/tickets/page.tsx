@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { Suspense, useState, useEffect, useRef, useCallback, useSyncExternalStore } from "react";
+import { useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 import { Pagination } from "@/components/ui/Pagination";
@@ -9,9 +10,50 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { businessTodayIso } from "@/lib/businessDate";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
+import type { Page } from "@/lib/api/ledger";
+import { TowerSelect } from "@/components/ui/TowerSelect";
+import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import {
     Plus, X, Search, Loader2, Eye, Upload, Wrench, BarChart3,
 } from "lucide-react";
+
+/**
+ * R1 P3-2: the property + tower filters live in the URL (bookmarkable, same
+ * pattern as the Contracts list) — a tiny store over `location.search`, read
+ * with `useSyncExternalStore` (empty server snapshot, so hydration matches),
+ * written with `history.replaceState`.
+ */
+const urlListeners = new Set<() => void>();
+function subscribeUrl(cb: () => void) {
+    urlListeners.add(cb);
+    window.addEventListener("popstate", cb);
+    return () => {
+        urlListeners.delete(cb);
+        window.removeEventListener("popstate", cb);
+    };
+}
+function setUrlQuery(changes: Record<string, string | null>) {
+    const url = new URL(window.location.href);
+    for (const [k, v] of Object.entries(changes)) {
+        if (v) url.searchParams.set(k, v);
+        else url.searchParams.delete(k);
+    }
+    window.history.replaceState(window.history.state, "", url.toString());
+    urlListeners.forEach(l => l());
+}
+
+/**
+ * S16-02/S16-03: staff (SA/TA/PM/ACCOUNTANT) read `GET /tickets/paged` — search,
+ * property, tower (buildingId), status and priority filtered and paged on the
+ * server. A staff user (TENANT_USER) and a renter are not admitted to that
+ * endpoint (`MaintenanceTicketController#listTicketsPaged`'s `@PreAuthorize`);
+ * they keep the plain `GET /tickets`, already scoped server-side to what they
+ * reported and — for a maintenance-team TENANT_USER (S16-03) — what is
+ * assigned to them, filtered and paged here in the browser.
+ */
+function canUsePagedTickets(role: UserRole | undefined): boolean {
+    return role === "SUPER_ADMIN" || role === "TENANT_ADMIN" || role === "PROPERTY_MANAGER" || role === "ACCOUNTANT";
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -30,6 +72,8 @@ type Ticket = {
     unitNumber: string;
     reporterName: string;
     assigneeName: string | null;
+    /** S16-03: the staff user id it is assigned to, for the "My tickets" filter. */
+    assignedTo?: string | null;
     onBehalfOf: string | null;
     /** #19: the renter the ticket was logged for; null on legacy free-text rows. */
     onBehalfOfRenterId?: string | null;
@@ -45,6 +89,7 @@ type Property = {
     property: {
         id: string;
         nameEn: string;
+        nameAr?: string | null;
     };
 };
 
@@ -89,21 +134,71 @@ const CATEGORIES = [
 // ── Page Component ─────────────────────────────────────────────────────────
 
 export default function TicketsPage() {
+    return (
+        <Suspense fallback={null}>
+            <TicketsPageInner />
+        </Suspense>
+    );
+}
+
+function TicketsPageInner() {
     const t = useTranslations("Tickets");
+    const tTowers = useTranslations("Towers");
     const locale = useLocale();
-    const { data: session } = useSession();
+    const { data: session, status: sessionStatus } = useSession();
+    // R1 P1-2: the role is unknown until the session resolves — fetching
+    // before that would ask the org-wide `GET /tickets` for every role
+    // (`canPage` defaults false while `userRole` is undefined), and an admin
+    // reloading the page would see every ticket, unpaged and unfiltered,
+    // until the slower unbounded read is overtaken by the real one (or not).
+    const sessionReady = sessionStatus !== "loading";
     const userRole = session?.user?.role as UserRole | undefined;
 
     // Data
     const [tickets, setTickets] = useState<Ticket[]>([]);
+    const [pagedTotal, setPagedTotal] = useState(0);
     const [properties, setProperties] = useState<Property[]>([]);
     const [units, setUnits] = useState<Unit[]>([]);
-    const [loading, setLoading] = useState(true);
+    // R1 P1-1/P3-1: `initialLoading` gates only the very first read's full-page
+    // spinner; every read after that keeps the page (filters, search box and
+    // all) mounted, with `tableLoading` as a small in-table indicator instead —
+    // the search input used to unmount and lose focus on every keystroke,
+    // because the whole page was replaced with a spinner on every refetch.
+    const [initialLoading, setInitialLoading] = useState(true);
+    const [tableLoading, setTableLoading] = useState(false);
+    const [loadError, setLoadError] = useState<string | null>(null);
 
     // Filters
-    const [searchQuery, setSearchQuery] = useState("");
+    // R1 P1-1: the box shows `searchInput` immediately (so typing is never
+    // interrupted); `debouncedSearch`, 350 ms behind it, is what actually
+    // drives a fetch — the Contracts list's search box debounces the same way.
+    const [searchInput, setSearchInput] = useState("");
+    const [debouncedSearch, setDebouncedSearch] = useState("");
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedSearch(searchInput.trim()), 350);
+        return () => clearTimeout(timer);
+    }, [searchInput]);
     const [statusFilter, setStatusFilter] = useState("ALL");
     const [priorityFilter, setPriorityFilter] = useState("ALL");
+    // R1 P3-2: property + tower (buildingId) live in the URL — bookmarkable,
+    // like the Contracts list's filters — for staff's server-paged list.
+    useSearchParams();
+    const urlSearch = useSyncExternalStore(subscribeUrl, () => window.location.search, () => "");
+    const usp = new URLSearchParams(urlSearch);
+    const propertyFilter = usp.get("propertyId") ?? "";
+    const buildingFilter = usp.get("buildingId") ?? "";
+    const setPropertyFilter = (id: string) => setUrlQuery({ propertyId: id || null, buildingId: null });
+    const setBuildingFilter = (id: string) => setUrlQuery({ buildingId: id || null });
+    // R1 P2-2: once the Tower select reports it isn't showing (no towers, or
+    // GET /buildings/property/{id} refuses this role, e.g. ACCOUNTANT), any
+    // buildingId left in the URL is dropped — an active filter must always
+    // have a control that can clear it.
+    const onTowerAvailability = (available: boolean) => {
+        if (!available && buildingFilter) setBuildingFilter("");
+    };
+    // S16-03: a maintenance-team TENANT_USER's own worklist vs. everything they
+    // can see (also what they reported).
+    const [myOnly, setMyOnly] = useState(false);
 
     // Pagination
     const [currentPage, setCurrentPage] = useState(1);
@@ -126,6 +221,8 @@ export default function TicketsPage() {
     const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
     const [renterLeases, setRenterLeases] = useState<{ id: string; propertyId: string; propertyName: string; unitId: string; unitIdentifier: string }[]>([]);
     const isRenter = userRole === "RENTER";
+    const isStaffUser = userRole === "TENANT_USER";
+    const canPage = canUsePagedTickets(userRole);
     // Status, priority and category arrive as enum codes; an unknown code falls
     // back to its readable form rather than a raw key path.
     const enumLabel = (group: "status" | "priority" | "category", code: string | null | undefined) =>
@@ -133,12 +230,60 @@ export default function TicketsPage() {
 
     // ── Fetch data ──────────────────────────────────────────────────────
 
+    // S16-02: staff read the server-paged, server-filtered list; a staff user
+    // (TENANT_USER) and a renter are not admitted to /tickets/paged, so they
+    // keep the plain endpoint (already scoped server-side) and are filtered
+    // and paged here.
+    //
+    // R1 P1-2/P3-1: nothing fetches before the session resolves (`sessionReady`
+    // false is its own early return, never a plain-`GET /tickets` branch); a
+    // request counter (`fetchSeq`) means a response that lands out of order —
+    // typing quickly, or the session resolving after an already-started
+    // request — can never overwrite a newer one.
+    const fetchSeq = useRef(0);
     const fetchTickets = useCallback(async () => {
+        if (!sessionReady) return;
+        const seq = ++fetchSeq.current;
+        const isCurrent = () => seq === fetchSeq.current;
+        setTableLoading(true);
         try {
-            const res = await fetch("/api/proxy/v1/tickets");
-            if (res.ok) setTickets(await res.json());
-        } catch { /* ignore */ }
-    }, []);
+            if (canPage) {
+                const sp = new URLSearchParams();
+                if (debouncedSearch) sp.set("q", debouncedSearch);
+                if (propertyFilter) sp.set("propertyId", propertyFilter);
+                if (buildingFilter) sp.set("buildingId", buildingFilter);
+                if (statusFilter !== "ALL") sp.set("status", statusFilter);
+                if (priorityFilter !== "ALL") sp.set("priority", priorityFilter);
+                sp.set("page", String(currentPage - 1));
+                sp.set("size", String(itemsPerPage));
+                const res = await fetch(`/api/proxy/v1/tickets/paged?${sp.toString()}`);
+                if (!isCurrent()) return;
+                if (res.ok) {
+                    const page: Page<Ticket> = await res.json();
+                    setTickets(page.content ?? []);
+                    setPagedTotal(page.totalElements ?? 0);
+                    setLoadError(null);
+                } else {
+                    // R1 P3-3: e.g. a SUPER_ADMIN with no organisation picked
+                    // (`Search.requireTenant()`, 400) — say so, rather than
+                    // showing an empty "No tickets" as if none existed.
+                    const body = await res.json().catch(() => null);
+                    setLoadError(body?.message || t("loadFailed"));
+                    setTickets([]);
+                    setPagedTotal(0);
+                }
+            } else {
+                const res = await fetch("/api/proxy/v1/tickets");
+                if (!isCurrent()) return;
+                if (res.ok) { setTickets(await res.json()); setLoadError(null); }
+                else setLoadError(t("loadFailed"));
+            }
+        } catch {
+            if (isCurrent()) setLoadError(t("loadFailed"));
+        } finally {
+            if (isCurrent()) { setInitialLoading(false); setTableLoading(false); }
+        }
+    }, [sessionReady, canPage, debouncedSearch, propertyFilter, buildingFilter, statusFilter, priorityFilter, currentPage, itemsPerPage, t]);
 
     const fetchProperties = useCallback(async () => {
         if (isRenter) return; // Renters use their leases instead
@@ -186,16 +331,28 @@ export default function TicketsPage() {
     }, [isRenter]);
 
     useEffect(() => {
-        Promise.all([fetchTickets(), fetchProperties(), fetchUnits(), fetchRenterLeases(), fetchRenters()]).finally(() => setLoading(false));
-    }, [fetchTickets, fetchProperties, fetchUnits, fetchRenterLeases, fetchRenters]);
+        Promise.all([fetchProperties(), fetchUnits(), fetchRenterLeases(), fetchRenters()]).finally(() => {});
+    }, [fetchProperties, fetchUnits, fetchRenterLeases, fetchRenters]);
+
+    useEffect(() => {
+        fetchTickets();
+    }, [fetchTickets]);
+
+    // A filter narrows the page, so the page number it was chosen on is stale.
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [debouncedSearch, propertyFilter, buildingFilter, statusFilter, priorityFilter, itemsPerPage]);
 
     // ── Filtering ───────────────────────────────────────────────────────
 
-    const filtered = tickets.filter((t) => {
+    // Staff's list is already filtered and paged server-side; a TENANT_USER's
+    // and a renter's plain list is narrowed and paged here in the browser.
+    const filtered = canPage ? tickets : tickets.filter((t) => {
+        if (isStaffUser && myOnly && t.assignedTo !== session?.user?.id) return false;
         if (statusFilter !== "ALL" && t.status !== statusFilter) return false;
         if (priorityFilter !== "ALL" && t.priority !== priorityFilter) return false;
-        if (searchQuery) {
-            const q = searchQuery.toLowerCase();
+        if (debouncedSearch) {
+            const q = debouncedSearch.toLowerCase();
             // #20: the reference is what a caller quotes over the phone, so it
             // is searchable, with or without the "TKT-" prefix.
             if (
@@ -208,8 +365,8 @@ export default function TicketsPage() {
         return true;
     });
 
-    const totalItems = filtered.length;
-    const paginated = filtered.slice(
+    const totalItems = canPage ? pagedTotal : filtered.length;
+    const paginated = canPage ? filtered : filtered.slice(
         (currentPage - 1) * itemsPerPage,
         currentPage * itemsPerPage,
     );
@@ -270,8 +427,11 @@ export default function TicketsPage() {
     };
 
     // ── Loading state ───────────────────────────────────────────────────
+    // R1 P1-1: only the very first read (nothing on screen yet) gets the
+    // full-page spinner; every read after that leaves the page — filters,
+    // search box and all — mounted (see `tableLoading` in the table below).
 
-    if (loading) {
+    if (initialLoading) {
         return (
             <div className="flex items-center justify-center py-24">
                 <Loader2 className="w-6 h-6 animate-spin text-primary opacity-60" />
@@ -283,6 +443,7 @@ export default function TicketsPage() {
 
     return (
         <div>
+            {loadError && <LoadErrorBanner message={loadError} onRetry={fetchTickets} />}
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
                 <div>
@@ -325,11 +486,57 @@ export default function TicketsPage() {
                         <input
                             type="text"
                             placeholder={t("searchPlaceholder")}
-                            value={searchQuery}
-                            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                            value={searchInput}
+                            onChange={(e) => setSearchInput(e.target.value)}
                             className="w-full ps-9 pe-3 py-2 border border-border rounded-lg bg-surface text-xs text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                         />
                     </div>
+
+                    {/* S16-02: property + tower — staff's server-paged list only; a
+                        TENANT_USER's and a renter's list is already their own scope. */}
+                    {canPage && (
+                        <>
+                            <select
+                                aria-label={t("property")}
+                                data-testid="ticket-property-filter"
+                                value={propertyFilter}
+                                onChange={(e) => setPropertyFilter(e.target.value)}
+                                className="border border-border rounded-lg bg-surface px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
+                            >
+                                <option value="">{t("allProperties")}</option>
+                                {properties.map((p) => (
+                                    <option key={p.property.id} value={p.property.id}>
+                                        {(locale === "ar" && p.property.nameAr) ? p.property.nameAr : p.property.nameEn}
+                                    </option>
+                                ))}
+                            </select>
+                            <TowerSelect propertyId={propertyFilter} value={buildingFilter} onChange={setBuildingFilter} testId="ticket-building-filter" onAvailabilityChange={onTowerAvailability} />
+                        </>
+                    )}
+
+                    {/* S16-03: a maintenance-team TENANT_USER's own worklist vs. everything they can see. */}
+                    {isStaffUser && (
+                        <div className="flex items-center bg-input rounded-lg p-0.5 border border-border" role="group" aria-label={t("myTicketsToggleLabel")}>
+                            <button
+                                type="button"
+                                data-testid="ticket-filter-all"
+                                onClick={() => setMyOnly(false)}
+                                className={cn("px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer",
+                                    !myOnly ? "bg-surface text-foreground shadow-sm border border-border" : "text-muted hover:text-foreground")}
+                            >
+                                {tTowers("allTickets")}
+                            </button>
+                            <button
+                                type="button"
+                                data-testid="ticket-filter-mine"
+                                onClick={() => setMyOnly(true)}
+                                className={cn("px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer",
+                                    myOnly ? "bg-surface text-foreground shadow-sm border border-border" : "text-muted hover:text-foreground")}
+                            >
+                                {tTowers("myTickets")}
+                            </button>
+                        </div>
+                    )}
 
                     {/* Status filter */}
                     <select
@@ -358,7 +565,14 @@ export default function TicketsPage() {
             </div>
 
             {/* Table */}
-            <div className="bg-surface rounded-xl border border-border overflow-hidden">
+            <div className="bg-surface rounded-xl border border-border overflow-hidden relative">
+                {/* R1 P1-1: a refetch (typing, a filter, a page) shows here, not as a
+                    full-page spinner that would unmount the filters and search box. */}
+                {tableLoading && (
+                    <div className="absolute inset-x-0 top-0 z-10 flex justify-center pt-2" data-testid="tickets-table-loading">
+                        <Loader2 size={16} className="animate-spin text-primary opacity-70" />
+                    </div>
+                )}
                 <div className="overflow-x-auto">
                     <table className="w-full">
                         <thead>
