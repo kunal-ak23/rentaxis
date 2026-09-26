@@ -16,10 +16,36 @@ export interface ActionsMenuItem {
 }
 
 /**
+ * The panel is `position: fixed`, placed from the trigger's box when it opens,
+ * so a row menu inside a scrolling or clipped table is never cut off. It
+ * lines up with the trigger's inline end (right in English, left in Arabic),
+ * flips to the start edge when that would leave the screen, and opens upward
+ * near the bottom of the viewport. "gone": the trigger is off screen.
+ */
+function placeFor(el: HTMLElement | null, count: number): React.CSSProperties | null | "gone" {
+    if (!el || typeof window === "undefined") return null;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return null;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    if (r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw) return "gone";
+    const rtl = getComputedStyle(el).direction === "rtl";
+    const need = 208;
+    const endFits = rtl ? r.left + need <= vw - 4 : r.right - need >= 4;
+    const alignRight = rtl ? !endFits : endFits; // anchor the panel's right edge to the trigger's right edge
+    const estimate = count * 34 + 10;
+    const up = r.bottom + 4 + estimate > vh - 4 && r.top - 4 - estimate >= 4;
+    return {
+        position: "fixed",
+        ...(alignRight ? { right: Math.max(4, vw - r.right) } : { left: Math.max(4, r.left) }),
+        ...(up ? { bottom: vh - r.top + 4 } : { top: r.bottom + 4 }),
+    };
+}
+
+/**
  * One "More actions" / ⋯ menu. Items are always mounted and the panel is
  * `hidden` while closed, so hidden items stay out of the accessibility tree
  * but tests (and the action-coverage catalog) can still find them by test id.
- * See `measure` for where the open panel goes.
+ * See `placeFor` for where the open panel goes.
  */
 export default function ActionsMenu({ label, items, testId, triggerTestId, variant = "button" }: {
     label: string;
@@ -35,16 +61,19 @@ export default function ActionsMenu({ label, items, testId, triggerTestId, varia
     const panel = useRef<HTMLDivElement>(null);
     const trigger = useRef<HTMLButtonElement>(null);
 
+    const count = items.length;
     useEffect(() => {
         if (!open) return;
         const onDown = (e: MouseEvent) => {
             if (root.current && !root.current.contains(e.target as Node)) setOpen(false);
         };
-        // The panel is placed against the trigger when it opens; a scroll or resize
-        // moves the trigger, so the menu closes rather than float off it.
+        // A scroll or resize moves the trigger: the panel follows it, and closes once
+        // the trigger has left the screen (a scroll inside the panel is its own).
         const onMove = (e: Event) => {
             if (panel.current && e.target instanceof Node && panel.current.contains(e.target)) return;
-            setOpen(false);
+            const next = placeFor(trigger.current, count);
+            if (next === "gone") setOpen(false);
+            else if (next) setPlace(next);
         };
         // Esc closes it wherever focus is (the trigger keeps focus after a mouse click).
         const onKey = (e: KeyboardEvent) => {
@@ -62,35 +91,11 @@ export default function ActionsMenu({ label, items, testId, triggerTestId, varia
             window.removeEventListener("scroll", onMove, true);
             window.removeEventListener("resize", onMove);
         };
-    }, [open]);
+    }, [open, count]);
 
-    /**
-     * The panel is `position: fixed`, placed from the trigger's box when it opens,
-     * so a row menu inside a scrolling or clipped table is never cut off. It
-     * lines up with the trigger's inline end (right in English, left in Arabic),
-     * flips to the start edge when that would leave the screen, and opens upward
-     * near the bottom of the viewport.
-     */
-    const measure = (): React.CSSProperties | null => {
-        const el = trigger.current;
-        if (!el || typeof window === "undefined") return null;
-        const r = el.getBoundingClientRect();
-        if (r.width === 0 && r.height === 0) return null;
-        const vw = window.innerWidth, vh = window.innerHeight;
-        const rtl = getComputedStyle(el).direction === "rtl";
-        const need = 208;
-        const endFits = rtl ? r.left + need <= vw - 4 : r.right - need >= 4;
-        const alignRight = rtl ? !endFits : endFits; // anchor the panel's right edge to the trigger's right edge
-        const estimate = items.length * 34 + 10;
-        const up = r.bottom + 4 + estimate > vh - 4 && r.top - 4 - estimate >= 4;
-        return {
-            position: "fixed",
-            ...(alignRight ? { right: Math.max(4, vw - r.right) } : { left: Math.max(4, r.left) }),
-            ...(up ? { bottom: vh - r.top + 4 } : { top: r.bottom + 4 }),
-        };
-    };
     const openMenu = () => {
-        setPlace(measure());
+        const at = placeFor(trigger.current, items.length);
+        setPlace(at === "gone" ? null : at);
         setOpen(true);
     };
 

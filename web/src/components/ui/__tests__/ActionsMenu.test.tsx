@@ -89,9 +89,19 @@ describe("ActionsMenu", () => {
         expect(screen.getByTestId("m")).not.toBeVisible();
     });
 
-    it("closes when the page scrolls under it", () => {
+    it("follows its trigger when the page scrolls, and closes once the trigger has left the screen", () => {
+        const rect = (r: Partial<DOMRect>) => () => ({ x: 0, y: 0, width: 32, height: 28, top: 0, left: 0, right: 0, bottom: 0, toJSON: () => ({}), ...r }) as DOMRect;
+        Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+        Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
         render(<ActionsMenu label="x" items={items()} testId="m" triggerTestId="t" />);
-        fireEvent.click(screen.getByTestId("t"));
+        const t = screen.getByTestId("t");
+        t.getBoundingClientRect = rect({ left: 340, right: 372, top: 100, bottom: 128 });
+        fireEvent.click(t);
+        t.getBoundingClientRect = rect({ left: 300, right: 332, top: 100, bottom: 128 });
+        fireEvent.scroll(window);
+        expect(screen.getByTestId("m")).toBeVisible();
+        expect(screen.getByTestId("m").style.right).toBe("58px");
+        t.getBoundingClientRect = rect({ left: 300, right: 332, top: -60, bottom: -32 });
         fireEvent.scroll(window);
         expect(screen.getByTestId("m")).not.toBeVisible();
     });

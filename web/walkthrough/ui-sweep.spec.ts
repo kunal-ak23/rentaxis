@@ -324,6 +324,9 @@ for (const { role } of ROLES) {
             const failures: string[] = [];
             for (const viewport of WIDTHS) {
                 const context = await browser.newContext({ baseURL: BASE_URL, viewport, storageState: path.join(STATE_DIR, `${role}.json`) });
+                // The first-visit welcome tour (TourProvider) opens a modal overlay 1.5 s after load
+                // that would sit over every click below; mark it seen, as a returning user has it.
+                await context.addInitScript(() => localStorage.setItem('rentaxis_tours_completed', JSON.stringify(['admin-onboarding'])));
                 const page = await context.newPage();
                 const at = `${role} ${locale} ${viewport.width}px`;
 
@@ -367,6 +370,8 @@ for (const { role } of ROLES) {
                 await expect(page.getByTestId('contract-pills').getByRole('button')).toHaveCount(6);
                 await page.getByTestId('contract-pill-active').click();
                 await expect(page).toHaveURL(/status=ACTIVE/);
+                // The pill re-reads the list (the table shows a skeleton meanwhile); let that land first.
+                await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => {});
                 await expect(page.getByTestId(`lease-row-${leaseId}`)).toBeVisible();
                 await page.getByTestId(`lease-actions-menu-${leaseId}`).click();
                 await expect(page.getByTestId(`lease-actions-menu-panel-${leaseId}`)).toBeVisible();
