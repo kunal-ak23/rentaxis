@@ -65,4 +65,12 @@ public class VatReturn extends BaseTenantEntity {
 
     @Column(name = "reopen_reason", length = 500)
     private String reopenReason;
+
+    /** S16-04: the output check's difference the filer acknowledged (null: the check tied). */
+    @Column(name = "output_difference", precision = 14, scale = 2)
+    private BigDecimal outputDifference;
+
+    /** S16-04: why the return was filed although its output check did not tie. */
+    @Column(name = "output_override_reason", length = 500)
+    private String outputOverrideReason;
 }

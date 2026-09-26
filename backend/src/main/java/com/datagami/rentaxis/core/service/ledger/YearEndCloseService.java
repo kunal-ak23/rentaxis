@@ -105,10 +105,27 @@ public class YearEndCloseService {
         for (FiscalYearClose c : closes.findAllByOrderByFiscalYearDescClosedAtDesc()) {
             latest.putIfAbsent(c.getFiscalYear(), c);
         }
+        // S16-07: a year that ended before the books start is closed by the first close
+        // after it (the YEC closes cumulative balances), so it is listed as closed, with
+        // that close's journal — until that close is re-opened.
+        LocalDate booksStart = fiscal.booksStartDate();
+        List<FiscalYearClose> closedRows = latest.values().stream()
+                .filter(c -> c.getStatus() == FiscalYearCloseStatus.CLOSED)
+                .sorted(Comparator.comparingInt(FiscalYearClose::getFiscalYear)).toList();
         List<FiscalYearDTO> out = new ArrayList<>();
         for (int fy = to; fy >= from; fy--) {
             Period p = periodOf(fy);
             FiscalYearClose c = latest.get(fy);
+            Integer coveredBy = null;
+            if ((c == null || c.getStatus() != FiscalYearCloseStatus.CLOSED)
+                    && booksStart != null && p.end().isBefore(booksStart)) {
+                final int year = fy;
+                FiscalYearClose covering = closedRows.stream().filter(x -> x.getFiscalYear() > year).findFirst().orElse(null);
+                if (covering != null) {
+                    c = covering;
+                    coveredBy = covering.getFiscalYear();
+                }
+            }
             List<PnlLine> pnl = pnlLines(tenant, p.start(), p.end());
             BigDecimal result = sum(pnl, "INCOME").subtract(sum(pnl, "EXPENSE"));
             String number = c == null || c.getJournalId() == null ? null
@@ -117,7 +134,7 @@ public class YearEndCloseService {
                     result, c == null ? null : c.getJournalId(), number,
                     c == null ? null : c.getClosedAt(), c == null ? null : c.getClosedBy(),
                     c == null ? null : c.getReopenedAt(), c == null ? null : c.getReopenedBy(),
-                    c == null ? null : c.getReopenReason()));
+                    c == null ? null : c.getReopenReason(), coveredBy));
         }
         return out;
     }
@@ -148,11 +165,26 @@ public class YearEndCloseService {
         // Years close in order. A previous year with no income or expense on or
         // before its end has nothing to close (e.g. one holding only an opening
         // balance of balance-sheet accounts), so it does not have to be closed first.
+        //
+        // S16-07: except a year that ended before the books start. It holds only what a
+        // cut-over replayed (and the opening balance) — years the organisation never
+        // kept in the product. The first close after the books start sweeps them with
+        // its own (the YEC closes cumulative balances; the preview shows them apart as
+        // brought forward), instead of making the accountant close each replayed year.
         LocalDate previousEnd = p.start().minusDays(1);
-        if (hasPnlThrough(tenant, previousEnd) && closes.findClosed(p.fiscalYear() - 1).isEmpty()) {
+        LocalDate booksStart = settings.getBooksStartDate();
+        boolean previousBeforeBooks = booksStart != null && previousEnd.isBefore(booksStart);
+        if (!previousBeforeBooks && hasPnlThrough(tenant, previousEnd) && closes.findClosed(p.fiscalYear() - 1).isEmpty()) {
             blockers.add(issue("previousOpen", "Close fiscal year " + (p.fiscalYear() - 1) + " first; years close in order.",
                     Map.of("year", String.valueOf(p.fiscalYear() - 1))));
         }
+        // S16-07: a later close already swept this year's balances; a second YEC would close them twice.
+        closes.findAllByOrderByFiscalYearDescClosedAtDesc().stream()
+                .filter(c -> c.getStatus() == FiscalYearCloseStatus.CLOSED && c.getFiscalYear() > p.fiscalYear())
+                .findFirst()
+                .ifPresent(c -> blockers.add(issue("laterClosed", "Fiscal year " + c.getFiscalYear()
+                        + " is already closed and its close covers " + fy + ".",
+                        Map.of("year", fy, "closed", String.valueOf(c.getFiscalYear())))));
         long planned = count("""
                 select count(*) from recognition_entries
                 where tenant_id = :t and status = 'PLANNED' and period_end <= :end""", tenant, p.end());
@@ -256,8 +288,19 @@ public class YearEndCloseService {
                     "fiscalYear.reasonRequired", Map.of());
         }
         fiscal.lockRow();
-        FiscalYearClose row = closes.findClosed(fiscalYear).orElseThrow(() ->
-                new NotFoundException("Fiscal year " + fiscalYear + " is not closed"));
+        FiscalYearClose row = closes.findClosed(fiscalYear).orElse(null);
+        if (row == null) {
+            // R1 P3-8: a pre-books year swept by a later close is listed CLOSED under that
+            // close; it is re-opened by re-opening the covering year.
+            Integer covering = list(today).stream().filter(y -> y.fiscalYear() == fiscalYear)
+                    .map(FiscalYearDTO::coveredBy).filter(java.util.Objects::nonNull).findFirst().orElse(null);
+            if (covering != null) {
+                throw new BusinessRuleViolationException("Fiscal year " + fiscalYear + " was closed by the close of "
+                        + covering + "; re-open " + covering + " instead.", "fiscalYear.coveredBy",
+                        Map.of("year", String.valueOf(fiscalYear), "coveredBy", String.valueOf(covering)));
+            }
+            throw new NotFoundException("Fiscal year " + fiscalYear + " is not closed");
+        }
         boolean laterClosed = closes.findAllByOrderByFiscalYearDescClosedAtDesc().stream()
                 .anyMatch(c -> c.getStatus() == FiscalYearCloseStatus.CLOSED && c.getFiscalYear() > fiscalYear);
         if (laterClosed) {

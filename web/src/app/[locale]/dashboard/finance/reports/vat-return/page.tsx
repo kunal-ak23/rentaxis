@@ -11,7 +11,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount } from "@/lib/api/ledger";
 import { formatDate } from "@/lib/format";
-import { lastQuarterStart, vatReturnsApi, type VatFiling, type VatReturn } from "@/lib/api/vatReturns";
+import { lastQuarterStart, MIN_OVERRIDE_REASON, vatReturnsApi, type VatFiling, type VatReturn } from "@/lib/api/vatReturns";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 
 const input = "px-3 py-2 rounded-lg border border-border bg-background text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none";
@@ -41,6 +41,8 @@ export default function VatReturnPage() {
     const [busy, setBusy] = useState(false);
     const [confirm, setConfirm] = useState<"file" | "reopen" | null>(null);
     const [reopenReason, setReopenReason] = useState("");
+    // PR #369 R1 P2-1: filing with an output difference needs a reason; the difference shown is the one acknowledged.
+    const [overrideReason, setOverrideReason] = useState("");
 
     const load = useCallback(async (start: string) => {
         setLoading(true);
@@ -69,12 +71,23 @@ export default function VatReturnPage() {
             await fn();
             setConfirm(null);
             setReopenReason("");
+            setOverrideReason("");
             await load(periodStart);
         } catch (err) {
             setActionError(err instanceof ApiError ? serverText(tCommon, err) || err.message : tCommon("loadFailed"));
         } finally {
             setBusy(false);
         }
+    };
+
+    /** What the filing recorded about the output check: acknowledged difference, tied, or not recorded. */
+    const outputAtFiling = (r: { status: string; outputDifference?: number | null; outputOverrideReason?: string | null }) => {
+        if (r.status !== "FILED") return null;
+        if (r.outputOverrideReason) {
+            return t("acknowledged", { amount: fmtAmount(r.outputDifference ?? 0), reason: r.outputOverrideReason });
+        }
+        if (r.outputDifference == null) return t("notRecorded");
+        return t("tiedAtFiling");
     };
 
     if (userRole && !allowed) {
@@ -131,6 +144,7 @@ export default function VatReturnPage() {
                         {data.filedAt && <> · <bdi dir="ltr">{formatDate(data.filedAt.slice(0, 10))}</bdi></>}
                         {data.filedByName && <> · {t("filedBy", { name: data.filedByName })}</>}
                         {data.filingReference && <> · <bdi dir="ltr">{data.filingReference}</bdi></>}
+                        {outputAtFiling(data) && <> · <span data-testid="vat-output-at-filing">{outputAtFiling(data)}</span></>}
                     </span>
                 )}
                 {data?.outputCheck && (
@@ -167,13 +181,29 @@ export default function VatReturnPage() {
                     )}
                     <p className="mt-3 text-xs text-muted">{t("lockNote")}</p>
 
+                    {canFile && data.status !== "FILED" && data.reasonRequired && data.outputCheck && (
+                        <div className="mt-5 bg-error/5 border border-error/30 rounded-xl p-4" data-testid="vat-override">
+                            <p className="text-xs font-semibold text-error flex items-center gap-1">
+                                <AlertTriangle size={13} />{t("reasonTitle", { amount: fmtAmount(data.outputCheck.difference) })}
+                            </p>
+                            <p className="text-xs text-muted mt-1">
+                                {t("reasonHelp", { amount: fmtAmount(data.outputCheck.difference), min: MIN_OVERRIDE_REASON })}
+                            </p>
+                            <label className="flex flex-col gap-1 text-[11px] font-semibold text-muted mt-3">
+                                {t("reasonLabel")}
+                                <textarea className={`${input} w-full`} rows={2} value={overrideReason} data-testid="vat-override-reason"
+                                          onChange={e => setOverrideReason(e.target.value)} />
+                            </label>
+                        </div>
+                    )}
                     {canFile && data.status !== "FILED" && (
                         <div className="mt-5 flex flex-wrap items-end gap-3 bg-surface border border-border rounded-xl p-4">
                             <label className="flex flex-col gap-1 text-[11px] font-semibold text-muted">
                                 {t("reference")}
                                 <input className={input} value={reference} onChange={e => setReference(e.target.value)} data-testid="vat-reference" />
                             </label>
-                            <button type="button" disabled={busy || !data.canFile} data-testid="vat-file"
+                            <button type="button" data-testid="vat-file"
+                                    disabled={busy || !data.canFile || (!!data.reasonRequired && overrideReason.trim().length < MIN_OVERRIDE_REASON)}
                                     onClick={() => setConfirm("file")}
                                     className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-bold disabled:opacity-50">
                                 <Lock size={13} />{t("markFiled")}
@@ -203,7 +233,9 @@ export default function VatReturnPage() {
                         confirmTestId="vat-confirm"
                         confirmDisabled={confirm === "reopen" && !reopenReason.trim()}
                         onConfirm={() => {
-                            if (confirm === "file") act(() => vatReturnsApi.file(periodStart, reference));
+                            if (confirm === "file") act(() => data.reasonRequired && data.outputCheck
+                                ? vatReturnsApi.file(periodStart, reference, overrideReason.trim(), data.outputCheck.difference)
+                                : vatReturnsApi.file(periodStart, reference));
                             if (confirm === "reopen" && data.id) act(() => vatReturnsApi.reopen(data.id!, reopenReason.trim()));
                         }}
                     >
@@ -225,6 +257,7 @@ export default function VatReturnPage() {
                                 {f.filedAt && <> · <bdi dir="ltr">{formatDate(f.filedAt.slice(0, 10))}</bdi></>}
                                 {f.filedByName && <> · {t("filedBy", { name: f.filedByName })}</>}
                                 {f.netVat != null && <> · <bdi dir="ltr">{fmtAmount(f.netVat)}</bdi></>}
+                                {outputAtFiling(f) && <> · {outputAtFiling(f)}</>}
                                 {f.reopenReason && <> · {f.reopenReason}</>}
                             </li>
                         ))}

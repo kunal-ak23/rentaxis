@@ -61,4 +61,39 @@ describe("VAT return page", () => {
         const quarter = screen.getByTestId("vat-quarter") as HTMLSelectElement;
         expect([...quarter.options].map(o => o.textContent)).not.toContain("2026-04-01");
     });
+
+    it("asks for a reason when the output check fails and sends it with the acknowledged difference (PR #369 R1)", async () => {
+        const failing = { ...base, outputCheck: { documents: 100, ledger: 3100, difference: -3000, ok: false }, reasonRequired: true };
+        api.get.mockResolvedValue(failing);
+        api.filings.mockResolvedValue([]);
+        api.file.mockResolvedValue({ ...failing, status: "FILED" });
+        render(<NextIntlClientProvider locale="en" messages={en}><VatReturnPage /></NextIntlClientProvider>);
+        expect(await screen.findByTestId("vat-override")).toBeTruthy();
+        const file = screen.getByTestId("vat-file") as HTMLButtonElement;
+        expect(file.disabled).toBe(true);
+        fireEvent.change(screen.getByTestId("vat-override-reason"), { target: { value: "short" } });
+        expect(file.disabled).toBe(true);
+        fireEvent.change(screen.getByTestId("vat-override-reason"), { target: { value: "Cut-over contracts invoiced by PACT" } });
+        expect(file.disabled).toBe(false);
+        fireEvent.click(file);
+        fireEvent.click(await screen.findByTestId("vat-confirm"));
+        await waitFor(() => expect(api.file).toHaveBeenCalledWith("2026-04-01", "", "Cut-over contracts invoiced by PACT", -3000));
+    });
+
+    it("shows what the filing recorded about the output check, and never a pre-check filing as tied", async () => {
+        api.get.mockResolvedValue({ ...base, id: "r1", status: "FILED", filedAt: "2026-07-10T00:00:00Z", canFile: false,
+            outputDifference: -3000, outputOverrideReason: "Cut-over contracts invoiced by PACT" });
+        api.filings.mockResolvedValue([
+            { id: "r1", periodStart: "2026-04-01", periodEnd: "2026-06-30", status: "FILED", netVat: 10, filingReference: null,
+              filedAt: "2026-07-10T00:00:00Z", filedByName: null, reopenedAt: null, reopenReason: null,
+              outputDifference: -3000, outputOverrideReason: "Cut-over contracts invoiced by PACT" },
+            { id: "r0", periodStart: "2026-01-01", periodEnd: "2026-03-31", status: "FILED", netVat: 5, filingReference: null,
+              filedAt: "2026-04-10T00:00:00Z", filedByName: null, reopenedAt: null, reopenReason: null,
+              outputDifference: null, outputOverrideReason: null }]);
+        render(<NextIntlClientProvider locale="en" messages={en}><VatReturnPage /></NextIntlClientProvider>);
+        expect((await screen.findByTestId("vat-output-at-filing")).textContent).toContain("Cut-over contracts invoiced by PACT");
+        const history = screen.getByTestId("vat-history").textContent ?? "";
+        expect(history).toContain("not recorded");
+        expect(history).not.toContain("tied at filing");
+    });
 });

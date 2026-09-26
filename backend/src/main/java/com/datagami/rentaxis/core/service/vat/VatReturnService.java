@@ -115,11 +115,13 @@ public class VatReturnService {
             return new VatReturnDTO(filed.getId(), periodStart, end, VatReturn.FILED, filed.getFiledAt(),
                     nameOf(filed.getFiledBy()), filed.getFilingReference(), asFiled == null ? live.boxes : asFiled,
                     filed.getNetVat(), live.check, live.commercialWithoutVat, live.inputOther, live.inputExempt, false,
-                    "vat.alreadyFiled");
+                    "vat.alreadyFiled", false, filed.getOutputDifference(), filed.getOutputOverrideReason());
         }
         String reason = cannotFile(periodStart, end);
+        // R1 P2-1: a failing output check does not stop the filing, but it needs a reason.
         return new VatReturnDTO(null, periodStart, end, "OPEN", null, null, null, live.boxes, live.net, live.check,
-                live.commercialWithoutVat, live.inputOther, live.inputExempt, reason == null, reason);
+                live.commercialWithoutVat, live.inputOther, live.inputExempt, reason == null, reason,
+                reason == null && !live.check.ok(), null, null);
     }
 
     @Transactional(readOnly = true)
@@ -127,13 +129,42 @@ public class VatReturnService {
         tenant();
         return returns.findAllByOrderByPeriodStartDescFiledAtDesc().stream()
                 .map(r -> new Filing(r.getId(), r.getPeriodStart(), r.getPeriodEnd(), r.getStatus(), r.getNetVat(),
-                        r.getFilingReference(), r.getFiledAt(), nameOf(r.getFiledBy()), r.getReopenedAt(), r.getReopenReason()))
+                        r.getFilingReference(), r.getFiledAt(), nameOf(r.getFiledBy()), r.getReopenedAt(), r.getReopenReason(),
+                        r.getOutputDifference(), r.getOutputOverrideReason()))
                 .toList();
     }
 
     /** Marks the period filed: keeps the figures as they stand and locks VAT dated in it. */
     @Transactional
     public VatReturnDTO file(LocalDate periodStart, String filingReference) {
+        return file(periodStart, filingReference, null);
+    }
+
+    /**
+     * S16-04: as {@link #file(LocalDate, String)}, and a return whose own output
+     * check fails — Output VAT per our tax invoices and credit notes differs from the
+     * Output VAT account's movement, so the boxes do not say what the ledger declared —
+     * is refused unless {@code outputDifferenceReason} acknowledges the difference.
+     * The acknowledged difference and the reason are recorded on the filed row.
+     */
+    @Transactional
+    public VatReturnDTO file(LocalDate periodStart, String filingReference, String outputDifferenceReason) {
+        return file(periodStart, filingReference, outputDifferenceReason, null);
+    }
+
+    /** PR #369 R1 P2-1: the shortest reason that acknowledges an output difference. */
+    public static final int MIN_OVERRIDE_REASON = 10;
+
+    /**
+     * PR #369 R1 P2-1: {@code acknowledgedDifference} is the difference the filer saw
+     * (the GET's {@code outputCheck.difference}). When the check fails the filing is
+     * refused unless a reason of at least {@value #MIN_OVERRIDE_REASON} characters is
+     * given <em>and</em> the difference is still the one acknowledged — postings that
+     * land between the preview and the click change it ({@code vat.outputCheckChanged}).
+     */
+    @Transactional
+    public VatReturnDTO file(LocalDate periodStart, String filingReference, String outputDifferenceReason,
+                             BigDecimal acknowledgedDifference) {
         UUID t = tenant();
         LocalDate end = endOf(periodStart);
         String reason = cannotFile(periodStart, end);
@@ -149,7 +180,35 @@ public class VatReturnService {
         jdbc.queryForList("select id from vat_returns where tenant_id = :t for update",
                 new MapSqlParameterSource("t", t), UUID.class);
         Computed c = compute(t, periodStart, end);
+        String override = outputDifferenceReason == null || outputDifferenceReason.isBlank()
+                ? null : outputDifferenceReason.trim();
+        if (!c.check.ok() && override == null) {
+            throw new BusinessRuleViolationException("Output VAT per the tax invoices and credit notes ("
+                    + c.check.documents().toPlainString() + ") does not match the Output VAT account ("
+                    + c.check.ledger().toPlainString() + "), a difference of " + c.check.difference().toPlainString()
+                    + ". Find the entries without a tax document (the OUTPUT_LEDGER drill-down) and correct them,"
+                    + " or file with a reason acknowledging the difference.",
+                    "vat.outputCheckFailed", Map.of("difference", c.check.difference().toPlainString()));
+        }
+        if (!c.check.ok() && override.length() < MIN_OVERRIDE_REASON) {
+            throw new BusinessRuleViolationException("Explain the difference in at least " + MIN_OVERRIDE_REASON
+                    + " characters", "vat.overrideReasonShort", Map.of("min", String.valueOf(MIN_OVERRIDE_REASON)));
+        }
+        if (override != null && override.length() > 500) {
+            throw new BusinessRuleViolationException("Keep the reason under 500 characters", "vat.overrideReason", Map.of());
+        }
+        if (!c.check.ok() && (acknowledgedDifference == null
+                || acknowledgedDifference.compareTo(c.check.difference()) != 0)) {
+            throw new BusinessRuleViolationException("The output difference is now " + c.check.difference().toPlainString()
+                    + (acknowledgedDifference == null ? "" : ", not the " + acknowledgedDifference.toPlainString()
+                    + " acknowledged") + "; review the return again before filing it.",
+                    "vat.outputCheckChanged", Map.of("difference", c.check.difference().toPlainString()));
+        }
         VatReturn r = new VatReturn();
+        // Recorded on every filing from now on: 0.00 = the check tied; null on a row
+        // filed before the check was enforced ("not recorded", never "tied").
+        r.setOutputDifference(c.check.ok() ? BigDecimal.ZERO.setScale(2) : c.check.difference());
+        r.setOutputOverrideReason(c.check.ok() ? null : override);
         r.setTenantId(t);
         r.setPeriodStart(periodStart);
         r.setPeriodEnd(end);

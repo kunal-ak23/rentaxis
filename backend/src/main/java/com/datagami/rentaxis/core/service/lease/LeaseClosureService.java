@@ -118,6 +118,10 @@ public class LeaseClosureService {
     private final AccountResolver accountResolver;
     private final LeaseDepositLedger depositLedger;
 
+    /** R1 P3-5. */
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.datagami.rentaxis.core.service.penalty.PenaltyLapse penaltyLapse;
+
     public LeaseClosureService(LeaseRepository leases,
                                ChequeRepository cheques,
                                LeaseSettlementRepository settlements,
@@ -195,6 +199,8 @@ public class LeaseClosureService {
         event.setCreatedAt(Instant.now());
         leaseEvents.save(event);
 
+        // R1 P3-5: a proposal raised after the settlement (a kept cheque that bounced) can no longer be charged.
+        penaltyLapse.lapse(lease.getId(), java.time.LocalDate.now(), com.datagami.rentaxis.core.service.penalty.PenaltyLapse.End.CLOSED, null);
         log.info("Lease {} closed: settlement finalised, receivable, instruments and deposits all flat",
                 lease.getId());
         return true;

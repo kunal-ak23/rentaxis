@@ -217,6 +217,36 @@ class YearEndCloseIT extends AbstractPostgresIT {
                 .isInstanceOf(BusinessRuleViolationException.class).hasMessageContaining("later closed year first");
     }
 
+    /**
+     * S16-07: a year that ended before the books start (only a cut-over's replay lives
+     * there) need not be closed first; the first close after the books start sweeps it,
+     * and it cannot be closed again afterwards.
+     */
+    @Test
+    void aYearBeforeTheBooksStartIsSweptByTheFirstCloseAfterIt() {
+        twoYears(true);
+        jdbc.update("update tenant_fiscal_settings set books_start_date = ? where tenant_id = ?",
+                LocalDate.of(2025, 1, 1), fixtures.tenantId());
+        YearClosePreviewDTO preview = closes.preview(2025, TODAY);
+        assertThat(preview.blockers()).isEmpty();
+        assertThat(preview.retainedEarnings()).singleElement()
+                .satisfies(r -> assertThat(r.broughtForward()).isEqualByComparingTo("19200"));
+        closes.close(2025, false, TODAY);
+        assertThat(balance(LocalDate.of(2025, 12, 31), AccountRole.RETAINED_EARNINGS, false)).isEqualByComparingTo("-37000");
+        assertThat(pnlTotal(LocalDate.of(2025, 12, 31), false)).isEqualByComparingTo("0");
+        assertThatThrownBy(() -> closes.close(2024, false, TODAY))
+                .isInstanceOf(BusinessRuleViolationException.class).hasMessageContaining("its close covers 2024");
+        // Listed as closed by 2025's close, and open again once that close is re-opened.
+        assertThat(year(2024).status()).isEqualTo("CLOSED");
+        assertThat(year(2024).journalId()).isEqualTo(year(2025).journalId());
+        assertThat(year(2024).coveredBy()).isEqualTo(2025);
+        assertThat(year(2025).coveredBy()).isNull();
+        assertThatThrownBy(() -> closes.reopen(2024, "Audit adjustment", TODAY))
+                .isInstanceOf(BusinessRuleViolationException.class).hasMessageContaining("re-open 2025 instead");
+        closes.reopen(2025, "Audit adjustment", TODAY);
+        assertThat(year(2024).status()).isEqualTo("OPEN");
+    }
+
     @Test
     void reopeningRestoresTheTrialBalanceAndTheLockAndAReCloseIsFresh() {
         twoYears(true);

@@ -34,7 +34,15 @@ public record PostLeaseDryRunResponse(boolean ok,
                                       BigDecimal depositCarriedForward,
                                       JournalPlan journals,
                                       /* F15-13: the instruments a transfer brings onto this grid when it posts. */
-                                      List<CarriedCheque> carriedCheques) {
+                                      List<CarriedCheque> carriedCheques,
+                                      /* PR #369 R1 P3-8: what the post will do that is not an error (e.g. a prepaid transfer's VAT timing). */
+                                      List<String> notices) {
+
+    public PostLeaseDryRunResponse(boolean ok, List<String> errors, BigDecimal contractValue, BigDecimal contractValueInclVat,
+                                   BigDecimal chequeTotal, BigDecimal depositCarriedForward, JournalPlan journals,
+                                   List<CarriedCheque> carriedCheques) {
+        this(ok, errors, contractValue, contractValueInclVat, chequeTotal, depositCarriedForward, journals, carriedCheques, List.of());
+    }
 
     public PostLeaseDryRunResponse(boolean ok, List<String> errors, BigDecimal contractValue, BigDecimal contractValueInclVat,
                                    BigDecimal chequeTotal, BigDecimal depositCarriedForward, JournalPlan journals) {

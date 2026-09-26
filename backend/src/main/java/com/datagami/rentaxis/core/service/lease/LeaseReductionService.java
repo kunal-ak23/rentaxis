@@ -165,6 +165,9 @@ public class LeaseReductionService {
         BigDecimal vat = sum(plans.stream().map(LinePlan::vat).toList());
         BigDecimal taxable = taxableOf(plans);
         VatTaxPointService.ReductionVat rv = vatTaxPoints.previewReduction(leaseId, vat, taxable);
+        // R1 P3-3: the credit note the reduction issues needs the TRN; said here as the reduce says it.
+        String trn = leasePostingService.creditNoteTrnProblem(lease, rv.creditNote());
+        if (trn != null) problems.add(new ReductionPreviewDTO.Problem("lease.noTrnForCreditNote", trn, Map.of()));
         BigDecimal total = net.add(vat);
 
         List<Cheque> register = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
@@ -246,6 +249,10 @@ public class LeaseReductionService {
         }
 
         List<String> problems = new ArrayList<>(leasePostingService.periodLockErrors(entryDate, List.of()));
+        // R1 P3-3: refused before anything is written — the credit note needs the TRN.
+        String trnProblem = leasePostingService.creditNoteTrnProblem(lease,
+                vatTaxPoints.previewReduction(lease.getId(), vat, taxableOf(plans)).creditNote());
+        if (trnProblem != null) problems.add(trnProblem);
         LocalDate locked = lockedThrough();
         if (locked != null && !e.minusDays(1).isAfter(locked)) {
             problems.add("The day before the effective date (" + e.minusDays(1) + ") is in the locked period: books"

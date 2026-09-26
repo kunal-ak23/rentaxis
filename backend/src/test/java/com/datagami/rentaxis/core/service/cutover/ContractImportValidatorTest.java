@@ -42,6 +42,9 @@ class ContractImportValidatorTest {
     private final Map<String, ContractImportValidator.AccountMatch> chart = new LinkedHashMap<>();
     private final List<String> existingProperties = new ArrayList<>();
     private final List<String> existingRenterEmails = new ArrayList<>();
+    /** S16-10: renters an earlier, POSTED workbook created: email → name. */
+    private final Map<String, String> reusableRenters = new LinkedHashMap<>();
+    private boolean hasTrn = true;
     private final Map<String, String> liveLeases = new LinkedHashMap<>();
     private final Map<String, String> existingContractRefs = new LinkedHashMap<>();
 
@@ -93,8 +96,30 @@ class ContractImportValidatorTest {
             }
 
             @Override public String existingRenter(String email) {
+                if (reusableRenters.containsKey(email.toLowerCase(Locale.ROOT))) return "import batch 'Workbook 1', POSTED";
                 return existingRenterEmails.stream().anyMatch(e -> e.equalsIgnoreCase(email))
                         ? "import batch 'September cut-over', REVERSED" : null;
+            }
+
+            @Override public boolean organisationHasTrn() {
+                return hasTrn;
+            }
+
+            /** The matcher's answers, stubbed per email (the rule itself is CutoverRenterMatcherTest's). */
+            @Override public CutoverRenterMatcher.Match renterMatch(String email, String name) {
+                String e = email.trim().toLowerCase(Locale.ROOT);
+                String held = reusableRenters.get(e);
+                if (held != null) {
+                    if (name == null || name.isBlank()) return new CutoverRenterMatcher.Match(null, held, "List them on the Renters sheet");
+                    return CutoverRenterMatcher.sameName(held, name)
+                            ? new CutoverRenterMatcher.Match(UUID.randomUUID(), held, null)
+                            : new CutoverRenterMatcher.Match(null, held, "belongs to the existing renter '" + held + "'", true);
+                }
+                if (existingRenterEmails.stream().anyMatch(x -> x.equalsIgnoreCase(e))) {
+                    return new CutoverRenterMatcher.Match(null, null, "A renter with email '" + email
+                            + "' already exists in this organisation (import batch 'September cut-over', REVERSED).");
+                }
+                return null;
             }
 
             @Override public String liveLeaseOn(String propertyName, String buildingName, String unitNumber) {
@@ -743,6 +768,61 @@ class ContractImportValidatorTest {
             assertThat(errors(wb))
                     .extracting(ImportErrorDTO::getSheet, ImportErrorDTO::getField)
                     .contains(Tuple.tuple("Renters", "Email"));
+        }
+    }
+
+    /** S16-10: a later workbook lists a renter an earlier, posted workbook created — matched, not refused. */
+    @Test
+    void aRenterAnEarlierPostedWorkbookCreatedIsMatched() throws Exception {
+        try (Workbook wb = workbook(true)) {
+            reusableRenters.put("sample.renter.one@example.com", "Sample  renter one");
+            assertThat(errors(wb)).extracting(ImportErrorDTO::getSheet).doesNotContain("Renters");
+        }
+    }
+
+    /** S16-10: …or does not list them at all and names them only on Contracts. */
+    @Test
+    void aContractMayNameARenterAnEarlierPostedWorkbookCreated() throws Exception {
+        try (Workbook wb = workbook(true)) {
+            set(wb, "Renters", 1, 2, "someone.else@example.com");
+            assertThat(errors(wb)).extracting(ImportErrorDTO::getSheet, ImportErrorDTO::getField)
+                    .contains(Tuple.tuple("Contracts", "RenterEmail"));
+            reusableRenters.put("sample.renter.one@example.com", "Sample Renter One");
+            // R1 P2-2: not without naming them — the email alone never picks a renter.
+            assertThat(errors(wb)).extracting(ImportErrorDTO::getSheet, ImportErrorDTO::getField)
+                    .contains(Tuple.tuple("Contracts", "RenterEmail"));
+            set(wb, "Contracts", 0, 17, "RenterName");
+            set(wb, "Contracts", 1, 17, "Sample Renter One");
+            assertThat(errors(wb)).extracting(ImportErrorDTO::getSheet, ImportErrorDTO::getField)
+                    .doesNotContain(Tuple.tuple("Contracts", "RenterEmail"));
+            set(wb, "Contracts", 1, 17, "Somebody Else");
+            assertThat(errors(wb)).extracting(ImportErrorDTO::getSheet, ImportErrorDTO::getField)
+                    .contains(Tuple.tuple("Contracts", "RenterEmail"));
+        }
+    }
+
+    /** S16-10: the email of an existing renter under another person's name is a typo, not a match. */
+    @Test
+    void anExistingRentersEmailUnderAnotherNameIsAnError() throws Exception {
+        try (Workbook wb = workbook(true)) {
+            reusableRenters.put("sample.renter.one@example.com", "Somebody Else");
+            assertThat(errors(wb)).filteredOn(e -> "Renters".equals(e.getSheet()))
+                    .singleElement().satisfies(e -> {
+                        assertThat(e.getField()).isEqualTo("Name");
+                        assertThat(e.getMessage()).contains("Somebody Else");
+                    });
+        }
+    }
+
+    /** R1 P3-3: VAT contracts into an organisation with no TRN import, with a warning that later credit notes need it. */
+    @Test
+    void vatContractsWithoutATrnWarn() throws Exception {
+        try (Workbook wb = workbook(true)) {
+            assertThat(warnings(wb)).noneMatch(w -> "VatApplicable".equals(w.getField()));
+            hasTrn = false;
+            assertThat(warnings(wb)).filteredOn(w -> "VatApplicable".equals(w.getField())).singleElement()
+                    .satisfies(w -> assertThat(w.getMessage()).contains("no TRN"));
+            assertThat(errors(wb)).noneMatch(e -> "VatApplicable".equals(e.getField()));
         }
     }
 

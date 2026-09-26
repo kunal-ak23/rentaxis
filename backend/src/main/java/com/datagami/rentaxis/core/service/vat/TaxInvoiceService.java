@@ -74,12 +74,18 @@ public class TaxInvoiceService {
     private final LeaseAccessPolicy leaseAccessPolicy;
     private final TaxInvoicePdfRenderer renderer;
     private final com.datagami.rentaxis.domain.repository.VatTaxPointRepository points;
+    private final com.datagami.rentaxis.domain.repository.JournalEntryRepository journals;
+    private final com.datagami.rentaxis.domain.repository.LeaseAddendumRepository addenda;
 
     public TaxInvoiceService(TaxInvoiceRepository invoices, LeaseRepository leases,
                              ChequeRepository cheques, LandlordOrgRepository orgs, EntryNumberService numbers,
                              LeaseAccessPolicy leaseAccessPolicy, TaxInvoicePdfRenderer renderer,
-                             com.datagami.rentaxis.domain.repository.VatTaxPointRepository points) {
+                             com.datagami.rentaxis.domain.repository.VatTaxPointRepository points,
+                             com.datagami.rentaxis.domain.repository.JournalEntryRepository journals,
+                             com.datagami.rentaxis.domain.repository.LeaseAddendumRepository addenda) {
         this.points = points;
+        this.journals = journals;
+        this.addenda = addenda;
         this.invoices = invoices;
         this.leases = leases;
         this.cheques = cheques;
@@ -147,10 +153,17 @@ public class TaxInvoiceService {
         inv.setPropertyName(property == null ? null : property.getNameEn());
         inv.setUnitNumber(unit == null ? null : unit.getUnitNumber());
 
-        LocalDate[] period = periodOf(point, lease, cheque);
+        // PR #369 R1 P3-7: an addendum's charge names the addendum and covers its term.
+        com.datagami.rentaxis.domain.entity.LeaseAddendum addendum = addendumOf(point, lease);
+        LocalDate[] period = addendum != null
+                ? new LocalDate[]{addendum.getEffectiveFrom(), lease.getEndDate()}
+                : periodOf(point, lease, cheque);
         inv.setPeriodStart(period[0]);
         inv.setPeriodEnd(period[1]);
-        inv.setDescription(describe(point, cheque, period));
+        inv.setDescription(addendum != null
+                ? "Addendum " + addendum.getAddendumNumber() + (addendum.getReason() == null ? "" : ": " + addendum.getReason())
+                        + " (" + DAY.format(period[0]) + " – " + DAY.format(period[1]) + ")"
+                : describe(point, cheque, period));
         if (credit) inv.setReferenceNote(referencesFor(point, lease));
 
         BigDecimal taxable = point.getTaxableAmount().abs();
@@ -211,24 +224,56 @@ public class TaxInvoiceService {
      * what it corrects).
      */
     private String referencesFor(VatTaxPoint point, Lease lease) {
+        List<TaxInvoice> all = invoices.findByLeaseIdOrderByIssueDateAscCreatedAtAsc(lease.getId()).stream()
+                .filter(i -> i.getKind() == TaxInvoiceKind.TAX_INVOICE).toList();
+        if (point.getKind() == VatTaxPointKind.CHARGE) {
+            // PR #369 R1 P3-1: a charge reversed — its credit note corrects that charge's
+            // own tax invoice (the reversed journal's), and nothing else.
+            UUID reversed = point.getJournalId() == null ? null
+                    : journals.findById(point.getJournalId()).map(com.datagami.rentaxis.domain.entity.JournalEntry::getReversalOfId).orElse(null);
+            return all.stream().filter(i -> reversed != null && reversed.equals(i.getJournalId()))
+                    .map(TaxInvoiceService::cite).findFirst().orElse(null);
+        }
+        // A termination or reduction credit: the tax invoices of ours this lease carries
+        // (instalments, contract, addenda, charges) whose period runs past the date —
+        // every one of them when none does.
         LocalDate t = point.getTaxPointDate();
-        List<TaxInvoice> issued = invoices.findByLeaseIdOrderByIssueDateAscCreatedAtAsc(lease.getId()).stream()
-                .filter(i -> i.getKind() == TaxInvoiceKind.TAX_INVOICE
-                        && (i.getChequeId() != null || i.getTaxPointId() != null && isContractPoint(i.getTaxPointId())))
-                .toList();
-        List<TaxInvoice> covering = issued.stream()
+        List<TaxInvoice> covering = all.stream()
                 .filter(i -> i.getPeriodEnd() == null || i.getPeriodEnd().isAfter(t))
                 .toList();
-        List<TaxInvoice> named = covering.isEmpty() ? issued : covering;
-        if (named.isEmpty()) return null;
-        return named.stream()
-                .map(i -> i.getInvoiceNumber() + " (" + DAY.format(i.getIssueDate()) + ")")
-                .collect(java.util.stream.Collectors.joining(", "));
+        List<String> refs = new java.util.ArrayList<>((covering.isEmpty() ? all : covering).stream()
+                .map(TaxInvoiceService::cite).toList());
+        if (cutOver(lease)) {
+            // S16-04: the contract's own VAT on a cut-over lease was invoiced by the previous
+            // system; the credit note names that invoice's contract too. Only for a true
+            // cut-over (its contract journal carries an import batch) — never for a lease of ours.
+            String ref = lease.getExternalContractRef() != null && !lease.getExternalContractRef().isBlank()
+                    ? lease.getExternalContractRef().trim()
+                    : lease.getContractNumber() != null ? String.valueOf(lease.getContractNumber()) : null;
+            refs.add("Tax invoice issued by the previous system for contract"
+                    + (ref == null ? "" : " " + ref)
+                    + (lease.getContractDate() == null ? "" : " (" + DAY.format(lease.getContractDate()) + ")"));
+        }
+        return refs.isEmpty() ? null : String.join(", ", refs);
     }
 
-    private boolean isContractPoint(UUID pointId) {
-        return points.findById(pointId).map(p -> p.getKind() == VatTaxPointKind.CONTRACT).orElse(false);
+    /** The addendum whose contract journal this CHARGE point is, or null. */
+    private com.datagami.rentaxis.domain.entity.LeaseAddendum addendumOf(VatTaxPoint point, Lease lease) {
+        if (point.getKind() != VatTaxPointKind.CHARGE || point.getJournalId() == null) return null;
+        return addenda.findByLease_IdOrderByCreatedAtAsc(lease.getId()).stream()
+                .filter(a -> point.getJournalId().equals(a.getTcoJournalId())).findFirst().orElse(null);
     }
+
+    private static String cite(TaxInvoice i) {
+        return i.getInvoiceNumber() + " (" + DAY.format(i.getIssueDate()) + ")";
+    }
+
+    /** Whether the lease's contract journal was written by a cut-over import. */
+    private boolean cutOver(Lease lease) {
+        return lease.getPostingJournalId() != null && journals.findById(lease.getPostingJournalId())
+                .map(e -> e.getImportBatchId() != null).orElse(false);
+    }
+
 
     private static String describe(VatTaxPoint point, Cheque cheque, LocalDate[] period) {
         String span = period[0] == null || period[1] == null ? ""

@@ -29,6 +29,13 @@ public interface RenterRepository extends JpaRepository<Renter, UUID> {
      */
     List<Renter> findByTenantIdAndEmailIn(UUID tenantId, Collection<String> emails);
 
+    /** PR #369 R1 P2-2: every renter of the tenant with this email, trimmed and case-insensitive. */
+    @org.springframework.data.jpa.repository.Query("""
+            select r from Renter r where r.tenantId = :tenantId and lower(trim(r.email)) = lower(trim(:email))
+            order by r.nameEn, r.id""")
+    List<Renter> findByTenantIdAndEmailNormalised(@org.springframework.data.repository.query.Param("tenantId") UUID tenantId,
+                                                  @org.springframework.data.repository.query.Param("email") String email);
+
     /**
      * Scale P1-3/P1-6: the renters list and picker, searched and paged in the database.
      * {@code q} is {@code %term%}, already lowercased and trimmed (the trigram indexes on

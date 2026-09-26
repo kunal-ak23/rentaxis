@@ -20,7 +20,14 @@ export type VatReturn = {
   inputVatOnExempt?: number;
   canFile: boolean;
   cannotFileReason: string | null;
+  /** PR #369 R1 P2-1: the output check fails, so filing needs a reason and the difference acknowledged. */
+  reasonRequired?: boolean;
+  /** As filed: the difference recorded at filing (0 = tied; null = filed before it was recorded) and the reason given. */
+  outputDifference?: number | null;
+  outputOverrideReason?: string | null;
 };
+/** The shortest reason the server accepts for filing with an output difference. */
+export const MIN_OVERRIDE_REASON = 10;
 export type VatDocument = {
   kind: string; id: string; number: string; date: string; party: string | null; partyAr: string | null;
   amount: number | null; vat: number | null; journalId: string | null; entryNumber: string | null; leaseId: string | null;
@@ -28,6 +35,7 @@ export type VatDocument = {
 export type VatFiling = {
   id: string; periodStart: string; periodEnd: string; status: string; netVat: number | null; filingReference: string | null;
   filedAt: string; filedByName: string | null; reopenedAt: string | null; reopenReason: string | null;
+  outputDifference?: number | null; outputOverrideReason?: string | null;
 };
 
 
@@ -35,8 +43,8 @@ export const vatReturnsApi = {
   get: (periodStart: string) => apiGet<VatReturn>(`/finance/vat-returns${qs({ periodStart })}`),
   filings: () => apiGet<VatFiling[]>("/finance/vat-returns/filings"),
   documents: (periodStart: string, box: string) => apiGet<VatDocument[]>(`/finance/vat-returns/documents${qs({ periodStart, box })}`),
-  file: (periodStart: string, filingReference: string) =>
-    apiSend<VatReturn>("POST", "/finance/vat-returns/file", { periodStart, filingReference }),
+  file: (periodStart: string, filingReference: string, outputDifferenceReason?: string, acknowledgedDifference?: number) =>
+    apiSend<VatReturn>("POST", "/finance/vat-returns/file", { periodStart, filingReference, outputDifferenceReason, acknowledgedDifference }),
   reopen: (id: string, reason: string) => apiSend<VatReturn>("POST", `/finance/vat-returns/${id}/reopen`, { reason }),
   pdfUrl: (periodStart: string, lang: string) => `${PROXY}/finance/vat-returns/return.pdf${qs({ periodStart, lang })}`,
   csvUrl: (periodStart: string, lang: string) => `${PROXY}/finance/vat-returns/return.csv${qs({ periodStart, lang })}`,

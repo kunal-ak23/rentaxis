@@ -31,7 +31,12 @@ public record VatReturnDTO(
         /* PR #361 R1 P2-3: box 9's VAT on costs of residential-only (exempt) properties — may not be recoverable. */
         BigDecimal inputVatOnExempt,
         boolean canFile,
-        String cannotFileReason) {
+        String cannotFileReason,
+        /* PR #369 R1 P2-1: an open return whose output check fails can be filed only with a reason (and the difference acknowledged). */
+        boolean reasonRequired,
+        /* As filed: the output difference recorded at filing (0.00 = tied; null = filed before the check was recorded) and the reason given. */
+        BigDecimal outputDifference,
+        String outputOverrideReason) {
 
     /** {@code documents}: how many documents the box drills to (0 for a total). */
     public record Box(String code, String key, BigDecimal amount, BigDecimal vat, int documents, boolean total) { }
@@ -46,5 +51,7 @@ public record VatReturnDTO(
     /** A filed (or re-opened) period, for the history list. */
     public record Filing(UUID id, LocalDate periodStart, LocalDate periodEnd, String status, BigDecimal netVat,
                          String filingReference, Instant filedAt, String filedByName, Instant reopenedAt,
-                         String reopenReason) { }
+                         String reopenReason,
+                         /* S16-04: set when the return was filed with its output check acknowledged as failing. */
+                         BigDecimal outputDifference, String outputOverrideReason) { }
 }

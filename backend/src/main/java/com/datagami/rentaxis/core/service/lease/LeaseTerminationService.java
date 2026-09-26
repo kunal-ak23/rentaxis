@@ -148,6 +148,7 @@ public class LeaseTerminationService {
 
         Split split = defaultSplit(chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId), t);
         RecognitionService.TerminationRecognition plan = recognitionService.previewTermination(leaseId, t);
+        requireTrnForCreditNote(lease, plan.unearnedVat());
         VatTaxPointService.TerminationVat vat = vatTaxPoints.previewTermination(leaseId, t, plan.unearnedVat());
         return new TerminationPreviewDTO(
                 t,
@@ -185,7 +186,9 @@ public class LeaseTerminationService {
         // recognition reversal carries the later of T and the entry's own date
         // (see RecognitionService.reversalDate), so a month closed after T files
         // on its own month-end, and that date has to be open too.
-        requireOpenPeriod(recognitionService.previewTermination(leaseId, t).latestPostingDate(), t);
+        RecognitionService.TerminationRecognition priced = recognitionService.previewTermination(leaseId, t);
+        requireOpenPeriod(priced.latestPostingDate(), t);
+        requireTrnForCreditNote(lease, priced.unearnedVat());
 
         for (Cheque cheque : toReturn) {
             // An abandoned checkout is not money and the contract it belonged to is
@@ -236,7 +239,9 @@ public class LeaseTerminationService {
      */
     UUID endForTransfer(Lease lease, LocalDate t, List<Cheque> toReturn, List<Cheque> toCarry, String note) {
         validate(lease, t);
-        requireOpenPeriod(recognitionService.previewTermination(lease.getId(), t).latestPostingDate(), t);
+        RecognitionService.TerminationRecognition priced = recognitionService.previewTermination(lease.getId(), t);
+        requireOpenPeriod(priced.latestPostingDate(), t);
+        requireTrnForCreditNote(lease, priced.unearnedVat());
         for (Cheque cheque : toCarry) {
             chequeService.transferOut(cheque.getId(), t, note);
         }
@@ -249,6 +254,18 @@ public class LeaseTerminationService {
         RecognitionService.TerminationRecognition plan = recognitionService.truncateForTermination(lease.getId(), t);
         VatTaxPointService.TerminationVat vat = vatTaxPoints.settleForTermination(lease, t, plan.unearnedVat());
         return postUnearnedReversal(lease, plan, vat, t);
+    }
+
+    /**
+     * PR #369 R1 P3-3: a CONTRACT lease hands the VAT on its unearned rent back on a tax
+     * credit note, which needs the TRN — refused before anything is written, and by the
+     * preview the same way. (An instalment lease's VAT settles through its tax points,
+     * whose own post checks the TRN.)
+     */
+    void requireTrnForCreditNote(Lease lease, java.math.BigDecimal unearnedVat) {
+        if (lease.getVatTiming() == VatTiming.INSTALMENT) return;
+        String problem = leasePostingService.creditNoteTrnProblem(lease, unearnedVat);
+        if (problem != null) throw new BusinessRuleViolationException(problem);
     }
 
     /** A's rent receivable on the lease as the ledger has it now (debit positive). */
@@ -358,10 +375,12 @@ public class LeaseTerminationService {
             BigDecimal adjustment = vat.declaredAtT().subtract(vat.creditedBack());
             BigDecimal taxable = vat.pendingTaxable().subtract(plan.unearnedVatTaxable());
             vatTaxPoints.recordTerminationAdjustment(lease, t, adjustment, taxable, tcr.getId());
-        } else if (unearnedVat != null && unearnedVat.signum() > 0 && vatTaxPoints.contractDocumented(lease.getId())) {
-            // F14-11: a CONTRACT lease whose contract tax invoice we issued gets the
-            // credit note for the VAT handed back. A cut-over or pre-rule lease has no
-            // invoice of ours to correct, so none is issued for it.
+        } else if (unearnedVat != null && unearnedVat.signum() > 0) {
+            // F14-11 / S16-04: the VAT handed back out of OUTPUT_VAT needs its tax credit
+            // note, dated on the TCR, or the VAT return's output check cannot tie. A
+            // cut-over (or pre-rule) CONTRACT lease has no invoice of ours to correct —
+            // the credit note then names the contract whose tax invoice the previous
+            // system issued (TaxInvoiceService.referencesFor).
             vatTaxPoints.recordTerminationAdjustment(lease, t, unearnedVat.negate(),
                     plan.unearnedVatTaxable().negate(), tcr.getId());
         }
