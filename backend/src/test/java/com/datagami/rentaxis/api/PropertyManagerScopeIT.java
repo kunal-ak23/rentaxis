@@ -384,6 +384,20 @@ class PropertyManagerScopeIT extends AbstractPostgresIT {
 
     // ------------------------------------------------------------- inventory
 
+    /** The accountant reads a property's towers (tower selector, "By tower" P&L) and cannot create one. */
+    @Test
+    void anAccountantReadsAPropertysBuildingsButCannotCreateOne() {
+        call(admin, HttpMethod.POST, "/api/v1/buildings",
+                Map.of("property", Map.of("id", palm.getId().toString()), "nameEn", "Palm Tower"));
+        User accountant = user(UserRole.ACCOUNTANT);
+        ResponseEntity<String> read = call(accountant, HttpMethod.GET, "/api/v1/buildings/property/" + palm.getId(), null);
+        assertThat(read.getStatusCode()).as(read.getBody()).isEqualTo(HttpStatus.OK);
+        assertThat(body(read)).hasSize(1);
+        assertThat(call(accountant, HttpMethod.POST, "/api/v1/buildings",
+                Map.of("property", Map.of("id", palm.getId().toString()), "nameEn", "Another")).getStatusCode())
+                .isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
     @Test
     void unitsBuildingsPropertiesAndContactsStopAtTheManagersBuildings() {
         String palmTower = body(call(admin, HttpMethod.POST, "/api/v1/buildings",

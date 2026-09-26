@@ -32,8 +32,9 @@ public class BuildingController {
         return ResponseEntity.ok(service.getAllBuildings());
     }
 
+    /** Read-only for the accountant too: the tower selector and the "By tower" P&L (S16-02) are finance screens. */
     @GetMapping("/property/{propertyId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
     public ResponseEntity<List<Building>> getBuildingsByProperty(@PathVariable UUID propertyId) {
         return ResponseEntity.ok(service.getBuildingsByProperty(propertyId));
     }
