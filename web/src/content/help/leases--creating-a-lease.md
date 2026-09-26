@@ -35,7 +35,7 @@ You can review and edit the payment schedule before posting the contract.
 
 ### Posting the Tenancy Contract
 
-1. Open the draft — the **Draft** pill on the contract list, or **Drafts to post** in the side panel, lists them
+1. Open the draft — the **Draft & to sign** pill on the contract list, or **Contracts to post** in the side panel, lists drafts and contracts awaiting the tenant's signature
 2. Review the contract details and the cheques (the **Cheques** tab)
 3. Click **Post Contract**; a dry run checks it first, then its journal is written
 4. The unit shows as **Occupied** from the start date (or **Reserved** until then)

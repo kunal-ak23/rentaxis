@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useSyncExternalStore } from "react";
+import { Suspense, useState, useEffect, useSyncExternalStore } from "react";
+import { useSearchParams } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { Plus, X, FileText, Calendar, DollarSign, Home, CheckCircle, Ban, AlertCircle, LayoutGrid, Columns3, Download, Sparkles, Loader2, RefreshCw, Pencil, List, Eye, Search, Upload, Trash2 } from "lucide-react";
@@ -23,9 +24,10 @@ import ActionsMenu, { type ActionsMenuItem } from "@/components/ui/ActionsMenu";
 import { FilterChip, FiltersButton } from "@/components/ui/FiltersButton";
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import { businessTodayIso } from "@/lib/businessDate";
-import { expiringFrom } from "@/lib/dashboard/pipeline";
+import { expiringFrom, upcomingFrom } from "@/lib/dashboard/pipeline";
 import {
-    CONTRACT_VIEWS, ENDED, contractViewQuery, parseContractView, viewQuery, type ContractView,
+    CONTRACT_VIEWS, ENDED, TO_POST, contractRead, parseContractView, segmentReads, statusQuery, viewQuery, viewStatuses,
+    type ContractRead, type ContractView,
 } from "@/lib/leases/contractListView";
 
 type Lease = LeaseDetail;
@@ -107,10 +109,20 @@ function setUrlQuery(changes: Record<string, string | null>) {
 const PILL_LABEL: Record<ContractView, string> = {
     all: "pillAll", draft: "pillDraft", active: "pillActive", expiring: "pillExpiring", notice: "pillNotice", ended: "pillEnded",
 };
-/** The pills' own statuses: a status filter outside them is shown as a chip. */
-const PILL_STATUSES: (LeaseStatus | "")[] = ["", "DRAFT", "ACTIVE", "NOTICE_GIVEN"];
-
+/**
+ * `useSearchParams` makes Next re-render this page when a link (a pinned view in
+ * the side panel) changes the query on the same route; it also needs a Suspense
+ * boundary for `next build`.
+ */
 export default function LeasesPage() {
+    return (
+        <Suspense fallback={null}>
+            <LeasesList />
+        </Suspense>
+    );
+}
+
+function LeasesList() {
     const t = useTranslations("MasterData");
     const tl = useTranslations("Leasing");
     const tList = useTranslations("ListActions");
@@ -124,22 +136,28 @@ export default function LeasesPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(25);
     const [totalItems, setTotalItems] = useState(0);
+    // Read so a same-route link (a pinned view) re-renders the page; the URL itself is read below.
+    useSearchParams();
     const urlSearch = useSyncExternalStore(subscribeUrl, () => window.location.search, () => "");
     const listState = parseContractView(new URLSearchParams(urlSearch));
     const view = listState.view;
+    const subset = listState.subset;
     const statusFilter = listState.status;
     const propertyFilter = listState.propertyId;
-    // What is typed, until it is typed: the URL's search seeds the box without an effect.
-    const [typedSearch, setTypedSearch] = useState<string | null>(null);
-    const searchQuery = typedSearch ?? listState.search;
-    const setSearchQuery = (v: string) => setTypedSearch(v);
-    const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(listState.search);
-    const setStatusFilter = (status: LeaseStatus | "") => setUrlQuery({ status: status || null, view: ENDED.includes(status as LeaseStatus) ? "ended" : null });
+    // The URL is the one source of truth for the search (R1 P3-1). While typing, the
+    // box shows the draft; once the URL's search moves (the debounce wrote it, or a
+    // link replaced it) the box shows the URL again.
+    const [draftSearch, setDraftSearch] = useState<{ base: string; text: string } | null>(null);
+    const debouncedSearchQuery = listState.search;
+    const typing = draftSearch !== null && draftSearch.base === debouncedSearchQuery;
+    const searchQuery = typing ? draftSearch.text : debouncedSearchQuery;
+    const setSearchQuery = (v: string) => setDraftSearch({ base: debouncedSearchQuery, text: v });
+    const setStatusFilter = (status: LeaseStatus | "") => setUrlQuery(statusQuery(status));
     const selectView = (v: ContractView) => setUrlQuery(viewQuery(v));
     const setPropertyFilter = (id: string) => setUrlQuery({ propertyId: id || null });
     const properties = useNameLookup("properties");
     const [pillCounts, setPillCounts] = useState<{ key: string; counts: Partial<Record<ContractView, string>> }>({ key: "", counts: {} });
-    const [expiringCapped, setExpiringCapped] = useState(false);
+    const [boundedCapped, setBoundedCapped] = useState(false);
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [postResults, setPostResults] = useState<PostResult[] | null>(null);
     /** The drafts the last bulk run tried, so "Retry failed" can send them again. */
@@ -200,13 +218,17 @@ export default function LeasesPage() {
     }, [canManageLeases]);
 
     useEffect(() => {
+        if (!typing) return;
         const timer = setTimeout(() => {
-            const next = searchQuery.trim();
-            setDebouncedSearchQuery(next);
-            if (typedSearch !== null) setUrlQuery({ search: next || null });
+            const next = draftSearch.text.trim();
+            if (next === debouncedSearchQuery) return;
+            // The draft now belongs to the search it wrote (a trailing space being typed
+            // survives); a link that changes the search leaves it behind.
+            setDraftSearch({ base: next, text: draftSearch.text });
+            setUrlQuery({ search: next || null });
         }, 350);
         return () => clearTimeout(timer);
-    }, [searchQuery, typedSearch]);
+    }, [typing, draftSearch, debouncedSearchQuery]);
 
     useEffect(() => {
         setCurrentPage(1);
@@ -214,7 +236,7 @@ export default function LeasesPage() {
 
     useEffect(() => {
         fetchLeases();
-    }, [currentPage, itemsPerPage, debouncedSearchQuery, statusFilter, view, propertyFilter]);
+    }, [currentPage, itemsPerPage, debouncedSearchQuery, statusFilter, view, subset, propertyFilter]);
 
     // Pill counts (spec §1a), from GET /leases/paged totals — size=1 each, plus the
     // bounded Expiring read the Home pipeline uses. The endpoint filters one status
@@ -229,7 +251,7 @@ export default function LeasesPage() {
             if (alive) setPillCounts(prev => ({ key, counts: { ...(prev.key === key ? prev.counts : {}), [v]: n } }));
         };
         total().then(n => put("all", String(n))).catch(() => {});
-        total("DRAFT").then(n => put("draft", String(n))).catch(() => {});
+        Promise.all(TO_POST.map(st => total(st))).then(ns => put("draft", String(ns.reduce((a, b) => a + b, 0)))).catch(() => {});
         total("ACTIVE").then(n => put("active", String(n))).catch(() => {});
         total("NOTICE_GIVEN").then(n => put("notice", String(n))).catch(() => {});
         Promise.all(ENDED.map(st => total(st))).then(ns => put("ended", String(ns.reduce((a, b) => a + b, 0)))).catch(() => {});
@@ -253,27 +275,31 @@ export default function LeasesPage() {
     useEffect(() => {
         setCurrentPage(1);
         setSelected(new Set());
-    }, [statusFilter, view, propertyFilter]);
+    }, [statusFilter, view, subset, propertyFilter]);
 
     const fetchLeases = async () => {
         setLoading(true);
         try {
-            const q = contractViewQuery(view, statusFilter);
-            const data = await leaseApi.paged({
-                search: debouncedSearchQuery || undefined,
-                status: q.status,
-                propertyId: propertyFilter || undefined,
-                sort: q.sort,
-                page: q.bounded ? 0 : Math.max(currentPage - 1, 0),
-                size: q.size ?? itemsPerPage,
-            });
-            if (view === "expiring") {
-                // One bounded page sorted by end date, narrowed to the next 60 days.
-                const e = expiringFrom(data, businessTodayIso());
-                setLeases(e.rows);
-                setTotalItems(e.rows.length);
-                setExpiringCapped(e.capped);
+            const read = contractRead(listState);
+            const common = { search: debouncedSearchQuery || undefined, propertyId: propertyFilter || undefined };
+            if (read.kind === "bounded") {
+                // One bounded page sorted by date, narrowed to the stage (Expiring / Upcoming).
+                const data = await leaseApi.paged({ ...common, status: read.status, sort: read.sort, page: 0, size: read.size });
+                const cut = (read.which === "expiring" ? expiringFrom : upcomingFrom)(data, businessTodayIso());
+                setLeases(cut.rows);
+                setTotalItems(cut.rows.length);
+                setBoundedCapped(cut.capped);
+            } else if (read.kind === "multi") {
+                // The endpoint filters one status at a time: read each status's total, then
+                // the rows of this page from the statuses listed back to back (R1 P2-2).
+                const totals = await Promise.all(read.statuses.map(st =>
+                    leaseApi.paged({ ...common, status: st, size: 1 }).then(p => p.totalElements ?? 0)));
+                const reads = segmentReads(read.statuses, totals, Math.max(currentPage - 1, 0), itemsPerPage);
+                const pages = await Promise.all(reads.map(r => leaseApi.paged({ ...common, status: r.status, page: r.page, size: r.size })));
+                setLeases(pages.flatMap((p, i) => (p.content ?? []).slice(reads[i].skip, reads[i].skip + reads[i].take)));
+                setTotalItems(totals.reduce((x, y) => x + y, 0));
             } else {
+                const data = await leaseApi.paged({ ...common, status: read.status, page: Math.max(currentPage - 1, 0), size: itemsPerPage });
                 setLeases(data.content ?? []);
                 setTotalItems(data.totalElements ?? 0);
             }
@@ -765,7 +791,10 @@ export default function LeasesPage() {
     // `leases` is already the server's filtered page — `status` rode along on
     // the request above, so there is nothing left to filter client-side.
     const filteredLeases = leases;
-    const listBounded = contractViewQuery(view, statusFilter).bounded;
+    const listRead: ContractRead = contractRead(listState);
+    const listBounded = listRead.kind === "bounded";
+    // A status the Filters select narrowed a multi-status pill (or All) to, shown as a chip.
+    const narrowed = statusFilter && (view === "all" || viewStatuses(listState).length > 1) ? statusFilter : "";
     const selectableDrafts = filteredLeases.filter(l => l.status === "DRAFT");
 
     return (
@@ -826,7 +855,7 @@ export default function LeasesPage() {
                             className="ps-9 pe-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 max-w-full transition-all"
                         />
                     </div>
-                    <FiltersButton label={tList("filters")} activeCount={statusFilter && !PILL_STATUSES.includes(statusFilter) ? 1 : 0}>
+                    <FiltersButton label={tList("filters")} activeCount={narrowed ? 1 : 0}>
                         <label className="block text-[11px] font-semibold text-muted">
                             {tc("statusFilter")}
                             <select
@@ -843,12 +872,20 @@ export default function LeasesPage() {
                             </select>
                         </label>
                     </FiltersButton>
-                    {statusFilter && !PILL_STATUSES.includes(statusFilter) && (
+                    {narrowed && (
                         <FilterChip
                             testId="lease-filter-chip-status"
-                            label={tl(`leaseStatus.${statusFilter}`)}
-                            removeLabel={tList("removeFilter", { name: tl(`leaseStatus.${statusFilter}`) })}
-                            onRemove={() => (view === "ended" ? selectView("all") : setStatusFilter(""))}
+                            label={tl(`leaseStatus.${narrowed}`)}
+                            removeLabel={tList("removeFilter", { name: tl(`leaseStatus.${narrowed}`) })}
+                            onRemove={() => (subset ? setUrlQuery({ status: null }) : selectView(view))}
+                        />
+                    )}
+                    {subset && (
+                        <FilterChip
+                            testId={`lease-filter-chip-${subset}`}
+                            label={tc(subset === "settlement" ? "chipSettlement" : "chipUpcoming")}
+                            removeLabel={tList("removeFilter", { name: tc(subset === "settlement" ? "chipSettlement" : "chipUpcoming") })}
+                            onRemove={() => selectView(view)}
                         />
                     )}
                     </div>
@@ -926,9 +963,11 @@ export default function LeasesPage() {
             )}
 
 
-            {view === "expiring" && !loading && (
-                <p className="mb-3 text-[12px] text-muted" data-testid="lease-expiring-note">
-                    {expiringCapped ? tc("expiringCapped", { count: leases.length }) : tc("expiringNote")}
+            {listRead.kind === "bounded" && !loading && (
+                <p className={cn("mb-3 text-[12px]", boundedCapped ? "text-warning" : "text-muted")} data-testid="lease-expiring-note" data-capped={boundedCapped || undefined}>
+                    {listRead.which === "expiring"
+                        ? (boundedCapped ? tc("expiringCapped", { count: leases.length }) : tc("expiringNote"))
+                        : (boundedCapped ? tc("upcomingCapped", { count: leases.length }) : tc("upcomingNote"))}
                 </p>
             )}
 

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../../../messages/en.json";
@@ -101,13 +101,55 @@ describe("contract list pills", () => {
         expect(pill("all")).toHaveAttribute("aria-pressed", "true");
     });
 
-    it("filters on the server and writes the pill into the URL", async () => {
+    it("filters on the server and writes the pill into the URL; Draft lists drafts and contracts awaiting signature", async () => {
         renderPage();
         await screen.findByTestId("lease-row-l-draft");
         fireEvent.click(screen.getByTestId("contract-pill-draft"));
-        await waitFor(() => expect(api.paged).toHaveBeenLastCalledWith(expect.objectContaining({ status: "DRAFT", size: 25 })));
-        expect(new URL(window.location.href).searchParams.get("status")).toBe("DRAFT");
+        await waitFor(() => expect(api.paged).toHaveBeenCalledWith(expect.objectContaining({ status: "PENDING_SIGNATURE", size: 1 })));
+        await waitFor(() => expect(api.paged).toHaveBeenLastCalledWith(expect.objectContaining({ status: "DRAFT", page: 0, size: 25 })));
+        expect(new URL(window.location.href).searchParams.get("view")).toBe("draft");
         expect(screen.getByTestId("contract-pill-draft")).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("lists every status the Ended pill counts, page by page across statuses (R1 P2-2)", async () => {
+        window.history.replaceState(null, "", "/en/dashboard/leases?view=ended");
+        const rows = (st: string, n: number) => Array.from({ length: n }, (_, i) => ({ ...lease(`${st}-${i}`, st as LeaseStatus, `${st}-${i}`) }));
+        const byStatus: Record<string, LeaseDetail[]> = { TERMINATED: rows("TERMINATED", 1), EXPIRED: rows("EXPIRED", 1), RENEWED: [], CLOSED: rows("CLOSED", 3) };
+        api.paged.mockImplementation(async (q: { status?: string; size?: number; page?: number } = {}) => {
+            const all = byStatus[q.status ?? ""] ?? [];
+            const size = q.size ?? 25, pg = q.page ?? 0;
+            return { content: all.slice(pg * size, pg * size + size), totalElements: all.length, totalPages: Math.ceil(all.length / size), number: pg, size };
+        });
+        renderPage();
+        await screen.findByTestId("lease-row-CLOSED-2");
+        expect(screen.getAllByTestId(/^lease-row-/).map(r => r.getAttribute("data-testid"))).toEqual(
+            ["lease-row-TERMINATED-0", "lease-row-EXPIRED-0", "lease-row-CLOSED-0", "lease-row-CLOSED-1", "lease-row-CLOSED-2"]);
+        expect(screen.getByTestId("contract-pill-ended")).toHaveTextContent("5");
+    });
+
+    it("opens Home's Settlement due as Terminated + Expired with a chip that widens back to Ended", async () => {
+        window.history.replaceState(null, "", "/en/dashboard/leases?view=settlement");
+        renderPage();
+        expect(await screen.findByTestId("lease-filter-chip-settlement")).toBeInTheDocument();
+        await waitFor(() => expect(api.paged).toHaveBeenCalledWith(expect.objectContaining({ status: "EXPIRED", size: 1 })));
+        expect(api.paged).not.toHaveBeenCalledWith(expect.objectContaining({ status: "RENEWED", page: 0, size: 25 }));
+        fireEvent.click(screen.getByTestId("lease-filter-chip-settlement-remove"));
+        expect(new URL(window.location.href).searchParams.get("view")).toBe("ended");
+    });
+
+    it("keeps the URL as the only source of the search (R1 P3-1)", async () => {
+        renderPage();
+        await screen.findByTestId("lease-row-l-draft");
+        fireEvent.change(screen.getByTestId("lease-search"), { target: { value: "olv" } });
+        await waitFor(() => expect(new URL(window.location.href).searchParams.get("search")).toBe("olv"), { timeout: 2000 });
+        await waitFor(() => expect(api.paged).toHaveBeenLastCalledWith(expect.objectContaining({ search: "olv" })));
+        // A link replaces the query (a pinned view): the old search no longer filters or shows.
+        act(() => {
+            window.history.pushState(null, "", "/en/dashboard/leases?view=draft");
+            window.dispatchEvent(new PopStateEvent("popstate"));
+        });
+        await waitFor(() => expect(screen.getByTestId("lease-search")).toHaveValue(""));
+        await waitFor(() => expect(api.paged).toHaveBeenLastCalledWith(expect.objectContaining({ search: undefined, status: "DRAFT" })));
     });
 
     it("opens on the pill the URL names (Home's pipeline links here)", async () => {

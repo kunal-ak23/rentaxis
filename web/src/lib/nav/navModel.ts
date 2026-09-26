@@ -75,7 +75,7 @@ export function buildNav(ctx: NavModelContext): RailSection[] {
         // Spec §1a: pinned views, filters on the contract list every such role already reaches.
         savedViews: can("canViewLeases") ? [
             pi("saved-expiring", "/dashboard/leases?view=expiring", { ns: "ContractList", key: "savedExpiring" }, "saved-expiring"),
-            pi("saved-drafts", "/dashboard/leases?status=DRAFT", { ns: "ContractList", key: "savedDrafts" }, "saved-drafts"),
+            pi("saved-drafts", "/dashboard/leases?view=draft", { ns: "ContractList", key: "savedDrafts" }, "saved-drafts"),
         ] : [],
     }));
 
