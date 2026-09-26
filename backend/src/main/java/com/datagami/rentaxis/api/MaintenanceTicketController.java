@@ -50,13 +50,14 @@ public class MaintenanceTicketController {
     public ResponseEntity<org.springframework.data.domain.Page<MaintenanceTicketDTO>> listTicketsPaged(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) UUID propertyId,
+            @RequestParam(required = false) UUID buildingId,
             @RequestParam(required = false) com.datagami.rentaxis.domain.entity.enums.TicketStatus status,
             @RequestParam(required = false) com.datagami.rentaxis.domain.entity.enums.TicketPriority priority,
             @RequestParam(required = false) java.time.LocalDate from,
             @RequestParam(required = false) java.time.LocalDate to,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "25") int size) {
-        return ResponseEntity.ok(ticketService.searchPaged(callerId(), q, propertyId, status, priority, from, to, page, size));
+        return ResponseEntity.ok(ticketService.searchPaged(callerId(), q, propertyId, buildingId, status, priority, from, to, page, size));
     }
 
     @GetMapping("/{id}")
@@ -84,7 +85,7 @@ public class MaintenanceTicketController {
     }
 
     @PutMapping("/{id}/status")
-    @PreAuthorize("hasAnyRole('PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN')")
+    @PreAuthorize("hasAnyRole('PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN', 'TENANT_USER')")
     public ResponseEntity<MaintenanceTicketDTO> updateStatus(
             @PathVariable UUID id,
             @RequestBody Map<String, String> body) {

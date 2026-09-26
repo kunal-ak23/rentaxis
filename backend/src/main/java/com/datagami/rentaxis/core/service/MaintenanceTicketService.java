@@ -119,9 +119,13 @@ public class MaintenanceTicketService {
         throw new NotFoundException("Ticket not found");
     }
 
-    /** Staff roles a ticket can be assigned to. There is no technician role. */
+    /**
+     * Staff roles a ticket can be assigned to. There is no technician role: the
+     * maintenance team are staff users (TENANT_USER), who can be given tickets
+     * (S16-03) and see and work the ones assigned to them.
+     */
     private static final Set<String> ASSIGNABLE_ROLES =
-            Set.of(UserRole.TENANT_ADMIN.name(), UserRole.PROPERTY_MANAGER.name());
+            Set.of(UserRole.TENANT_ADMIN.name(), UserRole.PROPERTY_MANAGER.name(), UserRole.TENANT_USER.name());
 
     /**
      * The assignee must be ACTIVE and belong to the ticket's tenant as a tenant
@@ -151,7 +155,8 @@ public class MaintenanceTicketService {
         }
         if ((!superAdmin && !ASSIGNABLE_ROLES.contains(assignee.getRole()))
                 || !UserStatus.ACTIVE.name().equals(assignee.getStatus())) {
-            throw new BusinessRuleViolationException("Tickets can be assigned only to active admins and property managers");
+            throw new BusinessRuleViolationException(
+                    "Tickets can be assigned only to active admins, property managers and staff users");
         }
         if (UserRole.PROPERTY_MANAGER.name().equals(assignee.getRole())) {
             UUID propertyId = ticket.getProperty() != null ? ticket.getProperty().getId() : null;
@@ -178,8 +183,11 @@ public class MaintenanceTicketService {
         }
         if (callerHasRole("TENANT_USER")) {
             // What they reported, as their list already was (#73): the detail,
-            // replies, history and attachments used to be open by id.
-            if (!java.util.Objects.equals(callerUserId(), ticket.getReportedBy())) {
+            // replies, history and attachments used to be open by id. S16-03: and
+            // what was assigned to them — the maintenance team's worklist.
+            UUID caller = callerUserId();
+            if (!java.util.Objects.equals(caller, ticket.getReportedBy())
+                    && !java.util.Objects.equals(caller, ticket.getAssignedTo())) {
                 throw new NotFoundException("Ticket not found");
             }
             return;
@@ -470,13 +478,21 @@ public class MaintenanceTicketService {
     public org.springframework.data.domain.Page<MaintenanceTicketDTO> searchPaged(UUID userId, String q, UUID propertyId,
             TicketStatus status, com.datagami.rentaxis.domain.entity.enums.TicketPriority priority,
             java.time.LocalDate from, java.time.LocalDate to, int page, int size) {
+        return searchPaged(userId, q, propertyId, null, status, priority, from, to, page, size);
+    }
+
+    /** S16-02: {@code buildingId} narrows to the tickets on one tower's (Building's) units. */
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<MaintenanceTicketDTO> searchPaged(UUID userId, String q, UUID propertyId,
+            UUID buildingId, TicketStatus status, com.datagami.rentaxis.domain.entity.enums.TicketPriority priority,
+            java.time.LocalDate from, java.time.LocalDate to, int page, int size) {
         org.springframework.data.domain.Pageable pageable = com.datagami.rentaxis.core.util.Search.page(page, size, TICKET_ORDER);
         if (propertyId != null && !propertyScope.canAccessProperty(propertyId)) {
             return org.springframework.data.domain.Page.empty(pageable);
         }
         List<UUID> scoped = propertyScope.scopedPropertyIds();
         org.springframework.data.domain.Page<MaintenanceTicket> rows = ticketRepository.searchPaged(
-                com.datagami.rentaxis.core.util.Search.requireTenant(), propertyId, status, priority, from, to,
+                com.datagami.rentaxis.core.util.Search.requireTenant(), propertyId, buildingId, status, priority, from, to,
                 com.datagami.rentaxis.core.util.Search.like(q), scoped == null,
                 com.datagami.rentaxis.core.util.Search.scopeIds(scoped), pageable);
         List<MaintenanceTicketDTO> dtos = mapAll(rows.getContent(), userId);
@@ -487,7 +503,10 @@ public class MaintenanceTicketService {
     private List<MaintenanceTicket> scopedTickets(UUID userId, String role, UUID unitId) {
         List<MaintenanceTicket> tickets;
 
-        if ("RENTER".equals(role) || "TENANT_USER".equals(role)) {
+        if ("TENANT_USER".equals(role)) {
+            // S16-03: what they reported and what was assigned to them.
+            tickets = ticketRepository.findForStaff(userId, unitId);
+        } else if ("RENTER".equals(role)) {
             // Renters/tenant users see the tickets they reported, and a renter
             // also sees the ones staff logged on their behalf (#19).
             UUID renterId = "RENTER".equals(role)
@@ -596,6 +615,10 @@ public class MaintenanceTicketService {
     @Transactional
     public MaintenanceTicketDTO updateStatus(UUID ticketId, String newStatus, UUID performedBy) {
         MaintenanceTicket ticket = lockedVisibleTicket(ticketId);
+        if (callerHasRole("TENANT_USER") && !java.util.Objects.equals(callerUserId(), ticket.getAssignedTo())) {
+            // S16-03: a staff user works the tickets assigned to them, not the ones they merely reported.
+            throw new AccessDeniedException("Only the ticket's assignee can change its status");
+        }
 
         String fromStatus = ticket.getStatus().name();
         TicketStatus targetStatus = TicketStatus.valueOf(newStatus);

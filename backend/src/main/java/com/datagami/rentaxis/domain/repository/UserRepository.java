@@ -163,7 +163,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     /**
      * Who a ticket on {@code propertyId} can be assigned to: ACTIVE tenant admins
-     * of {@code tenantId}, and ACTIVE property managers of it who run that
+     * and staff users (TENANT_USER — the maintenance team, S16-03) of
+     * {@code tenantId}, and ACTIVE property managers of it who run that
      * property — by home tenant or membership. The same rule
      * {@code MaintenanceTicketService.requireAssignableStaff} enforces, so the
      * picker offers nobody the assign call would refuse. Native for the reason
@@ -176,7 +177,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
               AND (u.tenant_id = :tenantId
                    OR EXISTS (SELECT 1 FROM user_tenant_memberships m
                               WHERE m.user_id = u.id AND m.tenant_id = :tenantId))
-              AND (u.role = 'TENANT_ADMIN'
+              AND (u.role IN ('TENANT_ADMIN', 'TENANT_USER')
                    OR (u.role = 'PROPERTY_MANAGER'
                        AND EXISTS (SELECT 1 FROM user_property_assignments a
                                    WHERE a.user_id = u.id AND a.property_id = :propertyId)))
