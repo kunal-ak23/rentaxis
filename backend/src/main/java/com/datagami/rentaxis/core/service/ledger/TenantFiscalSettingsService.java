@@ -123,6 +123,19 @@ public class TenantFiscalSettingsService {
     }
 
     /**
+     * Whether {@code date} is outside the locked period — the question {@link #assertOpen}
+     * asks, answered without throwing. A caller that only wants to know (and would catch
+     * the refusal) must use this: an exception leaving this bean marks the caller's
+     * shared transaction rollback-only, so catching it still fails the caller at commit
+     * with UnexpectedRollbackException (sim4y S16-01, the bank-reconciliation workspace).
+     */
+    @Transactional(readOnly = true)
+    public boolean isOpen(LocalDate date) {
+        LocalDate locked = get().getBooksLockedThrough();
+        return locked == null || date.isAfter(locked);
+    }
+
+    /**
      * Close the books through {@code date}.
      *
      * <p><b>Refused while a VAT tax point dated on or before {@code date} is still

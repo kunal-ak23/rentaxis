@@ -281,12 +281,9 @@ public class BankMatchService {
     LocalDate reverseDate(LocalDate entryDate) {
         LocalDate today = LocalDate.now(clock);
         if (entryDate == null || entryDate.isAfter(today)) return today;
-        try {
-            fiscal.assertOpen(entryDate);
-            return entryDate;
-        } catch (RuntimeException closed) {
-            return today;
-        }
+        // Asked, not asserted: a refusal thrown out of the fiscal bean would mark this
+        // (workspace's) transaction rollback-only even though it is caught (S16-01).
+        return fiscal.isOpen(entryDate) ? entryDate : today;
     }
 
     private static Instant instant(Timestamp ts) {
