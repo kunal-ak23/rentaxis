@@ -97,8 +97,10 @@ describe("Tickets list — reference", () => {
 
         fireEvent.change(screen.getByPlaceholderText("Search tickets..."), { target: { value: "26/15" } });
 
-        await screen.findByText("Lift stuck");
-        expect(screen.queryByText("Leaking tap")).toBeNull();
+        // "Lift stuck" is already on screen from the unfiltered first read, so
+        // wait for the debounced, filtered fetch by the row that must go away.
+        await waitFor(() => expect(screen.queryByText("Leaking tap")).toBeNull());
+        expect(screen.getByText("Lift stuck")).toBeTruthy();
     });
 
     // #19: "on behalf of" is a renter picked from the org's renters, sent by id.

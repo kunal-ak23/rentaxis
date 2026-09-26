@@ -3159,6 +3159,7 @@
     "view": "View",
     "noTickets": "No tickets found.",
     "noTicketsHint": "Create a new ticket to get started.",
+    "loadFailed": "Couldn't load tickets. Please try again.",
     "createFailed": "Failed to create ticket",
     "fieldTitle": "Title",
     "titlePlaceholder": "Brief summary of the issue",

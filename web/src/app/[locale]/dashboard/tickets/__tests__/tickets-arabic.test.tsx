@@ -16,7 +16,7 @@ const session = vi.hoisted(() => ({ role: "TENANT_ADMIN" }));
 vi.mock("next-auth/react", () => ({
     useSession: () => ({ data: { user: { role: session.role, id: "me-1" } } }),
 }));
-vi.mock("next/navigation", () => ({ useParams: () => ({ id: "t-1" }) }));
+vi.mock("next/navigation", () => ({ useParams: () => ({ id: "t-1" }), useSearchParams: () => new URLSearchParams() }));
 vi.mock("@/i18n/routing", () => ({
     Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
         <a href={href} {...rest}>{children}</a>
