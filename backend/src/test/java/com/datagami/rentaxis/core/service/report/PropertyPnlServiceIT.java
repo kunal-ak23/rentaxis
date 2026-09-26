@@ -223,6 +223,26 @@ class PropertyPnlServiceIT extends AbstractPostgresIT {
                 service.pnl(SEP_1, SEP_30, null, Compare.NONE, Basis.NONE).noi().get("TOTAL").amount());
     }
 
+    /**
+     * S16-13: a named selection reads only its properties' lines and the unassigned
+     * ones (the property statement asks for one property); every figure it shows is
+     * the whole report's.
+     */
+    @Test
+    void aNamedSelectionShowsTheWholeReportsFigures() {
+        PropertyPnlDTO all = service.pnl(SEP_1, SEP_30, null, Compare.PREVIOUS, Basis.NONE);
+        PropertyPnlDTO one = service.pnl(SEP_1, SEP_30, List.of(fx.p1.getId()), Compare.PREVIOUS, Basis.NONE);
+        String p1 = fx.p1.getId().toString();
+        for (String col : List.of(p1, "UNASSIGNED")) {
+            assertThat(one.income().get(col)).as(col).isEqualTo(all.income().get(col));
+            assertThat(one.expenses().get(col)).as(col).isEqualTo(all.expenses().get(col));
+            assertThat(one.noi().get(col)).as(col).isEqualTo(all.noi().get(col));
+        }
+        assertThat(one.groups().stream().flatMap(g -> g.rows().stream()).map(r -> r.key() + "=" + r.cells().get(p1)).toList())
+                .isSubsetOf(all.groups().stream().flatMap(g -> g.rows().stream()).map(r -> r.key() + "=" + r.cells().get(p1)).toList());
+        assertThat(one.check().ok()).isTrue();
+    }
+
     @Test
     void aSubsetCarriesOnlyItsOwnShareOfTheSharedCosts() {
         fx.property("Creek View");

@@ -158,10 +158,12 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
         where l.tenantId = :tenantId
           and (cast(:status as string) is null or l.status = :status)
           and (cast(:propertyId as java.util.UUID) is null or l.unit.property.id = :propertyId)
+          and (cast(:buildingId as java.util.UUID) is null or l.unit.building.id = :buildingId)
         """)
     Page<Lease> search(@Param("tenantId") UUID tenantId,
                        @Param("status") LeaseStatus status,
                        @Param("propertyId") UUID propertyId,
+                       @Param("buildingId") UUID buildingId,
                        Pageable pageable);
 
     /**
@@ -177,10 +179,12 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
         where l.tenantId = :tenantId
           and (cast(:status as string) is null or l.status = :status)
           and (cast(:propertyId as java.util.UUID) is null or l.unit.property.id = :propertyId)
+          and (cast(:buildingId as java.util.UUID) is null or l.unit.building.id = :buildingId)
         """)
     List<Lease> searchList(@Param("tenantId") UUID tenantId,
                            @Param("status") LeaseStatus status,
-                           @Param("propertyId") UUID propertyId);
+                           @Param("propertyId") UUID propertyId,
+                           @Param("buildingId") UUID buildingId);
 
     List<Lease> findByUnitId(UUID unitId);
 

@@ -135,7 +135,8 @@ class MaintenanceTicketUnitFilterTest {
     void tenantUserWithAUnitIsScopedTheSameWay() {
         service.getTickets(userId, "TENANT_USER", unitId);
 
-        verify(ticketRepository).findByReportedByAndUnitId(userId, unitId);
+        // S16-03: what they reported and what was assigned to them, on that unit.
+        verify(ticketRepository).findForStaff(userId, unitId);
         verify(ticketRepository, never()).findByUnitId(any());
     }
 

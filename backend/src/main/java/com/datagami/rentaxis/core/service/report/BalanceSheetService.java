@@ -57,7 +57,6 @@ import java.util.function.Function;
 public class BalanceSheetService {
 
     private static final List<AccountType> SIDES = List.of(AccountType.ASSET, AccountType.LIABILITY, AccountType.EQUITY);
-    private static final LocalDate BEGINNING = LocalDate.of(1900, 1, 1);
 
     private final JournalLineRepository lines;
     private final PropertyPnlService pnl;
@@ -73,7 +72,13 @@ public class BalanceSheetService {
     }
 
     /** Not read-only: the fiscal settings row is created on a tenant's first access. */
-    @Transactional
+    /**
+     * PR #370 R1 P3-1: REPEATABLE READ — the undated pass and the "after as at"
+     * subtraction are two statements and must see one snapshot, or an entry committed
+     * between them would be subtracted without having been added. (Not read-only:
+     * {@code TenantFiscalSettingsService.get()} creates the settings row on first use.)
+     */
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
     public BalanceSheetDTO balanceSheet(LocalDate asAt, LocalDate compareAt, Collection<UUID> propertyIds) {
         UUID tenantId = PropertyPnlService.requireTenant();
         if (asAt == null) throw new BusinessRuleViolationException("'asAt' is required");
@@ -81,8 +86,9 @@ public class BalanceSheetService {
         LocalDate fyStart = fiscalYearStart(asAt);
 
         List<Property> columnProperties = pnl.columnProperties(tenantId, propertyIds, scoped);
-        Snapshot now = snapshot(tenantId, asAt);
-        Snapshot before = compareAt == null ? null : snapshot(tenantId, compareAt);
+        Map<UUID, Account> byId = pnl.accountsById(tenantId);
+        Snapshot now = snapshot(tenantId, asAt, byId);
+        Snapshot before = compareAt == null ? null : snapshot(tenantId, compareAt, byId);
 
         // A property whose row is gone keeps a column while its lines remain (as the P&L).
         if (!scoped && (propertyIds == null || propertyIds.isEmpty())) {
@@ -114,7 +120,6 @@ public class BalanceSheetService {
         Function<UUID, String> columnOf = pid -> pid == null ? (scoped ? null : PropertyPnlDTO.UNASSIGNED)
                 : columnSet.contains(pid) ? pid.toString() : null;
 
-        Map<UUID, Account> byId = pnl.accountsById(tenantId);
         boolean withPrior = before != null;
 
         // row key → column → debit-positive net, per snapshot
@@ -207,8 +212,7 @@ public class BalanceSheetService {
         boolean ok = scoped
                 ? checkNow.values().stream().allMatch(v -> money(v).signum() == 0)
                 : money(checkNow.getOrDefault(PropertyPnlDTO.TOTAL, BigDecimal.ZERO)).signum() == 0;
-        BigDecimal imbalance = scoped ? null
-                : money(Objects.requireNonNullElse(lines.ledgerImbalance(tenantId, asAt), BigDecimal.ZERO));
+        BigDecimal imbalance = scoped ? null : money(now.imbalance());
         if (imbalance != null && imbalance.signum() != 0) ok = false;
 
         return new BalanceSheetDTO(asAt, compareAt, fyStart, scoped, columns, finalSections,
@@ -226,11 +230,58 @@ public class BalanceSheetService {
 
     // ------------------------------------------------------------------ folding
 
-    private record Snapshot(List<PnlCellRow> all, List<PnlCellRow> currentYear) { }
+    /** {@code imbalance}: Σ(debit − credit) over every line through the date, the ledger's own check. */
+    private record Snapshot(List<PnlCellRow> all, List<PnlCellRow> currentYear, BigDecimal imbalance) { }
 
-    private Snapshot snapshot(UUID tenantId, LocalDate asAt) {
-        return new Snapshot(lines.balanceCells(tenantId, BEGINNING, asAt),
-                lines.balanceCells(tenantId, fiscalYearStart(asAt), asAt));
+    /**
+     * S16-13: the cumulative cells are every line of the tenant (one pass, no join)
+     * less the entries dated after {@code asAt} (few, for "as at today"); the fiscal
+     * year's are read from that year's entries only. The report used to join every
+     * line to its entry three times (cumulative, year, imbalance). Cells of accounts
+     * that are not the tenant's are left out of the report, as the join to
+     * {@code accounts} used to leave them out, but still count in the imbalance, as
+     * {@code ledgerImbalance} counted them.
+     */
+    private Snapshot snapshot(UUID tenantId, LocalDate asAt, Map<UUID, Account> byId) {
+        Map<List<UUID>, BigDecimal[]> sums = new LinkedHashMap<>();
+        for (PnlCellRow r : lines.cellsAllDates(tenantId)) {
+            sums.computeIfAbsent(java.util.Arrays.asList(r.getPropertyId(), r.getAccountId()),
+                    k -> new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO});
+            BigDecimal[] v = sums.get(java.util.Arrays.asList(r.getPropertyId(), r.getAccountId()));
+            v[0] = v[0].add(r.getDebit());
+            v[1] = v[1].add(r.getCredit());
+        }
+        for (PnlCellRow r : lines.cellsDated(tenantId, asAt.plusDays(1), END_OF_TIME)) {
+            BigDecimal[] v = sums.get(java.util.Arrays.asList(r.getPropertyId(), r.getAccountId()));
+            if (v == null) continue;   // cannot happen: every dated line is in the undated pass
+            v[0] = v[0].subtract(r.getDebit());
+            v[1] = v[1].subtract(r.getCredit());
+        }
+        List<PnlCellRow> all = new ArrayList<>();
+        BigDecimal imbalance = BigDecimal.ZERO;
+        for (Map.Entry<List<UUID>, BigDecimal[]> e : sums.entrySet()) {
+            BigDecimal debit = e.getValue()[0], credit = e.getValue()[1];
+            imbalance = imbalance.add(debit).subtract(credit);
+            if (debit.signum() == 0 && credit.signum() == 0) continue;
+            if (!byId.containsKey(e.getKey().get(1))) continue;
+            all.add(cell(e.getKey().get(0), e.getKey().get(1), debit, credit));
+        }
+        List<PnlCellRow> year = lines.cellsDated(tenantId, fiscalYearStart(asAt), asAt).stream()
+                .filter(r -> byId.containsKey(r.getAccountId())).toList();
+        return new Snapshot(all, year, imbalance);
+    }
+
+    /** The far end of "every entry after as-at". */
+    private static final LocalDate END_OF_TIME = LocalDate.of(9999, 12, 31);
+
+    private static PnlCellRow cell(UUID propertyId, UUID accountId, BigDecimal debit, BigDecimal credit) {
+        return new PnlCellRow() {
+            @Override public UUID getPropertyId() { return propertyId; }
+            @Override public UUID getAccountId() { return accountId; }
+            @Override public BigDecimal getDebit() { return debit; }
+            @Override public BigDecimal getCredit() { return credit; }
+            @Override public long getMismatchLines() { return 0; }
+        };
     }
 
     private static final class RowMeta {

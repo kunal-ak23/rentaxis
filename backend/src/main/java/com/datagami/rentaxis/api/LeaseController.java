@@ -109,8 +109,9 @@ public class LeaseController {
             @RequestParam(required = false) String search,
             @RequestParam(required = false) LeaseStatus status,
             @RequestParam(required = false) UUID propertyId,
+            @RequestParam(required = false) UUID buildingId,
             @PageableDefault(size = 25, sort = "startDate", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ResponseEntity.ok(leaseService.getAllLeasesPaged(search, status, propertyId, pageable));
+        return ResponseEntity.ok(leaseService.getAllLeasesPaged(search, status, propertyId, buildingId, pageable));
     }
 
     @GetMapping("/property/{propertyId}")

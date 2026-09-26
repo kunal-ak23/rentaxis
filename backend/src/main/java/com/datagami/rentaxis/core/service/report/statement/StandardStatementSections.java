@@ -82,9 +82,33 @@ public final class StandardStatementSections {
                     Figure.of("income", income.amount()), Figure.of("expenses", expenses.amount()), Figure.of("noi", noi.amount()),
                     Figure.of("priorIncome", income.prior()), Figure.of("priorExpenses", expenses.prior()),
                     Figure.of("priorNoi", noi.prior())),
-                    List.of(new Table("lines", List.of("type", "line", "lineAr", "amount", "prior", "delta"), rows)),
+                    List.of(new Table("lines", List.of("type", "line", "lineAr", "amount", "prior", "delta"), rows),
+                            buildings(ctx, pnl)),
                     List.of(), Map.of("priorFrom", r.priorFrom().toString(), "priorTo", r.priorTo().toString()));
         }
+    }
+
+    /**
+     * S16-02: the NOI per tower (Building) of the property, from the building P&L —
+     * empty (not shown) for a property with no towers. The rows sum to the property's
+     * NOI with the "no building" row (property-level lines).
+     */
+    static Table buildings(StatementContext ctx, PropertyPnlService pnl) {
+        List<List<Object>> rows = new ArrayList<>();
+        if (pnl.hasBuildings(ctx.propertyId())) {
+            PropertyPnlDTO b = pnl.buildingPnl(ctx.propertyId(), ctx.from(), ctx.to(), PnlPeriods.Compare.PREVIOUS);
+            for (PropertyPnlDTO.Column c : b.columns()) {
+                if (PropertyPnlDTO.TOTAL.equals(c.key())) continue;
+                PropertyPnlDTO.Amount a = b.noi().get(c.key());
+                String en = PropertyPnlService.NO_BUILDING.equals(c.key()) ? "Not in a building" : c.name();
+                String ar = PropertyPnlService.NO_BUILDING.equals(c.key()) ? "خارج المباني"
+                        : (c.nameAr() == null || c.nameAr().isBlank() ? c.name() : c.nameAr());
+                if (a == null) continue;
+                rows.add(java.util.Arrays.asList(en + " — net operating income", ar + " — صافي الدخل التشغيلي",
+                        a.amount(), a.prior(), a.delta()));
+            }
+        }
+        return new Table("buildings", List.of("line", "lineAr", "amount", "prior", "delta"), rows);
     }
 
     // ---------------------------------------------------------------- 2

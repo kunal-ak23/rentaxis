@@ -305,3 +305,5 @@ databaseChangeLog:
       file: db/changelog/changesets/148-trigram-indexes-retry.yaml
   - include:
       file: db/changelog/changesets/149-vat-return-output-override.yaml
+  - include:
+      file: db/changelog/changesets/150-journal-lines-cells-index.yaml

@@ -50,11 +50,12 @@ public class UnitController {
     public ResponseEntity<org.springframework.data.domain.Page<Unit>> getUnitsPaged(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) java.util.UUID propertyId,
+            @RequestParam(required = false) java.util.UUID buildingId,
             @RequestParam(required = false) UnitStatus status,
             @RequestParam(required = false) String floor,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "25") int size) {
-        return ResponseEntity.ok(service.searchPaged(q, propertyId, status, floor, page, size));
+        return ResponseEntity.ok(service.searchPaged(q, propertyId, buildingId, status, floor, page, size));
     }
 
     /** Scale P1-6: the async unit picker. */

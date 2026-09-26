@@ -105,6 +105,46 @@ class TicketRoleScopeIT extends AbstractPostgresIT {
                 Map.of("message", "any update?")).getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
+    /**
+     * S16-03: tickets are assigned to the maintenance team — staff users
+     * (TENANT_USER). The assignee sees the ticket in their list and by id, and
+     * works it (status); a ticket they only reported they may not move. Another
+     * organisation's staff user and a guard still cannot be given one.
+     */
+    @Test
+    void aStaffUserCanBeAssignedATicketAndWorksIt() {
+        UUID foreignTenant = org("TRS-FOREIGN");
+        TenantContextHolder.setTenantId(foreignTenant);
+        User foreignStaff = user(foreignTenant, UserRole.TENANT_USER);
+        TenantContextHolder.setTenantId(tenantId);
+        User guard = user(tenantId, UserRole.SECURITY_GUARD);
+        User inactiveStaff = user(tenantId, UserRole.TENANT_USER);
+        inactiveStaff.setStatus(UserStatus.INACTIVE);
+        userRepo.save(inactiveStaff);
+        TenantContextHolder.clear();
+
+        assertThat(assignTo(foreignStaff.getId()).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(assignTo(guard.getId()).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(assignTo(inactiveStaff.getId()).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(status(tenantUser, HttpMethod.GET, "/api/v1/tickets/" + otherTicket)).isEqualTo(HttpStatus.NOT_FOUND);
+
+        assertThat(assignTo(tenantUser.getId()).getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(ids(call(tenantUser, HttpMethod.GET, "/api/v1/tickets", null)))
+                .containsExactlyInAnyOrder(ownTicket, otherTicket);
+        assertThat(status(tenantUser, HttpMethod.GET, "/api/v1/tickets/" + otherTicket)).isEqualTo(HttpStatus.OK);
+        assertThat(call(tenantUser, HttpMethod.PUT, "/api/v1/tickets/" + otherTicket + "/status",
+                Map.of("status", "IN_PROGRESS")).getStatusCode()).isEqualTo(HttpStatus.OK);
+        // Their own report, assigned to somebody else: IN_PROGRESS would be a valid move, but not theirs.
+        assertThat(call(admin, HttpMethod.PUT, "/api/v1/tickets/" + ownTicket + "/assign",
+                Map.of("assignTo", admin.getId().toString())).getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(call(tenantUser, HttpMethod.PUT, "/api/v1/tickets/" + ownTicket + "/status",
+                Map.of("status", "IN_PROGRESS")).getStatusCode()).as("reported, not assigned")
+                .isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(call(admin, HttpMethod.PUT, "/api/v1/tickets/" + ownTicket + "/status",
+                Map.of("status", "IN_PROGRESS")).getStatusCode()).as("the same move by the assignee's admin")
+                .isEqualTo(HttpStatus.OK);
+    }
+
     @Test
     void aGuardSeesNoTickets() {
         TenantContextHolder.setTenantId(tenantId);
@@ -243,10 +283,12 @@ class TicketRoleScopeIT extends AbstractPostgresIT {
         String path = "/api/v1/tickets/" + otherTicket + "/assignees";
         ResponseEntity<String> res = call(admin, HttpMethod.GET, path, null);
         assertThat(res.getStatusCode()).as(res.getBody()).isEqualTo(HttpStatus.OK);
+        // S16-03: the staff user (maintenance team) is offered too.
         assertThat(ids(res)).containsExactlyInAnyOrder(
-                admin.getId().toString(), memberAdmin.getId().toString(), pmHere.getId().toString());
+                admin.getId().toString(), memberAdmin.getId().toString(), pmHere.getId().toString(),
+                tenantUser.getId().toString());
         assertThat(ids(res)).doesNotContain(foreignAdmin.getId().toString(), renter.getId().toString(),
-                inactivePm.getId().toString(), pmElsewhere.getId().toString(), tenantUser.getId().toString());
+                inactivePm.getId().toString(), pmElsewhere.getId().toString());
 
         // Every name offered is accepted.
         for (String id : ids(res)) {

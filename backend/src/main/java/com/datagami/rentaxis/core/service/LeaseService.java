@@ -172,15 +172,22 @@ public class LeaseService {
     @Transactional(readOnly = true)
     public Page<LeaseDTO> getAllLeasesPaged(String search, LeaseStatus status, UUID propertyId,
                                             Pageable pageable) {
+        return getAllLeasesPaged(search, status, propertyId, null, pageable);
+    }
+
+    /** S16-02: {@code buildingId} narrows to the leases of one tower (Building). */
+    @Transactional(readOnly = true)
+    public Page<LeaseDTO> getAllLeasesPaged(String search, LeaseStatus status, UUID propertyId, UUID buildingId,
+                                            Pageable pageable) {
         UUID tenantId = TenantContextHolder.getTenantId();
         String normalizedSearch = search == null ? null : search.trim();
 
         if ((normalizedSearch == null || normalizedSearch.isEmpty()) && !leaseAccessPolicy.isRestricted()) {
-            return mapPage(leaseRepository.search(tenantId, status, propertyId, pageable));
+            return mapPage(leaseRepository.search(tenantId, status, propertyId, buildingId, pageable));
         }
 
         List<LeaseDTO> readable = mapAll(leaseAccessPolicy
-                .filterReadable(leaseRepository.searchList(tenantId, status, propertyId)));
+                .filterReadable(leaseRepository.searchList(tenantId, status, propertyId, buildingId)));
 
         if (normalizedSearch == null || normalizedSearch.isEmpty()) {
             return pageOf(readable, pageable);

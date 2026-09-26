@@ -80,8 +80,13 @@ public class PropertyPnlService {
     private final UnitRepository units;
     private final PropertyScope scope;
 
+    /** S16-02: the towers of a property, for the building P&L's columns. */
+    private final com.datagami.rentaxis.domain.repository.BuildingRepository buildings;
+
     public PropertyPnlService(JournalLineRepository lines, AccountRepository accounts, PropertyRepository properties,
-                              UnitRepository units, PropertyScope scope) {
+                              UnitRepository units, PropertyScope scope,
+                              com.datagami.rentaxis.domain.repository.BuildingRepository buildings) {
+        this.buildings = buildings;
         this.lines = lines;
         this.accounts = accounts;
         this.properties = properties;
@@ -121,9 +126,16 @@ public class PropertyPnlService {
         List<Property> columnProperties = columnProperties(tenantId, propertyIds, scoped);
         List<UUID> propertyColumnIds = columnProperties.stream().map(Property::getId).toList();
 
-        List<PnlCellRow> current = lines.pnlCells(tenantId, from, to);
+        // S16-13: a named selection reads only its properties' lines (and the unassigned ones) —
+        // unless shared costs are allocated, which weighs every property (rent basis).
+        boolean named = propertyIds != null && !propertyIds.isEmpty() && !propertyColumnIds.isEmpty()
+                && basis == Basis.NONE;
+        List<UUID> namedIds = propertyColumnIds;
+        List<PnlCellRow> current = named ? lines.pnlCellsFor(tenantId, from, to, namedIds) : lines.pnlCells(tenantId, from, to);
         Period prior = PnlPeriods.prior(from, to, cmp);
-        List<PnlCellRow> previous = prior == null ? List.of() : lines.pnlCells(tenantId, prior.from(), prior.to());
+        List<PnlCellRow> previous = prior == null ? List.of()
+                : named ? lines.pnlCellsFor(tenantId, prior.from(), prior.to(), namedIds)
+                : lines.pnlCells(tenantId, prior.from(), prior.to());
 
         // Unnamed and "all" requests also show a property that has lines but no row
         // any more (spec §1: deleted or inactive properties still appear).
@@ -151,10 +163,77 @@ public class PropertyPnlService {
         List<String> sumKeys = new ArrayList<>(propertyKeys);   // the columns TOTAL adds up
         if (!scoped) sumKeys.add(PropertyPnlDTO.UNASSIGNED);
 
-        Map<UUID, Account> byId = accountsById(tenantId);
         Set<UUID> columnSet = new java.util.HashSet<>(propertyColumnIds);
         Function<UUID, String> columnOf = pid -> pid == null ? (scoped ? null : PropertyPnlDTO.UNASSIGNED)
                 : columnSet.contains(pid) ? pid.toString() : null;
+        // Only the lines behind the columns on the report: a subset leaves the others out.
+        long mismatches = current.stream()
+                .filter(r -> r.getPropertyId() != null && columnSet.contains(r.getPropertyId()))
+                .mapToLong(PnlCellRow::getMismatchLines).sum();
+        List<UUID> checkIds = propertyColumnIds;
+        return assemble(tenantId, from, to, cmp, prior, current, previous, columns, sumKeys, columnOf, scoped,
+                noiNow -> basis == Basis.NONE ? null : allocate(basis, propertyKeys, noiNow, current, accountsById(tenantId), tenantId),
+                scoped ? null : () -> propertyIds == null || propertyIds.isEmpty()
+                        ? lines.pnlNetMovement(tenantId, from, to)
+                        : lines.pnlNetMovementFor(tenantId, from, to, checkIds),
+                mismatches);
+    }
+
+    /**
+     * S16-02: one property's P&L with a column per tower (Building), a column for
+     * what no tower carries (property-level lines, and units not in a tower) and the
+     * Total. A line belongs to the tower of the unit it carries — building is derived
+     * from the line's unit, so nothing is written for it. The check row compares the
+     * Total with the property's own net movement.
+     *
+     * <p>PR #370 R1 P3-2: the unit's <em>current</em> building. A unit moved between
+     * towers takes its history with it: past periods' split between towers is
+     * restated, the Total is not.</p>
+     */
+    public PropertyPnlDTO buildingPnl(UUID propertyId, LocalDate from, LocalDate to, Compare compare) {
+        UUID tenantId = requireTenant();
+        requireRange(from, to);
+        requireProperty(tenantId, propertyId);
+        Compare cmp = compare == null ? Compare.NONE : compare;
+        List<PnlCellRow> current = lines.pnlCellsByBuilding(tenantId, propertyId, from, to);
+        Period prior = PnlPeriods.prior(from, to, cmp);
+        List<PnlCellRow> previous = prior == null ? List.of()
+                : lines.pnlCellsByBuilding(tenantId, propertyId, prior.from(), prior.to());
+
+        List<Column> columns = new ArrayList<>();
+        List<String> sumKeys = new ArrayList<>();
+        Set<UUID> known = new java.util.HashSet<>();
+        for (com.datagami.rentaxis.domain.entity.Building b : buildings.findByPropertyId(propertyId).stream()
+                .filter(b -> tenantId.equals(b.getTenantId()))
+                .sorted(Comparator.comparing(com.datagami.rentaxis.domain.entity.Building::getNameEn)).toList()) {
+            columns.add(new Column(b.getId().toString(), b.getId(), "BUILDING", b.getNameEn(), b.getNameAr()));
+            sumKeys.add(b.getId().toString());
+            known.add(b.getId());
+        }
+        columns.add(new Column(NO_BUILDING, null, NO_BUILDING, "No building", "بدون مبنى"));
+        sumKeys.add(NO_BUILDING);
+        columns.add(new Column(PropertyPnlDTO.TOTAL, null, PropertyPnlDTO.TOTAL, "Total", "الإجمالي"));
+        Function<UUID, String> columnOf = bid -> bid != null && known.contains(bid) ? bid.toString() : NO_BUILDING;
+        return assemble(tenantId, from, to, cmp, prior, current, previous, columns, sumKeys, columnOf, false,
+                noi -> null, () -> lines.pnlNetMovementForProperty(tenantId, from, to, propertyId), 0);
+    }
+
+    /** S16-02: whether the property has any tower (the statement skips the per-building table when not). */
+    public boolean hasBuildings(UUID propertyId) {
+        UUID tenantId = requireTenant();
+        return buildings.findByPropertyId(propertyId).stream().anyMatch(b -> tenantId.equals(b.getTenantId()));
+    }
+
+    /** S16-02: the building P&L's column for lines no tower carries. */
+    public static final String NO_BUILDING = "NO_BUILDING";
+
+    /** The report body over cells already bucketed into {@code columns} by {@code columnOf}. */
+    private PropertyPnlDTO assemble(UUID tenantId, LocalDate from, LocalDate to, Compare cmp, Period prior,
+                                    List<PnlCellRow> current, List<PnlCellRow> previous, List<Column> columns,
+                                    List<String> sumKeys, Function<UUID, String> columnOf, boolean scoped,
+                                    Function<Map<String, BigDecimal>, Allocation> allocator,
+                                    java.util.function.Supplier<BigDecimal> ledgerNet, long mismatches) {
+        Map<UUID, Account> byId = accountsById(tenantId);
 
         // row key -> column -> credit-positive net
         Map<String, Map<String, BigDecimal>> now = fold(current, byId, columnOf);
@@ -218,17 +297,10 @@ public class PropertyPnlService {
         Map<String, BigDecimal> noiNow = minus(incomeNow, expenseNow, columns);
         Map<String, BigDecimal> noiBefore = minus(incomeBefore, expenseBefore, columns);
 
-        Allocation allocation = basis == Basis.NONE ? null
-                : allocate(basis, propertyKeys, noiNow, current, byId, tenantId);
-        Check check = scoped ? null : checkOf(
-                money(Objects.requireNonNullElse(propertyIds == null || propertyIds.isEmpty()
-                        ? lines.pnlNetMovement(tenantId, from, to)
-                        : lines.pnlNetMovementFor(tenantId, from, to, propertyColumnIds), BigDecimal.ZERO)),
+        Allocation allocation = allocator.apply(noiNow);
+        Check check = ledgerNet == null ? null : checkOf(
+                money(Objects.requireNonNullElse(ledgerNet.get(), BigDecimal.ZERO)),
                 money(noiNow.getOrDefault(PropertyPnlDTO.TOTAL, BigDecimal.ZERO)));
-        // Only the lines behind the columns on the report: a subset leaves the others out.
-        long mismatches = current.stream()
-                .filter(r -> r.getPropertyId() != null && columnSet.contains(r.getPropertyId()))
-                .mapToLong(PnlCellRow::getMismatchLines).sum();
 
         return new PropertyPnlDTO(from, to, cmp.name(),
                 prior == null ? null : prior.from(), prior == null ? null : prior.to(),

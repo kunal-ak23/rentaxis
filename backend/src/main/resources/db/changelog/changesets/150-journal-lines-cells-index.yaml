@@ -1,0 +1,23 @@
+# S16-13: the balance sheet's cumulative cells are every line of the tenant grouped by
+# property and account (JournalLineRepository.cellsAllDates). A covering index turns that
+# into an index-only scan in group order: 230 ms -> 125 ms on 1.1M lines of one tenant
+# (2.2M in the table). Numbered 150: 149 is taken by the VAT-return override on
+# fix/sim4y-money (#369), which merges independently of this branch.
+# Lock time (PR #370 R1 P3-4): plain CREATE INDEX holds a SHARE lock on journal_lines
+# while it builds, so every posting (recognition, receipts, a cut-over) waits. Kept plain
+# on purpose: the production ledger is small (a data wipe is planned), where the build is
+# seconds, and a CONCURRENTLY changeset needs runInTransaction: false and cannot be retried
+# cleanly after a failed build (it leaves an INVALID index). On a ledger the size of the
+# 4,000-unit simulation (2.2M rows) expect tens of seconds of blocked writes: deploy
+# outside business hours, or pre-create the index CONCURRENTLY by hand — IF NOT EXISTS
+# then makes this changeset a no-op.
+databaseChangeLog:
+  - changeSet:
+      id: 150-journal-lines-cells-index
+      author: claude
+      changes:
+        - sql:
+            sql: CREATE INDEX IF NOT EXISTS idx_jl_tenant_cells ON journal_lines (tenant_id, property_id, account_id) INCLUDE (debit, credit);
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_jl_tenant_cells;

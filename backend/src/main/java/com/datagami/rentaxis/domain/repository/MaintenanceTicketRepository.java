@@ -21,6 +21,15 @@ public interface MaintenanceTicketRepository extends JpaRepository<MaintenanceTi
 
     List<MaintenanceTicket> findByAssignedTo(UUID assignedTo);
 
+    /** S16-03: a staff user's worklist — what they reported and what was assigned to them. */
+    @org.springframework.data.jpa.repository.Query("""
+            select t from MaintenanceTicket t
+            where (t.reportedBy = :userId or t.assignedTo = :userId)
+              and (cast(:unitId as java.util.UUID) is null or t.unit.id = :unitId)
+            """)
+    List<MaintenanceTicket> findForStaff(@org.springframework.data.repository.query.Param("userId") UUID userId,
+                                         @org.springframework.data.repository.query.Param("unitId") UUID unitId);
+
     List<MaintenanceTicket> findByStatus(TicketStatus status);
 
     List<MaintenanceTicket> findByPropertyIdIn(List<UUID> propertyIds);
@@ -80,6 +89,7 @@ public interface MaintenanceTicketRepository extends JpaRepository<MaintenanceTi
         select t from MaintenanceTicket t left join t.unit u
         where t.tenantId = :tenantId
           and (cast(:propertyId as java.util.UUID) is null or t.property.id = :propertyId)
+          and (cast(:buildingId as java.util.UUID) is null or u.building.id = :buildingId)
           and (cast(:status as string) is null or t.status = :status)
           and (cast(:priority as string) is null or t.priority = :priority)
           and (cast(:from as LocalDate) is null or t.reportedDate >= :from)
@@ -91,6 +101,7 @@ public interface MaintenanceTicketRepository extends JpaRepository<MaintenanceTi
     org.springframework.data.domain.Page<MaintenanceTicket> searchPaged(
             @org.springframework.data.repository.query.Param("tenantId") UUID tenantId,
             @org.springframework.data.repository.query.Param("propertyId") UUID propertyId,
+            @org.springframework.data.repository.query.Param("buildingId") UUID buildingId,
             @org.springframework.data.repository.query.Param("status") com.datagami.rentaxis.domain.entity.enums.TicketStatus status,
             @org.springframework.data.repository.query.Param("priority") com.datagami.rentaxis.domain.entity.enums.TicketPriority priority,
             @org.springframework.data.repository.query.Param("from") java.time.LocalDate from,

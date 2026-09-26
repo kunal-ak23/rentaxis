@@ -112,6 +112,7 @@ public class YearEndCloseService {
         List<FiscalYearClose> closedRows = latest.values().stream()
                 .filter(c -> c.getStatus() == FiscalYearCloseStatus.CLOSED)
                 .sorted(Comparator.comparingInt(FiscalYearClose::getFiscalYear)).toList();
+        Map<Integer, BigDecimal> results = resultsByYear(tenant, fiscal.get().getFiscalYearStartMonth());
         List<FiscalYearDTO> out = new ArrayList<>();
         for (int fy = to; fy >= from; fy--) {
             Period p = periodOf(fy);
@@ -126,8 +127,7 @@ public class YearEndCloseService {
                     coveredBy = covering.getFiscalYear();
                 }
             }
-            List<PnlLine> pnl = pnlLines(tenant, p.start(), p.end());
-            BigDecimal result = sum(pnl, "INCOME").subtract(sum(pnl, "EXPENSE"));
+            BigDecimal result = results.getOrDefault(fy, BigDecimal.ZERO).setScale(2, java.math.RoundingMode.HALF_UP);
             String number = c == null || c.getJournalId() == null ? null
                     : journals.findById(c.getJournalId()).map(JournalEntry::getEntryNumber).orElse(null);
             out.add(new FiscalYearDTO(fy, p.start(), p.end(), c == null ? "OPEN" : c.getStatus().name(),
@@ -431,6 +431,28 @@ public class YearEndCloseService {
         jdbc.query("select id, name_en from properties where tenant_id = :t and id in (:ids)",
                 params(tenant()).addValue("ids", list),
                 rs -> { out.put(rs.getObject("id", UUID.class), rs.getString("name_en")); });
+        return out;
+    }
+
+    /**
+     * S16-13: every fiscal year's result (income less expenses, YEC excluded) in one
+     * grouped pass, where the list used to run the P&L query once per year. A year is
+     * labelled by the calendar year it starts in ({@code TenantFiscalSettingsService.fiscalYearOf}).
+     */
+    private Map<Integer, BigDecimal> resultsByYear(UUID tenant, int startMonth) {
+        Map<Integer, BigDecimal> out = new HashMap<>();
+        jdbc.query("""
+                select case when extract(month from e.entry_date) >= :m then extract(year from e.entry_date)
+                            else extract(year from e.entry_date) - 1 end as fy,
+                       coalesce(sum(l.credit), 0) - coalesce(sum(l.debit), 0) as result
+                from journal_lines l
+                     join journal_entries e on e.id = l.journal_entry_id
+                     join accounts a on a.id = l.account_id
+                where l.tenant_id = :t and e.tenant_id = :t
+                  and a.account_type in ('INCOME', 'EXPENSE') and e.doc_type <> 'YEC'
+                group by 1""",
+                params(tenant).addValue("m", startMonth),
+                rs -> { out.put(rs.getInt("fy"), rs.getBigDecimal("result")); });
         return out;
     }
 

@@ -99,13 +99,20 @@ public class UnitService {
     @Transactional(readOnly = true)
     public org.springframework.data.domain.Page<Unit> searchPaged(String q, UUID propertyId,
             com.datagami.rentaxis.domain.entity.enums.UnitStatus status, String floor, int page, int size) {
+        return searchPaged(q, propertyId, null, status, floor, page, size);
+    }
+
+    /** S16-02: {@code buildingId} narrows to one tower (Building) of the property. */
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<Unit> searchPaged(String q, UUID propertyId, UUID buildingId,
+            com.datagami.rentaxis.domain.entity.enums.UnitStatus status, String floor, int page, int size) {
         org.springframework.data.domain.Pageable pageable = com.datagami.rentaxis.core.util.Search.page(page, size, UNIT_ORDER);
         if (propertyId != null && !propertyScope.canAccessProperty(propertyId)) {
             return org.springframework.data.domain.Page.empty(pageable);
         }
         List<UUID> scoped = propertyScope.scopedPropertyIds();
         org.springframework.data.domain.Page<Unit> rows = repository.searchPaged(
-                com.datagami.rentaxis.core.util.Search.requireTenant(), propertyId, status,
+                com.datagami.rentaxis.core.util.Search.requireTenant(), propertyId, buildingId, status,
                 floor == null || floor.isBlank() ? null : floor.trim() + "%",
                 com.datagami.rentaxis.core.util.Search.like(q), scoped == null,
                 com.datagami.rentaxis.core.util.Search.scopeIds(scoped), pageable);
@@ -121,7 +128,7 @@ public class UnitService {
         }
         List<UUID> scoped = propertyScope.scopedPropertyIds();
         return repository.searchPaged(com.datagami.rentaxis.core.util.Search.requireTenant(), propertyId,
-                        null, null, com.datagami.rentaxis.core.util.Search.like(q), scoped == null,
+                        null, null, null, com.datagami.rentaxis.core.util.Search.like(q), scoped == null,
                         com.datagami.rentaxis.core.util.Search.scopeIds(scoped),
                         org.springframework.data.domain.PageRequest.of(0, com.datagami.rentaxis.core.util.Search.limit(limit), UNIT_ORDER))
                 .getContent().stream().map(UnitService::option).toList();
