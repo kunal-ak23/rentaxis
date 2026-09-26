@@ -127,13 +127,26 @@ public class VatReturnService {
         tenant();
         return returns.findAllByOrderByPeriodStartDescFiledAtDesc().stream()
                 .map(r -> new Filing(r.getId(), r.getPeriodStart(), r.getPeriodEnd(), r.getStatus(), r.getNetVat(),
-                        r.getFilingReference(), r.getFiledAt(), nameOf(r.getFiledBy()), r.getReopenedAt(), r.getReopenReason()))
+                        r.getFilingReference(), r.getFiledAt(), nameOf(r.getFiledBy()), r.getReopenedAt(), r.getReopenReason(),
+                        r.getOutputDifference(), r.getOutputOverrideReason()))
                 .toList();
     }
 
     /** Marks the period filed: keeps the figures as they stand and locks VAT dated in it. */
     @Transactional
     public VatReturnDTO file(LocalDate periodStart, String filingReference) {
+        return file(periodStart, filingReference, null);
+    }
+
+    /**
+     * S16-04: as {@link #file(LocalDate, String)}, and a return whose own output
+     * check fails — Output VAT per our tax invoices and credit notes differs from the
+     * Output VAT account's movement, so the boxes do not say what the ledger declared —
+     * is refused unless {@code outputDifferenceReason} acknowledges the difference.
+     * The acknowledged difference and the reason are recorded on the filed row.
+     */
+    @Transactional
+    public VatReturnDTO file(LocalDate periodStart, String filingReference, String outputDifferenceReason) {
         UUID t = tenant();
         LocalDate end = endOf(periodStart);
         String reason = cannotFile(periodStart, end);
@@ -149,7 +162,24 @@ public class VatReturnService {
         jdbc.queryForList("select id from vat_returns where tenant_id = :t for update",
                 new MapSqlParameterSource("t", t), UUID.class);
         Computed c = compute(t, periodStart, end);
+        String override = outputDifferenceReason == null || outputDifferenceReason.isBlank()
+                ? null : outputDifferenceReason.trim();
+        if (!c.check.ok() && override == null) {
+            throw new BusinessRuleViolationException("Output VAT per the tax invoices and credit notes ("
+                    + c.check.documents().toPlainString() + ") does not match the Output VAT account ("
+                    + c.check.ledger().toPlainString() + "), a difference of " + c.check.difference().toPlainString()
+                    + ". Find the entries without a tax document (the OUTPUT_LEDGER drill-down) and correct them,"
+                    + " or file with a reason acknowledging the difference.",
+                    "vat.outputCheckFailed", Map.of("difference", c.check.difference().toPlainString()));
+        }
+        if (override != null && override.length() > 500) {
+            throw new BusinessRuleViolationException("Keep the reason under 500 characters", "vat.overrideReason", Map.of());
+        }
         VatReturn r = new VatReturn();
+        if (!c.check.ok()) {
+            r.setOutputDifference(c.check.difference());
+            r.setOutputOverrideReason(override);
+        }
         r.setTenantId(t);
         r.setPeriodStart(periodStart);
         r.setPeriodEnd(end);

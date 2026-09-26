@@ -46,5 +46,7 @@ public record VatReturnDTO(
     /** A filed (or re-opened) period, for the history list. */
     public record Filing(UUID id, LocalDate periodStart, LocalDate periodEnd, String status, BigDecimal netVat,
                          String filingReference, Instant filedAt, String filedByName, Instant reopenedAt,
-                         String reopenReason) { }
+                         String reopenReason,
+                         /* S16-04: set when the return was filed with its output check acknowledged as failing. */
+                         BigDecimal outputDifference, String outputOverrideReason) { }
 }

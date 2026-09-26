@@ -220,7 +220,17 @@ public class TaxInvoiceService {
                 .filter(i -> i.getPeriodEnd() == null || i.getPeriodEnd().isAfter(t))
                 .toList();
         List<TaxInvoice> named = covering.isEmpty() ? issued : covering;
-        if (named.isEmpty()) return null;
+        if (named.isEmpty()) {
+            // S16-04: a cut-over (or pre-rule) CONTRACT lease — the contract's tax
+            // invoice was issued outside this system; the credit note still names what
+            // it corrects.
+            String ref = lease.getExternalContractRef() != null && !lease.getExternalContractRef().isBlank()
+                    ? lease.getExternalContractRef().trim()
+                    : lease.getContractNumber() != null ? String.valueOf(lease.getContractNumber()) : null;
+            return "Tax invoice issued by the previous system for contract"
+                    + (ref == null ? "" : " " + ref)
+                    + (lease.getContractDate() == null ? "" : " (" + DAY.format(lease.getContractDate()) + ")");
+        }
         return named.stream()
                 .map(i -> i.getInvoiceNumber() + " (" + DAY.format(i.getIssueDate()) + ")")
                 .collect(java.util.stream.Collectors.joining(", "));

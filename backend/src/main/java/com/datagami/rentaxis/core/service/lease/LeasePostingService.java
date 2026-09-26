@@ -1180,6 +1180,11 @@ public class LeasePostingService {
      * The TRN this lease's tax invoices will carry: the organisation's, or failing
      * that the one snapshotted on the lease when it first posted. Null when neither.
      */
+    /** S16-04: whether a tax invoice for this lease can name its supplier's TRN. */
+    boolean hasSupplierTrn(Lease lease) {
+        return supplierTrn(lease) != null;
+    }
+
     private String supplierTrn(Lease lease) {
         UUID tenantId = lease.getTenantId();
         String trn = tenantId == null ? null : landlordOrgs.findById(tenantId).map(o -> o.getTrn()).orElse(null);

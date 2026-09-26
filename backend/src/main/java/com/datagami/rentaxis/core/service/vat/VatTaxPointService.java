@@ -804,13 +804,13 @@ public class VatTaxPointService {
 
     /**
      * The POSTED {@code REDUCTION} point for the VAT a credit addendum credited back,
-     * with its tax credit note. On a CONTRACT lease only when the contract's own tax
-     * invoice is ours to correct (the termination rule, F14-11).
+     * with its tax credit note. S16-04: on every lease, a cut-over CONTRACT lease
+     * included — the Output VAT it moves needs its document; the credit note names
+     * the previous system's contract invoice when there is none of ours.
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void recordReductionCreditNote(Lease lease, LocalDate date, ReductionVat vat, UUID journalId) {
         if (vat == null || vat.creditNote().signum() <= 0) return;
-        if (lease.getVatTiming() != VatTiming.INSTALMENT && !contractDocumented(lease.getId())) return;
         VatTaxPoint p = new VatTaxPoint();
         p.setTenantId(lease.getTenantId());
         p.setLeaseId(lease.getId());

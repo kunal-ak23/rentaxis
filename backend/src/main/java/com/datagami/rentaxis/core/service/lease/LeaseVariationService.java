@@ -19,6 +19,7 @@ import com.datagami.rentaxis.domain.entity.LeaseAddendum;
 import com.datagami.rentaxis.domain.entity.LeaseLine;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
+import com.datagami.rentaxis.domain.entity.enums.VatTiming;
 import com.datagami.rentaxis.domain.entity.enums.JournalStatus;
 import com.datagami.rentaxis.domain.repository.ChequeRepository;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
@@ -80,6 +81,10 @@ public class LeaseVariationService {
     private final EntryNumberService entryNumbers;
     private final LeaseAccessPolicy leaseAccessPolicy;
     private final ApplicationEventPublisher events;
+
+    /** S16-04: the tax invoice for the VAT a CONTRACT lease's addendum declares. */
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints;
     @org.springframework.beans.factory.annotation.Autowired
     private com.datagami.rentaxis.domain.repository.LeaseAddendumCreditRepository credits;
 
@@ -178,6 +183,14 @@ public class LeaseVariationService {
         // post-dated cheque needs its number. LeaseChequeRegistrar.register refuses
         // one anyway; listing it here puts it beside every other problem at once.
         problems.addAll(LeaseChequeRegistrar.missingNumbers(newRows));
+        // S16-04: on a CONTRACT lease the addendum's TCO declares its VAT at once, so
+        // it issues a tax invoice (below) and needs the supplier's TRN.
+        BigDecimal addendumVat = InstalmentVat.contractVat(newLines);
+        if (lease.getVatTiming() == VatTiming.CONTRACT && addendumVat.signum() > 0
+                && !postingService.hasSupplierTrn(lease)) {
+            problems.add("This addendum charges VAT, so it issues a tax invoice, and the organisation has no TRN."
+                    + " Add the TRN to the organisation's details first.");
+        }
         if (problems.isEmpty() && !missing.isEmpty()) {
             throw new UnmappedAccountRoleException(missing, LeasePostingService.propertyIdOf(lease));
         }
@@ -198,6 +211,13 @@ public class LeaseVariationService {
                 "Addendum " + number + (reason == null ? "" : ": " + reason));
         for (Cheque row : newRows) {
             chequeRegistrar.register(lease, row);
+        }
+        if (lease.getVatTiming() == VatTiming.CONTRACT && addendumVat.signum() > 0) {
+            // S16-04: the TCO credited OUTPUT_VAT for the new lines; that is the tax
+            // point, documented by a tax invoice dated on the addendum — on a cut-over
+            // lease too, whose earlier invoices the previous system issued.
+            vatTaxPoints.recordChargeVat(lease, entryDate, tco.getId(),
+                    InstalmentVat.contractTaxable(newLines), addendumVat);
         }
 
         LeaseAddendum addendum = new LeaseAddendum();
