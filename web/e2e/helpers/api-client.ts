@@ -116,7 +116,7 @@ export async function createUnit(
   userId: string,
   role: string,
   tenantId: string,
-  unit: { propertyId: string; unitNumber: string; type?: string; sizeSqft?: number; expectedRent?: number },
+  unit: { propertyId: string; unitNumber: string; type?: string; sizeSqft?: number; expectedRent?: number; buildingId?: string },
 ) {
   return apiCall<{ id: string; unitNumber: string }>('/api/v1/units', {
     method: 'POST',
@@ -127,7 +127,63 @@ export async function createUnit(
       type: unit.type || 'BHK1',
       sizeSqft: unit.sizeSqft || 100,
       expectedRent: unit.expectedRent || 5000,
+      ...(unit.buildingId ? { building: { id: unit.buildingId } } : {}),
     }),
+  });
+}
+
+/** S16-02: a tower (Building) of a property. */
+export async function createBuilding(
+  userId: string,
+  role: string,
+  tenantId: string,
+  building: { propertyId: string; nameEn: string; nameAr?: string; floors?: number },
+) {
+  return apiCall<{ id: string; nameEn: string }>('/api/v1/buildings', {
+    method: 'POST',
+    headers: authHeaders(userId, role, tenantId),
+    body: JSON.stringify({
+      property: { id: building.propertyId },
+      nameEn: building.nameEn,
+      nameAr: building.nameAr || building.nameEn,
+      floors: building.floors ?? 5,
+    }),
+  });
+}
+
+/** S16-03: a maintenance ticket, for the staff-assignment sweep. */
+export async function createTicket(
+  userId: string,
+  role: string,
+  tenantId: string,
+  ticket: { propertyId: string; unitId: string; title: string },
+) {
+  return apiCall<{ id: string; title: string }>('/api/v1/tickets', {
+    method: 'POST',
+    headers: authHeaders(userId, role, tenantId),
+    body: JSON.stringify({
+      propertyId: ticket.propertyId,
+      unitId: ticket.unitId,
+      title: ticket.title,
+      description: ticket.title,
+      category: 'OTHER',
+      priority: 'MEDIUM',
+    }),
+  });
+}
+
+/** S16-03: assign a ticket to a staff user (or an admin/PM). */
+export async function assignTicket(
+  userId: string,
+  role: string,
+  tenantId: string,
+  ticketId: string,
+  assignTo: string,
+) {
+  return apiCall<{ id: string; status: string; assignedTo: string | null }>(`/api/v1/tickets/${ticketId}/assign`, {
+    method: 'PUT',
+    headers: authHeaders(userId, role, tenantId),
+    body: JSON.stringify({ assignTo }),
   });
 }
 
