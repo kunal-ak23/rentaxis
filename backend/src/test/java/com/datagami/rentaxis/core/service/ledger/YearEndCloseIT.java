@@ -239,6 +239,10 @@ class YearEndCloseIT extends AbstractPostgresIT {
         // Listed as closed by 2025's close, and open again once that close is re-opened.
         assertThat(year(2024).status()).isEqualTo("CLOSED");
         assertThat(year(2024).journalId()).isEqualTo(year(2025).journalId());
+        assertThat(year(2024).coveredBy()).isEqualTo(2025);
+        assertThat(year(2025).coveredBy()).isNull();
+        assertThatThrownBy(() -> closes.reopen(2024, "Audit adjustment", TODAY))
+                .isInstanceOf(BusinessRuleViolationException.class).hasMessageContaining("re-open 2025 instead");
         closes.reopen(2025, "Audit adjustment", TODAY);
         assertThat(year(2024).status()).isEqualTo("OPEN");
     }

@@ -95,6 +95,7 @@ class LeaseTransferIT extends AbstractPostgresIT {
     @Autowired TransactionTemplate tx;
     @Autowired JdbcTemplate jdbc;
     @Autowired com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints;
+    @Autowired com.datagami.rentaxis.core.service.penalty.PenaltyAssessmentService penalties;
 
     private LeaseTestFixtures fixtures;
 
@@ -271,6 +272,20 @@ class LeaseTransferIT extends AbstractPostgresIT {
         assertTrialBalanceBalances();
     }
 
+    /** R1 P3-5: a fine still proposed on the lease left behind lapses with the transfer (it can no longer be charged). */
+    @Test
+    void aProposedPenaltyOnTheLeaseLeftBehindLapsesWithTheTransfer() {
+        UUID a = prepaidLeaseA(line("RENT", "60000"), "60000");
+        var proposed = penalties.propose(new com.datagami.rentaxis.api.dto.penalty.ProposePenaltyRequest(a, null,
+                com.datagami.rentaxis.domain.entity.enums.PenaltyReason.LATE_PAYMENT, new BigDecimal("500"), "Late"), null);
+        Unit target = tx.execute(s -> fixtures.createUnit(fixtures.property(), "A-214"));
+        UUID b = transfers.draft(a, request(T, target.getId(), List.of(line("RENT", "37808.22"))), posting).getId();
+        posting.post(b);
+        String row = jdbc.queryForObject("select status || '|' || resolution_note from penalty_assessments where id = ?",
+                String.class, proposed.id());
+        assertThat(row).startsWith("WAIVED|Lapsed: not decided before the tenancy moved to A-214 on 15/05/2026");
+    }
+
     /** S16-11: a prepaid renter moving to a cheaper term keeps the surplus as a credit on the new lease. */
     @Test
     void aPrepaidTransferToACheaperTermLeavesTheSurplusAsACredit() {
@@ -296,6 +311,7 @@ class LeaseTransferIT extends AbstractPostgresIT {
                 List.of(com.datagami.rentaxis.testsupport.LeaseTestFixtures.vatLine("RENT", "37000"))), posting).getId();
         PostLeaseDryRunResponse dry = posting.dryRun(b);
         assertThat(dry.errors()).isEmpty();
+        assertThat(dry.notices()).singleElement().asString().contains("declared on the contract date");
         posting.post(b);
         assertThat(lease(b).getVatTiming()).isEqualTo(com.datagami.rentaxis.domain.entity.enums.VatTiming.CONTRACT);
         Boolean documented = tx.execute(s -> vatTaxPoints.contractDocumented(b));

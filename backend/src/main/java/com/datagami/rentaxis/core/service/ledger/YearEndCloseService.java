@@ -116,11 +116,15 @@ public class YearEndCloseService {
         for (int fy = to; fy >= from; fy--) {
             Period p = periodOf(fy);
             FiscalYearClose c = latest.get(fy);
+            Integer coveredBy = null;
             if ((c == null || c.getStatus() != FiscalYearCloseStatus.CLOSED)
                     && booksStart != null && p.end().isBefore(booksStart)) {
                 final int year = fy;
                 FiscalYearClose covering = closedRows.stream().filter(x -> x.getFiscalYear() > year).findFirst().orElse(null);
-                if (covering != null) c = covering;
+                if (covering != null) {
+                    c = covering;
+                    coveredBy = covering.getFiscalYear();
+                }
             }
             List<PnlLine> pnl = pnlLines(tenant, p.start(), p.end());
             BigDecimal result = sum(pnl, "INCOME").subtract(sum(pnl, "EXPENSE"));
@@ -130,7 +134,7 @@ public class YearEndCloseService {
                     result, c == null ? null : c.getJournalId(), number,
                     c == null ? null : c.getClosedAt(), c == null ? null : c.getClosedBy(),
                     c == null ? null : c.getReopenedAt(), c == null ? null : c.getReopenedBy(),
-                    c == null ? null : c.getReopenReason()));
+                    c == null ? null : c.getReopenReason(), coveredBy));
         }
         return out;
     }
@@ -284,8 +288,19 @@ public class YearEndCloseService {
                     "fiscalYear.reasonRequired", Map.of());
         }
         fiscal.lockRow();
-        FiscalYearClose row = closes.findClosed(fiscalYear).orElseThrow(() ->
-                new NotFoundException("Fiscal year " + fiscalYear + " is not closed"));
+        FiscalYearClose row = closes.findClosed(fiscalYear).orElse(null);
+        if (row == null) {
+            // R1 P3-8: a pre-books year swept by a later close is listed CLOSED under that
+            // close; it is re-opened by re-opening the covering year.
+            Integer covering = list(today).stream().filter(y -> y.fiscalYear() == fiscalYear)
+                    .map(FiscalYearDTO::coveredBy).filter(java.util.Objects::nonNull).findFirst().orElse(null);
+            if (covering != null) {
+                throw new BusinessRuleViolationException("Fiscal year " + fiscalYear + " was closed by the close of "
+                        + covering + "; re-open " + covering + " instead.", "fiscalYear.coveredBy",
+                        Map.of("year", String.valueOf(fiscalYear), "coveredBy", String.valueOf(covering)));
+            }
+            throw new NotFoundException("Fiscal year " + fiscalYear + " is not closed");
+        }
         boolean laterClosed = closes.findAllByOrderByFiscalYearDescClosedAtDesc().stream()
                 .anyMatch(c -> c.getStatus() == FiscalYearCloseStatus.CLOSED && c.getFiscalYear() > fiscalYear);
         if (laterClosed) {

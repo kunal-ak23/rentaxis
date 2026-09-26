@@ -203,6 +203,8 @@ public final class StatementLabels {
         put("vat.recoverableTax", "Total value of recoverable tax for the period", "إجمالي الضريبة القابلة للاسترداد عن الفترة");
         put("vat.netPayable", "Payable tax for the period (negative: refundable)", "صافي الضريبة المستحقة الدفع (السالب: قابل للاسترداد)");
         put("vat.outputCheckOk", "Output VAT per documents ties to the Output VAT account", "ضريبة المخرجات حسب المستندات مطابقة لحساب ضريبة المخرجات");
+        put("vat.outputAcknowledged", "Output difference acknowledged at filing:", "فرق ضريبة المخرجات المُقرّ به عند التقديم:");
+        put("vat.outputNotRecorded", "Output check not recorded (filed before it was required)", "لم يُسجَّل فحص ضريبة المخرجات (قُدِّم قبل اشتراطه)");
         put("vat.outputCheckBad", "Output VAT per documents differs from the Output VAT account by", "ضريبة المخرجات حسب المستندات تختلف عن حساب ضريبة المخرجات بمقدار");
         put("vat.inputVatOther", "Input VAT moved by an opening balance, import or journal (not in box 9; check)",
                 "ضريبة مدخلات من رصيد افتتاحي أو استيراد أو قيد يومية (غير مدرجة في الخانة 9؛ للمراجعة)");

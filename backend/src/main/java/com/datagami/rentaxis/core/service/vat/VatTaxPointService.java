@@ -95,12 +95,16 @@ public class VatTaxPointService {
     private final jakarta.persistence.EntityManager entityManager;
     private final com.datagami.rentaxis.domain.repository.LeaseLineRepository leaseLines;
 
+    private final com.datagami.rentaxis.domain.repository.LeaseAddendumRepository addenda;
+
     public VatTaxPointService(VatTaxPointRepository points, ChequeRepository cheques, LeaseRepository leases,
                               JournalEntryRepository journals, TenantFiscalSettingsRepository fiscalSettings,
                               VatTaxPointPoster poster, TaxInvoiceService taxInvoices,
                               LeaseAccessPolicy leaseAccessPolicy, PlatformTransactionManager transactionManager,
                               jakarta.persistence.EntityManager entityManager,
-                              com.datagami.rentaxis.domain.repository.LeaseLineRepository leaseLines) {
+                              com.datagami.rentaxis.domain.repository.LeaseLineRepository leaseLines,
+                              com.datagami.rentaxis.domain.repository.LeaseAddendumRepository addenda) {
+        this.addenda = addenda;
         this.entityManager = entityManager;
         this.leaseLines = leaseLines;
         this.points = points;
@@ -376,10 +380,19 @@ public class VatTaxPointService {
             // A CONTRACT lease's own tax point is the contract's; an amendment
             // re-posts the contract and records the VAT delta (recordContractVat).
             if (p.getKind() == VatTaxPointKind.CONTRACT) continue;
-            String which = p.getChequeId() == null ? "this lease"
-                    : cheques.findById(p.getChequeId()).map(VatTaxPointService::label).orElse("an instalment");
-            throw new BusinessRuleViolationException("VAT already declared on instalment " + which
-                    + "; use an addendum.");
+            // PR #369 R1 P3-2: said by what declared it — an instalment, or a charge / addendum /
+            // termination document of this lease.
+            String which = p.getChequeId() != null
+                    ? "instalment " + cheques.findById(p.getChequeId()).map(VatTaxPointService::label).orElse("")
+                    : switch (p.getKind()) {
+                        case CHARGE -> "a charge or addendum of this lease (its tax invoice is issued)";
+                        case TERMINATION_ADJUSTMENT -> "this lease's termination";
+                        case REDUCTION -> "a credit addendum of this lease";
+                        case SETTLEMENT -> "this lease's settlement";
+                        default -> "this lease";
+                    };
+            throw new BusinessRuleViolationException("VAT is already declared on " + which.trim()
+                    + ", so the contract's lines can no longer be re-posted; change them with an addendum.");
         }
     }
 
@@ -516,7 +529,18 @@ public class VatTaxPointService {
         List<VatTaxPoint> declared = points.findByLeaseIdAndStatusOrderByTaxPointDateAsc(lease.getId(),
                 VatTaxPointStatus.POSTED).stream().filter(p -> p.getKind() == VatTaxPointKind.CONTRACT).toList();
         if (!firstPost && declared.isEmpty()) return;
-        List<com.datagami.rentaxis.domain.entity.LeaseLine> lines = leaseLines.findByLease_IdOrderBySeqNoAsc(lease.getId());
+        // PR #369 R1 P3-2: an addendum whose VAT its own CHARGE tax invoice documents is not
+        // the contract's to document again (the backfill would otherwise invoice it twice).
+        java.util.Set<UUID> chargeJournals = points.findByLeaseIdAndStatusOrderByTaxPointDateAsc(lease.getId(),
+                        VatTaxPointStatus.POSTED).stream().filter(p -> p.getKind() == VatTaxPointKind.CHARGE)
+                .map(VatTaxPoint::getJournalId).filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+        java.util.Set<UUID> documentedAddenda = chargeJournals.isEmpty() ? java.util.Set.of()
+                : addenda.findByLease_IdOrderByCreatedAtAsc(lease.getId()).stream()
+                        .filter(a -> a.getTcoJournalId() != null && chargeJournals.contains(a.getTcoJournalId()))
+                        .map(com.datagami.rentaxis.domain.entity.LeaseAddendum::getId)
+                        .collect(java.util.stream.Collectors.toSet());
+        List<com.datagami.rentaxis.domain.entity.LeaseLine> lines = leaseLines.findByLease_IdOrderBySeqNoAsc(lease.getId())
+                .stream().filter(l -> l.getAddendumId() == null || !documentedAddenda.contains(l.getAddendumId())).toList();
         BigDecimal vat = com.datagami.rentaxis.core.service.lease.InstalmentVat.contractVat(lines)
                 .subtract(declared.stream().map(VatTaxPoint::getVatAmount).reduce(BigDecimal.ZERO, BigDecimal::add));
         BigDecimal taxable = com.datagami.rentaxis.core.service.lease.InstalmentVat.contractTaxable(lines)
@@ -605,11 +629,13 @@ public class VatTaxPointService {
         leaseAccessPolicy.requireManageable(lease);
         // R1 P3-4b: a terminated contract handed part of its VAT back on the TCR. The
         // backfill would have to issue the invoice and a credit note rebuilt from
-        // that entry, whose taxable split it cannot know for certain — so it refuses,
-        // and the accountant issues the pair by hand.
+        // that entry, whose taxable split it cannot know for certain — so it refuses.
+        // PR #369 R1 P3-1: the termination issues its own credit note now; nothing is
+        // to be issued by hand.
         if (lease.getTerminationJournalId() != null) {
             throw new BusinessRuleViolationException("This lease was terminated, and the VAT its termination handed"
-                    + " back needs a credit note beside the contract invoice; issue both by hand rather than here.");
+                    + " back already carries its credit note, and a contract invoice issued now could not be"
+                    + " matched to it; the contract's VAT stays documented as it was.");
         }
         if (lease.getVatTiming() != com.datagami.rentaxis.domain.entity.enums.VatTiming.CONTRACT) {
             throw new BusinessRuleViolationException("Only a lease that declares its VAT on the contract date has a"

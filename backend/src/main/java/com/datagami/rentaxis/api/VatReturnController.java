@@ -37,8 +37,12 @@ public class VatReturnController {
         this.service = service;
     }
 
-    /** {@code outputDifferenceReason}: S16-04, required only to file a return whose output check fails. */
-    public record FileRequest(LocalDate periodStart, String filingReference, String outputDifferenceReason) { }
+    /**
+     * {@code outputDifferenceReason} and {@code acknowledgedDifference}: S16-04 / R1 P2-1, required
+     * only to file a return whose output check fails — the reason, and the difference the filer saw.
+     */
+    public record FileRequest(LocalDate periodStart, String filingReference, String outputDifferenceReason,
+                              java.math.BigDecimal acknowledgedDifference) { }
 
     public record ReopenRequest(String reason) { }
 
@@ -62,7 +66,7 @@ public class VatReturnController {
     @PostMapping("/file")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public VatReturnDTO file(@RequestBody FileRequest r) {
-        return service.file(r.periodStart(), r.filingReference(), r.outputDifferenceReason());
+        return service.file(r.periodStart(), r.filingReference(), r.outputDifferenceReason(), r.acknowledgedDifference());
     }
 
     @PostMapping("/{id}/reopen")

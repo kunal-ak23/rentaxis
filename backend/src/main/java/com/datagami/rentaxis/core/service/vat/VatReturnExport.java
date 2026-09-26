@@ -44,6 +44,13 @@ public final class VatReturnExport {
             notes.add(r.outputCheck().ok() ? lbl("vat.outputCheckOk", lang)
                     : lbl("vat.outputCheckBad", lang) + " " + FinancialReportExport.money(r.outputCheck().difference()));
         }
+        // R1 P2-1: what was acknowledged at filing.
+        if (r.outputOverrideReason() != null) {
+            notes.add(lbl("vat.outputAcknowledged", lang) + " " + FinancialReportExport.money(r.outputDifference())
+                    + " — " + r.outputOverrideReason());
+        } else if ("FILED".equals(r.status()) && r.outputDifference() == null) {
+            notes.add(lbl("vat.outputNotRecorded", lang));
+        }
         if (r.commercialWithoutVat() != null && r.commercialWithoutVat().signum() != 0) {
             notes.add(lbl("vat.commercialWithoutVat", lang) + ": " + FinancialReportExport.money(r.commercialWithoutVat()));
         }
@@ -69,6 +76,11 @@ public final class VatReturnExport {
             out.add(List.of(b.code(), lbl("vat." + b.key(), lang), plain(b.amount()), plain(b.vat())));
         }
         if (r.outputCheck() != null) out.add(List.of("", lbl("vat.outputCheckBad", lang), plain(r.outputCheck().difference())));
+        if (r.outputOverrideReason() != null) {
+            out.add(List.of("", lbl("vat.outputAcknowledged", lang), plain(r.outputDifference()), r.outputOverrideReason()));
+        } else if ("FILED".equals(r.status()) && r.outputDifference() == null) {
+            out.add(List.of("", lbl("vat.outputNotRecorded", lang)));
+        }
         // F15-17: every check and warning the screen shows.
         out.add(List.of("", lbl("vat.commercialWithoutVat", lang), plain(r.commercialWithoutVat())));
         out.add(List.of("", lbl("vat.inputVatOther", lang), plain(r.inputVatOther())));

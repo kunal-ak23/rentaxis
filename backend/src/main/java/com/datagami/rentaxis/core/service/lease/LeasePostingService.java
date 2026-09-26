@@ -384,8 +384,9 @@ public class LeasePostingService {
         // so a cut-over lease reverted to draft and re-posted takes today's rule).
         lines.forEach(LeaseLine::snapshotRecognition);
         lease.setPostedAt(Instant.now());
-        if (lease.getVatTiming() == VatTiming.INSTALMENT && InstalmentVat.contractVat(lines).signum() > 0) {
-            // What the tax invoices fall back to if the TRN is cleared later.
+        if (InstalmentVat.contractVat(lines).signum() > 0) {
+            // What the tax invoices fall back to if the TRN is cleared later — on a CONTRACT
+            // lease too (R1 P3-3): its termination, reduction or addendum issues documents.
             lease.setVatTrn(supplierTrn(lease));
         }
         lease.setPostedBy(currentUserId());
@@ -426,6 +427,7 @@ public class LeasePostingService {
         // balance the move will leave (estimated from the ledger as it stands).
         PostingPlan plan;
         List<String> transferProblems = new ArrayList<>();
+        List<String> notices = new ArrayList<>();
         List<PostLeaseDryRunResponse.CarriedCheque> carried = List.of();
         if (lease.getTransferredFromLeaseId() != null && lease.getStatus() == LeaseStatus.DRAFT) {
             LeaseTransferService.Estimate est = transfers.estimateForDryRun(lease);
@@ -440,6 +442,12 @@ public class LeasePostingService {
             // balance still to collect is refused here as it is there.
             plan = validate(lease, lines, cheques, Preconditions.FOR_POST, Set.of(),
                     est.carriedBalance(), est.carriedTotal());
+            // R1 P3-8: the S16-11 switch the post makes, said before the button.
+            if (cheques.isEmpty() && est.carriedTotal().signum() == 0 && est.carriedBalance().signum() < 0
+                    && lease.getVatTiming() == VatTiming.INSTALMENT && InstalmentVat.contractVat(lines).signum() > 0) {
+                notices.add("The carried balance pays this contract in full, so there is no instalment to carry its VAT:"
+                        + " the VAT is declared on the contract date with a tax invoice when it posts.");
+            }
         } else {
             plan = validate(lease, lines, cheques);
         }
@@ -467,7 +475,7 @@ public class LeasePostingService {
                 plan.chequeTotal(),
                 depositCarryForward.total(lease),
                 new PostLeaseDryRunResponse.JournalPlan(1, plan.pairs().size() * 2, cheques.size() + carried.size()),
-                carried);
+                carried, notices);
     }
 
     /**
@@ -986,10 +994,16 @@ public class LeasePostingService {
         // expense is offset only by that year's recovery and an early exit refunds the
         // rest. It is still never income.
         ChargeRecognition r = type == null ? null : type.getRecognition();
-        return lease.getFeeTiming() == FeeTiming.OVER_TERM
-                && type != null
-                && type.getBehaviour() == ChargeBehaviour.FEE
-                && (r == ChargeRecognition.RENT_LIKE || r == ChargeRecognition.PASS_THROUGH);
+        if (type == null || type.getBehaviour() != ChargeBehaviour.FEE) return false;
+        if (lease.getFeeTiming() == FeeTiming.OVER_TERM) {
+            return r == ChargeRecognition.RENT_LIKE || r == ChargeRecognition.PASS_THROUGH;
+        }
+        // PR #369 R1 P3-6: on a lease posted at-posting (a cut-over), an addendum signed
+        // after go-live follows the new-lease rule — its RENT_LIKE fee is stamped RENT_LIKE
+        // when it is written (LeaseVariationService) and earned over the remaining term.
+        // Replayed contract lines were stamped ONE_OFF at the cut-over post and keep the
+        // legacy rule; a PASS_THROUGH line is recovered at cost either way, never income.
+        return r == ChargeRecognition.RENT_LIKE && line.getPostedRecognition() == ChargeRecognition.RENT_LIKE;
     }
 
     private static boolean passThrough(ChargeType type) {
@@ -1176,15 +1190,28 @@ public class LeasePostingService {
         return errors;
     }
 
-    /**
-     * The TRN this lease's tax invoices will carry: the organisation's, or failing
-     * that the one snapshotted on the lease when it first posted. Null when neither.
-     */
     /** S16-04: whether a tax invoice for this lease can name its supplier's TRN. */
     boolean hasSupplierTrn(Lease lease) {
         return supplierTrn(lease) != null;
     }
 
+    /**
+     * PR #369 R1 P3-3: the refusal every door that hands contract VAT back gives before
+     * it writes anything — termination, its preview, a transfer and its dry run, a credit
+     * addendum — because the credit note needs the supplier's TRN.
+     */
+    static final String NO_TRN_FOR_CREDIT_NOTE = "Ending or reducing this contract hands VAT back on a tax credit note,"
+            + " and the organisation has no TRN. Add the TRN to the organisation's details first.";
+
+    /** Null when a credit note for {@code vat} can be issued on this lease; else {@link #NO_TRN_FOR_CREDIT_NOTE}. */
+    String creditNoteTrnProblem(Lease lease, BigDecimal vat) {
+        return vat != null && vat.signum() > 0 && !hasSupplierTrn(lease) ? NO_TRN_FOR_CREDIT_NOTE : null;
+    }
+
+    /**
+     * The TRN this lease's tax invoices will carry: the organisation's, or failing
+     * that the one snapshotted on the lease when it first posted. Null when neither.
+     */
     private String supplierTrn(Lease lease) {
         UUID tenantId = lease.getTenantId();
         String trn = tenantId == null ? null : landlordOrgs.findById(tenantId).map(o -> o.getTrn()).orElse(null);

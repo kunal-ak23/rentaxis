@@ -167,6 +167,12 @@ public class LeaseVariationService {
 
         // ---- stage 2: rows exist, journals do not --------------------------
         List<LeaseLine> newLines = leaseService.appendLines(lease, inputs);
+        // PR #369 R1 P3-6: an addendum signed now follows the new-lease recognition rule
+        // even on a lease posted at-posting (a cut-over): a RENT_LIKE fee is earned over the
+        // remaining term, a PASS_THROUGH is recovered at cost, a ONE_OFF is income at posting.
+        for (LeaseLine l : newLines) {
+            l.setPostedRecognition(LeaseLine.postingRecognition(null, l.getChargeType()));
+        }
         List<Cheque> newRows = chequeGeneration.appendRows(lease, rows, entryDate, newLines);
 
         LeasePostingService.LinePlan plan = postingService.planLines(lease, newLines);
@@ -212,13 +218,6 @@ public class LeaseVariationService {
         for (Cheque row : newRows) {
             chequeRegistrar.register(lease, row);
         }
-        if (lease.getVatTiming() == VatTiming.CONTRACT && addendumVat.signum() > 0) {
-            // S16-04: the TCO credited OUTPUT_VAT for the new lines; that is the tax
-            // point, documented by a tax invoice dated on the addendum — on a cut-over
-            // lease too, whose earlier invoices the previous system issued.
-            vatTaxPoints.recordChargeVat(lease, entryDate, tco.getId(),
-                    InstalmentVat.contractTaxable(newLines), addendumVat);
-        }
 
         LeaseAddendum addendum = new LeaseAddendum();
         addendum.setLease(lease);
@@ -232,6 +231,14 @@ public class LeaseVariationService {
         addendum.setTcoEntryNumber(tco.getEntryNumber());
         addendum.setCreatedBy(currentUserId());
         addendum = addendumRepository.save(addendum);
+        if (lease.getVatTiming() == VatTiming.CONTRACT && addendumVat.signum() > 0) {
+            // S16-04: the TCO credited OUTPUT_VAT for the new lines; that is the tax
+            // point, documented by a tax invoice dated on the addendum — on a cut-over
+            // lease too, whose earlier invoices the previous system issued. After the
+            // addendum is saved, so the invoice names it (R1 P3-7).
+            vatTaxPoints.recordChargeVat(lease, entryDate, tco.getId(),
+                    InstalmentVat.contractTaxable(newLines), addendumVat);
+        }
 
         for (LeaseLine line : newLines) {
             line.setAddendumId(addendum.getId());

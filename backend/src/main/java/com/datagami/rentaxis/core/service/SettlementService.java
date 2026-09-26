@@ -220,6 +220,9 @@ public class SettlementService {
     private final UserRepository userRepository;
     private final TenantFiscalSettingsRepository fiscalSettings;
     private final LeaseDepositLedger depositLedger;
+    /** S16-09 / R1 P3-5. */
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.datagami.rentaxis.core.service.penalty.PenaltyLapse penaltyLapse;
     private final PenaltyAssessmentService penaltyAssessmentService;
     private final DeductionAttachmentService deductionAttachmentService;
     private final RecognitionService recognitionService;
@@ -624,7 +627,7 @@ public class SettlementService {
         settlement.setSettledAt(LocalDateTime.now(clock));
         leaseSettlementRepository.save(settlement);
         // S16-09: proposals nobody decided before the settlement can no longer be approved.
-        penaltyAssessmentService.lapseProposalsOnSettlement(leaseId, settlementDate);
+        penaltyLapse.lapse(leaseId, settlementDate, com.datagami.rentaxis.core.service.penalty.PenaltyLapse.End.SETTLED, null);
 
         // CLOSED only when nothing is left to collect, which is the register's
         // question and not this method's: a balance due has just been raised as a

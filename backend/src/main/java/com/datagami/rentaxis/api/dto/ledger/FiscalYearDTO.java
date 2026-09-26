@@ -13,5 +13,7 @@ import java.util.UUID;
  */
 public record FiscalYearDTO(int fiscalYear, LocalDate periodStart, LocalDate periodEnd, String status,
                             BigDecimal netResult, UUID journalId, String journalNumber,
-                            Instant closedAt, UUID closedBy, Instant reopenedAt, UUID reopenedBy, String reopenReason) {
+                            Instant closedAt, UUID closedBy, Instant reopenedAt, UUID reopenedBy, String reopenReason,
+                            /* PR #369 R1 P3-8: set when a pre-books year is closed by this later year's close (re-open that one). */
+                            Integer coveredBy) {
 }

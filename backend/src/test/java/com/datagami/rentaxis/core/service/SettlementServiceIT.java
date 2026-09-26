@@ -704,7 +704,7 @@ class SettlementServiceIT extends AbstractPostgresIT {
 
         String row = jdbcTemplate.queryForObject("select status || '|' || resolution_note from penalty_assessments where id = ?",
                 String.class, proposed.id());
-        assertThat(row).startsWith("WAIVED|Lapsed: the lease was settled on");
+        assertThat(row).startsWith("WAIVED|Lapsed: not decided before the lease was settled on").endsWith("it was not included in the settlement.");
         assertTrialBalanceBalances();
     }
 
