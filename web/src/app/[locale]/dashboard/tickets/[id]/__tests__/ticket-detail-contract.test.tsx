@@ -58,8 +58,8 @@ const baseTicket = {
     unitNumber: "101",
     reporterName: "Renter",
     reportedBy: "r1",
-    assignedTo: null,
-    assigneeName: null,
+    assignedTo: null as string | null,
+    assigneeName: null as string | null,
     createdAt: "2026-08-01T00:00:00Z",
     updatedAt: "2026-08-01T00:00:00Z",
     estimatedResolutionHours: null as number | null,
@@ -392,5 +392,37 @@ describe("TicketDetailPage closing a resolved ticket", () => {
 
         expect(await screen.findByPlaceholderText("6-digit OTP")).toBeTruthy();
         expect(screen.queryByText(en.Tickets.reissueOtp)).toBeNull();
+    });
+
+    // S16-03: a maintenance-team TENANT_USER moves only the tickets assigned to
+    // them (MaintenanceTicketService#updateStatus's AccessDeniedException
+    // otherwise), and never assigns, closes with a code, or sets an ETA.
+    const ME = "99999999-9999-9999-9999-999999999999";
+
+    it("lets an assignee TENANT_USER change status, but not assign, close with a code, or set an ETA", async () => {
+        sessionUser.role = "TENANT_USER";
+        ticket.status = "IN_PROGRESS";
+        ticket.assignedTo = ME;
+        ticket.assigneeName = "Me";
+        render(<TicketDetailPage />);
+
+        // The status action itself is offered (PUT /status, which the backend
+        // now admits for the assignee), but nothing that endpoint alone can't do.
+        expect(await screen.findByText(en.Tickets.markResolved)).toBeTruthy();
+        expect(screen.queryByText(en.Tickets.assignToMe)).toBeNull();
+        expect(screen.queryByText(en.Tickets.assignTo)).toBeNull();
+        expect(screen.queryByText(en.Tickets.setEstimatedHours)).toBeNull();
+        expect(screen.queryByPlaceholderText("6-digit OTP")).toBeNull();
+    });
+
+    it("shows no action panel for a TENANT_USER who is neither the reporter's staff assignee", async () => {
+        sessionUser.role = "TENANT_USER";
+        ticket.status = "OPEN";
+        ticket.assignedTo = "someone-else";
+        render(<TicketDetailPage />);
+
+        await screen.findByText("Leaking tap");
+        expect(screen.queryByText(en.Tickets.actions)).toBeNull();
+        expect(screen.queryByText(en.Tickets.startWork)).toBeNull();
     });
 });
