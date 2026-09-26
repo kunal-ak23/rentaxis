@@ -10,10 +10,12 @@ import { collectionTile, type CollectionSummary } from "@/components/dashboard/c
 import { cn } from "@/lib/utils";
 import { Activity, Calendar, Plus, TrendingDown, TrendingUp } from "lucide-react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
-import FollowUpsWidget from "@/components/dashboard/FollowUpsWidget";
-import OverduePaymentsWidget from "@/components/dashboard/OverduePaymentsWidget";
-import ChequesToDepositWidget from "@/components/dashboard/ChequesToDepositWidget";
-import RecognitionBehindWidget from "@/components/dashboard/RecognitionBehindWidget";
+import { leaseApi } from "@/lib/api/leasing";
+import { businessTodayIso } from "@/lib/businessDate";
+import { buildPipeline, type PipelineStage } from "@/lib/dashboard/pipeline";
+import ContractPipeline from "@/components/dashboard/ContractPipeline";
+import TodayList from "@/components/dashboard/TodayList";
+import UnitStatusBoard from "@/components/dashboard/UnitStatusBoard";
 
 type DashboardSummary = {
   totalProperties: number;
@@ -171,96 +173,18 @@ function CollectionChart({ data }: { data: MonthlyPoint[] }) {
   );
 }
 
-function OccupancyDonut({
-  occupied,
-  reserved,
-  vacant,
-  rate,
-}: {
-  occupied: number;
-  reserved: number;
-  vacant: number;
-  rate: number;
-}) {
-  const t = useTranslations("Dashboard");
-  const total = occupied + reserved + vacant;
-  const size = 128;
-  const stroke = 16;
-  const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
-  const occFrac = total > 0 ? occupied / total : 0;
-  const resFrac = total > 0 ? reserved / total : 0;
-  const cx = size / 2;
-  const cy = size / 2;
-  return (
-    <div className="flex items-center gap-5">
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--ink-500)" strokeOpacity="0.16" strokeWidth={stroke} />
-        {total > 0 && (
-          <>
-            <circle
-              cx={cx}
-              cy={cy}
-              r={r}
-              fill="none"
-              stroke="var(--teal-600)"
-              strokeWidth={stroke}
-              strokeLinecap="butt"
-              strokeDasharray={`${occFrac * c} ${c}`}
-              transform={`rotate(-90 ${cx} ${cy})`}
-            />
-            {reserved > 0 && (
-              <circle
-                cx={cx}
-                cy={cy}
-                r={r}
-                fill="none"
-                stroke="var(--gold-500)"
-                strokeWidth={stroke}
-                strokeLinecap="butt"
-                strokeDasharray={`${resFrac * c} ${c}`}
-                strokeDashoffset={-occFrac * c}
-                transform={`rotate(-90 ${cx} ${cy})`}
-              />
-            )}
-          </>
-        )}
-        <text x={cx} y={cy - 1} textAnchor="middle" className="fill-foreground" style={{ fontSize: 22, fontWeight: 600 }}>
-          {rate.toFixed(0)}%
-        </text>
-        <text x={cx} y={cy + 16} textAnchor="middle" className="fill-[var(--ink-500)]" style={{ fontSize: 10 }}>
-          {t("occupiedShort")}
-        </text>
-      </svg>
-      <div className="space-y-2 text-[13px] min-w-[120px]">
-        <div className="flex items-center gap-2">
-          <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "var(--teal-600)" }} />
-          <span className="text-[var(--ink-500)]">{t("occupied")}</span>
-          <span className="font-semibold ms-auto">{occupied}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "var(--gold-500)" }} />
-          <span className="text-[var(--ink-500)]">{t("reservedLabel")}</span>
-          <span className="font-semibold ms-auto">{reserved}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "var(--ink-500)", opacity: 0.45 }} />
-          <span className="text-[var(--ink-500)]">{t("vacantLabel")}</span>
-          <span className="font-semibold ms-auto">{vacant}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function DashboardPage() {
   const t = useTranslations("Dashboard");
   const tCheques = useTranslations("Cheques");
   const locale = useLocale();
   const { data: session } = useSession();
-  const canManageLeases = hasPermission(session?.user?.role as UserRole | undefined, "canManageLeases");
-  const canRunRecognition = hasPermission(session?.user?.role as UserRole | undefined, "canRunRecognition");
+  const tToday = useTranslations("Today");
+  const role = session?.user?.role as UserRole | undefined;
+  const canManageLeases = hasPermission(role, "canManageLeases");
+  const canViewLeases = hasPermission(role, "canViewLeases");
+  const canSeeBoard = hasPermission(role, "canViewProperties");
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [pipeline, setPipeline] = useState<PipelineStage[] | null>(null);
   const [monthly, setMonthly] = useState<MonthlyPoint[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -285,6 +209,26 @@ export default function DashboardPage() {
 
     load();
   }, []);
+
+  // Spec §1a: the contract pipeline, from counts and bounded pages of GET /leases/paged.
+  useEffect(() => {
+    if (!canViewLeases) return;
+    let alive = true;
+    const today = businessTodayIso();
+    Promise.all([
+      leaseApi.paged({ status: "DRAFT", sort: "startDate,asc", size: 1 }),
+      leaseApi.paged({ status: "ACTIVE", sort: "startDate,desc", size: 50 }),
+      leaseApi.paged({ status: "ACTIVE", sort: "endDate,asc", size: 100 }),
+      leaseApi.paged({ status: "NOTICE_GIVEN", sort: "endDate,asc", size: 1 }),
+      leaseApi.paged({ status: "TERMINATED", sort: "endDate,asc", size: 1 }),
+      leaseApi.paged({ status: "EXPIRED", sort: "endDate,asc", size: 1 }),
+    ])
+      .then(([draft, activeByStart, activeByEnd, notice, terminated, expired]) => {
+        if (alive) setPipeline(buildPipeline({ draft, activeByStart, activeByEnd, notice, terminated, expired }, today));
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [canViewLeases]);
 
   if (loading) {
     return <div className="p-7 text-sm text-[var(--ink-500)]">Loading dashboard…</div>;
@@ -357,12 +301,16 @@ export default function DashboardPage() {
             {now.toLocaleDateString(locale, { month: "short", year: "numeric" })}
           </span>
           {canManageLeases && (
-          <Link href="/dashboard/leases?new=1" className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-semibold rounded-[var(--radius)] bg-[var(--ink-900)] text-white">
+          <Link href="/dashboard/leases?new=1" data-testid="home-new-contract" className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-semibold rounded-[var(--radius)] bg-[var(--ink-900)] text-white">
             <Plus size={13} /> {t("newLease")}
           </Link>
           )}
         </div>
       </div>
+
+      {pipeline && <ContractPipeline stages={pipeline} />}
+
+      <TodayList role={role} pipeline={pipeline} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5">
         <StatCard
@@ -378,18 +326,27 @@ export default function DashboardPage() {
           value={formatCurrencyCompact(summary.pendingThisMonthAmount)}
           sub={t("dueThisMonthUnpaid")}
         />
-        {/* Home › Unit Status lands here (/dashboard#unit-status). */}
-        <div id="unit-status" className="scroll-mt-6 [&>div]:h-full">
+        {/* Home › Unit Status lands on the board below; without it, here (/dashboard#unit-status). */}
+        <div id={canSeeBoard ? undefined : "unit-status"} className="scroll-mt-6 [&>div]:h-full" data-testid="kpi-unit-status">
           <StatCard
-            label={t("occupancy")}
+            label={tToday("unitStatus")}
             value={summary.occupancyRate.toFixed(1)}
             unit="%"
-            sub={t("unitsLeased", { occupied: summary.occupiedUnits, total: summary.totalUnits })}
-            note={reservedUnits > 0 ? t("reservedSubline", { count: reservedUnits }) : undefined}
+            sub={tToday("unitStatusLine", {
+              occupied: summary.occupiedUnits,
+              expiring: pipeline?.find(s => s.id === "expiring")?.count ?? summary.expiringLeases,
+              vacant: summary.vacantUnits,
+            })}
+            note={[
+              t("unitsLeased", { occupied: summary.occupiedUnits, total: summary.totalUnits }),
+              reservedUnits > 0 ? t("reservedSubline", { count: reservedUnits }) : null,
+              tToday("portfolioNote", { properties: summary.totalProperties, active: summary.activeLeases }),
+            ].filter(Boolean).join(" · ")}
           />
         </div>
         <Link
           href="/dashboard/collections?tab=overdue"
+          data-testid="kpi-overdue"
           aria-label={t("viewOverduePayments")}
           className="block rounded-[var(--radius-lg)] transition-all hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/30 [&>div]:hover:border-primary"
         >
@@ -401,39 +358,12 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      <div className="grid gap-3.5" style={{ gridTemplateColumns: "1.6fr 1fr" }}>
-        <CollectionChart data={monthly} />
-        <div className="bg-surface border border-border rounded-[var(--radius-lg)] p-5">
-          <div className="text-[13px] text-[var(--ink-500)]">{t("portfolioSnapshot")}</div>
-          <div className="font-serif text-[20px] font-semibold text-foreground mb-3">{t("currentTotals")}</div>
-          <div className="mb-4 pb-4 border-b border-border">
-            <OccupancyDonut
-              occupied={summary.occupiedUnits}
-              reserved={reservedUnits}
-              vacant={summary.vacantUnits}
-              rate={summary.occupancyRate}
-            />
-          </div>
-          <div className="space-y-2.5 text-[13px]">
-            <div className="flex justify-between"><span className="text-[var(--ink-500)]">{t("properties")}</span><span className="font-semibold">{summary.totalProperties}</span></div>
-            <div className="flex justify-between"><span className="text-[var(--ink-500)]">{t("activeLeasesLabel")}</span><span className="font-semibold">{summary.activeLeases}</span></div>
-            <div className="flex justify-between"><span className="text-[var(--ink-500)]">{t("draftLeases")}</span><span className="font-semibold">{summary.draftLeases}</span></div>
-            <div className="flex justify-between"><span className="text-[var(--ink-500)]">{t("reservedUnits")}</span><span className="font-semibold">{reservedUnits}</span></div>
-            <div className="flex justify-between"><span className="text-[var(--ink-500)]">{t("vacantUnits")}</span><span className="font-semibold">{summary.vacantUnits}</span></div>
-          </div>
-        </div>
-      </div>
+      {/* Spec §6: one chart — collections against what fell due; occupancy is on Unit Status. */}
+      <CollectionChart data={monthly} />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-        <OverduePaymentsWidget />
-        <ChequesToDepositWidget />
-      </div>
+      {canSeeBoard && <UnitStatusBoard />}
 
-      {canRunRecognition && <RecognitionBehindWidget />}
-
-      <FollowUpsWidget />
-
-      <div className="bg-surface border border-border rounded-[var(--radius-lg)] p-5">
+      <div className="bg-surface border border-border rounded-[var(--radius-lg)] p-5" data-testid="recent-activity">
         <div className="font-serif text-[20px] font-semibold text-foreground mb-3">{t("recentActivity")}</div>
         {summary.recentActivity.length === 0 ? (
           <p className="text-[13px] text-[var(--ink-500)]">{t("noActivityYet")}</p>

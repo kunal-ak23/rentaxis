@@ -340,3 +340,12 @@ describe("ApiError", () => {
     expect(ApiError).toBeDefined();
   });
 });
+
+describe("leaseApi.paged sort", () => {
+  it("passes Spring's field,dir sort through, and leaves it out when unset", async () => {
+    await leaseApi.paged({ status: "ACTIVE", size: 1, sort: "endDate,asc" });
+    expect(lastCall().url).toMatch(/\/leases\/paged\?.*sort=endDate(%2C|,)asc/);
+    await leaseApi.paged({ status: "ACTIVE" });
+    expect(lastCall().url).not.toContain("sort=");
+  });
+});

@@ -1347,11 +1347,12 @@ export const leaseApi = {
    * The leases list. `status` and `propertyId` are filters, not hints: they
    * narrow the page the server hands back (`LeaseController#getAllLeasesPaged`,
    * single-valued `status` — not a CSV). A client-side filter over the page
-   * already fetched hid every match outside that one page.
+   * already fetched hid every match outside that one page. `sort` is Spring's
+   * `field,dir` (the endpoint's Pageable); omitted, the server's default applies.
    */
-  paged: (q: { search?: string; status?: LeaseStatus; propertyId?: string; page?: number; size?: number } = {}) =>
+  paged: (q: { search?: string; status?: LeaseStatus; propertyId?: string; page?: number; size?: number; sort?: string } = {}) =>
     get<Page<LeaseDetail>>(
-      `/leases/paged${qs({ search: q.search, status: q.status, propertyId: q.propertyId, page: q.page ?? 0, size: q.size ?? 25 })}`,
+      `/leases/paged${qs({ search: q.search, status: q.status, propertyId: q.propertyId, page: q.page ?? 0, size: q.size ?? 25, sort: q.sort })}`,
     ),
   createDraft: (body: DraftLeaseInput) => send<LeaseDetail>("POST", "/leases", body),
   updateDraft: (id: string, body: DraftLeaseInput) => send<LeaseDetail>("PUT", `/leases/${id}`, body),

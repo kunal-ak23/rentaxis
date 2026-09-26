@@ -50,7 +50,9 @@ beforeEach(() => {
     global.fetch = vi.fn(async (url: unknown) => {
         const u = String(url);
         if (u.includes("monthly")) return { ok: true, json: async () => [] } as Response;
-        return { ok: true, json: async () => SUMMARY } as Response;
+        if (u.includes("/leases/paged")) return { ok: true, json: async () => ({ content: [], totalElements: 2, totalPages: 1, number: 0, size: 1 }) } as Response;
+        if (u.includes("/dashboard/summary")) return { ok: true, json: async () => SUMMARY } as Response;
+        return { ok: true, json: async () => [] } as Response;
     }) as unknown as typeof fetch;
 });
 
@@ -76,9 +78,12 @@ describe("dashboard home localization", () => {
             expect(screen.getByText(ar.Dashboard.collectedAgainstDues)).toBeInTheDocument(),
         );
         expect(screen.getByText(ar.Dashboard.pendingThisMonth)).toBeInTheDocument();
-        expect(screen.getByText(ar.Dashboard.portfolioSnapshot)).toBeInTheDocument();
-        expect(screen.getByText(ar.Dashboard.currentTotals)).toBeInTheDocument();
-        expect(screen.getByText(ar.Dashboard.draftLeases)).toBeInTheDocument();
+        // Spec §1a/§6: the pipeline, "Needs you now" and Unit Status replaced the portfolio snapshot.
+        expect(await screen.findByText(ar.Today.pipelineTitle)).toBeInTheDocument();
+        expect(screen.getByText(ar.Today.title)).toBeInTheDocument();
+        // "Unit Status" heads both the KPI tile and the board (same words in both catalogs).
+        expect(screen.getAllByText(ar.Today.unitStatus)).toHaveLength(2);
+        expect(screen.getByTestId("unit-board")).toHaveTextContent(ar.UnitBoard.title);
         expect(screen.getByText(ar.Dashboard.newLease)).toBeInTheDocument();
     });
 
@@ -96,6 +101,9 @@ describe("dashboard home localization", () => {
             // The two summary widgets, previously stubbed out of this test and
             // therefore the last English text left on the Arabic dashboard.
             "Overdue payments", "Cheques to deposit", "View all",
+            // PR 3's Home blocks.
+            "Contract pipeline", "Needs you now", "Unit Status", "Settlement due", "Draft contracts to post",
+            "Nothing needs you right now", "No properties yet", "Occupied", "Vacant",
         ]) {
             expect(text, `"${literal}" should not appear on the Arabic dashboard`).not.toContain(literal);
         }
@@ -125,6 +133,10 @@ describe("dashboard home localization", () => {
 
         const arNs = ar.Dashboard as Record<string, string>;
         const enNs = en.Dashboard as Record<string, string>;
+        const todayKeys = [...new Set([...source.matchAll(/\btToday\("([^"]+)"/g)].map((m) => m[1]))];
+        const arToday = ar.Today as Record<string, string>;
+        expect(todayKeys.length).toBeGreaterThan(2);
+        expect(todayKeys.filter((k) => !(k in arToday) || arToday[k] === (en.Today as Record<string, string>)[k])).toEqual([]);
 
         // A key that is missing renders as its own key path; a key whose Arabic
         // value is still the English text renders English. Parity alone sees
