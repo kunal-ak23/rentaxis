@@ -267,31 +267,207 @@ public class RecognitionService {
     @Transactional
     public void rebuildAfterAmend(UUID leaseId, LocalDate reversalDate) {
         Lease lease = lease(leaseId);
-        LocalDate on = reversalDate == null ? LocalDate.now() : reversalDate;
+        LocalDate d = reversalDate == null ? LocalDate.now() : reversalDate;
+        String reason = "Lease amended " + d;
 
-        // Ids, not the instances just read: each row is re-read under its own write
-        // lock before it is touched, and the decision below is made on the status
-        // that read returns. See lock().
-        List<UUID> entryIds = entries.findByLease_IdOrderByPeriodStartAsc(leaseId).stream()
-                .map(RecognitionEntry::getId).toList();
-        for (UUID entryId : entryIds) {
-            RecognitionEntry entry = lock(entryId);
-            if (entry.getStatus() == RecognitionStatus.POSTED && entry.getJournalId() != null) {
-                postingService.reverse(entry.getJournalId(), on, "Lease amended");
-                entry.setStatus(RecognitionStatus.REVERSED);
-                entries.save(entry);
-            } else if (entry.getStatus() == RecognitionStatus.PLANNED) {
-                entry.setStatus(RecognitionStatus.CANCELLED);
-                entries.save(entry);
+        // --- 1. the old schedule keeps what it earned through d − 1 ---------------
+        // Nothing the ledger saw before the amendment is touched: months already
+        // recognised stay where they were posted (#371 review, amendment-date design).
+        // Each live segment is cut at d − 1 the way a credit addendum cuts one
+        // (reduceFrom): rows after it reversed (never dated before d), the row holding
+        // d re-cut; a segment starting on or after d never began and is cancelled.
+        // The segment's accounts are resolved before its line can be read no more.
+        Map<List<UUID>, UUID> lineOfKey = new java.util.LinkedHashMap<>();
+        Map<List<UUID>, LocalDate> fromOfKey = new java.util.LinkedHashMap<>();
+        Map<UUID, List<UUID>> keyOfSegment = new HashMap<>();
+        for (RentSegment seg : segments.findByLease_IdOrderByFromDateAsc(leaseId)) {
+            if (seg.getStatus() == SegmentStatus.CANCELLED) continue;
+            List<UUID> key = List.of(poster.deferralAccountId(seg, lease), poster.incomeAccountId(seg, lease));
+            keyOfSegment.put(seg.getId(), key);
+            lineOfKey.putIfAbsent(key, seg.getLeaseLineId());
+            fromOfKey.merge(key, seg.getFromDate(), (x, y) -> x.isBefore(y) ? x : y);
+            if (seg.getStatus() != SegmentStatus.ACTIVE) continue;
+            if (!seg.getFromDate().isBefore(d)) {
+                cancelWholeSegment(seg, d, reason);
+            } else if (!seg.getToDate().isBefore(d)) {
+                truncateSegment(seg, d.minusDays(1), d, reason);
+                seg.setStatus(SegmentStatus.ACTIVE);
+                segments.save(seg);
             }
         }
-        for (RentSegment segment : segments.findByLease_IdOrderByFromDateAsc(leaseId)) {
-            if (LIVE_SEGMENTS.contains(segment.getStatus())) {
-                segment.setStatus(SegmentStatus.CANCELLED);
-                segments.save(segment);
+        // What the old schedule has recognised, or will — per (deferral, income) pair:
+        // POSTED rows (earlier catch-ups included), and PLANNED rows the runner can
+        // still post. A PLANNED row inside the period lock never will be, so it is
+        // cancelled and left to the catch-up below.
+        LocalDate locked = booksLockedThrough();
+        Map<List<UUID>, BigDecimal> kept = new java.util.LinkedHashMap<>();
+        for (RecognitionEntry e : entries.findByLease_IdOrderByPeriodStartAsc(leaseId)) {
+            List<UUID> key = keyOfSegment.get(e.getSegment().getId());
+            if (key == null) continue;
+            RecognitionStatus status = e.getStatus();
+            if (status == RecognitionStatus.PLANNED && locked != null && !e.getPeriodEnd().isAfter(locked)) {
+                RecognitionEntry row = lock(e.getId());
+                if (row.getStatus() == RecognitionStatus.PLANNED) {
+                    row.setStatus(RecognitionStatus.CANCELLED);
+                    entries.save(row);
+                    continue;
+                }
+                status = row.getStatus();
+            }
+            if (status == RecognitionStatus.POSTED || status == RecognitionStatus.PLANNED) {
+                kept.merge(key, e.getAmount(), BigDecimal::add);
             }
         }
-        build(lease, leaseLines.findByLease_IdOrderBySeqNoAsc(leaseId));
+
+        // --- 2. the new lines: the remaining term, per day -------------------------
+        // Each line's whole-term value, split at d: what it would have earned through
+        // d − 1 (compared with what was recognised, below) and the rest, earned from d
+        // over the remaining days (remaining ÷ remaining days; the last period absorbs
+        // the rounding).
+        Map<List<UUID>, BigDecimal> newEarned = new java.util.LinkedHashMap<>();
+        for (LeaseLine line : leaseLines.findByLease_IdOrderBySeqNoAsc(leaseId)) {
+            Window w = schedulable(lease, line);
+            if (w == null) continue;
+            if (segments.existsByLeaseLineIdAndStatusIn(line.getId(), LIVE_SEGMENTS)) continue;
+            BigDecimal earned = w.from().isBefore(d)
+                    ? ProrationEngine.earnedThrough(w.net(), w.from(), w.to(), d.minusDays(1)) : BigDecimal.ZERO;
+            LocalDate newFrom = w.from().isBefore(d) ? d : w.from();
+            RentSegment probe = newSegment(lease, line, w.fee(), w.from(), w.to(), w.net());
+            List<UUID> key = List.of(poster.deferralAccountId(probe, lease), poster.incomeAccountId(probe, lease));
+            lineOfKey.put(key, line.getId());
+            fromOfKey.merge(key, w.from(), (x, y) -> x.isBefore(y) ? x : y);
+            newEarned.merge(key, earned, BigDecimal::add);
+            BigDecimal remaining = w.net().subtract(earned);
+            if (remaining.signum() <= 0 || newFrom.isAfter(w.to())) continue;
+            schedule(lease, newSegment(lease, line, w.fee(), newFrom, w.to(), remaining));
+        }
+
+        // --- 3. the elapsed period's difference, as one catch-up dated d -----------
+        java.util.Set<List<UUID>> keys = new java.util.LinkedHashSet<>(kept.keySet());
+        keys.addAll(newEarned.keySet());
+        for (List<UUID> key : keys) {
+            BigDecimal diff = newEarned.getOrDefault(key, BigDecimal.ZERO)
+                    .subtract(kept.getOrDefault(key, BigDecimal.ZERO)).setScale(2, RoundingMode.HALF_UP);
+            if (diff.signum() == 0) continue;
+            postCatchUp(lease, key, lineOfKey.get(key), fromOfKey.get(key), d, diff, reason);
+        }
+    }
+
+    /** The date a journal is dated on (null when there is none) — an amendment's re-posted contract. */
+    @Transactional(readOnly = true)
+    public LocalDate entryDateOf(UUID journalId) {
+        return journalId == null ? null : journals.findById(journalId).map(JournalEntry::getEntryDate).orElse(null);
+    }
+
+    /** A line's recognition window and value, or null when it has nothing to recognise. */
+    private record Window(LocalDate from, LocalDate to, BigDecimal net, boolean fee) { }
+
+    private Window schedulable(Lease lease, LeaseLine line) {
+        boolean rent = line.getChargeType() != null && line.getChargeType().getBehaviour() == ChargeBehaviour.RENT;
+        boolean fee = !rent && LeasePostingService.earnedOverTerm(lease, line);
+        if (!rent && !fee) return null;
+        BigDecimal net = line.getNetAmount() == null ? BigDecimal.ZERO : line.getNetAmount();
+        if (net.signum() <= 0) return null;
+        LocalDate from = line.getPeriodStart() != null ? line.getPeriodStart() : lease.getStartDate();
+        LocalDate to = line.getPeriodEnd() != null ? line.getPeriodEnd() : lease.getEndDate();
+        if (from == null || to == null || to.isBefore(from)) {
+            throw new BusinessRuleViolationException("Line " + line.getSeqNo()
+                    + (rent ? " charges rent" : " is earned over the term")
+                    + " but has no usable period to recognise it over (" + from + " – " + to + ").");
+        }
+        return new Window(from, to, net, fee);
+    }
+
+    /** An unsaved segment of {@code amount} over {@code from}..{@code to} for the line. */
+    private RentSegment newSegment(Lease lease, LeaseLine line, boolean fee, LocalDate from, LocalDate to,
+                                   BigDecimal amount) {
+        RentSegment segment = new RentSegment();
+        segment.setTenantId(lease.getTenantId());
+        segment.setLease(lease);
+        segment.setLeaseLineId(line.getId());
+        segment.setFromDate(from);
+        segment.setToDate(to);
+        segment.setAmount(amount);
+        segment.setDays(ProrationEngine.daysInclusive(from, to));
+        segment.setDayRate(ProrationEngine.dayRate(amount, from, to));
+        segment.setStatus(SegmentStatus.ACTIVE);
+        if (fee) {
+            segment.setDeferralAccountId(poster.unearnedChargesLeaf(lease));
+            segment.setIncomeAccountId(line.getCreditAccount() == null ? null : line.getCreditAccount().getId());
+            if (segment.getIncomeAccountId() == null) {
+                throw new BusinessRuleViolationException("Line " + line.getSeqNo() + " has no income account to earn into.");
+            }
+        }
+        return segment;
+    }
+
+    /** Saves the segment and plans its months. */
+    private void schedule(Lease lease, RentSegment segment) {
+        segment = segments.save(segment);
+        for (ProrationEngine.Slice slice : ProrationEngine.slice(segment.getAmount(), segment.getFromDate(), segment.getToDate())) {
+            RecognitionEntry entry = new RecognitionEntry();
+            entry.setTenantId(lease.getTenantId());
+            entry.setLease(lease);
+            entry.setSegment(segment);
+            entry.setPeriodStart(slice.periodStart());
+            entry.setPeriodEnd(slice.periodEnd());
+            entry.setDays(slice.days());
+            entry.setAmount(slice.amount());
+            entry.setStatus(RecognitionStatus.PLANNED);
+            entries.save(entry);
+        }
+    }
+
+    /**
+     * The elapsed period's difference between the amended contract and what was
+     * recognised, posted as one {@code CIL} dated the amendment date — a release when
+     * the contract rose (Dr deferral / Cr income), a reversal of income when it fell.
+     * Recorded as a POSTED row of a closed (TRUNCATED) catch-up segment over the
+     * elapsed window, so it shows on the schedule and a later amendment counts it.
+     */
+    private void postCatchUp(Lease lease, List<UUID> key, UUID lineId, LocalDate from, LocalDate d,
+                             BigDecimal diff, String reason) {
+        LocalDate end = d.minusDays(1);
+        LocalDate start = from == null || from.isAfter(end) ? end : from;
+        RentSegment seg = new RentSegment();
+        seg.setTenantId(lease.getTenantId());
+        seg.setLease(lease);
+        seg.setLeaseLineId(lineId);
+        seg.setFromDate(start);
+        seg.setToDate(end);
+        seg.setAmount(diff);
+        seg.setDays(ProrationEngine.daysInclusive(start, end));
+        seg.setDayRate(BigDecimal.ZERO);
+        seg.setStatus(SegmentStatus.TRUNCATED);
+        seg.setDeferralAccountId(key.get(0));
+        seg.setIncomeAccountId(key.get(1));
+        seg = segments.save(seg);
+
+        RecognitionEntry entry = new RecognitionEntry();
+        entry.setTenantId(lease.getTenantId());
+        entry.setLease(lease);
+        entry.setSegment(seg);
+        entry.setPeriodStart(start);
+        entry.setPeriodEnd(end);
+        entry.setDays(seg.getDays());
+        entry.setAmount(diff);
+        entry.setStatus(RecognitionStatus.PLANNED);
+        entry = entries.saveAndFlush(entry);
+
+        BigDecimal amount = diff.abs();
+        PostingRequest.Line deferral = new PostingRequest.Line(new PostingRequest.ById(key.get(0)),
+                diff.signum() > 0 ? PostingRequest.Side.DR : PostingRequest.Side.CR, amount, null, null);
+        PostingRequest.Line income = new PostingRequest.Line(new PostingRequest.ById(key.get(1)),
+                diff.signum() > 0 ? PostingRequest.Side.CR : PostingRequest.Side.DR, amount, null, null);
+        JournalEntry cil = postingService.post(PostingRequest.ofPairs(com.datagami.rentaxis.domain.entity.enums.JournalDocType.CIL, d,
+                "Recognition catch-up – " + reason,
+                com.datagami.rentaxis.core.service.lease.LeaseChequeRegistrar.dimensions(lease, null),
+                com.datagami.rentaxis.domain.entity.enums.JournalSourceType.RECOGNITION, entry.getId(), null,
+                List.of(diff.signum() > 0 ? PostingRequest.pair(deferral, income) : PostingRequest.pair(income, deferral))));
+        entry.setStatus(RecognitionStatus.POSTED);
+        entry.setJournalId(cil.getId());
+        entry.setPostedAt(java.time.Instant.now());
+        entries.save(entry);
     }
 
     // ------------------------------------------------------------------

@@ -617,10 +617,11 @@ public class VatTaxPointService {
      * invoice is {@code recordContractVat}'s; nothing here.
      */
     @Transactional(propagation = Propagation.MANDATORY)
-    public void recordCutoverAmendment(Lease lease, LocalDate date, UUID tcoJournalId,
-                                       BigDecimal vatBefore, BigDecimal taxableBefore) {
-        if (lease.getVatTiming() != VatTiming.CONTRACT || contractDocumented(lease.getId())
-                || !taxInvoices.cutOverContract(lease)) return;
+    public void recordAmendmentVat(Lease lease, LocalDate date, UUID tcoJournalId,
+                                   BigDecimal vatBefore, BigDecimal taxableBefore) {
+        // #371 review part 3: generalised from cut-over leases to every CONTRACT lease
+        // without a contract invoice of ours (a lease posted before the rule too).
+        if (lease.getVatTiming() != VatTiming.CONTRACT || contractDocumented(lease.getId())) return;
         List<com.datagami.rentaxis.domain.entity.LeaseLine> lines = leaseLines.findByLease_IdOrderBySeqNoAsc(lease.getId());
         BigDecimal vat = com.datagami.rentaxis.core.service.lease.InstalmentVat.contractVat(lines).subtract(nz(vatBefore));
         BigDecimal taxable = com.datagami.rentaxis.core.service.lease.InstalmentVat.contractTaxable(lines).subtract(nz(taxableBefore));

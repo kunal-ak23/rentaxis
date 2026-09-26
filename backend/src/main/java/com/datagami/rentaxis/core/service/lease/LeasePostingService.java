@@ -146,6 +146,10 @@ public class LeasePostingService {
     private final VatTaxPointService vatTaxPoints;
     private final com.datagami.rentaxis.core.service.cheque.ChequeNumberClash numberClash;
 
+    /** The amendment date ("today") from the bean, so a test can fix it. */
+    @org.springframework.beans.factory.annotation.Autowired
+    private java.time.Clock clock = java.time.Clock.systemDefaultZone();
+
     public LeasePostingService(LeaseRepository leaseRepository,
                                LeaseLineRepository leaseLineRepository,
                                ChequeRepository chequeRepository,
@@ -638,7 +642,7 @@ public class LeasePostingService {
         // reversal below carries the deferred credit away with it.
         vatTaxPoints.cancelPlanned(leaseId);
 
-        LocalDate reversedOn = LocalDate.now();
+        LocalDate reversedOn = LocalDate.now(clock);
         // Collected as they are reversed, so the event names exactly the entries this
         // amendment unwound — the contract's own TCO and one per extension.
         List<UUID> reversedJournalIds = new ArrayList<>(contractEntries.size());
@@ -646,18 +650,19 @@ public class LeasePostingService {
             postingService.reverse(contract.getId(), reversedOn, reason);
             reversedJournalIds.add(contract.getId());
         }
-        // #369 R1-P3-3: a cut-over contract is re-posted on the amendment date, not its
-        // contract date — that date sits in the replayed period before the books start (locked
-        // in practice), and on the same day as the reversal the Output VAT moves by exactly the
-        // difference the AMENDMENT document below carries. Nothing before today changes.
-        boolean cutOver = vatTaxPoints.cutOverContract(lease);
-        JournalEntry tco = cutOver
-                ? postTco(lease, plan.pairs(), reversedOn, contractNarration(lease))
-                : postTco(lease, plan.pairs());
+        // #371 review (amendment-date design): every contract — ours and cut-over — is
+        // re-posted on the amendment date, the same day as the reversal. The two net on one
+        // date, so no earlier period changes (a balance or P&L as at any past month-end is
+        // what it was), and the Output VAT moves by exactly the difference the document below
+        // carries. Recognition follows the same rule (RecognitionService.rebuildAfterAmend:
+        // posted months kept, one catch-up dated today, the rest planned from today).
+        JournalEntry tco = postTco(lease, plan.pairs(), reversedOn, contractNarration(lease));
         // F14-11: a CONTRACT lease that already carries its contract tax invoice gets
-        // a TI (or TCN) for the VAT the amendment moved.
+        // a TI (or TCN) for the VAT the amendment moved, dated today; one without an
+        // invoice of ours (a cut-over, or a lease posted before the rule) gets the
+        // difference as an AMENDMENT document dated today.
         vatTaxPoints.recordContractVat(lease, reversedOn, tco.getId(), false);
-        vatTaxPoints.recordCutoverAmendment(lease, reversedOn, tco.getId(), vatBefore, taxableBefore);
+        vatTaxPoints.recordAmendmentVat(lease, reversedOn, tco.getId(), vatBefore, taxableBefore);
 
         lease.setPostingJournalId(tco.getId());
         leaseRepository.save(lease);
@@ -908,7 +913,13 @@ public class LeasePostingService {
         }
 
         if (checks.periodLockApplies()) {
-            otherErrors.addAll(periodLockErrors(lease, cheques));
+            // #371 review (amendment-date design): an amendment writes only on its own
+            // date — the reversal, the re-posted contract and the recognition catch-up —
+            // and touches no cheque, so that date is the one the lock is asked about. A
+            // contract date inside a locked month does not block it, and nothing posts there.
+            otherErrors.addAll(checks == Preconditions.FOR_AMEND
+                    ? periodLockErrors(LocalDate.now(clock), List.of())
+                    : periodLockErrors(lease, cheques));
         }
 
         return new PostingPlan(pairs, net, gross, chequeTotal, missingRoles, accountErrors, otherErrors);

@@ -277,6 +277,24 @@ public class RecognitionPoster {
     }
 
     /**
+     * Amendment catch-up: the ledger leaf a segment releases from, resolved to an
+     * account id (the role for the lease's property when the segment names none).
+     */
+    public UUID deferralAccountId(RentSegment segment, Lease lease) {
+        return resolve(deferralOf(segment, lease), lease);
+    }
+
+    /** Amendment catch-up: the leaf a segment earns into, resolved to an account id. */
+    public UUID incomeAccountId(RentSegment segment, Lease lease) {
+        return segment.getIncomeAccountId() != null ? segment.getIncomeAccountId() : resolve(incomeOf(lease), lease);
+    }
+
+    private UUID resolve(PostingRequest.AccountRef ref, Lease lease) {
+        if (ref instanceof PostingRequest.ById byId) return byId.accountId();
+        return accountResolver.resolve(((PostingRequest.ByRole) ref).role(), propertyIdOf(lease)).getId();
+    }
+
+    /**
      * F14-18: the leaf a periodic fee is deferred into — {@code UNEARNED_CHARGES}
      * resolved for the lease's property. Called while building the schedule, inside
      * the posting transaction whose TCO credited the same role.

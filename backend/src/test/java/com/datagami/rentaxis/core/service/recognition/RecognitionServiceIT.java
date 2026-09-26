@@ -122,12 +122,25 @@ class RecognitionServiceIT extends AbstractPostgresIT {
                 propertyService, accountService, propertyAccountService, chargeTypeService)
                 .bootstrap()
                 .withLeaseServices(leaseService, cheques, posting);
+        // An amendment is dated the day it is made (#371 review): here the lease's first
+        // day, so a rebuild restates the whole term — the mechanics these tests are about
+        // (reversal of posted rows, races, extensions), independent of today's date.
+        // AmendmentAsAtIT covers amendments made mid-term.
+        Object target = org.springframework.test.util.AopTestUtils.getTargetObject(posting);
+        savedClock = (java.time.Clock) org.springframework.test.util.ReflectionTestUtils.getField(target, "clock");
+        org.springframework.test.util.ReflectionTestUtils.setField(target, "clock",
+                java.time.Clock.fixed(START.atStartOfDay(java.time.ZoneId.systemDefault()).plusHours(10).toInstant(),
+                        java.time.ZoneId.systemDefault()));
     }
+
+    private java.time.Clock savedClock;
 
     @AfterEach
     void tearDown() {
         TenantContextHolder.clear();
         LeaseTestFixtures.clearAuth();
+        Object target = org.springframework.test.util.AopTestUtils.getTargetObject(posting);
+        org.springframework.test.util.ReflectionTestUtils.setField(target, "clock", savedClock);
     }
 
     // ------------------------------------------------------------------
