@@ -193,6 +193,7 @@ public class TaxInvoiceService {
         }
         if (point.getKind() == VatTaxPointKind.CHARGE) return new LocalDate[]{point.getTaxPointDate(), point.getTaxPointDate()};
         if (point.getKind() == VatTaxPointKind.CONTRACT) return new LocalDate[]{start, end};
+        if (point.getKind() == VatTaxPointKind.AMENDMENT) return new LocalDate[]{start, end};
         if (point.getKind() == VatTaxPointKind.REDUCTION) return new LocalDate[]{point.getTaxPointDate(), end};
         if (cheque == null || cheque.getChequeDate() == null) return new LocalDate[]{start, end};
         LocalDate from = start != null && cheque.getChequeDate().isBefore(start) ? start : cheque.getChequeDate();
@@ -243,7 +244,7 @@ public class TaxInvoiceService {
                 .toList();
         List<String> refs = new java.util.ArrayList<>((covering.isEmpty() ? all : covering).stream()
                 .map(TaxInvoiceService::cite).toList());
-        if (cutOver(lease)) {
+        if (cutOverContract(lease)) {
             // S16-04: the contract's own VAT on a cut-over lease was invoiced by the previous
             // system; the credit note names that invoice's contract too. Only for a true
             // cut-over (its contract journal carries an import batch) — never for a lease of ours.
@@ -268,10 +269,16 @@ public class TaxInvoiceService {
         return i.getInvoiceNumber() + " (" + DAY.format(i.getIssueDate()) + ")";
     }
 
-    /** Whether the lease's contract journal was written by a cut-over import. */
-    private boolean cutOver(Lease lease) {
-        return lease.getPostingJournalId() != null && journals.findById(lease.getPostingJournalId())
-                .map(e -> e.getImportBatchId() != null).orElse(false);
+    /**
+     * Whether the lease's contract came from a cut-over import. #369 R1-P3-3: any of its
+     * contract entries (TCO) carrying an import batch — an amendment re-posts the contract
+     * under a new TCO of ours, and the lease stays a cut-over lease.
+     */
+    public boolean cutOverContract(Lease lease) {
+        return journals.findBySourceTypeAndSourceIdOrderByEntryDateAscCreatedAtAsc(
+                        com.datagami.rentaxis.domain.entity.enums.JournalSourceType.LEASE, lease.getId()).stream()
+                .anyMatch(e -> e.getDocType() == com.datagami.rentaxis.domain.entity.enums.JournalDocType.TCO
+                        && e.getImportBatchId() != null);
     }
 
 
@@ -295,6 +302,10 @@ public class TaxInvoiceService {
         }
         if (point.getKind() == VatTaxPointKind.CONTRACT) {
             return (point.getVatAmount().signum() >= 0 ? "Tenancy contract" : "Tenancy contract amended") + span;
+        }
+        if (point.getKind() == VatTaxPointKind.AMENDMENT) {
+            return (point.getVatAmount().signum() >= 0 ? "Tenancy contract amended: VAT added"
+                    : "Tenancy contract amended: VAT reduced") + span;
         }
         String what = cheque == null ? "Instalment"
                 : (cheque.getNarration() != null && !cheque.getNarration().isBlank()

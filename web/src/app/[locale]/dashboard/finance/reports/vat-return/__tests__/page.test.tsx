@@ -96,4 +96,18 @@ describe("VAT return page", () => {
         expect(history).toContain("not recorded");
         expect(history).not.toContain("tied at filing");
     });
+
+    it("reloads the return when the output check moved since the page loaded (#369 R1-P3-2)", async () => {
+        const { ApiError } = await import("@/lib/api/facilities");
+        api.get.mockResolvedValueOnce(base).mockResolvedValue({ ...base,
+            outputCheck: { documents: 100, ledger: 3100, difference: -3000, ok: false }, reasonRequired: true });
+        api.filings.mockResolvedValue([]);
+        api.file.mockRejectedValue(new ApiError(400, "The output difference is now -3000.00",
+            JSON.stringify({ code: "vat.outputCheckFailed", args: { difference: "-3000.00" }, message: "x" })));
+        render(<NextIntlClientProvider locale="en" messages={en}><VatReturnPage /></NextIntlClientProvider>);
+        fireEvent.click(await screen.findByTestId("vat-file"));
+        fireEvent.click(await screen.findByTestId("vat-confirm"));
+        expect(await screen.findByTestId("vat-override")).toBeTruthy();
+        expect(api.get).toHaveBeenCalledTimes(2);
+    });
 });

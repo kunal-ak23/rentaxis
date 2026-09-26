@@ -295,8 +295,8 @@ class CutoverContractVatDocumentsIT extends AbstractPostgresIT {
         jdbc.update("update landlord_org set trn = null where id = ?", fixtures.tenantId());
         UUID leaseId = cutoverLease();
         LocalDate t = LocalDate.of(2026, 5, 31);
-        assertThatThrownBy(() -> tx.execute(s -> termination.preview(leaseId, t)))
-                .isInstanceOf(BusinessRuleViolationException.class).hasMessageContaining("has no TRN");
+        assertThat(tx.execute(s -> termination.preview(leaseId, t)).problems())
+                .singleElement().asString().contains("has no TRN");
         assertThatThrownBy(() -> termination.terminate(leaseId, new TerminateLeaseRequest(t, null, null, null), null))
                 .isInstanceOf(BusinessRuleViolationException.class).hasMessageContaining("has no TRN");
         assertThat(jdbc.queryForObject("select count(*) from journal_entries where lease_id = ? and doc_type = 'TCR'",
@@ -341,5 +341,77 @@ class CutoverContractVatDocumentsIT extends AbstractPostgresIT {
         assertThat(invoices(leaseId)).extracting(TaxInvoiceDTO::vatAmount)
                 .usingElementComparator(BigDecimal::compareTo)
                 .containsExactlyInAnyOrder(new BigDecimal("100.00"), new BigDecimal("3000.00"));
+    }
+
+    private static com.datagami.rentaxis.api.dto.lease.LeaseLineInput resend(LeaseLineDTO l, String gross) {
+        return new com.datagami.rentaxis.api.dto.lease.LeaseLineInput(l.chargeTypeId(), null,
+                gross == null ? l.grossAmount() : new BigDecimal(gross), l.discountAmount(), l.narration(),
+                l.vatApplicable(), l.creditAccountId(), l.periodStart(), l.periodEnd(), l.addendumId());
+    }
+
+    /**
+     * #369 R1-P3-1: an amendment deletes and re-inserts every line. A post-go-live
+     * addendum's parking fee on a cut-over lease was stamped with the new-lease rule;
+     * re-inserted, it used to take the lease's legacy rule and the repost credited the
+     * whole fee to income. It keeps its stamp and stays in Unearned charges.
+     */
+    @Test
+    void anAmendmentKeepsANewRuleAddendumFeeOnTheNewRule() {
+        UUID leaseId = cutoverLease();
+        LocalDate signed = LocalDate.of(2026, 5, 20);
+        variations.addCharge(leaseId, new AddChargeRequest(LocalDate.of(2026, 6, 1), signed, null, "Parking bay",
+                List.of(com.datagami.rentaxis.testsupport.LeaseTestFixtures.line("PARKING_FEE", "2000")),
+                List.of(new ChequeRowInput(null, null, signed, "880090", LocalDate.of(2026, 6, 1), "Emirates NBD",
+                        null, null, new BigDecimal("2000"), null, null))));
+        UUID unearned = tx.execute(s -> resolver.resolve(com.datagami.rentaxis.domain.entity.enums.AccountRole.UNEARNED_CHARGES,
+                fixtures.property().getId())).getId();
+        String parked = "select coalesce(sum(credit - debit), 0) from journal_lines where lease_id = ? and account_id = ?";
+        assertThat(jdbc.queryForObject(parked, BigDecimal.class, leaseId, unearned)).isEqualByComparingTo("2000.00");
+
+        List<com.datagami.rentaxis.api.dto.lease.LeaseLineInput> same = tx.execute(s -> leaseService.getLines(leaseId))
+                .stream().map(l -> resend(l, null)).toList();
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        posting.amendLines(leaseId, same, "Narration correction");
+
+        assertThat(jdbc.queryForObject("select posted_recognition from lease_lines where lease_id = ? and addendum_id is not null",
+                String.class, leaseId)).isEqualTo("RENT_LIKE");
+        assertThat(jdbc.queryForObject(parked, BigDecimal.class, leaseId, unearned)).isEqualByComparingTo("2000.00");
+    }
+
+    /**
+     * #369 R1-P3-3: amending a cut-over CONTRACT-VAT lease so its VAT changes moves Output
+     * VAT by the difference; with no contract invoice of ours to adjust, the difference is
+     * its own credit note (VAT down), and the lease stays a cut-over lease for later
+     * references.
+     */
+    @Test
+    void anAmendmentThatLowersACutOverLeasesVatIssuesACreditNote() {
+        UUID leaseId = cutoverLease();
+        // The rent is re-split: 12,000 of it becomes a service charge without VAT, so the
+        // contract (and the register's 63,000) is unchanged and only the VAT moves.
+        List<com.datagami.rentaxis.api.dto.lease.LeaseLineInput> lower = new java.util.ArrayList<>(
+                tx.execute(s -> leaseService.getLines(leaseId)).stream()
+                        .map(l -> resend(l, "RENT".equals(l.chargeTypeCode()) ? "48000" : null)).toList());
+        lower.add(com.datagami.rentaxis.testsupport.LeaseTestFixtures.line("ADMIN_FEE", "12600"));
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        posting.amendLines(leaseId, lower, "Rent re-split");
+
+        assertThat(invoices(leaseId)).singleElement().satisfies(cn -> {
+            assertThat(cn.kind()).isEqualTo(TaxInvoiceKind.CREDIT_NOTE);
+            assertThat(cn.vatAmount()).isEqualByComparingTo("600.00");
+        });
+        assertThat(jdbc.queryForObject("select kind from vat_tax_points where lease_id = ?", String.class, leaseId))
+                .isEqualTo("AMENDMENT");
+        assertThat(jdbc.queryForObject("select reference_note from tax_invoices where lease_id = ?", String.class, leaseId))
+                .contains("previous system");
+        LocalDate today = LocalDate.now();
+        LocalDate quarter = LocalDate.of(today.getYear(), ((today.getMonthValue() - 1) / 3) * 3 + 1, 1);
+        VatReturnDTO.OutputCheck qc = check(quarter);
+        assertThat(qc.ok()).as("the amendment Output VAT movement is documented: " + qc).isTrue();
+
+        // Still a cut-over lease after its contract was re-posted under a TCO of ours.
+        termination.terminate(leaseId, new TerminateLeaseRequest(today.plusDays(1), null, null, null), null);
+        assertThat(jdbc.queryForList("select reference_note from tax_invoices where lease_id = ? and kind = 'CREDIT_NOTE'"
+                + " order by created_at", String.class, leaseId)).last().asString().contains("previous system");
     }
 }

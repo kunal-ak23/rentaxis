@@ -769,9 +769,15 @@ public class PortfolioImportService {
             // show, rather than a FAILED job with a stack trace behind it.
             log.warn("Portfolio import refused: jobId={}, reason={}", job.getId(), e.getMessage());
             job.setStatus("VALIDATION_FAILED");
+            if (e instanceof com.datagami.rentaxis.core.service.cutover.ImportRowRefusedException) {
+                // #369 R1 nit: refused by persist after validation; its transaction (and the
+                // batch it had created) rolled back, so nothing points at it.
+                job.setImportBatchId(null);
+            }
             try {
-                job.setErrors(objectMapper.writeValueAsString(
-                        List.of(ImportErrorDTO.file("General", "File", e.getMessage()))));
+                job.setErrors(objectMapper.writeValueAsString(List.of(
+                        e instanceof com.datagami.rentaxis.core.service.cutover.ImportRowRefusedException refused
+                                ? refused.row() : ImportErrorDTO.file("General", "File", e.getMessage()))));
             } catch (Exception jsonEx) {
                 job.setErrors("[{\"sheet\":\"General\",\"row\":null,\"field\":\"File\","
                         + "\"message\":\"This workbook was refused\"}]");

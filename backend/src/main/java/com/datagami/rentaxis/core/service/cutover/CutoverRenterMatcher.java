@@ -79,10 +79,11 @@ public class CutoverRenterMatcher {
                     + "), so the contract cannot be attached to one of them; give this renter an email of their own.");
         }
         Renter r = held.get(0);
-        String made = madeBy(tenantId, r.getId());
-        if (made != null && !made.endsWith(ImportBatchStatus.POSTED.name())) {
+        com.datagami.rentaxis.domain.entity.ImportBatch made = madeBy(tenantId, r.getId());
+        if (made != null && made.getStatus() != ImportBatchStatus.POSTED) {
             return new Match(null, r.getNameEn(), "A renter with email '" + shown + "' already exists in this organisation ("
-                    + made + "). Post or discard that batch first, or correct its draft leases instead of re-importing.");
+                    + "import batch '" + made.getLabel() + "', " + made.getStatus()
+                    + "). Post or discard that batch first, or correct its draft leases instead of re-importing.");
         }
         if (sheetName == null || sheetName.isBlank()) {
             return new Match(null, r.getNameEn(), "The email '" + shown + "' belongs to the existing renter '"
@@ -105,13 +106,12 @@ public class CutoverRenterMatcher {
         return s == null ? "" : s.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
     }
 
-    /** "import batch 'label', STATUS" for the batch that made this renter, or null when none did. */
-    private String madeBy(UUID tenantId, UUID renterId) {
+    /** The batch of this tenant that made this renter, or null when none did (#369 R1 nit: the typed status, not its text). */
+    private com.datagami.rentaxis.domain.entity.ImportBatch madeBy(UUID tenantId, UUID renterId) {
         return batchEntities.findByEntityTypeAndEntityId(ImportedEntityType.RENTER, renterId).stream()
                 .map(link -> batches.findById(link.getBatchId()).orElse(null))
                 .filter(b -> b != null && tenantId.equals(b.getTenantId()))
                 .findFirst()
-                .map(b -> "import batch '" + b.getLabel() + "', " + b.getStatus())
                 .orElse(null);
     }
 }

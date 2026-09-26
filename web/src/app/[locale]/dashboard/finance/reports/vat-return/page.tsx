@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
 import { AlertTriangle, CheckCircle2, Download, FileText, Lock, Receipt, ShieldCheck, Unlock } from "lucide-react";
 import VatReturnView from "@/components/finance/vat/VatReturnView";
-import { serverText } from "@/components/finance/bankrec/serverText";
+import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ApiError } from "@/lib/api/facilities";
@@ -75,6 +75,12 @@ export default function VatReturnPage() {
             await load(periodStart);
         } catch (err) {
             setActionError(err instanceof ApiError ? serverText(tCommon, err) || err.message : tCommon("loadFailed"));
+            // #369 R1-P3-2: the output check moved (or failed since the page loaded) — reload the
+            // return so the difference shown, and the reason field, are the server's now.
+            if (codedOf(err).code?.startsWith("vat.outputCheck")) {
+                setConfirm(null);
+                await load(periodStart);
+            }
         } finally {
             setBusy(false);
         }
