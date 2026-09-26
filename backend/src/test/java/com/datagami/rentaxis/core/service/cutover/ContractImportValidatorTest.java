@@ -42,6 +42,8 @@ class ContractImportValidatorTest {
     private final Map<String, ContractImportValidator.AccountMatch> chart = new LinkedHashMap<>();
     private final List<String> existingProperties = new ArrayList<>();
     private final List<String> existingRenterEmails = new ArrayList<>();
+    /** S16-10: renters an earlier, POSTED workbook created: email → name. */
+    private final Map<String, String> reusableRenters = new LinkedHashMap<>();
     private final Map<String, String> liveLeases = new LinkedHashMap<>();
     private final Map<String, String> existingContractRefs = new LinkedHashMap<>();
 
@@ -93,8 +95,13 @@ class ContractImportValidatorTest {
             }
 
             @Override public String existingRenter(String email) {
+                if (reusableRenters.containsKey(email.toLowerCase(Locale.ROOT))) return "import batch 'Workbook 1', POSTED";
                 return existingRenterEmails.stream().anyMatch(e -> e.equalsIgnoreCase(email))
                         ? "import batch 'September cut-over', REVERSED" : null;
+            }
+
+            @Override public String reusableRenterName(String email) {
+                return reusableRenters.get(email.toLowerCase(Locale.ROOT));
             }
 
             @Override public String liveLeaseOn(String propertyName, String buildingName, String unitNumber) {
@@ -743,6 +750,41 @@ class ContractImportValidatorTest {
             assertThat(errors(wb))
                     .extracting(ImportErrorDTO::getSheet, ImportErrorDTO::getField)
                     .contains(Tuple.tuple("Renters", "Email"));
+        }
+    }
+
+    /** S16-10: a later workbook lists a renter an earlier, posted workbook created — matched, not refused. */
+    @Test
+    void aRenterAnEarlierPostedWorkbookCreatedIsMatched() throws Exception {
+        try (Workbook wb = workbook(true)) {
+            reusableRenters.put("sample.renter.one@example.com", "Sample  renter one");
+            assertThat(errors(wb)).extracting(ImportErrorDTO::getSheet).doesNotContain("Renters");
+        }
+    }
+
+    /** S16-10: …or does not list them at all and names them only on Contracts. */
+    @Test
+    void aContractMayNameARenterAnEarlierPostedWorkbookCreated() throws Exception {
+        try (Workbook wb = workbook(true)) {
+            set(wb, "Renters", 1, 2, "someone.else@example.com");
+            assertThat(errors(wb)).extracting(ImportErrorDTO::getSheet, ImportErrorDTO::getField)
+                    .contains(Tuple.tuple("Contracts", "RenterEmail"));
+            reusableRenters.put("sample.renter.one@example.com", "Sample Renter One");
+            assertThat(errors(wb)).extracting(ImportErrorDTO::getSheet, ImportErrorDTO::getField)
+                    .doesNotContain(Tuple.tuple("Contracts", "RenterEmail"));
+        }
+    }
+
+    /** S16-10: the email of an existing renter under another person's name is a typo, not a match. */
+    @Test
+    void anExistingRentersEmailUnderAnotherNameIsAnError() throws Exception {
+        try (Workbook wb = workbook(true)) {
+            reusableRenters.put("sample.renter.one@example.com", "Somebody Else");
+            assertThat(errors(wb)).filteredOn(e -> "Renters".equals(e.getSheet()))
+                    .singleElement().satisfies(e -> {
+                        assertThat(e.getField()).isEqualTo("Name");
+                        assertThat(e.getMessage()).contains("Somebody Else");
+                    });
         }
     }
 

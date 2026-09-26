@@ -202,6 +202,22 @@ public class ContractImportValidator {
         /** The same, for a renter's email. */
         String existingRenter(String email);
 
+        /**
+         * S16-10: the name of the renter this organisation already holds under that
+         * email, when a later workbook may attach contracts to it — or null when there
+         * is none, or when it may not be reused (made by a batch that is not POSTED:
+         * a DRAFT batch is this data loaded twice, a REVERSED one may yet be discarded).
+         *
+         * <p>The match key is the email, case-insensitive: it is the one identity the
+         * Renters sheet carries (Name, NameAr, Email, Phone — no Emirates ID or
+         * passport), the key the Contracts sheet already uses to name a renter, and
+         * unique per organisation. The name is checked as well, so a mistyped email
+         * that happens to belong to somebody else is refused rather than merged.</p>
+         */
+        default String reusableRenterName(String email) {
+            return null;
+        }
+
         /** Who is already living there, phrased for an error message — or null when nobody is. */
         String liveLeaseOn(String propertyName, String buildingName, String unitNumber);
 
@@ -446,15 +462,30 @@ public class ContractImportValidator {
                 // Same reason as the property rule: a second renter row for a person
                 // the organisation already has would split their history in two.
                 String existing = lk.existingRenter(email);
-                if (existing != null) {
+                String reusable = existing == null ? null : lk.reusableRenterName(email);
+                if (existing != null && reusable == null) {
                     errors.add(new ImportErrorDTO("Renters", rowNum, "Email",
                             "A renter with email '" + email + "' already exists in this organisation ("
-                                    + existing + "). Discard that batch first, or correct its draft"
+                                    + existing + "). Post or discard that batch first, or correct its draft"
                                     + " leases instead of re-importing."));
+                } else if (reusable != null && !sameName(reusable, SheetCells.getCellString(row, 0))) {
+                    // S16-10: listed again by a later workbook, the row matches the
+                    // existing renter (no second record) — but only if it is the same person.
+                    errors.add(new ImportErrorDTO("Renters", rowNum, "Name",
+                            "The email '" + email + "' belongs to the existing renter '" + reusable
+                                    + "', but this row names '" + SheetCells.getCellString(row, 0)
+                                    + "'. Correct the email or the name."));
                 }
             }
         }
         return emails;
+    }
+
+    /** Names compared as a person would: case, repeated spaces and surrounding blanks ignored. */
+    static boolean sameName(String a, String b) {
+        java.util.function.Function<String, String> n = x -> x == null ? ""
+                : x.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+        return n.apply(a).equals(n.apply(b));
     }
 
     // ------------------------------------------------------------------
@@ -651,9 +682,16 @@ public class ContractImportValidator {
                             "Unit '" + unitNumber + "' of '" + propertyName + "' is " + occupant));
                 }
             }
-            if (!renterEmails.contains(renterEmail.toLowerCase(Locale.ROOT))) {
+            if (!renterEmails.contains(renterEmail.toLowerCase(Locale.ROOT))
+                    && (renterEmail.isEmpty() || lk.reusableRenterName(renterEmail) == null)) {
+                // S16-10: a renter an earlier (posted) workbook created is matched by
+                // email; it need not be listed again.
+                String existing = renterEmail.isEmpty() ? null : lk.existingRenter(renterEmail);
                 errors.add(new ImportErrorDTO("Contracts", rowNum, "RenterEmail",
-                        "Renter email '" + renterEmail + "' is not on the Renters sheet"));
+                        "Renter email '" + renterEmail + "' is not on the Renters sheet"
+                                + (existing == null ? " and is not a renter of this organisation"
+                                : "; the organisation's renter with that email (" + existing
+                                        + ") can be used once that batch is posted")));
             }
 
             dateCell(SheetCells.cell(row, hi, "ContractDate"), true, "Contracts", rowNum, "ContractDate", errors);
@@ -1102,6 +1140,18 @@ public class ContractImportValidator {
             var held = renters.findByTenantIdAndEmailIn(tenantId, List.of(email));
             if (held.isEmpty()) return null;
             return madeBy(ImportedEntityType.RENTER, held.get(0).getId(), "created outside any import");
+        }
+
+        @Override public String reusableRenterName(String email) {
+            var held = renters.findByTenantIdAndEmailIn(tenantId, List.of(email));
+            if (held.isEmpty()) return null;
+            com.datagami.rentaxis.domain.entity.Renter renter = held.get(0);
+            boolean unposted = batchEntities.findByEntityTypeAndEntityId(ImportedEntityType.RENTER, renter.getId())
+                    .stream()
+                    .map(link -> batchRepository.findById(link.getBatchId()).orElse(null))
+                    .anyMatch(b -> b != null && tenantId.equals(b.getTenantId())
+                            && b.getStatus() != com.datagami.rentaxis.domain.entity.enums.ImportBatchStatus.POSTED);
+            return unposted ? null : renter.getNameEn();
         }
 
         /** Which batch made this row, phrased for the accountant, or {@code otherwise}. */
