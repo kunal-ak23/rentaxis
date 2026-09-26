@@ -623,6 +623,8 @@ public class SettlementService {
         settlement.setSettledBy(settledBy);
         settlement.setSettledAt(LocalDateTime.now(clock));
         leaseSettlementRepository.save(settlement);
+        // S16-09: proposals nobody decided before the settlement can no longer be approved.
+        penaltyAssessmentService.lapseProposalsOnSettlement(leaseId, settlementDate);
 
         // CLOSED only when nothing is left to collect, which is the register's
         // question and not this method's: a balance due has just been raised as a

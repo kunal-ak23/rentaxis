@@ -685,6 +685,29 @@ class SettlementServiceIT extends AbstractPostgresIT {
     }
 
     /** F15-03: Finalize on a fresh settlement page, with no draft saved, books the statement it showed. */
+    /**
+     * S16-09: a fine proposed before the termination and still undecided at
+     * settlement could no longer be approved ("charge this penalty through
+     * settlement") and sat PROPOSED for ever. Finalising the settlement closes it,
+     * with a note saying why.
+     */
+    @Test
+    void anUndecidedProposalLapsesWhenTheSettlementIsFinalised() {
+        UUID leaseId = galah();
+        PenaltyAssessmentDTO proposed = penalties.propose(new ProposePenaltyRequest(
+                leaseId, null, PenaltyReason.LATE_PAYMENT, new BigDecimal("500"), "Late"), null);
+        recognition.runTo(RECOGNISED_TO, false);
+        termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, "Renter relocating"), null);
+        recognition.runTo(T, false);
+
+        finalize(leaseId, leaf(AccountRole.BANK).getId());
+
+        String row = jdbcTemplate.queryForObject("select status || '|' || resolution_note from penalty_assessments where id = ?",
+                String.class, proposed.id());
+        assertThat(row).startsWith("WAIVED|Lapsed: the lease was settled on");
+        assertTrialBalanceBalances();
+    }
+
     @Test
     void finalizeWithoutASavedDraftCreatesItFromTheStatement() {
         UUID leaseId = terminatedGalah();

@@ -477,6 +477,32 @@ public class PenaltyAssessmentService {
     }
 
     /**
+     * S16-09: a settlement was finalised while a proposal on the lease was still
+     * undecided. It can no longer be approved (the lease is not chargeable; a fine
+     * still due is a settlement deduction), so it would sit in the queue for ever.
+     * Each one is closed as WAIVED with a note saying why, in the settlement's own
+     * transaction.
+     *
+     * @return how many proposals lapsed
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public int lapseProposalsOnSettlement(UUID leaseId, LocalDate settledOn) {
+        int lapsed = 0;
+        for (PenaltyAssessment p : repository.findByLease_Id(leaseId)) {
+            if (p.getStatus() != PenaltyAssessmentStatus.PROPOSED) continue;
+            PenaltyAssessment a = lock(p.getId());
+            if (a.getStatus() != PenaltyAssessmentStatus.PROPOSED) continue;
+            a.setStatus(PenaltyAssessmentStatus.WAIVED);
+            a.setResolutionNote("Lapsed: the lease was settled on "
+                    + settledOn.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                    + " before this was decided; a fine still due is charged as a settlement deduction.");
+            repository.save(a);
+            lapsed++;
+        }
+        return lapsed;
+    }
+
+    /**
      * F14-28: a partial waiver. The proposal stays PROPOSED at the lower amount,
      * the amount first proposed is kept, and the reason is recorded — one
      * decision on one assessment rather than a waiver plus an unlinked new
