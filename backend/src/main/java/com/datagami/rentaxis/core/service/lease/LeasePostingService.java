@@ -340,6 +340,16 @@ public class LeasePostingService {
         }
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
         List<Cheque> cheques = chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
+        if (lease.getTransferredFromLeaseId() != null && checks != Preconditions.FOR_IMPORT_POST
+                && cheques.isEmpty() && carried.signum() < 0
+                && lease.getVatTiming() == VatTiming.INSTALMENT && InstalmentVat.contractVat(lines).signum() > 0) {
+            // S16-11: a successor the carried (prepaid) balance pays in full has no
+            // instalment to carry its tax point — the consideration was received up
+            // front, so the VAT is due now: declared on the contract with its tax
+            // invoice, as a CONTRACT lease is. If validate refuses below, the
+            // transaction rolls this back with everything else.
+            lease.setVatTiming(VatTiming.CONTRACT);
+        }
         allocateVatIfNeverAllocated(lease, lines, cheques);
 
         PostingPlan plan = validate(lease, lines, cheques, checks, numberExempt, carried);
@@ -423,13 +433,13 @@ public class LeasePostingService {
             // F15-13: the review lists the instruments the post re-registers on this grid.
             carried = est.carried().stream().map(c -> new PostLeaseDryRunResponse.CarriedCheque(c.getSeqNo(),
                     c.getChequeNumber(), c.getChequeDate(), c.getAmount())).toList();
-            // The carried instruments are not on B's grid yet: B's own rows must cover
-            // the contract plus C less what the carried ones already pay.
+            // S16-06: judged exactly as the post judges it. The carried instruments are
+            // not on B's grid yet, so they are passed as instruments the grid will hold
+            // (the post appends them before it validates): the grid total, the balance
+            // check and its message are the post's, and an empty own grid with a
+            // balance still to collect is refused here as it is there.
             plan = validate(lease, lines, cheques, Preconditions.FOR_POST, Set.of(),
-                    est.carriedBalance().subtract(est.carriedTotal()));
-            // F15-07: a fully carried transfer has no rows of its own until the post
-            // appends the carried ones (completeForPosting runs before validate there).
-            if (cheques.isEmpty() && est.carriedTotal().signum() > 0) plan = plan.without(NO_CHEQUE_GRID);
+                    est.carriedBalance(), est.carriedTotal());
         } else {
             plan = validate(lease, lines, cheques);
         }
@@ -734,6 +744,18 @@ public class LeasePostingService {
      */
     private PostingPlan validate(Lease lease, List<LeaseLine> lines, List<Cheque> cheques, Preconditions checks,
                                  Set<UUID> numberExempt, BigDecimal carried) {
+        return validate(lease, lines, cheques, checks, numberExempt, carried, BigDecimal.ZERO);
+    }
+
+    /**
+     * @param carriedInstruments S16-06: the total of the instruments a transfer will
+     *                           carry onto this grid but that are not on it yet — the
+     *                           dry run's view; the post appends them before it
+     *                           validates and passes zero. Counted in the grid total
+     *                           exactly as the appended rows are.
+     */
+    private PostingPlan validate(Lease lease, List<LeaseLine> lines, List<Cheque> cheques, Preconditions checks,
+                                 Set<UUID> numberExempt, BigDecimal carried, BigDecimal carriedInstruments) {
         // Errors about the accounts this posting would use — a line's credit account
         // or the lease's receivable override. They rank above the role-level
         // complaint, which is usually the same gap seen from further away.
@@ -786,8 +808,19 @@ public class LeasePostingService {
 
         missingRoles.addAll(unmappedRoles(lease, lines, cheques));
 
-        BigDecimal chequeTotal = BigDecimal.ZERO;
-        if (cheques.isEmpty()) {
+        BigDecimal balanceCarried = carried == null ? BigDecimal.ZERO : carried;
+        BigDecimal instruments = carriedInstruments == null ? BigDecimal.ZERO : carriedInstruments;
+        BigDecimal chequeTotal = instruments;
+        boolean noRows = cheques.isEmpty() && instruments.signum() == 0;
+        BigDecimal expected = gross.add(balanceCarried);
+        // S16-11: a transfer successor the carried balance already pays in full (the
+        // renter prepaid the old term) has nothing to collect, so it needs no grid of
+        // its own. A surplus (the new term is worth less than the prepaid balance)
+        // stays on the new lease's receivable as a credit for its settlement.
+        boolean transfer = lease.getTransferredFromLeaseId() != null && checks != Preconditions.FOR_IMPORT_POST;
+        boolean paidByCarriedBalance = transfer && noRows && balanceCarried.signum() < 0
+                && gross.signum() > 0 && expected.signum() <= 0;
+        if (noRows && !paidByCarriedBalance && !(transfer && balanceCarried.signum() != 0)) {
             otherErrors.add(NO_CHEQUE_GRID);
         }
         for (Cheque c : cheques) {
@@ -819,14 +852,15 @@ public class LeasePostingService {
                 otherErrors.add("Cheque " + label(c) + " has no posting date.");
             }
         }
-        BigDecimal expected = gross.add(carried == null ? BigDecimal.ZERO : carried);
-        if (!cheques.isEmpty() && carried != null && carried.signum() != 0 && chequeTotal.compareTo(expected) != 0) {
+        if (paidByCarriedBalance) {
+            // Nothing to collect and no rows: nothing to compare.
+        } else if (transfer && balanceCarried.signum() != 0 && chequeTotal.compareTo(expected) != 0) {
             BigDecimal gap = expected.subtract(chequeTotal);
             otherErrors.add("Cheque grid totals " + money(chequeTotal) + " but the new contract incl. VAT is "
-                    + money(gross) + " and the balance carried from the old lease is " + money(carried)
+                    + money(gross) + " and the balance carried from the old lease is " + money(balanceCarried)
                     + ", so the rows must total " + money(expected) + " (" + money(gap.abs())
                     + (gap.signum() > 0 ? " still to collect)." : " too much)."));
-        } else if (!cheques.isEmpty() && chequeTotal.compareTo(expected) != 0) {
+        } else if (!noRows && chequeTotal.compareTo(expected) != 0) {
             otherErrors.add("Cheque grid totals " + money(chequeTotal)
                     + " but contract value" + (gross.compareTo(net) == 0 ? " is " : " incl. VAT is ")
                     + money(gross) + ".");
@@ -1186,12 +1220,6 @@ public class LeasePostingService {
                                Set<AccountRole> missingRoles,
                                List<String> accountErrors,
                                List<String> otherErrors) {
-
-        PostingPlan without(String error) {
-            List<String> other = new ArrayList<>(otherErrors);
-            other.remove(error);
-            return new PostingPlan(pairs, contractValue, contractValueInclVat, chequeTotal, missingRoles, accountErrors, other);
-        }
 
         List<String> errors(UUID propertyId) {
             List<String> all = new ArrayList<>(accountErrors);
