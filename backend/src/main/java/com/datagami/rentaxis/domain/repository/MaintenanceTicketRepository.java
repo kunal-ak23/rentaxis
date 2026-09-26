@@ -82,8 +82,8 @@ public interface MaintenanceTicketRepository extends JpaRepository<MaintenanceTi
 
     /**
      * Scale P1-3: the staff tickets list, filtered and paged in the database. {@code q} is
-     * {@code %term%}, lowercased and trimmed, matched against the title, the reference and
-     * the unit number; {@code from}/{@code to} bound the reported date.
+     * {@code %term%}, lowercased and trimmed, matched against the title, the reference,
+     * the unit number and the description (as the web list's old client-side search did); {@code from}/{@code to} bound the reported date.
      */
     @org.springframework.data.jpa.repository.Query("""
         select t from MaintenanceTicket t left join t.unit u
@@ -95,7 +95,8 @@ public interface MaintenanceTicketRepository extends JpaRepository<MaintenanceTi
           and (cast(:from as LocalDate) is null or t.reportedDate >= :from)
           and (cast(:to as LocalDate) is null or t.reportedDate <= :to)
           and (cast(:q as string) is null
-               or lower(t.title) like :q or lower(t.reference) like :q or lower(u.unitNumber) like :q)
+               or lower(t.title) like :q or lower(t.reference) like :q or lower(u.unitNumber) like :q
+               or lower(t.description) like :q)
           and (:unrestricted = true or t.property.id in :propertyIds)
         """)
     org.springframework.data.domain.Page<MaintenanceTicket> searchPaged(
