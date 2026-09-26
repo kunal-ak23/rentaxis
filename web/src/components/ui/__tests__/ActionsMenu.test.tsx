@@ -5,6 +5,7 @@ vi.mock("@/i18n/routing", () => ({
 }));
 import ActionsMenu from "../ActionsMenu";
 import SideDrawer from "../SideDrawer";
+import { ConfirmDialog } from "../confirm-dialog";
 
 const items = (onA = vi.fn()) => [
     { id: "a", label: "Extend Contract", testId: "item-a", onSelect: onA },
@@ -123,5 +124,32 @@ describe("SideDrawer", () => {
         fireEvent.keyDown(window, { key: "Escape" });
         fireEvent.click(screen.getByTestId("d-close"));
         expect(onClose).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe("SideDrawer focus and Esc (PR #368 R1 P3-4)", () => {
+    it("keeps Tab inside the drawer, wrapping both ways", () => {
+        render(<div><button data-testid="behind">behind</button>
+            <SideDrawer open onClose={() => {}} title="T" closeLabel="Close" testId="d"><button data-testid="inside">inside</button></SideDrawer></div>);
+        expect(document.activeElement).toBe(screen.getByTestId("d-close"));
+        screen.getByTestId("inside").focus();
+        fireEvent.keyDown(window, { key: "Tab" });
+        expect(document.activeElement).toBe(screen.getByTestId("d-close"));
+        fireEvent.keyDown(window, { key: "Tab", shiftKey: true });
+        expect(document.activeElement).toBe(screen.getByTestId("inside"));
+        // Focus that escapes to the page behind is brought back.
+        screen.getByTestId("behind").focus();
+        expect(document.activeElement).toBe(screen.getByTestId("d-close"));
+    });
+
+    it("leaves Esc to a dialog opened from inside it", () => {
+        const closeDrawer = vi.fn();
+        const closeInner = vi.fn();
+        render(<SideDrawer open onClose={closeDrawer} title="T" closeLabel="Close" testId="d">
+            <ConfirmDialog isOpen onClose={closeInner} onConfirm={() => {}} title="Write off?" />
+        </SideDrawer>);
+        fireEvent.keyDown(window, { key: "Escape" });
+        expect(closeInner).toHaveBeenCalledTimes(1);
+        expect(closeDrawer).not.toHaveBeenCalled();
     });
 });

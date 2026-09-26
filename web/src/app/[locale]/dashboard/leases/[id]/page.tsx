@@ -1074,13 +1074,13 @@ export default function LeaseDetailPage() {
             {/* F14-39 / F14-38: the assignment and bad-debt cards, opened from More actions. */}
             <SideDrawer open={drawer === "assignment"} onClose={closeDrawer} title={tA("assignment")} closeLabel={tA("close")} testId="lease-assignment-drawer">
                 <div className="peer">
-                    <LeaseAssignmentCard lease={lease} canDraft={canRenew} canPost={canPost} onChanged={loadLease} />
+                    <LeaseAssignmentCard lease={lease} canDraft={canRenew} canPost={canPost} onChanged={loadLease} loadingText={tA("loading")} />
                 </div>
                 <p className="hidden peer-empty:block text-xs text-muted" data-testid="lease-assignment-empty">{tA("assignmentEmpty")}</p>
             </SideDrawer>
             <SideDrawer open={drawer === "writeOff"} onClose={closeDrawer} title={tA("writeOff")} closeLabel={tA("close")} testId="lease-write-off-drawer">
                 <div className="peer">
-                    <BadDebtCard leaseId={lease.id} canApprove={hasPermission(userRole, "canAccessFinanceOps")} />
+                    <BadDebtCard leaseId={lease.id} canApprove={hasPermission(userRole, "canAccessFinanceOps")} loadingText={tA("loading")} />
                 </div>
                 <p className="hidden peer-empty:block text-xs text-muted" data-testid="lease-write-off-empty">{tA("writeOffEmpty")}</p>
             </SideDrawer>

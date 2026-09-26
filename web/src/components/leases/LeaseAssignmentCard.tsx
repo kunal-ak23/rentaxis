@@ -27,9 +27,11 @@ type Props = {
     canDraft: boolean;
     canPost: boolean;
     onChanged: () => void;
+    /** Shown until the first read lands (the drawer would otherwise flash its "nothing here" line). */
+    loadingText?: string;
 };
 
-export default function LeaseAssignmentCard({ lease, canDraft, canPost, onChanged }: Props) {
+export default function LeaseAssignmentCard({ lease, canDraft, canPost, onChanged, loadingText }: Props) {
     const t = useTranslations("Leasing");
     const tCommon = useTranslations("Common");
     const locale = useLocale();
@@ -45,11 +47,14 @@ export default function LeaseAssignmentCard({ lease, canDraft, canPost, onChange
     /** Post and Delete are confirmed first, stating what they do (PR #359 R1). */
     const [confirming, setConfirming] = useState<"post" | "delete" | null>(null);
 
+    const [loaded, setLoaded] = useState(false);
     const load = useCallback(async () => {
         try {
             setItems(await leaseApi.assignments(lease.id));
         } catch {
             setItems([]);
+        } finally {
+            setLoaded(true);
         }
     }, [lease.id]);
 
@@ -101,6 +106,7 @@ export default function LeaseAssignmentCard({ lease, canDraft, canPost, onChange
     const draft = items.find(a => a.status === "DRAFT");
     const posted = items.filter(a => a.status === "POSTED");
     const assignable = (lease.status === "ACTIVE" || lease.status === "NOTICE_GIVEN") && !!lease.postedAt;
+    if (!loaded && loadingText) return <p className="text-xs text-muted" data-testid="lease-assignment-loading">{loadingText}</p>;
     if (!assignable && posted.length === 0) return null;
     const bdi = (v: number) => <bdi dir="ltr">{fmtAmount(v)}</bdi>;
 
