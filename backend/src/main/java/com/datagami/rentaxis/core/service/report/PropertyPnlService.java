@@ -81,11 +81,12 @@ public class PropertyPnlService {
     private final PropertyScope scope;
 
     /** S16-02: the towers of a property, for the building P&L's columns. */
-    @org.springframework.beans.factory.annotation.Autowired
-    private com.datagami.rentaxis.domain.repository.BuildingRepository buildings;
+    private final com.datagami.rentaxis.domain.repository.BuildingRepository buildings;
 
     public PropertyPnlService(JournalLineRepository lines, AccountRepository accounts, PropertyRepository properties,
-                              UnitRepository units, PropertyScope scope) {
+                              UnitRepository units, PropertyScope scope,
+                              com.datagami.rentaxis.domain.repository.BuildingRepository buildings) {
+        this.buildings = buildings;
         this.lines = lines;
         this.accounts = accounts;
         this.properties = properties;
@@ -184,6 +185,10 @@ public class PropertyPnlService {
      * Total. A line belongs to the tower of the unit it carries — building is derived
      * from the line's unit, so nothing is written for it. The check row compares the
      * Total with the property's own net movement.
+     *
+     * <p>PR #370 R1 P3-2: the unit's <em>current</em> building. A unit moved between
+     * towers takes its history with it: past periods' split between towers is
+     * restated, the Total is not.</p>
      */
     public PropertyPnlDTO buildingPnl(UUID propertyId, LocalDate from, LocalDate to, Compare compare) {
         UUID tenantId = requireTenant();

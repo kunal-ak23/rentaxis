@@ -90,6 +90,11 @@ public class PropertyReportController {
     /**
      * S16-02: one property's P&L by tower (Building): a column per building, one for
      * lines no tower carries, and the Total — which the check row ties to the property.
+     *
+     * <p>PR #370 R1 P3-2: a line's tower is its unit's <em>current</em> building — the
+     * ledger carries no building dimension. Moving a unit to another tower (say, to
+     * correct an import) restates the split of its past months between towers; the
+     * Total, and every other report, are unchanged.</p>
      */
     @GetMapping("/property-pl/buildings")
     public PropertyPnlDTO propertyPlByBuilding(

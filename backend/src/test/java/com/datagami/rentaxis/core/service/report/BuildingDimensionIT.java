@@ -183,4 +183,57 @@ class BuildingDimensionIT extends AbstractPostgresIT {
         assertThat(tickets.searchPaged(null, null, prop, null, null, null, null, null, 0, 50).getTotalElements())
                 .isEqualTo(2);
     }
+
+    @Autowired com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository assignmentRepo;
+
+    /**
+     * PR #370 R1 P3-3: a property manager of property 1 cannot read another property's
+     * tower — the per-building P&L is a 404 and the buildingId filters on units, leases
+     * (both the query and the restricted in-memory path) and tickets come back empty —
+     * while their own tower still reads.
+     */
+    @Test
+    void aPropertyManagerReachesOnlyTheirPropertiesBuildings() {
+        // A second property with its own tower + unit + lease.
+        com.datagami.rentaxis.domain.entity.Property p2 = fixtures.createProperty("P2X");
+        Building[] towerC = new Building[1];
+        Unit[] c1 = new Unit[1];
+        tx.executeWithoutResult(s -> {
+            Building b = new Building(); b.setProperty(p2); b.setNameEn("Tower C"); towerC[0] = buildings.save(b);
+            Unit u = fixtures.createUnit(p2, "C-101"); u.setBuilding(towerC[0]); c1[0] = unitRepo.save(u);
+        });
+        UUID leaseC = fixtures.postedLease(c1[0], fixtures.createRenter("C renter"), CONTRACT, START, END,
+                List.of(line("RENT", "36500")), 4, null).lease().getId();
+        recognition.runTo(TO, false);
+        tx.executeWithoutResult(s -> {
+            MaintenanceTicket t = new MaintenanceTicket();
+            t.setProperty(p2); t.setUnit(unitRepo.findById(c1[0].getId()).orElseThrow());
+            t.setReportedBy(fixtures.tenantId()); t.setTitle("Leak C"); ticketRepo.save(t);
+        });
+        // Sanity as admin: tower C has data.
+        assertThat(leaseService.getAllLeasesPaged(null, null, null, towerC[0].getId(), PageRequest.of(0, 50)).getContent())
+                .extracting(l -> l.getId()).containsExactly(leaseC);
+
+        // PM of property 1 only.
+        com.datagami.rentaxis.domain.entity.User pm = new com.datagami.rentaxis.domain.entity.User();
+        pm.setEmail("pm-" + UUID.randomUUID() + "@t.io"); pm.setName("PM");
+        pm.setRole(com.datagami.rentaxis.domain.entity.enums.UserRole.PROPERTY_MANAGER);
+        pm.setStatus(com.datagami.rentaxis.domain.entity.enums.UserStatus.ACTIVE);
+        pm.setPasswordHash("x"); pm.setTenantId(fixtures.tenantId());
+        UUID pmId = userRepo.save(pm).getId();
+        com.datagami.rentaxis.domain.entity.UserPropertyAssignment a = new com.datagami.rentaxis.domain.entity.UserPropertyAssignment();
+        a.setUserId(pmId); a.setPropertyId(fixtures.property().getId()); assignmentRepo.save(a);
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(pmId.toString(), null,
+                        List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_PROPERTY_MANAGER"))));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> pnl.buildingPnl(p2.getId(), FROM, TO, Compare.NONE))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.NotFoundException.class);
+        assertThat(pnl.buildingPnl(fixtures.property().getId(), FROM, TO, Compare.NONE).check().ok()).isTrue();
+        assertThat(tx.execute(s -> unitService.searchPaged(null, null, towerC[0].getId(), null, null, 0, 50)).getContent()).isEmpty();
+        assertThat(leaseService.getAllLeasesPaged(null, null, null, towerC[0].getId(), PageRequest.of(0, 50)).getContent()).isEmpty();
+        assertThat(leaseService.getAllLeasesPaged("C", null, null, towerC[0].getId(), PageRequest.of(0, 50)).getContent()).isEmpty();
+        assertThat(tickets.searchPaged(pmId, null, null, towerC[0].getId(), null, null, null, null, 0, 50).getContent()).isEmpty();
+        assertThat(tx.execute(s -> unitService.searchPaged(null, null, towerA.getId(), null, null, 0, 50)).getContent()).hasSize(1);
+    }
 }

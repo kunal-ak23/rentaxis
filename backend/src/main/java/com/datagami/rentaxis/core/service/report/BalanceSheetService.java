@@ -72,7 +72,13 @@ public class BalanceSheetService {
     }
 
     /** Not read-only: the fiscal settings row is created on a tenant's first access. */
-    @Transactional
+    /**
+     * PR #370 R1 P3-1: REPEATABLE READ — the undated pass and the "after as at"
+     * subtraction are two statements and must see one snapshot, or an entry committed
+     * between them would be subtracted without having been added. (Not read-only:
+     * {@code TenantFiscalSettingsService.get()} creates the settings row on first use.)
+     */
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
     public BalanceSheetDTO balanceSheet(LocalDate asAt, LocalDate compareAt, Collection<UUID> propertyIds) {
         UUID tenantId = PropertyPnlService.requireTenant();
         if (asAt == null) throw new BusinessRuleViolationException("'asAt' is required");

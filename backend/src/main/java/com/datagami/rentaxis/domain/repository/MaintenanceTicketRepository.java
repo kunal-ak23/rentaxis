@@ -25,7 +25,7 @@ public interface MaintenanceTicketRepository extends JpaRepository<MaintenanceTi
     @org.springframework.data.jpa.repository.Query("""
             select t from MaintenanceTicket t
             where (t.reportedBy = :userId or t.assignedTo = :userId)
-              and (:unitId is null or t.unit.id = :unitId)
+              and (cast(:unitId as java.util.UUID) is null or t.unit.id = :unitId)
             """)
     List<MaintenanceTicket> findForStaff(@org.springframework.data.repository.query.Param("userId") UUID userId,
                                          @org.springframework.data.repository.query.Param("unitId") UUID unitId);
