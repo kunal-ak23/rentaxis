@@ -379,6 +379,11 @@ for (const { role } of ROLES) {
                 await expect(page.getByTestId(`lease-actions-menu-panel-${leaseId}`)).toBeVisible();
                 await inView(page, `lease-actions-menu-panel-${leaseId}`, viewport.width, failures, `${at} row menu`);
                 await page.keyboard.press('Escape');
+                // The Filters panel (the all-status select) opens inside the screen too (R1 P2-1).
+                await page.getByTestId('filters-button').click();
+                await expect(page.getByTestId('filters-panel')).toBeVisible();
+                await inView(page, 'filters-panel', viewport.width, failures, `${at} filters panel`);
+                await page.getByTestId('filters-button').click();
                 await check(page, `/${locale}/dashboard/leases?view=expiring`, role, failures);
                 await expect(page.getByTestId('contract-pill-expiring')).toHaveAttribute('aria-pressed', 'true');
 

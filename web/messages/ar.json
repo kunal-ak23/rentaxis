@@ -4524,14 +4524,15 @@
     "sectionAttachments": "المرفقات",
     "sectionAddenda": "الملاحق وإيجاري",
     "sectionInteractions": "الملاحظات",
-    "sectionMaintenance": "الصيانة"
+    "sectionMaintenance": "الصيانة",
+    "loading": "جارٍ التحميل…"
   },
   "Today": {
     "title": "بحاجة إليك الآن",
     "deposit": "شيكات للإيداع",
     "overdue": "مدفوعات متأخرة",
     "ending": "عقود تنتهي خلال 60 يوماً",
-    "drafts": "مسودات عقود للترحيل",
+    "drafts": "عقود للترحيل (مسودة أو بانتظار التوقيع)",
     "tickets": "تذاكر مفتوحة",
     "penalties": "غرامات بانتظار الموافقة",
     "recognition": "فترات اعتراف متأخرة",
@@ -4539,7 +4540,7 @@
     "followUps": "متابعات التجديد",
     "allClear": "لا يوجد ما يحتاجك الآن.",
     "pipelineTitle": "مسار العقود",
-    "stageDraft": "مسودة",
+    "stageDraft": "مسودة وللتوقيع",
     "stageUpcoming": "قادمة",
     "stageActive": "نشطة",
     "stageExpiring": "تنتهي خلال 60 يوماً",
@@ -4549,7 +4550,11 @@
     "capped": "+{count}",
     "unitStatus": "حالة الوحدات",
     "unitStatusLine": "{occupied} مشغولة · {expiring} تنتهي قريباً · {vacant} شاغرة",
-    "portfolioNote": "{properties} عقار · {active} عقد نشط"
+    "portfolioNote": "{properties} عقار · {active} عقد نشط",
+    "activeIncludes": "منها {upcoming} قادمة · {expiring} تنتهي قريباً",
+    "expiringCapped": "أكثر من {count} عقداً ينتهي قريباً",
+    "depositPreviewMore": "و{count} أخرى",
+    "recognitionBehindDetail": "{amount} لم يُعترف بها بعد · أقدم فترة {date}"
   },
   "UnitBoard": {
     "title": "حالة الوحدات",
@@ -4576,20 +4581,25 @@
     "contract": "عقد الإيجار",
     "contractStatus": "الحالة",
     "openContract": "فتح العقد",
-    "openUnits": "كل وحدات هذا العقار"
+    "openUnits": "كل وحدات هذا العقار",
+    "renewed": "يليه عقد مرحَّل اعتباراً من {date}"
   },
   "ContractList": {
     "pillAll": "الكل",
-    "pillDraft": "مسودة",
+    "pillDraft": "مسودة وللتوقيع",
     "pillActive": "نشطة",
     "pillExpiring": "تنتهي قريباً",
     "pillNotice": "إشعار",
     "pillEnded": "منتهية",
     "pillsLabel": "حالة العقد",
     "savedExpiring": "تنتهي خلال 60 يوماً",
-    "savedDrafts": "مسودات للترحيل",
+    "savedDrafts": "عقود للترحيل",
     "statusFilter": "الحالة",
-    "expiringCapped": "عرض {count} عقداً من أول 100 عقد نشط حسب تاريخ الانتهاء.",
-    "expiringNote": "العقود النشطة التي تنتهي خلال 60 يوماً، الأقرب أولاً."
+    "expiringCapped": "محدود: عرض {count} من أول 100 عقد نشط حسب تاريخ الانتهاء؛ قد يوجد غيرها.",
+    "expiringNote": "العقود النشطة التي تنتهي خلال 60 يوماً، الأقرب أولاً.",
+    "chipSettlement": "تسوية مستحقة (منهية، منتهية المدة)",
+    "chipUpcoming": "قادمة (لم تبدأ)",
+    "upcomingNote": "عقود مرحّلة لم تبدأ بعد، الأحدث بدءاً أولاً.",
+    "upcomingCapped": "محدود: عرض {count} من بين آخر 100 عقد نشط بدءاً."
   }
 }

@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { hasPermission, type UserRole } from "@/lib/rbac";
-import { recognitionApi } from "@/lib/api/leasing";
+import { chequeApi, recognitionApi, type Cheque, type RecognitionStatusSummary } from "@/lib/api/leasing";
+import { formatCurrencyCompact } from "@/lib/format";
+import { fmtAmount } from "@/lib/api/ledger";
+import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { buildCollectionsTabs, collectionsHref } from "@/lib/nav/collectionsModel";
 import { usePillCounts } from "@/components/collections/usePillCounts";
 import type { PipelineStage } from "@/lib/dashboard/pipeline";
@@ -31,7 +34,7 @@ export function todayRowDefs(role: UserRole | undefined): TodayRowDef[] {
     if (tabs.has("overdue")) add("overdue", collectionsHref("overdue"));
     if (hasPermission(role, "canViewLeases")) {
         add("ending", "/dashboard/leases?view=expiring");
-        add("drafts", "/dashboard/leases?status=DRAFT");
+        add("drafts", "/dashboard/leases?view=draft");
     }
     if (hasPermission(role, "canResolveIssues")) add("tickets", "/dashboard/tickets");
     if (hasPermission(role, "canApprovePenalties") && tabs.has("penalties")) add("penalties", collectionsHref("penalties"));
@@ -54,7 +57,11 @@ async function countOpenTickets(): Promise<number> {
 
 export default function TodayList({ role, pipeline }: { role: UserRole | undefined; pipeline: PipelineStage[] | null }) {
     const t = useTranslations("Today");
+    const locale = useLocale();
     const [counts, setCounts] = useState<Partial<Record<TodayRowId, number>>>({});
+    // The top five rows the old Home widgets listed (R1 P3-6), and the recognition detail.
+    const [previews, setPreviews] = useState<{ deposit?: Cheque[]; overdue?: Cheque[] }>({});
+    const [recognition, setRecognition] = useState<RecognitionStatusSummary | null>(null);
     const pills = usePillCounts(role, "");
     const defs = todayRowDefs(role);
 
@@ -66,8 +73,18 @@ export default function TodayList({ role, pipeline }: { role: UserRole | undefin
         if (ids.has("tickets")) countOpenTickets().then(n => set("tickets", n)).catch(() => {});
         if (ids.has("recognition")) {
             recognitionApi.status().then(s => {
+                if (alive) setRecognition(s);
                 set("recognition", s.behind ?? 0);
                 set("recognitionFailed", s.lastRunFailed ?? 0);
+            }).catch(() => {});
+        }
+        if (ids.has("deposit")) {
+            chequeApi.toDeposit({ page: 0, size: 5 }).then(p => { if (alive) setPreviews(x => ({ ...x, deposit: p.content ?? [] })); }).catch(() => {});
+        }
+        if (ids.has("overdue")) {
+            // GET /cheques/due has no overdue-only filter: a bounded page, nearest maturity first, as the old widget read it.
+            chequeApi.due({ page: 0, size: 50 }).then(p => {
+                if (alive) setPreviews(x => ({ ...x, overdue: (p.content ?? []).filter(c => c.overdue).slice(0, 5) }));
             }).catch(() => {});
         }
         if (ids.has("followUps")) {
@@ -112,6 +129,30 @@ export default function TodayList({ role, pipeline }: { role: UserRole | undefin
                                 <span className="font-semibold tabular-nums">{show(d.id)}</span>
                                 <ChevronRight size={14} className="text-muted rtl:rotate-180 shrink-0" aria-hidden />
                             </Link>
+                            {(d.id === "deposit" || d.id === "overdue") && (previews[d.id]?.length ?? 0) > 0 && (
+                                <ul className="pb-2.5 ps-3 space-y-1" data-testid={`${d.testId}-rows`}>
+                                    {previews[d.id]!.map(c => (
+                                        <li key={c.id} className="text-xs">
+                                            <Link href={`/dashboard/leases/${c.leaseId}`} className="flex items-center justify-between gap-2 hover:underline">
+                                                <span className="truncate text-[var(--ink-600)]">
+                                                    {c.unitIdentifier ?? "—"} · {c.renterName ?? "—"}{c.chequeNumber ? ` · #${c.chequeNumber}` : ""}
+                                                </span>
+                                                <bdi dir="ltr" className={`font-semibold tabular-nums whitespace-nowrap ${d.id === "overdue" ? "text-error" : ""}`}>
+                                                    {formatCurrencyCompact(c.amount)}
+                                                </bdi>
+                                            </Link>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                            {d.id === "recognition" && recognition && recognition.behind > 0 && (
+                                <p className="pb-2.5 ps-3 text-xs text-[var(--ink-600)]" data-testid="today-recognition-detail">
+                                    {t("recognitionBehindDetail", {
+                                        amount: fmtAmount(recognition.behindAmount),
+                                        date: recognition.oldestPeriodEnd ? fmtIsoDate(recognition.oldestPeriodEnd, locale) : "—",
+                                    })}
+                                </p>
+                            )}
                         </li>
                     ) : (
                         <li key={d.id}>

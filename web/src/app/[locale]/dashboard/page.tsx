@@ -217,14 +217,15 @@ export default function DashboardPage() {
     const today = businessTodayIso();
     Promise.all([
       leaseApi.paged({ status: "DRAFT", sort: "startDate,asc", size: 1 }),
+      leaseApi.paged({ status: "PENDING_SIGNATURE", sort: "startDate,asc", size: 1 }),
       leaseApi.paged({ status: "ACTIVE", sort: "startDate,desc", size: 50 }),
       leaseApi.paged({ status: "ACTIVE", sort: "endDate,asc", size: 100 }),
       leaseApi.paged({ status: "NOTICE_GIVEN", sort: "endDate,asc", size: 1 }),
       leaseApi.paged({ status: "TERMINATED", sort: "endDate,asc", size: 1 }),
       leaseApi.paged({ status: "EXPIRED", sort: "endDate,asc", size: 1 }),
     ])
-      .then(([draft, activeByStart, activeByEnd, notice, terminated, expired]) => {
-        if (alive) setPipeline(buildPipeline({ draft, activeByStart, activeByEnd, notice, terminated, expired }, today));
+      .then(([draft, pending, activeByStart, activeByEnd, notice, terminated, expired]) => {
+        if (alive) setPipeline(buildPipeline({ draft, pending, activeByStart, activeByEnd, notice, terminated, expired }, today));
       })
       .catch(() => {});
     return () => { alive = false; };
@@ -283,7 +284,10 @@ export default function DashboardPage() {
   }
   const collectedSpark = monthly.map((m) => m.collected);
   // One "expiring" figure on the page: the pipeline's 60 days (the summary counts 30) once it has loaded.
-  const expiringCount = pipeline?.find(s => s.id === "expiring")?.count ?? summary.expiringLeases;
+  const expiringStage = pipeline?.find(s => s.id === "expiring");
+  const expiringCount = expiringStage?.count ?? summary.expiringLeases;
+  // A capped stage is a lower bound, and says so (R1 P3-6).
+  const expiringLabel = expiringStage?.capped ? `${expiringCount}+` : String(expiringCount);
 
   return (
     <div className="flex flex-col gap-5">
@@ -292,7 +296,7 @@ export default function DashboardPage() {
           <p className="text-[12.5px] text-[var(--ink-500)] mb-1">{dayLabel}</p>
           <h1 className="font-serif text-[28px] font-semibold tracking-tight m-0">{t(greetingKey, { name: firstName })}</h1>
           <p className="text-[13.5px] text-[var(--ink-600)] mt-1">
-            <span className="text-[var(--gold-700)] font-semibold">{t("expiringLeasesCount", { count: expiringCount })}</span>
+            <span className="text-[var(--gold-700)] font-semibold">{expiringStage?.capped ? tToday("expiringCapped", { count: expiringCount }) : t("expiringLeasesCount", { count: expiringCount })}</span>
             {summary.overdueAmount > 0 ? <span className="text-[var(--red-600)] font-semibold ml-1.5">· {t("overdueSuffix", { amount: formatCurrencyCompact(summary.overdueAmount) })}</span> : null}
           </p>
         </div>
@@ -336,7 +340,7 @@ export default function DashboardPage() {
             unit="%"
             sub={tToday("unitStatusLine", {
               occupied: summary.occupiedUnits,
-              expiring: expiringCount,
+              expiring: expiringLabel,
               vacant: summary.vacantUnits,
             })}
             note={[

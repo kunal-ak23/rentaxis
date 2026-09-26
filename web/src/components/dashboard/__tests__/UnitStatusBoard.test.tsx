@@ -50,6 +50,8 @@ describe("Unit status board", () => {
         expect(unitCalls.every(u => u.includes("/units/paged?propertyId=p1"))).toBe(true);
         expect(calls.some(u => /\/v1\/units($|\?)/.test(u))).toBe(false);
         expect(calls.filter(u => u.includes("/leases/paged")).every(u => u.includes("propertyId=p1"))).toBe(true);
+        // Contracts awaiting signature are read too, so a unit they hold opens with its contract.
+        expect(calls.some(u => u.includes("/leases/paged") && u.includes("status=PENDING_SIGNATURE"))).toBe(true);
     });
 
     it("groups by building and floor and colours each unit by status", async () => {

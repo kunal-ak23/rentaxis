@@ -5,14 +5,16 @@ vi.mock("@/i18n/routing", () => ({
     Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => <a href={href} {...rest}>{children}</a>,
 }));
 vi.mock("@/components/dashboard/FollowUpsWidget", () => ({ default: () => <div data-testid="follow-ups-widget" /> }));
-const recognition = vi.hoisted(() => ({ behind: 0, lastRunFailed: 0 }));
+const recognition = vi.hoisted(() => ({ behind: 0, lastRunFailed: 0, behindAmount: 0, oldestPeriodEnd: null as string | null }));
+const cq = vi.hoisted(() => (id: string, over: Record<string, unknown> = {}) => ({ id, leaseId: `l-${id}`, unitIdentifier: `A-${id}`, renterName: `Renter ${id}`, amount: 1000, chequeNumber: `N${id}`, overdue: false, ...over }));
 vi.mock("@/lib/api/leasing", async orig => {
     const m = await orig<typeof import("@/lib/api/leasing")>();
     return {
         ...m,
         chequeApi: {
             ...m.chequeApi,
-            toDeposit: vi.fn().mockResolvedValue({ totalElements: 3 }),
+            toDeposit: vi.fn().mockResolvedValue({ totalElements: 3, content: [cq("1"), cq("2"), cq("3")] }),
+            due: vi.fn().mockResolvedValue({ content: [cq("4", { overdue: true, amount: 5000 }), cq("5"), cq("6", { overdue: true })] }),
             summary: vi.fn().mockResolvedValue({ overdueCount: 2, dueCount: 0, bouncedCount: 0 }),
         },
         penaltyApi: { ...m.penaltyApi, list: vi.fn().mockResolvedValue({ totalElements: 1 }) },
@@ -28,6 +30,8 @@ beforeEach(() => {
     ticketCalls = [];
     recognition.behind = 0;
     recognition.lastRunFailed = 0;
+    recognition.behindAmount = 0;
+    recognition.oldestPeriodEnd = null;
     global.fetch = vi.fn(async (u: RequestInfo | URL) => {
         const url = String(u);
         if (url.includes("/tickets/paged")) {
@@ -68,11 +72,24 @@ describe("Needs you now", () => {
         expect(ticketCalls.every(u => u.includes("size=1"))).toBe(true);
     });
 
-    it("keeps the recognition warnings the old widget showed (behind, and a failed last run)", async () => {
+    it("lists the top rows the old Home widgets showed, each linking to its contract (R1 P3-6)", async () => {
+        render(<TodayList role="TENANT_ADMIN" pipeline={null} />);
+        const deposit = await screen.findByTestId("today-deposit-rows");
+        expect(deposit.querySelectorAll("a")).toHaveLength(3);
+        expect(deposit.querySelector("a")).toHaveAttribute("href", "/dashboard/leases/l-1");
+        expect(deposit).toHaveTextContent("A-1 · Renter 1 · #N1");
+        const overdue = await screen.findByTestId("today-overdue-rows");
+        expect(Array.from(overdue.querySelectorAll("a")).map(a => a.getAttribute("href"))).toEqual(["/dashboard/leases/l-4", "/dashboard/leases/l-6"]);
+    });
+
+    it("keeps the recognition warnings the old widget showed (behind with amount and oldest period, and a failed last run)", async () => {
         recognition.behind = 4;
         recognition.lastRunFailed = 2;
+        recognition.behindAmount = 12500;
+        recognition.oldestPeriodEnd = "2026-06-30";
         render(<TodayList role="ACCOUNTANT" pipeline={null} />);
         expect(await screen.findByTestId("today-recognition")).toHaveTextContent("4");
+        expect(screen.getByTestId("today-recognition-detail")).toHaveTextContent("12,500.00 not yet recognised · oldest period 30/06/2026");
         expect(screen.getByTestId("today-recognition-failed")).toHaveTextContent("2");
         expect(screen.getByTestId("today-recognition-failed")).toHaveAttribute("href", "/dashboard/finance/recognition");
     });
@@ -89,7 +106,8 @@ describe("Needs you now", () => {
         const { container, unmount } = render(<TodayList role="TENANT_USER" pipeline={null} />);
         expect(container).toBeEmptyDOMElement();
         unmount();
-        vi.mocked(chequeApi.toDeposit).mockResolvedValueOnce({ totalElements: 0 } as never);
+        vi.mocked(chequeApi.toDeposit).mockResolvedValue({ totalElements: 0, content: [] } as never);
+        vi.mocked(chequeApi.due).mockResolvedValue({ content: [] } as never);
         vi.mocked(chequeApi.summary).mockResolvedValueOnce({ overdueCount: 0, dueCount: 0, bouncedCount: 0 } as never);
         render(<TodayList role="PROPERTY_MANAGER" pipeline={[stage("expiring", 0), stage("draft", 0)]} />);
         await waitFor(() => expect(chequeApi.summary).toHaveBeenCalled());

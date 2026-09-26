@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LeaseDetail } from "@/lib/api/leasing";
-import { buildBoard, classifyUnit, countByStatus, floorOf, leaseForUnit, type BoardUnit } from "../unitBoard";
+import { buildBoard, classifyUnit, countByStatus, floorOf, leaseForUnit, successorOf, type BoardUnit } from "../unitBoard";
 
 const TODAY = "2026-09-25";
 const U = (id: string, unitNumber: string, occupancy: string, building: string | null = null, status = occupancy === "MAINTENANCE" ? "MAINTENANCE" : "VACANT"): BoardUnit =>
@@ -26,6 +26,26 @@ describe("classifyUnit", () => {
     });
     it("treats a unit held for maintenance as Maintenance whatever else it says", () => {
         expect(classifyUnit({ id: "u", unitNumber: "1", occupancy: "VACANT", status: "MAINTENANCE" }, null, TODAY)).toBe("MAINTENANCE");
+    });
+});
+
+describe("a posted renewal (R1 P3-7)", () => {
+    it("keeps a unit whose ending contract is already followed by a posted one Occupied, not Expiring", () => {
+        const now = L("now", "u", "2025-11-01", "2026-10-31");
+        const next = L("next", "u", "2026-11-01", "2027-10-31");
+        const [g] = buildBoard([U("u", "A-101", "OCCUPIED")], [now, next], [], TODAY);
+        expect(g.floors[0].cells[0]).toMatchObject({ status: "OCCUPIED", successor: { id: "next" }, lease: { id: "now" } });
+        const [alone] = buildBoard([U("u", "A-101", "OCCUPIED")], [now], [], TODAY);
+        expect(alone.floors[0].cells[0]).toMatchObject({ status: "EXPIRING", successor: null });
+    });
+    it("reads the server's next posted start too", () => {
+        const now = L("now", "u", "2025-11-01", "2026-10-31");
+        expect(classifyUnit({ ...U("u", "A-101", "OCCUPIED"), nextLeaseStart: "2026-11-01" }, now, TODAY)).toBe("OCCUPIED");
+    });
+    it("does not count a contract awaiting signature as a successor", () => {
+        const now = L("now", "u", "2025-11-01", "2026-10-31");
+        const pending = { ...L("p", "u", "2026-11-01", "2027-10-31"), status: "PENDING_SIGNATURE" } as LeaseDetail;
+        expect(successorOf(now, [now, pending])).toBeNull();
     });
 });
 

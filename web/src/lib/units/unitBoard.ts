@@ -26,6 +26,8 @@ export interface BoardCell {
     status: BoardStatus;
     /** The contract in force today (or the one reserving the unit), when the board read one. */
     lease: LeaseDetail | null;
+    /** A posted contract that follows the current one (a renewal): the unit is not "expiring". */
+    successor: LeaseDetail | null;
 }
 export interface BoardFloor { floor: string; cells: BoardCell[] }
 export interface BoardGroup { buildingId: string | null; floors: BoardFloor[] }
@@ -64,17 +66,28 @@ export function leaseForUnit(leases: LeaseDetail[], today: string): LeaseDetail 
     return next[0] ?? null;
 }
 
+/** A posted (ACTIVE) contract on the unit that starts after `current` ends — a renewal or the next tenant. */
+export function successorOf(current: LeaseDetail | null, leases: LeaseDetail[]): LeaseDetail | null {
+    if (!current) return null;
+    return leases
+        .filter(l => l.id !== current.id && l.status === "ACTIVE" && l.startDate > current.endDate)
+        .sort((a, b) => a.startDate.localeCompare(b.startDate))[0] ?? null;
+}
+
 /**
  * Occupancy comes from the server (`occupancy`, F14-01: OCCUPIED, RESERVED,
  * VACANT, MAINTENANCE); an occupied unit whose contract ends within 60 days
  * is shown as Expiring.
  */
-export function classifyUnit(unit: BoardUnit, lease: LeaseDetail | null, today: string): BoardStatus {
+export function classifyUnit(unit: BoardUnit, lease: LeaseDetail | null, today: string, successor: LeaseDetail | null = null): BoardStatus {
     const occ = (unit.occupancy ?? unit.status ?? "VACANT").toUpperCase();
     if (occ === "MAINTENANCE" || unit.status === "MAINTENANCE") return "MAINTENANCE";
     if (occ === "RESERVED") return "RESERVED";
     if (occ === "OCCUPIED") {
-        if (lease && lease.startDate <= today && lease.endDate <= plusDays(today, EXPIRING_DAYS)) return "EXPIRING";
+        // A renewal already posted (a successor, or the server's next posted start after this
+        // contract's end) keeps the unit occupied rather than expiring (PR #368 R1 P3-7).
+        const followed = !!successor || (!!lease && !!unit.nextLeaseStart && unit.nextLeaseStart > lease.endDate);
+        if (lease && !followed && lease.startDate <= today && lease.endDate <= plusDays(today, EXPIRING_DAYS)) return "EXPIRING";
         return "OCCUPIED";
     }
     return "VACANT";
@@ -92,8 +105,10 @@ export function buildBoard(units: BoardUnit[], leases: LeaseDetail[], buildings:
     const known = new Set(buildings.map(b => b.id));
     const groups = new Map<string | null, Map<string, BoardCell[]>>();
     for (const unit of units) {
-        const lease = leaseForUnit(byUnit.get(unit.id) ?? [], today);
-        const cell: BoardCell = { unit, lease, status: classifyUnit(unit, lease, today) };
+        const own = byUnit.get(unit.id) ?? [];
+        const lease = leaseForUnit(own, today);
+        const successor = lease && lease.startDate <= today ? successorOf(lease, own) : null;
+        const cell: BoardCell = { unit, lease, successor, status: classifyUnit(unit, lease, today, successor) };
         const bid = buildings.length > 0 && unit.building?.id && known.has(unit.building.id) ? unit.building.id : null;
         const floors = groups.get(bid) ?? new Map<string, BoardCell[]>();
         const f = floorOf(unit.unitNumber);

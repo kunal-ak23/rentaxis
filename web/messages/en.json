@@ -4524,14 +4524,15 @@
     "sectionAttachments": "Attachments",
     "sectionAddenda": "Addenda & Ejari",
     "sectionInteractions": "Notes",
-    "sectionMaintenance": "Maintenance"
+    "sectionMaintenance": "Maintenance",
+    "loading": "Loading…"
   },
   "Today": {
     "title": "Needs you now",
     "deposit": "Cheques to deposit",
     "overdue": "Overdue payments",
     "ending": "Contracts ending within 60 days",
-    "drafts": "Draft contracts to post",
+    "drafts": "Contracts to post (draft or awaiting signature)",
     "tickets": "Open tickets",
     "penalties": "Penalties awaiting approval",
     "recognition": "Recognition periods behind",
@@ -4539,7 +4540,7 @@
     "followUps": "Renewal follow-ups",
     "allClear": "Nothing needs you right now.",
     "pipelineTitle": "Contract pipeline",
-    "stageDraft": "Draft",
+    "stageDraft": "Draft & to sign",
     "stageUpcoming": "Upcoming",
     "stageActive": "Active",
     "stageExpiring": "Expiring ≤ 60 days",
@@ -4549,7 +4550,11 @@
     "capped": "{count}+",
     "unitStatus": "Unit Status",
     "unitStatusLine": "{occupied} occupied · {expiring} expiring · {vacant} vacant",
-    "portfolioNote": "{properties} properties · {active} active contracts"
+    "portfolioNote": "{properties} properties · {active} active contracts",
+    "activeIncludes": "incl. {upcoming} upcoming · {expiring} expiring",
+    "expiringCapped": "{count}+ expiring contracts",
+    "depositPreviewMore": "and {count} more",
+    "recognitionBehindDetail": "{amount} not yet recognised · oldest period {date}"
   },
   "UnitBoard": {
     "title": "Unit Status",
@@ -4576,20 +4581,25 @@
     "contract": "Tenancy Contract",
     "contractStatus": "Status",
     "openContract": "Open contract",
-    "openUnits": "All units of this property"
+    "openUnits": "All units of this property",
+    "renewed": "Followed by a posted contract from {date}"
   },
   "ContractList": {
     "pillAll": "All",
-    "pillDraft": "Draft",
+    "pillDraft": "Draft & to sign",
     "pillActive": "Active",
     "pillExpiring": "Expiring",
     "pillNotice": "Notice",
     "pillEnded": "Ended",
     "pillsLabel": "Contract status",
     "savedExpiring": "Expiring in 60 days",
-    "savedDrafts": "Drafts to post",
+    "savedDrafts": "Contracts to post",
     "statusFilter": "Status",
-    "expiringCapped": "Showing the {count} contracts found among the first 100 active contracts by end date.",
-    "expiringNote": "Active contracts ending within 60 days, soonest first."
+    "expiringCapped": "Capped: showing the {count} found among the first 100 active contracts by end date; there may be more.",
+    "expiringNote": "Active contracts ending within 60 days, soonest first.",
+    "chipSettlement": "Settlement due (Terminated, Expired)",
+    "chipUpcoming": "Upcoming (not started)",
+    "upcomingNote": "Posted contracts that have not started yet, latest start first.",
+    "upcomingCapped": "Capped: showing the {count} found among the 100 active contracts that start last."
   }
 }

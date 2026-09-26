@@ -52,17 +52,19 @@ async function loadProperty(propertyId: string): Promise<Omit<Loaded, "key">> {
     const unitsPage = (page: number) => fetch(`/api/proxy/v1/units/paged?propertyId=${encodeURIComponent(propertyId)}&page=${page}&size=${PAGE}`)
         .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json(); });
     const leasesOf = (status: LeaseStatus) => pages<LeaseDetail>(page => leaseApi.paged({ propertyId, status, page, size: PAGE }));
-    const [units, active, notice, buildings] = await Promise.all([
+    // PENDING_SIGNATURE too: a unit held by a contract awaiting signature opens with that contract (R1 P3-7).
+    const [units, active, notice, pending, buildings] = await Promise.all([
         pages<BoardUnit>(unitsPage),
         leasesOf("ACTIVE"),
         leasesOf("NOTICE_GIVEN"),
+        leasesOf("PENDING_SIGNATURE"),
         fetch(`/api/proxy/v1/buildings/property/${encodeURIComponent(propertyId)}`).then(r => (r.ok ? r.json() : [])).catch(() => []),
     ]);
     return {
         units: units.rows,
-        leases: [...active.rows, ...notice.rows],
+        leases: [...active.rows, ...notice.rows, ...pending.rows],
         buildings: Array.isArray(buildings) ? buildings : [],
-        truncated: units.truncated || active.truncated || notice.truncated,
+        truncated: units.truncated || active.truncated || notice.truncated || pending.truncated,
         failed: false,
     };
 }
@@ -210,7 +212,7 @@ function UnitPanel({ cell, propertyId }: { cell: BoardCell; propertyId: string }
     const t = useTranslations("UnitBoard");
     const tL = useTranslations("Leasing");
     const locale = useLocale();
-    const { unit, lease, status } = cell;
+    const { unit, lease, status, successor } = cell;
     const row = (label: string, value: React.ReactNode) => (
         <div className="flex justify-between gap-3 py-1.5 border-b border-border last:border-b-0 text-xs">
             <span className="text-muted">{label}</span>
@@ -230,6 +232,13 @@ function UnitPanel({ cell, propertyId }: { cell: BoardCell; propertyId: string }
                 {unit.expectedRent ? row(t("expectedRent"), <bdi dir="ltr">{fmtAmount(unit.expectedRent)}</bdi>) : null}
                 {unit.currentTenantName && row(t("currentTenant"), unit.currentTenantName)}
                 {unit.nextLeaseStart && row(t("nextLease"), `${unit.nextTenantName ?? "—"} · ${fmtIsoDate(unit.nextLeaseStart, locale)}`)}
+                {successor && (
+                    <p className="pt-1.5 text-xs text-[var(--teal-600)]" data-testid="unit-board-panel-renewed">
+                        <Link href={`/dashboard/leases/${successor.id}`} className="hover:underline">
+                            {t("renewed", { date: fmtIsoDate(successor.startDate, locale) })}
+                        </Link>
+                    </p>
+                )}
             </div>
             {lease && (
                 <div className="rounded-lg border border-border p-3 space-y-1" data-testid="unit-board-panel-lease">
