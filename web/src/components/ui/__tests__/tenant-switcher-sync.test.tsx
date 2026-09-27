@@ -49,3 +49,34 @@ describe("TenantSwitcher — cross-tab announcement (F3)", () => {
         expect(getPageOrg()).toBe("org2");
     });
 });
+
+describe("TenantSwitcher — super admin Global View sticks (F7)", () => {
+    it("shows Global View with no organisation cookie, and does not auto-select the first organisation", async () => {
+        render(<TenantSwitcher isCollapsed={false} />);
+        await waitFor(() => expect(window.fetch).toHaveBeenCalled());
+        await new Promise(r => setTimeout(r, 0));
+        expect(screen.getByTestId("org-switcher-button")).toHaveAttribute("title", "Global View");
+        expect(Cookies.get("active_tenant_id")).toBeUndefined();
+    });
+
+    it("picking Global View clears the cookie, and a fresh load stays in Global View", async () => {
+        Cookies.set("active_tenant_id", "brk1", { path: "/" });
+        const first = render(<TenantSwitcher isCollapsed={false} />);
+        await waitFor(() => expect(screen.getByTestId("org-switcher-button")).toHaveAttribute("title", "Sweep brk1"));
+        await pick("Global View");
+        expect(Cookies.get("active_tenant_id")).toBeUndefined();
+        first.unmount();
+        // The hard reload the pick triggers.
+        render(<TenantSwitcher isCollapsed={false} />);
+        await new Promise(r => setTimeout(r, 0));
+        expect(screen.getByTestId("org-switcher-button")).toHaveAttribute("title", "Global View");
+        expect(Cookies.get("active_tenant_id")).toBeUndefined();
+    });
+
+    it("still resolves a non-super-admin with no cookie to their own organisation", async () => {
+        session.current = { user: { id: "ta", role: "TENANT_ADMIN", tenantId: "org2" } };
+        render(<TenantSwitcher isCollapsed={false} />);
+        await waitFor(() => expect(screen.getByTestId("org-switcher-button")).toHaveAttribute("title", "BRK-AUTH-Org2"));
+        expect(Cookies.get("active_tenant_id")).toBe("org2");
+    });
+});

@@ -152,6 +152,8 @@ describe("at ≥ 1280 px", () => {
 describe("organisation switcher", () => {
     it("is one instance, in the header, and a super admin at tablet width can open it and see the organisations", async () => {
         role.current = "SUPER_ADMIN";
+        // A super admin with no saved organisation is in Global View (break round 1, F7); this one has picked Acme.
+        document.cookie = "active_tenant_id=t1; path=/";
         window.innerWidth = 1024;
         render(<Shell />);
         const buttons = screen.getAllByTestId("org-switcher-button");
