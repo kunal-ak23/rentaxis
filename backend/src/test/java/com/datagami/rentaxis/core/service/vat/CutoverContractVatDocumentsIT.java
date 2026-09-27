@@ -371,7 +371,7 @@ class CutoverContractVatDocumentsIT extends AbstractPostgresIT {
         List<com.datagami.rentaxis.api.dto.lease.LeaseLineInput> same = tx.execute(s -> leaseService.getLines(leaseId))
                 .stream().map(l -> resend(l, null)).toList();
         LeaseTestFixtures.authenticateAsTenantAdmin();
-        posting.amendLines(leaseId, same, "Narration correction");
+        posting.amendLines(leaseId, withNarrationCorrected(same), "Narration correction");
 
         assertThat(jdbc.queryForObject("select posted_recognition from lease_lines where lease_id = ? and addendum_id is not null",
                 String.class, leaseId)).isEqualTo("RENT_LIKE");
@@ -414,4 +414,19 @@ class CutoverContractVatDocumentsIT extends AbstractPostgresIT {
         assertThat(jdbc.queryForList("select reference_note from tax_invoices where lease_id = ? and kind = 'CREDIT_NOTE'"
                 + " order by created_at", String.class, leaseId)).last().asString().contains("previous system");
     }
+
+    /**
+     * Break-it round 1 (money) F5: an amendment identical to the posted lines is now
+     * refused ("No changes to amend"). The re-send keeps every figure and changes
+     * only the first line's narration — the "narration correction" these tests name.
+     */
+    private static List<com.datagami.rentaxis.api.dto.lease.LeaseLineInput> withNarrationCorrected(List<com.datagami.rentaxis.api.dto.lease.LeaseLineInput> lines) {
+        List<com.datagami.rentaxis.api.dto.lease.LeaseLineInput> out = new java.util.ArrayList<>(lines);
+        com.datagami.rentaxis.api.dto.lease.LeaseLineInput first = out.get(0);
+        out.set(0, new com.datagami.rentaxis.api.dto.lease.LeaseLineInput(first.chargeTypeId(), first.chargeTypeCode(), first.grossAmount(),
+                first.discountAmount(), (first.narration() == null ? "" : first.narration() + " ") + "(corrected)",
+                first.vatApplicable(), first.creditAccountId(), first.periodStart(), first.periodEnd(), first.addendumId()));
+        return out;
+    }
+
 }

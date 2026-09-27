@@ -1292,7 +1292,7 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
 
         List<LeaseLineInput> same = leaseLines(leaseId).stream().map(LeaseRenewalServiceIT::resendTied).toList();
         fixtures.asTenantAdmin();
-        posting.amendLines(leaseId, same, "Narration correction");
+        posting.amendLines(leaseId, withNarrationCorrected(same), "Narration correction");
 
         List<LeaseLineDTO> after = leaseLines(leaseId);
         assertThat(after).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT", "ADMIN_FEE", "PARKING_FEE");
@@ -1353,4 +1353,19 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("only an amend may name an addendum");
     }
+
+    /**
+     * Break-it round 1 (money) F5: an amendment identical to the posted lines is now
+     * refused ("No changes to amend"). The re-send keeps every figure and changes
+     * only the first line's narration — the "narration correction" these tests name.
+     */
+    private static List<LeaseLineInput> withNarrationCorrected(List<LeaseLineInput> lines) {
+        List<LeaseLineInput> out = new java.util.ArrayList<>(lines);
+        LeaseLineInput first = out.get(0);
+        out.set(0, new LeaseLineInput(first.chargeTypeId(), first.chargeTypeCode(), first.grossAmount(),
+                first.discountAmount(), (first.narration() == null ? "" : first.narration() + " ") + "(corrected)",
+                first.vatApplicable(), first.creditAccountId(), first.periodStart(), first.periodEnd(), first.addendumId()));
+        return out;
+    }
+
 }

@@ -643,10 +643,21 @@ public class LeasePostingService {
         BigDecimal vendorShareBefore = acquiredVat == null ? BigDecimal.ZERO : acquiredVat.vendorShare(lease);
         BigDecimal contractVatBefore = contractLinesVat(lease, linesBefore);
         BigDecimal taxableBefore = InstalmentVat.contractTaxable(linesBefore);
+        List<String> signatureBefore = linesBefore.stream().map(LeasePostingService::amendSignature).toList();
 
         leaseService.applyAmendedLines(lease, newLines);
         leaseService.syncDerivedTotals(lease);
         List<LeaseLine> lines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
+        // Break-it round 1 (money) F5: an amendment that changes nothing used to
+        // reverse the contract and post it again — a TCR and a fresh TCO per click,
+        // identical totals, a ledger filling with pairs that do nothing. Compared
+        // after the lines are resolved (charge type, default account, VAT flag), so
+        // "the same line sent a different way" is the same line. Refused before any
+        // journal; the transaction rolls the re-inserted lines back.
+        if (signatureBefore.equals(lines.stream().map(LeasePostingService::amendSignature).toList())) {
+            throw new BusinessRuleViolationException("No changes to amend: the lines are the same as the posted ones.",
+                    "lease.amendNoChanges", java.util.Map.of());
+        }
         if (lease.getVatTiming() == VatTiming.INSTALMENT) {
             // The new lines may charge different VAT; the register rows are the same
             // paper, so their VAT is re-spread before the Σ check below — kept as it
@@ -733,6 +744,24 @@ public class LeasePostingService {
 
         PostLeaseResponse done = response(lease, tco, cheques);
         return new PostLeaseResponse(done.lease(), done.tcoJournalId(), done.tcoEntryNumber(), done.cheques(), notices);
+    }
+
+    /** A line as an amendment compares it: what it charges, to whom, for when — not its id or position number. */
+    private static String amendSignature(LeaseLine l) {
+        return String.join("|",
+                l.getChargeType() == null ? "" : String.valueOf(l.getChargeType().getId()),
+                l.getCreditAccount() == null ? "" : String.valueOf(l.getCreditAccount().getId()),
+                plain(l.getGrossAmount()),
+                plain(l.getDiscountAmount()),
+                l.getNarration() == null ? "" : l.getNarration().trim(),
+                String.valueOf(l.isVatApplicable()),
+                String.valueOf(l.getPeriodStart()),
+                String.valueOf(l.getPeriodEnd()),
+                String.valueOf(l.getAddendumId()));
+    }
+
+    private static String plain(BigDecimal amount) {
+        return amount == null ? "0" : amount.stripTrailingZeros().toPlainString();
     }
 
     /** Convenience overload for the controller's request body. */
