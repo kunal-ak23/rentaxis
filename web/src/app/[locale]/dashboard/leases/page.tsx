@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect, useSyncExternalStore } from "react";
+import { Suspense, useState, useEffect, useRef, useSyncExternalStore } from "react";
 import { useSearchParams } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
@@ -149,11 +149,21 @@ function LeasesList() {
     // The URL is the one source of truth for the search (R1 P3-1). While typing, the
     // box shows the draft; once the URL's search moves (the debounce wrote it, or a
     // link replaced it) the box shows the URL again.
-    const [draftSearch, setDraftSearch] = useState<{ base: string; text: string } | null>(null);
+    //
+    // #105 N2: "still the same draft" used to be judged by the search param
+    // alone. A pinned view chosen inside the 350 ms debounce window can leave
+    // that param exactly as it was (e.g. neither the old nor the new view has
+    // a search) while changing everything else the list reads by — and the
+    // pending timer, seeing no change worth reacting to, wrote the old text
+    // onto the new view a moment later. `listKey` folds in every other filter,
+    // so any of them changing invalidates the draft immediately, the same as
+    // the search itself moving.
+    const listKey = `${view}|${subset ?? ""}|${statusFilter}|${propertyFilter}|${buildingFilter}`;
+    const [draftSearch, setDraftSearch] = useState<{ listKey: string; base: string; text: string } | null>(null);
     const debouncedSearchQuery = listState.search;
-    const typing = draftSearch !== null && draftSearch.base === debouncedSearchQuery;
+    const typing = draftSearch !== null && draftSearch.listKey === listKey && draftSearch.base === debouncedSearchQuery;
     const searchQuery = typing ? draftSearch.text : debouncedSearchQuery;
-    const setSearchQuery = (v: string) => setDraftSearch({ base: debouncedSearchQuery, text: v });
+    const setSearchQuery = (v: string) => setDraftSearch({ listKey, base: debouncedSearchQuery, text: v });
     const setStatusFilter = (status: LeaseStatus | "") => setUrlQuery(statusQuery(status));
     const selectView = (v: ContractView) => setUrlQuery(viewQuery(v));
     const setPropertyFilter = (id: string) => setUrlQuery({ propertyId: id || null, buildingId: null });
@@ -233,12 +243,13 @@ function LeasesList() {
             const next = draftSearch.text.trim();
             if (next === debouncedSearchQuery) return;
             // The draft now belongs to the search it wrote (a trailing space being typed
-            // survives); a link that changes the search leaves it behind.
-            setDraftSearch({ base: next, text: draftSearch.text });
+            // survives); a link that changes the search — or, per #105 N2, anything else
+            // about the list — leaves it behind (`typing` above already went false).
+            setDraftSearch({ listKey, base: next, text: draftSearch.text });
             setUrlQuery({ search: next || null });
         }, 350);
         return () => clearTimeout(timer);
-    }, [typing, draftSearch, debouncedSearchQuery]);
+    }, [typing, draftSearch, debouncedSearchQuery, listKey]);
 
     useEffect(() => {
         setCurrentPage(1);
@@ -288,7 +299,15 @@ function LeasesList() {
         setSelected(new Set());
     }, [statusFilter, view, subset, propertyFilter, buildingFilter]);
 
+    // #105 N1: a request-sequence guard, the same pattern PR #373's R1 gave
+    // Units and Tickets — the "multi" read (Draft, Ended) is two rounds
+    // (totals, then a paged read per status), and with nothing to say "a
+    // newer selection has since been made", a slower multi-round response
+    // landing after a faster single-status one would overwrite it.
+    const fetchSeq = useRef(0);
     const fetchLeases = async () => {
+        const seq = ++fetchSeq.current;
+        const isCurrent = () => seq === fetchSeq.current;
         setLoading(true);
         try {
             const read = contractRead(listState);
@@ -296,6 +315,7 @@ function LeasesList() {
             if (read.kind === "bounded") {
                 // One bounded page sorted by date, narrowed to the stage (Expiring / Upcoming).
                 const data = await leaseApi.paged({ ...common, status: read.status, sort: read.sort, page: 0, size: read.size });
+                if (!isCurrent()) return;
                 const cut = (read.which === "expiring" ? expiringFrom : upcomingFrom)(data, businessTodayIso());
                 setLeases(cut.rows);
                 setTotalItems(cut.rows.length);
@@ -305,19 +325,23 @@ function LeasesList() {
                 // the rows of this page from the statuses listed back to back (R1 P2-2).
                 const totals = await Promise.all(read.statuses.map(st =>
                     leaseApi.paged({ ...common, status: st, size: 1 }).then(p => p.totalElements ?? 0)));
+                if (!isCurrent()) return;
                 const reads = segmentReads(read.statuses, totals, Math.max(currentPage - 1, 0), itemsPerPage);
                 const pages = await Promise.all(reads.map(r => leaseApi.paged({ ...common, status: r.status, page: r.page, size: r.size })));
+                if (!isCurrent()) return;
                 setLeases(pages.flatMap((p, i) => (p.content ?? []).slice(reads[i].skip, reads[i].skip + reads[i].take)));
                 setTotalItems(totals.reduce((x, y) => x + y, 0));
             } else {
                 const data = await leaseApi.paged({ ...common, status: read.status, page: Math.max(currentPage - 1, 0), size: itemsPerPage });
+                if (!isCurrent()) return;
                 setLeases(data.content ?? []);
                 setTotalItems(data.totalElements ?? 0);
             }
         } catch (err) {
+            if (!isCurrent()) return;
             console.error(err);
         } finally {
-            setLoading(false);
+            if (isCurrent()) setLoading(false);
         }
     };
 

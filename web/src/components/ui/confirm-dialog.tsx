@@ -48,15 +48,48 @@ export function ConfirmDialog({
     children,
 }: ConfirmDialogProps) {
     const dialogRef = useRef<HTMLDivElement>(null);
-    // Esc closes the dialog on top — this one when it is, never a drawer it was opened from.
+    // Esc closes the dialog on top — this one when it is, never a drawer it was
+    // opened from. #105 N4: Tab is trapped the same way (wraps at the first/last
+    // focusable) — a confirm opened from inside a `SideDrawer` stood aside
+    // correctly (its own trap bails once this dialog is topmost), but nothing
+    // then stopped Tab walking out of this dialog and back into the drawer or
+    // the page behind it.
     useEffect(() => {
         if (!isOpen) return;
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key !== "Escape" || e.defaultPrevented) return;
+        const isTop = () => {
             const modals = document.querySelectorAll('[aria-modal="true"]');
-            if (modals[modals.length - 1] !== dialogRef.current) return;
-            e.preventDefault();
-            if (!isLoading) onClose();
+            return modals[modals.length - 1] === dialogRef.current;
+        };
+        const onKey = (e: KeyboardEvent) => {
+            if (e.defaultPrevented || !isTop()) return;
+            if (e.key === "Escape") {
+                e.preventDefault();
+                if (!isLoading) onClose();
+                return;
+            }
+            if (e.key !== "Tab" || !dialogRef.current) return;
+            const items = Array.from(
+                dialogRef.current.querySelectorAll<HTMLElement>(
+                    'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+                ),
+            );
+            // R1 P3-3: both buttons are disabled while a field-less confirm is
+            // loading — keep focus on the dialog itself instead of letting Tab
+            // walk out to the page behind.
+            if (items.length === 0) {
+                e.preventDefault();
+                dialogRef.current.focus();
+                return;
+            }
+            const first = items[0], last = items[items.length - 1];
+            const inside = dialogRef.current.contains(document.activeElement);
+            if (e.shiftKey && (document.activeElement === first || !inside)) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && (document.activeElement === last || !inside)) {
+                e.preventDefault();
+                first.focus();
+            }
         };
         window.addEventListener("keydown", onKey, true);
         return () => window.removeEventListener("keydown", onKey, true);
@@ -78,11 +111,12 @@ export function ConfirmDialog({
                         aria-modal="true"
                         aria-label={title}
                         ref={dialogRef}
+                        tabIndex={-1}
                         initial={{ opacity: 0, scale: 0.95, y: 10 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 10 }}
                         transition={{ duration: 0.2, type: "spring", bounce: 0 }}
-                        className="relative w-full max-w-sm bg-surface rounded-xl shadow-2xl flex flex-col overflow-hidden"
+                        className="relative w-full max-w-sm bg-surface rounded-xl shadow-2xl flex flex-col overflow-hidden focus:outline-none"
                     >
                         <div className="p-6">
                             <h2 className="text-lg font-bold text-foreground mb-2 tracking-tight">{title}</h2>

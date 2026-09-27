@@ -363,6 +363,58 @@ class ImportBatchControllerIT extends AbstractPostgresIT {
         assertThat(job.get("errors").get(0).get("message").asText()).contains("books start date");
     }
 
+    /**
+     * PR #377 R1 P2-1: on a DRAFT the post body is the whole answer — no
+     * {@code acquisitionDate} means go-live. A date stored by an earlier attempt
+     * must not silently turn this post into an acquisition.
+     *
+     * <p>Discriminates on what the job actually ran as, not on the stored date:
+     * the stored 2026-06-01 is before this fixture's books start, so posted as an
+     * acquisition the job would fail with "The acquisition date … is before the
+     * books start" — and {@code ContractImportPostJobService}'s own clear-on-failure
+     * would then wipe the date anyway, hiding a missing controller fix from a
+     * date-only assertion.</p>
+     */
+    @Test
+    void postingWithNoAcquisitionDatePostsAsGoLiveEvenWithOneStoredOnTheDraft() {
+        ImportBatch b = batches.create(null, "September cut-over");
+        batches.setAcquisitionDate(b.getId(), LocalDate.of(2026, 6, 1));
+
+        String jobId = json(call(HttpMethod.POST,
+                "/api/v1/finance/import-batches/" + b.getId() + "/post", accountant, null))
+                .get("jobId").asText();
+
+        JsonNode job = awaitTerminalPostJob(b.getId(), jobId);
+        assertThat(job.get("status").asText())
+                .as("go-live post of an empty DRAFT, not a refused acquisition: %s", job.get("errors"))
+                .isEqualTo("COMPLETED");
+        assertThat(batches.get(b.getId()).getAcquisitionDate()).isNull();
+    }
+
+    /**
+     * The counterpart: a date in the body makes the post an acquisition. Awaits the
+     * job rather than reading the stored date straight after the 200 (the job runs
+     * on the real async executor) — the 2026-06-01 date is before this fixture's
+     * books start, so only a post that ran as an acquisition fails with that rule.
+     */
+    @Test
+    void postingWithAnAcquisitionDatePostsAsAnAcquisition() {
+        ImportBatch b = batches.create(null, "September cut-over");
+
+        String jobId = json(call(HttpMethod.POST,
+                "/api/v1/finance/import-batches/" + b.getId() + "/post", accountant,
+                Map.of("acquisitionDate", "2026-06-01")))
+                .get("jobId").asText();
+
+        JsonNode job = awaitTerminalPostJob(b.getId(), jobId);
+        assertThat(job.get("status").asText()).isEqualTo("FAILED");
+        assertThat(job.get("errors").get(0).get("message").asText())
+                .contains("acquisition date 2026-06-01 is before the books start");
+        assertThat(batches.get(b.getId()).getAcquisitionDate())
+                .as("kept for the next attempt, which the web pre-fills from it")
+                .isEqualTo(LocalDate.of(2026, 6, 1));
+    }
+
     @Test
     void anAccountantDiscardsADraftBatch() {
         ImportBatch b = batches.create(null, "wrong workbook");

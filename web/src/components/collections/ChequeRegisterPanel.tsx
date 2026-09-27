@@ -478,7 +478,7 @@ export default function ChequeRegisterPanel({ embedded = false }: { embedded?: b
                             </thead>
                             <tbody className="divide-y divide-border">
                                 {rows.map(c => {
-                                    const actions = registerActionsFor(c.status, c.mode, canCancel, undefined, c.ledgerSettled);
+                                    const actions = registerActionsFor(c.status, c.mode, canCancel, undefined, c.ledgerSettled, c.settledBeforeAcquisition);
                                     return (
                                         <tr key={c.id} data-testid={`cheque-row-${c.id}`} className="hover:bg-input/60 transition-colors">
                                             {batchMode && (
@@ -519,6 +519,11 @@ export default function ChequeRegisterPanel({ embedded = false }: { embedded?: b
                                                 {c.ledgerSettled && (
                                                     <span className="block text-[10px] text-muted" data-testid={`cheque-ledger-settled-${c.id}`}>
                                                         {t("ledgerSettled")}
+                                                    </span>
+                                                )}
+                                                {c.settledBeforeAcquisition && (
+                                                    <span className="block text-[10px] text-muted" data-testid={`cheque-settled-before-acquisition-${c.id}`}>
+                                                        {t("settledBeforeAcquisition")}
                                                     </span>
                                                 )}
                                             </td>

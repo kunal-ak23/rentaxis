@@ -452,9 +452,11 @@ for (const { role } of ROLES) {
                 const page = await context.newPage();
                 const at = `${role} ${locale} ${viewport.width}px`;
 
-                // GET /buildings/property/{id} does not admit ACCOUNTANT (BuildingController): the
-                // select degrades to hidden for them rather than erroring, on all three lists.
-                const buildingsScoped = role !== 'ACCOUNTANT';
+                // GET /buildings/property/{id} now admits ACCOUNTANT too (BuildingController:
+                // "Read-only for the accountant too: the tower selector and the 'By tower' P&L
+                // (S16-02) are finance screens") — the select is scoped the same for all three
+                // sweep roles, on all three lists.
+                const buildingsScoped = true;
 
                 // Units (route-scoped to the property already; the select is the tower).
                 await check(page, `/${locale}/dashboard/properties/${propertyId}/units`, role, failures);
@@ -535,27 +537,25 @@ for (const { role } of ROLES) {
                 await page.getByRole('button', { name: msgs.PropertyReports.apply }).click();
                 await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => {});
 
+                // GET /buildings/property/{id} now admits ACCOUNTANT too (BuildingController:
+                // "Read-only for the accountant too: the tower selector and the 'By tower' P&L
+                // (S16-02) are finance screens") — the toggle is scoped the same for all three
+                // sweep roles.
                 const towerToggle = page.getByTestId('pl-view-tower');
-                if (role === 'ACCOUNTANT') {
-                    // GET /buildings/property/{id} does not admit ACCOUNTANT: the toggle
-                    // degrades to hidden (same as the tower filters) rather than erroring.
-                    await expect(towerToggle, `${at} By tower toggle hidden for ACCOUNTANT`).toHaveCount(0);
-                } else {
-                    await expect(towerToggle, `${at} By tower toggle`).toBeVisible();
-                    await towerToggle.click();
-                    const table = page.getByTestId('pl-by-tower-table');
-                    await expect(table, `${at} by-tower table`).toBeVisible();
-                    await inView(page, 'pl-by-tower-table', viewport.width, failures, `${at} by-tower table`);
-                    const towerName = locale === 'ar' ? `برج أ ${SUFFIX}` : `Tower A ${SUFFIX}`;
-                    await expect(table.getByText(towerName), `${at} tower column`).toBeVisible();
-                    // Not `getByText`: "Total" is also a substring of the group
-                    // subtotal rows ("Subtotal — Direct Income" etc.), which
-                    // made this a strict-mode violation in English.
-                    await expect(table.getByTestId('col-TOTAL'), `${at} total column`).toBeVisible();
+                await expect(towerToggle, `${at} By tower toggle`).toBeVisible();
+                await towerToggle.click();
+                const table = page.getByTestId('pl-by-tower-table');
+                await expect(table, `${at} by-tower table`).toBeVisible();
+                await inView(page, 'pl-by-tower-table', viewport.width, failures, `${at} by-tower table`);
+                const towerName = locale === 'ar' ? `برج أ ${SUFFIX}` : `Tower A ${SUFFIX}`;
+                await expect(table.getByText(towerName), `${at} tower column`).toBeVisible();
+                // Not `getByText`: "Total" is also a substring of the group
+                // subtotal rows ("Subtotal — Direct Income" etc.), which
+                // made this a strict-mode violation in English.
+                await expect(table.getByTestId('col-TOTAL'), `${at} total column`).toBeVisible();
 
-                    await page.getByTestId('pl-view-property').click();
-                    await expect(page.getByTestId('pl-by-tower-table')).toHaveCount(0);
-                }
+                await page.getByTestId('pl-view-property').click();
+                await expect(page.getByTestId('pl-by-tower-table')).toHaveCount(0);
 
                 await context.close();
             }

@@ -160,14 +160,28 @@ export default function ReturnReplacePanel(props: { embedded?: boolean; property
                                         <td className={`${td} text-end tabular-nums font-semibold`}>{fmtAmount(c.amount)}</td>
                                         <td className={td}>{c.failureReason ? t(`failureReasons.${c.failureReason}`) : "—"}</td>
                                         <td className={td}>
-                                            <button
-                                                type="button"
-                                                data-testid={`cheque-row-action-replace-${c.id}`}
-                                                onClick={() => setTarget(c)}
-                                                className="px-2 py-1 rounded-md text-[10px] font-bold bg-input text-foreground hover:bg-border transition-colors cursor-pointer"
-                                            >
-                                                {t("replace")}
-                                            </button>
+                                            {/*
+                                             * S16-14: `ChequeService.requireOurs` refuses Replace
+                                             * outright for a cheque a previous owner already banked
+                                             * before an acquisition — this queue is BOUNCED-only, so
+                                             * in practice such a row never appears here
+                                             * (`markSettledBeforeAcquisition` sets CLEARED), but the
+                                             * button must not be offered on one regardless.
+                                             */}
+                                            {c.settledBeforeAcquisition ? (
+                                                <span className="text-[10px] text-muted" data-testid={`cheque-settled-before-acquisition-${c.id}`}>
+                                                    {t("settledBeforeAcquisition")}
+                                                </span>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    data-testid={`cheque-row-action-replace-${c.id}`}
+                                                    onClick={() => setTarget(c)}
+                                                    className="px-2 py-1 rounded-md text-[10px] font-bold bg-input text-foreground hover:bg-border transition-colors cursor-pointer"
+                                                >
+                                                    {t("replace")}
+                                                </button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}

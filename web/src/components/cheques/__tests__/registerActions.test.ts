@@ -122,3 +122,29 @@ describe("registerActionsFor once the lease's settlement is FINALIZED", () => {
             .toEqual(["deposit", "details", "cancel"]);
     });
 });
+
+/**
+ * S16-14: `ChequeService.requireOurs` refuses bounce/replace/receipt (and
+ * `returnToTenant`) outright for a cheque a previous owner already banked
+ * before the acquisition — "settle it through the acquisition clearing
+ * account instead". Offering any of those here would always 400.
+ */
+describe("registerActionsFor a cheque settled before the acquisition", () => {
+    it("drops bounce/replace/receipt — the verbs `requireOurs` refuses — everywhere they would otherwise appear", () => {
+        // DEPOSITED keeps `clear` (untouched by `requireOurs`) but loses `bounce`.
+        expect(registerActionsFor("DEPOSITED", "PDC", true, undefined, false, true)).toEqual(["clear"]);
+        // CLEARED had only `bounce`/`receipt` to offer, so both cases end up empty.
+        expect(registerActionsFor("CLEARED", "PDC", true, undefined, false, true)).toEqual([]);
+        expect(registerActionsFor("CLEARED", "CASH", true, undefined, false, true)).toEqual([]);
+        // BOUNCED had only `replace`.
+        expect(registerActionsFor("BOUNCED", "PDC", true, undefined, false, true)).toEqual([]);
+    });
+
+    it("leaves REGISTERED alone — the flag is only ever set once a row is already banked", () => {
+        expect(registerActionsFor("REGISTERED", "PDC", true, undefined, false, true)).toEqual(["deposit", "details", "cancel"]);
+    });
+
+    it("defaults to false, unchanged from every case above", () => {
+        expect(registerActionsFor("CLEARED", "PDC", true)).toEqual(["bounce", "receipt"]);
+    });
+});

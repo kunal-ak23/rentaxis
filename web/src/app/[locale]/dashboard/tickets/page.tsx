@@ -260,6 +260,11 @@ function TicketsPageInner() {
                 if (!isCurrent()) return;
                 if (res.ok) {
                     const page: Page<Ticket> = await res.json();
+                    // #106 R1-P3-a: `res.json()` is itself async — a newer
+                    // request can start and finish while this one is still
+                    // parsing, so the guard must run again here, not only
+                    // right after `fetch()` resolved.
+                    if (!isCurrent()) return;
                     setTickets(page.content ?? []);
                     setPagedTotal(page.totalElements ?? 0);
                     setLoadError(null);
@@ -268,6 +273,7 @@ function TicketsPageInner() {
                     // (`Search.requireTenant()`, 400) — say so, rather than
                     // showing an empty "No tickets" as if none existed.
                     const body = await res.json().catch(() => null);
+                    if (!isCurrent()) return;
                     setLoadError(body?.message || t("loadFailed"));
                     setTickets([]);
                     setPagedTotal(0);
@@ -275,8 +281,12 @@ function TicketsPageInner() {
             } else {
                 const res = await fetch("/api/proxy/v1/tickets");
                 if (!isCurrent()) return;
-                if (res.ok) { setTickets(await res.json()); setLoadError(null); }
-                else setLoadError(t("loadFailed"));
+                if (res.ok) {
+                    const body = await res.json();
+                    if (!isCurrent()) return;
+                    setTickets(body);
+                    setLoadError(null);
+                } else if (isCurrent()) setLoadError(t("loadFailed"));
             }
         } catch {
             if (isCurrent()) setLoadError(t("loadFailed"));

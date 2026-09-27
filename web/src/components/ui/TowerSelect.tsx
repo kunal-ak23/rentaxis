@@ -38,13 +38,16 @@ export function TowerSelect({
 }) {
     const t = useTranslations("Towers");
     const tList = useTranslations("ListActions");
-    const { buildings, hasBuildings, loading, label } = useBuildings(propertyId || null);
+    const { buildings, hasBuildings, loading, label, failed } = useBuildings(propertyId || null);
 
     // Resolved as soon as there is no propertyId (definitely unavailable); while
     // one is set, only once the read has actually settled — not mid-flight,
     // which would otherwise report "unavailable" for a property that turns out
-    // to have towers a moment later.
-    const resolved = !propertyId || !loading;
+    // to have towers a moment later. R1 P3-3: a *failed* read is never
+    // "resolved" here — reporting `false` off a transient failure is exactly
+    // what would drop a valid `buildingId` the caller cannot get back once its
+    // own control (this select) has hidden itself.
+    const resolved = !propertyId || (!loading && !failed);
     const available = !!propertyId && hasBuildings;
     const onAvailabilityChangeRef = useRef(onAvailabilityChange);
     useEffect(() => {
@@ -53,6 +56,33 @@ export function TowerSelect({
     useEffect(() => {
         if (resolved) onAvailabilityChangeRef.current?.(available);
     }, [resolved, available]);
+
+    const onChangeRef = useRef(onChange);
+    useEffect(() => {
+        onChangeRef.current = onChange;
+    });
+    // R1 P3-2: a `value` that is not one of this property's towers — it
+    // belongs to another property, or the tower was deleted — must not sit in
+    // the URL with nothing on screen to say it is there. Only once loaded (not
+    // mid-flight, and never off a transient failure — see `resolved` above).
+    useEffect(() => {
+        if (!resolved || !value) return;
+        if (!buildings.some(b => b.id === value)) onChangeRef.current("");
+    }, [resolved, value, buildings]);
+
+    // R1 P3-2: the read gave up but `value` is deliberately kept (see
+    // `resolved`) — say so, rather than leave a filter applied with nothing on
+    // screen, and let it be cleared.
+    if (propertyId && failed && value) {
+        return (
+            <FilterChip
+                testId={`${testId}-chip`}
+                label={t("unavailable")}
+                removeLabel={tList("removeFilter", { name: t("label") })}
+                onRemove={() => onChange("")}
+            />
+        );
+    }
 
     if (!propertyId || !hasBuildings) return null;
 

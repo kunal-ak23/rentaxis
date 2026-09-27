@@ -605,6 +605,15 @@ export type Cheque = {
    * "Replace" action and overdue badge to withhold too.
    */
   ledgerSettled: boolean;
+  /**
+   * S16-14: banked by the previous owner before an acquisition cut-over
+   * (`ChequeService.markSettledBeforeAcquisition`) — the server's
+   * `requireOurs` refuses bounce, replace, receipt and return outright for
+   * it: "settle it through the acquisition clearing account instead".
+   * Optional the same way `ledgerSettled`'s siblings are: an older server
+   * (or a fixture that predates this field) reads as `false`, never `undefined.anything`.
+   */
+  settledBeforeAcquisition?: boolean;
   /** F14-24/F14-62: RR-yy/n, given when the money landed; null before that or on rows cleared before the series. */
   receiptNumber?: string | null;
   /**
@@ -815,6 +824,12 @@ export type TerminationPreview = {
    * back. All zeros on a legacy lease; optional for the same reason as `unearnedVat`.
    */
   vatSettlement?: TerminationVatSettlement | null;
+  /**
+   * Refusals a real termination would raise (e.g. a missing TRN, a date
+   * before the latest amendment). Optional for the same reason as
+   * `unearnedVat`: an older server's answer must read as "none", not `undefined.length`.
+   */
+  problems?: string[];
 };
 
 export type TerminationVatSettlement = {
@@ -1036,6 +1051,8 @@ export type PostLeaseResponse = {
   tcoJournalId: string;
   tcoEntryNumber: string;
   cheques: Cheque[];
+  /** What the post/amend did that the accountant should know, not an error. */
+  notices?: string[];
 };
 
 /** PostLeaseDryRunResponse — every validation a real post would run, nothing written. */
@@ -1049,6 +1066,8 @@ export type PostLeaseDryRunResponse = {
   journals: { tco: number; tcoLines: number; pdr: number };
   /** F15-13: a transfer's carried cheques, re-registered on this grid when it posts. */
   carriedCheques?: { seqNo: number; chequeNumber: string | null; chequeDate: string | null; amount: number }[];
+  /** What the real post would do that the accountant should know, not an error. */
+  notices?: string[];
 };
 
 /** ChequeActionRequest — the shared shape for deposit/clear/receive/bounce/cancel. */

@@ -2406,6 +2406,7 @@
     "overdue": "Overdue",
     "daysOverdue": "{n} days overdue",
     "ledgerSettled": "Settled",
+    "settledBeforeAcquisition": "Banked by previous owner",
     "receiptNumber": "Receipt {number}",
     "maturity": "Maturity",
     "receipt": "Receipt Voucher",
@@ -3091,6 +3092,14 @@
     "postAgain": "Post again",
     "retryFailed": "Retry failed contracts",
     "confirmPostBatch": "Post all {n} contracts in this batch? Each is posted at its own contract date, its cheques are replayed to the statuses they were imported with on their real dates, and income is recognised up to the day before your books start. No e-mails are sent and no penalties are raised for imported history.",
+    "cutoverKindLabel": "What is this?",
+    "cutoverKindGoLive": "Go-live of the organisation",
+    "cutoverKindAcquisition": "Acquisition of new building(s)",
+    "cutoverKindAcquisitionHint": "The buildings in this batch were acquired after go-live. Cheques already banked by the previous owner are settled through a \"Due to/from vendor\" clearing account instead of being replayed as ours.",
+    "acquisitionDateLabel": "Acquisition date",
+    "acquisitionDateRequired": "An acquisition date is required.",
+    "acquisitionDateOn": "Acquired {date}",
+    "acquisitionDatePending": "Acquisition date {date}",
     "confirmPostAgain": "This batch was reversed, so posting it creates a NEW batch to hold the new journals. The reversed one stays in the list as history.",
     "confirmRetryFailed": "Post this batch again? Contracts already on the books are skipped; only the {n} that failed are tried again.",
     "postingProgress": "Posting {processed} of {total} contracts…",
@@ -4620,6 +4629,7 @@
     "label": "Tower",
     "all": "All towers",
     "myTickets": "My tickets",
-    "allTickets": "All tickets"
+    "allTickets": "All tickets",
+    "unavailable": "Tower filter (towers could not be loaded)"
   }
 }

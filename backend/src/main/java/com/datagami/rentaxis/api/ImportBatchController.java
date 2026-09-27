@@ -9,7 +9,9 @@ import com.datagami.rentaxis.core.service.cutover.ContractImportPostService;
 import com.datagami.rentaxis.core.service.cutover.ImportBatchDiscardService;
 import com.datagami.rentaxis.core.service.cutover.ImportBatchService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.ImportBatch;
 import com.datagami.rentaxis.domain.entity.ImportJob;
+import com.datagami.rentaxis.domain.entity.enums.ImportBatchStatus;
 import com.datagami.rentaxis.domain.repository.ImportJobRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -136,9 +138,14 @@ public class ImportBatchController {
                                                @org.springframework.web.bind.annotation.RequestBody(required = false)
                                                PostBatchDTO body) {
         requireTenantSelected();
-        batches.get(id);   // 404 for another organisation's id, before a job row exists
-        if (body != null && body.acquisitionDate() != null) {
-            batches.setAcquisitionDate(id, body.acquisitionDate());
+        ImportBatch batch = batches.get(id);   // 404 for another organisation's id, before a job row exists
+        // PR #377 R1 P2-1: on a DRAFT the body is the whole answer — a date means an
+        // acquisition, none means go-live. A date stored by an earlier attempt must
+        // not turn a post the caller made as go-live into an acquisition.
+        java.time.LocalDate requested = body == null ? null : body.acquisitionDate();
+        if (requested != null
+                || (batch.getStatus() == ImportBatchStatus.DRAFT && batch.getAcquisitionDate() != null)) {
+            batches.setAcquisitionDate(id, requested);
         }
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         ImportJob job = postJobs.start(id, currentUserId(auth));

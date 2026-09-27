@@ -155,6 +155,15 @@ export default function ImportBatchesPage() {
     const [confirmPost, setConfirmPost] = useState<ImportBatch | null>(null);
     const [confirmDiscard, setConfirmDiscard] = useState<ImportBatch | null>(null);
     /**
+     * S16-14: the go-live/acquisition choice only exists on a fresh DRAFT post
+     * — `ImportBatchService.setAcquisitionDate` refuses it once the batch is
+     * no longer DRAFT, so a re-post (REVERSED → successor) or a retry (POSTED)
+     * never offers it at all, rather than offering a control the server would
+     * refuse.
+     */
+    const [cutoverKind, setCutoverKind] = useState<"goLive" | "acquisition">("goLive");
+    const [acquisitionDate, setAcquisitionDate] = useState("");
+    /**
      * Rejoin a bulk post left running by a reload. The job id lives under a key
      * that carries its batch, so the batch is read back from there — setting it
      * mounts the poller against the right status URL.
@@ -243,14 +252,16 @@ export default function ImportBatchesPage() {
         return [...leases].sort((a, b) => OUTCOME_ORDER[a.outcome] - OUTCOME_ORDER[b.outcome]);
     }, [postJob.job]);
 
-    const startPost = (b: ImportBatch) => {
+    const startPost = (b: ImportBatch, acquisitionDateArg: string | null) => {
         setPostError(null);
         setDiscard(null);
         setResultPage(0);
         setConfirmPost(null);
         setPostBatchId(b.id);
-        cutoverApi.batches
-            .post(b.id)
+        const started = acquisitionDateArg
+            ? cutoverApi.batches.post(b.id, { acquisitionDate: acquisitionDateArg })
+            : cutoverApi.batches.post(b.id);
+        started
             .then(({ jobId }) => postJob.start(jobId))
             .catch(e => setPostError(e instanceof ApiError ? e.message : tCommon("loadFailed")));
     };
@@ -324,6 +335,10 @@ export default function ImportBatchesPage() {
     };
 
     const visible = rows.slice(page * size, page * size + size);
+    // S16-14: only a fresh DRAFT post may set (or leave alone) the acquisition
+    // date — the same precondition `ImportBatchService.setAcquisitionDate`
+    // enforces server-side.
+    const isFreshDraftPost = !!confirmPost && confirmPost.status === "DRAFT" && !isRepost(confirmPost.status);
 
     return (
         <div>
@@ -823,7 +838,17 @@ export default function ImportBatchesPage() {
                                                 : "hover:bg-input/30 transition-colors"
                                         }
                                     >
-                                        <td className={`${td} font-medium`}>{b.label ?? b.id.slice(0, 8)}</td>
+                                        <td className={`${td} font-medium`}>
+                                            {b.label ?? b.id.slice(0, 8)}
+                                            {b.acquisitionDate && (
+                                                <span
+                                                    data-testid={`batch-acquisition-date-${b.id}`}
+                                                    className="block mt-0.5 text-[10px] font-normal text-muted tabular-nums"
+                                                >
+                                                    {t(b.status === "DRAFT" ? "acquisitionDatePending" : "acquisitionDateOn", { date: fmtIsoDate(b.acquisitionDate, locale) })}
+                                                </span>
+                                            )}
+                                        </td>
                                         <td className={`${td} text-muted`}>{t(b.kind)}</td>
                                         <td className={`${td} tabular-nums`}>{fmtIsoDate(b.createdAt, locale)}</td>
                                         <td className={`${td} text-end tabular-nums`}>{b.leasesImported}</td>
@@ -867,7 +892,14 @@ export default function ImportBatchesPage() {
                                                                 // would have two runs writing to the
                                                                 // same batches at once.
                                                                 disabled={postJob.polling || importJob.polling}
-                                                                onClick={() => setConfirmPost(b)}
+                                                                onClick={() => {
+                                                                    // R1 P2-1: a DRAFT that already carries a date
+                                                                    // opens on it — the server posts what the body
+                                                                    // says, so the dialog must start from what is stored.
+                                                                    setCutoverKind(b.status === "DRAFT" && b.acquisitionDate ? "acquisition" : "goLive");
+                                                                    setAcquisitionDate(b.status === "DRAFT" ? (b.acquisitionDate ?? "") : "");
+                                                                    setConfirmPost(b);
+                                                                }}
                                                                 className="text-primary hover:underline cursor-pointer font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                                                             >
                                                                 {action === "repost"
@@ -927,7 +959,11 @@ export default function ImportBatchesPage() {
             <ConfirmDialog
                 isOpen={!!confirmPost}
                 onClose={() => setConfirmPost(null)}
-                onConfirm={() => confirmPost && startPost(confirmPost)}
+                onConfirm={() =>
+                    confirmPost &&
+                    startPost(confirmPost, isFreshDraftPost && cutoverKind === "acquisition" ? acquisitionDate : null)
+                }
+                confirmDisabled={isFreshDraftPost && cutoverKind === "acquisition" && !acquisitionDate}
                 title={
                     confirmPost && isRepost(confirmPost.status)
                         ? t("postAgain")
@@ -952,6 +988,61 @@ export default function ImportBatchesPage() {
                     which is confusing unless it is said here first. */}
                 {confirmPost && isRepost(confirmPost.status) && (
                     <p className="text-xs text-warning">{t("confirmPostAgain")}</p>
+                )}
+                {/*
+                 * S16-14: the choice only exists on a fresh DRAFT post —
+                 * `ImportBatchController.PostBatchDTO.acquisitionDate` is
+                 * refused once the batch is no longer DRAFT
+                 * (`ImportBatchService.setAcquisitionDate`), so a re-post or a
+                 * retry never shows this at all.
+                 */}
+                {isFreshDraftPost && (
+                    <fieldset className="space-y-2">
+                        <legend className="text-[11px] font-semibold text-muted uppercase tracking-wider mb-1">
+                            {t("cutoverKindLabel")}
+                        </legend>
+                        <div className="flex flex-col gap-2 text-xs">
+                            <label className="inline-flex items-center gap-2 cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="cutover-kind"
+                                    data-testid="cutover-kind-go-live"
+                                    checked={cutoverKind === "goLive"}
+                                    onChange={() => setCutoverKind("goLive")}
+                                />
+                                {t("cutoverKindGoLive")}
+                            </label>
+                            <label className="inline-flex items-center gap-2 cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="cutover-kind"
+                                    data-testid="cutover-kind-acquisition"
+                                    checked={cutoverKind === "acquisition"}
+                                    onChange={() => setCutoverKind("acquisition")}
+                                />
+                                {t("cutoverKindAcquisition")}
+                            </label>
+                        </div>
+                        {cutoverKind === "acquisition" && (
+                            <div className="pt-1">
+                                <p className="text-[11px] text-muted mb-2">{t("cutoverKindAcquisitionHint")}</p>
+                                <label className={fieldLabel} htmlFor="acquisition-date">
+                                    {t("acquisitionDateLabel")}
+                                </label>
+                                <input
+                                    id="acquisition-date"
+                                    data-testid="acquisition-date"
+                                    type="date"
+                                    className={field}
+                                    value={acquisitionDate}
+                                    onChange={e => setAcquisitionDate(e.target.value)}
+                                />
+                                {!acquisitionDate && (
+                                    <p className="mt-1 text-[11px] text-warning">{t("acquisitionDateRequired")}</p>
+                                )}
+                            </div>
+                        )}
+                    </fieldset>
                 )}
             </ConfirmDialog>
 

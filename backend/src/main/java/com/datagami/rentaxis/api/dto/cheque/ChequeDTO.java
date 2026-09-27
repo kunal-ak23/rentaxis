@@ -76,5 +76,9 @@ public record ChequeDTO(UUID id,
                         boolean ledgerSettled,
                         /* F14-24/F14-62: the receipt number (RR-yy/n) given when the money landed;
                            null for a row not cleared, or cleared before the series existed. */
-                        String receiptNumber) {
+                        String receiptNumber,
+                        /* S16-14: banked by the previous owner before an acquisition cut-over
+                           (ChequeService.markSettledBeforeAcquisition) — requireOurs refuses
+                           bounce, replace, receipt and return outright for it. */
+                        boolean settledBeforeAcquisition) {
 }

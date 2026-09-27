@@ -181,6 +181,8 @@ export default function TerminateLeasePage() {
     /** Absent on an older server, and zero on every residential tenancy. */
     const unearnedVat = preview?.unearnedVat ?? 0;
     const vatSettlement = preview?.vatSettlement ?? null;
+    /** Refusals a real termination would raise (a missing TRN, a date before the latest amendment, …). */
+    const problems = preview?.problems ?? [];
     const returnedCount = rows.filter(c => decisions[c.id] === "RETURN").length;
 
     const submit = async () => {
@@ -384,6 +386,16 @@ export default function TerminateLeasePage() {
                                 </div>
                             )}
 
+                            {problems.length > 0 && (
+                                <ul
+                                    role="alert"
+                                    data-testid="terminate-problems"
+                                    className="bg-error/10 border border-error/30 text-error rounded-xl px-5 py-3 text-sm space-y-1"
+                                >
+                                    {problems.map((p, i) => <li key={i}>{p}</li>)}
+                                </ul>
+                            )}
+
                             <ChequeReturnTable
                                 rows={rows}
                                 bounced={preview.bouncedOutstanding}
@@ -418,7 +430,7 @@ export default function TerminateLeasePage() {
                                         <button
                                             type="button"
                                             data-testid="terminate-submit"
-                                            disabled={pricing || submitting}
+                                            disabled={pricing || submitting || problems.length > 0}
                                             onClick={() => setConfirmOpen(true)}
                                             className="flex items-center gap-2 bg-error text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-error/90 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                         >

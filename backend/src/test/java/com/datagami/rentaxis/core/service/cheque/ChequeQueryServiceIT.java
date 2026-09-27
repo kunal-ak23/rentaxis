@@ -40,6 +40,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -152,6 +153,37 @@ class ChequeQueryServiceIT extends AbstractPostgresIT {
         assertThat(summary.bouncedAmount()).isEqualByComparingTo(rows.get(1).getAmount());
         // Cleared on 3 September, which is the month AS_OF falls in.
         assertThat(summary.clearedThisMonthAmount()).isEqualByComparingTo(rows.get(0).getAmount());
+    }
+
+    /**
+     * S16-14 / PR #377 R1 P1-1: the register and the single-cheque read must carry
+     * {@code settledBeforeAcquisition} through to the wire — the web's "Banked by
+     * previous owner" badge and its withheld bounce/replace/receipt buttons are
+     * inert without it. Pinned against both read paths so a mapper regression on
+     * either one is caught.
+     */
+    @Test
+    void settledBeforeAcquisitionReachesBothTheSingleReadAndTheRegisterSearch() {
+        UUID leaseId = posted().lease().getId();
+        List<Cheque> rows = register(leaseId);
+        Cheque sellerBanked = rows.get(0);
+
+        chequeService.markSettledBeforeAcquisition(sellerBanked, LocalDate.of(2026, 1, 20), LocalDate.of(2026, 1, 25));
+
+        ChequeDTO single = query.get(sellerBanked.getId());
+        assertThat(single.settledBeforeAcquisition()).isTrue();
+        assertThat(single.status()).isEqualTo(ChequeStatus.CLEARED);
+
+        Page<ChequeDTO> registerPage = query.search(null, null, null, null, null, null,
+                PageRequest.of(0, 25));
+        ChequeDTO fromRegister = registerPage.getContent().stream()
+                .filter(c -> c.id().equals(sellerBanked.getId())).findFirst().orElseThrow();
+        assertThat(fromRegister.settledBeforeAcquisition()).isTrue();
+
+        // An ordinary row (never touched by the acquisition flow) must read false,
+        // not merely "whatever the previous row happened to leave".
+        ChequeDTO ordinary = query.get(rows.get(1).getId());
+        assertThat(ordinary.settledBeforeAcquisition()).isFalse();
     }
 
     /**

@@ -171,4 +171,16 @@ describe("Post gate on a draft contract", () => {
         await waitFor(() => expect(api.post).toHaveBeenCalledWith("lease-1"));
         await waitFor(() => expect(screen.getByTestId("lease-banner")).toHaveTextContent("Posted as TCO-26/15"));
     });
+
+    it("shows the post's own notices alongside the banner", async () => {
+        api.post.mockImplementation(async () => ({
+            lease: { ...DRAFT, status: "ACTIVE" as const }, tcoJournalId: "j1", tcoEntryNumber: "TCO-26/15",
+            cheques: [], notices: ["A fee on this lease is also charged on its predecessor; both stay on the books."],
+        }));
+        renderPage();
+        fireEvent.click(await screen.findByTestId("lease-post"));
+        await waitFor(() => expect(screen.getByTestId("post-dry-run-ok")).toBeInTheDocument());
+        fireEvent.click(screen.getByTestId("post-lease-confirm"));
+        await waitFor(() => expect(screen.getByTestId("lease-notices")).toHaveTextContent("also charged on its predecessor"));
+    });
 });
