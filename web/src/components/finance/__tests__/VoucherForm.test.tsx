@@ -62,6 +62,24 @@ vi.mock("@/i18n/routing", () => ({
     ),
 }));
 
+/**
+ * Scale PR B, task 5: the line unit picker asks the server (`UnitPicker`)
+ * instead of reading a page-wide `/units` list, so `lookupApi` — shared by
+ * every picker and by `useIdNames`'s caches — is mocked directly, the same way
+ * `LeaseAssignmentCard.test.tsx` mocks it.
+ */
+type MockUnitOption = {
+    id: string; unitNumber: string; propertyId: string | null; propertyName: string | null;
+    propertyType: string | null; buildingId: string | null; buildingName: string | null; status: string | null;
+};
+const UNIT_OPTIONS: Record<string, MockUnitOption> = {
+    "unit-a1": { id: "unit-a1", unitNumber: "A-101", propertyId: "prop-1", propertyName: "L'Olivier", propertyType: null, buildingId: null, buildingName: null, status: null },
+    "unit-a2": { id: "unit-a2", unitNumber: "A-102", propertyId: "prop-1", propertyName: "L'Olivier", propertyType: null, buildingId: null, buildingName: null, status: null },
+    "unit-b1": { id: "unit-b1", unitNumber: "B-201", propertyId: "prop-2", propertyName: "Marina Heights", propertyType: null, buildingId: null, buildingName: null, status: null },
+};
+const lookup = vi.hoisted(() => ({ searchUnits: vi.fn(), searchRenters: vi.fn(), unitNames: vi.fn(), renterNames: vi.fn() }));
+vi.mock("@/lib/api/lookup", () => ({ lookupApi: lookup }));
+
 const api = vi.hoisted(() => ({
     get: vi.fn(),
     create: vi.fn(),
@@ -220,15 +238,18 @@ beforeEach(() => {
     api.create.mockResolvedValue(detail({ id: "v-new", lines: [], netTotal: 0, vatTotal: 0, grossTotal: 0 }));
     api.update.mockResolvedValue(detail());
     api.post.mockResolvedValue(detail({ status: "POSTED", voucherNumber: "PISR/2026/0007", journalId: "j1" }));
+    lookup.searchUnits.mockImplementation(async ({ propertyId }: { propertyId?: string } = {}) =>
+        Object.values(UNIT_OPTIONS).filter(u => !propertyId || u.propertyId === propertyId));
+    lookup.unitNames.mockImplementation(async (ids: string[]) => ids.map(id => UNIT_OPTIONS[id]).filter(Boolean));
+    lookup.searchRenters.mockResolvedValue([]);
+    lookup.renterNames.mockResolvedValue([]);
     vi.stubGlobal(
         "fetch",
         vi.fn(async (url: string) => {
             const u = String(url);
             const body = u.includes("/vendors")
                 ? VENDORS
-                : u.includes("/units")
-                  ? UNITS
-                  : u.includes("/properties")
+                : u.includes("/properties")
                     ? PROPERTIES
                     : [];
             return new Response(JSON.stringify(body), {
@@ -841,9 +862,9 @@ describe("VoucherForm — line dimensions", () => {
         api.get.mockResolvedValue(twoProperties());
         renderForm("PISR", { voucherId: "v1" });
         await waitFor(() => expect(screen.getByTestId("line-property-0")).toHaveValue("prop-1"));
-        expect(screen.getByTestId("line-unit-0")).toHaveValue("unit-a1");
+        await waitFor(() => expect(screen.getByTestId("line-unit-0")).toHaveTextContent("A-101"));
         expect(screen.getByTestId("line-property-1")).toHaveValue("prop-2");
-        expect(screen.getByTestId("line-unit-1")).toHaveValue("");
+        expect(screen.getByTestId("line-unit-1")).toHaveTextContent(en.Vouchers.wholeProperty);
 
         fireEvent.click(screen.getByTestId("save-draft"));
         await waitFor(() => expect(api.update).toHaveBeenCalled());
@@ -857,7 +878,10 @@ describe("VoucherForm — line dimensions", () => {
         renderForm("PISR", { voucherId: "v1" });
         await waitFor(() => expect(screen.getByTestId("line-property-1")).toHaveValue("prop-2"));
 
-        fireEvent.change(screen.getByTestId("line-unit-1"), { target: { value: "unit-b1" } });
+        fireEvent.click(screen.getByTestId("line-unit-1"));
+        fireEvent.click(await screen.findByText("B-201"));
+        expect(screen.getByTestId("line-unit-1")).toHaveTextContent("B-201");
+
         fireEvent.click(screen.getByTestId("save-draft"));
         await waitFor(() => expect(api.update).toHaveBeenCalled());
         const body = api.update.mock.calls.at(-1)![1];
@@ -867,14 +891,17 @@ describe("VoucherForm — line dimensions", () => {
     it("offers only the chosen property's units, and clearing the property clears the unit", async () => {
         api.get.mockResolvedValue(twoProperties());
         renderForm("PISR", { voucherId: "v1" });
-        await waitFor(() => expect(screen.getByTestId("line-unit-0")).toHaveValue("unit-a1"));
+        await waitFor(() => expect(screen.getByTestId("line-unit-0")).toHaveTextContent("A-101"));
 
-        const unit0 = screen.getByTestId("line-unit-0") as HTMLSelectElement;
-        const offered = Array.from(unit0.options).map(o => o.value).filter(Boolean);
-        expect(offered).toEqual(["unit-a1", "unit-a2"]);
+        fireEvent.click(screen.getByTestId("line-unit-0"));
+        expect(lookup.searchUnits).toHaveBeenCalledWith(expect.objectContaining({ propertyId: "prop-1" }));
+        expect(await screen.findByText("A-102")).toBeInTheDocument();
+        expect(screen.queryByText("B-201")).toBeNull();
+        // Close the panel before touching a different control on the page.
+        fireEvent.keyDown(screen.getByPlaceholderText(en.Pickers.typeToSearch), { key: "Escape" });
 
         fireEvent.change(screen.getByTestId("line-property-0"), { target: { value: "" } });
-        await waitFor(() => expect(screen.getByTestId("line-unit-0")).toHaveValue(""));
+        await waitFor(() => expect(screen.getByTestId("line-unit-0")).toHaveTextContent(en.Vouchers.wholeProperty));
         fireEvent.click(screen.getByTestId("save-draft"));
         await waitFor(() => expect(api.update).toHaveBeenCalled());
         expect(api.update.mock.calls.at(-1)![1].lines[0]).toMatchObject({ propertyId: null, unitId: null });
@@ -883,14 +910,15 @@ describe("VoucherForm — line dimensions", () => {
     it("moves the unit off a line whose property changed", async () => {
         api.get.mockResolvedValue(twoProperties());
         renderForm("PISR", { voucherId: "v1" });
-        await waitFor(() => expect(screen.getByTestId("line-unit-0")).toHaveValue("unit-a1"));
+        await waitFor(() => expect(screen.getByTestId("line-unit-0")).toHaveTextContent("A-101"));
         fireEvent.change(screen.getByTestId("line-property-0"), { target: { value: "prop-2" } });
-        await waitFor(() => expect(screen.getByTestId("line-unit-0")).toHaveValue(""));
+        await waitFor(() => expect(screen.getByTestId("line-unit-0")).toHaveTextContent(en.Vouchers.wholeProperty));
 
-        // Asserted on the PAYLOAD, not on the select: a select whose value has no
-        // matching option renders as "" while state still holds the stale unit,
-        // and it is the state that gets sent. A unit belongs to one property, so
-        // A-101 on a Marina Heights line is a journal nobody can explain.
+        // Asserted on the PAYLOAD, not on the trigger's label: the picker's own
+        // value has no matching option under the new property while state still
+        // holds the stale unit, and it is the state that gets sent. A unit
+        // belongs to one property, so A-101 on a Marina Heights line is a
+        // journal nobody can explain.
         fireEvent.click(screen.getByTestId("save-draft"));
         await waitFor(() => expect(api.update).toHaveBeenCalled());
         expect(api.update.mock.calls.at(-1)![1].lines[0]).toMatchObject({
@@ -1571,5 +1599,27 @@ describe("VoucherForm — deposit refund (F14-36)", () => {
         expect(await screen.findByTestId("voucher-error")).toHaveTextContent(
             "This settlement owes 6,164.38; 7,000.00 is more than that.",
         );
+    });
+});
+
+describe("VoucherForm: no unbounded unit read (scale PR B, task 5)", () => {
+    /** The unbounded read this task removed: exactly `/units`, with or without a query. */
+    const UNBOUNDED = /\/api\/proxy\/v1\/units(\?|$)/;
+    const urls = () => (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.map(c => String(c[0]));
+
+    it("never calls /api/proxy/v1/units on load, and asks the server for a line's units", async () => {
+        api.get.mockResolvedValue(detail({
+            propertyId: "prop-1",
+            lines: [{ lineNo: 1, accountId: "acct-1", accountCode: "510100", accountName: "Maintenance",
+                description: "Chillers", amount: 1000, vatRate: 5, vatAmount: 50, propertyId: "prop-1", unitId: null }],
+        }));
+        renderForm("PISR", { voucherId: "v1" });
+        await screen.findByTestId("line-amount-0");
+        await waitFor(() => expect(urls().length).toBeGreaterThan(0));
+        expect(urls().filter(u => UNBOUNDED.test(u))).toEqual([]);
+
+        fireEvent.click(screen.getByTestId("line-unit-0"));
+        expect(await screen.findByText("A-101")).toBeInTheDocument();
+        expect(lookup.searchUnits).toHaveBeenCalledWith(expect.objectContaining({ propertyId: "prop-1" }));
     });
 });

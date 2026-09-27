@@ -7,6 +7,7 @@ import { Link } from "@/i18n/routing";
 import AccountPicker, { loadAccounts } from "@/components/finance/AccountPicker";
 import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import RefundPaymentAccountPicker from "@/components/finance/RefundPaymentAccountPicker";
+import { UnitPicker } from "@/components/pickers/UnitPicker";
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
@@ -118,8 +119,6 @@ const SETTLEMENT_CLASS: Record<string, string> = {
     PAID: "bg-success/10 text-success border-success/30",
 };
 
-type UnitRow = { id: string; unitNumber: string; property: { id: string } | null };
-
 let lineKeySeq = 0;
 /** A new row starts on the header's property, which is the common case for a single-site invoice. */
 const newLine = (propertyId = ""): DraftLine => ({
@@ -206,7 +205,6 @@ export default function VoucherForm({
     const [docDate, setDocDate] = useState(todayIso);
     const [vendorId, setVendorId] = useState("");
     const [vendors, setVendors] = useState<VendorRow[]>([]);
-    const [units, setUnits] = useState<UnitRow[]>([]);
     const [invoiceNumber, setInvoiceNumber] = useState("");
     const [narration, setNarration] = useState("");
     const [propertyId, setPropertyId] = useState("");
@@ -307,12 +305,6 @@ export default function VoucherForm({
             })
             .then((rows: VendorRow[]) => alive && setVendors(Array.isArray(rows) ? rows : []))
             .catch(e => alive && setLoadError(e instanceof ApiError ? e.message : tCommon("loadFailed")));
-        // One unpaginated GET, kept with its property so a line's unit list can be
-        // filtered without a request per row (UnitController#getAllUnits).
-        fetch("/api/proxy/v1/units")
-            .then(r => (r.ok ? r.json() : []))
-            .then((rows: UnitRow[]) => alive && setUnits(Array.isArray(rows) ? rows : []))
-            .catch(() => {});
         ledgerApi.fiscal
             .get()
             .then(f => alive && setBooksLockedThrough(f.booksLockedThrough))
@@ -933,14 +925,6 @@ export default function VoucherForm({
 
     const vendorName = (id: string) => vendors.find(v => v.id === id)?.nameEn ?? "";
 
-    /** The units of one property, name-sorted. Empty until a property is chosen. */
-    const unitsFor = (propId: string) =>
-        propId
-            ? units
-                  .filter(u => u.property?.id === propId)
-                  .sort((a, b) => a.unitNumber.localeCompare(b.unitNumber))
-            : [];
-
     // ---- render ----
 
     // account, description, property, unit, amount, line total, actions (+ VAT rate and VAT amount)
@@ -1353,23 +1337,17 @@ export default function VoucherForm({
                                             </select>
                                         </td>
                                         <td className={td}>
-                                            <select
-                                                data-testid={`line-unit-${i}`}
-                                                aria-label={tLedger("unit")}
+                                            <UnitPicker
+                                                testId={`line-unit-${i}`}
                                                 className={`${field} w-32`}
                                                 // A unit without a property to scope it would be a
                                                 // list of every unit in the portfolio.
                                                 disabled={!editable || !l.propertyId}
+                                                propertyId={l.propertyId || undefined}
                                                 value={l.unitId}
-                                                onChange={e => setLine(i, { unitId: e.target.value })}
-                                            >
-                                                <option value="">{t("wholeProperty")}</option>
-                                                {unitsFor(l.propertyId).map(u => (
-                                                    <option key={u.id} value={u.id}>
-                                                        {u.unitNumber}
-                                                    </option>
-                                                ))}
-                                            </select>
+                                                onChange={id => setLine(i, { unitId: id })}
+                                                placeholder={t("wholeProperty")}
+                                            />
                                         </td>
                                         <td className={`${td} text-end`}>
                                             <input
