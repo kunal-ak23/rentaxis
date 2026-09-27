@@ -4652,5 +4652,22 @@
     "commercial": "Commercial",
     "selectUnit": "Select a unit",
     "selectRenter": "Select a tenant"
+  },
+  "PageState": {
+    "accessDeniedTitle": "Access denied",
+    "accessDeniedBody": "You do not have permission to view this page. Ask your organisation admin if you need access.",
+    "notFoundTitle": "Not found",
+    "propertyNotFound": "Property not found. It may have been removed, or you may not have access to it.",
+    "backToProperties": "Back to properties",
+    "backToDashboard": "Back to the dashboard",
+    "loadFailedTitle": "This page could not be loaded",
+    "loadFailedBody": "Something went wrong while loading. Check your connection and try again.",
+    "retry": "Retry",
+    "selectOrgTitle": "Select an organisation",
+    "selectOrgBody": "You are in Global View. This page shows one organisation's data, so choose an organisation in the switcher at the top to continue.",
+    "orgChangedTitle": "Organisation changed in another tab",
+    "orgChangedBody": "Another tab switched to a different organisation. Reload this tab before you continue, so nothing is saved to or read from the wrong organisation.",
+    "reload": "Reload",
+    "sessionExpired": "Your session has ended. Taking you to sign in…"
   }
 }

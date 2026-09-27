@@ -14,6 +14,7 @@ import { hasPermission, canConfigureRentSettings, type UserRole } from "@/lib/rb
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { NumberInput } from "@/components/ui/NumberInput";
+import { AccessDeniedState, LoadFailedState, NotFoundState } from "@/components/ui/PageStates";
 
 type PropertyContact = {
     id: string;
@@ -71,6 +72,7 @@ export default function PropertyDetailPage() {
     const tFacilities = useTranslations("Facilities");
     const tLedger = useTranslations("Ledger");
     const tNav = useTranslations("Navigation");
+    const tState = useTranslations("PageState");
     const locale = useLocale();
     const propertyId = params.id as string;
 
@@ -83,6 +85,7 @@ export default function PropertyDetailPage() {
 
     const [activeTab, setActiveTab] = useState<"overview" | "buildings" | "units" | "leases" | "amenities" | "parking" | "accounts">("overview");
     const [property, setProperty] = useState<any>(null);
+    const [propertyLoad, setPropertyLoad] = useState<"loading" | "ok" | "notFound" | "forbidden" | "failed">("loading");
     const [buildings, setBuildings] = useState<any[]>([]);
     const [units, setUnits] = useState<any[]>([]);
     const [managers, setManagers] = useState<any[]>([]);
@@ -101,25 +104,43 @@ export default function PropertyDetailPage() {
         fetchContacts();
     }, [propertyId]);
 
+    // Break round 1, F5: a 404/403/500 (or a network failure) used to leave
+    // `property` null, and the page kept its skeleton forever. The load now
+    // ends in one of: loaded, not found, access denied, or failed (retry).
     const fetchProperty = async () => {
-        const res = await fetch(`/api/proxy/v1/properties/${propertyId}`);
-        if (res.ok) setProperty(await res.json());
+        setPropertyLoad("loading");
+        try {
+            const res = await fetch(`/api/proxy/v1/properties/${propertyId}`);
+            if (res.ok) {
+                setProperty(await res.json());
+                setPropertyLoad("ok");
+            } else if (res.status === 404 || res.status === 400) {
+                setPropertyLoad("notFound");
+            } else if (res.status === 403) {
+                setPropertyLoad("forbidden");
+            } else {
+                setPropertyLoad("failed");
+            }
+        } catch {
+            setPropertyLoad("failed");
+        }
     };
 
-    const fetchBuildings = async () => {
-        const res = await fetch(`/api/proxy/v1/buildings/property/${propertyId}`);
-        if (res.ok) setBuildings(await res.json());
+    // Secondary reads: a failure leaves the tab empty rather than breaking the page.
+    const fetchList = async (url: string, set: (rows: any[]) => void) => {
+        try {
+            const res = await fetch(url);
+            if (res.ok) set(await res.json());
+        } catch (err) {
+            console.error("Failed to fetch", url, err);
+        }
     };
 
-    const fetchUnits = async () => {
-        const res = await fetch(`/api/proxy/v1/units/property/${propertyId}`);
-        if (res.ok) setUnits(await res.json());
-    };
+    const fetchBuildings = () => fetchList(`/api/proxy/v1/buildings/property/${propertyId}`, setBuildings);
 
-    const fetchManagers = async () => {
-        const res = await fetch(`/api/proxy/v1/properties/${propertyId}/managers`);
-        if (res.ok) setManagers(await res.json());
-    };
+    const fetchUnits = () => fetchList(`/api/proxy/v1/units/property/${propertyId}`, setUnits);
+
+    const fetchManagers = () => fetchList(`/api/proxy/v1/properties/${propertyId}/managers`, setManagers);
 
     const fetchContacts = async () => {
         try {
@@ -187,6 +208,12 @@ export default function PropertyDetailPage() {
         const res = await fetch(`/api/proxy/v1/properties/${propertyId}/contacts/${contactId}`, { method: 'DELETE' });
         if (res.ok) fetchContacts();
     };
+
+    if (propertyLoad === "notFound") {
+        return <NotFoundState message={tState("propertyNotFound")} backHref="/dashboard/properties" backLabel={tState("backToProperties")} />;
+    }
+    if (propertyLoad === "forbidden") return <AccessDeniedState />;
+    if (propertyLoad === "failed") return <LoadFailedState onRetry={fetchProperty} />;
 
     if (!property) return (
         <div className="p-8 max-w-7xl mx-auto space-y-6">
