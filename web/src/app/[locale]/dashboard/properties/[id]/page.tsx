@@ -127,7 +127,7 @@ export default function PropertyDetailPage() {
     };
 
     // Secondary reads: a failure leaves the tab empty rather than breaking the page.
-    const fetchList = async (url: string, set: (rows: any[]) => void) => {
+    const fetchList = async <T,>(url: string, set: (rows: T[]) => void) => {
         try {
             const res = await fetch(url);
             if (res.ok) set(await res.json());
