@@ -145,7 +145,11 @@ function TicketsPageInner() {
     // A negative or zero page (a hand-edited or otherwise malformed bookmark,
     // e.g. `?page=-3`) is clamped to 1 rather than passed through to the API.
     const currentPage = Math.max(1, parseInt(pageParam, 10) || 1);
-    const itemsPerPage = parseInt(sizeParam, 10) || 25;
+    // A hand-edited or bookmarked size outside the API's accepted range
+    // (`?size=1000` — the API caps a page at 200 — or `?size=-5`) is clamped
+    // rather than passed through, so the page-count math never goes negative
+    // or silently exceeds what the server will actually return.
+    const itemsPerPage = Math.min(200, Math.max(1, parseInt(sizeParam, 10) || 25));
 
     // Filters
     // Scale PR B2 task 7: search, status and priority now live in the URL too
@@ -350,6 +354,17 @@ function TicketsPageInner() {
     });
 
     const totalItems = canPage ? pagedTotal : filtered.length;
+    // Controller ruling (Scale PR B2 task 7), client-side path only — the
+    // server-paged path already clamps itself in `fetchTickets` above. A
+    // bookmarked or now-stale `?page=` beyond the last page for the current
+    // (filtered) result set — e.g. a TENANT_USER/renter's `?page=9` with only
+    // a couple of tickets — clamps to the last page instead of rendering a
+    // blank table.
+    const clientTotalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+    useEffect(() => {
+        if (canPage) return;
+        if (filtered.length > 0 && currentPage > clientTotalPages) setPageParam(String(clientTotalPages));
+    }, [canPage, filtered.length, clientTotalPages, currentPage, setPageParam]);
     const paginated = canPage ? filtered : filtered.slice(
         (currentPage - 1) * itemsPerPage,
         currentPage * itemsPerPage,

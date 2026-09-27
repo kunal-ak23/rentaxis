@@ -21,8 +21,8 @@ import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
  *
  * Built on `GET /renters/{id}`, `GET /renters/{id}/leases` (tenant-scoped, and
  * narrowed to a property manager's own buildings by LeaseAccessPolicy),
- * `GET /leases/{id}/cheques` per contract, and `GET /tickets?renterId=`, the
- * caller's own ticket scope narrowed to this renter on the server.
+ * `GET /renters/{id}/cheques` once for every contract, and `GET /tickets?renterId=`,
+ * the caller's own ticket scope narrowed to this renter on the server.
  */
 
 type Renter = {

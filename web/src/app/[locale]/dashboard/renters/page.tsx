@@ -63,7 +63,11 @@ function RentersPageInner() {
     // A negative or zero page (a hand-edited or otherwise malformed bookmark,
     // e.g. `?page=-3`) is clamped to 1 rather than passed through to the API.
     const currentPage = Math.max(1, parseInt(pageParam, 10) || 1);
-    const itemsPerPage = parseInt(sizeParam, 10) || 25;
+    // A hand-edited or bookmarked size outside the API's accepted range
+    // (`?size=1000` — the API caps a page at 200 — or `?size=-5`) is clamped
+    // rather than passed through, so the page-count math never goes negative
+    // or silently exceeds what the server will actually return.
+    const itemsPerPage = Math.min(200, Math.max(1, parseInt(sizeParam, 10) || 25));
 
     // R1 P1-1: the box shows `draftSearch` immediately while typing; 300 ms
     // after the last keystroke it is written to the URL (which also resets
@@ -123,8 +127,14 @@ function RentersPageInner() {
                 setLoadError(null);
             } else {
                 // A non-2xx used to leave the state at its initial empty
-                // value, so a failed request rendered as "nothing here".
-                setLoadError(tCommon("loadFailedRenters"));
+                // value, so a failed request rendered as "nothing here". Same
+                // as the Tickets list: surface the server's own message (e.g.
+                // a SUPER_ADMIN with no organisation picked gets a 400 from
+                // Search.requireTenant() with a real explanation) and fall
+                // back to the generic text only when the body has none.
+                const body = await res.json().catch(() => null);
+                if (!isCurrent()) return;
+                setLoadError(body?.message || tCommon("loadFailedRenters"));
                 setRenters([]);
                 setTotalItems(0);
             }

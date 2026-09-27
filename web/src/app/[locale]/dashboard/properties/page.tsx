@@ -104,7 +104,11 @@ function PropertiesPageInner() {
     // A negative or zero page (a hand-edited or otherwise malformed bookmark,
     // e.g. `?page=-3`) is clamped to 1 rather than passed through.
     const currentPage = Math.max(1, parseInt(pageParam, 10) || 1);
-    const itemsPerPage = parseInt(sizeParam, 10) || 25;
+    // A hand-edited or bookmarked size outside the API's accepted range
+    // (`?size=1000` — the API caps a page at 200 — or `?size=-5`) is clamped
+    // rather than passed through, so the page-count math never goes negative
+    // or silently exceeds what the server will actually return.
+    const itemsPerPage = Math.min(200, Math.max(1, parseInt(sizeParam, 10) || 25));
     const [searchQuery, setSearchQueryParam] = useUrlState("q", "");
     const setSearchQuery = (v: string) => { setSearchQueryParam(v); setPageParam("1"); };
     const [confirmDialog, setConfirmDialog] = useState<{
