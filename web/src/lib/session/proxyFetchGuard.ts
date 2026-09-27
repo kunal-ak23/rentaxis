@@ -1,7 +1,8 @@
 import { EXPECTED_TENANT_HEADER, MUTATING_METHODS, NO_ORG, ORG_MISMATCH_HEADER, SESSION_ENDED_HEADER } from "./orgHeaders";
 
 /**
- * One wrapper around `window.fetch` for every browser call to /api/proxy.
+ * One wrapper around `window.fetch` for every browser call to /api/proxy (and
+ * /api/upload, which applies the proxy's rules itself).
  *
  * The dashboard makes ~150 raw `fetch("/api/proxy/…")` calls across ~75 files,
  * so session and organisation handling cannot live in each page. Installed
@@ -39,7 +40,10 @@ function proxyPath(input: RequestInfo | URL): string | null {
         return null;
     }
     if (url.origin !== window.location.origin) return null;
-    return url.pathname.startsWith("/api/proxy/") ? url.pathname : null;
+    // /api/upload forwards to the backend itself with the same identity rules
+    // (lib/session/backendIdentity.ts), so it gets the same expected-org stamp
+    // and the same session/org-mismatch handling.
+    return url.pathname.startsWith("/api/proxy/") || url.pathname === "/api/upload" ? url.pathname : null;
 }
 
 export function installProxyFetchGuard(opts: ProxyFetchGuardOptions): () => void {

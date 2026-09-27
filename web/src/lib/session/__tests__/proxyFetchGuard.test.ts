@@ -61,6 +61,17 @@ describe("installProxyFetchGuard — expected organisation (F3)", () => {
         expect(calls.map(c => headerOf(c, "X-Expected-Tenant-Id"))).toEqual([null, null, null]);
     });
 
+    it("stamps an upload through /api/upload too, keeping its multipart body", async () => {
+        const { onUnauthorized } = install();
+        const fd = new FormData();
+        fd.append("file", new Blob(["x"]), "a.pdf");
+        respond = () => new Response("", { status: 401, headers: { "X-Session-Ended": "1" } });
+        await fetch("/api/upload?path=/api/v1/leases/l1/attachments", { method: "POST", body: fd });
+        expect(headerOf(calls[0], "X-Expected-Tenant-Id")).toBe("brk1");
+        expect(calls[0].init?.body).toBe(fd);
+        expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    });
+
     it("stamps a Request object too", async () => {
         install();
         await fetch(new Request("http://localhost:3000/api/proxy/v1/renters", { method: "POST" }));
