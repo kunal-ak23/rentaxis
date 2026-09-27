@@ -184,6 +184,145 @@ class AmendmentAsAtIT extends AbstractPostgresIT {
                 .contains("includes 1 locked month(s) never recognised (3000.00)");
     }
 
+    /**
+     * S16-15: after an amendment the catch-up and the re-planned rent rows are still rent
+     * (chargeCode null), so the Recognition tab and the settlement statement count them:
+     * the live rent rows add up to the amended rent and none carries the RENT code.
+     */
+    @Test
+    void anAmendedLeasesRentRowsStayRent() {
+        UUID leaseId = amendedLease();
+        List<com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO> rows =
+                tx.execute(s -> recognition.scheduleFor(leaseId));
+        assertThat(rows).extracting(com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO::chargeCode)
+                .containsOnlyNulls();
+        BigDecimal rent = rows.stream()
+                .filter(r -> r.status() != com.datagami.rentaxis.domain.entity.enums.RecognitionStatus.CANCELLED && r.rent())
+                .map(com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO::amount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(rent).isEqualByComparingTo("43800.00");
+        // The catch-up is stamped as rent: no accounts of its own, like every rent segment.
+        String catchUps = "select count(*) from rent_segments where lease_id = ? and status = 'TRUNCATED'"
+                + " and day_rate = 0 and income_account_id is not null";
+        assertThat(jdbc.queryForObject(catchUps.replace("is not null", "is null"), Integer.class, leaseId)).isEqualTo(1);
+
+        // A catch-up written before the fix named the rent's accounts like a fee's (prod,
+        // since #372): the read side still calls it rent.
+        jdbc.update("update rent_segments set income_account_id = ?, deferral_account_id = ?"
+                + " where lease_id = ? and status = 'TRUNCATED' and day_rate = 0",
+                leaf(AccountRole.RENTAL_INCOME), leaf(AccountRole.ADVANCE_RENT), leaseId);
+        assertThat(jdbc.queryForObject(catchUps, Integer.class, leaseId)).isEqualTo(1);
+        List<com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO> after =
+                tx.execute(s -> recognition.scheduleFor(leaseId));
+        assertThat(after)
+                .extracting(com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO::chargeCode)
+                .containsOnlyNulls();
+    }
+
+    /**
+     * S16-15: a periodic fee's catch-up is still the fee's — it names its accounts and
+     * shows the fee's code — while the rent's stays rent. Rent cut to 29,200, parking
+     * raised from 3,650 to 7,300, the one-off fee absorbing the difference.
+     */
+    @Test
+    void anAmendedFeesCatchUpStaysTheFees() {
+        UUID leaseId = fixtures.draftLease(CONTRACT, START, END,
+                List.of(vatLine("RENT", "36500"), line("PARKING_FEE", "3650"), line("ADMIN_FEE", "10000")));
+        fixtures.generateGrid(leaseId, 4, START);
+        posting.post(leaseId);
+        recognition.runTo(AUG_31, false);
+        List<LeaseLineInput> amended = new ArrayList<>();
+        for (LeaseLineDTO l : tx.execute(s -> leaseService.getLines(leaseId))) {
+            String gross = switch (l.chargeTypeCode()) {
+                case "RENT" -> "29200";
+                case "PARKING_FEE" -> "7300";
+                default -> "14015";
+            };
+            amended.add(new LeaseLineInput(l.chargeTypeId(), null, new BigDecimal(gross), l.discountAmount(),
+                    l.narration(), l.vatApplicable(), l.creditAccountId(), l.periodStart(), l.periodEnd(), l.addendumId()));
+        }
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        posting.amendLines(leaseId, amended, "Rent and parking corrected");
+
+        List<com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO> rows =
+                tx.execute(s -> recognition.scheduleFor(leaseId));
+        Map<String, BigDecimal> byCode = new java.util.HashMap<>();
+        for (var r : rows) {
+            if (r.status() == com.datagami.rentaxis.domain.entity.enums.RecognitionStatus.CANCELLED) continue;
+            byCode.merge(String.valueOf(r.chargeCode()), r.amount(), BigDecimal::add);
+        }
+        assertThat(byCode).containsOnlyKeys("null", "PARKING_FEE");
+        assertThat(byCode.get("null")).isEqualByComparingTo("29200.00");
+        assertThat(byCode.get("PARKING_FEE")).isEqualByComparingTo("7300.00");
+        assertThat(jdbc.queryForObject("select count(*) from rent_segments where lease_id = ? and status = 'TRUNCATED'"
+                + " and day_rate = 0 and income_account_id is not null", Integer.class, leaseId)).isEqualTo(1);
+    }
+
+    /**
+     * #375 P3-1: a rent catch-up #372 wrote with accounts, on a lease amended again —
+     * the second amendment deletes the line it named. Its deferral (Advance Rent) still
+     * says rent.
+     */
+    @Test
+    void aPreFixRentCatchUpStaysRentAfterASecondAmendment() {
+        UUID leaseId = amendedLease();
+        jdbc.update("update rent_segments set income_account_id = ?, deferral_account_id = ?"
+                + " where lease_id = ? and status = 'TRUNCATED' and day_rate = 0",
+                leaf(AccountRole.RENTAL_INCOME), leaf(AccountRole.ADVANCE_RENT), leaseId);
+        amendAgainUnchanged(leaseId);
+        UUID catchUp = jdbc.queryForObject("select id from rent_segments where lease_id = ? and day_rate = 0"
+                + " and income_account_id is not null", UUID.class, leaseId);
+        assertThat(jdbc.queryForObject("select count(*) from lease_lines l join rent_segments s on s.lease_line_id = l.id"
+                + " where s.id = ?", Integer.class, catchUp)).as("its line is gone").isZero();
+        List<com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO> rows =
+                tx.execute(s -> recognition.scheduleFor(leaseId));
+        assertThat(rows).extracting(com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO::chargeCode)
+                .containsOnlyNulls();
+    }
+
+    /**
+     * #375 P3-2: two periodic fees earning into one income account, both replaced by an
+     * amendment — a row kept from before it cannot tell which fee it was, so it says the
+     * generic FEE rather than borrowing the first fee's name.
+     */
+    @Test
+    void aKeptFeeRowWhoseIncomeAccountTwoFeesShareSaysFee() {
+        UUID leaseId = fixtures.draftLease(CONTRACT, START, END,
+                List.of(vatLine("RENT", "36500"), line("PARKING_FEE", "3650"), line("MAINTENANCE", "7300"),
+                        line("ADMIN_FEE", "10000")));
+        jdbc.update("""
+                update lease_lines m set credit_account_id = (select p.credit_account_id from lease_lines p
+                    join charge_types t on t.id = p.charge_type_id where p.lease_id = m.lease_id and t.code = 'PARKING_FEE')
+                 where m.lease_id = ? and m.charge_type_id in (select id from charge_types where code = 'MAINTENANCE')""",
+                leaseId);
+        fixtures.generateGrid(leaseId, 4, START);
+        posting.post(leaseId);
+        recognition.runTo(AUG_31, false);
+        amendAgainUnchanged(leaseId);
+
+        java.util.Set<UUID> kept = new java.util.HashSet<>(jdbc.queryForList(
+                "select s.id from rent_segments s where s.lease_id = ? and s.day_rate <> 0 and s.income_account_id is not null"
+                        + " and not exists (select 1 from lease_lines l where l.id = s.lease_line_id)", UUID.class, leaseId));
+        assertThat(kept).hasSize(2);
+        List<com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO> rows =
+                tx.execute(s -> recognition.scheduleFor(leaseId));
+        assertThat(rows).filteredOn(r -> kept.contains(r.segmentId()))
+                .isNotEmpty()
+                .extracting(com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO::chargeCode)
+                .containsOnly("FEE");
+    }
+
+    /** The same lines again: the amendment replaces them without changing a figure. */
+    private void amendAgainUnchanged(UUID leaseId) {
+        List<LeaseLineInput> same = new ArrayList<>();
+        for (LeaseLineDTO l : tx.execute(s -> leaseService.getLines(leaseId))) {
+            same.add(new LeaseLineInput(l.chargeTypeId(), null, l.grossAmount(), l.discountAmount(),
+                    l.narration(), l.vatApplicable(), l.creditAccountId(), l.periodStart(), l.periodEnd(), l.addendumId()));
+        }
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        posting.amendLines(leaseId, same, "Re-keyed");
+    }
+
     /** Amends the rent to 43,800 on 27/09 (the fixed clock) after recognising through 31/08. */
     private UUID amendedLease() {
         UUID leaseId = lease(false);
