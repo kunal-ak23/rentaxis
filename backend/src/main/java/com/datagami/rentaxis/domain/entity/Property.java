@@ -49,4 +49,13 @@ public class Property extends BaseTenantEntity {
 
     @Column(name = "fixed_expenses")
     private BigDecimal fixedExpenses = BigDecimal.ZERO;
+
+    /**
+     * S16-14: the day this property's books open — its acquisition date, set when an
+     * acquisition cut-over brings it in after go-live. Nothing on the property is
+     * dated before it ({@code PostingService}). Null for every other property: the
+     * organisation's books start applies.
+     */
+    @Column(name = "books_start_date")
+    private java.time.LocalDate booksStartDate;
 }

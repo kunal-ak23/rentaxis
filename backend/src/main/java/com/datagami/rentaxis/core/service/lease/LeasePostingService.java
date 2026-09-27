@@ -319,14 +319,36 @@ public class LeasePostingService {
                 importGeneratedRows == null ? Set.of() : Set.copyOf(importGeneratedRows));
     }
 
+    /**
+     * S16-14: a running tenancy of a building acquired after go-live, posted by an
+     * acquisition cut-over batch. The cut-over post in every respect except the dates:
+     * the {@code TCO} and every {@code PDR} are dated no earlier than
+     * {@code acquiredOn} — nothing of the acquired property's is dated before its own
+     * books start — and its fees keep the lease's own timing (a rent-like fee is
+     * earned over the term, the previous owner's part of it taken out at the
+     * acquisition like the rent's).
+     */
+    @Transactional
+    public PostLeaseResponse postAcquired(UUID leaseId, UUID importBatchId, LocalDate acquiredOn) {
+        if (importBatchId == null || acquiredOn == null) {
+            throw new IllegalArgumentException("An acquisition post needs its batch and its acquisition date");
+        }
+        return post(leaseId, importBatchId, Preconditions.FOR_IMPORT_POST, false, Set.of(), acquiredOn);
+    }
+
     private PostLeaseResponse post(UUID leaseId, UUID importBatchId, Preconditions checks, boolean announce) {
         return post(leaseId, importBatchId, checks, announce, Set.of());
     }
 
     private PostLeaseResponse post(UUID leaseId, UUID importBatchId, Preconditions checks, boolean announce,
                                    Set<UUID> numberExempt) {
+        return post(leaseId, importBatchId, checks, announce, numberExempt, null);
+    }
+
+    private PostLeaseResponse post(UUID leaseId, UUID importBatchId, Preconditions checks, boolean announce,
+                                   Set<UUID> numberExempt, LocalDate notBefore) {
         Lease lease = lockLease(leaseId);
-        if (checks == Preconditions.FOR_IMPORT_POST && lease.getFeeTiming() != FeeTiming.AT_POSTING) {
+        if (checks == Preconditions.FOR_IMPORT_POST && notBefore == null && lease.getFeeTiming() != FeeTiming.AT_POSTING) {
             // F14-18: a cut-over replays PACT, which booked every fee as income on the
             // contract date. ContractImportLeasePoster sets this too; it is repeated
             // here so no cut-over path can defer a fee.
@@ -364,9 +386,10 @@ public class LeasePostingService {
         PostingPlan plan = validate(lease, lines, cheques, checks, numberExempt, carried);
         plan.throwIfRefused(propertyIdOf(lease));
 
-        JournalEntry tco = postTco(lease, plan.pairs(), lease.getContractDate(), contractNarration(lease),
-                importBatchId);
-        registerCheques(lease, cheques, importBatchId, numberExempt);
+        LocalDate contractOn = notBefore != null && lease.getContractDate().isBefore(notBefore)
+                ? notBefore : lease.getContractDate();
+        JournalEntry tco = postTco(lease, plan.pairs(), contractOn, contractNarration(lease), importBatchId);
+        registerCheques(lease, cheques, importBatchId, numberExempt, notBefore);
         // F14-11: the TCO put CONTRACT-timing VAT on the books, so it is the tax point
         // and its tax invoice is issued now. Never for a cut-over contract.
         if (importBatchId == null && checks != Preconditions.FOR_IMPORT_POST) {
@@ -1399,12 +1422,13 @@ public class LeasePostingService {
      * dimensions, same date rule, same receivable override — and two copies of that
      * would eventually differ on exactly the detail nobody re-reads.</p>
      */
-    private void registerCheques(Lease lease, List<Cheque> cheques, UUID importBatchId, Set<UUID> numberExempt) {
+    private void registerCheques(Lease lease, List<Cheque> cheques, UUID importBatchId, Set<UUID> numberExempt,
+                                 LocalDate notBefore) {
         for (Cheque c : cheques) {
             if (numberExempt.contains(c.getId())) {
                 chequeRegistrar.registerGeneratedByImport(lease, c);
             } else {
-                chequeRegistrar.register(lease, c, importBatchId);
+                chequeRegistrar.register(lease, c, importBatchId, notBefore);
             }
         }
     }

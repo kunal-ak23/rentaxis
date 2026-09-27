@@ -1142,6 +1142,86 @@ public class RecognitionService {
     }
 
     /**
+     * S16-14: a running tenancy of a building acquired on {@code a} — what it earned
+     * before {@code a} is the previous owner's. Each live segment that began before
+     * {@code a} is split there, per day ({@link ProrationEngine#earnedThrough}): the
+     * earned part is one POSTED row of a closed (TRUNCATED) segment, released by a
+     * {@code CIL} dated {@code a} from the deferral into the acquisition's opening
+     * position ({@code openingAccountId}) rather than into income; the rest is planned
+     * over {@code a} → the old end (remaining ÷ remaining days, the last period
+     * absorbing the rounding) and earned by the month-end close like any schedule.
+     * Nothing is dated before {@code a}.
+     *
+     * <p>{@code MANDATORY}: part of the lease's own all-or-nothing post, as
+     * {@link #catchUpLease} is.</p>
+     *
+     * @return the {@code CIL}s posted
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public int acquireFrom(UUID leaseId, LocalDate a, UUID openingAccountId, UUID importBatchId) {
+        Lease lease = lease(leaseId);
+        String reason = "Acquired " + a;
+        int posted = 0;
+        for (RentSegment seg : segments.findByLease_IdOrderByFromDateAsc(leaseId)) {
+            if (seg.getStatus() != SegmentStatus.ACTIVE || !seg.getFromDate().isBefore(a)) continue;
+            LocalDate end = seg.getToDate().isBefore(a) ? seg.getToDate() : a.minusDays(1);
+            BigDecimal earned = ProrationEngine.earnedThrough(seg.getAmount(), seg.getFromDate(), seg.getToDate(), end);
+            BigDecimal remaining = seg.getAmount().subtract(earned);
+            PostingRequest.AccountRef deferral = poster.deferralOf(seg, lease);
+            cancelWholeSegment(seg, a, reason);
+            if (remaining.signum() > 0 && !seg.getToDate().isBefore(a)) {
+                schedule(lease, copyOf(seg, a, seg.getToDate(), remaining, SegmentStatus.ACTIVE));
+            }
+            if (earned.signum() <= 0) continue;
+
+            RentSegment before = segments.save(copyOf(seg, seg.getFromDate(), end, earned, SegmentStatus.TRUNCATED));
+            RecognitionEntry entry = new RecognitionEntry();
+            entry.setTenantId(lease.getTenantId());
+            entry.setLease(lease);
+            entry.setSegment(before);
+            entry.setPeriodStart(before.getFromDate());
+            entry.setPeriodEnd(end);
+            entry.setDays(before.getDays());
+            entry.setAmount(earned);
+            entry.setStatus(RecognitionStatus.PLANNED);
+            entry = entries.saveAndFlush(entry);
+            JournalEntry cil = postingService.post(PostingRequest.ofPairs(
+                    com.datagami.rentaxis.domain.entity.enums.JournalDocType.CIL, a,
+                    "Earned by the previous owner before the acquisition on " + a,
+                    com.datagami.rentaxis.core.service.lease.LeaseChequeRegistrar.dimensions(lease, null),
+                    com.datagami.rentaxis.domain.entity.enums.JournalSourceType.RECOGNITION, entry.getId(), importBatchId,
+                    List.of(PostingRequest.pair(
+                            new PostingRequest.Line(deferral, PostingRequest.Side.DR, earned, null, null),
+                            new PostingRequest.Line(new PostingRequest.ById(openingAccountId), PostingRequest.Side.CR,
+                                    earned, null, null)))));
+            entry.setStatus(RecognitionStatus.POSTED);
+            entry.setJournalId(cil.getId());
+            entry.setPostedAt(java.time.Instant.now());
+            entries.save(entry);
+            posted++;
+        }
+        return posted;
+    }
+
+    /** A segment like {@code template} (its line and, for a fee, its accounts) over {@code from}..{@code to}. */
+    private static RentSegment copyOf(RentSegment template, LocalDate from, LocalDate to, BigDecimal amount,
+                                      SegmentStatus status) {
+        RentSegment segment = new RentSegment();
+        segment.setTenantId(template.getTenantId());
+        segment.setLease(template.getLease());
+        segment.setLeaseLineId(template.getLeaseLineId());
+        segment.setFromDate(from);
+        segment.setToDate(to);
+        segment.setAmount(amount);
+        segment.setDays(ProrationEngine.daysInclusive(from, to));
+        segment.setDayRate(status == SegmentStatus.ACTIVE ? ProrationEngine.dayRate(amount, from, to) : BigDecimal.ZERO);
+        segment.setStatus(status);
+        segment.setDeferralAccountId(template.getDeferralAccountId());
+        segment.setIncomeAccountId(template.getIncomeAccountId());
+        return segment;
+    }
+
+    /**
      * The candidate rows and the period lock, in one short read-only transaction.
      *
      * <p>A {@code TransactionTemplate} rather than a {@code @Transactional} method

@@ -1966,6 +1966,25 @@ public class ChequeService {
         return mode == ChequeMode.CASH ? AccountRole.CASH : AccountRole.BANK;
     }
 
+    /**
+     * S16-14: an instrument the previous owner of an acquired building banked before
+     * the acquisition — cleared on the dates the sheet gives, with <b>no journal of
+     * its own</b>: the money went to the previous owner, so the acquisition's opening
+     * position (not our bank) takes the receivable the PDR raised. Only
+     * {@code ContractImportLeasePoster} calls this, inside the lease's own post.
+     */
+    public void markSettledBeforeAcquisition(Cheque cheque, LocalDate depositedOn, LocalDate clearedOn) {
+        if (cheque.getStatus() != ChequeStatus.REGISTERED) {
+            throw new BusinessRuleViolationException("Cheque #" + cheque.getSeqNo() + " is " + cheque.getStatus()
+                    + "; only a registered instrument can be settled with the previous owner");
+        }
+        cheque.setDepositedAt(depositedOn);
+        cheque.setClearedAt(clearedOn);
+        cheque.setStatus(ChequeStatus.CLEARED);
+        cheque.setStatusChangedAt(Instant.now());
+        chequeRepository.save(cheque);
+    }
+
     private static void moveTo(Cheque cheque, ChequeStatus status, String notes) {
         cheque.setStatus(status);
         // The clock, not the transition's date: the date columns say when the money

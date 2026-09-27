@@ -50,6 +50,14 @@ public class PostingService {
         this.resolver = resolver; this.numbers = numbers; this.fiscal = fiscal; this.bankLock = bankLock;
     }
 
+    /** S16-14: a property's own books start. Setter-injected, like the year closes. */
+    private com.datagami.rentaxis.domain.repository.PropertyRepository properties;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setProperties(com.datagami.rentaxis.domain.repository.PropertyRepository properties) {
+        this.properties = properties;
+    }
+
     /** Setter-injected so hand-built instances in unit tests need no new argument. */
     private com.datagami.rentaxis.domain.repository.FiscalYearCloseRepository yearCloses;
 
@@ -139,6 +147,7 @@ public class PostingService {
             throw new BusinessRuleViolationException("Journal entry is not balanced: debit " + dr + " vs credit " + cr);
         }
         requireBalancedPerProperty(r, e.getLines());
+        requireOnOrAfterPropertyBooksStart(r.entryDate(), e.getLines());
         // Finance-ops spec §4: the bank lock, no doc-type exemptions. Before the
         // entry number, so a posting waiting on a finalize (FOR SHARE against its
         // FOR UPDATE) never holds the number sequence while it waits.
@@ -150,6 +159,24 @@ public class PostingService {
         e.setEntryNumber(numbers.next(r.docType(), r.entryDate()));
         linkContraAccounts(pairs);
         return entries.save(e);
+    }
+
+    /**
+     * S16-14: a property brought in by an acquisition cut-over has its own books
+     * start — the acquisition date. Its history before that belongs to the previous
+     * owner and is summed up in the acquisition's opening position, so nothing on the
+     * property may be dated before it, whatever posts it (an import batch included).
+     */
+    private void requireOnOrAfterPropertyBooksStart(LocalDate date, List<JournalLine> posted) {
+        if (properties == null || date == null) return;
+        java.util.Set<UUID> ids = new java.util.HashSet<>();
+        for (JournalLine l : posted) if (l.getPropertyId() != null) ids.add(l.getPropertyId());
+        if (ids.isEmpty()) return;
+        List<com.datagami.rentaxis.domain.entity.Property> later = properties.findStartingAfter(ids, date);
+        if (later.isEmpty()) return;
+        com.datagami.rentaxis.domain.entity.Property p = later.get(0);
+        throw new BusinessRuleViolationException("Cannot post on " + date + ": the books of " + p.getNameEn()
+                + " start on " + p.getBooksStartDate() + ", the day it was acquired.");
     }
 
     /**

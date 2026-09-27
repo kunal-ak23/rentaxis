@@ -124,10 +124,22 @@ public class ImportBatchController {
      * id is a 404 rather than a job that fails a second later. The caller's
      * authentication travels with the job: see {@link ContractImportPostJobService}.</p>
      */
+    /**
+     * S16-14: optional. {@code acquisitionDate} makes the batch an acquisition
+     * cut-over — buildings bought on that day, after go-live, brought in with an
+     * opening position of their own dated that day.
+     */
+    public record PostBatchDTO(java.time.LocalDate acquisitionDate) {}
+
     @PostMapping("/{id}/post")
-    public ResponseEntity<PostStartedDTO> post(@PathVariable UUID id) {
+    public ResponseEntity<PostStartedDTO> post(@PathVariable UUID id,
+                                               @org.springframework.web.bind.annotation.RequestBody(required = false)
+                                               PostBatchDTO body) {
         requireTenantSelected();
         batches.get(id);   // 404 for another organisation's id, before a job row exists
+        if (body != null && body.acquisitionDate() != null) {
+            batches.setAcquisitionDate(id, body.acquisitionDate());
+        }
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         ImportJob job = postJobs.start(id, currentUserId(auth));
         postJobs.runAsync(id, job.getId(), TenantContextHolder.getTenantId(), auth);

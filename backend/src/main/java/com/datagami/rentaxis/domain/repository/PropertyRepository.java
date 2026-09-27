@@ -14,6 +14,15 @@ import java.util.UUID;
 public interface PropertyRepository extends JpaRepository<Property, UUID> {
 
     /**
+     * S16-14: the properties among {@code ids} whose own books open after {@code date}
+     * (an acquisition's books start) — a journal dated {@code date} may not touch them.
+     */
+    @org.springframework.data.jpa.repository.Query(
+            "select p from Property p where p.id in :ids and p.booksStartDate > :date")
+    java.util.List<Property> findStartingAfter(@org.springframework.data.repository.query.Param("ids") java.util.Collection<UUID> ids,
+                                              @org.springframework.data.repository.query.Param("date") java.time.LocalDate date);
+
+    /**
      * How many properties the caller may see — the dashboard's first tile.
      *
      * <p>{@code unrestricted}/{@code propertyIds} are the register's scoping shape

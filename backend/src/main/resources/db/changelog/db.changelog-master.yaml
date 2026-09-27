@@ -309,3 +309,5 @@ databaseChangeLog:
       file: db/changelog/changesets/150-journal-lines-cells-index.yaml
   - include:
       file: db/changelog/changesets/151-vtp-kind-amendment.yaml
+  - include:
+      file: db/changelog/changesets/152-acquisition-books-start.yaml
