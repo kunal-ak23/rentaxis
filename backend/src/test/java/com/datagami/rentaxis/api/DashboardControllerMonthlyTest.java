@@ -54,6 +54,11 @@ class DashboardControllerMonthlyTest {
                 new MonthlyCollectionDTO("Jun", "2026-06", new BigDecimal("3500"), new BigDecimal("2500"))
         ));
         doAnswer(inv -> {
+            // Stands in for ApiSecurityFilter, so it does that filter's job of
+            // setting the request's tenant: TenantContextResetFilter clears one
+            // set on the test thread, and an org-scoped endpoint with no tenant
+            // is now a 400 (OrganisationRequiredInterceptor, break round 1 F7).
+            TenantContextHolder.setTenantId(tenantId);
             jakarta.servlet.FilterChain chain = inv.getArgument(2);
             chain.doFilter(inv.getArgument(0), inv.getArgument(1));
             return null;
