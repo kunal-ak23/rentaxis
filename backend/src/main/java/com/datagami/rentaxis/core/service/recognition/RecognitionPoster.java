@@ -284,6 +284,16 @@ public class RecognitionPoster {
         return resolve(deferralOf(segment, lease), lease);
     }
 
+    /**
+     * S16-15: the property's Advance Rent leaf (null when unmapped) — what a rent
+     * segment defers into, whatever accounts it names. Read-only; call inside a transaction.
+     */
+    public UUID advanceRentLeafOf(UUID propertyId) {
+        com.datagami.rentaxis.domain.entity.Account a =
+                accountResolver.resolveOrNull(AccountRole.ADVANCE_RENT, propertyId);
+        return a == null ? null : a.getId();
+    }
+
     /** Amendment catch-up: the leaf a segment earns into, resolved to an account id. */
     public UUID incomeAccountId(RentSegment segment, Lease lease) {
         return segment.getIncomeAccountId() != null ? segment.getIncomeAccountId() : resolve(incomeOf(lease), lease);
