@@ -280,11 +280,15 @@ public class RecognitionService {
         Map<List<UUID>, UUID> lineOfKey = new java.util.LinkedHashMap<>();
         Map<List<UUID>, LocalDate> fromOfKey = new java.util.LinkedHashMap<>();
         Map<UUID, List<UUID>> keyOfSegment = new HashMap<>();
+        // S16-15: which keys are a periodic fee's — only those catch-ups name their
+        // accounts; a rent catch-up stays a rent row (no income account = rent).
+        java.util.Set<List<UUID>> feeKeys = new java.util.HashSet<>();
         for (RentSegment seg : segments.findByLease_IdOrderByFromDateAsc(leaseId)) {
             if (seg.getStatus() == SegmentStatus.CANCELLED) continue;
             List<UUID> key = List.of(poster.deferralAccountId(seg, lease), poster.incomeAccountId(seg, lease));
             keyOfSegment.put(seg.getId(), key);
             lineOfKey.putIfAbsent(key, seg.getLeaseLineId());
+            if (seg.getIncomeAccountId() != null) feeKeys.add(key);
             fromOfKey.merge(key, seg.getFromDate(), (x, y) -> x.isBefore(y) ? x : y);
             if (seg.getStatus() != SegmentStatus.ACTIVE) continue;
             if (!seg.getFromDate().isBefore(d)) {
@@ -343,6 +347,7 @@ public class RecognitionService {
             RentSegment probe = newSegment(lease, line, w.fee(), w.from(), w.to(), w.net());
             List<UUID> key = List.of(poster.deferralAccountId(probe, lease), poster.incomeAccountId(probe, lease));
             lineOfKey.put(key, line.getId());
+            if (w.fee()) feeKeys.add(key);
             fromOfKey.merge(key, w.from(), (x, y) -> x.isBefore(y) ? x : y);
             newEarned.merge(key, earned, BigDecimal::add);
             BigDecimal remaining = w.net().subtract(earned);
@@ -363,7 +368,7 @@ public class RecognitionService {
                     ? reason + "; includes " + foldedMonths.get(key) + " locked month(s) never recognised ("
                             + folded.get(key).setScale(2, RoundingMode.HALF_UP).toPlainString() + ")"
                     : reason;
-            postCatchUp(lease, key, lineOfKey.get(key), fromOfKey.get(key), d, diff, why);
+            postCatchUp(lease, key, feeKeys.contains(key), lineOfKey.get(key), fromOfKey.get(key), d, diff, why);
         }
     }
 
@@ -456,7 +461,7 @@ public class RecognitionService {
      * Recorded as a POSTED row of a closed (TRUNCATED) catch-up segment over the
      * elapsed window, so it shows on the schedule and a later amendment counts it.
      */
-    private void postCatchUp(Lease lease, List<UUID> key, UUID lineId, LocalDate from, LocalDate d,
+    private void postCatchUp(Lease lease, List<UUID> key, boolean fee, UUID lineId, LocalDate from, LocalDate d,
                              BigDecimal diff, String reason) {
         LocalDate end = d.minusDays(1);
         LocalDate start = from == null || from.isAfter(end) ? end : from;
@@ -470,8 +475,12 @@ public class RecognitionService {
         seg.setDays(ProrationEngine.daysInclusive(start, end));
         seg.setDayRate(BigDecimal.ZERO);
         seg.setStatus(SegmentStatus.TRUNCATED);
-        seg.setDeferralAccountId(key.get(0));
-        seg.setIncomeAccountId(key.get(1));
+        if (fee) {
+            // Only a fee's segment names its accounts (F14-18); a rent segment resolves
+            // them from its line and the property's roles — to this same key.
+            seg.setDeferralAccountId(key.get(0));
+            seg.setIncomeAccountId(key.get(1));
+        }
         seg = segments.save(seg);
 
         RecognitionEntry entry = new RecognitionEntry();
@@ -1291,16 +1300,35 @@ public class RecognitionService {
         List<UUID> segmentIds = rows.stream()
                 .map(r -> idOf(r.getSegment(), RentSegment::getId)).filter(Objects::nonNull).distinct().toList();
         Map<UUID, LeaseLine> feeLineBySegment = new HashMap<>();
+        java.util.Set<UUID> feeSegments = new java.util.HashSet<>();
         if (!segmentIds.isEmpty()) {
-            Map<UUID, UUID> lineOfFeeSegment = new HashMap<>();
+            Map<UUID, RentSegment> feeSegmentById = new HashMap<>();
             segments.findAllById(segmentIds).forEach(sg -> {
-                if (sg.getIncomeAccountId() != null) lineOfFeeSegment.put(sg.getId(), sg.getLeaseLineId());
+                if (sg.getIncomeAccountId() != null) feeSegmentById.put(sg.getId(), sg);
             });
-            if (!lineOfFeeSegment.isEmpty()) {
+            if (!feeSegmentById.isEmpty()) {
                 Map<UUID, LeaseLine> lines = new HashMap<>();
-                leaseLines.findAllById(lineOfFeeSegment.values()).forEach(l -> lines.put(l.getId(), l));
-                lineOfFeeSegment.forEach((sid, lid) -> {
-                    LeaseLine l = lines.get(lid);
+                leaseLines.findAllById(feeSegmentById.values().stream().map(RentSegment::getLeaseLineId)
+                        .filter(Objects::nonNull).distinct().toList()).forEach(l -> lines.put(l.getId(), l));
+                Map<UUID, List<LeaseLine>> currentLines = new HashMap<>();
+                feeSegmentById.forEach((sid, sg) -> {
+                    LeaseLine l = sg.getLeaseLineId() == null ? null : lines.get(sg.getLeaseLineId());
+                    if (l == null) {
+                        // S16-15: an amendment replaces the lease's lines, so a segment kept
+                        // from before it names a line that is gone — still the fee it was:
+                        // the lease's current line earning into the same income account.
+                        UUID leaseId = idOf(sg.getLease(), Lease::getId);
+                        l = leaseId == null ? null : currentLines
+                                .computeIfAbsent(leaseId, leaseLines::findByLease_IdOrderBySeqNoAsc).stream()
+                                .filter(c -> c.getCreditAccount() != null
+                                        && sg.getIncomeAccountId().equals(c.getCreditAccount().getId()))
+                                .findFirst().orElse(null);
+                    }
+                    // S16-15: a rent catch-up written by #372 named its accounts like a
+                    // fee's; it is still rent (tolerant read, no data fix).
+                    if (l != null && l.getChargeType() != null
+                            && l.getChargeType().getBehaviour() == ChargeBehaviour.RENT) return;
+                    feeSegments.add(sid);
                     if (l != null) feeLineBySegment.put(sid, l);
                 });
             }
@@ -1309,6 +1337,7 @@ public class RecognitionService {
         return rows.stream().map(r -> toDto(r,
                 r.getJournalId() == null ? null : numbers.get(r.getJournalId()),
                 where.getOrDefault(idOf(r.getLease(), Lease::getId), Where.UNKNOWN),
+                feeSegments.contains(idOf(r.getSegment(), RentSegment::getId)),
                 feeLineBySegment.get(idOf(r.getSegment(), RentSegment::getId)))).toList();
     }
 
@@ -1325,7 +1354,8 @@ public class RecognitionService {
                 unit == null ? null : unit.getUnitNumber());
     }
 
-    private static RecognitionEntryDTO toDto(RecognitionEntry r, String journalNumber, Where where, LeaseLine feeLine) {
+    private static RecognitionEntryDTO toDto(RecognitionEntry r, String journalNumber, Where where, boolean fee,
+                                             LeaseLine feeLine) {
         var type = feeLine == null ? null : feeLine.getChargeType();
         return new RecognitionEntryDTO(
                 r.getId(),
@@ -1342,7 +1372,7 @@ public class RecognitionService {
                 r.getJournalId(),
                 journalNumber,
                 r.getPostedAt(),
-                feeLine == null ? null : (type == null ? "FEE" : type.getCode()),
+                !fee ? null : (type == null ? "FEE" : type.getCode()),
                 type == null ? null : type.getNameEn(),
                 type == null ? null : type.getNameAr());
     }
