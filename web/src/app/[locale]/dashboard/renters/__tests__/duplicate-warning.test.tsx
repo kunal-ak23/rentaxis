@@ -90,13 +90,64 @@ describe("Add Tenant duplicate warning", () => {
         expect(searches.length).toBeGreaterThan(0);
     });
 
-    it("creates only after Create anyway", async () => {
+    it("creates only after a deliberate Create anyway", async () => {
         await fill("sweep@example.com", "");
         await screen.findByTestId("renter-duplicate-warning");
         expect(posts).toBe(0);
-        fireEvent.click(screen.getByText("createAnyway"));
+        const anyway = screen.getByText("createAnyway").closest("button")!;
+        await waitFor(() => expect(anyway.getAttribute("aria-disabled")).toBe("false"));
+        fireEvent.click(anyway);
         await waitFor(() => expect(posts).toBe(1));
         expect(await screen.findByText("noInviteBody")).toBeTruthy();
+    });
+
+    // Review fix 1: the check resolves fast, "Create anyway" renders where
+    // "Create" was, and the second click of the same double-click landed on it.
+    it("a double-click on Create shows the warning and creates nothing", async () => {
+        await fill("sweep@example.com", "");
+        await screen.findByTestId("renter-duplicate-warning");
+        // The second click of the double-click, on the same spot.
+        fireEvent.click(screen.getByText("createAnyway"), { detail: 2 });
+        fireEvent.click(screen.getByText("createAnyway"));
+        await new Promise((r) => setTimeout(r, 50));
+        expect(posts).toBe(0);
+        expect(screen.getByTestId("renter-duplicate-warning")).toBeTruthy();
+        expect(screen.getByText("createAnyway").closest("button")!.getAttribute("aria-disabled")).toBe("true");
+    });
+
+    it("a mouse click on Create anyway counts only if it was pressed after the warning appeared", async () => {
+        await fill("sweep@example.com", "");
+        await screen.findByTestId("renter-duplicate-warning");
+        const anyway = screen.getByText("createAnyway").closest("button")!;
+        await waitFor(() => expect(anyway.getAttribute("aria-disabled")).toBe("false"));
+        // A click (detail 1) with no press on this button since the warning: ignored.
+        fireEvent.click(anyway, { detail: 1 });
+        await new Promise((r) => setTimeout(r, 20));
+        expect(posts).toBe(0);
+        // Pressed and released on it: counts.
+        fireEvent.pointerDown(anyway);
+        fireEvent.click(anyway, { detail: 1 });
+        await waitFor(() => expect(posts).toBe(1));
+    });
+
+    // Review fix 3: a check that resolves after the email/phone changed is stale.
+    it("ignores a duplicate check whose email changed while it ran", async () => {
+        let release: (() => void) | null = null;
+        const fetchImpl = global.fetch as unknown as (u: unknown, i?: RequestInit) => Promise<Response>;
+        global.fetch = vi.fn(async (url: unknown, init?: RequestInit) => {
+            if (String(url).includes("/v1/renters/search")) {
+                await new Promise<void>((r) => { release = r; });
+            }
+            return fetchImpl(url, init);
+        }) as unknown as typeof fetch;
+
+        await fill("sweep@example.com", "");
+        await waitFor(() => expect(release).not.toBeNull());
+        fireEvent.change(screen.getByPlaceholderText("john@example.com"), { target: { value: "other@example.com" } });
+        release!();
+        await waitFor(() => expect(screen.getByText("create").closest("button")!.disabled).toBe(false));
+        expect(screen.queryByTestId("renter-duplicate-warning")).toBeNull();
+        expect(posts).toBe(0);
     });
 
     it("editing the email clears the warning so the check runs again", async () => {

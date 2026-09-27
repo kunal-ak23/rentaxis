@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { findDuplicateRenters, normaliseEmail, phoneDigits, phonesMatch } from "../duplicates";
+import { findDuplicateRenters, nationalNumber, normaliseEmail, phoneDigits, phonesMatch } from "../duplicates";
 
 const jsonRes = (body: unknown, ok = true, status = 200) =>
     ({ ok, status, json: async () => body, text: async () => JSON.stringify(body) }) as unknown as Response;
@@ -20,6 +20,32 @@ describe("renter duplicate matching", () => {
         // Short numbers compare exactly — "4567" is not the same phone as "0501234567".
         expect(phonesMatch("4567", "0501234567")).toBe(false);
         expect(phonesMatch("", "")).toBe(false);
+    });
+
+    // Review fix: a landline has an 8-digit national number, so "last 9 digits"
+    // missed it. Every form is reduced to the national number first.
+    it("reduces +971 / 00971 / 971 / 0 prefixes to the national number", () => {
+        expect(nationalNumber("+971 50 123 4567")).toBe("501234567");
+        expect(nationalNumber("00971 50 123 4567")).toBe("501234567");
+        expect(nationalNumber("971501234567")).toBe("501234567");
+        expect(nationalNumber("050-123-4567")).toBe("501234567");
+        expect(nationalNumber("+971 4 123 4567")).toBe("41234567");
+        expect(nationalNumber("04 123 4567")).toBe("41234567");
+        expect(nationalNumber("+971 (0) 4 123 4567")).toBe("41234567");
+    });
+
+    it("matches landlines as well as mobiles across formats", () => {
+        expect(phonesMatch("+971 4 123 4567", "04 123 4567")).toBe(true);
+        expect(phonesMatch("00971 4 1234567", "+971-4-123-4567")).toBe(true);
+        expect(phonesMatch("+971 4 123 4567", "04 123 4568")).toBe(false);
+        expect(phonesMatch("+971 50 123 4567", "971 50 123 4567")).toBe(true);
+        // A landline is not a mobile that happens to share its last 8 digits.
+        expect(phonesMatch("04 123 4567", "050 4123 4567".replace(/ /g, ""))).toBe(false);
+        // A foreign number keeps its country code: +44 and 0044 agree, a UAE number does not.
+        expect(phonesMatch("+44 20 7946 0958", "0044 20 7946 0958")).toBe(true);
+        expect(phonesMatch("+44 20 7946 0958", "020 7946 0958")).toBe(false);
+        // Swiss +41 23 4567 shares its digits with the Dubai landline 04 123 4567's national number.
+        expect(phonesMatch("+41 23 4567", "04 123 4567")).toBe(false);
     });
 
     it("finds an existing renter by email via the server search", async () => {

@@ -16,22 +16,41 @@ export const normaliseEmail = (email: string | null | undefined) => (email ?? ""
 /** Only the digits of a phone number ("+971 50-123 4567" → "971501234567"). */
 export const phoneDigits = (phone: string | null | undefined) => (phone ?? "").replace(/\D/g, "");
 
-/** A UAE number's national significant number is 9 digits (5X XXX XXXX). */
-const NATIONAL_DIGITS = 9;
+const UAE = "971";
 
 /**
- * Two phones are the same number when their digits are equal, or — both being
- * full numbers — when their last 9 digits are, so "+971 50 123 4567",
- * "00971501234567" and "050-123-4567" all match. Short fragments compare
- * exactly (a 4-digit extension is not "the same phone" as a mobile number).
+ * A phone reduced to a comparable form. A UAE number (written +971 …, 00971 …,
+ * 971 …, or with the trunk 0 as 0X …) becomes its national number — "501234567"
+ * for a mobile, "41234567" for a Dubai landline. A foreign number keeps its
+ * country code behind a "+" (so +44 … and 0044 … agree, and neither equals a
+ * UAE number). Anything else is its bare digits.
+ */
+export function nationalNumber(phone: string | null | undefined): string {
+    const raw = (phone ?? "").trim();
+    const digits = phoneDigits(raw);
+    if (!digits) return "";
+    let international: string | null = null;
+    if (raw.startsWith("+")) international = digits;
+    else if (digits.startsWith("00")) international = digits.slice(2);
+    // "971501234567" typed without the +: long enough to hold a country code.
+    else if (digits.startsWith(UAE) && digits.length >= 11) international = digits;
+    if (international !== null) {
+        if (!international.startsWith(UAE)) return `+${international}`;
+        return international.slice(UAE.length).replace(/^0/, ""); // "+971 (0) 4 …"
+    }
+    return digits.replace(/^0/, "");
+}
+
+/**
+ * Two phones are the same number when their national numbers (see
+ * {@link nationalNumber}) are equal, so "+971 50 123 4567", "00971501234567"
+ * and "050-123-4567" match, as do "+971 4 123 4567" and "04 123 4567". A short
+ * fragment only matches itself (a 4-digit extension is not a mobile number).
  */
 export function phonesMatch(a: string | null | undefined, b: string | null | undefined): boolean {
-    const da = phoneDigits(a);
-    const db = phoneDigits(b);
-    if (!da || !db) return false;
-    if (da === db) return true;
-    if (da.length < NATIONAL_DIGITS || db.length < NATIONAL_DIGITS) return false;
-    return da.slice(-NATIONAL_DIGITS) === db.slice(-NATIONAL_DIGITS);
+    const na = nationalNumber(a);
+    const nb = nationalNumber(b);
+    return na !== "" && na === nb;
 }
 
 /** Server search page size: the lookup endpoint's own maximum. */

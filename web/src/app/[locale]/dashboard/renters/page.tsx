@@ -13,7 +13,10 @@ import { Pagination } from "@/components/ui/Pagination";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { useUrlState } from "@/hooks/useUrlState";
 import type { Page } from "@/lib/api/ledger";
-import { findDuplicateRenters, type DuplicateMatch } from "@/lib/renters/duplicates";
+import { findDuplicateRenters, normaliseEmail, type DuplicateMatch } from "@/lib/renters/duplicates";
+
+/** How long "Create anyway" stays unarmed after the duplicate warning appears. */
+const CREATE_ANYWAY_ARM_MS = 600;
 
 type Renter = {
     id: string;
@@ -167,6 +170,33 @@ function RentersPageInner() {
     // email or phone. While non-null the form shows a warning and only
     // "Create anyway" creates; editing the email or phone clears it.
     const [duplicates, setDuplicates] = useState<DuplicateMatch[] | null>(null);
+    // Review fix 1: the check resolves fast and "Create anyway" renders where
+    // "Create" was, so the second click of a double-click used to land on it.
+    // It is armed only ARM_MS after the warning appears, and a mouse click
+    // (event.detail > 0) counts only if it was pressed on the button after
+    // that. Keyboard activation (detail 0) needs only the delay.
+    const [anywayArmed, setAnywayArmed] = useState(false);
+    const warningShownAtRef = useRef(0);
+    const anywayPressedAtRef = useRef(-1);
+    useEffect(() => {
+        setAnywayArmed(false);
+        if (!duplicates || duplicates.length === 0) return;
+        warningShownAtRef.current = performance.now();
+        anywayPressedAtRef.current = -1;
+        const timer = setTimeout(() => setAnywayArmed(true), CREATE_ANYWAY_ARM_MS);
+        return () => clearTimeout(timer);
+    }, [duplicates]);
+    const confirmCreateAnyway = (ev: React.MouseEvent) => {
+        if (!anywayArmed) return;
+        if (ev.detail > 0 && anywayPressedAtRef.current < warningShownAtRef.current) return;
+        void submitRenter(true);
+    };
+    // Review fix 3: the values a pending duplicate check was run for are
+    // compared with the form's current ones when it resolves.
+    const formDataRef = useRef(formData);
+    useEffect(() => {
+        formDataRef.current = formData;
+    }, [formData]);
 
     const closeForm = () => {
         setShowForm(false);
@@ -187,8 +217,16 @@ function RentersPageInner() {
             if (!createAnyway) {
                 // A failed lookup must not block creating a renter: warn when
                 // we can, create when we cannot check.
-                const matches = await findDuplicateRenters({ email: formData.email, phone: formData.phone })
+                const checked = { email: formData.email, phone: formData.phone };
+                const matches = await findDuplicateRenters(checked)
                     .catch((err) => { console.error(err); return [] as DuplicateMatch[]; });
+                // The email or phone changed while the check ran: its answer
+                // is about other values, and neither warns nor creates. The
+                // next Create checks what is in the form now.
+                const now = formDataRef.current;
+                if (normaliseEmail(now.email) !== normaliseEmail(checked.email) || now.phone.trim() !== checked.phone.trim()) {
+                    return;
+                }
                 if (matches.length > 0) {
                     setDuplicates(matches);
                     return;
@@ -417,7 +455,20 @@ function RentersPageInner() {
                             <div className="col-span-2 flex justify-end gap-3 mt-4">
                                 <button type="button" onClick={closeForm} className="cursor-pointer px-6 py-3 text-xs font-bold text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">{t("cancel")}</button>
                                 {duplicates && duplicates.length > 0 ? (
-                                    <button type="button" onClick={() => void submitRenter(true)} disabled={submitting} aria-busy={submitting} className="cursor-pointer px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed">{t("createAnyway")}</button>
+                                    <button
+                                        type="button"
+                                        onPointerDown={() => { anywayPressedAtRef.current = performance.now(); }}
+                                        onClick={confirmCreateAnyway}
+                                        disabled={submitting}
+                                        aria-disabled={!anywayArmed}
+                                        aria-busy={submitting}
+                                        className={cn(
+                                            "px-8 py-3 rounded-xl text-xs font-bold border border-warning text-warning bg-warning/10 transition-all duration-200 focus:ring-2 focus:ring-warning/30 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed",
+                                            anywayArmed ? "cursor-pointer hover:bg-warning/20" : "opacity-60 cursor-wait",
+                                        )}
+                                    >
+                                        {t("createAnyway")}
+                                    </button>
                                 ) : (
                                 <button type="submit" disabled={submitting} aria-busy={submitting} className="cursor-pointer px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed">{t("create")}</button>
                                 )}
