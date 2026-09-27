@@ -4668,6 +4668,9 @@
     "orgChangedTitle": "Organisation changed in another tab",
     "orgChangedBody": "Another tab switched to a different organisation. Reload this tab before you continue, so nothing is saved to or read from the wrong organisation.",
     "reload": "Reload",
-    "sessionExpired": "Your session has ended. Taking you to sign in…"
+    "sessionExpired": "Your session has ended. Taking you to sign in…",
+    "orgUnavailableTitle": "This organisation is not available",
+    "orgUnavailableBody": "The organisation this tab was using is inactive or no longer open to you. Reload to continue in your own organisation.",
+    "goToOrganisations": "Choose an organisation"
   }
 }
