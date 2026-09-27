@@ -30,8 +30,6 @@ class OrganisationRequiredIT extends AbstractCallerIdentityIT {
 
     private static final List<String> ORG_SCOPED_READS = List.of(
             "/api/v1/finance/fiscal-settings",
-            "/api/v1/cheques/summary",
-            "/api/v1/dashboard/summary",
             "/api/v1/finance/journals",
             "/api/v1/properties",
             "/api/v1/renters",
@@ -119,5 +117,14 @@ class OrganisationRequiredIT extends AbstractCallerIdentityIT {
         assertThat(call(superAdmin, "GET", "/api/admin/tenants/" + org + "/properties", null).getBody())
                 .doesNotContain(otherProperty.getId().toString());
         assertThat(call(admin, "GET", uri, org).getStatusCode().value()).as("SUPER_ADMIN only").isEqualTo(403);
+    }
+
+    /** Batch 5 ruling: PR #366 P2-3's platform totals stay readable for a SUPER_ADMIN with no organisation. */
+    @Test
+    void aSuperAdminKeepsThePlatformTotalsWithNoOrganisation() {
+        for (String uri : List.of("/api/v1/dashboard/summary", "/api/v1/cheques/summary", "/api/v1/cheques/aging")) {
+            assertThat(call(superAdmin, "GET", uri, null).getStatusCode().value()).as(uri).isEqualTo(200);
+            assertThat(call(superAdmin, "GET", uri, org).getStatusCode().value()).as(uri + " with an org").isEqualTo(200);
+        }
     }
 }

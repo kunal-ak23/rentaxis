@@ -362,15 +362,13 @@ class ScaleListEndpointsIT extends AbstractPostgresIT {
     /**
      * PR #366 review P2-3. A SUPER_ADMIN with no organisation selected: the new paged /
      * search / names endpoints refuse (400, "Select an organisation first") rather than
-     * answer an empty page.
-     *
-     * <p>Break round 1 F7 (batch 5) reversed the other half of that ruling: the dashboard,
-     * register tiles and aging used to keep reading across ALL organisations with no
-     * organisation selected, which is the mixed-data leak F7 reported. Every org-scoped
-     * endpoint now answers the same 400 ({@code OrganisationRequiredInterceptor}).
+     * answer an empty page; the dashboard, register tiles and aging keep reading across
+     * organisations, as they did before their overdue figures moved to SQL. (Batch 5
+     * ruling: those three stay platform-wide for SUPER_ADMIN; see
+     * {@code OrganisationRequiredInterceptor.SUPER_ADMIN_PLATFORM_READS}.)
      */
     @Test
-    void aSuperAdminWithNoOrganisationIsToldToPickOneEverywhere() {
+    void aSuperAdminWithNoOrganisationIsToldToPickOneOnTheNewListsAndKeepsTheOldTotals() {
         User sa = new User();
         sa.setEmail("sa-" + UUID.randomUUID() + "@t.io");
         sa.setName("SA");
@@ -382,11 +380,11 @@ class ScaleListEndpointsIT extends AbstractPostgresIT {
                 "/api/v1/units/names?ids=" + u0701.getId(), "/api/v1/tickets/paged", "/api/v1/vendors/paged")) {
             assertThat(noTenant(sa, path).getStatusCode().value()).as(path).isEqualTo(400);
         }
-        for (String path : List.of("/api/v1/dashboard/summary", "/api/v1/cheques/aging", "/api/v1/cheques/summary")) {
-            ResponseEntity<String> res = noTenant(sa, path);
-            assertThat(res.getStatusCode().value()).as(path).isEqualTo(400);
-            assertThat(res.getBody()).as(path).contains("Select an organisation first");
-        }
+        ResponseEntity<String> dash = noTenant(sa, "/api/v1/dashboard/summary");
+        assertThat(dash.getStatusCode().is2xxSuccessful()).as(dash.getBody()).isTrue();
+        assertThat(noTenant(sa, "/api/v1/cheques/aging").getStatusCode().is2xxSuccessful()).isTrue();
+        JsonNode summary = read(noTenant(sa, "/api/v1/cheques/summary").getBody());
+        assertThat(summary.get("registeredCount").asLong()).isGreaterThanOrEqualTo(4);
     }
 
     private ResponseEntity<String> noTenant(User caller, String path) {

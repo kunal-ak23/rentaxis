@@ -8,6 +8,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.servlet.HandlerInterceptor;
 
+import java.util.List;
+
 /**
  * An organisation-scoped endpoint called with no organisation selected answers
  * 400 "Select an organisation first" (break round 1, F7).
@@ -40,7 +42,28 @@ public class OrganisationRequiredInterceptor implements HandlerInterceptor {
         if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken) {
             return true;
         }
+        if (isSuperAdminPlatformRead(request, auth)) {
+            return true;
+        }
         throw new BusinessRuleViolationException(MESSAGE);
+    }
+
+    /**
+     * Controller ruling (batch 5, partial revert): PR #366 review P2-3 kept
+     * platform-wide totals for a SUPER_ADMIN with no organisation selected on
+     * exactly these reads — the mobile manager app's dashboard calls them in that
+     * state. GET only and SUPER_ADMIN only; any other caller, method or path
+     * without an organisation still gets the 400.
+     */
+    static final List<String> SUPER_ADMIN_PLATFORM_READS = List.of(
+            "/api/v1/dashboard/summary",
+            "/api/v1/cheques/summary",
+            "/api/v1/cheques/aging");
+
+    private static boolean isSuperAdminPlatformRead(HttpServletRequest request, Authentication auth) {
+        return "GET".equalsIgnoreCase(request.getMethod())
+                && SUPER_ADMIN_PLATFORM_READS.contains(request.getRequestURI())
+                && auth.getAuthorities().stream().anyMatch(a -> "ROLE_SUPER_ADMIN".equals(a.getAuthority()));
     }
 
 }
