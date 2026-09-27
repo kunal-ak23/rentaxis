@@ -42,7 +42,7 @@ describe("NumberInput money mode", () => {
         type("1,000.55");
         expect(reported()).toBe("1000.55");
         expect(input().getAttribute("aria-invalid")).toBe("false");
-        expect(screen.queryByRole("alert")).toBeNull();
+        expect(screen.queryByTestId("money-input-error")).toBeNull();
     });
 
     it("refuses a third decimal with a message and reports no amount", () => {
@@ -53,7 +53,7 @@ describe("NumberInput money mode", () => {
         expect(reported()).toBe("0");
         expect(input().getAttribute("aria-invalid")).toBe("true");
         expect(input().dataset.moneyInvalid).toBe("true");
-        expect(screen.getByRole("alert").textContent).toBe(en.MoneyInput.decimals);
+        expect(screen.getByTestId("money-input-error").textContent).toBe(en.MoneyInput.decimals);
         // The text stays as typed so the user can fix it.
         expect(input().value).toBe("1000.555");
     });
@@ -63,11 +63,11 @@ describe("NumberInput money mode", () => {
         type("0.001");
         expect(reported()).toBe("0");
         type("0");
-        expect(screen.getByRole("alert").textContent).toBe(en.MoneyInput.min);
+        expect(screen.getByTestId("money-input-error").textContent).toBe(en.MoneyInput.min);
         type("1000000000000");
-        expect(screen.getByRole("alert").textContent).toBe(en.MoneyInput.max);
+        expect(screen.getByTestId("money-input-error").textContent).toBe(en.MoneyInput.max);
         type("AED 5,000");
-        expect(screen.getByRole("alert").textContent).toBe(en.MoneyInput.format);
+        expect(screen.getByTestId("money-input-error").textContent).toBe(en.MoneyInput.format);
         expect(reported()).toBe("0");
     });
 
@@ -76,14 +76,14 @@ describe("NumberInput money mode", () => {
         type("١٢٣٤");
         expect(reported()).toBe("1234");
         type("١٢٣٫٤٥٦");
-        expect(screen.getByRole("alert").textContent).toBe(ar.MoneyInput.decimals);
+        expect(screen.getByTestId("money-input-error").textContent).toBe(ar.MoneyInput.decimals);
     });
 
     it("accepts zero where the field allows it", () => {
         render(<Harness money={{ allowZero: true }} />);
         type("0");
         expect(reported()).toBe("0");
-        expect(screen.queryByRole("alert")).toBeNull();
+        expect(screen.queryByTestId("money-input-error")).toBeNull();
     });
 
     it("an empty field is no amount, not an error", () => {
@@ -91,6 +91,30 @@ describe("NumberInput money mode", () => {
         type("5");
         type("");
         expect(reported()).toBe("0");
-        expect(screen.queryByRole("alert")).toBeNull();
+        expect(screen.queryByTestId("money-input-error")).toBeNull();
+    });
+});
+
+/** Batch 4 review #5: described, translated, and announced on leaving the field — not per keystroke. */
+describe("NumberInput money mode accessibility", () => {
+    it("links the error through aria-describedby and is not a live region while typing", () => {
+        render(<Harness />);
+        type("1000.555");
+        const error = screen.getByTestId("money-input-error");
+        expect(input().getAttribute("aria-describedby")).toBe(error.id);
+        expect(error.getAttribute("role")).toBeNull();
+        fireEvent.blur(input());
+        expect(screen.getByTestId("money-input-error").getAttribute("role")).toBe("alert");
+        type("1000.5555");
+        expect(screen.getByTestId("money-input-error").getAttribute("role")).toBeNull();
+    });
+
+    it("puts the translated sentence, not English, in the native validity message", () => {
+        render(<Harness locale="ar" />);
+        type("1000.555");
+        expect(input().validationMessage).toBe(ar.MoneyInput.decimals);
+        type("1000.5");
+        expect(input().validationMessage).toBe("");
+        expect(input().getAttribute("aria-describedby")).toBeNull();
     });
 });

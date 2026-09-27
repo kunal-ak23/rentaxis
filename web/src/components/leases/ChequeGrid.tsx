@@ -544,7 +544,14 @@ export default function ChequeGrid({
                                                 placeholder={t("vatAuto")}
                                                 showZero={c.vatAmount != null}
                                                 value={c.vatAmount ?? 0}
-                                                onChange={v => patch(c.id, { vatAmount: v })}
+                                                onChange={(v, meta) => {
+                                                    // Batch 4 review #1: a refused entry in an "auto" cell reports 0;
+                                                    // taking it would flip the key, remount the field and lose the
+                                                    // refusal — the grid would save an explicit VAT of 0. The cell
+                                                    // stays auto and invalid, so the save gate still sees it.
+                                                    if (meta?.invalid && c.vatAmount == null) return;
+                                                    patch(c.id, { vatAmount: v });
+                                                }}
                                             />
                                         ) : c.vatAmount === null || c.vatAmount === undefined ? (
                                             <span className="text-muted">{t("vatAuto")}</span>

@@ -185,7 +185,7 @@ describe("AmendLinesDialog no-op guard (F5)", () => {
         renderDialog(MATCHING_CHEQUES);
         fireEvent.change(screen.getByTestId("amend-reason"), { target: { value: "x" } });
         fireEvent.change(screen.getByTestId("lease-line-amount-0"), { target: { value: "40000.555" } });
-        expect(screen.getByRole("alert")).toHaveTextContent(en.MoneyInput.decimals);
+        expect(screen.getByTestId("money-input-error")).toHaveTextContent(en.MoneyInput.decimals);
         expect(screen.getByTestId("amend-lines-confirm")).toBeDisabled();
     });
 });

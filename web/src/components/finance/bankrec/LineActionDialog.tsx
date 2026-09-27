@@ -1,5 +1,6 @@
 "use client";
 
+import { MoneyTextInput, moneyTextInvalid } from "@/components/ui/NumberInput";
 import { moneyValueOrNull } from "@/lib/money";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -19,6 +20,10 @@ import { Modal } from "./Modal";
 import { Money } from "./Money";
 import { serverText } from "./serverText";
 import { button, field, label, primary } from "./styles";
+
+
+/** The stated split of a multi-line charge: zero is an answer (no VAT). */
+const SPLIT = { allowZero: true } as const;
 
 export type LineAction = "clear" | "receive" | "receiveSuspense" | "bounce" | "present" | "charge" | "interest" | "suspense" | "other";
 
@@ -110,7 +115,7 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
     const bankTrnSet = !!cands?.bankTrnSet;
     // Break-it round 1 (money) F1: the shared money parse, never Number()'s guess.
     const stated = multiCharge
-        ? { net: moneyValueOrNull(netText, { allowZero: true }) ?? 0, vat: moneyValueOrNull(vatText, { allowZero: true }) ?? 0 }
+        ? { net: moneyValueOrNull(netText, SPLIT) ?? 0, vat: moneyValueOrNull(vatText, SPLIT) ?? 0 }
         : null;
     const split = chargeSplit(lines.map(l => l.amount), vatIncluded, bankTrnSet, stated);
     const leafName = cands?.leaves.find(l => l.id === leafId)?.name ?? t("gross");
@@ -143,7 +148,8 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
             case "clear": return picked.size > 0 && Math.round(pickedTotal * 100) === Math.round(total * 100);
             case "receive": case "receiveSuspense": case "bounce": case "present": return picked.size === 1;
             case "other": return !!accountId;
-            case "charge": return !split.error;
+            // Batch 4 review #5: a refused net or VAT is named under its field and never booked as 0.
+            case "charge": return !split.error && !(multiCharge && (moneyTextInvalid(netText, SPLIT) || moneyTextInvalid(vatText, SPLIT)));
             default: return true;
         }
     })();
@@ -256,11 +262,11 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
                         {multiCharge && (
                             <div className="flex gap-3">
                                 <label><span className={`${label} block mb-1`}>{t("net")}</span>
-                                    <input className={`${field} w-28`} dir="ltr" inputMode="decimal" value={netText}
-                                           onChange={e => setNetText(e.target.value)} data-testid="charge-net" /></label>
+                                    <MoneyTextInput options={SPLIT} className={`${field} w-28`} value={netText}
+                                           onChange={setNetText} data-testid="charge-net" /></label>
                                 <label><span className={`${label} block mb-1`}>{t("vat")}</span>
-                                    <input className={`${field} w-28`} dir="ltr" inputMode="decimal" value={vatText}
-                                           onChange={e => setVatText(e.target.value)} data-testid="charge-vat" /></label>
+                                    <MoneyTextInput options={SPLIT} className={`${field} w-28`} value={vatText}
+                                           onChange={setVatText} data-testid="charge-vat" /></label>
                             </div>
                         )}
                         {split.error && split.error !== "split" && (

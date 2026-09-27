@@ -210,6 +210,18 @@ describe("Penalties queue page — reduce (F14-28)", () => {
         await waitFor(() => expect(api.reduce).toHaveBeenCalledWith("pen-1", 300, "Renter partly disputed"));
     });
 
+    /** Batch 4 review #5: the new amount is a money field — 3 decimals are named, not rounded. */
+    it("refuses a reduced amount with three decimals", async () => {
+        renderPage();
+        (await screen.findByTestId("penalty-reduce-0")).click();
+        const confirm = await screen.findByTestId("penalty-reduce-confirm");
+        fireEvent.change(screen.getByTestId("penalty-decision-note"), { target: { value: "partly disputed" } });
+        fireEvent.change(screen.getByTestId("penalty-reduce-amount"), { target: { value: "300.555" } });
+        expect(screen.getByTestId("money-input-error")).toHaveTextContent(en.MoneyInput.decimals);
+        expect(screen.getByTestId("penalty-reduce-amount")).toHaveAttribute("type", "text");
+        expect(confirm).toBeDisabled();
+    });
+
     it("never offers Reduce on an APPROVED row", async () => {
         api.list.mockImplementation(async () => ({
             content: [assessment({ status: "APPROVED", journalId: "j9" })],

@@ -50,14 +50,14 @@ describe("New journal voucher — money guards", () => {
     const debits = screen.getAllByLabelText("Debit");
     const credits = screen.getAllByLabelText("Credit");
     fireEvent.change(debits[0], { target: { value: "100.004" } });
-    expect(screen.getByRole("alert")).toHaveTextContent(en.MoneyInput.decimals);
+    expect(screen.getByTestId("money-input-error")).toHaveTextContent(en.MoneyInput.decimals);
     fireEvent.change(debits[0], { target: { value: "1e12" } });
-    expect(screen.getByRole("alert")).toHaveTextContent(en.MoneyInput.format);
+    expect(screen.getByTestId("money-input-error")).toHaveTextContent(en.MoneyInput.format);
     fireEvent.change(debits[0], { target: { value: "1000000000000" } });
-    expect(screen.getByRole("alert")).toHaveTextContent(en.MoneyInput.max);
+    expect(screen.getByTestId("money-input-error")).toHaveTextContent(en.MoneyInput.max);
     fireEvent.change(debits[0], { target: { value: "1,000" } });
     fireEvent.change(credits[1], { target: { value: "1000" } });
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByTestId("money-input-error")).toBeNull();
     expect(screen.queryByText("Debits and credits must be equal")).not.toBeInTheDocument();
   });
 
@@ -67,6 +67,7 @@ describe("New journal voucher — money guards", () => {
     const date = screen.getByLabelText(en.Ledger.docDate) as HTMLInputElement;
     expect(date.max).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     fireEvent.change(date, { target: { value: "2126-09-28" } });
-    expect(screen.getByTestId("jv-date-error")).toBeInTheDocument();
+    // Batch 4 review #5: the limit is shown dd/mm/yyyy, like VoucherForm — not raw ISO.
+    expect(screen.getByTestId("jv-date-error").textContent).toMatch(/\(\d{2}\/\d{2}\/\d{4}\)/);
   });
 });

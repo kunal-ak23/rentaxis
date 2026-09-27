@@ -178,6 +178,24 @@ describe("the reconciliation statement", () => {
             reference: null, chequeNo: "000009", amount: -1000 });
     });
 
+    /** Batch 4 review #5: statement balances and opening items are money fields (signed, 2 decimals). */
+    it("refuses a mis-typed balance or opening item instead of sending Number()'s guess", async () => {
+        stubFetch([{ match: "/bank-accounts/ba-1/reconciliations", method: "GET", body: [] },
+            { match: "/bank-accounts/ba-1/reconciliations", method: "POST", body: SEPT }]);
+        renderIn("en", <ReconciliationPanel bankAccountId="ba-1" />);
+        const closing = await screen.findByTestId("rec-closing");
+        fireEvent.change(screen.getByTestId("rec-from"), { target: { value: "2026-09-01" } });
+        fireEvent.change(screen.getByTestId("rec-to"), { target: { value: "2026-09-30" } });
+        fireEvent.change(closing, { target: { value: "1,5" } });
+        expect(screen.getByTestId("money-input-error")).toHaveTextContent(en.MoneyInput.format);
+        expect(screen.getByTestId("rec-create")).toBeDisabled();
+        fireEvent.change(closing, { target: { value: "-1,250.50" } });
+        fireEvent.change(screen.getByTestId("rec-opening"), { target: { value: "1000" } });
+        fireEvent.click(screen.getByTestId("rec-create"));
+        await waitFor(() => expect(calls.some(c => c.method === "POST")).toBe(true));
+        expect(calls.find(c => c.method === "POST")!.body).toMatchObject({ statementOpening: 1000, statementClosing: -1250.5 });
+    });
+
     it("offers Reopen only to an admin, only on the latest finalized one, and sends the reason", async () => {
         const rows = [ROWS[1], { ...ROWS[1], id: "rec-7", periodFrom: "2026-07-01", periodTo: "2026-07-31" }];
         stubFetch([{ match: "/reconciliations/rec-8/reopen", method: "POST", body: SEPT }, { match: "/bank-accounts/ba-1/reconciliations", body: rows }]);

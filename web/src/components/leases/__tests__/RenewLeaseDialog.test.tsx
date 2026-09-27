@@ -240,13 +240,13 @@ describe("RenewLeaseDialog money guards (F1/F2)", () => {
         fireEvent.click(screen.getByTestId("renew-mode-AMOUNT"));
         fireEvent.change(screen.getByTestId("renew-amount"), { target: { value: "0.001" } });
         expect(screen.getByTestId("renew-lease-confirm")).toBeDisabled();
-        expect(screen.getByRole("alert")).toHaveTextContent(en.MoneyInput.min);
+        expect(screen.getByTestId("money-input-error")).toHaveTextContent(en.MoneyInput.min);
         fireEvent.change(screen.getByTestId("renew-amount"), { target: { value: "0" } });
         expect(screen.getByTestId("renew-lease-confirm")).toBeDisabled();
-        expect(screen.getByRole("alert")).toHaveTextContent(en.MoneyInput.min);
+        expect(screen.getByTestId("money-input-error")).toHaveTextContent(en.MoneyInput.min);
         fireEvent.change(screen.getByTestId("renew-amount"), { target: { value: "52000.555" } });
         expect(screen.getByTestId("renew-lease-confirm")).toBeDisabled();
-        expect(screen.getByRole("alert")).toHaveTextContent(en.MoneyInput.decimals);
+        expect(screen.getByTestId("money-input-error")).toHaveTextContent(en.MoneyInput.decimals);
     });
 
     it("sends a grouped amount exactly", async () => {

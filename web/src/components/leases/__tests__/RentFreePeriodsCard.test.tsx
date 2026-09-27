@@ -81,3 +81,29 @@ describe("RentFreePeriodsCard", () => {
         expect(amounts).toEqual(["72,000.00", "5,917.81", "66,082.19"]);
     });
 });
+
+/** Batch 4 review #2: the override drives the TCO; 1000.555 used to be stored and rounded. */
+describe("RentFreePeriodsCard override is a money field", () => {
+    it("refuses three decimals or a mis-grouped figure and will not save it", () => {
+        renderCard(lease(), true);
+        fireEvent.click(screen.getByTestId("rent-free-add"));
+        fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-06-30" } });
+        for (const [text, key] of [["1000.555", "decimals"], ["1,5", "format"], ["-5", "negative"]] as const) {
+            fireEvent.change(screen.getByTestId("rent-free-override-0"), { target: { value: text } });
+            expect(screen.getByTestId("money-input-error")).toHaveTextContent(en.MoneyInput[key]);
+            expect(screen.getByTestId("rent-free-save")).toBeDisabled();
+        }
+    });
+
+    it("sends a grouped override exactly, and 0 is a valid override", async () => {
+        api.setRentFreePeriods.mockResolvedValue(lease());
+        renderCard(lease(), true);
+        fireEvent.click(screen.getByTestId("rent-free-add"));
+        fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-06-30" } });
+        fireEvent.change(screen.getByTestId("rent-free-override-0"), { target: { value: "1,000.50" } });
+        fireEvent.click(screen.getByTestId("rent-free-save"));
+        await waitFor(() => expect(api.setRentFreePeriods).toHaveBeenCalledWith("l1", [
+            expect.objectContaining({ concessionOverride: 1000.5 }),
+        ]));
+    });
+});

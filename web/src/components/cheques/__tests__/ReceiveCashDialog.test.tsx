@@ -147,7 +147,7 @@ describe("ReceiveCashDialog money guards", () => {
     it("refuses three decimals instead of rounding them", async () => {
         await openOnActive();
         fireEvent.change(screen.getByTestId("cash-receipt-amount"), { target: { value: "1000.555" } });
-        expect(screen.getByRole("alert")).toHaveTextContent(en.MoneyInput.decimals);
+        expect(screen.getByTestId("money-input-error")).toHaveTextContent(en.MoneyInput.decimals);
         expect(screen.getByTestId("cash-receipt-confirm")).toBeDisabled();
         expect(api.cashReceipt).not.toHaveBeenCalled();
     });
@@ -156,7 +156,7 @@ describe("ReceiveCashDialog money guards", () => {
         await openOnActive();
         fireEvent.change(screen.getByTestId("cash-receipt-amount"), { target: { value: "1500" } });
         fireEvent.change(screen.getByTestId("cash-receipt-date"), { target: { value: "2126-09-28" } });
-        expect(screen.getByTestId("cash-receipt-date-error")).toBeInTheDocument();
+        expect(screen.getByTestId("cash-receipt-date-error").textContent).toMatch(/\(\d{2}\/\d{2}\/\d{4}\)/);
         expect(screen.getByTestId("cash-receipt-confirm")).toBeDisabled();
         expect(screen.getByTestId("cash-receipt-date").getAttribute("max")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     });

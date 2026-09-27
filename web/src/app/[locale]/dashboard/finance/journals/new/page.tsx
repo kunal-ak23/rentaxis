@@ -1,5 +1,6 @@
 "use client";
 
+import { formatDate } from "@/lib/format";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
@@ -183,7 +184,7 @@ export default function NewJournalPage() {
                         />
                         {dateTooFar && (
                             <p role="alert" data-testid="jv-date-error" className="mt-1 text-[11px] text-error">
-                                {tm("dateTooFar", { max: maxManualPostingDateIso() })}
+                                {tm("dateTooFar", { max: formatDate(maxManualPostingDateIso()) })}
                             </p>
                         )}
                     </div>

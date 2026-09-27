@@ -299,6 +299,24 @@ describe("create-from-line dialogs", () => {
         expect(screen.getByTestId("action-submit")).toBeDisabled();
     });
 
+    /** Batch 4 review #5: a refused net/VAT was read as 0 with nothing said; now it is named and blocks Book. */
+    it("names a refused net or VAT on a two-line charge and will not book it", async () => {
+        stubFetch([{ match: "/candidates", body: { statementLineId: "x", clear: [], receive: [], bounce: [], present: [],
+            suspenseBalance: 0, bankTrnSet: true, leaves: [LEAVES[0]] } }]);
+        renderIn("en", <LineActionDialog lines={[line("x", "SMS ALERT FEE", -25), line("y", "SMS ALERT FEE", -25)]}
+                                          onClose={() => {}} onDone={() => {}} />);
+        await screen.findByTestId("charge-net");
+        // Read as 0, "0.001" VAT would make 50 + 0 = 50 — a split that adds up — so only
+        // the field's own refusal stands between it and the ledger.
+        fireEvent.change(screen.getByTestId("charge-net"), { target: { value: "50" } });
+        fireEvent.change(screen.getByTestId("charge-vat"), { target: { value: "0.001" } });
+        expect(screen.getByTestId("money-input-error")).toHaveTextContent(en.MoneyInput.decimals);
+        expect(screen.getByTestId("charge-vat")).toHaveAttribute("aria-invalid", "true");
+        expect(screen.getByTestId("action-submit")).toBeDisabled();
+        fireEvent.change(screen.getByTestId("charge-net"), { target: { value: "47.619" } });
+        expect(screen.getAllByTestId("money-input-error")).toHaveLength(2);
+    });
+
     it("pre-selects the cheque by number, and says when there is no bank TRN", async () => {
         stubFetch([{ match: "/candidates", body: { statementLineId: "e", clear: [], receive: [], bounce: [],
             present: [{ id: "ic-1", kind: "ISSUED_CHEQUE", label: "000031 Gulf AC", amount: 20000, date: "2026-09-28",

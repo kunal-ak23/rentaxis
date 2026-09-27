@@ -114,7 +114,7 @@ describe("TransferLeaseDialog rent guard (F1/F2)", () => {
         for (const [text, key] of [["0.001", "min"], ["0", "min"], ["41589.045", "decimals"], ["41,58", "format"]] as const) {
             fireEvent.change(screen.getByTestId("transfer-rent"), { target: { value: text } });
             expect(screen.getByTestId("transfer-confirm"), text).toBeDisabled();
-            expect(screen.getByRole("alert")).toHaveTextContent(en.MoneyInput[key]);
+            expect(screen.getByTestId("money-input-error")).toHaveTextContent(en.MoneyInput[key]);
         }
     });
 

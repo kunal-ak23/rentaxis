@@ -1,5 +1,8 @@
 "use client";
 
+import { MoneyTextInput, moneyTextInvalid } from "@/components/ui/NumberInput";
+import { moneyValueOrNull } from "@/lib/money";
+
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
@@ -19,6 +22,10 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "./Modal";
 import { Money } from "./Money";
 import { button, field, label, panel, primary, small, td, th } from "./styles";
+
+
+/** Batch 4 review #5: statement balances and opening items are signed money. */
+const SIGNED = { allowNegative: true } as const;
 
 /** yyyy-MM-dd ± days, in UTC so no time zone moves the day. */
 export function addDays(iso: string, days: number): string {
@@ -201,8 +208,8 @@ function StartForm({ first, nextFrom, busy, onStart }: {
                   e.preventDefault();
                   onStart({
                       periodFrom: first ? from : null, periodTo: to,
-                      statementOpening: first && opening ? Number(opening) : null,
-                      statementClosing: closing ? Number(closing) : null,
+                      statementOpening: first && opening ? moneyValueOrNull(opening, SIGNED) : null,
+                      statementClosing: closing ? moneyValueOrNull(closing, SIGNED) : null,
                   });
               }}>
             <label className="text-xs"><span className={`${label} block mb-1`}>{t("from")}</span>
@@ -212,13 +219,14 @@ function StartForm({ first, nextFrom, busy, onStart }: {
                 <input type="date" className={field} value={to} required onChange={e => setTo(e.target.value)} data-testid="rec-to" /></label>
             {first && (
                 <label className="text-xs"><span className={`${label} block mb-1`}>{t("statementOpeningTyped")}</span>
-                    <input type="number" step="0.01" dir="ltr" className={field} value={opening} onChange={e => setOpening(e.target.value)}
+                    <MoneyTextInput options={SIGNED} className={field} value={opening} onChange={setOpening}
                            data-testid="rec-opening" /></label>
             )}
             <label className="text-xs"><span className={`${label} block mb-1`}>{t("statementClosingTyped")}</span>
-                <input type="number" step="0.01" dir="ltr" className={field} value={closing} onChange={e => setClosing(e.target.value)}
+                <MoneyTextInput options={SIGNED} className={field} value={closing} onChange={setClosing}
                        data-testid="rec-closing" /></label>
-            <button type="submit" className={primary} disabled={busy || !to || (first && !from)} data-testid="rec-create">
+            <button type="submit" className={primary} data-testid="rec-create"
+                    disabled={busy || !to || (first && !from) || moneyTextInvalid(closing, SIGNED) || (first && moneyTextInvalid(opening, SIGNED))}>
                 <Plus size={13} />{first ? t("startFirst") : t("startNext")}
             </button>
             <p className="w-full text-[11px] text-muted">{first ? t("startFirstHint") : t("startNextHint")}</p>
@@ -303,10 +311,10 @@ function DraftEdit({ rec, busy, onSave }: {
     return (
         <span className="inline-flex flex-wrap items-center gap-2 text-xs">
             <input type="date" className={field} value={to} onChange={e => setTo(e.target.value)} data-testid="rec-edit-to" />
-            <input type="number" step="0.01" dir="ltr" className={field} placeholder={t("statementClosingTyped")} value={closing}
-                   onChange={e => setClosing(e.target.value)} data-testid="rec-edit-closing" />
-            <button type="button" className={small} disabled={busy || !to} data-testid="rec-edit-save"
-                    onClick={() => { setOpen(false); onSave({ periodTo: to, statementClosing: closing ? Number(closing) : null }); }}>{t("save")}</button>
+            <MoneyTextInput options={SIGNED} className={field} placeholder={t("statementClosingTyped")} value={closing}
+                   onChange={setClosing} data-testid="rec-edit-closing" />
+            <button type="button" className={small} disabled={busy || !to || moneyTextInvalid(closing, SIGNED)} data-testid="rec-edit-save"
+                    onClick={() => { setOpen(false); onSave({ periodTo: to, statementClosing: closing ? moneyValueOrNull(closing, SIGNED) : null }); }}>{t("save")}</button>
             <button type="button" className={small} onClick={() => setOpen(false)}>{t("cancel")}</button>
         </span>
     );
@@ -373,7 +381,7 @@ function OpeningItems({ bankAccountId, rec, busy, run }: {
                       e.preventDefault();
                       run(async () => {
                           await bankRecApi.addOpeningItem(bankAccountId, {
-                              itemDate: date, description, reference: reference || null, chequeNo: chequeNo || null, amount: Number(amount),
+                              itemDate: date, description, reference: reference || null, chequeNo: chequeNo || null, amount: moneyValueOrNull(amount, SIGNED) ?? Number.NaN,
                           });
                           setDescription(""); setReference(""); setChequeNo(""); setAmount("");
                           reload();
@@ -383,8 +391,8 @@ function OpeningItems({ bankAccountId, rec, busy, run }: {
                 <input className={field} value={description} required placeholder={t("description")} onChange={e => setDescription(e.target.value)} data-testid="opening-description" />
                 <input className={field} value={reference} placeholder={t("reference")} onChange={e => setReference(e.target.value)} />
                 <input className={field} value={chequeNo} placeholder={t("chequeNo")} dir="ltr" onChange={e => setChequeNo(e.target.value)} data-testid="opening-cheque" />
-                <input type="number" step="0.01" className={field} dir="ltr" value={amount} required placeholder={t("openingAmountHint")}
-                       onChange={e => setAmount(e.target.value)} data-testid="opening-amount" />
+                <MoneyTextInput options={SIGNED} className={field} value={amount} required placeholder={t("openingAmountHint")}
+                       onChange={setAmount} data-testid="opening-amount" />
                 <button type="submit" className={button} disabled={busy} data-testid="opening-save"><Plus size={12} />{t("addOpeningItem")}</button>
             </form>
         </div>

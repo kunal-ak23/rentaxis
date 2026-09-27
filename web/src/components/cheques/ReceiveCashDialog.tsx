@@ -1,5 +1,6 @@
 "use client";
 
+import { formatDate } from "@/lib/format";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import LeaseDialog from "@/components/leases/LeaseDialog";
@@ -282,7 +283,7 @@ export default function ReceiveCashDialog({ open, initialLeaseId, onClose, onDon
                         />
                         {dateTooFar && (
                             <p role="alert" data-testid="cash-receipt-date-error" className="mt-1 text-[11px] text-error">
-                                {tm("dateTooFar", { max: maxManualPostingDateIso() })}
+                                {tm("dateTooFar", { max: formatDate(maxManualPostingDateIso()) })}
                             </p>
                         )}
                     </div>
