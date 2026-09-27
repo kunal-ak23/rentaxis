@@ -1,7 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect, useRef, useCallback, useSyncExternalStore } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useState, useEffect, useRef, useCallback } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 import { Pagination } from "@/components/ui/Pagination";
@@ -15,34 +14,10 @@ import { TowerSelect } from "@/components/ui/TowerSelect";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { UnitPicker } from "@/components/pickers/UnitPicker";
 import { RenterPicker } from "@/components/pickers/RenterPicker";
+import { useUrlState } from "@/hooks/useUrlState";
 import {
     Plus, X, Search, Loader2, Eye, Upload, Wrench, BarChart3,
 } from "lucide-react";
-
-/**
- * R1 P3-2: the property + tower filters live in the URL (bookmarkable, same
- * pattern as the Contracts list) — a tiny store over `location.search`, read
- * with `useSyncExternalStore` (empty server snapshot, so hydration matches),
- * written with `history.replaceState`.
- */
-const urlListeners = new Set<() => void>();
-function subscribeUrl(cb: () => void) {
-    urlListeners.add(cb);
-    window.addEventListener("popstate", cb);
-    return () => {
-        urlListeners.delete(cb);
-        window.removeEventListener("popstate", cb);
-    };
-}
-function setUrlQuery(changes: Record<string, string | null>) {
-    const url = new URL(window.location.href);
-    for (const [k, v] of Object.entries(changes)) {
-        if (v) url.searchParams.set(k, v);
-        else url.searchParams.delete(k);
-    }
-    window.history.replaceState(window.history.state, "", url.toString());
-    urlListeners.forEach(l => l());
-}
 
 /**
  * S16-02/S16-03: staff (SA/TA/PM/ACCOUNTANT) read `GET /tickets/paged` — search,
@@ -177,13 +152,9 @@ function TicketsPageInner() {
     const [priorityFilter, setPriorityFilter] = useState("ALL");
     // R1 P3-2: property + tower (buildingId) live in the URL — bookmarkable,
     // like the Contracts list's filters — for staff's server-paged list.
-    useSearchParams();
-    const urlSearch = useSyncExternalStore(subscribeUrl, () => window.location.search, () => "");
-    const usp = new URLSearchParams(urlSearch);
-    const propertyFilter = usp.get("propertyId") ?? "";
-    const buildingFilter = usp.get("buildingId") ?? "";
-    const setPropertyFilter = (id: string) => setUrlQuery({ propertyId: id || null, buildingId: null });
-    const setBuildingFilter = (id: string) => setUrlQuery({ buildingId: id || null });
+    const [propertyFilter, setPropertyId] = useUrlState("propertyId", "");
+    const [buildingFilter, setBuildingFilter] = useUrlState("buildingId", "");
+    const setPropertyFilter = (id: string) => { setPropertyId(id); setBuildingFilter(""); };
     // R1 P2-2: once the Tower select reports it isn't showing (no towers, or
     // GET /buildings/property/{id} refuses this role, e.g. ACCOUNTANT), any
     // buildingId left in the URL is dropped — an active filter must always

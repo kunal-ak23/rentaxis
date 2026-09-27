@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect, useRef, useCallback } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { Plus, X, User, Mail, Phone, List, LayoutGrid, Search, MailCheck } from "lucide-react";
 import { ResendInviteButton } from "@/components/users/ResendInviteButton";
@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { Pagination } from "@/components/ui/Pagination";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
+import { useUrlState } from "@/hooks/useUrlState";
+import type { Page } from "@/lib/api/ledger";
 
 type Renter = {
     id: string;
@@ -26,6 +28,14 @@ type Renter = {
 };
 
 export default function RentersPage() {
+    return (
+        <Suspense fallback={null}>
+            <RentersPageInner />
+        </Suspense>
+    );
+}
+
+function RentersPageInner() {
     const t = useTranslations("MasterData");
     const tCommon = useTranslations("Common");
     const tInv = useTranslations("Invites");
@@ -33,6 +43,7 @@ export default function RentersPage() {
         code && t.has(`language${code}`) ? t(`language${code}`) : (code ?? "—");
     const locale = useLocale();
     const [renters, setRenters] = useState<Renter[]>([]);
+    const [totalItems, setTotalItems] = useState(0);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [showForm, setShowForm] = useState(false);
@@ -42,9 +53,34 @@ export default function RentersPage() {
     const canManageRenters = hasPermission(userRole, 'canManageRenters');
 
     const [viewMode, setViewMode] = useState<"table" | "cards">("table");
-    const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(25);
-    const [searchQuery, setSearchQuery] = useState("");
+
+    // Scale P1-3: search, page and size live in the URL (bookmarkable, same
+    // pattern as the Tickets/Contracts lists) via the shared `useUrlState`
+    // hook — the URL's page is 1-based, the API's `page` is 0-based.
+    const [q, setQ] = useUrlState("q", "");
+    const [pageParam, setPageParam] = useUrlState("page", "1");
+    const [sizeParam, setSizeParam] = useUrlState("size", "25");
+    const currentPage = parseInt(pageParam, 10) || 1;
+    const itemsPerPage = parseInt(sizeParam, 10) || 25;
+
+    // R1 P1-1: the box shows `draftSearch` immediately while typing; 300 ms
+    // after the last keystroke it is written to the URL (which also resets
+    // the page to 1) and `draftSearch` hands control back to the URL value.
+    const [draftSearch, setDraftSearch] = useState<string | null>(null);
+    const searchQuery = draftSearch ?? q;
+    useEffect(() => {
+        if (draftSearch === null || draftSearch === q) return;
+        const timer = setTimeout(() => {
+            setQ(draftSearch);
+            setPageParam("1");
+            setDraftSearch(null);
+        }, 300);
+        return () => clearTimeout(timer);
+        // `setQ`/`setPageParam` are fresh closures from `useUrlState` on every
+        // render (they read `window.location.href` live); including them here
+        // would reset the debounce timer on every render, not just on typing.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [draftSearch, q]);
 
     const [formData, setFormData] = useState({
         nameEn: "",
@@ -55,31 +91,43 @@ export default function RentersPage() {
         createPortalAccount: true
     });
 
-    useEffect(() => {
-        fetchRenters();
-    }, []);
-
-    useEffect(() => {
-        setCurrentPage(1);
-    }, [renters]);
-
-    const fetchRenters = async () => {
+    // R1 P1-2: a request counter so a slow, older response (a stale search or
+    // page) can never overwrite a newer one — same guard as the Tickets and
+    // Contracts lists.
+    const fetchSeq = useRef(0);
+    const fetchRenters = useCallback(async () => {
+        const seq = ++fetchSeq.current;
+        const isCurrent = () => seq === fetchSeq.current;
         try {
-            const res = await fetch("/api/proxy/v1/renters");
+            const sp = new URLSearchParams();
+            if (q) sp.set("q", q);
+            sp.set("page", String(currentPage - 1));
+            sp.set("size", String(itemsPerPage));
+            const res = await fetch(`/api/proxy/v1/renters/paged?${sp.toString()}`);
+            if (!isCurrent()) return;
             if (res.ok) {
-                const data = await res.json();
-                setRenters(data);
+                const page: Page<Renter> = await res.json();
+                if (!isCurrent()) return;
+                setRenters(page.content ?? []);
+                setTotalItems(page.totalElements ?? 0);
+                setLoadError(null);
             } else {
                 // A non-2xx used to leave the state at its initial empty
                 // value, so a failed request rendered as "nothing here".
                 setLoadError(tCommon("loadFailedRenters"));
+                setRenters([]);
+                setTotalItems(0);
             }
         } catch (err) {
-            console.error(err);
+            if (isCurrent()) console.error(err);
         } finally {
-            setLoading(false);
+            if (isCurrent()) setLoading(false);
         }
-    };
+    }, [q, currentPage, itemsPerPage, tCommon]);
+
+    useEffect(() => {
+        fetchRenters();
+    }, [fetchRenters]);
 
     // #7: after creating a renter we confirm the emailed invite. There is no
     // password to show: the backend neither generates nor returns one.
@@ -130,18 +178,10 @@ export default function RentersPage() {
         return r.nameEn;
     };
 
-    const filteredRenters = renters.filter(r => {
-        if (!searchQuery) return true;
-        const q = searchQuery.toLowerCase();
-        return (
-            r.nameEn?.toLowerCase().includes(q) ||
-            r.nameAr?.toLowerCase().includes(q) ||
-            r.email?.toLowerCase().includes(q) ||
-            r.phone?.toLowerCase().includes(q)
-        );
-    });
-    const totalItems = filteredRenters.length;
-    const paginatedItems = filteredRenters.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+    // The search, page and page size are now all applied server-side
+    // (`GET /renters/paged`) — `renters` is already this page's rows, and
+    // `totalItems` is the server's total for the current `q`.
+    const paginatedItems = renters;
 
     if (loading) {
         return (
@@ -204,7 +244,7 @@ export default function RentersPage() {
                             type="text"
                             placeholder={t("search")}
                             value={searchQuery}
-                            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                            onChange={(e) => setDraftSearch(e.target.value)}
                             className="ps-9 pe-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
                         />
                     </div>
@@ -382,8 +422,8 @@ export default function RentersPage() {
                         currentPage={currentPage}
                         totalItems={totalItems}
                         itemsPerPage={itemsPerPage}
-                        onPageChange={setCurrentPage}
-                        onItemsPerPageChange={(n) => { setItemsPerPage(n); setCurrentPage(1); }}
+                        onPageChange={(p) => setPageParam(String(p))}
+                        onItemsPerPageChange={(n) => { setSizeParam(String(n)); setPageParam("1"); }}
                     />
                 </>
             )}
