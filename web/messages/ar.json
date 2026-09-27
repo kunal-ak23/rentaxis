@@ -4637,6 +4637,8 @@
     "noMatches": "لا توجد نتائج",
     "searchFailed": "تعذّر البحث — حاول مرة أخرى",
     "typeToSearch": "اكتب للبحث",
-    "commercial": "تجاري"
+    "commercial": "تجاري",
+    "selectUnit": "اختر وحدة",
+    "selectRenter": "اختر مستأجرًا"
   }
 }

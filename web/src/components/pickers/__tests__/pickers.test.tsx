@@ -121,3 +121,15 @@ describe("RenterPicker", () => {
         expect(screen.queryByText("Ali Hassan (علي حسن)")).not.toBeInTheDocument();
     });
 });
+
+describe("picker placeholders", () => {
+    it("default to translated text when the caller passes none", () => {
+        withIntl("ar", <UnitPicker value="" onChange={vi.fn()} testId="unit" />);
+        expect(screen.getByTestId("unit")).toHaveTextContent(ar.Pickers.selectUnit);
+        cleanup();
+        withIntl("ar", <RenterPicker value="" onChange={vi.fn()} testId="renter" />);
+        expect(screen.getByTestId("renter")).toHaveTextContent(ar.Pickers.selectRenter);
+        expect(ar.Pickers.selectRenter).toBe("اختر مستأجرًا");
+        expect(ar.Pickers.selectUnit).toBe("اختر وحدة");
+    });
+});

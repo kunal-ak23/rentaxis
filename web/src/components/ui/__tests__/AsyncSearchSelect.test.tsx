@@ -156,4 +156,41 @@ describe("AsyncSearchSelect", () => {
         expect(search).not.toHaveBeenCalled();
     });
 
+    it("drops the highlight when newer results arrive, so Enter cannot pick a row the user did not see highlighted", async () => {
+        const pending = new Map<string, Deferred>();
+        const search = vi.fn(
+            (q: string) => new Promise<AsyncOption[]>((resolve, reject) => pending.set(q, { resolve, reject })),
+        );
+        const { onChange } = renderSelect({ search, searchPlaceholder: "Find" });
+
+        fireEvent.click(trigger());
+        await act(async () => {
+            pending.get("")!.resolve([
+                { value: "a", label: "Alpha" },
+                { value: "b", label: "Beta" },
+            ]);
+        });
+        fireEvent.keyDown(searchBox(), { key: "ArrowDown" });
+        fireEvent.keyDown(searchBox(), { key: "ArrowDown" }); // "Beta" (index 1) highlighted
+
+        // A newer response for the same panel (e.g. a retried open) lands with different rows.
+        fireEvent.change(searchBox(), { target: { value: "x" } });
+        act(() => {
+            vi.advanceTimersByTime(250);
+        });
+        fireEvent.keyDown(searchBox(), { key: "ArrowDown" });
+        fireEvent.keyDown(searchBox(), { key: "ArrowDown" }); // index 1 again, on the old rows
+        await act(async () => {
+            pending.get("x")!.resolve([
+                { value: "x1", label: "Xray" },
+                { value: "x2", label: "Xenon" },
+            ]);
+        });
+        fireEvent.keyDown(searchBox(), { key: "Enter" });
+
+        expect(onChange).not.toHaveBeenCalledWith("x2", expect.anything());
+        expect(onChange).not.toHaveBeenCalledWith("b", expect.anything());
+        expect(onChange.mock.calls.every(([v]) => v === "")).toBe(true);
+    });
+
 });

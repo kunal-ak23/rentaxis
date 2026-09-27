@@ -74,11 +74,14 @@ export function AsyncSearchSelect({
                 (rows) => {
                     if (seq !== seqRef.current) return;
                     setOptions(rows);
+                    // The old index points at a different row (or none) in the new list.
+                    setHighlightedIndex(-1);
                     setStatus("done");
                 },
                 () => {
                     if (seq !== seqRef.current) return;
                     setOptions([]);
+                    setHighlightedIndex(-1);
                     setStatus("error");
                 },
             );

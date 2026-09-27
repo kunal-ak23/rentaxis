@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { useLocale } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { AsyncSearchSelect, type AsyncOption } from "@/components/ui/AsyncSearchSelect";
 import { lookupApi, type RenterOption } from "@/lib/api/lookup";
 import { createLookupCache } from "@/components/pickers/lookupCache";
@@ -34,6 +34,7 @@ export function renterLabel(r: RenterOption, locale: string): string {
 /** Server-searched renter select: label is the localized name, sublabel the email (or phone). */
 export function RenterPicker({ value, onChange, placeholder, className, testId, disabled, excludeIds }: Props) {
     const locale = useLocale();
+    const t = useTranslations("Pickers");
     const excludeKey = (excludeIds ?? []).join("\u0000");
 
     const search = useCallback(
@@ -57,7 +58,7 @@ export function RenterPicker({ value, onChange, placeholder, className, testId, 
             onChange={(id) => onChange(id, id ? (renters.get(id) ?? null) : null)}
             search={search}
             selectedLabel={resolved ? renterLabel(resolved, locale) : undefined}
-            placeholder={placeholder}
+            placeholder={placeholder ?? t("selectRenter")}
             className={className}
             testId={testId}
             disabled={disabled}

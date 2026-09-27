@@ -59,7 +59,7 @@ export function UnitPicker({ value, onChange, propertyId, status, placeholder, c
             onChange={(id) => onChange(id, id ? (units.get(id) ?? null) : null)}
             search={search}
             selectedLabel={resolved?.unitNumber}
-            placeholder={placeholder}
+            placeholder={placeholder ?? t("selectUnit")}
             className={className}
             testId={testId}
             disabled={disabled}
