@@ -118,28 +118,28 @@ public class ContractImportLeasePoster {
      * S16-14: one running tenancy of a building acquired on {@code acquiredOn}, after
      * go-live — the acquisition cut-over. Nothing is dated before {@code acquiredOn};
      * what happened before it is the previous owner's and lands on the acquisition's
-     * opening position ({@code openingAccountId}):
+     * vendor account (ACQUISITION_CLEARING):
      * <ul>
      *   <li>the contract ({@code TCO}) and its cheques ({@code PDR}s) are posted as a
      *       cut-over's are, dated {@code acquiredOn} at the earliest;</li>
      *   <li>an instrument the previous owner banked before {@code acquiredOn} is marked
      *       cleared on its own dates with no bank entry, its receivable settled against
-     *       the opening position; one banked on or after it is replayed like a cut-over's;
+     *       the vendor account (ACQUISITION_CLEARING); one banked on or after it is replayed like a cut-over's;
      *       one the previous owner deposited that had not cleared, or that bounced, before
      *       the acquisition is refused — the sheet has to say how it ended;</li>
      *   <li>rent (and a fee earned over the term) earned through the day before is
-     *       released to the opening position, the rest planned per day from
+     *       released to the vendor account (ACQUISITION_CLEARING), the rest planned per day from
      *       {@code acquiredOn} ({@link RecognitionService#acquireFrom});</li>
      *   <li>the contract's Output VAT (declared by the previous owner on the CONTRACT
      *       model, as a cut-over's) and whatever it put through income or expense at
-     *       signing go back to the opening position in one journal dated
+     *       signing go back to the vendor account (ACQUISITION_CLEARING) in one journal dated
      *       {@code acquiredOn}.</li>
      * </ul>
      *
      * @return what was written, or {@code null} when the lease is already posted.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public Posted postAcquired(UUID batchId, UUID leaseId, LocalDate acquiredOn, UUID openingAccountId) {
+    public Posted postAcquired(UUID batchId, UUID leaseId, LocalDate acquiredOn) {
         Lease lease = leases.findByIdScopedToTenant(leaseId).orElse(null);
         if (lease == null) throw new BusinessRuleViolationException("This lease no longer exists");
         if (!UNPOSTED.contains(lease.getStatus())) return null;
@@ -172,9 +172,15 @@ public class ContractImportLeasePoster {
                 replay(c, replay, n);
             }
         }
-        int recognised = recognition.acquireFrom(leaseId, acquiredOn, openingAccountId, batchId);
         Lease posted = leases.findByIdScopedToTenant(leaseId).orElseThrow();
-        postOpeningPosition(posted, settled, acquiredOn, openingAccountId, batchId);
+        UUID vendor = accountResolver.resolve(com.datagami.rentaxis.domain.entity.enums.AccountRole.ACQUISITION_CLEARING,
+                com.datagami.rentaxis.core.service.lease.LeaseChequeRegistrar.dimensions(posted, null).propertyId()).getId();
+        int recognised = recognition.acquireFrom(leaseId, acquiredOn, vendor, batchId);
+        java.math.BigDecimal sellerVat = postOpeningPosition(posted, settled, acquiredOn, vendor, batchId);
+        posted = leases.findByIdScopedToTenant(leaseId).orElseThrow();
+        posted.setAcquiredOn(acquiredOn);
+        posted.setAcquiredVatOpen(sellerVat.setScale(2, java.math.RoundingMode.HALF_UP));
+        leases.saveAndFlush(posted);
         log.debug("Acquired lease {} posted in batch {} as at {}: {} settled with the previous owner",
                 leaseId, batchId, acquiredOn, settled.size());
         return new Posted(n[0], n[1], n[2], recognised);
@@ -207,12 +213,14 @@ public class ContractImportLeasePoster {
     }
 
     /**
-     * The contract's opening position at the acquisition, one journal dated {@code a}:
+     * The contract's vendor account (ACQUISITION_CLEARING) at the acquisition, one journal dated {@code a}:
      * its Output VAT and every income or expense line the contract posted at signing
-     * back to the opening position, and the receivable of each instrument the previous
+     * back to the vendor account (ACQUISITION_CLEARING), and the receivable of each instrument the previous
      * owner banked settled against it. Nothing when there is nothing to move.
+     *
+     * @return the Output VAT moved — what the previous owner declared on the contract
      */
-    private void postOpeningPosition(Lease lease, List<Cheque> settled, LocalDate a, UUID opening, UUID batchId) {
+    private java.math.BigDecimal postOpeningPosition(Lease lease, List<Cheque> settled, LocalDate a, UUID opening, UUID batchId) {
         List<com.datagami.rentaxis.core.service.ledger.PostingRequest.Pair> pairs = new java.util.ArrayList<>();
         com.datagami.rentaxis.core.service.ledger.PostingRequest.Dimensions dims =
                 com.datagami.rentaxis.core.service.lease.LeaseChequeRegistrar.dimensions(lease, null);
@@ -220,6 +228,7 @@ public class ContractImportLeasePoster {
         com.datagami.rentaxis.domain.entity.Account outputVat = accountResolver.resolveOrNull(
                 com.datagami.rentaxis.domain.entity.enums.AccountRole.OUTPUT_VAT, propertyId);
         com.datagami.rentaxis.domain.entity.JournalEntry tco = journals.findById(lease.getPostingJournalId()).orElseThrow();
+        java.math.BigDecimal sellerVat = java.math.BigDecimal.ZERO;
         for (com.datagami.rentaxis.domain.entity.JournalLine l : tco.getLines()) {
             com.datagami.rentaxis.domain.entity.Account account = l.getAccount();
             com.datagami.rentaxis.domain.entity.enums.AccountType type = account.getAccountType();
@@ -229,6 +238,7 @@ public class ContractImportLeasePoster {
             boolean credit = l.getCredit() != null && l.getCredit().signum() > 0;
             java.math.BigDecimal amount = credit ? l.getCredit() : l.getDebit();
             if (amount == null || amount.signum() == 0) continue;
+            if (vat) sellerVat = sellerVat.add(credit ? amount : amount.negate());
             String why = vat ? "Output VAT declared by the previous owner" : "Charged at signing, before the acquisition";
             var line = new com.datagami.rentaxis.core.service.ledger.PostingRequest.Line(
                     new com.datagami.rentaxis.core.service.ledger.PostingRequest.ById(account.getId()),
@@ -254,12 +264,13 @@ public class ContractImportLeasePoster {
                             .withDims(com.datagami.rentaxis.core.service.lease.LeaseChequeRegistrar.dimensions(lease, c.getId()))
                             .withNarration(why + " (" + label(c) + ")")));
         }
-        if (pairs.isEmpty()) return;
+        if (pairs.isEmpty()) return sellerVat;
         posting.post(com.datagami.rentaxis.core.service.ledger.PostingRequest.ofPairs(
                 com.datagami.rentaxis.domain.entity.enums.JournalDocType.JV, a,
-                "Acquisition opening position " + a + " – "
+                "Acquisition vendor account (ACQUISITION_CLEARING) " + a + " – "
                         + (lease.getExternalContractRef() == null ? lease.getId().toString() : lease.getExternalContractRef()),
                 dims, com.datagami.rentaxis.domain.entity.enums.JournalSourceType.IMPORT, lease.getId(), batchId, pairs));
+        return sellerVat;
     }
 
     /**

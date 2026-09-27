@@ -284,6 +284,11 @@ public class RecognitionPoster {
         return resolve(deferralOf(segment, lease), lease);
     }
 
+    /** S16-14: the lease's property's vendor account (ACQUISITION_CLEARING) — an acquired building's. */
+    public UUID acquisitionClearingOf(Lease lease) {
+        return accountResolver.resolve(AccountRole.ACQUISITION_CLEARING, propertyIdOf(lease)).getId();
+    }
+
     /**
      * S16-15: the property's Advance Rent leaf (null when unmapped) — what a rent
      * segment defers into, whatever accounts it names. Read-only; call inside a transaction.

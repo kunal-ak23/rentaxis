@@ -106,6 +106,8 @@ public class RentReceiptService {
         leaseAccessPolicy.requireReadable(lease);
         // PR #359 R1: after an assignment the rows are split by renter; each sees their own.
         leaseAccessPolicy.requireRentersOwnCheque(cheque);
+        // S16-14 (#376 P2-1): no receipt in our name for money the previous owner received.
+        com.datagami.rentaxis.core.service.cheque.ChequeService.requireOurs(cheque, lease);
 
         if (cheque.getStatus() != ChequeStatus.CLEARED) {
             throw new BusinessRuleViolationException("Receipt can only be generated for cleared payments");

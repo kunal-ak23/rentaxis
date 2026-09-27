@@ -64,7 +64,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * </ul>
  * <p>At 15/10 the acquired building's books hold the cheques handed over (47,050.00
  * PDC), the unearned rent (68,260.27), the deposit (5,000.00) and the opening position
- * that settles the rest with the previous owner (26,210.27 Dr = 31,000 banked by them
+ * with the previous owner — its vendor account, "Due to/from vendor - Acquired Tower"
+ * (ACQUISITION_CLEARING, #376 P2-2) — (26,210.27 Dr = 31,000 banked by them
  * − 2,934.25 − 805.48 earned by them − 1,050.00 VAT they declared). No income, no VAT,
  * nothing dated before 15/10. Today (the fixed clock) is 15/11/2026.</p>
  */
@@ -103,6 +104,12 @@ class AcquisitionCutoverIT extends AbstractPostgresIT {
     @Autowired PropertyRepository propertyRepo;
     @Autowired TransactionTemplate tx;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.datagami.rentaxis.core.service.lease.LeaseTerminationService termination;
+    @Autowired com.datagami.rentaxis.core.service.lease.LeaseReductionService reductions;
+    @Autowired com.datagami.rentaxis.core.service.lease.LeasePostingService leasePosting;
+    @Autowired com.datagami.rentaxis.core.service.LeaseService leaseService;
+    @Autowired com.datagami.rentaxis.core.service.cheque.ChequeService chequeService;
+    @Autowired com.datagami.rentaxis.core.service.RentReceiptService receipts;
 
     UUID tenantId;
 
@@ -163,7 +170,7 @@ class AcquisitionCutoverIT extends AbstractPostgresIT {
         assertThat(balance(property, AccountRole.RENTAL_INCOME, A)).isEqualByComparingTo("0");
         assertThat(balance(property, AccountRole.OUTPUT_VAT, A)).isEqualByComparingTo("0");
         assertThat(balance(property, AccountRole.RENT_RECEIVABLE, A)).isEqualByComparingTo("0");
-        assertThat(balance(property, AccountRole.OPENING_BALANCE_DIFFERENCE, A)).isEqualByComparingTo("26210.27");
+        assertThat(balance(property, AccountRole.ACQUISITION_CLEARING, A)).isEqualByComparingTo("26210.27");
 
         // The cheque the previous owner banked is cleared on its own dates with no bank entry;
         // the ones handed over are ours to bank.
@@ -222,7 +229,123 @@ class AcquisitionCutoverIT extends AbstractPostgresIT {
                 "update tenant_fiscal_settings set books_locked_through = ? where tenant_id = ?",
                 LocalDate.of(2026, 9, 30), tenantId));
         assertThat(batches.reverse(batchId, "wrong").getStatus()).isEqualTo(ImportBatchStatus.REVERSED);
-        assertThat(balance(acquiredProperty(), AccountRole.OPENING_BALANCE_DIFFERENCE, TODAY)).isEqualByComparingTo("0");
+        assertThat(balance(acquiredProperty(), AccountRole.ACQUISITION_CLEARING, TODAY)).isEqualByComparingTo("0");
+        // #376 P3-2: the acquisition's books start goes with it.
+        assertThat(jdbc.queryForObject("select books_start_date from properties where id = ?", LocalDate.class,
+                acquiredProperty())).isNull();
+    }
+
+    // ------------------------------------------------------------------ after the acquisition (#376 review)
+
+    /** The acquisition, posted: 26,210.27 due from the vendor, nothing on our Output VAT. */
+    private UUID acquire() throws Exception {
+        UUID batchId = importAcquisition(null);
+        batches.setAcquisitionDate(batchId, A);
+        assertThat(postService.post(batchId).failures()).isEmpty();
+        return batchId;
+    }
+
+    /**
+     * P1-1 (the reviewer's probe): terminating an acquired VAT lease on 10/11 hands back
+     * 932.06 of VAT the previous owner declared. The vendor refunds it — no credit note
+     * of ours, our Output VAT and the Q4 return untouched.
+     */
+    @Test
+    void terminatingAnAcquiredVatLeaseHandsTheVendorsVatBackThroughTheVendor() throws Exception {
+        acquire();
+        UUID property = acquiredProperty();
+        UUID leaseId = leaseIdOf("SAMPLE-0002");
+        termination.terminate(leaseId, new com.datagami.rentaxis.api.dto.lease.TerminateLeaseRequest(
+                LocalDate.of(2026, 11, 10), null, null, null), null);
+
+        assertThat(jdbc.queryForObject("select count(*) from tax_invoices where lease_id = ?", Integer.class, leaseId))
+                .as("no tax document of ours").isZero();
+        assertThat(balance(property, AccountRole.OUTPUT_VAT, TODAY)).isEqualByComparingTo("0");
+        assertThat(balance(property, AccountRole.ACQUISITION_CLEARING, TODAY)).isEqualByComparingTo("27142.33");
+        var q4 = tx.execute(s -> vatReturns.get(LocalDate.of(2026, 10, 1)));
+        assertThat(q4.outputCheck().ok()).isTrue();
+        assertThat(q4.netVat()).as("no refund claimed on our return").isEqualByComparingTo("0");
+    }
+
+    /**
+     * P1-1 and P3-1: an amendment cutting ACQ-0002's rent from 21,000 to 14,600 on 15/11
+     * (a one-off fee keeps the cheque whole). The 320.00 of VAT it takes off is the
+     * vendor's; the previous owner's 14 days are re-priced (805.48 → 560.00) against the
+     * vendor, never through our income. At the end of the term Advance Rent is nil and our
+     * rental income is exactly our days of both contracts.
+     */
+    @Test
+    void amendingAnAcquiredLeaseKeepsTheVendorsVatAndDaysWithTheVendor() throws Exception {
+        acquire();
+        UUID property = acquiredProperty();
+        UUID leaseId = leaseIdOf("SAMPLE-0002");
+        UUID adminFee = jdbc.queryForObject("select id from charge_types where tenant_id = ? and code = 'ADMIN_FEE'",
+                UUID.class, tenantId);
+        List<com.datagami.rentaxis.api.dto.lease.LeaseLineInput> lines = new java.util.ArrayList<>();
+        for (var l : tx.execute(s -> leaseService.getLines(leaseId))) {
+            lines.add(new com.datagami.rentaxis.api.dto.lease.LeaseLineInput(l.chargeTypeId(), null,
+                    new BigDecimal("14600"), l.discountAmount(), l.narration(), l.vatApplicable(), l.creditAccountId(),
+                    l.periodStart(), l.periodEnd(), l.addendumId()));
+        }
+        lines.add(new com.datagami.rentaxis.api.dto.lease.LeaseLineInput(adminFee, null, new BigDecimal("6720"),
+                BigDecimal.ZERO, "Admin fee", false, null, null, null, null));
+        leasePosting.amendLines(leaseId, lines, "Rent corrected");
+
+        assertThat(jdbc.queryForObject("select count(*) from tax_invoices where lease_id = ?", Integer.class, leaseId))
+                .as("no tax document of ours").isZero();
+        assertThat(balance(property, AccountRole.OUTPUT_VAT, TODAY)).isEqualByComparingTo("0");
+        assertThat(balance(property, AccountRole.ACQUISITION_CLEARING, TODAY)).isEqualByComparingTo("26775.75");
+
+        LocalDate end = LocalDate.of(2027, 9, 30);
+        recognition.runTo(end, false);
+        assertThat(balance(property, AccountRole.ADVANCE_RENT, end)).isEqualByComparingTo("0");
+        assertThat(balance(property, AccountRole.RENTAL_INCOME, end)).isEqualByComparingTo("-62105.75");
+    }
+
+    /** P1-1: a credit addendum on an acquired VAT lease — the VAT it takes off is the vendor's too. */
+    @Test
+    void aCreditAddendumOnAnAcquiredLeaseIssuesNoCreditNoteOfOurs() throws Exception {
+        acquire();
+        UUID property = acquiredProperty();
+        UUID leaseId = leaseIdOf("SAMPLE-0002");
+        UUID rentLine = tx.execute(s -> leaseService.getLines(leaseId)).get(0).id();
+        LocalDate e = LocalDate.of(2026, 11, 10);
+        reductions.reduce(leaseId, new com.datagami.rentaxis.api.dto.lease.ReduceLeaseRequest(e, e, "Rent renegotiated",
+                null, List.of(new com.datagami.rentaxis.api.dto.lease.ReduceLeaseRequest.LineReduction(rentLine,
+                        new BigDecimal("14600"))), "CREDIT", List.of(), List.of()));
+        assertThat(jdbc.queryForObject("select count(*) from tax_invoices where lease_id = ?", Integer.class, leaseId))
+                .as("no tax document of ours").isZero();
+        assertThat(balance(property, AccountRole.OUTPUT_VAT, TODAY)).isEqualByComparingTo("0");
+        assertThat(balance(property, AccountRole.ACQUISITION_CLEARING, TODAY)).isGreaterThan(new BigDecimal("26210.27"));
+    }
+
+    /** P2-1: the cheque the previous owner banked is not ours to bounce, receipt or count as collected. */
+    @Test
+    void aChequeTheVendorBankedIsNotOurs() throws Exception {
+        acquire();
+        Cheque banked = cheques("SAMPLE-0001").get(0);
+        assertThat(banked.isSettledBeforeAcquisition()).isTrue();
+        assertThatThrownBy(() -> chequeService.bounce(banked.getId(),
+                new com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest(LocalDate.of(2026, 11, 1), null, null, null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("banked by the previous owner before " + A)
+                .hasMessageContaining("acquisition clearing account");
+        assertThatThrownBy(() -> receipts.receipt(banked.getId()))
+                .hasMessageContaining("banked by the previous owner");
+        // The dashboard's collected tile counts go-live's 31,000 cleared cheque, not the vendor's.
+        BigDecimal cleared = tx.execute(s -> chequeRepo.totalsByStatus(null, true, List.of()).stream()
+                .filter(r -> r[0] == ChequeStatus.CLEARED).map(r -> (BigDecimal) r[2]).findFirst().orElse(BigDecimal.ZERO));
+        assertThat(cleared).isEqualByComparingTo("31000.00");
+    }
+
+    /** P3-2: a property whose books already start on another day is not moved by a second acquisition. */
+    @Test
+    void aPropertyWhoseBooksStartElsewhereIsRefused() throws Exception {
+        UUID batchId = importAcquisition(null);
+        jdbc.update("update properties set books_start_date = ? where id = ?", LocalDate.of(2026, 10, 10), acquiredProperty());
+        batches.setAcquisitionDate(batchId, A);
+        assertThatThrownBy(() -> postService.post(batchId))
+                .hasMessageContaining("already start on 2026-10-10");
     }
 
     // ------------------------------------------------------------------ what is refused

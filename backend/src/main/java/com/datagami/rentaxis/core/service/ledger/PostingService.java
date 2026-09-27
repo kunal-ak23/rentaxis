@@ -172,11 +172,45 @@ public class PostingService {
         java.util.Set<UUID> ids = new java.util.HashSet<>();
         for (JournalLine l : posted) if (l.getPropertyId() != null) ids.add(l.getPropertyId());
         if (ids.isEmpty()) return;
-        List<com.datagami.rentaxis.domain.entity.Property> later = properties.findStartingAfter(ids, date);
-        if (later.isEmpty()) return;
-        com.datagami.rentaxis.domain.entity.Property p = later.get(0);
-        throw new BusinessRuleViolationException("Cannot post on " + date + ": the books of " + p.getNameEn()
-                + " start on " + p.getBooksStartDate() + ", the day it was acquired.");
+        // #376 P3-3: read once per property per transaction — a bulk post or a month-end
+        // run writes thousands of entries on the same few properties.
+        Map<UUID, Object[]> known = BooksStartCache.current();
+        java.util.List<UUID> missing = ids.stream().filter(id -> !known.containsKey(id)).toList();
+        if (!missing.isEmpty()) {
+            for (Object[] row : properties.booksStartOf(missing)) known.put((UUID) row[0], row);
+            for (UUID id : missing) known.putIfAbsent(id, new Object[]{id, null, null});
+        }
+        for (UUID id : ids) {
+            Object[] row = known.get(id);
+            LocalDate start = (LocalDate) row[2];
+            if (start != null && date.isBefore(start)) {
+                throw new BusinessRuleViolationException("Cannot post on " + date + ": the books of " + row[1]
+                        + " start on " + start + ", the day it was acquired.");
+            }
+        }
+    }
+
+    /**
+     * The properties' books starts read in the current transaction, held by a
+     * synchronization of that transaction — so a suspended outer transaction and a
+     * REQUIRES_NEW inner one never share it, and it goes when the transaction does.
+     * Outside a transaction, a fresh map per call.
+     */
+    private static final class BooksStartCache
+            implements org.springframework.transaction.support.TransactionSynchronization {
+        private final Map<UUID, Object[]> byProperty = new HashMap<>();
+
+        static Map<UUID, Object[]> current() {
+            if (!org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+                return new HashMap<>();
+            }
+            for (var s : org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations()) {
+                if (s instanceof BooksStartCache c) return c.byProperty;
+            }
+            BooksStartCache c = new BooksStartCache();
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(c);
+            return c.byProperty;
+        }
     }
 
     /**

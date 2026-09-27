@@ -266,6 +266,14 @@ public class LeaseTerminationService {
         return postUnearnedReversal(lease, plan, vat, t);
     }
 
+    /** S16-14 (#376 P1-1): the previous owner's VAT on an acquired lease. Setter-injected. */
+    private com.datagami.rentaxis.core.service.vat.AcquiredLeaseVat acquiredVat;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setAcquiredVat(com.datagami.rentaxis.core.service.vat.AcquiredLeaseVat acquiredVat) {
+        this.acquiredVat = acquiredVat;
+    }
+
     /**
      * PR #369 R1 P3-3: a CONTRACT lease hands the VAT on its unearned rent back on a tax
      * credit note, which needs the TRN — refused before anything is written, and by the
@@ -335,6 +343,23 @@ public class LeaseTerminationService {
         // the entry should see the tax as a line of its own rather than folded into
         // the rent.
         BigDecimal unearnedVat = plan.unearnedVat();
+        BigDecimal unearnedTaxable = plan.unearnedVatTaxable();
+        if (!instalment && unearnedVat != null && unearnedVat.signum() > 0 && acquiredVat != null) {
+            // S16-14 (#376 P1-1): on an acquired lease the previous owner declared this
+            // VAT; they refund it — the vendor account takes it, our VAT return never sees
+            // it, and no credit note of ours is issued for it.
+            BigDecimal vendor = acquiredVat.takeVendorPart(lease, unearnedVat);
+            if (vendor.signum() > 0) {
+                String n = "VAT the previous owner declared on unearned rent, refunded through them";
+                pairs.add(PostingRequest.pair(
+                        PostingRequest.dr(AccountRole.ACQUISITION_CLEARING, vendor).withNarration(n),
+                        LeaseChequeRegistrar.crReceivable(lease, vendor).withNarration(n)));
+                BigDecimal ours = unearnedVat.subtract(vendor);
+                unearnedTaxable = unearnedTaxable == null ? null
+                        : unearnedTaxable.multiply(ours).divide(unearnedVat, 2, java.math.RoundingMode.HALF_UP);
+                unearnedVat = ours;
+            }
+        }
         if (!instalment) {
             // A legacy CONTRACT lease declared all its VAT at the TCO: the unearned
             // part is credited straight back out of OUTPUT_VAT, as it always was.
@@ -392,7 +417,7 @@ public class LeaseTerminationService {
             // the credit note then names the contract whose tax invoice the previous
             // system issued (TaxInvoiceService.referencesFor).
             vatTaxPoints.recordTerminationAdjustment(lease, t, unearnedVat.negate(),
-                    plan.unearnedVatTaxable().negate(), tcr.getId());
+                    unearnedTaxable.negate(), tcr.getId());
         }
         return tcr.getId();
     }

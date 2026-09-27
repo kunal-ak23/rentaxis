@@ -530,6 +530,19 @@ public class ImportBatchService {
         for (UUID leaseId : leases) {
             reverter.revertToDraft(leaseId);
         }
+        if (b.getAcquisitionDate() != null && !leases.isEmpty()) {
+            // #376 P3-2: the acquired properties' own books start goes with the acquisition
+            // (a re-post sets it again). Native, so the tenant is bound explicitly.
+            entityManager.createNativeQuery("""
+                    update properties p set books_start_date = null
+                     where p.tenant_id = :t and p.books_start_date = :a
+                       and p.id in (select u.property_id from leases l join units u on u.id = l.unit_id
+                                     where l.tenant_id = :t and l.id in (:ids))""")
+                    .setParameter("t", TenantContextHolder.getTenantId())
+                    .setParameter("a", b.getAcquisitionDate())
+                    .setParameter("ids", leases)
+                    .executeUpdate();
+        }
         log.info("Reversed import batch {}: {} journals, {} leases returned to DRAFT",
                 batchId, toReverse.size(), leases.size());
 

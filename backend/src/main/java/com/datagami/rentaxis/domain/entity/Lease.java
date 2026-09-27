@@ -145,6 +145,21 @@ public class Lease extends BaseTenantEntity {
     @Column(name = "vat_trn", length = 50)
     private String vatTrn;
 
+    /**
+     * S16-14: the day this lease came in with a building acquired after go-live (null
+     * for every other lease). What happened before it is the previous owner's.
+     */
+    @Column(name = "acquired_on")
+    private LocalDate acquiredOn;
+
+    /**
+     * S16-14 (#376 P1-1): the Output VAT the previous owner declared on this contract
+     * that has not been handed back yet. A hand-back of it goes through the vendor
+     * (ACQUISITION_CLEARING), never our VAT return; null on a lease not acquired.
+     */
+    @Column(name = "acquired_vat_open", precision = 15, scale = 2)
+    private java.math.BigDecimal acquiredVatOpen;
+
     // ---- contract header (spec §6.3) ----------------------------------------
 
     /**

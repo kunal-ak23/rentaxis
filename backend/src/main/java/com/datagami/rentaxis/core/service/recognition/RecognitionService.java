@@ -269,6 +269,11 @@ public class RecognitionService {
         Lease lease = lease(leaseId);
         LocalDate d = reversalDate == null ? LocalDate.now() : reversalDate;
         String reason = "Lease amended " + d;
+        // S16-14 (#376 P3-1): on a lease of an acquired building the days before its books
+        // start are the previous owner's (released to the vendor at the acquisition) — the
+        // amendment's arithmetic starts there, and never moves their days through our income.
+        LocalDate own = lease.getUnit() == null || lease.getUnit().getProperty() == null ? null
+                : lease.getUnit().getProperty().getBooksStartDate();
 
         // --- 1. the old schedule keeps what it earned through d − 1 ---------------
         // Nothing the ledger saw before the amendment is touched: months already
@@ -289,7 +294,8 @@ public class RecognitionService {
             keyOfSegment.put(seg.getId(), key);
             lineOfKey.putIfAbsent(key, seg.getLeaseLineId());
             if (seg.getIncomeAccountId() != null) feeKeys.add(key);
-            fromOfKey.merge(key, seg.getFromDate(), (x, y) -> x.isBefore(y) ? x : y);
+            fromOfKey.merge(key, own != null && seg.getFromDate().isBefore(own) ? own : seg.getFromDate(),
+                    (x, y) -> x.isBefore(y) ? x : y);
             if (seg.getStatus() != SegmentStatus.ACTIVE) continue;
             if (!seg.getFromDate().isBefore(d)) {
                 cancelWholeSegment(seg, d, reason);
@@ -311,9 +317,15 @@ public class RecognitionService {
         Map<List<UUID>, BigDecimal> kept = new java.util.LinkedHashMap<>();
         Map<List<UUID>, BigDecimal> folded = new java.util.LinkedHashMap<>();
         Map<List<UUID>, Integer> foldedMonths = new java.util.LinkedHashMap<>();
+        Map<List<UUID>, BigDecimal> theirsKept = new java.util.LinkedHashMap<>();
         for (RecognitionEntry e : entries.findByLease_IdOrderByPeriodStartAsc(leaseId)) {
             List<UUID> key = keyOfSegment.get(e.getSegment().getId());
             if (key == null) continue;
+            if (own != null && e.getPeriodEnd().isBefore(own)) {
+                // The previous owner's days: compared on their own below, never with ours.
+                if (e.getStatus() == RecognitionStatus.POSTED) theirsKept.merge(key, e.getAmount(), BigDecimal::add);
+                continue;
+            }
             RecognitionStatus status = e.getStatus();
             if (status == RecognitionStatus.PLANNED && locked != null && !e.getPeriodEnd().isAfter(locked)) {
                 RecognitionEntry row = lock(e.getId());
@@ -337,19 +349,28 @@ public class RecognitionService {
         // over the remaining days (remaining ÷ remaining days; the last period absorbs
         // the rounding).
         Map<List<UUID>, BigDecimal> newEarned = new java.util.LinkedHashMap<>();
+        Map<List<UUID>, BigDecimal> theirsNew = new java.util.LinkedHashMap<>();
+        Map<List<UUID>, LocalDate> theirsFrom = new java.util.LinkedHashMap<>();
         for (LeaseLine line : leaseLines.findByLease_IdOrderBySeqNoAsc(leaseId)) {
             Window w = schedulable(lease, line);
             if (w == null) continue;
             if (segments.existsByLeaseLineIdAndStatusIn(line.getId(), LIVE_SEGMENTS)) continue;
             BigDecimal earned = w.from().isBefore(d)
                     ? ProrationEngine.earnedThrough(w.net(), w.from(), w.to(), d.minusDays(1)) : BigDecimal.ZERO;
+            BigDecimal theirs = own != null && w.from().isBefore(own)
+                    ? ProrationEngine.earnedThrough(w.net(), w.from(), w.to(), own.minusDays(1)) : BigDecimal.ZERO;
             LocalDate newFrom = w.from().isBefore(d) ? d : w.from();
             RentSegment probe = newSegment(lease, line, w.fee(), w.from(), w.to(), w.net());
             List<UUID> key = List.of(poster.deferralAccountId(probe, lease), poster.incomeAccountId(probe, lease));
             lineOfKey.put(key, line.getId());
             if (w.fee()) feeKeys.add(key);
-            fromOfKey.merge(key, w.from(), (x, y) -> x.isBefore(y) ? x : y);
-            newEarned.merge(key, earned, BigDecimal::add);
+            LocalDate ours = own != null && w.from().isBefore(own) ? own : w.from();
+            fromOfKey.merge(key, ours, (x, y) -> x.isBefore(y) ? x : y);
+            newEarned.merge(key, earned.subtract(theirs), BigDecimal::add);
+            if (own != null && w.from().isBefore(own)) {
+                theirsNew.merge(key, theirs, BigDecimal::add);
+                theirsFrom.merge(key, w.from(), (x, y) -> x.isBefore(y) ? x : y);
+            }
             BigDecimal remaining = w.net().subtract(earned);
             if (remaining.signum() <= 0 || newFrom.isAfter(w.to())) continue;
             schedule(lease, newSegment(lease, line, w.fee(), newFrom, w.to(), remaining));
@@ -369,6 +390,24 @@ public class RecognitionService {
                             + folded.get(key).setScale(2, RoundingMode.HALF_UP).toPlainString() + ")"
                     : reason;
             postCatchUp(lease, key, feeKeys.contains(key), lineOfKey.get(key), fromOfKey.get(key), d, diff, why);
+        }
+
+        // --- 4. the previous owner's days, re-priced: settled with the vendor -------
+        // #376 P3-1: the amended contract values their days differently from what was
+        // released to them at the acquisition; the difference is theirs (the vendor
+        // account), never our income. Dated d, like the catch-up.
+        if (own != null) {
+            java.util.Set<List<UUID>> theirKeys = new java.util.LinkedHashSet<>(theirsKept.keySet());
+            theirKeys.addAll(theirsNew.keySet());
+            for (List<UUID> key : theirKeys) {
+                BigDecimal diff = theirsNew.getOrDefault(key, BigDecimal.ZERO)
+                        .subtract(theirsKept.getOrDefault(key, BigDecimal.ZERO)).setScale(2, RoundingMode.HALF_UP);
+                if (diff.signum() == 0) continue;
+                LocalDate from = theirsFrom.getOrDefault(key, lease.getStartDate());
+                postCatchUp(lease, key, feeKeys.contains(key), lineOfKey.get(key), from, own, d, diff,
+                        reason + "; the previous owner's days before " + own + ", settled with the vendor",
+                        poster.acquisitionClearingOf(lease));
+            }
         }
     }
 
@@ -463,7 +502,17 @@ public class RecognitionService {
      */
     private void postCatchUp(Lease lease, List<UUID> key, boolean fee, UUID lineId, LocalDate from, LocalDate d,
                              BigDecimal diff, String reason) {
-        LocalDate end = d.minusDays(1);
+        postCatchUp(lease, key, fee, lineId, from, d, d, diff, reason, null);
+    }
+
+    /**
+     * The same, over the window {@code from} → {@code end − 1}, still dated today's
+     * amendment date; {@code creditOverride}, when set, takes the income side (the
+     * vendor account for the previous owner's days).
+     */
+    private void postCatchUp(Lease lease, List<UUID> key, boolean fee, UUID lineId, LocalDate from, LocalDate endExclusive,
+                             LocalDate d, BigDecimal diff, String reason, UUID creditOverride) {
+        LocalDate end = endExclusive.minusDays(1);
         LocalDate start = from == null || from.isAfter(end) ? end : from;
         RentSegment seg = new RentSegment();
         seg.setTenantId(lease.getTenantId());
@@ -497,7 +546,7 @@ public class RecognitionService {
         BigDecimal amount = diff.abs();
         PostingRequest.Line deferral = new PostingRequest.Line(new PostingRequest.ById(key.get(0)),
                 diff.signum() > 0 ? PostingRequest.Side.DR : PostingRequest.Side.CR, amount, null, null);
-        PostingRequest.Line income = new PostingRequest.Line(new PostingRequest.ById(key.get(1)),
+        PostingRequest.Line income = new PostingRequest.Line(new PostingRequest.ById(creditOverride != null ? creditOverride : key.get(1)),
                 diff.signum() > 0 ? PostingRequest.Side.CR : PostingRequest.Side.DR, amount, null, null);
         JournalEntry cil = postingService.post(PostingRequest.ofPairs(com.datagami.rentaxis.domain.entity.enums.JournalDocType.CIL, d,
                 "Recognition catch-up – " + reason,

@@ -148,6 +148,14 @@ public class LeaseReductionService {
     // ------------------------------------------------------------------
 
     /** What {@link #reduce} would do, with nothing written; problems are listed rather than thrown. */
+    /** S16-14 (#376 P1-1): the previous owner's VAT on an acquired lease. Setter-injected. */
+    private com.datagami.rentaxis.core.service.vat.AcquiredLeaseVat acquiredVat;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setAcquiredVat(com.datagami.rentaxis.core.service.vat.AcquiredLeaseVat acquiredVat) {
+        this.acquiredVat = acquiredVat;
+    }
+
     @Transactional(readOnly = true)
     public ReductionPreviewDTO preview(UUID leaseId, ReduceLeaseRequest r) {
         Lease lease = leaseRepository.findById(leaseId).orElseThrow(() -> new NotFoundException("Lease not found"));
@@ -293,6 +301,20 @@ public class LeaseReductionService {
             pairs.add(PostingRequest.pair(
                     PostingRequest.dr(AccountRole.OUTPUT_VAT_DEFERRED, rv.fromDeferred()).withNarration(n),
                     LeaseChequeRegistrar.crReceivable(lease, rv.fromDeferred()).withNarration(n)));
+        }
+        if (rv.creditNote().signum() > 0 && acquiredVat != null) {
+            // S16-14 (#376 P1-1): the previous owner's VAT on an acquired lease is refunded
+            // through them — the vendor account, no credit note of ours for that part.
+            BigDecimal vendor = acquiredVat.takeVendorPart(lease, rv.creditNote());
+            if (vendor.signum() > 0) {
+                String n = "VAT the previous owner declared on the reduced charges, refunded through them";
+                pairs.add(PostingRequest.pair(
+                        PostingRequest.dr(AccountRole.ACQUISITION_CLEARING, vendor).withNarration(n),
+                        LeaseChequeRegistrar.crReceivable(lease, vendor).withNarration(n)));
+                BigDecimal ours = rv.creditNote().subtract(vendor);
+                rv = new VatTaxPointService.ReductionVat(rv.fromDeferred(), ours,
+                        rv.creditNoteTaxable().multiply(ours).divide(rv.creditNote(), 2, java.math.RoundingMode.HALF_UP));
+            }
         }
         if (rv.creditNote().signum() > 0) {
             String n = "VAT credited back on the reduced charges";

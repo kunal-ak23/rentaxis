@@ -658,8 +658,13 @@ public class LeasePostingService {
         // post, so the status rule is checked above and skipped here.
         PostingPlan plan = validate(lease, lines, cheques, Preconditions.FOR_AMEND);
         plan.throwIfRefused(propertyIdOf(lease));
+        // S16-14 (#376 P1-1): VAT the amendment takes off an acquired lease is the previous
+        // owner's to refund, as far as it is theirs — no document of ours for that part.
+        BigDecimal vatDrop = vatBefore.subtract(InstalmentVat.contractVat(lines));
+        BigDecimal vendorVat = lease.getVatTiming() == VatTiming.CONTRACT && acquiredVat != null
+                ? acquiredVat.vendorPart(lease, vatDrop) : BigDecimal.ZERO;
         if (lease.getVatTiming() == VatTiming.CONTRACT
-                && InstalmentVat.contractVat(lines).compareTo(vatBefore) != 0 && !hasSupplierTrn(lease)) {
+                && InstalmentVat.contractVat(lines).compareTo(vatBefore.subtract(vendorVat)) != 0 && !hasSupplierTrn(lease)) {
             throw new BusinessRuleViolationException("This amendment changes the contract's VAT, so it issues a tax"
                     + " invoice or credit note, and the organisation has no TRN. Add the TRN to the organisation's"
                     + " details first.");
@@ -700,6 +705,18 @@ public class LeasePostingService {
         // invoice of ours (a cut-over, or a lease posted before the rule) gets the
         // difference as an AMENDMENT document dated today.
         vatTaxPoints.recordContractVat(lease, reversedOn, tco.getId(), false);
+        if (vendorVat.signum() > 0) {
+            vendorVat = acquiredVat.takeVendorPart(lease, vatDrop);
+            String n = "VAT the previous owner declared, taken off by the amendment and refunded through them";
+            postingService.post(PostingRequest.ofPairs(JournalDocType.JV, reversedOn, n,
+                    LeaseChequeRegistrar.dimensions(lease, null), JournalSourceType.LEASE, lease.getId(), null,
+                    List.of(PostingRequest.pair(
+                            PostingRequest.dr(AccountRole.ACQUISITION_CLEARING, vendorVat).withNarration(n),
+                            PostingRequest.cr(AccountRole.OUTPUT_VAT, vendorVat).withNarration(n)))));
+            taxableBefore = vatBefore.signum() == 0 ? taxableBefore
+                    : taxableBefore.subtract(taxableBefore.multiply(vendorVat).divide(vatBefore, 2, java.math.RoundingMode.HALF_UP));
+            vatBefore = vatBefore.subtract(vendorVat);
+        }
         vatTaxPoints.recordAmendmentVat(lease, reversedOn, tco.getId(), vatBefore, taxableBefore);
 
         lease.setPostingJournalId(tco.getId());
@@ -1302,8 +1319,20 @@ public class LeasePostingService {
     static final String NO_TRN_FOR_CREDIT_NOTE = "Ending or reducing this contract hands VAT back on a tax credit note,"
             + " and the organisation has no TRN. Add the TRN to the organisation's details first.";
 
-    /** Null when a credit note for {@code vat} can be issued on this lease; else {@link #NO_TRN_FOR_CREDIT_NOTE}. */
+    /** S16-14 (#376 P1-1): the previous owner's VAT on an acquired lease. Setter-injected. */
+    private com.datagami.rentaxis.core.service.vat.AcquiredLeaseVat acquiredVat;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setAcquiredVat(com.datagami.rentaxis.core.service.vat.AcquiredLeaseVat acquiredVat) {
+        this.acquiredVat = acquiredVat;
+    }
+
+    /**
+     * Null when a credit note for {@code vat} can be issued on this lease; else {@link #NO_TRN_FOR_CREDIT_NOTE}.
+     * S16-14: the vendor's part of an acquired lease's VAT carries no credit note of ours.
+     */
     String creditNoteTrnProblem(Lease lease, BigDecimal vat) {
+        if (vat != null && acquiredVat != null) vat = vat.subtract(acquiredVat.vendorPart(lease, vat));
         return vat != null && vat.signum() > 0 && !hasSupplierTrn(lease) ? NO_TRN_FOR_CREDIT_NOTE : null;
     }
 

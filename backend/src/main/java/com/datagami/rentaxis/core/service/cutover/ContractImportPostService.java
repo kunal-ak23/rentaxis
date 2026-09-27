@@ -97,17 +97,17 @@ public class ContractImportPostService {
     // S16-14: what an acquisition cut-over needs. Setter-injected, so the constructor
     // every other caller knows is unchanged.
     private java.time.Clock clock = java.time.Clock.systemDefaultZone();
-    private com.datagami.rentaxis.core.service.ledger.AccountResolver accountResolver;
+    private com.datagami.rentaxis.core.service.ledger.PropertyAccountService propertyAccounts;
     private com.datagami.rentaxis.domain.repository.PropertyRepository properties;
     private org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate jdbc;
 
     @org.springframework.beans.factory.annotation.Autowired
     void setAcquisitionSupport(java.time.Clock clock,
-                               com.datagami.rentaxis.core.service.ledger.AccountResolver accountResolver,
+                               com.datagami.rentaxis.core.service.ledger.PropertyAccountService propertyAccounts,
                                com.datagami.rentaxis.domain.repository.PropertyRepository properties,
                                org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate jdbc) {
         this.clock = clock;
-        this.accountResolver = accountResolver;
+        this.propertyAccounts = propertyAccounts;
         this.properties = properties;
         this.jdbc = jdbc;
     }
@@ -224,7 +224,7 @@ public class ContractImportPostService {
         LocalDate recogniseThrough = booksStart.minusDays(1);
 
         List<Plan> plan = planOf(target);
-        UUID opening = acquiredOn == null ? null : requireAcquirable(plan, acquiredOn, booksStart, target, repostOf);
+        if (acquiredOn != null) requireAcquirable(plan, acquiredOn, booksStart, target, repostOf);
         List<LeaseOutcome> outcomes = new ArrayList<>(plan.size());
         List<ImportErrorDTO> failures = new ArrayList<>();
         int posted = 0;
@@ -240,7 +240,7 @@ public class ContractImportPostService {
             try {
                 ContractImportLeasePoster.Posted done = acquiredOn == null
                         ? leasePoster.postOne(target, row.leaseId(), recogniseThrough)
-                        : leasePoster.postAcquired(target, row.leaseId(), acquiredOn, opening);
+                        : leasePoster.postAcquired(target, row.leaseId(), acquiredOn);
                 if (done == null) {
                     skipped++;
                     outcomes.add(new LeaseOutcome(row.leaseId(), row.ref(),
@@ -314,13 +314,15 @@ public class ContractImportPostService {
      *   <li>every property the batch's contracts stand on has <b>no postings</b> but
      *       this batch's own (or the reversed batch it re-posts): an acquisition brings
      *       in a building new to the books, never one whose history is already here;</li>
-     *   <li>an account is mapped to OPENING_BALANCE_DIFFERENCE — the opening position
-     *       the previous owner's part is settled on.</li>
+     *   <li>no property already has a different books start (an earlier acquisition
+     *       of it that posted nothing, say).</li>
      * </ul>
      *
-     * @return the opening-position account
+     * <p>Each property gets its ACQUISITION_CLEARING leaf ("Due to/from vendor —
+     * &lt;property&gt;", #376 P2-2): the previous owner's position is a balance with
+     * the vendor, settled against the purchase price by a JV — not equity.</p>
      */
-    private UUID requireAcquirable(List<Plan> plan, LocalDate a, LocalDate booksStart, UUID target, UUID repostOf) {
+    private void requireAcquirable(List<Plan> plan, LocalDate a, LocalDate booksStart, UUID target, UUID repostOf) {
         if (a.isBefore(booksStart)) {
             throw new BusinessRuleViolationException("The acquisition date " + a + " is before the books start on "
                     + booksStart + " — a building held at go-live belongs in the go-live cut-over.");
@@ -333,19 +335,19 @@ public class ContractImportPostService {
         if (a.isAfter(LocalDate.now(clock))) {
             throw new BusinessRuleViolationException("The acquisition date " + a + " is in the future.");
         }
-        com.datagami.rentaxis.domain.entity.Account opening = accountResolver.resolveOrNull(
-                com.datagami.rentaxis.domain.entity.enums.AccountRole.OPENING_BALANCE_DIFFERENCE, null);
-        if (opening == null) {
-            throw new BusinessRuleViolationException("Map an account to OPENING_BALANCE_DIFFERENCE before posting an"
-                    + " acquisition: the previous owner's part of each contract is settled on it.");
-        }
         java.util.Set<UUID> propertyIds = new java.util.LinkedHashSet<>();
         for (Plan row : plan) {
             leases.findByIdScopedToTenant(row.leaseId())
                     .map(Lease::getUnit).map(com.datagami.rentaxis.domain.entity.Unit::getProperty)
                     .ifPresent(p -> propertyIds.add(p.getId()));
         }
-        if (propertyIds.isEmpty()) return opening.getId();
+        if (propertyIds.isEmpty()) return;
+        for (com.datagami.rentaxis.domain.entity.Property p : properties.findAllById(propertyIds)) {
+            if (p.getBooksStartDate() != null && !p.getBooksStartDate().equals(a)) {
+                throw new BusinessRuleViolationException("The books of " + p.getNameEn() + " already start on "
+                        + p.getBooksStartDate() + "; an acquisition on " + a + " cannot move them.");
+            }
+        }
         List<String> held = jdbc.queryForList("""
                 select distinct p.name_en from journal_lines l
                   join journal_entries e on e.id = l.journal_entry_id and e.tenant_id = :t
@@ -363,8 +365,8 @@ public class ContractImportPostService {
         ownTx.executeWithoutResult(s -> properties.findAllById(propertyIds).forEach(p -> {
             p.setBooksStartDate(a);
             properties.save(p);
+            propertyAccounts.acquisitionClearingLeaf(p.getId());
         }));
-        return opening.getId();
     }
 
     /** One contract of the batch, and the reference a failure has to name. */
