@@ -1438,14 +1438,24 @@ public class LeaseService {
      * are missing or out of order are left to the checks that own them.
      */
     public static void requireSaneTerm(LocalDate start, LocalDate end) {
-        if (start == null || end == null || end.isBefore(start)) return;
-        if (end.isBefore(start.plusYears(MAX_TERM_YEARS))) return;
+        String problem = termTooLongMessage(start, end);
+        if (problem == null) return;
         java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
-        throw new BusinessRuleViolationException("A contract can run for at most " + MAX_TERM_YEARS
-                + " years; this one runs from " + start.format(dmy) + " to " + end.format(dmy)
-                + ". Check the end date.",
+        throw new BusinessRuleViolationException(problem,
                 "lease.termTooLong", java.util.Map.of("maxYears", MAX_TERM_YEARS,
                         "start", start.format(dmy), "end", end.format(dmy)));
+    }
+
+    /**
+     * The refusal {@link #requireSaneTerm} raises, or null for a term within the
+     * cap — the importers report it as a row error with the same words.
+     */
+    public static String termTooLongMessage(LocalDate start, LocalDate end) {
+        if (start == null || end == null || end.isBefore(start)) return null;
+        if (end.isBefore(start.plusYears(MAX_TERM_YEARS))) return null;
+        java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        return "A contract can run for at most " + MAX_TERM_YEARS + " years; this one runs from "
+                + start.format(dmy) + " to " + end.format(dmy) + ". Check the end date.";
     }
 
     /** Amounts may legitimately be omitted (a zero-value line); null is not an error. */

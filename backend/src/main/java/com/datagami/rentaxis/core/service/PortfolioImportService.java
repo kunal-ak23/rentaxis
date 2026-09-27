@@ -308,6 +308,11 @@ public class PortfolioImportService {
             if (startDate != null && endDate != null && !endDate.isAfter(startDate)) {
                 errors.add(new ImportErrorDTO("Leases", rowNum, "EndDate", "End date must be after start date"));
             }
+            // Break round 1: the same 50-year cap as the wizard and LeaseService.
+            String tooLong = LeaseService.termTooLongMessage(startDate, endDate);
+            if (tooLong != null) {
+                errors.add(new ImportErrorDTO("Leases", rowNum, "EndDate", tooLong));
+            }
 
             // Rent xor: exactly one of RentAmount or MonthlyRent must be set.
             String monthlyRentStr = cell(row, hi, "MonthlyRent");

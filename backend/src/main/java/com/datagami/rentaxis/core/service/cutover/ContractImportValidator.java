@@ -717,6 +717,11 @@ public class ContractImportValidator {
                 errors.add(new ImportErrorDTO("Contracts", rowNum, "EndDate",
                         "EndDate " + endDate + " must be after StartDate " + startDate));
             }
+            // Break round 1: the same 50-year cap as the wizard and LeaseService.
+            String tooLong = com.datagami.rentaxis.core.service.LeaseService.termTooLongMessage(startDate, endDate);
+            if (tooLong != null) {
+                errors.add(new ImportErrorDTO("Contracts", rowNum, "EndDate", tooLong));
+            }
 
             String grace = SheetCells.cell(row, hi, "GracePeriodDays");
             if (!grace.isEmpty()) {
