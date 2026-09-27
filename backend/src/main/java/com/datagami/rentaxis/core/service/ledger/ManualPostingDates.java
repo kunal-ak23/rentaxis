@@ -1,7 +1,10 @@
 package com.datagami.rentaxis.core.service.ledger;
 
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -9,8 +12,8 @@ import java.util.Map;
 
 /**
  * Break-it round 1 (money) F4: how far ahead a user may date a manual journal-type
- * posting — a journal voucher, a payment or receipt voucher, a cash receipt, or a
- * reversal of one.
+ * posting — a journal voucher, a payment or receipt voucher, a cash receipt, a
+ * bad-debt recovery, a payment run, or a reversal of one.
  *
  * <p>Journal numbers carry a two-digit year ({@code JV-26/1};
  * {@link EntryNumberService}), and the golden replay pins that format. So a
@@ -18,21 +21,36 @@ import java.util.Map;
  * fiscal year 2126, restarted at JV-26/1, and collided with a number already on
  * the books: "conflicts with existing related records (uq_journal_entries_number)",
  * every time. Dates a century out are never meant; the ruling is at most one year
- * after today in the business zone (Asia/Dubai). Contract-driven dates are not
- * affected — the 50-year term cap bounds those.</p>
+ * after today. Contract-driven dates are not affected — the 50-year term cap bounds
+ * those.</p>
+ *
+ * <p>"Today" is the application's {@link Clock} (app.time-zone, Asia/Dubai), the
+ * same one the rest of the services read — so a test's fixed clock moves it too.
+ * Services take this bean by setter injection and fall back to {@link #system()}
+ * when built by hand in a unit test.</p>
  */
-public final class ManualPostingDates {
+@Component
+public class ManualPostingDates {
 
     public static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Dubai");
 
     private static final DateTimeFormatter DMY = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
-    private ManualPostingDates() {
+    private final Clock clock;
+
+    @Autowired
+    public ManualPostingDates(Clock clock) {
+        this.clock = clock;
     }
 
-    /** The last date a manual posting may carry: one year after today in Asia/Dubai. */
-    public static LocalDate latestAllowed() {
-        return LocalDate.now(BUSINESS_ZONE).plusYears(1);
+    /** The rule on the wall clock in Asia/Dubai, for code built outside Spring. */
+    public static ManualPostingDates system() {
+        return new ManualPostingDates(Clock.system(BUSINESS_ZONE));
+    }
+
+    /** The last date a manual posting may carry: one year after today. */
+    public LocalDate latestAllowed() {
+        return LocalDate.now(clock).plusYears(1);
     }
 
     /**
@@ -41,7 +59,7 @@ public final class ManualPostingDates {
      *
      * @param what the document, for the sentence ("A journal voucher", "A cash receipt")
      */
-    public static void requireWithinAYear(LocalDate date, String what) {
+    public void requireWithinAYear(LocalDate date, String what) {
         if (date == null) return;
         LocalDate latest = latestAllowed();
         if (date.isAfter(latest)) {

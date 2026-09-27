@@ -30,7 +30,7 @@ public class RentCollectionSettingsController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<RentCollectionSettingsDTO> saveSettings(
             @PathVariable UUID propertyId,
-            @RequestBody RentCollectionSettingsDTO dto) {
+            @jakarta.validation.Valid @RequestBody RentCollectionSettingsDTO dto) {
         return ResponseEntity.ok(rentCollectionSettingsService.saveSettings(propertyId, dto));
     }
 }

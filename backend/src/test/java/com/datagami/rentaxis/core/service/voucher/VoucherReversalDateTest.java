@@ -27,11 +27,11 @@ class VoucherReversalDateTest {
     @Test
     void aReversalMoreThanAYearAheadIsRefused() {
         Voucher v = datedOn(LocalDate.of(2026, 9, 1));
-        LocalDate tooFar = ManualPostingDates.latestAllowed().plusDays(1);
+        LocalDate tooFar = ManualPostingDates.system().latestAllowed().plusDays(1);
         assertThatThrownBy(() -> VoucherService.requireReversible(v, tooFar, "typo"))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("more than a year ahead");
-        assertThatCode(() -> VoucherService.requireReversible(v, ManualPostingDates.latestAllowed(), "ok"))
+        assertThatCode(() -> VoucherService.requireReversible(v, ManualPostingDates.system().latestAllowed(), "ok"))
                 .doesNotThrowAnyException();
     }
 

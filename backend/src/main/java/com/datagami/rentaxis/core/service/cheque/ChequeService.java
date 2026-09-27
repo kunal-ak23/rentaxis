@@ -108,6 +108,14 @@ import java.util.UUID;
 @Service
 public class ChequeService {
 
+    /** Break-it round 1 (money) F4: the one-year window on manual dates, on the app clock. */
+    private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates = com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setManualPostingDates(com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates) {
+        this.manualDates = manualDates;
+    }
+
     private static final Logger log = LoggerFactory.getLogger(ChequeService.class);
 
     /**
@@ -1165,8 +1173,8 @@ public class ChequeService {
         if (row == null) throw new BusinessRuleViolationException("A receipt needs a row");
         // Break-it round 1 (money) F4: a counter receipt is dated by hand and posts a
         // PDR and a CRT on that date, numbered with a two-digit year.
-        com.datagami.rentaxis.core.service.ledger.ManualPostingDates.requireWithinAYear(row.chequeDate(), "A cash receipt");
-        com.datagami.rentaxis.core.service.ledger.ManualPostingDates.requireWithinAYear(row.postingDate(), "A cash receipt");
+        manualDates.requireWithinAYear(row.chequeDate(), "A cash receipt");
+        manualDates.requireWithinAYear(row.postingDate(), "A cash receipt");
         ChequeMode mode = row.mode();
         if (mode != ChequeMode.CASH && mode != ChequeMode.TRANSFER) {
             // A PDC is paper to be banked and cleared later; an ONLINE row belongs to

@@ -27,7 +27,7 @@ public record StaffRequest(
         String employeeId,
         String designation,
         String department,
-        BigDecimal monthlySalary,
+        @com.datagami.rentaxis.api.validation.Money BigDecimal monthlySalary,
         LocalDate joinDate,
         String phone,
         String emiratesId,

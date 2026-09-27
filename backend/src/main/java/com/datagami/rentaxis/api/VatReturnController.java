@@ -42,7 +42,7 @@ public class VatReturnController {
      * only to file a return whose output check fails — the reason, and the difference the filer saw.
      */
     public record FileRequest(LocalDate periodStart, String filingReference, String outputDifferenceReason,
-                              java.math.BigDecimal acknowledgedDifference) { }
+                              @com.datagami.rentaxis.api.validation.Money(allowNegative = true) java.math.BigDecimal acknowledgedDifference) { }
 
     public record ReopenRequest(String reason) { }
 
@@ -65,7 +65,7 @@ public class VatReturnController {
 
     @PostMapping("/file")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
-    public VatReturnDTO file(@RequestBody FileRequest r) {
+    public VatReturnDTO file(@jakarta.validation.Valid @RequestBody FileRequest r) {
         return service.file(r.periodStart(), r.filingReference(), r.outputDifferenceReason(), r.acknowledgedDifference());
     }
 

@@ -33,5 +33,6 @@ public class CreatePropertyDTO {
     private String makaniNumber;
 
     @PositiveOrZero(message = "Fixed expenses cannot be negative")
+    @com.datagami.rentaxis.api.validation.Money
     private BigDecimal fixedExpenses;
 }

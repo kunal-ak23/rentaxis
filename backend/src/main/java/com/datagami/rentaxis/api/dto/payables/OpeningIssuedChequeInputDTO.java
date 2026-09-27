@@ -10,4 +10,4 @@ import java.util.UUID;
 /** A post-dated cheque outstanding at cut-over (spec §2): its money arrived as an OB balance on PDC_PAYABLE. */
 public record OpeningIssuedChequeInputDTO(@NotNull UUID vendorId, @NotNull UUID bankAccountId,
                                           @NotBlank String chequeNumber, @NotNull LocalDate chequeDate,
-                                          @NotNull BigDecimal amount) { }
+                                          @NotNull @com.datagami.rentaxis.api.validation.Money(positive = true) BigDecimal amount) { }

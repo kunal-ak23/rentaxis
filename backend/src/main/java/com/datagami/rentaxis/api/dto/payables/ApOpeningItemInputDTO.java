@@ -12,4 +12,4 @@ import java.util.UUID;
 /** Create or edit a cut-over open item. {@code dueDate} null means the invoice date plus the vendor's terms. */
 public record ApOpeningItemInputDTO(@NotNull UUID vendorId, @NotBlank @Size(max = 60) String invoiceNumber,
                                     @NotNull LocalDate invoiceDate, LocalDate dueDate,
-                                    @NotNull @Positive BigDecimal amount, UUID propertyId) { }
+                                    @NotNull @com.datagami.rentaxis.api.validation.Money(positive = true) BigDecimal amount, UUID propertyId) { }

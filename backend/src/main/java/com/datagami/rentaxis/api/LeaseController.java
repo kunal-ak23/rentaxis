@@ -173,7 +173,7 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<LeaseDTO> replaceRentFreePeriods(
             @PathVariable UUID id,
-            @RequestBody List<com.datagami.rentaxis.api.dto.lease.RentFreePeriodDTO> periods) {
+            @RequestBody List<com.datagami.rentaxis.api.dto.lease.@Valid RentFreePeriodDTO> periods) {
         return ResponseEntity.ok(rentFreeService.replace(id, periods));
     }
 

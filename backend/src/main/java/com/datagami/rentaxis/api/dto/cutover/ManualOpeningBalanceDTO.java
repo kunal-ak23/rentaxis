@@ -11,4 +11,4 @@ import java.math.BigDecimal;
  * {@code FAIL_ON_NULL_FOR_PRIMITIVES}, which is the wrong answer to the ordinary
  * case of filling in one column.</p>
  */
-public record ManualOpeningBalanceDTO(BigDecimal debit, BigDecimal credit) {}
+public record ManualOpeningBalanceDTO(@com.datagami.rentaxis.api.validation.Money BigDecimal debit, @com.datagami.rentaxis.api.validation.Money BigDecimal credit) {}

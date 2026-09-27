@@ -116,6 +116,22 @@ class BadDebtIT extends AbstractPostgresIT {
         bankLedgers.setLeaves(id, List.of(leaf));
     }
 
+    /**
+     * Batch 4 review #4: a recovery is a receipt dated by hand; its BDR number carries a
+     * two-digit year, so a date more than a year ahead is refused before anything posts.
+     */
+    @Test
+    void aRecoveryDatedMoreThanAYearAheadIsRefused() {
+        UUID leaseId = lease();
+        WriteOffDTO w = service.approve(service.propose(new ProposeRequest(leaseId, null, ON, "gone")).id(), null);
+        UUID bank = resolver.resolve(AccountRole.BANK, fixtures.property().getId()).getId();
+        bankAccountOwning(bank);
+        java.time.LocalDate tooFar = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Dubai")).plusYears(1).plusDays(1);
+        assertThatThrownBy(() -> service.recover(w.id(), new RecoveryRequest(new BigDecimal("100"), tooFar, bank, null)))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("posting.dateTooFarAhead"));
+        assertThat(onAccount(AccountRole.BAD_DEBT_RECOVERED)).isZero();
+    }
+
     @Test
     void theUnpaidRowsAreWrittenOffRecoveredInPartAndClosed() {
         UUID leaseId = lease();

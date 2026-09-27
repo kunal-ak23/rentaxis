@@ -36,12 +36,12 @@ public class StaffController {
     }
 
     @PostMapping
-    public ResponseEntity<Staff> createStaff(@RequestBody StaffRequest request) {
+    public ResponseEntity<Staff> createStaff(@jakarta.validation.Valid @RequestBody StaffRequest request) {
         return ResponseEntity.ok(service.createStaff(request));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Staff> updateStaff(@PathVariable UUID id, @RequestBody StaffRequest request) {
+    public ResponseEntity<Staff> updateStaff(@PathVariable UUID id, @jakarta.validation.Valid @RequestBody StaffRequest request) {
         return ResponseEntity.ok(service.updateStaff(id, request));
     }
 

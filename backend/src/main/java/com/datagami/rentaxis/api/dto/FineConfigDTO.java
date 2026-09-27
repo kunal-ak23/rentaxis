@@ -17,11 +17,11 @@ import java.math.BigDecimal;
  * write them.</p>
  */
 public record FineConfigDTO(
-        @NotNull @DecimalMin("0.00") BigDecimal bounceAmount,
-        @NotNull @DecimalMin("0.00") BigDecimal signatureMismatchAmount,
-        @NotNull @DecimalMin("0.00") BigDecimal accountClosedAmount,
+        @NotNull @DecimalMin("0.00") @com.datagami.rentaxis.api.validation.Money BigDecimal bounceAmount,
+        @NotNull @DecimalMin("0.00") @com.datagami.rentaxis.api.validation.Money BigDecimal signatureMismatchAmount,
+        @NotNull @DecimalMin("0.00") @com.datagami.rentaxis.api.validation.Money BigDecimal accountClosedAmount,
         @NotNull @Min(0)             Integer    graceDays,
-        @NotNull @DecimalMin("0.00") BigDecimal perDayRate,
+        @NotNull @DecimalMin("0.00") @com.datagami.rentaxis.api.validation.Money BigDecimal perDayRate,
         @Min(1)                      Integer    bouncesBeforePenalty,
                                      Boolean    autoProposeChequeReturn,
                                      Boolean    autoProposeLatePayment

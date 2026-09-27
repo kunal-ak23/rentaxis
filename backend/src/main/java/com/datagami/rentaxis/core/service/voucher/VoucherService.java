@@ -55,6 +55,14 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class VoucherService {
 
+    /** Break-it round 1 (money) F4: the one-year window on manual dates, on the app clock. */
+    private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates = com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setManualPostingDates(com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates) {
+        this.manualDates = manualDates;
+    }
+
     private final VoucherRepository vouchers;
     private final AccountRepository accounts;
     private final VendorRepository vendors;
@@ -595,10 +603,15 @@ public class VoucherService {
     }
 
     static void requireReversible(Voucher original, LocalDate date, String reason) {
+        requireReversible(original, date, reason, com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system());
+    }
+
+    static void requireReversible(Voucher original, LocalDate date, String reason,
+                                  com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates) {
         if (date == null) throw new BusinessRuleViolationException("A reversal date is required");
         // F4: except on the voucher's own date, so one already dated far ahead can be undone.
         if (!date.equals(original.getDocDate())) {
-            com.datagami.rentaxis.core.service.ledger.ManualPostingDates.requireWithinAYear(date, "A reversal");
+            manualDates.requireWithinAYear(date, "A reversal");
         }
         if (original.getDocDate() != null && date.isBefore(original.getDocDate())) {
             String doc = original.getVoucherNumber() == null ? "the voucher" : original.getVoucherNumber();
@@ -667,7 +680,7 @@ public class VoucherService {
             throw new BusinessRuleViolationException(
                     "Only a POSTED voucher can be reversed; this one is " + original.getStatus());
         }
-        requireReversible(original, date, reason);
+        requireReversible(original, date, reason, manualDates);
         fiscal.assertOpen(date);
         bankLock.assertOpenForEntry(original.getJournalId(), date);
         allocationService.lockCounterparts(original.getId(), null);
@@ -697,7 +710,7 @@ public class VoucherService {
                     "Only a POSTED voucher can be voided; this one is " + original.getStatus());
         }
         if (date == null) throw new BusinessRuleViolationException("A void date is required");
-        requireReversible(original, date, reason);
+        requireReversible(original, date, reason, manualDates);
         fiscal.assertOpen(date);
         bankLock.assertOpenForEntry(original.getJournalId(), date);
         allocationService.lockCounterparts(original.getId(), null);
@@ -774,7 +787,7 @@ public class VoucherService {
         // dated into a closed period is refused before any of this is written.
         fiscal.assertOpen(reversalDate);
         // F14-41: dated on or after the original, and a reason.
-        requireReversible(original, reversalDate, reason);
+        requireReversible(original, reversalDate, reason, manualDates);
         bankLock.assertOpenForEntry(original.getJournalId(), reversalDate);
         // A grandfathered duplicate (changeset 110) shares its number with a POSTED
         // invoice the guard protects, so it can only be corrected to a new number —
@@ -957,7 +970,7 @@ public class VoucherService {
     private void requirePostable(Voucher v) {
         if (v.getDocDate() == null) throw new BusinessRuleViolationException("Document date is required");
         // F4: a draft saved before the rule is held to it when it posts.
-        com.datagami.rentaxis.core.service.ledger.ManualPostingDates.requireWithinAYear(v.getDocDate(), "A voucher");
+        manualDates.requireWithinAYear(v.getDocDate(), "A voucher");
         if (v.getLines().isEmpty()) throw new BusinessRuleViolationException("A voucher needs at least one line");
 
         for (VoucherLine l : v.getLines()) {
@@ -1086,7 +1099,7 @@ public class VoucherService {
         }
         if (in.docDate() == null) throw new BusinessRuleViolationException("Document date is required");
         // Break-it round 1 (money) F4: a voucher's number carries a two-digit year.
-        com.datagami.rentaxis.core.service.ledger.ManualPostingDates.requireWithinAYear(in.docDate(), "A voucher");
+        manualDates.requireWithinAYear(in.docDate(), "A voucher");
         if (in.lines() == null || in.lines().isEmpty()) {
             throw new BusinessRuleViolationException("A voucher needs at least one line");
         }

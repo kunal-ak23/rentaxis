@@ -20,10 +20,10 @@ public record PostRunRequestDTO(@NotNull @Valid List<Vendor> vendors, Boolean no
         this(vendors, null);
     }
 
-    public record Vendor(@NotNull UUID vendorId, @NotNull BigDecimal netPayment, BigDecimal advanceApplied,
-                         String chequeNumber, @NotNull List<Item> items) { }
+    public record Vendor(@NotNull UUID vendorId, @NotNull @com.datagami.rentaxis.api.validation.Money BigDecimal netPayment, @com.datagami.rentaxis.api.validation.Money BigDecimal advanceApplied,
+                         String chequeNumber, @NotNull List<@jakarta.validation.Valid Item> items) { }
 
-    public record Item(@NotNull UUID itemId, @NotNull BigDecimal paid) { }
+    public record Item(@NotNull UUID itemId, @NotNull @com.datagami.rentaxis.api.validation.Money BigDecimal paid) { }
 
     /** Exactly what a preview showed. */
     public static PostRunRequestDTO of(PaymentRunPreviewDTO preview) {

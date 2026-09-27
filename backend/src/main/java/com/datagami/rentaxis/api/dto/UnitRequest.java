@@ -25,8 +25,8 @@ public record UnitRequest(
         UnitType type,
         BigDecimal sizeSqft,
         UnitStatus status,
-        BigDecimal expectedRent,
-        BigDecimal actualRent,
+        @com.datagami.rentaxis.api.validation.Money BigDecimal expectedRent,
+        @com.datagami.rentaxis.api.validation.Money BigDecimal actualRent,
         String currentTenantName,
         IdRef property,
         IdRef building) {

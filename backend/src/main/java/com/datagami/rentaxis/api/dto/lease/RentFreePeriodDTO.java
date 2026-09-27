@@ -13,6 +13,6 @@ import java.util.UUID;
  *                           (read-only; ignored on a request)
  * @param days               inclusive day count (read-only)
  */
-public record RentFreePeriodDTO(UUID id, LocalDate fromDate, LocalDate toDate, BigDecimal concessionOverride,
+public record RentFreePeriodDTO(UUID id, LocalDate fromDate, LocalDate toDate, @com.datagami.rentaxis.api.validation.Money BigDecimal concessionOverride,
                                 String note, BigDecimal concession, Integer days) {
 }

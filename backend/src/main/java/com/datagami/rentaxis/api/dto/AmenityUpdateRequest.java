@@ -14,7 +14,7 @@ public record AmenityUpdateRequest(
         Boolean active,
         List<UUID> buildingIds,
         /* F14-50 */ String feeType,
-        java.math.BigDecimal feeAmount) {
+        @com.datagami.rentaxis.api.validation.Money java.math.BigDecimal feeAmount) {
     public AmenityUpdateRequest(@Size(max = 160) String nameEn,
         @Size(max = 160) String nameAr,
         String description,

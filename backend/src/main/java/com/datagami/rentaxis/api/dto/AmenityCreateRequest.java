@@ -15,7 +15,7 @@ public record AmenityCreateRequest(
         Boolean bookable,
         List<UUID> buildingIds,
         /* F14-50 */ String feeType,
-        java.math.BigDecimal feeAmount) {
+        @com.datagami.rentaxis.api.validation.Money java.math.BigDecimal feeAmount) {
     public AmenityCreateRequest(UUID propertyId,
         @NotBlank @Size(max = 160) String nameEn,
         @Size(max = 160) String nameAr,

@@ -31,7 +31,7 @@ public class UnitController {
 
     @PostMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
-    public ResponseEntity<Unit> createUnit(@RequestBody UnitRequest request) {
+    public ResponseEntity<Unit> createUnit(@jakarta.validation.Valid @RequestBody UnitRequest request) {
         return ResponseEntity.ok(service.createUnit(request));
     }
 

@@ -85,6 +85,7 @@ class MoneyInputGuardsIT extends AbstractPostgresIT {
     private LeaseTestFixtures fixtures;
     private UUID leaseId;
     private User accountant;
+    private User tenantAdmin;
     private String bankId;
     private String capitalId;
 
@@ -109,6 +110,15 @@ class MoneyInputGuardsIT extends AbstractPostgresIT {
         u.setPasswordHash("x");
         u.setTenantId(fixtures.tenantId());
         accountant = userRepo.save(u);
+
+        User ta = new User();
+        ta.setEmail("ta-" + UUID.randomUUID() + "@t.io");
+        ta.setName("TENANT_ADMIN");
+        ta.setRole(UserRole.TENANT_ADMIN);
+        ta.setStatus(UserStatus.ACTIVE);
+        ta.setPasswordHash("x");
+        ta.setTenantId(fixtures.tenantId());
+        tenantAdmin = userRepo.save(ta);
     }
 
     @AfterEach
@@ -119,13 +129,18 @@ class MoneyInputGuardsIT extends AbstractPostgresIT {
 
     @SuppressWarnings("rawtypes")
     private ResponseEntity<Map> call(HttpMethod method, String path, Object body) {
+        return callAs(accountant, method, path, body);
+    }
+
+    @SuppressWarnings("rawtypes")
+    private ResponseEntity<Map> callAs(User caller, HttpMethod method, String path, Object body) {
         RestClient.RequestBodySpec spec = RestClient.builder()
                 .baseUrl("http://localhost:" + port).build()
                 .method(method).uri(path)
-                .header("X-User-Id", accountant.getId().toString())
-                .header("X-User-Role", accountant.getRole().name())
-                .header("X-Tenant-Id", accountant.getTenantId().toString())
-                .header("X-User-Tenant-Id", accountant.getTenantId().toString());
+                .header("X-User-Id", caller.getId().toString())
+                .header("X-User-Role", caller.getRole().name())
+                .header("X-Tenant-Id", caller.getTenantId().toString())
+                .header("X-User-Tenant-Id", caller.getTenantId().toString());
         if (body != null) {
             spec = spec.contentType(MediaType.APPLICATION_JSON).body(body);
         }
@@ -367,4 +382,75 @@ class MoneyInputGuardsIT extends AbstractPostgresIT {
                 .isEqualTo(200);
         assertThat(journalCount()).isEqualTo(journals + 2);
     }
+
+    // ---- Batch 4 review #3: the rest of the money request bodies ------------------
+
+    private static Map<String, Object> m(Object... kv) {
+        Map<String, Object> out = new HashMap<>();
+        for (int i = 0; i < kv.length; i += 2) out.put((String) kv[i], kv[i + 1]);
+        return out;
+    }
+
+    private static final BigDecimal THREE_DP = new BigDecimal("1000.555");
+    private static final BigDecimal TOO_BIG = new BigDecimal("1E12");
+    private static final BigDecimal BELOW_FIL = new BigDecimal("0.001");
+
+    @Test
+    void payablesBodiesAreMoneyChecked() {
+        String any = UUID.randomUUID().toString();
+        assertRefused(call(HttpMethod.POST, "/api/v1/finance/voucher-allocations",
+                m("paymentId", any, "invoiceId", any, "amount", THREE_DP)), "2 decimal places");
+        assertRefused(call(HttpMethod.POST, "/api/v1/finance/ap-opening-items",
+                m("vendorId", any, "invoiceNumber", "INV-1", "invoiceDate", "2026-09-01", "amount", TOO_BIG)), "too large");
+        assertRefused(call(HttpMethod.POST, "/api/v1/finance/issued-cheques/opening",
+                m("vendorId", any, "bankAccountId", any, "chequeNumber", "1", "chequeDate", "2026-09-01",
+                        "amount", BELOW_FIL)), "0.01");
+        assertRefused(call(HttpMethod.POST, "/api/v1/finance/payment-runs",
+                m("paymentDate", "2026-09-20", "paymentAccountId", bankId, "method", "TRANSFER",
+                        "items", List.of(m("invoiceId", any, "amount", THREE_DP)))), "2 decimal places");
+    }
+
+    @Test
+    void aPaymentRunDatedMoreThanAYearAheadIsRefusedBeforeItIsNumbered() {
+        Long before = jdbc.queryForObject("select count(*) from payment_runs where tenant_id = ?", Long.class,
+                fixtures.tenantId());
+        assertRefused(call(HttpMethod.POST, "/api/v1/finance/payment-runs",
+                m("paymentDate", "2126-09-20", "paymentAccountId", bankId, "method", "TRANSFER",
+                        "items", List.of(m("invoiceId", UUID.randomUUID().toString(), "amount", 100)))),
+                "more than a year");
+        assertThat(jdbc.queryForObject("select count(*) from payment_runs where tenant_id = ?", Long.class,
+                fixtures.tenantId())).isEqualTo(before);
+    }
+
+    @Test
+    void recoveryRechargeAndPenaltyReductionAreMoneyChecked() {
+        String any = UUID.randomUUID().toString();
+        assertRefused(callAs(tenantAdmin, HttpMethod.POST, "/api/v1/finance/bad-debts/" + any + "/recoveries",
+                m("amount", THREE_DP, "date", "2026-09-20", "accountId", bankId)), "2 decimal places");
+        assertRefused(call(HttpMethod.POST, "/api/v1/tickets/" + any + "/recharge", m("amount", BELOW_FIL)), "0.01");
+        assertRefused(call(HttpMethod.POST, "/api/v1/penalties/" + any + "/reduce", m("amount", THREE_DP)),
+                "2 decimal places");
+    }
+
+    @Test
+    void bankRecOpeningBalancesSettlementRentFreeAndFinesAreMoneyChecked() {
+        String any = UUID.randomUUID().toString();
+        assertRefused(call(HttpMethod.POST, "/api/v1/finance/bank-reconciliation/lines/actions/post",
+                m("statementLineIds", List.of(any), "kind", "CHARGE", "net", THREE_DP, "vat", BigDecimal.ZERO)),
+                "2 decimal places");
+        assertRefused(call(HttpMethod.POST, "/api/v1/finance/bank-reconciliation/bank-accounts/" + any + "/opening-items",
+                m("itemDate", "2026-09-01", "description", "x", "amount", TOO_BIG.negate())), "too large");
+        assertRefused(call(HttpMethod.PUT, "/api/v1/finance/opening-balances/" + capitalId,
+                m("debit", THREE_DP, "credit", BigDecimal.ZERO)), "2 decimal places");
+        assertRefused(call(HttpMethod.POST, "/api/v1/leases/" + leaseId + "/settlement/draft",
+                m("deductions", List.of(m("category", "PROPERTY_DAMAGE", "description", "x", "amount", THREE_DP)))),
+                "2 decimal places");
+        assertRefused(callAs(tenantAdmin, HttpMethod.PUT, "/api/v1/leases/" + leaseId + "/rent-free-periods",
+                List.of(m("fromDate", "2026-10-02", "toDate", "2026-10-31", "concessionOverride", THREE_DP))),
+                "2 decimal places");
+        assertRefused(callAs(tenantAdmin, HttpMethod.PUT, "/api/v1/settings/fines",
+                m("bounceAmount", THREE_DP, "signatureMismatchAmount", 0, "accountClosedAmount", 0,
+                        "graceDays", 0, "perDayRate", 0)), "2 decimal places");
+    }
+
 }

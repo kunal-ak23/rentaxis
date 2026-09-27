@@ -102,7 +102,7 @@ public final class BankRecDTOs {
 
     public record OpeningItemInput(@NotNull LocalDate itemDate, @NotBlank @Size(max = 500) String description,
                                    @Size(max = 200) String reference, @Size(max = 50) String chequeNo,
-                                   @NotNull BigDecimal amount) { }
+                                   @NotNull @com.datagami.rentaxis.api.validation.Money(allowNegative = true) BigDecimal amount) { }
 
     /**
      * {@code periodFrom} and {@code statementOpening}: the first reconciliation
@@ -110,8 +110,8 @@ public final class BankRecDTOs {
      * {@code statementClosing}: typed from the paper statement when the lines
      * carry no running balance.
      */
-    public record ReconciliationInput(LocalDate periodFrom, @NotNull LocalDate periodTo, BigDecimal statementOpening,
-                                      BigDecimal statementClosing) { }
+    public record ReconciliationInput(LocalDate periodFrom, @NotNull LocalDate periodTo, @com.datagami.rentaxis.api.validation.Money(allowNegative = true) BigDecimal statementOpening,
+                                      @com.datagami.rentaxis.api.validation.Money(allowNegative = true) BigDecimal statementClosing) { }
 
     public record ReopenInput(@NotBlank @Size(max = 1000) String reason) { }
 
@@ -176,7 +176,7 @@ public final class BankRecDTOs {
     /** {@code kind}: CHARGE, INTEREST, SUSPENSE or OTHER. {@code bankLeafId} picks the leaf when the set has several. */
     public record PostLinesInput(@NotNull List<UUID> statementLineIds, @NotNull String kind, Boolean vatIncluded,
                                  UUID accountId, UUID propertyId, UUID bankLeafId, Boolean shared,
-                                 @Size(max = 500) String narration, BigDecimal net, BigDecimal vat) {
+                                 @Size(max = 500) String narration, @com.datagami.rentaxis.api.validation.Money BigDecimal net, @com.datagami.rentaxis.api.validation.Money BigDecimal vat) {
         /** Without the stated split (a single line, or a kind that has none). */
         public PostLinesInput(List<UUID> statementLineIds, String kind, Boolean vatIncluded, UUID accountId,
                               UUID propertyId, UUID bankLeafId, Boolean shared, String narration) {
