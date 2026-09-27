@@ -258,6 +258,71 @@ class AmendmentAsAtIT extends AbstractPostgresIT {
                 + " and day_rate = 0 and income_account_id is not null", Integer.class, leaseId)).isEqualTo(1);
     }
 
+    /**
+     * #375 P3-1: a rent catch-up #372 wrote with accounts, on a lease amended again —
+     * the second amendment deletes the line it named. Its deferral (Advance Rent) still
+     * says rent.
+     */
+    @Test
+    void aPreFixRentCatchUpStaysRentAfterASecondAmendment() {
+        UUID leaseId = amendedLease();
+        jdbc.update("update rent_segments set income_account_id = ?, deferral_account_id = ?"
+                + " where lease_id = ? and status = 'TRUNCATED' and day_rate = 0",
+                leaf(AccountRole.RENTAL_INCOME), leaf(AccountRole.ADVANCE_RENT), leaseId);
+        amendAgainUnchanged(leaseId);
+        UUID catchUp = jdbc.queryForObject("select id from rent_segments where lease_id = ? and day_rate = 0"
+                + " and income_account_id is not null", UUID.class, leaseId);
+        assertThat(jdbc.queryForObject("select count(*) from lease_lines l join rent_segments s on s.lease_line_id = l.id"
+                + " where s.id = ?", Integer.class, catchUp)).as("its line is gone").isZero();
+        List<com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO> rows =
+                tx.execute(s -> recognition.scheduleFor(leaseId));
+        assertThat(rows).extracting(com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO::chargeCode)
+                .containsOnlyNulls();
+    }
+
+    /**
+     * #375 P3-2: two periodic fees earning into one income account, both replaced by an
+     * amendment — a row kept from before it cannot tell which fee it was, so it says the
+     * generic FEE rather than borrowing the first fee's name.
+     */
+    @Test
+    void aKeptFeeRowWhoseIncomeAccountTwoFeesShareSaysFee() {
+        UUID leaseId = fixtures.draftLease(CONTRACT, START, END,
+                List.of(vatLine("RENT", "36500"), line("PARKING_FEE", "3650"), line("MAINTENANCE", "7300"),
+                        line("ADMIN_FEE", "10000")));
+        jdbc.update("""
+                update lease_lines m set credit_account_id = (select p.credit_account_id from lease_lines p
+                    join charge_types t on t.id = p.charge_type_id where p.lease_id = m.lease_id and t.code = 'PARKING_FEE')
+                 where m.lease_id = ? and m.charge_type_id in (select id from charge_types where code = 'MAINTENANCE')""",
+                leaseId);
+        fixtures.generateGrid(leaseId, 4, START);
+        posting.post(leaseId);
+        recognition.runTo(AUG_31, false);
+        amendAgainUnchanged(leaseId);
+
+        java.util.Set<UUID> kept = new java.util.HashSet<>(jdbc.queryForList(
+                "select s.id from rent_segments s where s.lease_id = ? and s.day_rate <> 0 and s.income_account_id is not null"
+                        + " and not exists (select 1 from lease_lines l where l.id = s.lease_line_id)", UUID.class, leaseId));
+        assertThat(kept).hasSize(2);
+        List<com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO> rows =
+                tx.execute(s -> recognition.scheduleFor(leaseId));
+        assertThat(rows).filteredOn(r -> kept.contains(r.segmentId()))
+                .isNotEmpty()
+                .extracting(com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO::chargeCode)
+                .containsOnly("FEE");
+    }
+
+    /** The same lines again: the amendment replaces them without changing a figure. */
+    private void amendAgainUnchanged(UUID leaseId) {
+        List<LeaseLineInput> same = new ArrayList<>();
+        for (LeaseLineDTO l : tx.execute(s -> leaseService.getLines(leaseId))) {
+            same.add(new LeaseLineInput(l.chargeTypeId(), null, l.grossAmount(), l.discountAmount(),
+                    l.narration(), l.vatApplicable(), l.creditAccountId(), l.periodStart(), l.periodEnd(), l.addendumId()));
+        }
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        posting.amendLines(leaseId, same, "Re-keyed");
+    }
+
     /** Amends the rent to 43,800 on 27/09 (the fixed clock) after recognising through 31/08. */
     private UUID amendedLease() {
         UUID leaseId = lease(false);

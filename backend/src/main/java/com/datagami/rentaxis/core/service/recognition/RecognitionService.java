@@ -1311,21 +1311,33 @@ public class RecognitionService {
                 leaseLines.findAllById(feeSegmentById.values().stream().map(RentSegment::getLeaseLineId)
                         .filter(Objects::nonNull).distinct().toList()).forEach(l -> lines.put(l.getId(), l));
                 Map<UUID, List<LeaseLine>> currentLines = new HashMap<>();
+                Map<UUID, java.util.Optional<UUID>> advanceRentLeaf = new HashMap<>();
                 feeSegmentById.forEach((sid, sg) -> {
+                    UUID leaseId = idOf(sg.getLease(), Lease::getId);
+                    // S16-15 (#375 P3-1): a segment deferring from the property's Advance
+                    // Rent is rent, whatever accounts it names — #372 wrote rent catch-ups
+                    // with both, and a later amendment deletes the line they named, so the
+                    // deferral is the one fact about them that survives.
+                    UUID propertyId = leaseId == null ? null
+                            : where.getOrDefault(leaseId, Where.UNKNOWN).propertyId();
+                    java.util.Optional<UUID> advance = advanceRentLeaf.computeIfAbsent(propertyId,
+                            p -> java.util.Optional.ofNullable(poster.advanceRentLeafOf(p)));
+                    if (sg.getDeferralAccountId() != null && advance.isPresent()
+                            && advance.get().equals(sg.getDeferralAccountId())) return;
                     LeaseLine l = sg.getLeaseLineId() == null ? null : lines.get(sg.getLeaseLineId());
-                    if (l == null) {
-                        // S16-15: an amendment replaces the lease's lines, so a segment kept
-                        // from before it names a line that is gone — still the fee it was:
-                        // the lease's current line earning into the same income account.
-                        UUID leaseId = idOf(sg.getLease(), Lease::getId);
-                        l = leaseId == null ? null : currentLines
+                    if (l == null && leaseId != null) {
+                        // An amendment replaces the lease's lines, so a fee segment kept from
+                        // before it names a line that is gone: the lease's current line earning
+                        // into the same income account — only when exactly one does (#375
+                        // P3-2); two fees into one account leave the honest generic "FEE".
+                        List<LeaseLine> same = currentLines
                                 .computeIfAbsent(leaseId, leaseLines::findByLease_IdOrderBySeqNoAsc).stream()
                                 .filter(c -> c.getCreditAccount() != null
                                         && sg.getIncomeAccountId().equals(c.getCreditAccount().getId()))
-                                .findFirst().orElse(null);
+                                .toList();
+                        l = same.size() == 1 ? same.get(0) : null;
                     }
-                    // S16-15: a rent catch-up written by #372 named its accounts like a
-                    // fee's; it is still rent (tolerant read, no data fix).
+                    // A RENT line is rent (the line survives when the lease was amended once).
                     if (l != null && l.getChargeType() != null
                             && l.getChargeType().getBehaviour() == ChargeBehaviour.RENT) return;
                     feeSegments.add(sid);
