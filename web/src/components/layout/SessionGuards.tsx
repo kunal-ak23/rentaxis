@@ -62,7 +62,7 @@ export function SessionGuards({
             // cookie and loop, so drop the selection back to the home org and
             // ask for a reload. With no selection (or the home org itself)
             // there is nothing to repair; the page shows its own error.
-            onBackendUnauthorized: (message: string) => {
+            onBackendUnauthorized: (message: string, reason: string | null) => {
                 if (redirected) return;
                 const selected = readActiveOrgCookie();
                 const repairable = !!selected && role !== "SUPER_ADMIN" && selected !== homeTenantId;
@@ -72,7 +72,14 @@ export function SessionGuards({
                 // omits the message from the error body unless
                 // server.error.include-message is on, so the match is
                 // best-effort; the fallback below covers the rest.
-                const inactiveUser = /unknown or inactive user/i.test(message);
+                //
+                // Batch 2 follow-up: the backend now names the reason in
+                // X-Auth-Reason, which survives any error-body config.
+                // USER_INACTIVE signs out; ORG_INACTIVE and NOT_A_MEMBER repair
+                // the selection when there is one to repair. Without the header
+                // (an older backend) the message match still applies.
+                const inactiveUser = reason === "USER_INACTIVE"
+                    || (reason === null && /unknown or inactive user/i.test(message));
                 if (!inactiveUser && repairable) {
                     // Inactive (or no longer open) org in the cookie: drop the
                     // selection back to the home org and ask for a reload.

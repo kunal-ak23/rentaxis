@@ -182,3 +182,53 @@ describe("SessionGuards — a deactivated or deleted user is signed out (fix rou
         await vi.waitFor(() => expect(signOut).toHaveBeenCalledTimes(1));
     });
 });
+
+describe("SessionGuards — the backend's X-Auth-Reason picks the recovery (batch 2 follow-up)", () => {
+    const reply = (status: number, reason?: string, body = "") =>
+        vi.fn(async () => new Response(body, { status, headers: reason ? { "X-Auth-Reason": reason } : {} })) as unknown as typeof fetch;
+
+    it("signs out on USER_INACTIVE even when the error body carries no message", async () => {
+        signOut.mockClear();
+        Cookies.set("active_tenant_id", "second", { path: "/" });
+        window.fetch = reply(401, "USER_INACTIVE");
+        renderGuards("TENANT_ADMIN", "brk1");
+        await act(async () => { await fetch("/api/proxy/v1/leases/paged"); });
+        await vi.waitFor(() => expect(signOut).toHaveBeenCalledTimes(1));
+        expect(Cookies.get("active_tenant_id")).toBe("second");
+    });
+
+    it("repairs the selection on ORG_INACTIVE, whatever the body says", async () => {
+        signOut.mockClear();
+        Cookies.set("active_tenant_id", "second", { path: "/" });
+        window.fetch = reply(401, "ORG_INACTIVE", "Unknown or inactive user.");
+        renderGuards("TENANT_ADMIN", "brk1");
+        await act(async () => { await fetch("/api/proxy/v1/leases/paged"); });
+        await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+        expect(signOut).not.toHaveBeenCalled();
+        expect(Cookies.get("active_tenant_id")).toBeUndefined();
+        expect(screen.getByRole("alertdialog", { name: /this organisation is not available/i })).toBeInTheDocument();
+    });
+
+    it("repairs the selection on a 403 NOT_A_MEMBER (removed from the selected organisation)", async () => {
+        signOut.mockClear();
+        Cookies.set("active_tenant_id", "second", { path: "/" });
+        window.fetch = reply(403, "NOT_A_MEMBER");
+        renderGuards("TENANT_ADMIN", "brk1");
+        await act(async () => { await fetch("/api/proxy/v1/leases/paged"); });
+        await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+        expect(signOut).not.toHaveBeenCalled();
+        expect(Cookies.get("active_tenant_id")).toBeUndefined();
+    });
+
+    it("ignores an ordinary 403 (a role refusal carries no reason)", async () => {
+        signOut.mockClear();
+        Cookies.set("active_tenant_id", "second", { path: "/" });
+        window.fetch = reply(403);
+        renderGuards("TENANT_ADMIN", "brk1");
+        await act(async () => { await fetch("/api/proxy/v1/leases/paged"); });
+        await act(async () => { await new Promise(r => setTimeout(r, 0)); });
+        expect(signOut).not.toHaveBeenCalled();
+        expect(Cookies.get("active_tenant_id")).toBe("second");
+        expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    });
+});

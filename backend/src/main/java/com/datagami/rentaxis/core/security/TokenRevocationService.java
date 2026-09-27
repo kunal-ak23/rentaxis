@@ -46,6 +46,12 @@ public class TokenRevocationService implements BearerTokenStateCheck, LegacyHead
 
     static final Duration CACHE_TTL = Duration.ofSeconds(30);
 
+    /** {@link #rejectionReason} values; {@code ApiSecurityFilter.AuthReason} maps them to response codes. */
+    public static final String USER_GONE = "user no longer exists";
+    public static final String USER_NOT_ACTIVE = "user is not active";
+    public static final String TOKEN_REVOKED = "token has been revoked";
+    public static final String ORG_NOT_ACTIVE = "organisation is not active";
+
     private record UserState(int tokenVersion, String status, UserRole role, UUID homeTenantId,
             Set<UUID> memberTenantIds) {
     }
@@ -127,17 +133,17 @@ public class TokenRevocationService implements BearerTokenStateCheck, LegacyHead
     public String rejectionReason(AuthTokenService.VerifiedIdentity identity, UUID activeTenantId) {
         Optional<UserState> state = state(identity.userId());
         if (state.isEmpty()) {
-            return "user no longer exists";
+            return USER_GONE;
         }
         if (!UserStatus.ACTIVE.name().equals(state.get().status())) {
-            return "user is not active";
+            return USER_NOT_ACTIVE;
         }
         if (state.get().tokenVersion() != identity.tokenVersion()) {
-            return "token has been revoked";
+            return TOKEN_REVOKED;
         }
         // SUPER_ADMIN is exempt: it is the role that re-activates an organisation.
         if (activeTenantId != null && identity.role() != UserRole.SUPER_ADMIN && !orgActive(activeTenantId)) {
-            return "organisation is not active";
+            return ORG_NOT_ACTIVE;
         }
         return null;
     }

@@ -1,4 +1,4 @@
-import { EXPECTED_TENANT_HEADER, FORWARDED_HEADER, MUTATING_METHODS, NO_ORG, ORG_MISMATCH_HEADER, SESSION_ENDED_HEADER } from "./orgHeaders";
+import { AUTH_REASON_HEADER, EXPECTED_TENANT_HEADER, FORWARDED_HEADER, MUTATING_METHODS, NO_ORG, ORG_MISMATCH_HEADER, SESSION_ENDED_HEADER } from "./orgHeaders";
 
 /**
  * One wrapper around `window.fetch` for every browser call to /api/proxy (and
@@ -23,10 +23,13 @@ export type ProxyFetchGuardOptions = {
     onOrgMismatch: () => void;
     /**
      * A 401 the backend gave (e.g. "Organisation is not active" for the org
-     * in the cookie). Not a signed-out session: signing in again would keep
-     * the same cookie and loop. The caller repairs the org selection instead.
+     * in the cookie), or its 403 NOT_A_MEMBER (the org in the cookie is no
+     * longer one of the user's). Not a signed-out session: signing in again
+     * would keep the same cookie and loop. `reason` is the backend's
+     * X-Auth-Reason (null when absent); the caller decides between signing
+     * out (USER_INACTIVE) and repairing the org selection.
      */
-    onBackendUnauthorized?: (message: string) => void;
+    onBackendUnauthorized?: (message: string, reason: string | null) => void;
 };
 
 const GUARD = Symbol.for("rentaxis.proxyFetchGuard");
@@ -71,12 +74,13 @@ export function installProxyFetchGuard(opts: ProxyFetchGuardOptions): () => void
         // The proxy's own signals count only on a response it answered itself
         // (not stamped as forwarded to the backend).
         const proxyOwn = !res.headers.has(FORWARDED_HEADER);
-        if (res.status === 401) {
-            if (proxyOwn && res.headers.get(SESSION_ENDED_HEADER) === "1") opts.onUnauthorized();
+        const reason = res.headers.get(AUTH_REASON_HEADER);
+        if (res.status === 401 || (res.status === 403 && reason === "NOT_A_MEMBER")) {
+            if (res.status === 401 && proxyOwn && res.headers.get(SESSION_ENDED_HEADER) === "1") opts.onUnauthorized();
             else if (opts.onBackendUnauthorized) {
                 const notify = opts.onBackendUnauthorized;
                 // The body is read from a clone: the caller still gets the untouched response.
-                void res.clone().text().catch(() => "").then(text => notify(text));
+                void res.clone().text().catch(() => "").then(text => notify(text, reason));
             }
         } else if (res.status === 409 && proxyOwn && res.headers.get(ORG_MISMATCH_HEADER) === "1") {
             opts.onOrgMismatch();

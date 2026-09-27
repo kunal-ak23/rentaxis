@@ -33,3 +33,11 @@ export const SESSION_ENDED_HEADER = "X-Session-Ended";
  * a response WITHOUT this stamp: one the proxy answered itself.
  */
 export const FORWARDED_HEADER = "X-Rentaxis-Forwarded";
+
+/**
+ * Set by the backend's ApiSecurityFilter on each refusal: USER_INACTIVE,
+ * ORG_INACTIVE, NOT_A_MEMBER, LEGACY_DENIED, BAD_TOKEN, PROXY_AUTH_REQUIRED,
+ * BAD_HEADERS. A backend header on a forwarded response: it only selects the
+ * recovery (sign out vs repair the org selection), it never grants anything.
+ */
+export const AUTH_REASON_HEADER = "X-Auth-Reason";

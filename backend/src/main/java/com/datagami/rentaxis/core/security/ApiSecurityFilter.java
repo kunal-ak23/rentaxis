@@ -129,7 +129,7 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
         // Phase-2 kill switch: once flipped to "deny", nothing without a valid
         // Bearer gets past this filter on non-skipped paths.
         if ("deny".equalsIgnoreCase(legacyHeadersMode)) {
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED,
+            refuse(response, HttpServletResponse.SC_UNAUTHORIZED, AuthReason.LEGACY_DENIED,
                     "A valid bearer token is required.");
             return;
         }
@@ -170,7 +170,7 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
             // app.auth.internal-proxy-secret is set only the web proxy (which
             // sends X-Internal-Auth) may assert it. Unset secret => gate off.
             if ("SUPER_ADMIN".equals(assertedRole) && !internalProxyAuthenticated(request)) {
-                response.sendError(HttpServletResponse.SC_FORBIDDEN,
+                refuse(response, HttpServletResponse.SC_FORBIDDEN, AuthReason.PROXY_AUTH_REQUIRED,
                         "SUPER_ADMIN requires internal proxy authentication.");
                 return;
             }
@@ -188,7 +188,7 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
                                 ? UUID.fromString(homeTenantIdStr)
                                 : null;
             } catch (IllegalArgumentException e) {
-                response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid UUID format in context headers.");
+                refuse(response, HttpServletResponse.SC_BAD_REQUEST, AuthReason.BAD_HEADERS, "Invalid UUID format in context headers.");
                 return;
             }
 
@@ -196,7 +196,7 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
             if (found.isEmpty() || !found.get().active() || found.get().role() == null) {
                 log.info("Refusing legacy identity headers for user {}: {}", userId,
                         found.isEmpty() ? "user no longer exists" : "user is not active");
-                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Unknown or inactive user.");
+                refuse(response, HttpServletResponse.SC_UNAUTHORIZED, AuthReason.USER_INACTIVE, "Unknown or inactive user.");
                 return;
             }
             LegacyHeaderIdentityCheck.CurrentUser user = found.get();
@@ -211,7 +211,7 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
             // A stored SUPER_ADMIN presented under another asserted role still
             // needs the proxy's proof before it is granted SUPER_ADMIN.
             if (role == UserRole.SUPER_ADMIN && !internalProxyAuthenticated(request)) {
-                response.sendError(HttpServletResponse.SC_FORBIDDEN,
+                refuse(response, HttpServletResponse.SC_FORBIDDEN, AuthReason.PROXY_AUTH_REQUIRED,
                         "SUPER_ADMIN requires internal proxy authentication.");
                 return;
             }
@@ -245,7 +245,7 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
                 authorized = user.belongsTo(requestedTenantId);
             }
             if (!authorized) {
-                response.sendError(HttpServletResponse.SC_FORBIDDEN, "Access to requested tenant is forbidden.");
+                refuse(response, HttpServletResponse.SC_FORBIDDEN, AuthReason.NOT_A_MEMBER, "Access to requested tenant is forbidden.");
                 return;
             }
 
@@ -255,7 +255,7 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
                     && !legacyIdentityCheck.orgActive(requestedTenantId)) {
                 log.info("Refusing legacy identity headers for user {}: organisation {} is not active",
                         userId, requestedTenantId);
-                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Organisation is not active.");
+                refuse(response, HttpServletResponse.SC_UNAUTHORIZED, AuthReason.ORG_INACTIVE, "Organisation is not active.");
                 return;
             }
 
@@ -295,6 +295,46 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
         return MessageDigest.isEqual(expected, actual);
     }
 
+    /** Response header naming why this filter refused a request (never set on success). */
+    public static final String AUTH_REASON_HEADER = "X-Auth-Reason";
+
+    /**
+     * Stable, machine-readable reasons for this filter's refusals. A header, not
+     * the error body: {@code server.error.include-message} is off, so a
+     * {@code sendError} message never reaches the client. They only tell a client
+     * which recovery applies (sign out, or pick another organisation); none
+     * reveals more than the status code already does.
+     */
+    public enum AuthReason {
+        /** The named user does not exist or is not ACTIVE: the session is over. */
+        USER_INACTIVE,
+        /** The organisation the request acts in is not ACTIVE. */
+        ORG_INACTIVE,
+        /** The caller is not a member of the requested organisation (or named none). */
+        NOT_A_MEMBER,
+        /** Legacy X-User-* headers are switched off (app.auth.legacy-headers=deny). */
+        LEGACY_DENIED,
+        /** The bearer token is invalid, expired or revoked. */
+        BAD_TOKEN,
+        /** SUPER_ADMIN asserted without the internal proxy's proof. */
+        PROXY_AUTH_REQUIRED,
+        /** A malformed id in the identity headers. */
+        BAD_HEADERS;
+
+        /** The code for a {@link BearerTokenStateCheck} rejection. */
+        static AuthReason forRejection(String rejection) {
+            if (TokenRevocationService.ORG_NOT_ACTIVE.equals(rejection)) return ORG_INACTIVE;
+            if (TokenRevocationService.TOKEN_REVOKED.equals(rejection)) return BAD_TOKEN;
+            return USER_INACTIVE;
+        }
+    }
+
+    private static void refuse(HttpServletResponse response, int status, AuthReason reason, String message)
+            throws IOException {
+        response.setHeader(AUTH_REASON_HEADER, reason.name());
+        response.sendError(status, message);
+    }
+
     /**
      * {@code /api/auth/me} and everything under it; SecurityConfig requires
      * authentication there.
@@ -326,7 +366,7 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
             // Hard stop. Falling back to the legacy headers here would let an
             // attacker downgrade to the spoofable path by attaching a garbage
             // token to spoofed X-User-* headers.
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid or expired bearer token.");
+            refuse(response, HttpServletResponse.SC_UNAUTHORIZED, AuthReason.BAD_TOKEN, "Invalid or expired bearer token.");
             return;
         }
 
@@ -339,7 +379,7 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
                     ? UUID.fromString(activeTenantIdStr)
                     : null;
         } catch (IllegalArgumentException e) {
-            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid UUID format in context headers.");
+            refuse(response, HttpServletResponse.SC_BAD_REQUEST, AuthReason.BAD_HEADERS, "Invalid UUID format in context headers.");
             return;
         }
 
@@ -363,7 +403,7 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
         // Same shape as the legacy branch: a verified non-SUPER_ADMIN token with no
         // home tenant and no X-Tenant-Id is refused rather than let through unscoped.
         if (!authorized) {
-            response.sendError(HttpServletResponse.SC_FORBIDDEN, "Access to requested tenant is forbidden.");
+            refuse(response, HttpServletResponse.SC_FORBIDDEN, AuthReason.NOT_A_MEMBER, "Access to requested tenant is forbidden.");
             return;
         }
 
@@ -377,7 +417,8 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
         String rejection = tokenStateCheck.rejectionReason(identity, requestedTenantId);
         if (rejection != null) {
             log.info("Refusing bearer token for user {}: {}", identity.userId(), rejection);
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid or expired bearer token.");
+            refuse(response, HttpServletResponse.SC_UNAUTHORIZED, AuthReason.forRejection(rejection),
+                    "Invalid or expired bearer token.");
             return;
         }
 

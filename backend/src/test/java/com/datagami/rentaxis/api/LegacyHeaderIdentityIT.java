@@ -214,4 +214,28 @@ class LegacyHeaderIdentityIT extends AbstractCallerIdentityIT {
         tokenRevocation.evictUserAfterCommit(admin.getId());
         assertThat(status(legacy("/api/auth/me", admin.getId(), "TENANT_ADMIN", org))).isEqualTo(401);
     }
+
+    private String reason(RestClient.RequestHeadersSpec<?> spec) {
+        return spec.retrieve().onStatus(st -> true, (rq, rs) -> { }).toBodilessEntity()
+                .getHeaders().getFirst("X-Auth-Reason");
+    }
+
+    /** Batch 2 follow-up: each refusal says which recovery applies, in a header that survives error-body config. */
+    @Test
+    void refusalsCarryAStableReasonHeader() {
+        UUID org = newTenant("LHI-REASON");
+        UUID other = newTenant("LHI-REASON-2");
+        User admin = stored(org, UserRole.TENANT_ADMIN);
+        User gone = stored(org, UserRole.TENANT_ADMIN);
+
+        assertThat(reason(legacy("/api/v1/properties", admin.getId(), "TENANT_ADMIN", other))).isEqualTo("NOT_A_MEMBER");
+        assertThat(reason(legacy("/api/v1/properties", UUID.randomUUID(), "TENANT_ADMIN", org))).isEqualTo("USER_INACTIVE");
+        userService.deleteUser(gone.getId());
+        assertThat(reason(legacy("/api/v1/properties", gone.getId(), "TENANT_ADMIN", org))).isEqualTo("USER_INACTIVE");
+        assertThat(reason(legacy("/api/v1/properties", admin.getId(), "TENANT_ADMIN", org))).isNull();
+
+        jdbc.update("UPDATE landlord_org SET status = 'INACTIVE' WHERE id = ?", org);
+        tokenRevocation.evictOrg(org);
+        assertThat(reason(legacy("/api/v1/properties", admin.getId(), "TENANT_ADMIN", org))).isEqualTo("ORG_INACTIVE");
+    }
 }

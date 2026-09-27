@@ -1,7 +1,7 @@
 import { getToken } from "next-auth/jwt";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { EXPECTED_TENANT_HEADER } from "@/lib/session/orgHeaders";
+import { AUTH_REASON_HEADER, EXPECTED_TENANT_HEADER } from "@/lib/session/orgHeaders";
 import {
     backendTarget,
     orgMismatchResponse,
@@ -56,5 +56,10 @@ export async function POST(req: NextRequest) {
     });
 
     const data = await backendRes.json().catch(() => ({ error: "Backend error" }));
-    return NextResponse.json(data, { status: backendRes.status });
+    const res = NextResponse.json(data, { status: backendRes.status });
+    // The backend's refusal reason is the one header passed on: the browser
+    // guard uses it to choose between signing out and repairing the org.
+    const reason = backendRes.headers.get(AUTH_REASON_HEADER);
+    if (reason) res.headers.set(AUTH_REASON_HEADER, reason);
+    return res;
 }

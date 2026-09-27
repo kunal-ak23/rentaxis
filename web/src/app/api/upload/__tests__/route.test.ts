@@ -145,3 +145,14 @@ describe("POST /api/upload — same session and organisation rules as the proxy 
     expect(String(fetchMock.mock.calls[0][0])).toBe("http://localhost:8080/api/v1/tickets/t1/attachments");
   });
 });
+
+describe("POST /api/upload — passes the backend's refusal reason on", () => {
+  it("copies X-Auth-Reason (and nothing else) from the backend response", async () => {
+    getTokenMock.mockResolvedValue({ id: "u", role: "TENANT_ADMIN", tenantId: "home" });
+    fetchMock.mockResolvedValue(new Response("{}", { status: 401, headers: { "X-Auth-Reason": "USER_INACTIVE", "X-Session-Ended": "1" } }));
+    const res = await POST(upload());
+    expect(res.status).toBe(401);
+    expect(res.headers.get("X-Auth-Reason")).toBe("USER_INACTIVE");
+    expect(res.headers.get("X-Session-Ended")).toBeNull();
+  });
+});

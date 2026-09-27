@@ -108,7 +108,7 @@ describe("installProxyFetchGuard — session gone (F6)", () => {
         expect(onUnauthorized).not.toHaveBeenCalled();
         await vi.waitFor(() => expect(onBackendUnauthorized).toHaveBeenCalledTimes(1));
         // The backend's message is passed on (fix round 2: inactive user vs inactive org).
-        expect(onBackendUnauthorized).toHaveBeenCalledWith("Organisation is not active.");
+        expect(onBackendUnauthorized).toHaveBeenCalledWith("Organisation is not active.", null);
     });
 
     it("ignores a 401 from outside /api/proxy and other statuses", async () => {
@@ -151,5 +151,24 @@ describe("loginUrlFor", () => {
     it("never redirects from the auth pages themselves (no loop)", () => {
         expect(loginUrlFor({ pathname: "/en/auth/login", search: "?callbackUrl=%2Fen%2Fdashboard" })).toBeNull();
         expect(loginUrlFor({ pathname: "/ar/auth/set-password", search: "" })).toBeNull();
+    });
+});
+
+describe("installProxyFetchGuard — backend refusal reason (batch 2 follow-up)", () => {
+    it("passes X-Auth-Reason with a backend 401", async () => {
+        const { onBackendUnauthorized } = install();
+        respond = () => new Response("", { status: 401, headers: { "X-Auth-Reason": "USER_INACTIVE", "X-Rentaxis-Forwarded": "1" } });
+        await fetch("/api/proxy/v1/renters");
+        await vi.waitFor(() => expect(onBackendUnauthorized).toHaveBeenCalledWith("", "USER_INACTIVE"));
+    });
+
+    it("reports a 403 only when the backend says NOT_A_MEMBER", async () => {
+        const { onBackendUnauthorized } = install();
+        respond = () => new Response("", { status: 403 });
+        await fetch("/api/proxy/v1/renters");
+        respond = () => new Response("", { status: 403, headers: { "X-Auth-Reason": "NOT_A_MEMBER" } });
+        await fetch("/api/proxy/v1/renters");
+        await vi.waitFor(() => expect(onBackendUnauthorized).toHaveBeenCalledTimes(1));
+        expect(onBackendUnauthorized).toHaveBeenCalledWith("", "NOT_A_MEMBER");
     });
 });

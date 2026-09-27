@@ -241,6 +241,7 @@ class ApiSecurityFilterTest {
         legacyOnlyFilter().doFilter(req, res, chain);
 
         assertThat(res.getStatus()).isEqualTo(401);
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isEqualTo("USER_INACTIVE");
         assertThat(chain.invoked).isFalse();
     }
 
@@ -337,6 +338,7 @@ class ApiSecurityFilterTest {
         legacyOnlyFilter().doFilter(req, res, chain);
 
         assertThat(res.getStatus()).isEqualTo(403);
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isEqualTo("NOT_A_MEMBER");
         assertThat(chain.invoked).isFalse();
     }
 
@@ -352,6 +354,7 @@ class ApiSecurityFilterTest {
         legacyOnlyFilter().doFilter(req, res, chain);
 
         assertThat(res.getStatus()).isEqualTo(400);
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isEqualTo("BAD_HEADERS");
         assertThat(chain.invoked).isFalse();
     }
 
@@ -442,6 +445,7 @@ class ApiSecurityFilterTest {
         legacyOnlyFilter().doFilter(legacy(userId, "TENANT_ADMIN", tenant), res, chain);
 
         assertThat(res.getStatus()).isEqualTo(401);
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isEqualTo("USER_INACTIVE");
         assertThat(chain.invoked).isFalse();
     }
 
@@ -472,6 +476,7 @@ class ApiSecurityFilterTest {
         CapturingChain refused = new CapturingChain();
         legacyOnlyFilter().doFilter(legacy(admin, "TENANT_ADMIN", tenant), res, refused);
         assertThat(res.getStatus()).isEqualTo(401);
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isEqualTo("ORG_INACTIVE");
         assertThat(refused.invoked).isFalse();
 
         UUID superAdmin = stored(UserRole.SUPER_ADMIN, null);
@@ -525,6 +530,34 @@ class ApiSecurityFilterTest {
     }
 
     @Test
+    void aBearerRejectionNamesItsReason() throws Exception {
+        UUID home = UUID.randomUUID();
+        String token = enabledTokens.issue(UUID.randomUUID(), UserRole.TENANT_ADMIN, home, List.of(home), 0);
+        for (String[] c : new String[][] {
+                {TokenRevocationService.ORG_NOT_ACTIVE, "ORG_INACTIVE"},
+                {TokenRevocationService.USER_GONE, "USER_INACTIVE"},
+                {TokenRevocationService.USER_NOT_ACTIVE, "USER_INACTIVE"},
+                {TokenRevocationService.TOKEN_REVOKED, "BAD_TOKEN"}}) {
+            MockHttpServletRequest req = request("/api/v1/properties");
+            req.addHeader("Authorization", "Bearer " + token);
+            MockHttpServletResponse res = new MockHttpServletResponse();
+            new ApiSecurityFilter(enabledTokens, (identity, tenant) -> c[0], db, PROXY_SECRET, "allow")
+                    .doFilter(req, res, new CapturingChain());
+            assertThat(res.getStatus()).isEqualTo(401);
+            assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).as(c[0]).isEqualTo(c[1]);
+        }
+    }
+
+    @Test
+    void anAdmittedRequestCarriesNoReasonHeader() throws Exception {
+        UUID tenant = UUID.randomUUID();
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        legacyOnlyFilter().doFilter(legacy(stored(UserRole.TENANT_ADMIN, tenant), "TENANT_ADMIN", tenant), res,
+                new CapturingChain());
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isNull();
+    }
+
+    @Test
     void legacyMalformedUserIdIs400() throws Exception {
         MockHttpServletRequest req = request("/api/v1/properties");
         req.addHeader("X-User-Id", "not-a-uuid");
@@ -567,6 +600,7 @@ class ApiSecurityFilterTest {
         new ApiSecurityFilter(enabledTokens, revoked, db, PROXY_SECRET, "allow").doFilter(req, res, chain);
 
         assertThat(res.getStatus()).isEqualTo(401);
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isEqualTo("BAD_TOKEN");
         assertThat(chain.invoked).isFalse();
         assertThat(askedAbout[0]).as("the check is asked about the tenant the request acts in").isEqualTo(home);
         assertThat(askedVersion[0]).isEqualTo(3);
@@ -636,6 +670,7 @@ class ApiSecurityFilterTest {
         activatedFilter().doFilter(req, res, chain);
 
         assertThat(res.getStatus()).isEqualTo(401);
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isEqualTo("BAD_TOKEN");
         assertThat(chain.invoked).isFalse();
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
@@ -699,6 +734,7 @@ class ApiSecurityFilterTest {
         activatedFilter().doFilter(req, res, chain);
 
         assertThat(res.getStatus()).isEqualTo(403);
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isEqualTo("NOT_A_MEMBER");
         assertThat(chain.invoked).isFalse();
     }
 
@@ -768,6 +804,7 @@ class ApiSecurityFilterTest {
         activatedFilter().doFilter(req, res, chain);
 
         assertThat(res.getStatus()).isEqualTo(403);
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isEqualTo("PROXY_AUTH_REQUIRED");
         assertThat(chain.invoked).isFalse();
     }
 
@@ -837,6 +874,7 @@ class ApiSecurityFilterTest {
         new ApiSecurityFilter(enabledTokens, ALWAYS_CURRENT, db, "", "deny").doFilter(req, res, chain);
 
         assertThat(res.getStatus()).isEqualTo(401);
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isEqualTo("LEGACY_DENIED");
         assertThat(chain.invoked).isFalse();
     }
 
