@@ -47,16 +47,25 @@ public class RenterService {
             org.springframework.data.domain.Sort.Order.asc("nameEn"), org.springframework.data.domain.Sort.Order.asc("id"));
 
     /**
+     * Controller ruling (Scale PR B2 final-review fix, task 5): every entity list sorts by
+     * createdAt ascending, not by name. {@link #BY_NAME} stays reserved for {@link #search},
+     * the picker typeahead, where a caller is scanning by name and expects alphabetical order.
+     */
+    private static final org.springframework.data.domain.Sort BY_CREATED = org.springframework.data.domain.Sort.by(
+            org.springframework.data.domain.Sort.Order.asc("createdAt"), org.springframework.data.domain.Sort.Order.asc("id"));
+
+    /**
      * {@code GET /renters/paged} (scale P1-3): searched on name, phone and email in the
-     * database, a page at a time, by name. A property manager sees the renters with a
-     * contract in their buildings and the renters with none yet.
+     * database, a page at a time, ordered by createdAt ascending (then id, for renters
+     * created in the same instant). A property manager sees the renters with a contract in
+     * their buildings and the renters with none yet.
      */
     @Transactional(readOnly = true)
     public org.springframework.data.domain.Page<RenterDTO> searchPaged(String q, int page, int size) {
         UUID tenantId = Search.requireTenant();
         List<UUID> scoped = scoped();
         org.springframework.data.domain.Page<Renter> rows = renterRepository.searchPaged(tenantId, Search.like(q),
-                scoped == null, Search.scopeIds(scoped), Search.page(page, size, BY_NAME));
+                scoped == null, Search.scopeIds(scoped), Search.page(page, size, BY_CREATED));
         Map<UUID, User> users = new HashMap<>();
         List<UUID> userIds = rows.getContent().stream().map(Renter::getUserId).filter(java.util.Objects::nonNull).toList();
         if (!userIds.isEmpty() && tenantId != null) {

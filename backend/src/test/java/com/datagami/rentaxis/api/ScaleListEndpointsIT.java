@@ -164,6 +164,17 @@ class ScaleListEndpointsIT extends AbstractPostgresIT {
     }
 
     @Test
+    void rentersPagedOrdersByCreatedAtAscendingNotName() {
+        // Controller ruling (Scale PR B2 final-review fix, task 5): every entity list sorts
+        // by createdAt ascending. Fixture creation order for org A is the bootstrap's own
+        // "Test Renter", then Semi/Palm/Fresh (setUp, in that order) — alphabetically that
+        // would be Fresh/Palm/Test/R14, so an assertion on this exact order also proves the
+        // list isn't secretly still sorting by nameEn.
+        assertThat(names(get(admin, "/api/v1/renters/paged?page=0&size=10"), "nameEn"))
+                .containsExactly("Test Renter", "R14 Semi Salem", "Palm Person", "Fresh Renter");
+    }
+
+    @Test
     void aManagerSeesRentersOfTheirBuildingsAndRentersWithNoContract() {
         List<String> seen = names(get(pm, "/api/v1/renters/paged?size=50"), "nameEn");
         assertThat(seen).contains("R14 Semi Salem", "Fresh Renter").doesNotContain("Palm Person");

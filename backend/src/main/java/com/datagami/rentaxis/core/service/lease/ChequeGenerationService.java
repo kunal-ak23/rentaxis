@@ -341,7 +341,7 @@ public class ChequeGenerationService {
     @Transactional(readOnly = true)
     public List<ChequeDTO> list(UUID leaseId) {
         Lease lease = readableLease(leaseId);
-        return toDtos(chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId), lease);
+        return toDtos(chequeRepository.findByLease_IdOrderBySeqNoAscIdAsc(leaseId), lease);
     }
 
     /**
@@ -363,7 +363,7 @@ public class ChequeGenerationService {
             return List.of();
         }
         Map<UUID, List<Cheque>> byLease = new java.util.HashMap<>();
-        for (Cheque c : chequeRepository.findByLease_IdInOrderBySeqNoAsc(
+        for (Cheque c : chequeRepository.findByLease_IdInOrderBySeqNoAscIdAsc(
                 leases.stream().map(Lease::getId).toList())) {
             byLease.computeIfAbsent(c.getLease().getId(), id -> new ArrayList<>()).add(c);
         }

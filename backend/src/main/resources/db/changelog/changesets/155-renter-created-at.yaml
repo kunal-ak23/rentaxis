@@ -1,0 +1,21 @@
+# Scale PR B2 final-review fix (task 5): the standing controller ruling is that every
+# entity list sorts by createdAt ascending, not by name or updatedAt. `renters` never had
+# a created_at column — `RenterService.searchPaged` was ordering `GET /renters/paged` by
+# name instead. Existing rows all get the same backfilled timestamp (the migration's own
+# run time); that is fine — they only need a stable, creation-ish order relative to renters
+# created afterward, and the `id` tiebreak added alongside this makes the order strictly
+# deterministic even among rows that tie.
+databaseChangeLog:
+  - changeSet:
+      id: 155-renter-created-at
+      author: claude
+      changes:
+        - addColumn:
+            tableName: renters
+            columns:
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
