@@ -66,15 +66,50 @@ describe("LoginPage callbackUrl (F6)", () => {
 });
 
 describe("safeCallbackUrl", () => {
+    const ORIGIN = "http://localhost:3000";
+
+    // Review fix 1 (open redirect): URL parsing strips TAB/LF, so a check on
+    // the leading characters alone let "/\t/evil.example" through to
+    // location.assign, which lands on https://evil.example/.
     it.each([
-        ["/en/dashboard", "/en/dashboard"],
-        ["https://evil.example", null],
-        ["//evil.example/x", null],
-        ["/\\evil.example", null],
-        ["/en/auth/login", null],
-        ["", null],
-        [null, null],
-    ])("%s → %s", (raw, expected) => {
-        expect(safeCallbackUrl(raw)).toBe(expected);
+        ["/\t/evil.example"],
+        ["/\n/evil.example"],
+        ["/\r/evil.example"],
+        ["/\x00/evil.example"],
+        ["/\x7f/evil.example"],
+        ["//evil.example"],
+        ["/\\evil.example"],
+        ["\\\\evil.example"],
+        ["https://evil.example"],
+        ["javascript:alert(1)"],
+        ["/en/auth/login"],
+        ["/ar/auth/set-password?x=1"],
+        [""],
+        [null],
+    ])("rejects %j", (raw) => {
+        expect(safeCallbackUrl(raw as string | null, ORIGIN)).toBeNull();
+    });
+
+    it("keeps a same-origin path with its query and hash", () => {
+        expect(safeCallbackUrl("/en/dashboard/leases?x=1#y", ORIGIN)).toBe("/en/dashboard/leases?x=1#y");
+    });
+
+    it("keeps an encoded-slash path on this origin (it cannot leave it)", () => {
+        const out = safeCallbackUrl("/%2F%2Fevil.example", ORIGIN);
+        expect(out).not.toBeNull();
+        expect(new URL(out!, ORIGIN).origin).toBe(ORIGIN);
+    });
+
+    it("returns null without an origin to check against (server render)", () => {
+        expect(safeCallbackUrl("/en/dashboard", null)).toBeNull();
+    });
+});
+
+describe("LoginPage refuses an encoded control-character callbackUrl", () => {
+    it("goes to the dashboard instead of the TAB-smuggled host", async () => {
+        search.value = "callbackUrl=%2F%09%2Fevil.example";
+        await signInNow();
+        await waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard"));
+        expect(assign).not.toHaveBeenCalled();
     });
 });

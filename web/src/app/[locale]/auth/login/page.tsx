@@ -20,7 +20,8 @@ export default function LoginPage() {
     const searchParams = useSearchParams();
     const registered = searchParams.get("registered") === "true";
     // Break round 1, F6: set when an expired session sent the user here.
-    const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"));
+    // Validated against this origin at the moment it is used (safeCallbackUrl).
+    const rawCallbackUrl = searchParams.get("callbackUrl");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
@@ -88,6 +89,7 @@ export default function LoginPage() {
             return;
         }
 
+        const callbackUrl = safeCallbackUrl(rawCallbackUrl);
         if (callbackUrl) {
             // A full path with its locale: navigate outside the locale-prefixing router.
             window.location.assign(callbackUrl);

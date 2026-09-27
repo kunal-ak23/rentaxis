@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Cookies from "js-cookie";
 
@@ -18,6 +19,7 @@ import { resetPageOrg } from "@/lib/session/orgSync";
 let assign: ReturnType<typeof vi.fn>;
 let reload: ReturnType<typeof vi.fn>;
 let fetchStatus = 200;
+let fetchHeaders: Record<string, string> = {};
 const realLocation = window.location;
 
 beforeEach(() => {
@@ -31,7 +33,8 @@ beforeEach(() => {
             pathname: "/en/dashboard/renters", search: "?q=a", assign, reload },
     });
     fetchStatus = 200;
-    window.fetch = vi.fn(async () => new Response("{}", { status: fetchStatus })) as unknown as typeof fetch;
+    fetchHeaders = {};
+    window.fetch = vi.fn(async () => new Response("{}", { status: fetchStatus, headers: fetchHeaders })) as unknown as typeof fetch;
 });
 afterEach(() => {
     cleanup();
@@ -104,11 +107,51 @@ describe("SessionGuards — session gone (F6)", () => {
     it("sends the user to sign in with the current page as callbackUrl on a 401", async () => {
         renderGuards("TENANT_ADMIN", "brk1");
         fetchStatus = 401;
+        fetchHeaders = { "X-Session-Ended": "1" };
         await act(async () => { await fetch("/api/proxy/v1/leases/paged"); });
         expect(assign).toHaveBeenCalledTimes(1);
         expect(assign).toHaveBeenCalledWith(`/en/auth/login?callbackUrl=${encodeURIComponent("/en/dashboard/renters?q=a")}`);
         // A burst of 401s redirects once.
         await act(async () => { await fetch("/api/proxy/v1/renters"); });
         expect(assign).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe("SessionGuards — a backend 401 is not a signed-out session (review fix 2)", () => {
+    it("repairs a cookie pointing at an organisation the backend refuses, instead of looping through sign-in", async () => {
+        Cookies.set("active_tenant_id", "second", { path: "/" });
+        renderGuards("TENANT_ADMIN", "brk1");
+        fetchStatus = 401; // "Organisation is not active." — no X-Session-Ended
+        await act(async () => { await fetch("/api/proxy/v1/leases/paged"); });
+        expect(assign).not.toHaveBeenCalled();
+        expect(Cookies.get("active_tenant_id")).toBeUndefined();
+        expect(screen.getByRole("alertdialog", { name: /this organisation is not available/i })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: /reload/i }));
+        expect(reload).toHaveBeenCalled();
+    });
+
+    it("leaves the home organisation alone (nothing to repair; the page shows its error)", async () => {
+        renderGuards("TENANT_ADMIN", "brk1"); // cookie is brk1 = home
+        fetchStatus = 401;
+        await act(async () => { await fetch("/api/proxy/v1/leases/paged"); });
+        expect(assign).not.toHaveBeenCalled();
+        expect(Cookies.get("active_tenant_id")).toBe("brk1");
+        expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    });
+});
+
+describe("SessionGuards — installed before the page's own mount effects (review fix 4)", () => {
+    it("stamps a mutation a child makes in its mount effect", async () => {
+        const inner = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async () => new Response("{}", { status: 200 }));
+        window.fetch = inner as unknown as typeof fetch;
+        function Child() {
+            useEffect(() => { void fetch("/api/proxy/v1/renters", { method: "POST" }); }, []);
+            return null;
+        }
+        await act(async () => {
+            render(<SessionGuards role="TENANT_ADMIN" homeTenantId="brk1"><Child /></SessionGuards>);
+        });
+        expect(inner).toHaveBeenCalledTimes(1);
+        expect(new Headers(inner.mock.calls[0][1]?.headers).get("X-Expected-Tenant-Id")).toBe("brk1");
     });
 });

@@ -74,3 +74,24 @@ describe("proxy — expected organisation on mutating requests (F3)", () => {
         expect(switched.status).toBe(409);
     });
 });
+
+describe("proxy — its own session-ended 401s are marked (review fix 2)", () => {
+    it("marks the no-session 401", async () => {
+        getTokenMock.mockResolvedValue(null);
+        const res = await middleware(req("GET"));
+        expect(res.status).toBe(401);
+        expect(res.headers.get("X-Session-Ended")).toBe("1");
+    });
+
+    it("marks the revoked-session 401", async () => {
+        getTokenMock.mockResolvedValue({ id: "u", role: "TENANT_ADMIN", tenantId: "t1", revoked: true });
+        const res = await middleware(req("GET"));
+        expect(res.status).toBe(401);
+        expect(res.headers.get("X-Session-Ended")).toBe("1");
+    });
+
+    it("does not mark a forwarded request (a backend 401 carries no such header)", async () => {
+        const res = await middleware(req("GET", { cookie: "brk1" }));
+        expect(res.headers.get("X-Session-Ended")).toBeNull();
+    });
+});

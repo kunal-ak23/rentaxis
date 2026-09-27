@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useLayoutEffect, useState, type ReactNode } from "react";
+import Cookies from "js-cookie";
 import { useTranslations } from "next-intl";
 import { Building2, Loader2, RefreshCw } from "lucide-react";
 import { installProxyFetchGuard, loginUrlFor } from "@/lib/session/proxyFetchGuard";
-import { getPageOrg, readActiveOrgCookie, subscribeOrgChange } from "@/lib/session/orgSync";
+import { ACTIVE_ORG_COOKIE, getPageOrg, readActiveOrgCookie, setPageOrg, subscribeOrgChange } from "@/lib/session/orgSync";
 
 /**
  * Session-wide guards for every authenticated page (break round 1):
@@ -15,7 +16,7 @@ import { getPageOrg, readActiveOrgCookie, subscribeOrgChange } from "@/lib/sessi
  *      The page underneath is made inert, and every mutation carries the org
  *      the page was loaded for, so the proxy refuses a stale write even if
  *      the notice were bypassed.
- * F6 — a 401 from /api/proxy anywhere means the session is gone: send the
+ * F6 — the proxy's own 401 (X-Session-Ended) means the session is gone: send the
  *      user to sign in (callbackUrl = this page), once.
  */
 export function SessionGuards({
@@ -29,9 +30,13 @@ export function SessionGuards({
 }) {
     const t = useTranslations("PageState");
     const [orgChanged, setOrgChanged] = useState(false);
+    const [orgUnavailable, setOrgUnavailable] = useState(false);
     const [signingIn, setSigningIn] = useState(false);
 
-    useEffect(() => {
+    // A layout effect, not a passive one (review fix 4): it runs before any
+    // child's useEffect, so the page's own mount-time calls are already
+    // stamped with the org and covered by the 401 handling.
+    useLayoutEffect(() => {
         // Snapshot the organisation this page was loaded for.
         getPageOrg();
         // No cookie means the home organisation for everyone but a super admin
@@ -51,6 +56,18 @@ export function SessionGuards({
                 window.location.assign(url);
             },
             onOrgMismatch: () => setOrgChanged(true),
+            // Review fix 2: the backend refused the org in the cookie (e.g.
+            // "Organisation is not active"). Signing in again would keep the
+            // cookie and loop, so drop the selection back to the home org and
+            // ask for a reload. With no selection (or the home org itself)
+            // there is nothing to repair; the page shows its own error.
+            onBackendUnauthorized: () => {
+                const selected = readActiveOrgCookie();
+                if (!selected || role === "SUPER_ADMIN" || selected === homeTenantId) return;
+                Cookies.remove(ACTIVE_ORG_COOKIE, { path: "/" });
+                setPageOrg("");
+                setOrgUnavailable(true);
+            },
         });
         const unsubscribe = subscribeOrgChange(orgId => {
             if (isStale(orgId)) setOrgChanged(true);
@@ -70,12 +87,16 @@ export function SessionGuards({
         };
     }, [role, homeTenantId]);
 
-    const blocked = orgChanged || signingIn;
+    const blocked = orgChanged || orgUnavailable || signingIn;
+    const notice = signingIn ? null
+        : orgUnavailable ? { title: t("orgUnavailableTitle"), body: t("orgUnavailableBody") }
+        : orgChanged ? { title: t("orgChangedTitle"), body: t("orgChangedBody") }
+        : null;
 
     return (
         <>
             <div inert={blocked} className="contents">{children}</div>
-            {orgChanged && !signingIn && (
+            {notice && (
                 <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 px-4">
                     <div
                         role="alertdialog"
@@ -86,8 +107,8 @@ export function SessionGuards({
                         className="w-full max-w-md bg-surface rounded-xl shadow-xl border border-border p-6 text-center"
                     >
                         <Building2 size={36} className="mx-auto text-muted mb-3" />
-                        <h2 id="org-changed-title" className="text-base font-bold text-foreground mb-2">{t("orgChangedTitle")}</h2>
-                        <p id="org-changed-body" className="text-sm text-muted mb-5">{t("orgChangedBody")}</p>
+                        <h2 id="org-changed-title" className="text-base font-bold text-foreground mb-2">{notice.title}</h2>
+                        <p id="org-changed-body" className="text-sm text-muted mb-5">{notice.body}</p>
                         <button
                             type="button"
                             autoFocus

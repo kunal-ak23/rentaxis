@@ -16,3 +16,10 @@ export const ORG_MISMATCH_HEADER = "X-Org-Mismatch";
 export const ORG_MISMATCH_CODE = "ORG_CHANGED";
 
 export const MUTATING_METHODS: ReadonlySet<string> = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/**
+ * Set on the proxy's OWN 401s (no session, revoked session). Only these mean
+ * "sign in again"; a 401 from the backend (e.g. "Organisation is not active"
+ * for the org in the cookie) would loop sign-in → same cookie → 401 forever.
+ */
+export const SESSION_ENDED_HEADER = "X-Session-Ended";

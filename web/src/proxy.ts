@@ -9,6 +9,7 @@ import {
     NO_ORG,
     ORG_MISMATCH_CODE,
     ORG_MISMATCH_HEADER,
+    SESSION_ENDED_HEADER,
 } from "./lib/session/orgHeaders";
 
 const intlMiddleware = createIntlMiddleware(routing);
@@ -52,6 +53,13 @@ function addSecurityHeaders(response: NextResponse, pathname: string): NextRespo
     return response;
 }
 
+/** The proxy's own "sign in again" answer, marked so the client can tell it from a backend 401. */
+function sessionEnded(body: string): NextResponse {
+    const res = new NextResponse(body, { status: 401 });
+    res.headers.set(SESSION_ENDED_HEADER, '1');
+    return res;
+}
+
 export default async function middleware(req: NextRequest) {
     const isApiProxy = req.nextUrl.pathname.startsWith('/api/proxy');
 
@@ -77,16 +85,14 @@ export default async function middleware(req: NextRequest) {
         // Authenticate proxy requests and attach tenant context headers
         const token = await getToken({ req });
         if (!token) {
-            return addSecurityHeaders(new NextResponse('Unauthorized', { status: 401 }),
-                req.nextUrl.pathname);
+            return addSecurityHeaders(sessionEnded('Unauthorized'), req.nextUrl.pathname);
         }
 
         // The jwt callback marks a token revoked once the backend reports the
         // account no longer exists. Refuse it here rather than forwarding the
         // stale role to the backend, which trusts these headers as presented.
         if (token.revoked === true) {
-            return addSecurityHeaders(new NextResponse('Session revoked', { status: 401 }),
-                req.nextUrl.pathname);
+            return addSecurityHeaders(sessionEnded('Session revoked'), req.nextUrl.pathname);
         }
 
         const requestHeaders = new Headers(req.headers);

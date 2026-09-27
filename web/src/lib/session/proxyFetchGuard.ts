@@ -1,4 +1,4 @@
-import { EXPECTED_TENANT_HEADER, MUTATING_METHODS, NO_ORG, ORG_MISMATCH_HEADER } from "./orgHeaders";
+import { EXPECTED_TENANT_HEADER, MUTATING_METHODS, NO_ORG, ORG_MISMATCH_HEADER, SESSION_ENDED_HEADER } from "./orgHeaders";
 
 /**
  * One wrapper around `window.fetch` for every browser call to /api/proxy.
@@ -8,8 +8,8 @@ import { EXPECTED_TENANT_HEADER, MUTATING_METHODS, NO_ORG, ORG_MISMATCH_HEADER }
  * once by the authenticated layout (never on the auth pages), it:
  *  - stamps each mutating call with the organisation the page was loaded for
  *    (break round 1, F3; the proxy 409s a mismatch);
- *  - reports a 401 — the session cookie expired, was cleared or revoked — so
- *    the layout can send the user to sign in (F6), instead of the page showing
+ *  - reports the proxy's own 401 — the session cookie expired, was cleared or
+ *    revoked — so the layout can send the user to sign in (F6), instead of the page showing
  *    "Request failed (status 401)" or a false "nothing here" state;
  *  - reports the proxy's own org-mismatch 409 (F3).
  * The caller always receives the real response.
@@ -17,8 +17,15 @@ import { EXPECTED_TENANT_HEADER, MUTATING_METHODS, NO_ORG, ORG_MISMATCH_HEADER }
 export type ProxyFetchGuardOptions = {
     /** The organisation this page was loaded for; "" when none (Global View). */
     getExpectedOrg: () => string;
+    /** The proxy's own 401 (X-Session-Ended): the session is gone. */
     onUnauthorized: () => void;
     onOrgMismatch: () => void;
+    /**
+     * A 401 the backend gave (e.g. "Organisation is not active" for the org
+     * in the cookie). Not a signed-out session: signing in again would keep
+     * the same cookie and loop. The caller repairs the org selection instead.
+     */
+    onBackendUnauthorized?: () => void;
 };
 
 const GUARD = Symbol.for("rentaxis.proxyFetchGuard");
@@ -58,7 +65,8 @@ export function installProxyFetchGuard(opts: ProxyFetchGuardOptions): () => void
 
         const res = await original(nextInput, nextInit);
         if (res.status === 401) {
-            opts.onUnauthorized();
+            if (res.headers.get(SESSION_ENDED_HEADER) === "1") opts.onUnauthorized();
+            else opts.onBackendUnauthorized?.();
         } else if (res.status === 409 && res.headers.get(ORG_MISMATCH_HEADER) === "1") {
             opts.onOrgMismatch();
         }
@@ -83,12 +91,31 @@ export function loginUrlFor(loc: { pathname: string; search: string }): string |
 }
 
 /**
- * A post-login destination from `?callbackUrl=`: same-origin paths only (no
- * scheme, no protocol-relative `//host`), never back into the auth pages.
+ * A post-login destination from `?callbackUrl=`: a path on THIS origin, never
+ * the auth pages. The single gate for every redirect parameter the web
+ * consumes (today: the login page's callbackUrl; NextAuth's own redirect
+ * callback is the v4 default, which already refuses other origins).
+ *
+ * Review fix (open redirect): checking only the leading characters is not
+ * enough — the URL parser strips TAB/LF/CR, so "/\t/evil.example" became
+ * "//evil.example" inside location.assign. Control characters and
+ * backslashes are refused outright, then the value is parsed against this
+ * origin and must still be on it.
  */
-export function safeCallbackUrl(raw: string | null | undefined): string | null {
-    if (!raw) return null;
-    if (!raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) return null;
-    if (/^\/(?:(?:en|ar)\/)?auth(?:\/|$)/.test(raw)) return null;
-    return raw;
+export function safeCallbackUrl(
+    raw: string | null | undefined,
+    origin: string | null = typeof window !== "undefined" ? window.location.origin : null,
+): string | null {
+    if (!raw || !origin) return null;
+    if (/[\x00-\x1F\x7F\\]/.test(raw)) return null;
+    if (!raw.startsWith("/") || raw.startsWith("//")) return null;
+    let u: URL;
+    try {
+        u = new URL(raw, origin);
+    } catch {
+        return null;
+    }
+    if (u.origin !== origin) return null;
+    if (/^\/(?:(?:en|ar)\/)?auth(?:\/|$)/.test(u.pathname)) return null;
+    return u.pathname + u.search + u.hash;
 }

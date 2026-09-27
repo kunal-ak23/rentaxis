@@ -32,8 +32,9 @@ afterEach(() => {
 function install(overrides: Partial<Parameters<typeof installProxyFetchGuard>[0]> = {}) {
     const onUnauthorized = vi.fn();
     const onOrgMismatch = vi.fn();
-    uninstall = installProxyFetchGuard({ getExpectedOrg: () => "brk1", onUnauthorized, onOrgMismatch, ...overrides });
-    return { onUnauthorized, onOrgMismatch };
+    const onBackendUnauthorized = vi.fn();
+    uninstall = installProxyFetchGuard({ getExpectedOrg: () => "brk1", onUnauthorized, onOrgMismatch, onBackendUnauthorized, ...overrides });
+    return { onUnauthorized, onOrgMismatch, onBackendUnauthorized };
 }
 
 const headerOf = (c: Call, name: string) => c.headers.get(name);
@@ -78,14 +79,23 @@ describe("installProxyFetchGuard — expected organisation (F3)", () => {
 });
 
 describe("installProxyFetchGuard — session gone (F6)", () => {
-    it("calls onUnauthorized on a 401 from /api/proxy, for reads and writes", async () => {
-        const { onUnauthorized } = install();
-        respond = () => new Response("Unauthorized", { status: 401 });
+    it("calls onUnauthorized on the proxy's session-ended 401, for reads and writes", async () => {
+        const { onUnauthorized, onBackendUnauthorized } = install();
+        respond = () => new Response("Unauthorized", { status: 401, headers: { "X-Session-Ended": "1" } });
         const res = await fetch("/api/proxy/v1/leases/paged");
         await fetch("/api/proxy/v1/renters", { method: "POST" });
         expect(onUnauthorized).toHaveBeenCalledTimes(2);
         // The caller still gets the real response.
         expect(res.status).toBe(401);
+        expect(onBackendUnauthorized).not.toHaveBeenCalled();
+    });
+
+    it("never treats a backend 401 (e.g. 'Organisation is not active') as a signed-out session — no sign-in loop", async () => {
+        const { onUnauthorized, onBackendUnauthorized } = install();
+        respond = () => new Response("Organisation is not active.", { status: 401 });
+        await fetch("/api/proxy/v1/leases/paged");
+        expect(onUnauthorized).not.toHaveBeenCalled();
+        expect(onBackendUnauthorized).toHaveBeenCalledTimes(1);
     });
 
     it("ignores a 401 from outside /api/proxy and other statuses", async () => {
