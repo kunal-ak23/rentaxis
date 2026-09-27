@@ -76,7 +76,13 @@ export type AccountRole =
   | "INTERPROPERTY_CLEARING"
   /** F14-38: bad debts written off (D-02-004) and recovered (C-02-002). */
   | "BAD_DEBT"
-  | "BAD_DEBT_RECOVERED";
+  | "BAD_DEBT_RECOVERED"
+  /**
+   * S16-14: "Due to/from vendor – <property>" (A-02-07, "Due from/(to) vendors
+   * on acquisitions"), one leaf per property — `PropertyAccountService.acquisitionClearingLeaf`.
+   * Settles cheques a previous owner already banked before the acquisition.
+   */
+  | "ACQUISITION_CLEARING";
 
 export type JournalDocType =
   | "TCO"

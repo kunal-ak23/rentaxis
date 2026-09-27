@@ -218,7 +218,11 @@ export default function DashboardPage() {
     Promise.all([
       leaseApi.paged({ status: "DRAFT", sort: "startDate,asc", size: 1 }),
       leaseApi.paged({ status: "PENDING_SIGNATURE", sort: "startDate,asc", size: 1 }),
-      leaseApi.paged({ status: "ACTIVE", sort: "startDate,desc", size: 50 }),
+      // #105 N3: matches the Contracts list's own Upcoming read (contractRead's
+      // "bounded"/"upcoming" case) — a mismatched bound here made Home's count
+      // (and whether it showed "N+") disagree with what the list showed after
+      // the click-through.
+      leaseApi.paged({ status: "ACTIVE", sort: "startDate,desc", size: 100 }),
       leaseApi.paged({ status: "ACTIVE", sort: "endDate,asc", size: 100 }),
       leaseApi.paged({ status: "NOTICE_GIVEN", sort: "endDate,asc", size: 1 }),
       leaseApi.paged({ status: "TERMINATED", sort: "endDate,asc", size: 1 }),

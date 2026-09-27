@@ -59,7 +59,23 @@ export type ImportBatch = {
     /** Set when the batch was thrown away; its leases and created rows no longer exist. */
     discardedAt: string | null;
     createdAt: string;
+    /**
+     * S16-14: set only on an ACQUISITION cut-over (a building bought after
+     * go-live) — `ImportBatchController.PostBatchDTO.acquisitionDate`, settable
+     * only while the batch is DRAFT (`ImportBatchService.setAcquisitionDate`).
+     * Null on an ordinary go-live cut-over. There is no separate "kind" field
+     * for this: the distinction is purely whether a date was given.
+     */
+    acquisitionDate: string | null;
 };
+
+/**
+ * `ImportBatchController.PostBatchDTO` — optional, and the ONLY thing that
+ * distinguishes an acquisition cut-over from an ordinary go-live one. No date
+ * (or no body at all) is a go-live post; a date is an acquisition, and the
+ * server refuses to accept one once the batch is no longer DRAFT.
+ */
+export type PostBatchInput = { acquisitionDate: string };
 
 /**
  * `ImportBatchController.ReverseBatchDTO` — `reason` and nothing else.
@@ -424,7 +440,14 @@ export const cutoverApi = {
          * which is not a request to hold a connection open for. Answers the job
          * id at once; poll `postStatus`.
          */
-        post: (id: string) => apiSend<PostStarted>("POST", `/finance/import-batches/${id}/post`),
+        /**
+         * `body` is omitted (or `acquisitionDate` left out of it) for an
+         * ordinary go-live post; passing `acquisitionDate` marks this a
+         * S16-14 acquisition cut-over — refused once the batch is no longer
+         * DRAFT.
+         */
+        post: (id: string, body?: PostBatchInput) =>
+            apiSend<PostStarted>("POST", `/finance/import-batches/${id}/post`, body),
         /** The poll. 404 when the job is not this batch's, or not this organisation's. */
         postStatus: (id: string, jobId: string) =>
             apiGet<PostJob>(`/finance/import-batches/${id}/post/${jobId}`),

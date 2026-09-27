@@ -121,7 +121,18 @@ export function registerActionsFor(
      * nothing left on this instrument for a replacement to collect.
      */
     ledgerSettled?: boolean,
+    /**
+     * S16-14: `ChequeService.requireOurs` refuses bounce, replace, receipt and
+     * `returnToTenant` outright for a cheque a previous owner already banked
+     * before an acquisition cut-over — "settle it through the acquisition
+     * clearing account instead". Every one of those verbs is dropped below,
+     * whatever status the row is otherwise in.
+     */
+    settledBeforeAcquisition?: boolean,
 ): RegisterAction[] {
+    const REFUSED_IF_PRE_ACQUISITION: RegisterAction[] = ["bounce", "replace", "receipt"];
+    const withoutRefused = (actions: RegisterAction[]) =>
+        settledBeforeAcquisition ? actions.filter(a => !REFUSED_IF_PRE_ACQUISITION.includes(a)) : actions;
     // A lease status the caller DID supply and that `requireCollectable` refuses
     // closes the row completely: every verb below is a transition, and `details`
     // and `receipt` are withheld with them so a finished contract reads as
@@ -154,11 +165,11 @@ export function registerActionsFor(
             return actions;
         }
         case "DEPOSITED":
-            return ["clear", "bounce"];
+            return withoutRefused(["clear", "bounce"]);
         case "CLEARED":
-            return mode === "PDC" ? ["bounce", "receipt"] : ["receipt"];
+            return withoutRefused(mode === "PDC" ? ["bounce", "receipt"] : ["receipt"]);
         case "BOUNCED":
-            return ledgerSettled ? [] : ["replace"];
+            return ledgerSettled ? [] : withoutRefused(["replace"]);
         case "ONLINE_PENDING":
             // Not a state transition the renter can finish from here: the
             // gateway either calls back or it does not. Staff put the row back

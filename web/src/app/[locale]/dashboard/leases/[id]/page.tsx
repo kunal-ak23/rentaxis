@@ -190,6 +190,8 @@ export default function LeaseDetailPage() {
     const [writtenOff, setWrittenOff] = useState(0);
     const [loading, setLoading] = useState(true);
     const [banner, setBanner] = useState<string | null>(null);
+    /** What a post, amendment or extension did that is worth knowing but is not an error (backend PR #372). */
+    const [notices, setNotices] = useState<string[]>([]);
     const [error, setError] = useState<string | null>(null);
     // A role that passes the client-side `canView` precheck can still get a
     // real 403 from GET /leases/{id} — a cross-tenant id, e.g. — and that is
@@ -657,6 +659,11 @@ export default function LeaseDetailPage() {
                         {banner}
                     </p>
                 )}
+                {notices.length > 0 && (
+                    <ul className="rounded-xl bg-info/10 border border-info/30 px-4 py-2.5 text-xs text-info space-y-1" data-testid="lease-notices">
+                        {notices.map((n, i) => <li key={i}>{n}</li>)}
+                    </ul>
+                )}
                 {error && (
                     <p className="rounded-xl bg-error/10 border border-error/30 px-4 py-2.5 text-xs text-error" data-testid="lease-error">
                         {error}
@@ -1093,6 +1100,7 @@ export default function LeaseDetailPage() {
                 onPosted={async res => {
                     setPostOpen(false);
                     setBanner(t("postedBanner", { tco: res.tcoEntryNumber }));
+                    setNotices(res.notices ?? []);
                     await loadLease();
                 }}
             />
@@ -1103,8 +1111,9 @@ export default function LeaseDetailPage() {
                 cheques={cheques}
                 chargeTypes={chargeTypes}
                 onClose={() => setAmendOpen(false)}
-                onAmended={async () => {
+                onAmended={async res => {
                     setAmendOpen(false);
+                    setNotices(res.notices ?? []);
                     await loadLease();
                 }}
             />
@@ -1125,8 +1134,9 @@ export default function LeaseDetailPage() {
                 lease={lease}
                 chargeTypes={chargeTypes}
                 onClose={() => setExtendOpen(false)}
-                onExtended={async () => {
+                onExtended={async res => {
                     setExtendOpen(false);
+                    setNotices(res.notices ?? []);
                     await loadLease();
                 }}
             />

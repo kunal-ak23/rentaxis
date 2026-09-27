@@ -138,6 +138,13 @@ export default function PostLeaseDialog({ open, lease, onClose, onPosted }: Prop
                                 pdr: dry.journals.pdr,
                             })}
                         </p>
+                        {!!dry.notices?.length && (
+                            <ul data-testid="post-dry-run-notices" className="space-y-1 text-info list-disc ms-4">
+                                {dry.notices.map((n, i) => (
+                                    <li key={i}>{n}</li>
+                                ))}
+                            </ul>
+                        )}
                         {ok ? (
                             <p className="text-success font-semibold" data-testid="post-dry-run-ok">
                                 {t("dryRunOk")}

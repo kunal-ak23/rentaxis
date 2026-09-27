@@ -237,6 +237,20 @@ describe("Termination page", () => {
         );
     });
 
+    it("F-16: shows the preview's problems and disables the terminate button while any exist", async () => {
+        api.preview.mockResolvedValue({ ...PREVIEW, problems: ["The renter has no TRN on file."] });
+        renderPage();
+        expect(await screen.findByTestId("terminate-problems")).toHaveTextContent("The renter has no TRN on file.");
+        expect(screen.getByTestId("terminate-submit")).toBeDisabled();
+    });
+
+    it("F-16: a clean preview (no problems) leaves the terminate button enabled", async () => {
+        renderPage();
+        await screen.findByTestId("terminate-receivable-after");
+        expect(screen.queryByTestId("terminate-problems")).toBeNull();
+        expect(screen.getByTestId("terminate-submit")).not.toBeDisabled();
+    });
+
     it("names the back arrow, which was icon-only", async () => {
         renderPage();
         expect(await screen.findByTestId("terminate-back")).toHaveAccessibleName("Back to contract");

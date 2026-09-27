@@ -143,6 +143,53 @@ describe("Tickets list — P1-2: no org-wide read, and no stale response wins", 
     });
 });
 
+describe("Tickets list — #106 R1-P3-a: the stale check must survive res.json(), not just the fetch itself", () => {
+    it("never applies an older response whose JSON parse (not the fetch) is what resolves late", async () => {
+        // Both requests' `fetch()` calls resolve immediately (ok:true) — it is
+        // each response's own `.json()` that takes time. The older (OPEN)
+        // request's `.json()` is the slow one; the newer (RESOLVED) request's
+        // resolves at once. A guard checked only once, right after `fetch()`
+        // and before `.json()`, passes for OPEN before RESOLVED even starts —
+        // then OPEN's `.json()` resolves after RESOLVED's already painted the
+        // screen, and nothing stops it from overwriting that state.
+        sessionState = { status: "authenticated", role: "TENANT_ADMIN" };
+        let resolveSlowJson: (v: unknown) => void = () => {};
+        const slowJson = new Promise(r => { resolveSlowJson = r; });
+        global.fetch = vi.fn(async (url: unknown) => {
+            const u = String(url);
+            if (u.includes("/v1/tickets/paged")) {
+                if (u.includes("status=RESOLVED")) {
+                    return { ok: true, status: 200, json: async () => pagedBody([ticket("2", "Newest filter")]) } as unknown as Response;
+                }
+                if (u.includes("status=OPEN")) {
+                    return { ok: true, status: 200, json: async () => { await slowJson; return pagedBody([ticket("3", "Stale filter")]); } } as unknown as Response;
+                }
+                return { ok: true, status: 200, json: async () => pagedBody([ticket("1", "Unfiltered")]) } as unknown as Response;
+            }
+            return { ok: true, status: 200, json: async () => [] } as unknown as Response;
+        }) as unknown as typeof fetch;
+
+        render(<TicketsPage />);
+        await screen.findByText("Unfiltered");
+
+        const statusSelect = screen.getByDisplayValue("All Statuses");
+        fireEvent.change(statusSelect, { target: { value: "OPEN" } });
+        // Let OPEN's own `fetch()` resolve (and pass the "is this still the
+        // latest request" check) before RESOLVED is even asked for — only
+        // OPEN's `.json()` is left pending. This is the gap a check placed
+        // only before `.json()` cannot see.
+        await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+        fireEvent.change(statusSelect, { target: { value: "RESOLVED" } });
+        await screen.findByText("Newest filter");
+
+        // The OPEN request's slow JSON parse resolves now, well after RESOLVED's.
+        resolveSlowJson(undefined);
+        await act(async () => { await new Promise(r => setTimeout(r, 20)); });
+        expect(screen.getByText("Newest filter")).toBeTruthy();
+        expect(screen.queryByText("Stale filter")).toBeNull();
+    });
+});
+
 describe("Tickets list — P3-3: a SUPER_ADMIN with no organisation sees why the list is empty", () => {
     it("surfaces the backend's message instead of a bare 'No tickets'", async () => {
         sessionState = { status: "authenticated", role: "SUPER_ADMIN" };

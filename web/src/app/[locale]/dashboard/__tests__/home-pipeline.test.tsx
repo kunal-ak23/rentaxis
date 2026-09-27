@@ -67,6 +67,14 @@ describe("Home (spec §1a, §6)", () => {
         expect(pagedCalls.every(u => /size=(1|50|100)\b/.test(u))).toBe(true);
     });
 
+    it("#105 N3: reads Upcoming from the same bounded size the Contracts list uses (100), not 50", async () => {
+        renderHome();
+        await screen.findByTestId("contract-pipeline");
+        const upcomingRead = pagedCalls.find(u => u.includes("status=ACTIVE") && u.includes("sort=startDate%2Cdesc"));
+        expect(upcomingRead).toBeTruthy();
+        expect(new URL(upcomingRead!, "http://x").searchParams.get("size")).toBe("100");
+    });
+
     it("skips the pipeline and the unit board for a role that cannot read contracts or properties", async () => {
         session.role = "TENANT_USER";
         renderHome();

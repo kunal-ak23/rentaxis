@@ -120,6 +120,7 @@ function batch(over: Partial<ImportBatch> & { id: string }): ImportBatch {
         reversedAt: null,
         discardedAt: null,
         createdAt: "2026-09-11T08:00:00Z",
+        acquisitionDate: null,
         ...over,
     };
 }
@@ -518,6 +519,64 @@ describe("bulk post", () => {
         expect(screen.getByText(/No e-mails are sent/)).toBeInTheDocument();
         fireEvent.click(dialog);
         await waitFor(() => expect(api.post).toHaveBeenCalledWith("b-draft"));
+    });
+});
+
+/** S16-14 (backend PR #376): a building bought after go-live. */
+describe("acquisition cut-over", () => {
+    it("defaults to go-live and posts with no acquisition date", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        fireEvent.click(screen.getByTestId("post-batch-b-draft"));
+        await screen.findByTestId("confirm-post-batch");
+
+        expect(screen.getByTestId("cutover-kind-go-live")).toBeChecked();
+        expect(screen.queryByTestId("acquisition-date")).not.toBeInTheDocument();
+        fireEvent.click(screen.getByTestId("confirm-post-batch"));
+        await waitFor(() => expect(api.post).toHaveBeenCalledWith("b-draft"));
+    });
+
+    it("requires a date once Acquisition is chosen, and disables Post until one is given", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        fireEvent.click(screen.getByTestId("post-batch-b-draft"));
+        await screen.findByTestId("confirm-post-batch");
+
+        fireEvent.click(screen.getByTestId("cutover-kind-acquisition"));
+        expect(screen.getByTestId("confirm-post-batch")).toBeDisabled();
+
+        fireEvent.change(await screen.findByTestId("acquisition-date"), { target: { value: "2026-09-01" } });
+        expect(screen.getByTestId("confirm-post-batch")).not.toBeDisabled();
+        fireEvent.click(screen.getByTestId("confirm-post-batch"));
+        await waitFor(() => expect(api.post).toHaveBeenCalledWith("b-draft", { acquisitionDate: "2026-09-01" }));
+    });
+
+    it("does not offer the go-live/acquisition choice when posting again or retrying (only a fresh DRAFT may set it)", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-reversed");
+        fireEvent.click(screen.getByTestId("post-batch-b-reversed"));
+        await screen.findByTestId("confirm-post-batch");
+        expect(screen.queryByTestId("cutover-kind-go-live")).not.toBeInTheDocument();
+    });
+
+    it("shows the acquisition date on a posted batch", async () => {
+        api.list.mockResolvedValue([
+            batch({ id: "b-acq", status: "POSTED", journalsPosted: 4, postedAt: "2026-09-05T09:00:00Z", acquisitionDate: "2026-09-01" }),
+        ]);
+        renderPage();
+        expect(await screen.findByTestId("batch-acquisition-date-b-acq")).toHaveTextContent("Acquired");
+    });
+
+    it("surfaces the server's refusal clearly (e.g. a batch no longer DRAFT)", async () => {
+        api.post.mockRejectedValue(new ApiError(400, "Import batch is POSTED; the acquisition date can be set only before it is posted."));
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        fireEvent.click(screen.getByTestId("post-batch-b-draft"));
+        await screen.findByTestId("confirm-post-batch");
+        fireEvent.click(screen.getByTestId("cutover-kind-acquisition"));
+        fireEvent.change(await screen.findByTestId("acquisition-date"), { target: { value: "2026-09-01" } });
+        fireEvent.click(screen.getByTestId("confirm-post-batch"));
+        await waitFor(() => expect(screen.getByTestId("post-error")).toHaveTextContent("the acquisition date can be set only before it is posted"));
     });
 
     it("shows progress while the job runs", async () => {

@@ -243,7 +243,7 @@ export default function ChequeGrid({
 
     /** One decision, made once and reused by the header, the cells and the colspans. */
     const actionsOf = (c: Cheque) =>
-        registerActionsFor(c.status, c.mode, canCancelCheques, { status: leaseStatus, settlementFinalized }, c.ledgerSettled);
+        registerActionsFor(c.status, c.mode, canCancelCheques, { status: leaseStatus, settlementFinalized }, c.ledgerSettled, c.settledBeforeAcquisition);
 
     const showActions = !editable && !!onRowAction && cheques.some(c => actionsOf(c).length > 0);
     const cols = 9 + (showVat ? 1 : 0) + (editable ? 0 : 1) + (showActions ? 1 : 0);
@@ -596,6 +596,11 @@ export default function ChequeGrid({
                                         {c.ledgerSettled && (
                                             <span className="ms-1 text-[9px] text-muted" data-testid={`cheque-ledger-settled-${i}`}>
                                                 {tc("ledgerSettled")}
+                                            </span>
+                                        )}
+                                        {c.settledBeforeAcquisition && (
+                                            <span className="ms-1 text-[9px] text-muted" data-testid={`cheque-settled-before-acquisition-${i}`}>
+                                                {tc("settledBeforeAcquisition")}
                                             </span>
                                         )}
                                     </td>
