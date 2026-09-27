@@ -47,18 +47,27 @@ public class RenterService {
             org.springframework.data.domain.Sort.Order.asc("nameEn"), org.springframework.data.domain.Sort.Order.asc("id"));
 
     /**
-     * Controller ruling (Scale PR B2 final-review fix, task 5): every entity list sorts by
-     * createdAt ascending, not by name. {@link #BY_NAME} stays reserved for {@link #search},
-     * the picker typeahead, where a caller is scanning by name and expects alphabetical order.
+     * Controller ruling (Scale PR B2 final-review fix, task 5, revised): every entity list
+     * sorts by createdAt ascending, not by name — but every existing renter ties on the same
+     * backfilled {@code created_at} (changeset 155 ran once, at one instant, for all of
+     * them), so a createdAt-then-id order would show today's renters in effectively random
+     * (UUID) order. {@code nameEn} is the secondary key instead — the same field {@link
+     * #BY_NAME} sorts by, reused as-is rather than re-decided here — so the existing list
+     * stays stable and readable while renters created after the migration append in true
+     * creation order. {@code id} remains the final tiebreak for two renters sharing both a
+     * createdAt and a name. {@link #BY_NAME} itself stays reserved for {@link #search}, the
+     * picker typeahead, where a caller is scanning by name regardless of when it was created.
      */
     private static final org.springframework.data.domain.Sort BY_CREATED = org.springframework.data.domain.Sort.by(
-            org.springframework.data.domain.Sort.Order.asc("createdAt"), org.springframework.data.domain.Sort.Order.asc("id"));
+            org.springframework.data.domain.Sort.Order.asc("createdAt"),
+            org.springframework.data.domain.Sort.Order.asc("nameEn"),
+            org.springframework.data.domain.Sort.Order.asc("id"));
 
     /**
      * {@code GET /renters/paged} (scale P1-3): searched on name, phone and email in the
-     * database, a page at a time, ordered by createdAt ascending (then id, for renters
-     * created in the same instant). A property manager sees the renters with a contract in
-     * their buildings and the renters with none yet.
+     * database, a page at a time, ordered by createdAt ascending, then name, then id (see
+     * {@link #BY_CREATED}). A property manager sees the renters with a contract in their
+     * buildings and the renters with none yet.
      */
     @Transactional(readOnly = true)
     public org.springframework.data.domain.Page<RenterDTO> searchPaged(String q, int page, int size) {

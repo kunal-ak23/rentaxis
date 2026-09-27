@@ -45,6 +45,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestClient;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -164,14 +165,33 @@ class ScaleListEndpointsIT extends AbstractPostgresIT {
     }
 
     @Test
-    void rentersPagedOrdersByCreatedAtAscendingNotName() {
-        // Controller ruling (Scale PR B2 final-review fix, task 5): every entity list sorts
-        // by createdAt ascending. Fixture creation order for org A is the bootstrap's own
-        // "Test Renter", then Semi/Palm/Fresh (setUp, in that order) — alphabetically that
-        // would be Fresh/Palm/Test/R14, so an assertion on this exact order also proves the
-        // list isn't secretly still sorting by nameEn.
+    void rentersPagedOrdersByCreatedAtThenNameThenId() {
+        // Controller ruling (Scale PR B2 final-review fix, task 5, revised): every entity
+        // list sorts by createdAt ascending, with nameEn as the tiebreak (not a raw id/UUID
+        // tiebreak — every renter migrated by changeset 155 ties on the same backfilled
+        // created_at, and a UUID tiebreak would show them in effectively random order).
+        //
+        // Renters created with distinct timestamps sort oldest first: fixture creation order
+        // for org A is the bootstrap's own "Test Renter", then Semi/Palm/Fresh (setUp, in
+        // that order) — alphabetically that would be Fresh/Palm/Test/R14, so this also proves
+        // the list isn't secretly still sorting by nameEn alone.
         assertThat(names(get(admin, "/api/v1/renters/paged?page=0&size=10"), "nameEn"))
                 .containsExactly("Test Renter", "R14 Semi Salem", "Palm Person", "Fresh Renter");
+
+        // Two renters sharing the same createdAt (as every renter backfilled by the same
+        // migration run does) tie-break on nameEn — "Amy Tied" before "Zed Tied" — not on
+        // their random UUID id.
+        Renter zed = a.createRenter("Zed Tied");
+        Renter amy = a.createRenter("Amy Tied");
+        Instant tiedAt = Instant.now();
+        zed.setCreatedAt(tiedAt);
+        amy.setCreatedAt(tiedAt);
+        renterRepo.save(zed);
+        renterRepo.save(amy);
+
+        assertThat(names(get(admin, "/api/v1/renters/paged?page=0&size=10"), "nameEn"))
+                .containsExactly("Test Renter", "R14 Semi Salem", "Palm Person", "Fresh Renter",
+                        "Amy Tied", "Zed Tied");
     }
 
     @Test

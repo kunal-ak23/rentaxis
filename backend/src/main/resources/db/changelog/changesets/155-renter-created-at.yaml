@@ -2,9 +2,11 @@
 # entity list sorts by createdAt ascending, not by name or updatedAt. `renters` never had
 # a created_at column — `RenterService.searchPaged` was ordering `GET /renters/paged` by
 # name instead. Existing rows all get the same backfilled timestamp (the migration's own
-# run time); that is fine — they only need a stable, creation-ish order relative to renters
-# created afterward, and the `id` tiebreak added alongside this makes the order strictly
-# deterministic even among rows that tie.
+# run time) and so all tie on it; `RenterService.BY_CREATED` falls back to `nameEn` (then
+# `id`) as the secondary sort key for exactly that reason — a UUID-only tiebreak would have
+# shown every renter that existed before this migration in effectively random order, where
+# name keeps that existing list stable and readable while renters created after this
+# migration append in true creation order ahead of them by createdAt alone.
 databaseChangeLog:
   - changeSet:
       id: 155-renter-created-at
