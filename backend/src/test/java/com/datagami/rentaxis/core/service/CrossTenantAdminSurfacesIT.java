@@ -260,16 +260,22 @@ class CrossTenantAdminSurfacesIT extends AbstractPostgresIT {
      * {@code TenantAspect} leaves the filter off even inside the request-scoped
      * session, so the unfiltered {@code findAll().get(0)} hands a SUPER_ADMIN some
      * arbitrary landlord's "How to pay" text.
+     *
+     * <p>Break round 1 F7: it used to answer an empty row; every org-scoped
+     * endpoint now refuses a caller with no organisation selected
+     * ({@code OrganisationRequiredInterceptor}), so this is a 400 that names the
+     * missing selection and still carries no landlord's text.
      */
     @Test
-    void withNoOrganisationSelectedOrgSettingsReadsEmpty() throws Exception {
+    void withNoOrganisationSelectedOrgSettingsReadIsRefused() throws Exception {
         orgSettingsRow(tenantB, "Pay tenant B: IBAN AE99 BBBB");
 
-        mvc.perform(get("/api/v1/settings/org")
+        String body = mvc.perform(get("/api/v1/settings/org")
                         .header("X-User-Id", superAdmin().toString())
                         .header("X-User-Role", "SUPER_ADMIN"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.penaltyPaymentInstructions", is("")));
+                .andExpect(status().isBadRequest())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(body).contains("Select an organisation first").doesNotContain("AE99");
     }
 
     /**

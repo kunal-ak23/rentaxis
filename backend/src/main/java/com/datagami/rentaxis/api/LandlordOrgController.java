@@ -20,10 +20,13 @@ public class LandlordOrgController {
 
     private final LandlordOrgService service;
     private final TenantFeatureService tenantFeatureService;
+    private final com.datagami.rentaxis.domain.repository.PropertyRepository propertyRepository;
 
-    public LandlordOrgController(LandlordOrgService service, TenantFeatureService tenantFeatureService) {
+    public LandlordOrgController(LandlordOrgService service, TenantFeatureService tenantFeatureService,
+            com.datagami.rentaxis.domain.repository.PropertyRepository propertyRepository) {
         this.service = service;
         this.tenantFeatureService = tenantFeatureService;
+        this.propertyRepository = propertyRepository;
     }
 
     @PostMapping
@@ -162,5 +165,43 @@ public class LandlordOrgController {
         }
         tenantFeatureService.setEnabled(id, feature, enabled);
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * The properties of one organisation, named in the path, for the user screen's
+     * property-manager assignment picker (break round 1, F7). That picker used the
+     * org-scoped {@code GET /api/v1/properties}, which in Global View (no
+     * organisation selected) listed every organisation's properties and now answers
+     * 400; the organisation being assigned into is the one that matters, whatever
+     * is selected. Same {@code [{property: {id, nameEn, nameAr}}]} shape.
+     */
+    @GetMapping("/{id}/properties")
+    public ResponseEntity<List<Map<String, Object>>> getProperties(@PathVariable UUID id) {
+        if (service.findById(id).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        // Act in that organisation for the read, so the tenant filter (which follows
+        // the context, possibly another organisation the SUPER_ADMIN has selected)
+        // agrees with the explicit tenant predicate.
+        UUID previous = com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId();
+        com.datagami.rentaxis.core.tenant.TenantContextHolder.setTenantId(id);
+        try {
+            List<Map<String, Object>> out = propertyRepository.findByTenantIdOrderByNameEnAsc(id).stream()
+                    .map(p -> {
+                        Map<String, Object> property = new java.util.LinkedHashMap<>();
+                        property.put("id", p.getId());
+                        property.put("nameEn", p.getNameEn());
+                        property.put("nameAr", p.getNameAr());
+                        return Map.<String, Object>of("property", property);
+                    })
+                    .toList();
+            return ResponseEntity.ok(out);
+        } finally {
+            if (previous == null) {
+                com.datagami.rentaxis.core.tenant.TenantContextHolder.clear();
+            } else {
+                com.datagami.rentaxis.core.tenant.TenantContextHolder.setTenantId(previous);
+            }
+        }
     }
 }

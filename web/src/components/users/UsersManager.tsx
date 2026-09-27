@@ -98,8 +98,16 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
 
     useEffect(() => {
         fetchUsers();
-        fetchProperties();
     }, []);
+
+    // The assignment picker lists the properties of the organisation the user is
+    // being put in. A SUPER_ADMIN reads that organisation by id: the org-scoped
+    // /v1/properties answers 400 in Global View (break round 1, F7) and, with an
+    // organisation selected, would list the selected one, not the user's.
+    useEffect(() => {
+        fetchProperties();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isSuperAdmin, tenantId]);
 
     // GET /admin/tenants is SUPER_ADMIN-only: a tenant admin (who now reaches
     // this list from Settings › Users & staff) only ever got a 403 from it and
@@ -132,8 +140,14 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
     };
 
     const fetchProperties = async () => {
+        if (isSuperAdmin && !tenantId) {
+            setProperties([]);
+            return;
+        }
         try {
-            const res = await fetch("/api/proxy/v1/properties");
+            const res = await fetch(isSuperAdmin
+                ? `/api/proxy/admin/tenants/${encodeURIComponent(tenantId)}/properties`
+                : "/api/proxy/v1/properties");
             if (res.ok) {
                 setProperties(await res.json());
             }

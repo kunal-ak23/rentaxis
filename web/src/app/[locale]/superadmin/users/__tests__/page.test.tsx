@@ -39,6 +39,7 @@ const jsonRes = (body: unknown, ok = true, status = 200) =>
 let putBodies: unknown[];
 let postBodies: Record<string, unknown>[];
 let resendUrls: string[];
+let propertyUrls: string[];
 let postResponse: { ok: boolean; status: number; body: unknown };
 let deleteResponse: { ok: boolean; status: number; body: unknown };
 
@@ -46,6 +47,7 @@ beforeEach(() => {
     putBodies = [];
     postBodies = [];
     resendUrls = [];
+    propertyUrls = [];
     postResponse = { ok: true, status: 200, body: pmUser };
     deleteResponse = { ok: true, status: 200, body: {} };
     global.fetch = vi.fn(async (url: unknown, init?: RequestInit) => {
@@ -72,6 +74,11 @@ beforeEach(() => {
         if (u.includes("/admin/users")) {
             return jsonRes([{ ...pmUser, invitePending: true }]);
         }
+        if (u.includes("/admin/tenants/t1/properties")) {
+            // A SUPER_ADMIN's picker reads the edited user's organisation by id (break round 1, F7).
+            propertyUrls.push(u);
+            return jsonRes([{ property: { id: PROP_ID, nameEn: "Tower A" } }]);
+        }
         if (u.includes("/admin/tenants")) {
             return jsonRes([{ id: "t1", name: "Tenant One" }]);
         }
@@ -96,6 +103,8 @@ describe("SuperAdminUsersPage", () => {
         // The assignment chip loads from /admin/users/{id}/properties.
         const chip = (await screen.findAllByText("Tower A")).find((el) => el.tagName === "DIV");
         expect(chip).toBeTruthy();
+        // …and the picker lists the edited user's organisation, by id, not /v1/properties.
+        expect(propertyUrls).toContain("/api/proxy/admin/tenants/t1/properties");
         fireEvent.click(chip!.querySelector("button")!);
 
         fireEvent.click(screen.getByText("Update User"));
