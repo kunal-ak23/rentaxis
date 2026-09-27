@@ -2406,7 +2406,7 @@
     "overdue": "متأخر",
     "daysOverdue": "متأخر {n} يومًا",
     "ledgerSettled": "مُسدّد",
-    "settledBeforeAcquisition": "تم تحصيله من المالك السابق",
+    "settledBeforeAcquisition": "أودعه المالك السابق",
     "receiptNumber": "إيصال {number}",
     "maturity": "تاريخ الاستحقاق",
     "receipt": "سند قبض",
@@ -3099,6 +3099,7 @@
     "acquisitionDateLabel": "تاريخ الاستحواذ",
     "acquisitionDateRequired": "تاريخ الاستحواذ مطلوب.",
     "acquisitionDateOn": "تم الاستحواذ في {date}",
+    "acquisitionDatePending": "تاريخ الاستحواذ {date}",
     "confirmPostAgain": "عُكست هذه الدفعة، لذا فإن تقييدها ينشئ دفعة جديدة تحمل القيود الجديدة. وتبقى الدفعة المعكوسة في القائمة كجزء من السجل.",
     "confirmRetryFailed": "إعادة تقييد هذه الدفعة؟ تُتجاوَز العقود المقيَّدة فعلًا، ولا يُعاد إلا محاولة {n} عقدًا فاشلًا.",
     "postingProgress": "جارٍ تقييد {processed} من {total} عقدًا…",
@@ -4628,6 +4629,7 @@
     "label": "المبنى",
     "all": "كل المباني",
     "myTickets": "تذاكري",
-    "allTickets": "كل التذاكر"
+    "allTickets": "كل التذاكر",
+    "unavailable": "عامل تصفية المبنى (تعذّر تحميل المباني)"
   }
 }

@@ -73,7 +73,14 @@ export function ConfirmDialog({
                     'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
                 ),
             );
-            if (items.length === 0) return;
+            // R1 P3-3: both buttons are disabled while a field-less confirm is
+            // loading — keep focus on the dialog itself instead of letting Tab
+            // walk out to the page behind.
+            if (items.length === 0) {
+                e.preventDefault();
+                dialogRef.current.focus();
+                return;
+            }
             const first = items[0], last = items[items.length - 1];
             const inside = dialogRef.current.contains(document.activeElement);
             if (e.shiftKey && (document.activeElement === first || !inside)) {
@@ -104,11 +111,12 @@ export function ConfirmDialog({
                         aria-modal="true"
                         aria-label={title}
                         ref={dialogRef}
+                        tabIndex={-1}
                         initial={{ opacity: 0, scale: 0.95, y: 10 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 10 }}
                         transition={{ duration: 0.2, type: "spring", bounce: 0 }}
-                        className="relative w-full max-w-sm bg-surface rounded-xl shadow-2xl flex flex-col overflow-hidden"
+                        className="relative w-full max-w-sm bg-surface rounded-xl shadow-2xl flex flex-col overflow-hidden focus:outline-none"
                     >
                         <div className="p-6">
                             <h2 className="text-lg font-bold text-foreground mb-2 tracking-tight">{title}</h2>

@@ -70,6 +70,20 @@ export function TowerSelect({
         if (!buildings.some(b => b.id === value)) onChangeRef.current("");
     }, [resolved, value, buildings]);
 
+    // R1 P3-2: the read gave up but `value` is deliberately kept (see
+    // `resolved`) — say so, rather than leave a filter applied with nothing on
+    // screen, and let it be cleared.
+    if (propertyId && failed && value) {
+        return (
+            <FilterChip
+                testId={`${testId}-chip`}
+                label={t("unavailable")}
+                removeLabel={tList("removeFilter", { name: t("label") })}
+                onRemove={() => onChange("")}
+            />
+        );
+    }
+
     if (!propertyId || !hasBuildings) return null;
 
     const selected = buildings.find(b => b.id === value);

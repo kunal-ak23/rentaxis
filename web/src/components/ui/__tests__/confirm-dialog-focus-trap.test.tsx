@@ -49,4 +49,18 @@ describe("ConfirmDialog — Tab trap inside a drawer (#105 N4)", () => {
         fireEvent.keyDown(window, { key: "Tab", shiftKey: true });
         expect(document.activeElement).toBe(confirmBtn);
     });
+
+    it("R1 P3-3: while a field-less confirm is loading (both buttons disabled), Tab stays on the dialog", () => {
+        render(
+            <>
+                <button data-testid="behind">Behind</button>
+                <ConfirmDialog isOpen isLoading onClose={() => {}} onConfirm={() => {}}
+                    title="Post?" confirmText="Post" cancelText="Cancel" confirmTestId="confirm-post" />
+            </>,
+        );
+        const dialog = document.querySelector('[aria-modal="true"]') as HTMLElement;
+        fireEvent.keyDown(window, { key: "Tab" });
+        expect(document.activeElement).toBe(dialog);
+        expect(document.activeElement).not.toBe(screen.getByTestId("behind"));
+    });
 });

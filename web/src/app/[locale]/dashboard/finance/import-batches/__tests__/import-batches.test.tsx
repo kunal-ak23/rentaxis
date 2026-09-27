@@ -567,6 +567,19 @@ describe("acquisition cut-over", () => {
         expect(await screen.findByTestId("batch-acquisition-date-b-acq")).toHaveTextContent("Acquired");
     });
 
+    it("R1 P2-1: a DRAFT that already carries a date opens on Acquisition with it pre-filled, and says it is not yet acquired", async () => {
+        api.list.mockResolvedValue([batch({ id: "b-draft", acquisitionDate: "2026-06-01" })]);
+        renderPage();
+        expect(await screen.findByTestId("batch-acquisition-date-b-draft")).toHaveTextContent("Acquisition date");
+        fireEvent.click(screen.getByTestId("post-batch-b-draft"));
+        await screen.findByTestId("confirm-post-batch");
+
+        expect(screen.getByTestId("cutover-kind-acquisition")).toBeChecked();
+        expect(screen.getByTestId("acquisition-date")).toHaveValue("2026-06-01");
+        fireEvent.click(screen.getByTestId("confirm-post-batch"));
+        await waitFor(() => expect(api.post).toHaveBeenCalledWith("b-draft", { acquisitionDate: "2026-06-01" }));
+    });
+
     it("surfaces the server's refusal clearly (e.g. a batch no longer DRAFT)", async () => {
         api.post.mockRejectedValue(new ApiError(400, "Import batch is POSTED; the acquisition date can be set only before it is posted."));
         renderPage();

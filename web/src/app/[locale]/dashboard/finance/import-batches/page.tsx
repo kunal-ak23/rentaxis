@@ -845,7 +845,7 @@ export default function ImportBatchesPage() {
                                                     data-testid={`batch-acquisition-date-${b.id}`}
                                                     className="block mt-0.5 text-[10px] font-normal text-muted tabular-nums"
                                                 >
-                                                    {t("acquisitionDateOn", { date: fmtIsoDate(b.acquisitionDate, locale) })}
+                                                    {t(b.status === "DRAFT" ? "acquisitionDatePending" : "acquisitionDateOn", { date: fmtIsoDate(b.acquisitionDate, locale) })}
                                                 </span>
                                             )}
                                         </td>
@@ -893,8 +893,11 @@ export default function ImportBatchesPage() {
                                                                 // same batches at once.
                                                                 disabled={postJob.polling || importJob.polling}
                                                                 onClick={() => {
-                                                                    setCutoverKind("goLive");
-                                                                    setAcquisitionDate("");
+                                                                    // R1 P2-1: a DRAFT that already carries a date
+                                                                    // opens on it — the server posts what the body
+                                                                    // says, so the dialog must start from what is stored.
+                                                                    setCutoverKind(b.status === "DRAFT" && b.acquisitionDate ? "acquisition" : "goLive");
+                                                                    setAcquisitionDate(b.status === "DRAFT" ? (b.acquisitionDate ?? "") : "");
                                                                     setConfirmPost(b);
                                                                 }}
                                                                 className="text-primary hover:underline cursor-pointer font-semibold disabled:opacity-50 disabled:cursor-not-allowed"

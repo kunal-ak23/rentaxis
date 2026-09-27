@@ -65,4 +65,17 @@ describe("TowerSelect", () => {
         expect(onAvailabilityChange).not.toHaveBeenCalledWith(false);
         vi.useRealTimers();
     });
+
+    it("R1-P3-2: once the tower read gives up, a kept buildingId still shows a chip that clears it", async () => {
+        global.fetch = vi.fn(async () => ({ ok: false, status: 503, json: async () => ({}) })) as unknown as typeof fetch;
+        const onChange = vi.fn();
+        const { findByTestId } = render(withIntl(
+            <TowerSelect propertyId="prop-1" value="tower-1" onChange={onChange} testId="tf" />,
+        ));
+        const chip = await findByTestId("tf-chip", undefined, { timeout: 3000 });
+        expect(chip).toHaveTextContent("towers could not be loaded");
+        expect(onChange).not.toHaveBeenCalled();
+        chip.querySelector("button")?.click();
+        expect(onChange).toHaveBeenCalledWith("");
+    });
 });

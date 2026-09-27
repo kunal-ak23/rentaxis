@@ -193,6 +193,20 @@ class ChequeMapperTest {
         assertThat(dto.renterName()).isEqualTo("Prabhjot Singh");
     }
 
+    /**
+     * S16-14 / PR #377 R1 P1-1: the acquisition-cut-over flag has to reach the
+     * wire — the web badge and its withheld bounce/replace/receipt buttons read
+     * this field and nothing else.
+     */
+    @Test
+    void settledBeforeAcquisitionMapsThrough() {
+        Cheque c = fullyPopulated();
+        assertThat(ChequeMapper.toDto(c, TODAY, 0).settledBeforeAcquisition()).isFalse();
+
+        c.setSettledBeforeAcquisition(true);
+        assertThat(ChequeMapper.toDto(c, TODAY, 0).settledBeforeAcquisition()).isTrue();
+    }
+
     /** F14-52: a bounced row the ledger has settled is never overdue, however old. */
     @Test
     void aLedgerSettledBounceIsNotOverdue() {

@@ -3099,6 +3099,7 @@
     "acquisitionDateLabel": "Acquisition date",
     "acquisitionDateRequired": "An acquisition date is required.",
     "acquisitionDateOn": "Acquired {date}",
+    "acquisitionDatePending": "Acquisition date {date}",
     "confirmPostAgain": "This batch was reversed, so posting it creates a NEW batch to hold the new journals. The reversed one stays in the list as history.",
     "confirmRetryFailed": "Post this batch again? Contracts already on the books are skipped; only the {n} that failed are tried again.",
     "postingProgress": "Posting {processed} of {total} contracts…",
@@ -4628,6 +4629,7 @@
     "label": "Tower",
     "all": "All towers",
     "myTickets": "My tickets",
-    "allTickets": "All tickets"
+    "allTickets": "All tickets",
+    "unavailable": "Tower filter (towers could not be loaded)"
   }
 }

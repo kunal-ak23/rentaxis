@@ -659,10 +659,23 @@ export default function LeaseDetailPage() {
                         {banner}
                     </p>
                 )}
+                {/* R1 P3-4: notices only change on the next post/amend/extend, so
+                    they can be dismissed rather than outliving what raised them. */}
                 {notices.length > 0 && (
-                    <ul className="rounded-xl bg-info/10 border border-info/30 px-4 py-2.5 text-xs text-info space-y-1" data-testid="lease-notices">
-                        {notices.map((n, i) => <li key={i}>{n}</li>)}
-                    </ul>
+                    <div className="flex items-start gap-2 rounded-xl bg-info/10 border border-info/30 px-4 py-2.5 text-xs text-info" data-testid="lease-notices">
+                        <ul className="flex-1 space-y-1">
+                            {notices.map((n, i) => <li key={i}>{n}</li>)}
+                        </ul>
+                        <button
+                            type="button"
+                            data-testid="lease-notices-dismiss"
+                            aria-label={tMaster("close")}
+                            onClick={() => setNotices([])}
+                            className="shrink-0 rounded p-0.5 hover:bg-info/10 cursor-pointer"
+                        >
+                            <X size={14} />
+                        </button>
+                    </div>
                 )}
                 {error && (
                     <p className="rounded-xl bg-error/10 border border-error/30 px-4 py-2.5 text-xs text-error" data-testid="lease-error">
