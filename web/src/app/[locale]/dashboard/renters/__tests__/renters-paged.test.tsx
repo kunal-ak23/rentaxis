@@ -174,3 +174,45 @@ describe("Renters list — server-paged with URL-persisted search/page/size", ()
         expect(new URL(window.location.href).searchParams.get("size")).toBe("10");
     });
 });
+
+/**
+ * Fix round 1 (Task 6 review): `renters` now holds only the current search's
+ * server page, so gating the "you haven't added any renters yet — Add Tenant"
+ * first-run CTA on `renters.length` told an admin searching for a renter who
+ * exists that none do, and offered to create a duplicate. The CTA must only
+ * show for a true empty tenant list (no search, server total 0); a search
+ * with no matches gets its own message and never offers to create one.
+ */
+describe("Renters list — a search with no matches is not the same as no renters at all", () => {
+    it("shows a 'no matches' message (not the first-run Add Tenant CTA) when a search returns nothing", async () => {
+        window.history.replaceState(null, "", "/en/dashboard/renters?q=zzz-nomatch");
+        global.fetch = vi.fn(async (url: unknown) => {
+            const u = String(url);
+            if (u.includes("/v1/renters/paged")) return { ok: true, status: 200, json: async () => pagedBody([], { totalElements: 0 }) } as unknown as Response;
+            return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+        }) as unknown as typeof fetch;
+
+        render(<RentersPage />);
+
+        await screen.findByTestId("renters-no-search-results");
+        expect(screen.queryByText("No Tenants Found")).toBeNull();
+        // The header's own "Add Tenant" button is fine; the first-run empty
+        // state's second one must not also render.
+        expect(screen.getAllByText("Add Tenant")).toHaveLength(1);
+    });
+
+    it("shows the first-run 'Add Tenant' CTA when there is no search and the tenant list is truly empty", async () => {
+        window.history.replaceState(null, "", "/en/dashboard/renters");
+        global.fetch = vi.fn(async (url: unknown) => {
+            const u = String(url);
+            if (u.includes("/v1/renters/paged")) return { ok: true, status: 200, json: async () => pagedBody([], { totalElements: 0 }) } as unknown as Response;
+            return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+        }) as unknown as typeof fetch;
+
+        render(<RentersPage />);
+
+        await screen.findByText("No Tenants Found");
+        expect(screen.queryByTestId("renters-no-search-results")).toBeNull();
+        expect(screen.getAllByText("Add Tenant")).toHaveLength(2); // header + CTA
+    });
+});

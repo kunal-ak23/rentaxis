@@ -182,6 +182,15 @@ function RentersPageInner() {
     // (`GET /renters/paged`) — `renters` is already this page's rows, and
     // `totalItems` is the server's total for the current `q`.
     const paginatedItems = renters;
+    // Fix round 1: `totalItems === 0` alone doesn't say *why* the list is
+    // empty — no renters exist at all, or this search just has no matches.
+    // Gating the "you haven't added any renters yet" CTA on that alone told
+    // an admin searching for someone who exists that nobody does, and
+    // offered to create a duplicate. `q` (the committed URL search, not the
+    // in-flight `draftSearch`) tells them apart.
+    const hasSearch = q !== "";
+    const showFirstRunEmptyState = !hasSearch && totalItems === 0;
+    const showNoSearchResults = hasSearch && totalItems === 0;
 
     if (loading) {
         return (
@@ -428,7 +437,21 @@ function RentersPageInner() {
                 </>
             )}
 
-            {renters.length === 0 && !showForm && (
+            {/* A search with no matches is not the same fact as "no renters
+                exist yet" — this keeps the search box (above) editable and
+                does not offer to create a renter who may already exist. */}
+            {showNoSearchResults && !showForm && (
+                <div className="text-center py-16 bg-background border border-dashed border-border rounded-xl flex flex-col items-center" data-testid="renters-no-search-results">
+                    <div className="w-16 h-16 bg-surface rounded-xl flex items-center justify-center text-muted shadow-sm mb-6">
+                        <Search size={28} />
+                    </div>
+                    <p className="text-sm font-bold text-muted uppercase tracking-widest">
+                        {t("noRentersMatchSearch")}
+                    </p>
+                </div>
+            )}
+
+            {showFirstRunEmptyState && !showForm && (
                 <div className="text-center py-24 bg-background border border-dashed border-border rounded-xl flex flex-col items-center">
                     <div className="w-16 h-16 bg-surface rounded-xl flex items-center justify-center text-muted shadow-sm mb-6">
                         <User size={32} />
