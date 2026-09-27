@@ -3,6 +3,13 @@ import createIntlMiddleware from "next-intl/middleware";
 import { routing } from "./i18n/routing";
 import { NextRequest, NextResponse } from "next/server";
 import { legacyRedirect } from "./lib/nav/routeMap";
+import {
+    EXPECTED_TENANT_HEADER,
+    MUTATING_METHODS,
+    NO_ORG,
+    ORG_MISMATCH_CODE,
+    ORG_MISMATCH_HEADER,
+} from "./lib/session/orgHeaders";
 
 const intlMiddleware = createIntlMiddleware(routing);
 
@@ -133,11 +140,38 @@ export default async function middleware(req: NextRequest) {
         // select a tenant they are actually a member of. An unrecognised or
         // stale cookie falls back to the home tenant rather than being
         // forwarded to certainly-403.
-        const activeTenantId =
-            requestedTenantId &&
-            (isSuperAdmin || requestedTenantId === homeTenantId || memberships.includes(requestedTenantId))
-                ? requestedTenantId
+        const resolveTenant = (requested: string | undefined) =>
+            requested &&
+            (isSuperAdmin || requested === homeTenantId || memberships.includes(requested))
+                ? requested
                 : homeTenantId;
+        const activeTenantId = resolveTenant(requestedTenantId);
+
+        // Break round 1, F3: the cookie is shared by every tab, so a form
+        // loaded for org A in one tab would be submitted into org B once
+        // another tab switched. The web client stamps each mutation with the
+        // organisation its page was loaded for; resolved by the same rule as
+        // the cookie, a mismatch is refused here instead of being forwarded.
+        // Reads are unaffected, and a request without the header (another
+        // caller) is forwarded as before.
+        const expectedHeader = req.headers.get(EXPECTED_TENANT_HEADER);
+        requestHeaders.delete(EXPECTED_TENANT_HEADER);
+        if (expectedHeader !== null && MUTATING_METHODS.has(req.method.toUpperCase())) {
+            const expectedTenantId = resolveTenant(expectedHeader === NO_ORG ? undefined : expectedHeader);
+            if ((expectedTenantId ?? "") !== (activeTenantId ?? "")) {
+                const response = NextResponse.json(
+                    {
+                        error: true,
+                        code: ORG_MISMATCH_CODE,
+                        status: 409,
+                        message: "The active organisation changed in another tab. Reload this page before saving, so the change is not made in the wrong organisation.",
+                    },
+                    { status: 409 },
+                );
+                response.headers.set(ORG_MISMATCH_HEADER, "1");
+                return addSecurityHeaders(response, req.nextUrl.pathname);
+            }
+        }
 
         if (activeTenantId) {
             requestHeaders.set('X-Tenant-Id', activeTenantId);

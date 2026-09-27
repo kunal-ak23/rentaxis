@@ -1,0 +1,76 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
+
+const getTokenMock = vi.fn();
+vi.mock("next-auth/jwt", () => ({ getToken: (...args: unknown[]) => getTokenMock(...args) }));
+vi.mock("next-intl/middleware", () => ({ default: () => () => new Response(null, { status: 200 }) }));
+vi.mock("@/i18n/routing", () => ({ routing: {} }));
+
+import middleware from "../proxy";
+
+/**
+ * Break round 1, F3: tab A (loaded for org brk1) submitted a form after tab B
+ * had switched the shared cookie to org2, and the record landed in org2. The
+ * client now sends the org its page was loaded for on every mutating call;
+ * the proxy refuses a mismatch with 409 instead of forwarding it.
+ */
+function req(method: string, opts: { cookie?: string; expected?: string } = {}) {
+    const headers: Record<string, string> = {};
+    if (opts.cookie) headers.cookie = `active_tenant_id=${opts.cookie}`;
+    if (opts.expected !== undefined) headers["X-Expected-Tenant-Id"] = opts.expected;
+    return new NextRequest("http://localhost:3000/api/proxy/v1/renters", { method, headers });
+}
+
+beforeEach(() => {
+    getTokenMock.mockReset();
+    getTokenMock.mockResolvedValue({ id: "sa", role: "SUPER_ADMIN", tenantId: undefined });
+});
+
+describe("proxy — expected organisation on mutating requests (F3)", () => {
+    it.each(["POST", "PUT", "PATCH", "DELETE"])("refuses a %s loaded for another organisation with a readable 409", async (method) => {
+        const res = await middleware(req(method, { cookie: "org2", expected: "brk1" }));
+        expect(res.status).toBe(409);
+        expect(res.headers.get("X-Org-Mismatch")).toBe("1");
+        // Not forwarded to the backend.
+        expect(res.headers.get("x-middleware-next")).toBeNull();
+        const body = await res.json();
+        expect(body.code).toBe("ORG_CHANGED");
+        expect(body.message).toMatch(/organisation changed/i);
+    });
+
+    it("forwards a mutation whose expected organisation matches the cookie, without the expectation header", async () => {
+        const res = await middleware(req("POST", { cookie: "brk1", expected: "brk1" }));
+        expect(res.status).toBe(200);
+        expect(res.headers.get("x-middleware-next")).toBe("1");
+        expect(res.headers.get("x-middleware-request-x-tenant-id")).toBe("brk1");
+        expect(res.headers.get("x-middleware-request-x-expected-tenant-id")).toBeNull();
+    });
+
+    it("never blocks a GET, even when it is stale", async () => {
+        const res = await middleware(req("GET", { cookie: "org2", expected: "brk1" }));
+        expect(res.status).toBe(200);
+    });
+
+    it("forwards a mutation that carries no expectation (other callers are unaffected)", async () => {
+        const res = await middleware(req("POST", { cookie: "org2" }));
+        expect(res.status).toBe(200);
+    });
+
+    it("refuses a Global View page's mutation once another tab picked an organisation", async () => {
+        const res = await middleware(req("POST", { cookie: "org2", expected: "none" }));
+        expect(res.status).toBe(409);
+    });
+
+    it("refuses a mutation from a page loaded for an organisation after another tab went to Global View", async () => {
+        const res = await middleware(req("POST", { expected: "brk1" }));
+        expect(res.status).toBe(409);
+    });
+
+    it("treats no cookie and the home tenant as the same organisation for a member", async () => {
+        getTokenMock.mockResolvedValue({ id: "u", role: "TENANT_ADMIN", tenantId: "home", tenantIds: ["home", "second"] });
+        const sameHome = await middleware(req("POST", { cookie: "home", expected: "none" }));
+        expect(sameHome.status).toBe(200);
+        const switched = await middleware(req("POST", { cookie: "second", expected: "home" }));
+        expect(switched.status).toBe(409);
+    });
+});
