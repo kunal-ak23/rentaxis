@@ -110,6 +110,7 @@ class AcquisitionCutoverIT extends AbstractPostgresIT {
     @Autowired com.datagami.rentaxis.core.service.LeaseService leaseService;
     @Autowired com.datagami.rentaxis.core.service.cheque.ChequeService chequeService;
     @Autowired com.datagami.rentaxis.core.service.RentReceiptService receipts;
+    @Autowired com.datagami.rentaxis.core.service.lease.LeaseVariationService variations;
 
     UUID tenantId;
 
@@ -317,6 +318,102 @@ class AcquisitionCutoverIT extends AbstractPostgresIT {
                 .as("no tax document of ours").isZero();
         assertThat(balance(property, AccountRole.OUTPUT_VAT, TODAY)).isEqualByComparingTo("0");
         assertThat(balance(property, AccountRole.ACQUISITION_CLEARING, TODAY)).isGreaterThan(new BigDecimal("26210.27"));
+    }
+
+    /**
+     * R1-P2-1 (the reviewer's probe): ACQ-0002 (1,050 VAT the vendor declared) takes a
+     * parking addendum from 01/11 — 2,000 + 100 VAT on our own tax invoice — and ends on
+     * 10/11. By source line, pro rata to the unearned days: the vendor refunds 932.06
+     * (1,050 × 324/365); we credit 97.01 (100 × 324/334) on our own credit note.
+     */
+    @Test
+    void aMixedLeaseSplitsTheHandBackBySourceLine() throws Exception {
+        acquire();
+        UUID property = acquiredProperty();
+        UUID leaseId = leaseIdOf("SAMPLE-0002");
+        LocalDate signed = LocalDate.of(2026, 11, 1);
+        variations.addCharge(leaseId, new com.datagami.rentaxis.api.dto.lease.AddChargeRequest(signed, signed, null, "Parking",
+                List.of(com.datagami.rentaxis.testsupport.LeaseTestFixtures.vatLine("PARKING_FEE", "2000")),
+                List.of(new com.datagami.rentaxis.api.dto.lease.ChequeRowInput(null, null, signed, "300001", signed,
+                        "Emirates NBD", null, null, new BigDecimal("2100"), null, null))));
+        termination.terminate(leaseId, new com.datagami.rentaxis.api.dto.lease.TerminateLeaseRequest(
+                LocalDate.of(2026, 11, 10), null, null, null), null);
+
+        assertThat(balance(property, AccountRole.ACQUISITION_CLEARING, TODAY)).isEqualByComparingTo("27142.33");
+        assertThat(jdbc.queryForObject("select vat_amount from tax_invoices where lease_id = ? and kind = 'CREDIT_NOTE'",
+                BigDecimal.class, leaseId)).isEqualByComparingTo("97.01");
+        assertThat(balance(property, AccountRole.OUTPUT_VAT, TODAY)).isEqualByComparingTo("-2.99");
+        assertThat(jdbc.queryForObject("select acquired_vat_open from leases where id = ?", BigDecimal.class, leaseId))
+                .isEqualByComparingTo("117.94");
+        var q4 = tx.execute(s -> vatReturns.get(LocalDate.of(2026, 10, 1)));
+        assertThat(q4.outputCheck().ok()).isTrue();
+        assertThat(q4.netVat()).isEqualByComparingTo("2.99");
+    }
+
+    /**
+     * R1-P2-1: a credit addendum on the mixed lease from 10/11 — rent 21,000 → 14,600 and
+     * parking 2,000 → 1,000. The rent's VAT (284.93) is the vendor's; the parking's (on
+     * our own invoice) is on our credit note.
+     */
+    @Test
+    void aCreditAddendumOnAMixedLeaseSplitsBySourceLine() throws Exception {
+        acquire();
+        UUID property = acquiredProperty();
+        UUID leaseId = leaseIdOf("SAMPLE-0002");
+        LocalDate signed = LocalDate.of(2026, 11, 1);
+        variations.addCharge(leaseId, new com.datagami.rentaxis.api.dto.lease.AddChargeRequest(signed, signed, null, "Parking",
+                List.of(com.datagami.rentaxis.testsupport.LeaseTestFixtures.vatLine("PARKING_FEE", "2000")),
+                List.of(new com.datagami.rentaxis.api.dto.lease.ChequeRowInput(null, null, signed, "300001", signed,
+                        "Emirates NBD", null, null, new BigDecimal("2100"), null, null))));
+        List<com.datagami.rentaxis.api.dto.lease.ReduceLeaseRequest.LineReduction> cuts = new java.util.ArrayList<>();
+        for (var l : tx.execute(s -> leaseService.getLines(leaseId))) {
+            cuts.add(new com.datagami.rentaxis.api.dto.lease.ReduceLeaseRequest.LineReduction(l.id(),
+                    new BigDecimal("RENT".equals(l.chargeTypeCode()) ? "14600" : "1000")));
+        }
+        BigDecimal clearingBefore = balance(property, AccountRole.ACQUISITION_CLEARING, TODAY);
+        LocalDate e = LocalDate.of(2026, 11, 10);
+        reductions.reduce(leaseId, new com.datagami.rentaxis.api.dto.lease.ReduceLeaseRequest(e, e, "Renegotiated",
+                null, cuts, "CREDIT", List.of(), List.of()));
+        assertThat(balance(property, AccountRole.ACQUISITION_CLEARING, TODAY).subtract(clearingBefore))
+                .isEqualByComparingTo("284.93");
+        assertThat(jdbc.queryForObject("select vat_amount from tax_invoices where lease_id = ? and kind = 'CREDIT_NOTE'",
+                BigDecimal.class, leaseId)).isCloseTo(new BigDecimal("48.65"),
+                org.assertj.core.data.Offset.offset(new BigDecimal("0.05")));
+    }
+
+    /**
+     * R1-P2-1: an amendment raising ACQ-0002's rent to 23,000 on 15/11 adds 100 VAT of
+     * ours (the vendor's 1,050 is now 1,050/1,150 of the contract's VAT). Ended the same
+     * day, the unearned VAT (319 of 365 days) is split in that proportion: the vendor
+     * about 1,050 × 319/365, we about 100 × 319/365 on our credit note — not our whole 100.
+     */
+    @Test
+    void aVatRaisingAmendmentThenATerminationSplitsProRata() throws Exception {
+        acquire();
+        UUID property = acquiredProperty();
+        UUID leaseId = leaseIdOf("SAMPLE-0002");
+        chequeService.addRowToPostedLease(leaseId, new com.datagami.rentaxis.api.dto.lease.ChequeRowInput(null, null,
+                TODAY, "300002", TODAY, "Emirates NBD", null, null, new BigDecimal("2100"), null, null));
+        List<com.datagami.rentaxis.api.dto.lease.LeaseLineInput> lines = new java.util.ArrayList<>();
+        for (var l : tx.execute(s -> leaseService.getLines(leaseId))) {
+            lines.add(new com.datagami.rentaxis.api.dto.lease.LeaseLineInput(l.chargeTypeId(), null,
+                    new BigDecimal("23000"), l.discountAmount(), l.narration(), l.vatApplicable(), l.creditAccountId(),
+                    l.periodStart(), l.periodEnd(), l.addendumId()));
+        }
+        leasePosting.amendLines(leaseId, lines, "Rent corrected");
+        assertThat(jdbc.queryForObject("select vat_amount from tax_invoices where lease_id = ? and kind = 'TAX_INVOICE'",
+                BigDecimal.class, leaseId)).isEqualByComparingTo("100.00");
+
+        BigDecimal clearingBefore = balance(property, AccountRole.ACQUISITION_CLEARING, TODAY);
+        termination.terminate(leaseId, new com.datagami.rentaxis.api.dto.lease.TerminateLeaseRequest(
+                TODAY, null, null, null), null);
+        BigDecimal vendor = balance(property, AccountRole.ACQUISITION_CLEARING, TODAY).subtract(clearingBefore);
+        BigDecimal ours = jdbc.queryForObject("select vat_amount from tax_invoices where lease_id = ? and kind = 'CREDIT_NOTE'",
+                BigDecimal.class, leaseId);
+        assertThat(vendor).isCloseTo(new BigDecimal("917.67"), org.assertj.core.data.Offset.offset(new BigDecimal("0.05")));
+        assertThat(ours).isCloseTo(new BigDecimal("87.40"), org.assertj.core.data.Offset.offset(new BigDecimal("0.05")));
+        var q4 = tx.execute(s -> vatReturns.get(LocalDate.of(2026, 10, 1)));
+        assertThat(q4.outputCheck().ok()).isTrue();
     }
 
     /** P2-1: the cheque the previous owner banked is not ours to bounce, receipt or count as collected. */

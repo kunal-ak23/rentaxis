@@ -160,6 +160,14 @@ public class Lease extends BaseTenantEntity {
     @Column(name = "acquired_vat_open", precision = 15, scale = 2)
     private java.math.BigDecimal acquiredVatOpen;
 
+    /**
+     * #376 R1-P2-1: the previous owner's VAT on the contract's own lines — what they
+     * declared, less what an amendment took off them. Their share of the contract lines'
+     * VAT is this over those lines' current VAT (1 until an amendment raises it).
+     */
+    @Column(name = "acquired_vat_base", precision = 15, scale = 2)
+    private java.math.BigDecimal acquiredVatBase;
+
     // ---- contract header (spec §6.3) ----------------------------------------
 
     /**

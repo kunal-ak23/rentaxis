@@ -174,6 +174,7 @@ public class ImportedLeaseReverter implements LeaseReverter {
         // S16-14: what an acquisition post recorded; a re-post records it again.
         lease.setAcquiredOn(null);
         lease.setAcquiredVatOpen(null);
+        lease.setAcquiredVatBase(null);
         // Flushed before the unit is asked who lives in it: that query auto-flushes
         // anyway, and doing it here means the answer cannot depend on ordering.
         leases.saveAndFlush(lease);

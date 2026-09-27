@@ -640,6 +640,8 @@ public class LeasePostingService {
         // lease the difference is documented on its own tax invoice / credit note.
         List<LeaseLine> linesBefore = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
         BigDecimal vatBefore = InstalmentVat.contractVat(linesBefore);
+        BigDecimal vendorShareBefore = acquiredVat == null ? BigDecimal.ZERO : acquiredVat.vendorShare(lease);
+        BigDecimal contractVatBefore = contractLinesVat(lease, linesBefore);
         BigDecimal taxableBefore = InstalmentVat.contractTaxable(linesBefore);
 
         leaseService.applyAmendedLines(lease, newLines);
@@ -660,9 +662,11 @@ public class LeasePostingService {
         plan.throwIfRefused(propertyIdOf(lease));
         // S16-14 (#376 P1-1): VAT the amendment takes off an acquired lease is the previous
         // owner's to refund, as far as it is theirs — no document of ours for that part.
-        BigDecimal vatDrop = vatBefore.subtract(InstalmentVat.contractVat(lines));
+        // #376 R1-P2-1: the drop on the contract's own lines, times the vendor's share of
+        // those lines' VAT before the amendment; an addendum line's VAT is ours.
+        BigDecimal vatDrop = contractVatBefore.subtract(contractLinesVat(lease, lines));
         BigDecimal vendorVat = lease.getVatTiming() == VatTiming.CONTRACT && acquiredVat != null
-                ? acquiredVat.vendorPart(lease, vatDrop) : BigDecimal.ZERO;
+                ? acquiredVat.vendorPart(lease, vatDrop, vendorShareBefore) : BigDecimal.ZERO;
         if (lease.getVatTiming() == VatTiming.CONTRACT
                 && InstalmentVat.contractVat(lines).compareTo(vatBefore.subtract(vendorVat)) != 0 && !hasSupplierTrn(lease)) {
             throw new BusinessRuleViolationException("This amendment changes the contract's VAT, so it issues a tax"
@@ -706,7 +710,7 @@ public class LeasePostingService {
         // difference as an AMENDMENT document dated today.
         vatTaxPoints.recordContractVat(lease, reversedOn, tco.getId(), false);
         if (vendorVat.signum() > 0) {
-            vendorVat = acquiredVat.takeVendorPart(lease, vatDrop);
+            acquiredVat.takeByAmendment(lease, vendorVat);
             String n = "VAT the previous owner declared, taken off by the amendment and refunded through them";
             postingService.post(PostingRequest.ofPairs(JournalDocType.JV, reversedOn, n,
                     LeaseChequeRegistrar.dimensions(lease, null), JournalSourceType.LEASE, lease.getId(), null,
@@ -1327,12 +1331,21 @@ public class LeasePostingService {
         this.acquiredVat = acquiredVat;
     }
 
+    /** The VAT the lease's contract lines (not an addendum's) charge. */
+    private static BigDecimal contractLinesVat(Lease lease, List<LeaseLine> lines) {
+        BigDecimal v = BigDecimal.ZERO;
+        for (LeaseLine l : lines) {
+            if (com.datagami.rentaxis.core.service.vat.AcquiredLeaseVat.contractLine(lease, l)) v = v.add(LeaseVat.vatOf(l));
+        }
+        return v;
+    }
+
     /**
      * Null when a credit note for {@code vat} can be issued on this lease; else {@link #NO_TRN_FOR_CREDIT_NOTE}.
-     * S16-14: the vendor's part of an acquired lease's VAT carries no credit note of ours.
+     * S16-14: callers pass our part only — the vendor's part of an acquired lease's VAT
+     * carries no credit note of ours ({@code AcquiredLeaseVat}).
      */
     String creditNoteTrnProblem(Lease lease, BigDecimal vat) {
-        if (vat != null && acquiredVat != null) vat = vat.subtract(acquiredVat.vendorPart(lease, vat));
         return vat != null && vat.signum() > 0 && !hasSupplierTrn(lease) ? NO_TRN_FOR_CREDIT_NOTE : null;
     }
 

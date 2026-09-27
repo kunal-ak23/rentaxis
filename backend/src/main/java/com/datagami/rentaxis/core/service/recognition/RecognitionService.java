@@ -601,7 +601,8 @@ public class RecognitionService {
                                          BigDecimal unearned, BigDecimal unearnedVat,
                                          List<UnearnedDeferral> deferrals,
                                          LocalDate latestPostingDate,
-                                         BigDecimal unearnedVatTaxable) {
+                                         BigDecimal unearnedVatTaxable,
+                                         BigDecimal unearnedVatContract) {
     }
 
     /** One segment's worth of unearned rent, and the liability leaf it sits in. */
@@ -780,6 +781,7 @@ public class RecognitionService {
         // The part of `unearned` that VAT was charged on — the net a termination's
         // VAT settlement is computed against (spec 2026-09-24 §1).
         BigDecimal unearnedVatTaxable = BigDecimal.ZERO;
+        BigDecimal unearnedVatContract = BigDecimal.ZERO;
         List<UnearnedDeferral> deferrals = new ArrayList<>();
         for (RentSegment segment : live) {
             BigDecimal segmentEarned = ProrationEngine.earnedThrough(
@@ -793,8 +795,14 @@ public class RecognitionService {
                 // VAT on, the part of it the tenancy never used is handed back too.
                 // Asked of LeaseVat rather than multiplied here — one definition of
                 // which lines are taxed and at what rate (spec §6.2).
-                BigDecimal segmentVat = LeaseVat.vatOnPortion(lineOf(segment), segmentUnearned);
+                LeaseLine line = lineOf(segment);
+                BigDecimal segmentVat = LeaseVat.vatOnPortion(line, segmentUnearned);
                 unearnedVat = unearnedVat.add(segmentVat);
+                // #376 R1-P2-1: the part on the contract's own lines (an acquired lease's
+                // vendor VAT is a share of it; an addendum's is always ours).
+                if (com.datagami.rentaxis.core.service.vat.AcquiredLeaseVat.contractLine(lease, line)) {
+                    unearnedVatContract = unearnedVatContract.add(segmentVat);
+                }
                 if (segmentVat.signum() > 0) unearnedVatTaxable = unearnedVatTaxable.add(segmentUnearned);
             }
         }
@@ -809,7 +817,8 @@ public class RecognitionService {
                 unearnedVat.setScale(2, RoundingMode.HALF_UP),
                 List.copyOf(deferrals),
                 latestPostingDate(posted, t),
-                unearnedVatTaxable.setScale(2, RoundingMode.HALF_UP));
+                unearnedVatTaxable.setScale(2, RoundingMode.HALF_UP),
+                unearnedVatContract.setScale(2, RoundingMode.HALF_UP));
     }
 
     /**

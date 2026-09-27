@@ -180,6 +180,7 @@ public class ContractImportLeasePoster {
         posted = leases.findByIdScopedToTenant(leaseId).orElseThrow();
         posted.setAcquiredOn(acquiredOn);
         posted.setAcquiredVatOpen(sellerVat.setScale(2, java.math.RoundingMode.HALF_UP));
+        posted.setAcquiredVatBase(sellerVat.setScale(2, java.math.RoundingMode.HALF_UP));
         leases.saveAndFlush(posted);
         log.debug("Acquired lease {} posted in batch {} as at {}: {} settled with the previous owner",
                 leaseId, batchId, acquiredOn, settled.size());

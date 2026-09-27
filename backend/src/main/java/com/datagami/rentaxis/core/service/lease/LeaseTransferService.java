@@ -493,7 +493,7 @@ public class LeaseTransferService {
         LeaseTerminationService.TransferEnd end = termination.previewForTransfer(a, t, leaving);
         // R1 P3-3: the post ends A with a credit note for its unearned VAT; the dry run says so first.
         try {
-            termination.requireTrnForCreditNote(a, end.unearnedVat());
+            termination.requireTrnForCreditNote(a, end.unearnedVat(), end.unearnedVatContract());
         } catch (BusinessRuleViolationException e) {
             problems.add(e.getMessage());
         }
