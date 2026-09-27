@@ -4631,5 +4631,12 @@
     "myTickets": "تذاكري",
     "allTickets": "كل التذاكر",
     "unavailable": "عامل تصفية المبنى (تعذّر تحميل المباني)"
+  },
+  "Pickers": {
+    "searching": "جارٍ البحث…",
+    "noMatches": "لا توجد نتائج",
+    "searchFailed": "تعذّر البحث — حاول مرة أخرى",
+    "typeToSearch": "اكتب للبحث",
+    "commercial": "تجاري"
   }
 }

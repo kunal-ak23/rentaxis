@@ -4631,5 +4631,12 @@
     "myTickets": "My tickets",
     "allTickets": "All tickets",
     "unavailable": "Tower filter (towers could not be loaded)"
+  },
+  "Pickers": {
+    "searching": "Searching…",
+    "noMatches": "No matches",
+    "searchFailed": "Search failed — try again",
+    "typeToSearch": "Type to search",
+    "commercial": "Commercial"
   }
 }
