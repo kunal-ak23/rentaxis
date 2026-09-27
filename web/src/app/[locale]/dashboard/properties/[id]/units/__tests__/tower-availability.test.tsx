@@ -46,15 +46,15 @@ async function renderPage() {
 
 describe("Units tower filter — P2-2: no invisible filter with no way to clear", () => {
     it("drops a buildingId from the URL once GET /buildings/property/{id} refuses this role (403)", async () => {
-        window.history.replaceState(null, "", "/en/dashboard/properties/prop-1/units?buildingId=bA");
+        window.history.replaceState(null, "", "/en/dashboard/properties/prop-1/units?buildingId=baaaaaaa-0000-4000-8000-00000000000a");
         global.fetch = vi.fn(async (url: unknown) => {
             const u = String(url);
             if (u.includes("/v1/buildings/property/")) return { ok: false, status: 403, json: async () => ({}) } as unknown as Response;
             if (u.includes("/units/paged")) {
-                // The unit fetch itself still accepts buildingId=bA (only the
+                // The unit fetch itself still accepts buildingId=baaaaaaa-0000-4000-8000-00000000000a (only the
                 // buildings *read* is refused) — but nothing should keep asking
                 // for it once the page knows the select can't show.
-                return { ok: true, json: async () => page(u.includes("buildingId=bA") ? [unit("u1", "A-101")] : [unit("u1", "A-101"), unit("u2", "B-101")]) } as unknown as Response;
+                return { ok: true, json: async () => page(u.includes("buildingId=baaaaaaa-0000-4000-8000-00000000000a") ? [unit("u1", "A-101")] : [unit("u1", "A-101"), unit("u2", "B-101")]) } as unknown as Response;
             }
             return { ok: true, json: async () => [] } as unknown as Response;
         }) as unknown as typeof fetch;
@@ -67,11 +67,11 @@ describe("Units tower filter — P2-2: no invisible filter with no way to clear"
     });
 
     it("shows a removable chip next to the select while a tower is active", async () => {
-        window.history.replaceState(null, "", "/en/dashboard/properties/prop-1/units?buildingId=bA");
+        window.history.replaceState(null, "", "/en/dashboard/properties/prop-1/units?buildingId=baaaaaaa-0000-4000-8000-00000000000a");
         global.fetch = vi.fn(async (url: unknown) => {
             const u = String(url);
             if (u.includes("/v1/buildings/property/")) {
-                return { ok: true, json: async () => [{ id: "bA", nameEn: "Tower A" }] } as unknown as Response;
+                return { ok: true, json: async () => [{ id: "baaaaaaa-0000-4000-8000-00000000000a", nameEn: "Tower A" }] } as unknown as Response;
             }
             if (u.includes("/units/paged")) return { ok: true, json: async () => page([unit("u1", "A-101")]) } as unknown as Response;
             return { ok: true, json: async () => [] } as unknown as Response;

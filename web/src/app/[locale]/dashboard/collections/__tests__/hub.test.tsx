@@ -9,7 +9,7 @@ const api = vi.hoisted(() => ({ toDeposit: vi.fn(), summary: vi.fn(), penalties:
 vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: role.current } } }) }));
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(query.current) }));
 vi.mock("@/i18n/routing", () => ({ Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => <a href={href} {...rest}>{children}</a>, useRouter: () => router }));
-vi.mock("@/components/finance/useNameLookup", () => ({ useNameLookup: () => ({ options: [{ id: "p1", label: "Belle Vue" }], name: () => "", loading: false }) }));
+vi.mock("@/components/finance/useNameLookup", () => ({ useNameLookup: () => ({ options: [{ id: "11111111-1111-4111-8111-111111111111", label: "Belle Vue" }], name: () => "", loading: false }) }));
 vi.mock("@/components/collections/ToDepositPanel", () => ({ default: (p: { propertyId?: string }) => <div data-testid="panel-deposit" data-property={p.propertyId ?? ""} /> }));
 vi.mock("@/components/collections/ReturnReplacePanel", () => ({ default: (p: { propertyId?: string }) => <div data-testid="panel-returned" data-property={p.propertyId ?? ""} /> }));
 vi.mock("@/components/collections/PostDatedPanel", () => ({ default: (p: { propertyId?: string }) => <div data-testid="panel-post-dated" data-property={p.propertyId ?? ""} /> }));
@@ -67,18 +67,18 @@ describe("Cheque / Cash Collection hub", () => {
     });
 
     it("hands the property filter to the panel, the counts and the pill links", async () => {
-        query.current = "tab=returned&propertyId=p1";
+        query.current = "tab=returned&propertyId=11111111-1111-4111-8111-111111111111";
         render(<Page />);
-        expect(screen.getByTestId("panel-returned")).toHaveAttribute("data-property", "p1");
-        expect(screen.getByTestId("collections-pill-due")).toHaveAttribute("href", "/dashboard/collections?tab=due&propertyId=p1");
-        expect(api.summary).toHaveBeenCalledWith("p1");
+        expect(screen.getByTestId("panel-returned")).toHaveAttribute("data-property", "11111111-1111-4111-8111-111111111111");
+        expect(screen.getByTestId("collections-pill-due")).toHaveAttribute("href", "/dashboard/collections?tab=due&propertyId=11111111-1111-4111-8111-111111111111");
+        expect(api.summary).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111");
     });
 
     it("changes the property in the URL and keeps the tab and the register's filters", () => {
         query.current = "tab=all&status=BOUNCED";
         render(<Page />);
-        fireEvent.change(screen.getByTestId("collections-property"), { target: { value: "p1" } });
-        expect(router.replace).toHaveBeenCalledWith("/dashboard/collections?tab=all&status=BOUNCED&propertyId=p1");
+        fireEvent.change(screen.getByTestId("collections-property"), { target: { value: "11111111-1111-4111-8111-111111111111" } });
+        expect(router.replace).toHaveBeenCalledWith("/dashboard/collections?tab=all&status=BOUNCED&propertyId=11111111-1111-4111-8111-111111111111");
     });
 
     it("says that search opens the cheque register, except on the register itself (#104)", () => {
@@ -93,13 +93,13 @@ describe("Cheque / Cash Collection hub", () => {
     });
 
     it("sends a search to the cheque register, keeping the property", () => {
-        query.current = "tab=due&propertyId=p1";
+        query.current = "tab=due&propertyId=11111111-1111-4111-8111-111111111111";
         render(<Page />);
         const box = screen.getByTestId("collections-search");
         expect(box.closest("form")).toHaveAttribute("action", "/en/dashboard/collections");
         fireEvent.change(box, { target: { value: " 100026 " } });
         fireEvent.submit(box.closest("form")!);
-        expect(router.push).toHaveBeenCalledWith("/dashboard/collections?tab=all&propertyId=p1&search=100026");
+        expect(router.push).toHaveBeenCalledWith("/dashboard/collections?tab=all&propertyId=11111111-1111-4111-8111-111111111111&search=100026");
     });
 
     it("gives a property manager every pill (same gates as the old pages)", () => {

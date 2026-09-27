@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, type FormEvent } from "react";
+import { Suspense, useEffect, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
@@ -17,6 +17,7 @@ import ReturnReplacePanel from "@/components/collections/ReturnReplacePanel";
 import PostDatedPanel from "@/components/collections/PostDatedPanel";
 import PenaltiesPanel from "@/components/collections/PenaltiesPanel";
 import ChequeRegisterPanel from "@/components/collections/ChequeRegisterPanel";
+import { idParam, stripInvalidIdParams } from "@/lib/urlIds";
 
 const field = "bg-surface border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none";
 
@@ -49,7 +50,12 @@ function CollectionsHub() {
     const tabs = buildCollectionsTabs(role);
     const requested = params?.get("tab");
     const active: CollectionsTabId | undefined = tabs.find(x => x.id === requested)?.id ?? tabs[0]?.id;
-    const propertyId = params?.get("propertyId") ?? "";
+    // Break round 1: a malformed ?propertyId= is no filter, and is dropped from the URL.
+    const propertyId = idParam(params?.get("propertyId"));
+    const paramsKey = params?.toString() ?? "";
+    useEffect(() => {
+        stripInvalidIdParams(["propertyId"]);
+    }, [paramsKey]);
     const search = params?.get("search") ?? "";
     const counts = usePillCounts(role, propertyId);
     const properties = useNameLookup("properties", tabs.length > 0);

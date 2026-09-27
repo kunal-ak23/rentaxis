@@ -30,6 +30,7 @@ import {
     CONTRACT_VIEWS, ENDED, TO_POST, contractRead, parseContractView, segmentReads, statusQuery, viewQuery, viewStatuses,
     type ContractRead, type ContractView,
 } from "@/lib/leases/contractListView";
+import { stripInvalidIdParams } from "@/lib/urlIds";
 
 type Lease = LeaseDetail;
 
@@ -131,6 +132,11 @@ function LeasesList() {
     const statusFilter = listState.status;
     const propertyFilter = listState.propertyId;
     const buildingFilter = listState.buildingId;
+    // parseContractView already reads a malformed id as no filter; this drops
+    // it from the URL too, so the address bar matches what the list shows.
+    useEffect(() => {
+        if (stripInvalidIdParams(["propertyId", "buildingId"])) urlListeners.forEach(l => l());
+    }, [urlSearch]);
     // The URL is the one source of truth for the search (R1 P3-1). While typing, the
     // box shows the draft; once the URL's search moves (the debounce wrote it, or a
     // link replaced it) the box shows the URL again.

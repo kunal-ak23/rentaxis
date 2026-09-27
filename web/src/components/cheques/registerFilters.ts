@@ -1,4 +1,5 @@
 import type { ChequeMode, ChequeStatus } from "@/lib/api/leasing";
+import { idParam } from "@/lib/urlIds";
 
 /**
  * The cheque register's filters and the URL query that carries them (#85).
@@ -40,7 +41,7 @@ export function filtersFromQuery(query: Query | null | undefined): RegisterFilte
     return {
         status: (REGISTER_STATUSES as string[]).includes(status) ? (status as ChequeStatus) : "",
         mode: (REGISTER_MODES as string[]).includes(mode) ? (mode as ChequeMode) : "",
-        propertyId: get("propertyId"),
+        propertyId: idParam(get("propertyId")),
         from: ISO_DATE.test(from) ? from : "",
         to: ISO_DATE.test(to) ? to : "",
         search: get("search"),

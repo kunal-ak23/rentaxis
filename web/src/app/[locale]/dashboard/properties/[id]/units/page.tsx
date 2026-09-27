@@ -13,6 +13,7 @@ import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { TowerSelect } from "@/components/ui/TowerSelect";
 import type { Page } from "@/lib/api/ledger";
+import { idParam, stripInvalidIdParams } from "@/lib/urlIds";
 
 /** The units page's own page size, for the pages-loop below (S16-02). */
 const UNITS_PAGE_SIZE = 200;
@@ -86,7 +87,11 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
     // `history.replaceState`, no full navigation.
     useSearchParams();
     const urlSearch = useSyncExternalStore(subscribeUrl, () => window.location.search, () => "");
-    const buildingFilter = new URLSearchParams(urlSearch).get("buildingId") ?? "";
+    // Break round 1: a malformed ?buildingId= is no filter, and is dropped from the URL.
+    const buildingFilter = idParam(new URLSearchParams(urlSearch).get("buildingId"));
+    useEffect(() => {
+        if (stripInvalidIdParams(["buildingId"])) urlListeners.forEach(l => l());
+    }, [urlSearch]);
     const setBuildingFilter = (id: string) => {
         const url = new URL(window.location.href);
         if (id) url.searchParams.set("buildingId", id); else url.searchParams.delete("buildingId");

@@ -22,11 +22,11 @@ describe("contract list view", () => {
     });
 
     it("keeps property and search", () => {
-        expect(p("propertyId=p1&search=olv")).toMatchObject({ propertyId: "p1", search: "olv" });
+        expect(p("propertyId=11111111-1111-4111-8111-111111111111&search=olv")).toMatchObject({ propertyId: "11111111-1111-4111-8111-111111111111", search: "olv" });
     });
 
     it("keeps the tower (buildingId) filter (S16-02)", () => {
-        expect(p("propertyId=p1&buildingId=b1")).toMatchObject({ propertyId: "p1", buildingId: "b1" });
+        expect(p("propertyId=11111111-1111-4111-8111-111111111111&buildingId=b1b1b1b1-0000-4000-8000-000000000001")).toMatchObject({ propertyId: "11111111-1111-4111-8111-111111111111", buildingId: "b1b1b1b1-0000-4000-8000-000000000001" });
         expect(p("")).toMatchObject({ buildingId: "" });
     });
 

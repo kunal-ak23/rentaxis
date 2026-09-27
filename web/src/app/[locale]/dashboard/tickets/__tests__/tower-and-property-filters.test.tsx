@@ -51,7 +51,7 @@ describe("Tickets list — P3-2: property + tower filters are URL-persisted", ()
     beforeEach(() => {
         global.fetch = vi.fn(async (url: unknown) => {
             const u = String(url);
-            if (u.endsWith("/v1/properties")) return { ok: true, json: async () => [{ property: { id: "p1", nameEn: "Sweep House", nameAr: "بيت المسح" } }] } as unknown as Response;
+            if (u.endsWith("/v1/properties")) return { ok: true, json: async () => [{ property: { id: "11111111-1111-4111-8111-111111111111", nameEn: "Sweep House", nameAr: "بيت المسح" } }] } as unknown as Response;
             if (u.includes("/v1/buildings/property/")) return { ok: true, json: async () => [] } as unknown as Response;
             if (u.includes("/v1/tickets/paged")) return { ok: true, status: 200, json: async () => pagedBody([]) } as unknown as Response;
             return { ok: true, json: async () => [] } as unknown as Response;
@@ -59,23 +59,23 @@ describe("Tickets list — P3-2: property + tower filters are URL-persisted", ()
     });
 
     it("keeps a deep-linked propertyId across a reload (a fresh mount)", async () => {
-        window.history.replaceState(null, "", "/en/dashboard/tickets?propertyId=p1");
+        window.history.replaceState(null, "", "/en/dashboard/tickets?propertyId=11111111-1111-4111-8111-111111111111");
         const { unmount } = render(<TicketsPage />);
         const select = await screen.findByTestId("ticket-property-filter") as HTMLSelectElement;
-        await waitFor(() => expect(select.value).toBe("p1"));
+        await waitFor(() => expect(select.value).toBe("11111111-1111-4111-8111-111111111111"));
         unmount();
 
         // A fresh mount (what a reload gives) reads the same URL straight back.
         render(<TicketsPage />);
         const select2 = await screen.findByTestId("ticket-property-filter") as HTMLSelectElement;
-        await waitFor(() => expect(select2.value).toBe("p1"));
+        await waitFor(() => expect(select2.value).toBe("11111111-1111-4111-8111-111111111111"));
     });
 
     it("writes propertyId/buildingId to the URL when the selects change, and clears buildingId when the property changes", async () => {
         render(<TicketsPage />);
         const select = await screen.findByTestId("ticket-property-filter");
-        fireEvent.change(select, { target: { value: "p1" } });
-        await waitFor(() => expect(new URL(window.location.href).searchParams.get("propertyId")).toBe("p1"));
+        fireEvent.change(select, { target: { value: "11111111-1111-4111-8111-111111111111" } });
+        await waitFor(() => expect(new URL(window.location.href).searchParams.get("propertyId")).toBe("11111111-1111-4111-8111-111111111111"));
 
         fireEvent.change(select, { target: { value: "" } });
         await waitFor(() => expect(new URL(window.location.href).searchParams.get("propertyId")).toBeNull());
@@ -95,17 +95,17 @@ describe("Tickets list — P2-2: no invisible filter with no way to clear", () =
     it("drops a buildingId from the URL once GET /buildings/property/{id} refuses this role (403)", async () => {
         global.fetch = vi.fn(async (url: unknown) => {
             const u = String(url);
-            if (u.endsWith("/v1/properties")) return { ok: true, json: async () => [{ property: { id: "p1", nameEn: "Sweep House" } }] } as unknown as Response;
+            if (u.endsWith("/v1/properties")) return { ok: true, json: async () => [{ property: { id: "11111111-1111-4111-8111-111111111111", nameEn: "Sweep House" } }] } as unknown as Response;
             if (u.includes("/v1/buildings/property/")) return { ok: false, status: 403, json: async () => ({}) } as unknown as Response;
             if (u.includes("/v1/tickets/paged")) return { ok: true, status: 200, json: async () => pagedBody([]) } as unknown as Response;
             return { ok: true, json: async () => [] } as unknown as Response;
         }) as unknown as typeof fetch;
-        window.history.replaceState(null, "", "/en/dashboard/tickets?propertyId=p1&buildingId=bA");
+        window.history.replaceState(null, "", "/en/dashboard/tickets?propertyId=11111111-1111-4111-8111-111111111111&buildingId=baaaaaaa-0000-4000-8000-00000000000a");
 
         render(<TicketsPage />);
         await screen.findByTestId("ticket-property-filter");
         await waitFor(() => expect(new URL(window.location.href).searchParams.get("buildingId")).toBeNull());
         expect(screen.queryByTestId("ticket-building-filter")).toBeNull();
-        expect(new URL(window.location.href).searchParams.get("propertyId")).toBe("p1");
+        expect(new URL(window.location.href).searchParams.get("propertyId")).toBe("11111111-1111-4111-8111-111111111111");
     });
 });

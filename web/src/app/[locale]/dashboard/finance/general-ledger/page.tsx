@@ -16,6 +16,7 @@ import { buildLedgerReport } from "@/lib/finance/ledgerReport";
 import { accountName, fmtAmount, fmtBalance, ledgerApi, type AccountLedger, type LedgerQuery } from "@/lib/api/ledger";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { Link } from "@/i18n/routing";
+import { idParam } from "@/lib/urlIds";
 
 /**
  * `useSearchParams` opts the tree into client rendering, which `next build`
@@ -61,7 +62,7 @@ function GeneralLedger() {
         ...range,
         from: params.get("from") || range.from,
         to: params.get("to") || range.to,
-        propertyId: params.get("propertyId") || undefined,
+        propertyId: idParam(params.get("propertyId")) || undefined,
         effectiveProperty: effectiveProperty || undefined,
         accountIds: urlIds.length ? (capped ? urlIds.slice(0, MAX_LEDGER_ACCOUNTS) : urlIds)
             : accountId ? [accountId] : undefined,
