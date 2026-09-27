@@ -122,13 +122,14 @@ public class UnitService {
 
     /** {@code GET /units/search} (scale P1-6): the first {@code limit} matches for a picker. */
     @Transactional(readOnly = true)
-    public List<com.datagami.rentaxis.api.dto.lookup.UnitOptionDTO> search(String q, UUID propertyId, int limit) {
+    public List<com.datagami.rentaxis.api.dto.lookup.UnitOptionDTO> search(String q, UUID propertyId,
+            com.datagami.rentaxis.domain.entity.enums.UnitStatus status, int limit) {
         if (propertyId != null && !propertyScope.canAccessProperty(propertyId)) {
             return List.of();
         }
         List<UUID> scoped = propertyScope.scopedPropertyIds();
         return repository.searchPaged(com.datagami.rentaxis.core.util.Search.requireTenant(), propertyId,
-                        null, null, null, com.datagami.rentaxis.core.util.Search.like(q), scoped == null,
+                        null, status, null, com.datagami.rentaxis.core.util.Search.like(q), scoped == null,
                         com.datagami.rentaxis.core.util.Search.scopeIds(scoped),
                         org.springframework.data.domain.PageRequest.of(0, com.datagami.rentaxis.core.util.Search.limit(limit), UNIT_ORDER))
                 .getContent().stream().map(UnitService::option).toList();
@@ -150,6 +151,7 @@ public class UnitService {
         Building b = u.getBuilding();
         return new com.datagami.rentaxis.api.dto.lookup.UnitOptionDTO(u.getId(), u.getUnitNumber(),
                 p == null ? null : p.getId(), p == null ? null : p.getNameEn(),
+                p == null || p.getType() == null ? null : p.getType().name(),
                 b == null ? null : b.getId(), b == null ? null : b.getNameEn(),
                 u.getStatus() == null ? null : u.getStatus().name());
     }
