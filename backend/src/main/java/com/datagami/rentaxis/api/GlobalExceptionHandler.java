@@ -333,6 +333,21 @@ public class GlobalExceptionHandler {
         }
         log.warn("Data integrity violation{}", constraint != null ? " on " + constraint : "", ex);
 
+        // Break-it round 1 (money) F2/F3: a value the database refuses on its own
+        // terms is the caller's bad data, not a clash with other rows. A numeric
+        // overflow (22003) — 1e12 into numeric(14,2) — and a CHECK constraint
+        // (23514) — 0.001 rounded to a zero amount — used to answer 409 "conflicts
+        // with existing related records", naming the constraint, and the web's bulk
+        // poster retried that 409 as lock contention. A 400 in words instead; only
+        // unique / foreign-key / exclusion violations stay a 409 below.
+        String sqlState = sqlStateOf(ex);
+        if ("22003".equals(sqlState)) {
+            return clientError(com.datagami.rentaxis.api.validation.MoneyAmounts.TOO_LARGE, ex);
+        }
+        if ("23514".equals(sqlState)) {
+            return clientError(checkViolationMessage(constraint), ex);
+        }
+
         Map<String, Object> body = new java.util.HashMap<>();
         body.put("error", true);
         body.put("status", 409);
@@ -343,6 +358,53 @@ public class GlobalExceptionHandler {
             body.put("constraint", constraint);
         }
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    /** The first SQLState on the cause chain, or null. */
+    private static String sqlStateOf(Throwable ex) {
+        int depth = 0;
+        for (Throwable t = ex; t != null && depth++ < 16; t = t.getCause()) {
+            if (t instanceof java.sql.SQLException sql && sql.getSQLState() != null) {
+                return sql.getSQLState();
+            }
+            if (t instanceof org.hibernate.JDBCException jdbc && jdbc.getSQLException() != null
+                    && jdbc.getSQLException().getSQLState() != null) {
+                return jdbc.getSQLException().getSQLState();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * A CHECK constraint in words. The name is schema shape the caller cannot act on,
+     * so it stays in the log; the amount checks — the ones a form can reach — say
+     * what the amount must be.
+     */
+    static String checkViolationMessage(String constraint) {
+        String name = constraint == null ? "" : constraint.toLowerCase(java.util.Locale.ROOT);
+        if (name.contains("amount") || name.contains("positive")) {
+            return com.datagami.rentaxis.api.validation.MoneyAmounts.BELOW_MINIMUM + ".";
+        }
+        return "One of the values is outside what this record allows.";
+    }
+
+    /**
+     * Spring's own method validation — a constraint on a {@code @RequestBody List<@Valid …>}
+     * element, say — raised as a ResponseStatusException whose reason is a bare
+     * "Validation failure". The constraint messages are written for the caller
+     * (break-it round 1, money F1: "Amounts can have at most 2 decimal places"),
+     * so they go back the way {@link #handleConstraintViolation} returns them.
+     */
+    @ExceptionHandler(org.springframework.web.method.annotation.HandlerMethodValidationException.class)
+    public ResponseEntity<Map<String, Object>> handleMethodValidation(
+            org.springframework.web.method.annotation.HandlerMethodValidationException ex) {
+        String messages = ex.getAllErrors().stream()
+                .map(org.springframework.context.MessageSourceResolvable::getDefaultMessage)
+                .filter(Objects::nonNull)
+                .distinct()
+                .sorted()
+                .collect(Collectors.joining(", "));
+        return clientError(messages.isBlank() ? "Validation failed" : "Validation failed: " + messages, ex);
     }
 
     /**
