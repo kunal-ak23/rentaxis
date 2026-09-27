@@ -25,8 +25,8 @@ vi.mock("@/components/finance/useNameLookup", () => ({
 const lookup = vi.hoisted(() => ({
     searchUnits: vi.fn(async () => []),
     searchRenters: vi.fn(async () => []),
-    unitNames: vi.fn(async (ids: string[]) => ids.map(id => ({ id, unitNumber: `Unit-${id}`, propertyId: null, propertyName: null, propertyType: null, buildingId: null, buildingName: null, status: null }))),
-    renterNames: vi.fn(async (ids: string[]) => ids.map(id => ({ id, nameEn: `Renter-${id}`, nameAr: null, phone: null, email: null }))),
+    unitNames: vi.fn(async (ids: string[]) => ({ rows: ids.map(id => ({ id, unitNumber: `Unit-${id}`, propertyId: null, propertyName: null, propertyType: null, buildingId: null, buildingName: null, status: null })), failedIds: [] })),
+    renterNames: vi.fn(async (ids: string[]) => ({ rows: ids.map(id => ({ id, nameEn: `Renter-${id}`, nameAr: null, phone: null, email: null })), failedIds: [] })),
 }));
 vi.mock("@/lib/api/lookup", () => ({ lookupApi: lookup }));
 const api = vi.hoisted(() => ({ get: vi.fn() }));

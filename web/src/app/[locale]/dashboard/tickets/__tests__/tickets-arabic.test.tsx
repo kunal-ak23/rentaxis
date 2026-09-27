@@ -54,9 +54,9 @@ beforeEach(() => {
     session.role = "TENANT_ADMIN";
     current = { ...ticket };
     lookup.searchUnits.mockResolvedValue([]);
-    lookup.unitNames.mockResolvedValue([{ id: "u1", unitNumber: "101", propertyId: "p1", propertyName: "Tower A", propertyType: null, buildingId: null, buildingName: null, status: null }]);
+    lookup.unitNames.mockResolvedValue({ rows: [{ id: "u1", unitNumber: "101", propertyId: "p1", propertyName: "Tower A", propertyType: null, buildingId: null, buildingName: null, status: null }], failedIds: [] });
     lookup.searchRenters.mockResolvedValue([{ id: "ren-1", nameEn: "Rajesh Kumar", nameAr: null, phone: null, email: null }]);
-    lookup.renterNames.mockResolvedValue([]);
+    lookup.renterNames.mockResolvedValue({ rows: [], failedIds: [] });
     global.fetch = vi.fn(async (url: unknown) => {
         const u = String(url);
         const rows = [current, { ...current, id: "t-2", reference: "TKT-26/15", status: "REOPENED", priority: "LOW", category: "HVAC" }];

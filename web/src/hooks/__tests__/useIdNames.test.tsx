@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { useIdNames } from "@/hooks/useIdNames";
 
 /**
- * The real lookupApi (chunking to 200 ids) over a stubbed fetch that answers a
+ * The real lookupApi (chunking to 80 ids) over a stubbed fetch that answers a
  * names call with one row per requested id. The id cache is module-wide and
  * outlives a test, so every test uses its own id prefix.
  */
@@ -37,7 +37,7 @@ afterEach(() => {
 });
 
 describe("useIdNames", () => {
-    it("fetches 450 unique ids (duplicates and nulls dropped) in 3 chunks, then labels them", async () => {
+    it("fetches 450 unique ids (duplicates and nulls dropped) in 6 chunks, then labels them", async () => {
         const unique = Array.from({ length: 450 }, (_, i) => `a${i}`);
         const ids: (string | null | undefined)[] = [...unique, null, "a1", undefined, "a449", ""];
         const { result, rerender } = renderHook(({ list }) => useIdNames("units", list), {
@@ -50,9 +50,9 @@ describe("useIdNames", () => {
         await waitFor(() => expect(result.current.name("a1")).toBe("U-a1"));
         expect(result.current.loading).toBe(false);
 
-        expect(fetchMock).toHaveBeenCalledTimes(3);
+        expect(fetchMock).toHaveBeenCalledTimes(6);
         const requested = fetchMock.mock.calls.map(idsIn);
-        expect(requested.map((c) => c.length).sort((x, y) => x - y)).toEqual([50, 200, 200]);
+        expect(requested.map((c) => c.length).sort((x, y) => x - y)).toEqual([50, 80, 80, 80, 80, 80]);
         expect(new Set(requested.flat()).size).toBe(450);
         expect(result.current.name(null)).toBe("");
         expect(result.current.name(undefined)).toBe("");
@@ -60,7 +60,7 @@ describe("useIdNames", () => {
         // Same ids in a new array (every render builds one) → no new fetch.
         rerender({ list: [...ids].reverse() });
         await Promise.resolve();
-        expect(fetchMock).toHaveBeenCalledTimes(3);
+        expect(fetchMock).toHaveBeenCalledTimes(6);
     });
 
     it("a second instance with an overlapping set fetches only the ids not seen yet", async () => {
@@ -114,6 +114,32 @@ describe("useIdNames", () => {
         const second = renderHook(() => useIdNames("units", ["f1"]), { wrapper: wrapper("en") });
         await waitFor(() => expect(second.result.current.name("f1")).toBe("U-f1"));
         expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("one failed chunk of a multi-chunk request only blanks and retries that chunk's ids", async () => {
+        // 90 ids -> two chunks (80 + 10) per the 80-id NAMES_CHUNK. Zero-padded so
+        // useIdNames's alphabetical id sort keeps this numeric order (00..89),
+        // matching the chunk boundaries below. Fail only the first chunk once so
+        // the second chunk's rows still land.
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const chunk1 = Array.from({ length: 80 }, (_, i) => `g${pad(i)}`);
+        const chunk2 = Array.from({ length: 10 }, (_, i) => `g${pad(80 + i)}`);
+        fetchMock.mockImplementationOnce(async () => new Response("boom", { status: 500 }));
+        const first = renderHook(() => useIdNames("units", [...chunk1, ...chunk2]), { wrapper: wrapper("en") });
+        await waitFor(() => expect(first.result.current.loading).toBe(false));
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        // The successful chunk's ids are labeled.
+        for (const id of chunk2) expect(first.result.current.name(id)).toBe(`U-${id}`);
+        // The failed chunk's ids stay blank (not marked missing, not labeled).
+        for (const id of chunk1) expect(first.result.current.name(id)).toBe("");
+
+        // A later mount asking for one id from each chunk only re-fetches the
+        // failed chunk's id — the successful chunk's id is cached, not retried.
+        const second = renderHook(() => useIdNames("units", [chunk1[0], chunk2[0]]), { wrapper: wrapper("en") });
+        await waitFor(() => expect(second.result.current.name(chunk1[0])).toBe(`U-${chunk1[0]}`));
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+        expect(idsIn(fetchMock.mock.calls[2])).toEqual([chunk1[0]]);
     });
 
     it("an empty id list fetches nothing and is not loading", () => {

@@ -6,12 +6,17 @@ import { useEffect, useState } from "react";
  * the page, so the label of a selected value is usually free.
  *
  * `resolveMany` fetches the ids it has not seen with one names call (the API
- * chunks it), deduplicated per id while in flight, so concurrent mounts asking
- * for overlapping ids share requests. Ids the server answered without (deleted,
- * out of scope) are remembered as missing and not asked for again; ids whose
- * call failed are retried by the next caller.
+ * chunks it internally and reports back per-chunk), deduplicated per id while
+ * in flight, so concurrent mounts asking for overlapping ids share requests.
+ * Ids a *successful* chunk answered without (deleted, out of scope) are
+ * remembered as missing and not asked for again; ids whose chunk failed are
+ * retried by the next caller. A partial failure — some chunks succeed, others
+ * don't — never marks a successful chunk's ids as failed, and never marks a
+ * failed chunk's ids as missing.
  */
-export function createLookupCache<T extends { id: string }>(fetchNames: (ids: string[]) => Promise<T[]>) {
+export function createLookupCache<T extends { id: string }>(
+    fetchNames: (ids: string[]) => Promise<{ rows: T[]; failedIds: string[] }>,
+) {
     const seen = new Map<string, T>();
     // Ids a names call answered without. Lasts until the page reloads; a picker
     // search that later returns the id clears it (see `remember`).
@@ -33,11 +38,16 @@ export function createLookupCache<T extends { id: string }>(fetchNames: (ids: st
         if (need.length) {
             for (const id of need) failed.delete(id);
             const p = fetchNames(need)
-                .then((rows) => {
+                .then(({ rows, failedIds }) => {
                     remember(rows);
-                    for (const id of need) if (!seen.has(id)) missing.add(id);
+                    const failedSet = new Set(failedIds);
+                    for (const id of need) {
+                        if (failedSet.has(id)) failed.add(id);
+                        else if (!seen.has(id)) missing.add(id);
+                    }
                 })
                 .catch(() => {
+                    // Defensive: fetchNames settles its own chunks and should not reject.
                     // Leave them unresolved; labels render blank / the trigger shows the placeholder.
                     for (const id of need) failed.add(id);
                 })

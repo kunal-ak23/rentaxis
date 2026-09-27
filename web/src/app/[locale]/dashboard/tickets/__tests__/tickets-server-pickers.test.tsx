@@ -34,9 +34,9 @@ const RENTER = { id: "ren-1", nameEn: "Rajesh Kumar", nameAr: null, phone: "+971
 
 beforeEach(() => {
     lookup.searchUnits.mockResolvedValue([SHOP_UNIT]);
-    lookup.unitNames.mockResolvedValue([]);
+    lookup.unitNames.mockResolvedValue({ rows: [], failedIds: [] });
     lookup.searchRenters.mockResolvedValue([RENTER]);
-    lookup.renterNames.mockResolvedValue([]);
+    lookup.renterNames.mockResolvedValue({ rows: [], failedIds: [] });
     global.fetch = vi.fn(async (url: unknown) => {
         const u = String(url);
         if (u.includes("/v1/tickets/paged")) return { ok: true, status: 200, json: async () => pagedBody([]) } as unknown as Response;

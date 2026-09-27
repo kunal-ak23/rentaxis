@@ -83,7 +83,7 @@ describe("UnitPicker", () => {
     });
 
     it("resolves the label of a value it has not seen with one names call", async () => {
-        api.unitNames.mockResolvedValue([unit({ id: "u-far", unitNumber: "909" })]);
+        api.unitNames.mockResolvedValue({ rows: [unit({ id: "u-far", unitNumber: "909" })], failedIds: [] });
         withIntl("en", <UnitPicker value="u-far" onChange={vi.fn()} testId="unit" />);
 
         expect(await screen.findByText("909")).toBeInTheDocument();

@@ -46,11 +46,11 @@ let posted: Record<string, unknown>[];
 beforeEach(() => {
     posted = [];
     lookup.searchUnits.mockResolvedValue([]);
-    lookup.unitNames.mockResolvedValue([]);
+    lookup.unitNames.mockResolvedValue({ rows: [], failedIds: [] });
     lookup.searchRenters.mockResolvedValue([
         { id: "ren-1", nameEn: "Rajesh Kumar", nameAr: null, phone: "+971501234567", email: null },
     ]);
-    lookup.renterNames.mockResolvedValue([]);
+    lookup.renterNames.mockResolvedValue({ rows: [], failedIds: [] });
     global.fetch = vi.fn(async (url: unknown, init?: RequestInit) => {
         const u = String(url);
         if (u.endsWith("/v1/tickets") && init?.method === "POST") {

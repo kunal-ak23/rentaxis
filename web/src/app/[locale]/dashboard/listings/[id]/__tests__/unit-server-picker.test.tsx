@@ -75,9 +75,9 @@ async function renderPage(id: string) {
 
 beforeEach(() => {
     lookup.searchUnits.mockResolvedValue([UNIT]);
-    lookup.unitNames.mockResolvedValue([UNIT]);
+    lookup.unitNames.mockResolvedValue({ rows: [UNIT], failedIds: [] });
     lookup.searchRenters.mockResolvedValue([]);
-    lookup.renterNames.mockResolvedValue([]);
+    lookup.renterNames.mockResolvedValue({ rows: [], failedIds: [] });
     global.fetch = vi.fn(async () => ({ ok: true, json: async () => [] })) as unknown as typeof fetch;
 });
 

@@ -25,21 +25,42 @@ export type RenterOption = {
     email: string | null;
 };
 
-/** The server refuses a names call naming more than this many ids. */
-const NAMES_CHUNK = 200;
+/**
+ * Ids per names call. Spring/Tomcat's default max HTTP line (request line +
+ * headers, which the proxy forwards including Authorization/cookies) is 8 KB.
+ * A UUID plus its `ids=` and `&` separator is ~41 bytes, so 200 ids alone is
+ * already ~8.2 KB before any headers — over budget, and confirmed to 400 on a
+ * running backend. 80 ids keeps the query itself to ~3.3 KB, leaving headroom
+ * for a long Authorization/cookie header on top of the rest of the request line.
+ */
+const NAMES_CHUNK = 80;
 
-/** GET `{path}?ids=a&ids=b…` in chunks of at most {@link NAMES_CHUNK}, concatenated in order. */
-async function names<T>(path: string, ids: string[]): Promise<T[]> {
+/** One chunk's names call succeeded (its rows) or failed (its ids, for retry). */
+type NamesResult<T> = { rows: T[]; failedIds: string[] };
+
+/**
+ * GET `{path}?ids=a&ids=b…` in chunks of at most {@link NAMES_CHUNK}. Chunks run
+ * independently (`Promise.allSettled`) so one rejected chunk does not drop the
+ * rows of the others — the caller gets every row that came back plus the ids of
+ * whichever chunks failed, to retry later.
+ */
+async function names<T>(path: string, ids: string[]): Promise<NamesResult<T>> {
     const chunks: string[][] = [];
     for (let i = 0; i < ids.length; i += NAMES_CHUNK) chunks.push(ids.slice(i, i + NAMES_CHUNK));
-    const pages = await Promise.all(
+    const settled = await Promise.allSettled(
         chunks.map((chunk) => {
             const sp = new URLSearchParams();
             for (const id of chunk) sp.append("ids", id);
             return apiGet<T[]>(`${path}?${sp.toString()}`);
         }),
     );
-    return pages.flat();
+    const rows: T[] = [];
+    const failedIds: string[] = [];
+    settled.forEach((result, i) => {
+        if (result.status === "fulfilled") rows.push(...result.value);
+        else failedIds.push(...chunks[i]);
+    });
+    return { rows, failedIds };
 }
 
 export const lookupApi = {

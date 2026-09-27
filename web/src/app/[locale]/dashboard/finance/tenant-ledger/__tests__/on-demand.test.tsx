@@ -20,9 +20,9 @@ const lookup = vi.hoisted(() => {
     const linked = { id: "r3", nameEn: "Layla", nameAr: null, phone: null, email: null };
     return {
         searchUnits: vi.fn(async () => []),
-        unitNames: vi.fn(async () => []),
+        unitNames: vi.fn(async () => ({ rows: [], failedIds: [] })),
         searchRenters: vi.fn(async () => people),
-        renterNames: vi.fn(async (ids: string[]) => [...people, linked].filter(p => ids.includes(p.id))),
+        renterNames: vi.fn(async (ids: string[]) => ({ rows: [...people, linked].filter(p => ids.includes(p.id)), failedIds: [] })),
     };
 });
 vi.mock("@/lib/api/lookup", () => ({ lookupApi: lookup }));
@@ -67,7 +67,7 @@ describe("Tenant Ledger — on demand", () => {
             rows: [row], totalDebit: 1000, totalCredit: 0, closingBalance: 1000, truncated: false }]);
         // The name lands after the report has rendered: only the page's own lookup re-renders the band.
         let answer: () => void = () => {};
-        lookup.renterNames.mockImplementationOnce((ids: string[]) => new Promise(res => { answer = () => res(ids.includes("r3") ? [{ id: "r3", nameEn: "Layla", nameAr: null, phone: null, email: null }] : []); }));
+        lookup.renterNames.mockImplementationOnce((ids: string[]) => new Promise(res => { answer = () => res({ rows: ids.includes("r3") ? [{ id: "r3", nameEn: "Layla", nameAr: null, phone: null, email: null }] : [], failedIds: [] }); }));
         render(<Page />);
         await waitFor(() => expect(screen.getByTestId("ledger-subtotal-a")).toBeInTheDocument());
         expect(screen.queryByText(/Tenant Name :/)).toBeNull();

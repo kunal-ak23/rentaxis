@@ -240,9 +240,9 @@ beforeEach(() => {
     api.post.mockResolvedValue(detail({ status: "POSTED", voucherNumber: "PISR/2026/0007", journalId: "j1" }));
     lookup.searchUnits.mockImplementation(async ({ propertyId }: { propertyId?: string } = {}) =>
         Object.values(UNIT_OPTIONS).filter(u => !propertyId || u.propertyId === propertyId));
-    lookup.unitNames.mockImplementation(async (ids: string[]) => ids.map(id => UNIT_OPTIONS[id]).filter(Boolean));
+    lookup.unitNames.mockImplementation(async (ids: string[]) => ({ rows: ids.map(id => UNIT_OPTIONS[id]).filter(Boolean), failedIds: [] }));
     lookup.searchRenters.mockResolvedValue([]);
-    lookup.renterNames.mockResolvedValue([]);
+    lookup.renterNames.mockResolvedValue({ rows: [], failedIds: [] });
     vi.stubGlobal(
         "fetch",
         vi.fn(async (url: string) => {
