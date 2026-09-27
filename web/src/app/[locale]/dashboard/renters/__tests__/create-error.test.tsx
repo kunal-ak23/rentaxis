@@ -46,8 +46,8 @@ beforeEach(() => {
             resendUrls.push(u);
             return jsonRes({});
         }
-        if (u.includes("/v1/renters")) {
-            return jsonRes(listBody);
+        if (u.includes("/v1/renters/paged")) {
+            return jsonRes({ content: listBody, totalElements: listBody.length, totalPages: 1, number: 0, size: 25 });
         }
         return jsonRes({}, false, 404);
     }) as unknown as typeof fetch;

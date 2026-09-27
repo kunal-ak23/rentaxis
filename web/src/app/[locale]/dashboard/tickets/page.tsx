@@ -1,7 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect, useRef, useCallback, useSyncExternalStore } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useState, useEffect, useRef, useCallback } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 import { Pagination } from "@/components/ui/Pagination";
@@ -15,34 +14,10 @@ import { TowerSelect } from "@/components/ui/TowerSelect";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { UnitPicker } from "@/components/pickers/UnitPicker";
 import { RenterPicker } from "@/components/pickers/RenterPicker";
+import { useUrlState } from "@/hooks/useUrlState";
 import {
     Plus, X, Search, Loader2, Eye, Upload, Wrench, BarChart3,
 } from "lucide-react";
-
-/**
- * R1 P3-2: the property + tower filters live in the URL (bookmarkable, same
- * pattern as the Contracts list) — a tiny store over `location.search`, read
- * with `useSyncExternalStore` (empty server snapshot, so hydration matches),
- * written with `history.replaceState`.
- */
-const urlListeners = new Set<() => void>();
-function subscribeUrl(cb: () => void) {
-    urlListeners.add(cb);
-    window.addEventListener("popstate", cb);
-    return () => {
-        urlListeners.delete(cb);
-        window.removeEventListener("popstate", cb);
-    };
-}
-function setUrlQuery(changes: Record<string, string | null>) {
-    const url = new URL(window.location.href);
-    for (const [k, v] of Object.entries(changes)) {
-        if (v) url.searchParams.set(k, v);
-        else url.searchParams.delete(k);
-    }
-    window.history.replaceState(window.history.state, "", url.toString());
-    urlListeners.forEach(l => l());
-}
 
 /**
  * S16-02/S16-03: staff (SA/TA/PM/ACCOUNTANT) read `GET /tickets/paged` — search,
@@ -163,27 +138,47 @@ function TicketsPageInner() {
     const [tableLoading, setTableLoading] = useState(false);
     const [loadError, setLoadError] = useState<string | null>(null);
 
+    // Pagination — bookmarkable in the URL (Scale PR B2 task 7), same shape
+    // as the Renters list's page/size: 1-based in the URL, 0-based to the API.
+    const [pageParam, setPageParam] = useUrlState("page", "1");
+    const [sizeParam, setSizeParam] = useUrlState("size", "25");
+    // A negative or zero page (a hand-edited or otherwise malformed bookmark,
+    // e.g. `?page=-3`) is clamped to 1 rather than passed through to the API.
+    const currentPage = Math.max(1, parseInt(pageParam, 10) || 1);
+    // A hand-edited or bookmarked size outside the API's accepted range
+    // (`?size=1000` — the API caps a page at 200 — or `?size=-5`) is clamped
+    // rather than passed through, so the page-count math never goes negative
+    // or silently exceeds what the server will actually return.
+    const itemsPerPage = Math.min(200, Math.max(1, parseInt(sizeParam, 10) || 25));
+
     // Filters
-    // R1 P1-1: the box shows `searchInput` immediately (so typing is never
-    // interrupted); `debouncedSearch`, 350 ms behind it, is what actually
-    // drives a fetch — the Contracts list's search box debounces the same way.
-    const [searchInput, setSearchInput] = useState("");
-    const [debouncedSearch, setDebouncedSearch] = useState("");
+    // Scale PR B2 task 7: search, status and priority now live in the URL too
+    // (propertyId/buildingId already did). The box shows `draftSearch`
+    // immediately (so typing is never interrupted); 350 ms after the last
+    // keystroke it is written to `q` in the URL, which also resets the page —
+    // same pattern as the Renters list's debounced search.
+    // The committed value is trimmed — "leak " or "  " must not reach the URL
+    // or the API as a search with trailing/only whitespace.
+    const [q, setQ] = useUrlState("q", "");
+    const [draftSearch, setDraftSearch] = useState<string | null>(null);
+    const searchInput = draftSearch ?? q;
+    const debouncedSearch = q;
     useEffect(() => {
-        const timer = setTimeout(() => setDebouncedSearch(searchInput.trim()), 350);
+        if (draftSearch === null || draftSearch.trim() === q) return;
+        const timer = setTimeout(() => {
+            setQ(draftSearch.trim());
+            setPageParam("1");
+            setDraftSearch(null);
+        }, 350);
         return () => clearTimeout(timer);
-    }, [searchInput]);
-    const [statusFilter, setStatusFilter] = useState("ALL");
-    const [priorityFilter, setPriorityFilter] = useState("ALL");
+    }, [draftSearch, q, setQ, setPageParam]);
+    const [statusFilter, setStatusFilter] = useUrlState("status", "ALL");
+    const [priorityFilter, setPriorityFilter] = useUrlState("priority", "ALL");
     // R1 P3-2: property + tower (buildingId) live in the URL — bookmarkable,
     // like the Contracts list's filters — for staff's server-paged list.
-    useSearchParams();
-    const urlSearch = useSyncExternalStore(subscribeUrl, () => window.location.search, () => "");
-    const usp = new URLSearchParams(urlSearch);
-    const propertyFilter = usp.get("propertyId") ?? "";
-    const buildingFilter = usp.get("buildingId") ?? "";
-    const setPropertyFilter = (id: string) => setUrlQuery({ propertyId: id || null, buildingId: null });
-    const setBuildingFilter = (id: string) => setUrlQuery({ buildingId: id || null });
+    const [propertyFilter, setPropertyId] = useUrlState("propertyId", "");
+    const [buildingFilter, setBuildingFilter] = useUrlState("buildingId", "");
+    const setPropertyFilter = (id: string) => { setPropertyId(id); setBuildingFilter(""); setPageParam("1"); };
     // R1 P2-2: once the Tower select reports it isn't showing (no towers, or
     // GET /buildings/property/{id} refuses this role, e.g. ACCOUNTANT), any
     // buildingId left in the URL is dropped — an active filter must always
@@ -194,10 +189,6 @@ function TicketsPageInner() {
     // S16-03: a maintenance-team TENANT_USER's own worklist vs. everything they
     // can see (also what they reported).
     const [myOnly, setMyOnly] = useState(false);
-
-    // Pagination
-    const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(25);
 
     // Create modal
     const [showForm, setShowForm] = useState(false);
@@ -260,8 +251,19 @@ function TicketsPageInner() {
                     // parsing, so the guard must run again here, not only
                     // right after `fetch()` resolved.
                     if (!isCurrent()) return;
+                    const totalElements = page.totalElements ?? 0;
+                    // Controller ruling (Scale PR B2 task 7): a bookmarked or
+                    // now-stale URL page beyond the last page for this query
+                    // (rows exist, but this page came back empty) clamps to
+                    // the last page and refetches, instead of rendering a
+                    // blank table.
+                    const totalPages = Math.max(1, Math.ceil(totalElements / itemsPerPage));
+                    if ((page.content?.length ?? 0) === 0 && totalElements > 0 && currentPage > totalPages) {
+                        setPageParam(String(totalPages));
+                        return;
+                    }
                     setTickets(page.content ?? []);
-                    setPagedTotal(page.totalElements ?? 0);
+                    setPagedTotal(totalElements);
                     setLoadError(null);
                 } else {
                     // R1 P3-3: e.g. a SUPER_ADMIN with no organisation picked
@@ -288,7 +290,7 @@ function TicketsPageInner() {
         } finally {
             if (isCurrent()) { setInitialLoading(false); setTableLoading(false); }
         }
-    }, [sessionReady, canPage, debouncedSearch, propertyFilter, buildingFilter, statusFilter, priorityFilter, currentPage, itemsPerPage, t]);
+    }, [sessionReady, canPage, debouncedSearch, propertyFilter, buildingFilter, statusFilter, priorityFilter, currentPage, itemsPerPage, t, setPageParam]);
 
     const fetchProperties = useCallback(async () => {
         if (isRenter) return; // Renters use their leases instead
@@ -324,27 +326,27 @@ function TicketsPageInner() {
         fetchTickets();
     }, [fetchTickets]);
 
-    // A filter narrows the page, so the page number it was chosen on is stale.
-    useEffect(() => {
-        setCurrentPage(1);
-    }, [debouncedSearch, propertyFilter, buildingFilter, statusFilter, priorityFilter, itemsPerPage]);
-
     // ── Filtering ───────────────────────────────────────────────────────
 
     // Staff's list is already filtered and paged server-side; a TENANT_USER's
     // and a renter's plain list is narrowed and paged here in the browser.
+    // Note: the page reset on a filter change is explicit at each control
+    // (search's debounce commit, the property/tower/status/priority
+    // handlers, the page-size dropdown) rather than a blanket effect keyed on
+    // these values — that effect would also fire on mount and wipe out a
+    // page restored from the URL (e.g. `?status=OPEN&page=2`).
     const filtered = canPage ? tickets : tickets.filter((t) => {
         if (isStaffUser && myOnly && t.assignedTo !== session?.user?.id) return false;
         if (statusFilter !== "ALL" && t.status !== statusFilter) return false;
         if (priorityFilter !== "ALL" && t.priority !== priorityFilter) return false;
         if (debouncedSearch) {
-            const q = debouncedSearch.toLowerCase();
+            const needle = debouncedSearch.toLowerCase();
             // #20: the reference is what a caller quotes over the phone, so it
             // is searchable, with or without the "TKT-" prefix.
             if (
-                !t.title.toLowerCase().includes(q) &&
-                !(t.description ?? "").toLowerCase().includes(q) &&
-                !(t.reference ?? "").toLowerCase().includes(q)
+                !t.title.toLowerCase().includes(needle) &&
+                !(t.description ?? "").toLowerCase().includes(needle) &&
+                !(t.reference ?? "").toLowerCase().includes(needle)
             )
                 return false;
         }
@@ -352,6 +354,17 @@ function TicketsPageInner() {
     });
 
     const totalItems = canPage ? pagedTotal : filtered.length;
+    // Controller ruling (Scale PR B2 task 7), client-side path only — the
+    // server-paged path already clamps itself in `fetchTickets` above. A
+    // bookmarked or now-stale `?page=` beyond the last page for the current
+    // (filtered) result set — e.g. a TENANT_USER/renter's `?page=9` with only
+    // a couple of tickets — clamps to the last page instead of rendering a
+    // blank table.
+    const clientTotalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+    useEffect(() => {
+        if (canPage) return;
+        if (filtered.length > 0 && currentPage > clientTotalPages) setPageParam(String(clientTotalPages));
+    }, [canPage, filtered.length, clientTotalPages, currentPage, setPageParam]);
     const paginated = canPage ? filtered : filtered.slice(
         (currentPage - 1) * itemsPerPage,
         currentPage * itemsPerPage,
@@ -468,7 +481,7 @@ function TicketsPageInner() {
                             type="text"
                             placeholder={t("searchPlaceholder")}
                             value={searchInput}
-                            onChange={(e) => setSearchInput(e.target.value)}
+                            onChange={(e) => setDraftSearch(e.target.value)}
                             className="w-full ps-9 pe-3 py-2 border border-border rounded-lg bg-surface text-xs text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                         />
                     </div>
@@ -491,7 +504,7 @@ function TicketsPageInner() {
                                     </option>
                                 ))}
                             </select>
-                            <TowerSelect propertyId={propertyFilter} value={buildingFilter} onChange={setBuildingFilter} testId="ticket-building-filter" onAvailabilityChange={onTowerAvailability} />
+                            <TowerSelect propertyId={propertyFilter} value={buildingFilter} onChange={(id) => { setBuildingFilter(id); setPageParam("1"); }} testId="ticket-building-filter" onAvailabilityChange={onTowerAvailability} />
                         </>
                     )}
 
@@ -522,7 +535,7 @@ function TicketsPageInner() {
                     {/* Status filter */}
                     <select
                         value={statusFilter}
-                        onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+                        onChange={(e) => { setStatusFilter(e.target.value); setPageParam("1"); }}
                         className="border border-border rounded-lg bg-surface px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
                     >
                         <option value="ALL">{t("allStatuses")}</option>
@@ -534,7 +547,7 @@ function TicketsPageInner() {
                     {/* Priority filter */}
                     <select
                         value={priorityFilter}
-                        onChange={(e) => { setPriorityFilter(e.target.value); setCurrentPage(1); }}
+                        onChange={(e) => { setPriorityFilter(e.target.value); setPageParam("1"); }}
                         className="border border-border rounded-lg bg-surface px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
                     >
                         <option value="ALL">{t("allPriorities")}</option>
@@ -645,8 +658,8 @@ function TicketsPageInner() {
                         currentPage={currentPage}
                         totalItems={totalItems}
                         itemsPerPage={itemsPerPage}
-                        onPageChange={setCurrentPage}
-                        onItemsPerPageChange={(n) => { setItemsPerPage(n); setCurrentPage(1); }}
+                        onPageChange={(p) => setPageParam(String(p))}
+                        onItemsPerPageChange={(n) => { setSizeParam(String(n)); setPageParam("1"); }}
                     />
                 </div>
             </div>

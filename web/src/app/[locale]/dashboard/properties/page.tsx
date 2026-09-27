@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { Suspense, useState, useEffect, useRef } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { Plus, MapPin, Building2, Hash, ArrowRight, X, Users, DollarSign, PieChart, Activity, List, LayoutGrid, Search, AlertCircle, RefreshCw, Upload, FileSpreadsheet, CheckCircle2, Loader2, Download } from "lucide-react";
 import { Link } from "@/i18n/routing";
@@ -13,6 +13,7 @@ import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { Pagination } from "@/components/ui/Pagination";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { NumberInput } from "@/components/ui/NumberInput";
+import { useUrlState } from "@/hooks/useUrlState";
 
 type Property = {
     id: string;
@@ -60,6 +61,14 @@ function getOccupancyTextColor(pct: number) {
 }
 
 export default function PropertiesPage() {
+    return (
+        <Suspense fallback={null}>
+            <PropertiesPageInner />
+        </Suspense>
+    );
+}
+
+function PropertiesPageInner() {
     const t = useTranslations("MasterData");
     const tList = useTranslations("ListActions");
     const e = useTranslations("Emirates");
@@ -83,10 +92,25 @@ export default function PropertiesPage() {
     const userRole = session?.user?.role as UserRole | undefined;
     const canCreate = hasPermission(userRole, 'canCreateProperties');
 
-    const [viewMode, setViewMode] = useState<"table" | "cards">("table");
-    const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(25);
-    const [searchQuery, setSearchQuery] = useState("");
+    // Scale PR B2 task 7: search, page, size and the table/cards view toggle
+    // live in the URL via the shared `useUrlState` hook (same pattern as the
+    // Renters/Tickets lists) — this list is small and stays client-side, so
+    // only the bookmark shape changes, not the fetch.
+    const [viewModeParam, setViewModeParam] = useUrlState("view", "table");
+    const viewMode = viewModeParam === "cards" ? "cards" : "table";
+    const setViewMode = (v: "table" | "cards") => setViewModeParam(v);
+    const [pageParam, setPageParam] = useUrlState("page", "1");
+    const [sizeParam, setSizeParam] = useUrlState("size", "25");
+    // A negative or zero page (a hand-edited or otherwise malformed bookmark,
+    // e.g. `?page=-3`) is clamped to 1 rather than passed through.
+    const currentPage = Math.max(1, parseInt(pageParam, 10) || 1);
+    // A hand-edited or bookmarked size outside the API's accepted range
+    // (`?size=1000` — the API caps a page at 200 — or `?size=-5`) is clamped
+    // rather than passed through, so the page-count math never goes negative
+    // or silently exceeds what the server will actually return.
+    const itemsPerPage = Math.min(200, Math.max(1, parseInt(sizeParam, 10) || 25));
+    const [searchQuery, setSearchQueryParam] = useUrlState("q", "");
+    const setSearchQuery = (v: string) => { setSearchQueryParam(v); setPageParam("1"); };
     const [confirmDialog, setConfirmDialog] = useState<{
         title: string;
         description: string;
@@ -143,10 +167,6 @@ export default function PropertiesPage() {
         document.addEventListener("visibilitychange", onVisibilityChange);
         return () => document.removeEventListener("visibilitychange", onVisibilityChange);
     }, []);
-
-    useEffect(() => {
-        setCurrentPage(1);
-    }, [stats]);
 
     const fetchStats = async () => {
         try {
@@ -388,8 +408,11 @@ export default function PropertiesPage() {
     };
 
     const filteredStats = stats.filter(s => {
-        if (!searchQuery) return true;
-        const q = searchQuery.toLowerCase();
+        // A whitespace-only search (typed and not yet cleared, or a stray
+        // bookmarked `?q=%20`) is treated as no search — trimmed to empty —
+        // rather than excluding every property.
+        if (!searchQuery.trim()) return true;
+        const q = searchQuery.trim().toLowerCase();
         return (
             s.property.nameEn?.toLowerCase().includes(q) ||
             s.property.nameAr?.toLowerCase().includes(q) ||
@@ -399,6 +422,16 @@ export default function PropertiesPage() {
         );
     });
     const totalItems = filteredStats.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
+    // Controller ruling (Scale PR B2 task 7): a bookmarked page beyond the
+    // last page for the current (filtered) result set — e.g. a stale
+    // `?page=9`, or the last property on the last page got deleted — clamps
+    // to the last page instead of rendering a blank table. This list is
+    // client-side, so the ruling is against the filtered count, not a server
+    // response.
+    useEffect(() => {
+        if (totalItems > 0 && currentPage > totalPages) setPageParam(String(totalPages));
+    }, [totalItems, totalPages, currentPage, setPageParam]);
     const paginatedItems = filteredStats.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
     if (loading) {
@@ -475,7 +508,7 @@ export default function PropertiesPage() {
                             type="text"
                             placeholder={t("search")}
                             value={searchQuery}
-                            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                            onChange={(e) => setSearchQuery(e.target.value)}
                             className="ps-9 pe-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
                         />
                     </div>
@@ -1301,8 +1334,8 @@ export default function PropertiesPage() {
                         currentPage={currentPage}
                         totalItems={totalItems}
                         itemsPerPage={itemsPerPage}
-                        onPageChange={setCurrentPage}
-                        onItemsPerPageChange={(n) => { setItemsPerPage(n); setCurrentPage(1); }}
+                        onPageChange={(p) => setPageParam(String(p))}
+                        onItemsPerPageChange={(n) => { setSizeParam(String(n)); setPageParam("1"); }}
                     />
                 </>
             )}

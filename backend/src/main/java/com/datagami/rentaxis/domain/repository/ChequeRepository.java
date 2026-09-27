@@ -65,6 +65,31 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
     List<Cheque> findByLease_IdOrderBySeqNoAsc(UUID leaseId);
 
     /**
+     * {@link #findByLease_IdOrderBySeqNoAsc} for several leases in one query — every
+     * status, as the per-lease grid read returns them. Grouped by lease in the caller
+     * (scale #14, the renter page's all-cheques read).
+     */
+    List<Cheque> findByLease_IdInOrderBySeqNoAsc(java.util.Collection<UUID> leaseIds);
+
+    /**
+     * Scale PR B2 final-review fix (task 6): same as {@link #findByLease_IdOrderBySeqNoAsc},
+     * with an {@code id} tiebreak — {@code seq_no} is not unique (e.g. a replaced or
+     * renumbered instalment can share it with another row), so "same rows, same order" was
+     * not strictly true without one. Used by the web-facing single-lease grid read
+     * ({@code ChequeGenerationService.list}); the many internal accounting/posting call
+     * sites of {@link #findByLease_IdOrderBySeqNoAsc} are left as-is — out of scope for this
+     * fix, and re-ordering them is its own, separately-reviewed change.
+     */
+    List<Cheque> findByLease_IdOrderBySeqNoAscIdAsc(UUID leaseId);
+
+    /**
+     * {@link #findByLease_IdOrderBySeqNoAscIdAsc} for several leases in one query — the
+     * tiebroken counterpart of {@link #findByLease_IdInOrderBySeqNoAsc}, used by the renter
+     * page's all-cheques read ({@code ChequeGenerationService.listForRenter}, scale #14).
+     */
+    List<Cheque> findByLease_IdInOrderBySeqNoAscIdAsc(java.util.Collection<UUID> leaseIds);
+
+    /**
      * Drop a lease's cheques in one status. Used with {@code DRAFT} when a draft
      * lease's lines change: the proposed instalments were cut from amounts that
      * no longer exist, and there is nothing on a DRAFT cheque worth preserving.

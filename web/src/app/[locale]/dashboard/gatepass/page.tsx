@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useSession } from "next-auth/react";
 import { Download, Loader2, ShieldCheck } from "lucide-react";
@@ -43,6 +43,12 @@ type GatePassReportRow = {
     vehicleNumber: string | null;
     purpose: string | null;
     passType: GatePassType;
+};
+
+/** The slice of a Spring `Page` that `GET /gatepass/report/paged` returns and this page reads. */
+type ReportPage = {
+    content: GatePassReportRow[];
+    totalElements: number;
 };
 
 /**
@@ -132,13 +138,31 @@ export default function GatePassReportPage() {
     const [to, setTo] = useState(defaults.to);
     const [propertyId, setPropertyId] = useState("");
 
+    // One page of the period's scans (scale #15): the server pages, filters by
+    // property and applies a manager's buildings; `totalItems` is the period's total.
     const [rows, setRows] = useState<GatePassReportRow[]>([]);
+    const [totalItems, setTotalItems] = useState(0);
     const [properties, setProperties] = useState<PropertyRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [exporting, setExporting] = useState(false);
+    const [exportError, setExportError] = useState<string | null>(null);
 
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(25);
+
+    // A new filter starts again from the first page.
+    const changeFrom = (v: string) => { setFrom(v); setCurrentPage(1); };
+    const changeTo = (v: string) => { setTo(v); setCurrentPage(1); };
+    const changeProperty = (v: string) => { setPropertyId(v); setCurrentPage(1); };
+
+    /** The period and property as the report endpoints take them. */
+    const reportParams = useCallback(() => {
+        const bounds = dayBoundsIso(from, to);
+        const params = new URLSearchParams({ from: bounds.from, to: bounds.to });
+        if (propertyId) params.set("propertyId", propertyId);
+        return params;
+    }, [from, to, propertyId]);
 
     const propertyName = useCallback(
         (id: string) => {
@@ -160,12 +184,18 @@ export default function GatePassReportPage() {
         }
     }, []);
 
+    // A request counter so a slow, older response (a previous page or filter) can
+    // never overwrite a newer one — the same guard as the Renters and Tickets lists.
+    const fetchSeq = useRef(0);
     const fetchReport = useCallback(async () => {
+        const seq = ++fetchSeq.current;
+        const isCurrent = () => seq === fetchSeq.current;
         // The server rejects an inverted range with a 400; catching it here keeps the
         // message actionable and in the user's language rather than a bare failure.
         if (to < from) {
             setError(t("invalidRange"));
             setRows([]);
+            setTotalItems(0);
             setLoading(false);
             return;
         }
@@ -173,25 +203,39 @@ export default function GatePassReportPage() {
         setLoading(true);
         setError(null);
         try {
-            const bounds = dayBoundsIso(from, to);
-            const params = new URLSearchParams({ from: bounds.from, to: bounds.to });
-            if (propertyId) params.set("propertyId", propertyId);
+            const params = reportParams();
+            // The UI's page is 1-based; Spring's is 0-based.
+            params.set("page", String(currentPage - 1));
+            params.set("size", String(itemsPerPage));
 
-            const res = await fetch(`/api/proxy/v1/gatepass/report?${params}`);
+            const res = await fetch(`/api/proxy/v1/gatepass/report/paged?${params}`);
+            if (!isCurrent()) return;
             if (!res.ok) {
                 setError(t("loadError"));
                 setRows([]);
+                setTotalItems(0);
                 return;
             }
-            setRows(await res.json());
-            setCurrentPage(1);
+            const page: ReportPage = await res.json();
+            if (!isCurrent()) return;
+            const total = page.totalElements ?? 0;
+            // A page past the end (the period shrank under it) clamps to the last page.
+            const totalPages = Math.max(1, Math.ceil(total / itemsPerPage));
+            if ((page.content?.length ?? 0) === 0 && total > 0 && currentPage > totalPages) {
+                setCurrentPage(totalPages);
+                return;
+            }
+            setRows(page.content ?? []);
+            setTotalItems(total);
         } catch {
+            if (!isCurrent()) return;
             setError(t("loadError"));
             setRows([]);
+            setTotalItems(0);
         } finally {
-            setLoading(false);
+            if (isCurrent()) setLoading(false);
         }
-    }, [from, to, propertyId, t]);
+    }, [from, to, currentPage, itemsPerPage, reportParams, t]);
 
     useEffect(() => {
         if (status !== "authenticated" || !canView) return;
@@ -212,19 +256,36 @@ export default function GatePassReportPage() {
         [t],
     );
 
-    function exportCsv() {
-        // Exports every fetched row, not just the visible page — the pagination is a
-        // reading aid, and an export that silently dropped 90% of the period would be
-        // worse than no export.
+    async function exportCsv() {
+        // Exports every row of the period, not just the visible page — the pagination
+        // is a reading aid, and an export that silently dropped 90% of the period would
+        // be worse than no export. So it reads the full, unpaged /report (oldest first),
+        // which the table no longer holds.
         //
         // One column wider than the table: the guard's name AND their full id. The two
         // answer different questions and neither replaces the other — a name is what a
         // reader acts on, but names are not unique, so the id is what the row can still
         // be joined and disambiguated by. This extends the divergence the CSV already
         // had (full id vs the table's fragment) rather than inventing one.
+        setExporting(true);
+        setExportError(null);
+        let all: GatePassReportRow[];
+        try {
+            const res = await fetch(`/api/proxy/v1/gatepass/report?${reportParams()}`);
+            if (!res.ok) {
+                setExportError(t("exportError"));
+                return;
+            }
+            all = await res.json();
+        } catch {
+            setExportError(t("exportError"));
+            return;
+        } finally {
+            setExporting(false);
+        }
         const csv = toCsv(
             [...columns, t("colGuardId")],
-            rows.map((r) => [
+            all.map((r) => [
                 csvTimestamp(r.scannedAt),
                 t(r.direction),
                 t(r.result),
@@ -260,12 +321,6 @@ export default function GatePassReportPage() {
         );
     }
 
-    const totalItems = rows.length;
-    const paginated = rows.slice(
-        (currentPage - 1) * itemsPerPage,
-        currentPage * itemsPerPage,
-    );
-
     return (
         <div>
             {/* Header */}
@@ -274,13 +329,16 @@ export default function GatePassReportPage() {
                     <h1 className="text-lg font-bold text-foreground">{t("reportTitle")}</h1>
                     <p className="text-xs text-muted mt-0.5">{t("reportDescription")}</p>
                 </div>
-                <button
-                    onClick={exportCsv}
-                    disabled={loading || totalItems === 0}
-                    className="flex items-center gap-2 border border-border text-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-input transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                    <Download size={14} /> {t("exportCsv")}
-                </button>
+                <div className="flex flex-col items-end gap-1">
+                    <button
+                        onClick={exportCsv}
+                        disabled={loading || exporting || totalItems === 0}
+                        className="flex items-center gap-2 border border-border text-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-input transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                        {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} {t("exportCsv")}
+                    </button>
+                    {exportError && <p role="alert" className="text-[10px] text-error">{exportError}</p>}
+                </div>
             </div>
 
             {/* Filters */}
@@ -294,7 +352,7 @@ export default function GatePassReportPage() {
                             id="gatepass-from"
                             type="date"
                             value={from}
-                            onChange={(e) => setFrom(e.target.value)}
+                            onChange={(e) => changeFrom(e.target.value)}
                             className="border border-border rounded-lg bg-surface px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                         />
                     </div>
@@ -306,7 +364,7 @@ export default function GatePassReportPage() {
                             id="gatepass-to"
                             type="date"
                             value={to}
-                            onChange={(e) => setTo(e.target.value)}
+                            onChange={(e) => changeTo(e.target.value)}
                             className="border border-border rounded-lg bg-surface px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                         />
                     </div>
@@ -317,7 +375,7 @@ export default function GatePassReportPage() {
                         <select
                             id="gatepass-property"
                             value={propertyId}
-                            onChange={(e) => setPropertyId(e.target.value)}
+                            onChange={(e) => changeProperty(e.target.value)}
                             className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
                         >
                             <option value="">{t("allProperties")}</option>
@@ -373,7 +431,7 @@ export default function GatePassReportPage() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {paginated.map((row) => (
+                                    {rows.map((row) => (
                                         <tr key={row.scanId} className="border-b border-border hover:bg-input/30 transition-colors">
                                             <td className="px-4 py-2.5 text-xs text-muted whitespace-nowrap tabular-nums">
                                                 {new Date(row.scannedAt).toLocaleString(

@@ -33,4 +33,8 @@ public class Renter extends BaseTenantEntity {
 
     @Column(name = "user_id")
     private UUID userId;
+
+    /** Scale PR B2 final-review fix (task 5): `GET /renters/paged` orders by this, ascending. */
+    @Column(name = "created_at", nullable = false)
+    private java.time.Instant createdAt = java.time.Instant.now();
 }

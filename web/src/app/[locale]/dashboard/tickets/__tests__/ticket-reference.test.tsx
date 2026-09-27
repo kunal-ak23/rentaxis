@@ -82,6 +82,10 @@ beforeEach(() => {
 afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    // Scale PR B2 task 7: search now lives in the URL (`?q=`), so a leftover
+    // value from one test's `history.replaceState` would otherwise leak into
+    // the next test in this file.
+    window.history.replaceState(null, "", "/");
 });
 
 describe("Tickets list — reference", () => {

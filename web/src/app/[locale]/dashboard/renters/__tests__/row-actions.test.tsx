@@ -17,8 +17,10 @@ import RentersPage from "../page";
 
 const RENTERS = [{ id: "r1", nameEn: "Rajesh Kumar", nameAr: "راجيش كومار", email: "r@example.com", phone: "+971501234567", primaryLanguage: "EN", invitePending: false, userId: null }];
 
+const pagedBody = { content: RENTERS, totalElements: RENTERS.length, totalPages: 1, number: 0, size: 25 };
+
 beforeEach(() => {
-    global.fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => RENTERS, text: async () => JSON.stringify(RENTERS) }) as unknown as Response) as unknown as typeof fetch;
+    global.fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => pagedBody, text: async () => JSON.stringify(pagedBody) }) as unknown as Response) as unknown as typeof fetch;
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
