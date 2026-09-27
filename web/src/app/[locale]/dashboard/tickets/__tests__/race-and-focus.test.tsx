@@ -46,6 +46,10 @@ const pagedBody = (content: unknown[]) => ({ content, totalElements: content.len
 afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    // Scale PR B2 task 7: search/status/priority now live in the URL, so a
+    // leftover value from one test's `history.replaceState` would otherwise
+    // leak into the next test in this file.
+    window.history.replaceState(null, "", "/");
 });
 
 describe("Tickets list — P1-1: the search box keeps focus while typing", () => {

@@ -108,8 +108,18 @@ function RentersPageInner() {
             if (res.ok) {
                 const page: Page<Renter> = await res.json();
                 if (!isCurrent()) return;
+                const totalElements = page.totalElements ?? 0;
+                // Controller ruling (Scale PR B2 task 7): a bookmarked or
+                // now-stale URL page beyond the last page for this query
+                // (rows exist, but this page came back empty) clamps to the
+                // last page and refetches, instead of rendering a blank list.
+                const totalPages = Math.max(1, Math.ceil(totalElements / itemsPerPage));
+                if ((page.content?.length ?? 0) === 0 && totalElements > 0 && currentPage > totalPages) {
+                    setPageParam(String(totalPages));
+                    return;
+                }
                 setRenters(page.content ?? []);
-                setTotalItems(page.totalElements ?? 0);
+                setTotalItems(totalElements);
                 setLoadError(null);
             } else {
                 // A non-2xx used to leave the state at its initial empty
@@ -123,6 +133,11 @@ function RentersPageInner() {
         } finally {
             if (isCurrent()) setLoading(false);
         }
+        // `setPageParam` is a fresh closure from `useUrlState` on every
+        // render (see the debounce effect above) — it must not be a
+        // dependency here, or the clamp branch's call to it would recreate
+        // this callback and refire the fetch on every render.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [q, currentPage, itemsPerPage, tCommon]);
 
     useEffect(() => {

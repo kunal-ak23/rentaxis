@@ -138,23 +138,43 @@ function TicketsPageInner() {
     const [tableLoading, setTableLoading] = useState(false);
     const [loadError, setLoadError] = useState<string | null>(null);
 
+    // Pagination — bookmarkable in the URL (Scale PR B2 task 7), same shape
+    // as the Renters list's page/size: 1-based in the URL, 0-based to the API.
+    const [pageParam, setPageParam] = useUrlState("page", "1");
+    const [sizeParam, setSizeParam] = useUrlState("size", "25");
+    const currentPage = parseInt(pageParam, 10) || 1;
+    const itemsPerPage = parseInt(sizeParam, 10) || 25;
+
     // Filters
-    // R1 P1-1: the box shows `searchInput` immediately (so typing is never
-    // interrupted); `debouncedSearch`, 350 ms behind it, is what actually
-    // drives a fetch — the Contracts list's search box debounces the same way.
-    const [searchInput, setSearchInput] = useState("");
-    const [debouncedSearch, setDebouncedSearch] = useState("");
+    // Scale PR B2 task 7: search, status and priority now live in the URL too
+    // (propertyId/buildingId already did). The box shows `draftSearch`
+    // immediately (so typing is never interrupted); 350 ms after the last
+    // keystroke it is written to `q` in the URL, which also resets the page —
+    // same pattern as the Renters list's debounced search.
+    const [q, setQ] = useUrlState("q", "");
+    const [draftSearch, setDraftSearch] = useState<string | null>(null);
+    const searchInput = draftSearch ?? q;
+    const debouncedSearch = q;
     useEffect(() => {
-        const timer = setTimeout(() => setDebouncedSearch(searchInput.trim()), 350);
+        if (draftSearch === null || draftSearch === q) return;
+        const timer = setTimeout(() => {
+            setQ(draftSearch);
+            setPageParam("1");
+            setDraftSearch(null);
+        }, 350);
         return () => clearTimeout(timer);
-    }, [searchInput]);
-    const [statusFilter, setStatusFilter] = useState("ALL");
-    const [priorityFilter, setPriorityFilter] = useState("ALL");
+        // `setQ`/`setPageParam` are fresh closures from `useUrlState` on every
+        // render; including them here would reset the debounce timer on every
+        // render, not just on typing.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [draftSearch, q]);
+    const [statusFilter, setStatusFilter] = useUrlState("status", "ALL");
+    const [priorityFilter, setPriorityFilter] = useUrlState("priority", "ALL");
     // R1 P3-2: property + tower (buildingId) live in the URL — bookmarkable,
     // like the Contracts list's filters — for staff's server-paged list.
     const [propertyFilter, setPropertyId] = useUrlState("propertyId", "");
     const [buildingFilter, setBuildingFilter] = useUrlState("buildingId", "");
-    const setPropertyFilter = (id: string) => { setPropertyId(id); setBuildingFilter(""); };
+    const setPropertyFilter = (id: string) => { setPropertyId(id); setBuildingFilter(""); setPageParam("1"); };
     // R1 P2-2: once the Tower select reports it isn't showing (no towers, or
     // GET /buildings/property/{id} refuses this role, e.g. ACCOUNTANT), any
     // buildingId left in the URL is dropped — an active filter must always
@@ -165,10 +185,6 @@ function TicketsPageInner() {
     // S16-03: a maintenance-team TENANT_USER's own worklist vs. everything they
     // can see (also what they reported).
     const [myOnly, setMyOnly] = useState(false);
-
-    // Pagination
-    const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(25);
 
     // Create modal
     const [showForm, setShowForm] = useState(false);
@@ -231,8 +247,19 @@ function TicketsPageInner() {
                     // parsing, so the guard must run again here, not only
                     // right after `fetch()` resolved.
                     if (!isCurrent()) return;
+                    const totalElements = page.totalElements ?? 0;
+                    // Controller ruling (Scale PR B2 task 7): a bookmarked or
+                    // now-stale URL page beyond the last page for this query
+                    // (rows exist, but this page came back empty) clamps to
+                    // the last page and refetches, instead of rendering a
+                    // blank table.
+                    const totalPages = Math.max(1, Math.ceil(totalElements / itemsPerPage));
+                    if ((page.content?.length ?? 0) === 0 && totalElements > 0 && currentPage > totalPages) {
+                        setPageParam(String(totalPages));
+                        return;
+                    }
                     setTickets(page.content ?? []);
-                    setPagedTotal(page.totalElements ?? 0);
+                    setPagedTotal(totalElements);
                     setLoadError(null);
                 } else {
                     // R1 P3-3: e.g. a SUPER_ADMIN with no organisation picked
@@ -259,6 +286,11 @@ function TicketsPageInner() {
         } finally {
             if (isCurrent()) { setInitialLoading(false); setTableLoading(false); }
         }
+        // `setPageParam` is intentionally not a dependency: it is a fresh
+        // closure from `useUrlState` on every render (like `setQ` in the
+        // debounce effect above), and including it would refire this fetch
+        // on every render rather than only when a real filter changes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionReady, canPage, debouncedSearch, propertyFilter, buildingFilter, statusFilter, priorityFilter, currentPage, itemsPerPage, t]);
 
     const fetchProperties = useCallback(async () => {
@@ -295,27 +327,27 @@ function TicketsPageInner() {
         fetchTickets();
     }, [fetchTickets]);
 
-    // A filter narrows the page, so the page number it was chosen on is stale.
-    useEffect(() => {
-        setCurrentPage(1);
-    }, [debouncedSearch, propertyFilter, buildingFilter, statusFilter, priorityFilter, itemsPerPage]);
-
     // ── Filtering ───────────────────────────────────────────────────────
 
     // Staff's list is already filtered and paged server-side; a TENANT_USER's
     // and a renter's plain list is narrowed and paged here in the browser.
+    // Note: the page reset on a filter change is explicit at each control
+    // (search's debounce commit, the property/tower/status/priority
+    // handlers, the page-size dropdown) rather than a blanket effect keyed on
+    // these values — that effect would also fire on mount and wipe out a
+    // page restored from the URL (e.g. `?status=OPEN&page=2`).
     const filtered = canPage ? tickets : tickets.filter((t) => {
         if (isStaffUser && myOnly && t.assignedTo !== session?.user?.id) return false;
         if (statusFilter !== "ALL" && t.status !== statusFilter) return false;
         if (priorityFilter !== "ALL" && t.priority !== priorityFilter) return false;
         if (debouncedSearch) {
-            const q = debouncedSearch.toLowerCase();
+            const needle = debouncedSearch.toLowerCase();
             // #20: the reference is what a caller quotes over the phone, so it
             // is searchable, with or without the "TKT-" prefix.
             if (
-                !t.title.toLowerCase().includes(q) &&
-                !(t.description ?? "").toLowerCase().includes(q) &&
-                !(t.reference ?? "").toLowerCase().includes(q)
+                !t.title.toLowerCase().includes(needle) &&
+                !(t.description ?? "").toLowerCase().includes(needle) &&
+                !(t.reference ?? "").toLowerCase().includes(needle)
             )
                 return false;
         }
@@ -439,7 +471,7 @@ function TicketsPageInner() {
                             type="text"
                             placeholder={t("searchPlaceholder")}
                             value={searchInput}
-                            onChange={(e) => setSearchInput(e.target.value)}
+                            onChange={(e) => setDraftSearch(e.target.value)}
                             className="w-full ps-9 pe-3 py-2 border border-border rounded-lg bg-surface text-xs text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                         />
                     </div>
@@ -462,7 +494,7 @@ function TicketsPageInner() {
                                     </option>
                                 ))}
                             </select>
-                            <TowerSelect propertyId={propertyFilter} value={buildingFilter} onChange={setBuildingFilter} testId="ticket-building-filter" onAvailabilityChange={onTowerAvailability} />
+                            <TowerSelect propertyId={propertyFilter} value={buildingFilter} onChange={(id) => { setBuildingFilter(id); setPageParam("1"); }} testId="ticket-building-filter" onAvailabilityChange={onTowerAvailability} />
                         </>
                     )}
 
@@ -493,7 +525,7 @@ function TicketsPageInner() {
                     {/* Status filter */}
                     <select
                         value={statusFilter}
-                        onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+                        onChange={(e) => { setStatusFilter(e.target.value); setPageParam("1"); }}
                         className="border border-border rounded-lg bg-surface px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
                     >
                         <option value="ALL">{t("allStatuses")}</option>
@@ -505,7 +537,7 @@ function TicketsPageInner() {
                     {/* Priority filter */}
                     <select
                         value={priorityFilter}
-                        onChange={(e) => { setPriorityFilter(e.target.value); setCurrentPage(1); }}
+                        onChange={(e) => { setPriorityFilter(e.target.value); setPageParam("1"); }}
                         className="border border-border rounded-lg bg-surface px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
                     >
                         <option value="ALL">{t("allPriorities")}</option>
@@ -616,8 +648,8 @@ function TicketsPageInner() {
                         currentPage={currentPage}
                         totalItems={totalItems}
                         itemsPerPage={itemsPerPage}
-                        onPageChange={setCurrentPage}
-                        onItemsPerPageChange={(n) => { setItemsPerPage(n); setCurrentPage(1); }}
+                        onPageChange={(p) => setPageParam(String(p))}
+                        onItemsPerPageChange={(n) => { setSizeParam(String(n)); setPageParam("1"); }}
                     />
                 </div>
             </div>
