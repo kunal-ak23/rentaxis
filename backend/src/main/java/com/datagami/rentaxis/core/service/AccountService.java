@@ -348,6 +348,9 @@ public class AccountService {
         // Changeset 138 adds them to charts seeded before they existed.
         seed(byCode, "A-02-06", "Inter-property clearing", "مقاصة بين العقارات", AccountType.ASSET, AccountSubType.OTHER_ASSET, "A-02", "Balances a journal that spans properties, one leaf per property", true);
         seed(byCode, "A-02-06-001", "Inter-property clearing – head office", "مقاصة بين العقارات – المكتب الرئيسي", AccountType.ASSET, AccountSubType.OTHER_ASSET, "A-02-06", null, false);
+        // S16-14: the previous owner's position per acquired property (role
+        // ACQUISITION_CLEARING), a leaf created when the acquisition posts. Changeset 153.
+        seed(byCode, "A-02-07", "Due from/(to) vendors on acquisitions", "مستحق من/(إلى) البائعين عن الاستحواذ", AccountType.ASSET, AccountSubType.OTHER_ASSET, "A-02", "The previous owner's position on a building bought after go-live, one leaf per acquired property", true);
 
         seed(byCode, "B", "Liability", "الالتزامات", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, null, "All liabilities", true);
         seed(byCode, "B-01", "Current Liability", "الالتزامات المتداولة", AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY, "B", null, true);

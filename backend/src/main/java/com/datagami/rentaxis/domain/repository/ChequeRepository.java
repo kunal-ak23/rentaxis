@@ -320,6 +320,7 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
                                      com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
           and (cast(:propertyId as java.util.UUID) is null or c.property.id = :propertyId)
           and (:unrestricted = true or c.property.id in :propertyIds)
+          and c.settledBeforeAcquisition = false
         group by c.status
         """)
     List<Object[]> totalsByStatus(@Param("propertyId") UUID propertyId,
@@ -456,6 +457,7 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
                                      com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
           and (cast(:propertyId as java.util.UUID) is null or c.property.id = :propertyId)
           and (:unrestricted = true or c.property.id in :propertyIds)
+          and c.settledBeforeAcquisition = false
         """)
     BigDecimal sumClearedBetween(@Param("from") LocalDate from,
                                  @Param("to") LocalDate to,
@@ -486,6 +488,7 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
           and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
                                      com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
           and (:unrestricted = true or c.property.id in :propertyIds)
+          and c.settledBeforeAcquisition = false
         """)
     List<Object[]> sumClearedBetweenByDueWindow(@Param("from") LocalDate from,
                                                 @Param("to") LocalDate to,
@@ -517,6 +520,7 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
           and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
                                      com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
           and (:unrestricted = true or c.property.id in :propertyIds)
+          and c.settledBeforeAcquisition = false
         group by function('to_char', c.chequeDate, 'YYYY-MM')
         """)
     List<Object[]> aggregateMonthly(@Param("from") LocalDate from,

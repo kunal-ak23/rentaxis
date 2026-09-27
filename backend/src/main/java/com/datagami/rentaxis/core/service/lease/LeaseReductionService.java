@@ -137,6 +137,18 @@ public class LeaseReductionService {
         this.leaseAccessPolicy = leaseAccessPolicy;
     }
 
+    /** S16-14: the previous owner's part of the plans' VAT on an acquired lease (0 otherwise); nothing written. */
+    private BigDecimal vendorVat(Lease lease, List<LinePlan> plans) {
+        if (acquiredVat == null || lease.getAcquiredOn() == null) return BigDecimal.ZERO;
+        BigDecimal onContract = BigDecimal.ZERO;
+        for (LinePlan p : plans) {
+            if (com.datagami.rentaxis.core.service.vat.AcquiredLeaseVat.contractLine(lease, p.line())) {
+                onContract = onContract.add(p.vat());
+            }
+        }
+        return acquiredVat.vendorPart(lease, onContract);
+    }
+
     /** One line's cut, computed. */
     private record LinePlan(LeaseLine line, List<RentSegment> segments, BigDecimal newLineAmount,
                             LocalDate from, LocalDate to, int remainingDays,
@@ -148,6 +160,14 @@ public class LeaseReductionService {
     // ------------------------------------------------------------------
 
     /** What {@link #reduce} would do, with nothing written; problems are listed rather than thrown. */
+    /** S16-14 (#376 P1-1): the previous owner's VAT on an acquired lease. Setter-injected. */
+    private com.datagami.rentaxis.core.service.vat.AcquiredLeaseVat acquiredVat;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setAcquiredVat(com.datagami.rentaxis.core.service.vat.AcquiredLeaseVat acquiredVat) {
+        this.acquiredVat = acquiredVat;
+    }
+
     @Transactional(readOnly = true)
     public ReductionPreviewDTO preview(UUID leaseId, ReduceLeaseRequest r) {
         Lease lease = leaseRepository.findById(leaseId).orElseThrow(() -> new NotFoundException("Lease not found"));
@@ -166,7 +186,7 @@ public class LeaseReductionService {
         BigDecimal taxable = taxableOf(plans);
         VatTaxPointService.ReductionVat rv = vatTaxPoints.previewReduction(leaseId, vat, taxable);
         // R1 P3-3: the credit note the reduction issues needs the TRN; said here as the reduce says it.
-        String trn = leasePostingService.creditNoteTrnProblem(lease, rv.creditNote());
+        String trn = leasePostingService.creditNoteTrnProblem(lease, rv.creditNote().subtract(vendorVat(lease, plans)));
         if (trn != null) problems.add(new ReductionPreviewDTO.Problem("lease.noTrnForCreditNote", trn, Map.of()));
         BigDecimal total = net.add(vat);
 
@@ -251,7 +271,8 @@ public class LeaseReductionService {
         List<String> problems = new ArrayList<>(leasePostingService.periodLockErrors(entryDate, List.of()));
         // R1 P3-3: refused before anything is written — the credit note needs the TRN.
         String trnProblem = leasePostingService.creditNoteTrnProblem(lease,
-                vatTaxPoints.previewReduction(lease.getId(), vat, taxableOf(plans)).creditNote());
+                vatTaxPoints.previewReduction(lease.getId(), vat, taxableOf(plans)).creditNote()
+                        .subtract(vendorVat(lease, plans)));
         if (trnProblem != null) problems.add(trnProblem);
         LocalDate locked = lockedThrough();
         if (locked != null && !e.minusDays(1).isAfter(locked)) {
@@ -293,6 +314,23 @@ public class LeaseReductionService {
             pairs.add(PostingRequest.pair(
                     PostingRequest.dr(AccountRole.OUTPUT_VAT_DEFERRED, rv.fromDeferred()).withNarration(n),
                     LeaseChequeRegistrar.crReceivable(lease, rv.fromDeferred()).withNarration(n)));
+        }
+        if (rv.creditNote().signum() > 0 && acquiredVat != null) {
+            // S16-14 (#376 P1-1): the previous owner's VAT on an acquired lease is refunded
+            // through them — the vendor account, no credit note of ours for that part.
+            // #376 R1-P2-1: by source line — the vendor's share of the VAT on the contract's
+            // own lines being reduced; an addendum line's is ours.
+            BigDecimal vendor = vendorVat(lease, plans).min(rv.creditNote());
+            acquiredVat.take(lease, vendor);
+            if (vendor.signum() > 0) {
+                String n = "VAT the previous owner declared on the reduced charges, refunded through them";
+                pairs.add(PostingRequest.pair(
+                        PostingRequest.dr(AccountRole.ACQUISITION_CLEARING, vendor).withNarration(n),
+                        LeaseChequeRegistrar.crReceivable(lease, vendor).withNarration(n)));
+                BigDecimal ours = rv.creditNote().subtract(vendor);
+                rv = new VatTaxPointService.ReductionVat(rv.fromDeferred(), ours,
+                        rv.creditNoteTaxable().multiply(ours).divide(rv.creditNote(), 2, java.math.RoundingMode.HALF_UP));
+            }
         }
         if (rv.creditNote().signum() > 0) {
             String n = "VAT credited back on the reduced charges";

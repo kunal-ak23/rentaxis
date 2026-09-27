@@ -97,6 +97,14 @@ public class LeaseChequeRegistrar {
      *                      user-facing path passes null.
      */
     public JournalEntry register(Lease lease, Cheque cheque, UUID importBatchId) {
+        return register(lease, cheque, importBatchId, null);
+    }
+
+    /**
+     * S16-14: the same, dated no earlier than {@code notBefore} — an acquisition
+     * cut-over registers a handed-over cheque on the acquisition date at the earliest.
+     */
+    public JournalEntry register(Lease lease, Cheque cheque, UUID importBatchId, java.time.LocalDate notBefore) {
         String missing = missingNumber(cheque);
         if (missing != null) {
             throw new BusinessRuleViolationException(missing);
@@ -106,7 +114,7 @@ public class LeaseChequeRegistrar {
         if (importBatchId == null) {
             numberClash.requireUnique(lease, cheque);
         }
-        return post(lease, cheque, importBatchId);
+        return post(lease, cheque, importBatchId, notBefore);
     }
 
     /**
@@ -119,7 +127,7 @@ public class LeaseChequeRegistrar {
      * only for the rows the import itself named.
      */
     public JournalEntry registerGeneratedByImport(Lease lease, Cheque cheque) {
-        return post(lease, cheque, null);
+        return post(lease, cheque, null, null);
     }
 
     /**
@@ -149,11 +157,13 @@ public class LeaseChequeRegistrar {
         return out;
     }
 
-    private JournalEntry post(Lease lease, Cheque cheque, UUID importBatchId) {
+    private JournalEntry post(Lease lease, Cheque cheque, UUID importBatchId, java.time.LocalDate notBefore) {
         String narration = narrationOf(cheque);
+        java.time.LocalDate on = notBefore != null && (cheque.getPostingDate() == null || cheque.getPostingDate().isBefore(notBefore))
+                ? notBefore : cheque.getPostingDate();
         JournalEntry pdr = postingService.post(PostingRequest.ofPairs(
                 JournalDocType.PDR,
-                cheque.getPostingDate(),
+                on,
                 narration,
                 dimensions(lease, cheque.getId()),
                 JournalSourceType.CHEQUE,

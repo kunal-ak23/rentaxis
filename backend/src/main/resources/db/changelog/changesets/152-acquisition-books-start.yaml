@@ -1,0 +1,21 @@
+# S16-14: an acquisition cut-over — a building bought after go-live brings its running
+# tenancies in with an opening position dated the acquisition date. The batch records
+# that date; each property it brings in records it as its own books start (nothing on
+# the property is dated before it).
+databaseChangeLog:
+  - changeSet:
+      id: 152-acquisition-books-start
+      author: claude
+      changes:
+        - addColumn:
+            tableName: import_batches
+            columns:
+              - column:
+                  name: acquisition_date
+                  type: date
+        - addColumn:
+            tableName: properties
+            columns:
+              - column:
+                  name: books_start_date
+                  type: date

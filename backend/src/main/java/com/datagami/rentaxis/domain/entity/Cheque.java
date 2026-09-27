@@ -183,6 +183,14 @@ public class Cheque extends BaseTenantEntity {
     @Column(name = "imported_bounced_on")
     private LocalDate importedBouncedOn;
 
+    /**
+     * S16-14 (#376 P2-1): banked by the previous owner of an acquired building before
+     * the acquisition — CLEARED on their dates with no bank entry of ours. Never ours
+     * to bounce, return, replace or give a receipt for.
+     */
+    @Column(name = "settled_before_acquisition", nullable = false)
+    private boolean settledBeforeAcquisition;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "failure_reason", length = 30)
     private ChequeFailureReason failureReason;

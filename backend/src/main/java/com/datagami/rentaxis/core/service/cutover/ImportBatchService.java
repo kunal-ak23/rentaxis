@@ -155,7 +155,14 @@ public class ImportBatchService {
      */
     @Transactional
     public ImportBatch createSuccessor(UUID importJobId, String label, UUID repostOf) {
+        return createSuccessor(importJobId, label, repostOf, null);
+    }
+
+    /** The same, keeping the reversed batch's acquisition date (S16-14): a re-post is the same acquisition. */
+    @Transactional
+    public ImportBatch createSuccessor(UUID importJobId, String label, UUID repostOf, java.time.LocalDate acquisitionDate) {
         ImportBatch b = new ImportBatch();
+        b.setAcquisitionDate(acquisitionDate);
         b.setImportJobId(importJobId);
         b.setLabel(label);
         b.setStatus(ImportBatchStatus.DRAFT);
@@ -217,6 +224,23 @@ public class ImportBatchService {
     public List<ImportBatchEntity> createdEntities(UUID batchId) {
         get(batchId);
         return entityLinks.findByBatchIdOrderByEntityTypeAscEntityIdAsc(batchId);
+    }
+
+    /**
+     * S16-14: make a DRAFT batch an <b>acquisition</b> cut-over — buildings bought on
+     * {@code date}, after go-live — or (null) an ordinary one again. Only while it is
+     * DRAFT: a posted batch's journals are dated by it. The rules the date must meet
+     * are asked when the batch is posted, against the books as they are then.
+     */
+    @Transactional
+    public ImportBatch setAcquisitionDate(UUID batchId, java.time.LocalDate date) {
+        ImportBatch b = lockForRun(batchId);
+        if (b.getStatus() != ImportBatchStatus.DRAFT) {
+            throw new BusinessRuleViolationException("Import batch is " + b.getStatus()
+                    + "; the acquisition date can be set only before it is posted.");
+        }
+        b.setAcquisitionDate(date);
+        return batches.save(b);
     }
 
     /** The leases this batch created. Resolves the batch first, so another tenant's id is "not found". */
@@ -445,8 +469,17 @@ public class ImportBatchService {
         // The opening balances are the LAST step (ruling R17). Taking the cut-over off
         // the books underneath a live OB journal would leave that journal netting out a
         // holding that is no longer there. Asked before anything is written.
-        if (fiscal.hasLiveOpeningBalance()) {
+        if (b.getAcquisitionDate() == null && fiscal.hasLiveOpeningBalance()) {
             throw new BusinessRuleViolationException(OPENING_BALANCES_ARE_LIVE);
+        }
+        // S16-14: an acquisition's journals are dated from its acquisition date in the
+        // open books and obey the period lock — so does taking them off.
+        if (b.getAcquisitionDate() != null) {
+            java.time.LocalDate locked = fiscal.get().getBooksLockedThrough();
+            if (locked != null && !b.getAcquisitionDate().isAfter(locked)) {
+                throw new BusinessRuleViolationException("This acquisition is dated " + b.getAcquisitionDate()
+                        + ", inside the period locked through " + locked + ". Re-open the period first.");
+            }
         }
 
         List<UUID> leases = links.findByBatchIdOrderByLeaseIdAsc(batchId).stream()
@@ -496,6 +529,19 @@ public class ImportBatchService {
         }
         for (UUID leaseId : leases) {
             reverter.revertToDraft(leaseId);
+        }
+        if (b.getAcquisitionDate() != null && !leases.isEmpty()) {
+            // #376 P3-2: the acquired properties' own books start goes with the acquisition
+            // (a re-post sets it again). Native, so the tenant is bound explicitly.
+            entityManager.createNativeQuery("""
+                    update properties p set books_start_date = null
+                     where p.tenant_id = :t and p.books_start_date = :a
+                       and p.id in (select u.property_id from leases l join units u on u.id = l.unit_id
+                                     where l.tenant_id = :t and l.id in (:ids))""")
+                    .setParameter("t", TenantContextHolder.getTenantId())
+                    .setParameter("a", b.getAcquisitionDate())
+                    .setParameter("ids", leases)
+                    .executeUpdate();
         }
         log.info("Reversed import batch {}: {} journals, {} leases returned to DRAFT",
                 batchId, toReverse.size(), leases.size());

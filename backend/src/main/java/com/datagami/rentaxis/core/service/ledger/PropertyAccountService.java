@@ -213,6 +213,32 @@ public class PropertyAccountService {
 
     // ---------- per-property ----------
 
+    /**
+     * S16-14: the acquired property's "Due to/from vendor" leaf under A-02-07 — the
+     * ACQUISITION_CLEARING mapping it already has, else a new leaf and its mapping.
+     * Refused when the chart has no A-02-07 group to put it under.
+     */
+    @Transactional
+    public Account acquisitionClearingLeaf(UUID propertyId) {
+        java.util.Optional<PropertyAccountMapping> mapped =
+                mappingRepo.findByPropertyIdAndRole(propertyId, AccountRole.ACQUISITION_CLEARING);
+        if (mapped.isPresent()) return mapped.get().getAccount();
+        Property property = propertyRepo.findById(propertyId).orElseThrow(() -> new NotFoundException("Property not found"));
+        Account parent = accountRepo.findByCode("A-02-07").orElseThrow(() -> new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                "The chart of accounts has no A-02-07 (Due from/(to) vendors on acquisitions) group to hold "
+                        + property.getNameEn() + "'s vendor account; add it, then post the acquisition."));
+        String name = "Due to/from vendor - " + property.getNameEn();
+        Account leaf = accountRepo.findByNameAndParent_Id(name, parent.getId())
+                .orElseGet(() -> accountService.createLeaf(name,
+                        arabicLeafName("مستحق من/إلى البائع", property), parent, propertyId));
+        PropertyAccountMapping m = new PropertyAccountMapping();
+        m.setPropertyId(propertyId);
+        m.setRole(AccountRole.ACQUISITION_CLEARING);
+        m.setAccount(leaf);
+        mappingRepo.save(m);
+        return leaf;
+    }
+
     /** Creates a leaf per enabled template row that has no mapping yet, reusing a same-named leaf under the same parent. */
     @Transactional
     public List<RoleMappingDTO> generateMissing(UUID propertyId) {

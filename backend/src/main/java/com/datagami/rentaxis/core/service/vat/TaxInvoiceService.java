@@ -244,7 +244,9 @@ public class TaxInvoiceService {
                 .toList();
         List<String> refs = new java.util.ArrayList<>((covering.isEmpty() ? all : covering).stream()
                 .map(TaxInvoiceService::cite).toList());
-        if (cutOverContract(lease)) {
+        if (cutOverContract(lease) && lease.getAcquiredOn() == null) {
+            // (#376 P1-1: never for an acquired lease — the previous owner is a different
+            // taxable person, and their VAT is refunded through them, not on this note.)
             // S16-04: the contract's own VAT on a cut-over lease was invoiced by the previous
             // system; the credit note names that invoice's contract too. Only for a true
             // cut-over (its contract journal carries an import batch) — never for a lease of ours.

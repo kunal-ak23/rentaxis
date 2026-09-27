@@ -1,0 +1,59 @@
+# S16-14 (#376 review): an acquisition's own accounts and facts.
+#
+#   - A-02-07 "Due from/(to) vendors on acquisitions" (ASSET group) for every chart with
+#     the A-02 group; each acquired property gets its own leaf and its
+#     ACQUISITION_CLEARING mapping when its acquisition is posted.
+#   - leases.acquired_on / acquired_vat_open: the lease came in with an acquired building
+#     on that day; the Output VAT the previous owner declared on it that has not been
+#     handed back yet (a hand-back goes through the vendor, never our VAT return).
+#   - cheques.settled_before_acquisition: banked by the previous owner before the
+#     acquisition — never ours to bounce, return, replace or receipt.
+databaseChangeLog:
+  - changeSet:
+      id: 153-acquisition-clearing
+      author: claude
+      changes:
+        - sql:
+            comment: A-02-07 group
+            sql: |
+              INSERT INTO accounts (id, tenant_id, code, name, name_en, name_ar, account_type, account_sub_type,
+                                    parent_id, description, is_system, is_group, is_active, display_order, created_at, updated_at)
+              SELECT gen_random_uuid(), g.tenant_id, 'A-02-07', 'Due from/(to) vendors on acquisitions',
+                     'Due from/(to) vendors on acquisitions', 'مستحق من/(إلى) البائعين عن الاستحواذ', 'ASSET', 'OTHER_ASSET', g.id,
+                     'The previous owner''s position on a building bought after go-live, one leaf per acquired property',
+                     TRUE, TRUE, TRUE, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                FROM accounts g
+               WHERE g.code = 'A-02' AND g.is_group
+                 AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.tenant_id = g.tenant_id AND a.code = 'A-02-07');
+        - addColumn:
+            tableName: leases
+            columns:
+              - column:
+                  name: acquired_on
+                  type: date
+              - column:
+                  name: acquired_vat_open
+                  type: numeric(15,2)
+        - addColumn:
+            tableName: cheques
+            columns:
+              - column:
+                  name: settled_before_acquisition
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            tableName: cheques
+            columnName: settled_before_acquisition
+        - dropColumn:
+            tableName: leases
+            columnName: acquired_vat_open
+        - dropColumn:
+            tableName: leases
+            columnName: acquired_on
+        - sql:
+            sql: |
+              DELETE FROM accounts a WHERE a.code = 'A-02-07'
+                AND NOT EXISTS (SELECT 1 FROM accounts c WHERE c.parent_id = a.id);

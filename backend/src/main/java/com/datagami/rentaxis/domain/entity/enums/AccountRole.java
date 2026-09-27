@@ -32,7 +32,13 @@ public enum AccountRole {
     /** F14-38: a renter's unrecoverable balance written off (D-02-004); lines carry the property. */
     BAD_DEBT,
     /** F14-38: money later recovered on a written-off debt, other income (C-02-002); lines carry the property. */
-    BAD_DEBT_RECOVERED;
+    BAD_DEBT_RECOVERED,
+    /**
+     * S16-14: the previous owner's position on a building bought after go-live — due
+     * from (Dr) or to (Cr) the vendor, one leaf per acquired property under A-02-07,
+     * settled against the purchase price by a JV.
+     */
+    ACQUISITION_CLEARING;
 
     /** Roles that are normally per-property (template rows). The rest default to tenant-level mappings. */
     public boolean isPropertyScoped() {

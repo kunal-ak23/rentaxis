@@ -56,6 +56,12 @@ public class ImportBatch extends BaseTenantEntity {
     @Column(name = "reversed_by") private UUID reversedBy;
 
     /**
+     * S16-14: set for an <b>acquisition</b> cut-over — buildings bought after go-live,
+     * brought in with an opening position dated this day. Null for the go-live cut-over.
+     */
+    @Column(name = "acquisition_date") private java.time.LocalDate acquisitionDate;
+
+    /**
      * When the batch and everything it created were deleted, and by whom. The batch
      * row outlives its own contents on purpose: after a discard it is the only
      * record that the import happened at all.

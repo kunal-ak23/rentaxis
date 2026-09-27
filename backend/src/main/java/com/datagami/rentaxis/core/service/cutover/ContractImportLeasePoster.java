@@ -65,16 +65,25 @@ public class ContractImportLeasePoster {
     private final ChequeService chequeService;
     private final RecognitionService recognition;
     private final Clock clock;
+    private final com.datagami.rentaxis.domain.repository.JournalEntryRepository journals;
+    private final com.datagami.rentaxis.core.service.ledger.PostingService posting;
+    private final com.datagami.rentaxis.core.service.ledger.AccountResolver accountResolver;
 
     public ContractImportLeasePoster(LeaseRepository leases, ChequeRepository cheques,
                                      LeasePostingService leasePosting, ChequeService chequeService,
-                                     RecognitionService recognition, Clock clock) {
+                                     RecognitionService recognition, Clock clock,
+                                     com.datagami.rentaxis.domain.repository.JournalEntryRepository journals,
+                                     com.datagami.rentaxis.core.service.ledger.PostingService posting,
+                                     com.datagami.rentaxis.core.service.ledger.AccountResolver accountResolver) {
         this.leases = leases;
         this.cheques = cheques;
         this.leasePosting = leasePosting;
         this.chequeService = chequeService;
         this.recognition = recognition;
         this.clock = clock;
+        this.journals = journals;
+        this.posting = posting;
+        this.accountResolver = accountResolver;
     }
 
     /**
@@ -103,6 +112,166 @@ public class ContractImportLeasePoster {
             onContractVatTiming(leaseId);
             leasePosting.post(leaseId, batchId);
         });
+    }
+
+    /**
+     * S16-14: one running tenancy of a building acquired on {@code acquiredOn}, after
+     * go-live — the acquisition cut-over. Nothing is dated before {@code acquiredOn};
+     * what happened before it is the previous owner's and lands on the acquisition's
+     * vendor account (ACQUISITION_CLEARING):
+     * <ul>
+     *   <li>the contract ({@code TCO}) and its cheques ({@code PDR}s) are posted as a
+     *       cut-over's are, dated {@code acquiredOn} at the earliest;</li>
+     *   <li>an instrument the previous owner banked before {@code acquiredOn} is marked
+     *       cleared on its own dates with no bank entry, its receivable settled against
+     *       the vendor account (ACQUISITION_CLEARING); one banked on or after it is replayed like a cut-over's;
+     *       one the previous owner deposited that had not cleared, or that bounced, before
+     *       the acquisition is refused — the sheet has to say how it ended;</li>
+     *   <li>rent (and a fee earned over the term) earned through the day before is
+     *       released to the vendor account (ACQUISITION_CLEARING), the rest planned per day from
+     *       {@code acquiredOn} ({@link RecognitionService#acquireFrom});</li>
+     *   <li>the contract's Output VAT (declared by the previous owner on the CONTRACT
+     *       model, as a cut-over's) and whatever it put through income or expense at
+     *       signing go back to the vendor account (ACQUISITION_CLEARING) in one journal dated
+     *       {@code acquiredOn}.</li>
+     * </ul>
+     *
+     * @return what was written, or {@code null} when the lease is already posted.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Posted postAcquired(UUID batchId, UUID leaseId, LocalDate acquiredOn) {
+        Lease lease = leases.findByIdScopedToTenant(leaseId).orElse(null);
+        if (lease == null) throw new BusinessRuleViolationException("This lease no longer exists");
+        if (!UNPOSTED.contains(lease.getStatus())) return null;
+        if (lease.getEndDate() != null && lease.getEndDate().isBefore(acquiredOn)) {
+            throw new BusinessRuleViolationException("The tenancy ended on " + lease.getEndDate()
+                    + ", before the acquisition on " + acquiredOn + " — it is not a running tenancy of the building.");
+        }
+        List<Cheque> rows = cheques.findByLease_IdOrderBySeqNoAsc(leaseId);
+        for (Cheque c : rows) {
+            String problem = acquisitionProblem(c, acquiredOn);
+            if (problem != null) throw new BusinessRuleViolationException(problem);
+        }
+        lease.setVatTiming(VatTiming.CONTRACT);
+        // A rent-like fee is earned over the term like the rent, so the previous
+        // owner's part of it is taken out at the acquisition with the rent's.
+        lease.setFeeTiming(com.datagami.rentaxis.domain.entity.enums.FeeTiming.OVER_TERM);
+        leases.saveAndFlush(lease);
+
+        leasePosting.postAcquired(leaseId, batchId, acquiredOn);
+
+        ChequeService.Replay replay = new ChequeService.Replay(batchId);
+        int[] n = new int[3];
+        List<Cheque> settled = new java.util.ArrayList<>();
+        for (Cheque c : cheques.findByLease_IdOrderBySeqNoAsc(leaseId)) {
+            if (bankedBefore(c, acquiredOn)) {
+                chequeService.markSettledBeforeAcquisition(c, c.getImportedDepositedOn(), c.getImportedClearedOn());
+                settled.add(c);
+                n[1]++;
+            } else {
+                replay(c, replay, n);
+            }
+        }
+        Lease posted = leases.findByIdScopedToTenant(leaseId).orElseThrow();
+        UUID vendor = accountResolver.resolve(com.datagami.rentaxis.domain.entity.enums.AccountRole.ACQUISITION_CLEARING,
+                com.datagami.rentaxis.core.service.lease.LeaseChequeRegistrar.dimensions(posted, null).propertyId()).getId();
+        int recognised = recognition.acquireFrom(leaseId, acquiredOn, vendor, batchId);
+        java.math.BigDecimal sellerVat = postOpeningPosition(posted, settled, acquiredOn, vendor, batchId);
+        posted = leases.findByIdScopedToTenant(leaseId).orElseThrow();
+        posted.setAcquiredOn(acquiredOn);
+        posted.setAcquiredVatOpen(sellerVat.setScale(2, java.math.RoundingMode.HALF_UP));
+        posted.setAcquiredVatBase(sellerVat.setScale(2, java.math.RoundingMode.HALF_UP));
+        leases.saveAndFlush(posted);
+        log.debug("Acquired lease {} posted in batch {} as at {}: {} settled with the previous owner",
+                leaseId, batchId, acquiredOn, settled.size());
+        return new Posted(n[0], n[1], n[2], recognised);
+    }
+
+    /** Why this instrument cannot come in with the acquisition, or null. */
+    private static String acquisitionProblem(Cheque c, LocalDate a) {
+        ChequeStatus target = replayTarget(c);
+        if (target == ChequeStatus.DEPOSITED && before(c.getImportedDepositedOn(), a)) {
+            return "Cheque " + label(c) + " was deposited by the previous owner on " + c.getImportedDepositedOn()
+                    + " and had not cleared by the acquisition on " + a
+                    + " — record whether it cleared or bounced before importing the contract.";
+        }
+        if (target == ChequeStatus.BOUNCED && (before(c.getImportedDepositedOn(), a) || before(c.getImportedBouncedOn(), a))) {
+            return "Cheque " + label(c) + " bounced before the acquisition on " + a
+                    + " — settle it with the previous owner and import the contract without it.";
+        }
+        return null;
+    }
+
+    /** Banked by the previous owner: cleared, and presented (or received) before the acquisition. */
+    private static boolean bankedBefore(Cheque c, LocalDate a) {
+        if (replayTarget(c) != ChequeStatus.CLEARED) return false;
+        LocalDate banked = c.getImportedDepositedOn() != null ? c.getImportedDepositedOn() : c.getImportedClearedOn();
+        return before(banked, a);
+    }
+
+    private static boolean before(LocalDate d, LocalDate a) {
+        return d != null && d.isBefore(a);
+    }
+
+    /**
+     * The contract's vendor account (ACQUISITION_CLEARING) at the acquisition, one journal dated {@code a}:
+     * its Output VAT and every income or expense line the contract posted at signing
+     * back to the vendor account (ACQUISITION_CLEARING), and the receivable of each instrument the previous
+     * owner banked settled against it. Nothing when there is nothing to move.
+     *
+     * @return the Output VAT moved — what the previous owner declared on the contract
+     */
+    private java.math.BigDecimal postOpeningPosition(Lease lease, List<Cheque> settled, LocalDate a, UUID opening, UUID batchId) {
+        List<com.datagami.rentaxis.core.service.ledger.PostingRequest.Pair> pairs = new java.util.ArrayList<>();
+        com.datagami.rentaxis.core.service.ledger.PostingRequest.Dimensions dims =
+                com.datagami.rentaxis.core.service.lease.LeaseChequeRegistrar.dimensions(lease, null);
+        UUID propertyId = dims.propertyId();
+        com.datagami.rentaxis.domain.entity.Account outputVat = accountResolver.resolveOrNull(
+                com.datagami.rentaxis.domain.entity.enums.AccountRole.OUTPUT_VAT, propertyId);
+        com.datagami.rentaxis.domain.entity.JournalEntry tco = journals.findById(lease.getPostingJournalId()).orElseThrow();
+        java.math.BigDecimal sellerVat = java.math.BigDecimal.ZERO;
+        for (com.datagami.rentaxis.domain.entity.JournalLine l : tco.getLines()) {
+            com.datagami.rentaxis.domain.entity.Account account = l.getAccount();
+            com.datagami.rentaxis.domain.entity.enums.AccountType type = account.getAccountType();
+            boolean vat = outputVat != null && outputVat.getId().equals(account.getId());
+            if (!vat && type != com.datagami.rentaxis.domain.entity.enums.AccountType.INCOME
+                    && type != com.datagami.rentaxis.domain.entity.enums.AccountType.EXPENSE) continue;
+            boolean credit = l.getCredit() != null && l.getCredit().signum() > 0;
+            java.math.BigDecimal amount = credit ? l.getCredit() : l.getDebit();
+            if (amount == null || amount.signum() == 0) continue;
+            if (vat) sellerVat = sellerVat.add(credit ? amount : amount.negate());
+            String why = vat ? "Output VAT declared by the previous owner" : "Charged at signing, before the acquisition";
+            var line = new com.datagami.rentaxis.core.service.ledger.PostingRequest.Line(
+                    new com.datagami.rentaxis.core.service.ledger.PostingRequest.ById(account.getId()),
+                    credit ? com.datagami.rentaxis.core.service.ledger.PostingRequest.Side.DR
+                            : com.datagami.rentaxis.core.service.ledger.PostingRequest.Side.CR,
+                    amount, null, why);
+            var other = new com.datagami.rentaxis.core.service.ledger.PostingRequest.Line(
+                    new com.datagami.rentaxis.core.service.ledger.PostingRequest.ById(opening),
+                    credit ? com.datagami.rentaxis.core.service.ledger.PostingRequest.Side.CR
+                            : com.datagami.rentaxis.core.service.ledger.PostingRequest.Side.DR,
+                    amount, null, why);
+            pairs.add(credit ? com.datagami.rentaxis.core.service.ledger.PostingRequest.pair(line, other)
+                    : com.datagami.rentaxis.core.service.ledger.PostingRequest.pair(other, line));
+        }
+        for (Cheque c : settled) {
+            String why = "Banked by the previous owner before the acquisition";
+            pairs.add(com.datagami.rentaxis.core.service.ledger.PostingRequest.pair(
+                    new com.datagami.rentaxis.core.service.ledger.PostingRequest.Line(
+                            new com.datagami.rentaxis.core.service.ledger.PostingRequest.ById(opening),
+                            com.datagami.rentaxis.core.service.ledger.PostingRequest.Side.DR, c.getAmount(), null, why),
+                    com.datagami.rentaxis.core.service.ledger.PostingRequest.cr(
+                            com.datagami.rentaxis.domain.entity.enums.AccountRole.PDC_RECEIVABLE, c.getAmount())
+                            .withDims(com.datagami.rentaxis.core.service.lease.LeaseChequeRegistrar.dimensions(lease, c.getId()))
+                            .withNarration(why + " (" + label(c) + ")")));
+        }
+        if (pairs.isEmpty()) return sellerVat;
+        posting.post(com.datagami.rentaxis.core.service.ledger.PostingRequest.ofPairs(
+                com.datagami.rentaxis.domain.entity.enums.JournalDocType.JV, a,
+                "Acquisition vendor account (ACQUISITION_CLEARING) " + a + " – "
+                        + (lease.getExternalContractRef() == null ? lease.getId().toString() : lease.getExternalContractRef()),
+                dims, com.datagami.rentaxis.domain.entity.enums.JournalSourceType.IMPORT, lease.getId(), batchId, pairs));
+        return sellerVat;
     }
 
     /**
@@ -202,49 +371,13 @@ public class ContractImportLeasePoster {
         // post has registered every row and that is all its sheet said.
         List<Cheque> toReplay = batchId == null ? List.of() : cheques.findByLease_IdOrderBySeqNoAsc(leaseId);
         ChequeService.Replay replay = batchId == null ? null : new ChequeService.Replay(batchId);
+        int[] n = new int[3];
         for (Cheque c : toReplay) {
-            switch (replayTarget(c)) {
-                case REGISTERED -> {
-                    // The lease post already registered it and wrote its PDR; the
-                    // spreadsheet says nothing else happened to this instrument.
-                }
-                case DEPOSITED -> {
-                    chequeService.deposit(c.getId(), on(c.getImportedDepositedOn()), replay);
-                    deposited++;
-                }
-                case CLEARED -> {
-                    if (c.getMode() == ChequeMode.PDC) {
-                        // Paper goes to the bank before the bank confirms it. The date
-                        // is the sheet's, or the day it cleared when PACT exported only
-                        // that — ContractImportValidator.depositedOnFor owns that rule
-                        // and wrote this column with it.
-                        chequeService.deposit(c.getId(), on(c.getImportedDepositedOn()), replay);
-                        chequeService.clear(c.getId(), on(c.getImportedClearedOn()), replay);
-                    } else {
-                        // Cash and transfers are received straight to CLEARED and never
-                        // go near a bank; ChequeService.requireDepositable refuses to
-                        // deposit one.
-                        chequeService.receive(c.getId(), on(c.getImportedClearedOn()), replay);
-                    }
-                    cleared++;
-                }
-                case BOUNCED -> {
-                    chequeService.deposit(c.getId(), on(c.getImportedDepositedOn()), replay);
-                    if (c.getImportedClearedOn() != null) {
-                        // A cheque that cleared and was returned weeks later. The
-                        // difference is not cosmetic: bouncing after clearing credits
-                        // the bank the money actually reached, while bouncing before it
-                        // credits the PDC receivable.
-                        chequeService.clear(c.getId(), on(c.getImportedClearedOn()), replay);
-                    }
-                    chequeService.bounce(c.getId(), on(c.getImportedBouncedOn()), replay);
-                    bounced++;
-                }
-                default -> throw new BusinessRuleViolationException(
-                        "Cheque " + label(c) + " asks to be imported as " + c.getImportedStatus()
-                                + ", which the replay cannot reach from a new contract");
-            }
+            replay(c, replay, n);
         }
+        deposited = n[0];
+        cleared = n[1];
+        bounced = n[2];
 
         int recognised = recogniseThrough == null ? 0
                 : recognition.catchUpLease(leaseId, recogniseThrough, batchId).posted();
@@ -252,6 +385,51 @@ public class ContractImportLeasePoster {
         log.debug("Imported lease {} posted in batch {}: {} deposited, {} cleared, {} bounced, {} recognised",
                 leaseId, batchId, deposited, cleared, bounced, recognised);
         return new Posted(deposited, cleared, bounced, recognised);
+    }
+
+    /** One instrument replayed to the status the sheet asked for, on its own dates; counts into {@code n}. */
+    private void replay(Cheque c, ChequeService.Replay replay, int[] n) {
+        switch (replayTarget(c)) {
+            case REGISTERED -> {
+                // The lease post already registered it and wrote its PDR; the
+                // spreadsheet says nothing else happened to this instrument.
+            }
+            case DEPOSITED -> {
+                chequeService.deposit(c.getId(), on(c.getImportedDepositedOn()), replay);
+                n[0]++;
+            }
+            case CLEARED -> {
+                if (c.getMode() == ChequeMode.PDC) {
+                    // Paper goes to the bank before the bank confirms it. The date
+                    // is the sheet's, or the day it cleared when PACT exported only
+                    // that — ContractImportValidator.depositedOnFor owns that rule
+                    // and wrote this column with it.
+                    chequeService.deposit(c.getId(), on(c.getImportedDepositedOn()), replay);
+                    chequeService.clear(c.getId(), on(c.getImportedClearedOn()), replay);
+                } else {
+                    // Cash and transfers are received straight to CLEARED and never
+                    // go near a bank; ChequeService.requireDepositable refuses to
+                    // deposit one.
+                    chequeService.receive(c.getId(), on(c.getImportedClearedOn()), replay);
+                }
+                n[1]++;
+            }
+            case BOUNCED -> {
+                chequeService.deposit(c.getId(), on(c.getImportedDepositedOn()), replay);
+                if (c.getImportedClearedOn() != null) {
+                    // A cheque that cleared and was returned weeks later. The
+                    // difference is not cosmetic: bouncing after clearing credits
+                    // the bank the money actually reached, while bouncing before it
+                    // credits the PDC receivable.
+                    chequeService.clear(c.getId(), on(c.getImportedClearedOn()), replay);
+                }
+                chequeService.bounce(c.getId(), on(c.getImportedBouncedOn()), replay);
+                n[2]++;
+            }
+            default -> throw new BusinessRuleViolationException(
+                    "Cheque " + label(c) + " asks to be imported as " + c.getImportedStatus()
+                            + ", which the replay cannot reach from a new contract");
+        }
     }
 
     /**

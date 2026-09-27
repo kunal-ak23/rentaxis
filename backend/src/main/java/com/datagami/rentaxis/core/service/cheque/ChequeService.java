@@ -680,6 +680,7 @@ public class ChequeService {
         ChequeActionRequest r = request == null ? ChequeActionRequest.empty() : request;
         Cheque cheque = lock(chequeId);
         Lease lease = managedLeaseOf(cheque);
+        requireOurs(cheque, lease);
         requireStatus(cheque, "bounce", ChequeStatus.DEPOSITED, ChequeStatus.CLEARED);
         boolean afterClearing = cheque.getStatus() == ChequeStatus.CLEARED;
         if (afterClearing && cheque.getMode() != ChequeMode.PDC) {
@@ -772,6 +773,7 @@ public class ChequeService {
         // two replacements agreed at the same moment on the same lease would both
         // read the same maximum and both claim the same position.
         lockLease(lease.getId());
+        requireOurs(bounced, lease);
         requireStatus(bounced, "replace", ChequeStatus.BOUNCED);
         requireNotAlreadySettled(lease, bounced);
 
@@ -851,6 +853,7 @@ public class ChequeService {
         Cheque bounced = lock(bouncedChequeId);
         Lease lease = requireCollectable(gatewayLeaseOf(bounced));
         lockLease(lease.getId());
+        requireOurs(bounced, lease);
         requireStatus(bounced, "replace", ChequeStatus.BOUNCED);
         // The renter's own portal offers this door, so it needs the same rule the
         // clerk's does: a bounce the settlement absorbed must not be paid again.
@@ -979,6 +982,7 @@ public class ChequeService {
     public ChequeDTO returnToTenant(UUID chequeId, LocalDate date, String reason) {
         Cheque cheque = lock(chequeId);
         Lease lease = managedLeaseOf(cheque);
+        requireOurs(cheque, lease);
         requireStatus(cheque, "return", ChequeStatus.REGISTERED, ChequeStatus.DEPOSITED);
         requireSettlementUndisturbed(lease, cheque);
 
@@ -1964,6 +1968,39 @@ public class ChequeService {
     /** Where a receipt of this kind lands when the row names no account of its own. */
     private static AccountRole settlementRole(ChequeMode mode) {
         return mode == ChequeMode.CASH ? AccountRole.CASH : AccountRole.BANK;
+    }
+
+    /**
+     * S16-14: an instrument the previous owner of an acquired building banked before
+     * the acquisition — cleared on the dates the sheet gives, with <b>no journal of
+     * its own</b>: the money went to the previous owner, so the vendor account
+     * (not our bank) takes the receivable the PDR raised. Only
+     * {@code ContractImportLeasePoster} calls this, inside the lease's own post.
+     */
+    public void markSettledBeforeAcquisition(Cheque cheque, LocalDate depositedOn, LocalDate clearedOn) {
+        if (cheque.getStatus() != ChequeStatus.REGISTERED) {
+            throw new BusinessRuleViolationException("Cheque #" + cheque.getSeqNo() + " is " + cheque.getStatus()
+                    + "; only a registered instrument can be settled with the previous owner");
+        }
+        cheque.setDepositedAt(depositedOn);
+        cheque.setClearedAt(clearedOn);
+        cheque.setStatus(ChequeStatus.CLEARED);
+        cheque.setSettledBeforeAcquisition(true);
+        cheque.setStatusChangedAt(Instant.now());
+        chequeRepository.save(cheque);
+    }
+
+    /**
+     * S16-14 (#376 P2-1): an instrument the previous owner of an acquired building banked
+     * before the acquisition is not ours — the money reached their bank, not ours. Refused
+     * for bounce, return, replace and receipt; anything about it is settled with the vendor.
+     */
+    public static void requireOurs(Cheque cheque, Lease lease) {
+        if (!cheque.isSettledBeforeAcquisition()) return;
+        LocalDate on = lease == null ? null : lease.getAcquiredOn();
+        throw new BusinessRuleViolationException("Cheque " + label(cheque) + " was banked by the previous owner"
+                + (on == null ? " before the acquisition" : " before " + on)
+                + "; settle it through the acquisition clearing account.");
     }
 
     private static void moveTo(Cheque cheque, ChequeStatus status, String notes) {

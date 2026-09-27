@@ -13,6 +13,11 @@ import java.util.UUID;
 @Repository
 public interface PropertyRepository extends JpaRepository<Property, UUID> {
 
+    /** S16-14: {@code [id, nameEn, booksStartDate]} of each of {@code ids} — an acquired property's own books start. */
+    @org.springframework.data.jpa.repository.Query(
+            "select p.id, p.nameEn, p.booksStartDate from Property p where p.id in :ids")
+    java.util.List<Object[]> booksStartOf(@org.springframework.data.repository.query.Param("ids") java.util.Collection<UUID> ids);
+
     /**
      * How many properties the caller may see — the dashboard's first tile.
      *

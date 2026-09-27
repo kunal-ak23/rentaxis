@@ -94,6 +94,24 @@ public class ContractImportPostService {
         this.ownTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
+    // S16-14: what an acquisition cut-over needs. Setter-injected, so the constructor
+    // every other caller knows is unchanged.
+    private java.time.Clock clock = java.time.Clock.systemDefaultZone();
+    private com.datagami.rentaxis.core.service.ledger.PropertyAccountService propertyAccounts;
+    private com.datagami.rentaxis.domain.repository.PropertyRepository properties;
+    private org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate jdbc;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setAcquisitionSupport(java.time.Clock clock,
+                               com.datagami.rentaxis.core.service.ledger.PropertyAccountService propertyAccounts,
+                               com.datagami.rentaxis.domain.repository.PropertyRepository properties,
+                               org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate jdbc) {
+        this.clock = clock;
+        this.propertyAccounts = propertyAccounts;
+        this.properties = properties;
+        this.jdbc = jdbc;
+    }
+
     // ------------------------------------------------------------------
     // the result
     // ------------------------------------------------------------------
@@ -168,6 +186,10 @@ public class ContractImportPostService {
 
     private BulkPostResult runUnderBatchLock(UUID batchId, Consumer<Progress> progress) {
         ImportBatch batch = batches.lockForRun(batchId);
+        // S16-14: an acquisition batch brings in buildings bought after go-live with an
+        // opening position of their own, dated the acquisition date; it never reads or
+        // moves the organisation's opening balances, so the rule below is not its.
+        LocalDate acquiredOn = batch.getAcquisitionDate();
         // The opening balances are the LAST step of the cut-over (review C2, ruling
         // R17; spec §10.3 "Amendment 2026-09-22"). The OB journal posts PACT's figure
         // LESS what step 1 left on the books, so putting more of step 1 on the books
@@ -175,7 +197,7 @@ public class ContractImportPostService {
         // leaves the books holding neither PACT's figure nor ours until somebody
         // notices the grid say "Replace". Refused up front, under the batch lock,
         // before one contract has been touched.
-        if (fiscal.hasLiveOpeningBalance()) {
+        if (acquiredOn == null && fiscal.hasLiveOpeningBalance()) {
             throw new BusinessRuleViolationException(ImportBatchService.OPENING_BALANCES_ARE_LIVE);
         }
         UUID repostOf = null;
@@ -202,6 +224,7 @@ public class ContractImportPostService {
         LocalDate recogniseThrough = booksStart.minusDays(1);
 
         List<Plan> plan = planOf(target);
+        if (acquiredOn != null) requireAcquirable(plan, acquiredOn, booksStart, target, repostOf);
         List<LeaseOutcome> outcomes = new ArrayList<>(plan.size());
         List<ImportErrorDTO> failures = new ArrayList<>();
         int posted = 0;
@@ -215,7 +238,9 @@ public class ContractImportPostService {
 
         for (Plan row : plan) {
             try {
-                ContractImportLeasePoster.Posted done = leasePoster.postOne(target, row.leaseId(), recogniseThrough);
+                ContractImportLeasePoster.Posted done = acquiredOn == null
+                        ? leasePoster.postOne(target, row.leaseId(), recogniseThrough)
+                        : leasePoster.postAcquired(target, row.leaseId(), acquiredOn);
                 if (done == null) {
                     skipped++;
                     outcomes.add(new LeaseOutcome(row.leaseId(), row.ref(),
@@ -275,6 +300,73 @@ public class ContractImportPostService {
 
         return new BulkPostResult(target, repostOf, finalStatus, posted, skipped, failures.size(),
                 deposited, cleared, bounced, recognised, journalsPosted, withCounts, failures);
+    }
+
+    /**
+     * S16-14: the acquisition's own rules, asked of the whole batch before one contract
+     * is touched — and, when they hold, each property's books start set to the
+     * acquisition date (committed on its own, so the posts that follow see it).
+     *
+     * <ul>
+     *   <li>the date is on or after the organisation's books start, after the period
+     *       lock (the lock applies per the acquisition date — nothing of it is dated
+     *       inside a closed period) and not in the future;</li>
+     *   <li>every property the batch's contracts stand on has <b>no postings</b> but
+     *       this batch's own (or the reversed batch it re-posts): an acquisition brings
+     *       in a building new to the books, never one whose history is already here;</li>
+     *   <li>no property already has a different books start (an earlier acquisition
+     *       of it that posted nothing, say).</li>
+     * </ul>
+     *
+     * <p>Each property gets its ACQUISITION_CLEARING leaf ("Due to/from vendor —
+     * &lt;property&gt;", #376 P2-2): the previous owner's position is a balance with
+     * the vendor, settled against the purchase price by a JV — not equity.</p>
+     */
+    private void requireAcquirable(List<Plan> plan, LocalDate a, LocalDate booksStart, UUID target, UUID repostOf) {
+        if (a.isBefore(booksStart)) {
+            throw new BusinessRuleViolationException("The acquisition date " + a + " is before the books start on "
+                    + booksStart + " — a building held at go-live belongs in the go-live cut-over.");
+        }
+        LocalDate locked = fiscal.get().getBooksLockedThrough();
+        if (locked != null && !a.isAfter(locked)) {
+            throw new BusinessRuleViolationException("Cannot post an acquisition on " + a + ": books are locked through "
+                    + locked + ". Re-open the period first.");
+        }
+        if (a.isAfter(LocalDate.now(clock))) {
+            throw new BusinessRuleViolationException("The acquisition date " + a + " is in the future.");
+        }
+        java.util.Set<UUID> propertyIds = new java.util.LinkedHashSet<>();
+        for (Plan row : plan) {
+            leases.findByIdScopedToTenant(row.leaseId())
+                    .map(Lease::getUnit).map(com.datagami.rentaxis.domain.entity.Unit::getProperty)
+                    .ifPresent(p -> propertyIds.add(p.getId()));
+        }
+        if (propertyIds.isEmpty()) return;
+        for (com.datagami.rentaxis.domain.entity.Property p : properties.findAllById(propertyIds)) {
+            if (p.getBooksStartDate() != null && !p.getBooksStartDate().equals(a)) {
+                throw new BusinessRuleViolationException("The books of " + p.getNameEn() + " already start on "
+                        + p.getBooksStartDate() + "; an acquisition on " + a + " cannot move them.");
+            }
+        }
+        List<String> held = jdbc.queryForList("""
+                select distinct p.name_en from journal_lines l
+                  join journal_entries e on e.id = l.journal_entry_id and e.tenant_id = :t
+                  join properties p on p.id = l.property_id and p.tenant_id = :t
+                 where l.tenant_id = :t and l.property_id in (:ids)
+                   and (e.import_batch_id is null or e.import_batch_id not in (:mine))
+                 order by 1""", new org.springframework.jdbc.core.namedparam.MapSqlParameterSource()
+                .addValue("t", com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId())
+                .addValue("ids", propertyIds)
+                .addValue("mine", repostOf == null ? List.of(target) : List.of(target, repostOf)), String.class);
+        if (!held.isEmpty()) {
+            throw new BusinessRuleViolationException("An acquisition brings in only buildings with no postings yet; "
+                    + String.join(", ", held) + " already has postings.");
+        }
+        ownTx.executeWithoutResult(s -> properties.findAllById(propertyIds).forEach(p -> {
+            p.setBooksStartDate(a);
+            properties.save(p);
+            propertyAccounts.acquisitionClearingLeaf(p.getId());
+        }));
     }
 
     /** One contract of the batch, and the reference a failure has to name. */
@@ -346,7 +438,7 @@ public class ContractImportPostService {
                         reversedId, existing.getId());
                 return existing;
             }
-            ImportBatch successor = batches.createSuccessor(jobId, label, reversedId);
+            ImportBatch successor = batches.createSuccessor(jobId, label, reversedId, reversed.getAcquisitionDate());
             for (UUID leaseId : leaseIds) {
                 batches.linkLease(successor.getId(), leaseId);
             }

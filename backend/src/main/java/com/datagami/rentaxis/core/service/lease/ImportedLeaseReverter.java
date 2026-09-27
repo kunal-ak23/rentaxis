@@ -139,6 +139,7 @@ public class ImportedLeaseReverter implements LeaseReverter {
             c.setStatusChangedAt(null);
             c.setReplaces(null);
             c.setReplacedBy(null);
+            c.setSettledBeforeAcquisition(false);   // S16-14: the acquisition's own mark
             // importedStatus and the three imported dates deliberately STAY: they are
             // what the spreadsheet asked for, not what the register did, and a re-post
             // has to replay them onto the same days. That is the whole reason Task 10
@@ -170,6 +171,10 @@ public class ImportedLeaseReverter implements LeaseReverter {
         lease.setTerminatedOn(null);
         lease.setTerminationJournalId(null);
         lease.setTerminationNotes(null);
+        // S16-14: what an acquisition post recorded; a re-post records it again.
+        lease.setAcquiredOn(null);
+        lease.setAcquiredVatOpen(null);
+        lease.setAcquiredVatBase(null);
         // Flushed before the unit is asked who lives in it: that query auto-flushes
         // anyway, and doing it here means the answer cannot depend on ordering.
         leases.saveAndFlush(lease);

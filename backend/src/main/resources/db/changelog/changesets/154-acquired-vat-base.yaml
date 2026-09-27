@@ -1,0 +1,19 @@
+# S16-14 (#376 R1-P2-1): the previous owner's share of an acquired contract's VAT, so a
+# later hand-back is split by source line and pro rata to the unearned part — the
+# vendor's VAT on the contract's lines at acquired_vat_base / (their current VAT), ours
+# for the rest (addenda, and what an amendment added).
+databaseChangeLog:
+  - changeSet:
+      id: 154-acquired-vat-base
+      author: claude
+      changes:
+        - addColumn:
+            tableName: leases
+            columns:
+              - column:
+                  name: acquired_vat_base
+                  type: numeric(15,2)
+      rollback:
+        - dropColumn:
+            tableName: leases
+            columnName: acquired_vat_base

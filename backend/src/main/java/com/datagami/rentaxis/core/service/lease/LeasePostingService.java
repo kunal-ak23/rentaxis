@@ -319,14 +319,36 @@ public class LeasePostingService {
                 importGeneratedRows == null ? Set.of() : Set.copyOf(importGeneratedRows));
     }
 
+    /**
+     * S16-14: a running tenancy of a building acquired after go-live, posted by an
+     * acquisition cut-over batch. The cut-over post in every respect except the dates:
+     * the {@code TCO} and every {@code PDR} are dated no earlier than
+     * {@code acquiredOn} — nothing of the acquired property's is dated before its own
+     * books start — and its fees keep the lease's own timing (a rent-like fee is
+     * earned over the term, the previous owner's part of it taken out at the
+     * acquisition like the rent's).
+     */
+    @Transactional
+    public PostLeaseResponse postAcquired(UUID leaseId, UUID importBatchId, LocalDate acquiredOn) {
+        if (importBatchId == null || acquiredOn == null) {
+            throw new IllegalArgumentException("An acquisition post needs its batch and its acquisition date");
+        }
+        return post(leaseId, importBatchId, Preconditions.FOR_IMPORT_POST, false, Set.of(), acquiredOn);
+    }
+
     private PostLeaseResponse post(UUID leaseId, UUID importBatchId, Preconditions checks, boolean announce) {
         return post(leaseId, importBatchId, checks, announce, Set.of());
     }
 
     private PostLeaseResponse post(UUID leaseId, UUID importBatchId, Preconditions checks, boolean announce,
                                    Set<UUID> numberExempt) {
+        return post(leaseId, importBatchId, checks, announce, numberExempt, null);
+    }
+
+    private PostLeaseResponse post(UUID leaseId, UUID importBatchId, Preconditions checks, boolean announce,
+                                   Set<UUID> numberExempt, LocalDate notBefore) {
         Lease lease = lockLease(leaseId);
-        if (checks == Preconditions.FOR_IMPORT_POST && lease.getFeeTiming() != FeeTiming.AT_POSTING) {
+        if (checks == Preconditions.FOR_IMPORT_POST && notBefore == null && lease.getFeeTiming() != FeeTiming.AT_POSTING) {
             // F14-18: a cut-over replays PACT, which booked every fee as income on the
             // contract date. ContractImportLeasePoster sets this too; it is repeated
             // here so no cut-over path can defer a fee.
@@ -364,9 +386,10 @@ public class LeasePostingService {
         PostingPlan plan = validate(lease, lines, cheques, checks, numberExempt, carried);
         plan.throwIfRefused(propertyIdOf(lease));
 
-        JournalEntry tco = postTco(lease, plan.pairs(), lease.getContractDate(), contractNarration(lease),
-                importBatchId);
-        registerCheques(lease, cheques, importBatchId, numberExempt);
+        LocalDate contractOn = notBefore != null && lease.getContractDate().isBefore(notBefore)
+                ? notBefore : lease.getContractDate();
+        JournalEntry tco = postTco(lease, plan.pairs(), contractOn, contractNarration(lease), importBatchId);
+        registerCheques(lease, cheques, importBatchId, numberExempt, notBefore);
         // F14-11: the TCO put CONTRACT-timing VAT on the books, so it is the tax point
         // and its tax invoice is issued now. Never for a cut-over contract.
         if (importBatchId == null && checks != Preconditions.FOR_IMPORT_POST) {
@@ -617,6 +640,8 @@ public class LeasePostingService {
         // lease the difference is documented on its own tax invoice / credit note.
         List<LeaseLine> linesBefore = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(leaseId);
         BigDecimal vatBefore = InstalmentVat.contractVat(linesBefore);
+        BigDecimal vendorShareBefore = acquiredVat == null ? BigDecimal.ZERO : acquiredVat.vendorShare(lease);
+        BigDecimal contractVatBefore = contractLinesVat(lease, linesBefore);
         BigDecimal taxableBefore = InstalmentVat.contractTaxable(linesBefore);
 
         leaseService.applyAmendedLines(lease, newLines);
@@ -635,8 +660,15 @@ public class LeasePostingService {
         // post, so the status rule is checked above and skipped here.
         PostingPlan plan = validate(lease, lines, cheques, Preconditions.FOR_AMEND);
         plan.throwIfRefused(propertyIdOf(lease));
+        // S16-14 (#376 P1-1): VAT the amendment takes off an acquired lease is the previous
+        // owner's to refund, as far as it is theirs — no document of ours for that part.
+        // #376 R1-P2-1: the drop on the contract's own lines, times the vendor's share of
+        // those lines' VAT before the amendment; an addendum line's VAT is ours.
+        BigDecimal vatDrop = contractVatBefore.subtract(contractLinesVat(lease, lines));
+        BigDecimal vendorVat = lease.getVatTiming() == VatTiming.CONTRACT && acquiredVat != null
+                ? acquiredVat.vendorPart(lease, vatDrop, vendorShareBefore) : BigDecimal.ZERO;
         if (lease.getVatTiming() == VatTiming.CONTRACT
-                && InstalmentVat.contractVat(lines).compareTo(vatBefore) != 0 && !hasSupplierTrn(lease)) {
+                && InstalmentVat.contractVat(lines).compareTo(vatBefore.subtract(vendorVat)) != 0 && !hasSupplierTrn(lease)) {
             throw new BusinessRuleViolationException("This amendment changes the contract's VAT, so it issues a tax"
                     + " invoice or credit note, and the organisation has no TRN. Add the TRN to the organisation's"
                     + " details first.");
@@ -677,6 +709,18 @@ public class LeasePostingService {
         // invoice of ours (a cut-over, or a lease posted before the rule) gets the
         // difference as an AMENDMENT document dated today.
         vatTaxPoints.recordContractVat(lease, reversedOn, tco.getId(), false);
+        if (vendorVat.signum() > 0) {
+            acquiredVat.takeByAmendment(lease, vendorVat);
+            String n = "VAT the previous owner declared, taken off by the amendment and refunded through them";
+            postingService.post(PostingRequest.ofPairs(JournalDocType.JV, reversedOn, n,
+                    LeaseChequeRegistrar.dimensions(lease, null), JournalSourceType.LEASE, lease.getId(), null,
+                    List.of(PostingRequest.pair(
+                            PostingRequest.dr(AccountRole.ACQUISITION_CLEARING, vendorVat).withNarration(n),
+                            PostingRequest.cr(AccountRole.OUTPUT_VAT, vendorVat).withNarration(n)))));
+            taxableBefore = vatBefore.signum() == 0 ? taxableBefore
+                    : taxableBefore.subtract(taxableBefore.multiply(vendorVat).divide(vatBefore, 2, java.math.RoundingMode.HALF_UP));
+            vatBefore = vatBefore.subtract(vendorVat);
+        }
         vatTaxPoints.recordAmendmentVat(lease, reversedOn, tco.getId(), vatBefore, taxableBefore);
 
         lease.setPostingJournalId(tco.getId());
@@ -1279,7 +1323,28 @@ public class LeasePostingService {
     static final String NO_TRN_FOR_CREDIT_NOTE = "Ending or reducing this contract hands VAT back on a tax credit note,"
             + " and the organisation has no TRN. Add the TRN to the organisation's details first.";
 
-    /** Null when a credit note for {@code vat} can be issued on this lease; else {@link #NO_TRN_FOR_CREDIT_NOTE}. */
+    /** S16-14 (#376 P1-1): the previous owner's VAT on an acquired lease. Setter-injected. */
+    private com.datagami.rentaxis.core.service.vat.AcquiredLeaseVat acquiredVat;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setAcquiredVat(com.datagami.rentaxis.core.service.vat.AcquiredLeaseVat acquiredVat) {
+        this.acquiredVat = acquiredVat;
+    }
+
+    /** The VAT the lease's contract lines (not an addendum's) charge. */
+    private static BigDecimal contractLinesVat(Lease lease, List<LeaseLine> lines) {
+        BigDecimal v = BigDecimal.ZERO;
+        for (LeaseLine l : lines) {
+            if (com.datagami.rentaxis.core.service.vat.AcquiredLeaseVat.contractLine(lease, l)) v = v.add(LeaseVat.vatOf(l));
+        }
+        return v;
+    }
+
+    /**
+     * Null when a credit note for {@code vat} can be issued on this lease; else {@link #NO_TRN_FOR_CREDIT_NOTE}.
+     * S16-14: callers pass our part only — the vendor's part of an acquired lease's VAT
+     * carries no credit note of ours ({@code AcquiredLeaseVat}).
+     */
     String creditNoteTrnProblem(Lease lease, BigDecimal vat) {
         return vat != null && vat.signum() > 0 && !hasSupplierTrn(lease) ? NO_TRN_FOR_CREDIT_NOTE : null;
     }
@@ -1399,12 +1464,13 @@ public class LeasePostingService {
      * dimensions, same date rule, same receivable override — and two copies of that
      * would eventually differ on exactly the detail nobody re-reads.</p>
      */
-    private void registerCheques(Lease lease, List<Cheque> cheques, UUID importBatchId, Set<UUID> numberExempt) {
+    private void registerCheques(Lease lease, List<Cheque> cheques, UUID importBatchId, Set<UUID> numberExempt,
+                                 LocalDate notBefore) {
         for (Cheque c : cheques) {
             if (numberExempt.contains(c.getId())) {
                 chequeRegistrar.registerGeneratedByImport(lease, c);
             } else {
-                chequeRegistrar.register(lease, c, importBatchId);
+                chequeRegistrar.register(lease, c, importBatchId, notBefore);
             }
         }
     }

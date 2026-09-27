@@ -50,6 +50,14 @@ public class PostingService {
         this.resolver = resolver; this.numbers = numbers; this.fiscal = fiscal; this.bankLock = bankLock;
     }
 
+    /** S16-14: a property's own books start. Setter-injected, like the year closes. */
+    private com.datagami.rentaxis.domain.repository.PropertyRepository properties;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setProperties(com.datagami.rentaxis.domain.repository.PropertyRepository properties) {
+        this.properties = properties;
+    }
+
     /** Setter-injected so hand-built instances in unit tests need no new argument. */
     private com.datagami.rentaxis.domain.repository.FiscalYearCloseRepository yearCloses;
 
@@ -139,6 +147,7 @@ public class PostingService {
             throw new BusinessRuleViolationException("Journal entry is not balanced: debit " + dr + " vs credit " + cr);
         }
         requireBalancedPerProperty(r, e.getLines());
+        requireOnOrAfterPropertyBooksStart(r.entryDate(), e.getLines());
         // Finance-ops spec §4: the bank lock, no doc-type exemptions. Before the
         // entry number, so a posting waiting on a finalize (FOR SHARE against its
         // FOR UPDATE) never holds the number sequence while it waits.
@@ -150,6 +159,58 @@ public class PostingService {
         e.setEntryNumber(numbers.next(r.docType(), r.entryDate()));
         linkContraAccounts(pairs);
         return entries.save(e);
+    }
+
+    /**
+     * S16-14: a property brought in by an acquisition cut-over has its own books
+     * start — the acquisition date. Its history before that belongs to the previous
+     * owner and is summed up in the acquisition's opening position, so nothing on the
+     * property may be dated before it, whatever posts it (an import batch included).
+     */
+    private void requireOnOrAfterPropertyBooksStart(LocalDate date, List<JournalLine> posted) {
+        if (properties == null || date == null) return;
+        java.util.Set<UUID> ids = new java.util.HashSet<>();
+        for (JournalLine l : posted) if (l.getPropertyId() != null) ids.add(l.getPropertyId());
+        if (ids.isEmpty()) return;
+        // #376 P3-3: read once per property per transaction — a bulk post or a month-end
+        // run writes thousands of entries on the same few properties.
+        Map<UUID, Object[]> known = BooksStartCache.current();
+        java.util.List<UUID> missing = ids.stream().filter(id -> !known.containsKey(id)).toList();
+        if (!missing.isEmpty()) {
+            for (Object[] row : properties.booksStartOf(missing)) known.put((UUID) row[0], row);
+            for (UUID id : missing) known.putIfAbsent(id, new Object[]{id, null, null});
+        }
+        for (UUID id : ids) {
+            Object[] row = known.get(id);
+            LocalDate start = (LocalDate) row[2];
+            if (start != null && date.isBefore(start)) {
+                throw new BusinessRuleViolationException("Cannot post on " + date + ": the books of " + row[1]
+                        + " start on " + start + ", the day it was acquired.");
+            }
+        }
+    }
+
+    /**
+     * The properties' books starts read in the current transaction, held by a
+     * synchronization of that transaction — so a suspended outer transaction and a
+     * REQUIRES_NEW inner one never share it, and it goes when the transaction does.
+     * Outside a transaction, a fresh map per call.
+     */
+    private static final class BooksStartCache
+            implements org.springframework.transaction.support.TransactionSynchronization {
+        private final Map<UUID, Object[]> byProperty = new HashMap<>();
+
+        static Map<UUID, Object[]> current() {
+            if (!org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+                return new HashMap<>();
+            }
+            for (var s : org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations()) {
+                if (s instanceof BooksStartCache c) return c.byProperty;
+            }
+            BooksStartCache c = new BooksStartCache();
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(c);
+            return c.byProperty;
+        }
     }
 
     /**
