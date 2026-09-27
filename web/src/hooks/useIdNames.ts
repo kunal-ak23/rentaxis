@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useLocale } from "next-intl";
-import { renterCache, renterLabel, unitCache } from "@/components/pickers/caches";
+import { renterCache, renterRowLabel, unitCache } from "@/components/pickers/caches";
 
 export type IdNameKind = "units" | "renters";
 
@@ -21,8 +21,8 @@ export type IdNames = {
  * Shares the pickers' page-wide cache: an id already seen (by a picker's search,
  * or another mount of this hook) is never asked for again, concurrent mounts
  * share in-flight requests, and `lookupApi` chunks a long list to the server's
- * 200-id cap. Units print their unit number; renters print what `RenterPicker`
- * prints ({@link renterLabel}).
+ * 200-id cap. Units print their unit number; renters print their row label
+ * ({@link renterRowLabel}: English under /en, not the picker's "English (Arabic)").
  */
 export function useIdNames(kind: IdNameKind, ids: (string | null | undefined)[]): IdNames {
     const locale = useLocale();
@@ -49,7 +49,7 @@ export function useIdNames(kind: IdNameKind, ids: (string | null | undefined)[])
         if (!id) return "";
         if (kind === "units") return unitCache.get(id)?.unitNumber ?? "";
         const r = renterCache.get(id);
-        return r ? renterLabel(r, locale) : "";
+        return r ? renterRowLabel(r, locale) : "";
     };
 
     return { name, loading: unique.some((id) => cache.isPending(id)) };

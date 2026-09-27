@@ -84,9 +84,9 @@ describe("useIdNames", () => {
         expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    it("labels renters like RenterPicker: 'English (Arabic)' under en, Arabic under ar", async () => {
+    it("labels renter rows as the ledger always has: English under en (never 'English (Arabic)'), Arabic under ar", async () => {
         const en = renderHook(() => useIdNames("renters", ["d1", "d2-noar"]), { wrapper: wrapper("en") });
-        await waitFor(() => expect(en.result.current.name("d1")).toBe("EN-d1 (AR-d1)"));
+        await waitFor(() => expect(en.result.current.name("d1")).toBe("EN-d1"));
         expect(en.result.current.name("d2-noar")).toBe("EN-d2-noar");
 
         const ar = renderHook(() => useIdNames("renters", ["d1", "d2-noar"]), { wrapper: wrapper("ar") });

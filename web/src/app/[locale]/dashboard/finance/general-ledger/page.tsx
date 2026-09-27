@@ -76,7 +76,7 @@ function GeneralLedger() {
     const [loadError, setLoadError] = useState<string | null>(null);
 
     const towers = useNameLookup("properties");
-    // The CSV names the same rows the table shows; the table's lookups have already cached them.
+    // The CSV export relies on these: they keep the rows' names fetched even if the table stops asking (no extra fetch while it does).
     const ledgerRows = ledgers.flatMap(l => l.rows);
     const units = useIdNames("units", ledgerRows.map(r => r.unitId));
     const renters = useIdNames("renters", ledgerRows.map(r => r.renterId));

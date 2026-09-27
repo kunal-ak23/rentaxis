@@ -188,9 +188,30 @@ describe("AsyncSearchSelect", () => {
         });
         fireEvent.keyDown(searchBox(), { key: "Enter" });
 
-        expect(onChange).not.toHaveBeenCalledWith("x2", expect.anything());
-        expect(onChange).not.toHaveBeenCalledWith("b", expect.anything());
-        expect(onChange.mock.calls.every(([v]) => v === "")).toBe(true);
+        // Nothing is highlighted, not even the clear row: Enter neither picks nor clears.
+        expect(onChange).not.toHaveBeenCalled();
+        expect(searchBox()).toBeInTheDocument();
+        expect(screen.getAllByRole("option").filter((o) => o.getAttribute("aria-selected") === "true")).toHaveLength(0);
+
+        // Once the user moves, Enter picks the row they moved to: the first of the new rows.
+        fireEvent.keyDown(searchBox(), { key: "ArrowDown" });
+        fireEvent.keyDown(searchBox(), { key: "Enter" });
+        expect(onChange).toHaveBeenCalledTimes(1);
+        expect(onChange).toHaveBeenCalledWith("x1", { value: "x1", label: "Xray" });
+    });
+
+    it("Enter right after the first results land keeps the current value; ArrowUp reaches the clear row", async () => {
+        const search = vi.fn(async () => [{ value: "a", label: "Alpha" }]);
+        const { onChange } = renderSelect({ search, value: "a", selectedLabel: "Alpha", searchPlaceholder: "Find" });
+
+        fireEvent.click(trigger());
+        await screen.findAllByText("Alpha");
+        fireEvent.keyDown(searchBox(), { key: "Enter" });
+        expect(onChange).not.toHaveBeenCalled();
+
+        fireEvent.keyDown(searchBox(), { key: "ArrowUp" });
+        fireEvent.keyDown(searchBox(), { key: "Enter" });
+        expect(onChange).toHaveBeenCalledWith("", null);
     });
 
 });

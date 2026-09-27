@@ -13,6 +13,8 @@ import { useEffect, useState } from "react";
  */
 export function createLookupCache<T extends { id: string }>(fetchNames: (ids: string[]) => Promise<T[]>) {
     const seen = new Map<string, T>();
+    // Ids a names call answered without. Lasts until the page reloads; a picker
+    // search that later returns the id clears it (see `remember`).
     const missing = new Set<string>();
     const failed = new Set<string>();
     const inFlight = new Map<string, Promise<void>>();

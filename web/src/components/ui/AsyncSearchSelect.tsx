@@ -24,6 +24,14 @@ type Props = {
 
 const DEBOUNCE_MS = 250;
 
+/**
+ * Nothing highlighted, not even the clear row (-1): Enter does nothing. Set
+ * whenever the rows change under the user (open, typing, a response landing),
+ * so Enter can never act on a row the user did not move to. The first arrow key
+ * moves as if from -1: ArrowDown to the first row, ArrowUp to the clear row.
+ */
+const NONE = -2;
+
 type Status = "idle" | "loading" | "done" | "error";
 
 /**
@@ -51,7 +59,7 @@ export function AsyncSearchSelect({
     const [query, setQuery] = useState("");
     const [options, setOptions] = useState<AsyncOption[]>([]);
     const [status, setStatus] = useState<Status>("idle");
-    const [highlightedIndex, setHighlightedIndex] = useState(-1);
+    const [highlightedIndex, setHighlightedIndex] = useState(NONE);
     // The option last picked here, so the trigger keeps its label before the parent supplies one.
     const [picked, setPicked] = useState<AsyncOption | null>(null);
     const triggerRef = useRef<HTMLButtonElement>(null);
@@ -78,13 +86,13 @@ export function AsyncSearchSelect({
                     if (seq !== seqRef.current) return;
                     setOptions(rows);
                     // The old index points at a different row (or none) in the new list.
-                    setHighlightedIndex(-1);
+                    setHighlightedIndex(NONE);
                     setStatus("done");
                 },
                 () => {
                     if (seq !== seqRef.current) return;
                     setOptions([]);
-                    setHighlightedIndex(-1);
+                    setHighlightedIndex(NONE);
                     setStatus("error");
                 },
             );
@@ -94,6 +102,7 @@ export function AsyncSearchSelect({
 
     const openPanel = () => {
         setOpen(true);
+        setHighlightedIndex(NONE);
         run("");
     };
 
@@ -102,14 +111,14 @@ export function AsyncSearchSelect({
         seqRef.current++; // an in-flight response must not repopulate a closed panel
         setOpen(false);
         setQuery("");
-        setHighlightedIndex(-1);
+        setHighlightedIndex(NONE);
         setStatus("idle");
         if (returnFocus) triggerRef.current?.focus();
     };
 
     const onQueryChange = (q: string) => {
         setQuery(q);
-        setHighlightedIndex(-1);
+        setHighlightedIndex(NONE);
         clearTimer();
         timerRef.current = setTimeout(() => {
             timerRef.current = null;
@@ -165,7 +174,15 @@ export function AsyncSearchSelect({
                     query={query}
                     onQueryChange={onQueryChange}
                     onKeyDown={(e) =>
-                        handleListKey(e, options.length, setHighlightedIndex, () => selectIndex(highlightedIndex), () => close(true))
+                        handleListKey(
+                            e,
+                            options.length,
+                            (move) => setHighlightedIndex((i) => move(i === NONE ? -1 : i)),
+                            () => {
+                                if (highlightedIndex !== NONE) selectIndex(highlightedIndex);
+                            },
+                            () => close(true),
+                        )
                     }
                     searchPlaceholder={searchPlaceholder ?? t("typeToSearch")}
                     clearLabel={placeholderText}

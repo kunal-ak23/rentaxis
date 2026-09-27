@@ -4,9 +4,7 @@ import { useCallback } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { AsyncSearchSelect, type AsyncOption } from "@/components/ui/AsyncSearchSelect";
 import { lookupApi, type RenterOption } from "@/lib/api/lookup";
-import { renterCache as renters, renterLabel } from "@/components/pickers/caches";
-
-export { renterLabel };
+import { renterCache as renters, renterPickerLabel } from "@/components/pickers/caches";
 
 /** Rows asked for per search; more when some will be hidden by `excludeIds` (server cap 50). */
 const PAGE = 20;
@@ -38,7 +36,7 @@ export function RenterPicker({ value, onChange, placeholder, className, testId, 
             );
             return rows
                 .filter((r) => !excluded.has(r.id))
-                .map((r) => ({ value: r.id, label: renterLabel(r, locale), sublabel: r.email ?? r.phone ?? undefined }));
+                .map((r) => ({ value: r.id, label: renterPickerLabel(r, locale), sublabel: r.email ?? r.phone ?? undefined }));
         },
         [excludeKey, locale],
     );
@@ -50,7 +48,7 @@ export function RenterPicker({ value, onChange, placeholder, className, testId, 
             value={value}
             onChange={(id) => onChange(id, id ? (renters.get(id) ?? null) : null)}
             search={search}
-            selectedLabel={resolved ? renterLabel(resolved, locale) : undefined}
+            selectedLabel={resolved ? renterPickerLabel(resolved, locale) : undefined}
             placeholder={placeholder ?? t("selectRenter")}
             className={className}
             testId={testId}

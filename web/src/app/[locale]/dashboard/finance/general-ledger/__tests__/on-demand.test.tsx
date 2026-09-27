@@ -22,7 +22,7 @@ const lookup = vi.hoisted(() => ({
     searchUnits: vi.fn(async () => []),
     searchRenters: vi.fn(async () => []),
     unitNames: vi.fn(async (ids: string[]) => ids.map(id => ({ id, unitNumber: `Unit-${id}`, propertyId: null, propertyName: null, propertyType: null, buildingId: null, buildingName: null, status: null }))),
-    renterNames: vi.fn(async (ids: string[]) => ids.map(id => ({ id, nameEn: `Renter-${id}`, nameAr: null, phone: null, email: null }))),
+    renterNames: vi.fn(async (ids: string[]) => ids.map(id => ({ id, nameEn: `Renter-${id}`, nameAr: `مستأجر-${id}`, phone: null, email: null }))),
 }));
 vi.mock("@/lib/api/lookup", () => ({ lookupApi: lookup }));
 const csv = vi.hoisted(() => ({ rows: [] as (string | number)[][] }));
@@ -132,7 +132,10 @@ describe("General Ledger — on demand", () => {
         general.mockResolvedValue([named]);
         render(<Page />);
         await waitFor(() => expect(screen.getByText("Unit-u7")).toBeInTheDocument());
+        // The EN Tenant cell is the plain English name, as the ledger has always printed it — not the picker's "English (Arabic)".
         await waitFor(() => expect(screen.getByText("Renter-r7")).toBeInTheDocument());
+        expect(screen.getByText("Renter-r7").tagName).toBe("TD");
+        expect(screen.getByText("Renter-r7").textContent).toBe("Renter-r7");
         expect(lookup.unitNames).toHaveBeenCalledTimes(1);
         expect(lookup.unitNames).toHaveBeenCalledWith(["u7"]);
         expect(lookup.renterNames).toHaveBeenCalledWith(["r7"]);
