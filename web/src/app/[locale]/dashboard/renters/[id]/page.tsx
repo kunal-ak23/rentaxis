@@ -11,7 +11,7 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 import { formatCurrency } from "@/lib/format";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { ResendInviteButton } from "@/components/users/ResendInviteButton";
-import { ApiError, leaseApi, type Cheque, type LeaseStatus } from "@/lib/api/leasing";
+import { ApiError, type Cheque, type LeaseStatus } from "@/lib/api/leasing";
 import { chequeSummary } from "@/components/renters/chequeSummary";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 
@@ -166,13 +166,22 @@ export default function RenterDetailPage() {
                 if (cancelled) return;
                 setLeases(ls);
 
-                const perLease = await Promise.all(
-                    ls.map(l => leaseApi.cheques(l.id).then(cs => ({ ok: true, cs }), () => ({ ok: false, cs: [] as Cheque[] }))),
-                );
-                if (!cancelled) {
-                    setCheques(perLease.flatMap(p => p.cs));
-                    setChequesFailed(perLease.some(p => !p.ok));
+                // Scale #14: every contract's cheques in one read — the rows each
+                // GET /leases/{id}/cheques gave, in the leases' order. As before, no
+                // cheque read without the contracts (none to read, or they failed);
+                // a failed read lists nothing and marks the figures incomplete.
+                let cs: Cheque[] = [];
+                if (ls.length > 0) {
+                    try {
+                        const cr = await fetch(`/api/proxy/v1/renters/${encodeURIComponent(renterId)}/cheques`);
+                        if (!cr.ok) throw new Error(String(cr.status));
+                        cs = await cr.json();
+                    } catch {
+                        cs = [];
+                        if (!cancelled) setChequesFailed(true);
+                    }
                 }
+                if (!cancelled) setCheques(cs);
 
                 // Filtered server-side (web review I3): tickets this renter
                 // reported, raised on one of their contracts, or logged on their

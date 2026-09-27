@@ -66,8 +66,10 @@ beforeEach(() => {
         if (u.endsWith("/v1/renters/r1")) return res(renterStatus, renter);
         if (u.endsWith("/v1/renters/r1/leases")) return res(leasesStatus, leaseRows);
         if (u.includes("/resend-invite")) return jsonRes({});
-        if (u.includes("/leases/L1/cheques")) return jsonRes(cheques);
-        if (u.includes("/leases/L2/cheques")) return res(chequesStatus, []);
+        // Scale #14: one read for every contract's cheques, in the leases' order.
+        if (u.endsWith("/v1/renters/r1/cheques")) {
+            return res(chequesStatus, leaseRows.flatMap(l => (l.id === "L1" ? cheques : [])));
+        }
         // The server filters by renter (GET /tickets?renterId=); "t-other" is
         // what an unfiltered list would add.
         if (u.endsWith("/v1/tickets?renterId=r1")) return res(ticketsStatus, tickets.filter(tk => tk.id !== "t-other"));
@@ -180,14 +182,14 @@ describe("RenterDetailPage", () => {
         expect(await screen.findByText("Ahmed Al Mansoori")).toBeTruthy();
     });
 
-    it("hides the cheque totals and says so when one contract's cheques fail to load", async () => {
+    it("hides the cheque totals and says so when the cheque read fails", async () => {
         leaseRows = twoLeases;
         chequesStatus = 500;
         render(<RenterDetailPage />);
 
         expect(await screen.findByText("chequesLoadFailed")).toBeTruthy();
-        // The cheques that did load are listed, but no total pretends to be complete.
-        expect(screen.getByText("000102")).toBeTruthy();
+        // No row and no total pretends the read succeeded.
+        expect(screen.queryByText("000102")).toBeNull();
         const tiles = screen.getByTestId("renter-summary");
         expect(tiles.textContent).not.toContain("60,000");
         expect(tiles.textContent).not.toContain("30,000");
@@ -254,8 +256,7 @@ describe("RenterDetailPage — cheque tiles (PR #365 R1)", () => {
         const base = global.fetch;
         global.fetch = vi.fn(async (url: unknown, init?: RequestInit) => {
             const u = String(url);
-            if (u.includes("/leases/L1/cheques")) return jsonRes(mixed);
-            if (u.includes("/leases/L2/cheques")) return jsonRes(draftRows);
+            if (u.endsWith("/v1/renters/r1/cheques")) return jsonRes([...mixed, ...draftRows]);
             return (base as unknown as (u: unknown, i?: RequestInit) => Promise<Response>)(url, init);
         }) as unknown as typeof fetch;
         render(<RenterDetailPage />);
@@ -267,5 +268,87 @@ describe("RenterDetailPage — cheque tiles (PR #365 R1)", () => {
         expect(tiles.join("|")).toContain("37,000");
         expect(tiles.join("|")).toContain("27,000");
         expect(screen.getByText("000203")).toBeTruthy();
+    });
+});
+
+// Scale #14: every contract's cheques in one read. The fixture and the expected tiles and
+// rows below were captured from the per-lease version of the page (one
+// GET /leases/{id}/cheques per contract) before it was replaced, so identical output here
+// is identical output to what the page showed before.
+describe("RenterDetailPage — one cheque read (scale #14)", () => {
+    const parityLeases = [
+        { id: "L1", unitIdentifier: "101", propertyName: "Tower", startDate: "2026-01-01", endDate: "2026-12-31", status: "ACTIVE", rentAmount: 60000, displayContractNumber: "TCO-26/1" },
+        { id: "L2", unitIdentifier: "102", propertyName: "Tower", startDate: "2027-01-01", endDate: "2027-12-31", status: "DRAFT", rentAmount: 55000, displayContractNumber: null },
+        { id: "L3", unitIdentifier: "103", propertyName: "Tower", startDate: "2025-01-01", endDate: "2025-12-31", status: "EXPIRED", rentAmount: 50000, displayContractNumber: "TCO-25/3" },
+    ];
+    const parityRows: Record<string, unknown[]> = {
+        L1: [
+            { id: "m1", leaseId: "L1", chequeNumber: "000201", chequeDate: "2026-01-01", amount: 10000, status: "CLEARED" },
+            { id: "m2", leaseId: "L1", chequeNumber: "000202", chequeDate: "2026-04-01", amount: 20000, status: "REGISTERED" },
+            { id: "m3", leaseId: "L1", chequeNumber: "000203", chequeDate: "2026-07-01", amount: 7000, status: "REPLACED" },
+            { id: "m4", leaseId: "L1", chequeNumber: "000204", chequeDate: "2026-07-01", amount: 7000, status: "DEPOSITED" },
+            { id: "m5", leaseId: "L1", chequeNumber: "000205", chequeDate: "2026-10-01", amount: 3000, status: "CANCELLED" },
+            { id: "m6", leaseId: "L1", chequeNumber: "000206", chequeDate: "2026-11-01", amount: 4500.5, status: "BOUNCED" },
+        ],
+        L2: [{ id: "d1", leaseId: "L2", chequeNumber: "DRAFT01", chequeDate: "2027-01-01", amount: 99999, status: "DRAFT" }],
+        L3: [
+            { id: "o1", leaseId: "L3", chequeNumber: "000301", chequeDate: "2025-01-01", amount: 25000, status: "CLEARED" },
+            { id: "o2", leaseId: "L3", chequeNumber: "000302", chequeDate: "2025-07-01", amount: 25000, status: "REPLACED" },
+            { id: "o3", leaseId: "L3", chequeNumber: "000303", chequeDate: "2025-07-15", amount: 25000, status: "CLEARED" },
+        ],
+    };
+    // Captured from the per-lease page on the same fixture.
+    const PER_LEASE_TILES = ["1", "AED 91,500.50", "AED 60,000.00", "AED 27,000.00", "1"];
+    const PER_LEASE_ROWS = [
+        "TCO-26/1101Tower01/01/2026 – 31/12/2026leaseStatus.ACTIVEAED 60,000.00",
+        "L2102Tower01/01/2027 – 31/12/2027leaseStatus.DRAFTAED 55,000.00",
+        "TCO-25/3103Tower01/01/2025 – 31/12/2025leaseStatus.EXPIREDAED 50,000.00",
+        "10100020101/01/2026status.CLEAREDAED 10,000.00",
+        "10100020201/04/2026status.REGISTEREDAED 20,000.00",
+        "10100020301/07/2026status.REPLACEDAED 7,000.00",
+        "10100020401/07/2026status.DEPOSITEDAED 7,000.00",
+        "10100020501/10/2026status.CANCELLEDAED 3,000.00",
+        "10100020601/11/2026status.BOUNCEDAED 4,500.50",
+        "102DRAFT0101/01/2027status.DRAFTAED 99,999.00",
+        "10300030101/01/2025status.CLEAREDAED 25,000.00",
+        "10300030201/07/2025status.REPLACEDAED 25,000.00",
+        "10300030315/07/2025status.CLEAREDAED 25,000.00",
+    ];
+
+    const serve = (leaseList: typeof parityLeases) => {
+        global.fetch = vi.fn(async (url: unknown) => {
+            const u = String(url);
+            if (u.endsWith("/v1/renters/r1")) return jsonRes(renter);
+            if (u.endsWith("/v1/renters/r1/leases")) return jsonRes(leaseList);
+            if (u.endsWith("/v1/renters/r1/cheques")) return jsonRes(leaseList.flatMap(l => parityRows[l.id]));
+            if (u.includes("/tickets")) return jsonRes([]);
+            return jsonRes({}, false, 404);
+        }) as unknown as typeof fetch;
+    };
+    const chequeCalls = () => (global.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls
+        .map(c => String(c[0])).filter(u => u.includes("/cheques"));
+
+    it("asks for the cheques once, whatever the number of contracts", async () => {
+        for (const n of [1, 3]) {
+            serve(parityLeases.slice(0, n));
+            render(<RenterDetailPage />);
+            expect(await screen.findByText("000201")).toBeTruthy();
+            await waitFor(() => expect(screen.queryByText("loading")).toBeNull());
+            expect(chequeCalls()).toEqual(["/api/proxy/v1/renters/r1/cheques"]);
+            cleanup();
+        }
+    });
+
+    it("shows the same tiles and rows as the per-lease page, REPLACED and CANCELLED rows included", async () => {
+        serve(parityLeases);
+        render(<RenterDetailPage />);
+        expect(await screen.findByText("DRAFT01")).toBeTruthy();
+
+        // Intl puts a no-break space after the currency; the captured strings use a plain one.
+        const text = (el: Element) => (el.textContent ?? "").replace(/\u00a0/g, " ");
+        const tiles = [...screen.getByTestId("renter-summary").querySelectorAll("div > p:last-child")].map(text);
+        expect(tiles).toEqual(PER_LEASE_TILES);
+        expect([...document.querySelectorAll("tbody tr")].map(text)).toEqual(PER_LEASE_ROWS);
+        expect(screen.queryByText("chequesLoadFailed")).toBeNull();
     });
 });

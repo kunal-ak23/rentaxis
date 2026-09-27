@@ -1920,6 +1920,18 @@ public class LeaseService {
      */
     @Transactional(readOnly = true)
     public List<LeaseDTO> getLeasesForRenter(UUID renterId) {
+        return mapAll(readableLeasesForRenter(renterId));
+    }
+
+    /**
+     * The contracts {@link #getLeasesForRenter} lists, as entities and in the same
+     * order (newest start first) — one rule for which of a renter's contracts the
+     * caller may see, shared with the renter page's all-cheques read
+     * ({@code ChequeGenerationService.listForRenter}) so the two cannot drift.
+     * Entities, so the caller must be inside a transaction of its own to use them.
+     */
+    @Transactional(readOnly = true)
+    public List<Lease> readableLeasesForRenter(UUID renterId) {
         UUID tenantId = TenantContextHolder.getTenantId();
         Renter renter = renterRepository.findById(renterId)
                 .filter(r -> tenantId != null && tenantId.equals(r.getTenantId()))
@@ -1927,10 +1939,10 @@ public class LeaseService {
         List<Lease> own = leaseRepository.findByRenterId(renter.getId()).stream()
                 .filter(l -> tenantId.equals(l.getTenantId()))
                 .toList();
-        return mapAll(leaseAccessPolicy.filterReadable(own).stream()
+        return leaseAccessPolicy.filterReadable(own).stream()
                 .sorted(java.util.Comparator.comparing(Lease::getStartDate,
                         java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
-                .toList());
+                .toList();
     }
 
     @Transactional(readOnly = true)

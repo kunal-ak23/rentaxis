@@ -102,6 +102,7 @@ public class ChequeGenerationService {
     private final LeaseAccessPolicy leaseAccessPolicy;
 
     private final com.datagami.rentaxis.core.service.bank.OwnedBankLeaf ownedBankLeaf;
+    private final com.datagami.rentaxis.core.service.LeaseService leaseService;
 
     public ChequeGenerationService(LeaseRepository leaseRepository,
                                    LeaseLineRepository leaseLineRepository,
@@ -109,8 +110,10 @@ public class ChequeGenerationService {
                                    AccountRepository accountRepository,
                                    AccountResolver accountResolver,
                                    LeaseAccessPolicy leaseAccessPolicy,
-                                   com.datagami.rentaxis.core.service.bank.OwnedBankLeaf ownedBankLeaf) {
+                                   com.datagami.rentaxis.core.service.bank.OwnedBankLeaf ownedBankLeaf,
+                                   com.datagami.rentaxis.core.service.LeaseService leaseService) {
         this.ownedBankLeaf = ownedBankLeaf;
+        this.leaseService = leaseService;
         this.leaseRepository = leaseRepository;
         this.leaseLineRepository = leaseLineRepository;
         this.chequeRepository = chequeRepository;
@@ -339,6 +342,36 @@ public class ChequeGenerationService {
     public List<ChequeDTO> list(UUID leaseId) {
         Lease lease = readableLease(leaseId);
         return toDtos(chequeRepository.findByLease_IdOrderBySeqNoAsc(leaseId), lease);
+    }
+
+    /**
+     * Every row of every contract of one renter, for the staff renter page (scale #14):
+     * what {@link #list} returns for each lease of {@code GET /renters/{id}/leases},
+     * concatenated in that endpoint's lease order, from one cheque query instead of one
+     * per lease.
+     *
+     * <p>The lease set is {@code LeaseService.readableLeasesForRenter} — the renter must
+     * be in the caller's tenant (a foreign id is a 404) and a property manager gets only
+     * the contracts on their buildings: the same rule, in the same code, as the leases
+     * endpoint. Each lease's rows are mapped by {@link #toDtos} with that lease's grace
+     * days, exactly as {@link #list} maps them.</p>
+     */
+    @Transactional(readOnly = true)
+    public List<ChequeDTO> listForRenter(UUID renterId) {
+        List<Lease> leases = leaseService.readableLeasesForRenter(renterId);
+        if (leases.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, List<Cheque>> byLease = new java.util.HashMap<>();
+        for (Cheque c : chequeRepository.findByLease_IdInOrderBySeqNoAsc(
+                leases.stream().map(Lease::getId).toList())) {
+            byLease.computeIfAbsent(c.getLease().getId(), id -> new ArrayList<>()).add(c);
+        }
+        List<ChequeDTO> out = new ArrayList<>();
+        for (Lease lease : leases) {
+            out.addAll(toDtos(byLease.getOrDefault(lease.getId(), List.of()), lease));
+        }
+        return out;
     }
 
     /**

@@ -65,6 +65,13 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
     List<Cheque> findByLease_IdOrderBySeqNoAsc(UUID leaseId);
 
     /**
+     * {@link #findByLease_IdOrderBySeqNoAsc} for several leases in one query — every
+     * status, as the per-lease grid read returns them. Grouped by lease in the caller
+     * (scale #14, the renter page's all-cheques read).
+     */
+    List<Cheque> findByLease_IdInOrderBySeqNoAsc(java.util.Collection<UUID> leaseIds);
+
+    /**
      * Drop a lease's cheques in one status. Used with {@code DRAFT} when a draft
      * lease's lines change: the proposed instalments were cut from amounts that
      * no longer exist, and there is nothing on a DRAFT cheque worth preserving.

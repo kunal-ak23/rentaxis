@@ -3,8 +3,10 @@ package com.datagami.rentaxis.api;
 import com.datagami.rentaxis.api.dto.CreateRenterDTO;
 import com.datagami.rentaxis.api.dto.RenterDTO;
 import com.datagami.rentaxis.api.dto.LeaseDTO;
+import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.RenterService;
+import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -22,6 +24,7 @@ public class RenterController {
 
     private final RenterService renterService;
     private final LeaseService leaseService;
+    private final ChequeGenerationService chequeGenerationService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
@@ -67,6 +70,17 @@ public class RenterController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
     public ResponseEntity<List<LeaseDTO>> getRenterLeases(@PathVariable UUID id) {
         return ResponseEntity.ok(leaseService.getLeasesForRenter(id));
+    }
+
+    /**
+     * Every cheque of the renter's contracts in one read (scale #14, renter detail page):
+     * the rows of {@code GET /leases/{id}/cheques} for each lease {@code GET /{id}/leases}
+     * returns, in that order. A renter of another organisation is a 404.
+     */
+    @GetMapping("/{id}/cheques")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
+    public ResponseEntity<List<ChequeDTO>> getRenterCheques(@PathVariable UUID id) {
+        return ResponseEntity.ok(chequeGenerationService.listForRenter(id));
     }
 
     @PostMapping
