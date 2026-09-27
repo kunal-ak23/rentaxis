@@ -18,6 +18,8 @@ type Props = {
     className?: string;
     testId?: string;
     disabled?: boolean;
+    /** Id of the trigger, for a `<label htmlFor>`. */
+    id?: string;
 };
 
 const DEBOUNCE_MS = 250;
@@ -42,6 +44,7 @@ export function AsyncSearchSelect({
     className,
     testId,
     disabled,
+    id,
 }: Props) {
     const t = useTranslations("Pickers");
     const [open, setOpen] = useState(false);
@@ -146,6 +149,7 @@ export function AsyncSearchSelect({
         <div className="relative">
             <SelectTrigger
                 ref={triggerRef}
+                id={id}
                 open={open}
                 listboxId={listboxId}
                 selected={selected}

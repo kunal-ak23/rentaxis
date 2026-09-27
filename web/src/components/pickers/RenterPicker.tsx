@@ -4,9 +4,9 @@ import { useCallback } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { AsyncSearchSelect, type AsyncOption } from "@/components/ui/AsyncSearchSelect";
 import { lookupApi, type RenterOption } from "@/lib/api/lookup";
-import { createLookupCache } from "@/components/pickers/lookupCache";
+import { renterCache as renters, renterLabel } from "@/components/pickers/caches";
 
-const renters = createLookupCache<RenterOption>(lookupApi.renterNames);
+export { renterLabel };
 
 /** Rows asked for per search; more when some will be hidden by `excludeIds` (server cap 50). */
 const PAGE = 20;
@@ -20,19 +20,12 @@ type Props = {
     testId?: string;
     disabled?: boolean;
     excludeIds?: string[];
+    /** Id of the trigger, for a `<label htmlFor>`. */
+    id?: string;
 };
 
-/**
- * The renter's name as the pickers show it: Arabic under /ar when there is
- * one; under /en "English (Arabic)", as the lease forms have always shown it.
- */
-export function renterLabel(r: RenterOption, locale: string): string {
-    if (locale === "ar") return r.nameAr || r.nameEn;
-    return r.nameAr ? `${r.nameEn} (${r.nameAr})` : r.nameEn;
-}
-
 /** Server-searched renter select: label is the localized name, sublabel the email (or phone). */
-export function RenterPicker({ value, onChange, placeholder, className, testId, disabled, excludeIds }: Props) {
+export function RenterPicker({ value, onChange, placeholder, className, testId, disabled, excludeIds, id }: Props) {
     const locale = useLocale();
     const t = useTranslations("Pickers");
     const excludeKey = (excludeIds ?? []).join("\u0000");
@@ -62,6 +55,7 @@ export function RenterPicker({ value, onChange, placeholder, className, testId, 
             className={className}
             testId={testId}
             disabled={disabled}
+            id={id}
         />
     );
 }

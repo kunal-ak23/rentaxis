@@ -10,6 +10,12 @@ import type { AccountLedger } from "@/lib/api/ledger";
 vi.mock("../useNameLookup", () => ({
   useNameLookup: (kind: string) => ({ name: (id: string | null) => (kind === "properties" && id ? "برج ١" : id ?? ""), options: [], loading: false }),
 }));
+// Units and renters are named per id (bounded /names calls), never from the whole table.
+const idNames = vi.hoisted(() => vi.fn((kind: string, ids: (string | null | undefined)[]) => {
+  void kind; void ids;
+  return { name: (id: string | null | undefined) => id ?? "", loading: false };
+}));
+vi.mock("@/hooks/useIdNames", () => ({ useIdNames: idNames }));
 
 // next-intl's locale-aware Link pulls in next/navigation, which vitest cannot
 // resolve outside a Next runtime. Same stand-in the dashboard link tests use.
@@ -79,6 +85,19 @@ describe("LedgerTable", () => {
     expect(headers).toEqual([en.Ledger.docDate, en.Ledger.docNo, en.Ledger.particular, en.Ledger.debit, en.Ledger.credit, en.Ledger.balance,
       en.Ledger.unit, en.Ledger.tower, en.Ledger.tenant, en.Ledger.narration]);
     expect(screen.getByText("برج ١")).toBeInTheDocument();
+  });
+
+  it("asks useIdNames for the ids of the rows it renders, and none when the tenant columns are off", () => {
+    idNames.mockClear();
+    const { unmount } = render(<NextIntlClientProvider locale="en" messages={en}><LedgerTable ledgers={ledgers} /></NextIntlClientProvider>);
+    expect(idNames).toHaveBeenCalledWith("units", ["u1", "u1"]);
+    expect(idNames).toHaveBeenCalledWith("renters", ["r1", "r1"]);
+    unmount();
+
+    idNames.mockClear();
+    render(<NextIntlClientProvider locale="en" messages={en}><LedgerTable ledgers={ledgers} showTenantColumns={false} /></NextIntlClientProvider>);
+    expect(idNames).toHaveBeenCalledWith("units", []);
+    expect(idNames).toHaveBeenCalledWith("renters", []);
   });
 
   it("opens every account with its balance brought forward in a period report, even at zero", () => {

@@ -4,9 +4,7 @@ import { useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { AsyncSearchSelect, type AsyncOption } from "@/components/ui/AsyncSearchSelect";
 import { lookupApi, type UnitOption } from "@/lib/api/lookup";
-import { createLookupCache } from "@/components/pickers/lookupCache";
-
-const units = createLookupCache<UnitOption>(lookupApi.unitNames);
+import { unitCache as units } from "@/components/pickers/caches";
 
 /** Rows asked for per search; more when some will be hidden by `excludeIds` (server cap 50). */
 const PAGE = 20;
@@ -22,10 +20,12 @@ type Props = {
     testId?: string;
     disabled?: boolean;
     excludeIds?: string[];
+    /** Id of the trigger, for a `<label htmlFor>`. */
+    id?: string;
 };
 
 /** Server-searched unit select: label is the unit number, sublabel its property (· building) and a commercial tag. */
-export function UnitPicker({ value, onChange, propertyId, status, placeholder, className, testId, disabled, excludeIds }: Props) {
+export function UnitPicker({ value, onChange, propertyId, status, placeholder, className, testId, disabled, excludeIds, id }: Props) {
     const t = useTranslations("Pickers");
     const commercial = t("commercial");
     const excludeKey = (excludeIds ?? []).join("\u0000");
@@ -63,6 +63,7 @@ export function UnitPicker({ value, onChange, propertyId, status, placeholder, c
             className={className}
             testId={testId}
             disabled={disabled}
+            id={id}
         />
     );
 }

@@ -8,6 +8,7 @@ import { BookOpen, Download, Loader2, ShieldCheck } from "lucide-react";
 import LedgerFilters, { defaultLedgerRange, MAX_LEDGER_ACCOUNTS } from "@/components/finance/LedgerFilters";
 import LedgerTable from "@/components/finance/LedgerTable";
 import { useNameLookup } from "@/components/finance/useNameLookup";
+import { useIdNames } from "@/hooks/useIdNames";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
 import { downloadCsv, toCsv } from "@/lib/csv";
@@ -74,9 +75,11 @@ function GeneralLedger() {
     const [loading, setLoading] = useState(false);
     const [loadError, setLoadError] = useState<string | null>(null);
 
-    const units = useNameLookup("units");
-    const renters = useNameLookup("renters");
     const towers = useNameLookup("properties");
+    // The CSV names the same rows the table shows; the table's lookups have already cached them.
+    const ledgerRows = ledgers.flatMap(l => l.rows);
+    const units = useIdNames("units", ledgerRows.map(r => r.unitId));
+    const renters = useIdNames("renters", ledgerRows.map(r => r.renterId));
 
     // Loads on demand (client feedback 2026-09-25): at 1000s of buildings an
     // "every account" ledger is years of rows, so nothing is fetched until an

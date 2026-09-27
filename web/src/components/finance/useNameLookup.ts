@@ -3,53 +3,50 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocale } from "next-intl";
 
-export type LookupKind = "units" | "renters" | "properties";
+/**
+ * Properties only: a tenant has few enough of them to list whole. Units and
+ * renters are named per id with `useIdNames` and picked with the server-searched
+ * `UnitPicker` / `RenterPicker` (scale P1-6), so this type refuses them.
+ */
+export type LookupKind = "properties";
 
 export type LookupEntry = { id: string; en: string; ar: string };
 
 /**
- * Ledger rows carry ids, not names: a row knows `unitId` and `renterId`, and the
- * report has to print "A-1204" and the tenant's name. Rather than have the
- * backend denormalise a name onto every row, the three small tenant-wide lists
- * are fetched once per page load and cached module-wide, so the general ledger,
- * the filters bar and the tenant ledger share one GET each.
+ * Rows and filters carry a property id; the report prints the property's name.
+ * The tenant's property list is fetched once per page load and cached
+ * module-wide, so every finance page and filter bar shares one GET.
  *
- * All three endpoints return a plain `List<…>` (see `UnitController#getAllUnits`,
- * `RenterController#getAllRenters`, `PropertyController#getAllProperties`) — none
- * of them is paginated, so there is no `size` parameter to send. The `content`
- * unwrapping below is defensive for the day one of them grows a `Page<…>`.
+ * `GET /v1/properties` returns a plain `List<…>` (`PropertyController#getAllProperties`),
+ * not paginated. The `content` unwrapping below is defensive for the day it
+ * grows a `Page<…>`.
  *
  * Both names are kept so the hook can pick per locale without a second fetch:
- * the AR dashboard must show the Arabic renter name, and the cache is shared
- * across locales within a session (a locale switch is a full navigation, but the
- * module may survive it under client-side routing).
+ * the cache is shared across locales within a session (a locale switch is a full
+ * navigation, but the module may survive it under client-side routing).
  */
 const cache: Partial<Record<LookupKind, Promise<LookupEntry[]>>> = {};
 
 type RawRow = {
     id?: string;
-    unitNumber?: string;
     nameEn?: string;
     nameAr?: string;
     name?: string;
-    fullName?: string;
     /** `GET /v1/properties` returns portfolio-summary rows that wrap the property. */
-    property?: { id?: string; nameEn?: string; nameAr?: string };
+    property?: { id?: string; nameEn?: string; nameAr?: string; name?: string };
 };
 
-function normalise(kind: LookupKind, data: unknown): LookupEntry[] {
+function normalise(data: unknown): LookupEntry[] {
     const list: RawRow[] = Array.isArray(data)
         ? (data as RawRow[])
         : ((data as { content?: RawRow[] } | null)?.content ?? []);
 
     return list
         .map(row => {
-            // A property row is `{ property: {...}, vacancies, … }`; a unit row
-            // carries its own property, which must NOT be unwrapped.
-            const x = kind === "properties" && row.property ? row.property : row;
-            const source = x as RawRow;
-            const en = source.unitNumber ?? source.nameEn ?? source.fullName ?? source.name ?? "";
-            const ar = source.unitNumber ?? source.nameAr ?? en;
+            // A portfolio row is `{ property: {...}, vacancies, … }`; a bare property row is the property.
+            const source: RawRow = row.property ?? row;
+            const en = source.nameEn ?? source.name ?? "";
+            const ar = source.nameAr ?? en;
             return { id: source.id ?? "", en: en || (source.id ?? ""), ar: ar || en || (source.id ?? "") };
         })
         .filter(e => e.id);
@@ -59,7 +56,7 @@ export function loadNames(kind: LookupKind): Promise<LookupEntry[]> {
     if (!cache[kind]) {
         cache[kind] = fetch(`/api/proxy/v1/${kind}`)
             .then(res => (res.ok ? res.json() : []))
-            .then(data => normalise(kind, data))
+            .then(data => normalise(data))
             .catch(err => {
                 // A failed load must not poison the cache forever — the next
                 // mount retries. Names simply render blank until it succeeds.

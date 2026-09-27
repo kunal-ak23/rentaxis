@@ -17,6 +17,8 @@ import { cn } from "@/lib/utils";
 export type SelectRow = { value: string; label: string; sublabel?: string };
 
 type TriggerProps = {
+    /** Lets a `<label htmlFor>` name the combobox. */
+    id?: string;
     open: boolean;
     listboxId: string;
     selected: { label: string; sublabel?: string } | null;
@@ -28,12 +30,13 @@ type TriggerProps = {
 };
 
 export const SelectTrigger = forwardRef<HTMLButtonElement, TriggerProps>(function SelectTrigger(
-    { open, listboxId, selected, placeholder, onToggle, className, testId, disabled },
+    { id, open, listboxId, selected, placeholder, onToggle, className, testId, disabled },
     ref,
 ) {
     return (
         <button
             ref={ref}
+            id={id}
             type="button"
             role="combobox"
             aria-expanded={open}

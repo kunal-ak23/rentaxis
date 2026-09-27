@@ -17,6 +17,14 @@ vi.mock("@/lib/api/ledger", async orig => {
     const m = await orig<typeof import("@/lib/api/ledger")>();
     return { ...m, ledgerApi: { ...m.ledgerApi, accounts: { ...m.ledgerApi.accounts, list: () => Promise.resolve(accounts) }, ledger: { ...m.ledgerApi.ledger, general } } };
 });
+// Units and renters on the rows are named per id through the bounded /names calls.
+const lookup = vi.hoisted(() => ({
+    searchUnits: vi.fn(async () => []),
+    searchRenters: vi.fn(async () => []),
+    unitNames: vi.fn(async (ids: string[]) => ids.map(id => ({ id, unitNumber: `Unit-${id}`, propertyId: null, propertyName: null, propertyType: null, buildingId: null, buildingName: null, status: null }))),
+    renterNames: vi.fn(async (ids: string[]) => ids.map(id => ({ id, nameEn: `Renter-${id}`, nameAr: null, phone: null, email: null }))),
+}));
+vi.mock("@/lib/api/lookup", () => ({ lookupApi: lookup }));
 const csv = vi.hoisted(() => ({ rows: [] as (string | number)[][] }));
 vi.mock("@/lib/csv", async orig => {
     const m = await orig<typeof import("@/lib/csv")>();
@@ -116,5 +124,21 @@ describe("General Ledger — on demand", () => {
         expect(codes.indexOf("1050")).toBeLessThan(codes.indexOf("1100"));
         const sub1050 = csv.rows.find(r => r[0] === "1050" && r[4] === "Sub Total")!;
         expect(sub1050[5]).toBe("50.00");
+    });
+
+    it("names the rows' unit and tenant in the table and the CSV from the ids on screen only", async () => {
+        query.current = "accountIds=a0";
+        const named = { ...ledger, rows: [{ ...ledger.rows[0], unitId: "u7", renterId: "r7" }] };
+        general.mockResolvedValue([named]);
+        render(<Page />);
+        await waitFor(() => expect(screen.getByText("Unit-u7")).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText("Renter-r7")).toBeInTheDocument());
+        expect(lookup.unitNames).toHaveBeenCalledTimes(1);
+        expect(lookup.unitNames).toHaveBeenCalledWith(["u7"]);
+        expect(lookup.renterNames).toHaveBeenCalledWith(["r7"]);
+        fireEvent.click(screen.getByTestId("ledger-export-csv"));
+        const row = csv.rows.find(r => r[3] === "JV-1")!;
+        expect(row[8]).toBe("Unit-u7");
+        expect(row[10]).toBe("Renter-r7");
     });
 });
