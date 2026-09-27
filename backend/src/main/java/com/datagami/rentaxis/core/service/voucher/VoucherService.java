@@ -596,6 +596,10 @@ public class VoucherService {
 
     static void requireReversible(Voucher original, LocalDate date, String reason) {
         if (date == null) throw new BusinessRuleViolationException("A reversal date is required");
+        // F4: except on the voucher's own date, so one already dated far ahead can be undone.
+        if (!date.equals(original.getDocDate())) {
+            com.datagami.rentaxis.core.service.ledger.ManualPostingDates.requireWithinAYear(date, "A reversal");
+        }
         if (original.getDocDate() != null && date.isBefore(original.getDocDate())) {
             String doc = original.getVoucherNumber() == null ? "the voucher" : original.getVoucherNumber();
             throw new BusinessRuleViolationException("A reversal cannot be dated before " + doc + " ("
@@ -952,6 +956,8 @@ public class VoucherService {
      */
     private void requirePostable(Voucher v) {
         if (v.getDocDate() == null) throw new BusinessRuleViolationException("Document date is required");
+        // F4: a draft saved before the rule is held to it when it posts.
+        com.datagami.rentaxis.core.service.ledger.ManualPostingDates.requireWithinAYear(v.getDocDate(), "A voucher");
         if (v.getLines().isEmpty()) throw new BusinessRuleViolationException("A voucher needs at least one line");
 
         for (VoucherLine l : v.getLines()) {
@@ -1079,6 +1085,8 @@ public class VoucherService {
                     "Cash Receipt Vouchers are created from the lease receipt screen, not here");
         }
         if (in.docDate() == null) throw new BusinessRuleViolationException("Document date is required");
+        // Break-it round 1 (money) F4: a voucher's number carries a two-digit year.
+        com.datagami.rentaxis.core.service.ledger.ManualPostingDates.requireWithinAYear(in.docDate(), "A voucher");
         if (in.lines() == null || in.lines().isEmpty()) {
             throw new BusinessRuleViolationException("A voucher needs at least one line");
         }

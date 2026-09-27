@@ -28,6 +28,9 @@ import {
 import { useStatementCoverGuard } from "@/lib/statementCoverGuard";
 import { StatementCoverNotice } from "@/components/finance/StatementCoverNotice";
 import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
+import { moneyInputError, parseMoneyInput } from "@/lib/money";
+import { MoneyFieldError } from "@/components/ui/NumberInput";
+import { isBeyondManualPostingWindow, maxManualPostingDateIso } from "@/lib/businessDate";
 
 /**
  * One form for both voucher documents (spec §10.1, §11): a Purchase/Service
@@ -144,6 +147,21 @@ function num(s: string): number {
     return Number.isFinite(n) ? n : 0;
 }
 
+/**
+ * Break-it round 1 (money) F1: an amount through the shared money parse.
+ * `parseFloat` read "1,000" as 1 and passed 1000.555 on to be rounded; a refused
+ * or blank amount is 0 here (so the line reads as incomplete) and the field says why.
+ */
+function moneyNum(s: string): number {
+    const r = parseMoneyInput(s);
+    return r.ok ? r.value ?? 0 : 0;
+}
+
+/** The refusal to show under a money field, or null (a blank field is incomplete, not wrong). */
+function moneyErr(s: string) {
+    return s.trim() === "" ? null : moneyInputError(s);
+}
+
 const field =
     "w-full bg-input border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed";
 const fieldLabel = "block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5";
@@ -188,6 +206,7 @@ export default function VoucherForm({
     onDeleted?: () => void;
 }) {
     const t = useTranslations("Vouchers");
+    const tm = useTranslations("MoneyInput");
     const tLedger = useTranslations("Ledger");
     const tCommon = useTranslations("Common");
 
@@ -444,7 +463,7 @@ export default function VoucherForm({
     const vatBlocked = isExpenseLike && vendorHasTrn === false;
 
     const numericLines = useMemo(
-        () => lines.map(l => ({ amount: num(l.amount), vatRate: withVat ? num(l.vatRate) : 0 })),
+        () => lines.map(l => ({ amount: moneyNum(l.amount), vatRate: withVat ? num(l.vatRate) : 0 })),
         [lines, withVat],
     );
 
@@ -456,7 +475,7 @@ export default function VoucherForm({
     );
     const allocationInputs: VoucherAllocationInput[] = useMemo(
         () => openItems.flatMap(i => {
-            const a = num(allocate[itemKey(i)] ?? "");
+            const a = moneyNum(allocate[itemKey(i)] ?? "");
             if (!(a > 0)) return [];
             return [i.kind === "PISR" ? { invoiceId: i.id, amount: a } : { openingItemId: i.id, amount: a }];
         }),
@@ -748,7 +767,16 @@ export default function VoucherForm({
      * disabled button with a hidden reason is the same dead end as a 400 — it
      * just arrives earlier, silently.
      */
-    const blocker = refusal
+    // F1/F4: a refused amount or a date past the manual-posting window, named first.
+    const moneyProblem = lines.map(l => moneyErr(l.amount)).find(e => e !== null)
+        ?? Object.values(allocate).map(v => moneyErr(v ?? "")).find(e => e !== null)
+        ?? null;
+    const dateTooFar = editable && isBeyondManualPostingWindow(docDate);
+    const blocker = moneyProblem
+        ? tm(moneyProblem)
+        : dateTooFar
+        ? tm("dateTooFar", { max: formatDate(maxManualPostingDateIso()) })
+        : refusal
         ? t(refusal.key, { line: refusal.line ?? 1 })
         : duplicateOf && editable
           ? t("duplicateInvoice", { invoice: invoiceNumber.trim(), vendor: vendor?.nameEn ?? "", number: duplicateOf })
@@ -1009,6 +1037,7 @@ export default function VoucherForm({
                             className={field}
                             disabled={!editable}
                             value={docDate}
+                            max={maxManualPostingDateIso()}
                             onChange={e => setDocDate(e.target.value)}
                         />
                     </div>
@@ -1354,11 +1383,18 @@ export default function VoucherForm({
                                                 data-testid={`line-amount-${i}`}
                                                 aria-label={t("amount")}
                                                 inputMode="decimal"
+                                                dir="ltr"
+                                                aria-invalid={moneyErr(l.amount) !== null}
                                                 className={`${field} w-32 text-end tabular-nums`}
                                                 disabled={!editable}
                                                 value={l.amount}
                                                 onChange={e => setLine(i, { amount: e.target.value })}
                                             />
+                                            {moneyErr(l.amount) && (
+                                                <span data-testid={`line-amount-error-${i}`}>
+                                                    <MoneyFieldError error={moneyErr(l.amount)!} />
+                                                </span>
+                                            )}
                                         </td>
                                         {withVat && (
                                             <td className={`${td} text-end`}>
@@ -1522,10 +1558,15 @@ export default function VoucherForm({
                                                     aria-label={t("allocateAmount")}
                                                     data-testid={`allocate-amount-${i.invoiceNumber ?? i.id}`}
                                                     inputMode="decimal"
+                                                    dir="ltr"
+                                                    aria-invalid={moneyErr(allocate[itemKey(i)] ?? "") !== null}
                                                     className={`${field} w-32 text-end tabular-nums`}
                                                     value={allocate[itemKey(i)] ?? ""}
                                                     onChange={e => setAllocate(a => ({ ...a, [itemKey(i)]: e.target.value }))}
                                                 />
+                                                {moneyErr(allocate[itemKey(i)] ?? "") && (
+                                                    <MoneyFieldError error={moneyErr(allocate[itemKey(i)] ?? "")!} />
+                                                )}
                                             </td>
                                         </tr>
                                     ))}
@@ -1734,7 +1775,7 @@ export default function VoucherForm({
                     <button
                         type="button"
                         data-testid="save-draft"
-                        disabled={busy}
+                        disabled={busy || !!moneyProblem || dateTooFar}
                         onClick={saveDraft}
                         className="px-5 py-2.5 rounded-lg text-xs font-semibold border border-border text-foreground cursor-pointer disabled:opacity-50"
                     >

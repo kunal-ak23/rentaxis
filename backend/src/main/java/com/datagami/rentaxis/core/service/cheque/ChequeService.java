@@ -1163,6 +1163,10 @@ public class ChequeService {
     @Transactional
     public ChequeDTO cashReceipt(UUID leaseId, ChequeRowInput row) {
         if (row == null) throw new BusinessRuleViolationException("A receipt needs a row");
+        // Break-it round 1 (money) F4: a counter receipt is dated by hand and posts a
+        // PDR and a CRT on that date, numbered with a two-digit year.
+        com.datagami.rentaxis.core.service.ledger.ManualPostingDates.requireWithinAYear(row.chequeDate(), "A cash receipt");
+        com.datagami.rentaxis.core.service.ledger.ManualPostingDates.requireWithinAYear(row.postingDate(), "A cash receipt");
         ChequeMode mode = row.mode();
         if (mode != ChequeMode.CASH && mode != ChequeMode.TRANSFER) {
             // A PDC is paper to be banked and cleared later; an ONLINE row belongs to
