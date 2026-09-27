@@ -11,6 +11,7 @@ import com.datagami.rentaxis.api.dto.GatePassDtos.ScanResponse;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.security.PropertyScope;
+import com.datagami.rentaxis.core.service.GatePassReportService;
 import com.datagami.rentaxis.core.service.GatePassScanService;
 import com.datagami.rentaxis.core.service.GatePassScanService.ScanOutcome;
 import com.datagami.rentaxis.core.service.GatePassService;
@@ -36,6 +37,7 @@ import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -109,6 +111,7 @@ public class GatePassController {
     private final LeaseRepository leaseRepository;
     private final UserRepository userRepository;
     private final PropertyScope propertyScope;
+    private final GatePassReportService gatePassReportService;
 
     public GatePassController(GatePassService gatePassService,
                               GatePassScanService gatePassScanService,
@@ -120,7 +123,8 @@ public class GatePassController {
                               RenterRepository renterRepository,
                               LeaseRepository leaseRepository,
                               UserRepository userRepository,
-                              PropertyScope propertyScope) {
+                              PropertyScope propertyScope,
+                              GatePassReportService gatePassReportService) {
         this.gatePassService = gatePassService;
         this.gatePassScanService = gatePassScanService;
         this.gatePassRepository = gatePassRepository;
@@ -132,6 +136,7 @@ public class GatePassController {
         this.leaseRepository = leaseRepository;
         this.userRepository = userRepository;
         this.propertyScope = propertyScope;
+        this.gatePassReportService = gatePassReportService;
     }
 
     // ---------------------------------------------------------------- renter
@@ -369,6 +374,31 @@ public class GatePassController {
         return rows;
     }
 
+    /**
+     * The same rows as {@link #report}, a page at a time and newest first (scale #15) —
+     * what the web table reads; the CSV export keeps {@code /report}. Validation and the
+     * named-property check are {@link #report}'s; the property filter and a property
+     * manager's buildings are applied in the query (see
+     * {@link GatePassReportService#reportPage}).
+     */
+    @GetMapping("/report/paged")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
+    public Page<GatePassReportRow> reportPaged(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @RequestParam(required = false) UUID propertyId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+
+        if (to.isBefore(from)) {
+            throw new BusinessRuleViolationException("'to' must not be before 'from'");
+        }
+        if (propertyId != null) {
+            propertyScope.requireCanAccessProperty(propertyId);
+        }
+        return gatePassReportService.reportPage(tenantId(), from, to, propertyId, page, size);
+    }
+
     @GetMapping("/guards/{userId}/properties")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
     public List<UUID> guardProperties(@PathVariable UUID userId) {
@@ -511,17 +541,9 @@ public class GatePassController {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    /** Batch unit-number lookup for display; missing units simply have no number. */
+    /** Batch unit-number lookup for display; see {@link GatePassReportService#unitNumbers}. */
     private Map<UUID, String> unitNumbers(List<UUID> unitIds) {
-        List<UUID> distinct = unitIds.stream().distinct().toList();
-        if (distinct.isEmpty()) {
-            return Map.of();
-        }
-        Map<UUID, String> byId = new HashMap<>();
-        for (Unit unit : unitRepository.findAllById(distinct)) {
-            byId.put(unit.getId(), unit.getUnitNumber());
-        }
-        return byId;
+        return gatePassReportService.unitNumbers(unitIds);
     }
 
     /**
@@ -553,40 +575,12 @@ public class GatePassController {
     }
 
     /**
-     * Batch display-name lookup for the guards who performed the scans, mirroring
-     * {@link #propertyNames}.
-     *
-     * <p>Exists because the report's central question is "who scanned this", and the
-     * row carried only a UUID. The role that most needs the answer is the one that
-     * cannot get it: {@code PROPERTY_MANAGER} is allowed on this report but not on
-     * {@code /api/admin/users} (SUPER_ADMIN/TENANT_ADMIN only), so resolving the id
-     * client-side 403s. Resolving it here is the only place a manager can be told.
-     *
-     * <p>Tenant-scoped in the SQL rather than relying on the {@code tenantFilter}
-     * aspect, matching {@link #propertyNames} and {@code existsByIdAndTenantId}. Note
-     * this rejects {@code UserRepository.findDisplayNameById}, which exists for
-     * exactly this shape of question but deliberately bypasses the filter with native
-     * SQL to attribute cross-tenant SUPER_ADMIN actions — and is single-id besides.
-     * A scan is always performed by a guard inside the tenant that owns it, so there
-     * is no cross-tenant case to serve here, and using that helper would trade one
-     * query for one per row while widening the read.
-     *
-     * <p>A miss — deleted user, or an id from outside the tenant — yields no entry, so
-     * the row's name is null and the client falls back to the id it still carries. It
-     * does not skip the row: a scan that happened is part of the audit trail whether
-     * or not the account behind it still exists, and dropping it would quietly shorten
-     * the report.
+     * Batch display-name lookup for the guards who performed the scans, tenant-scoped in
+     * the SQL; why it exists and why a miss keeps the row are on
+     * {@link GatePassReportService#guardNames}.
      */
     private Map<UUID, String> guardNames(List<UUID> userIds) {
-        List<UUID> distinct = userIds.stream().filter(Objects::nonNull).distinct().toList();
-        if (distinct.isEmpty()) {
-            return Map.of();
-        }
-        Map<UUID, String> byId = new HashMap<>();
-        for (User user : userRepository.findByTenantIdAndIdIn(tenantId(), distinct)) {
-            byId.put(user.getId(), user.getName());
-        }
-        return byId;
+        return gatePassReportService.guardNames(tenantId(), userIds);
     }
 
     private GatePassResponse toResponse(GatePass pass) {

@@ -1364,6 +1364,7 @@
     "exportCsv": "Export CSV",
     "scanCount": "{count} scans",
     "loadError": "Failed to load the gate pass report.",
+    "exportError": "Could not export the report. Try again.",
     "invalidRange": "The 'To' date must not be before the 'From' date.",
     "retry": "Retry",
     "noRows": "No gate activity in this period.",
