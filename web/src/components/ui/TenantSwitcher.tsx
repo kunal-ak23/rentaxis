@@ -9,6 +9,7 @@ import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { useMyOrgs } from "@/components/nav/orgStore";
+import { announceOrgChange, setPageOrg } from "@/lib/session/orgSync";
 
 type Tenant = { id: string; name: string };
 
@@ -44,6 +45,10 @@ export function TenantSwitcher({ isCollapsed, responsive = false }: { isCollapse
         if (!active) return;
         if (Cookies.get("active_tenant_id") !== active.id) {
             Cookies.set("active_tenant_id", active.id, { path: "/" });
+            // The resolved default is the organisation this page shows; not a
+            // switch, so the other tabs are not told (the proxy resolves "no
+            // cookie" to the same organisation).
+            setPageOrg(active.id);
             router.refresh();
         }
     }, [active, router]);
@@ -55,6 +60,9 @@ export function TenantSwitcher({ isCollapsed, responsive = false }: { isCollapse
         } else {
             Cookies.remove("active_tenant_id", { path: "/" });
         }
+        // Break round 1, F3: every other open tab still shows the old
+        // organisation; tell them so they block until reloaded.
+        announceOrgChange(tenant?.id ?? "");
         setIsOpen(false);
         // Hard navigate to dashboard to reload all data with new tenant context
         const locale = pathname.startsWith('/ar') ? 'ar' : 'en';

@@ -1,0 +1,121 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { installProxyFetchGuard, loginUrlFor } from "../proxyFetchGuard";
+
+/**
+ * The one place every browser call to /api/proxy passes through (the app has
+ * ~150 raw fetch sites, so per-page handling is not an option):
+ *  - F3: mutations carry the organisation the page was loaded for;
+ *  - F6: a 401 means the session is gone — send the user to sign in instead of
+ *    rendering "Request failed (status 401)" or a false empty state;
+ *  - F3: the proxy's own 409 org-mismatch raises the "organisation changed" notice.
+ */
+
+type Call = { url: string; init?: RequestInit; headers: Headers };
+let calls: Call[];
+let respond: (url: string) => Response;
+let uninstall: (() => void) | null = null;
+
+beforeEach(() => {
+    calls = [];
+    respond = () => new Response("{}", { status: 200 });
+    window.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+        calls.push({ url, init, headers: new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)) });
+        return respond(url);
+    }) as unknown as typeof fetch;
+});
+afterEach(() => {
+    uninstall?.();
+    uninstall = null;
+});
+
+function install(overrides: Partial<Parameters<typeof installProxyFetchGuard>[0]> = {}) {
+    const onUnauthorized = vi.fn();
+    const onOrgMismatch = vi.fn();
+    uninstall = installProxyFetchGuard({ getExpectedOrg: () => "brk1", onUnauthorized, onOrgMismatch, ...overrides });
+    return { onUnauthorized, onOrgMismatch };
+}
+
+const headerOf = (c: Call, name: string) => c.headers.get(name);
+
+describe("installProxyFetchGuard — expected organisation (F3)", () => {
+    it.each(["POST", "PUT", "PATCH", "DELETE", "post"])("stamps a %s to /api/proxy with the page's organisation", async (method) => {
+        install();
+        await fetch("/api/proxy/v1/renters", { method, headers: { "Content-Type": "application/json" }, body: "{}" });
+        expect(headerOf(calls[0], "X-Expected-Tenant-Id")).toBe("brk1");
+        expect(headerOf(calls[0], "Content-Type")).toBe("application/json");
+    });
+
+    it("sends 'none' for a page loaded in Global View", async () => {
+        install({ getExpectedOrg: () => "" });
+        await fetch("/api/proxy/v1/renters", { method: "POST" });
+        expect(headerOf(calls[0], "X-Expected-Tenant-Id")).toBe("none");
+    });
+
+    it("leaves GETs and non-proxy calls alone", async () => {
+        install();
+        await fetch("/api/proxy/v1/renters");
+        await fetch("/api/auth/session", { method: "POST" });
+        await fetch("https://example.com/api/proxy/x", { method: "POST" });
+        expect(calls.map(c => headerOf(c, "X-Expected-Tenant-Id"))).toEqual([null, null, null]);
+    });
+
+    it("stamps a Request object too", async () => {
+        install();
+        await fetch(new Request("http://localhost:3000/api/proxy/v1/renters", { method: "POST" }));
+        expect(headerOf(calls[0], "X-Expected-Tenant-Id")).toBe("brk1");
+    });
+
+    it("calls onOrgMismatch on the proxy's own 409, not on a backend conflict", async () => {
+        const { onOrgMismatch } = install();
+        respond = () => new Response("{}", { status: 409, headers: { "X-Org-Mismatch": "1" } });
+        await fetch("/api/proxy/v1/renters", { method: "POST" });
+        expect(onOrgMismatch).toHaveBeenCalledTimes(1);
+        respond = () => new Response("{}", { status: 409 });
+        await fetch("/api/proxy/v1/renters", { method: "POST" });
+        expect(onOrgMismatch).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe("installProxyFetchGuard — session gone (F6)", () => {
+    it("calls onUnauthorized on a 401 from /api/proxy, for reads and writes", async () => {
+        const { onUnauthorized } = install();
+        respond = () => new Response("Unauthorized", { status: 401 });
+        const res = await fetch("/api/proxy/v1/leases/paged");
+        await fetch("/api/proxy/v1/renters", { method: "POST" });
+        expect(onUnauthorized).toHaveBeenCalledTimes(2);
+        // The caller still gets the real response.
+        expect(res.status).toBe(401);
+    });
+
+    it("ignores a 401 from outside /api/proxy and other statuses", async () => {
+        const { onUnauthorized } = install();
+        respond = (url) => new Response("", { status: url.includes("/api/proxy") ? 403 : 401 });
+        await fetch("/api/auth/callback/credentials", { method: "POST" });
+        await fetch("/api/proxy/v1/leases");
+        expect(onUnauthorized).not.toHaveBeenCalled();
+    });
+
+    it("restores the original fetch on uninstall", async () => {
+        const original = window.fetch;
+        install();
+        expect(window.fetch).not.toBe(original);
+        uninstall!();
+        uninstall = null;
+        expect(window.fetch).toBe(original);
+    });
+});
+
+describe("loginUrlFor", () => {
+    it("keeps the locale and the current page as callbackUrl", () => {
+        expect(loginUrlFor({ pathname: "/ar/dashboard/leases", search: "?status=ACTIVE" }))
+            .toBe(`/ar/auth/login?callbackUrl=${encodeURIComponent("/ar/dashboard/leases?status=ACTIVE")}`);
+        expect(loginUrlFor({ pathname: "/en/dashboard", search: "" }))
+            .toBe(`/en/auth/login?callbackUrl=${encodeURIComponent("/en/dashboard")}`);
+    });
+
+    it("never redirects from the auth pages themselves (no loop)", () => {
+        expect(loginUrlFor({ pathname: "/en/auth/login", search: "?callbackUrl=%2Fen%2Fdashboard" })).toBeNull();
+        expect(loginUrlFor({ pathname: "/ar/auth/set-password", search: "" })).toBeNull();
+    });
+});

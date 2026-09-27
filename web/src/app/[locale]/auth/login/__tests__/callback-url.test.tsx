@@ -1,0 +1,80 @@
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+/**
+ * Break round 1, F6: a user whose session ended is sent to sign in with the
+ * page they were on as ?callbackUrl=; signing in must bring them back there —
+ * but only to a same-origin path.
+ */
+const { push, search, signIn, getSession } = vi.hoisted(() => ({
+    push: vi.fn(),
+    search: { value: "" },
+    signIn: vi.fn(),
+    getSession: vi.fn(),
+}));
+
+vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(search.value) }));
+vi.mock("next-auth/react", () => ({ signIn, getSession }));
+vi.mock("@/i18n/routing", () => ({
+    Link: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a href={String(href)} {...props}>{children}</a>,
+    useRouter: () => ({ push }),
+}));
+vi.mock("next/image", () => ({ default: ({ alt }: { alt: string }) => <span role="img" aria-label={alt} /> }));
+vi.mock("framer-motion", () => ({
+    motion: { div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div> },
+}));
+
+import LoginPage from "../page";
+import { safeCallbackUrl } from "@/lib/session/proxyFetchGuard";
+
+const realLocation = window.location;
+let assign: ReturnType<typeof vi.fn>;
+
+beforeEach(() => {
+    push.mockReset();
+    signIn.mockResolvedValue({ ok: true, error: null });
+    getSession.mockResolvedValue({ user: { role: "TENANT_ADMIN" } });
+    assign = vi.fn();
+    Object.defineProperty(window, "location", { configurable: true, value: { ...realLocation, assign } });
+});
+afterEach(() => {
+    cleanup();
+    Object.defineProperty(window, "location", { configurable: true, value: realLocation });
+});
+
+async function signInNow() {
+    render(<LoginPage />);
+    fireEvent.change(screen.getByLabelText("Email Address"), { target: { value: "a@b.c" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret" } });
+    fireEvent.submit(screen.getByLabelText("Email Address").closest("form")!);
+}
+
+describe("LoginPage callbackUrl (F6)", () => {
+    it("returns to the page the session ended on", async () => {
+        search.value = `callbackUrl=${encodeURIComponent("/ar/dashboard/leases?status=ACTIVE")}`;
+        await signInNow();
+        await waitFor(() => expect(assign).toHaveBeenCalledWith("/ar/dashboard/leases?status=ACTIVE"));
+        expect(push).not.toHaveBeenCalled();
+    });
+
+    it("ignores an off-site callbackUrl and goes to the dashboard", async () => {
+        search.value = `callbackUrl=${encodeURIComponent("https://evil.example/x")}`;
+        await signInNow();
+        await waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard"));
+        expect(assign).not.toHaveBeenCalled();
+    });
+});
+
+describe("safeCallbackUrl", () => {
+    it.each([
+        ["/en/dashboard", "/en/dashboard"],
+        ["https://evil.example", null],
+        ["//evil.example/x", null],
+        ["/\\evil.example", null],
+        ["/en/auth/login", null],
+        ["", null],
+        [null, null],
+    ])("%s → %s", (raw, expected) => {
+        expect(safeCallbackUrl(raw)).toBe(expected);
+    });
+});

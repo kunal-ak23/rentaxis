@@ -12,6 +12,7 @@ import TourProvider from "@/components/tour/TourProvider";
 import HelpFAB from "@/components/help/HelpFAB";
 import { NavShellProvider } from "@/components/nav/NavShellContext";
 import type { UserRole } from "@/lib/rbac";
+import { SessionGuards } from "@/components/layout/SessionGuards";
 
 export default function AuthenticatedLayout({
     children,
@@ -42,6 +43,7 @@ export default function AuthenticatedLayout({
     if (!session) return null;
 
     return (
+        <SessionGuards role={session.user?.role} homeTenantId={session.user?.tenantId}>
         <TourProvider role={session?.user?.role as UserRole | undefined}>
             <NavShellProvider>
             <div className="flex h-screen overflow-hidden bg-background">
@@ -68,5 +70,6 @@ export default function AuthenticatedLayout({
             </NavShellProvider>
             <HelpFAB />
         </TourProvider>
+        </SessionGuards>
     );
 }

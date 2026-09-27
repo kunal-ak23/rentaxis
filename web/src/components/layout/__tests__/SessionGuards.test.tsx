@@ -1,0 +1,114 @@
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import Cookies from "js-cookie";
+
+vi.mock("next-intl", async () => (await import("@/test/intlMock")).englishIntl());
+
+import { SessionGuards } from "../SessionGuards";
+import { resetPageOrg } from "@/lib/session/orgSync";
+
+/**
+ * Break round 1:
+ *  F3 — tab B switching organisation must block tab A (which still shows the
+ *       old organisation) until it is reloaded;
+ *  F6 — a 401 from /api/proxy anywhere sends the user to sign in, keeping the
+ *       page as callbackUrl.
+ */
+
+let assign: ReturnType<typeof vi.fn>;
+let reload: ReturnType<typeof vi.fn>;
+let fetchStatus = 200;
+const realLocation = window.location;
+
+beforeEach(() => {
+    resetPageOrg();
+    Cookies.set("active_tenant_id", "brk1", { path: "/" });
+    assign = vi.fn();
+    reload = vi.fn();
+    Object.defineProperty(window, "location", {
+        configurable: true,
+        value: { ...realLocation, href: "http://localhost:3000/en/dashboard/renters?q=a", origin: "http://localhost:3000",
+            pathname: "/en/dashboard/renters", search: "?q=a", assign, reload },
+    });
+    fetchStatus = 200;
+    window.fetch = vi.fn(async () => new Response("{}", { status: fetchStatus })) as unknown as typeof fetch;
+});
+afterEach(() => {
+    cleanup();
+    Cookies.remove("active_tenant_id", { path: "/" });
+    Object.defineProperty(window, "location", { configurable: true, value: realLocation });
+});
+
+function renderGuards(role = "SUPER_ADMIN", homeTenantId?: string) {
+    return render(
+        <SessionGuards role={role} homeTenantId={homeTenantId}>
+            <form><button type="submit">Create</button></form>
+        </SessionGuards>,
+    );
+}
+
+function otherTabSwitchesTo(orgId: string) {
+    Cookies.set("active_tenant_id", orgId, { path: "/" });
+    act(() => {
+        window.dispatchEvent(new StorageEvent("storage", {
+            key: "rentaxis-org-change",
+            newValue: JSON.stringify({ orgId, from: "other-tab", at: Date.now() }),
+        }));
+    });
+}
+
+describe("SessionGuards — organisation changed in another tab (F3)", () => {
+    it("blocks the page with a reload notice when another tab switches", () => {
+        renderGuards();
+        expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+        otherTabSwitchesTo("org2");
+        const dialog = screen.getByRole("alertdialog", { name: /organisation changed in another tab/i });
+        expect(dialog).toBeInTheDocument();
+        // The page underneath cannot be used.
+        expect(screen.getByRole("button", { name: "Create", hidden: true }).closest("[inert]")).not.toBeNull();
+        fireEvent.click(screen.getByRole("button", { name: /reload/i }));
+        expect(reload).toHaveBeenCalled();
+    });
+
+    it("does not block when the other tab picked the organisation this page already shows", () => {
+        renderGuards();
+        otherTabSwitchesTo("brk1");
+        expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    });
+
+    it("blocks when the cookie changed behind the tab's back (checked on focus)", () => {
+        renderGuards();
+        Cookies.set("active_tenant_id", "org2", { path: "/" });
+        act(() => { window.dispatchEvent(new Event("focus")); });
+        expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    });
+
+    it("stamps mutations with the organisation the page was loaded for, even after the cookie moved", async () => {
+        const inner = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async () => new Response("{}", { status: 200 }));
+        window.fetch = inner as unknown as typeof fetch;
+        renderGuards();
+        Cookies.set("active_tenant_id", "org2", { path: "/" });
+        await act(async () => { await fetch("/api/proxy/v1/renters", { method: "POST" }); });
+        expect(new Headers(inner.mock.calls[0][1]?.headers).get("X-Expected-Tenant-Id")).toBe("brk1");
+    });
+
+    it("shows the notice when the proxy refuses a stale write (409 org mismatch)", async () => {
+        window.fetch = vi.fn(async () => new Response("{}", { status: 409, headers: { "X-Org-Mismatch": "1" } })) as unknown as typeof fetch;
+        renderGuards();
+        await act(async () => { await fetch("/api/proxy/v1/renters", { method: "POST" }); });
+        expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    });
+});
+
+describe("SessionGuards — session gone (F6)", () => {
+    it("sends the user to sign in with the current page as callbackUrl on a 401", async () => {
+        renderGuards("TENANT_ADMIN", "brk1");
+        fetchStatus = 401;
+        await act(async () => { await fetch("/api/proxy/v1/leases/paged"); });
+        expect(assign).toHaveBeenCalledTimes(1);
+        expect(assign).toHaveBeenCalledWith(`/en/auth/login?callbackUrl=${encodeURIComponent("/en/dashboard/renters?q=a")}`);
+        // A burst of 401s redirects once.
+        await act(async () => { await fetch("/api/proxy/v1/renters"); });
+        expect(assign).toHaveBeenCalledTimes(1);
+    });
+});
