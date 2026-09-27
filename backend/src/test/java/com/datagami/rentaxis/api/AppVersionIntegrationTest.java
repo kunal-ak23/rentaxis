@@ -1,6 +1,8 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
+import com.datagami.rentaxis.testsupport.TestIdentities;
+import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -38,6 +40,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class AppVersionIntegrationTest extends AbstractPostgresIT {
+
+    // Header identities must be real rows (break round 1, F1/F2).
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.domain.repository.UserRepository userRepo;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.domain.repository.LandlordOrgRepository orgRepo;
+
+    private UUID superAdmin() {
+        return TestIdentities.user(userRepo, UserRole.SUPER_ADMIN, null);
+    }
+
 
     @LocalServerPort
     int port;
@@ -118,7 +131,7 @@ class AppVersionIntegrationTest extends AbstractPostgresIT {
         // Bump SECURITY/IOS (a row no other test reads) so the change is isolated.
         ResponseEntity<Void> put = client().put()
                 .uri("/api/v1/admin/app-versions/SECURITY/IOS")
-                .header("X-User-Id", UUID.randomUUID().toString())
+                .header("X-User-Id", superAdmin().toString())
                 .header("X-User-Role", "SUPER_ADMIN")
                 .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                 .body(Map.of(
@@ -144,7 +157,7 @@ class AppVersionIntegrationTest extends AbstractPostgresIT {
     void adminList_asSuperAdmin_returnsAllSixSeededRows() {
         ResponseEntity<String> resp = client().get()
                 .uri("/api/v1/admin/app-versions")
-                .header("X-User-Id", UUID.randomUUID().toString())
+                .header("X-User-Id", superAdmin().toString())
                 .header("X-User-Role", "SUPER_ADMIN")
                 .retrieve()
                 .toEntity(String.class);
@@ -158,7 +171,8 @@ class AppVersionIntegrationTest extends AbstractPostgresIT {
     // ── admin bump: SUPER_ADMIN only ─────────────────────────────────────────
 
     private int bumpStatusFor(String role) {
-        UUID tenantId = UUID.randomUUID();
+        UUID tenantId = TestIdentities.org(orgRepo);
+        UUID userId = TestIdentities.user(userRepo, UserRole.valueOf(role), tenantId);
         // Targets MANAGER/ANDROID — a real, valid row (so authorization is the
         // only thing that can reject the request) that no read test in this
         // class asserts on. That keeps this test honest even if the guard is
@@ -170,7 +184,7 @@ class AppVersionIntegrationTest extends AbstractPostgresIT {
                 // request and establishes the role context; the @PreAuthorize is
                 // then the only thing that can reject it — an honest 403, not a
                 // filter-level 401 for missing context.
-                .header("X-User-Id", UUID.randomUUID().toString())
+                .header("X-User-Id", userId.toString())
                 .header("X-User-Role", role)
                 .header("X-Tenant-Id", tenantId.toString())
                 .header("X-User-Tenant-Id", tenantId.toString())

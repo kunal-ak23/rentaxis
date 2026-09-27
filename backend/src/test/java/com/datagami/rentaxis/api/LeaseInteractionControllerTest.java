@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.testsupport.TestIdentities;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
@@ -118,7 +119,9 @@ class LeaseInteractionControllerTest extends AbstractPostgresIT {
     private RestClient renterClient() {
         return RestClient.builder()
                 .baseUrl("http://localhost:" + port)
-                .defaultHeader("X-User-Id", UUID.randomUUID().toString())
+                // A real RENTER row: header identities are checked against it (break round 1, F1).
+                .defaultHeader("X-User-Id", TestIdentities.user(userRepo,
+                        com.datagami.rentaxis.domain.entity.enums.UserRole.RENTER, tenantId).toString())
                 .defaultHeader("X-User-Role", "RENTER")
                 .defaultHeader("X-Tenant-Id", tenantId.toString())
                 .defaultHeader("X-User-Tenant-Id", tenantId.toString())

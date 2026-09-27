@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.testsupport.TestIdentities;
 import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -27,16 +28,23 @@ class PromotionFeedControllerAuthorizationTest extends AbstractPostgresIT {
 
     @LocalServerPort int port;
 
-    private final UUID tenantId = UUID.randomUUID();
+    // Header identities must be real rows in a real organisation (break round 1, F1/F2).
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.domain.repository.UserRepository userRepo;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.domain.repository.LandlordOrgRepository orgRepo;
 
     private int statusFor(String role) {
+        UUID tenantId = TestIdentities.org(orgRepo);
+        UUID userId = TestIdentities.user(userRepo,
+                com.datagami.rentaxis.domain.entity.enums.UserRole.valueOf(role), tenantId);
         RestClient client = RestClient.builder()
                 .baseUrl("http://localhost:" + port)
                 .build();
         try {
             client.get()
                     .uri("/api/v1/promotions/feed")
-                    .header("X-User-Id", UUID.randomUUID().toString())
+                    .header("X-User-Id", userId.toString())
                     .header("X-User-Role", role)
                     .header("X-Tenant-Id", tenantId.toString())
                     .header("X-User-Tenant-Id", tenantId.toString())

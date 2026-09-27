@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.testsupport.TestIdentities;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import org.junit.jupiter.api.AfterEach;
@@ -38,6 +39,9 @@ class PropertyAccountTenantIsolationIT extends AbstractPostgresIT {
     private UUID propertyA;
     private UUID propertyB;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.domain.repository.UserRepository userRepo;
+
     @BeforeEach
     void setUp() {
         TenantContextHolder.clear();
@@ -54,7 +58,8 @@ class PropertyAccountTenantIsolationIT extends AbstractPostgresIT {
 
     private UUID tenant() {
         UUID id = UUID.randomUUID();
-        jdbc.update("INSERT INTO landlord_org (id, name, slug) VALUES (?, ?, ?)", id, "T-" + id, "t-" + id);
+        jdbc.update("INSERT INTO landlord_org (id, name, slug, status) VALUES (?, ?, ?, 'ACTIVE')",
+                id, "T-" + id, "t-" + id);
         return id;
     }
 
@@ -66,7 +71,10 @@ class PropertyAccountTenantIsolationIT extends AbstractPostgresIT {
     }
 
     private MockHttpServletRequestBuilder asAdminOfA(MockHttpServletRequestBuilder r) {
-        return r.header("X-User-Id", UUID.randomUUID().toString())
+        // A real TENANT_ADMIN of A: header identities are checked against the row (break round 1, F1).
+        UUID adminOfA = TestIdentities.user(userRepo,
+                com.datagami.rentaxis.domain.entity.enums.UserRole.TENANT_ADMIN, tenantA);
+        return r.header("X-User-Id", adminOfA.toString())
                 .header("X-User-Role", "TENANT_ADMIN")
                 .header("X-User-Tenant-Id", tenantA.toString())
                 .header("X-Tenant-Id", tenantA.toString());

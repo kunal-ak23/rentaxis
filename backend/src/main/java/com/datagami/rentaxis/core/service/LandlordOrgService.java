@@ -274,6 +274,10 @@ public class LandlordOrgService {
         // Tokens that act in this tenant stop working on the next request, not
         // when the cached ACTIVE status expires.
         tokenRevocation.evictOrg(tenantId);
+        // Reparented users changed home tenant and lost a membership in one bulk
+        // UPDATE that names none of them; the request filter reads both through
+        // the user cache (break round 1, F2).
+        tokenRevocation.evictAllUsersAfterCommit();
         log.info("deleteTenant({}): database purge completed; contract cleanup and {} exact artifact cleanups scheduled after commit",
                 tenantId, queuedArtifacts);
     }

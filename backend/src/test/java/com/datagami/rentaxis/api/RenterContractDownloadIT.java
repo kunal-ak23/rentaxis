@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.testsupport.TestIdentities;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.Lease;
@@ -162,7 +163,8 @@ class RenterContractDownloadIT extends AbstractPostgresIT {
 
         ResponseEntity<byte[]> preview = RestClient.builder().baseUrl("http://localhost:" + port).build()
                 .post().uri("/api/v1/leases/" + numberlessRenewal.getId() + "/generate-contract/preview")
-                .header("X-User-Id", UUID.randomUUID().toString())
+                .header("X-User-Id", TestIdentities.user(userRepo,
+                        com.datagami.rentaxis.domain.entity.enums.UserRole.TENANT_ADMIN, tenantId).toString())
                 .header("X-User-Role", "TENANT_ADMIN")
                 .header("X-Tenant-Id", tenantId.toString())
                 .header("X-User-Tenant-Id", tenantId.toString())

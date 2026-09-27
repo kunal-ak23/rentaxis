@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.testsupport.TestIdentities;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.User;
@@ -135,7 +136,7 @@ class CrossTenantAdminSurfacesIT extends AbstractPostgresIT {
     @Test
     void aSuperAdminWithNoTenantContextStillSeesEveryTenantsUsers() throws Exception {
         mvc.perform(get("/api/admin/users")
-                        .header("X-User-Id", UUID.randomUUID().toString())
+                        .header("X-User-Id", superAdmin().toString())
                         .header("X-User-Role", "SUPER_ADMIN"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].id", hasItem(staffA.toString())))
@@ -265,7 +266,7 @@ class CrossTenantAdminSurfacesIT extends AbstractPostgresIT {
         orgSettingsRow(tenantB, "Pay tenant B: IBAN AE99 BBBB");
 
         mvc.perform(get("/api/v1/settings/org")
-                        .header("X-User-Id", UUID.randomUUID().toString())
+                        .header("X-User-Id", superAdmin().toString())
                         .header("X-User-Role", "SUPER_ADMIN"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.penaltyPaymentInstructions", is("")));
@@ -282,7 +283,7 @@ class CrossTenantAdminSurfacesIT extends AbstractPostgresIT {
         Map<String, Object> before = jdbc.queryForMap("SELECT * FROM org_settings WHERE id = ?", rowB);
 
         int status = mvc.perform(put("/api/v1/settings/org")
-                        .header("X-User-Id", UUID.randomUUID().toString())
+                        .header("X-User-Id", superAdmin().toString())
                         .header("X-User-Role", "SUPER_ADMIN")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"penaltyPaymentInstructions\":\"Pay head office\"}"))
@@ -299,6 +300,11 @@ class CrossTenantAdminSurfacesIT extends AbstractPostgresIT {
     }
 
     // ---- fixtures ----------------------------------------------------------
+
+    /** A real SUPER_ADMIN row: header identities are checked against it (break round 1, F1). */
+    private UUID superAdmin() {
+        return TestIdentities.user(userRepo, com.datagami.rentaxis.domain.entity.enums.UserRole.SUPER_ADMIN, null);
+    }
 
     private MockHttpServletRequestBuilder as(MockHttpServletRequestBuilder request, UUID userId, String role,
             UUID tenantId) {

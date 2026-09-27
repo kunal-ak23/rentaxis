@@ -649,6 +649,10 @@ public class UserService {
         boolean passwordSet = rawPassword != null && !rawPassword.isBlank();
         if (previousRole != role || !java.util.Objects.equals(previousTenantId, newTenantId) || passwordSet) {
             tokenRevocation.revokeAllTokens(saved.getId());
+        } else {
+            // The legacy X-User-* path reads role, tenant and memberships through
+            // the same cache (break round 1, F1/F2); any edit drops it.
+            tokenRevocation.evictUserAfterCommit(saved.getId());
         }
 
         // Emit STAFF_ROLE_CHANGED when role transitions to a different value
@@ -733,6 +737,9 @@ public class UserService {
         membership.setUserId(userId);
         membership.setTenantId(tenantId);
         tenantMembershipRepository.save(membership);
+        // The request filter authorizes tenants from the cached membership list
+        // (break round 1, F2): a new membership works from the next request.
+        tokenRevocation.evictUserAfterCommit(userId);
     }
 
     @Transactional

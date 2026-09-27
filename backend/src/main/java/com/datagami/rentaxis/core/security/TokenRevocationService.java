@@ -11,7 +11,10 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Duration;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -30,13 +33,21 @@ import java.util.UUID;
  * never delays a revocation made in this process. The TTL only bounds changes
  * written some other way: a status edited directly in the database, or another
  * backend instance's cache.
+ *
+ * <p>The same cached row also answers the legacy X-User-* path
+ * ({@link LegacyHeaderIdentityCheck}, break round 1 F1/F2): the user's current
+ * role, home tenant and memberships. So every in-process change to any of those
+ * must evict the user here — {@code UserService} does on update, delete,
+ * membership add/remove, and {@code LandlordOrgService.deleteTenant} evicts
+ * everyone it reparents.
  */
 @Service
-public class TokenRevocationService implements BearerTokenStateCheck {
+public class TokenRevocationService implements BearerTokenStateCheck, LegacyHeaderIdentityCheck {
 
     static final Duration CACHE_TTL = Duration.ofSeconds(30);
 
-    private record UserState(int tokenVersion, String status) {
+    private record UserState(int tokenVersion, String status, UserRole role, UUID homeTenantId,
+            Set<UUID> memberTenantIds) {
     }
 
     private final UserRepository userRepository;
@@ -54,10 +65,43 @@ public class TokenRevocationService implements BearerTokenStateCheck {
         this.orgRepository = orgRepository;
     }
 
+    private Optional<UserState> state(UUID userId) {
+        return users.get(userId, id -> userRepository.findAuthStateById(id).map(TokenRevocationService::toState));
+    }
+
+    private static UserState toState(UserRepository.AuthState s) {
+        UserRole role;
+        try {
+            role = s.getRole() == null ? null : UserRole.valueOf(s.getRole());
+        } catch (IllegalArgumentException unknownRole) {
+            role = null;
+        }
+        Set<UUID> members = new LinkedHashSet<>();
+        if (s.getMemberTenantIds() != null && !s.getMemberTenantIds().isBlank()) {
+            for (String id : s.getMemberTenantIds().split(",")) {
+                members.add(UUID.fromString(id.trim()));
+            }
+        }
+        return new UserState(s.getTokenVersion() == null ? 0 : s.getTokenVersion(), s.getStatus(), role,
+                s.getTenantId() == null ? null : UUID.fromString(s.getTenantId()),
+                Collections.unmodifiableSet(members));
+    }
+
+    @Override
+    public Optional<CurrentUser> currentUser(UUID userId) {
+        return state(userId).map(s -> new CurrentUser(s.role(), UserStatus.ACTIVE.name().equals(s.status()),
+                s.homeTenantId(), s.memberTenantIds()));
+    }
+
+    @Override
+    public boolean orgActive(UUID tenantId) {
+        Optional<String> orgStatus = orgStatuses.get(tenantId, orgRepository::findStatusById);
+        return orgStatus.isPresent() && "ACTIVE".equalsIgnoreCase(orgStatus.get());
+    }
+
     @Override
     public String rejectionReason(AuthTokenService.VerifiedIdentity identity, UUID activeTenantId) {
-        Optional<UserState> state = users.get(identity.userId(), id -> userRepository.findTokenStateById(id)
-                .map(s -> new UserState(s.getTokenVersion() == null ? 0 : s.getTokenVersion(), s.getStatus())));
+        Optional<UserState> state = state(identity.userId());
         if (state.isEmpty()) {
             return "user no longer exists";
         }
@@ -68,11 +112,8 @@ public class TokenRevocationService implements BearerTokenStateCheck {
             return "token has been revoked";
         }
         // SUPER_ADMIN is exempt: it is the role that re-activates an organisation.
-        if (activeTenantId != null && identity.role() != UserRole.SUPER_ADMIN) {
-            Optional<String> orgStatus = orgStatuses.get(activeTenantId, orgRepository::findStatusById);
-            if (orgStatus.isEmpty() || !"ACTIVE".equalsIgnoreCase(orgStatus.get())) {
-                return "organisation is not active";
-            }
+        if (activeTenantId != null && identity.role() != UserRole.SUPER_ADMIN && !orgActive(activeTenantId)) {
+            return "organisation is not active";
         }
         return null;
     }
@@ -95,6 +136,23 @@ public class TokenRevocationService implements BearerTokenStateCheck {
                 @Override
                 public void afterCompletion(int status) {
                     users.invalidate(userId);
+                }
+            });
+        }
+    }
+
+    /**
+     * Drops every cached user, now and after commit. For bulk writes that change
+     * users without naming them ({@code LandlordOrgService.deleteTenant}
+     * reparents every cross-tenant member of the deleted organisation).
+     */
+    public void evictAllUsersAfterCommit() {
+        users.invalidateAll();
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCompletion(int status) {
+                    users.invalidateAll();
                 }
             });
         }
