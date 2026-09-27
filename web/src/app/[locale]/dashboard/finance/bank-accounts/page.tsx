@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { Landmark, Plus, Pencil, Trash2, X, Loader2 } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { AccessDeniedState, LoadFailedState } from "@/components/ui/PageStates";
+import { loadList } from "@/lib/api/listLoad";
 import { accountName } from "@/lib/api/ledger";
 
 type Account = {
@@ -65,6 +67,7 @@ export default function BankAccountsPage() {
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [properties, setProperties] = useState<PropertyStats[]>([]);
     const [loading, setLoading] = useState(true);
+    const [listLoad, setListLoad] = useState<"ok" | "forbidden" | "failed">("ok");
     const [showModal, setShowModal] = useState(false);
     const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
     const [submitting, setSubmitting] = useState(false);
@@ -86,18 +89,13 @@ export default function BankAccountsPage() {
     }, []);
 
     const fetchBankAccounts = async () => {
-        try {
-            const res = await fetch("/api/proxy/v1/bank-accounts");
-            if (res.ok) {
-                const data = await res.json();
-                data.sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
-                setBankAccounts(data);
-            }
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setLoading(false);
+        // Break round 1, F8: a refused or failed read is not "no bank accounts".
+        const load = await loadList<BankAccount>("/api/proxy/v1/bank-accounts");
+        setListLoad(load.kind === "ok" ? "ok" : load.kind);
+        if (load.kind === "ok") {
+            setBankAccounts([...load.items].sort((a, b) => (a.id || '').localeCompare(b.id || '')));
         }
+        setLoading(false);
     };
 
     const fetchAccounts = async () => {
@@ -228,6 +226,11 @@ export default function BankAccountsPage() {
         if (!p) return "\u2014";
         return locale === "ar" ? p.nameAr || p.nameEn : p.nameEn || p.nameAr;
     };
+
+    if (listLoad === "forbidden") return <AccessDeniedState />;
+    if (listLoad === "failed" && bankAccounts.length === 0) {
+        return <LoadFailedState onRetry={() => { setLoading(true); setListLoad("ok"); fetchBankAccounts(); }} />;
+    }
 
     return (
         <div>

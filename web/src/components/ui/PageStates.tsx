@@ -1,9 +1,18 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import NextLink from "next/link";
 import { AlertCircle, Building2, RefreshCw, SearchX, ShieldCheck } from "lucide-react";
-import { Link } from "@/i18n/routing";
+
+/**
+ * A locale-prefixed link without @/i18n/routing, so every page (and its unit
+ * tests) can render these states without the navigation runtime.
+ */
+function Link({ href, className, children }: { href: string; className?: string; children: ReactNode }) {
+    const locale = useLocale();
+    return <NextLink href={`/${locale}${href}`} className={className}>{children}</NextLink>;
+}
 
 /**
  * Whole-page states shared by the dashboard: access denied, not found, load

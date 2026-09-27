@@ -7,6 +7,7 @@ import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { Pagination } from "@/components/ui/Pagination";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
+import { AccessDeniedState } from "@/components/ui/PageStates";
 import { NumberInput } from "@/components/ui/NumberInput";
 
 type Property = {
@@ -69,6 +70,8 @@ export default function StaffManager({ embedded = false }: { embedded?: boolean 
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
+    // Break round 1, F8: a 403 is "you may not see staff", not a load failure or "no staff".
+    const [forbidden, setForbidden] = useState(false);
     const [showModal, setShowModal] = useState(false);
     const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
     const [submitting, setSubmitting] = useState(false);
@@ -94,6 +97,7 @@ export default function StaffManager({ embedded = false }: { embedded?: boolean 
     const fetchStaff = async () => {
         try {
             const res = await fetch("/api/proxy/v1/staff");
+            setForbidden(res.status === 403);
             if (res.ok) {
                 const data = await res.json();
                 data.sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
@@ -263,6 +267,8 @@ export default function StaffManager({ embedded = false }: { embedded?: boolean 
         fetchProperties();
         fetchAccounts();
     };
+
+    if (forbidden) return <AccessDeniedState />;
 
     return (
         <div>

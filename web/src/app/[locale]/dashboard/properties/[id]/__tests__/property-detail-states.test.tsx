@@ -48,7 +48,7 @@ describe("property detail — unresolvable ids (F5)", () => {
         renderPage();
         expect(await screen.findByTestId("page-not-found")).toBeInTheDocument();
         expect(screen.getByText(/property not found/i)).toBeInTheDocument();
-        expect(screen.getByRole("link", { name: /back to properties/i })).toHaveAttribute("href", "/dashboard/properties");
+        expect(screen.getByRole("link", { name: /back to properties/i })).toHaveAttribute("href", "/en/dashboard/properties");
     });
 
     it("shows access denied for a 403", async () => {

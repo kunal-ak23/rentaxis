@@ -18,6 +18,8 @@ import {
     type CreateAccountBody,
 } from "@/lib/api/ledger";
 import { ApiError } from "@/lib/api/facilities";
+import { isForbidden } from "@/lib/api/listLoad";
+import { AccessDeniedState } from "@/components/ui/PageStates";
 import { propertyReportsApi, type ReportLineOption } from "@/lib/api/propertyReports";
 import AccountPicker, { invalidateAccounts } from "@/components/finance/AccountPicker";
 
@@ -98,6 +100,7 @@ export default function AccountsPage() {
     const [formError, setFormError] = useState<string | null>(null);
     // …and at page level for modal-less actions (delete, seed).
     const [pageError, setPageError] = useState<string | null>(null);
+    const [forbidden, setForbidden] = useState(false);
 
     // Tree expand state — keyed by account id, the same key the tree is built on.
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -128,6 +131,8 @@ export default function AccountsPage() {
                 setExpandedIds(new Set(list.filter(a => a.group).map(a => a.id)));
             }
         } catch (err) {
+            // Break round 1, F8: a 403 is "you may not see the chart", not "no accounts".
+            if (isForbidden(err)) setForbidden(true);
             setPageError(err instanceof ApiError ? err.message : t("loadAccountsFailed"));
         } finally {
             setLoading(false);
@@ -652,6 +657,8 @@ export default function AccountsPage() {
     };
 
     const { roots, childrenMap } = buildTree();
+
+    if (forbidden) return <AccessDeniedState />;
 
     return (
         <div>
