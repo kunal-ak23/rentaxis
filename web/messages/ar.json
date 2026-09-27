@@ -1634,7 +1634,8 @@
     "groupTenants": "المؤسسات",
     "leaseFallback": "عقد إيجار",
     "cheque": "شيك {number}",
-    "installment": "قسط {number}"
+    "installment": "قسط {number}",
+    "selectOrgHint": "اختر مؤسسة للبحث في عقود الإيجار والشيكات الخاصة بها. لا يزال البحث في المؤسسات متاحًا هنا."
   },
   "ErrorBoundary": {
     "title": "حدث خطأ ما",

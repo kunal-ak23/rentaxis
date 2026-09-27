@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Building2, FileText, Loader2, ReceiptText, Search, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { chequeApi } from "@/lib/api/leasing";
+import { readActiveOrgCookie } from "@/lib/session/orgSync";
 import type { UserRole } from "@/lib/rbac";
 
 const noopSubscribe = () => () => {};
@@ -39,6 +40,9 @@ type ChequeHit = {
 type TenantHit = { id: string; name: string; status?: string };
 
 const SEARCH_ROLES: UserRole[] = ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"];
+
+/** A super admin with no organisation selected (read on the client, where the cookie lives). */
+const isGlobalView = (role?: UserRole) => role === "SUPER_ADMIN" && !readActiveOrgCookie();
 
 export default function GlobalSearch({ role, locale }: { role?: UserRole; locale: string }) {
     const router = useRouter();
@@ -97,13 +101,20 @@ export default function GlobalSearch({ role, locale }: { role?: UserRole; locale
             };
 
             const encoded = encodeURIComponent(query.trim());
+            // Global View (a super admin with no organisation selected): contracts
+            // and cheques belong to one organisation and those endpoints answer 400
+            // without one (break round 1, F7). Not asked for; the dialog says why,
+            // and organisations are still searched.
+            const noOrg = isGlobalView(role);
             const [leasePayload, chequePayload, tenantPayload] = await Promise.all([
-                safeJson(`/api/proxy/v1/leases/paged?search=${encoded}&page=0&size=6`),
+                noOrg ? Promise.resolve(null)
+                    : safeJson(`/api/proxy/v1/leases/paged?search=${encoded}&page=0&size=6`),
                 // Server-side search across the whole cheque register. Fetching a
                 // fixed window and filtering here instead would silently miss
                 // anything outside it — an older cheque would render "No results"
                 // rather than an error.
-                chequeApi.list({ search: query.trim(), page: 0, size: 6 }).catch(() => null),
+                noOrg ? Promise.resolve(null)
+                    : chequeApi.list({ search: query.trim(), page: 0, size: 6 }).catch(() => null),
                 role === "SUPER_ADMIN" ? safeJson("/api/proxy/admin/tenants") : Promise.resolve(null),
             ]);
             if (controller.signal.aborted) return;
@@ -154,7 +165,7 @@ export default function GlobalSearch({ role, locale }: { role?: UserRole; locale
             // source errored and we found nothing, saying "no results" is the
             // same silent wrong answer this component was fixed to stop telling:
             // the user cannot tell "it isn't there" from "we couldn't look".
-            const anySourceFailed = leasePayload == null || chequePayload == null
+            const anySourceFailed = (!noOrg && (leasePayload == null || chequePayload == null))
                 || (role === "SUPER_ADMIN" && tenantPayload == null);
             setFailed(anySourceFailed && next.length === 0);
             setLoading(false);
@@ -255,6 +266,9 @@ export default function GlobalSearch({ role, locale }: { role?: UserRole; locale
                             </button>
                         </div>
                         <div className="max-h-[55vh] overflow-y-auto p-2">
+                            {isGlobalView(role) && (
+                                <p role="note" className="px-3 pt-3 pb-1 text-center text-xs text-muted">{t("selectOrgHint")}</p>
+                            )}
                             {query.trim().length < 2 ? (
                                 <p className="px-3 py-8 text-center text-sm text-muted">{t("minChars")}</p>
                             ) : failed ? (

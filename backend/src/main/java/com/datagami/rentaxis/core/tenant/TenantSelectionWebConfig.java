@@ -33,9 +33,8 @@ public class TenantSelectionWebConfig implements WebMvcConfigurer {
             // Answer defaults when no organisation is selected (TenantFeatureController).
             "/api/v1/tenant/features",
             "/api/v1/tenant/info",
-            // Stored files by key, and the public marketplace (organisation by slug).
+            // Stored files by key.
             "/api/v1/assets/serve/**",
-            "/api/marketplace/**",
             // Unauthenticated anyway; listed so the intent is explicit.
             "/api/v1/public/**",
             "/public/**",

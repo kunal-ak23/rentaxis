@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import Cookies from "js-cookie";
 import en from "../../../../messages/en.json";
 import ar from "../../../../messages/ar.json";
 
@@ -68,12 +69,14 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    Cookies.remove("active_tenant_id", { path: "/" });
     cleanup();
     vi.restoreAllMocks();
 });
 
 describe("GlobalSearch", () => {
     it("opens from the advertised button and returns role-aware results", async () => {
+        Cookies.set("active_tenant_id", "org-1", { path: "/" }); // an organisation is selected
         render(<GlobalSearch role="SUPER_ADMIN" locale="en" />);
         fireEvent.click(screen.getByRole("button", { name: en.GlobalSearch.placeholderSuperAdmin }));
         fireEvent.change(screen.getByRole("textbox", { name: en.GlobalSearch.inputLabel }), {
@@ -106,6 +109,37 @@ describe("GlobalSearch", () => {
         fireEvent.click(await screen.findByText("A-101 · Samira Khan"));
 
         await waitFor(() => expect(push).toHaveBeenCalledWith("/ar/dashboard/leases/lease-1"));
+    });
+
+    // Break round 1, F7 (batch 5 review): in Global View the contract and cheque
+    // endpoints answer 400, so they are not called and the dialog says why,
+    // rather than showing a silently empty (or "unavailable") result.
+    it.each(["en", "ar"] as const)("in Global View asks for an organisation and still finds organisations (%s)", async (locale) => {
+        activeLocale.value = locale;
+        const messages = locale === "ar" ? ar : en;
+        render(<GlobalSearch role="SUPER_ADMIN" locale={locale} />);
+        fireEvent.keyDown(document, { key: "k", ctrlKey: true });
+        expect(screen.getByRole("note").textContent).toBe(messages.GlobalSearch.selectOrgHint);
+        fireEvent.change(screen.getByRole("textbox", { name: messages.GlobalSearch.inputLabel }), {
+            target: { value: "Samira" },
+        });
+
+        expect(await screen.findByText("Samira Properties")).toBeTruthy();
+        const urls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.map(c => String(c[0]));
+        expect(urls.some(u => u.includes("/leases/paged") || u.includes("/v1/cheques"))).toBe(false);
+        expect(screen.queryByText(messages.GlobalSearch.unavailable)).toBeNull();
+        expect(screen.getByRole("note").textContent).toBe(messages.GlobalSearch.selectOrgHint);
+    });
+
+    it("shows no Global View hint once an organisation is selected, or to other roles", async () => {
+        render(<GlobalSearch role="TENANT_ADMIN" locale="en" />);
+        fireEvent.keyDown(document, { key: "k", ctrlKey: true });
+        expect(screen.queryByRole("note")).toBeNull();
+        cleanup();
+        Cookies.set("active_tenant_id", "org-1", { path: "/" });
+        render(<GlobalSearch role="SUPER_ADMIN" locale="en" />);
+        fireEvent.keyDown(document, { key: "k", ctrlKey: true });
+        expect(screen.queryByRole("note")).toBeNull();
     });
 
     it("does not advertise administrative search to unsupported roles", () => {

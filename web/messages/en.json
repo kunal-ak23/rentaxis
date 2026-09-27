@@ -1634,7 +1634,8 @@
     "groupTenants": "Organizations",
     "leaseFallback": "Tenancy Contract",
     "cheque": "Cheque {number}",
-    "installment": "Installment {number}"
+    "installment": "Installment {number}",
+    "selectOrgHint": "Select an organisation to search its contracts and cheques. Organisations are still searched here."
   },
   "ErrorBoundary": {
     "title": "Something went wrong",

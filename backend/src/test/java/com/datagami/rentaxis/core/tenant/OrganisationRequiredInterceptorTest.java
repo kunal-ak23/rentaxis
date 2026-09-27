@@ -67,4 +67,20 @@ class OrganisationRequiredInterceptorTest {
         TenantContextHolder.setTenantId(UUID.randomUUID());
         assertThat(pass("GET", "/api/v1/finance/journals")).isTrue();
     }
+
+    /**
+     * The no-organisation allow-list is a trust surface: pinned here so an addition
+     * is a deliberate, reviewed change. The marketplace is RENTER-only and a renter
+     * always has a tenant, so it is not on it (batch 5 review).
+     */
+    @Test
+    void theCrossOrganisationAllowListIsExactlyThis() {
+        assertThat(TenantSelectionWebConfig.CROSS_ORG_PATHS).containsExactly(
+                "/api/auth/**", "/api/v1/auth/**", "/api/admin/**", "/api/v1/admin/**",
+                "/api/v1/notifications/**", "/api/v1/email/**", "/api/v1/account/**",
+                "/api/v1/tenant/features", "/api/v1/tenant/info", "/api/v1/assets/serve/**",
+                "/api/v1/public/**", "/public/**", "/api/webhooks/**", "/error");
+        assertThat(OrganisationRequiredInterceptor.SUPER_ADMIN_PLATFORM_READS).containsExactly(
+                "/api/v1/dashboard/summary", "/api/v1/cheques/summary", "/api/v1/cheques/aging");
+    }
 }

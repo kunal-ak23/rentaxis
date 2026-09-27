@@ -75,8 +75,16 @@ export async function fetchCurrentUser(
 
         if (res.status === 404) return { status: "revoked" };
         // Without a role header the backend never authenticates the request, so
-        // its 401 would say nothing about the user.
-        if (res.status === 401 && role) return { status: "revoked" };
+        // its 401 would say nothing about the user. And only the user's own
+        // state revokes: X-Auth-Reason USER_INACTIVE (or no header, from a backend
+        // older than the reason codes). With app.auth.legacy-headers=deny every
+        // header-authenticated call 401s with LEGACY_DENIED; that must not sign
+        // every web session out.
+        if (res.status === 401 && role) {
+            const reason = res.headers?.get?.("X-Auth-Reason") ?? null;
+            if (reason === null || reason === "USER_INACTIVE") return { status: "revoked" };
+            return { status: "unavailable" };
+        }
         if (!res.ok) return { status: "unavailable" };
 
         const profile = await res.json();
