@@ -1,4 +1,4 @@
-import { EXPECTED_TENANT_HEADER, MUTATING_METHODS, NO_ORG, ORG_MISMATCH_HEADER, SESSION_ENDED_HEADER } from "./orgHeaders";
+import { EXPECTED_TENANT_HEADER, FORWARDED_HEADER, MUTATING_METHODS, NO_ORG, ORG_MISMATCH_HEADER, SESSION_ENDED_HEADER } from "./orgHeaders";
 
 /**
  * One wrapper around `window.fetch` for every browser call to /api/proxy (and
@@ -26,7 +26,7 @@ export type ProxyFetchGuardOptions = {
      * in the cookie). Not a signed-out session: signing in again would keep
      * the same cookie and loop. The caller repairs the org selection instead.
      */
-    onBackendUnauthorized?: () => void;
+    onBackendUnauthorized?: (message: string) => void;
 };
 
 const GUARD = Symbol.for("rentaxis.proxyFetchGuard");
@@ -68,10 +68,17 @@ export function installProxyFetchGuard(opts: ProxyFetchGuardOptions): () => void
         }
 
         const res = await original(nextInput, nextInit);
+        // The proxy's own signals count only on a response it answered itself
+        // (not stamped as forwarded to the backend).
+        const proxyOwn = !res.headers.has(FORWARDED_HEADER);
         if (res.status === 401) {
-            if (res.headers.get(SESSION_ENDED_HEADER) === "1") opts.onUnauthorized();
-            else opts.onBackendUnauthorized?.();
-        } else if (res.status === 409 && res.headers.get(ORG_MISMATCH_HEADER) === "1") {
+            if (proxyOwn && res.headers.get(SESSION_ENDED_HEADER) === "1") opts.onUnauthorized();
+            else if (opts.onBackendUnauthorized) {
+                const notify = opts.onBackendUnauthorized;
+                // The body is read from a clone: the caller still gets the untouched response.
+                void res.clone().text().catch(() => "").then(text => notify(text));
+            }
+        } else if (res.status === 409 && proxyOwn && res.headers.get(ORG_MISMATCH_HEADER) === "1") {
             opts.onOrgMismatch();
         }
         return res;
@@ -113,6 +120,10 @@ export function safeCallbackUrl(
     if (!raw || !origin) return null;
     if (/[\x00-\x1F\x7F\\]/.test(raw)) return null;
     if (!raw.startsWith("/") || raw.startsWith("//")) return null;
+    // Fix round 2: dot segments ("." / ".." / "%2e%2e") collapse while the
+    // URL is parsed, so "/..//evil.example" came out as "//evil.example".
+    // No legitimate callback has one; refuse them outright.
+    if (raw.split(/[?#]/)[0].split("/").some(seg => /^(?:\.|%2e){1,2}$/i.test(seg))) return null;
     let u: URL;
     try {
         u = new URL(raw, origin);
@@ -120,6 +131,30 @@ export function safeCallbackUrl(
         return null;
     }
     if (u.origin !== origin) return null;
-    if (/^\/(?:(?:en|ar)\/)?auth(?:\/|$)/.test(u.pathname)) return null;
-    return u.pathname + u.search + u.hash;
+    // The auth pages (and NextAuth's /api/auth) are excluded on the decoded,
+    // lower-cased path, so "/en/%61uth/login" or "/EN/AUTH/login" do not slip by.
+    let decodedPath: string;
+    try {
+        decodedPath = decodeURIComponent(u.pathname).toLowerCase();
+    } catch {
+        return null;
+    }
+    if (/^\/(?:(?:en|ar)\/)?auth(?:\/|$)|^\/api\/auth(?:\/|$)/.test(decodedPath)) return null;
+    const result = u.pathname + u.search + u.hash;
+    // Validate the OUTPUT too, whatever the checks above let through.
+    return isSameOriginPath(result, origin) ? result : null;
+}
+
+/**
+ * The last gate before a value reaches location.assign: exactly one leading
+ * "/" not followed by "/" or "\" (never protocol-relative), and it resolves
+ * to `origin`.
+ */
+export function isSameOriginPath(path: string, origin: string): boolean {
+    if (!/^\/(?![/\\])/.test(path)) return false;
+    try {
+        return new URL(path, origin).origin === origin;
+    } catch {
+        return false;
+    }
 }

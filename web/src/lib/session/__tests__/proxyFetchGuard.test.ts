@@ -106,7 +106,9 @@ describe("installProxyFetchGuard — session gone (F6)", () => {
         respond = () => new Response("Organisation is not active.", { status: 401 });
         await fetch("/api/proxy/v1/leases/paged");
         expect(onUnauthorized).not.toHaveBeenCalled();
-        expect(onBackendUnauthorized).toHaveBeenCalledTimes(1);
+        await vi.waitFor(() => expect(onBackendUnauthorized).toHaveBeenCalledTimes(1));
+        // The backend's message is passed on (fix round 2: inactive user vs inactive org).
+        expect(onBackendUnauthorized).toHaveBeenCalledWith("Organisation is not active.");
     });
 
     it("ignores a 401 from outside /api/proxy and other statuses", async () => {
@@ -115,6 +117,17 @@ describe("installProxyFetchGuard — session gone (F6)", () => {
         await fetch("/api/auth/callback/credentials", { method: "POST" });
         await fetch("/api/proxy/v1/leases");
         expect(onUnauthorized).not.toHaveBeenCalled();
+    });
+
+    it("ignores the markers on a response that went to the backend (fix round 2)", async () => {
+        const { onUnauthorized, onOrgMismatch, onBackendUnauthorized } = install();
+        respond = () => new Response("", { status: 401, headers: { "X-Session-Ended": "1", "X-Rentaxis-Forwarded": "1" } });
+        await fetch("/api/proxy/v1/leases");
+        expect(onUnauthorized).not.toHaveBeenCalled();
+        await vi.waitFor(() => expect(onBackendUnauthorized).toHaveBeenCalledTimes(1));
+        respond = () => new Response("", { status: 409, headers: { "X-Org-Mismatch": "1", "X-Rentaxis-Forwarded": "1" } });
+        await fetch("/api/proxy/v1/renters", { method: "POST" });
+        expect(onOrgMismatch).not.toHaveBeenCalled();
     });
 
     it("restores the original fetch on uninstall", async () => {

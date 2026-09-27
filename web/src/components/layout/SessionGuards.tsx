@@ -2,6 +2,7 @@
 
 import { useLayoutEffect, useState, type ReactNode } from "react";
 import Cookies from "js-cookie";
+import { signOut } from "next-auth/react";
 import { useTranslations } from "next-intl";
 import { Building2, Loader2, RefreshCw } from "lucide-react";
 import { installProxyFetchGuard, loginUrlFor } from "@/lib/session/proxyFetchGuard";
@@ -61,12 +62,34 @@ export function SessionGuards({
             // cookie and loop, so drop the selection back to the home org and
             // ask for a reload. With no selection (or the home org itself)
             // there is nothing to repair; the page shows its own error.
-            onBackendUnauthorized: () => {
+            onBackendUnauthorized: (message: string) => {
+                if (redirected) return;
                 const selected = readActiveOrgCookie();
-                if (!selected || role === "SUPER_ADMIN" || selected === homeTenantId) return;
-                Cookies.remove(ACTIVE_ORG_COOKIE, { path: "/" });
-                setPageOrg("");
-                setOrgUnavailable(true);
+                const repairable = !!selected && role !== "SUPER_ADMIN" && selected !== homeTenantId;
+                // Fix round 2: the backend's "Unknown or inactive user." 401
+                // (ApiSecurityFilter, user deleted or deactivated) means this
+                // person must be signed out, not shown an org notice. Spring
+                // omits the message from the error body unless
+                // server.error.include-message is on, so the match is
+                // best-effort; the fallback below covers the rest.
+                const inactiveUser = /unknown or inactive user/i.test(message);
+                if (!inactiveUser && repairable) {
+                    // Inactive (or no longer open) org in the cookie: drop the
+                    // selection back to the home org and ask for a reload.
+                    Cookies.remove(ACTIVE_ORG_COOKIE, { path: "/" });
+                    setPageOrg("");
+                    setOrgUnavailable(true);
+                    return;
+                }
+                // Inactive user, or the refused org is the user's own (nothing
+                // to repair): end the NextAuth session and go to sign in, where
+                // a new attempt reports why (ACCOUNT_INACTIVE / ORG_INACTIVE).
+                // No loop: the login page installs no guard.
+                const url = loginUrlFor(window.location);
+                if (!url) return;
+                redirected = true;
+                setSigningIn(true);
+                void signOut({ callbackUrl: url });
             },
         });
         const unsubscribe = subscribeOrgChange(orgId => {

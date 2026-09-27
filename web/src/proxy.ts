@@ -47,6 +47,20 @@ function addSecurityHeaders(response: NextResponse, pathname: string): NextRespo
     return response;
 }
 
+/**
+ * Forward to the backend (next.config rewrite), stamped X-Rentaxis-Forwarded.
+ * Break round 1 fix round 2: Next applies these middleware headers and then
+ * the backend's, so backend response headers cannot be stripped here; the
+ * stamp is what proves a response went to the backend, and the browser guard
+ * trusts X-Session-Ended / X-Org-Mismatch only on an unstamped response —
+ * one this middleware answered itself.
+ */
+function forwardToBackend(requestHeaders: Headers): NextResponse {
+    const response = NextResponse.next({ request: { headers: requestHeaders } });
+    response.headers.set('X-Rentaxis-Forwarded', '1');
+    return response;
+}
+
 export default async function middleware(req: NextRequest) {
     const isApiProxy = req.nextUrl.pathname.startsWith('/api/proxy');
 
@@ -62,11 +76,7 @@ export default async function middleware(req: NextRequest) {
             requestHeaders.delete('X-Tenant-Id');
             requestHeaders.delete('X-Internal-Auth');
 
-            return addSecurityHeaders(NextResponse.next({
-                request: {
-                    headers: requestHeaders,
-                },
-            }), req.nextUrl.pathname);
+            return addSecurityHeaders(forwardToBackend(requestHeaders), req.nextUrl.pathname);
         }
 
         // Authenticate proxy requests and attach identity and tenant headers.
@@ -107,11 +117,7 @@ export default async function middleware(req: NextRequest) {
             requestHeaders.set(name, value);
         }
 
-        return addSecurityHeaders(NextResponse.next({
-            request: {
-                headers: requestHeaders,
-            },
-        }), req.nextUrl.pathname);
+        return addSecurityHeaders(forwardToBackend(requestHeaders), req.nextUrl.pathname);
     }
 
     // Admin UI simplification: a moved page answers its old URL with a

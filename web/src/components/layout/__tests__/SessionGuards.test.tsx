@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Cookies from "js-cookie";
 
 vi.mock("next-intl", async () => (await import("@/test/intlMock")).englishIntl());
+const { signOut } = vi.hoisted(() => ({ signOut: vi.fn() }));
+vi.mock("next-auth/react", () => ({ signOut }));
 
 import { SessionGuards } from "../SessionGuards";
 import { resetPageOrg } from "@/lib/session/orgSync";
@@ -123,14 +125,16 @@ describe("SessionGuards — a backend 401 is not a signed-out session (review fi
         renderGuards("TENANT_ADMIN", "brk1");
         fetchStatus = 401; // "Organisation is not active." — no X-Session-Ended
         await act(async () => { await fetch("/api/proxy/v1/leases/paged"); });
+        await act(async () => { await new Promise(r => setTimeout(r, 0)); });
         expect(assign).not.toHaveBeenCalled();
+        expect(signOut).not.toHaveBeenCalled();
         expect(Cookies.get("active_tenant_id")).toBeUndefined();
         expect(screen.getByRole("alertdialog", { name: /this organisation is not available/i })).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: /reload/i }));
         expect(reload).toHaveBeenCalled();
     });
 
-    it("leaves the home organisation alone (nothing to repair; the page shows its error)", async () => {
+    it("leaves the home organisation cookie alone (nothing to repair)", async () => {
         renderGuards("TENANT_ADMIN", "brk1"); // cookie is brk1 = home
         fetchStatus = 401;
         await act(async () => { await fetch("/api/proxy/v1/leases/paged"); });
@@ -153,5 +157,28 @@ describe("SessionGuards — installed before the page's own mount effects (revie
         });
         expect(inner).toHaveBeenCalledTimes(1);
         expect(new Headers(inner.mock.calls[0][1]?.headers).get("X-Expected-Tenant-Id")).toBe("brk1");
+    });
+});
+
+describe("SessionGuards — a deactivated or deleted user is signed out (fix round 2)", () => {
+    it("signs out on the backend's 'Unknown or inactive user.' 401, keeping the page as callbackUrl", async () => {
+        signOut.mockClear();
+        Cookies.set("active_tenant_id", "second", { path: "/" });
+        window.fetch = vi.fn(async () => new Response("Unknown or inactive user.", { status: 401 })) as unknown as typeof fetch;
+        renderGuards("TENANT_ADMIN", "brk1");
+        await act(async () => { await fetch("/api/proxy/v1/leases/paged"); });
+        await vi.waitFor(() => expect(signOut).toHaveBeenCalledTimes(1));
+        expect(signOut).toHaveBeenCalledWith({ callbackUrl: `/en/auth/login?callbackUrl=${encodeURIComponent("/en/dashboard/renters?q=a")}` });
+        // Not mistaken for the inactive-organisation case.
+        expect(Cookies.get("active_tenant_id")).toBe("second");
+        expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    });
+
+    it("signs out when the refused organisation is the user's own (nothing to repair; the login page explains)", async () => {
+        signOut.mockClear();
+        window.fetch = vi.fn(async () => new Response("", { status: 401 })) as unknown as typeof fetch;
+        renderGuards("TENANT_ADMIN", "brk1");
+        await act(async () => { await fetch("/api/proxy/v1/leases/paged"); });
+        await vi.waitFor(() => expect(signOut).toHaveBeenCalledTimes(1));
     });
 });

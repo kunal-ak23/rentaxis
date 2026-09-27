@@ -95,3 +95,43 @@ describe("proxy — its own session-ended 401s are marked (review fix 2)", () =>
         expect(res.headers.get("X-Session-Ended")).toBeNull();
     });
 });
+
+describe("proxy — its own markers are provable (fix round 2)", () => {
+    // Next applies the middleware's response headers and then the backend's
+    // (external rewrite via httpxy), so a forwarded response cannot have
+    // backend headers stripped here. Instead every forwarded response is
+    // stamped X-Rentaxis-Forwarded; the client trusts X-Session-Ended /
+    // X-Org-Mismatch only on a response WITHOUT that stamp — i.e. one this
+    // middleware answered itself and never sent to the backend.
+    it("stamps every forwarded response", async () => {
+        const res = await middleware(req("POST", { cookie: "brk1", expected: "brk1" }));
+        expect(res.headers.get("x-middleware-next")).toBe("1");
+        expect(res.headers.get("X-Rentaxis-Forwarded")).toBe("1");
+    });
+
+    it("never stamps its own 401 / 409", async () => {
+        const mismatch = await middleware(req("POST", { cookie: "org2", expected: "brk1" }));
+        expect(mismatch.status).toBe(409);
+        expect(mismatch.headers.get("X-Rentaxis-Forwarded")).toBeNull();
+        getTokenMock.mockResolvedValue(null);
+        const ended = await middleware(req("GET"));
+        expect(ended.headers.get("X-Rentaxis-Forwarded")).toBeNull();
+    });
+
+    it("the backend never sets the markers the client trusts", async () => {
+        const fs = await import("node:fs");
+        const path = await import("node:path");
+        const root = path.resolve(__dirname, "../../../backend/src/main");
+        const hits: string[] = [];
+        const walk = (dir: string) => {
+            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+                const full = path.join(dir, e.name);
+                if (e.isDirectory()) walk(full);
+                else if (/\.(java|ya?ml|properties)$/.test(e.name)
+                    && /X-Session-Ended|X-Org-Mismatch|X-Rentaxis-Forwarded/i.test(fs.readFileSync(full, "utf8"))) hits.push(full);
+            }
+        };
+        if (fs.existsSync(root)) walk(root);
+        expect(hits).toEqual([]);
+    });
+});

@@ -25,7 +25,7 @@ vi.mock("framer-motion", () => ({
 }));
 
 import LoginPage from "../page";
-import { safeCallbackUrl } from "@/lib/session/proxyFetchGuard";
+import { isSameOriginPath, safeCallbackUrl } from "@/lib/session/proxyFetchGuard";
 
 const realLocation = window.location;
 let assign: ReturnType<typeof vi.fn>;
@@ -82,7 +82,22 @@ describe("safeCallbackUrl", () => {
         ["\\\\evil.example"],
         ["https://evil.example"],
         ["javascript:alert(1)"],
+        // Fix round 2: dot segments collapse during parsing, so the OUTPUT
+        // could start with "//" even though the input did not.
+        ["/..//x"],
+        ["/.//x"],
+        ["/%2e%2e//x"],
+        ["/%2E%2E//x"],
+        ["/..//evil.example"],
+        ["/en/dashboard/%2e%2e/%2e%2e//evil.example/x?y#z"],
+        ["/.."],
+        ["/./"],
         ["/en/auth/login"],
+        // ...and the auth exclusion runs on the decoded, lower-cased path.
+        ["/en/%61uth/login"],
+        ["/EN/AUTH/login"],
+        ["/api/auth/signout"],
+        ["/api/auth/signout?callbackUrl=/x"],
         ["/ar/auth/set-password?x=1"],
         [""],
         [null],
@@ -111,5 +126,15 @@ describe("LoginPage refuses an encoded control-character callbackUrl", () => {
         await signInNow();
         await waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard"));
         expect(assign).not.toHaveBeenCalled();
+    });
+});
+
+describe("isSameOriginPath — the output gate (fix round 2)", () => {
+    const ORIGIN = "http://localhost:3000";
+    it.each(["//evil.example", "//evil.example/x?y#z", "/\\evil.example", "https://evil.example", "evil.example", ""])("refuses %j", (p) => {
+        expect(isSameOriginPath(p, ORIGIN)).toBe(false);
+    });
+    it("accepts an ordinary path", () => {
+        expect(isSameOriginPath("/en/dashboard/leases?x=1#y", ORIGIN)).toBe(true);
     });
 });

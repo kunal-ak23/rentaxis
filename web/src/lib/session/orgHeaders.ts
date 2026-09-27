@@ -23,3 +23,13 @@ export const MUTATING_METHODS: ReadonlySet<string> = new Set(["POST", "PUT", "PA
  * for the org in the cookie) would loop sign-in → same cookie → 401 forever.
  */
 export const SESSION_ENDED_HEADER = "X-Session-Ended";
+
+/**
+ * Stamped by the proxy on every response it forwards to the backend. Next
+ * applies the middleware's response headers first and the backend's after
+ * them (external rewrite), so backend headers cannot be stripped here; but a
+ * header the middleware sets is always present on a forwarded response. The
+ * client therefore trusts SESSION_ENDED_HEADER / ORG_MISMATCH_HEADER only on
+ * a response WITHOUT this stamp: one the proxy answered itself.
+ */
+export const FORWARDED_HEADER = "X-Rentaxis-Forwarded";
