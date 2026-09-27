@@ -71,14 +71,12 @@ public class PromotionFeedController {
     }
 
     /**
-     * {@code ApiSecurityFilter} has a fall-through: a request carrying
-     * {@code X-User-Id} and {@code X-User-Role} but neither tenant header leaves
-     * {@code authorized} false, yet the 403 is gated on
-     * {@code requestedTenantId != null} — so no 403 fires, the authentication is
-     * set anyway, and the tenant holder is never populated. Every query on this
-     * path carries an explicit tenantId predicate, so a null simply matches
-     * nothing and the renter gets an empty carousel with no clue why. Fail
-     * loudly instead, matching {@code PromotionAdminController.requireTenant()}.
+     * {@code ApiSecurityFilter} refuses a non-SUPER_ADMIN with no organisation,
+     * and {@code OrganisationRequiredInterceptor} refuses a SUPER_ADMIN without
+     * one, so a null tenant should not reach this controller. Every query here
+     * carries an explicit tenantId predicate, where a null would just match
+     * nothing and show an empty carousel with no clue why; this stays as the
+     * loud belt-and-braces, matching {@code PromotionAdminController.requireTenant()}.
      */
     private UUID requireTenant() {
         UUID tenantId = TenantContextHolder.getTenantId();

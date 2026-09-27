@@ -497,6 +497,34 @@ class ApiSecurityFilterTest {
     }
 
     @Test
+    void legacySelfServiceProfileSkipsTheOrganisationChecksButNotTheUserCheck() throws Exception {
+        UUID oldHome = UUID.randomUUID();
+        UUID newHome = UUID.randomUUID();
+        inactiveOrgs.add(oldHome);
+        UUID moved = stored(UserRole.TENANT_ADMIN, newHome);
+        MockHttpServletRequest req = legacy(moved, "TENANT_ADMIN", oldHome);
+        req.setRequestURI("/api/auth/me");
+        CapturingChain chain = new CapturingChain();
+
+        legacyOnlyFilter().doFilter(req, new MockHttpServletResponse(), chain);
+
+        assertThat(chain.invoked).isTrue();
+        assertThat(authorities(chain.auth)).containsExactly("ROLE_TENANT_ADMIN");
+        assertThat(chain.tenantInContext).as("no tenant context on the profile routes").isNull();
+
+        MockHttpServletRequest other = legacy(moved, "TENANT_ADMIN", oldHome);
+        MockHttpServletResponse refused = new MockHttpServletResponse();
+        legacyOnlyFilter().doFilter(other, refused, new CapturingChain());
+        assertThat(refused.getStatus()).as("everywhere else the old org stays refused").isEqualTo(403);
+
+        MockHttpServletRequest unknown = legacy(UUID.randomUUID(), "TENANT_ADMIN", newHome);
+        unknown.setRequestURI("/api/auth/me");
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        legacyOnlyFilter().doFilter(unknown, res, new CapturingChain());
+        assertThat(res.getStatus()).isEqualTo(401);
+    }
+
+    @Test
     void legacyMalformedUserIdIs400() throws Exception {
         MockHttpServletRequest req = request("/api/v1/properties");
         req.addHeader("X-User-Id", "not-a-uuid");

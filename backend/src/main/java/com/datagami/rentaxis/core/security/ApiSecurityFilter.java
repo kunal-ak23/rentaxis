@@ -201,8 +201,10 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
             }
             LegacyHeaderIdentityCheck.CurrentUser user = found.get();
             UserRole role = user.role();
-            if (!role.name().equals(assertedRole)) {
-                log.info("Legacy headers for user {} asserted role {} but the stored role is {}; using the stored role",
+            if (!role.name().equals(assertedRole) && log.isDebugEnabled()) {
+                // Debug, not info: after a demotion the stale web session keeps
+                // asserting the old role on every request until it revalidates.
+                log.debug("Legacy headers for user {} asserted role {} but the stored role is {}; using the stored role",
                         userId, assertedRole, role);
             }
 
@@ -224,8 +226,17 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
             // with no tenant a tenant-scoped role would reach the controllers
             // with NO TenantContext, which disables the tenantFilter on
             // BaseTenantEntity — a cross-tenant read, not a harmless unscoped one.
+            //
+            // The self-service profile routes (/api/auth/me*) skip the
+            // organisation checks: they set no tenant context and act on the
+            // caller's own row, and they are how the web session revalidates. A
+            // user moved to another organisation still presents their OLD home
+            // tenant there; refusing that with a 403 left the session stale for
+            // its whole life instead of letting /me report the new tenant. The
+            // user must still exist and be ACTIVE (checked above).
+            boolean selfService = isSelfServiceProfilePath(path);
             boolean authorized;
-            if (role == UserRole.SUPER_ADMIN) {
+            if (role == UserRole.SUPER_ADMIN || selfService) {
                 authorized = true;
             } else {
                 if (requestedTenantId == null) {
@@ -240,7 +251,7 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
 
             // Same rule as bearer: an organisation that is not ACTIVE admits no
             // one but SUPER_ADMIN (the role that re-activates it).
-            if (requestedTenantId != null && role != UserRole.SUPER_ADMIN
+            if (requestedTenantId != null && role != UserRole.SUPER_ADMIN && !selfService
                     && !legacyIdentityCheck.orgActive(requestedTenantId)) {
                 log.info("Refusing legacy identity headers for user {}: organisation {} is not active",
                         userId, requestedTenantId);
@@ -254,7 +265,7 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
             SecurityContextHolder.getContext().setAuthentication(auth);
 
             // Setup Tenant Context for Database Isolation (Hibernate Filters)
-            if (requestedTenantId != null && !isSelfServiceProfilePath(path)) {
+            if (requestedTenantId != null && !selfService) {
                 TenantContextHolder.setTenantId(requestedTenantId);
             }
         }

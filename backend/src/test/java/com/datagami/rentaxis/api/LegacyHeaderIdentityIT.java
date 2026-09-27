@@ -180,4 +180,38 @@ class LegacyHeaderIdentityIT extends AbstractCallerIdentityIT {
         assertThat(status(legacy("/api/v1/properties", admin.getId(), "TENANT_ADMIN", org))).isEqualTo(401);
         assertThat(status(legacy("/api/v1/properties", sa.getId(), "SUPER_ADMIN", org))).isEqualTo(200);
     }
+
+    /**
+     * Batch 2 review: the web session revalidates through /api/auth/me with its
+     * stale home tenant as X-User-Tenant-Id. After a move that must still answer —
+     * with the new tenant — or the session never learns about the move.
+     */
+    @Test
+    void aMovedUsersProfileAnswersWithTheNewTenantEvenFromTheOldOne() {
+        UUID a = newTenant("LHI-ME-A");
+        UUID b = newTenant("LHI-ME-B");
+        User admin = stored(a, UserRole.TENANT_ADMIN);
+        update(admin, UserRole.TENANT_ADMIN, b);
+
+        @SuppressWarnings("rawtypes")
+        java.util.Map body = legacy("/api/auth/me", admin.getId(), "TENANT_ADMIN", a)
+                .retrieve().body(java.util.Map.class);
+        assertThat(body.get("tenantId")).isEqualTo(b.toString());
+        // Everything else under the old tenant stays refused.
+        assertThat(status(legacy("/api/v1/properties", admin.getId(), "TENANT_ADMIN", a))).isEqualTo(403);
+    }
+
+    @Test
+    void aProfileReadStillRefusesAnInactiveUserAndAnInactiveOrgDoesNotBlockIt() {
+        UUID org = newTenant("LHI-ME-OFF");
+        User admin = stored(org, UserRole.TENANT_ADMIN);
+        User other = stored(org, UserRole.TENANT_ADMIN);
+        jdbc.update("UPDATE landlord_org SET status = 'INACTIVE' WHERE id = ?", org);
+        tokenRevocation.evictOrg(org);
+        assertThat(status(legacy("/api/auth/me", other.getId(), "TENANT_ADMIN", org))).isEqualTo(200);
+
+        jdbc.update("UPDATE users SET status = ? WHERE id = ?", UserStatus.INACTIVE.name(), admin.getId());
+        tokenRevocation.evictUserAfterCommit(admin.getId());
+        assertThat(status(legacy("/api/auth/me", admin.getId(), "TENANT_ADMIN", org))).isEqualTo(401);
+    }
 }

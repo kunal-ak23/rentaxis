@@ -53,10 +53,15 @@ public class TokenRevocationService implements BearerTokenStateCheck, LegacyHead
     private final UserRepository userRepository;
     private final LandlordOrgRepository orgRepository;
 
-    // Optional.empty() is cached too: a deleted user stays refused without a
-    // query per request.
-    private final Cache<UUID, Optional<UserState>> users = Caffeine.newBuilder()
+    // Only users that exist. A lookup that found nobody goes in its own small,
+    // short-lived cache below: any caller can send X-User-Id values at random,
+    // and if those empties shared this cache they could evict every real user's
+    // entry (break round 1 review) and turn each request into a query.
+    private final Cache<UUID, UserState> users = Caffeine.newBuilder()
             .expireAfterWrite(CACHE_TTL).maximumSize(50_000).build();
+    static final Duration MISSING_TTL = Duration.ofSeconds(5);
+    private final Cache<UUID, Boolean> missingUsers = Caffeine.newBuilder()
+            .expireAfterWrite(MISSING_TTL).maximumSize(1_000).build();
     private final Cache<UUID, Optional<String>> orgStatuses = Caffeine.newBuilder()
             .expireAfterWrite(CACHE_TTL).maximumSize(10_000).build();
 
@@ -66,7 +71,26 @@ public class TokenRevocationService implements BearerTokenStateCheck, LegacyHead
     }
 
     private Optional<UserState> state(UUID userId) {
-        return users.get(userId, id -> userRepository.findAuthStateById(id).map(TokenRevocationService::toState));
+        UserState cached = users.getIfPresent(userId);
+        if (cached != null) {
+            return Optional.of(cached);
+        }
+        if (missingUsers.getIfPresent(userId) != null) {
+            return Optional.empty();
+        }
+        Optional<UserState> loaded = userRepository.findAuthStateById(userId).map(TokenRevocationService::toState);
+        if (loaded.isPresent()) {
+            users.put(userId, loaded.get());
+        } else {
+            missingUsers.put(userId, Boolean.TRUE);
+        }
+        return loaded;
+    }
+
+    /** How many existing users are cached (tests: unknown ids must never land here). */
+    long cachedUserCount() {
+        users.cleanUp();
+        return users.estimatedSize();
     }
 
     private static UserState toState(UserRepository.AuthState s) {
@@ -131,11 +155,13 @@ public class TokenRevocationService implements BearerTokenStateCheck, LegacyHead
     /** Drops the cached row state, now and again once the current transaction commits. */
     public void evictUserAfterCommit(UUID userId) {
         users.invalidate(userId);
+        missingUsers.invalidate(userId);
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCompletion(int status) {
                     users.invalidate(userId);
+                    missingUsers.invalidate(userId);
                 }
             });
         }
@@ -148,11 +174,13 @@ public class TokenRevocationService implements BearerTokenStateCheck, LegacyHead
      */
     public void evictAllUsersAfterCommit() {
         users.invalidateAll();
+        missingUsers.invalidateAll();
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCompletion(int status) {
                     users.invalidateAll();
+                    missingUsers.invalidateAll();
                 }
             });
         }

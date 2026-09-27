@@ -60,6 +60,21 @@ describe("session revalidation", () => {
             await expect(fetchCurrentUser("user-1")).resolves.toEqual({ status: "revoked" });
         });
 
+        it("reports revoked when the backend 401s a full identity (deleted or deactivated user)", async () => {
+            fetchMock.mockResolvedValue({ ok: false, status: 401 });
+            await expect(fetchCurrentUser("user-1", "TENANT_ADMIN", "tenant-1")).resolves.toEqual({ status: "revoked" });
+        });
+
+        it("does not treat a 401 as revocation when no role was sent (the backend never authenticated it)", async () => {
+            fetchMock.mockResolvedValue({ ok: false, status: 401 });
+            await expect(fetchCurrentUser("user-1")).resolves.toEqual({ status: "unavailable" });
+        });
+
+        it("reports unavailable on a 403 rather than revoking", async () => {
+            fetchMock.mockResolvedValue({ ok: false, status: 403 });
+            await expect(fetchCurrentUser("user-1", "TENANT_ADMIN", "tenant-1")).resolves.toEqual({ status: "unavailable" });
+        });
+
         it("reports unavailable on a network failure rather than revoking", async () => {
             fetchMock.mockRejectedValue(new Error("ECONNREFUSED"));
             await expect(fetchCurrentUser("user-1")).resolves.toEqual({ status: "unavailable" });
@@ -109,6 +124,14 @@ describe("session revalidation", () => {
 
         it("marks a deleted account revoked", async () => {
             fetchMock.mockResolvedValue({ ok: false, status: 404 });
+
+            const out = (await jwt({ token: staleToken() } as never)) as JWT;
+
+            expect(out.revoked).toBe(true);
+        });
+
+        it("marks a deactivated account (backend 401) revoked", async () => {
+            fetchMock.mockResolvedValue({ ok: false, status: 401 });
 
             const out = (await jwt({ token: staleToken() } as never)) as JWT;
 
