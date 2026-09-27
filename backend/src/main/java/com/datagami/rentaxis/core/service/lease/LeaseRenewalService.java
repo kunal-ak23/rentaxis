@@ -147,6 +147,7 @@ public class LeaseRenewalService {
         if (!r.endDate().isAfter(r.startDate())) {
             throw new BusinessRuleViolationException("The renewal's end date must be after its start date");
         }
+        LeaseService.requireSaneTerm(r.startDate(), r.endDate());
 
         // Renewing twice would put two successors on one unit, each expecting to
         // retire the same predecessor and claim the same unit. Caught here rather
@@ -556,6 +557,8 @@ public class LeaseRenewalService {
             throw new BusinessRuleViolationException(
                     "The new end date must be after the current one (" + previousEnd + ")");
         }
+        // The extended term runs from the lease's own start to the new end.
+        LeaseService.requireSaneTerm(lease.getStartDate(), r.newEndDate());
         // P2-1: the longer term must not run into the next lease on the unit.
         leaseService.requireExtensionFree(lease, r.newEndDate());
         LocalDate entryDate = r.contractDate() != null ? r.contractDate() : LocalDate.now();
