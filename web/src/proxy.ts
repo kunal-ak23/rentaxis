@@ -3,14 +3,8 @@ import createIntlMiddleware from "next-intl/middleware";
 import { routing } from "./i18n/routing";
 import { NextRequest, NextResponse } from "next/server";
 import { legacyRedirect } from "./lib/nav/routeMap";
-import {
-    EXPECTED_TENANT_HEADER,
-    MUTATING_METHODS,
-    NO_ORG,
-    ORG_MISMATCH_CODE,
-    ORG_MISMATCH_HEADER,
-    SESSION_ENDED_HEADER,
-} from "./lib/session/orgHeaders";
+import { EXPECTED_TENANT_HEADER } from "./lib/session/orgHeaders";
+import { orgMismatchResponse, resolveBackendIdentity, sessionEndedResponse } from "./lib/session/backendIdentity";
 
 const intlMiddleware = createIntlMiddleware(routing);
 
@@ -53,13 +47,6 @@ function addSecurityHeaders(response: NextResponse, pathname: string): NextRespo
     return response;
 }
 
-/** The proxy's own "sign in again" answer, marked so the client can tell it from a backend 401. */
-function sessionEnded(body: string): NextResponse {
-    const res = new NextResponse(body, { status: 401 });
-    res.headers.set(SESSION_ENDED_HEADER, '1');
-    return res;
-}
-
 export default async function middleware(req: NextRequest) {
     const isApiProxy = req.nextUrl.pathname.startsWith('/api/proxy');
 
@@ -82,114 +69,42 @@ export default async function middleware(req: NextRequest) {
             }), req.nextUrl.pathname);
         }
 
-        // Authenticate proxy requests and attach tenant context headers
-        const token = await getToken({ req });
-        if (!token) {
-            return addSecurityHeaders(sessionEnded('Unauthorized'), req.nextUrl.pathname);
+        // Authenticate proxy requests and attach identity and tenant headers.
+        // The rule lives in lib/session/backendIdentity.ts, shared with the Next
+        // API routes that call the backend themselves (/api/upload), so the two
+        // cannot drift: no session or a revoked one is this proxy's own 401;
+        // the active_tenant_id cookie is a selection honoured only for an
+        // organisation the session proves membership of (SUPER_ADMIN: any); and
+        // a mutation stamped for another organisation than the active one is a
+        // 409 (break round 1, F3).
+        const decision = resolveBackendIdentity({
+            token: await getToken({ req }),
+            cookieTenant: req.cookies.get('active_tenant_id')?.value,
+            expectedTenant: req.headers.get(EXPECTED_TENANT_HEADER),
+            method: req.method,
+            internalProxySecret: process.env.INTERNAL_PROXY_SECRET,
+        });
+        if (decision.kind === 'session-ended') {
+            return addSecurityHeaders(sessionEndedResponse(decision.body), req.nextUrl.pathname);
         }
-
-        // The jwt callback marks a token revoked once the backend reports the
-        // account no longer exists. Refuse it here rather than forwarding the
-        // stale role to the backend, which trusts these headers as presented.
-        if (token.revoked === true) {
-            return addSecurityHeaders(sessionEnded('Session revoked'), req.nextUrl.pathname);
+        if (decision.kind === 'org-mismatch') {
+            return addSecurityHeaders(orgMismatchResponse(), req.nextUrl.pathname);
         }
 
         const requestHeaders = new Headers(req.headers);
-
-        // X-Internal-Auth is a server-to-server secret: only this middleware may
-        // assert it, so any inbound value is forged — drop it before deciding
-        // whether to attach the real one.
-        requestHeaders.delete('X-Internal-Auth');
-        // The web authenticates to the backend with the headers below, never a
-        // backend bearer token: the NextAuth session carries none, so the
-        // marketplace helpers send "Bearer " or "Bearer undefined". Once
-        // APP_AUTH_TOKEN_SECRET is set the backend takes any presented Bearer
-        // over the headers and 401s an unverifiable one, which would break
-        // every such call. Drop it so the session is what authenticates.
-        requestHeaders.delete('Authorization');
-        const internalProxySecret = process.env.INTERNAL_PROXY_SECRET;
-        if (internalProxySecret) {
-            // Proves to the backend that SUPER_ADMIN (and other identity headers)
-            // were asserted by this trusted proxy, not replayed by a client.
-            // Unset/empty env keeps the gate off (pre-rollout compatibility).
-            requestHeaders.set('X-Internal-Auth', internalProxySecret);
+        // Every identity header is this proxy's to assert: an inbound value is
+        // forged. X-Internal-Auth is a server-to-server secret. Authorization is
+        // dropped because the web authenticates with the headers below, never a
+        // backend bearer token: the marketplace helpers send "Bearer " or
+        // "Bearer undefined", and once APP_AUTH_TOKEN_SECRET is set the backend
+        // takes any presented Bearer over the headers and 401s an unverifiable
+        // one. The expectation header is consumed here.
+        for (const name of ['X-Internal-Auth', 'Authorization', 'X-User-Id', 'X-User-Role',
+            'X-Tenant-Id', 'X-User-Tenant-Id', EXPECTED_TENANT_HEADER]) {
+            requestHeaders.delete(name);
         }
-
-        if (token.id) requestHeaders.set('X-User-Id', token.id as string);
-        if (token.role) requestHeaders.set('X-User-Role', token.role as string);
-
-        // Resolve the active tenant.
-        //
-        // The switcher is enabled for TENANT_ADMIN as well as SUPER_ADMIN
-        // (see rbac.ts canSwitchTenants), and getMyTenants legitimately returns
-        // several tenants for a multi-membership user. But the backend's
-        // legacy-header path authorizes a non-SUPER_ADMIN only when the
-        // requested tenant equals the home tenant, and this proxy always sent
-        // the home tenant as X-User-Tenant-Id — so picking a secondary
-        // organisation 403'd every subsequent request until the user cleared
-        // the cookie. The switch was non-functional for the exact role it was
-        // built for.
-        //
-        // The cookie is client-writable, so it is treated as a *selection*, not
-        // as authorization: it is honoured only when the verified session token
-        // already proves membership of that tenant. The decision is made here,
-        // server-side, against JWT claims a client cannot forge — deliberately
-        // NOT by forwarding the membership list as another trusted header,
-        // which would widen the spoofable X-User-* surface (#133).
-        const homeTenantId = token.tenantId as string | undefined;
-        const memberships = (token.tenantIds as string[] | undefined) ?? [];
-        const requestedTenantId = req.cookies.get('active_tenant_id')?.value;
-        const isSuperAdmin = token.role === 'SUPER_ADMIN';
-
-        // SUPER_ADMIN reaches any tenant by design; everyone else may only
-        // select a tenant they are actually a member of. An unrecognised or
-        // stale cookie falls back to the home tenant rather than being
-        // forwarded to certainly-403.
-        const resolveTenant = (requested: string | undefined) =>
-            requested &&
-            (isSuperAdmin || requested === homeTenantId || memberships.includes(requested))
-                ? requested
-                : homeTenantId;
-        const activeTenantId = resolveTenant(requestedTenantId);
-
-        // Break round 1, F3: the cookie is shared by every tab, so a form
-        // loaded for org A in one tab would be submitted into org B once
-        // another tab switched. The web client stamps each mutation with the
-        // organisation its page was loaded for; resolved by the same rule as
-        // the cookie, a mismatch is refused here instead of being forwarded.
-        // Reads are unaffected, and a request without the header (another
-        // caller) is forwarded as before.
-        const expectedHeader = req.headers.get(EXPECTED_TENANT_HEADER);
-        requestHeaders.delete(EXPECTED_TENANT_HEADER);
-        if (expectedHeader !== null && MUTATING_METHODS.has(req.method.toUpperCase())) {
-            const expectedTenantId = resolveTenant(expectedHeader === NO_ORG ? undefined : expectedHeader);
-            if ((expectedTenantId ?? "") !== (activeTenantId ?? "")) {
-                const response = NextResponse.json(
-                    {
-                        error: true,
-                        code: ORG_MISMATCH_CODE,
-                        status: 409,
-                        message: "The active organisation changed in another tab. Reload this page before saving, so the change is not made in the wrong organisation.",
-                    },
-                    { status: 409 },
-                );
-                response.headers.set(ORG_MISMATCH_HEADER, "1");
-                return addSecurityHeaders(response, req.nextUrl.pathname);
-            }
-        }
-
-        if (activeTenantId) {
-            requestHeaders.set('X-Tenant-Id', activeTenantId);
-        }
-        // For a non-SUPER_ADMIN the backend compares the requested tenant
-        // against X-User-Tenant-Id, so an authorized non-home selection has to
-        // travel as the user's tenant for this request. SUPER_ADMIN keeps its
-        // real home tenant, since the backend authorizes that role outright and
-        // other code reads it.
-        const assertedUserTenantId = isSuperAdmin ? homeTenantId : activeTenantId;
-        if (assertedUserTenantId) {
-            requestHeaders.set('X-User-Tenant-Id', assertedUserTenantId);
+        for (const [name, value] of Object.entries(decision.headers)) {
+            requestHeaders.set(name, value);
         }
 
         return addSecurityHeaders(NextResponse.next({
