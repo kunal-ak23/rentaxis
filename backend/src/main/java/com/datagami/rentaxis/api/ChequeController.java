@@ -238,7 +238,7 @@ public class ChequeController {
 
     @PostMapping("/{id}/replace")
     @PreAuthorize(STAFF)
-    public List<ChequeDTO> replace(@PathVariable UUID id, @RequestBody ReplaceChequeRequest request) {
+    public List<ChequeDTO> replace(@PathVariable UUID id, @jakarta.validation.Valid @RequestBody ReplaceChequeRequest request) {
         return chequeService.replace(id, request);
     }
 
@@ -272,7 +272,7 @@ public class ChequeController {
     /** Number, bank, payer and the date on the paper — REGISTERED rows only, no journal. */
     @PutMapping("/{id}/details")
     @PreAuthorize(STAFF)
-    public ChequeDTO details(@PathVariable UUID id, @RequestBody ChequeRowInput input) {
+    public ChequeDTO details(@PathVariable UUID id, @jakarta.validation.Valid @RequestBody ChequeRowInput input) {
         return detailsService.updateDetails(id, input);
     }
 
@@ -283,7 +283,7 @@ public class ChequeController {
      */
     @PostMapping("/lease/{leaseId}/cash-receipt")
     @PreAuthorize(STAFF)
-    public ChequeDTO cashReceipt(@PathVariable UUID leaseId, @RequestBody ChequeRowInput row) {
+    public ChequeDTO cashReceipt(@PathVariable UUID leaseId, @jakarta.validation.Valid @RequestBody ChequeRowInput row) {
         return chequeService.cashReceipt(leaseId, row);
     }
 

@@ -144,8 +144,7 @@ export default function ChequeRowsEditor({ rows, onChange, propertyId, expectedT
                                 <td className={`${td} text-end${flag(i, "amount")}`} data-grid-field="amount" data-paste-invalid={paste.isBad(i, "amount") || undefined}>
                                     <NumberInput
                                         aria-label={`${t("amount")} ${i + 1}`}
-                                        min={0}
-                                        step={0.01}
+                                        money
                                         className={`${field} text-end tabular-nums`}
                                         value={c.amount}
                                         onChange={v => patch(c.key, { amount: v })}

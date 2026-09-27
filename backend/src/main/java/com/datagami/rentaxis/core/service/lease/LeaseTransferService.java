@@ -154,9 +154,13 @@ public class LeaseTransferService {
         List<LeaseLineInput> lines = r.lines() != null && !r.lines().isEmpty() ? r.lines() : defaultLines(a, start, end);
         if ((r.lines() == null || r.lines().isEmpty()) && r.rent() != null) {
             if (r.rent().signum() <= 0) throw new BusinessRuleViolationException("The new rent must be more than zero.");
+            // Break-it round 1 (money) F2: checked after rounding — 0.001 passed "> 0"
+            // and drafted a successor with RENT 0.
+            BigDecimal newRent = com.datagami.rentaxis.api.validation.MoneyAmounts.requirePositive(
+                    r.rent().setScale(2, RoundingMode.HALF_UP));
             // The rent the operator typed in place of the suggestion; the fees stay pro rata.
             lines = lines.stream().map(l -> isRent(l.chargeTypeId())
-                    ? new LeaseLineInput(l.chargeTypeId(), l.chargeTypeCode(), r.rent().setScale(2, RoundingMode.HALF_UP),
+                    ? new LeaseLineInput(l.chargeTypeId(), l.chargeTypeCode(), newRent,
                             BigDecimal.ZERO, l.narration(), l.vatApplicable(), l.creditAccountId(), l.periodStart(), l.periodEnd())
                     : l).toList();
         }

@@ -1,5 +1,7 @@
 "use client";
 
+import { moneyInputError, moneyValueOrNull } from "@/lib/money";
+import { MoneyFieldError } from "@/components/ui/NumberInput";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import LeaseDialog from "./LeaseDialog";
@@ -89,8 +91,10 @@ export default function ReduceLeaseDialog({ open, lease, onClose, onReduced, pre
 
     const request: ReduceLeaseInput | null = useMemo(() => {
         const lines = Object.entries(cuts)
-            .filter(([, v]) => v.trim() !== "" && Number.isFinite(Number(v)))
-            .map(([lineId, v]) => ({ lineId, newAmount: Number(v) }));
+            // Break-it round 1 (money) F1: the shared money parse (0 is "remove the line").
+            .filter(([, v]) => v.trim() !== "" && moneyValueOrNull(v, { allowZero: true }) !== null)
+            .map(([lineId, v]) => ({ lineId, newAmount: moneyValueOrNull(v, { allowZero: true }) as number }));
+        if (Object.values(cuts).some(v => v.trim() !== "" && moneyValueOrNull(v, { allowZero: true }) === null)) return null;
         if (!effectiveFrom || lines.length === 0) return null;
         return {
             effectiveFrom,
@@ -219,7 +223,11 @@ export default function ReduceLeaseDialog({ open, lease, onClose, onReduced, pre
                                                         <input aria-label={`${t("reduction.newAmount")} ${lineName(l)}`}
                                                                data-testid={`reduce-amount-${l.id}`}
                                                                className={`${field} text-end tabular-nums w-32`} inputMode="decimal"
+                                                               dir="ltr" aria-invalid={cut.trim() !== "" && moneyInputError(cut, { allowZero: true }) !== null}
                                                                value={cut} onChange={e => setCuts(c => ({ ...c, [l.id]: e.target.value }))} />
+                                                        {cut.trim() !== "" && moneyInputError(cut, { allowZero: true }) && (
+                                                            <MoneyFieldError error={moneyInputError(cut, { allowZero: true })!} />
+                                                        )}
                                                         <button type="button" data-testid={`reduce-remove-${l.id}`}
                                                                 onClick={() => setCuts(c => ({ ...c, [l.id]: "0" }))}
                                                                 className="px-2 py-1 rounded-md text-[11px] font-semibold border border-border cursor-pointer">

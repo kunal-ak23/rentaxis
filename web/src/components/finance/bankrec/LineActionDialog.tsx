@@ -1,5 +1,6 @@
 "use client";
 
+import { moneyValueOrNull } from "@/lib/money";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { loadAccounts } from "@/components/finance/AccountPicker";
@@ -107,7 +108,10 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
     const pickedTotal = sumCents(list.filter(c => picked.has(c.id)).map(c => c.amount)) / 100;
     const needsLeaf = ["charge", "interest", "suspense", "other"].includes(action) && (cands?.leaves.length ?? 0) > 1;
     const bankTrnSet = !!cands?.bankTrnSet;
-    const stated = multiCharge ? { net: Number(netText) || 0, vat: Number(vatText) || 0 } : null;
+    // Break-it round 1 (money) F1: the shared money parse, never Number()'s guess.
+    const stated = multiCharge
+        ? { net: moneyValueOrNull(netText, { allowZero: true }) ?? 0, vat: moneyValueOrNull(vatText, { allowZero: true }) ?? 0 }
+        : null;
     const split = chargeSplit(lines.map(l => l.amount), vatIncluded, bankTrnSet, stated);
     const leafName = cands?.leaves.find(l => l.id === leafId)?.name ?? t("gross");
     const abs = Math.abs(total);

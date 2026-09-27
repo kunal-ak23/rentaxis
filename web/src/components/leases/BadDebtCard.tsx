@@ -1,5 +1,6 @@
 "use client";
 
+import { NumberInput } from "@/components/ui/NumberInput";
 import { useCallback, useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { Ban } from "lucide-react";
@@ -194,8 +195,8 @@ export default function BadDebtCard({ leaseId, canApprove, loadingText }: { leas
                     <div className="grid gap-2">
                         <div>
                             <label className={label} htmlFor="bd-rec-amount">{t("amount")}</label>
-                            <input id="bd-rec-amount" type="number" className={`${field} w-full`} value={recovery.amount} min={0} step={0.01}
-                                   onChange={e => setRecovery({ ...recovery, amount: Number(e.target.value) })} />
+                            <NumberInput id="bd-rec-amount" money className={`${field} w-full`} value={recovery.amount}
+                                   onChange={v => setRecovery({ ...recovery, amount: v })} />
                         </div>
                         <div>
                             <label className={label} htmlFor="bd-rec-date">{t("date")}</label>

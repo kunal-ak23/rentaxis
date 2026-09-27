@@ -76,5 +76,5 @@ public class CreateLeaseDTO {
     private Boolean rentVatApplicable;
 
     /** At least one line is required; {@code LeaseService} rejects an empty list. */
-    private List<LeaseLineInput> lines;
+    private List<@jakarta.validation.Valid LeaseLineInput> lines;
 }

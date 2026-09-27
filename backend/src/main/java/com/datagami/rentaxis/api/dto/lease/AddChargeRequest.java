@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api.dto.lease;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 
@@ -23,7 +24,7 @@ public record AddChargeRequest(@NotNull(message = "The addendum needs an effecti
                                String ejariNumber,
                                String reason,
                                @NotEmpty(message = "At least one line is required")
-                               List<LeaseLineInput> lines,
+                               List<@Valid LeaseLineInput> lines,
                                @NotEmpty(message = "At least one cheque row is required")
-                               List<ChequeRowInput> cheques) {
+                               List<@Valid ChequeRowInput> cheques) {
 }

@@ -1,5 +1,7 @@
 package com.datagami.rentaxis.api.dto.lease;
 
+import com.datagami.rentaxis.api.validation.Money;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 
 import java.time.LocalDate;
@@ -30,14 +32,14 @@ import java.util.List;
 public record RenewLeaseRequest(LocalDate contractDate,
                                 @NotNull(message = "The renewal needs a start date") LocalDate startDate,
                                 @NotNull(message = "The renewal needs an end date") LocalDate endDate,
-                                List<LeaseLineInput> lines,
+                                List<@Valid LeaseLineInput> lines,
                                 boolean carryDepositForward,
                                 /* Spec §4a: how the rent moves; null = NONE. */
-                                RentChange rentChange,
+                                @Valid RentChange rentChange,
                                 /* Spec §4a: the new registration, when already known. */
                                 String ejariNumber,
                                 /* Spec §4d: charges added to this renewal (e.g. a renewal fee). */
-                                List<LeaseLineInput> additionalLines) {
+                                List<@Valid LeaseLineInput> additionalLines) {
 
     /** The shape before §4a/§4d. */
     public RenewLeaseRequest(LocalDate contractDate, LocalDate startDate, LocalDate endDate,
@@ -50,7 +52,8 @@ public record RenewLeaseRequest(LocalDate contractDate,
      * whole AED, same term length only. {@code AMOUNT}: the new headline rent as
      * typed. {@code NONE}: last year's headline.
      */
-    public record RentChange(Mode mode, java.math.BigDecimal percent, java.math.BigDecimal newRentAmount) {
+    public record RentChange(Mode mode, java.math.BigDecimal percent,
+                             @Money(positive = true) java.math.BigDecimal newRentAmount) {
         public enum Mode { NONE, PERCENT, AMOUNT }
     }
 }

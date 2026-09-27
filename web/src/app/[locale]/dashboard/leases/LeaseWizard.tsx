@@ -1,5 +1,6 @@
 "use client";
 
+import { focusFirstInvalidMoney } from "@/components/ui/NumberInput";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "@/i18n/routing";
 import { useTranslations } from "next-intl";
@@ -226,6 +227,9 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
      * second abandoned lease behind.
      */
     const saveLines = async () => {
+        // Break-it round 1 (money) F1: a refused amount (1000.555, "1,5") reports 0;
+        // it must not be saved as that 0 — take the user to it instead.
+        if (focusFirstInvalidMoney(document)) return;
         setBusy(true);
         setError(null);
         setServerErrors([]);
@@ -275,7 +279,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         runCheques(() => leaseApi.generateChequeNumbers(lease.id, startingNumber));
     };
     const saveCheques = () => {
-        if (!lease) return;
+        if (!lease || focusFirstInvalidMoney(document)) return;
         runCheques(() => leaseApi.saveCheques(lease.id, toChequeRows(cheques)));
     };
 

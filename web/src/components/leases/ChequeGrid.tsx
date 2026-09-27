@@ -520,8 +520,7 @@ export default function ChequeGrid({
                                     {editable ? (
                                         <NumberInput
                                             aria-label={`${t("amount")} ${i + 1}`}
-                                            min={0}
-                                            step={0.01}
+                                            money
                                             className={numField}
                                             value={c.amount}
                                             // A new amount clears the row's VAT, so the
@@ -540,8 +539,7 @@ export default function ChequeGrid({
                                                 // figure, so an explicit 0 shows as 0 and "auto" as blank.
                                                 key={`${c.id}-${c.vatAmount == null ? "auto" : "set"}`}
                                                 aria-label={`${t("vatColumn")} ${i + 1}`}
-                                                min={0}
-                                                step={0.01}
+                                                money={{ allowZero: true }}
                                                 className={numField}
                                                 placeholder={t("vatAuto")}
                                                 showZero={c.vatAmount != null}

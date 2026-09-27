@@ -60,6 +60,9 @@ import java.util.UUID;
 @Service
 public class LeaseRenewalService {
 
+    /** The largest rent change {@code leases.renewal_change_percent} (numeric(7,3)) holds. */
+    static final BigDecimal MAX_CHANGE_PERCENT = new BigDecimal("9999.999");
+
     /**
      * What a lease must be to be renewed.
      *
@@ -319,7 +322,10 @@ public class LeaseRenewalService {
                         if (change.newRentAmount() == null || change.newRentAmount().signum() <= 0) {
                             throw new BusinessRuleViolationException("Enter the new rent amount.");
                         }
-                        yield change.newRentAmount().setScale(2, java.math.RoundingMode.HALF_UP);
+                        // Break-it round 1 (money) F2: checked after rounding, not before —
+                        // 0.001 passed "> 0" and drafted a successor with RENT 0.00.
+                        yield com.datagami.rentaxis.api.validation.MoneyAmounts.requirePositive(
+                                change.newRentAmount().setScale(2, java.math.RoundingMode.HALF_UP));
                     }
                     case PERCENT -> {
                         if (change.percent() == null) {
@@ -335,12 +341,19 @@ public class LeaseRenewalService {
                         if (escalated.signum() <= 0) {
                             throw new BusinessRuleViolationException("The rent change leaves no rent to charge.");
                         }
-                        yield escalated.setScale(2);
+                        // F3: 1,000,000 % is not a rent the ledger can hold.
+                        yield com.datagami.rentaxis.api.validation.MoneyAmounts.requirePositive(escalated.setScale(2));
                     }
                 };
                 if (base.signum() > 0) {
                     percent = newRent.subtract(base).multiply(BigDecimal.valueOf(100))
                             .divide(base, 3, java.math.RoundingMode.HALF_UP);
+                    // F3: the change is stored as numeric(7,3); past that it overflowed
+                    // into a 409 "conflict" rather than saying what was wrong.
+                    if (percent.abs().compareTo(MAX_CHANGE_PERCENT) > 0) {
+                        throw new BusinessRuleViolationException("The rent change is too large (more than "
+                                + MAX_CHANGE_PERCENT.toPlainString() + " %). Check the new rent.");
+                    }
                 }
                 // Concessions do not renew (spec §4a): the discount resets to 0, and the
                 // successor starts with no rent-free period.

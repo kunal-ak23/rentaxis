@@ -23,7 +23,7 @@ import java.util.UUID;
 public record ProposePenaltyRequest(@NotNull UUID leaseId,
                                     UUID chequeId,
                                     @NotNull PenaltyReason reason,
-                                    @NotNull @DecimalMin(value = "0.00", inclusive = false) BigDecimal amount,
+                                    @NotNull @DecimalMin(value = "0.00", inclusive = false) @com.datagami.rentaxis.api.validation.Money(positive = true) BigDecimal amount,
                                     String description,
                                     LocalDate incidentDate,
                                     /* F14-30: VAT on this charge; null = the reason's default on a VAT lease. */

@@ -1,5 +1,6 @@
 "use client";
 
+import { NumberInput } from "@/components/ui/NumberInput";
 import { useCallback, useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { Receipt, X } from "lucide-react";
@@ -120,8 +121,8 @@ export default function TicketChargesCard({ ticketId }: { ticketId: string }) {
                 onConfirm={() => run(() => ticketChargesApi.recharge(ticketId, { amount, vatable: vat === "auto" ? null : vat === "yes" }))}
             >
                 <div className="grid gap-2">
-                    <input type="number" className={field} min={0} step={0.01} value={amount} aria-label={t("amount")}
-                           onChange={e => setAmount(Number(e.target.value))} data-testid="ticket-recharge-amount" />
+                    <NumberInput money className={field} value={amount} aria-label={t("amount")}
+                           onChange={setAmount} data-testid="ticket-recharge-amount" />
                     <select className={field} value={vat} onChange={e => setVat(e.target.value as "auto" | "yes" | "no")} aria-label={t("vat")}>
                         <option value="auto">{t("vatAuto")}</option>
                         <option value="yes">{t("vatYes")}</option>

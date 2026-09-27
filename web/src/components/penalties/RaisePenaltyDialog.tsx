@@ -106,7 +106,7 @@ export default function RaisePenaltyDialog({ open, leaseId, onClose, onRaised, m
                 </div>
                 <div>
                     <label className={label} htmlFor="raise-penalty-amount">{tl("amount")}</label>
-                    <NumberInput id="raise-penalty-amount" min={0} step={0.01} className={`${field} text-end tabular-nums`} value={amount} onChange={setAmount} />
+                    <NumberInput id="raise-penalty-amount" money className={`${field} text-end tabular-nums`} value={amount} onChange={setAmount} />
                 </div>
                 <div>
                     <label className={label} htmlFor="raise-penalty-vat">{t("chargeVat")}</label>

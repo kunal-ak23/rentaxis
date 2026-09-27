@@ -144,3 +144,107 @@ export function differenceOf(a: AmountLike, b: AmountLike): number {
 export function isZeroAmount(n: AmountLike): boolean {
     return toFils(n) === 0;
 }
+
+// ---------------------------------------------------------------------------
+// Typed amounts (break-it round 1, money F1–F3)
+// ---------------------------------------------------------------------------
+
+/** The largest amount a `numeric(14,2)` ledger column holds — the server's `MoneyAmounts.MAX`. */
+export const MONEY_MAX = 999_999_999_999.99;
+
+/** One fil: the smallest positive amount. */
+export const MONEY_MIN = 0.01;
+
+/** Why a typed amount was refused; each has a sentence under `MoneyInput.<code>`. */
+export type MoneyInputError = "format" | "decimals" | "min" | "negative" | "max";
+
+export type MoneyInputResult = { ok: true; value: number | null } | { ok: false; error: MoneyInputError };
+
+export type MoneyInputOptions = {
+    /** Zero is an answer here (a discount, a waived fee). Default: the amount must be at least 0.01. */
+    allowZero?: boolean;
+    /** A signed adjustment. Implies `allowZero`. */
+    allowNegative?: boolean;
+};
+
+/** Arabic-Indic (U+0660–0669) and Extended/Persian (U+06F0–06F9) digits, and the Arabic separators. */
+function westernDigits(text: string): string {
+    return text
+        .replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660))
+        .replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 0x06f0))
+        .replace(/٫/g, ".") // ARABIC DECIMAL SEPARATOR
+        .replace(/٬/g, ","); // ARABIC THOUSANDS SEPARATOR
+}
+
+/**
+ * Digits, optionally grouped in threes with commas exactly the way `fmtAmount`
+ * prints them (en grouping), then at most one decimal point. No sign, exponent,
+ * currency or spaces — a leading minus is split off before this runs.
+ */
+const TYPED_AMOUNT_RE = /^(?:\d{1,3}(?:,\d{3})+|\d+)?(?:\.(\d*))?$/;
+
+/**
+ * The one parse every money field uses. It never rounds and never guesses:
+ *
+ * - more than two decimals is refused (`decimals`) — 1000.555 is not 1000.56;
+ * - a comma is thousands grouping in threes or it is refused (`format`) — "1,5"
+ *   is not read as one and a half, "1,00" is not read as one;
+ * - Arabic-Indic digits (and ٫ ٬) are read as the digits they are;
+ * - "1e12", "AED 5,000", "+5" and anything else that is not plainly an amount
+ *   is `format`;
+ * - below one fil where the amount must be positive is `min`, below zero is
+ *   `negative`, beyond {@link MONEY_MAX} is `max`.
+ *
+ * An empty field is `{ ok: true, value: null }` — no amount, which is neither
+ * zero nor an error; the form decides whether the field is required.
+ */
+export function parseMoneyInput(raw: string | number | null | undefined, opts: MoneyInputOptions = {}): MoneyInputResult {
+    if (raw === null || raw === undefined) return { ok: true, value: null };
+    let text: string;
+    if (typeof raw === "number") {
+        if (!Number.isFinite(raw)) return { ok: false, error: "format" };
+        // A number's shortest round-trip form; toFixed would round the third decimal away.
+        text = String(raw);
+        if (/e/i.test(text)) return { ok: false, error: raw > 0 && Math.abs(raw) >= 1 ? "max" : "decimals" };
+    } else {
+        text = westernDigits(raw).trim();
+    }
+    if (text === "") return { ok: true, value: null };
+
+    const negative = text.startsWith("-");
+    const unsigned = negative ? text.slice(1) : text;
+    const match = TYPED_AMOUNT_RE.exec(unsigned);
+    if (!match || unsigned === "." || unsigned === "") return { ok: false, error: "format" };
+
+    const fraction = (match[1] ?? "").replace(/0+$/, "");
+    if (fraction.length > 2) {
+        // 0.001 where the amount must be positive: "at least 0.01" is the sentence
+        // that helps (the server's MoneyAmounts answers the same).
+        const wholeIsZero = !/[1-9]/.test(unsigned.split(".")[0] ?? "");
+        const belowFil = wholeIsZero && fraction.slice(0, 2) === "00";
+        const positiveOnly = !opts.allowZero && !opts.allowNegative;
+        return { ok: false, error: belowFil && positiveOnly && !negative ? "min" : "decimals" };
+    }
+
+    const fils = toFils(unsigned);
+    if (fils === null) return { ok: false, error: "format" };
+    const value = fromFils(negative ? -fils : fils);
+
+    if (Math.abs(value) > MONEY_MAX) return { ok: false, error: "max" };
+    if (value < 0 && !opts.allowNegative) return { ok: false, error: "negative" };
+    if (value === 0 && !opts.allowZero && !opts.allowNegative) return { ok: false, error: "min" };
+    // Normalise -0 to 0.
+    return { ok: true, value: value === 0 ? 0 : value };
+}
+
+/** `parseMoneyInput` as the i18n key of its refusal (`MoneyInput.<code>`), or null when the text is fine. */
+export function moneyInputError(raw: string | number | null | undefined, opts?: MoneyInputOptions): MoneyInputError | null {
+    const r = parseMoneyInput(raw, opts);
+    return r.ok ? null : r.error;
+}
+
+/** `parseMoneyInput` as a plain value: the amount, or null when blank or refused. */
+export function moneyValueOrNull(raw: string | number | null | undefined, opts?: MoneyInputOptions): number | null {
+    const r = parseMoneyInput(raw, opts);
+    return r.ok ? r.value : null;
+}

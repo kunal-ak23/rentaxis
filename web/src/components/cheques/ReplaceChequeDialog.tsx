@@ -210,8 +210,7 @@ export default function ReplaceChequeDialog({ cheque, propertyId, onClose, onDon
                                 <label className={label}>{tl("amount")}</label>
                                 <NumberInput
                                     data-testid={`replace-row-${i}-amount`}
-                                    min={0}
-                                    step={0.01}
+                                    money
                                     className={`${field} text-end tabular-nums`}
                                     value={r.amount}
                                     onChange={v => patch(r.key, { amount: v })}

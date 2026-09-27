@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api.dto.cheque;
 
+import jakarta.validation.Valid;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
 
 import java.time.LocalDate;
@@ -22,7 +23,7 @@ import java.util.List;
  * @param date the day the replacement was agreed — the reversal/registration date.
  * @param notes kept on the bounced row for the audit trail.
  */
-public record ReplaceChequeRequest(List<ChequeRowInput> replacements, LocalDate date, String notes) {
+public record ReplaceChequeRequest(List<@Valid ChequeRowInput> replacements, LocalDate date, String notes) {
 
     public LocalDate dateOrToday() {
         return date != null ? date : LocalDate.now();

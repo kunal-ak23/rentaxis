@@ -1,5 +1,6 @@
 "use client";
 
+import { moneyValueOrNull } from "@/lib/money";
 import { useCallback, useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { Loader2 } from "lucide-react";
@@ -110,7 +111,8 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
         setDecision({ action, row });
     };
 
-    const reduceAmountNumber = Number(reduceAmount);
+    // Break-it round 1 (money) F1: the shared money parse (3 decimals / "1,5" are no amount).
+    const reduceAmountNumber = moneyValueOrNull(reduceAmount) ?? Number.NaN;
     // Server rule (F14-28): 0 < amount < the current amount.
     const reduceAmountValid = decision?.action === "reduce"
         && reduceAmount !== ""

@@ -1,5 +1,6 @@
 "use client";
 
+import { moneyValueOrNull } from "@/lib/money";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { AlertTriangle, ArrowLeft, CheckCircle2, Eye, Filter, Send } from "lucide-react";
@@ -50,10 +51,9 @@ function Amount({ v, strong }: { v: number | null | undefined; strong?: boolean 
 }
 
 const itemKey = (i: { kind: string; id: string }) => `${i.kind}:${i.id}`;
-const num = (s: string) => {
-    const n = Number(String(s).replace(/,/g, ""));
-    return Number.isFinite(n) ? n : NaN;
-};
+// Break-it round 1 (money) F1: the shared money parse — stripping every comma read
+// "1,5" as 15 and let a third decimal through to be rounded. Refused or blank is NaN.
+const num = (s: string) => moneyValueOrNull(String(s), { allowZero: true }) ?? NaN;
 
 /** One problem, in the reader's language when the code is known; the server's sentence otherwise. */
 export function ProblemLine({ p }: { p: RunProblem }) {

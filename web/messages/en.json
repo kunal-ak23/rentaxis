@@ -4672,5 +4672,16 @@
     "orgUnavailableTitle": "This organisation is not available",
     "orgUnavailableBody": "The organisation this tab was using is inactive or no longer open to you. Reload to continue in your own organisation.",
     "goToOrganisations": "Choose an organisation"
+  },
+  "MoneyInput": {
+    "format": "Enter an amount such as 1,250.50",
+    "decimals": "Use at most 2 decimal places",
+    "min": "Enter at least 0.01",
+    "negative": "The amount cannot be negative",
+    "max": "The amount is too large (maximum 999,999,999,999.99)",
+    "dateTooFar": "The date can be at most one year from today ({max})",
+    "aboveOutstanding": "This is {excess} more than the {outstanding} still outstanding on this contract. It will be recorded as an advance payment — confirm to continue.",
+    "recordAnyway": "Record anyway",
+    "amendNoChanges": "Nothing has changed yet — edit a line to amend."
   }
 }

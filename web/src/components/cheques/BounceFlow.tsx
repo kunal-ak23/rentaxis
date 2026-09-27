@@ -154,7 +154,7 @@ export default function BounceFlow({ cheque, canProposeFee, onClose, onChanged }
                                 <div className="flex items-end gap-2">
                                     <label className="flex-1">
                                         <span className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">{t("bounceFlowFeeAmount")}</span>
-                                        <NumberInput value={fee} onChange={setFee} data-testid="bounce-flow-fee-amount" dir="ltr"
+                                        <NumberInput money value={fee} onChange={setFee} data-testid="bounce-flow-fee-amount" dir="ltr"
                                             className="w-full bg-input border border-border rounded-lg px-3 py-2 text-xs text-end tabular-nums" />
                                     </label>
                                     <button type="button" data-testid="bounce-flow-propose-fee" onClick={proposeFee} disabled={busy || !(fee > 0)}

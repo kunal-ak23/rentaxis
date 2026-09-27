@@ -86,7 +86,7 @@ public class JournalController {
     }
 
     @PostMapping
-    public ResponseEntity<JournalEntryDTO> postManual(@RequestBody ManualJournalRequest request) {
+    public ResponseEntity<JournalEntryDTO> postManual(@jakarta.validation.Valid @RequestBody ManualJournalRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.postManual(request));
     }
 

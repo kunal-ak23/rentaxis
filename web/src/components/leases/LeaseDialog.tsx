@@ -1,7 +1,9 @@
 "use client";
 
+import { useRef } from "react";
 import { X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { focusFirstInvalidMoney } from "@/components/ui/NumberInput";
 
 /**
  * The shell the four lease actions share.
@@ -43,6 +45,15 @@ export default function LeaseDialog({
     width = "sm",
     children,
 }: Props) {
+    // Break-it round 1 (money) F1: this shell is not a <form>, so a field's own
+    // validity never stopped a submit. A money field `NumberInput` has refused
+    // (1000.555, 0.001, "1,5") is marked `data-money-invalid`; confirm takes the
+    // user to it instead of sending whatever the form last held.
+    const bodyRef = useRef<HTMLDivElement>(null);
+    const confirm = () => {
+        if (focusFirstInvalidMoney(bodyRef.current)) return;
+        onConfirm();
+    };
     if (!open) return null;
     return (
         <div className="fixed inset-0 z-[105] flex items-center justify-center bg-black/40 p-4">
@@ -65,7 +76,7 @@ export default function LeaseDialog({
                         <X size={15} />
                     </button>
                 </div>
-                <div className="px-5 py-4 overflow-y-auto flex-1">{children}</div>
+                <div ref={bodyRef} className="px-5 py-4 overflow-y-auto flex-1">{children}</div>
                 <div className="px-5 py-3.5 border-t border-border bg-input/50 flex justify-end gap-2 shrink-0">
                     <button
                         type="button"
@@ -79,7 +90,7 @@ export default function LeaseDialog({
                     <button
                         type="button"
                         data-testid={confirmTestId}
-                        onClick={onConfirm}
+                        onClick={confirm}
                         disabled={confirmDisabled || busy}
                         className={cn(
                             "inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",

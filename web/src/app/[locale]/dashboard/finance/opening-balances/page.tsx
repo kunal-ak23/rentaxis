@@ -21,7 +21,7 @@ import {
     canPostOpeningBalances, canReplaceOpeningBalances, canReverseOpeningBalances,
     gridDeclaresComputed, problemMessage, snapshotRefusal, type ComputedAccountSource,
 } from "@/lib/cutoverRules";
-import { differenceOf, parseAmount, sumAmounts } from "@/lib/money";
+import { differenceOf, moneyValueOrNull, sumAmounts } from "@/lib/money";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 
@@ -87,7 +87,9 @@ type Edit = { debit: string; credit: string };
  * unreadable is null, NOT 0: a typo saved as a silent zero is a figure the
  * accountant never entered and will never be told about.
  */
-const cellAmount = (s: string): number | null => (s.trim() === "" ? 0 : parseAmount(s));
+// Break-it round 1 (money) F1: the shared money parse — a third decimal, "1,5" or
+// Arabic-Indic digits read wrongly are unreadable (null), never rounded or guessed.
+const cellAmount = (s: string): number | null => (s.trim() === "" ? 0 : moneyValueOrNull(s, { allowZero: true }));
 
 /** The stored figure as text, with a true zero shown as an empty cell rather than "0". */
 const asText = (n: number) => (n ? String(n) : "");

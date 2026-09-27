@@ -12,7 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { fmtAmount, ledgerApi } from "@/lib/api/ledger";
-import { NumberInput } from "@/components/ui/NumberInput";
+import { NumberInput, focusFirstInvalidMoney } from "@/components/ui/NumberInput";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import AccountPicker from "@/components/finance/AccountPicker";
@@ -421,6 +421,8 @@ export default function SettlementPage() {
     };
 
     const saveDraft = async () => {
+        // Break-it round 1 (money) F1: a refused amount reports 0; never save it as that.
+        if (focusFirstInvalidMoney(document)) return;
         setSaving(true);
         setSaveError(null);
         try {
@@ -441,7 +443,7 @@ export default function SettlementPage() {
     };
 
     const finalize = async () => {
-        if (!settlementDate) return;
+        if (!settlementDate || focusFirstInvalidMoney(document)) return;
         setFinalizing(true);
         setFinalizeError(null);
         try {
@@ -1063,8 +1065,7 @@ function LineTable({
                                     {editable ? (
                                         <NumberInput
                                             value={r.amount}
-                                            min={0}
-                                            step={0.01}
+                                            money={{ allowZero: true }}
                                             data-testid={`settlement-amount-${index}`}
                                             aria-label={t("amount")}
                                             onChange={v => onPatch(r.key, { amount: v })}

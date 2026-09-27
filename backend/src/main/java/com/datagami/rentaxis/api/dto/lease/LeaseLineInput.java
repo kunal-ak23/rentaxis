@@ -1,5 +1,7 @@
 package com.datagami.rentaxis.api.dto.lease;
 
+import com.datagami.rentaxis.api.validation.Money;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -28,8 +30,8 @@ import java.util.UUID;
  */
 public record LeaseLineInput(UUID chargeTypeId,
                              String chargeTypeCode,
-                             BigDecimal grossAmount,
-                             BigDecimal discountAmount,
+                             @Money BigDecimal grossAmount,
+                             @Money BigDecimal discountAmount,
                              String narration,
                              Boolean vatApplicable,
                              UUID creditAccountId,
