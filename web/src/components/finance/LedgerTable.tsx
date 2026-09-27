@@ -5,6 +5,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { accountName, fmtAmount, type AccountLedger } from "@/lib/api/ledger";
 import { buildLedgerReport, drCr, type LedgerGroup } from "@/lib/finance/ledgerReport";
 import { useNameLookup } from "./useNameLookup";
+import { useIdNames } from "@/hooks/useIdNames";
 
 const th = "text-start px-3 py-2 text-[11px] font-semibold text-muted uppercase tracking-wider";
 const td = "px-3 py-1.5 text-xs";
@@ -50,8 +51,10 @@ type Props = {
 export default function LedgerTable({ ledgers, showTenantColumns = true, subBand, broughtForward = false }: Props) {
     const t = useTranslations("Ledger");
     const locale = useLocale();
-    const units = useNameLookup("units", showTenantColumns);
-    const renters = useNameLookup("renters", showTenantColumns);
+    // Only the ids on screen are named (bounded /names calls), and none when the columns are off.
+    const rows = showTenantColumns ? ledgers.flatMap(l => l.rows) : [];
+    const units = useIdNames("units", rows.map(r => r.unitId));
+    const renters = useIdNames("renters", rows.map(r => r.renterId));
     const towers = useNameLookup("properties", showTenantColumns);
     const cols = showTenantColumns ? 10 : 7;
     // Sub-totals and the report total are summed here from the rows (PACT

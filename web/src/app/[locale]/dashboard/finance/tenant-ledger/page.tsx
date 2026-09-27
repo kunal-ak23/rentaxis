@@ -7,7 +7,7 @@ import { useTranslations } from "next-intl";
 import { ShieldCheck, Users } from "lucide-react";
 import LedgerFilters, { defaultLedgerRange } from "@/components/finance/LedgerFilters";
 import LedgerTable from "@/components/finance/LedgerTable";
-import { useNameLookup } from "@/components/finance/useNameLookup";
+import { useIdNames } from "@/hooks/useIdNames";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
 import { ledgerApi, type AccountLedger, type LedgerQuery } from "@/lib/api/ledger";
@@ -44,8 +44,7 @@ export default function TenantLedgerPage() {
     const [loading, setLoading] = useState(false);
     const [loadError, setLoadError] = useState<string | null>(null);
 
-    const renters = useNameLookup("renters");
-    const tenantName = renters.name(applied.renterId);
+    const tenantName = useIdNames("renters", [applied.renterId]).name(applied.renterId);
 
     const load = useCallback(
         async (q: LedgerQuery) => {

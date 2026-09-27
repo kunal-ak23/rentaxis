@@ -13,6 +13,8 @@ import { fmtIsoDate } from "@/components/leases/leaseMath";
 import type { Page } from "@/lib/api/ledger";
 import { TowerSelect } from "@/components/ui/TowerSelect";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
+import { UnitPicker } from "@/components/pickers/UnitPicker";
+import { RenterPicker } from "@/components/pickers/RenterPicker";
 import {
     Plus, X, Search, Loader2, Eye, Upload, Wrench, BarChart3,
 } from "lucide-react";
@@ -93,12 +95,6 @@ type Property = {
     };
 };
 
-type Unit = {
-    id: string;
-    unitNumber: string;
-    property?: { id: string; nameEn?: string; nameAr?: string };
-};
-
 // ── Badge Maps ─────────────────────────────────────────────────────────────
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -158,7 +154,6 @@ function TicketsPageInner() {
     const [tickets, setTickets] = useState<Ticket[]>([]);
     const [pagedTotal, setPagedTotal] = useState(0);
     const [properties, setProperties] = useState<Property[]>([]);
-    const [units, setUnits] = useState<Unit[]>([]);
     // R1 P1-1/P3-1: `initialLoading` gates only the very first read's full-page
     // spinner; every read after that keeps the page (filters, search box and
     // all) mounted, with `tableLoading` as a small in-table indicator instead —
@@ -303,25 +298,6 @@ function TicketsPageInner() {
         } catch { /* ignore */ }
     }, [isRenter]);
 
-    // #19: the org's renters, for the "on behalf of" picker. Staff only; the
-    // endpoint is not open to a renter, and a renter reports for themselves.
-    const [renters, setRenters] = useState<{ id: string; nameEn: string; nameAr: string | null; phone: string | null }[]>([]);
-    const fetchRenters = useCallback(async () => {
-        if (isRenter) return;
-        try {
-            const res = await fetch("/api/proxy/v1/renters");
-            if (res.ok) setRenters(await res.json());
-        } catch { /* ignore */ }
-    }, [isRenter]);
-
-    const fetchUnits = useCallback(async () => {
-        if (isRenter) return; // Renters use their leases instead
-        try {
-            const res = await fetch("/api/proxy/v1/units");
-            if (res.ok) setUnits(await res.json());
-        } catch { /* ignore */ }
-    }, [isRenter]);
-
     const fetchRenterLeases = useCallback(async () => {
         if (!isRenter) return;
         try {
@@ -341,8 +317,8 @@ function TicketsPageInner() {
     }, [isRenter]);
 
     useEffect(() => {
-        Promise.all([fetchProperties(), fetchUnits(), fetchRenterLeases(), fetchRenters()]).finally(() => {});
-    }, [fetchProperties, fetchUnits, fetchRenterLeases, fetchRenters]);
+        Promise.all([fetchProperties(), fetchRenterLeases()]).finally(() => {});
+    }, [fetchProperties, fetchRenterLeases]);
 
     useEffect(() => {
         fetchTickets();
@@ -380,11 +356,6 @@ function TicketsPageInner() {
         (currentPage - 1) * itemsPerPage,
         currentPage * itemsPerPage,
     );
-
-    // Units filtered by selected property
-    const filteredUnits = form.propertyId
-        ? units.filter((u) => u.property?.id === form.propertyId)
-        : units;
 
     // ── Create ticket ───────────────────────────────────────────────────
 
@@ -761,16 +732,14 @@ function TicketsPageInner() {
                                     </div>
                                     <div>
                                         <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t("unit")}</label>
-                                        <select
+                                        <UnitPicker
+                                            testId="ticket-unit-picker"
                                             value={form.unitId}
-                                            onChange={(e) => setForm({ ...form, unitId: e.target.value })}
-                                            className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
-                                        >
-                                            <option value="">{t("selectUnit")}</option>
-                                            {filteredUnits.map((u) => (
-                                                <option key={u.id} value={u.id}>{u.unitNumber}</option>
-                                            ))}
-                                        </select>
+                                            onChange={(id) => setForm({ ...form, unitId: id })}
+                                            propertyId={form.propertyId || undefined}
+                                            placeholder={t("selectUnit")}
+                                            className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                                        />
                                     </div>
                                 </div>
                             )}
@@ -781,19 +750,14 @@ function TicketsPageInner() {
                             {!isRenter && (
                                 <div>
                                     <label htmlFor="ticket-on-behalf-of" className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t("onBehalfOfRenter")}</label>
-                                    <select
+                                    <RenterPicker
                                         id="ticket-on-behalf-of"
+                                        testId="ticket-on-behalf-of"
                                         value={form.onBehalfOfRenterId || ""}
-                                        onChange={(e) => setForm({ ...form, onBehalfOfRenterId: e.target.value })}
+                                        onChange={(id) => setForm({ ...form, onBehalfOfRenterId: id })}
+                                        placeholder={t("onBehalfOfNone")}
                                         className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none"
-                                    >
-                                        <option value="">{t("onBehalfOfNone")}</option>
-                                        {renters.map((r) => (
-                                            <option key={r.id} value={r.id}>
-                                                {(locale === "ar" && r.nameAr) ? r.nameAr : r.nameEn}{r.phone ? ` · ${r.phone}` : ""}
-                                            </option>
-                                        ))}
-                                    </select>
+                                    />
                                     <p className="text-[10px] text-muted mt-1">{t("onBehalfOfHint")}</p>
                                 </div>
                             )}

@@ -219,6 +219,25 @@ class ScaleListEndpointsIT extends AbstractPostgresIT {
         assertThat(names(get(admin, "/api/v1/units/search?q=07&limit=1"), null, "unitNumber")).hasSize(1);
     }
 
+    @Test
+    void unitSearchFiltersByStatusAndCarriesThePropertyType() {
+        Unit vacant = a.createUnit(marina, "50-01");
+        Unit occupied = a.createUnit(marina, "50-02");
+        occupied.setStatus(UnitStatus.OCCUPIED);
+        unitRepo.save(occupied);
+
+        assertThat(names(get(admin, "/api/v1/units/search?q=50-&status=" + UnitStatus.VACANT), null, "unitNumber"))
+                .containsExactly("50-01");
+        assertThat(names(get(admin, "/api/v1/units/search?q=50-"), null, "unitNumber"))
+                .containsExactlyInAnyOrder("50-01", "50-02");
+
+        JsonNode rows = get(admin, "/api/v1/units/search?q=50-&status=" + UnitStatus.VACANT);
+        assertThat(rows.get(0).get("propertyType").asText()).isEqualTo(marina.getType().name());
+
+        assertThat(names(get(pm, "/api/v1/units/search?q=90&status=" + UnitStatus.VACANT), null, "unitNumber"))
+                .doesNotContain("901");
+    }
+
     // ------------------------------------------------------------------ tickets
 
     @Test

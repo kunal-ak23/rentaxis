@@ -5,6 +5,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { UserRoundCog } from "lucide-react";
 import { serverText } from "@/components/finance/bankrec/serverText";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { RenterPicker } from "@/components/pickers/RenterPicker";
 import { fmtAmount } from "@/lib/api/ledger";
 import { fmtIsoDate } from "./leaseMath";
 import { ApiError, leaseApi, type LeaseAssignment, type LeaseDetail } from "@/lib/api/leasing";
@@ -36,7 +37,6 @@ export default function LeaseAssignmentCard({ lease, canDraft, canPost, onChange
     const tCommon = useTranslations("Common");
     const locale = useLocale();
     const [items, setItems] = useState<LeaseAssignment[]>([]);
-    const [renters, setRenters] = useState<{ id: string; nameEn: string; nameAr?: string | null }[]>([]);
     const [open, setOpen] = useState(false);
     const [toRenterId, setToRenterId] = useState("");
     const [effectiveDate, setEffectiveDate] = useState("");
@@ -62,16 +62,9 @@ export default function LeaseAssignmentCard({ lease, canDraft, canPost, onChange
 
     const fail = (e: unknown) => setError(e instanceof ApiError ? serverText(tCommon, e) || e.message : t("assignment.failed"));
 
-    const startDraft = async () => {
+    const startDraft = () => {
         setOpen(true);
         setError(null);
-        if (renters.length === 0) {
-            try {
-                setRenters((await leaseApi.renterOptions()).filter(r => r.id !== lease.renterId));
-            } catch (e) {
-                fail(e);
-            }
-        }
     };
 
     const draftIt = async () => {
@@ -134,13 +127,10 @@ export default function LeaseAssignmentCard({ lease, canDraft, canPost, onChange
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3" data-testid="assignment-form">
                     <div>
                         <label className={label} htmlFor="assignment-renter">{t("assignment.toRenter")}</label>
-                        <select id="assignment-renter" data-testid="assignment-renter" className={field}
-                                value={toRenterId} onChange={e => setToRenterId(e.target.value)}>
-                            <option value="">{t("assignment.chooseRenter")}</option>
-                            {renters.map(r => (
-                                <option key={r.id} value={r.id}>{locale === "ar" ? r.nameAr || r.nameEn : r.nameEn}</option>
-                            ))}
-                        </select>
+                        {/* The sitting renter is not offered: assigning to them is no assignment. */}
+                        <RenterPicker id="assignment-renter" testId="assignment-renter" className={field}
+                                      value={toRenterId} onChange={id => setToRenterId(id)}
+                                      excludeIds={[lease.renterId]} placeholder={t("assignment.chooseRenter")} />
                     </div>
                     <div>
                         <label className={label} htmlFor="assignment-date">{t("effectiveFrom")}</label>

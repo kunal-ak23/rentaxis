@@ -9,6 +9,7 @@ import { Link, useRouter } from "@/i18n/routing";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { useNameLookup } from "@/components/finance/useNameLookup";
+import { useIdNames } from "@/hooks/useIdNames";
 import { journalStatusClass } from "@/components/finance/journalStatus";
 import { ApiError } from "@/lib/api/facilities";
 import { accountName, fmtAmount, ledgerApi, type JournalEntry } from "@/lib/api/ledger";
@@ -58,11 +59,12 @@ function JournalDetail() {
     const canPost = hasPermission(userRole, "canPostJournals");
 
     const id = params?.id ?? "";
-    const units = useNameLookup("units", allowed);
-    const renters = useNameLookup("renters", allowed);
     const properties = useNameLookup("properties", allowed);
 
     const [entry, setEntry] = useState<JournalEntry | null>(null);
+    // Only this entry's lines are named (the entry is loaded only when `allowed`).
+    const units = useIdNames("units", entry?.lines.map(l => l.unitId) ?? []);
+    const renters = useIdNames("renters", entry?.lines.map(l => l.renterId) ?? []);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [confirmOpen, setConfirmOpen] = useState(false);

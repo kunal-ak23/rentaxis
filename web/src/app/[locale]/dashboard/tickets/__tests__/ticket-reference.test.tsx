@@ -27,6 +27,12 @@ vi.mock("@/i18n/routing", () => ({
     ),
 }));
 
+// Scale PR B, task 5: "on behalf of" is now the server-searched `RenterPicker`
+// (and the unit field the server-searched `UnitPicker`) instead of a page-wide
+// `/renters`/`/units` list, so `lookupApi` is mocked directly.
+const lookup = vi.hoisted(() => ({ searchUnits: vi.fn(), searchRenters: vi.fn(), unitNames: vi.fn(), renterNames: vi.fn() }));
+vi.mock("@/lib/api/lookup", () => ({ lookupApi: lookup }));
+
 import TicketsPage from "../page";
 
 const ticket = (id: string, reference: string | null, title: string) => ({
@@ -39,16 +45,17 @@ let posted: Record<string, unknown>[];
 
 beforeEach(() => {
     posted = [];
+    lookup.searchUnits.mockResolvedValue([]);
+    lookup.unitNames.mockResolvedValue({ rows: [], failedIds: [] });
+    lookup.searchRenters.mockResolvedValue([
+        { id: "ren-1", nameEn: "Rajesh Kumar", nameAr: null, phone: "+971501234567", email: null },
+    ]);
+    lookup.renterNames.mockResolvedValue({ rows: [], failedIds: [] });
     global.fetch = vi.fn(async (url: unknown, init?: RequestInit) => {
         const u = String(url);
         if (u.endsWith("/v1/tickets") && init?.method === "POST") {
             posted.push(JSON.parse(String(init.body)));
             return { ok: true, status: 200, json: async () => ({ id: "new" }) } as unknown as Response;
-        }
-        if (u.endsWith("/v1/renters")) {
-            return { ok: true, status: 200, json: async () => [
-                { id: "ren-1", nameEn: "Rajesh Kumar", nameAr: null, phone: "+971501234567" },
-            ] } as unknown as Response;
         }
         if (u.endsWith("/v1/properties")) {
             return { ok: true, status: 200, json: async () => [{ property: { id: "p1", nameEn: "Tower" } }] } as unknown as Response;
@@ -112,8 +119,8 @@ describe("Tickets list — reference", () => {
         fireEvent.change(screen.getByPlaceholderText("Brief summary of the issue"), { target: { value: "Noise" } });
         fireEvent.change(screen.getByDisplayValue("Select property"), { target: { value: "p1" } });
         const picker = await screen.findByLabelText(en.Tickets.onBehalfOfRenter);
-        await screen.findByText(/Rajesh Kumar/);
-        fireEvent.change(picker, { target: { value: "ren-1" } });
+        fireEvent.click(picker);
+        fireEvent.click(await screen.findByText(/Rajesh Kumar/));
         // The header button and the form's submit share the label; the submit is last.
         const buttons = screen.getAllByRole("button", { name: /Create Ticket/ });
         fireEvent.click(buttons[buttons.length - 1]);

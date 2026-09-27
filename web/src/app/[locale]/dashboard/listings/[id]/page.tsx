@@ -36,6 +36,7 @@ import type {
 import { InterestsDrawer } from "../_components/InterestsDrawer";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatCurrencyCompact } from "@/lib/format";
+import { UnitPicker } from "@/components/pickers/UnitPicker";
 
 // ──────────── Amenity groups ────────────
 const AMENITY_GROUPS: { key: string; amenities: ListingAmenity[] }[] = [
@@ -65,8 +66,6 @@ function getStatusBadgeClass(status: ListingStatus) {
 type Tab = 'details' | 'media' | 'amenities' | 'seo' | 'pricing' | 'location';
 
 const TABS: Tab[] = ['details', 'media', 'amenities', 'seo', 'pricing', 'location'];
-
-type UnitOption = { id: string; unitNumber: string; propertyName?: string };
 
 interface FormState {
   unitId: string;
@@ -111,7 +110,6 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
   const [amenities, setAmenities] = useState<Map<ListingAmenity, string>>(new Map());
   const [media, setMedia] = useState<UnitListingMediaDTO[]>([]);
-  const [units, setUnits] = useState<UnitOption[]>([]);
 
   const [activeTab, setActiveTab] = useState<Tab>('details');
   const [loading, setLoading] = useState(!isNew);
@@ -139,20 +137,6 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
   const showToast = useCallback((type: 'success' | 'error', message: string) => {
     setToast({ type, message });
     setTimeout(() => setToast(null), 3500);
-  }, []);
-
-  // Load units list
-  useEffect(() => {
-    fetch('/api/proxy/v1/units')
-      .then(r => r.ok ? r.json() : [])
-      .then((data: Array<{ id: string; unitNumber: string; property?: { nameEn?: string } }>) => {
-        setUnits(data.map(u => ({
-          id: u.id,
-          unitNumber: u.unitNumber,
-          propertyName: u.property?.nameEn,
-        })));
-      })
-      .catch(() => {});
   }, []);
 
   // Load existing listing
@@ -552,20 +536,14 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
             {/* Unit */}
             <div className="col-span-1 md:col-span-2">
               <label className={labelClass}>{t('unitId')} *</label>
-              <select
+              <UnitPicker
+                testId="listing-unit-picker"
                 value={form.unitId}
-                onChange={e => setField('unitId', e.target.value)}
-                className={selectClass}
-                required
+                onChange={id => setField('unitId', id)}
+                placeholder={t('selectUnit')}
                 disabled={!isNew}
-              >
-                <option value="">{t('selectUnit')}</option>
-                {units.map(u => (
-                  <option key={u.id} value={u.id}>
-                    {u.propertyName ? `${u.propertyName} — ` : ''}{u.unitNumber}
-                  </option>
-                ))}
-              </select>
+                className={selectClass}
+              />
             </div>
 
             {/* Title EN */}

@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { Filter, X } from "lucide-react";
 import AccountPicker, { loadAccounts } from "./AccountPicker";
 import { useNameLookup } from "./useNameLookup";
+import { RenterPicker } from "@/components/pickers/RenterPicker";
 import type { Account, LedgerQuery } from "@/lib/api/ledger";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -55,7 +56,6 @@ export default function LedgerFilters({
 }: Props) {
     const t = useTranslations("Ledger");
     const properties = useNameLookup("properties", showProperty);
-    const renters = useNameLookup("renters", showRenter);
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [refused, setRefused] = useState(false);
 
@@ -146,17 +146,14 @@ export default function LedgerFilters({
                 {showRenter && (
                     <div>
                         <label className={label} htmlFor="ledger-renter">{t("tenant")}</label>
-                        <select
+                        <RenterPicker
                             id="ledger-renter"
+                            testId="ledger-renter-filter"
                             className={`${field} min-w-[14rem]`}
                             value={value.renterId ?? ""}
-                            onChange={ev => onChange({ ...value, renterId: ev.target.value || undefined })}
-                        >
-                            <option value="">{t("selectRenter")}</option>
-                            {renters.options.map(r => (
-                                <option key={r.id} value={r.id}>{r.label}</option>
-                            ))}
-                        </select>
+                            onChange={id => onChange({ ...value, renterId: id || undefined })}
+                            placeholder={t("selectRenter")}
+                        />
                     </div>
                 )}
 

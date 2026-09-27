@@ -24,6 +24,11 @@ vi.mock("@/i18n/routing", () => ({
 }));
 vi.mock("@/components/ui/ImageLightbox", () => ({ ImageLightbox: () => null }));
 
+// Scale PR B, task 5: the unit/renter fields are the server-searched
+// UnitPicker/RenterPicker instead of a page-wide `/units`/`/renters` list.
+const lookup = vi.hoisted(() => ({ searchUnits: vi.fn(), searchRenters: vi.fn(), unitNames: vi.fn(), renterNames: vi.fn() }));
+vi.mock("@/lib/api/lookup", () => ({ lookupApi: lookup }));
+
 import TicketsPage from "../page";
 import TicketDetailPage from "../[id]/page";
 import TicketReportsPage from "../reports/page";
@@ -48,6 +53,10 @@ const json = (body: unknown) => ({ ok: true, status: 200, json: async () => body
 beforeEach(() => {
     session.role = "TENANT_ADMIN";
     current = { ...ticket };
+    lookup.searchUnits.mockResolvedValue([]);
+    lookup.unitNames.mockResolvedValue({ rows: [{ id: "u1", unitNumber: "101", propertyId: "p1", propertyName: "Tower A", propertyType: null, buildingId: null, buildingName: null, status: null }], failedIds: [] });
+    lookup.searchRenters.mockResolvedValue([{ id: "ren-1", nameEn: "Rajesh Kumar", nameAr: null, phone: null, email: null }]);
+    lookup.renterNames.mockResolvedValue({ rows: [], failedIds: [] });
     global.fetch = vi.fn(async (url: unknown) => {
         const u = String(url);
         const rows = [current, { ...current, id: "t-2", reference: "TKT-26/15", status: "REOPENED", priority: "LOW", category: "HVAC" }];
