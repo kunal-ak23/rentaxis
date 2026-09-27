@@ -17,6 +17,7 @@ const F = "/dashboard/finance";
  * maintenance-team TENANT_USER works their assigned tickets, a renter follows
  * their own (tickets/page.tsx S16-02/S16-03).
  */
+const propertyReadAllow = (role: UserRole) => hasPermission(role, "canViewProperties") || role === "ACCOUNTANT";
 const ticketsAllow = (role: UserRole) =>
     hasPermission(role, "canViewProperties") || role === "ACCOUNTANT" || role === "TENANT_USER" || role === "RENTER";
 
@@ -28,8 +29,10 @@ const ticketsAllow = (role: UserRole) =>
 export const DASHBOARD_ROUTES: RouteEntry[] = [
     r(D, "authenticated"), r(`${D}/help`, "authenticated"), r(`${D}/help/[slug]`, "authenticated"),
     r(`${D}/notifications`, "authenticated"), r(`${D}/profile`, "authenticated"),
-    r(`${D}/properties`, "canViewProperties"), r(`${D}/properties/[id]`, "canViewProperties"), r(`${D}/properties/[id]/units`, role => hasPermission(role, "canViewProperties") || role === "ACCOUNTANT"),
-    r(`${D}/renters`, "canViewProperties"), r(`${D}/renters/[id]`, "canViewLeases"),
+    // ACCOUNTANT reads properties and renters (PropertyController / RenterController
+    // GETs admit it); the pages render read-only for that role.
+    r(`${D}/properties`, propertyReadAllow), r(`${D}/properties/[id]`, propertyReadAllow), r(`${D}/properties/[id]/units`, propertyReadAllow),
+    r(`${D}/renters`, "canViewLeases"), r(`${D}/renters/[id]`, "canViewLeases"),
     r(`${D}/leases`, "canViewLeases"), r(`${D}/leases/[id]`, "canViewLeases"),
     r(`${D}/leases/[id]/terminate`, "canPreviewTermination"), r(`${D}/leases/[id]/settlement`, "canViewSettlement"),
     r(`${D}/listings`, "canViewProperties", "LISTINGS"), r(`${D}/listings/[id]`, "canViewProperties", "LISTINGS"),

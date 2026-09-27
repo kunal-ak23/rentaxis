@@ -56,6 +56,37 @@ describe("routeDecision — role rules (F8)", () => {
         }
     });
 
+    /**
+     * Review fix 3: before the layout guard, a page with no role check of its
+     * own rendered for anyone, with whatever its main GET returned. Every
+     * such page and the roles its backend read admits (@PreAuthorize on the
+     * controller, read 2026-09-28) must stay reachable for those roles.
+     * Pages that already refused a role themselves are not listed — the
+     * guard changes nothing for them.
+     */
+    const REACHED_BEFORE: [string, string, UserRole[]][] = [
+        // path, backend read, roles it admits
+        ["/en/dashboard/properties", "GET /properties", ["TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT"]],
+        ["/en/dashboard/properties/p1", "GET /properties/{id}", ["TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT"]],
+        ["/en/dashboard/properties/p1/units", "GET /units/paged", ["TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT"]],
+        ["/en/dashboard/renters", "GET /renters/paged", ["TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT"]],
+        ["/en/dashboard/renters/r1", "GET /renters/{id} (page gate canViewLeases)", ["TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT"]],
+        ["/en/dashboard/tickets", "GET /tickets (isAuthenticated), /tickets/paged", ["TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT", "TENANT_USER", "RENTER"]],
+        ["/en/dashboard/tickets/t1", "GET /tickets/{id} (isAuthenticated)", ["TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT", "TENANT_USER", "RENTER"]],
+        ["/en/dashboard/tickets/reports", "GET /tickets/reports", ["TENANT_ADMIN", "PROPERTY_MANAGER"]],
+        ["/en/dashboard/listings", "UnitListingController", ["TENANT_ADMIN", "PROPERTY_MANAGER"]],
+        ["/en/dashboard/listings/l1", "UnitListingController", ["TENANT_ADMIN", "PROPERTY_MANAGER"]],
+        ["/en/dashboard/staff", "StaffController", ["TENANT_ADMIN"]],
+        ["/en/dashboard/finance/bank-accounts", "BankAccountController", ["TENANT_ADMIN"]],
+        ["/en/dashboard/finance/accounts", "AccountController", ["TENANT_ADMIN", "ACCOUNTANT"]],
+        ["/en/dashboard/finance/vendors", "VendorController", ["TENANT_ADMIN", "ACCOUNTANT"]],
+        ["/en/dashboard/meetings", "meetings (renter portal links)", ["TENANT_ADMIN", "PROPERTY_MANAGER", "RENTER"]],
+    ];
+    it.each(REACHED_BEFORE)("still admits every role the backend serves at %s (%s)", (path, _read, roles) => {
+        const refused = roles.filter(role => routeDecision(path, role, true) !== "allow");
+        expect(refused).toEqual([]);
+    });
+
     it("allows unknown paths (left to the page or Next's not-found)", () => {
         expect(routeDecision("/en/dashboard/whatever", "TENANT_USER", true)).toBe("allow");
     });

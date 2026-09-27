@@ -64,9 +64,10 @@ export function TenantSwitcher({ isCollapsed, responsive = false }: { isCollapse
         // organisation; tell them so they block until reloaded.
         announceOrgChange(tenant?.id ?? "");
         setIsOpen(false);
-        // Hard navigate to dashboard to reload all data with new tenant context
+        // Hard navigate to reload all data with the new tenant context. Global
+        // View has no organisation's dashboard to show: go to the organisation list.
         const locale = pathname.startsWith('/ar') ? 'ar' : 'en';
-        window.location.href = `/${locale}/dashboard`;
+        window.location.href = tenant ? `/${locale}/dashboard` : `/${locale}/superadmin/tenants`;
     };
 
     const buttonRef = useRef<HTMLButtonElement>(null);

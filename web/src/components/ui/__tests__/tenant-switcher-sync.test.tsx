@@ -80,3 +80,13 @@ describe("TenantSwitcher — super admin Global View sticks (F7)", () => {
         expect(Cookies.get("active_tenant_id")).toBe("org2");
     });
 });
+
+describe("TenantSwitcher — picking Global View goes to the organisation list (review fix 5)", () => {
+    it("navigates to /superadmin/tenants", async () => {
+        Cookies.set("active_tenant_id", "brk1", { path: "/" });
+        render(<TenantSwitcher isCollapsed={false} />);
+        await waitFor(() => expect(screen.getByTestId("org-switcher-button")).toHaveAttribute("title", "Sweep brk1"));
+        await pick("Global View");
+        expect(window.location.href).toBe("/en/superadmin/tenants");
+    });
+});

@@ -97,6 +97,8 @@ export function SelectOrgState() {
             icon={<Building2 size={48} />}
             title={t("selectOrgTitle")}
             body={t("selectOrgBody")}
-        />
+        >
+            <Link href="/superadmin/tenants" className="text-xs text-primary font-semibold">{t("goToOrganisations")}</Link>
+        </StateCard>
     );
 }

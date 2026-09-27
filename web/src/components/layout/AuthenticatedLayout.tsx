@@ -13,7 +13,7 @@ import { NavShellProvider } from "@/components/nav/NavShellContext";
 import type { UserRole } from "@/lib/rbac";
 import { SessionGuards } from "@/components/layout/SessionGuards";
 import { AccessDeniedState, SelectOrgState } from "@/components/ui/PageStates";
-import { routeDecision } from "@/lib/nav/routeGuard";
+import { isDashboardHome, routeDecision } from "@/lib/nav/routeGuard";
 import { readActiveOrgCookie } from "@/lib/session/orgSync";
 
 export default function AuthenticatedLayout({
@@ -30,6 +30,18 @@ export default function AuthenticatedLayout({
             router.push("/auth/login");
         }
     }, [status, router]);
+
+    // Review fix 5: a super admin with no organisation selected who opens the
+    // dashboard home (e.g. straight after sign-in) lands on the organisation
+    // list rather than a bare "Select an organisation" card.
+    const role = session?.user?.role as UserRole | undefined;
+    const decision = session && role
+        ? routeDecision(pathname, role, readActiveOrgCookie() !== "")
+        : "allow";
+    const landOnOrgList = decision === "selectOrg" && isDashboardHome(pathname);
+    useEffect(() => {
+        if (landOnOrgList) router.replace("/superadmin/tenants");
+    }, [landOnOrgList, router]);
 
     if (status === "loading") {
         return (
@@ -48,14 +60,14 @@ export default function AuthenticatedLayout({
     // a super admin in Global View is asked to pick an organisation rather
     // than mounting a page whose org-scoped calls fail or aggregate every
     // organisation (F7). The shell stays so the user can navigate or switch.
-    const decision = routeDecision(pathname, session.user?.role as UserRole, readActiveOrgCookie() !== "");
     const content = decision === "denied" ? <AccessDeniedState />
+        : landOnOrgList ? null
         : decision === "selectOrg" ? <SelectOrgState />
         : children;
 
     return (
         <SessionGuards role={session.user?.role} homeTenantId={session.user?.tenantId}>
-        <TourProvider role={session?.user?.role as UserRole | undefined}>
+        <TourProvider role={role} autoStart={decision === "allow"}>
             <NavShellProvider>
             <div className="flex h-screen overflow-hidden bg-background">
                 <MvpSidebar />

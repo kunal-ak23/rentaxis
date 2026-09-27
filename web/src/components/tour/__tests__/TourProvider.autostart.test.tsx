@@ -79,3 +79,12 @@ describe("TourProvider auto-start", () => {
         expect(tours.filter(t => t.started)).toHaveLength(0);
     });
 });
+
+describe("TourProvider autoStart=false (review fix 5)", () => {
+    it("does not open on the dashboard home while the layout says the page is not usable", () => {
+        path.current = "/en/dashboard";
+        render(<TourProvider role="TENANT_USER" autoStart={false}><div /></TourProvider>);
+        act(() => { vi.advanceTimersByTime(2000); });
+        expect(tours.filter(t => t.started)).toHaveLength(0);
+    });
+});

@@ -12,6 +12,7 @@ import {
 import { ShepherdJourneyProvider, useShepherd } from 'react-shepherd';
 import { useRouter } from '@/i18n/routing';
 import { usePathname } from 'next/navigation';
+import { isDashboardHome } from '@/lib/nav/routeGuard';
 import { getTourById, getToursForRole } from './tours';
 import type { TourDef } from './tours/types';
 import type { UserRole } from '@/lib/rbac';
@@ -75,7 +76,7 @@ function markTourDismissed(tourId: string) {
  * whatever page a first-time user landed on (e.g. a ticket detail page).
  */
 export function isOnboardingHome(pathname: string | null): boolean {
-  return /^(?:\/(?:en|ar))?\/dashboard\/?$/.test(pathname ?? '');
+  return isDashboardHome(pathname);
 }
 
 /** Check whether a tour has been completed (callable outside of React tree). */
@@ -110,9 +111,11 @@ export function useTour(): TourContextValue {
 interface InnerProps {
   children: ReactNode;
   role?: UserRole;
+  /** False while the layout shows access-denied or "select an organisation" instead of the page. */
+  autoStart?: boolean;
 }
 
-function TourProviderInner({ children, role }: InnerProps) {
+function TourProviderInner({ children, role, autoStart = true }: InnerProps) {
   const Shepherd = useShepherd();
   const router = useRouter();
   const pathname = usePathname();
@@ -232,7 +235,7 @@ function TourProviderInner({ children, role }: InnerProps) {
   // Auto-trigger the onboarding tour on a first visit to the dashboard home only.
   useEffect(() => {
     if (autoTriggeredRef.current) return;
-    if (!role) return;
+    if (!role || !autoStart) return;
     if (!isOnboardingHome(pathname)) return;
 
     const onboardingId = 'admin-onboarding';
@@ -251,7 +254,7 @@ function TourProviderInner({ children, role }: InnerProps) {
       // Leaving the page before it fires cancels it.
       return () => clearTimeout(timer);
     }
-  }, [role, pathname]);
+  }, [role, pathname, autoStart]);
 
   return (
     <TourContext.Provider value={{ startTour, availableTours, completedTourIds }}>
@@ -267,12 +270,13 @@ function TourProviderInner({ children, role }: InnerProps) {
 interface TourProviderProps {
   children: ReactNode;
   role?: UserRole;
+  autoStart?: boolean;
 }
 
-export default function TourProvider({ children, role }: TourProviderProps) {
+export default function TourProvider({ children, role, autoStart = true }: TourProviderProps) {
   return (
     <ShepherdJourneyProvider>
-      <TourProviderInner role={role}>{children}</TourProviderInner>
+      <TourProviderInner role={role} autoStart={autoStart}>{children}</TourProviderInner>
     </ShepherdJourneyProvider>
   );
 }

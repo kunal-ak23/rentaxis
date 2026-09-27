@@ -56,3 +56,8 @@ export function routeDecision(pathname: string, role: UserRole, hasActiveOrg: bo
     }
     return "allow";
 }
+
+/** The dashboard home, with or without its locale prefix. */
+export function isDashboardHome(pathname: string | null): boolean {
+    return /^(?:\/(?:en|ar))?\/dashboard\/?$/.test(pathname ?? "");
+}
