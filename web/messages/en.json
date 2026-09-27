@@ -923,6 +923,7 @@
       "managersLoadError": "Couldn't load the property managers for this property. Please try again.",
       "hostLoadError": "Couldn't find out who hosts meetings. Please try again.",
       "preferredDate": "Preferred Date",
+      "dateInPast": "A meeting can't be booked in the past — pick today or a later date.",
       "availableSlots": "Available Slots",
       "noSlotsReturned": "No slots returned. Please pick a different date.",
       "hostUnknown": "Could not determine host. Please go back and verify your selection.",

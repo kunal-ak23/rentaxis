@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { X, Loader2, ChevronLeft, ChevronRight, CalendarDays, Building2, MapPin } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
+import { businessTodayIso } from "@/lib/businessDate";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -106,6 +107,11 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
 
     // Step 3
     const [selectedDate, setSelectedDate] = useState("");
+    // Break round 1: a past date (typed past the picker's `min`, e.g.
+    // 1900-01-01) is refused at this step — no slot lookup, no Next — instead
+    // of on the final submit. "Today" is the backend's: Asia/Dubai.
+    const minDate = businessTodayIso();
+    const dateInPast = selectedDate !== "" && selectedDate < minDate;
     const [slots, setSlots] = useState<Slot[]>([]);
     const [slotsLoading, setSlotsLoading] = useState(false);
     const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
@@ -345,10 +351,10 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
 
     useEffect(() => {
         const hostId = deriveHostUserId();
-        if (step === 3 && selectedDate && hostId) {
+        if (step === 3 && selectedDate && !dateInPast && hostId) {
             fetchSlots(selectedDate, hostId);
         }
-    }, [step, selectedDate, deriveHostUserId, fetchSlots]);
+    }, [step, selectedDate, dateInPast, deriveHostUserId, fetchSlots]);
 
     // ── Navigation ──────────────────────────────────────────────────────
 
@@ -359,7 +365,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
             if (meetingType === "PROPERTY_VISIT") return selectedPropertyId !== "";
         }
         if (step === 3) {
-            if (hostBlocked) return false;
+            if (hostBlocked || dateInPast) return false;
             return selectedSlot !== null;
         }
         if (step === 4) return true;
@@ -672,15 +678,19 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                                     <input
                                         type="date"
                                         value={selectedDate}
-                                        min={new Date().toISOString().split("T")[0]}
+                                        min={minDate}
+                                        aria-invalid={dateInPast || undefined}
                                         onChange={(e) => { setSelectedDate(e.target.value); setSelectedSlot(null); }}
                                         className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
                                     />
+                                    {dateInPast && (
+                                        <p className="text-[10px] text-error mt-1.5 text-start" role="alert">{t("create.dateInPast")}</p>
+                                    )}
                                 </div>
                             )}
 
                             {/* Slot Grid */}
-                            {selectedDate && !hostBlocked && (
+                            {selectedDate && !dateInPast && !hostBlocked && (
                                 <div>
                                     <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-2">
                                         {t("create.availableSlots")}
