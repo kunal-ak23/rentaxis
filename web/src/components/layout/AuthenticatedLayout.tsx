@@ -1,7 +1,6 @@
 "use client";
 
 import MvpSidebar from "@/components/ui/MvpSidebar";
-import { cn } from "@/lib/utils";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useRouter } from "@/i18n/routing";
@@ -13,6 +12,9 @@ import HelpFAB from "@/components/help/HelpFAB";
 import { NavShellProvider } from "@/components/nav/NavShellContext";
 import type { UserRole } from "@/lib/rbac";
 import { SessionGuards } from "@/components/layout/SessionGuards";
+import { AccessDeniedState, SelectOrgState } from "@/components/ui/PageStates";
+import { routeDecision } from "@/lib/nav/routeGuard";
+import { readActiveOrgCookie } from "@/lib/session/orgSync";
 
 export default function AuthenticatedLayout({
     children,
@@ -42,6 +44,15 @@ export default function AuthenticatedLayout({
 
     if (!session) return null;
 
+    // Break round 1: the route registry's role rules for every page (F8), and
+    // a super admin in Global View is asked to pick an organisation rather
+    // than mounting a page whose org-scoped calls fail or aggregate every
+    // organisation (F7). The shell stays so the user can navigate or switch.
+    const decision = routeDecision(pathname, session.user?.role as UserRole, readActiveOrgCookie() !== "");
+    const content = decision === "denied" ? <AccessDeniedState />
+        : decision === "selectOrg" ? <SelectOrgState />
+        : children;
+
     return (
         <SessionGuards role={session.user?.role} homeTenantId={session.user?.tenantId}>
         <TourProvider role={session?.user?.role as UserRole | undefined}>
@@ -63,7 +74,7 @@ export default function AuthenticatedLayout({
                       * physical corner.
                       */}
                     <main className="flex-1 overflow-y-auto thinscroll bg-background px-6 pt-6 pb-24 lg:px-8 lg:pt-7 lg:pb-28">
-                        {children}
+                        {content}
                     </main>
                 </div>
             </div>
