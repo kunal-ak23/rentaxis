@@ -13,6 +13,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { useUrlState } from "@/hooks/useUrlState";
 import type { Page } from "@/lib/api/ledger";
+import { findDuplicateRenters, type DuplicateMatch } from "@/lib/renters/duplicates";
 
 type Renter = {
     id: string;
@@ -162,14 +163,38 @@ function RentersPageInner() {
     // the button so the user sees the request is in flight.
     const submittingRef = useRef(false);
     const [submitting, setSubmitting] = useState(false);
+    // Break round 1 (controller ruling): existing renters sharing the typed
+    // email or phone. While non-null the form shows a warning and only
+    // "Create anyway" creates; editing the email or phone clears it.
+    const [duplicates, setDuplicates] = useState<DuplicateMatch[] | null>(null);
 
-    const handleSubmit = async (ev: React.FormEvent) => {
+    const closeForm = () => {
+        setShowForm(false);
+        setDuplicates(null);
+    };
+
+    const handleSubmit = (ev: React.FormEvent) => {
         ev.preventDefault();
+        void submitRenter(false);
+    };
+
+    const submitRenter = async (createAnyway: boolean) => {
         if (submittingRef.current) return;
         submittingRef.current = true;
         setSubmitting(true);
         setFormError(null);
         try {
+            if (!createAnyway) {
+                // A failed lookup must not block creating a renter: warn when
+                // we can, create when we cannot check.
+                const matches = await findDuplicateRenters({ email: formData.email, phone: formData.phone })
+                    .catch((err) => { console.error(err); return [] as DuplicateMatch[]; });
+                if (matches.length > 0) {
+                    setDuplicates(matches);
+                    return;
+                }
+            }
+            setDuplicates(null);
             const res = await fetch("/api/proxy/v1/renters", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -179,7 +204,7 @@ function RentersPageInner() {
             // email aborting the transaction) instead of silently doing nothing.
             await throwIfNotOk(res);
             const data = await res.json();
-            setShowForm(false);
+            closeForm();
             fetchRenters();
 
             const outcome: InviteOutcome = data.invitePending ? "invited"
@@ -326,7 +351,7 @@ function RentersPageInner() {
             {showForm && (
                 <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
                     <div className="bg-surface rounded-xl p-8 max-w-xl w-full shadow-2xl border border-border relative">
-                        <button onClick={() => setShowForm(false)} aria-label={t("close")} className="cursor-pointer absolute end-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
+                        <button onClick={closeForm} aria-label={t("close")} className="cursor-pointer absolute end-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
                         <h2 className="text-lg font-bold mb-1">{t("addRenter")}</h2>
                         <p className="text-xs text-muted mb-8 font-medium">{t("createRenterProfile")}</p>
                         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-5">
@@ -340,11 +365,11 @@ function RentersPageInner() {
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("email")}</label>
-                                <input type="email" placeholder="john@example.com" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.email} onChange={ev => setFormData({ ...formData, email: ev.target.value })} />
+                                <input type="email" placeholder="john@example.com" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.email} onChange={ev => { setDuplicates(null); setFormData({ ...formData, email: ev.target.value }); }} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("phone")}</label>
-                                <input placeholder="+971 50 123 4567" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.phone} onChange={ev => setFormData({ ...formData, phone: ev.target.value })} />
+                                <input placeholder="+971 50 123 4567" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.phone} onChange={ev => { setDuplicates(null); setFormData({ ...formData, phone: ev.target.value }); }} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("preferredLanguage")}</label>
@@ -364,14 +389,38 @@ function RentersPageInner() {
                                     <span className="text-xs font-bold text-foreground">{t("createPortalAccount")}</span>
                                 </label>
                             </div>
+                            {duplicates && duplicates.length > 0 && (
+                                <div className="col-span-2 bg-warning/10 border border-warning/30 text-foreground text-xs rounded-lg px-3 py-3" role="alert" data-testid="renter-duplicate-warning">
+                                    <p className="font-bold mb-1">{t("duplicateRenterTitle")}</p>
+                                    <p className="text-muted mb-2">{t("duplicateRenterBody")}</p>
+                                    <ul className="space-y-1.5">
+                                        {duplicates.map(({ renter, by }) => (
+                                            <li key={renter.id} className="flex flex-wrap items-center justify-between gap-2">
+                                                <span className="min-w-0">
+                                                    <span className="font-semibold">{(locale === "ar" && renter.nameAr) || renter.nameEn}</span>
+                                                    <span className="text-muted"> — {by.map((b) => t(b === "email" ? "duplicateMatchEmail" : "duplicateMatchPhone")).join(", ")}</span>
+                                                    <span className="block text-[10px] text-muted truncate" dir="ltr">{[renter.email, renter.phone].filter(Boolean).join(" · ")}</span>
+                                                </span>
+                                                <Link href={`/dashboard/renters/${renter.id}`} className="text-xs font-semibold text-primary hover:underline shrink-0">
+                                                    {t("openExisting")}
+                                                </Link>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
                             {formError && (
                                 <div className="col-span-2 bg-error/10 border border-error/20 text-error text-xs font-medium rounded-lg px-3 py-2" role="alert">
                                     {formError}
                                 </div>
                             )}
                             <div className="col-span-2 flex justify-end gap-3 mt-4">
-                                <button type="button" onClick={() => setShowForm(false)} className="cursor-pointer px-6 py-3 text-xs font-bold text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">{t("cancel")}</button>
+                                <button type="button" onClick={closeForm} className="cursor-pointer px-6 py-3 text-xs font-bold text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">{t("cancel")}</button>
+                                {duplicates && duplicates.length > 0 ? (
+                                    <button type="button" onClick={() => void submitRenter(true)} disabled={submitting} aria-busy={submitting} className="cursor-pointer px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed">{t("createAnyway")}</button>
+                                ) : (
                                 <button type="submit" disabled={submitting} aria-busy={submitting} className="cursor-pointer px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed">{t("create")}</button>
+                                )}
                             </div>
                         </form>
                     </div>
