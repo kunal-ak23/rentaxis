@@ -69,6 +69,9 @@ public class RenterController {
     @GetMapping("/{id}/leases")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
     public ResponseEntity<List<LeaseDTO>> getRenterLeases(@PathVariable UUID id) {
+        // Break round 1, F4: a renter outside a property manager's scope is a 404 here
+        // too, the same as GET /renters/{id}, not an empty list confirming it exists.
+        renterService.requireReadableRenter(id);
         return ResponseEntity.ok(leaseService.getLeasesForRenter(id));
     }
 
@@ -80,6 +83,7 @@ public class RenterController {
     @GetMapping("/{id}/cheques")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'ACCOUNTANT')")
     public ResponseEntity<List<ChequeDTO>> getRenterCheques(@PathVariable UUID id) {
+        renterService.requireReadableRenter(id);
         return ResponseEntity.ok(chequeGenerationService.listForRenter(id));
     }
 
