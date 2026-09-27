@@ -7,12 +7,15 @@ import type { LeaseAssignment, LeaseDetail } from "@/lib/api/leasing";
 import { ApiError } from "@/lib/api/facilities";
 
 const api = vi.hoisted(() => ({
-    assignments: vi.fn(), draftAssignment: vi.fn(), postAssignment: vi.fn(), cancelAssignment: vi.fn(), renterOptions: vi.fn(),
+    assignments: vi.fn(), draftAssignment: vi.fn(), postAssignment: vi.fn(), cancelAssignment: vi.fn(),
 }));
 vi.mock("@/lib/api/leasing", async orig => {
     const m = await orig<typeof import("@/lib/api/leasing")>();
     return { ...m, leaseApi: { ...m.leaseApi, ...api } };
 });
+
+const lookup = vi.hoisted(() => ({ searchUnits: vi.fn(), searchRenters: vi.fn(), unitNames: vi.fn(), renterNames: vi.fn() }));
+vi.mock("@/lib/api/lookup", () => ({ lookupApi: lookup }));
 
 import LeaseAssignmentCard from "../LeaseAssignmentCard";
 
@@ -43,13 +46,21 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 describe("LeaseAssignmentCard (F14-39)", () => {
     it("drafts an assignment to another renter with a reason", async () => {
         api.assignments.mockResolvedValueOnce([]).mockResolvedValueOnce([DRAFT]);
-        api.renterOptions.mockResolvedValue([{ id: "a", nameEn: "Omar" }, { id: "b", nameEn: "Omar's estate" }]);
+        lookup.searchRenters.mockResolvedValue([
+            { id: "a", nameEn: "Omar", nameAr: null, phone: null, email: "omar@example.com" },
+            { id: "b", nameEn: "Omar's estate", nameAr: null, phone: null, email: null },
+        ]);
         api.draftAssignment.mockResolvedValue(DRAFT);
         renderCard();
         fireEvent.click(await screen.findByTestId("assignment-start"));
-        const select = await screen.findByTestId("assignment-renter");
-        await waitFor(() => expect(select.querySelectorAll("option")).toHaveLength(2)); // the sitting renter is not offered
-        fireEvent.change(select, { target: { value: "b" } });
+        const picker = await screen.findByTestId("assignment-renter");
+        expect(picker).toHaveTextContent(en.Leasing.assignment.chooseRenter);
+        fireEvent.click(picker);
+        const estate = await screen.findByText("Omar's estate");
+        expect(screen.queryByText("omar@example.com")).toBeNull(); // the sitting renter is not offered
+        fireEvent.click(estate);
+        expect(lookup.searchRenters).toHaveBeenCalledWith(expect.objectContaining({ q: "" }));
+        expect(screen.getByTestId("assignment-renter")).toHaveTextContent("Omar's estate");
         fireEvent.change(screen.getByTestId("assignment-date"), { target: { value: "2027-02-01" } });
         expect(screen.getByTestId("assignment-draft")).toBeDisabled();
         fireEvent.change(screen.getByTestId("assignment-reason"), { target: { value: "Death of the tenant" } });

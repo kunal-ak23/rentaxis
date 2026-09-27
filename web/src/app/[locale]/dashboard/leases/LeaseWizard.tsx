@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "@/i18n/routing";
 import { useTranslations } from "next-intl";
 import { useSession } from "next-auth/react";
@@ -11,10 +11,10 @@ import {
 import { cn } from "@/lib/utils";
 import { fmtAmount } from "@/lib/api/ledger";
 import { hasPermission, type UserRole } from "@/lib/rbac";
-import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { UnitPicker } from "@/components/pickers/UnitPicker";
+import { RenterPicker } from "@/components/pickers/RenterPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { GraceDaysField, usePropertyDefaultGrace } from "@/components/leases/GraceDaysField";
-import { useLeasePartyOptions } from "@/hooks/useLeasePartyOptions";
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
 import ChequeGrid, { draftRowsAreValid, toChequeRows } from "@/components/leases/ChequeGrid";
 import { blankLine, followRentVat, linesAreValid, splitLineErrors, toInputs, toRows, todayIso, totalsOf, withRentVat, type LineRow } from "@/components/leases/leaseMath";
@@ -24,6 +24,7 @@ import {
     type GenerateChequesRequest, type InstallmentDistribution, type LeaseDetail,
     type PostLeaseDryRunResponse,
 } from "@/lib/api/leasing";
+import type { RenterOption, UnitOption } from "@/lib/api/lookup";
 
 /**
  * Drafting a tenancy contract, in the order the client's accountant fills one
@@ -40,16 +41,6 @@ import {
  * PUT, not a second POST. The backend drops DRAFT cheques whenever the lines
  * change, so when that happens the grid says so instead of silently emptying.
  */
-
-type Unit = {
-    id: string;
-    unitNumber: string;
-    status: string;
-    expectedRent?: number | null;
-    property?: { id: string; nameEn?: string; nameAr?: string; type?: string };
-};
-
-type Renter = { id: string; nameEn: string; nameAr: string; email?: string };
 
 type Terms = {
     agreementDate: string;
@@ -96,13 +87,11 @@ const field = "w-full bg-input border border-border p-3 rounded-xl text-xs focus
 
 type Props = {
     open: boolean;
-    units: Unit[];
-    renters: Renter[];
     onClose: () => void;
     onCreated: () => void;
 };
 
-export default function LeaseWizard({ open, units, renters, onClose, onCreated }: Props) {
+export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     const t = useTranslations("Leasing");
     const router = useRouter();
     const { data: session } = useSession();
@@ -112,6 +101,10 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
     const [stepIdx, setStepIdx] = useState(0);
     const [unitId, setUnitId] = useState("");
     const [renterId, setRenterId] = useState("");
+    // The picked rows: the pickers search the server, so the wizard keeps what
+    // it later reads (property id, name and type; the renter's name) itself.
+    const [selectedUnit, setSelectedUnit] = useState<UnitOption | null>(null);
+    const [selectedRenter, setSelectedRenter] = useState<RenterOption | null>(null);
     const [terms, setTerms] = useState<Terms>(initialTerms);
     // Once the operator edits the contract date directly, stop following the
     // agreement date — see #45. Before that, they're the same field.
@@ -133,6 +126,8 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
         setStepIdx(0);
         setUnitId("");
         setRenterId("");
+        setSelectedUnit(null);
+        setSelectedRenter(null);
         setTerms({ ...initialTerms, contractDate: todayIso() });
         setContractDateTouched(false);
         setRows([blankLine(0)]);
@@ -166,10 +161,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
         };
     }, [open]);
 
-    const selectedUnit = useMemo(() => units.find(u => u.id === unitId), [units, unitId]);
-    const selectedRenter = useMemo(() => renters.find(r => r.id === renterId), [renters, renterId]);
-    const { unitOptions, renterOptions } = useLeasePartyOptions(units, renters, unitId);
-    const propertyDefaultGrace = usePropertyDefaultGrace(selectedUnit?.property?.id);
+    const propertyDefaultGrace = usePropertyDefaultGrace(selectedUnit?.propertyId ?? undefined);
     const totals = totalsOf(rows, chargeTypes);
     const { rest: bannerErrors } = splitLineErrors(serverErrors);
 
@@ -394,30 +386,32 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                     {step.key === "parties" && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <Field label={`${t("unit")} *`}>
-                                <SearchableSelect
-                                    options={unitOptions}
+                                <UnitPicker
+                                    status="VACANT"
                                     value={unitId}
-                                    onChange={id => {
+                                    onChange={(id, u) => {
                                         setUnitId(id);
-                                        const u = units.find(x => x.id === id);
-                                        setRentVat(u?.property?.type === "COMMERCIAL");
+                                        setSelectedUnit(u);
+                                        setRentVat(u?.propertyType === "COMMERCIAL");
                                     }}
                                     placeholder={t("unit")}
-                                    searchPlaceholder={t("unit")}
+                                    testId="wizard-unit"
                                 />
                                 {selectedUnit && (
-                                    <p className="text-[11px] text-muted mt-1.5 flex items-center gap-1">
-                                        <Building2 size={11} /> {selectedUnit.property?.nameEn} • {selectedUnit.property?.type || "RESIDENTIAL"}
+                                    <p data-testid="wizard-unit-property" className="text-[11px] text-muted mt-1.5 flex items-center gap-1">
+                                        <Building2 size={11} /> {selectedUnit.propertyName} • {selectedUnit.propertyType || "RESIDENTIAL"}
                                     </p>
                                 )}
                             </Field>
                             <Field label={`${t("renter")} *`}>
-                                <SearchableSelect
-                                    options={renterOptions}
+                                <RenterPicker
                                     value={renterId}
-                                    onChange={setRenterId}
+                                    onChange={(id, r) => {
+                                        setRenterId(id);
+                                        setSelectedRenter(r);
+                                    }}
                                     placeholder={t("renter")}
-                                    searchPlaceholder={t("renter")}
+                                    testId="wizard-renter"
                                 />
                             </Field>
                             <Field label={t("agreementDate")}>
@@ -506,7 +500,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                             <LeaseLinesGrid
                                 lines={rows}
                                 chargeTypes={chargeTypes}
-                                propertyId={selectedUnit?.property?.id ?? null}
+                                propertyId={selectedUnit?.propertyId ?? null}
                                 editable
                                 onChange={onLinesChange}
                                 errors={serverErrors}
@@ -556,7 +550,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                     {step.key === "review" && lease && (
                         <div className="space-y-4" data-testid="wizard-review">
                             <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-xs rounded-xl border border-border bg-input/30 px-4 py-3">
-                                <Summary label={t("unit")} value={selectedUnit ? `${selectedUnit.unitNumber} • ${selectedUnit.property?.nameEn ?? ""}` : lease.unitIdentifier ?? "—"} />
+                                <Summary label={t("unit")} value={selectedUnit ? `${selectedUnit.unitNumber} • ${selectedUnit.propertyName ?? ""}` : lease.unitIdentifier ?? "—"} />
                                 <Summary label={t("renter")} value={selectedRenter?.nameEn ?? lease.renterName ?? "—"} />
                                 <Summary label={t("startDate")} value={lease.startDate} />
                                 <Summary label={t("endDate")} value={lease.endDate} />

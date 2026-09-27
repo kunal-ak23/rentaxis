@@ -53,19 +53,6 @@ const TERMINABLE: LeaseStatus[] = ["ACTIVE", "NOTICE_GIVEN"];
 /** One row of the bulk-post run: what was attempted, and what came back. */
 type PostResult = { leaseId: string; label: string; ok: boolean; message: string };
 
-type Unit = {
-    id: string;
-    unitNumber: string;
-    status: string;
-    property?: { id: string; nameEn?: string; nameAr?: string; type?: string };
-};
-
-type Renter = {
-    id: string;
-    nameEn: string;
-    nameAr: string;
-};
-
 type LeaseAttachment = {
     id: string;
     leaseId: string;
@@ -130,8 +117,6 @@ function LeasesList() {
     const tc = useTranslations("ContractList");
     const locale = useLocale();
     const [leases, setLeases] = useState<Lease[]>([]);
-    const [units, setUnits] = useState<Unit[]>([]);
-    const [renters, setRenters] = useState<Renter[]>([]);
     const [wizardOpen, setWizardOpen] = useState(false);
     const [viewMode, setViewMode] = useState<'table' | 'cards' | 'board'>('table');
     const [currentPage, setCurrentPage] = useState(1);
@@ -217,11 +202,6 @@ function LeasesList() {
     // with ending a contract. The page itself re-gates the button that posts the
     // journals on canTerminateLeases (:287-288).
     const canPreviewTermination = hasPermission(userRole, 'canPreviewTermination');
-
-    useEffect(() => {
-        fetchUnits();
-        fetchRenters();
-    }, []);
 
     // The dashboard's "New lease" arrives as ?new=1: there is no /leases/new
     // page (drafting is this list's wizard modal), so open the wizard here and
@@ -410,27 +390,6 @@ function LeasesList() {
             return next;
         });
 
-    const fetchUnits = async () => {
-        try {
-            const res = await fetch("/api/proxy/v1/units");
-            if (res.ok) {
-                const data = await res.json();
-                setUnits(data.filter((u: Unit) => u.status === 'VACANT'));
-            }
-        } catch (err) {
-            console.error(err);
-        }
-    };
-
-    const fetchRenters = async () => {
-        try {
-            const res = await fetch("/api/proxy/v1/renters");
-            if (res.ok) setRenters(await res.json());
-        } catch (err) {
-            console.error(err);
-        }
-    };
-
     const handleEditDraft = (lease: Lease) => {
         // The detail page is the single edit surface — it has the metadata
         // editor (mirroring all the inline form fields), the schedule editor,
@@ -605,11 +564,6 @@ function LeasesList() {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         }
-    };
-
-    const getRenterDisplayName = (r: Renter) => {
-        if (locale === 'ar' && r.nameAr) return r.nameAr;
-        return r.nameEn;
     };
 
     // #79: a PENDING_SIGNATURE lease the renter has already accepted is ready to
@@ -991,10 +945,8 @@ function LeasesList() {
             {wizardOpen && (
                 <LeaseWizard
                     open={wizardOpen}
-                    units={units}
-                    renters={renters}
                     onClose={() => setWizardOpen(false)}
-                    onCreated={() => { fetchLeases(); fetchUnits(); }}
+                    onCreated={() => { fetchLeases(); }}
                 />
             )}
 

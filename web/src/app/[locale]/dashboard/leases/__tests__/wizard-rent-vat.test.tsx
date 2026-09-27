@@ -18,13 +18,25 @@ vi.mock("@/i18n/routing", () => ({
     Link: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
 }));
 vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "TENANT_ADMIN" } } }) }));
-vi.mock("@/components/ui/SearchableSelect", () => ({
-    SearchableSelect: ({ options, value, onChange, placeholder }: {
-        options: { value: string; label: string }[]; value: string; onChange: (v: string) => void; placeholder?: string;
+// The server pickers reduced to a plain <select> over a fixed page of results,
+// handing onChange the option object as the real pickers do.
+vi.mock("@/components/pickers/UnitPicker", () => ({
+    UnitPicker: ({ value, onChange, placeholder }: {
+        value: string; onChange: (id: string, u: unknown) => void; placeholder?: string;
     }) => (
-        <select aria-label={placeholder} value={value} onChange={e => onChange(e.target.value)}>
+        <select aria-label={placeholder} value={value} onChange={e => onChange(e.target.value, UNITS.find(u => u.id === e.target.value) ?? null)}>
             <option value="" />
-            {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            {UNITS.map(u => <option key={u.id} value={u.id}>{u.unitNumber}</option>)}
+        </select>
+    ),
+}));
+vi.mock("@/components/pickers/RenterPicker", () => ({
+    RenterPicker: ({ value, onChange, placeholder }: {
+        value: string; onChange: (id: string, r: unknown) => void; placeholder?: string;
+    }) => (
+        <select aria-label={placeholder} value={value} onChange={e => onChange(e.target.value, e.target.value === RENTER.id ? RENTER : null)}>
+            <option value="" />
+            <option value={RENTER.id}>{RENTER.nameEn}</option>
         </select>
     ),
 }));
@@ -62,16 +74,16 @@ vi.mock("@/components/leases/LeaseLinesGrid", () => ({
 import LeaseWizard from "../LeaseWizard";
 
 const UNITS = [
-    { id: "u1", unitNumber: "A-101", status: "VACANT", property: { id: "p1", nameEn: "Tower", type: "RESIDENTIAL" } },
+    { id: "u1", unitNumber: "A-101", propertyId: "p1", propertyName: "Tower", propertyType: "RESIDENTIAL", buildingId: null, buildingName: null, status: "VACANT" },
 ];
-const RENTER = { id: "r1", nameEn: "Omar Tenant", nameAr: "عمر" };
+const RENTER = { id: "r1", nameEn: "Omar Tenant", nameAr: "عمر", phone: null, email: null };
 
 const rows = () => JSON.parse(screen.getByTestId("rows").textContent || "[]");
 
 async function toLinesStep(rentVat: boolean) {
     render(
         <NextIntlClientProvider locale="en" messages={en}>
-            <LeaseWizard open units={UNITS as never} renters={[RENTER] as never} onClose={() => {}} onCreated={() => {}} />
+            <LeaseWizard open onClose={() => {}} onCreated={() => {}} />
         </NextIntlClientProvider>,
     );
     fireEvent.change(screen.getByLabelText("Unit"), { target: { value: "u1" } });

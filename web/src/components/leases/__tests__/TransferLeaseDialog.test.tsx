@@ -5,11 +5,13 @@ import en from "../../../../messages/en.json";
 import ar from "../../../../messages/ar.json";
 import type { LeaseDetail, TransferPreview } from "@/lib/api/leasing";
 
-const api = vi.hoisted(() => ({ unitOptions: vi.fn(), transferPreview: vi.fn(), transfer: vi.fn() }));
+const api = vi.hoisted(() => ({ transferPreview: vi.fn(), transfer: vi.fn() }));
 vi.mock("@/lib/api/leasing", async orig => {
     const m = await orig<typeof import("@/lib/api/leasing")>();
     return { ...m, leaseApi: { ...m.leaseApi, ...api } };
 });
+const lookup = vi.hoisted(() => ({ searchUnits: vi.fn(), searchRenters: vi.fn(), unitNames: vi.fn(), renterNames: vi.fn() }));
+vi.mock("@/lib/api/lookup", () => ({ lookupApi: lookup }));
 
 import TransferLeaseDialog, { gapFor } from "../TransferLeaseDialog";
 
@@ -37,6 +39,11 @@ function renderDialog(locale: "en" | "ar" = "en", onDrafted = vi.fn()) {
     return onDrafted;
 }
 
+const unit = (id: string, unitNumber: string) => ({
+    id, unitNumber, propertyId: "p1", propertyName: "Palm Tower", propertyType: "RESIDENTIAL",
+    buildingId: null, buildingName: null, status: "VACANT",
+});
+
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("gapFor (spec §2)", () => {
@@ -49,20 +56,20 @@ describe("gapFor (spec §2)", () => {
 });
 
 describe("TransferLeaseDialog", () => {
-    it("offers vacant units only, pre-fills the rent, and drafts with the cheque plan", async () => {
-        api.unitOptions.mockResolvedValue([
-            { id: "u-102", unitNumber: "A-102", occupancy: "VACANT" },
-            { id: "u-201", unitNumber: "A-201", occupancy: "VACANT" },
-            { id: "u-202", unitNumber: "A-202", occupancy: "OCCUPIED" },
-        ]);
+    it("searches vacant units other than its own, pre-fills the rent, and drafts with the cheque plan", async () => {
+        lookup.searchUnits.mockResolvedValue([unit("u-102", "A-102"), unit("u-201", "A-201")]);
         api.transferPreview.mockResolvedValue(PREVIEW);
         api.transfer.mockResolvedValue({ id: "lease-b" });
         const onDrafted = renderDialog();
-        const unit = screen.getByTestId("transfer-unit");
-        await waitFor(() => expect(unit.querySelectorAll("option")).toHaveLength(2));
         fireEvent.change(screen.getByTestId("transfer-move-date"), { target: { value: "2026-05-15" } });
-        fireEvent.change(unit, { target: { value: "u-201" } });
+        fireEvent.click(screen.getByTestId("transfer-unit"));
+        const target = await screen.findByText("A-201");
+        expect(screen.queryByText("A-102")).toBeNull(); // the lease's own unit is not offered
+        expect(lookup.searchUnits).toHaveBeenCalledWith(expect.objectContaining({ q: "", status: "VACANT" }));
+        fireEvent.click(target);
+        expect(screen.getByTestId("transfer-unit")).toHaveTextContent("A-201");
         await waitFor(() => expect((screen.getByTestId("transfer-rent") as HTMLInputElement).value).toBe("37808.22"));
+        expect(api.transferPreview).toHaveBeenCalledWith("lease-a", "2026-05-15", "u-201", "2026-12-31");
         fireEvent.change(screen.getByTestId("transfer-rent"), { target: { value: "41589.04" } });
         expect(screen.getByTestId("transfer-gap")).toHaveTextContent("3,780.82");
         expect(screen.getByTestId("transfer-balance")).toHaveTextContent("7,808.22");
@@ -76,12 +83,13 @@ describe("TransferLeaseDialog", () => {
     });
 
     it("reads in Arabic, with amounts kept left-to-right", async () => {
-        api.unitOptions.mockResolvedValue([{ id: "u-201", unitNumber: "A-201", occupancy: "VACANT" }]);
+        lookup.searchUnits.mockResolvedValue([unit("u-201", "A-201")]);
         api.transferPreview.mockResolvedValue(PREVIEW);
         renderDialog("ar");
         fireEvent.change(screen.getByTestId("transfer-move-date"), { target: { value: "2026-05-15" } });
-        await waitFor(() => expect(screen.getByTestId("transfer-unit").querySelectorAll("option")).toHaveLength(2));
-        fireEvent.change(screen.getByTestId("transfer-unit"), { target: { value: "u-201" } });
+        expect(screen.getByTestId("transfer-unit")).toHaveTextContent(ar.Leasing.transfer.chooseUnit);
+        fireEvent.click(screen.getByTestId("transfer-unit"));
+        fireEvent.click(await screen.findByText("A-201"));
         const summary = await screen.findByTestId("transfer-summary");
         expect(summary).toHaveTextContent("مدفوع مقدمًا");
         expect(screen.getByTestId("transfer-balance").querySelector("bdi[dir='ltr']")?.textContent).toBe("7,808.22");

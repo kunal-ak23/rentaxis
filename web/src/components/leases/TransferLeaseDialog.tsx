@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import LeaseDialog from "./LeaseDialog";
+import { UnitPicker } from "@/components/pickers/UnitPicker";
 import { serverText } from "@/components/finance/bankrec/serverText";
 import { fmtAmount } from "@/lib/api/ledger";
 import { fmtIsoDate, round2 } from "./leaseMath";
@@ -24,8 +25,6 @@ const DISPOSITIONS: Disposition[] = ["CARRY", "KEEP", "RETURN"];
 const field =
     "w-full bg-input border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none";
 const label = "block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5";
-
-type Unit = { id: string; unitNumber: string; occupancy?: string | null; status?: string | null; property?: { id: string; nameEn?: string | null } | null };
 
 type Props = {
     open: boolean;
@@ -52,7 +51,6 @@ export default function TransferLeaseDialog({ open, lease, onClose, onDrafted }:
     const t = useTranslations("Leasing");
     const tCommon = useTranslations("Common");
     const locale = useLocale();
-    const [units, setUnits] = useState<Unit[]>([]);
     const [moveDate, setMoveDate] = useState("");
     const [targetUnitId, setTargetUnitId] = useState("");
     const [endDate, setEndDate] = useState("");
@@ -73,11 +71,7 @@ export default function TransferLeaseDialog({ open, lease, onClose, onDrafted }:
         setDispositions({});
         setPreview(null);
         setError(null);
-        leaseApi.unitOptions()
-            .then(all => setUnits(all.filter(u => u.id !== lease.unitId
-                && (u.occupancy ?? u.status ?? "VACANT") === "VACANT")))
-            .catch(() => setUnits([]));
-    }, [open, lease.endDate, lease.unitId]);
+    }, [open, lease.endDate]);
 
     useEffect(() => {
         if (!open || !moveDate || !targetUnitId) {
@@ -154,15 +148,10 @@ export default function TransferLeaseDialog({ open, lease, onClose, onDrafted }:
                             </div>
                             <div>
                                 <label className={label} htmlFor="transfer-unit">{t("transfer.targetUnit")}</label>
-                                <select id="transfer-unit" data-testid="transfer-unit" className={field}
-                                        value={targetUnitId} onChange={e => setTargetUnitId(e.target.value)}>
-                                    <option value="">{t("transfer.chooseUnit")}</option>
-                                    {units.map(u => (
-                                        <option key={u.id} value={u.id}>
-                                            {u.unitNumber}{u.property?.nameEn ? ` · ${u.property.nameEn}` : ""}
-                                        </option>
-                                    ))}
-                                </select>
+                                {/* A vacant unit other than the one the renter is leaving. */}
+                                <UnitPicker id="transfer-unit" testId="transfer-unit" className={field} status="VACANT"
+                                            value={targetUnitId} onChange={id => setTargetUnitId(id)}
+                                            excludeIds={[lease.unitId]} placeholder={t("transfer.chooseUnit")} />
                             </div>
                             <div>
                                 <label className={label} htmlFor="transfer-end">{t("transfer.endDate")}</label>

@@ -12,9 +12,6 @@ vi.mock("@/i18n/routing", () => ({
     Link: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
 }));
 vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "TENANT_ADMIN" } } }) }));
-vi.mock("@/hooks/useLeasePartyOptions", () => ({
-    useLeasePartyOptions: () => ({ unitOptions: [], renterOptions: [], loading: false }),
-}));
 vi.mock("@/components/finance/AccountPicker", () => ({ default: () => <div data-testid="account-picker" /> }));
 
 import LeaseWizard from "../LeaseWizard";
@@ -40,7 +37,7 @@ const WIZARD = path.join(__dirname, "..", "LeaseWizard.tsx");
 function renderWizard(locale: "en" | "ar") {
     return render(
         <NextIntlClientProvider locale={locale} messages={locale === "ar" ? ar : en}>
-            <LeaseWizard open units={[]} renters={[]} onClose={() => {}} onCreated={() => {}} />
+            <LeaseWizard open onClose={() => {}} onCreated={() => {}} />
         </NextIntlClientProvider>,
     );
 }

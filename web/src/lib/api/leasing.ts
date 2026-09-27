@@ -1397,13 +1397,11 @@ export const leaseApi = {
   transferPreview: (id: string, moveDate: string, targetUnitId: string, endDate?: string | null) =>
     get<TransferPreview>(`/leases/${id}/transfer/preview?moveDate=${encodeURIComponent(moveDate)}&targetUnitId=${encodeURIComponent(targetUnitId)}${endDate ? `&endDate=${encodeURIComponent(endDate)}` : ""}`),
   transfer: (id: string, body: TransferLeaseInput) => send<LeaseDetail>("POST", `/leases/${id}/transfer`, body),
-  unitOptions: () => get<{ id: string; unitNumber: string; occupancy?: string | null; status?: string | null; property?: { id: string; nameEn?: string | null } | null; propertyId?: string | null }[]>(`/units`),
   draftAssignment: (id: string, body: AssignLeaseInput) => send<LeaseAssignment>("POST", `/leases/${id}/assignments`, body),
   postAssignment: (id: string, assignmentId: string, takeOverOverdue?: boolean) =>
     send<LeaseAssignment>("POST", `/leases/${id}/assignments/${assignmentId}/post`, { takeOverOverdue: !!takeOverOverdue }),
   cancelAssignment: (id: string, assignmentId: string) =>
     send<void>("DELETE", `/leases/${id}/assignments/${assignmentId}`),
-  renterOptions: () => get<{ id: string; nameEn: string; nameAr?: string | null }[]>(`/renters`),
   recordAddendumEjari: (id: string, addendumId: string, ejariNumber: string) =>
     send<LeaseAddendum>("PATCH", `/leases/${id}/addenda/${addendumId}/ejari`, { ejariNumber }),
   cheques: (id: string) => get<Cheque[]>(`/leases/${id}/cheques`),
