@@ -156,9 +156,18 @@ function RentersPageInner() {
     type InviteOutcome = "invited" | "optedOut" | "noEmail" | "notInvited";
     const [inviteNotice, setInviteNotice] = useState<{ email: string; outcome: InviteOutcome } | null>(null);
     const [formError, setFormError] = useState<string | null>(null);
+    // Break round 1 (P1): a fast double-click (or Enter twice) on "Create"
+    // posted twice and created two renters. The ref guards re-entry
+    // synchronously (state updates land a render later); the state disables
+    // the button so the user sees the request is in flight.
+    const submittingRef = useRef(false);
+    const [submitting, setSubmitting] = useState(false);
 
     const handleSubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
+        if (submittingRef.current) return;
+        submittingRef.current = true;
+        setSubmitting(true);
         setFormError(null);
         try {
             const res = await fetch("/api/proxy/v1/renters", {
@@ -190,6 +199,9 @@ function RentersPageInner() {
         } catch (err) {
             console.error(err);
             setFormError(err instanceof ApiError ? err.message : t("genericError"));
+        } finally {
+            submittingRef.current = false;
+            setSubmitting(false);
         }
     };
 
@@ -359,7 +371,7 @@ function RentersPageInner() {
                             )}
                             <div className="col-span-2 flex justify-end gap-3 mt-4">
                                 <button type="button" onClick={() => setShowForm(false)} className="cursor-pointer px-6 py-3 text-xs font-bold text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">{t("cancel")}</button>
-                                <button type="submit" className="cursor-pointer px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none">{t("create")}</button>
+                                <button type="submit" disabled={submitting} aria-busy={submitting} className="cursor-pointer px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed">{t("create")}</button>
                             </div>
                         </form>
                     </div>
