@@ -18,7 +18,7 @@ import { useUrlState } from "@/hooks/useUrlState";
 import {
     Plus, X, Search, Loader2, Eye, Upload, Wrench, BarChart3,
 } from "lucide-react";
-import { isUuid } from "@/lib/urlIds";
+import { idParam, isIdParam } from "@/lib/urlIds";
 
 /**
  * S16-02/S16-03: staff (SA/TA/PM/ACCOUNTANT) read `GET /tickets/paged` — search,
@@ -178,8 +178,11 @@ function TicketsPageInner() {
     // R1 P3-2: property + tower (buildingId) live in the URL — bookmarkable,
     // like the Contracts list's filters — for staff's server-paged list.
     // Break round 1: a malformed id in the URL is no filter (and is dropped).
-    const [propertyFilter, setPropertyId] = useUrlState("propertyId", "", isUuid);
-    const [buildingFilter, setBuildingFilter] = useUrlState("buildingId", "", isUuid);
+    // Same rule as every other list (lib/urlIds): trimmed, then UUID-shaped.
+    const [rawPropertyFilter, setPropertyId] = useUrlState("propertyId", "", isIdParam);
+    const [rawBuildingFilter, setBuildingFilter] = useUrlState("buildingId", "", isIdParam);
+    const propertyFilter = idParam(rawPropertyFilter);
+    const buildingFilter = idParam(rawBuildingFilter);
     const setPropertyFilter = (id: string) => { setPropertyId(id); setBuildingFilter(""); setPageParam("1"); };
     // R1 P2-2: once the Tower select reports it isn't showing (no towers, or
     // GET /buildings/property/{id} refuses this role, e.g. ACCOUNTANT), any

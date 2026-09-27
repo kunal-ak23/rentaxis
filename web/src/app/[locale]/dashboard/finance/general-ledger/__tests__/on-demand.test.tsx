@@ -96,6 +96,17 @@ describe("General Ledger — on demand", () => {
         expect(screen.queryByTestId("ledger-pick-prompt")).toBeNull();
     });
 
+    // Break round 1 review: a malformed propertyId is no filter and leaves the URL, like the other lists.
+    it("drops a malformed propertyId from the query it sends and from the URL", async () => {
+        query.current = "accountIds=a3&from=2026-01-01&to=2026-03-31&propertyId=not-a-uuid";
+        window.history.replaceState(null, "", `/en/dashboard/finance/general-ledger?${query.current}`);
+        render(<Page />);
+        await waitFor(() => expect(general).toHaveBeenCalled());
+        expect(general.mock.calls[0][0].propertyId).toBeUndefined();
+        await waitFor(() => expect(new URLSearchParams(window.location.search).has("propertyId")).toBe(false));
+        expect(new URLSearchParams(window.location.search).get("accountIds")).toBe("a3");
+    });
+
     it("caps a URL with more than 20 accounts to the first 20 and says so", async () => {
         query.current = `accountIds=${Array.from({ length: 21 }, (_, i) => `a${i}`).join(",")}`;
         render(<Page />);

@@ -17,6 +17,11 @@ export function idParam(v: string | null | undefined): string {
     return isUuid(trimmed) ? trimmed : "";
 }
 
+/** Whether a URL value is a usable id once trimmed — `idParam`'s rule as a predicate. */
+export function isIdParam(v: string | null | undefined): boolean {
+    return idParam(v) !== "";
+}
+
 /**
  * Removes each of `keys` whose URL value is present but not UUID-shaped, with
  * `history.replaceState` (no navigation, history state kept). Every other
@@ -29,7 +34,7 @@ export function stripInvalidIdParams(keys: readonly string[]): boolean {
     let changed = false;
     for (const k of keys) {
         const v = url.searchParams.get(k);
-        if (v !== null && !isUuid(v.trim())) {
+        if (v !== null && !isIdParam(v)) {
             url.searchParams.delete(k);
             changed = true;
         }

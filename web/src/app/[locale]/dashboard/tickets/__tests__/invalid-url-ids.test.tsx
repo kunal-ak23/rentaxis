@@ -62,4 +62,17 @@ describe("tickets list with a malformed id in the URL", () => {
         });
         expect(new URLSearchParams(window.location.search).get("status")).toBe("OPEN");
     });
+
+    // Review fix 5: the same trim-then-validate rule as every other list (idParam).
+    it("accepts a padded valid id, sending and keeping it trimmed", async () => {
+        const good = "b394c93d-94d8-40e2-91b6-0740febaf250";
+        window.history.replaceState(null, "", `/en/dashboard/tickets?propertyId=%20${good}%20`);
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <TicketsPage />
+            </NextIntlClientProvider>,
+        );
+        await waitFor(() => expect(requested.length).toBeGreaterThan(0));
+        for (const sp of requested) expect(sp.get("propertyId")).toBe(good);
+    });
 });
