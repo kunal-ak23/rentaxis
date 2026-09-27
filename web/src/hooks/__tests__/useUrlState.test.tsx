@@ -84,6 +84,22 @@ describe("useUrlState", () => {
         expect(params.get("page")).toBe("3");
     });
 
+    it("returns a referentially stable setter across re-renders for the same key/fallback", () => {
+        // Fix round 1 (Task 7 review): consumers (Tickets/Renters/Properties'
+        // fetch callbacks and debounce effects) list the setter in their own
+        // dependency arrays. If it were a fresh closure every render, doing
+        // so would refire those effects on every render instead of only when
+        // a real value changes.
+        const { result, rerender } = renderHook(() => useUrlState("q", ""));
+        const first = result.current[1];
+        rerender();
+        expect(result.current[1]).toBe(first);
+
+        act(() => result.current[1]("sara"));
+        rerender();
+        expect(result.current[1]).toBe(first);
+    });
+
     it("re-renders subscribers when the URL changes from another useUrlState call", () => {
         const q = renderHook(() => useUrlState("q", ""));
         const page = renderHook(() => useUrlState("page", "1"));

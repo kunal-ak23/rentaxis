@@ -159,4 +159,69 @@ describe("Tickets list — URL-persisted search/status/priority/page", () => {
         expect(pageParams).toEqual(["8", "1"]);
         expect(new URL(window.location.href).searchParams.get("page")).toBe("2");
     });
+
+    it("typing whitespace-only text leaves no q in the URL or the request", async () => {
+        window.history.replaceState(null, "", "/en/dashboard/tickets");
+        let requested: URLSearchParams | null = null;
+        global.fetch = vi.fn(async (url: unknown) => {
+            const u = String(url);
+            if (u.includes("/v1/tickets/paged")) {
+                requested = new URL(u, "http://x").searchParams;
+                return json(pagedBody([ticket("1", "A ticket")]));
+            }
+            if (u.endsWith("/v1/properties")) return json([{ property: { id: "p1", nameEn: "Tower A" } }]);
+            return json([]);
+        }) as unknown as typeof fetch;
+
+        renderPage();
+        const searchBox = await screen.findByPlaceholderText(en.Tickets.searchPlaceholder);
+        fireEvent.change(searchBox, { target: { value: "   " } });
+
+        await new Promise((r) => setTimeout(r, 400));
+
+        expect(new URL(window.location.href).searchParams.has("q")).toBe(false);
+        expect(requested!.has("q")).toBe(false);
+    });
+
+    it("a trailing space is stripped from the committed q", async () => {
+        window.history.replaceState(null, "", "/en/dashboard/tickets");
+        let requested: URLSearchParams | null = null;
+        global.fetch = vi.fn(async (url: unknown) => {
+            const u = String(url);
+            if (u.includes("/v1/tickets/paged")) {
+                requested = new URL(u, "http://x").searchParams;
+                return json(pagedBody([ticket("1", "A ticket")]));
+            }
+            if (u.endsWith("/v1/properties")) return json([{ property: { id: "p1", nameEn: "Tower A" } }]);
+            return json([]);
+        }) as unknown as typeof fetch;
+
+        renderPage();
+        const searchBox = await screen.findByPlaceholderText(en.Tickets.searchPlaceholder);
+        fireEvent.change(searchBox, { target: { value: "leak " } });
+
+        await new Promise((r) => setTimeout(r, 400));
+
+        await waitFor(() => expect(new URL(window.location.href).searchParams.get("q")).toBe("leak"));
+        expect(requested!.get("q")).toBe("leak");
+    });
+
+    it("clamps a negative bookmarked page to page 1 (API page 0)", async () => {
+        window.history.replaceState(null, "", "/en/dashboard/tickets?page=-3");
+        let requested: URLSearchParams | null = null;
+        global.fetch = vi.fn(async (url: unknown) => {
+            const u = String(url);
+            if (u.includes("/v1/tickets/paged")) {
+                requested = new URL(u, "http://x").searchParams;
+                return json(pagedBody([ticket("1", "A ticket")]));
+            }
+            if (u.endsWith("/v1/properties")) return json([{ property: { id: "p1", nameEn: "Tower A" } }]);
+            return json([]);
+        }) as unknown as typeof fetch;
+
+        renderPage();
+        await screen.findByText("A ticket");
+
+        expect(requested!.get("page")).toBe("0");
+    });
 });

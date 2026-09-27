@@ -60,27 +60,27 @@ function RentersPageInner() {
     const [q, setQ] = useUrlState("q", "");
     const [pageParam, setPageParam] = useUrlState("page", "1");
     const [sizeParam, setSizeParam] = useUrlState("size", "25");
-    const currentPage = parseInt(pageParam, 10) || 1;
+    // A negative or zero page (a hand-edited or otherwise malformed bookmark,
+    // e.g. `?page=-3`) is clamped to 1 rather than passed through to the API.
+    const currentPage = Math.max(1, parseInt(pageParam, 10) || 1);
     const itemsPerPage = parseInt(sizeParam, 10) || 25;
 
     // R1 P1-1: the box shows `draftSearch` immediately while typing; 300 ms
     // after the last keystroke it is written to the URL (which also resets
     // the page to 1) and `draftSearch` hands control back to the URL value.
+    // The committed value is trimmed — "leak " or "  " must not reach the URL
+    // or the API as a search with trailing/only whitespace.
     const [draftSearch, setDraftSearch] = useState<string | null>(null);
     const searchQuery = draftSearch ?? q;
     useEffect(() => {
-        if (draftSearch === null || draftSearch === q) return;
+        if (draftSearch === null || draftSearch.trim() === q) return;
         const timer = setTimeout(() => {
-            setQ(draftSearch);
+            setQ(draftSearch.trim());
             setPageParam("1");
             setDraftSearch(null);
         }, 300);
         return () => clearTimeout(timer);
-        // `setQ`/`setPageParam` are fresh closures from `useUrlState` on every
-        // render (they read `window.location.href` live); including them here
-        // would reset the debounce timer on every render, not just on typing.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [draftSearch, q]);
+    }, [draftSearch, q, setQ, setPageParam]);
 
     const [formData, setFormData] = useState({
         nameEn: "",
@@ -133,12 +133,7 @@ function RentersPageInner() {
         } finally {
             if (isCurrent()) setLoading(false);
         }
-        // `setPageParam` is a fresh closure from `useUrlState` on every
-        // render (see the debounce effect above) — it must not be a
-        // dependency here, or the clamp branch's call to it would recreate
-        // this callback and refire the fetch on every render.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [q, currentPage, itemsPerPage, tCommon]);
+    }, [q, currentPage, itemsPerPage, tCommon, setPageParam]);
 
     useEffect(() => {
         fetchRenters();

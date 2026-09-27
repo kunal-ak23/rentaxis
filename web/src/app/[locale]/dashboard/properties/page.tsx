@@ -101,7 +101,9 @@ function PropertiesPageInner() {
     const setViewMode = (v: "table" | "cards") => setViewModeParam(v);
     const [pageParam, setPageParam] = useUrlState("page", "1");
     const [sizeParam, setSizeParam] = useUrlState("size", "25");
-    const currentPage = parseInt(pageParam, 10) || 1;
+    // A negative or zero page (a hand-edited or otherwise malformed bookmark,
+    // e.g. `?page=-3`) is clamped to 1 rather than passed through.
+    const currentPage = Math.max(1, parseInt(pageParam, 10) || 1);
     const itemsPerPage = parseInt(sizeParam, 10) || 25;
     const [searchQuery, setSearchQueryParam] = useUrlState("q", "");
     const setSearchQuery = (v: string) => { setSearchQueryParam(v); setPageParam("1"); };
@@ -402,8 +404,11 @@ function PropertiesPageInner() {
     };
 
     const filteredStats = stats.filter(s => {
-        if (!searchQuery) return true;
-        const q = searchQuery.toLowerCase();
+        // A whitespace-only search (typed and not yet cleared, or a stray
+        // bookmarked `?q=%20`) is treated as no search — trimmed to empty —
+        // rather than excluding every property.
+        if (!searchQuery.trim()) return true;
+        const q = searchQuery.trim().toLowerCase();
         return (
             s.property.nameEn?.toLowerCase().includes(q) ||
             s.property.nameAr?.toLowerCase().includes(q) ||
@@ -422,12 +427,7 @@ function PropertiesPageInner() {
     // response.
     useEffect(() => {
         if (totalItems > 0 && currentPage > totalPages) setPageParam(String(totalPages));
-        // `setPageParam` is a fresh closure from `useUrlState` on every
-        // render; including it here would run this effect on every render
-        // rather than only when the page or result count actually changes —
-        // harmless (the condition is false once clamped), but not the intent.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [totalItems, totalPages, currentPage]);
+    }, [totalItems, totalPages, currentPage, setPageParam]);
     const paginatedItems = filteredStats.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
     if (loading) {

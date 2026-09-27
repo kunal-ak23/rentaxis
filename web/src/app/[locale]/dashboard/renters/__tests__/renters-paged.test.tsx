@@ -114,6 +114,49 @@ describe("Renters list — server-paged with URL-persisted search/page/size", ()
         expect(new URL(window.location.href).searchParams.get("page")).toBeNull(); // reset to the 1-based default, so removed
     });
 
+    it("typing whitespace-only text leaves no q in the URL, and a trailing space is stripped", async () => {
+        let requested: URLSearchParams | null = null;
+        global.fetch = vi.fn(async (url: unknown) => {
+            const u = String(url);
+            if (u.includes("/v1/renters/paged")) {
+                requested = new URL(u, "http://x").searchParams;
+                return { ok: true, status: 200, json: async () => pagedBody([renter("r1", "Ahmed")]) } as unknown as Response;
+            }
+            return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+        }) as unknown as typeof fetch;
+
+        render(<RentersPage />);
+        const searchBox = await screen.findByPlaceholderText("Search...");
+
+        fireEvent.change(searchBox, { target: { value: "   " } });
+        await act(async () => { await new Promise((r) => setTimeout(r, 350)); });
+        expect(new URL(window.location.href).searchParams.has("q")).toBe(false);
+        expect(requested!.has("q")).toBe(false);
+
+        fireEvent.change(searchBox, { target: { value: "ahmed " } });
+        await act(async () => { await new Promise((r) => setTimeout(r, 350)); });
+        expect(new URL(window.location.href).searchParams.get("q")).toBe("ahmed");
+        expect(requested!.get("q")).toBe("ahmed");
+    });
+
+    it("clamps a negative bookmarked page to page 1 (API page 0)", async () => {
+        window.history.replaceState(null, "", "/en/dashboard/renters?page=-3");
+        let requested: URLSearchParams | null = null;
+        global.fetch = vi.fn(async (url: unknown) => {
+            const u = String(url);
+            if (u.includes("/v1/renters/paged")) {
+                requested = new URL(u, "http://x").searchParams;
+                return { ok: true, status: 200, json: async () => pagedBody([renter("r1", "Ahmed")]) } as unknown as Response;
+            }
+            return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+        }) as unknown as typeof fetch;
+
+        render(<RentersPage />);
+        await screen.findByText("Ahmed");
+
+        expect(requested!.get("page")).toBe("0");
+    });
+
     it("never lets an older, slower response overwrite a newer one", async () => {
         let resolveSlow: (v: unknown) => void = () => {};
         const slow = new Promise((r) => { resolveSlow = r; });

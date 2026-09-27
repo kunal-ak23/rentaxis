@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { useSearchParams } from "next/navigation";
 
 /**
@@ -39,13 +39,17 @@ export function useUrlState(key: string, fallback: string): [string, (v: string)
     const search = useSyncExternalStore(subscribeUrl, () => window.location.search, () => "");
     const value = new URLSearchParams(search).get(key) ?? fallback;
 
-    const setValue = (v: string) => {
+    // Referentially stable across re-renders for a given key/fallback — it
+    // reads `window.location` live and captures no render state, so callers
+    // (a `useCallback`'s fetch, a debounce effect) can list it in their own
+    // dependency arrays without it forcing a re-run on every render.
+    const setValue = useCallback((v: string) => {
         const url = new URL(window.location.href);
         if (v && v !== fallback) url.searchParams.set(key, v);
         else url.searchParams.delete(key);
         window.history.replaceState(window.history.state, "", url.toString());
         urlListeners.forEach((l) => l());
-    };
+    }, [key, fallback]);
 
     return [value, setValue];
 }

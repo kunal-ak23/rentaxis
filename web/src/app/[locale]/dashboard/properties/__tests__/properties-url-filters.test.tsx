@@ -101,6 +101,31 @@ describe("Properties list — URL-persisted search/page/size/view", () => {
         await waitFor(() => expect(new URL(window.location.href).searchParams.get("view")).toBe("cards"));
     });
 
+    it("treats a whitespace-only search as no search", async () => {
+        window.history.replaceState(null, "", "/en/dashboard/properties");
+        global.fetch = vi.fn(async () => json([property("p1", "Marina Tower")])) as unknown as typeof fetch;
+
+        renderPage();
+        await screen.findByText("Marina Tower");
+
+        const searchBox = screen.getByPlaceholderText(en.MasterData.search);
+        fireEvent.change(searchBox, { target: { value: "   " } });
+
+        expect(screen.getByText("Marina Tower")).toBeInTheDocument();
+    });
+
+    it("treats a negative bookmarked page as page 1 instead of rendering a blank list", async () => {
+        window.history.replaceState(null, "", "/en/dashboard/properties?page=-3&size=1");
+        const stats = [property("p1", "First Tower"), property("p2", "Second Tower")];
+        global.fetch = vi.fn(async () => json(stats)) as unknown as typeof fetch;
+
+        renderPage();
+        // page=-3 clamps to page 1, so the first item shows (not the second,
+        // and not a blank page).
+        await screen.findByText("First Tower");
+        expect(screen.queryByText("Second Tower")).toBeNull();
+    });
+
     it("clamps to the last page when a bookmarked page is beyond the filtered result set", async () => {
         window.history.replaceState(null, "", "/en/dashboard/properties?page=9&size=2");
         const stats = [

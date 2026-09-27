@@ -142,7 +142,9 @@ function TicketsPageInner() {
     // as the Renters list's page/size: 1-based in the URL, 0-based to the API.
     const [pageParam, setPageParam] = useUrlState("page", "1");
     const [sizeParam, setSizeParam] = useUrlState("size", "25");
-    const currentPage = parseInt(pageParam, 10) || 1;
+    // A negative or zero page (a hand-edited or otherwise malformed bookmark,
+    // e.g. `?page=-3`) is clamped to 1 rather than passed through to the API.
+    const currentPage = Math.max(1, parseInt(pageParam, 10) || 1);
     const itemsPerPage = parseInt(sizeParam, 10) || 25;
 
     // Filters
@@ -151,23 +153,21 @@ function TicketsPageInner() {
     // immediately (so typing is never interrupted); 350 ms after the last
     // keystroke it is written to `q` in the URL, which also resets the page —
     // same pattern as the Renters list's debounced search.
+    // The committed value is trimmed — "leak " or "  " must not reach the URL
+    // or the API as a search with trailing/only whitespace.
     const [q, setQ] = useUrlState("q", "");
     const [draftSearch, setDraftSearch] = useState<string | null>(null);
     const searchInput = draftSearch ?? q;
     const debouncedSearch = q;
     useEffect(() => {
-        if (draftSearch === null || draftSearch === q) return;
+        if (draftSearch === null || draftSearch.trim() === q) return;
         const timer = setTimeout(() => {
-            setQ(draftSearch);
+            setQ(draftSearch.trim());
             setPageParam("1");
             setDraftSearch(null);
         }, 350);
         return () => clearTimeout(timer);
-        // `setQ`/`setPageParam` are fresh closures from `useUrlState` on every
-        // render; including them here would reset the debounce timer on every
-        // render, not just on typing.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [draftSearch, q]);
+    }, [draftSearch, q, setQ, setPageParam]);
     const [statusFilter, setStatusFilter] = useUrlState("status", "ALL");
     const [priorityFilter, setPriorityFilter] = useUrlState("priority", "ALL");
     // R1 P3-2: property + tower (buildingId) live in the URL — bookmarkable,
@@ -286,12 +286,7 @@ function TicketsPageInner() {
         } finally {
             if (isCurrent()) { setInitialLoading(false); setTableLoading(false); }
         }
-        // `setPageParam` is intentionally not a dependency: it is a fresh
-        // closure from `useUrlState` on every render (like `setQ` in the
-        // debounce effect above), and including it would refire this fetch
-        // on every render rather than only when a real filter changes.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sessionReady, canPage, debouncedSearch, propertyFilter, buildingFilter, statusFilter, priorityFilter, currentPage, itemsPerPage, t]);
+    }, [sessionReady, canPage, debouncedSearch, propertyFilter, buildingFilter, statusFilter, priorityFilter, currentPage, itemsPerPage, t, setPageParam]);
 
     const fetchProperties = useCallback(async () => {
         if (isRenter) return; // Renters use their leases instead
