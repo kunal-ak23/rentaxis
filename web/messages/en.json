@@ -1097,6 +1097,10 @@
     "errorNetwork": "Network error. Please try again."
   },
   "Marketplace": {
+    "propertiesCount": "{count, plural, one {# property} other {# properties}}",
+    "backToDashboard": "Dashboard",
+    "wishlistRemoveFailed": "Your interest wasn't removed. Please try again.",
+    "wishlistAddFailed": "Your interest wasn't saved. Please try again.",
     "title": "Browse Properties",
     "subtitle": "Find your perfect home",
     "noListingsTitle": "No listings available",

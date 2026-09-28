@@ -1097,6 +1097,10 @@
     "errorNetwork": "خطأ في الشبكة. يرجى المحاولة مرة أخرى."
   },
   "Marketplace": {
+    "propertiesCount": "{count, plural, zero {لا عقارات} one {عقار واحد} two {عقاران} few {# عقارات} many {# عقارًا} other {# عقار}}",
+    "backToDashboard": "لوحة التحكم",
+    "wishlistRemoveFailed": "لم تتم إزالة اهتمامك. يرجى المحاولة مرة أخرى.",
+    "wishlistAddFailed": "لم يتم حفظ اهتمامك. يرجى المحاولة مرة أخرى.",
     "title": "تصفح العقارات",
     "subtitle": "اعثر على منزلك المثالي",
     "noListingsTitle": "لا توجد قوائم متاحة",
