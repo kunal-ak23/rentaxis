@@ -23,6 +23,14 @@ describe("loadList", () => {
         expect(await loadList("/api/proxy/v1/x")).toEqual({ kind: "forbidden" });
     });
 
+    it("passes the caller's abort signal to fetch", async () => {
+        const f = respond(200, []);
+        global.fetch = f;
+        const c = new AbortController();
+        await loadList("/api/proxy/v1/x", c.signal);
+        expect(f).toHaveBeenCalledWith("/api/proxy/v1/x", { signal: c.signal });
+    });
+
     it("says failed on any other status or a network error", async () => {
         global.fetch = respond(500);
         expect(await loadList("/api/proxy/v1/x")).toEqual({ kind: "failed", status: 500 });

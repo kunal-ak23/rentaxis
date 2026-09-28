@@ -16,6 +16,8 @@ import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { NumberInput, MoneyTextInput, focusFirstInvalidMoney } from "@/components/ui/NumberInput";
 import { MONEY_MAX_12_2, moneyValueOrNull } from "@/lib/money";
 import { AccessDeniedState, LoadFailedState, NotFoundState } from "@/components/ui/PageStates";
+import { useLatestRequest, type RequestTicket } from "@/hooks/useLatestRequest";
+import { isAbortError } from "@/lib/api/abort";
 
 type PropertyContact = {
     id: string;
@@ -120,12 +122,24 @@ export default function PropertyDetailPage() {
     // Break round 1, F5: a 404/403/500 (or a network failure) used to leave
     // `property` null, and the page kept its skeleton forever. The load now
     // ends in one of: loaded, not found, access denied, or failed (retry).
+    // Break round 3, F1: each load is aborted on unmount and superseded by a
+    // newer one, silently; a real failure still lands in its state.
+    const beginProperty = useLatestRequest();
+    const beginBuildings = useLatestRequest();
+    const beginUnits = useLatestRequest();
+    const beginManagers = useLatestRequest();
+    const beginContacts = useLatestRequest();
+
     const fetchProperty = async () => {
+        const { signal, isCurrent } = beginProperty();
         setPropertyLoad("loading");
         try {
-            const res = await fetch(`/api/proxy/v1/properties/${propertyId}`);
+            const res = await fetch(`/api/proxy/v1/properties/${propertyId}`, { signal });
+            if (!isCurrent()) return;
             if (res.ok) {
-                setProperty(await res.json());
+                const body = await res.json();
+                if (!isCurrent()) return;
+                setProperty(body);
                 setPropertyLoad("ok");
             } else if (res.status === 404 || res.status === 400) {
                 setPropertyLoad("notFound");
@@ -134,35 +148,33 @@ export default function PropertyDetailPage() {
             } else {
                 setPropertyLoad("failed");
             }
-        } catch {
+        } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             setPropertyLoad("failed");
         }
     };
 
     // Secondary reads: a failure leaves the tab empty rather than breaking the page.
-    const fetchList = async <T,>(url: string, set: (rows: T[]) => void) => {
+    const fetchList = async <T,>(ticket: RequestTicket, url: string, set: (rows: T[]) => void) => {
+        const { signal, isCurrent } = ticket;
         try {
-            const res = await fetch(url);
-            if (res.ok) set(await res.json());
+            const res = await fetch(url, { signal });
+            if (!res.ok) return;
+            const rows = await res.json();
+            if (isCurrent()) set(rows);
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             console.error("Failed to fetch", url, err);
         }
     };
 
-    const fetchBuildings = () => fetchList(`/api/proxy/v1/buildings/property/${propertyId}`, setBuildings);
+    const fetchBuildings = () => fetchList(beginBuildings(), `/api/proxy/v1/buildings/property/${propertyId}`, setBuildings);
 
-    const fetchUnits = () => fetchList(`/api/proxy/v1/units/property/${propertyId}`, setUnits);
+    const fetchUnits = () => fetchList(beginUnits(), `/api/proxy/v1/units/property/${propertyId}`, setUnits);
 
-    const fetchManagers = () => fetchList(`/api/proxy/v1/properties/${propertyId}/managers`, setManagers);
+    const fetchManagers = () => fetchList(beginManagers(), `/api/proxy/v1/properties/${propertyId}/managers`, setManagers);
 
-    const fetchContacts = async () => {
-        try {
-            const res = await fetch(`/api/proxy/v1/properties/${propertyId}/contacts`);
-            if (res.ok) setContacts(await res.json());
-        } catch (err) {
-            console.error("Failed to fetch contacts:", err);
-        }
-    };
+    const fetchContacts = () => fetchList<PropertyContact>(beginContacts(), `/api/proxy/v1/properties/${propertyId}/contacts`, setContacts);
 
     const openAddContact = () => {
         setEditingContact(null);
@@ -899,16 +911,21 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
 function LeasesTab({ propertyId }: { propertyId: string }) {
     const t = useTranslations("MasterData");
     const [leases, setLeases] = useState<any[]>([]);
+    const begin = useLatestRequest();
 
     useEffect(() => {
         fetchLeases();
     }, [propertyId]);
 
     const fetchLeases = async () => {
+        const { signal, isCurrent } = begin();
         try {
-            const res = await fetch(`/api/proxy/v1/leases/property/${propertyId}`);
-            if (res.ok) setLeases(await res.json());
+            const res = await fetch(`/api/proxy/v1/leases/property/${propertyId}`, { signal });
+            if (!res.ok) return;
+            const rows = await res.json();
+            if (isCurrent()) setLeases(rows);
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             console.error(err);
         }
     };

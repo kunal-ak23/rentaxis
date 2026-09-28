@@ -7,6 +7,8 @@ import { Plus, X, Building2, Hash, Settings2, ShieldCheck, Loader2, Search, Penc
 import { cn } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 import { FileUpload } from "@/components/ui/FileUpload";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { isAbortError } from "@/lib/api/abort";
 
 type Tenant = { id: string; name: string; status: string; address?: string; trn?: string; logoUrl?: string; ticketOtpRequired?: boolean; phone?: string; createdAt: string };
 
@@ -101,12 +103,17 @@ export default function SuperAdminTenantsPage() {
         }
     };
 
+    // Break round 3, F1: a refresh supersedes the read in flight; unmount aborts it, silently.
+    const beginTenants = useLatestRequest();
     const fetchTenants = async () => {
+        const { signal, isCurrent } = beginTenants();
         setLoading(true);
         try {
-            const res = await fetch("/api/proxy/admin/tenants");
+            const res = await fetch("/api/proxy/admin/tenants", { signal });
+            if (!isCurrent()) return;
             if (res.ok) {
                 const data = await res.json();
+                if (!isCurrent()) return;
                 data.sort((a: Tenant, b: Tenant) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
                 setTenants(data);
                 setLoadError("");
@@ -118,10 +125,11 @@ export default function SuperAdminTenantsPage() {
                 );
             }
         } catch (e) {
+            if (isAbortError(e) || !isCurrent()) return;
             console.error(e);
             setLoadError(tSa("orgNetworkError"));
         } finally {
-            setLoading(false);
+            if (isCurrent()) setLoading(false);
         }
     };
 

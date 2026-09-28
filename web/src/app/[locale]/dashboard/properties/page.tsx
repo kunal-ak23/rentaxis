@@ -15,6 +15,8 @@ import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { MONEY_MAX_12_2 } from "@/lib/money";
 import { useUrlState } from "@/hooks/useUrlState";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { isAbortError } from "@/lib/api/abort";
 
 type Property = {
     id: string;
@@ -169,21 +171,27 @@ function PropertiesPageInner() {
         return () => document.removeEventListener("visibilitychange", onVisibilityChange);
     }, []);
 
+    // Break round 3, F1: a refresh (tab back in view, after a save) supersedes
+    // the one in flight, and unmount aborts it — silently.
+    const beginStats = useLatestRequest();
     const fetchStats = async () => {
+        const { signal, isCurrent } = beginStats();
         try {
-            const res = await fetch("/api/proxy/v1/properties");
+            const res = await fetch("/api/proxy/v1/properties", { signal });
             if (res.ok) {
                 const data = await res.json();
+                if (!isCurrent()) return;
                 setStats(data);
                 setError(null);
-            } else {
+            } else if (isCurrent()) {
                 setError(tCommon("loadFailedProperties"));
             }
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             console.error(err);
             setError(tCommon("loadFailedProperties"));
         } finally {
-            setLoading(false);
+            if (isCurrent()) setLoading(false);
         }
     };
 

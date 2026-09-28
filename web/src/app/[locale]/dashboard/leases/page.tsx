@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect, useRef, useSyncExternalStore } from "react";
+import { Suspense, useState, useEffect, useSyncExternalStore } from "react";
 import { useSearchParams } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
@@ -33,6 +33,8 @@ import {
     type ContractRead, type ContractView,
 } from "@/lib/leases/contractListView";
 import { stripInvalidIdParams } from "@/lib/urlIds";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { isAbortError } from "@/lib/api/abort";
 
 type Lease = LeaseDetail;
 
@@ -286,6 +288,7 @@ function LeasesList() {
         if (leases.length > 0) {
             fetchChequeStats(leases);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/selection loads; the useLatestRequest gate is stable
     }, [leases]);
 
     // A status filter narrows what is on screen, so the page number it was
@@ -300,10 +303,12 @@ function LeasesList() {
     // (totals, then a paged read per status), and with nothing to say "a
     // newer selection has since been made", a slower multi-round response
     // landing after a faster single-status one would overwrite it.
-    const fetchSeq = useRef(0);
+    // Break round 3, F1: useLatestRequest also retires the read on unmount, so a
+    // read the user navigated away from never logs or sets state.
+    const beginLeases = useLatestRequest();
+    const beginChequeStats = useLatestRequest();
     const fetchLeases = async () => {
-        const seq = ++fetchSeq.current;
-        const isCurrent = () => seq === fetchSeq.current;
+        const { isCurrent } = beginLeases();
         setLoading(true);
         try {
             const read = contractRead(listState);
@@ -334,7 +339,7 @@ function LeasesList() {
                 setTotalItems(data.totalElements ?? 0);
             }
         } catch (err) {
-            if (!isCurrent()) return;
+            if (isAbortError(err) || !isCurrent()) return;
             console.error(err);
         } finally {
             if (isCurrent()) setLoading(false);
@@ -344,20 +349,29 @@ function LeasesList() {
     // Collection progress comes from the cheque register now: /v1/payments is
     // gone, and a lease's position is its cheques' -- how many have cleared and
     // how much is still due.
+    // Break round 3, F1: a newer list supersedes the stats read of the old one —
+    // a slow answer for the previous page would replace the map and blank the
+    // progress of the rows now on screen.
     const fetchChequeStats = async (allLeases: Lease[]) => {
+        const { isCurrent } = beginChequeStats();
         const ids = allLeases.filter(l => l.status === "ACTIVE" || l.status === "NOTICE_GIVEN").map(l => l.id);
-        if (ids.length === 0) return;
+        if (ids.length === 0) {
+            setChequeStatsLoading(false);
+            return;
+        }
 
         setChequeStatsLoading(true);
         try {
             const stats = await chequeApi.statsByLeases(ids);
+            if (!isCurrent()) return;
             const map: Record<string, LeaseChequeStats> = {};
             for (const s of stats) map[s.leaseId] = s;
             setChequeStats(map);
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             console.error(err);
         } finally {
-            setChequeStatsLoading(false);
+            if (isCurrent()) setChequeStatsLoading(false);
         }
     };
 

@@ -23,6 +23,8 @@ import { cn } from "@/lib/utils";
 import { canConfigureRentSettings } from "@/lib/rbac";
 import type { UserRole } from "@/lib/rbac";
 import { NumberInput } from "@/components/ui/NumberInput";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { isAbortError } from "@/lib/api/abort";
 import { DEFAULT_RENT_SETTINGS, readRentSettings, toRentSettingsBody, type RentSettingsData } from "@/lib/rentSettings";
 
 type Property = {
@@ -67,27 +69,40 @@ export default function RentSettings({ embedded = false, hideOnlinePaymentToggle
     const [error, setError] = useState("");
     const [finesExpanded, setFinesExpanded] = useState(false);
 
+    // Break round 3, F1: loads abort on unmount, and picking another property
+    // supersedes the settings read in flight — a slow answer for the property
+    // picked first must never fill the form of the one picked after it (Save
+    // would then write the first property's settings onto the second).
+    const beginFines = useLatestRequest();
+    const beginProperties = useLatestRequest();
+    const beginSettings = useLatestRequest();
+
     useEffect(() => {
         Promise.all([
             fetchProperties(),
             fetchOrgFines(),
         ]).finally(() => setInitialLoading(false));
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/selection loads; the useLatestRequest gate is stable
     }, []);
 
     useEffect(() => {
         if (selectedPropertyId) {
             fetchSettings(selectedPropertyId);
         } else {
+            beginSettings(); // retire a read still in flight for the previous property
             setSettings(null);
+            setLoading(false);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/selection loads; the useLatestRequest gate is stable
     }, [selectedPropertyId]);
 
     const fetchOrgFines = async () => {
+        const { signal, isCurrent } = beginFines();
         try {
-            const res = await fetch("/api/proxy/v1/settings/fines");
+            const res = await fetch("/api/proxy/v1/settings/fines", { signal });
             if (res.ok) {
                 const data = await res.json();
-                setOrgFines(data);
+                if (isCurrent()) setOrgFines(data);
             }
         } catch {
             // use defaults
@@ -95,37 +110,43 @@ export default function RentSettings({ embedded = false, hideOnlinePaymentToggle
     };
 
     const fetchProperties = async () => {
+        const { signal, isCurrent } = beginProperties();
         try {
-            const res = await fetch("/api/proxy/v1/properties");
+            const res = await fetch("/api/proxy/v1/properties", { signal });
             if (res.ok) {
                 const data = await res.json();
+                if (!isCurrent()) return;
                 // API returns PropertyStats[] with nested property object
                 const props = data.map((s: { property: Property }) => s.property);
                 setProperties(props);
             }
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             console.error("Failed to fetch properties", err);
         }
     };
 
     const fetchSettings = async (propertyId: string) => {
+        const { signal, isCurrent } = beginSettings();
         setLoading(true);
         setError("");
         try {
-            const res = await fetch(`/api/proxy/v1/rent-settings/${propertyId}`);
+            const res = await fetch(`/api/proxy/v1/rent-settings/${propertyId}`, { signal });
             // 204 = no row yet (defaults), 2xx = merged over the defaults, else an error.
             const loaded = await readRentSettings(res, propertyId);
+            if (!isCurrent()) return;
             if (loaded) {
                 setSettings(loaded);
             } else {
                 setSettings(null);
                 setError(t("loadSettingsFailed"));
             }
-        } catch {
+        } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             setSettings(null);
             setError(t("loadSettingsFailed"));
         } finally {
-            setLoading(false);
+            if (isCurrent()) setLoading(false);
         }
     };
 

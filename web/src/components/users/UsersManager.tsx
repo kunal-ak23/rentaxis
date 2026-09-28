@@ -12,6 +12,8 @@ import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { ResendInviteButton } from "@/components/users/ResendInviteButton";
 import { AccessDeniedState, LoadFailedState } from "@/components/ui/PageStates";
 import { loadList } from "@/lib/api/listLoad";
+import { isAbortError } from "@/lib/api/abort";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
 
 // Derived from PROVISIONABLE_ROLES rather than hand-listed: a hand-written copy
 // is how ACCOUNTANT came to be grantable by the API but absent from this form.
@@ -96,8 +98,17 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
     const [properties, setProperties] = useState<any[]>([]);
     const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
 
+    // Break round 3, F1: every load aborts on unmount and when a newer one
+    // supersedes it (a quick organisation change, or Edit on another user), so
+    // a slow old answer never lands on the newer selection.
+    const beginUsers = useLatestRequest();
+    const beginTenants = useLatestRequest();
+    const beginProperties = useLatestRequest();
+    const beginAssignments = useLatestRequest();
+
     useEffect(() => {
         fetchUsers();
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/selection loads; the useLatestRequest gate is stable
     }, []);
 
     // The assignment picker lists the properties of the organisation the user is
@@ -114,12 +125,15 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
     // sees their own organisation read-only below, so it is not asked for.
     useEffect(() => {
         if (isSuperAdmin) fetchTenants();
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/selection loads; the useLatestRequest gate is stable
     }, [isSuperAdmin]);
 
     const fetchUsers = async () => {
+        const { signal, isCurrent } = beginUsers();
         setLoading(true);
         // Break round 1, F8: a refused or failed read is not "no users".
-        const load = await loadList<User>("/api/proxy/admin/users");
+        const load = await loadList<User>("/api/proxy/admin/users", signal);
+        if (!isCurrent()) return;
         setListLoad(load.kind);
         if (load.kind === "ok") {
             setUsers([...load.items].sort((a, b) => (a.id || '').localeCompare(b.id || '')));
@@ -128,18 +142,23 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
     };
 
     const fetchTenants = async () => {
+        const { signal, isCurrent } = beginTenants();
         try {
-            const res = await fetch("/api/proxy/admin/tenants");
+            const res = await fetch("/api/proxy/admin/tenants", { signal });
             if (res.ok) {
                 const data = await res.json();
-                setTenants(data);
+                if (isCurrent()) setTenants(data);
             }
         } catch (e) {
+            if (isAbortError(e) || !isCurrent()) return;
             console.error("Failed to fetch tenants:", e);
         }
     };
 
     const fetchProperties = async () => {
+        // Begun before the early return, so clearing the organisation also
+        // supersedes a read still in flight for the previous one.
+        const { signal, isCurrent } = beginProperties();
         if (isSuperAdmin && !tenantId) {
             setProperties([]);
             return;
@@ -147,16 +166,19 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
         try {
             const res = await fetch(isSuperAdmin
                 ? `/api/proxy/admin/tenants/${encodeURIComponent(tenantId)}/properties`
-                : "/api/proxy/v1/properties");
+                : "/api/proxy/v1/properties", { signal });
             if (res.ok) {
-                setProperties(await res.json());
+                const rows = await res.json();
+                if (isCurrent()) setProperties(rows);
             }
         } catch (e) {
+            if (isAbortError(e) || !isCurrent()) return;
             console.error(e);
         }
     };
 
     const resetForm = () => {
+        beginAssignments(); // drop a previous Edit's assignment read still in flight
         setEditingUserId(null);
         // Non-super-admins can only provision into their own tenant.
         setEmail(""); setPassword(""); setName(""); setTenantId(isSuperAdmin ? "" : currentTenantId); setRole("TENANT_USER"); setSelectedPropertyIds([]);
@@ -242,15 +264,20 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
         setPhoneNumber((user as any).phoneNumber || "");
         setPassword("");
 
-        // Fetch existing assignments if it's a Property Manager
+        // Fetch existing assignments if it's a Property Manager. Editing another
+        // user before this answers supersedes it: a slow answer for the first
+        // user must never become the second user's assignments.
+        const { signal, isCurrent } = beginAssignments();
         if (user.role === 'PROPERTY_MANAGER') {
             try {
-                const res = await fetch(`/api/proxy/admin/users/${user.id}/properties`);
+                const res = await fetch(`/api/proxy/admin/users/${user.id}/properties`, { signal });
                 if (res.ok) {
                     const ids = await res.json();
+                    if (!isCurrent()) return;
                     setSelectedPropertyIds(ids);
                 }
             } catch (e) {
+                if (isAbortError(e) || !isCurrent()) return;
                 console.error("Failed to fetch property assignments:", e);
             }
         } else {

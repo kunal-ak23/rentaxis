@@ -17,6 +17,8 @@ import {
 import { cn } from "@/lib/utils";
 import { canConfigureGateway } from "@/lib/rbac";
 import type { UserRole } from "@/lib/rbac";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { isAbortError } from "@/lib/api/abort";
 
 type Gateway = {
     id: string;
@@ -65,30 +67,45 @@ export default function GatewaySettings({ embedded = false }: { embedded?: boole
     const [saveSuccess, setSaveSuccess] = useState(false);
     const [error, setError] = useState("");
 
+    // Break round 3, F1: loads abort on unmount (and a reload supersedes the
+    // config read in flight), silently.
+    const beginGateways = useLatestRequest();
+    const beginConfig = useLatestRequest();
+
     useEffect(() => {
-        Promise.all([fetchGateways(), fetchExistingConfig()]).finally(() =>
-            setInitialLoading(false)
-        );
+        Promise.all([fetchGateways(), fetchExistingConfig()]).then(([a, b]) => {
+            if (a || b) setInitialLoading(false); // both false only when the component went away
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/selection loads; the useLatestRequest gate is stable
     }, []);
 
-    const fetchGateways = async () => {
+    /** Resolves false when the read was abandoned (unmount / superseded). */
+    const fetchGateways = async (): Promise<boolean> => {
+        const { signal, isCurrent } = beginGateways();
         try {
-            const res = await fetch("/api/proxy/v1/gateway-config/gateways");
-            if (res.ok) setGateways(await res.json());
+            const res = await fetch("/api/proxy/v1/gateway-config/gateways", { signal });
+            if (res.ok) {
+                const rows = await res.json();
+                if (isCurrent()) setGateways(rows);
+            }
         } catch (err) {
-            console.error("Failed to fetch gateways", err);
+            if (!isAbortError(err) && isCurrent()) console.error("Failed to fetch gateways", err);
         }
+        return isCurrent();
     };
 
-    const fetchExistingConfig = async () => {
+    const fetchExistingConfig = async (): Promise<boolean> => {
+        const { signal, isCurrent } = beginConfig();
         try {
-            const res = await fetch("/api/proxy/v1/gateway-config");
+            const res = await fetch("/api/proxy/v1/gateway-config", { signal });
+            if (!isCurrent()) return false;
             if (res.status === 204) {
                 // No existing config yet — that's fine
-                return;
+                return true;
             }
             if (res.ok) {
                 const config: GatewayConfig = await res.json();
+                if (!isCurrent()) return false;
                 setExistingConfig(config);
                 setSelectedGatewayId(config.gatewayId);
                 setIsTestMode(config.isTestMode);
@@ -96,9 +113,11 @@ export default function GatewaySettings({ embedded = false }: { embedded?: boole
                 setError("Failed to load gateway configuration.");
             }
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return false;
             console.error("Failed to fetch gateway config", err);
             setError("Failed to load gateway configuration.");
         }
+        return isCurrent();
     };
 
     const handleTestConnection = async () => {

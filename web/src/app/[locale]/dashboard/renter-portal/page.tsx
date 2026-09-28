@@ -11,6 +11,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import CreateMeetingModal from "@/app/[locale]/dashboard/meetings/CreateMeetingModal";
 import RenewalBanner from "@/components/renewals/RenewalBanner";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { isAbortError } from "@/lib/api/abort";
 import type { RenterCheque } from "@/lib/api/leasing";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
 
@@ -128,6 +130,13 @@ export default function RenterPortalPage() {
     const [meetingsTotalPages, setMeetingsTotalPages] = useState(1);
     const [showCreateMeeting, setShowCreateMeeting] = useState(false);
 
+    // Break round 3, F1: each load is aborted on unmount and superseded by a
+    // newer one (paging meetings quickly), so a slow old page never lands on
+    // the newer one and a load the user left never logs.
+    const beginMeetings = useLatestRequest();
+    const beginLeases = useLatestRequest();
+    const beginPayments = useLatestRequest();
+
     useEffect(() => {
         if (!isRenter) return;
         fetchMyLeases();
@@ -135,12 +144,14 @@ export default function RenterPortalPage() {
     }, [isRenter]);
 
     const fetchMyMeetings = useCallback(async () => {
+        const { signal, isCurrent } = beginMeetings();
         if (!isRenter) { setMeetingsLoading(false); return; }
         setMeetingsLoading(true);
         try {
-            const res = await fetch(`/api/proxy/v1/meetings/my?page=${meetingsPage - 1}&size=${MEETINGS_PER_PAGE}`);
+            const res = await fetch(`/api/proxy/v1/meetings/my?page=${meetingsPage - 1}&size=${MEETINGS_PER_PAGE}`, { signal });
             if (res.ok) {
                 const data = await res.json();
+                if (!isCurrent()) return;
                 if (Array.isArray(data)) {
                     setMeetings(data);
                     setMeetingsTotalPages(1);
@@ -148,38 +159,47 @@ export default function RenterPortalPage() {
                     setMeetings(data.content);
                     setMeetingsTotalPages(data.totalPages ?? 1);
                 }
-            } else {
+            } else if (isCurrent()) {
                 // A non-2xx used to leave the state at its initial empty
                 // value, so a failed request rendered as "nothing here".
                 setLoadError(tCommon("loadFailed"));
             }
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             console.error(err);
+            setLoadError(tCommon("loadFailed"));
         } finally {
-            setMeetingsLoading(false);
+            if (isCurrent()) setMeetingsLoading(false);
         }
-    }, [meetingsPage, isRenter]);
+    }, [meetingsPage, isRenter, beginMeetings]);
 
     useEffect(() => {
         fetchMyMeetings();
     }, [fetchMyMeetings]);
 
     const fetchMyLeases = async () => {
+        const { signal, isCurrent } = beginLeases();
         try {
-            const res = await fetch("/api/proxy/v1/leases/my-leases");
-            if (res.ok) setLeases(await res.json());
+            const res = await fetch("/api/proxy/v1/leases/my-leases", { signal });
+            if (res.ok) {
+                const rows = await res.json();
+                if (isCurrent()) setLeases(rows);
+            }
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             console.error(err);
         } finally {
-            setLoading(false);
+            if (isCurrent()) setLoading(false);
         }
     };
 
     const fetchPendingPayments = async () => {
+        const { signal, isCurrent } = beginPayments();
         try {
-            const res = await fetch("/api/proxy/v1/online-payments/my-payments");
+            const res = await fetch("/api/proxy/v1/online-payments/my-payments", { signal });
             if (res.ok) {
                 const payments = await res.json();
+                if (!isCurrent()) return;
 
                 // Group all payments by lease so we can show the full schedule on
                 // the PENDING_SIGNATURE acceptance card before the renter signs.
@@ -220,12 +240,13 @@ export default function RenterPortalPage() {
                         daysOverdue: next.daysOverdue ?? 0,
                     });
                 }
-            } else {
+            } else if (isCurrent()) {
                 // A non-2xx used to leave the state at its initial empty
                 // value, so a failed request rendered as "nothing here".
                 setLoadError(tCommon("loadFailed"));
             }
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             console.error(err);
         }
     };

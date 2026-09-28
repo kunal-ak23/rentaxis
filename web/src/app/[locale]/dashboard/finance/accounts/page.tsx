@@ -22,6 +22,8 @@ import { isForbidden } from "@/lib/api/listLoad";
 import { AccessDeniedState } from "@/components/ui/PageStates";
 import { propertyReportsApi, type ReportLineOption } from "@/lib/api/propertyReports";
 import AccountPicker, { invalidateAccounts } from "@/components/finance/AccountPicker";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { isAbortError } from "@/lib/api/abort";
 
 /** GET /v1/properties wraps each property in a portfolio-summary row. */
 type PropertySummary = { property: { id: string; nameEn: string; nameAr?: string | null } };
@@ -116,9 +118,16 @@ export default function AccountsPage() {
     const [dragOver, setDragOver] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // Break round 3, F1: a refetch supersedes the read in flight (its late answer
+    // is dropped), and unmount retires it — silently.
+    const beginAccounts = useLatestRequest();
+    const beginProperties = useLatestRequest();
+
     const fetchAccounts = useCallback(async () => {
+        const { isCurrent } = beginAccounts();
         try {
             const list = await ledgerApi.accounts.list();
+            if (!isCurrent()) return;
             setAccounts(list);
             // A chart that is already seeded opens the way it does the moment
             // the seed lands: every group open. The tree's roots are the five
@@ -131,22 +140,27 @@ export default function AccountsPage() {
                 setExpandedIds(new Set(list.filter(a => a.group).map(a => a.id)));
             }
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             // Break round 1, F8: a 403 is "you may not see the chart", not "no accounts".
             if (isForbidden(err)) setForbidden(true);
             setPageError(err instanceof ApiError ? err.message : t("loadAccountsFailed"));
         } finally {
-            setLoading(false);
+            if (isCurrent()) setLoading(false);
         }
-    }, []);
+    }, [beginAccounts]);
 
     const fetchProperties = useCallback(async () => {
+        const { signal, isCurrent } = beginProperties();
         try {
-            const res = await fetch("/api/proxy/v1/properties");
-            if (res.ok) setProperties(await res.json());
+            const res = await fetch("/api/proxy/v1/properties", { signal });
+            if (!res.ok) return;
+            const rows = await res.json();
+            if (isCurrent()) setProperties(rows);
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             console.error(err);
         }
-    }, []);
+    }, [beginProperties]);
 
     useEffect(() => {
         fetchAccounts();

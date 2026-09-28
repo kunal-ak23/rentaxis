@@ -5,6 +5,8 @@ import { useLocale, useTranslations } from "next-intl";
 import { User, Phone, Mail, Loader2, Check, Lock } from "lucide-react";
 import { getRoleLabel, getRoleLabelKey, type UserRole } from "@/lib/rbac";
 import { isPlausiblePhone, normalizePhone } from "@/lib/phone";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { isAbortError } from "@/lib/api/abort";
 
 /**
  * The refusals a user can act on, in their language. Anything else is the
@@ -50,23 +52,30 @@ export default function ProfilePage() {
     const [passwordSuccess, setPasswordSuccess] = useState("");
     const [savingPassword, setSavingPassword] = useState(false);
 
+    // Break round 3, F1: aborted on unmount (navigating away mid-load), silently.
+    const beginProfile = useLatestRequest();
+
     useEffect(() => {
         fetchProfile();
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/selection loads; the useLatestRequest gate is stable
     }, []);
 
     const fetchProfile = async () => {
+        const { signal, isCurrent } = beginProfile();
         try {
-            const res = await fetch("/api/proxy/auth/me");
+            const res = await fetch("/api/proxy/auth/me", { signal });
             if (res.ok) {
                 const data = await res.json();
+                if (!isCurrent()) return;
                 setProfile(data);
                 setName(data.name || "");
                 setPhoneNumber(data.phoneNumber || "");
             }
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             console.error(err);
         } finally {
-            setLoading(false);
+            if (isCurrent()) setLoading(false);
         }
     };
 
