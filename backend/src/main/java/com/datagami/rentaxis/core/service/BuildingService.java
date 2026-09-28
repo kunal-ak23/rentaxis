@@ -15,6 +15,12 @@ import java.util.UUID;
 @Service
 public class BuildingService {
 
+    /** A building's floors, inclusive. The web form uses the same bounds (BUILDING_FLOORS_MIN/MAX). */
+    public static final int FLOORS_MIN = 1;
+    public static final int FLOORS_MAX = 200;
+    public static final String FLOORS_OUT_OF_RANGE =
+            "Floors must be a whole number from " + FLOORS_MIN + " to " + FLOORS_MAX;
+
     private final BuildingRepository repository;
     private final TenantReferences refs;
     private final com.datagami.rentaxis.core.security.PropertyScope propertyScope;
@@ -38,6 +44,11 @@ public class BuildingService {
         }
         if (r.property() == null) {
             throw new BusinessRuleViolationException("property.id is required");
+        }
+        // Break-it R3 ops3 F3: -3, 0 and 99 999 floors used to be saved as typed.
+        if (r.floors() != null && (r.floors() < FLOORS_MIN || r.floors() > FLOORS_MAX)) {
+            throw new BusinessRuleViolationException(FLOORS_OUT_OF_RANGE, "building.floorsOutOfRange",
+                    java.util.Map.of("min", FLOORS_MIN, "max", FLOORS_MAX));
         }
         Building b = new Building();
         b.setProperty(refs.propertyOrNull(r.property()));
