@@ -1852,6 +1852,9 @@
     "TENANT_USER": "Company User"
   },
   "Ledger": {
+    "lockRule": "Only a period that has already ended can be locked: the latest date is today ({today}).",
+    "lockAfterToday": "This date is after today. Check the year.",
+    "lockBigJump": "This moves the lock {months} months forward, from {from} to {to}. Nothing dated up to {to} can be posted afterwards. Tick to confirm the date is right.",
     "interPropertyRepairCancel": "Cancel",
     "interPropertyUnbalanced": "{count, plural, one {# journal does} other {# journals do}} not balance per property, so a property's trial balance is out. Post a clearing journal for each.",
     "interPropertyRepair": "Post clearing journals",
@@ -2348,6 +2351,8 @@
     "runFailed": "The VAT tax points could not be posted."
   },
   "Cheques": {
+    "dateAfterToday": "The date cannot be after today: the bank has not done this yet.",
+    "penaltyChanged": "This charge changed in another window. It has been reloaded with its current amount; review it and approve again.",
     "breakdownGross": "Total with VAT",
     "breakdownVat": "VAT",
     "breakdownNet": "Net",
@@ -2785,6 +2790,9 @@
     "previewOnly": "You can price a termination on this contract, but ending it posts journals and is limited to finance roles."
   },
   "Settlement": {
+    "changedReloaded": "This settlement changed in another window. The figures have been reloaded; review them and finalize again.",
+    "confirmRefund": "Refund owed to the tenant: {amount}",
+    "confirmBalanceDue": "Balance the tenant owes: {amount}",
     "stillDue": "Still due from tenant",
     "writtenOff": "Written off as bad debt",
     "title": "Settlement",
@@ -4313,6 +4321,8 @@
     "droppedDiscount": "Discount <n>{amount}</n> on the current contract does not renew"
   },
   "FiscalYears": {
+    "reopenLockMove": "Period lock will move from <n>{from}</n> to <n>{to}</n>.",
+    "reopenLockStays": "Period lock stays at <n>{from}</n>.",
     "title": "Fiscal years",
     "description": "Closing a year moves its income and expense into Retained Earnings (one line per property) and locks it. Re-opening reverses that entry.",
     "year": "Year",
@@ -4399,6 +4409,7 @@
     "history": "Filing history"
   },
   "BadDebts": {
+    "dateAfterToday": "A write-off cannot be dated after today: it is recorded when the decision is made.",
     "reversedBy": "reversed by",
     "noRecoveryAccounts": "No bank or cash account can take money for this contract's property. Attach its bank leaf to a bank account first.",
     "chooseAccount": "Choose an account",
@@ -4423,6 +4434,8 @@
     "cancel": "Cancel"
   },
   "TicketCharges": {
+    "remaining": "Left to recharge: {amount}",
+    "overRemaining": "Only {amount} of the bills is left to recharge.",
     "title": "Bill and recharge",
     "bills": "Vendor bill",
     "noBills": "No bill linked yet.",

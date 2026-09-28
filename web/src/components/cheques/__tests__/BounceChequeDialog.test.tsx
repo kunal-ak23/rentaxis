@@ -53,6 +53,19 @@ describe("BounceChequeDialog", () => {
         expect(screen.queryByText("Leave empty to use the cheque's bank account.")).not.toBeInTheDocument();
     });
 
+    /** Break-it R2 money2 F1: a 2126 typo is refused before it can take this year's CBR number. */
+    it("refuses a bounce date after today before it is sent", async () => {
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <BounceChequeDialog cheque={CHEQUE} onClose={() => {}} onDone={() => {}} />
+            </NextIntlClientProvider>,
+        );
+        fireEvent.change(screen.getByTestId("bounce-date"), { target: { value: "2126-01-15" } });
+        expect(await screen.findByTestId("bounce-date-error")).toBeInTheDocument();
+        expect(screen.getByTestId("cheque-bounce-confirm")).toBeDisabled();
+        expect(api.bounce).not.toHaveBeenCalled();
+    });
+
     it("sends the date, the reason and the note — and no account", async () => {
         api.bounce.mockResolvedValueOnce(CHEQUE);
         render(

@@ -14,6 +14,10 @@ type Props = {
     canReopen: boolean;
     /** Called after a close or re-open, which moves the period lock. */
     onChanged?: () => void;
+    /** Break-it R2 money2 F4: the current period lock, so the re-open can say where it moves it. */
+    lockedThrough?: string | null;
+    /** The books start: a re-open never unlocks the period before it. */
+    booksStartDate?: string | null;
 };
 
 /** Amounts and dates inside translated sentences stay LTR (the VoucherForm convention). */
@@ -33,7 +37,7 @@ const chip: Record<FiscalYear["status"], string> = {
  * day and locks the year. Re-open reverses that entry and unlocks every period
  * after the day before the year.
  */
-export default function FiscalYearsCard({ canReopen, onChanged }: Props) {
+export default function FiscalYearsCard({ canReopen, onChanged, lockedThrough, booksStartDate }: Props) {
     const t = useTranslations("FiscalYears");
     const tCommon = useTranslations("Common");
     const locale = useLocale();
@@ -278,6 +282,19 @@ export default function FiscalYearsCard({ canReopen, onChanged }: Props) {
                         {t.rich("reopenWarning", { date: formatDate(dayBefore(reopening.periodStart)), ...bdi })}
                     </p>
                 )}
+                {/* Break-it R2 money2 F4: the lock the re-open leaves, stated before it runs —
+                    YearEndCloseService.reopen moves it to the day before the year (never before
+                    the books start), dropping any later manual lock. */}
+                {reopening && lockedThrough && (() => {
+                    const target = reopenLockTarget(dayBefore(reopening.periodStart), booksStartDate ? dayBefore(booksStartDate) : null);
+                    return (
+                        <p className="text-xs font-semibold text-warning" data-testid="fiscal-reopen-lock-move">
+                            {target < lockedThrough
+                                ? t.rich("reopenLockMove", { from: formatDate(lockedThrough), to: formatDate(target), ...bdi })
+                                : t.rich("reopenLockStays", { from: formatDate(lockedThrough), ...bdi })}
+                        </p>
+                    );
+                })()}
                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1" htmlFor="fiscal-reopen-reason">
                     {t("reason")}
                 </label>
@@ -288,4 +305,9 @@ export default function FiscalYearsCard({ canReopen, onChanged }: Props) {
             </ConfirmDialog>
         </div>
     );
+}
+
+/** Where a re-open moves the lock: the day before the year, never before the day before the books start. */
+function reopenLockTarget(dayBeforeYear: string, dayBeforeBooks: string | null): string {
+    return dayBeforeBooks && dayBeforeYear < dayBeforeBooks ? dayBeforeBooks : dayBeforeYear;
 }

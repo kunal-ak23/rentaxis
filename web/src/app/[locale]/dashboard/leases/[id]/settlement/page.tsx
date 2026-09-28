@@ -17,6 +17,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import AccountPicker from "@/components/finance/AccountPicker";
 import { assetSrc } from "@/lib/assetUrl";
+import { codedOf } from "@/components/finance/bankrec/serverText";
 import { clampIso, fmtIsoDate, isoDayAfter, maxIso, todayIso } from "@/components/leases/leaseMath";
 import {
     netRefundOf, round2, toSaveLines, totalOf, totalVatOf, withLineVat, type SettlementRow,
@@ -451,6 +452,9 @@ export default function SettlementPage() {
             const saved = await settlementApi.finalize(leaseId, {
                 settlementDate,
                 acknowledgeOutstanding: needsAcknowledgement ? acknowledged : false,
+                // Break-it R2 money2 F5: the net refund this page showed; a settlement
+                // changed since (another tab saved a deduction) is refused, not posted.
+                expectedNetRefund: statement?.netRefund,
             });
             setStoredRow(saved);
             setRows(rowsOf(saved));
@@ -461,6 +465,13 @@ export default function SettlementPage() {
             if (detail) setLease(detail);
             setClosure(detail?.status === "CLOSED" ? "CLOSED" : "OPEN");
         } catch (e) {
+            if (e instanceof ApiError && codedOf(e).code === "settlement.changed") {
+                // Reload the figures the server now has and say so; never retry.
+                setConfirmOpen(false);
+                await load();
+                setFinalizeError(t("changedReloaded"));
+                return;
+            }
             const message = e instanceof ApiError ? e.message : t("finalizeFailed");
             setFinalizeError(message);
             // The one refusal the screen can answer with a control rather than
@@ -975,7 +986,16 @@ export default function SettlementPage() {
                 confirmText={t("finalize")}
                 cancelText={tLedger("cancel")}
                 confirmTestId="settlement-finalize-confirm"
-            />
+            >
+                {/* Break-it R2 money2 F5: the figure being finalised, not only the date. */}
+                {shown && (
+                    <p className="text-xs font-semibold tabular-nums" data-testid="settlement-finalize-net">
+                        {netRefund >= 0
+                            ? t("confirmRefund", { amount: fmtAmount(netRefund) })
+                            : t("confirmBalanceDue", { amount: fmtAmount(-netRefund) })}
+                    </p>
+                )}
+            </ConfirmDialog>
 
             <AttachmentPreviewDialog attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} />
         </div>

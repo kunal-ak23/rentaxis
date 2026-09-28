@@ -46,3 +46,15 @@ export function isBeyondManualPostingWindow(iso: string | null | undefined): boo
     if (year.length > 4) return true;
     return iso > maxManualPostingDateIso();
 }
+
+/**
+ * Break-it round 2 (money2) F1/F2/F3: true when an ISO date is after the business
+ * today — a deposit, clearing, bounce, write-off or period lock the server refuses
+ * (`ManualPostingDates.requireNotAfterToday`). A blank date is not "after" anything.
+ */
+export function isAfterBusinessToday(iso: string | null | undefined): boolean {
+    if (!iso) return false;
+    // A date input accepts five-digit years; "20260-01-01" sorts below "2027-…" as text.
+    if (iso.split("-")[0].length > 4) return true;
+    return iso > businessTodayIso();
+}

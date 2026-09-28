@@ -54,6 +54,10 @@ export default function TicketChargesCard({ ticketId }: { ticketId: string }) {
     };
 
     if (!data) return null;
+    // Break-it R2 money2 F6: a bill is recharged at most once over; the pre-fill and
+    // the cap are what is left, not the whole bill again.
+    const remaining = Math.max(0, data.rechargeable ?? data.billsNet);
+    const overRemaining = amount > remaining + 0.005;
     return (
         <div className="bg-surface rounded-xl border border-border p-5" data-testid="ticket-charges">
             <h3 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -103,9 +107,14 @@ export default function TicketChargesCard({ ticketId }: { ticketId: string }) {
                     ))}
                 </ul>
             )}
+            {data.bills.length > 0 && (
+                <p className="mt-2 text-[11px] text-muted" data-testid="ticket-recharge-remaining">
+                    {t("remaining", { amount: fmtAmount(remaining) })}
+                </p>
+            )}
             {data.leaseId && (
-                <button type="button" className={`${btn} mt-3`} data-testid="ticket-recharge-open"
-                        onClick={() => { setAmount(data.billsNet); setVat("auto"); setOpen(true); }}>{t("recharge")}</button>
+                <button type="button" className={`${btn} mt-3`} data-testid="ticket-recharge-open" disabled={remaining <= 0}
+                        onClick={() => { setAmount(remaining); setVat("auto"); setOpen(true); }}>{t("recharge")}</button>
             )}
             {error && <p className="mt-2 text-xs text-error" role="alert">{error}</p>}
             <ConfirmDialog
@@ -117,12 +126,17 @@ export default function TicketChargesCard({ ticketId }: { ticketId: string }) {
                 confirmText={t("recharge")}
                 cancelText={t("cancel")}
                 confirmTestId="ticket-recharge-confirm"
-                confirmDisabled={!(amount > 0)}
+                confirmDisabled={!(amount > 0) || overRemaining}
                 onConfirm={() => run(() => ticketChargesApi.recharge(ticketId, { amount, vatable: vat === "auto" ? null : vat === "yes" }))}
             >
                 <div className="grid gap-2">
                     <NumberInput money className={field} value={amount} aria-label={t("amount")}
-                           onChange={setAmount} data-testid="ticket-recharge-amount" />
+                           onChange={setAmount} data-testid="ticket-recharge-amount" aria-invalid={overRemaining} />
+                    {overRemaining && (
+                        <p role="alert" className="text-[11px] text-error" data-testid="ticket-recharge-over">
+                            {t("overRemaining", { amount: fmtAmount(remaining) })}
+                        </p>
+                    )}
                     <select className={field} value={vat} onChange={e => setVat(e.target.value as "auto" | "yes" | "no")} aria-label={t("vat")}>
                         <option value="auto">{t("vatAuto")}</option>
                         <option value="yes">{t("vatYes")}</option>

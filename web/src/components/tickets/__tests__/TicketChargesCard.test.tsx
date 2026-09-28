@@ -40,6 +40,27 @@ describe("TicketChargesCard", () => {
         await waitFor(() => expect(api.recharge).toHaveBeenCalledWith("t1", { amount: 1200, vatable: null }));
     });
 
+    /** Break-it R2 money2 F6: the pre-fill is what is left, and more than that is refused before it is sent. */
+    it("pre-fills and caps the recharge at what is left of the bill", async () => {
+        api.get.mockResolvedValue({ ...base, bills: [bill], candidates: [], billsNet: 1200, rechargeable: 300,
+            recharges: [{ id: "r1", status: "PROPOSED", amount: 900, vatable: false }] });
+        renderIn("en");
+        expect((await screen.findByTestId("ticket-recharge-remaining")).textContent).toContain("300.00");
+        fireEvent.click(screen.getByTestId("ticket-recharge-open"));
+        const input = screen.getByTestId("ticket-recharge-amount") as HTMLInputElement;
+        expect(input.value).toBe("300");
+        fireEvent.change(input, { target: { value: "400" } });
+        expect(await screen.findByTestId("ticket-recharge-over")).toBeTruthy();
+        expect((screen.getByTestId("ticket-recharge-confirm") as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it("offers no recharge once the bill is fully recharged", async () => {
+        api.get.mockResolvedValue({ ...base, bills: [bill], candidates: [], billsNet: 1200, rechargeable: 0,
+            recharges: [{ id: "r1", status: "PROPOSED", amount: 1200, vatable: false }] });
+        renderIn("ar");
+        expect(((await screen.findByTestId("ticket-recharge-open")) as HTMLButtonElement).disabled).toBe(true);
+    });
+
     it("renders in Arabic", async () => {
         api.get.mockResolvedValue(base);
         renderIn("ar");

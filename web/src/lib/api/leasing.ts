@@ -1082,6 +1082,12 @@ export type SaveSettlementInput = {
 export type FinalizeSettlementInput = {
   settlementDate: string;
   acknowledgeOutstanding?: boolean;
+  /**
+   * Break-it R2 money2 F5: the statement's `netRefund` the page showed. A settlement
+   * changed since (another tab saved a deduction) is refused with 409
+   * `settlement.changed` instead of posting figures nobody reviewed.
+   */
+  expectedNetRefund?: number;
 };
 
 /** PostLeaseResponse — the lease and its cheques re-read after a post, an amend, or an extend. */
@@ -1567,7 +1573,12 @@ export const chequeApi = {
 export const penaltyApi = {
   list: (q: PenaltyListQuery) => get<Page<PenaltyAssessment>>(`/penalties${qs(q)}`),
   propose: (body: ProposePenaltyInput) => send<PenaltyAssessment>("POST", "/penalties", body),
-  approve: (id: string, date?: string) => send<PenaltyAssessment>("POST", `/penalties/${id}/approve`, { date }),
+  /**
+   * Break-it R2 money2 F5: `expectedAmount` is the amount the queue showed; a proposal
+   * reduced since is refused with 409 `penalty.changed` rather than charged.
+   */
+  approve: (id: string, date?: string, expectedAmount?: number) =>
+    send<PenaltyAssessment>("POST", `/penalties/${id}/approve`, { date, expectedAmount }),
   waive: (id: string, note?: string) => send<PenaltyAssessment>("POST", `/penalties/${id}/waive`, { note }),
   /** F14-28: PROPOSED only; 0 < amount < the current amount; note required. Status stays PROPOSED. */
   reduce: (id: string, amount: number, note: string) => send<PenaltyAssessment>("POST", `/penalties/${id}/reduce`, { amount, note }),

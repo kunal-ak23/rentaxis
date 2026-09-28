@@ -9,6 +9,7 @@ import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
 import { ledgerApi, type FiscalSettings } from "@/lib/api/ledger";
 import { formatDate } from "@/lib/format";
+import { businessTodayIso, isAfterBusinessToday } from "@/lib/businessDate";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { BankLocksCard } from "@/components/finance/bankrec/BankLocksCard";
 import FiscalYearsCard from "@/components/finance/FiscalYearsCard";
@@ -37,6 +38,8 @@ export default function FiscalSettingsPage() {
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [locking, setLocking] = useState(false);
     const [lockError, setLockError] = useState<string | null>(null);
+    /** Break-it R2 money2 F3: the user has confirmed a lock more than 12 months past the current one. */
+    const [bigJumpChecked, setBigJumpChecked] = useState(false);
 
     // Month names come from the browser's own calendar data rather than twelve
     // more catalog keys, so AR gets Arabic month names for free.
@@ -89,6 +92,14 @@ export default function FiscalSettingsPage() {
             setSaving(false);
         }
     };
+
+    // Break-it R2 money2 F3: a period that has not happened cannot be locked (2062
+    // typed for 2026 used to lock the organisation out), and a move of more than
+    // twelve months past the current lock is asked about before it is sent.
+    const lockAfterToday = isAfterBusinessToday(lockThrough);
+    const lockBase = settings?.booksLockedThrough ?? null;
+    const bigJumpMonths = lockThrough && lockBase ? monthsBetween(lockBase, lockThrough) : 0;
+    const bigJump = bigJumpMonths > 12;
 
     const lock = async () => {
         setLocking(true);
@@ -207,15 +218,20 @@ export default function FiscalSettingsPage() {
                                         type="date"
                                         className={field}
                                         value={lockThrough}
+                                        max={businessTodayIso()}
+                                        aria-invalid={lockAfterToday}
+                                        data-testid="fiscal-lock-through"
                                         onChange={ev => setLockThrough(ev.target.value)}
                                     />
                                     <button
                                         type="button"
                                         onClick={() => {
                                             setLockError(null);
+                                            setBigJumpChecked(false);
                                             setConfirmOpen(true);
                                         }}
-                                        disabled={!lockThrough}
+                                        disabled={!lockThrough || lockAfterToday}
+                                        data-testid="fiscal-lock-open"
                                         className="flex items-center gap-1.5 shrink-0 px-4 py-2 rounded-lg bg-surface text-foreground border border-border text-xs font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:bg-input transition-all focus:ring-2 focus:ring-primary/20 focus:outline-none"
                                     >
                                         <Lock size={13} />
@@ -225,6 +241,14 @@ export default function FiscalSettingsPage() {
                             </div>
                         </div>
 
+                        <p className="mt-2 text-[11px] text-muted" data-testid="fiscal-lock-rule">
+                            {t("lockRule", { today: formatDate(businessTodayIso()) })}
+                        </p>
+                        {lockAfterToday && (
+                            <p role="alert" className="mt-1 text-xs font-semibold text-error" data-testid="fiscal-lock-after-today">
+                                {t("lockAfterToday")}
+                            </p>
+                        )}
                         {lockError && !confirmOpen && (
                             <p role="alert" className="mt-3 text-xs font-semibold text-error">{lockError}</p>
                         )}
@@ -236,6 +260,8 @@ export default function FiscalSettingsPage() {
             {!loading && (
                 <FiscalYearsCard
                     canReopen={userRole === "TENANT_ADMIN" || userRole === "SUPER_ADMIN"}
+                    lockedThrough={settings?.booksLockedThrough ?? null}
+                    booksStartDate={settings?.booksStartDate ?? null}
                     onChanged={load}
                 />
             )}
@@ -252,13 +278,32 @@ export default function FiscalSettingsPage() {
                 description={t("lockWarning")}
                 confirmText={t("lockThrough")}
                 cancelText={t("cancel")}
+                confirmDisabled={lockAfterToday || (bigJump && !bigJumpChecked)}
+                confirmTestId="fiscal-lock-confirm"
             >
                 <div>
                     <div className={label}>{t("lockThrough")}</div>
-                    <div className="text-sm font-semibold text-foreground tabular-nums">{lockThrough || "—"}</div>
+                    <div className="text-sm font-semibold text-foreground tabular-nums">{lockThrough ? formatDate(lockThrough) : "—"}</div>
                 </div>
+                {bigJump && lockBase && (
+                    <label className="flex items-start gap-2 text-xs text-warning" data-testid="fiscal-lock-big-jump">
+                        <input type="checkbox" className="mt-0.5" checked={bigJumpChecked}
+                            data-testid="fiscal-lock-big-jump-ack"
+                            onChange={e => setBigJumpChecked(e.target.checked)} />
+                        <span>{t("lockBigJump", { months: bigJumpMonths, from: formatDate(lockBase), to: formatDate(lockThrough) })}</span>
+                    </label>
+                )}
                 {lockError && <p role="alert" className="text-xs font-semibold text-error">{lockError}</p>}
             </ConfirmDialog>
         </div>
     );
+}
+
+/** Whole months from one ISO date to a later one (break-it R2 money2 F3's "more than 12 months"). */
+function monthsBetween(fromIso: string, toIso: string): number {
+    const [fy, fm, fd] = fromIso.split("-").map(Number);
+    const [ty, tm, td] = toIso.split("-").map(Number);
+    let months = (ty - fy) * 12 + (tm - fm);
+    if (td < fd) months -= 1;
+    return months;
 }

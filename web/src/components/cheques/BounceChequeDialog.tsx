@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import LeaseDialog from "@/components/leases/LeaseDialog";
 import { fmtAmount } from "@/lib/api/ledger";
-import { todayIso } from "@/components/leases/leaseMath";
+import { businessTodayIso, isAfterBusinessToday } from "@/lib/businessDate";
 import { ApiError, chequeApi, type Cheque, type ChequeFailureReason } from "@/lib/api/leasing";
 import { chequeTitle } from "./chequeLabel";
 
@@ -39,7 +39,7 @@ export default function BounceChequeDialog({ cheque, onClose, onDone }: Props) {
     const t = useTranslations("Cheques");
     const tl = useTranslations("Leasing");
 
-    const [date, setDate] = useState(todayIso());
+    const [date, setDate] = useState(businessTodayIso());
     const [failureReason, setFailureReason] = useState<ChequeFailureReason>("BOUNCE");
     const [notes, setNotes] = useState("");
     const [busy, setBusy] = useState(false);
@@ -47,7 +47,7 @@ export default function BounceChequeDialog({ cheque, onClose, onDone }: Props) {
 
     useEffect(() => {
         if (!cheque) return;
-        setDate(todayIso());
+        setDate(businessTodayIso());
         setFailureReason("BOUNCE");
         setNotes("");
         setError(null);
@@ -73,6 +73,8 @@ export default function BounceChequeDialog({ cheque, onClose, onDone }: Props) {
     };
 
     const title = chequeTitle(t("bounce"), cheque, fmtAmount(cheque.amount));
+    // Break-it R2 money2 F1: a return the bank has not made yet (2126 for 2026) is refused.
+    const dateAfterToday = isAfterBusinessToday(date);
 
     return (
         <LeaseDialog
@@ -84,6 +86,7 @@ export default function BounceChequeDialog({ cheque, onClose, onDone }: Props) {
             cancelText={tl("cancel")}
             busy={busy}
             destructive
+            confirmDisabled={!date || dateAfterToday}
             confirmTestId="cheque-bounce-confirm"
         >
             <div className="space-y-3">
@@ -95,8 +98,15 @@ export default function BounceChequeDialog({ cheque, onClose, onDone }: Props) {
                         type="date"
                         className={field}
                         value={date}
+                        max={businessTodayIso()}
+                        aria-invalid={dateAfterToday}
                         onChange={e => setDate(e.target.value)}
                     />
+                    {dateAfterToday && (
+                        <p role="alert" className="mt-1 text-[11px] text-error" data-testid="bounce-date-error">
+                            {t("dateAfterToday")}
+                        </p>
+                    )}
                 </div>
                 <div>
                     <label className={label} htmlFor="bounce-failure-reason">{t("failureReason")}</label>
