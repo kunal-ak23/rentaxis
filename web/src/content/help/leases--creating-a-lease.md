@@ -1,6 +1,6 @@
 ---
-title: Creating a Lease
-description: Step-by-step guide to creating and activating a lease
+title: Creating a Tenancy Contract
+description: Step-by-step guide to creating and activating a tenancy contract
 category: leases
 roles: [TENANT_ADMIN, PROPERTY_MANAGER]
 order: 1

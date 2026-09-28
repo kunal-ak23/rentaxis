@@ -1,6 +1,6 @@
 ---
-title: Lease Lifecycle
-description: Understanding lease statuses and transitions
+title: Tenancy Contract Lifecycle
+description: Understanding contract statuses and transitions
 category: leases
 roles: [TENANT_ADMIN, PROPERTY_MANAGER]
 order: 2

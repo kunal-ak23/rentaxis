@@ -440,7 +440,7 @@ function LeasesList() {
     const handleDeleteDraft = (id: string) => {
         setConfirmConfig({
             title: t("deleteDraftTitle"),
-            description: "This will permanently remove the draft lease, its payment schedule, attachments, and history. This action cannot be undone.",
+            description: t("deleteDraftDescription"),
             confirmText: t("delete"),
             isDestructive: true,
             onConfirm: async () => {

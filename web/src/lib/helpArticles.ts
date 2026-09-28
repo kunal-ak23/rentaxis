@@ -133,7 +133,7 @@ If your property has multiple buildings:
 
 1. Go to **Leasing › Tenants**
 2. Click **Add Tenant**
-3. Enter the renter's name, email, phone, and Emirates ID
+3. Enter the tenant's name, email, phone, and Emirates ID
 
 ### Step 5: Create a Tenancy Contract
 
@@ -243,8 +243,8 @@ Buildings help organize units within larger properties that have multiple struct
 // ─── Leases ─────────────────────────────────────────────────────────────────
 
 registerArticle('leases--creating-a-lease', `---
-title: Creating a Lease
-description: Step-by-step guide to creating and activating a lease
+title: Creating a Tenancy Contract
+description: Step-by-step guide to creating and activating a tenancy contract
 category: leases
 roles: [TENANT_ADMIN, PROPERTY_MANAGER]
 order: 1
@@ -286,8 +286,8 @@ You can review and edit the payment schedule before posting the contract.
 `);
 
 registerArticle('leases--lease-lifecycle', `---
-title: Lease Lifecycle
-description: Understanding lease statuses and transitions
+title: Tenancy Contract Lifecycle
+description: Understanding contract statuses and transitions
 category: leases
 roles: [TENANT_ADMIN, PROPERTY_MANAGER]
 order: 2
@@ -429,7 +429,7 @@ Posted entries are immutable. A mistake is corrected by reversing the entry from
 // ─── Renter Portal ──────────────────────────────────────────────────────────
 
 registerArticle('renter--renter-portal-overview', `---
-title: Renter Portal Overview
+title: Tenant Portal Overview
 description: Your self-service portal for managing your tenancy
 category: renter
 roles: [RENTER]

@@ -69,7 +69,7 @@ describe("property detail — Add Building floors (F3)", () => {
 describe("property detail — Add Unit number taken (F1)", () => {
     it("says the unit already exists, in Arabic too", async () => {
         render(<NextIntlClientProvider locale="ar" messages={ar}><PropertyDetailPage /></NextIntlClientProvider>);
-        fireEvent.click(await screen.findByRole("button", { name: /^units$/i }));
+        fireEvent.click(await screen.findByRole("button", { name: ar.MasterData.tabUnits }));
         fireEvent.click(await screen.findByText("Add Unit"));
         fireEvent.change(await screen.findByPlaceholderText(ar.MasterData.unitNumberPlaceholder), { target: { value: "101" } });
         fireEvent.click(screen.getByText("Save Unit"));

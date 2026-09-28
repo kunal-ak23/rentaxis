@@ -1,7 +1,11 @@
 // src/lib/__tests__/terminology.test.ts
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import ar from "../../../messages/ar.json";
 import en from "../../../messages/en.json";
+import { getAllArticles } from "../helpLoader";
+import "../helpArticles";
 
 type Tree = { [k: string]: string | Tree };
 const flatten = (tree: Tree, prefix = ""): [string, string][] =>
@@ -86,6 +90,51 @@ describe("PACT terminology", () => {
         const copy = (v: string) => v.replace(/\{\s*\w+/g, "{");
         const stale = [...EN].filter(([k, v]) => !allow.test(k) && /\b(Renters?|renters?|Leases?|leases?)\b/.test(copy(v)));
         expect(stale.map(([k, v]) => `${k}: ${v}`)).toEqual([]);
+    });
+
+    /** Renter/Lease in copy a person reads; slugs, categories and tour ids are code. */
+    const STALE_WORD = /\b(Renters?|renters?|Leases?|leases?)\b/;
+
+    it("says Tenant / Contract in every help article's title, summary and body", () => {
+        const stale = getAllArticles().flatMap(a =>
+            ([["title", a.title], ["description", a.description], ["content", a.content]] as const)
+                .filter(([, text]) => STALE_WORD.test(text.replace(/\]\([^)]*\)/g, "]")))
+                .map(([field, text]) => `${a.slug}.${field}: ${text.match(STALE_WORD)?.[0]}`));
+        expect(stale).toEqual([]);
+    });
+
+    it("keeps the help articles' authoring copy on the same terms", () => {
+        const dir = join(__dirname, "../../content/help");
+        const stale = readdirSync(dir).filter(f => f.endsWith(".md")).flatMap(f =>
+            readFileSync(join(dir, f), "utf8").split("\n")
+                .filter(l => !/^(slug|category|relatedTour|roles):/.test(l))
+                .filter(l => STALE_WORD.test(l.replace(/\]\([^)]*\)/g, "]")))
+                .map(l => `${f}: ${l.trim()}`));
+        expect(stale).toEqual([]);
+    });
+
+    /**
+     * Hard-coded copy the message catalogue cannot see: JSX text between tags and
+     * label/title/placeholder/description string props (the property page's "Leases"
+     * tab was one of these, in English under /ar too).
+     */
+    it("has no hard-coded Renter / Lease copy in pages and components", () => {
+        const root = join(__dirname, "../..");
+        const files: string[] = [];
+        const walk = (d: string) => readdirSync(d).forEach(n => {
+            const p = join(d, n);
+            if (statSync(p).isDirectory()) { if (n !== "__tests__") walk(p); }
+            else if (p.endsWith(".tsx")) files.push(p);
+        });
+        walk(join(root, "app"));
+        walk(join(root, "components"));
+        const jsxText = />([^<>{}]*)<\//g;
+        const prop = /\b(?:label|title|placeholder|aria-label|description)\s*[:=]\s*["']([^"']*)["']/g;
+        const stale = files.flatMap(f => readFileSync(f, "utf8").split("\n").flatMap((line, i) =>
+            [...line.matchAll(jsxText), ...line.matchAll(prop)]
+                .filter(m => STALE_WORD.test(m[1]))
+                .map(m => `${f.slice(root.length + 1)}:${i + 1}: ${m[1].trim()}`)));
+        expect(stale).toEqual([]);
     });
 
     it("calls a listing interest an Enquiry", () => {

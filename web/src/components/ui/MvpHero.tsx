@@ -29,13 +29,13 @@ const features = [
     },
     {
         icon: FileText,
-        title: "Lease Lifecycle",
-        description: "Draft, activate, and terminate leases with automated bilingual contract generation.",
+        title: "Tenancy Contract Lifecycle",
+        description: "Draft, activate, and terminate tenancy contracts with automated bilingual contract generation.",
     },
     {
         icon: CreditCard,
         title: "Payment Tracking",
-        description: "Track cheques, online payments, and deposits with a complete payment schedule per lease.",
+        description: "Track cheques, online payments, and deposits with a complete payment schedule per contract.",
     },
     {
         icon: BarChart3,
@@ -44,8 +44,8 @@ const features = [
     },
     {
         icon: Users,
-        title: "Renter Portal",
-        description: "Tenants can view leases, accept contracts, and pay rent online through their own portal.",
+        title: "Tenant Portal",
+        description: "Tenants can view their contracts, accept renewals, and pay rent online through their own portal.",
     },
     {
         icon: Shield,
@@ -62,7 +62,7 @@ const steps = [
     },
     {
         step: "02",
-        title: "Draft & Sign Leases",
+        title: "Draft & Sign Contracts",
         description: "Create bilingual contracts, send to tenants for acceptance, and activate with one click.",
     },
     {
@@ -85,7 +85,7 @@ const pricingPlans = [
         price: "Free",
         period: "",
         description: "For individual landlords getting started.",
-        features: ["Up to 5 units", "Lease management", "Contract generation", "Basic reports", "Email support"],
+        features: ["Up to 5 units", "Contract management", "Contract generation", "Basic reports", "Email support"],
         cta: "Get Started",
         highlighted: false,
     },
@@ -98,7 +98,7 @@ const pricingPlans = [
             "Up to 100 units",
             "Everything in Starter",
             "Online rent collection",
-            "Renter portal",
+            "Tenant portal",
             "Financial reports",
             "Priority support",
         ],
@@ -151,7 +151,7 @@ export default function MvpHero() {
                             </h1>
                             <p className="mb-10 text-base text-gray-500 md:text-lg max-w-xl mx-auto leading-relaxed font-medium">
                                 The complete cloud platform for UAE landlords and property managers.
-                                Leases, payments, contracts, and financials &mdash; all in one place.
+                                Tenancy contracts, payments, cheques, and financials &mdash; all in one place.
                             </p>
 
                             <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
@@ -190,7 +190,7 @@ export default function MvpHero() {
                                         {/* Sidebar + content */}
                                         <div className="flex-1 flex gap-4 mt-2">
                                             <div className="hidden md:flex w-48 flex-col gap-2">
-                                                {["Dashboard", "Properties", "Leases", "Payments", "Finance"].map((item, i) => (
+                                                {["Dashboard", "Properties", "Contracts", "Payments", "Finance"].map((item, i) => (
                                                     <div key={item} className={`h-8 rounded-lg flex items-center px-3 text-[10px] font-bold tracking-wide ${i === 0 ? "bg-primary/10 text-primary" : "text-gray-400"}`}>
                                                         {item}
                                                     </div>
@@ -226,7 +226,7 @@ export default function MvpHero() {
                                         <Check size={14} strokeWidth={3} />
                                     </div>
                                     <div className="text-left">
-                                        <div className="text-[9px] text-gray-400 font-bold uppercase tracking-wider">Lease</div>
+                                        <div className="text-[9px] text-gray-400 font-bold uppercase tracking-wider">Contract</div>
                                         <div className="text-xs font-bold text-foreground">Activated</div>
                                     </div>
                                 </motion.div>
@@ -276,7 +276,7 @@ export default function MvpHero() {
                             Everything you need to manage<br className="hidden md:block" /> your properties
                         </h2>
                         <p className="mt-4 text-gray-500 font-medium max-w-lg mx-auto">
-                            From lease drafting to financial reporting, Miftah covers the full property management lifecycle.
+                            From contract drafting to financial reporting, Miftah covers the full property management lifecycle.
                         </p>
                     </AnimateIn>
 
@@ -344,7 +344,7 @@ export default function MvpHero() {
                                     Bilingual contracts,<br />generated instantly
                                 </h2>
                                 <p className="text-gray-500 font-medium leading-relaxed mb-6">
-                                    Every lease generates a professional Arabic/English PDF contract with all terms, payment schedules, and Ejari details. Ready for signing in seconds.
+                                    Every tenancy contract generates a professional Arabic/English PDF contract with all terms, payment schedules, and Ejari details. Ready for signing in seconds.
                                 </p>
                                 <Link
                                     href="/dashboard/properties"
@@ -538,7 +538,7 @@ export default function MvpHero() {
                                 <span className="text-sm font-black text-foreground tracking-tight">Miftah</span>
                             </div>
                             <p className="text-xs text-gray-400 font-medium leading-relaxed">
-                                Enterprise lease management platform built for the UAE market.
+                                Enterprise property management platform built for the UAE market.
                             </p>
                         </div>
                         <div>

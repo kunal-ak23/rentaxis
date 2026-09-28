@@ -43,7 +43,7 @@ If your property has multiple buildings:
 
 1. Go to **Leasing › Tenants**
 2. Click **Add Tenant**
-3. Enter the renter's name, email, phone, and Emirates ID
+3. Enter the tenant's name, email, phone, and Emirates ID
 
 ### Step 5: Create a Tenancy Contract
 
