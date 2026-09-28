@@ -111,7 +111,7 @@ async function openLive(role, sceneIndex, scene, host) {
   const context = await browser.newContext(contextOptions);
   await suppressAutomaticOnboarding(context);
   if (!validateOnly && sceneIndex === 0) {
-    const introTitle = String(scene.title || 'RentAxis tutorial').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+    const introTitle = String(scene.title || 'Miftah tutorial').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
     await context.addInitScript({
       content: `(() => {
         try {
@@ -122,7 +122,7 @@ async function openLive(role, sceneIndex, scene, host) {
           if (document.querySelector('[data-rentaxis-recording-intro]')) return;
           const root = document.createElement('div');
           root.dataset.rentaxisRecordingIntro = 'true';
-          root.innerHTML = '<div style="font-size:18px;letter-spacing:.18em;text-transform:uppercase;color:#f59e0b;margin-bottom:18px">RentAxis tutorial</div><div style="font-size:42px;line-height:1.1;font-weight:700;max-width:900px">${introTitle}</div>';
+          root.innerHTML = '<div style="font-size:18px;letter-spacing:.18em;text-transform:uppercase;color:#f59e0b;margin-bottom:18px">Miftah tutorial</div><div style="font-size:42px;line-height:1.1;font-weight:700;max-width:900px">${introTitle}</div>';
           Object.assign(root.style, {
             position: 'fixed', inset: '0', zIndex: '2147483647', display: 'flex',
             flexDirection: 'column', justifyContent: 'center', alignItems: 'center',

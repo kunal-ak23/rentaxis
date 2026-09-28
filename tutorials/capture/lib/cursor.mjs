@@ -103,6 +103,33 @@ export async function glideTo(locator) {
   await page.waitForTimeout(150);
 }
 
+/**
+ * Move the pointer off the control it just pressed, onto a neutral spot, so a
+ * held frame never looks as if it is about to press something else. Capture
+ * only: validate-only runs draw no pointer.
+ */
+export async function restPointer(page, x, y) {
+  if (validateOnly) return;
+  const from = pointerAt.get(page) || { x: 1500, y: 640 };
+  const distance = Math.hypot(x - from.x, y - from.y);
+  if (distance > 2) {
+    const steps = 20;
+    const duration = Math.min(600, 380 + distance / 8);
+    for (let i = 1; i <= steps; i += 1) {
+      const t = easeInOut(i / steps);
+      await page.mouse.move(from.x + (x - from.x) * t, from.y + (y - from.y) * t);
+      await page.waitForTimeout(duration / steps);
+    }
+  }
+  pointerAt.set(page, { x, y });
+}
+
+/** Rest the pointer on (not click) a locator the narration is pointing at. */
+export async function pointAt(locator) {
+  if (validateOnly) return;
+  await glideTo(locator);
+}
+
 /** Patch Locator actions once, capture mode only, so every scene's clicks are seen. */
 export let locatorPatched = false;
 export function patchLocatorForCapture(page) {

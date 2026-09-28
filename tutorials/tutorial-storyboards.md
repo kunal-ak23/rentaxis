@@ -17,36 +17,36 @@ integrated with UI audio muted. macOS `say` remains a draft-only fallback.
 Arabic-localization segments remain narrated in English unless an Arabic voice
 track is commissioned separately.
 
-## 01 — Sign in and navigate RentAxis
+## 01 — Sign in and navigate Miftah
 
 - Audience: all users; 2–3 minutes.
-- Capture: sign in, identify the role-specific sidebar, switch EN → AR → EN,
-  open My Profile, update the phone number, log out, and sign in again.
-- Narration: “Welcome to RentAxis. In this tutorial, you will sign in, identify
-  the navigation for your role, change the interface language, review your
-  profile, and sign out safely. Start at the RentAxis sign-in page. Enter the
-  email address and password supplied by your administrator, then select Sign
-  In. Never use another person’s account, and do not save a password on a shared
-  computer. After authentication, RentAxis opens the landing page allowed for
-  your role. The menu is permission-aware. A super administrator, tenant
-  administrator, property manager, renter, and security guard will not see the
-  same options. This is expected and helps keep each person inside their
-  authorized workflow. Take a moment to identify the current organization and
-  the main navigation. On a smaller screen, open the menu before selecting a
-  destination. Now use the language control and switch from English to Arabic.
-  Notice that labels change and the page direction moves from left-to-right to
-  right-to-left. Open one menu, confirm the Arabic layout, then switch back to
-  English so the remaining tutorials match the recording. Next, open the user
-  menu and choose My Profile. Review your name, email address, role, and phone
-  number. Update the phone number only if it is incorrect, save the change, and
-  wait for the confirmation message before leaving the page. Password controls
-  are also available here when your account supports password authentication.
-  Use a unique password and never share it in a ticket, note, or screen
-  recording. Finally, open the user menu and select Logout. Confirm that the
-  protected navigation disappears and the sign-in page returns. Sign in once
-  more to verify the account still works. You now know the common navigation
-  pattern used throughout RentAxis. At the end of every session on a shared
-  device, return to this menu and log out.”
+- Capture: sign in as the Company Admin, point out the role label, the
+  organisation and the rail, open Leasing, switch EN → AR → EN, open the account
+  menu and My Profile, log out.
+- Narration: “Welcome to Miftah. In this tutorial you will sign in, find your
+  way around the navigation, switch the interface to Arabic and back, review
+  your profile, and sign out safely. Start on the sign-in page. Enter the email
+  address and password your administrator gave you, then select Sign In. Never
+  use another person’s account, and do not save a password on a shared
+  computer. Miftah opens the home page for your role. Your role is shown under
+  your name at the top right; this account is a Company Admin. The organisation
+  you are working in, Oasis Crest Properties, is shown at the top of the side
+  panel. The rail on the left holds the main areas: Home, Leasing, Collection,
+  Accounting, Operations, Settings, and More. Each person sees only the areas
+  their role allows, so a Property Manager or a Tenant sees a shorter menu.
+  Select Leasing. The side panel now lists its pages: Tenancy Contracts,
+  Tenants, Properties and Units, and Enquiry, with pinned views underneath. Now
+  select AR in the header. The labels change to Arabic, and the whole layout
+  mirrors from left-to-right to right-to-left, with the rail moving to the
+  right-hand side. Select EN to return to English. Next, open the menu under
+  your name. It shows your email address, Update Profile, and Logout. Select
+  Update Profile. My Profile shows your name, email address, and role. You can
+  correct your full name or phone number and select Save Changes. Only an
+  administrator can change your email address. The Password card holds Change
+  Password. Use a unique password, and never share it in a ticket, a note, or a
+  screen recording. Finally, open the menu again and select Logout. The
+  protected pages close and the sign-in page returns. At the end of every
+  session on a shared device, log out the same way.”
 
 ## 02 — Dashboard, search, notifications, and help
 
