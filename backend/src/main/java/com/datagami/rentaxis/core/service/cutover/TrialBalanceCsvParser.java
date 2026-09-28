@@ -1,5 +1,7 @@
 package com.datagami.rentaxis.core.service.cutover;
 
+import com.datagami.rentaxis.core.service.ImportFailures;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -45,6 +47,8 @@ import java.util.regex.Pattern;
  * with both sides filled is netted down to one, because a journal line has only one.
  */
 public final class TrialBalanceCsvParser {
+
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(TrialBalanceCsvParser.class);
 
     private TrialBalanceCsvParser() {}
 
@@ -166,7 +170,8 @@ public final class TrialBalanceCsvParser {
                         lineNo));
             }
         } catch (IOException e) {
-            problems.add("could not read the file: " + e.getMessage());
+            // The reader's own text can carry server paths; the user gets a sentence and a reference.
+            problems.add(ImportFailures.unreadableFile(e, LOG, "trial-balance CSV"));
         }
         return new CsvParseResult(rows, problems);
     }
