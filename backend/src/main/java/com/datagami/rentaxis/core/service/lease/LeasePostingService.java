@@ -221,8 +221,22 @@ public class LeasePostingService {
      */
     @Transactional
     public PostLeaseResponse post(UUID leaseId) {
+        return post(leaseId, (Long) null);
+    }
+
+    /**
+     * Break-it round 2 F2: the post the Post dialog confirms, with the lease version
+     * the dialog loaded. A lease edited since (another tab moved the rent) is refused
+     * with 409 before anything is written: the dialog approved figures that are no
+     * longer the contract's. Null (an older client) is not checked.
+     */
+    @Transactional
+    public PostLeaseResponse post(UUID leaseId, Long expectedVersion) {
+        if (expectedVersion != null) {
+            LeaseService.requireVersion(lockLease(leaseId), expectedVersion);
+        }
         draftImportBatchProblem(leaseId).ifPresent(m -> { throw new BusinessRuleViolationException(m); });
-        return post(leaseId, null);
+        return post(leaseId, (UUID) null);
     }
 
     /**

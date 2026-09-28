@@ -55,8 +55,28 @@ describe("RentFreePeriodsCard", () => {
         fireEvent.click(screen.getByTestId("rent-free-save"));
         await waitFor(() => expect(api.setRentFreePeriods).toHaveBeenCalledWith("l1", [
             { fromDate: "2026-06-01", toDate: "2026-06-30", concessionOverride: 6000, note: null },
-        ]));
+        ], undefined));
         await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    });
+
+    it("break-it R2 F3: sends the lease version; on 409 lease.changed says so and asks for a reload", async () => {
+        const { ApiError } = await import("@/lib/api/facilities");
+        api.setRentFreePeriods.mockRejectedValue(new ApiError(409, "This contract changed since you opened it — review it again",
+            '{"error":true,"status":409,"code":"lease.changed","message":"This contract changed since you opened it — review it again"}'));
+        const onStale = vi.fn();
+        const onSaved = vi.fn();
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <RentFreePeriodsCard lease={lease({ version: 4 } as Partial<LeaseDetail>)} editable onSaved={onSaved} onStale={onStale} />
+            </NextIntlClientProvider>,
+        );
+        fireEvent.click(screen.getByTestId("rent-free-add"));
+        fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-06-30" } });
+        fireEvent.click(screen.getByTestId("rent-free-save"));
+        expect(await screen.findByText("This contract changed since you opened it — review it again.")).toBeInTheDocument();
+        expect(api.setRentFreePeriods.mock.calls[0][2]).toBe(4);
+        expect(onStale).toHaveBeenCalledTimes(1);
+        expect(onSaved).not.toHaveBeenCalled();
     });
 
     it("shows the periods read-only on a posted lease, and nothing when there are none", () => {
@@ -104,6 +124,6 @@ describe("RentFreePeriodsCard override is a money field", () => {
         fireEvent.click(screen.getByTestId("rent-free-save"));
         await waitFor(() => expect(api.setRentFreePeriods).toHaveBeenCalledWith("l1", [
             expect.objectContaining({ concessionOverride: 1000.5 }),
-        ]));
+        ], undefined));
     });
 });

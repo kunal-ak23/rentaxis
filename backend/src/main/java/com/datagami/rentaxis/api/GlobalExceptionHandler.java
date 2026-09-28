@@ -2,6 +2,7 @@ package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.exception.AccessDeniedException;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.api.exception.ContractChangedException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.api.exception.SlotConflictException;
 import com.datagami.rentaxis.core.service.BulkAttachValidationException;
@@ -45,6 +46,17 @@ public class GlobalExceptionHandler {
                 "error", true,
                 "message", ex.getMessage(),
                 "status", 404
+        ));
+    }
+
+    /** Break-it round 2 F2/F3: a stale lease version — reload and review, never retry. */
+    @ExceptionHandler(ContractChangedException.class)
+    public ResponseEntity<Map<String, Object>> handleContractChanged(ContractChangedException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "error", true,
+                "message", ex.getMessage(),
+                "status", 409,
+                "code", ContractChangedException.CODE
         ));
     }
 

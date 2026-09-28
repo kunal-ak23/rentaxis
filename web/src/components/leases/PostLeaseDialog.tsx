@@ -13,6 +13,7 @@ import {
 import { fmtAmount } from "@/lib/api/ledger";
 import { serverText } from "@/components/finance/bankrec/serverText";
 import { formatDate } from "@/lib/format";
+import { isLeaseChanged } from "@/lib/leases/leaseVersion";
 
 /**
  * The review step in front of the Post button.
@@ -32,20 +33,29 @@ type Props = {
     lease: LeaseDetail;
     onClose: () => void;
     onPosted: (res: PostLeaseResponse) => void;
+    /**
+     * Break-it R2 F2: the contract changed since this dialog loaded it (409
+     * lease.changed). The page reloads the lease; the new version re-prices the
+     * dialog, so the user reviews the new figures before posting them.
+     */
+    onStale?: () => void;
 };
 
-export default function PostLeaseDialog({ open, lease, onClose, onPosted }: Props) {
+export default function PostLeaseDialog({ open, lease, onClose, onPosted, onStale }: Props) {
     const t = useTranslations("Leasing");
     const tCommon = useTranslations("Common");
     const [dry, setDry] = useState<PostLeaseDryRunResponse | null>(null);
     const [loading, setLoading] = useState(false);
     const [posting, setPosting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // Break-it R2 F2: "this contract changed" outlives the re-pricing it triggers.
+    const [stale, setStale] = useState<string | null>(null);
 
     useEffect(() => {
         if (!open) {
             setDry(null);
             setError(null);
+            setStale(null);
             return;
         }
         let cancelled = false;
@@ -65,15 +75,23 @@ export default function PostLeaseDialog({ open, lease, onClose, onPosted }: Prop
         return () => {
             cancelled = true;
         };
-    }, [open, lease.id, t]);
+        // lease.version: a reload after a 409 lease.changed prices the contract again.
+    }, [open, lease.id, lease.version, t]);
 
     const handlePost = async () => {
         setPosting(true);
         setError(null);
+        setStale(null);
         try {
-            const res = await leaseApi.post(lease.id);
+            // Break-it R2 F2: the version these figures were priced on; the server refuses a newer contract.
+            const res = await leaseApi.post(lease.id, lease.version);
             onPosted(res);
         } catch (e) {
+            if (isLeaseChanged(e)) {
+                setStale(serverText(tCommon, e) || (e as ApiError).message);
+                onStale?.();
+                return;
+            }
             // F15-07: a coded refusal (e.g. a fee charged on both leases) in the user's language.
             setError(e instanceof ApiError ? serverText(tCommon, e) || e.message : t("postFailed"));
         } finally {
@@ -162,9 +180,9 @@ export default function PostLeaseDialog({ open, lease, onClose, onPosted }: Prop
                     </>
                 )}
 
-                {error && (
-                    <p className="text-error" data-testid="post-error">
-                        {error}
+                {(stale || error) && (
+                    <p className="text-error" data-testid="post-error" role="alert">
+                        {stale ?? error}
                     </p>
                 )}
             </div>

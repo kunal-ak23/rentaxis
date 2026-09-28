@@ -33,7 +33,7 @@ vi.mock("@/components/finance/AccountPicker", () => ({ default: () => <div data-
 vi.mock("@/components/leases/LeaseInteractionsPanel", () => ({ default: () => null }));
 
 const DRAFT: LeaseDetail = {
-    id: "lease-1", unitId: "u1", renterId: "r1", unitIdentifier: "A-101", renterName: "Prabhjot Singh",
+    id: "lease-1", version: 6, unitId: "u1", renterId: "r1", unitIdentifier: "A-101", renterName: "Prabhjot Singh",
     startDate: "2026-01-01", endDate: "2026-12-31", status: "DRAFT",
     rentAmount: null, depositAmount: null, ejariNumber: null, paymentTerms: 4,
     installmentDistribution: "LAST_LARGER", paymentMethod: "CHEQUE", depositPaymentMethod: "CHEQUE",
@@ -168,7 +168,8 @@ describe("Post gate on a draft contract", () => {
         const confirm = screen.getByTestId("post-lease-confirm");
         expect(confirm).toBeEnabled();
         fireEvent.click(confirm);
-        await waitFor(() => expect(api.post).toHaveBeenCalledWith("lease-1"));
+        // Break-it R2 F2: with the version the dialog priced.
+        await waitFor(() => expect(api.post).toHaveBeenCalledWith("lease-1", 6));
         await waitFor(() => expect(screen.getByTestId("lease-banner")).toHaveTextContent("Posted as TCO-26/15"));
     });
 

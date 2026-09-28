@@ -2610,7 +2610,8 @@
         "assignmentPending": "This lease has a draft assignment to another renter; post or delete it first.",
         "successorRenterMismatch": "This contract continues a lease that now belongs to {renter}; the new contract must be in that renter's name.",
         "assignmentFuture": "An assignment cannot take effect after today; post it on or after {date}.",
-        "transferFeeChargedTwice": "{charge} was charged on the old lease for its whole term and is carried in the balance; remove it from the new lease."
+        "transferFeeChargedTwice": "{charge} was charged on the old lease for its whole term and is carried in the balance; remove it from the new lease.",
+        "changed": "This contract changed since you opened it — review it again."
       }
     },
     "paginationShowing": "Showing {start}-{end} of {total}",

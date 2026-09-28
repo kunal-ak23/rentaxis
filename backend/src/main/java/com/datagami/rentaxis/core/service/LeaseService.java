@@ -722,6 +722,10 @@ public class LeaseService {
                 buildLeasePayload(savedLease),
                 "LEASE_CREATED:" + savedLease.getId()));
 
+        // Break-it R2 F2: the DTO's version is what the wizard posts with, so it must
+        // be the row's as committed — flushed, not the in-memory one a pending update
+        // is about to bump.
+        leaseRepository.flush();
         return mapToDTO(savedLease);
     }
 
@@ -780,6 +784,36 @@ public class LeaseService {
         }
     }
 
+    /**
+     * Break-it round 2 F2/F3: contract money carries the lease version the user saw.
+     * {@code expected} null is an older client (mobile) and is accepted; any other
+     * value must be the row's current version, else {@link
+     * com.datagami.rentaxis.api.exception.ContractChangedException} (409).
+     */
+    public static void requireVersion(Lease lease, Long expected) {
+        if (expected == null) return;
+        if (!expected.equals(lease.getVersion())) {
+            throw new com.datagami.rentaxis.api.exception.ContractChangedException();
+        }
+    }
+
+    /**
+     * An {@code If-Match} value as a lease version: {@code "7"}, {@code 7} or
+     * {@code W/"7"}; null or {@code *} means "not checked".
+     */
+    public static Long versionFromIfMatch(String ifMatch) {
+        if (ifMatch == null) return null;
+        String v = ifMatch.trim();
+        if (v.isEmpty() || v.equals("*")) return null;
+        if (v.startsWith("W/")) v = v.substring(2);
+        if (v.length() >= 2 && v.startsWith("\"") && v.endsWith("\"")) v = v.substring(1, v.length() - 1);
+        try {
+            return Long.valueOf(v.trim());
+        } catch (NumberFormatException e) {
+            throw new BusinessRuleViolationException("If-Match must be the lease version the screen loaded.");
+        }
+    }
+
     private static String unitLabel(Lease lease) {
         return lease.getUnit() != null && lease.getUnit().getUnitNumber() != null
                 ? lease.getUnit().getUnitNumber() : String.valueOf(lease.getId());
@@ -792,6 +826,10 @@ public class LeaseService {
         if (lease.getStatus() != LeaseStatus.DRAFT) {
             throw new BusinessRuleViolationException("Only DRAFT leases can be edited");
         }
+        // Break-it R2 F3: the form is applied whole, so a stale one would silently
+        // revert another tab's rent. A change that commits after this check is caught
+        // by the row's @Version when this edit flushes.
+        requireVersion(lease, dto.getVersion());
 
         // F14-58: an edit is judged like the draft it replaces — the renewal must
         // start after its predecessor, and the unit must be free for the (possibly
@@ -840,6 +878,8 @@ public class LeaseService {
 
         recordEvent(savedLease, LeaseStatus.DRAFT, LeaseStatus.DRAFT, "Lease updated");
 
+        // The version the editor saves with next time: the row's once flushed.
+        leaseRepository.flush();
         return mapToDTO(savedLease);
     }
 
@@ -2213,6 +2253,7 @@ public class LeaseService {
     private LeaseDTO mapToDTO(Lease lease, MapContext ctx) {
         LeaseDTO dto = new LeaseDTO();
         dto.setId(lease.getId());
+        dto.setVersion(lease.getVersion());
         dto.setUnitId(lease.getUnit().getId());
         dto.setRenterId(lease.getRenter().getId());
         dto.setUnitIdentifier(lease.getUnit().getUnitNumber());

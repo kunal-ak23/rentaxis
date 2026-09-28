@@ -141,7 +141,10 @@ public class LeaseController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
-    public ResponseEntity<LeaseDTO> updateDraftLease(@PathVariable UUID id, @Valid @RequestBody CreateLeaseDTO dto) {
+    public ResponseEntity<LeaseDTO> updateDraftLease(@PathVariable UUID id, @Valid @RequestBody CreateLeaseDTO dto,
+                                                     @RequestHeader(value = "If-Match", required = false) String ifMatch) {
+        // Break-it R2 F3: the version the editor loaded, in the body or If-Match.
+        if (dto.getVersion() == null) dto.setVersion(LeaseService.versionFromIfMatch(ifMatch));
         return ResponseEntity.ok(leaseService.updateDraftLease(id, dto));
     }
 
@@ -173,8 +176,9 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<LeaseDTO> replaceRentFreePeriods(
             @PathVariable UUID id,
-            @RequestBody List<com.datagami.rentaxis.api.dto.lease.@Valid RentFreePeriodDTO> periods) {
-        return ResponseEntity.ok(rentFreeService.replace(id, periods));
+            @RequestBody List<com.datagami.rentaxis.api.dto.lease.@Valid RentFreePeriodDTO> periods,
+            @RequestHeader(value = "If-Match", required = false) String ifMatch) {
+        return ResponseEntity.ok(rentFreeService.replace(id, periods, LeaseService.versionFromIfMatch(ifMatch)));
     }
 
     @DeleteMapping("/{id}")
@@ -185,6 +189,10 @@ public class LeaseController {
     }
 
     // --- Posting -----------------------------------------------------------
+
+    /** Break-it R2 F2: the optional body of a post — the lease version the dialog loaded. */
+    public record PostLeaseRequest(Long version) {
+    }
     //
     // PUT /{id}/activate is gone. A lease used to become ACTIVE by a status change
     // with no journal behind it, so "active" and "on the books" were two separate
@@ -204,10 +212,14 @@ public class LeaseController {
     @PostMapping("/{id}/post")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
     public ResponseEntity<Object> postLease(@PathVariable UUID id,
-                                            @RequestParam(name = "dryRun", defaultValue = "false") boolean dryRun) {
+                                            @RequestParam(name = "dryRun", defaultValue = "false") boolean dryRun,
+                                            @RequestBody(required = false) PostLeaseRequest body,
+                                            @RequestHeader(value = "If-Match", required = false) String ifMatch) {
+        // Break-it R2 F2: the version the Post dialog loaded; absent = an older client, not checked.
+        Long expected = body != null && body.version() != null ? body.version() : LeaseService.versionFromIfMatch(ifMatch);
         return ResponseEntity.ok(dryRun
                 ? leasePostingService.dryRun(id)
-                : leasePostingService.post(id));
+                : leasePostingService.post(id, expected));
     }
 
     /**
@@ -253,8 +265,9 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<List<ChequeDTO>> generateCheques(
             @PathVariable UUID id,
-            @RequestBody(required = false) GenerateChequesRequest request) {
-        return ResponseEntity.ok(chequeGenerationService.generate(id, request));
+            @RequestBody(required = false) GenerateChequesRequest request,
+            @RequestHeader(value = "If-Match", required = false) String ifMatch) {
+        return ResponseEntity.ok(chequeGenerationService.generate(id, request, LeaseService.versionFromIfMatch(ifMatch)));
     }
 
     /** Number the draft PDC rows sequentially from the renter's first cheque. */
@@ -271,8 +284,9 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<List<ChequeDTO>> saveChequeRows(
             @PathVariable UUID id,
-            @RequestBody List<@Valid ChequeRowInput> rows) {
-        return ResponseEntity.ok(chequeGenerationService.saveRows(id, rows));
+            @RequestBody List<@Valid ChequeRowInput> rows,
+            @RequestHeader(value = "If-Match", required = false) String ifMatch) {
+        return ResponseEntity.ok(chequeGenerationService.saveRows(id, rows, LeaseService.versionFromIfMatch(ifMatch)));
     }
 
     // --- Termination (spec §9.1) -------------------------------------------

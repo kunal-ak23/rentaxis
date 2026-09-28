@@ -102,3 +102,50 @@ describe("draft editor: header rent-VAT flag drives RENT lines (#54)", () => {
         expect(await savedLines()).toEqual({ header: true, lines: [true, false] });
     });
 });
+
+/**
+ * Break-it round 2 (contracts2) F3: two tabs on one draft. The editor sends the
+ * version it loaded; when the other tab saved first the server answers 409
+ * lease.changed — the editor says so and asks the page to reload the draft
+ * rather than leaving the stale form to be saved over the other tab's rent.
+ */
+describe("draft editor: the version it loaded (break-it R2 F3)", () => {
+    it("sends the lease version with the form", async () => {
+        updateDraft.mockResolvedValue({});
+        const lease = {
+            id: "lease-1", version: 3, unitId: "u1", renterId: "r1", propertyId: "p1", status: "DRAFT",
+            startDate: "2026-10-01", endDate: "2027-09-30", rentVatApplicable: false, lines: [line({})],
+        } as unknown as LeaseDetail;
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <LeaseMetadataEditor lease={lease} chargeTypes={CHARGE_TYPES} />
+            </NextIntlClientProvider>,
+        );
+        fireEvent.click(screen.getByText("Edit draft"));
+        fireEvent.click(screen.getByTestId("lease-draft-save"));
+        await waitFor(() => expect(updateDraft).toHaveBeenCalled());
+        expect(updateDraft.mock.calls[0][1].version).toBe(3);
+    });
+
+    it("on 409 lease.changed shows the message and asks the page to reload", async () => {
+        const { ApiError } = await import("@/lib/api/facilities");
+        updateDraft.mockRejectedValue(new ApiError(409, "This contract changed since you opened it — review it again",
+            '{"error":true,"status":409,"code":"lease.changed","message":"This contract changed since you opened it — review it again"}'));
+        const onStale = vi.fn();
+        const onSaved = vi.fn();
+        const lease = {
+            id: "lease-1", version: 3, unitId: "u1", renterId: "r1", propertyId: "p1", status: "DRAFT",
+            startDate: "2026-10-01", endDate: "2027-09-30", rentVatApplicable: false, lines: [line({})],
+        } as unknown as LeaseDetail;
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <LeaseMetadataEditor lease={lease} chargeTypes={CHARGE_TYPES} onSaved={onSaved} onStale={onStale} />
+            </NextIntlClientProvider>,
+        );
+        fireEvent.click(screen.getByText("Edit draft"));
+        fireEvent.click(screen.getByTestId("lease-draft-save"));
+        expect(await screen.findByText("This contract changed since you opened it — review it again.")).toBeInTheDocument();
+        expect(onStale).toHaveBeenCalledTimes(1);
+        expect(onSaved).not.toHaveBeenCalled();
+    });
+});

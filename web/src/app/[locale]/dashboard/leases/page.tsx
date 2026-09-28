@@ -370,7 +370,9 @@ function LeasesList() {
         const results = await runPool(targets, BULK_POST_CONCURRENCY, async (lease): Promise<PostResult> => {
             const label = `${t("unit")} ${lease.unitIdentifier ?? ""} — ${lease.renterName ?? ""}`.trim();
             try {
-                const res = await withOneRetry(() => leaseApi.post(lease.id));
+                // Break-it R2 F2: the version of the row the user selected; a draft changed since is
+                // refused (409 lease.changed) and listed, never retried as contention.
+                const res = await withOneRetry(() => leaseApi.post(lease.id, lease.version));
                 return { leaseId: lease.id, label, ok: true, message: res.tcoEntryNumber };
             } catch (e) {
                 return { leaseId: lease.id, label, ok: false, message: e instanceof ApiError ? e.message : tl("postFailed") };
@@ -386,7 +388,9 @@ function LeasesList() {
     const handleBulkPost = () => runBulkPost(filteredLeases.filter(l => selected.has(l.id) && l.status === "DRAFT"));
     const retryFailedPosts = () => {
         const failed = new Set((postResults ?? []).filter(r => !r.ok).map(r => r.leaseId));
-        runBulkPost(postTargets.filter(l => failed.has(l.id)), postResults ?? []);
+        // The list was re-read after the run: retry with the rows (and versions) it shows now.
+        const shown = new Map(filteredLeases.map(l => [l.id, l]));
+        runBulkPost(postTargets.filter(l => failed.has(l.id)).map(l => shown.get(l.id) ?? l), postResults ?? []);
     };
 
     const toggleSelected = (id: string) =>

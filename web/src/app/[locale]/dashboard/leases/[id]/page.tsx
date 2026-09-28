@@ -30,6 +30,8 @@ import { chequeApi } from "@/lib/api/leasing";
 import type { RegisterAction } from "@/components/cheques/registerActions";
 import BulkChequeUploadFlow from "@/components/cheques/BulkChequeUploadFlow";
 import PostLeaseDialog from "@/components/leases/PostLeaseDialog";
+import { isLeaseChanged } from "@/lib/leases/leaseVersion";
+import { serverText } from "@/components/finance/bankrec/serverText";
 import AmendLinesDialog from "@/components/leases/AmendLinesDialog";
 import RenewLeaseDialog from "@/components/leases/RenewLeaseDialog";
 import ExtendLeaseDialog from "@/components/leases/ExtendLeaseDialog";
@@ -159,6 +161,7 @@ export default function LeaseDetailPage() {
     const leaseId = params.id as string;
 
     const t = useTranslations("Leasing");
+    const tCommon = useTranslations("Common");
     const tChequesReason = useTranslations("Cheques");
     const tMaster = useTranslations("MasterData");
     const tBulkUpload = useTranslations("bulkChequeUpload");
@@ -336,6 +339,12 @@ export default function LeaseDetailPage() {
         try {
             setCheques(await fn());
         } catch (e) {
+            if (isLeaseChanged(e)) {
+                // Break-it R2 F3: the contract changed in another tab — say so and show it as it now is.
+                setChequeError(serverText(tCommon, e) || (e as ApiError).message);
+                await loadLease();
+                return;
+            }
             setChequeError(e instanceof ApiError ? e.message : t("saveFailed"));
         } finally {
             setChequeBusy(false);
@@ -738,6 +747,7 @@ export default function LeaseDetailPage() {
                                     onSaved={async () => {
                                         await loadLease();
                                     }}
+                                    onStale={() => { void loadLease(); }}
                                 />
                             </div>
                         )}
@@ -798,6 +808,7 @@ export default function LeaseDetailPage() {
                                     lease={lease}
                                     editable={lease.status === "DRAFT" && canDraft}
                                     onSaved={async () => { await loadLease(); }}
+                                    onStale={() => { void loadLease(); }}
                                 />
 
                             </div>
@@ -814,7 +825,7 @@ export default function LeaseDetailPage() {
                                     cheques={cheques}
                                     editable={drafting && canCheques && !readOnly}
                                     onChange={setCheques}
-                                    onGenerate={req => runCheques(() => leaseApi.generateCheques(leaseId, req))}
+                                    onGenerate={req => runCheques(() => leaseApi.generateCheques(leaseId, req, lease.version))}
                                     onGenerateNumbers={n => runCheques(() => leaseApi.generateChequeNumbers(leaseId, n))}
                                     propertyId={lease.propertyId}
                                     contractValueInclVat={totals.inclVat}
@@ -842,7 +853,7 @@ export default function LeaseDetailPage() {
                                         onClick={() => {
                                             // Break-it round 1 (money) F1: never save a refused amount as the 0 it reports.
                                             if (focusFirstInvalidMoney(document)) return;
-                                            runCheques(() => leaseApi.saveCheques(leaseId, toChequeRows(cheques)));
+                                            runCheques(() => leaseApi.saveCheques(leaseId, toChequeRows(cheques), lease.version));
                                         }}
                                         disabled={chequeBusy || !draftRowsAreValid(cheques)}
                                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border border-border text-foreground hover:bg-input/40 cursor-pointer disabled:opacity-50"
@@ -1115,6 +1126,7 @@ export default function LeaseDetailPage() {
                 open={postOpen}
                 lease={lease}
                 onClose={() => setPostOpen(false)}
+                onStale={() => { void loadLease(); }}
                 onPosted={async res => {
                     setPostOpen(false);
                     setBanner(t("postedBanner", { tco: res.tcoEntryNumber }));

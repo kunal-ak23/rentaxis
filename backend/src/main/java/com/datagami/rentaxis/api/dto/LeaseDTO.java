@@ -15,6 +15,13 @@ import java.util.UUID;
 @Data
 public class LeaseDTO {
     private UUID id;
+    /**
+     * Break-it round 2 F2/F3: the row's optimistic-lock version. The draft editor,
+     * the cheque grid and the Post dialog send it back so a contract changed in
+     * another tab is refused (409 {@code lease.changed}) instead of overwritten or
+     * posted on figures nobody reviewed.
+     */
+    private Long version;
     private UUID unitId;
     private UUID renterId;
     private String unitIdentifier;

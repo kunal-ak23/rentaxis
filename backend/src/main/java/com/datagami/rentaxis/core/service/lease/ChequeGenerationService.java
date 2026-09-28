@@ -381,7 +381,18 @@ public class ChequeGenerationService {
      */
     @Transactional
     public List<ChequeDTO> generate(UUID leaseId, GenerateChequesRequest request) {
-        return generateForSystemImport(draftLease(leaseId), request);
+        return generate(leaseId, request, null);
+    }
+
+    /**
+     * Break-it round 2 F3: the same, refused (409) when the lease is no longer at
+     * {@code expectedVersion} — the version the grid's screen loaded; null = not checked.
+     */
+    @Transactional
+    public List<ChequeDTO> generate(UUID leaseId, GenerateChequesRequest request, Long expectedVersion) {
+        Lease lease = draftLease(leaseId);
+        com.datagami.rentaxis.core.service.LeaseService.requireVersion(lease, expectedVersion);
+        return generateForSystemImport(lease, request);
     }
 
     /**
@@ -662,7 +673,15 @@ public class ChequeGenerationService {
      */
     @Transactional
     public List<ChequeDTO> saveRows(UUID leaseId, List<ChequeRowInput> rows) {
-        return saveRowsForSystemImport(draftLease(leaseId), rows);
+        return saveRows(leaseId, rows, null);
+    }
+
+    /** Break-it round 2 F3: {@link #saveRows} checked against the version the grid loaded (null = not checked). */
+    @Transactional
+    public List<ChequeDTO> saveRows(UUID leaseId, List<ChequeRowInput> rows, Long expectedVersion) {
+        Lease lease = draftLease(leaseId);
+        com.datagami.rentaxis.core.service.LeaseService.requireVersion(lease, expectedVersion);
+        return saveRowsForSystemImport(lease, rows);
     }
 
     /**

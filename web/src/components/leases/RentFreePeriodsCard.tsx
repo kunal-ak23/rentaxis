@@ -8,6 +8,8 @@ import { Gift, Loader2, Plus, Trash2 } from "lucide-react";
 import { ApiError, leaseApi, type LeaseDetail, type RentFreePeriod } from "@/lib/api/leasing";
 import { fmtAmount } from "@/lib/api/ledger";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
+import { isLeaseChanged } from "@/lib/leases/leaseVersion";
+import { serverText } from "@/components/finance/bankrec/serverText";
 
 const field =
     "w-full bg-input border border-border rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none";
@@ -35,6 +37,8 @@ type Props = {
     /** A DRAFT the viewer may edit. Otherwise the periods are shown read-only (or nothing, when there are none). */
     editable: boolean;
     onSaved: (lease: LeaseDetail) => void;
+    /** Break-it R2 F3: the lease changed since it was loaded (409 lease.changed); the page reloads it. */
+    onStale?: () => void;
 };
 
 /**
@@ -45,8 +49,9 @@ type Props = {
 
 /** A concession may be zero (the period is free of nothing) but not negative. */
 const OVERRIDE = { allowZero: true } as const;
-export default function RentFreePeriodsCard({ lease, editable, onSaved }: Props) {
+export default function RentFreePeriodsCard({ lease, editable, onSaved, onStale }: Props) {
     const t = useTranslations("RentFree");
+    const tCommon = useTranslations("Common");
     const locale = useLocale();
     const saved = useMemo(() => lease.rentFreePeriods ?? [], [lease.rentFreePeriods]);
     const [rows, setRows] = useState<Draft[]>([]);
@@ -88,8 +93,14 @@ export default function RentFreePeriodsCard({ lease, editable, onSaved }: Props)
                 concessionOverride: overrideOf(r),
                 note: r.note.trim() || null,
             }));
-            onSaved(await leaseApi.setRentFreePeriods(lease.id, body));
+            // Break-it R2 F3: checked against the version this card was loaded from.
+            onSaved(await leaseApi.setRentFreePeriods(lease.id, body, lease.version));
         } catch (e) {
+            if (isLeaseChanged(e)) {
+                setError(serverText(tCommon, e) || (e as ApiError).message);
+                onStale?.();
+                return;
+            }
             setError(e instanceof ApiError ? e.message : t("saveFailed"));
         } finally {
             setBusy(false);
