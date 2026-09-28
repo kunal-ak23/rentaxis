@@ -14,8 +14,13 @@ export type Org = { id: string; name: string; logoVersion?: string | null };
  * (tenant containers are private). The version busts the browser cache when the
  * logo changes; the organisation is the request's own (the active one).
  */
-export function orgLogoSrc(org: Pick<Org, "logoVersion"> | null | undefined): string | null {
-    return org?.logoVersion ? `/api/proxy/v1/org/branding/logo?v=${encodeURIComponent(org.logoVersion)}` : null;
+export function orgLogoSrc(org: Pick<Org, "id" | "logoVersion"> | null | undefined): string | null {
+    // The organisation is part of the address: the backend refuses (404) when it is
+    // not the session's current one, so a tab left on org 1 after another tab
+    // switched to org 2 can never cache org 2's image under org 1's key.
+    return org?.logoVersion
+        ? `/api/proxy/v1/org/branding/logo?org=${encodeURIComponent(org.id)}&v=${encodeURIComponent(org.logoVersion)}`
+        : null;
 }
 
 /**

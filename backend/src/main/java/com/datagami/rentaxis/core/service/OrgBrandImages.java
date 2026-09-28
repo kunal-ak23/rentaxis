@@ -63,7 +63,7 @@ public final class OrgBrandImages {
             return Optional.empty();
         }
         Optional<BlobStorageService.DownloadResult> read = u.startsWith("/api/v1/assets/serve/")
-                ? blobs.readLocalPublicAsset(u, MAX_BYTES)
+                ? blobs.readLocalAsset(tenantId, u, MAX_BYTES)
                 : blobs.downloadOwnedUrl(tenantId, u, MAX_BYTES);
         return read.map(BlobStorageService.DownloadResult::bytes).flatMap(OrgBrandImages::verify);
     }

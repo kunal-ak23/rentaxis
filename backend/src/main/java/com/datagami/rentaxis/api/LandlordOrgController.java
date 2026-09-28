@@ -174,14 +174,14 @@ public class LandlordOrgController {
             }
         }
         if (payload.containsKey("logoUrl")) {
-            org.setLogoUrl(stringValue(payload.get("logoUrl")));
+            org.setLogoUrl(adoptStaged(org, stringValue(payload.get("logoUrl"))));
             changed = true;
         }
         // The stamp printed beside the landlord signature on the contract: saved
         // exactly like the logo (same upload, same role, this organisation only).
         // The contract renderer only ever inlines it from our own storage.
         if (payload.containsKey("stampImageUrl")) {
-            org.setStampImageUrl(stringValue(payload.get("stampImageUrl")));
+            org.setStampImageUrl(adoptStaged(org, stringValue(payload.get("stampImageUrl"))));
             changed = true;
         }
         if (payload.containsKey("phone")) {
@@ -193,6 +193,31 @@ public class LandlordOrgController {
             changed = true;
         }
         return changed;
+    }
+
+    private com.datagami.rentaxis.core.service.BlobStorageService blobs;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setBlobStorageService(com.datagami.rentaxis.core.service.BlobStorageService blobs) {
+        this.blobs = blobs;
+    }
+
+    /**
+     * A logo or stamp uploaded in the "new organisation" dialog was staged in
+     * private storage (the organisation had no container yet); saving it on the
+     * organisation moves it into that organisation's own container, where its PDFs
+     * and header read it and its purge removes it. Anything else is kept as sent.
+     */
+    private String adoptStaged(LandlordOrg org, String url) {
+        if (blobs == null || org.getId() == null || url == null || url.isBlank()) {
+            return url;
+        }
+        try {
+            return blobs.adoptStagedBranding(org.getId(), url);
+        } catch (RuntimeException e) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    "The uploaded image could not be stored for this organisation. Upload it again.");
+        }
     }
 
     private static String stringValue(Object value) {

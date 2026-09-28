@@ -77,6 +77,9 @@ describe("superadmin: organisation stamp", () => {
         expect(stamp).toHaveAttribute("data-accept", "image/png,image/jpeg");
         expect(screen.getByText(en.SuperAdmin.orgStamp)).toBeInTheDocument();
         expect(screen.getByText(en.SuperAdmin.orgStampHint)).toBeInTheDocument();
+        // R2: the hint says where the stamp appears — the executed copy issued at posting.
+        expect(en.SuperAdmin.orgStampHint).toMatch(/executed copy/i);
+        expect(ar.SuperAdmin.orgStampHint).toContain("النسخة المعتمدة");
     });
 
     it("uploads land in the edited organisation's own storage, not the active one (review I1)", async () => {

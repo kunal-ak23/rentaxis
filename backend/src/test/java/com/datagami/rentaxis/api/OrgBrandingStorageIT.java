@@ -157,9 +157,9 @@ class OrgBrandingStorageIT extends AbstractPostgresIT {
                 .getBody().get("url");
 
         // In B's container, not A's (the active organisation) and not shared.
-        assertThat(logoUrl).contains("/tenant-" + orgB + "/assets/branding/").doesNotContain(orgA.toString());
-        assertThat(stampUrl).contains("/tenant-" + orgB + "/assets/branding/");
-        assertThat(container("tenant-" + orgB).getBlobClient(logoUrl.substring(logoUrl.indexOf("assets/branding/")))
+        assertThat(logoUrl).contains("/tenant-" + orgB + "/branding/").doesNotContain(orgA.toString());
+        assertThat(stampUrl).contains("/tenant-" + orgB + "/branding/");
+        assertThat(container("tenant-" + orgB).getBlobClient(logoUrl.substring(logoUrl.indexOf("/branding/") + 1))
                 .exists()).isTrue();
         // The container is private: the browser could never load the stored URL.
         assertThat(container("tenant-" + orgB).getAccessPolicy().getBlobAccessType()).isNull();
@@ -215,17 +215,28 @@ class OrgBrandingStorageIT extends AbstractPostgresIT {
 
         // A's admin gets A's (none), never B's — even naming B.
         assertThat(get(adminA, "/api/v1/org/branding/logo", null).getStatusCode().value()).isEqualTo(404);
-        assertThat(get(adminA, "/api/v1/org/branding/logo?orgId=" + orgB, null).getStatusCode().value()).isEqualTo(404);
+        assertThat(get(adminA, "/api/v1/org/branding/logo?org=" + orgB, null).getStatusCode().value()).isEqualTo(404);
+        // The address names the organisation (R2): another org's id is refused even for
+        // its own member when the session is elsewhere, and the right one is served.
+        assertThat(get(adminB, "/api/v1/org/branding/logo?org=" + orgA, null).getStatusCode().value()).isEqualTo(404);
+        assertThat(get(adminB, "/api/v1/org/branding/logo?org=" + orgB, null).getBody()).isEqualTo(logo);
+
         assertThat(get(adminA, "/api/admin/tenants/" + orgB + "/branding/logo", null).getStatusCode().value()).isEqualTo(403);
 
         // The super admin previews any organisation's image by id.
         assertThat(get(saInA, "/api/admin/tenants/" + orgB + "/branding/stamp", null).getBody()).isEqualTo(stamp);
         // A super admin acting in B sees B's logo in the header.
         assertThat(get(http.user(orgB, UserRole.SUPER_ADMIN), "/api/v1/org/branding/logo", null).getBody()).isEqualTo(logo);
+
+        // The ETag is checked before storage is read: with the blob gone, a
+        // revalidation still answers 304 without touching storage; a fresh load 404s.
+        container("tenant-" + orgB).getBlobClient(logoUrl.substring(logoUrl.indexOf("/branding/") + 1)).delete();
+        assertThat(get(adminB, "/api/v1/org/branding/logo", etag).getStatusCode().value()).isEqualTo(304);
+        assertThat(get(adminB, "/api/v1/org/branding/logo", null).getStatusCode().value()).isEqualTo(404);
     }
 
     @Test
-    void onlyARealRasterImageIsAcceptedAndANewOrgsGoesToTheSharedFolder() throws Exception {
+    void onlyARealRasterImageIsAcceptedAndANewOrgsIsStagedPrivatelyThenAdopted() throws Exception {
         byte[] svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" onload=\"alert(1)\"/>".getBytes(StandardCharsets.UTF_8);
         assertThat(upload(saInA, "/api/admin/tenants/" + orgB + "/branding", svg, "x.png").getStatusCode().value())
                 .isEqualTo(400);
@@ -235,9 +246,31 @@ class OrgBrandingStorageIT extends AbstractPostgresIT {
         assertThat(upload(adminB, "/api/admin/tenants/" + orgB + "/branding", png(1), "x.png").getStatusCode().value())
                 .isEqualTo(403);
 
-        String url = (String) upload(saInA, "/api/admin/tenants/branding", png(2), "new.png").getBody().get("url");
-        assertThat(url).contains("/shared/assets/branding/");
-        // Readable for whichever organisation it is then given to.
-        assertThat(OrgBrandImages.load(blobs, orgB, url)).isPresent();
+        // A new organisation's upload is staged PRIVATELY (R2), unreadable until the
+        // organisation exists; creating it moves the file into its own container.
+        byte[] stamp = png(2);
+        String staged = (String) upload(saInA, "/api/admin/tenants/branding", stamp, "new.png").getBody().get("url");
+        assertThat(staged).contains("/" + BlobStorageService.BRANDING_STAGING_CONTAINER + "/branding/");
+        assertThat(container(BlobStorageService.BRANDING_STAGING_CONTAINER).getAccessPolicy().getBlobAccessType()).isNull();
+        assertThat(HttpClient.newHttpClient().send(HttpRequest.newBuilder(URI.create(staged)).GET().build(),
+                HttpResponse.BodyHandlers.ofByteArray()).statusCode()).isNotEqualTo(200);
+        assertThat(OrgBrandImages.load(blobs, orgB, staged)).isEmpty();
+
+        var created = http.call(saInA, HttpMethod.POST, "/api/admin/tenants",
+                Map.of("name", "Brand-store new " + UUID.randomUUID(), "stampImageUrl", staged));
+        assertThat(created.getStatusCode().value()).isEqualTo(200);
+        UUID newOrg = UUID.fromString((String) created.getBody().get("id"));
+        String adopted = (String) created.getBody().get("stampImageUrl");
+        assertThat(adopted).contains("/tenant-" + newOrg + "/branding/").isNotEqualTo(staged);
+        assertThat(OrgBrandImages.load(blobs, newOrg, adopted)).get()
+                .satisfies(i -> assertThat(i.bytes()).isEqualTo(stamp));
+        assertThat(container(BlobStorageService.BRANDING_STAGING_CONTAINER)
+                .getBlobClient(staged.substring(staged.indexOf("/branding/") + 1)).exists()).isFalse();
+        // ... and is purged with it.
+        cleanup.captureAndEnqueue(newOrg);
+        assertThat(jdbc.queryForList("select object_path from tenant_artifact_cleanup_queue where deleted_tenant_id = ?",
+                String.class, newOrg)).anyMatch(p -> adopted.endsWith(p));
+        // Leave no pending purge work behind for other tests' recovery runs.
+        jdbc.update("delete from tenant_artifact_cleanup_queue where deleted_tenant_id = ?", newOrg);
     }
 }

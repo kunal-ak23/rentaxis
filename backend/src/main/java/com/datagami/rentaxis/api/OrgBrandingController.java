@@ -68,7 +68,11 @@ public class OrgBrandingController {
         return store(id, file);
     }
 
-    /** For the "new organisation" dialog, before the organisation exists: the shared public-assets folder. */
+    /**
+     * For the "new organisation" dialog, before the organisation exists: staged in
+     * private storage and moved into the organisation's own container when it is
+     * created (LandlordOrgController), so it is purged with it.
+     */
     @PostMapping("/api/admin/tenants/branding")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ResponseEntity<Map<String, String>> uploadForNewOrg(@RequestParam("file") MultipartFile file) throws IOException {
@@ -95,9 +99,14 @@ public class OrgBrandingController {
     @GetMapping("/api/v1/org/branding/{kind}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<byte[]> current(@PathVariable String kind,
+                                          @RequestParam(value = "org", required = false) UUID org,
                                           @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch) {
         UUID tenantId = TenantContextHolder.getTenantId();
-        if (tenantId == null) {
+        // The web names the organisation it is showing (?org=), so a tab still on
+        // org 1 after another tab switched the session to org 2 never caches org 2's
+        // image under org 1's address: a mismatch is refused, not answered for the
+        // session's org.
+        if (tenantId == null || (org != null && !org.equals(tenantId))) {
             return ResponseEntity.notFound().build();
         }
         if (STAMP.equals(kind)) {
@@ -122,17 +131,24 @@ public class OrgBrandingController {
         }
         Optional<LandlordOrg> org = orgs.findById(orgId);
         String url = org.map(o -> LOGO.equals(kind) ? o.getLogoUrl() : o.getStampImageUrl()).orElse(null);
-        Optional<OrgBrandImages.Image> image = OrgBrandImages.load(blobs, orgId, url);
-        if (image.isEmpty()) {
+        if (url == null || url.isBlank()) {
             return ResponseEntity.notFound().build();
         }
-        String etag = "\"" + sha256(image.get().bytes()) + "\"";
+        // The ETag is the stored reference, not the bytes: every upload gets a new
+        // name (and a data: URI is its own content), so the same reference always
+        // means the same image — and a revalidation is answered without reading
+        // storage at all.
+        String etag = "\"" + sha256((orgId + "|" + kind + "|" + url.strip()).getBytes(StandardCharsets.UTF_8)) + "\"";
         HttpHeaders headers = new HttpHeaders();
         headers.setETag(etag);
         headers.setCacheControl("private, max-age=300");
         headers.set("X-Content-Type-Options", "nosniff");
         if (ifNoneMatch != null && ifNoneMatch.contains(etag)) {
             return new ResponseEntity<>(headers, HttpStatus.NOT_MODIFIED);
+        }
+        Optional<OrgBrandImages.Image> image = OrgBrandImages.load(blobs, orgId, url);
+        if (image.isEmpty()) {
+            return ResponseEntity.notFound().build();
         }
         headers.setContentType(MediaType.parseMediaType(image.get().type()));
         return new ResponseEntity<>(image.get().bytes(), headers, HttpStatus.OK);

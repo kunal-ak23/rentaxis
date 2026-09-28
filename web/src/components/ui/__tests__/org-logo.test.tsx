@@ -18,7 +18,7 @@ import { resetPageOrg } from "@/lib/session/orgSync";
  * admin Global View is unchanged.
  */
 // Streamed by the app (tenant containers are private), versioned for the cache.
-const LOGO = "/api/proxy/v1/org/branding/logo?v=3f2a9c1d0b7e";
+const LOGO = "/api/proxy/v1/org/branding/logo?org=org1&v=3f2a9c1d0b7e";
 let orgs: Array<{ id: string; name: string; logoVersion?: string | null }>;
 
 beforeEach(() => {
@@ -91,8 +91,10 @@ describe("header organisation logo", () => {
     });
 
     it("the logo is always the app's own streaming route, never a storage URL", () => {
-        expect(orgLogoSrc({ logoVersion: null })).toBeNull();
+        expect(orgLogoSrc({ id: "o1", logoVersion: null })).toBeNull();
         expect(orgLogoSrc(null)).toBeNull();
-        expect(orgLogoSrc({ logoVersion: "a b&c" })).toBe("/api/proxy/v1/org/branding/logo?v=a%20b%26c");
+        // The organisation is part of the cache key (review R2 minor 2).
+        expect(orgLogoSrc({ id: "o 1", logoVersion: "a b&c" })).toBe("/api/proxy/v1/org/branding/logo?org=o%201&v=a%20b%26c");
+        expect(orgLogoSrc({ id: "o1", logoVersion: "v" })).not.toBe(orgLogoSrc({ id: "o2", logoVersion: "v" }));
     });
 });

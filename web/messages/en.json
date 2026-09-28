@@ -2714,7 +2714,7 @@
     "orgLogoHint": "PNG, JPG or GIF. Max 2MB. Drag & drop or click to browse.",
     "orgStamp": "Company Stamp",
     "orgUploadStamp": "Upload Company Stamp",
-    "orgStampHint": "PNG or JPG. Max 2MB. Printed beside the landlord signature on tenancy contracts.",
+    "orgStampHint": "PNG or JPG. Max 2MB. Printed beside the landlord signature on the executed copy of a contract, issued when the contract is posted. The signed contract itself is not changed.",
     "orgName": "Organisation Name",
     "orgNamePlaceholder": "e.g. Sandstone Crest Properties",
     "orgAddress": "Address",
