@@ -49,6 +49,20 @@ class GlobalExceptionHandlerDataIntegrityTest {
         assertThat((String) response.getBody().get("message")).doesNotContain("ck_something_else");
     }
 
+    /**
+     * Break-it round 2 (portal2) F2: a 500-character name on PUT /auth/me overflowed
+     * users.name varchar(255) (SQLState 22001) and came back as 409 "conflicts with
+     * existing related records", which read as the web's organisation guard and gave
+     * the user nothing to fix. It is the caller's too-long value: a 400 in words.
+     */
+    @Test
+    void aValueTooLongForItsColumnIsA400SayingItIsTooLong() {
+        var response = handler.handleDataIntegrityViolation(violation("22001", null));
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat((String) response.getBody().get("message")).containsIgnoringCase("too long");
+        assertThat(response.getBody()).doesNotContainKey("constraint");
+    }
+
     @Test
     void uniqueAndForeignKeyViolationsStayA409() {
         assertThat(handler.handleDataIntegrityViolation(violation("23505", "uq_x")).getStatusCode().value())

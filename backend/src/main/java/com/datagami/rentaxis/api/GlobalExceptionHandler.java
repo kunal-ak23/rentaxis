@@ -359,6 +359,12 @@ public class GlobalExceptionHandler {
         if ("23514".equals(sqlState)) {
             return clientError(checkViolationMessage(constraint), ex);
         }
+        // Break-it round 2 (portal2) F2: a string longer than its column (22001,
+        // e.g. a 500-character name into users.name varchar(255)) is the caller's
+        // bad value too. As a 409 it read as the web's organisation guard.
+        if ("22001".equals(sqlState)) {
+            return clientError(VALUE_TOO_LONG, ex);
+        }
 
         Map<String, Object> body = new java.util.HashMap<>();
         body.put("error", true);
@@ -371,6 +377,8 @@ public class GlobalExceptionHandler {
         }
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
+
+    static final String VALUE_TOO_LONG = "One of the values is too long for its field. Shorten it and try again.";
 
     /** The first SQLState on the cause chain, or null. */
     private static String sqlStateOf(Throwable ex) {
