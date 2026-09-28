@@ -1,0 +1,57 @@
+{
+  "id": "12",
+  "slug": "administer-an-active-tenancy-contract",
+  "title": "Miftah tutorial 12 · Administer an active tenancy contract",
+  "description": "Add a charge with its Ejari number and cheque, attach supporting documents and log follow-ups on an active contract.\n\nWho this is for: Company Admin, Property Manager.\n\nChapters:\n0:00 An Active Contract\n0:24 Add Charge\n0:53 Six Cheques\n1:15 Log Interaction\n\nPart of the Miftah web course — playlist: Miftah · Leasing\n\nأضف رسومًا إلى عقد نشط برقم إيجاري وشيكها، وأرفق المستندات الداعمة، وسجّل المتابعات.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "tenancy contract",
+    "lease agreement",
+    "tenant management",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Leasing",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "An Active Contract"
+    },
+    {
+      "startSec": 24.751,
+      "start": "0:24",
+      "label": "Add Charge"
+    },
+    {
+      "startSec": 53.196,
+      "start": "0:53",
+      "label": "Six Cheques"
+    },
+    {
+      "startSec": 75.361,
+      "start": "1:15",
+      "label": "Log Interaction"
+    }
+  ],
+  "durationSec": 97,
+  "roles": [
+    "TENANT_ADMIN",
+    "PROPERTY_MANAGER"
+  ],
+  "topic": "leasing",
+  "captionsFile": "tutorials/output/12-administer-an-active-tenancy-contract.srt",
+  "videoFile": "tutorials/output/12-administer-an-active-tenancy-contract.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/12.png"
+}

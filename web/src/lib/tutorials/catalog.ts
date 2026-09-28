@@ -129,20 +129,20 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "12", slug: "activate-and-administer-a-tenancy-contract", topic: "leasing", roles: PORTFOLIO, durationSec: 150, youtubeId: null,
-        title: { en: "Activate and administer a tenancy contract", ar: "تفعيل عقد الإيجار وإدارته" },
+        id: "12", slug: "administer-an-active-tenancy-contract", topic: "leasing", roles: PORTFOLIO, durationSec: 97, youtubeId: null,
+        title: { en: "Administer an active tenancy contract", ar: "إدارة عقد إيجار نشط" },
         description: {
-            en: "Activate a contract, edit its details and attachments, log follow-ups and adjust the payment plan.",
-            ar: "فعّل العقد، وعدّل بياناته ومرفقاته، وسجّل المتابعات، وعدّل خطة الدفع.",
+            en: "Add a charge with its Ejari number and cheque, attach supporting documents and log follow-ups on an active contract.",
+            ar: "أضف رسومًا إلى عقد نشط برقم إيجاري وشيكها، وأرفق المستندات الداعمة، وسجّل المتابعات.",
         },
         relatedArticles: ["leases--lease-lifecycle"],
     },
     {
-        id: "13", slug: "renew-extend-terminate-and-settle", topic: "leasing", roles: ["SUPER_ADMIN", ...PORTFOLIO, "RENTER"], durationSec: 150, youtubeId: null,
+        id: "13", slug: "renew-extend-terminate-and-settle", topic: "leasing", roles: ["SUPER_ADMIN", ...PORTFOLIO, "RENTER"], durationSec: 133, youtubeId: null,
         title: { en: "Renew, extend, terminate and settle a contract", ar: "تجديد العقد وتمديده وإنهاؤه وتسويته" },
         description: {
-            en: "Handle renewal reminders and the Tenant's intent, extend or terminate a contract, and finalise the settlement.",
-            ar: "تابع تذكيرات التجديد ورغبة المستأجر، ومدّد العقد أو أنهِه، وأكمل التسوية النهائية.",
+            en: "Renew a contract for a new term, extend one by a month, take a Tenant's notice, terminate the contract and finalise the settlement.",
+            ar: "جدّد العقد لمدة جديدة، ومدّد عقدًا لشهر إضافي، وسجّل إشعار المستأجر، وأنهِ العقد، وأكمل التسوية النهائية.",
         },
         relatedArticles: ["leases--lease-lifecycle"],
     },
@@ -198,7 +198,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["finance--chart-of-accounts"],
     },
     {
-        id: "34", slug: "post-a-tenancy-contract", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 129, youtubeId: null,
+        id: "34", slug: "post-a-tenancy-contract", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 102, youtubeId: null,
         title: { en: "Post a tenancy contract", ar: "ترحيل عقد الإيجار" },
         description: {
             en: "Post a draft contract with its lines and cheque grid, and see the contract become active with its recognition schedule planned.",
