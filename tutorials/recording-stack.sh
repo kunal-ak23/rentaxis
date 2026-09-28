@@ -8,6 +8,7 @@
 #   tutorials/recording-stack.sh seed [--reset] [--refresh-branding]  # seed "Oasis Crest Properties" (idempotent)
 #   tutorials/recording-stack.sh stop     # stop only the processes this script started
 #   tutorials/recording-stack.sh status
+#   tutorials/recording-stack.sh snapshot|restore|drop-snapshot <tag>  # DB copy (restarts the backend)
 #
 # Everything lives under tutorials/work/stack/ (gitignored). Ports are
 # overridable; the defaults stay clear of the user's stack (3000-3002/8081),
@@ -36,7 +37,7 @@ esac
 
 mkdir -p "$logs" "$pids"
 
-listening_pid() { lsof -nP -tiTCP:"$1" -sTCP:LISTEN 2>/dev/null | head -1; }
+listening_pid() { lsof -nP -tiTCP:"$1" -sTCP:LISTEN 2>/dev/null | head -1 || true; }
 
 wait_for_gradle() {
   while pgrep -f "[G]radleWrapperMain|[G]radleWorkerMain" >/dev/null; do
@@ -178,6 +179,57 @@ stop_one() {
   echo "$name: stopped"
 }
 
+# Database snapshots, so a tutorial whose flow cannot be undone in the app
+# (posting a contract, terminating one) starts every run from the same state:
+# its proof, its capture and any retake. A snapshot is a template copy of the
+# recording database (`<db>_snap_<tag>`); restoring stops only the backend
+# this script started, recreates the database from the snapshot and starts the
+# backend again. The web server stays up. Tutorial databases on localhost only.
+snap_name() {
+  [[ "$1" =~ ^[a-z0-9_]{1,32}$ ]] || { echo "snapshot tag must match [a-z0-9_]{1,32}: $1" >&2; exit 2; }
+  echo "${db_name}_snap_$1"
+}
+assert_tutorial_db() {
+  [[ "$db_name" =~ ^rentaxis_tutorials[a-z0-9_]*$ ]] || { echo "Refusing: $db_name is not a tutorial database." >&2; exit 2; }
+  case "$db_host" in 127.0.0.1|localhost) ;; *) echo "Refusing: database host $db_host is not local." >&2; exit 2 ;; esac
+}
+db_exists() {
+  [[ "$(psql -h "$db_host" -p "$db_port" -U postgres -Atc "select 1 from pg_database where datname='$1'" postgres)" == 1 ]]
+}
+stop_backend_and_wait() {
+  local pid; pid=$(cat "$pids/backend.pid" 2>/dev/null || true)
+  stop_one backend "$backend_port"
+  for _ in $(seq 1 60); do
+    [[ -z "$(listening_pid "$backend_port")" ]] && { [[ -z "$pid" ]] || ! kill -0 "$pid" 2>/dev/null; } && return
+    sleep 1
+  done
+  echo "backend did not stop" >&2; exit 1
+}
+snapshot() {
+  assert_tutorial_db
+  local snap; snap=$(snap_name "$1")
+  stop_backend_and_wait
+  if db_exists "$snap"; then dropdb -h "$db_host" -p "$db_port" -U postgres "$snap"; fi
+  createdb -h "$db_host" -p "$db_port" -U postgres -T "$db_name" "$snap"
+  echo "snapshot=$snap"
+  start_backend
+}
+restore() {
+  assert_tutorial_db
+  local snap; snap=$(snap_name "$1")
+  db_exists "$snap" || { echo "no snapshot $snap" >&2; exit 1; }
+  stop_backend_and_wait
+  dropdb -h "$db_host" -p "$db_port" -U postgres --force "$db_name"
+  createdb -h "$db_host" -p "$db_port" -U postgres -T "$snap" "$db_name"
+  echo "restored=$snap"
+  start_backend
+}
+drop_snapshot() {
+  assert_tutorial_db
+  local snap; snap=$(snap_name "$1")
+  if db_exists "$snap"; then dropdb -h "$db_host" -p "$db_port" -U postgres "$snap"; echo "dropped=$snap"; fi
+}
+
 status() {
   echo "built_from=$(cat "$stack/BUILT_FROM" 2>/dev/null || echo none) head=$(git -C "$repo" rev-parse --short=7 HEAD)"
   echo "database=$db_name@$db_host:$db_port"
@@ -198,6 +250,9 @@ case "${1:-}" in
     ensure_db; start_backend; start_web; status ;;
   stop) stop_one web "$web_port"; stop_one backend "$backend_port" ;;
   seed) shift; seed "$@" ;;
+  snapshot) snapshot "${2:?snapshot tag}" ;;
+  restore) restore "${2:?snapshot tag}" ;;
+  drop-snapshot) drop_snapshot "${2:?snapshot tag}" ;;
   status) status ;;
-  *) echo "Usage: $0 build|start|seed|stop|status" >&2; exit 2 ;;
+  *) echo "Usage: $0 build|start|seed|stop|status|snapshot <tag>|restore <tag>|drop-snapshot <tag>" >&2; exit 2 ;;
 esac

@@ -40,7 +40,10 @@ const sceneWeights = scenes.map((scene) => {
   return Number.isFinite(weight) && weight > 0 ? weight : 1;
 });
 const totalSceneWeight = sceneWeights.reduce((total, weight) => total + weight, 0);
-const browser = await chromium.launch({ headless: true });
+// A scenario that shows a PDF inline (tutorial 11's contract preview) asks for
+// the full Chromium build: the default headless shell has no PDF viewer and
+// renders the preview as an empty frame.
+const browser = await chromium.launch({ headless: true, ...(scenario.browserChannel ? { channel: scenario.browserChannel } : {}) });
 const recordedVideoPaths = [];
 // Seconds of lead-in (blank document, loading shell) at the start of each clip.
 const clipLeadIns = [];

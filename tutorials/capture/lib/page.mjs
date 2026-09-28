@@ -112,12 +112,12 @@ export async function revealCursor(page) {
  *   never appears in a frame. The lease overview prints the renter's email and
  *   phone in a card beside the charge lines, on a page short enough to fit a
  *   1080-tall frame whole — there is nowhere to scroll them to. Those two rows
- *   are hidden for the accounting tutorials and for tutorial 10 (which ends on
+ *   are hidden for the accounting tutorials, the contract lifecycle ones (11-13) and for tutorial 10 (which ends on
  *   the draft it creates), the ones that hold on that page. The renter's NAME
  *   stays: it is what names the contract. Tutorial 02 opens the same page
  *   from global search.
  */
-export const PRIVACY_SENSITIVE_TUTORIALS = new Set(['02', '10', '34', '35', '36', '37']);
+export const PRIVACY_SENSITIVE_TUTORIALS = new Set(['02', '10', '11', '12', '13', '34', '35', '36', '37']);
 
 export const CAPTURE_STYLE_RULES = [
   'nextjs-portal, [data-nextjs-toast], #__next-build-watcher { display: none !important; }',

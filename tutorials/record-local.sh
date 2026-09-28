@@ -47,6 +47,18 @@ mkdir -p "$TUTORIAL_WORK_DIR" "$tut/qa"
 log="$TUTORIAL_WORK_DIR/record.log"
 : > "$log"
 
+# A tutorial whose flow cannot be undone in the app (posting, terminating)
+# has a database snapshot of its starting state, `recording-stack.sh snapshot
+# pre<id>`. When it exists, the proof and the capture each start from it.
+reset_to_snapshot() {
+  if [[ "$(psql -h "${TUTORIAL_DB_HOST:-127.0.0.1}" -p "${TUTORIAL_DB_PORT:-5432}" -U postgres -Atc \
+      "select 1 from pg_database where datname='${TUTORIAL_DB:-rentaxis_tutorials}_snap_pre$id'" postgres)" == 1 ]]; then
+    echo "== restoring snapshot pre$id"
+    "$tut/recording-stack.sh" restore "pre$id" 2>&1 | tee -a "$log"
+  fi
+}
+reset_to_snapshot
+
 # Fresh local super-admin session (the helper refuses non-localhost and
 # non-gitignored output paths).
 node "$tut/capture/local-auth.mjs" "$PROD_BASE_URL" "$TUTORIAL_AUTH_STATE" >> "$log"
@@ -72,6 +84,7 @@ echo "== proof (validate-only) tutorial $id"
 grep -q '^scenario_validation=passed$' "$log" || { echo "Proof failed; nothing recorded." >&2; exit 1; }
 delete_takes_drafts
 
+reset_to_snapshot
 echo "== capture tutorial $id"
 set +e
 "$tut/capture-tutorial.sh" "$id" "$TUTORIAL_VOICE" "$TUTORIAL_SPEECH_RATE" 2>&1 | tee -a "$log"
