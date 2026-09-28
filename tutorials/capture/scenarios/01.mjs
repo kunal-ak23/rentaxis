@@ -15,17 +15,18 @@ async function expectDir(page, dir) {
 }
 
 const scenes = [
-  // Weights follow the narration: roughly the seconds each part takes to speak.
+  // Weights are the seconds of narration each scene covers (Ava DragonHD at
+  // "140" speaks ~165 wpm), measured from the rendered subtitles.
   roleRouteScene('anonymous', '/en/auth/login', 'Sign in',
     'Enter the email address and password your administrator gave you, then select Sign In.', {
-    weight: 30,
+    weight: 23,
     verifyTenantContext: false,
     afterNavigation: async (page) => {
       await page.locator('#login-email').waitFor({ state: 'visible', timeout: navTimeoutMs });
-      await pace(page, 7000);
+      await pace(page, 10500);
       await page.locator('#login-email').fill(seed.adminLogin.email);
       await page.locator('#login-password').fill(seed.adminLogin.password);
-      await pace(page, 1500);
+      await pace(page, 3000);
       await page.getByRole('button', { name: /sign in/i }).click();
       await page.waitForURL(/\/en\/dashboard$/, { timeout: navTimeoutMs });
       await waitForApp(page);
@@ -39,14 +40,14 @@ const scenes = [
     async (page) => {
       await expectText(page.getByTestId('org-switcher-button'), tenantName, 'Organisation');
       for (const id of railIds) await page.getByTestId(id).waitFor({ state: 'visible' });
-      await pace(page, 5000);
+      await pace(page, 2500);
       await pointAt(page.getByTestId('profile-menu'));
-      await pace(page, 5000);
+      await pace(page, 6000);
       await pointAt(page.getByTestId('org-switcher-button'));
-      await pace(page, 5000);
+      await pace(page, 6500);
       await pointAt(page.getByTestId('rail-home'));
       await restPointer(page, 31, 380);
-    }, { weight: 36 }),
+    }, { weight: 29 }),
   stepScene('Leasing',
     'Each rail area opens its own pages in the side panel: Tenancy Contracts, Tenants, Properties & Units and Enquiry.',
     async (page) => {
@@ -58,7 +59,7 @@ const scenes = [
         await page.getByRole('link', { name: label, exact: true }).first().waitFor({ state: 'visible' });
       }
       await restPointer(page, 190, 460);
-    }, { weight: 14 }),
+    }, { weight: 7.6 }),
   stepScene('Arabic, right to left',
     'AR switches the labels to Arabic and mirrors the layout. EN switches back.',
     async (page) => {
@@ -69,14 +70,14 @@ const scenes = [
       await expectDir(page, 'rtl');
       // The header mirrors under the pointer: move it off the toolbar.
       await restPointer(page, 1100, 620);
-      await pace(page, 7000);
+      await pace(page, 8500);
       await page.getByRole('link', { name: 'EN', exact: true }).click();
       await page.waitForURL(/\/en\/dashboard\/leases/, { timeout: navTimeoutMs });
       await waitForApp(page);
       await applyCaptureStyles(page);
       await expectDir(page, 'ltr');
       await restPointer(page, 1100, 620);
-    }, { weight: 18 }),
+    }, { weight: 12.3 }),
   stepScene('Your account menu',
     'The menu under your name shows your email address, Update Profile and Logout.',
     async (page) => {
@@ -84,7 +85,7 @@ const scenes = [
       await page.getByText('Update Profile', { exact: true }).waitFor({ state: 'visible' });
       await page.getByRole('button', { name: 'Logout', exact: true }).waitFor({ state: 'visible' });
       await pointAt(page.getByText('Update Profile', { exact: true }));
-    }, { weight: 9 }),
+    }, { weight: 5.8 }),
   stepScene('My Profile',
     'Correct your full name or phone number and select Save Changes. Only an administrator can change your email.',
     async (page) => {
@@ -96,9 +97,9 @@ const scenes = [
       await expectText(page.locator('main'), 'Company Admin', 'Profile role');
       await page.getByRole('button', { name: 'Save Changes', exact: true }).waitFor({ state: 'visible' });
       await restPointer(page, 1300, 420);
-      await pace(page, 16000);
+      await pace(page, 10000);
       await pointAt(page.getByText('Change Password', { exact: true }));
-    }, { weight: 32 }),
+    }, { weight: 20.1 }),
   stepScene('Log out',
     'Open the menu under your name and select Logout. The sign-in page returns.',
     async (page) => {
@@ -109,7 +110,7 @@ const scenes = [
       await applyCaptureStyles(page);
       await page.locator('#login-email').waitFor({ state: 'visible', timeout: navTimeoutMs });
       await restPointer(page, 1300, 700);
-    }, { weight: 16, verifyTenantContext: false }),
+    }, { weight: 13.7, verifyTenantContext: false }),
 ];
 
 export default { role: 'anonymous', scenes };

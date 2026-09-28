@@ -1,0 +1,175 @@
+1
+00:00:00,000 --> 00:00:01,101
+Welcome to Miftah.
+
+2
+00:00:01,101 --> 00:00:04,404
+In this tutorial you will sign in, find
+your
+
+3
+00:00:04,404 --> 00:00:07,706
+way around the navigation, switch the
+interface to Arabic
+
+4
+00:00:07,706 --> 00:00:11,009
+and back, review your profile, and sign
+out safely.
+
+5
+00:00:11,009 --> 00:00:12,844
+Start on the sign-in page.
+
+6
+00:00:12,844 --> 00:00:15,413
+Enter the email address and password your
+
+7
+00:00:15,413 --> 00:00:17,982
+administrator gave you, then select Sign
+In.
+
+8
+00:00:17,982 --> 00:00:20,917
+Never use another person’s account, and do
+not
+
+9
+00:00:20,917 --> 00:00:23,486
+save a password on a shared computer.
+
+10
+00:00:23,486 --> 00:00:26,422
+Miftah opens the home page for your role.
+
+11
+00:00:26,422 --> 00:00:29,725
+Your role is shown under your name at the
+
+12
+00:00:29,725 --> 00:00:32,660
+top right; this account is a Company
+Admin.
+
+13
+00:00:32,660 --> 00:00:35,963
+The organisation you are working in, Oasis
+Crest Properties,
+
+14
+00:00:35,963 --> 00:00:39,266
+is shown at the top of the side panel.
+
+15
+00:00:39,266 --> 00:00:42,569
+The rail on the left holds the main areas:
+
+16
+00:00:42,569 --> 00:00:45,504
+Home, Leasing, Collection, Accounting,
+Operations, Settings, and More.
+
+17
+00:00:45,504 --> 00:00:49,174
+Each person sees only the areas their role
+allows, so
+
+18
+00:00:49,174 --> 00:00:52,844
+a Property Manager or a Tenant sees a
+shorter menu.
+
+19
+00:00:52,844 --> 00:00:53,578
+Select Leasing.
+
+20
+00:00:53,578 --> 00:00:57,247
+The side panel now lists its pages:
+Tenancy Contracts, Tenants,
+
+21
+00:00:57,247 --> 00:01:00,550
+Properties and Units, and Enquiry, with
+pinned views underneath.
+
+22
+00:01:00,550 --> 00:01:02,752
+Now select AR in the header.
+
+23
+00:01:02,752 --> 00:01:06,789
+The labels change to Arabic, and the whole
+layout mirrors from
+
+24
+00:01:06,789 --> 00:01:10,825
+left-to-right to right-to-left, with the
+rail moving to the right-hand side.
+
+25
+00:01:10,825 --> 00:01:13,027
+Select EN to return to English.
+
+26
+00:01:13,027 --> 00:01:15,596
+Next, open the menu under your name.
+
+27
+00:01:15,596 --> 00:01:18,899
+It shows your email address, Update
+Profile, and Logout.
+
+28
+00:01:18,899 --> 00:01:20,000
+Select Update Profile.
+
+29
+00:01:20,000 --> 00:01:23,302
+My Profile shows your name, email address,
+and role.
+
+30
+00:01:23,302 --> 00:01:25,871
+You can correct your full name or
+
+31
+00:01:25,871 --> 00:01:28,073
+phone number and select Save Changes.
+
+32
+00:01:28,073 --> 00:01:31,009
+Only an administrator can change your
+email address.
+
+33
+00:01:31,009 --> 00:01:33,210
+The Password card holds Change Password.
+
+34
+00:01:33,210 --> 00:01:36,513
+Use a unique password, and never share it
+in
+
+35
+00:01:36,513 --> 00:01:39,449
+a ticket, a note, or a screen recording.
+
+36
+00:01:39,449 --> 00:01:42,385
+Finally, open the menu again and select
+Logout.
+
+37
+00:01:42,385 --> 00:01:45,687
+The protected pages close and the sign-in
+page returns.
+
+38
+00:01:45,687 --> 00:01:48,623
+At the end of every session on a
+
+39
+00:01:48,623 --> 00:01:51,192
+shared device, log out the same way.
