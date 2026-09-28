@@ -6,6 +6,8 @@ import { Landmark, Plus, Pencil, Trash2, X, Loader2 } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AccessDeniedState, LoadFailedState } from "@/components/ui/PageStates";
 import { loadList } from "@/lib/api/listLoad";
+import { isAbortError } from "@/lib/api/abort";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { accountName } from "@/lib/api/ledger";
 
 type Account = {
@@ -86,11 +88,19 @@ export default function BankAccountsPage() {
         fetchBankAccounts();
         fetchAccounts();
         fetchProperties();
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/selection loads; the useLatestRequest gate is stable
     }, []);
 
+    // Break round 3, F1: loads abort on unmount / when superseded, silently.
+    const beginBankAccounts = useLatestRequest();
+    const beginAccounts = useLatestRequest();
+    const beginProperties = useLatestRequest();
+
     const fetchBankAccounts = async () => {
+        const { signal, isCurrent } = beginBankAccounts();
         // Break round 1, F8: a refused or failed read is not "no bank accounts".
-        const load = await loadList<BankAccount>("/api/proxy/v1/bank-accounts");
+        const load = await loadList<BankAccount>("/api/proxy/v1/bank-accounts", signal);
+        if (!isCurrent()) return;
         setListLoad(load.kind === "ok" ? "ok" : load.kind);
         if (load.kind === "ok") {
             setBankAccounts([...load.items].sort((a, b) => (a.id || '').localeCompare(b.id || '')));
@@ -99,22 +109,28 @@ export default function BankAccountsPage() {
     };
 
     const fetchAccounts = async () => {
+        const { signal, isCurrent } = beginAccounts();
         try {
-            const res = await fetch("/api/proxy/v1/finance/accounts");
+            const res = await fetch("/api/proxy/v1/finance/accounts", { signal });
             if (res.ok) {
                 const data: Account[] = await res.json();
-                setAccounts(data.filter(isBankLeaf));
+                if (isCurrent()) setAccounts(data.filter(isBankLeaf));
             }
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             console.error(err);
         }
     };
 
     const fetchProperties = async () => {
+        const { signal, isCurrent } = beginProperties();
         try {
-            const res = await fetch("/api/proxy/v1/properties");
-            if (res.ok) setProperties(await res.json());
+            const res = await fetch("/api/proxy/v1/properties", { signal });
+            if (!res.ok) return;
+            const rows = await res.json();
+            if (isCurrent()) setProperties(rows);
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             console.error(err);
         }
     };

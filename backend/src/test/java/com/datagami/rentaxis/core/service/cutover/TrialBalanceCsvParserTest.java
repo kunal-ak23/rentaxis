@@ -25,6 +25,26 @@ class TrialBalanceCsvParserTest {
         return TrialBalanceCsvParser.parse(new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8)));
     }
 
+    /** A read failure says so in a sentence with a reference, never the reader's own text. */
+    @Test
+    void anUnreadableFileNeverShowsTheReadersOwnMessage() {
+        java.io.InputStream broken = new java.io.InputStream() {
+            @Override
+            public int read() throws java.io.IOException {
+                throw new java.io.IOException("/srv/uploads/tmp-8812/secret-path.csv: Input/output error");
+            }
+        };
+
+        var r = TrialBalanceCsvParser.parse(broken);
+
+        assertThat(r.rows()).isEmpty();
+        assertThat(r.problems()).singleElement().satisfies(p -> {
+            assertThat(p).startsWith("The file could not be read");
+            assertThat(p).contains("reference");
+            assertThat(p).doesNotContain("/srv/uploads").doesNotContain("Input/output error");
+        });
+    }
+
     @Test
     void parsesCodeNameDebitCredit() {
         var r = parse("""

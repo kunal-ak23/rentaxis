@@ -327,3 +327,42 @@ describe("AccountsPage", () => {
         expect(body.nameEn).toBe("Landscaping");
     });
 });
+
+describe("AccountsPage import result (break-it R3 data3 F7)", () => {
+    function answerImport(body: unknown) {
+        const base = global.fetch;
+        global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            if (String(input).includes("/finance/accounts/import")) {
+                calls.push({ url: String(input), init });
+                return { ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) } as unknown as Response;
+            }
+            return base(input, init);
+        }) as unknown as typeof fetch;
+    }
+
+    async function importFile() {
+        render(<AccountsPage />);
+        await screen.findByText("Landscaping");
+        fireEvent.click(screen.getByRole("button", { name: "importAccounts" }));
+        const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+        fireEvent.change(input, { target: { files: [new File(["code,name,type\nA,Assets,ASSET\n"], "coa.csv", { type: "text/csv" })] } });
+        const buttons = screen.getAllByRole("button", { name: "importAccounts" });
+        fireEvent.click(buttons[buttons.length - 1]);
+    }
+
+    it("says how many accounts were created and skipped", async () => {
+        answerImport({ created: 2, skipped: 1, accounts: [] });
+        await importFile();
+        expect(await screen.findByTestId("import-accounts-done")).toHaveTextContent("importAccountsDone");
+        expect(screen.queryByText("importFromFile")).toBeNull();
+    });
+
+    it("never reports success when nothing was created", async () => {
+        answerImport({ created: 0, skipped: 3, accounts: [] });
+        await importFile();
+        expect(await screen.findByRole("alert")).toHaveTextContent("importAccountsNone");
+        expect(screen.queryByTestId("import-accounts-done")).toBeNull();
+        // The dialog stays open so the user can pick another file.
+        expect(screen.getByText("importFromFile")).toBeTruthy();
+    });
+});

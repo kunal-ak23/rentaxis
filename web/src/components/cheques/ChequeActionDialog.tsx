@@ -7,6 +7,7 @@ import SettlementAccountPicker from "@/components/finance/SettlementAccountPicke
 import { NumberInput } from "@/components/ui/NumberInput";
 import { fmtAmount, ledgerApi } from "@/lib/api/ledger";
 import { businessTodayIso, isAfterBusinessToday } from "@/lib/businessDate";
+import { formatDate } from "@/lib/format";
 import {
     ApiError,
     chequeApi,
@@ -44,8 +45,12 @@ import { StatementCoverNotice } from "@/components/finance/StatementCoverNotice"
  * simpler single-row case.
  */
 
-/** Break-it R2 money2 F1/F2: actions that record a bank event, which cannot be dated after today. */
-const BANK_EVENTS = new Set<string>(["deposit", "clear", "bounce"]);
+/**
+ * Break-it R2 money2 F1/F2 + R3 money3 N2: actions that record something that has
+ * already happened — a bank event, money received, a cheque cancelled — which
+ * cannot be dated after today (the server's EVENT class, `PostingDatePath`).
+ */
+const BANK_EVENTS = new Set<string>(["deposit", "clear", "bounce", "receive", "cancel"]);
 
 const field =
     "w-full bg-input border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200";
@@ -307,7 +312,9 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
                         />
                         {bankDateAfterToday && (
                             <p role="alert" className="mt-1 text-[11px] text-error" data-testid="cheque-action-date-error">
-                                {t("dateAfterToday")}
+                                {action === "receive" || action === "cancel"
+                                    ? t("eventAfterToday", { today: formatDate(businessTodayIso()) })
+                                    : t("dateAfterToday")}
                             </p>
                         )}
                     </div>

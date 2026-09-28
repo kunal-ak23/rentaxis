@@ -68,6 +68,10 @@ public interface BookingRequestRepository extends JpaRepository<BookingRequest, 
     Optional<BookingRequest> findFirstByTenantIdAndRenterUserIdAndParkingSpotIdAndStatus(
             UUID tenantId, UUID renterUserId, UUID parkingSpotId, BookingRequestStatus status);
 
+    /** Break-it R3 ops3 F7: the renter's open (PENDING/APPROVED) bookings of one amenity — overlap candidates. */
+    List<BookingRequest> findByTenantIdAndRenterUserIdAndAmenityIdAndStatusIn(
+            UUID tenantId, UUID renterUserId, UUID amenityId, Collection<BookingRequestStatus> statuses);
+
     boolean existsByParkingSpotIdAndStatus(UUID parkingSpotId, BookingRequestStatus status);
 
     long countByAmenityIdAndStatus(UUID amenityId, BookingRequestStatus status);

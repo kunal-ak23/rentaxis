@@ -64,8 +64,9 @@ describe("buildNav — rail sections and panel items per role (all flags on)", (
     });
 
     it("RENTER keeps its own list under Home", () => {
+        // Break-it R3 portal3 F10: Home is the renter home, never the staff dashboard.
         expect(flattenNav(buildNav(ctx("RENTER")))).toEqual([
-            "/dashboard", "/dashboard/renter-portal", "/dashboard/renter-portal/payments",
+            "/dashboard/renter-portal", "/dashboard/renter-portal/payments",
             "/dashboard/renter-portal/penalties", "/dashboard/tickets", "/marketplace/acme", "/dashboard/meetings",
         ]);
     });

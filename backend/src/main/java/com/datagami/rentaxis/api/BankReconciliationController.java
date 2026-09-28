@@ -187,27 +187,33 @@ public class BankReconciliationController {
     /**
      * The statement lines as CSV, with their match state. Every cell goes through
      * {@link ReportCsv#encode}'s formula-injection escaping: descriptions and
-     * references come from the bank's file.
+     * references come from the bank's file. Break-it R3 data3 F2: labels in the
+     * viewer's language ({@code ?lang=ar}) and a UTF-8 BOM so Excel shows the
+     * bank's Arabic descriptions instead of mojibake.
      */
     @GetMapping(value = "/bank-accounts/{id}/lines.csv", produces = "text/csv")
     public ResponseEntity<byte[]> linesCsv(
             @PathVariable UUID id,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false, defaultValue = "en") String lang) {
         requireTenantSelected();
         BankRecDTOs.Workspace w = matches.workspace(id, from, to, "ALL");
+        boolean ar = "ar".equalsIgnoreCase(lang);
+        java.util.function.Function<String, String> l = k -> com.datagami.rentaxis.core.service.bank.BankReconciliationPdfRenderer.label(k, ar);
         List<List<String>> rows = new ArrayList<>();
-        rows.add(List.of("Date", "Value date", "Description", "Reference", "Cheque no", "Amount", "Balance", "Match"));
-        for (BankRecDTOs.StatementLine l : w.statementLines()) {
-            rows.add(List.of(dmy(l.txnDate()), dmy(l.valueDate()), l.description(), Objects.toString(l.reference(), ""),
-                    Objects.toString(l.chequeNo(), ""), l.amount().toPlainString(),
-                    l.runningBalance() == null ? "" : l.runningBalance().toPlainString(),
-                    l.matchStatus() == null ? "UNMATCHED" : l.matchStatus()));
+        rows.add(List.of(l.apply("date"), l.apply("linesValueDate"), l.apply("linesDescription"), l.apply("linesReference"),
+                l.apply("linesChequeNo"), l.apply("amount"), l.apply("linesBalance"), l.apply("linesMatch")));
+        for (BankRecDTOs.StatementLine s : w.statementLines()) {
+            rows.add(List.of(dmy(s.txnDate()), dmy(s.valueDate()), s.description(), Objects.toString(s.reference(), ""),
+                    Objects.toString(s.chequeNo(), ""), s.amount().toPlainString(),
+                    s.runningBalance() == null ? "" : s.runningBalance().toPlainString(),
+                    l.apply("match" + (s.matchStatus() == null ? "UNMATCHED" : s.matchStatus()))));
         }
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"statement-lines.csv\"")
                 .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
-                .body(ReportCsv.encode(rows, false));
+                .body(ReportCsv.encode(rows, true));
     }
 
     private static String dmy(LocalDate d) {
@@ -385,7 +391,8 @@ public class BankReconciliationController {
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"bank-reconciliation-" + r.periodTo() + ".csv\"")
                 .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
-                .body(ReportCsv.encode(rows, false));
+                // Break-it R3 data3 F2: BOM so Excel reads the Arabic labels and narrations as UTF-8.
+                .body(ReportCsv.encode(rows, true));
     }
 
     private static void csvItems(List<List<String>> rows, String section, List<BankRecDTOs.RecItem> items, String yes) {

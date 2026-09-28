@@ -100,6 +100,15 @@ public class LeaseTerminationService {
     private final Clock clock;
     private final VatTaxPointService vatTaxPoints;
 
+    /** Break-it R3 money3: the shared posting-date policy ({@link com.datagami.rentaxis.core.service.ledger.PostingDatePath}), on the app clock. */
+    private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates =
+            com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setManualPostingDates(com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates) {
+        this.manualDates = manualDates;
+    }
+
     public LeaseTerminationService(LeaseRepository leaseRepository,
                                    ChequeRepository chequeRepository,
                                    TenantFiscalSettingsRepository fiscalSettings,
@@ -597,6 +606,9 @@ public class LeaseTerminationService {
             throw new BusinessRuleViolationException("The termination date " + t + " is outside the lease term ("
                     + lease.getStartDate() + " – " + lease.getEndDate() + ").");
         }
+        // Break-it R3 money3 sweep: a termination may be recorded ahead of the move-out,
+        // but not more than a year ahead (the TCR and the returns post on it).
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.LEASE_TERMINATION, t);
         LocalDate locked = booksLockedThrough();
         if (locked != null && !t.isAfter(locked)) {
             // Checked here rather than left to PostingService so the refusal arrives

@@ -311,7 +311,7 @@ public class ContractImportPersistService {
             Unit u = new Unit();
             u.setProperty(property);
             u.setBuilding(building);
-            u.setUnitNumber(unitNumber);
+            u.setUnitNumber(com.datagami.rentaxis.core.service.UnitRules.display(unitNumber));
             // VACANT, and it stays that way until the batch posts: a DRAFT lease
             // reserves nothing, exactly as a lease drafted in the wizard does not.
             u.setStatus(UnitStatus.VACANT);

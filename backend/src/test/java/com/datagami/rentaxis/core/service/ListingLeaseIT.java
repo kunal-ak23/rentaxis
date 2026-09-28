@@ -43,6 +43,8 @@ class ListingLeaseIT extends AbstractPostgresIT {
 
     @Autowired ListingLeaseService service;
     @Autowired UnitListingService listings;
+    @Autowired MarketplaceService marketplace;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     @Autowired UnitListingRepository listingRepo;
     @Autowired UnitListingInterestRepository interestRepo;
     @Autowired LeasePostingService posting;
@@ -146,5 +148,68 @@ class ListingLeaseIT extends AbstractPostgresIT {
         assertThat(listingRepo.findById(listingId).orElseThrow().getStatus()).isEqualTo(ListingStatus.UNLISTED);
         tx.executeWithoutResult(s -> listings.syncAvailableFrom(fixtures.unit().getId(), null));
         assertThat(listingRepo.findById(listingId).orElseThrow().getStatus()).isEqualTo(ListingStatus.PUBLISHED);
+    }
+
+    /** Break-it R3 ops3 F10: a unit with a posted lease cannot be (re)published as available, nor shown so publicly. */
+    @Test
+    void aLetUnitCannotBePublishedAsAvailableAndTheMarketplaceHidesIt() {
+        fixtures.postedLease(LocalDate.of(2026, 4, 20), LocalDate.of(2026, 5, 1), LocalDate.of(2027, 4, 30),
+                java.util.List.of(LeaseTestFixtures.line("RENT", "60000")), 4, null);
+        // Posting unlisted it and moved availability past the lease end.
+        UnitListing l = listingRepo.findById(listingId).orElseThrow();
+        assertThat(l.getStatus()).isEqualTo(ListingStatus.UNLISTED);
+
+        // Clear the date: "available now" while let → refused.
+        l.setAvailableFrom(null);
+        listingRepo.save(l);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> tx.executeWithoutResult(s -> listings.publish(fixtures.tenantId(), listingId)))
+                .satisfies(e -> assertThat(((com.datagami.rentaxis.api.exception.BusinessRuleViolationException) e).getCode())
+                        .isEqualTo("listing.unitLet"));
+        assertThat(listingRepo.findById(listingId).orElseThrow().getStatus()).isEqualTo(ListingStatus.UNLISTED);
+
+        // A listing published before the guard existed never shows on the marketplace.
+        UnitListing legacy = listingRepo.findById(listingId).orElseThrow();
+        legacy.setStatus(ListingStatus.PUBLISHED);
+        listingRepo.save(legacy);
+        var page = tx.execute(s -> marketplace.search(fixtures.tenantId(), null, org.springframework.data.domain.PageRequest.of(0, 50)));
+        assertThat(page.getContent()).extracting(UnitListing::getId).doesNotContain(listingId);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> tx.execute(s -> marketplace.getBySlug(fixtures.tenantId(), legacy.getSlug())))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.NotFoundException.class);
+
+        // Pre-marketing: available from the day after the lease ends → allowed and shown.
+        legacy.setStatus(ListingStatus.UNLISTED);
+        legacy.setAvailableFrom(LocalDate.of(2027, 5, 1));
+        listingRepo.save(legacy);
+        tx.executeWithoutResult(s -> listings.publish(fixtures.tenantId(), listingId));
+        assertThat(listingRepo.findById(listingId).orElseThrow().getStatus()).isEqualTo(ListingStatus.PUBLISHED);
+        var after = tx.execute(s -> marketplace.search(fixtures.tenantId(), null, org.springframework.data.domain.PageRequest.of(0, 50)));
+        assertThat(after.getContent()).extracting(UnitListing::getId).contains(listingId);
+    }
+
+    /** Review r3C I2: after notice with a move-out date, pre-marketing from the day after move-out is allowed and shown. */
+    @Test
+    void underNoticeTheListingMayBePreMarketedFromTheDayAfterMoveOut() {
+        fixtures.postedLease(LocalDate.of(2026, 4, 20), LocalDate.of(2026, 5, 1), LocalDate.of(2027, 4, 30),
+                java.util.List.of(LeaseTestFixtures.line("RENT", "60000")), 4, null);
+        int noticed = jdbc.update("update leases set status = 'NOTICE_GIVEN', intended_move_out_date = ? where tenant_id = ?",
+                LocalDate.of(2026, 11, 30), fixtures.tenantId());
+        assertThat(noticed).isOne();
+
+        UnitListing l = listingRepo.findById(listingId).orElseThrow();
+        l.setAvailableFrom(LocalDate.of(2026, 11, 30));   // move-out day itself: still let
+        listingRepo.save(l);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> tx.executeWithoutResult(s -> listings.publish(fixtures.tenantId(), listingId)))
+                .satisfies(e -> assertThat(((com.datagami.rentaxis.api.exception.BusinessRuleViolationException) e).getArgs())
+                        .containsEntry("next", "01/12/2026"));
+
+        l = listingRepo.findById(listingId).orElseThrow();
+        l.setAvailableFrom(LocalDate.of(2026, 12, 1));
+        listingRepo.save(l);
+        tx.executeWithoutResult(s -> listings.publish(fixtures.tenantId(), listingId));
+        var page = tx.execute(s -> marketplace.search(fixtures.tenantId(), null, org.springframework.data.domain.PageRequest.of(0, 50)));
+        assertThat(page.getContent()).extracting(UnitListing::getId).contains(listingId);
+        UnitListing shown = tx.execute(s -> marketplace.getBySlug(fixtures.tenantId(),
+                listingRepo.findById(listingId).orElseThrow().getSlug()));
+        assertThat(shown.getId()).isEqualTo(listingId);
     }
 }

@@ -108,8 +108,6 @@ import java.util.UUID;
 @Service
 public class ChequeService {
 
-    private static final String DEPOSIT_NOT_YET = "A cheque cannot have been banked yet, and nothing was deposited.";
-    private static final String CLEAR_NOT_YET = "Funds cannot have cleared yet, and nothing was cleared.";
 
     /** Break-it round 1 (money) F4: the one-year window on manual dates, on the app clock. */
     private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates = com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system();
@@ -373,7 +371,7 @@ public class ChequeService {
         requireDepositable(cheque);
         if (replay == null) {
             // Break-it R2 money2 F1/F2: the slip records a visit to the bank that happened.
-            manualDates.requireNotAfterToday(r.dateOrToday(), "deposit", DEPOSIT_NOT_YET);
+            manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.CHEQUE_DEPOSIT, r.dateOrToday());
             requireNotPresentedEarly(cheque, r.dateOrToday());
             // F14-64: the slip cannot predate the row, the same rule clearing applies.
             requireNotDepositedBeforeBooked(cheque, bookedOn(cheque), r.dateOrToday());
@@ -416,7 +414,7 @@ public class ChequeService {
         // useChequeDates (#10) that is each row's own cheque date instead.
         // Break-it R2 money2 F1/F2: one slip date for the pile, and it has happened.
         if (!Boolean.TRUE.equals(request.useChequeDates())) {
-            manualDates.requireNotAfterToday(request.dateOrToday(), "deposit", DEPOSIT_NOT_YET);
+            manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.CHEQUE_DEPOSIT, request.dateOrToday());
         }
         List<String> problems = new ArrayList<>();
         for (UUID id : ids) {
@@ -506,7 +504,7 @@ public class ChequeService {
         // also hand the late-payment rule a day that has not happened yet.
         LocalDate today = LocalDate.now(clock);
         LocalDate date = request.clearingDate() != null ? request.clearingDate() : today;
-        manualDates.requireNotAfterToday(date, "clearing", CLEAR_NOT_YET);
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.CHEQUE_CLEAR, date);
 
         List<Cheque> cheques;
         try {
@@ -594,7 +592,7 @@ public class ChequeService {
         requireStatus(cheque, "clear", ChequeStatus.DEPOSITED);
         if (replay == null) {
             // Break-it R2 money2 F2: the batch clear's rule, now on the single clear too.
-            manualDates.requireNotAfterToday(r.dateOrToday(), "clearing", CLEAR_NOT_YET);
+            manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.CHEQUE_CLEAR, r.dateOrToday());
             requireNotClearedEarly(cheque, r.dateOrToday());
         }
 
@@ -644,6 +642,10 @@ public class ChequeService {
             throw new BusinessRuleViolationException(
                     "Only a CASH or TRANSFER receipt can be received directly; " + label(cheque)
                             + " is a " + cheque.getMode() + " row. Deposit it and clear it instead.");
+        }
+        if (replay == null) {
+            // Break-it R3 money3 N2: money that arrived has arrived — the clear's rule.
+            manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.CHEQUE_RECEIVE, r.dateOrToday());
         }
 
         applyClearing(lease, cheque, r.dateOrToday(), r.debitAccountId(), r.notes(), replay, true, false,
@@ -712,7 +714,7 @@ public class ChequeService {
         // Break-it R2 money2 F1: a return the bank has not made yet cannot be recorded
         // (and a 2126 typo used to take CBR-26/1 and block every 2026 bounce).
         if (replay == null) {
-            manualDates.requireNotAfterToday(date, "bounce", "A cheque cannot have been returned yet, and nothing was bounced.");
+            manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.CHEQUE_BOUNCE, date);
         }
         BigDecimal amount = cheque.getAmount();
         String narration = LeaseChequeRegistrar.narrationOf(cheque);
@@ -815,6 +817,9 @@ public class ChequeService {
         }
 
         LocalDate date = request.dateOrToday();
+        // Break-it R3 money3 sweep: each replacement's PDR posts on its posting date.
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.CHEQUE_ROW, date);
+        for (ChequeRowInput row : rows) manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.CHEQUE_ROW, row.postingDate());
         List<ChequeDTO> out = new ArrayList<>(rows.size());
         int seq = nextSeqNo(register);
         for (ChequeRowInput row : rows) {
@@ -982,6 +987,8 @@ public class ChequeService {
         Cheque cheque = lock(chequeId);
         Lease lease = checkAccess ? managedLeaseOf(cheque) : requireCollectable(cheque.getLease());
         requireStatus(cheque, "cancel", ChequeStatus.REGISTERED);
+        // Break-it R3 money3 N2: a cancellation records something done, like a bounce.
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.CHEQUE_CANCEL, r.dateOrToday());
         requireSettlementUndisturbed(lease, cheque);
         vatTaxPoints.beforeCancel(cheque, moveVatToChequeId);
 
@@ -1161,6 +1168,8 @@ public class ChequeService {
         // same list, and a second query would be a second chance to disagree.
         List<Cheque> register = chequeRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
         ChequeRowRules.validateNewRows(List.of(row), takenNumbers(register), "row");
+        // Break-it R3 money3 sweep: the row's PDR posts on its posting date.
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.CHEQUE_ROW, row.postingDate());
 
         Cheque cheque = newRow(lease, row, nextSeqNo(register), LocalDate.now());
         chequeRepository.save(cheque);
@@ -1185,10 +1194,13 @@ public class ChequeService {
     @Transactional
     public ChequeDTO cashReceipt(UUID leaseId, ChequeRowInput row) {
         if (row == null) throw new BusinessRuleViolationException("A receipt needs a row");
-        // Break-it round 1 (money) F4: a counter receipt is dated by hand and posts a
-        // PDR and a CRT on that date, numbered with a two-digit year.
+        // Break-it round 1 (money) F4 / R3 money3 N2: a counter receipt is money that has
+        // arrived; it posts a PDR and a CRT on these dates, so neither may be after today.
+        // The year window first, so a mistyped year reads "check the year" (R1 F4's words).
         manualDates.requireWithinAYear(row.chequeDate(), "A cash receipt");
         manualDates.requireWithinAYear(row.postingDate(), "A cash receipt");
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.CASH_RECEIPT, row.chequeDate());
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.CASH_RECEIPT, row.postingDate());
         ChequeMode mode = row.mode();
         if (mode != ChequeMode.CASH && mode != ChequeMode.TRANSFER) {
             // A PDC is paper to be banked and cleared later; an ONLINE row belongs to

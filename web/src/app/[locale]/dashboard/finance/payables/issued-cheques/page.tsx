@@ -21,6 +21,7 @@ import {
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { useStatementCoverGuard } from "@/lib/statementCoverGuard";
 import { StatementCoverNotice } from "@/components/finance/StatementCoverNotice";
+import { businessTodayIso } from "@/lib/businessDate";
 
 const th = "px-3 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider whitespace-nowrap text-start";
 const td = "px-3 py-2 text-xs";
@@ -29,10 +30,9 @@ const label = "text-[10px] font-semibold text-muted uppercase tracking-wider";
 const button = "flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface text-foreground border border-border text-xs font-bold hover:bg-input transition-all cursor-pointer disabled:opacity-50";
 const small = "inline-flex items-center gap-1 px-2 py-1 rounded-md border border-border text-[10px] font-bold hover:bg-input cursor-pointer";
 
-const pad = (n: number) => String(n).padStart(2, "0");
+/** Break-it R3 money3 N4: the business (Dubai) date, not the browser's. */
 function todayIso(): string {
-    const d = new Date();
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    return businessTodayIso();
 }
 
 function Amount({ v, strong }: { v: number | null | undefined; strong?: boolean }) {

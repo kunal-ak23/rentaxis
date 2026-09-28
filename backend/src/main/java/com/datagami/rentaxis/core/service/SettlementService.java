@@ -906,6 +906,15 @@ public class SettlementService {
         }
     }
 
+    /** Break-it R3 money3 N5: "today" for the settlement date, on the app clock. */
+    private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates =
+            com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setManualPostingDates(com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates) {
+        this.manualDates = manualDates;
+    }
+
     /**
      * The {@code STL}'s date has to be a date the books will accept and a date the
      * tenancy had actually ended on.
@@ -915,6 +924,9 @@ public class SettlementService {
      * finance has to move.</p>
      */
     private void requireUsableDate(Lease lease, LocalDate settlementDate) {
+        // Break-it R3 money3 N5: a settlement records a move-out that has happened, and
+        // cannot be undone once finalised — 2099 typed for 2026 posted STL-99/1 for good.
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.SETTLEMENT, settlementDate);
         LocalDate terminatedOn = lease.getTerminatedOn();
         if (terminatedOn != null) {
             if (settlementDate.isBefore(terminatedOn)) {

@@ -119,7 +119,15 @@ public class ContractImportPostService {
     /** How one contract of the batch fared. */
     public record LeaseOutcome(UUID leaseId, String externalContractRef, Outcome outcome, String reason,
                                int journals, int chequesDeposited, int chequesCleared, int chequesBounced,
-                               int recognitionEntriesPosted) {
+                               int recognitionEntriesPosted, String reasonCode, Map<String, String> reasonArgs) {
+
+        /** The shape before break-it R3 data3 F4: a reason with no translation key. */
+        public LeaseOutcome(UUID leaseId, String externalContractRef, Outcome outcome, String reason,
+                            int journals, int chequesDeposited, int chequesCleared, int chequesBounced,
+                            int recognitionEntriesPosted) {
+            this(leaseId, externalContractRef, outcome, reason, journals, chequesDeposited, chequesCleared,
+                    chequesBounced, recognitionEntriesPosted, null, null);
+        }
 
         public enum Outcome {
             /** Posted by this run. */
@@ -259,12 +267,19 @@ public class ContractImportPostService {
                 // The lease's own transaction rolled back; this one is untouched,
                 // which is the whole point of the separate bean. The contract is
                 // still a DRAFT of this batch, so a later Post retries exactly it.
-                String reason = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                // Break-it R3 data3 F4: only a user-safe reason is stored; anything that is
+                // not a refusal written for users is logged under a reference instead.
+                com.datagami.rentaxis.core.service.ImportFailures.Safe safe = com.datagami.rentaxis.core.service.ImportFailures
+                        .safe(e, com.datagami.rentaxis.core.service.ImportFailures.Kind.POST, log,
+                                "Cut-over contract " + row.ref() + " (" + row.leaseId() + ") post");
+                String reason = safe.message();
                 log.warn("Cut-over contract {} ({}) could not be posted: {}", row.ref(), row.leaseId(), reason);
+                Map<String, String> args = safe.args().isEmpty() ? null : safe.args();
                 outcomes.add(new LeaseOutcome(row.leaseId(), row.ref(), LeaseOutcome.Outcome.FAILED,
-                        reason, 0, 0, 0, 0, 0));
-                failures.add(new ImportErrorDTO("Contracts", null, "ContractNumber",
-                        "Contract " + row.ref() + ": " + reason));
+                        reason, 0, 0, 0, 0, 0, safe.code(), args));
+                ImportErrorDTO failure = new ImportErrorDTO("Contracts", null, "ContractNumber",
+                        "Contract " + row.ref() + ": " + reason);
+                failures.add(failure);
             }
             progress.accept(new Progress(++processed, plan.size()));
         }
@@ -280,7 +295,7 @@ public class ContractImportPostService {
                 .map(o -> new LeaseOutcome(o.leaseId(), o.externalContractRef(), o.outcome(), o.reason(),
                         byLease.getOrDefault(o.leaseId(), 0L).intValue(),
                         o.chequesDeposited(), o.chequesCleared(), o.chequesBounced(),
-                        o.recognitionEntriesPosted()))
+                        o.recognitionEntriesPosted(), o.reasonCode(), o.reasonArgs()))
                 .toList();
 
         ImportBatchStatus finalStatus = batch.getStatus();

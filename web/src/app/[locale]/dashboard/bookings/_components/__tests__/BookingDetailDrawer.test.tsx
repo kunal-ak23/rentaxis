@@ -5,7 +5,10 @@ import type { BookingDetailDTO, BookingRequestDTO } from "@/types/facility";
 vi.mock("next-intl", () => {
   // Stable identity: the drawer's `load` useCallback depends on `t`, so a
   // fresh function per render would refire the load effect forever.
-  const translate = (key: string) => key;
+  const translate = Object.assign((key: string) => key, {
+    // serverText looks a coded refusal up under Common.errors.<code>.
+    has: (key: string) => key.startsWith("errors."),
+  });
   return {
     useTranslations: () => translate,
     useLocale: () => "en",
@@ -143,5 +146,76 @@ describe("BookingDetailDrawer 409 handling", () => {
 
     await waitFor(() => expect(screen.getByText("actionError")).toBeInTheDocument());
     expect(api.fetchBooking).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("BookingDetailDrawer — break-it R3 ops3 F7/F9", () => {
+  const amenityPending = makeRequest({
+    id: "req-1", resourceType: "AMENITY", amenityId: "am-1", parkingSpotId: null, resourceName: "PoolFee",
+    preferredDate: "2026-10-12",
+  });
+  const coded = (status: number, code: string, message: string) =>
+    new ApiError(status, message, JSON.stringify({ error: message, message, code }));
+
+  it("a lost race on an amenity says the request was already decided and shows its real status", async () => {
+    const onChanged = vi.fn();
+    api.approveBooking.mockRejectedValue(coded(409, "booking.decisionInProgress",
+      "A decision on this booking is already in progress, please retry"));
+    api.fetchBooking
+      .mockResolvedValueOnce({ request: amenityPending, otherRequests: [] })
+      // The winner has not committed at the first re-read…
+      .mockResolvedValueOnce({ request: amenityPending, otherRequests: [] })
+      // …and has at the next one.
+      .mockResolvedValue({ request: { ...amenityPending, status: "APPROVED" }, otherRequests: [] });
+
+    render(<BookingDetailDrawer bookingId="req-1" onClose={() => {}} onChanged={onChanged} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "approve" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "approve" }));
+
+    await waitFor(() => expect(screen.getByText("alreadyDecided")).toBeInTheDocument(), { timeout: 3000 });
+    expect(screen.getByText("statusAPPROVED")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "approve" })).toBeNull();
+    expect(screen.queryByText("spotConflict")).toBeNull();
+    expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ status: "APPROVED" }));
+  });
+
+  it("a 400 'not pending' re-reads the booking too", async () => {
+    api.rejectBooking.mockRejectedValue(coded(400, "booking.notPending", "Booking is not pending"));
+    api.fetchBooking
+      .mockResolvedValueOnce({ request: amenityPending, otherRequests: [] })
+      .mockResolvedValue({ request: { ...amenityPending, status: "CANCELLED" }, otherRequests: [] });
+
+    render(<BookingDetailDrawer bookingId="req-1" onClose={() => {}} onChanged={() => {}} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "reject" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "reject" }));
+
+    await waitFor(() => expect(screen.getByText("alreadyDecided")).toBeInTheDocument());
+    expect(screen.getByText("statusCANCELLED")).toBeInTheDocument();
+  });
+
+  it("an amenity clash shows the clash, never the parking 'another tenant' text", async () => {
+    api.approveBooking.mockRejectedValue(coded(409, "booking.renterAlreadyBooked",
+      "The renter already has an approved booking of this amenity at that time."));
+    api.fetchBooking.mockResolvedValue({ request: amenityPending, otherRequests: [] });
+
+    render(<BookingDetailDrawer bookingId="req-1" onClose={() => {}} onChanged={() => {}} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "approve" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "approve" }));
+
+    await waitFor(() => expect(screen.getByText("errors.booking.renterAlreadyBooked")).toBeInTheDocument());
+    expect(screen.queryByText("spotConflict")).toBeNull();
+  });
+
+  it("other requests list the booked date, not the day they were requested", async () => {
+    api.fetchBooking.mockResolvedValue({
+      request: amenityPending,
+      otherRequests: [makeRequest({ id: "req-9", resourceType: "AMENITY", status: "APPROVED",
+        preferredDate: "2026-10-12", preferredStartTime: "10:00:00", preferredEndTime: "12:30:00",
+        createdAt: "2026-09-01T09:00:00Z" })],
+    });
+
+    render(<BookingDetailDrawer bookingId="req-1" onClose={() => {}} onChanged={() => {}} />);
+    await waitFor(() => expect(screen.getByText(/bookedFor 12\/10\/2026 · 10:00–12:30/)).toBeInTheDocument());
+    expect(screen.queryByText(/01\/09\/2026/)).toBeNull();
   });
 });

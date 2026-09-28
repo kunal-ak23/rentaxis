@@ -447,8 +447,9 @@ public class ContractImportValidator {
     }
 
     static String unitKey(String propertyName, String buildingName, String unitNumber) {
-        return (propertyName.trim() + "|" + buildingName.trim() + "|" + unitNumber.trim())
-                .toLowerCase(Locale.ROOT);
+        // Break-it R3 ops3 F1: the unit number part compared the way Add Unit compares it.
+        return (propertyName.trim() + "|" + buildingName.trim()).toLowerCase(Locale.ROOT)
+                + "|" + com.datagami.rentaxis.core.service.UnitRules.normalise(unitNumber);
     }
 
     // ------------------------------------------------------------------

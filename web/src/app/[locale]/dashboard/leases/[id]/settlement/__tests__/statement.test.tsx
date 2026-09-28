@@ -72,6 +72,7 @@ vi.mock("@/lib/api/ledger", async orig => {
 
 import SettlementPage from "../page";
 import { ApiError } from "@/lib/api/leasing";
+import { businessTodayIso } from "@/lib/businessDate";
 
 const LEASE: LeaseDetail = {
     id: "lease-1", unitId: "u1", renterId: "r1", unitIdentifier: "204", renterName: "Prabhjot Singh",
@@ -328,6 +329,20 @@ describe("Settlement statement", () => {
     it("keeps the settlement date on or after the termination date", async () => {
         renderPage();
         expect(await screen.findByTestId("settlement-date")).toHaveAttribute("min", "2026-06-30");
+    });
+
+    /** Break-it R3 money3 N5: STL-99/1 was posted for good; a settlement is not dated after today. */
+    it("keeps the settlement date on or before today and blocks Finalize after it", async () => {
+        renderPage();
+        const input = await screen.findByTestId("settlement-date");
+        expect(input).toHaveAttribute("max", businessTodayIso());
+        await waitFor(() => expect(screen.getByTestId("settlement-finalize")).toBeEnabled());
+        fireEvent.change(input, { target: { value: "2099-12-31" } });
+        expect(screen.getByTestId("settlement-date-after-today")).toBeInTheDocument();
+        expect(screen.getByTestId("settlement-finalize")).toBeDisabled();
+        fireEvent.change(input, { target: { value: businessTodayIso() } });
+        expect(screen.queryByTestId("settlement-date-after-today")).toBeNull();
+        await waitFor(() => expect(screen.getByTestId("settlement-finalize")).toBeEnabled());
     });
 
     it("reports the STL and does not promise closure while cheques remain", async () => {

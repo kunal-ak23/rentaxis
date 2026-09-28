@@ -20,6 +20,9 @@ import java.util.UUID;
 @Repository
 public interface JournalEntryRepository extends JpaRepository<JournalEntry, UUID> {
 
+    /** Break-it R3 money3 N1: whether the tenant has any journal at all (tenant bound explicitly). */
+    boolean existsByTenantId(UUID tenantId);
+
     List<JournalEntry> findBySourceTypeAndSourceIdOrderByEntryDateAscCreatedAtAsc(JournalSourceType sourceType, UUID sourceId);
 
     /**

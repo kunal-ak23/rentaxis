@@ -215,6 +215,9 @@
     "addressPlaceholder": "Building name, street, area",
     "makaniPlaceholder": "e.g. 12345-67890",
     "unitNumberPlaceholder": "e.g. 101",
+    "unitNumberTaken": "Unit {unitNumber} already exists in {place}. Use a different unit number.",
+    "unitSizePositive": "Size must be greater than 0.",
+    "floorsRange": "Floors must be a whole number from {min} to {max}.",
     "projectCreateFailed": "Failed to create project. Please try again.",
     "propertyCreateFailed": "Failed to create property. Please try again.",
     "portfolioImportDesc": "Upload a multi-sheet Excel workbook to import properties, units, tenants, and contracts at once.",
@@ -428,7 +431,9 @@
     "createAccountFailed": "Failed to create account",
     "updateAccountFailed": "Failed to update account",
     "deleteAccountFailed": "Failed to delete account",
-    "importAccountsFailed": "Failed to import accounts"
+    "importAccountsFailed": "Failed to import accounts",
+    "importAccountsDone": "{created, plural, one {# account imported} other {# accounts imported}}{skipped, plural, =0 {} one {; # blank row skipped} other {; # blank rows skipped}}.",
+    "importAccountsNone": "No accounts were imported — the file has no account rows."
   },
   "Emirates": {
     "DUBAI": "Dubai",
@@ -1092,6 +1097,10 @@
     "errorNetwork": "Network error. Please try again."
   },
   "Marketplace": {
+    "propertiesCount": "{count, plural, one {# property} other {# properties}}",
+    "backToDashboard": "Dashboard",
+    "wishlistRemoveFailed": "Your interest wasn't removed. Please try again.",
+    "wishlistAddFailed": "Your interest wasn't saved. Please try again.",
     "title": "Browse Properties",
     "subtitle": "Find your perfect home",
     "noListingsTitle": "No listings available",
@@ -1333,6 +1342,10 @@
     "linkLabel": "Open contract"
   },
   "renewals": {
+    "contractEnded": "This contract has already ended, so a renewal choice can't be recorded. Please contact your landlord.",
+    "endedSection": "Ended contracts",
+    "endedHint": "This contract has ended, so there is nothing to renew here. Contact your landlord about a new contract.",
+    "endedDaysAgo": "Contract ended {days, plural, =0 {today} one {# day ago} other {# days ago}} ({date})",
     "pageTitle": "Renewals",
     "within30": "Within 30 days",
     "within60": "Within 60 days",
@@ -1532,6 +1545,7 @@
     "release": "Release",
     "working": "Working...",
     "spotConflict": "This spot is already approved for another tenant.",
+    "alreadyDecided": "This request was already decided — refreshed.", "bookedFor": "Booked for",
     "actionError": "Action failed. Please try again.",
     "loading": "Loading...",
     "loadError": "Failed to load booking requests.",
@@ -1853,7 +1867,10 @@
   },
   "Ledger": {
     "lockFirst": "This is the first period lock: nothing dated up to {to} can be posted afterwards. Tick to confirm the date is right.",
-    "lockAheadOfToday": "The books are locked through {date}, which is after today, so nothing can be posted. Re-open the latest closed fiscal year or ask support to correct the lock.",
+    "lockAheadOfToday": "The books are locked through {date}, which is after today, so nothing can be posted. If nothing has been posted yet, change the books start date; otherwise re-open the latest closed fiscal year or ask support to correct the lock.",
+    "booksStartRule": "The books can start at most three months ahead (the latest is {latest}); the period before the start is locked.",
+    "booksStartTooFar": "The books start date is more than three months ahead (the latest is {latest}). Check the year.",
+    "booksStartFuture": "The books start on {date}, after today: nothing can be posted before then. Tick to confirm the date is right.",
     "lockRule": "Only a period that has already ended can be locked: the latest date is today ({today}).",
     "lockAfterToday": "This date is after today. Check the year.",
     "lockBigJump": "This moves the lock {months} months forward, from {from} to {to}. Nothing dated up to {to} can be posted afterwards. Tick to confirm the date is right.",
@@ -2354,6 +2371,7 @@
   },
   "Cheques": {
     "dateAfterToday": "The date cannot be after today: the bank has not done this yet.",
+    "eventAfterToday": "The date cannot be after today ({today}): this has not happened yet.",
     "penaltyChanged": "This charge changed in another window. It has been reloaded with its current amount; review it and approve again.",
     "breakdownGross": "Total with VAT",
     "breakdownVat": "VAT",
@@ -2566,11 +2584,16 @@
       "settlement": {
         "changed": "This settlement changed since you opened it. Review it again; nothing was posted."
       },
+      "fiscal": {
+        "booksStartTooFar": "The books cannot start on {date}: that is more than three months ahead (the latest is {latest}). Check the year.",
+        "lockBackwards": "The period lock cannot move back from {current}: journals are posted inside it. Re-open the latest closed fiscal year instead.",
+        "changed": "The period lock changed since you opened this, and has been reloaded. Review the move again; nothing was re-opened."
+      },
       "listing": {
-        "interestWithdrawn": "This enquiry was withdrawn.","interestConverted": "This enquiry already has a draft lease."},
+        "interestWithdrawn": "This enquiry was withdrawn.","interestConverted": "This enquiry already has a draft lease.", "unitLet": "This unit is let until {end}. Set \"Available from\" to {next} or later to publish the listing."},
       "booking": {
-        "feeWrittenOff": "This booking's fee was written off as a bad debt; it can no longer be cancelled.","feeType": "Unknown fee type {type}.", "feeAmount": "A fee needs an amount greater than zero.", "noLease": "The renter has no live lease on this unit to charge the booking fee to.", "slotStarted": "The booking's slot has started; it can no longer be cancelled."},
-      "ticket": {"rechargeExceedsBill": "Only {remaining} of this ticket's bills ({bills}) is left to recharge. Nothing was recharged.", "billNotLinkable": "Only a posted purchase invoice not linked to another ticket can be linked.", "noLease": "This ticket's unit has no live lease to recharge.", "rechargeAmount": "Enter the amount to recharge."},
+        "feeWrittenOff": "This booking's fee was written off as a bad debt; it can no longer be cancelled.","feeType": "Unknown fee type {type}.", "feeAmount": "A fee needs an amount greater than zero.", "noLease": "The renter has no live lease on this unit to charge the booking fee to.", "slotStarted": "The booking's slot has started; it can no longer be cancelled.", "dateInPast": "The booking date cannot be before today ({today}).", "rangeTooLong": "A parking booking can cover at most {years} years. Choose an earlier end date.", "outsideLease": "The booking must fall within your contract period ({start} to {end}).", "outsideRenterLease": "The booking must fall within the renter's contract period ({start} to {end}).", "noActiveLease": "The renter has no current contract on this unit, so the booking cannot be made.", "alreadyBooked": "You already have an approved booking of this amenity at that time.", "renterAlreadyBooked": "The renter already has an approved booking of this amenity at that time.", "pendingExists": "You already have a pending request for this amenity. Wait for the decision or cancel it first.", "notPending": "This request was already decided.", "decisionInProgress": "Someone is deciding this request right now. Reload in a moment.", "spotTaken": "This parking spot is already assigned to another renter.", "dateRequired": "Choose a date: this amenity has a booking fee."},
+      "ticket": {"rechargeLive": "This bill backs a live recharge to the renter. Cancel the recharge first (waive it, or reverse it if approved); nothing was changed.", "rechargeExceedsBill": "Only {remaining} of this ticket's bills ({bills}) is left to recharge. Nothing was recharged.", "billNotLinkable": "Only a posted purchase invoice not linked to another ticket can be linked.", "noLease": "This ticket's unit has no live lease to recharge.", "rechargeAmount": "Enter the amount to recharge."},
       "badDebt": {"itemNotOpen": "Instalment {row} is {status}; only an unpaid or bounced item can be written off.", "vatNotDeclared": "Instalment {row} carries VAT not declared yet; post the VAT tax points through its date first.", "itemsChanged": "The items have changed since the write-off was proposed; reject it and propose again.", "nothingOpen": "This lease has nothing open to write off.", "recoveredCannotReverse": "Money was recovered on this write-off; it cannot be reversed.", "reverseBeforeWriteOff": "A reversal cannot be dated before the write-off ({date}).", "recoveryTooMuch": "Only {left} of this write-off is left to recover.", "recoveryAccount": "Choose the bank or cash account the money went into.", "wrongStatus": "This write-off is {status}.", "reasonRequired": "Give a reason.", "itemSettled": "Instalment {row} has been settled in the books (the lease's receivable no longer carries it); it cannot be written off.", "recoveryAccountProperty": "Account {account} cannot take money for this lease's property; choose one of its bank or cash accounts."},
       "vat": {"outputCheckFailed": "Output VAT per the tax invoices and credit notes does not match the Output VAT account (difference {difference}). Give a reason to file anyway.", "outputCheckChanged": "The output difference is now {difference}; review the return again before filing it.", "overrideReasonShort": "Explain the difference in at least {min} characters.", "overrideReason": "Keep the reason under 500 characters.", "periodFiled": "The VAT return for {from} – {to} is filed, so VAT dated {date} cannot change. Date the correction on or after {next}.", "periodStart": "A VAT period starts on the first day of a month.", "periodNotEnded": "A VAT period can be filed once it has ended.", "alreadyFiled": "This VAT period is already filed.", "periodOverlaps": "This VAT period overlaps one already filed.", "reopenReason": "Give a reason for re-opening the VAT return.", "notFiled": "This VAT return is not filed."},
       "ledger": {"propertyUnbalanced": "This journal does not balance per property (out by {amount}); a journal spanning properties needs an inter-property clearing leg in each."},
@@ -2702,6 +2725,14 @@
     "orgNetworkError": "Network error. Please check your connection and try again.",
     "orgSaveDenied": "You don't have permission to do this, or your session expired. Please sign in again.",
     "orgGone": "This organisation no longer exists. Close the dialog and refresh the list.",
+    "orgChanged": "Someone else changed this organisation while you had it open. It now shows the current details; make your change again.",
+    "orgStatusChanged": "This organisation's status changed in another tab. Close this and reopen it from the refreshed list to see it.",
+    "orgActivate": "Activate",
+    "orgDeactivate": "Deactivate",
+    "orgActivateTitle": "Activate this organisation?",
+    "orgDeactivateTitle": "Deactivate this organisation?",
+    "orgActivateBody": "{name} and its users will be able to sign in again.",
+    "orgDeactivateBody": "Everyone in {name} is signed out on their next action and cannot sign in until the organisation is activated again.",
     "orgInvalid": "Invalid organisation details. Organisation name is required.",
     "orgSaveFailed": "Failed to save the organisation. Please try again."
   },
@@ -2861,6 +2892,7 @@
     "refundBankRequired": "A settlement that refunds needs a bank or cash account to pay from.",
     "settlementDate": "Settlement date",
     "settlementDateHint": "On or after the termination date, {date}.",
+    "settlementDateAfterToday": "A settlement records a move-out that has happened: date it today ({today}) or earlier.",
     "notes": "Notes",
     "notesPlaceholder": "Settlement notes (optional)…",
     "saveDraft": "Save draft",
@@ -3177,6 +3209,9 @@
     "uploadBlockedByPost": "A batch is being posted. Wait for it to finish before uploading another workbook."
   },
   "Tickets": {
+    "attachmentDownloadFailed": "The file couldn't be downloaded. Please try again.",
+    "retry": "Retry",
+    "renterLeasesFailed": "Couldn't load your contracts. Please try again.",
     "onBehalfOfRenter": "On behalf of tenant (optional)",
     "onBehalfOfNone": "Nobody — staff reported it",
     "onBehalfOfHint": "Pick the tenant who phoned or messaged, so the ticket appears in their record.",
@@ -3308,9 +3343,10 @@
     "byCategory": "By Category",
     "byPriority": "By Priority",
     "count": "Count",
-    "history": {"statusChanged": "Status changed: {from} → {to}", "closedWithOtp": "Ticket closed with OTP verification", "closedNoRenter": "Ticket closed without OTP (no tenant to confirm)", "closedLocked": "Ticket closed without OTP (OTP closure locked after too many wrong codes)", "otpReissued": "A new closure OTP was sent to the tenant", "otpReissuedResolvedAgain": "A new closure OTP was sent to the tenant (ticket resolved again)", "otpLocked": "OTP closure locked after too many wrong codes", "assigned": "Ticket assigned to {name}", "reassigned": "Ticket reassigned to {name}"}
+    "history": {"unassigned": "Assignee's account was deleted; ticket returned to the unassigned queue", "statusChanged": "Status changed: {from} → {to}", "closedWithOtp": "Ticket closed with OTP verification", "closedNoRenter": "Ticket closed without OTP (no tenant to confirm)", "closedLocked": "Ticket closed without OTP (OTP closure locked after too many wrong codes)", "otpReissued": "A new closure OTP was sent to the tenant", "otpReissuedResolvedAgain": "A new closure OTP was sent to the tenant (ticket resolved again)", "otpLocked": "OTP closure locked after too many wrong codes", "assigned": "Ticket assigned to {name}", "reassigned": "Ticket reassigned to {name}"}
   },
   "RenterHome": {
+    "leasesLoadFailed": "Couldn't load your contracts. Please try again.",
     "pastContracts": "Past contracts ({count})",
     "renterFallback": "Tenant",
     "nextPayment": "Next payment",
@@ -4579,6 +4615,10 @@
     "provisionUser": "Provision User",
     "deleteTitle": "Delete User",
     "deleteDescription": "Are you sure you want to delete this user? This action cannot be undone and will permanently remove the user from the system.",
+    "userChanged": "Someone else changed this user's properties while you had the form open. The form now shows their current properties; make your change again.",
+    "deleteOpenTickets": "{count, plural, one {# open ticket assigned to this user goes} other {# open tickets assigned to this user go}} back to the unassigned queue.",
+    "deleteHasMeetings": "This user hosts or requested {count, plural, one {# meeting} other {# meetings}}. Meeting history is kept, so this user cannot be deleted.",
+    "assignmentsLoadFailed": "This user's properties could not be loaded, so they will be left as they are. Close and reopen the form to change them.",
     "deleteConfirm": "Delete User"
   },
   "ListActions": {
@@ -4740,6 +4780,7 @@
     "amendNoChanges": "Nothing has changed yet — edit a line to amend."
   },
   "Profile": {
+    "nameRequired": "Enter your name. It can't be only spaces or invisible characters.",
     "saveChanges": "Save Changes",
     "saved": "Saved",
     "saveFailed": "Your profile was not saved. Please try again.",
@@ -4800,5 +4841,11 @@
       "CIVIL_DEFENSE": "Civil Defense",
       "OTHER": "Other"
     }
+  },
+  "ImportErrors": {
+    "import_alreadyRunning": "This file is already being imported — refresh to see the result",
+    "import_failedRef": "Import failed — reference {reference}",
+    "post_alreadyRunning": "This is already being posted — refresh to see the result",
+    "post_failedRef": "Posting failed — reference {reference}"
   }
 }

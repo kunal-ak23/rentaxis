@@ -285,11 +285,33 @@ public class YearEndCloseService {
      */
     @Transactional
     public FiscalYearDTO reopen(int fiscalYear, String reason, LocalDate today) {
+        return reopen(fiscalYear, reason, today, null);
+    }
+
+    /** 409 code: the period lock moved since the re-open dialog read it (break-it R3 money3 N6). */
+    public static final String FISCAL_CHANGED = "fiscal.changed";
+
+    /**
+     * As above, carrying the period lock the re-open dialog showed. Break-it R3
+     * money3 N6: a stale tab re-opened a year and silently dropped a newer manual lock
+     * (31/12/2025 shown, 30/06/2026 current, 31/12/2024 written). Read under the
+     * settings row lock, so a lock that commits first is seen here; null (an older
+     * client) skips the comparison.
+     */
+    @Transactional
+    public FiscalYearDTO reopen(int fiscalYear, String reason, LocalDate today, LocalDate expectedLockedThrough) {
         if (reason == null || reason.isBlank()) {
             throw new BusinessRuleViolationException("A reason is required to re-open a fiscal year.",
                     "fiscalYear.reasonRequired", Map.of());
         }
-        fiscal.lockRow();
+        com.datagami.rentaxis.domain.entity.TenantFiscalSettings settings = fiscal.lockRow();
+        if (expectedLockedThrough != null && !expectedLockedThrough.equals(settings.getBooksLockedThrough())) {
+            java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+            LocalDate now = settings.getBooksLockedThrough();
+            throw new com.datagami.rentaxis.api.exception.FiguresChangedException(FISCAL_CHANGED,
+                    "The period lock changed since you opened this: it is now " + (now == null ? "not set" : now.format(dmy))
+                            + ", not " + expectedLockedThrough.format(dmy) + ". Review it again; nothing was re-opened.");
+        }
         FiscalYearClose row = closes.findClosed(fiscalYear).orElse(null);
         if (row == null) {
             // R1 P3-8: a pre-books year swept by a later close is listed CLOSED under that

@@ -711,7 +711,8 @@ public class ContractGenerationService {
 
             // Only inline data: URIs load; no http(s), no file:, no jar:.
             com.datagami.rentaxis.core.util.PdfResourcePolicy.apply(builder);
-            builder.withHtmlContent(html, null);
+            // Break-it R3 portal3 F11: no bidi controls or glyph-less characters (emoji).
+            builder.withHtmlContent(com.datagami.rentaxis.core.util.PdfText.clean(html), null);
             builder.toStream(baos);
             builder.run();
             return baos.toByteArray();

@@ -142,7 +142,12 @@ public final class StatementValues {
         throw new DateTimeParseException("\"" + s + "\" matches none of " + String.join(", ", formats), s, 0);
     }
 
-    static DateTimeFormatter formatter(String pattern) {
+    /**
+     * A STRICT, case-insensitive formatter for {@code pattern} ({@code y} read as the
+     * proleptic {@code u}). Shared with {@link com.datagami.rentaxis.core.service.SheetCells}
+     * so every importer refuses 31/11 the same way (break-it R3 data3 F3).
+     */
+    public static DateTimeFormatter formatter(String pattern) {
         // STRICT rejects 31/02; it needs the proleptic year letter.
         return new DateTimeFormatterBuilder().parseCaseInsensitive()
                 .appendPattern(pattern.replace('y', 'u'))

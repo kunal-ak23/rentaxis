@@ -22,6 +22,8 @@ import { isForbidden } from "@/lib/api/listLoad";
 import { AccessDeniedState } from "@/components/ui/PageStates";
 import { propertyReportsApi, type ReportLineOption } from "@/lib/api/propertyReports";
 import AccountPicker, { invalidateAccounts } from "@/components/finance/AccountPicker";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { isAbortError } from "@/lib/api/abort";
 
 /** GET /v1/properties wraps each property in a portfolio-summary row. */
 type PropertySummary = { property: { id: string; nameEn: string; nameAr?: string | null } };
@@ -98,6 +100,8 @@ export default function AccountsPage() {
     const [editId, setEditId] = useState<string | null>(null);
     // Backend {message} surfaced inside the open modal (add/edit/import)…
     const [formError, setFormError] = useState<string | null>(null);
+    /** Break-it R3 data3 F7: what the last import did, shown after the dialog closes. */
+    const [importNotice, setImportNotice] = useState<string | null>(null);
     // …and at page level for modal-less actions (delete, seed).
     const [pageError, setPageError] = useState<string | null>(null);
     const [forbidden, setForbidden] = useState(false);
@@ -116,9 +120,16 @@ export default function AccountsPage() {
     const [dragOver, setDragOver] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // Break round 3, F1: a refetch supersedes the read in flight (its late answer
+    // is dropped), and unmount retires it — silently.
+    const beginAccounts = useLatestRequest();
+    const beginProperties = useLatestRequest();
+
     const fetchAccounts = useCallback(async () => {
+        const { isCurrent } = beginAccounts();
         try {
             const list = await ledgerApi.accounts.list();
+            if (!isCurrent()) return;
             setAccounts(list);
             // A chart that is already seeded opens the way it does the moment
             // the seed lands: every group open. The tree's roots are the five
@@ -131,22 +142,27 @@ export default function AccountsPage() {
                 setExpandedIds(new Set(list.filter(a => a.group).map(a => a.id)));
             }
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             // Break round 1, F8: a 403 is "you may not see the chart", not "no accounts".
             if (isForbidden(err)) setForbidden(true);
             setPageError(err instanceof ApiError ? err.message : t("loadAccountsFailed"));
         } finally {
-            setLoading(false);
+            if (isCurrent()) setLoading(false);
         }
-    }, []);
+    }, [beginAccounts]);
 
     const fetchProperties = useCallback(async () => {
+        const { signal, isCurrent } = beginProperties();
         try {
-            const res = await fetch("/api/proxy/v1/properties");
-            if (res.ok) setProperties(await res.json());
+            const res = await fetch("/api/proxy/v1/properties", { signal });
+            if (!res.ok) return;
+            const rows = await res.json();
+            if (isCurrent()) setProperties(rows);
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             console.error(err);
         }
-    }, []);
+    }, [beginProperties]);
 
     useEffect(() => {
         fetchAccounts();
@@ -366,10 +382,16 @@ export default function AccountsPage() {
         setImporting(true);
         setFormError(null);
         try {
-            await ledgerApi.accounts.import(importFile);
+            const result = await ledgerApi.accounts.import(importFile);
+            // Break-it R3 data3 F7: a 2xx that created nothing is not a success.
+            if (!result || !(result.created > 0)) {
+                setFormError(t("importAccountsNone"));
+                return;
+            }
             invalidateAccounts();
             setShowImportModal(false);
             setImportFile(null);
+            setImportNotice(t("importAccountsDone", { created: result.created, skipped: result.skipped ?? 0 }));
             fetchAccounts();
         } catch (err) {
             setFormError(err instanceof ApiError ? err.message : t("importAccountsFailed"));
@@ -685,7 +707,7 @@ export default function AccountsPage() {
                         </button>
                     )}
                     <button
-                        onClick={() => { setFormError(null); setShowImportModal(true); }}
+                        onClick={() => { setFormError(null); setImportNotice(null); setShowImportModal(true); }}
                         className="flex items-center gap-2 bg-surface text-foreground border border-border px-5 py-2.5 rounded-full text-xs font-bold hover:bg-input transition-all duration-200 shadow-sm active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
                     >
                         <Upload size={14} />
@@ -700,6 +722,16 @@ export default function AccountsPage() {
                     </button>
                 </div>
             </div>
+
+            {importNotice && (
+                <div
+                    role="status"
+                    data-testid="import-accounts-done"
+                    className="mb-4 bg-success/10 border border-success/20 text-success text-xs font-medium rounded-lg p-3"
+                >
+                    {importNotice}
+                </div>
+            )}
 
             {/* ── Page-level errors (e.g. failed delete/seed) ── */}
             {pageError && (

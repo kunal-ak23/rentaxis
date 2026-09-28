@@ -23,6 +23,8 @@ import java.util.UUID;
 @RequestMapping("/api/v1/units")
 public class UnitController {
 
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(UnitController.class);
+
     private final UnitService service;
 
     public UnitController(UnitService service) {
@@ -99,6 +101,7 @@ public class UnitController {
         }
 
         List<Unit> units = new ArrayList<>();
+        List<Integer> rowNumbers = new ArrayList<>();
         List<String> errors = new ArrayList<>();
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream()))) {
             String line;
@@ -116,12 +119,14 @@ public class UnitController {
                 Unit u = parseRow(line.split(","), rowNum, errors);
                 if (u != null) {
                     units.add(u);
+                    rowNumbers.add(rowNum);
                 }
             }
         } catch (IOException e) {
             return ResponseEntity.badRequest().body(Map.of(
                     "error", true,
-                    "message", "Failed to read CSV file: " + e.getMessage(),
+                    // Break-it R3 data3 F4 (review round 2): no reader exception text on screen.
+                    "message", com.datagami.rentaxis.core.service.ImportFailures.unreadableFile(e, LOG, "Unit bulk CSV"),
                     "status", 400
             ));
         }
@@ -137,7 +142,17 @@ public class UnitController {
             ));
         }
 
-        return ResponseEntity.ok(service.bulkCreateUnits(propertyId, buildingId, units));
+        try {
+            return ResponseEntity.ok(service.bulkCreateUnits(propertyId, buildingId, units, rowNumbers));
+        } catch (com.datagami.rentaxis.core.service.UnitRowsRejectedException e) {
+            // Break-it R3 ops3 F1: a unit number already in the building, or twice in the file.
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", true,
+                    "message", "CSV contains invalid rows",
+                    "status", 400,
+                    "errors", e.getErrors()
+            ));
+        }
     }
 
     private static Unit parseRow(String[] parts, int rowNum, List<String> errors) {
@@ -180,6 +195,15 @@ public class UnitController {
                 valid = false;
             }
         }
-        return valid ? u : null;
+        if (!valid) return null;
+        // Break-it R3 ops3 F2: the field rules Add Unit applies (UnitRules), per row —
+        // a negative size or rent, or a rent of 1000.555, is a row error, never saved
+        // or rounded.
+        List<String> problems = com.datagami.rentaxis.core.service.UnitRules.fieldProblems(
+                u.getUnitNumber(), u.getSizeSqft(), u.getExpectedRent(), u.getActualRent());
+        for (String problem : problems) {
+            errors.add("Row " + rowNum + ": " + problem);
+        }
+        return problems.isEmpty() ? u : null;
     }
 }

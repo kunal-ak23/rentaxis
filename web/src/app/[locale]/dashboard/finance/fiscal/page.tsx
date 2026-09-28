@@ -41,6 +41,8 @@ export default function FiscalSettingsPage() {
     const [lockError, setLockError] = useState<string | null>(null);
     /** Break-it R2 money2 F3: the user has confirmed a lock more than 12 months past the current one. */
     const [bigJumpChecked, setBigJumpChecked] = useState(false);
+    /** Break-it R3 money3 N1: the user has confirmed a books start after today (it locks posting until then). */
+    const [futureStartChecked, setFutureStartChecked] = useState(false);
 
     // Month names come from the browser's own calendar data rather than twelve
     // more catalog keys, so AR gets Arabic month names for free.
@@ -56,6 +58,7 @@ export default function FiscalSettingsPage() {
         setSettings(s);
         setStartMonth(s.fiscalYearStartMonth);
         setBooksStartDate(s.booksStartDate ?? "");
+        setFutureStartChecked(false);
     };
 
     const load = useCallback(async () => {
@@ -88,11 +91,20 @@ export default function FiscalSettingsPage() {
             );
             setSaved(true);
         } catch (err) {
-            setSaveError(err instanceof ApiError ? err.message : tCommon("loadFailed"));
+            setSaveError(err instanceof ApiError ? serverText(tCommon, err) || err.message : tCommon("loadFailed"));
         } finally {
             setSaving(false);
         }
     };
+
+    // Break-it R3 money3 N1: the books start implies the first period lock (the day
+    // before it). It may be at most three months ahead — 2062 typed for 2026 locked the
+    // organisation out — and a start after today is asked about like a big lock jump.
+    const booksStartMax = addMonthsIso(businessTodayIso(), 3);
+    const booksStartChanged = !!booksStartDate && booksStartDate !== (settings?.booksStartDate ?? "");
+    const booksStartTooFar = booksStartChanged
+        && (booksStartDate.split("-")[0].length > 4 || booksStartDate > booksStartMax);
+    const booksStartNeedsTick = booksStartChanged && !booksStartTooFar && isAfterBusinessToday(booksStartDate);
 
     // Break-it R2 money2 F3: a period that has not happened cannot be locked (2062
     // typed for 2026 used to lock the organisation out), and a move of more than
@@ -178,11 +190,31 @@ export default function FiscalSettingsPage() {
                                 type="date"
                                 className={field}
                                 value={booksStartDate}
+                                max={booksStartMax}
+                                aria-invalid={booksStartTooFar}
+                                data-testid="fiscal-books-start"
                                 onChange={ev => {
                                     setSaved(false);
+                                    setFutureStartChecked(false);
                                     setBooksStartDate(ev.target.value);
                                 }}
                             />
+                            <p className="mt-1 text-[11px] text-muted" data-testid="fiscal-books-start-rule">
+                                {t("booksStartRule", { latest: formatDate(booksStartMax) })}
+                            </p>
+                            {booksStartTooFar && (
+                                <p role="alert" className="mt-1 text-xs font-semibold text-error" data-testid="fiscal-books-start-too-far">
+                                    {t("booksStartTooFar", { latest: formatDate(booksStartMax) })}
+                                </p>
+                            )}
+                            {booksStartNeedsTick && (
+                                <label className="mt-2 flex items-start gap-2 text-xs text-warning" data-testid="fiscal-books-start-future">
+                                    <input type="checkbox" className="mt-0.5" checked={futureStartChecked}
+                                        data-testid="fiscal-books-start-future-ack"
+                                        onChange={e => setFutureStartChecked(e.target.checked)} />
+                                    <span>{t("booksStartFuture", { date: formatDate(booksStartDate) })}</span>
+                                </label>
+                            )}
                         </div>
                     </div>
 
@@ -192,7 +224,8 @@ export default function FiscalSettingsPage() {
                         <button
                             type="button"
                             onClick={save}
-                            disabled={saving}
+                            disabled={saving || booksStartTooFar || (booksStartNeedsTick && !futureStartChecked)}
+                            data-testid="fiscal-save"
                             className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-bold cursor-pointer disabled:opacity-50 focus:ring-2 focus:ring-primary/20 focus:outline-none"
                         >
                             {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
@@ -313,6 +346,16 @@ export default function FiscalSettingsPage() {
             </ConfirmDialog>
         </div>
     );
+}
+
+/** An ISO date plus whole months, the day clamped to the month's end (Java's LocalDate.plusMonths). */
+function addMonthsIso(iso: string, months: number): string {
+    const [y, m, d] = iso.split("-").map(Number);
+    const total = y * 12 + (m - 1) + months;
+    const year = Math.floor(total / 12);
+    const month = (total % 12) + 1;
+    const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    return `${year}-${String(month).padStart(2, "0")}-${String(Math.min(d, last)).padStart(2, "0")}`;
 }
 
 /** Whole months from one ISO date to a later one (break-it R2 money2 F3's "more than 12 months"). */

@@ -30,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
+@org.springframework.test.context.event.RecordApplicationEvents
 class RenewalIntentServiceTest extends AbstractPostgresIT {
 
     @Autowired RenewalIntentService service;
@@ -42,6 +43,8 @@ class RenewalIntentServiceTest extends AbstractPostgresIT {
     @Autowired RenewalOpportunityRepository oppRepo;
     @Autowired LeaseInteractionRepository interactionRepo;
     @Autowired LeaseReminderRepository reminderRepo;
+
+    @Autowired org.springframework.test.context.event.ApplicationEvents appEvents;
 
     UUID tenantId;
 
@@ -58,7 +61,9 @@ class RenewalIntentServiceTest extends AbstractPostgresIT {
     void tearDown() { TenantContextHolder.clear(); }
 
     private RenewalOpportunity openOpportunity() {
-        LocalDate today = LocalDate.of(2026, 6, 1);
+        // Today, not a fixed date: an answer on a contract already past its end
+        // date is refused (break-it R3 portal3 F8).
+        LocalDate today = LocalDate.now();
         Lease lease = RenewalTestFixtures.createActiveLease(orgRepo, userRepo, renterRepo, propertyRepo, unitRepo, leaseRepo,
                 tenantId, today.minusYears(1), today.plusDays(45));
         RenewalOpportunity o = new RenewalOpportunity();
@@ -153,5 +158,80 @@ class RenewalIntentServiceTest extends AbstractPostgresIT {
 
         assertThatThrownBy(() -> service.captureIntentFromRenter(o.getId(), RenewalIntent.RENEW, someoneElse))
                 .isInstanceOf(NotFoundException.class);
+    }
+    // ---- break-it R3 portal3 F3: one staff e-mail per answer, a change of mind included ----
+
+    private List<com.datagami.rentaxis.core.email.event.EmailEvent> intentEmails() {
+        return appEvents.stream(com.datagami.rentaxis.core.email.event.EmailEvent.class)
+                .filter(e -> e.getType() == com.datagami.rentaxis.core.email.EmailEventType.RENEWAL_INTENT_CAPTURED)
+                .toList();
+    }
+
+    @Test
+    void a_changed_answer_is_emailed_again_with_the_new_choice() {
+        RenewalOpportunity o = openOpportunity();
+        UUID renter = o.getLease().getRenter().getUserId();
+
+        service.captureIntentFromRenter(o.getId(), RenewalIntent.RENEW, renter);
+        service.captureIntentFromRenter(o.getId(), RenewalIntent.MOVE_OUT, renter);
+
+        List<com.datagami.rentaxis.core.email.event.EmailEvent> emails = intentEmails();
+        assertThat(emails).hasSize(2);
+        assertThat(emails).extracting(com.datagami.rentaxis.core.email.event.EmailEvent::getDedupKey)
+                .doesNotHaveDuplicates();
+        assertThat(emails.get(1).getDedupKey()).contains("MOVE_OUT");
+        assertThat(((com.datagami.rentaxis.core.email.event.payload.RenewalIntentCapturedPayload)
+                emails.get(1).getPayload()).intent()).isEqualTo("MOVE_OUT");
+    }
+
+    @Test
+    void the_same_answer_twice_records_and_notifies_once() {
+        RenewalOpportunity o = openOpportunity();
+        UUID renter = o.getLease().getRenter().getUserId();
+
+        service.captureIntentFromRenter(o.getId(), RenewalIntent.RENEW, renter);
+        RenewalOpportunity again = service.captureIntentFromRenter(o.getId(), RenewalIntent.RENEW, renter);
+
+        assertThat(again.getIntent()).isEqualTo(RenewalIntent.RENEW);
+        assertThat(intentEmails()).hasSize(1);
+        assertThat(appEvents.stream(com.datagami.rentaxis.core.email.event.RenewalIntentCapturedEvent.class))
+                .hasSize(1);
+        assertThat(interactionRepo.findActiveByLeaseId(o.getLease().getId(), PageRequest.of(0, 10)).getContent())
+                .hasSize(1);
+    }
+
+    // ---- break-it R3 portal3 F8: no renewal answer on a contract that is over ----
+
+    @Test
+    void an_answer_on_a_contract_past_its_end_date_is_refused() {
+        RenewalOpportunity o = openOpportunity();
+        Lease lease = o.getLease();
+        lease.setEndDate(LocalDate.now().minusDays(40));
+        leaseRepo.save(lease);
+        UUID renter = lease.getRenter().getUserId();
+
+        assertThatThrownBy(() -> service.captureIntentFromRenter(o.getId(), RenewalIntent.RENEW, renter))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage(RenewalIntentService.CONTRACT_ENDED)
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("renewal.contractEnded");
+        assertThatThrownBy(() -> service.captureIntentFromToken(o.getId(), RenewalIntent.RENEW))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage(RenewalIntentService.CONTRACT_ENDED);
+        assertThat(oppRepo.findById(o.getId()).orElseThrow().getIntent()).isNull();
+        assertThat(intentEmails()).isEmpty();
+    }
+
+    @Test
+    void an_answer_on_a_terminated_contract_is_refused() {
+        RenewalOpportunity o = openOpportunity();
+        Lease lease = o.getLease();
+        lease.setStatus(com.datagami.rentaxis.domain.entity.enums.LeaseStatus.TERMINATED);
+        lease.setTerminatedOn(LocalDate.now());
+        leaseRepo.save(lease);
+
+        assertThatThrownBy(() -> service.captureIntentFromRenter(o.getId(), RenewalIntent.RENEW,
+                lease.getRenter().getUserId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage(RenewalIntentService.CONTRACT_ENDED);
     }
 }

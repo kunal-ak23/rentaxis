@@ -58,7 +58,7 @@ class AccountImportServiceTest {
         List<Account> saved = service.importFromCsv(csv(
                 "A-01-01,Rent Receivable,ASSET,A-01,,,false",
                 "A-01,Current Assets,ASSET,A,,,true",
-                "A,Assets,ASSET,,,,true"));
+                "A,Assets,ASSET,,,,true")).accounts();
 
         assertThat(saved).extracting(Account::getCode)
                 .containsExactly("A", "A-01", "A-01-01");
@@ -75,7 +75,7 @@ class AccountImportServiceTest {
         existing.setCode("A-02");
         when(repository.findByCode("A-02")).thenReturn(Optional.of(existing));
 
-        List<Account> saved = service.importFromCsv(csv("A-02-09,Rent Receivable,ASSET,A-02,,,false"));
+        List<Account> saved = service.importFromCsv(csv("A-02-09,Rent Receivable,ASSET,A-02,,,false")).accounts();
 
         assertThat(saved).hasSize(1);
         assertThat(saved.get(0).getParent()).isSameAs(existing);
@@ -92,10 +92,87 @@ class AccountImportServiceTest {
 
     @Test
     void importedAccountsAreNeverSystemAccounts() throws Exception {
-        List<Account> saved = service.importFromCsv(csv("A,Assets,ASSET,,,,true"));
+        List<Account> saved = service.importFromCsv(csv("A,Assets,ASSET,,,,true")).accounts();
 
         assertThat(saved.get(0).isSystem()).isFalse();
         assertThat(saved.get(0).isGroup()).isTrue();
+    }
+
+    // ------------------------------------------------------------------
+    // break-it R3 data3 F7: short rows, malformed rows, counts
+    // ------------------------------------------------------------------
+
+    /** A hand-made CSV that stops after the type: the parent and the rest are optional. */
+    @Test
+    void aRowThatOmitsTheOptionalTrailingColumnsIsImported() throws Exception {
+        AccountImportService.Result r = service.importFromCsv(csv("9B3D02,BRK3-DATA short,ASSET", "9B3D03,Short two,expense"));
+
+        assertThat(r.created()).isEqualTo(2);
+        assertThat(r.accounts()).extracting(Account::getCode).containsExactly("9B3D02", "9B3D03");
+        assertThat(r.accounts().get(0).getParent()).isNull();
+        assertThat(r.accounts().get(0).getNameAr()).isEmpty();
+        assertThat(r.accounts().get(1).getAccountType().name()).isEqualTo("EXPENSE");
+    }
+
+    @Test
+    void blankLinesAreCountedAsSkipped() throws Exception {
+        AccountImportService.Result r = service.importFromCsv(csv("A,Assets,ASSET", "", " , , ", "B,Bank,ASSET,A"));
+
+        assertThat(r.created()).isEqualTo(2);
+        assertThat(r.skipped()).isEqualTo(2);
+    }
+
+    @Test
+    void malformedRowsAreRowErrorsAndNothingIsSaved() {
+        assertThatThrownBy(() -> service.importFromCsv(csv(
+                "A,Assets,ASSET",
+                "B,Only a name",
+                ",No code,ASSET",
+                "C,Bad type,ASSETS",
+                "A,Duplicate of row 2,ASSET")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("4 rows have problems; nothing was imported")
+                .hasMessageContaining("Row 3: needs at least code, name and type")
+                .hasMessageContaining("Row 4: code is required")
+                .hasMessageContaining("Row 5: invalid account type 'ASSETS'")
+                .hasMessageContaining("Row 6: code A is already on row 2");
+        org.mockito.Mockito.verify(repository, org.mockito.Mockito.never()).saveAll(anyIterable());
+    }
+
+    @Test
+    void aCodeTheOrganisationAlreadyHasIsARowErrorNotAConstraintName() {
+        Account existing = new Account();
+        existing.setCode("A");
+        when(repository.findByCode("A")).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> service.importFromCsv(csv("A,Assets,ASSET")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Row 2: account code A already exists");
+    }
+
+    @Test
+    void aFileWithNoAccountRowsIsRefusedRatherThanReportedAsDone() {
+        assertThatThrownBy(() -> service.importFromCsv(csv("", "")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("The file has no account rows; nothing was imported");
+    }
+
+    @Test
+    void quotedCellsKeepTheirCommasAndArabicSurvives() throws Exception {
+        AccountImportService.Result r = service.importFromCsv(csv(
+                "\"A-1\",\"Rent, Dubai\",ASSET,,\"إيجار، دبي\""));
+
+        assertThat(r.accounts().get(0).getName()).isEqualTo("Rent, Dubai");
+        assertThat(r.accounts().get(0).getNameAr()).isEqualTo("إيجار، دبي");
+    }
+
+    @Test
+    void anExcelRowWithNoTypeIsARowErrorNotSilentlyDropped() {
+        assertThatThrownBy(() -> service.importFromExcel(xlsx(
+                new String[]{"A", "Assets", "", "ASSET", "", ""},
+                new String[]{"B", "No type", "", "", "", ""})))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Row 3: type is required");
     }
 
     // ------------------------------------------------------------------
@@ -112,7 +189,7 @@ class AccountImportServiceTest {
     void anOrdinaryChartOfAccountsSpreadsheetStillImports() throws Exception {
         List<Account> saved = service.importFromExcel(xlsx(
                 new String[]{"A", "Assets", "", "ASSET", "", ""},
-                new String[]{"A-01", "Current Assets", "", "ASSET", "A", ""}));
+                new String[]{"A-01", "Current Assets", "", "ASSET", "A", ""})).accounts();
 
         assertThat(saved).extracting(Account::getCode).containsExactly("A", "A-01");
         assertThat(saved.get(1).getParent()).isSameAs(saved.get(0));

@@ -12,8 +12,10 @@ export default function RenewalBanner() {
       const res = await fetch("/api/proxy/v1/me/renewals");
       if (!res.ok) return;
       const body = await res.json();
+      // Break-it R3 portal3 F8: a contract that has already ended is not "up for
+      // renewal in -40 days" — it is left out of the countdown.
       const inWindow = (body.leases ?? [])
-        .filter((l: any) => l.opportunityId)
+        .filter((l: any) => l.opportunityId && !l.ended && l.daysRemaining >= 0)
         .sort((a: any, b: any) => a.daysRemaining - b.daysRemaining)[0];
       if (inWindow) setActive({ days: inWindow.daysRemaining });
     })();

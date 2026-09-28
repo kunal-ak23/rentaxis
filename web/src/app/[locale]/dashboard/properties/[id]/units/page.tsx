@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect, useRef, use, useSyncExternalStore } from "react";
+import { Suspense, useState, useEffect, use, useSyncExternalStore } from "react";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Plus, X, Building, Info, LayoutList, Ruler, Hash, Users, CreditCard, ArrowLeft, Activity, Loader2 } from "lucide-react";
@@ -15,6 +15,8 @@ import { MONEY_MAX_12_2 } from "@/lib/money";
 import { TowerSelect } from "@/components/ui/TowerSelect";
 import type { Page } from "@/lib/api/ledger";
 import { idParam, stripInvalidIdParams } from "@/lib/urlIds";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { isAbortError } from "@/lib/api/abort";
 
 /** The units page's own page size, for the pages-loop below (S16-02). */
 const UNITS_PAGE_SIZE = 200;
@@ -129,7 +131,8 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
 
     // R1 P3-1: a request counter, so a tower/property change that reorders
     // responses never lets a stale page overwrite what a newer one already set.
-    const fetchSeq = useRef(0);
+    // Break round 3, F1: the older read is also aborted, and unmount retires it.
+    const beginUnits = useLatestRequest();
 
     useEffect(() => {
         fetchUnits();
@@ -141,8 +144,7 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
     // unpaged /units/property/{id} did — the loop just avoids ever asking the
     // server for an unbounded page).
     const fetchUnits = async () => {
-        const seq = ++fetchSeq.current;
-        const isCurrent = () => seq === fetchSeq.current;
+        const { signal, isCurrent } = beginUnits();
         (units.length === 0 ? setLoading : setRefreshing)(true);
         try {
             const rows: Unit[] = [];
@@ -150,7 +152,7 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
             for (let page = 0; page < UNITS_MAX_PAGES; page++) {
                 const sp = new URLSearchParams({ propertyId, page: String(page), size: String(UNITS_PAGE_SIZE) });
                 if (buildingFilter) sp.set("buildingId", buildingFilter);
-                const res = await fetch(`/api/proxy/v1/units/paged?${sp.toString()}`);
+                const res = await fetch(`/api/proxy/v1/units/paged?${sp.toString()}`, { signal });
                 if (!isCurrent()) return;
                 if (!res.ok) {
                     // A non-2xx used to leave the state at its initial empty
@@ -167,7 +169,10 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
             setUnits(rows);
             if (truncated) console.warn(`Units list truncated at ${rows.length} rows for property ${propertyId}`);
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
+            // A real network failure is a failed load, not "no units".
             console.error(err);
+            setLoadError(tCommon("loadFailedUnits"));
         } finally {
             if (isCurrent()) { setLoading(false); setRefreshing(false); }
         }

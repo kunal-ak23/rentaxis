@@ -900,4 +900,62 @@ class ContractGenerationServiceTest {
             server.stop(0);
         }
     }
+    /**
+     * Break-it R3 portal3 F11: a renter name carrying Arabic, an emoji and bidi
+     * controls. The emoji used to print as '#', the controls as stray glyphs, and
+     * the Arabic (not in Noto Sans) as '#' too. Now the controls and the emoji are
+     * gone and the Arabic prints with the Arabic font, joined (shaped) letters.
+     */
+    @Test
+    void aRenterNameWithArabicEmojiAndBidiControlsPrintsCleanly() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Renter renter = buildRenter(tenantId);
+        renter.setNameEn("O'Neil \u200F\u202Eevil\u202C \uD83C\uDFE0 \u0633\u0644\u0627\u0645");
+        Lease lease = buildLease(tenantId, buildUnit(tenantId, buildProperty(tenantId, PropertyType.RESIDENTIAL)),
+                renter, false);
+        lease.setContractNumber(9L);
+        ContractGenerationService svc = buildSpyForFullFlow(lease, buildLandlordOrg(tenantId),
+                buildRegister(), buildLines(false), 8L, Files.createTempDirectory("contract-test-"));
+
+        ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
+        svc.previewContract(lease.getId());
+        verify(svc).renderPdf(htmlCaptor.capture());
+        byte[] pdf = service.renderPdf(htmlCaptor.getValue());
+
+        String text;
+        // The glyphs drawn on the renter-name line, by the Unicode each maps back to.
+        List<Integer> nameGlyphs = new ArrayList<>();
+        try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.Loader.loadPDF(pdf)) {
+            text = new org.apache.pdfbox.text.PDFTextStripper() {
+                @Override
+                protected void writeString(String s, List<org.apache.pdfbox.text.TextPosition> positions)
+                        throws java.io.IOException {
+                    if (s.contains("O'Neil")) {
+                        for (org.apache.pdfbox.text.TextPosition p : positions) {
+                            if (p.getUnicode() != null && !p.getUnicode().isEmpty()) {
+                                nameGlyphs.add(p.getUnicode().codePointAt(0));
+                            }
+                        }
+                    }
+                    super.writeString(s, positions);
+                }
+            }.getText(doc);
+        }
+        String nameLine = text.lines().filter(l -> l.contains("O'Neil")).findFirst().orElseThrow();
+        System.out.println("F11 name line: " + nameLine.codePoints()
+                .mapToObj(cp -> cp < 0x80 ? String.valueOf((char) cp) : String.format("<U+%04X>", cp))
+                .collect(java.util.stream.Collectors.joining()));
+        assertThat(nameLine).contains("O'Neil").contains("evil");
+        assertThat(nameLine).doesNotContain("#");
+        assertThat(nameLine.codePoints().filter(com.datagami.rentaxis.core.util.UnicodeText::isInvisibleControl))
+                .isEmpty();
+        assertThat(nameLine).doesNotContain("\uD83C\uDFE0");
+        // The Arabic word is printed in the Arabic font and shaped: its glyphs are the
+        // contextual (joined) presentation forms, which fold back to the word in reading
+        // order — not '#'s, and not isolated letters printed left to right.
+        assertThat(nameLine).contains("\u0633\u0644\u0627\u0645");
+        // Shaped: the word is drawn with contextual (joined) presentation-form glyphs —
+        // initial seen U+FEB3 and the lam-alef ligature U+FEFC — not isolated letters.
+        assertThat(nameGlyphs).contains(0xFEB3, 0xFEFC);
+    }
 }

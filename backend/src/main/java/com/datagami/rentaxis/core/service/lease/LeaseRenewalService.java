@@ -88,6 +88,15 @@ public class LeaseRenewalService {
     private final ApplicationEventPublisher events;
     private final AdditionalCharges charges;
 
+    /** Break-it R3 money3: the shared posting-date policy ({@link com.datagami.rentaxis.core.service.ledger.PostingDatePath}), on the app clock. */
+    private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates =
+            com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setManualPostingDates(com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates) {
+        this.manualDates = manualDates;
+    }
+
     public LeaseRenewalService(LeaseRepository leaseRepository,
                                LeaseLineRepository leaseLineRepository,
                                ChequeRepository chequeRepository,
@@ -575,6 +584,9 @@ public class LeaseRenewalService {
         // P2-1: the longer term must not run into the next lease on the unit.
         leaseService.requireExtensionFree(lease, r.newEndDate());
         LocalDate entryDate = r.contractDate() != null ? r.contractDate() : LocalDate.now();
+        // Break-it R3 money3 sweep: the addendum's TCO and its new rows' PDRs post on these dates.
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.LEASE_ADDENDUM, entryDate);
+        if (r.cheques() != null) for (ChequeRowInput row : r.cheques()) if (row != null) manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.LEASE_ADDENDUM, row.postingDate());
         LocalDate windowStart = previousEnd.plusDays(1);
 
         // ---- stage 1: the request, with nothing written -------------------

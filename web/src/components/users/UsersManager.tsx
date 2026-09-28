@@ -12,6 +12,24 @@ import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { ResendInviteButton } from "@/components/users/ResendInviteButton";
 import { AccessDeniedState, LoadFailedState } from "@/components/ui/PageStates";
 import { loadList } from "@/lib/api/listLoad";
+import { isAbortError } from "@/lib/api/abort";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { changedFields, sameIdSet } from "@/lib/changedFields";
+
+/** The fields the edit panel loaded, to send only what the admin changed (break-it R3 ops3 F4). */
+type LoadedUser = { email: string; name: string; role: string; tenantId: string; phoneNumber: string };
+const USER_FIELDS = ["email", "name", "role", "tenantId", "phoneNumber"] as const;
+
+/** The machine code of an API refusal (`user.changed`, `user.hasMeetings`, ...), if it carries one. */
+function errorCode(e: unknown): string | undefined {
+    if (!(e instanceof ApiError) || !e.body) return undefined;
+    try {
+        const code = JSON.parse(e.body)?.code;
+        return typeof code === "string" ? code : undefined;
+    } catch {
+        return undefined;
+    }
+}
 
 // Derived from PROVISIONABLE_ROLES rather than hand-listed: a hand-written copy
 // is how ACCOUNTANT came to be grantable by the API but absent from this form.
@@ -63,6 +81,9 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
     const [deleting, setDeleting] = useState(false);
     const [userToDelete, setUserToDelete] = useState<string | null>(null);
     const [deleteError, setDeleteError] = useState<string | null>(null);
+    // Break-it R3 ops3 F5: what deleting the user does to their open work.
+    const [deleteImpact, setDeleteImpact] = useState<{ openTickets: number; meetings: number } | null>(null);
+    const beginImpact = useLatestRequest();
 
     // Form error (create/update failures, e.g. duplicate email or 403)
     const [formError, setFormError] = useState<string | null>(null);
@@ -95,9 +116,27 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
     // Properties for Property Manager assignment
     const [properties, setProperties] = useState<any[]>([]);
     const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
+    // What the edit panel loaded (break-it R3 ops3 F4): the PUT sends only what
+    // changed, and assignments go with the set loaded here, so a colleague's change
+    // made meanwhile is refused (409 user.changed) rather than undone.
+    const [loadedUser, setLoadedUser] = useState<LoadedUser | null>(null);
+    const [loadedPropertyIds, setLoadedPropertyIds] = useState<string[] | null>(null);
+    // Review r3B I2: the edited user's own assignments — until they load, Save
+    // waits; if they fail, the assignments are left untouched (never a list left
+    // over from another user).
+    const [assignmentsLoad, setAssignmentsLoad] = useState<"idle" | "loading" | "ok" | "failed">("idle");
+
+    // Break round 3, F1: every load aborts on unmount and when a newer one
+    // supersedes it (a quick organisation change, or Edit on another user), so
+    // a slow old answer never lands on the newer selection.
+    const beginUsers = useLatestRequest();
+    const beginTenants = useLatestRequest();
+    const beginProperties = useLatestRequest();
+    const beginAssignments = useLatestRequest();
 
     useEffect(() => {
         fetchUsers();
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/selection loads; the useLatestRequest gate is stable
     }, []);
 
     // The assignment picker lists the properties of the organisation the user is
@@ -114,12 +153,15 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
     // sees their own organisation read-only below, so it is not asked for.
     useEffect(() => {
         if (isSuperAdmin) fetchTenants();
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/selection loads; the useLatestRequest gate is stable
     }, [isSuperAdmin]);
 
     const fetchUsers = async () => {
+        const { signal, isCurrent } = beginUsers();
         setLoading(true);
         // Break round 1, F8: a refused or failed read is not "no users".
-        const load = await loadList<User>("/api/proxy/admin/users");
+        const load = await loadList<User>("/api/proxy/admin/users", signal);
+        if (!isCurrent()) return;
         setListLoad(load.kind);
         if (load.kind === "ok") {
             setUsers([...load.items].sort((a, b) => (a.id || '').localeCompare(b.id || '')));
@@ -128,18 +170,23 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
     };
 
     const fetchTenants = async () => {
+        const { signal, isCurrent } = beginTenants();
         try {
-            const res = await fetch("/api/proxy/admin/tenants");
+            const res = await fetch("/api/proxy/admin/tenants", { signal });
             if (res.ok) {
                 const data = await res.json();
-                setTenants(data);
+                if (isCurrent()) setTenants(data);
             }
         } catch (e) {
+            if (isAbortError(e) || !isCurrent()) return;
             console.error("Failed to fetch tenants:", e);
         }
     };
 
     const fetchProperties = async () => {
+        // Begun before the early return, so clearing the organisation also
+        // supersedes a read still in flight for the previous one.
+        const { signal, isCurrent } = beginProperties();
         if (isSuperAdmin && !tenantId) {
             setProperties([]);
             return;
@@ -147,17 +194,23 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
         try {
             const res = await fetch(isSuperAdmin
                 ? `/api/proxy/admin/tenants/${encodeURIComponent(tenantId)}/properties`
-                : "/api/proxy/v1/properties");
+                : "/api/proxy/v1/properties", { signal });
             if (res.ok) {
-                setProperties(await res.json());
+                const rows = await res.json();
+                if (isCurrent()) setProperties(rows);
             }
         } catch (e) {
+            if (isAbortError(e) || !isCurrent()) return;
             console.error(e);
         }
     };
 
     const resetForm = () => {
+        beginAssignments(); // drop a previous Edit's assignment read still in flight
         setEditingUserId(null);
+        setLoadedUser(null);
+        setLoadedPropertyIds(null);
+        setAssignmentsLoad("idle");
         // Non-super-admins can only provision into their own tenant.
         setEmail(""); setPassword(""); setName(""); setTenantId(isSuperAdmin ? "" : currentTenantId); setRole("TENANT_USER"); setSelectedPropertyIds([]);
         setPhoneNumber("");
@@ -169,17 +222,34 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
         setSubmitting(true);
         setFormError(null);
         try {
-            const bodyData: any = { email, name, role, tenantId, phoneNumber };
+            const current: LoadedUser = { email, name, role, tenantId, phoneNumber };
+            // An edit sends only what the admin changed here (break-it R3 ops3 F4); a
+            // new user sends everything.
+            const bodyData: Record<string, unknown> = editingUserId && loadedUser
+                ? changedFields(loadedUser, current, USER_FIELDS).changes
+                : { ...current };
             // #7/#2: a new user of an invited role never gets a password typed in
             // here; the backend emails them a set-password link instead.
             if (password && (editingUserId || PASSWORD_ON_CREATE_ROLES.has(role))) bodyData.password = password;
 
             if (role === 'PROPERTY_MANAGER') {
-                // Always send the list (including []) — the backend skips the
-                // property-assignment sync entirely when propertyIds is null,
-                // so omitting an empty selection would silently keep
-                // assignments the admin believes were revoked.
-                bodyData.propertyIds = selectedPropertyIds;
+                if (!editingUserId) {
+                    // A new manager: send the list (including []).
+                    bodyData.propertyIds = selectedPropertyIds;
+                } else if (loadedPropertyIds !== null && !sameIdSet(selectedPropertyIds, loadedPropertyIds)) {
+                    // Only when this user's own assignments loaded and the admin
+                    // changed them, always with the set this panel loaded. Never
+                    // while they are loading or failed to load (review r3B I2).
+                    bodyData.propertyIds = selectedPropertyIds;
+                    bodyData.expectedPropertyIds = loadedPropertyIds;
+                }
+            }
+
+            if (editingUserId && Object.keys(bodyData).length === 0) {
+                // Nothing changed: nothing to save.
+                setShowForm(false);
+                resetForm();
+                return;
             }
 
             const url = editingUserId
@@ -200,9 +270,31 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
             fetchUsers();
         } catch (e) {
             console.error(e);
-            setFormError(e instanceof ApiError ? e.message : tU("genericError"));
+            if (errorCode(e) === "user.changed" && editingUserId) {
+                // Reload: the panel shows the assignments as they are now.
+                await reloadAssignments(editingUserId);
+                fetchUsers();
+                setFormError(tU("userChanged"));
+            } else {
+                setFormError(e instanceof ApiError ? e.message : tU("genericError"));
+            }
         } finally {
             setSubmitting(false);
+        }
+    };
+
+    const reloadAssignments = async (userId: string) => {
+        const { signal, isCurrent } = beginAssignments();
+        try {
+            const res = await fetch(`/api/proxy/admin/users/${userId}/properties`, { signal });
+            if (!res.ok || !isCurrent()) return;
+            const ids: string[] = await res.json();
+            if (!isCurrent()) return;
+            setSelectedPropertyIds(ids);
+            setLoadedPropertyIds(ids);
+        } catch (e) {
+            if (isAbortError(e) || !isCurrent()) return;
+            console.error("Failed to reload property assignments:", e);
         }
     };
 
@@ -216,22 +308,44 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
             fetchUsers();
         } catch (e) {
             console.error(e);
-            setDeleteError(e instanceof ApiError ? e.message : tU("deleteFailed"));
+            setDeleteError(errorCode(e) === "user.hasMeetings"
+                ? tU("deleteHasMeetings", { count: deleteImpact?.meetings ?? 0 })
+                : e instanceof ApiError ? e.message : tU("deleteFailed"));
         } finally {
             setDeleting(false);
             setDeleteDialogOpen(false);
             setUserToDelete(null);
+            setDeleteImpact(null);
         }
     };
 
-    const handleDeleteClick = (id: string) => {
+    const handleDeleteClick = async (id: string) => {
         setUserToDelete(id);
         setDeleteError(null);
+        setDeleteImpact(null);
         setDeleteDialogOpen(true);
+        // Break-it R3 ops3 F5: say what happens to the user's open work first.
+        const { signal, isCurrent } = beginImpact();
+        try {
+            const res = await fetch(`/api/proxy/admin/users/${id}/delete-preview`, { signal });
+            if (!res.ok) return;
+            const impact = await res.json();
+            if (isCurrent()) setDeleteImpact(impact);
+        } catch (e) {
+            if (isAbortError(e) || !isCurrent()) return;
+            console.error("Failed to load delete preview:", e);
+        }
+    };
+
+    const closeForm = () => {
+        setShowForm(false);
+        resetForm();
     };
 
     const handleEdit = async (user: User) => {
         setFormError(null);
+        // Review r3B I2: nothing from the previous panel survives into this one.
+        setSelectedPropertyIds([]);
         setEditingUserId(user.id);
         setName(user.name);
         setEmail(user.email);
@@ -241,24 +355,44 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
         setTenantId(isSuperAdmin ? (user.tenantId || "") : currentTenantId);
         setPhoneNumber((user as any).phoneNumber || "");
         setPassword("");
-
-        // Fetch existing assignments if it's a Property Manager
-        if (user.role === 'PROPERTY_MANAGER') {
-            try {
-                const res = await fetch(`/api/proxy/admin/users/${user.id}/properties`);
-                if (res.ok) {
-                    const ids = await res.json();
-                    setSelectedPropertyIds(ids);
-                }
-            } catch (e) {
-                console.error("Failed to fetch property assignments:", e);
-            }
-        } else {
-            setSelectedPropertyIds([]);
-        }
-
+        setLoadedUser({
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            tenantId: isSuperAdmin ? (user.tenantId || "") : currentTenantId,
+            phoneNumber: (user as { phoneNumber?: string }).phoneNumber || "",
+        });
+        setLoadedPropertyIds(null);
+        setAssignmentsLoad("loading");
         setShowForm(true);
+
+        // The user's current assignments, whatever the role — a user made a manager
+        // here may still hold rows from an earlier spell as one (review r3B M10).
+        // Editing another user before this answers supersedes it: a slow answer for
+        // the first user must never become the second user's assignments.
+        const { signal, isCurrent } = beginAssignments();
+        try {
+            const res = await fetch(`/api/proxy/admin/users/${user.id}/properties`, { signal });
+            if (!isCurrent()) return;
+            if (!res.ok) {
+                setAssignmentsLoad("failed");
+                return;
+            }
+            const ids: string[] = await res.json();
+            if (!isCurrent()) return;
+            setSelectedPropertyIds(ids);
+            setLoadedPropertyIds(ids);
+            setAssignmentsLoad("ok");
+        } catch (e) {
+            if (isAbortError(e) || !isCurrent()) return;
+            console.error("Failed to fetch property assignments:", e);
+            setAssignmentsLoad("failed");
+        }
     };
+
+    // An edit of a manager waits for their assignments (review r3B I2).
+    const assignmentsPending = !!editingUserId && role === 'PROPERTY_MANAGER' && assignmentsLoad === "loading";
+    const assignmentsFailed = !!editingUserId && assignmentsLoad === "failed";
 
     const filteredUsers = searchQuery
         ? users.filter((u) =>
@@ -411,7 +545,7 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
             {/* Slide-over Form Overlay */}
             {showForm && (
                 <div className="fixed inset-0 z-[100] flex justify-end">
-                    <div className="absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity" onClick={() => setShowForm(false)} />
+                    <div className="absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity" onClick={closeForm} />
 
                     <div className="relative w-full max-w-md bg-surface h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
                         <div className="flex items-center justify-between p-6 border-b border-border">
@@ -422,7 +556,7 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                                 <p className="text-[11px] font-medium text-muted uppercase tracking-wider">{isSuperAdmin ? tU("systemAdministration") : tU("organisationUsers")}</p>
                             </div>
                             <button
-                                onClick={() => setShowForm(false)}
+                                onClick={closeForm}
                                 aria-label={tU("close")}
                                 className="w-8 h-8 bg-input rounded-lg flex items-center justify-center text-muted hover:bg-input/80 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
                             >
@@ -502,7 +636,12 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                                         ))}
                                     </select>
                                 </div>
-                                {role === 'PROPERTY_MANAGER' && (
+                                {role === 'PROPERTY_MANAGER' && assignmentsFailed && (
+                                    <p role="alert" data-testid="assignments-failed" className="text-xs text-error font-medium">
+                                        {tU("assignmentsLoadFailed")}
+                                    </p>
+                                )}
+                                {role === 'PROPERTY_MANAGER' && !assignmentsFailed && (
                                     <div className="space-y-3">
                                         <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1 ml-1">{tU("assignProperties")}</label>
                                         <div className="flex flex-wrap gap-2 p-2 bg-input border border-border rounded-lg min-h-[44px]">
@@ -581,7 +720,7 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                             <button
                                 type="submit"
                                 form="user-form"
-                                disabled={submitting}
+                                disabled={submitting || assignmentsPending}
                                 className="w-full py-3 bg-primary text-primary-foreground rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {submitting ? <Loader2 size={14} className="animate-spin" /> : <Users size={14} />}
@@ -595,14 +734,26 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
             {/* Confirm Delete Dialog */}
             <ConfirmDialog
                 isOpen={deleteDialogOpen}
-                onClose={() => setDeleteDialogOpen(false)}
+                onClose={() => { setDeleteDialogOpen(false); setDeleteImpact(null); }}
                 onConfirm={confirmDelete}
                 title={tU("deleteTitle")}
                 description={tU("deleteDescription")}
                 confirmText={tU("deleteConfirm")}
                 isDestructive={true}
                 isLoading={deleting}
-            />
+                confirmDisabled={(deleteImpact?.meetings ?? 0) > 0}
+            >
+                {deleteImpact && deleteImpact.openTickets > 0 && (
+                    <p className="text-xs text-foreground" data-testid="delete-open-tickets">
+                        {tU("deleteOpenTickets", { count: deleteImpact.openTickets })}
+                    </p>
+                )}
+                {deleteImpact && deleteImpact.meetings > 0 && (
+                    <p role="alert" className="text-xs text-error font-semibold" data-testid="delete-has-meetings">
+                        {tU("deleteHasMeetings", { count: deleteImpact.meetings })}
+                    </p>
+                )}
+            </ConfirmDialog>
 
         </div>
     );

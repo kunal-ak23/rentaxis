@@ -19,6 +19,9 @@ import {
     Plus, X, Search, Loader2, Eye, Upload, Wrench, BarChart3,
 } from "lucide-react";
 import { idParam, isIdParam } from "@/lib/urlIds";
+import { isTicketPriorityParam, isTicketStatusParam } from "@/lib/tickets/filters";
+import { currentRenterLeases } from "@/lib/tickets/renterLeases";
+import { isAbortError } from "@/lib/api/abort";
 import {
     TICKET_ATTACHMENT_MAX_MB,
     TICKET_CREATE_ACCEPT,
@@ -179,8 +182,11 @@ function TicketsPageInner() {
         }, 350);
         return () => clearTimeout(timer);
     }, [draftSearch, q, setQ, setPageParam]);
-    const [statusFilter, setStatusFilter] = useUrlState("status", "ALL");
-    const [priorityFilter, setPriorityFilter] = useUrlState("priority", "ALL");
+    // Break-it R3 data3 F6: an unknown status/priority in the URL (a stale
+    // bookmark) is no filter and is dropped, like a malformed id below —
+    // it used to reach the API as a 400 that Retry could only repeat.
+    const [statusFilter, setStatusFilter] = useUrlState("status", "ALL", isTicketStatusParam);
+    const [priorityFilter, setPriorityFilter] = useUrlState("priority", "ALL", isTicketPriorityParam);
     // R1 P3-2: property + tower (buildingId) live in the URL — bookmarkable,
     // like the Contracts list's filters — for staff's server-paged list.
     // Break round 1: a malformed id in the URL is no filter (and is dropped).
@@ -225,6 +231,9 @@ function TicketsPageInner() {
     // Whether the renter's my-leases read has finished (either way), so the
     // form can tell "still loading" from "no active lease".
     const [renterLeasesLoaded, setRenterLeasesLoaded] = useState(false);
+    // Break-it R3 portal3 F5: the read failed — say so with a Retry, never
+    // "you have no active contract".
+    const [renterLeasesFailed, setRenterLeasesFailed] = useState(false);
     const isRenter = userRole === "RENTER";
     const isStaffUser = userRole === "TENANT_USER";
     const canPage = canUsePagedTickets(userRole);
@@ -321,20 +330,26 @@ function TicketsPageInner() {
 
     const fetchRenterLeases = useCallback(async () => {
         if (!isRenter) return;
+        setRenterLeasesLoaded(false);
+        setRenterLeasesFailed(false);
         try {
             const res = await fetch("/api/proxy/v1/leases/my-leases");
-            if (res.ok) {
-                const leases = await res.json();
-                const active = leases.filter((l: any) => l.status === "ACTIVE");
-                setRenterLeases(active.map((l: any) => ({
-                    id: l.id,
-                    propertyId: l.propertyId,
-                    propertyName: l.propertyName,
-                    unitId: l.unitId,
-                    unitIdentifier: l.unitIdentifier,
-                })));
-            }
-        } catch {
+            if (!res.ok) throw new Error(`my-leases ${res.status}`);
+            const leases = await res.json();
+            // Break-it R3 portal3 F1: only the contracts the server accepts a
+            // ticket on (live, today inside the term) — not every ACTIVE one.
+            const current = currentRenterLeases<any>(Array.isArray(leases) ? leases : [], businessTodayIso());
+            setRenterLeases(current.map((l: any) => ({
+                id: l.id,
+                propertyId: l.propertyId,
+                propertyName: l.propertyName,
+                unitId: l.unitId,
+                unitIdentifier: l.unitIdentifier,
+            })));
+        } catch (e) {
+            if (isAbortError(e)) return;
+            setRenterLeases([]);
+            setRenterLeasesFailed(true);
         } finally {
             setRenterLeasesLoaded(true);
         }
@@ -420,6 +435,8 @@ function TicketsPageInner() {
                     description: form.description,
                     propertyId: form.propertyId,
                     unitId: form.unitId || undefined,
+                    // The renter's chosen contract, so the server never has to guess it.
+                    leaseId: isRenter ? renterLeases.find(l => l.unitId === form.unitId)?.id : undefined,
                     category: form.category,
                     priority: form.priority,
                     onBehalfOfRenterId: form.onBehalfOfRenterId || undefined,
@@ -445,7 +462,11 @@ function TicketsPageInner() {
                 fetchTickets();
             } else {
                 const errData = await res.json().catch(() => null);
-                setCreateError(errData?.message || errData?.error || t("createFailed"));
+                // Break-it R3 portal3 F1: a renter without a current contract is
+                // refused (403) — say it in their language, not the server's English.
+                setCreateError(isRenter && res.status === 403
+                    ? t("noActiveLease")
+                    : errData?.message || errData?.error || t("createFailed"));
             }
         } catch {
             setCreateError(t("createFailed"));
@@ -758,6 +779,17 @@ function TicketsPageInner() {
                                 <div data-testid="ticket-renter-leases-loading" className="flex items-center gap-2 bg-input/50 rounded-lg px-4 py-3 border border-border">
                                     <Loader2 size={12} className="animate-spin text-muted" />
                                     <p className="text-xs text-muted">{t("renterLeasesLoading")}</p>
+                                </div>
+                            ) : isRenter && renterLeasesFailed ? (
+                                <div data-testid="ticket-renter-leases-failed" role="alert" className="flex flex-wrap items-center justify-between gap-2 bg-error/5 rounded-lg px-4 py-3 border border-error/30">
+                                    <p className="text-xs text-error">{t("renterLeasesFailed")}</p>
+                                    <button
+                                        type="button"
+                                        onClick={() => void fetchRenterLeases()}
+                                        className="text-xs font-semibold text-primary hover:underline"
+                                    >
+                                        {t("retry")}
+                                    </button>
                                 </div>
                             ) : isRenter && renterLeases.length === 0 ? (
                                 <div className="bg-input/50 rounded-lg px-4 py-3 border border-border">

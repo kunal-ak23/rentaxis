@@ -77,6 +77,24 @@ public class LandlordOrgService {
         return repository.findById(id);
     }
 
+    /**
+     * Review r3B I1: reads the organisation under a row lock, applies {@code change}
+     * (which may refuse, e.g. with org.changed) and writes it, all in one transaction.
+     * Every edit and status change of an existing organisation goes through here, so
+     * none writes back a column it read before another writer committed.
+     *
+     * @throws com.datagami.rentaxis.api.exception.NotFoundException no such organisation
+     */
+    @Transactional
+    public LandlordOrg updateLocked(UUID id, java.util.function.Consumer<LandlordOrg> change) {
+        LandlordOrg org = repository.findByIdForUpdate(id)
+                .orElseThrow(() -> new com.datagami.rentaxis.api.exception.NotFoundException("Organisation not found"));
+        change.accept(org);
+        LandlordOrg saved = repository.saveAndFlush(org);
+        tokenRevocation.evictOrg(id);
+        return saved;
+    }
+
     @Transactional
     public LandlordOrg save(LandlordOrg org) {
         LandlordOrg saved = repository.save(org);

@@ -151,6 +151,7 @@ class MarketplaceControllerTest {
     void addInterest_201() {
         UnitListing listing = publishedListing();
         when(marketplaceService.getListingById(listing.getId())).thenReturn(listing);
+        when(marketplaceService.isPubliclyVisible(listing)).thenReturn(true);
         UnitListingInterest interest = new UnitListingInterest();
         interest.setId(UUID.randomUUID());
         when(interestService.addInterest(eq(tenantId), eq(listing.getId()), eq(renterId), any()))
@@ -160,6 +161,19 @@ class MarketplaceControllerTest {
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         verify(interestService).addInterest(tenantId, listing.getId(), renterId, "hello");
+    }
+
+    /** Review r3C m4: a listing hidden from the marketplace (unit still let) takes no enquiry by id. */
+    @Test
+    void addInterest_hiddenListing_refused() {
+        UnitListing listing = publishedListing();
+        when(marketplaceService.getListingById(listing.getId())).thenReturn(listing);
+        when(marketplaceService.isPubliclyVisible(listing)).thenReturn(false);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        controller.addInterest(listing.getId(), new MarketplaceController.NoteRequest("hello")))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.ListingNotAvailableException.class);
+        org.mockito.Mockito.verifyNoInteractions(interestService);
     }
 
     @Test

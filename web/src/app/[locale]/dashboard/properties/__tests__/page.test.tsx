@@ -214,6 +214,19 @@ describe("PropertiesPage portfolio import", () => {
         await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     }
 
+    it("renders a failed job's coded error from the catalog, not the stored text (break-it R3 data3 F4)", async () => {
+        portfolioStatusResponse = jsonStub(true, {
+            status: "FAILED",
+            errors: [{ sheet: "General", row: null, field: "File", message: "stored text", code: "import.failedRef", args: { reference: "ABCD1234" } }],
+        });
+
+        await openPortfolioModalAndUpload();
+        await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+
+        expect(screen.getByText("Import failed — reference ABCD1234")).toBeTruthy();
+        expect(screen.queryByText("stored text")).toBeNull();
+    });
+
     it("stops polling and shows a failure when the status endpoint returns 404", async () => {
         portfolioStatusResponse = jsonStub(false, {}, 404);
 

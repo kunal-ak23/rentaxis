@@ -9,6 +9,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { AccessDeniedState } from "@/components/ui/PageStates";
 import { NumberInput } from "@/components/ui/NumberInput";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { isAbortError } from "@/lib/api/abort";
 
 type Property = {
     id: string;
@@ -95,12 +97,21 @@ export default function StaffManager({ embedded = false }: { embedded?: boolean 
         fetchAccounts();
     }, []);
 
+    // Break round 3, F1: each load is aborted on unmount and superseded by a
+    // newer one (a refresh after a save), silently.
+    const beginStaff = useLatestRequest();
+    const beginProperties = useLatestRequest();
+    const beginAccounts = useLatestRequest();
+
     const fetchStaff = async () => {
+        const { signal, isCurrent } = beginStaff();
         try {
-            const res = await fetch("/api/proxy/v1/staff");
+            const res = await fetch("/api/proxy/v1/staff", { signal });
+            if (!isCurrent()) return;
             setForbidden(res.status === 403);
             if (res.ok) {
                 const data = await res.json();
+                if (!isCurrent()) return;
                 data.sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
                 setStaff(data);
                 setLoadError(null);
@@ -110,30 +121,37 @@ export default function StaffManager({ embedded = false }: { embedded?: boolean 
                 setLoadError(tCommon("loadFailedStaff"));
             }
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             console.error(err);
             setLoadError(tCommon("loadFailedStaff"));
         } finally {
-            setLoading(false);
+            if (isCurrent()) setLoading(false);
         }
     };
 
     const fetchProperties = async () => {
+        const { signal, isCurrent } = beginProperties();
         try {
-            const res = await fetch("/api/proxy/v1/properties");
-            if (res.ok) setProperties(await res.json());
+            const res = await fetch("/api/proxy/v1/properties", { signal });
+            if (!res.ok) return;
+            const rows = await res.json();
+            if (isCurrent()) setProperties(rows);
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             console.error(err);
         }
     };
 
     const fetchAccounts = async () => {
+        const { signal, isCurrent } = beginAccounts();
         try {
-            const res = await fetch("/api/proxy/v1/finance/accounts");
+            const res = await fetch("/api/proxy/v1/finance/accounts", { signal });
             if (res.ok) {
                 const data: Account[] = await res.json();
-                setAccounts(data.filter((a) => a.accountType === "EXPENSE"));
+                if (isCurrent()) setAccounts(data.filter((a) => a.accountType === "EXPENSE"));
             }
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             console.error(err);
         }
     };

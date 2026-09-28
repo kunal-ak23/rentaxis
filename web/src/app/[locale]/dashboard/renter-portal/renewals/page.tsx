@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import RenewalCard from "@/components/renewals/RenewalCard";
 
@@ -13,6 +13,9 @@ type LeaseRenewalView = {
   stage: string | null;
   intent: string | null;
   reminders: { slot: number; status: string; sentAt: string | null }[];
+  /** Break-it R3 portal3 F8: the contract is over — shown as ended, no renewal choice. */
+  ended?: boolean;
+  endedDaysAgo?: number;
 };
 
 export default function RenterRenewalsPage() {
@@ -20,6 +23,10 @@ export default function RenterRenewalsPage() {
   const [data, setData] = useState<{ leases: LeaseRenewalView[] } | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Break-it R3 portal3 F3: one answer in flight at a time — a double tap used to
+  // post twice and notify staff twice.
+  const [saving, setSaving] = useState<string | null>(null);
+  const inFlight = useRef(false);
 
   const load = async () => {
     try {
@@ -34,6 +41,9 @@ export default function RenterRenewalsPage() {
   useEffect(() => { void load(); }, []);
 
   const setIntent = async (opportunityId: string, intent: string) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setSaving(opportunityId);
     setActionError(null);
     try {
       const res = await fetch(`/api/proxy/v1/me/renewals/${opportunityId}/intent`, {
@@ -42,14 +52,22 @@ export default function RenterRenewalsPage() {
         body: JSON.stringify({ intent }),
       });
       if (!res.ok) {
-        // 400 here means the manager already closed this renewal; anything
-        // else (stale id, transient failure) gets the generic message.
-        setActionError(res.status === 400 ? t("intentAlreadyResolved") : t("genericError"));
+        // 400: the contract has ended (renewal.contractEnded), or the manager
+        // already closed this renewal; anything else (stale id, transient
+        // failure) gets the generic message.
+        const body = await res.json().catch(() => null);
+        setActionError(body?.code === "renewal.contractEnded" ? t("contractEnded")
+          : res.status === 400 ? t("intentAlreadyResolved") : t("genericError"));
       }
     } catch {
       setActionError(t("genericError"));
     }
-    await load();
+    try {
+      await load();
+    } finally {
+      inFlight.current = false;
+      setSaving(null);
+    }
   };
 
   if (!data) {
@@ -67,6 +85,8 @@ export default function RenterRenewalsPage() {
     return <p className="p-6 text-sm text-muted">{t("loading")}</p>;
   }
 
+  const live = data.leases.filter(l => !l.ended);
+  const ended = data.leases.filter(l => l.ended);
   const buckets = [
     { key: "within30", filter: (d: number) => d <= 30 },
     { key: "within60", filter: (d: number) => d > 30 && d <= 60 },
@@ -87,7 +107,7 @@ export default function RenterRenewalsPage() {
         </div>
       )}
       {buckets.map(b => {
-        const leases = data.leases.filter(l => b.filter(l.daysRemaining));
+        const leases = live.filter(l => b.filter(l.daysRemaining));
         return (
           <section key={b.key}>
             <h2 className="text-sm font-medium mb-2">{t(b.key as any)}</h2>
@@ -95,13 +115,21 @@ export default function RenterRenewalsPage() {
               ? <p className="text-xs text-muted">{t("emptyBucket")}</p>
               : <div className="space-y-2">
                   {leases.map(l => (
-                    <RenewalCard key={l.leaseId} {...l}
+                    <RenewalCard key={l.leaseId} {...l} busy={saving !== null}
                                  onSetIntent={(i) => l.opportunityId && setIntent(l.opportunityId, i)} />
                   ))}
                 </div>}
           </section>
         );
       })}
+      {ended.length > 0 && (
+        <section>
+          <h2 className="text-sm font-medium mb-2">{t("endedSection")}</h2>
+          <div className="space-y-2">
+            {ended.map(l => <RenewalCard key={l.leaseId} {...l} />)}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

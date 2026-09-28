@@ -14,7 +14,7 @@ import { fmtAmount, ledgerApi, type ManualJournalBody } from "@/lib/api/ledger";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { moneyInputError, parseMoneyInput } from "@/lib/money";
 import { MoneyFieldError } from "@/components/ui/NumberInput";
-import { isBeyondManualPostingWindow, maxManualPostingDateIso } from "@/lib/businessDate";
+import { isBeyondManualPostingWindow, maxManualPostingDateIso, businessTodayIso } from "@/lib/businessDate";
 
 /**
  * Break-it round 1 (money) F1/F3: a side of a line through the shared money parse.
@@ -30,11 +30,8 @@ function sideError(s: string) {
     return s.trim() === "" ? null : moneyInputError(s, sideOptions);
 }
 
-const pad = (n: number) => String(n).padStart(2, "0");
-const today = () => {
-    const d = new Date();
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
+/** Break-it R3 money3 N4: the business (Dubai) date, not the browser's. */
+const today = () => businessTodayIso();
 
 const field =
     "w-full bg-input border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200";

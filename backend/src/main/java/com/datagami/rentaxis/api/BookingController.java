@@ -21,7 +21,6 @@ import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.BookingRequestStatus;
 import com.datagami.rentaxis.domain.entity.enums.BookingResourceType;
-import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.repository.BookingRequestRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.ParkingSpotRepository;
@@ -60,7 +59,7 @@ import java.util.stream.Collectors;
  * Booking lifecycle HTTP surface, admin and renter sides. RBAC lives here —
  * {@code BookingService} implements none of it (gate-pass split). Two checks
  * exist nowhere else: {@link #requireUnitOnActiveLease} (a renter may only
- * book against a unit on their own ACTIVE lease — the service trusts the unit
+ * book against a unit on their own current contract — the service trusts the unit
  * completely), and the {@link #release} role branch (renter path passes
  * actorIsAdmin=false so the service enforces the owner rule). Renters never
  * see other applicants — otherRequests appears only in the admin detail, and
@@ -202,10 +201,11 @@ public class BookingController {
         if (!tenantId.equals(renter.getTenantId())) {
             throw new NotFoundException("No renter profile linked to this user");
         }
-        List<Unit> units = leaseRepository.findByRenterId(renter.getId()).stream()
-                .filter(l -> l.getStatus() == LeaseStatus.ACTIVE)
-                .filter(l -> tenantId.equals(l.getTenantId()))
+        // R3 round 1: the shared "current contract" rule (live, today inside the term),
+        // the same one gate passes and tickets use.
+        List<Unit> units = leaseRepository.findCurrentForRenterUser(tenantId, userId, java.time.LocalDate.now()).stream()
                 .map(Lease::getUnit)
+                .distinct()
                 .toList();
 
         Map<UUID, PropertyAmenity> amenitiesById = new LinkedHashMap<>();
@@ -297,12 +297,14 @@ public class BookingController {
         if (!tenantId.equals(renter.getTenantId())) {
             throw new NotFoundException("No renter profile linked to this user");
         }
-        Lease lease = leaseRepository.findByUnitIdAndStatus(unitId, LeaseStatus.ACTIVE).stream()
-                .filter(l -> tenantId.equals(l.getTenantId()))
-                .filter(l -> l.getRenter().getId().equals(renter.getId()))
+        // R3 round 1: a current contract — live and today inside its term — not merely
+        // ACTIVE (an ended lease no expiry job has closed yet stays ACTIVE). Same rule as
+        // gate passes and tickets (LeaseRepository.findCurrentForRenterUser).
+        return leaseRepository.findCurrentForRenterUser(tenantId, userId, java.time.LocalDate.now()).stream()
+                .filter(l -> unitId.equals(l.getUnit().getId()))
+                .map(Lease::getUnit)
                 .findFirst()
                 .orElseThrow(() -> new NotFoundException("Unit is not on an active lease of yours"));
-        return lease.getUnit();
     }
 
     /**

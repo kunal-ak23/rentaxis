@@ -96,6 +96,7 @@ public class IssuedChequeService {
         this.jdbc = jdbc;
         this.entityManager = entityManager;
         this.clock = clock;
+        this.manualDates = new com.datagami.rentaxis.core.service.ledger.ManualPostingDates(clock);
         this.openingItems = openingItems;
     }
 
@@ -209,7 +210,7 @@ public class IssuedChequeService {
                     "issuedCheque.presentBeforeChequeDate", java.util.Map.of("cheque", String.valueOf(c.getChequeNumber()),
                             "chequeDate", c.getChequeDate().format(DMY), "date", date.format(DMY)));
         }
-        if (date.isAfter(today())) {
+        if (!manualDates.allows(com.datagami.rentaxis.core.service.ledger.PostingDatePath.ISSUED_CHEQUE_PRESENT, date)) {
             throw new BusinessRuleViolationException("A cheque cannot be presented in the future (" + date.format(DMY) + ")");
         }
         Account bank = accounts.findById(c.getBankAccountId()).orElseThrow(() -> new NotFoundException("Bank account not found"));
@@ -245,7 +246,7 @@ public class IssuedChequeService {
         }
         requireReason(reason);
         if (date == null) throw new BusinessRuleViolationException("Give the date the bank returned the cheque");
-        requireNotFuture(date, "returned");
+        requireNotFuture(com.datagami.rentaxis.core.service.ledger.PostingDatePath.ISSUED_CHEQUE_RETURN, date, "returned");
         if (date.isBefore(c.getPresentedOn())) {
             throw new BusinessRuleViolationException("The cheque was presented on " + c.getPresentedOn().format(DMY)
                     + "; it cannot be returned before that");
@@ -270,7 +271,7 @@ public class IssuedChequeService {
         IssuedCheque c = find(id);
         requireReason(reason);
         if (date == null) throw new BusinessRuleViolationException("Give the date the cheque was cancelled");
-        requireNotFuture(date, "cancelled");
+        requireNotFuture(com.datagami.rentaxis.core.service.ledger.PostingDatePath.ISSUED_CHEQUE_CANCEL, date, "cancelled");
         if (c.getVoucherId() != null) {
             requireCancellable(c);
             // The voucher's lock, then this row's (inside reversePayment), then the journal.
@@ -381,8 +382,8 @@ public class IssuedChequeService {
     }
 
     /** PR #352 review P3-8: like presentation, a return or a cancellation has happened, so it is not in the future. */
-    private void requireNotFuture(LocalDate date, String what) {
-        if (date.isAfter(today())) {
+    private void requireNotFuture(com.datagami.rentaxis.core.service.ledger.PostingDatePath path, LocalDate date, String what) {
+        if (!manualDates.allows(path, date)) {
             throw new BusinessRuleViolationException("A cheque cannot be " + what + " in the future ("
                     + date.format(DMY) + ")");
         }
@@ -458,6 +459,14 @@ public class IssuedChequeService {
 
     private static BigDecimal sum(List<IssuedCheque> rows) {
         return rows.stream().map(IssuedCheque::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /** Break-it R3 money3: the shared posting-date policy, on the app clock. */
+    private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setManualPostingDates(com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates) {
+        this.manualDates = manualDates;
     }
 
     /** Today on the app clock (Asia/Dubai, {@code ClockConfig}), not the server's. */

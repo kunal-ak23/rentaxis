@@ -17,6 +17,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -59,7 +60,7 @@ class LandlordOrgControllerTest {
     void createTenant_persistsOptionalFields() {
         LandlordOrg provisioned = orgNamed("Acme");
         when(service.provisionTenant("Acme")).thenReturn(provisioned);
-        when(service.save(any(LandlordOrg.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(service.updateLocked(eq(provisioned.getId()), any())).thenAnswer(inv -> { inv.<java.util.function.Consumer<LandlordOrg>>getArgument(1).accept(provisioned); return provisioned; });
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("name", "Acme");
@@ -81,7 +82,7 @@ class LandlordOrgControllerTest {
         assertThat(saved.getLogoUrl()).isEqualTo("https://cdn.example/logo.png");
         assertThat(saved.getStatus()).isEqualTo("ACTIVE");
         assertThat(saved.getTicketOtpRequired()).isFalse();
-        verify(service).save(provisioned);
+        verify(service).updateLocked(eq(provisioned.getId()), any());
     }
 
     @Test
@@ -93,7 +94,7 @@ class LandlordOrgControllerTest {
 
         assertThat(res.getStatusCode().value()).isEqualTo(200);
         assertThat(res.getBody()).isSameAs(provisioned);
-        verify(service, never()).save(any());
+        verify(service, never()).updateLocked(any(), any());
     }
 
     @Test
@@ -108,7 +109,7 @@ class LandlordOrgControllerTest {
         LandlordOrg org = orgNamed("Acme");
         org.setTicketOtpRequired(true);
         when(service.findById(org.getId())).thenReturn(Optional.of(org));
-        when(service.save(any(LandlordOrg.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(service.updateLocked(eq(org.getId()), any())).thenAnswer(inv -> { inv.<java.util.function.Consumer<LandlordOrg>>getArgument(1).accept(org); return org; });
 
         ResponseEntity<LandlordOrg> res =
                 controller.updateTenant(org.getId(), Map.of("ticketOtpRequired", Boolean.FALSE));
@@ -122,7 +123,7 @@ class LandlordOrgControllerTest {
         LandlordOrg org = orgNamed("Acme");
         org.setTicketOtpRequired(false);
         when(service.findById(org.getId())).thenReturn(Optional.of(org));
-        when(service.save(any(LandlordOrg.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(service.updateLocked(eq(org.getId()), any())).thenAnswer(inv -> { inv.<java.util.function.Consumer<LandlordOrg>>getArgument(1).accept(org); return org; });
 
         controller.updateTenant(org.getId(), Map.of("ticketOtpRequired", "true"));
 
@@ -136,7 +137,7 @@ class LandlordOrgControllerTest {
         org.setTrn("100999999999");
         org.setStatus("ACTIVE");
         when(service.findById(org.getId())).thenReturn(Optional.of(org));
-        when(service.save(any(LandlordOrg.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(service.updateLocked(eq(org.getId()), any())).thenAnswer(inv -> { inv.<java.util.function.Consumer<LandlordOrg>>getArgument(1).accept(org); return org; });
 
         controller.updateTenant(org.getId(), Map.of("name", "Renamed"));
 
@@ -152,6 +153,6 @@ class LandlordOrgControllerTest {
         when(service.findById(id)).thenReturn(Optional.empty());
 
         assertThat(controller.updateTenant(id, Map.of("name", "x")).getStatusCode().value()).isEqualTo(404);
-        verify(service, never()).save(any());
+        verify(service, never()).updateLocked(any(), any());
     }
 }

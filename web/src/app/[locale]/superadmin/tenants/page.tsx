@@ -7,8 +7,35 @@ import { Plus, X, Building2, Hash, Settings2, ShieldCheck, Loader2, Search, Penc
 import { cn } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 import { FileUpload } from "@/components/ui/FileUpload";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { isAbortError } from "@/lib/api/abort";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { changedFields } from "@/lib/changedFields";
 
 type Tenant = { id: string; name: string; status: string; address?: string; trn?: string; logoUrl?: string; ticketOtpRequired?: boolean; phone?: string; createdAt: string };
+
+type OrgForm = { name: string; address: string; trn: string; logoUrl: string; ticketOtpRequired: boolean; phone: string };
+
+const EMPTY_FORM: OrgForm = { name: "", address: "", trn: "", logoUrl: "", ticketOtpRequired: true, phone: "" };
+
+/**
+ * The editable fields. Status is not one of them (break-it R3 ops3 F6): a dialog
+ * opened before another tab deactivated the organisation sent its old "ACTIVE"
+ * back and re-activated it. Status moves only through the Activate / Deactivate
+ * action, which names the status it saw.
+ */
+const ORG_FIELDS = ["name", "address", "trn", "logoUrl", "ticketOtpRequired", "phone"] as const;
+
+function formOf(tenant: Tenant): OrgForm {
+    return {
+        name: tenant.name,
+        address: tenant.address || "",
+        trn: tenant.trn || "",
+        logoUrl: tenant.logoUrl || "",
+        ticketOtpRequired: tenant.ticketOtpRequired !== false,
+        phone: tenant.phone || "",
+    };
+}
 
 type FeatureToggle = {
   feature: string;
@@ -37,7 +64,14 @@ export default function SuperAdminTenantsPage() {
     const [submitting, setSubmitting] = useState(false);
     const [showForm, setShowForm] = useState(false);
     const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
-    const [formData, setFormData] = useState({ name: "", address: "", trn: "", status: "ACTIVE", logoUrl: "", ticketOtpRequired: true, phone: "" });
+    const [formData, setFormData] = useState<OrgForm>(EMPTY_FORM);
+    // Activate / Deactivate: the only way status changes (break-it R3 ops3 F6).
+    const [statusTarget, setStatusTarget] = useState<Tenant | null>(null);
+    const [statusSaving, setStatusSaving] = useState(false);
+    const [statusError, setStatusError] = useState("");
+    // Review r3B M9: after org.changed the dialog stays as it was (its button never
+    // flips to the opposite action under the cursor) and cannot be confirmed again.
+    const [statusStale, setStatusStale] = useState(false);
     const [formError, setFormError] = useState("");
     // Deleting an organization is irreversible and takes everything inside it,
     // so the dialog asks for the name rather than a yes/no — the same
@@ -101,15 +135,21 @@ export default function SuperAdminTenantsPage() {
         }
     };
 
-    const fetchTenants = async () => {
+    // Break round 3, F1: a refresh supersedes the read in flight; unmount aborts it, silently.
+    const beginTenants = useLatestRequest();
+    const fetchTenants = async (): Promise<Tenant[] | null> => {
+        const { signal, isCurrent } = beginTenants();
         setLoading(true);
         try {
-            const res = await fetch("/api/proxy/admin/tenants");
+            const res = await fetch("/api/proxy/admin/tenants", { signal });
+            if (!isCurrent()) return null;
             if (res.ok) {
                 const data = await res.json();
+                if (!isCurrent()) return null;
                 data.sort((a: Tenant, b: Tenant) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
                 setTenants(data);
                 setLoadError("");
+                return data;
             } else {
                 setLoadError(
                     res.status === 401 || res.status === 403
@@ -118,16 +158,30 @@ export default function SuperAdminTenantsPage() {
                 );
             }
         } catch (e) {
+            if (isAbortError(e) || !isCurrent()) return null;
             console.error(e);
             setLoadError(tSa("orgNetworkError"));
         } finally {
-            setLoading(false);
+            if (isCurrent()) setLoading(false);
         }
+        return null;
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.name) return;
+        // An edit sends only the fields changed here, each with the value this dialog
+        // loaded, so a field another tab changed meanwhile is refused (409 org.changed)
+        // instead of overwritten.
+        let body: Record<string, unknown> = { ...formData };
+        if (editingTenant) {
+            const { changes, expected } = changedFields(formOf(editingTenant), formData, ORG_FIELDS);
+            if (Object.keys(changes).length === 0) {
+                resetForm();
+                return;
+            }
+            body = { ...changes, expected };
+        }
         setSubmitting(true);
         setFormError("");
         try {
@@ -137,11 +191,24 @@ export default function SuperAdminTenantsPage() {
             const res = await fetch(url, {
                 method: editingTenant ? "PUT" : "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(formData),
+                body: JSON.stringify(body),
             });
             if (res.ok) {
                 resetForm();
                 fetchTenants();
+            } else if (res.status === 409 && editingTenant) {
+                const data = await res.json().catch(() => ({}));
+                if (data?.code === "org.changed") {
+                    // Reload: the dialog shows the organisation as it is now.
+                    const fresh = (await fetchTenants())?.find((t) => t.id === editingTenant.id);
+                    if (fresh) {
+                        setEditingTenant(fresh);
+                        setFormData(formOf(fresh));
+                    }
+                    setFormError(tSa("orgChanged"));
+                } else {
+                    setFormError(data.message || data.error || tSa("orgSaveFailed"));
+                }
             } else {
                 const data = await res.json().catch(() => ({}));
                 const fallback =
@@ -164,14 +231,56 @@ export default function SuperAdminTenantsPage() {
 
     const openEdit = (tenant: Tenant) => {
         setEditingTenant(tenant);
-        setFormData({ name: tenant.name, address: tenant.address || "", trn: tenant.trn || "", status: tenant.status || "ACTIVE", logoUrl: tenant.logoUrl || "", ticketOtpRequired: tenant.ticketOtpRequired !== false, phone: tenant.phone || "" });
+        setFormData(formOf(tenant));
         setShowForm(true);
+    };
+
+    const closeStatus = () => {
+        setStatusTarget(null);
+        setStatusStale(false);
+        setStatusError("");
+    };
+
+    /** Activate or deactivate, naming the status this page showed (409 org.changed if it moved). */
+    const confirmStatus = async () => {
+        if (!statusTarget) return;
+        const next = statusTarget.status === "INACTIVE" ? "ACTIVE" : "INACTIVE";
+        setStatusSaving(true);
+        setStatusError("");
+        try {
+            const res = await fetch(`/api/proxy/admin/tenants/${statusTarget.id}/status`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: next, expectedStatus: statusTarget.status }),
+            });
+            if (res.ok) {
+                closeStatus();
+                fetchTenants();
+                return;
+            }
+            const data = await res.json().catch(() => ({}));
+            if (res.status === 409 && data?.code === "org.changed") {
+                // The list reloads; the row's button is the next action.
+                fetchTenants();
+                setStatusStale(true);
+                setStatusError(tSa("orgStatusChanged"));
+                return;
+            }
+            setStatusError(
+                res.status === 401 || res.status === 403 ? tSa("orgSaveDenied")
+                    : res.status === 404 ? tSa("orgGone")
+                        : data.message || tSa("orgSaveFailed"));
+        } catch {
+            setStatusError(tSa("orgNetworkError"));
+        } finally {
+            setStatusSaving(false);
+        }
     };
 
     const resetForm = () => {
         setShowForm(false);
         setEditingTenant(null);
-        setFormData({ name: "", address: "", trn: "", status: "ACTIVE", logoUrl: "", ticketOtpRequired: true, phone: "" });
+        setFormData(EMPTY_FORM);
         setFormError("");
     };
 
@@ -336,19 +445,6 @@ export default function SuperAdminTenantsPage() {
                                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                                 />
                             </div>
-                            {editingTenant && (
-                                <div>
-                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgStatus")}</label>
-                                    <select
-                                        value={formData.status}
-                                        onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                                        className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all cursor-pointer"
-                                    >
-                                        <option value="ACTIVE">{tSa("orgStatusACTIVE")}</option>
-                                        <option value="INACTIVE">{tSa("orgStatusINACTIVE")}</option>
-                                    </select>
-                                </div>
-                            )}
                             <div className="flex items-center justify-between">
                                 <div>
                                     <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider">{tSa("orgTicketOtp")}</label>
@@ -460,6 +556,13 @@ export default function SuperAdminTenantsPage() {
                                         >
                                             <Pencil size={12} />
                                             {tSa("orgEditButton")}
+                                        </button>
+                                        <button
+                                            onClick={() => { setStatusError(""); setStatusTarget(tenant); }}
+                                            data-testid={`org-status-${tenant.id}`}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-muted hover:text-foreground hover:bg-input rounded-lg transition-colors cursor-pointer"
+                                        >
+                                            {tenant.status === "INACTIVE" ? tSa("orgActivate") : tSa("orgDeactivate")}
                                         </button>
                                         <button
                                             onClick={() => openDelete(tenant)}
@@ -631,6 +734,26 @@ export default function SuperAdminTenantsPage() {
                 </div>
               </div>
             )}
+
+            <ConfirmDialog
+                isOpen={!!statusTarget}
+                onClose={closeStatus}
+                onConfirm={confirmStatus}
+                title={statusTarget?.status === "INACTIVE" ? tSa("orgActivateTitle") : tSa("orgDeactivateTitle")}
+                description={statusTarget
+                    ? tSa(statusTarget.status === "INACTIVE" ? "orgActivateBody" : "orgDeactivateBody", { name: statusTarget.name })
+                    : undefined}
+                confirmText={statusTarget?.status === "INACTIVE" ? tSa("orgActivate") : tSa("orgDeactivate")}
+                isDestructive={statusTarget?.status !== "INACTIVE"}
+                isLoading={statusSaving}
+                confirmDisabled={statusStale}
+                cancelText={tSa("cancel")}
+                confirmTestId="org-status-confirm"
+            >
+                {statusError && (
+                    <p role="alert" className="text-xs text-error font-semibold">{statusError}</p>
+                )}
+            </ConfirmDialog>
         </div>
     );
 }

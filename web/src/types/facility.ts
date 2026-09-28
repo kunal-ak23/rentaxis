@@ -57,6 +57,10 @@ export interface BookingRequestDTO {
   renterPhone: string | null
   note: string | null
   preferredDate: string | null
+  /** Parking range end (LocalDate); amenity time slot (LocalTime "HH:mm:ss"). Sent by the server, optional here for older fixtures. */
+  preferredEndDate?: string | null
+  preferredStartTime?: string | null
+  preferredEndTime?: string | null
   status: BookingRequestStatus
   adminNote: string | null
   decidedByUserId: string | null

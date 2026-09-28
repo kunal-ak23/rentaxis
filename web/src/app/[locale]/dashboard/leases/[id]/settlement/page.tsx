@@ -19,6 +19,7 @@ import AccountPicker from "@/components/finance/AccountPicker";
 import { assetSrc } from "@/lib/assetUrl";
 import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 import { clampIso, fmtIsoDate, isoDayAfter, maxIso, todayIso } from "@/components/leases/leaseMath";
+import { businessTodayIso, isAfterBusinessToday } from "@/lib/businessDate";
 import {
     netRefundOf, round2, toSaveLines, totalOf, totalVatOf, withLineVat, type SettlementRow,
 } from "@/components/leases/settlementMath";
@@ -379,11 +380,16 @@ export default function SettlementPage() {
     const instrumentsOutstanding = statement?.instrumentsOutstanding ?? 0;
     const needsAcknowledgement = refunds && (instrumentsOutstanding > 0 || ackDemanded);
 
+    // Break-it R3 money3 N5: a settlement records a move-out that has happened and
+    // cannot be undone, so it is not dated after today (Dubai) — the server refuses it too.
+    const settlementAfterToday = isAfterBusinessToday(settlementDate);
+
     const canFinalize =
         editable
         && settleable
         && !dirty
         && !!settlementDate
+        && !settlementAfterToday
         && (!needsAcknowledgement || acknowledged);
 
     /**
@@ -902,9 +908,16 @@ export default function SettlementPage() {
                                 data-testid="settlement-date"
                                 value={settlementDate ?? ""}
                                 min={minSettlementDate}
+                                max={businessTodayIso()}
+                                aria-invalid={settlementAfterToday}
                                 onChange={e => setSettlementDate(e.target.value)}
                                 className="border border-border rounded-lg bg-surface px-3 py-1.5 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                             />
+                            {settlementAfterToday && (
+                                <span role="alert" data-testid="settlement-date-after-today" className="text-[10px] text-error">
+                                    {t("settlementDateAfterToday", { today: fmtIsoDate(businessTodayIso(), locale) })}
+                                </span>
+                            )}
                             {lease?.terminatedOn && (
                                 <span className="text-[10px] text-muted">
                                     {t("settlementDateHint", { date: fmtIsoDate(lease.terminatedOn, locale) })}

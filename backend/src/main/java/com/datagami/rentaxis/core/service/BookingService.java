@@ -7,12 +7,15 @@ import com.datagami.rentaxis.api.exception.SlotConflictException;
 import com.datagami.rentaxis.core.event.BookingDecidedEvent;
 import com.datagami.rentaxis.core.event.BookingRequestedEvent;
 import com.datagami.rentaxis.domain.entity.BookingRequest;
+import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.ParkingSpot;
 import com.datagami.rentaxis.domain.entity.PropertyAmenity;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.BookingRequestStatus;
 import com.datagami.rentaxis.domain.entity.enums.BookingResourceType;
+import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.repository.BookingRequestRepository;
+import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.PessimisticLockingFailureException;
@@ -21,9 +24,15 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -61,6 +70,22 @@ public class BookingService {
     private static final List<BookingRequestStatus> OPEN_STATUSES =
             List.of(BookingRequestStatus.PENDING, BookingRequestStatus.APPROVED);
 
+    /** Break-it R3 ops3 F8: the longest parking range one request may cover. */
+    static final int MAX_PARKING_YEARS = 2;
+
+    /**
+     * Break-it R3 ops3 F8: the leases a booking must fall inside — the renter's current
+     * contract. RENEWED counts (review r3C I1): posting a renewal early flips the running
+     * lease to RENEWED at once while its term still runs, and the successor starts later.
+     */
+    private static final EnumSet<LeaseStatus> CURRENT_LEASE =
+            EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN, LeaseStatus.RENEWED);
+
+    static final ZoneId DUBAI = ZoneId.of("Asia/Dubai");
+    private static final DateTimeFormatter DMY = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
+    private Clock clock = Clock.system(DUBAI);
+
     private final BookingRequestRepository bookingRepository;
     private final FacilityService facilityService;
     private final ApplicationEventPublisher eventPublisher;
@@ -81,6 +106,10 @@ public class BookingService {
             throw new BusinessRuleViolationException("resourceId is required");
         }
         validateRequestedTimeWindow(req);
+        // Break-it R3 ops3 F8: not in the past, not an endless range, inside the contract.
+        validateDates(req.resourceType(), req.preferredDate(), req.preferredEndDate());
+        requireWithinCurrentLease(tenantId, renterUserId, unit.getId(),
+                req.preferredDate(), req.preferredEndDate(), true);
 
         BookingRequest booking = new BookingRequest();
         booking.setTenantId(tenantId);
@@ -103,11 +132,31 @@ public class BookingService {
             if (!amenity.isBookable()) {
                 throw new BusinessRuleViolationException("This amenity is not bookable");
             }
-            Optional<BookingRequest> existing =
-                    bookingRepository.findFirstByTenantIdAndRenterUserIdAndAmenityIdAndStatus(
-                            tenantId, renterUserId, amenity.getId(), BookingRequestStatus.PENDING);
-            if (existing.isPresent()) {
-                return existing.get(); // idempotent, like InterestService.addInterest
+            // Review r3C m1: an undated booking has no slot to clash with, so a paid amenity
+            // needs a date — otherwise repeat undated requests would each post the fee.
+            if (req.preferredDate() == null && amenity.getFeeType() != null && !"FREE".equals(amenity.getFeeType())
+                    && amenity.getFeeAmount() != null && amenity.getFeeAmount().signum() > 0) {
+                throw new BusinessRuleViolationException("Choose a date: this amenity has a booking fee.",
+                        "booking.dateRequired", Map.of());
+            }
+            // Break-it R3 ops3 F7: one renter, one amenity, one slot. The same request
+            // again is idempotent (a double submit); anything else the renter already
+            // holds or awaits for this amenity is refused rather than silently handed back.
+            for (BookingRequest open : bookingRepository.findByTenantIdAndRenterUserIdAndAmenityIdAndStatusIn(
+                    tenantId, renterUserId, amenity.getId(), OPEN_STATUSES)) {
+                if (open.getStatus() == BookingRequestStatus.PENDING) {
+                    if (sameSlot(open, booking)) {
+                        return open; // idempotent, like InterestService.addInterest
+                    }
+                    throw new SlotConflictException(
+                            "You already have a pending request for this amenity. Wait for the decision or cancel it first.",
+                            null, "booking.pendingExists");
+                }
+                if (slotsOverlap(open, booking)) {
+                    throw new SlotConflictException(
+                            "You already have an approved booking of this amenity at that time.",
+                            null, "booking.alreadyBooked");
+                }
             }
             booking.setAmenityId(amenity.getId());
             // propertyId always derives from the resource, never from the client.
@@ -126,7 +175,7 @@ public class BookingService {
                 return existing.get();
             }
             if (bookingRepository.existsByParkingSpotIdAndStatus(spot.getId(), BookingRequestStatus.APPROVED)) {
-                throw new SlotConflictException("Parking spot is already assigned", null);
+                throw new SlotConflictException("Parking spot is already assigned", null, "booking.spotTaken");
             }
             booking.setParkingSpotId(spot.getId());
             booking.setPropertyId(spot.getPropertyId());
@@ -176,6 +225,112 @@ public class BookingService {
     }
 
     /**
+     * Break-it R3 ops3 F8: a booking starts today or later (Asia/Dubai) and a parking
+     * range covers at most {@link #MAX_PARKING_YEARS} years. Checked on request and
+     * again on approval — a request left pending past its date cannot be approved.
+     */
+    private void validateDates(BookingResourceType type, LocalDate from, LocalDate to) {
+        LocalDate today = LocalDate.now(clock.withZone(DUBAI));
+        if (from != null && from.isBefore(today)) {
+            throw new BusinessRuleViolationException("The booking date cannot be before today.",
+                    "booking.dateInPast", Map.of("today", today.format(DMY)));
+        }
+        if (type == BookingResourceType.PARKING_SPOT && from != null && to != null
+                && to.isAfter(from.plusYears(MAX_PARKING_YEARS))) {
+            throw new BusinessRuleViolationException(
+                    "A parking booking can cover at most " + MAX_PARKING_YEARS + " years.",
+                    "booking.rangeTooLong", Map.of("years", MAX_PARKING_YEARS));
+        }
+    }
+
+    /**
+     * Break-it R3 ops3 F8: a dated booking falls inside the renter's current contract
+     * on the booked-from unit — no fee dated before the lease starts or after it ends.
+     * {@code renterSide} picks the wording (the renter's own request or an admin's approval).
+     */
+    private void requireWithinCurrentLease(UUID tenantId, UUID renterUserId, UUID unitId,
+                                           LocalDate from, LocalDate to, boolean renterSide) {
+        if (leaseRepository == null || from == null || unitId == null) return;
+        LocalDate last = to != null ? to : from;
+        List<Lease> leases = leaseRepository.findByUnitIdAndStatusIn(unitId, CURRENT_LEASE).stream()
+                .filter(l -> Objects.equals(l.getTenantId(), tenantId))
+                .filter(l -> l.getRenter() != null && Objects.equals(l.getRenter().getUserId(), renterUserId))
+                .toList();
+        // A RENEWED lease alone is history, not a current contract.
+        if (leases.stream().noneMatch(l -> l.getStatus() != LeaseStatus.RENEWED)) {
+            throw new BusinessRuleViolationException(
+                    "The renter has no current contract on this unit, so the booking cannot be made.",
+                    "booking.noActiveLease", Map.of());
+        }
+        // Review r3C I1: the renter's chain on the unit (a renewed term and its renewal)
+        // is one contract period — merge back-to-back terms before checking the range.
+        boolean inside = coveredByChain(leases, from, last);
+        if (!inside) {
+            Lease l = leases.stream().filter(x -> x.getStatus() != LeaseStatus.RENEWED).findFirst().orElse(leases.getFirst());
+            String start = l.getStartDate() == null ? "" : l.getStartDate().format(DMY);
+            String end = l.getEndDate() == null ? "" : l.getEndDate().format(DMY);
+            throw new BusinessRuleViolationException(
+                    (renterSide ? "The booking must fall within your contract period (" : "The booking must fall within the renter's contract period (")
+                            + start + " to " + end + ").",
+                    renterSide ? "booking.outsideLease" : "booking.outsideRenterLease",
+                    Map.of("start", start, "end", end));
+        }
+    }
+
+    /** Whether [from, last] lies inside one run of back-to-back (or overlapping) lease terms. */
+    static boolean coveredByChain(List<Lease> leases, LocalDate from, LocalDate last) {
+        List<Lease> sorted = leases.stream()
+                .sorted(java.util.Comparator.comparing(Lease::getStartDate,
+                        java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())))
+                .toList();
+        LocalDate runStart = null;
+        LocalDate runEnd = null;
+        boolean open = false;   // the current run has an open (null) end
+        boolean started = false;
+        for (Lease l : sorted) {
+            LocalDate s = l.getStartDate();
+            LocalDate e = l.getEndDate();
+            boolean joins = started && (open || s == null || !s.isAfter(runEnd.plusDays(1)));
+            if (!joins) {
+                if (started && runCovers(runStart, runEnd, open, from, last)) return true;
+                runStart = s;
+                runEnd = e;
+                open = e == null;
+                started = true;
+            } else if (!open) {
+                if (e == null) open = true;
+                else if (e.isAfter(runEnd)) runEnd = e;
+            }
+        }
+        return started && runCovers(runStart, runEnd, open, from, last);
+    }
+
+    private static boolean runCovers(LocalDate start, LocalDate end, boolean open, LocalDate from, LocalDate last) {
+        return (start == null || !from.isBefore(start)) && (open || !last.isAfter(end));
+    }
+
+    /** The same request again: same date and the same time slot. */
+    static boolean sameSlot(BookingRequest a, BookingRequest b) {
+        return Objects.equals(a.getPreferredDate(), b.getPreferredDate())
+                && Objects.equals(a.getPreferredStartTime(), b.getPreferredStartTime())
+                && Objects.equals(a.getPreferredEndTime(), b.getPreferredEndTime());
+    }
+
+    /**
+     * Break-it R3 ops3 F7: two amenity bookings clash when they are on the same day and
+     * their time slots overlap; a booking without times holds the whole day. An undated
+     * booking has no slot to clash with.
+     */
+    static boolean slotsOverlap(BookingRequest a, BookingRequest b) {
+        if (a.getPreferredDate() == null || b.getPreferredDate() == null) return false;
+        if (!a.getPreferredDate().equals(b.getPreferredDate())) return false;
+        LocalTime as = a.getPreferredStartTime(), ae = a.getPreferredEndTime();
+        LocalTime bs = b.getPreferredStartTime(), be = b.getPreferredEndTime();
+        if (as == null || ae == null || bs == null || be == null) return true;
+        return as.isBefore(be) && bs.isBefore(ae);
+    }
+
+    /**
      * saveAndFlush (not save) so the INSERT actually executes inside this try —
      * GenerationType.UUID assigns the id in memory, so Hibernate is otherwise
      * free to defer the INSERT past this catch (same reasoning as
@@ -220,7 +375,7 @@ public class BookingService {
                     "A request for this resource is already in flight, please retry", null);
         }
         if (causeMessage != null && causeMessage.contains(UQ_BOOKING_SPOT_ACTIVE)) {
-            return new SlotConflictException("Parking spot is already assigned", null);
+            return new SlotConflictException("Parking spot is already assigned", null, "booking.spotTaken");
         }
         return e;
     }
@@ -248,7 +403,8 @@ public class BookingService {
         } catch (PessimisticLockingFailureException e) {
             // NOWAIT fired: another decision holds this row's lock. Better a 409
             // retry hint than a 500 or blocking the request thread.
-            throw new SlotConflictException("A decision on this booking is already in progress, please retry", null);
+            throw new SlotConflictException("A decision on this booking is already in progress, please retry", null,
+                    "booking.decisionInProgress");
         }
         BookingRequest booking = found.orElseThrow(() -> new NotFoundException("Booking not found"));
         if (!Objects.equals(booking.getTenantId(), tenantId)) {
@@ -260,10 +416,32 @@ public class BookingService {
     public BookingRequest approve(UUID tenantId, UUID id, UUID adminUserId, String adminNote) {
         BookingRequest booking = getForUpdate(tenantId, id);
         requirePending(booking);
+        // Break-it R3 ops3 F8: the request's dates are checked again — it may have sat
+        // pending past its date, or the contract may have changed since.
+        validateDates(booking.getResourceType(), booking.getPreferredDate(), booking.getPreferredEndDate());
+        requireWithinCurrentLease(tenantId, booking.getRenterUserId(), booking.getUnitId(),
+                booking.getPreferredDate(), booking.getPreferredEndDate(), false);
         if (booking.getResourceType() == BookingResourceType.PARKING_SPOT
                 && bookingRepository.existsByParkingSpotIdAndStatus(
                         booking.getParkingSpotId(), BookingRequestStatus.APPROVED)) {
-            throw new SlotConflictException("Parking spot is already assigned to another renter", null);
+            throw new SlotConflictException("Parking spot is already assigned to another renter", null,
+                    "booking.spotTaken");
+        }
+        if (booking.getResourceType() == BookingResourceType.AMENITY) {
+            // Break-it R3 ops3 F7: under the amenity's row lock, so two approvals for the
+            // same amenity cannot both pass the check; the renter must not already hold
+            // an approved booking of it that overlaps this slot.
+            facilityService.lockAmenity(tenantId, booking.getAmenityId());
+            boolean clash = bookingRepository.findByTenantIdAndRenterUserIdAndAmenityIdAndStatusIn(
+                            tenantId, booking.getRenterUserId(), booking.getAmenityId(),
+                            List.of(BookingRequestStatus.APPROVED)).stream()
+                    .filter(o -> !o.getId().equals(booking.getId()))
+                    .anyMatch(o -> slotsOverlap(o, booking));
+            if (clash) {
+                throw new SlotConflictException(
+                        "The renter already has an approved booking of this amenity at that time.",
+                        null, "booking.renterAlreadyBooked");
+            }
         }
         // F14-50: the fee becomes a charge on the renter's lease, posted with the approval.
         if (bookingFees != null) bookingFees.chargeOnApproval(booking, resourceLabel(booking), java.time.LocalDate.now());
@@ -301,6 +479,19 @@ public class BookingService {
     }
 
     private BookingFeeService bookingFees;
+
+    private LeaseRepository leaseRepository;
+
+    /** Setter-injected like {@link #setBookingFees}: hand-built unit-test instances skip the lease check. */
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setLeaseRepository(LeaseRepository leaseRepository) {
+        this.leaseRepository = leaseRepository;
+    }
+
+    /** Tests pin "today". */
+    void setClock(Clock clock) {
+        this.clock = clock;
+    }
 
     /** Setter-injected: hand-built instances in unit tests need no new argument. */
     @org.springframework.beans.factory.annotation.Autowired
@@ -424,14 +615,15 @@ public class BookingService {
         Throwable cause = e.getMostSpecificCause();
         String causeMessage = cause != null ? cause.getMessage() : null;
         if (causeMessage != null && causeMessage.contains(UQ_BOOKING_SPOT_ACTIVE)) {
-            return new SlotConflictException("Parking spot is already assigned to another renter", null);
+            return new SlotConflictException("Parking spot is already assigned to another renter", null,
+                    "booking.spotTaken");
         }
         return e;
     }
 
     private static void requirePending(BookingRequest booking) {
         if (booking.getStatus() != BookingRequestStatus.PENDING) {
-            throw new BusinessRuleViolationException("Booking is not pending");
+            throw new BusinessRuleViolationException("Booking is not pending", "booking.notPending", Map.of());
         }
     }
 }

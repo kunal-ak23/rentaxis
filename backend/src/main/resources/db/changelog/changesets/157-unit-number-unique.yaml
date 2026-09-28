@@ -1,0 +1,59 @@
+# Break-it round 3 (ops3) F1: the same unit number could be created twice in one
+# building, and both copies then took overlapping leases (the double-booking guard is
+# per unit id), so one flat could be let twice.
+#
+# Rule: a unit number is unique per BUILDING when the unit has one, else per PROPERTY
+# among the units with no building (Tower A 101 and Tower B 101 are both fine),
+# compared normalised: trimmed, inner whitespace collapsed, Arabic-Indic (U+0660-0669)
+# and Eastern Arabic-Indic (U+06F0-06F9) digits read as ASCII, case ignored. The
+# expression is UnitRules.normalise in SQL; change both together.
+#
+# UnitService checks first and names the clash; these indexes are the backstop for
+# two tabs that pass the check at the same moment.
+#
+# Precondition: an organisation that already holds duplicates would fail the CREATE
+# UNIQUE INDEX and with it the deploy. Per the ruling the changeset is then MARK_RAN
+# (skipped, the warning logged) — the service-layer check still refuses every new
+# duplicate. Find them with the SELECT in the precondition, clean them, and add the
+# indexes in a later changeset.
+databaseChangeLog:
+  - changeSet:
+      id: 157-unit-number-unique
+      author: claude
+      preConditions:
+        - onFail: MARK_RAN
+        - onFailMessage: >-
+            157-unit-number-unique skipped: existing units share a normalised unit number
+            within one building (or one property without a building). The unique
+            indexes uq_units_number_building / uq_units_number_property were NOT created;
+            UnitService still refuses new duplicates. Clean the duplicates and add the
+            indexes in a new changeset.
+        - sqlCheck:
+            expectedResult: 0
+            sql: |
+              SELECT count(*) FROM (
+                SELECT 1 FROM units WHERE building_id IS NOT NULL
+                GROUP BY tenant_id, building_id,
+                  lower(btrim(regexp_replace(translate(unit_number, '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789'), '\s+', ' ', 'g')))
+                HAVING count(*) > 1
+                UNION ALL
+                SELECT 1 FROM units WHERE building_id IS NULL
+                GROUP BY tenant_id, property_id,
+                  lower(btrim(regexp_replace(translate(unit_number, '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789'), '\s+', ' ', 'g')))
+                HAVING count(*) > 1
+              ) dup
+      changes:
+        - sql:
+            splitStatements: true
+            sql: |
+              CREATE UNIQUE INDEX uq_units_number_building ON units (tenant_id, building_id,
+                (lower(btrim(regexp_replace(translate(unit_number, '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789'), '\s+', ' ', 'g')))))
+                WHERE building_id IS NOT NULL;
+              CREATE UNIQUE INDEX uq_units_number_property ON units (tenant_id, property_id,
+                (lower(btrim(regexp_replace(translate(unit_number, '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789'), '\s+', ' ', 'g')))))
+                WHERE building_id IS NULL;
+      rollback:
+        - sql:
+            sql: |
+              DROP INDEX IF EXISTS uq_units_number_building;
+              DROP INDEX IF EXISTS uq_units_number_property;

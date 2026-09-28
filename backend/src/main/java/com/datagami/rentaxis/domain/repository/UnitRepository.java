@@ -136,4 +136,16 @@ public interface UnitRepository extends JpaRepository<Unit, UUID> {
         from Unit u where u.property.id in :propertyIds group by u.property.id
         """)
     List<Object[]> statsByProperty(@org.springframework.data.repository.query.Param("propertyIds") java.util.Collection<UUID> propertyIds);
+
+    /** Break-it R3 ops3 F1: the unit numbers already in one building (the uniqueness scope of a unit in a building). */
+    @org.springframework.data.jpa.repository.Query(
+            "select u.unitNumber from Unit u where u.tenantId = :tenantId and u.building.id = :buildingId")
+    List<String> unitNumbersInBuilding(@org.springframework.data.repository.query.Param("tenantId") UUID tenantId,
+                                       @org.springframework.data.repository.query.Param("buildingId") UUID buildingId);
+
+    /** Break-it R3 ops3 F1: the unit numbers of a property's units that sit in no building. */
+    @org.springframework.data.jpa.repository.Query(
+            "select u.unitNumber from Unit u where u.tenantId = :tenantId and u.property.id = :propertyId and u.building is null")
+    List<String> unitNumbersWithoutBuilding(@org.springframework.data.repository.query.Param("tenantId") UUID tenantId,
+                                            @org.springframework.data.repository.query.Param("propertyId") UUID propertyId);
 }

@@ -97,6 +97,15 @@ public class LeaseTransferService {
     private final PostingService postingService;
     private final LeaseAccessPolicy leaseAccessPolicy;
 
+    /** Break-it R3 money3: the shared posting-date policy ({@link com.datagami.rentaxis.core.service.ledger.PostingDatePath}), on the app clock. */
+    private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates =
+            com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setManualPostingDates(com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates) {
+        this.manualDates = manualDates;
+    }
+
     public LeaseTransferService(LeaseRepository leaseRepository, LeaseLineRepository leaseLineRepository,
                                 ChequeRepository chequeRepository, UnitRepository unitRepository,
                                 LeaseTransferChequeRepository plans, TenantFiscalSettingsRepository fiscalSettings,
@@ -530,6 +539,8 @@ public class LeaseTransferService {
                     + " this one is " + a.getStatus() + ".");
         }
         if (t == null) throw new BusinessRuleViolationException("A transfer needs the move date (the last night in the current unit).");
+        // Break-it R3 money3 sweep: the carries, returns and the transfer JV post on it.
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.LEASE_TRANSFER, t);
         if (t.isBefore(a.getStartDate()) || t.isAfter(a.getEndDate())) {
             throw new BusinessRuleViolationException("The move date " + t + " is outside the lease term ("
                     + a.getStartDate() + " – " + a.getEndDate() + ").");

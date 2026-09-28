@@ -620,6 +620,17 @@ public class VoucherService {
         lockLinkedTicket(voucherId);
     }
 
+    /**
+     * Break-it R3 money3 N3: a bill backing a live recharge is not voided or amended —
+     * the renter would stay charged for a bill that no longer stands. Asked under the
+     * ticket lock then the voucher lock (TicketRowLock's order).
+     */
+    private void requireNoLiveRecharge(Voucher original) {
+        if (ticketRowLock != null && original.getDocType() == VoucherType.PISR) {
+            ticketRowLock.requireBillReleasable(original.getId());
+        }
+    }
+
     private com.datagami.rentaxis.core.service.TicketRowLock ticketRowLock;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -636,7 +647,7 @@ public class VoucherService {
         if (date == null) throw new BusinessRuleViolationException("A reversal date is required");
         // F4: except on the voucher's own date, so one already dated far ahead can be undone.
         if (!date.equals(original.getDocDate())) {
-            manualDates.requireWithinAYear(date, "A reversal");
+            manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.VOUCHER_REVERSAL, date);
         }
         if (original.getDocDate() != null && date.isBefore(original.getDocDate())) {
             String doc = original.getVoucherNumber() == null ? "the voucher" : original.getVoucherNumber();
@@ -736,6 +747,7 @@ public class VoucherService {
             throw new BusinessRuleViolationException(
                     "Only a POSTED voucher can be voided; this one is " + original.getStatus());
         }
+        requireNoLiveRecharge(original);
         if (date == null) throw new BusinessRuleViolationException("A void date is required");
         requireReversible(original, date, reason, manualDates);
         fiscal.assertOpen(date);
@@ -811,6 +823,7 @@ public class VoucherService {
             throw new BusinessRuleViolationException(
                     "Only a POSTED voucher can be amended; this one is " + original.getStatus());
         }
+        requireNoLiveRecharge(original);
         if (reversalDate == null) throw new BusinessRuleViolationException("A reversal date is required");
         // Asked here as well as inside PostingService.reverse so that a reversal
         // dated into a closed period is refused before any of this is written.
@@ -999,7 +1012,7 @@ public class VoucherService {
     private void requirePostable(Voucher v) {
         if (v.getDocDate() == null) throw new BusinessRuleViolationException("Document date is required");
         // F4: a draft saved before the rule is held to it when it posts.
-        manualDates.requireWithinAYear(v.getDocDate(), "A voucher");
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.VOUCHER, v.getDocDate());
         if (v.getLines().isEmpty()) throw new BusinessRuleViolationException("A voucher needs at least one line");
 
         for (VoucherLine l : v.getLines()) {
@@ -1128,7 +1141,7 @@ public class VoucherService {
         }
         if (in.docDate() == null) throw new BusinessRuleViolationException("Document date is required");
         // Break-it round 1 (money) F4: a voucher's number carries a two-digit year.
-        manualDates.requireWithinAYear(in.docDate(), "A voucher");
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.VOUCHER, in.docDate());
         if (in.lines() == null || in.lines().isEmpty()) {
             throw new BusinessRuleViolationException("A voucher needs at least one line");
         }

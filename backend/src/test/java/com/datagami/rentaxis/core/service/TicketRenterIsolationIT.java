@@ -59,6 +59,8 @@ class TicketRenterIsolationIT extends AbstractPostgresIT {
     @Autowired TicketAttachmentRepository attachmentRepo;
     @Autowired PropertyRepository propertyRepo;
     @Autowired RenterRepository renterRepo;
+    @Autowired com.datagami.rentaxis.domain.repository.UnitRepository unitRepo;
+    @Autowired com.datagami.rentaxis.domain.repository.LeaseRepository leaseRepo;
     @Autowired UserRepository userRepo;
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired JdbcTemplate jdbc;
@@ -95,7 +97,11 @@ class TicketRenterIsolationIT extends AbstractPostgresIT {
         Property p = new Property();
         p.setNameEn("Tower " + UUID.randomUUID());
         p.setEmirate(Emirate.DUBAI);
-        propertyId = propertyRepo.save(p).getId();
+        p = propertyRepo.save(p);
+        propertyId = p.getId();
+        // Each renter raises tickets on a current contract of theirs (R3 portal3 F1).
+        com.datagami.rentaxis.testsupport.CurrentLeaseFixture.currentLease(unitRepo, leaseRepo, tenantId, p, renterA);
+        com.datagami.rentaxis.testsupport.CurrentLeaseFixture.currentLease(unitRepo, leaseRepo, tenantId, p, renterB);
         // The staff member manages this building: a manager acts only on assigned properties.
         com.datagami.rentaxis.domain.entity.UserPropertyAssignment assignment =
                 new com.datagami.rentaxis.domain.entity.UserPropertyAssignment();

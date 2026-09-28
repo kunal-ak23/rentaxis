@@ -253,7 +253,7 @@ public class PaymentRunService {
         if (run.getStatus() == PaymentRun.Status.POSTED) return dto(run);
         requireDraft(run);
         // A draft saved before the one-year rule is held to it when it posts (its vouchers are numbered by this date).
-        manualDates.requireWithinAYear(run.getPaymentDate(), "A payment run");
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.PAYMENT_RUN, run.getPaymentDate());
         if (approved == null || approved.vendors() == null) {
             throw new BusinessRuleViolationException("Preview the run and post what the preview shows");
         }
@@ -591,7 +591,7 @@ public class PaymentRunService {
         if (in.paymentDate() == null) throw new BusinessRuleViolationException("Choose the payment date");
         // Batch 4 review #4: checked here, before create() numbers the run from this
         // date — PR-2126 would take this year's run numbers, like a JV dated 2126 did.
-        manualDates.requireWithinAYear(in.paymentDate(), "A payment run");
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.PAYMENT_RUN, in.paymentDate());
         if (in.method() == null) throw new BusinessRuleViolationException("Choose the payment method");
         Account pay = accounts.findById(in.paymentAccountId())
                 .orElseThrow(() -> new NotFoundException("Payment account not found"));

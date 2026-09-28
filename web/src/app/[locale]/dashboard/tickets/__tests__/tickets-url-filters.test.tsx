@@ -225,3 +225,37 @@ describe("Tickets list — URL-persisted search/status/priority/page", () => {
         expect(requested!.get("page")).toBe("0");
     });
 });
+
+// Break-it R3 data3 F6: an unknown status/priority in the URL used to reach the API as a 400
+// ("Invalid value for parameter 'status'") that Retry could only repeat.
+describe("Tickets list — unknown status/priority in the URL", () => {
+    it("is no filter: the list loads without it and the URL drops it", async () => {
+        window.history.replaceState(null, "", "/en/dashboard/tickets?status=NOPE&priority=HIGHEST&q=leak");
+        const requested: URLSearchParams[] = [];
+        global.fetch = vi.fn(async (url: unknown) => {
+            const u = String(url);
+            if (u.includes("/v1/tickets/paged")) {
+                requested.push(new URL(u, "http://x").searchParams);
+                return json(pagedBody([ticket("1", "Leaking tap")], { totalElements: 1 }));
+            }
+            if (u.endsWith("/v1/properties")) return json([{ property: { id: "p1", nameEn: "Tower A" } }]);
+            return json([]);
+        }) as unknown as typeof fetch;
+
+        renderPage();
+        await screen.findByText("Leaking tap");
+
+        expect(requested.length).toBeGreaterThan(0);
+        for (const sp of requested) {
+            expect(sp.get("status")).toBeNull();
+            expect(sp.get("priority")).toBeNull();
+        }
+        expect(requested[requested.length - 1].get("q")).toBe("leak");
+        await waitFor(() => {
+            const params = new URLSearchParams(window.location.search);
+            expect(params.get("status")).toBeNull();
+            expect(params.get("priority")).toBeNull();
+            expect(params.get("q")).toBe("leak");
+        });
+    });
+});

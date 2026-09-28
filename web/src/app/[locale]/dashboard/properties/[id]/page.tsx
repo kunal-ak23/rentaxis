@@ -16,6 +16,9 @@ import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { NumberInput, MoneyTextInput, focusFirstInvalidMoney } from "@/components/ui/NumberInput";
 import { MONEY_MAX_12_2, moneyValueOrNull } from "@/lib/money";
 import { AccessDeniedState, LoadFailedState, NotFoundState } from "@/components/ui/PageStates";
+import { BUILDING_FLOORS_MAX, BUILDING_FLOORS_MIN, floorsInRange, refusalOf, sizeIsValid } from "@/lib/units/unitRules";
+import { useLatestRequest, type RequestTicket } from "@/hooks/useLatestRequest";
+import { isAbortError } from "@/lib/api/abort";
 
 type PropertyContact = {
     id: string;
@@ -120,12 +123,24 @@ export default function PropertyDetailPage() {
     // Break round 1, F5: a 404/403/500 (or a network failure) used to leave
     // `property` null, and the page kept its skeleton forever. The load now
     // ends in one of: loaded, not found, access denied, or failed (retry).
+    // Break round 3, F1: each load is aborted on unmount and superseded by a
+    // newer one, silently; a real failure still lands in its state.
+    const beginProperty = useLatestRequest();
+    const beginBuildings = useLatestRequest();
+    const beginUnits = useLatestRequest();
+    const beginManagers = useLatestRequest();
+    const beginContacts = useLatestRequest();
+
     const fetchProperty = async () => {
+        const { signal, isCurrent } = beginProperty();
         setPropertyLoad("loading");
         try {
-            const res = await fetch(`/api/proxy/v1/properties/${propertyId}`);
+            const res = await fetch(`/api/proxy/v1/properties/${propertyId}`, { signal });
+            if (!isCurrent()) return;
             if (res.ok) {
-                setProperty(await res.json());
+                const body = await res.json();
+                if (!isCurrent()) return;
+                setProperty(body);
                 setPropertyLoad("ok");
             } else if (res.status === 404 || res.status === 400) {
                 setPropertyLoad("notFound");
@@ -134,35 +149,33 @@ export default function PropertyDetailPage() {
             } else {
                 setPropertyLoad("failed");
             }
-        } catch {
+        } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             setPropertyLoad("failed");
         }
     };
 
     // Secondary reads: a failure leaves the tab empty rather than breaking the page.
-    const fetchList = async <T,>(url: string, set: (rows: T[]) => void) => {
+    const fetchList = async <T,>(ticket: RequestTicket, url: string, set: (rows: T[]) => void) => {
+        const { signal, isCurrent } = ticket;
         try {
-            const res = await fetch(url);
-            if (res.ok) set(await res.json());
+            const res = await fetch(url, { signal });
+            if (!res.ok) return;
+            const rows = await res.json();
+            if (isCurrent()) set(rows);
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             console.error("Failed to fetch", url, err);
         }
     };
 
-    const fetchBuildings = () => fetchList(`/api/proxy/v1/buildings/property/${propertyId}`, setBuildings);
+    const fetchBuildings = () => fetchList(beginBuildings(), `/api/proxy/v1/buildings/property/${propertyId}`, setBuildings);
 
-    const fetchUnits = () => fetchList(`/api/proxy/v1/units/property/${propertyId}`, setUnits);
+    const fetchUnits = () => fetchList(beginUnits(), `/api/proxy/v1/units/property/${propertyId}`, setUnits);
 
-    const fetchManagers = () => fetchList(`/api/proxy/v1/properties/${propertyId}/managers`, setManagers);
+    const fetchManagers = () => fetchList(beginManagers(), `/api/proxy/v1/properties/${propertyId}/managers`, setManagers);
 
-    const fetchContacts = async () => {
-        try {
-            const res = await fetch(`/api/proxy/v1/properties/${propertyId}/contacts`);
-            if (res.ok) setContacts(await res.json());
-        } catch (err) {
-            console.error("Failed to fetch contacts:", err);
-        }
-    };
+    const fetchContacts = () => fetchList<PropertyContact>(beginContacts(), `/api/proxy/v1/properties/${propertyId}/contacts`, setContacts);
 
     const openAddContact = () => {
         setEditingContact(null);
@@ -590,6 +603,7 @@ export default function PropertyDetailPage() {
 // ------ BUILDINGS TAB SUB-COMPONENT ------
 
 function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
+    const t = useTranslations("MasterData");
     const [showForm, setShowForm] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
@@ -597,6 +611,11 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
 
     const handleSubmit = async (e: any) => {
         e.preventDefault();
+        // Break-it R3 ops3 F3: -3, 0 and 99 999 floors were saved as typed.
+        if (!floorsInRange(formData.floors)) {
+            setFormError(t("floorsRange", { min: BUILDING_FLOORS_MIN, max: BUILDING_FLOORS_MAX }));
+            return;
+        }
         setSubmitting(true);
         setFormError(null);
         try {
@@ -610,7 +629,10 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
             setFormData({ nameEn: "", nameAr: "", floors: 1 });
             onUpdate();
         } catch (err) {
-            setFormError(err instanceof ApiError ? err.message : "Failed to save building. Please try again.");
+            const refusal = err instanceof ApiError ? refusalOf(err.body) : null;
+            setFormError(refusal?.code === "building.floorsOutOfRange"
+                ? t("floorsRange", { min: BUILDING_FLOORS_MIN, max: BUILDING_FLOORS_MAX })
+                : err instanceof ApiError ? err.message : "Failed to save building. Please try again.");
         } finally {
             setSubmitting(false);
         }
@@ -642,7 +664,7 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Floors</label>
-                        <NumberInput required className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.floors} onChange={(v) => setFormData({ ...formData, floors: v })} />
+                        <NumberInput required min={BUILDING_FLOORS_MIN} max={BUILDING_FLOORS_MAX} step={1} className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.floors} onChange={(v) => setFormData({ ...formData, floors: v })} />
                     </div>
                     {formError && (
                         <div className="col-span-3 bg-error/10 border border-error/30 rounded-lg px-4 py-3 text-xs text-error">
@@ -680,6 +702,7 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
 
 function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
     const t = useTranslations("MasterData");
+    const locale = useLocale();
     const [showForm, setShowForm] = useState(false);
     const [showBulkUpload, setShowBulkUpload] = useState(false);
     const [submitting, setSubmitting] = useState(false);
@@ -696,6 +719,11 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
     const handleAddUnit = async (e: any) => {
         e.preventDefault();
         if (focusFirstInvalidMoney(e.currentTarget)) return;
+        // Break-it R3 ops3 F2: the rule the server applies to every unit, said here first.
+        if (!sizeIsValid(unitForm.sizeSqft)) {
+            setAddUnitError(t("unitSizePositive"));
+            return;
+        }
         setSubmitting(true);
         setAddUnitError(null);
         try {
@@ -720,7 +748,11 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
             setUnitForm({ unitNumber: "", type: "STUDIO", sizeSqft: "", expectedRent: "", buildingId: "" });
             onUpdate();
         } catch (err) {
-            setAddUnitError(err instanceof ApiError ? err.message : "Failed to save unit. Please try again.");
+            // Break-it R3 ops3 F1: "Unit 101 already exists in Tower A", in the user's language.
+            const refusal = err instanceof ApiError ? refusalOf(err.body) : null;
+            setAddUnitError(refusal?.code === "unit.numberTaken"
+                ? t("unitNumberTaken", { unitNumber: String(refusal.args.unitNumber ?? unitForm.unitNumber), place: String((locale === "ar" && refusal.args.placeAr) || refusal.args.place || "") })
+                : err instanceof ApiError ? err.message : "Failed to save unit. Please try again.");
         } finally {
             setSubmitting(false);
         }
@@ -799,7 +831,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Size (Sqft)</label>
-                        <input type="number" className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 850" value={unitForm.sizeSqft} onChange={e => setUnitForm({ ...unitForm, sizeSqft: e.target.value })} />
+                        <input type="number" min={0.01} step="any" className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 850" value={unitForm.sizeSqft} onChange={e => setUnitForm({ ...unitForm, sizeSqft: e.target.value })} />
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Expected Rent (AED/year)</label>
@@ -899,16 +931,21 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
 function LeasesTab({ propertyId }: { propertyId: string }) {
     const t = useTranslations("MasterData");
     const [leases, setLeases] = useState<any[]>([]);
+    const begin = useLatestRequest();
 
     useEffect(() => {
         fetchLeases();
     }, [propertyId]);
 
     const fetchLeases = async () => {
+        const { signal, isCurrent } = begin();
         try {
-            const res = await fetch(`/api/proxy/v1/leases/property/${propertyId}`);
-            if (res.ok) setLeases(await res.json());
+            const res = await fetch(`/api/proxy/v1/leases/property/${propertyId}`, { signal });
+            if (!res.ok) return;
+            const rows = await res.json();
+            if (isCurrent()) setLeases(rows);
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             console.error(err);
         }
     };

@@ -342,6 +342,9 @@ export type ManualJournalBody = {
   }[];
 };
 
+/** Break-it R3 data3 F7: what POST /finance/accounts/import did (AccountImportService.Result). */
+export type AccountImportResult = { created: number; skipped: number; accounts: Account[] };
+
 export const ledgerApi = {
   accounts: {
     list: () => apiGet<Account[]>("/finance/accounts"),
@@ -357,7 +360,7 @@ export const ledgerApi = {
       fd.append("file", file);
       const res = await fetch(`${BASE}/finance/accounts/import`, { method: "POST", body: fd });
       await throwIfNotOk(res);
-      return res.json() as Promise<Account[]>;
+      return res.json() as Promise<AccountImportResult>;
     },
   },
   propertyAccounts: {
@@ -411,7 +414,13 @@ export const ledgerApi = {
     preview: (fy: number) => apiGet<YearClosePreview>(`/finance/fiscal-years/${fy}/close-preview`),
     close: (fy: number, overrideWarnings: boolean) =>
       apiSend<FiscalYear>("POST", `/finance/fiscal-years/${fy}/close`, { overrideWarnings }),
-    reopen: (fy: number, reason: string) => apiSend<FiscalYear>("POST", `/finance/fiscal-years/${fy}/reopen`, { reason }),
+    /**
+     * Break-it R3 money3 N6: `expectedLockedThrough` is the lock the dialog showed; the
+     * server answers 409 `fiscal.changed` when it has moved since.
+     */
+    reopen: (fy: number, reason: string, expectedLockedThrough?: string | null) =>
+        apiSend<FiscalYear>("POST", `/finance/fiscal-years/${fy}/reopen`,
+            expectedLockedThrough ? { reason, expectedLockedThrough } : { reason }),
   },
 };
 

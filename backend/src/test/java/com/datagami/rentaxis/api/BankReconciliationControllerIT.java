@@ -164,7 +164,16 @@ class BankReconciliationControllerIT extends AbstractPostgresIT {
         assertThat(csv.getStatusCode()).isEqualTo(HttpStatus.OK);
         String text = new String(csv.getBody(), StandardCharsets.UTF_8);
         assertThat(text).contains("\"'=HYPERLINK(\"\"http://x\"\")\"").doesNotContain(",=HYPERLINK");
-        assertThat(text).contains("SERVICE CHARGE").contains("CONFIRMED");
+        assertThat(text).contains("SERVICE CHARGE").contains("Confirmed");
+        // Break-it R3 data3 F2: a UTF-8 BOM (Excel shows the bank's Arabic text) and ?lang=ar honoured.
+        assertThat(csv.getBody()).startsWith((byte) 0xEF, (byte) 0xBB, (byte) 0xBF);
+        assertThat(text).contains("Date,Value date,Description,Reference,Cheque no,Amount,Balance,Match");
+        byte[] ar = spec(HttpMethod.GET, BASE + "/bank-accounts/" + ei.getId() + "/lines.csv?lang=ar", accountant)
+                .retrieve().toEntity(byte[].class).getBody();
+        assertThat(ar).startsWith((byte) 0xEF, (byte) 0xBB, (byte) 0xBF);
+        String arText = new String(ar, StandardCharsets.UTF_8);
+        assertThat(arText).contains("التاريخ,تاريخ القيمة,الوصف,المرجع,رقم الشيك,المبلغ,الرصيد,المطابقة")
+                .contains("مؤكد").doesNotContain("Value date").doesNotContain("CONFIRMED");
     }
 
     @Test
@@ -213,6 +222,10 @@ class BankReconciliationControllerIT extends AbstractPostgresIT {
         String arText = new String(spec(HttpMethod.GET, BASE + "/reconciliations/" + id + ".csv?lang=ar", accountant)
                 .retrieve().toEntity(byte[].class).getBody(), StandardCharsets.UTF_8);
         assertThat(arText).contains("بند كشف غير مسجل").contains("كشف التسوية البنكية");
+        // Break-it R3 data3 F2: both languages lead with a UTF-8 BOM.
+        assertThat(csv.getBody()).startsWith((byte) 0xEF, (byte) 0xBB, (byte) 0xBF);
+        assertThat(spec(HttpMethod.GET, BASE + "/reconciliations/" + id + ".csv?lang=ar", accountant)
+                .retrieve().toEntity(byte[].class).getBody()).startsWith((byte) 0xEF, (byte) 0xBB, (byte) 0xBF);
 
         JsonNode ws = json(call(HttpMethod.GET, BASE + "/bank-accounts/" + ei.getId() + "/workspace", superAdmin, null));
         for (JsonNode l : ws.get("statementLines")) {

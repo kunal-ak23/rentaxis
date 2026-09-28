@@ -94,7 +94,37 @@ class ContractImportFailurePathIT extends AbstractPostgresIT {
         assertThat(after.getPropertiesCreated()).isZero();
         assertThat(after.getLeasesCreated()).isZero();
         assertThat(after.getSchedulesCreated()).isZero();
-        assertThat(after.getErrors()).contains("the database said no");
+        // Break-it R3 data3 F4: the exception's text stays in the log; the job says
+        // "Import failed — reference XXXXXXXX".
+        assertThat(after.getErrors()).doesNotContain("the database said no")
+                .containsPattern("Import failed — reference [0-9A-F]{8}").contains("import.failedRef");
+    }
+
+    /** Break-it R3 data3 F4: the two-tab upload — the loser's job names no table, column, value or org id. */
+    @Test
+    void aUniqueKeyRaceIsStoredAsAlreadyBeingImportedNotAsSql() throws Exception {
+        when(persistService.persist(any(), any(), any())).thenAnswer(inv -> {
+            java.sql.SQLException pg = new java.sql.SQLException("ERROR: duplicate key value violates unique constraint "
+                    + "\"ux_properties_tenant_name_en_lower\"", "23505");
+            java.sql.BatchUpdateException batch = new java.sql.BatchUpdateException("Batch entry 0 insert into properties "
+                    + "(address,books_start_date,code) values (('x'),('" + tenantId + "'::uuid)) was aborted", "23505", 0, new int[0], pg);
+            throw new org.springframework.dao.DataIntegrityViolationException("could not execute batch; SQL [insert into properties]",
+                    new org.hibernate.exception.ConstraintViolationException("could not execute batch", batch,
+                            "ux_properties_tenant_name_en_lower"));
+        });
+
+        ImportJob job = new ImportJob();
+        job.setStatus("VALIDATING");
+        job.setFileName("cutover.xlsx");
+        UUID jobId = importJobs.save(job).getId();
+
+        importService.processImportAsync(templates.generateCutOverTemplate(), job, tenantId);
+
+        ImportJob after = awaitTerminal(jobId);
+        assertThat(after.getStatus()).isEqualTo("FAILED");
+        assertThat(after.getErrors()).contains("This file is already being imported — refresh to see the result")
+                .contains("import.alreadyRunning")
+                .doesNotContain("insert into").doesNotContain("ux_properties").doesNotContain(tenantId.toString());
     }
 
     private ImportJob awaitTerminal(UUID jobId) {

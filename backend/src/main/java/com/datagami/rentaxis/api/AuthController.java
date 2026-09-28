@@ -498,8 +498,17 @@ public class AuthController {
         }
 
         User user = userOpt.get();
-        if (request.name() != null && !request.name().isBlank()) {
-            user.setName(request.name());
+        if (request.name() != null) {
+            // Break-it R3 portal3 F6: normalised (invisible characters removed,
+            // Unicode spaces trimmed and collapsed) and required. A spaces-only
+            // name used to be skipped behind a "Saved", and a zero-width one was
+            // stored, leaving the user nameless in every staff view.
+            String name = com.datagami.rentaxis.core.util.UnicodeText.normalizeName(request.name());
+            if (name.isEmpty()) {
+                throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                        "Name is required", "profile.nameRequired", java.util.Map.of());
+            }
+            user.setName(name);
         }
         if (request.phoneNumber() != null) {
             // Third write path for users.phone_number, and it reaches the row via

@@ -97,3 +97,19 @@ describe("Publishing a listing (#58)", () => {
         expect(screen.queryByText(en.Listings.confirmPublishNoMedia)).toBeNull();
     });
 });
+
+describe("Publishing a let unit (break-it R3 ops3 F10)", () => {
+    it("shows why the server refused: the unit is let until the lease ends", async () => {
+        const { ApiError } = await import("@/lib/api/facilities");
+        const body = JSON.stringify({ error: true, status: 400, code: "listing.unitLet",
+            message: "This unit is let until 30/04/2027.", args: { end: "30/04/2027", next: "01/05/2027" } });
+        api.publishListing.mockRejectedValue(new ApiError(400, "This unit is let until 30/04/2027.", body));
+        api.fetchListing.mockResolvedValue(
+            listing([{ id: "m1", mediaType: "PHOTO", url: "https://x/1.jpg", caption: null, sortOrder: 0, isCover: true }]),
+        );
+        fireEvent.click(await renderPage());
+
+        const expected = en.Common.errors.listing.unitLet.replace("{end}", "30/04/2027").replace("{next}", "01/05/2027");
+        expect(await screen.findByText(expected)).toBeInTheDocument();
+    });
+});

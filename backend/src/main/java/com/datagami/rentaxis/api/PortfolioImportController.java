@@ -68,8 +68,10 @@ public class PortfolioImportController {
 
             return ResponseEntity.ok(Map.of("jobId", savedJob.getId()));
         } catch (Exception e) {
-            log.error("Failed to start portfolio import", e);
-            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to start import: " + e.getMessage()));
+            // Break-it R3 data3 F4: the detail stays in the log, under the reference shown.
+            com.datagami.rentaxis.core.service.ImportFailures.Safe safe = com.datagami.rentaxis.core.service.ImportFailures
+                    .safe(e, com.datagami.rentaxis.core.service.ImportFailures.Kind.IMPORT, log, "Starting portfolio import");
+            return ResponseEntity.internalServerError().body(Map.of("error", safe.message(), "message", safe.message()));
         }
     }
 

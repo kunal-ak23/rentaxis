@@ -721,6 +721,27 @@ class SettlementServiceIT extends AbstractPostgresIT {
         assertTrialBalanceBalances();
     }
 
+    /**
+     * Break-it R3 money3 N5 (SD1/SD2): STL-99/1 was posted for good (there is no
+     * un-finalise). A settlement records a move-out that has happened, so it is not
+     * dated after today — this suite's today is LaterBusinessDayConfig.TODAY;
+     * the rule itself on the real today is ManualPostingDatesTest's. Nothing posts.
+     */
+    @Test
+    void aSettlementCannotBeDatedAfterToday() {
+        UUID leaseId = terminatedGalah();
+        UUID bank = leaf(AccountRole.BANK).getId();
+        for (LocalDate typo : new LocalDate[]{com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.TODAY.plusDays(1),
+                LocalDate.of(2099, 12, 31)}) {
+            assertThatThrownBy(() -> settlement.finalizeSettlement(leaseId, new FinalizeSettlementRequest(typo, bank, false), null))
+                    .isInstanceOf(BusinessRuleViolationException.class)
+                    .hasMessageContaining("is in the future")
+                    .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("date.inFuture"));
+        }
+        assertThat(settlement.getSettlement(leaseId).map(x -> x.getStatus())).isNotEqualTo(java.util.Optional.of(SettlementStatus.FINALIZED));
+        assertThat(finalize(leaseId, bank).getStatus()).isEqualTo(SettlementStatus.FINALIZED.name());
+    }
+
     @Test
     void finalizeRefundPostsStlAndClosesLease() {
         UUID leaseId = terminatedGalah();

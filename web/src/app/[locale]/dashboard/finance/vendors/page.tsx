@@ -12,6 +12,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { serverText } from "@/components/finance/bankrec/serverText";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { isAbortError } from "@/lib/api/abort";
 
 type Account = {
     id: string;
@@ -92,22 +94,30 @@ export default function VendorsPage() {
             .catch(() => {});
     }, []);
 
+    // Break round 3, F1: a refresh supersedes the read in flight; unmount aborts it, silently.
+    const beginVendors = useLatestRequest();
     const fetchVendors = async () => {
+        const { signal, isCurrent } = beginVendors();
         try {
-            const res = await fetch("/api/proxy/v1/vendors");
+            const res = await fetch("/api/proxy/v1/vendors", { signal });
             if (res.ok) {
                 const data = await res.json();
+                if (!isCurrent()) return;
                 data.sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
                 setVendors(data);
-            } else {
+                setLoadError(null);
+            } else if (isCurrent()) {
                 // A non-2xx used to leave the state at its initial empty
                 // value, so a failed request rendered as "nothing here".
                 setLoadError(tCommon("loadFailedVendors"));
             }
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
+            // A real network failure is a failed load, not "no vendors".
             console.error(err);
+            setLoadError(tCommon("loadFailedVendors"));
         } finally {
-            setLoading(false);
+            if (isCurrent()) setLoading(false);
         }
     };
 

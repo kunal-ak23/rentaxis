@@ -148,6 +148,8 @@ export default function ListingDetailPage({ params }: { params: Promise<{ tenant
   const [descExpanded, setDescExpanded] = useState(false);
   const [wishlisted, setWishlisted] = useState(false);
   const [wishlistLoading, setWishlistLoading] = useState(false);
+  // Break-it R3 portal3 F2: a failed save/remove is said, not swallowed.
+  const [wishlistError, setWishlistError] = useState<string | null>(null);
   const [interestNote, setInterestNote] = useState('');
   const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
   const [locationAddress, setLocationAddress] = useState<string | null>(null);
@@ -209,15 +211,19 @@ export default function ListingDetailPage({ params }: { params: Promise<{ tenant
     const token = (session.user as { accessToken?: string })?.accessToken ?? '';
     if (!listing) return;
     setWishlistLoading(true);
+    setWishlistError(null);
+    const removing = wishlisted;
     try {
-      if (wishlisted) {
+      if (removing) {
         await removeInterest(listing.id, token);
         setWishlisted(false);
       } else {
         await addInterest(listing.id, interestNote || undefined, token);
         setWishlisted(true);
       }
-    } catch {}
+    } catch {
+      setWishlistError(removing ? t('wishlistRemoveFailed') : t('wishlistAddFailed'));
+    }
     finally { setWishlistLoading(false); }
   }
 
@@ -566,7 +572,11 @@ export default function ListingDetailPage({ params }: { params: Promise<{ tenant
                   {wishlistLoading ? <Loader2 size={15} className="animate-spin" /> : <Heart size={15} fill={wishlisted ? 'currentColor' : 'none'} />}
                   {wishlistLabel}
                 </button>
-              ) : (
+              ) : null}
+              {session && wishlistError ? (
+                <p role="alert" data-testid="wishlist-error" className="hidden lg:block mt-2 text-xs text-red-600 text-center">{wishlistError}</p>
+              ) : null}
+              {session ? null : (
                 <div className="space-y-2">
                   <p className="text-xs text-neutral-500 text-center">{t('loginToWishlist')}</p>
                   <Link
@@ -596,6 +606,9 @@ export default function ListingDetailPage({ params }: { params: Promise<{ tenant
 
       {/* Sticky bottom bar (mobile only) */}
       <div className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-neutral-100 shadow-lg px-4 py-3 flex items-center gap-3 lg:hidden">
+        {session && wishlistError ? (
+          <p role="alert" data-testid="wishlist-error-mobile" className="absolute bottom-full inset-x-0 bg-red-50 border-t border-red-200 px-4 py-2 text-xs text-red-600 text-center">{wishlistError}</p>
+        ) : null}
         <div className="flex-1">
           {listing.annualRent && (
             <p className="text-base font-bold text-neutral-900">{formatCurrencyCompact(listing.annualRent)}<span className="text-xs text-neutral-400 font-normal ml-1">{t('aedPerYear')}</span></p>

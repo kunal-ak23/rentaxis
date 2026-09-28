@@ -523,26 +523,28 @@ function MarketplaceContent({ tenantSlug }: { tenantSlug: string }) {
     <div className="min-h-screen bg-neutral-50">
       {/* Top bar */}
       <div className="bg-white border-b border-neutral-100 sticky top-0 z-30">
-        <div className="max-w-screen-xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+        {/* Break-it R3 portal3 F9: wraps at 390 px (EN and AR) so the List/Map
+            toggle is never pushed off-screen; logical start/end, no left/right. */}
+        <div className="max-w-screen-xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <div className="flex min-w-0 items-center gap-3">
             {session && (
               <Link
                 href="/dashboard/renter-portal"
                 className="flex items-center gap-1.5 text-xs text-neutral-500 hover:text-neutral-900 transition-colors cursor-pointer"
               >
-                <ChevronLeft size={15} />
-                Dashboard
+                <ChevronLeft size={15} className="rtl:rotate-180" />
+                {t('backToDashboard')}
               </Link>
             )}
-            <div>
-              <h1 className="text-base font-bold text-neutral-900">{t('title')}</h1>
+            <div className="min-w-0">
+              <h1 className="text-base font-bold text-neutral-900 truncate">{t('title')}</h1>
               {totalElements > 0 && !loading && (
-                <p className="text-xs text-neutral-400">{totalElements} properties</p>
+                <p className="text-xs text-neutral-400">{t('propertiesCount', { count: totalElements })}</p>
               )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 ms-auto">
             {/* Sort */}
             <select
               value={sortParam}

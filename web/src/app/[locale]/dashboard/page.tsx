@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 import { Activity, Calendar, Plus, TrendingDown, TrendingUp } from "lucide-react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { leaseApi } from "@/lib/api/leasing";
+import { isAbortError } from "@/lib/api/abort";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { businessTodayIso } from "@/lib/businessDate";
 import { buildPipeline, type PipelineStage } from "@/lib/dashboard/pipeline";
 import ContractPipeline from "@/components/dashboard/ContractPipeline";
@@ -187,28 +189,39 @@ export default function DashboardPage() {
   const [pipeline, setPipeline] = useState<PipelineStage[] | null>(null);
   const [monthly, setMonthly] = useState<MonthlyPoint[]>([]);
   const [loading, setLoading] = useState(true);
+  // Break round 3, F1: aborted on unmount (navigating away mid-load), silently.
+  const beginSummary = useLatestRequest();
 
   useEffect(() => {
+    const { signal, isCurrent } = beginSummary();
     const load = async () => {
       try {
         const [summaryRes, monthlyRes] = await Promise.all([
-          fetch("/api/proxy/v1/dashboard/summary"),
-          fetch("/api/proxy/v1/dashboard/monthly-collections"),
+          fetch("/api/proxy/v1/dashboard/summary", { signal }),
+          fetch("/api/proxy/v1/dashboard/monthly-collections", { signal }),
         ]);
-        if (summaryRes.ok) setSummary(await summaryRes.json());
+        // Review M4: each body is read and set on its own, as before — a bad
+        // monthly body must not keep the summary cards empty.
+        if (summaryRes.ok) {
+          const summaryBody = await summaryRes.json();
+          if (!isCurrent()) return;
+          setSummary(summaryBody);
+        }
         if (monthlyRes.ok) {
-          const data = await monthlyRes.json();
-          setMonthly(Array.isArray(data) ? data : []);
+          const monthlyBody = await monthlyRes.json();
+          if (!isCurrent()) return;
+          setMonthly(Array.isArray(monthlyBody) ? monthlyBody : []);
         }
       } catch (err) {
+        if (isAbortError(err) || !isCurrent()) return;
         console.error(err);
       } finally {
-        setLoading(false);
+        if (isCurrent()) setLoading(false);
       }
     };
 
     load();
-  }, []);
+  }, [beginSummary]);
 
   // Spec §1a: the contract pipeline, from counts and bounded pages of GET /leases/paged.
   useEffect(() => {

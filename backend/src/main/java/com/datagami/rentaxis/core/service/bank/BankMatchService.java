@@ -803,6 +803,8 @@ public class BankMatchService {
                 on = reverseDate(entries.stream().map(e -> ((java.sql.Date) e.get("entry_date")).toLocalDate())
                         .min(Comparator.naturalOrder()).orElse(null));
             } else {
+                // Break-it R3 money3 sweep: a reversal dated by hand — the one-year window.
+                new com.datagami.rentaxis.core.service.ledger.ManualPostingDates(clock).require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.BANK_MATCH_UNDO, on);
                 // R1 P2-3 (the F14-41 rule): a reversal is not dated before the entry it reverses.
                 LocalDate latest = entries.stream().map(e -> ((java.sql.Date) e.get("entry_date")).toLocalDate())
                         .max(Comparator.naturalOrder()).orElse(null);

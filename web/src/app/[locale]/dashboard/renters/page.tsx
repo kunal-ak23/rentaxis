@@ -12,6 +12,8 @@ import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { Pagination } from "@/components/ui/Pagination";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { useUrlState } from "@/hooks/useUrlState";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { isAbortError } from "@/lib/api/abort";
 import type { Page } from "@/lib/api/ledger";
 import { findDuplicateRenters, normaliseEmail, type DuplicateMatch } from "@/lib/renters/duplicates";
 
@@ -101,17 +103,17 @@ function RentersPageInner() {
 
     // R1 P1-2: a request counter so a slow, older response (a stale search or
     // page) can never overwrite a newer one — same guard as the Tickets and
-    // Contracts lists.
-    const fetchSeq = useRef(0);
+    // Contracts lists. Break round 3, F1: the older request is also aborted,
+    // and unmount (navigating away) retires it silently.
+    const beginRenters = useLatestRequest();
     const fetchRenters = useCallback(async () => {
-        const seq = ++fetchSeq.current;
-        const isCurrent = () => seq === fetchSeq.current;
+        const { signal, isCurrent } = beginRenters();
         try {
             const sp = new URLSearchParams();
             if (q) sp.set("q", q);
             sp.set("page", String(currentPage - 1));
             sp.set("size", String(itemsPerPage));
-            const res = await fetch(`/api/proxy/v1/renters/paged?${sp.toString()}`);
+            const res = await fetch(`/api/proxy/v1/renters/paged?${sp.toString()}`, { signal });
             if (!isCurrent()) return;
             if (res.ok) {
                 const page: Page<Renter> = await res.json();
@@ -143,11 +145,14 @@ function RentersPageInner() {
                 setTotalItems(0);
             }
         } catch (err) {
-            if (isCurrent()) console.error(err);
+            if (isAbortError(err) || !isCurrent()) return;
+            // A real network failure is a failed load, not "no renters".
+            console.error(err);
+            setLoadError(tCommon("loadFailedRenters"));
         } finally {
             if (isCurrent()) setLoading(false);
         }
-    }, [q, currentPage, itemsPerPage, tCommon, setPageParam]);
+    }, [q, currentPage, itemsPerPage, tCommon, setPageParam, beginRenters]);
 
     useEffect(() => {
         fetchRenters();

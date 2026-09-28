@@ -95,6 +95,35 @@ class AuthProfileCallerIdentityIT extends AbstractCallerIdentityIT {
                 .body(Map.of("name", "Local phone", "phoneNumber", "050 8831786")))).isEqualTo(200);
     }
 
+    /**
+     * Break-it R3 portal3 F6: a name of spaces, NBSPs or zero-width characters is
+     * refused (400, nothing stored) — it used to answer "Saved" (spaces) or store an
+     * invisible name (U+200B). A real name is stored trimmed and without bidi controls.
+     */
+    @Test
+    void aBlankOrInvisibleNameIsRefusedAndARealOneIsStoredNormalised() {
+        String before = nameOf(userA);
+        for (String blank : List.of("    ", "​​​", "   ", "‏‮‬")) {
+            assertThat(status(forged(HttpMethod.PUT, "/api/auth/me", userA, userA)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("name", blank))))
+                    .as("name %s", blank.codePoints().mapToObj(Integer::toHexString).toList())
+                    .isEqualTo(400);
+            assertThat(nameOf(userA)).isEqualTo(before);
+        }
+
+        assertThat(status(forged(HttpMethod.PUT, "/api/auth/me", userA, userA)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("name", "  Rajesh  Kumar ‮evil‬​ ")))).isEqualTo(200);
+        assertThat(nameOf(userA)).isEqualTo("Rajesh Kumar evil");
+
+        // Leaving the name out still changes only the phone.
+        assertThat(status(forged(HttpMethod.PUT, "/api/auth/me", userA, userA)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("phoneNumber", "050 8831786")))).isEqualTo(200);
+        assertThat(nameOf(userA)).isEqualTo("Rajesh Kumar evil");
+    }
+
     @Test
     void aPasswordChangeWithAForgedUserIdDoesNotTouchTheVictim() {
         String victimsHash = hashOf(victim);

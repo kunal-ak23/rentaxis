@@ -428,8 +428,10 @@ class ChequeControllerIT extends AbstractPostgresIT {
 
         ResponseEntity<Map> refused = map(accountant, HttpMethod.POST,
                 "/api/v1/cheques/lease/" + leaseId + "/cash-receipt",
-                Map.of("amount", 1500, "chequeDate", "2027-02-02", "mode", "CASH",
-                        "narration", "Last month, over the counter"));
+                // Break-it R3 money3 N2: a receipt is not dated after today, so the day this
+                // test pays on is today's — the refusal under test is the lease's status.
+                Map.of("amount", 1500, "chequeDate", java.time.LocalDate.now(java.time.ZoneId.of("Asia/Dubai")).toString(),
+                        "mode", "CASH", "narration", "Last month, over the counter"));
 
         assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat((String) refused.getBody().get("message")).contains("This lease is EXPIRED");

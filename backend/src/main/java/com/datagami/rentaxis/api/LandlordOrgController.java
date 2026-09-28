@@ -38,8 +38,9 @@ public class LandlordOrgController {
         LandlordOrg org = service.provisionTenant(name);
         // The provisioning form also collects address/TRN/phone/logo/OTP toggle —
         // persist them too instead of silently dropping everything but the name.
-        if (applyOptionalFields(org, payload)) {
-            org = service.save(org);
+        // Under the row lock like every other write of an existing row (review r3B I1).
+        if (applyOptionalFields(new LandlordOrg(), payload)) {
+            org = service.updateLocked(org.getId(), o -> applyOptionalFields(o, payload));
         }
         return ResponseEntity.ok(org);
     }
@@ -53,17 +54,95 @@ public class LandlordOrgController {
     public ResponseEntity<LandlordOrg> updateTenant(
             @PathVariable UUID id,
             @RequestBody Map<String, Object> payload) {
-        java.util.Optional<LandlordOrg> orgOpt = service.findById(id);
-        if (orgOpt.isEmpty()) {
+        if (service.findById(id).isEmpty()) {
             return ResponseEntity.notFound().build();
         }
-        LandlordOrg org = orgOpt.get();
-        String name = stringValue(payload.get("name"));
-        if (name != null && !name.isBlank()) {
-            org.setName(name);
+        // Review r3B I1: read, check and write under the row lock in one transaction —
+        // an entity read before a concurrent deactivation, merged afterwards, wrote the
+        // old status back.
+        return ResponseEntity.ok(service.updateLocked(id, org -> {
+            // Break-it R3 ops3 F6: a stale dialog refused. "expected" carries the values
+            // the dialog loaded for the fields it changes; if any moved meanwhile the
+            // edit is refused with org.changed rather than overwriting it.
+            requireUnchanged(org, payload.get("expected"));
+            String name = stringValue(payload.get("name"));
+            if (name != null && !name.isBlank()) {
+                org.setName(name);
+            }
+            // Never the status: an edit dialog opened before another tab deactivated the
+            // organisation sent its old "ACTIVE" back and re-activated it. Status moves
+            // only through PUT /{id}/status. Older clients still send the key; it is ignored.
+            applyOptionalFields(org, payload, false);
+        }));
+    }
+
+    public static final String ORG_CHANGED = "org.changed";
+    static final String ORG_CHANGED_MESSAGE =
+            "This organisation was changed by someone else since you opened it. Reload and try again.";
+    static final java.util.Set<String> STATUSES = java.util.Set.of("ACTIVE", "INACTIVE");
+
+    /**
+     * Break-it R3 ops3 F6: the one way to activate or deactivate an organisation.
+     * Body {@code {"status": "ACTIVE"|"INACTIVE", "expectedStatus": "..."}};
+     * with {@code expectedStatus} (the status the screen showed) a different current
+     * status is a 409 {@code org.changed}.
+     */
+    @PutMapping("/{id}/status")
+    public ResponseEntity<LandlordOrg> setStatus(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
+        if (service.findById(id).isEmpty()) {
+            return ResponseEntity.notFound().build();
         }
-        applyOptionalFields(org, payload);
-        return ResponseEntity.ok(service.save(org));
+        String status = stringValue(body.get("status"));
+        if (status == null || !STATUSES.contains(status)) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    "Status must be ACTIVE or INACTIVE");
+        }
+        // Checked and written under the same row lock as an edit (review r3B I1).
+        return ResponseEntity.ok(service.updateLocked(id, org -> {
+            if (body.containsKey("expectedStatus")
+                    && !java.util.Objects.equals(stringValue(body.get("expectedStatus")), org.getStatus())) {
+                throw new com.datagami.rentaxis.api.exception.FiguresChangedException(ORG_CHANGED, ORG_CHANGED_MESSAGE);
+            }
+            org.setStatus(status);
+        }));
+    }
+
+    /** The fields an edit may name in {@code expected}, read from the organisation as they are now. */
+    private static Object currentValue(LandlordOrg org, String field) {
+        return switch (field) {
+            case "name" -> org.getName();
+            case "address" -> org.getAddress();
+            case "trn" -> org.getTrn();
+            case "phone" -> org.getPhone();
+            case "logoUrl" -> org.getLogoUrl();
+            case "ticketOtpRequired" -> org.getTicketOtpRequired() == null || org.getTicketOtpRequired();
+            case "status" -> org.getStatus();
+            default -> throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    "Unknown field in expected: " + field);
+        };
+    }
+
+    private static void requireUnchanged(LandlordOrg org, Object expected) {
+        if (!(expected instanceof Map<?, ?> fields)) {
+            return;
+        }
+        for (Map.Entry<?, ?> e : fields.entrySet()) {
+            String field = String.valueOf(e.getKey());
+            Object now = currentValue(org, field);
+            Object then = e.getValue();
+            boolean same = "ticketOtpRequired".equals(field)
+                    ? now.equals(then == null || booleanValue(then))
+                    : blankToNull(stringValue(now)) == null
+                            ? blankToNull(stringValue(then)) == null
+                            : stringValue(now).equals(stringValue(then));
+            if (!same) {
+                throw new com.datagami.rentaxis.api.exception.FiguresChangedException(ORG_CHANGED, ORG_CHANGED_MESSAGE);
+            }
+        }
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s;
     }
 
     /**
@@ -72,6 +151,10 @@ public class LandlordOrgController {
      * true when at least one field was applied.
      */
     private boolean applyOptionalFields(LandlordOrg org, Map<String, Object> payload) {
+        return applyOptionalFields(org, payload, true);
+    }
+
+    private boolean applyOptionalFields(LandlordOrg org, Map<String, Object> payload, boolean allowStatus) {
         boolean changed = false;
         if (payload.containsKey("address")) {
             org.setAddress(stringValue(payload.get("address")));
@@ -81,7 +164,7 @@ public class LandlordOrgController {
             org.setTrn(stringValue(payload.get("trn")));
             changed = true;
         }
-        if (payload.containsKey("status")) {
+        if (allowStatus && payload.containsKey("status")) {
             String status = stringValue(payload.get("status"));
             // status is a NOT NULL column — never null/blank it out.
             if (status != null && !status.isBlank()) {

@@ -241,4 +241,114 @@ class UnitListingServiceTest {
         verify(mediaRepository).findByListingIdInOrderByListingIdAscSortOrderAsc(List.of(listingId));
         verify(interestRepository).countByListingIdsAndStatus(List.of(listingId), InterestStatus.ACTIVE);
     }
+
+    // ---- break-it R3 ops3 F10: a let unit is not published as available ----
+
+    private UnitListing draftOn(UUID tenantId, UUID unitId, java.time.LocalDate availableFrom) {
+        UnitListing l = new UnitListing();
+        l.setId(UUID.randomUUID());
+        l.setTenantId(tenantId);
+        l.setUnitId(unitId);
+        l.setStatus(ListingStatus.DRAFT);
+        l.setAvailableFrom(availableFrom);
+        when(listingRepository.findById(l.getId())).thenReturn(Optional.of(l));
+        return l;
+    }
+
+    private void currentLease(UUID tenantId, UUID unitId, java.time.LocalDate end) {
+        com.datagami.rentaxis.domain.entity.Lease lease = new com.datagami.rentaxis.domain.entity.Lease();
+        lease.setTenantId(tenantId);
+        lease.setEndDate(end);
+        lease.setStatus(com.datagami.rentaxis.domain.entity.enums.LeaseStatus.ACTIVE);
+        when(leaseRepository.findByUnitIdAndStatusIn(org.mockito.ArgumentMatchers.eq(unitId), any()))
+                .thenReturn(List.of(lease));
+    }
+
+    @Test
+    void publish_unitLetPastAvailableFrom_isRefused() {
+        UUID tenantId = UUID.randomUUID();
+        UUID unitId = UUID.randomUUID();
+        currentLease(tenantId, unitId, java.time.LocalDate.of(2027, 4, 30));
+
+        UnitListing availableNow = draftOn(tenantId, unitId, null);
+        assertThatThrownBy(() -> service.publish(tenantId, availableNow.getId()))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class)
+                .satisfies(e -> assertThat(((com.datagami.rentaxis.api.exception.BusinessRuleViolationException) e).getCode())
+                        .isEqualTo("listing.unitLet"));
+        UnitListing onTheLastDay = draftOn(tenantId, unitId, java.time.LocalDate.of(2027, 4, 30));
+        assertThatThrownBy(() -> service.publish(tenantId, onTheLastDay.getId()))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class);
+        assertThat(availableNow.getStatus()).isEqualTo(ListingStatus.DRAFT);
+        verify(eventPublisher, never()).publishEvent(any(ListingPublishedEvent.class));
+    }
+
+    @Test
+    void publish_preMarketingAfterTheLeaseEnds_isAllowed() {
+        UUID tenantId = UUID.randomUUID();
+        UUID unitId = UUID.randomUUID();
+        currentLease(tenantId, unitId, java.time.LocalDate.of(2027, 4, 30));
+        UnitListing l = draftOn(tenantId, unitId, java.time.LocalDate.of(2027, 5, 1));
+
+        service.publish(tenantId, l.getId());
+
+        assertThat(l.getStatus()).isEqualTo(ListingStatus.PUBLISHED);
+    }
+
+    @Test
+    void update_movingALiveListingIntoTheLease_isRefused() {
+        UUID tenantId = UUID.randomUUID();
+        UUID unitId = UUID.randomUUID();
+        currentLease(tenantId, unitId, java.time.LocalDate.of(2027, 4, 30));
+        UnitListing l = draftOn(tenantId, unitId, java.time.LocalDate.of(2027, 5, 1));
+        l.setStatus(ListingStatus.PUBLISHED);
+        java.time.LocalDate inside = java.time.LocalDate.of(2027, 1, 1);
+        com.datagami.rentaxis.api.dto.UnitListingUpdateRequest req = new com.datagami.rentaxis.api.dto.UnitListingUpdateRequest(
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, inside, null, null, null, null, null, null, null);
+
+        assertThatThrownBy(() -> service.update(tenantId, l.getId(), req))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class);
+        verify(listingRepository, never()).save(l);
+    }
+
+    // ---- review r3C I2: under notice, the unit is let until the move-out date ----
+
+    @Test
+    void publish_underNoticeWithAMoveOutDate_usesTheMoveOutDate() {
+        UUID tenantId = UUID.randomUUID();
+        UUID unitId = UUID.randomUUID();
+        com.datagami.rentaxis.domain.entity.Lease lease = new com.datagami.rentaxis.domain.entity.Lease();
+        lease.setTenantId(tenantId);
+        lease.setEndDate(java.time.LocalDate.of(2027, 4, 30));
+        lease.setIntendedMoveOutDate(java.time.LocalDate.of(2026, 11, 30));
+        lease.setStatus(com.datagami.rentaxis.domain.entity.enums.LeaseStatus.NOTICE_GIVEN);
+        when(leaseRepository.findByUnitIdAndStatusIn(org.mockito.ArgumentMatchers.eq(unitId), any()))
+                .thenReturn(List.of(lease));
+
+        UnitListing onMoveOut = draftOn(tenantId, unitId, java.time.LocalDate.of(2026, 11, 30));
+        assertThatThrownBy(() -> service.publish(tenantId, onMoveOut.getId()))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class)
+                .satisfies(e -> assertThat(((com.datagami.rentaxis.api.exception.BusinessRuleViolationException) e).getArgs())
+                        .containsEntry("end", "30/11/2026").containsEntry("next", "01/12/2026"));
+
+        UnitListing dayAfter = draftOn(tenantId, unitId, java.time.LocalDate.of(2026, 12, 1));
+        service.publish(tenantId, dayAfter.getId());
+        assertThat(dayAfter.getStatus()).isEqualTo(ListingStatus.PUBLISHED);
+    }
+
+    @Test
+    void publish_activeLeaseWithAStrayMoveOutDate_stillUsesTheContractEnd() {
+        UUID tenantId = UUID.randomUUID();
+        UUID unitId = UUID.randomUUID();
+        com.datagami.rentaxis.domain.entity.Lease lease = new com.datagami.rentaxis.domain.entity.Lease();
+        lease.setTenantId(tenantId);
+        lease.setEndDate(java.time.LocalDate.of(2027, 4, 30));
+        lease.setIntendedMoveOutDate(java.time.LocalDate.of(2026, 11, 30));
+        lease.setStatus(com.datagami.rentaxis.domain.entity.enums.LeaseStatus.ACTIVE);
+        when(leaseRepository.findByUnitIdAndStatusIn(org.mockito.ArgumentMatchers.eq(unitId), any()))
+                .thenReturn(List.of(lease));
+        UnitListing l = draftOn(tenantId, unitId, java.time.LocalDate.of(2026, 12, 1));
+        assertThatThrownBy(() -> service.publish(tenantId, l.getId()))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.BusinessRuleViolationException.class);
+    }
 }

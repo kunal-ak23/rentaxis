@@ -60,6 +60,8 @@ class BookingFeeIT extends AbstractPostgresIT {
     @Autowired RenterRepository renterRepo;
     @Autowired UnitRepository unitRepo;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.datagami.rentaxis.domain.repository.BookingRequestRepository bookingRepo;
+    @Autowired com.datagami.rentaxis.domain.repository.LeaseRepository leaseRepo;
     @Autowired TransactionTemplate tx;
 
     private LeaseTestFixtures fixtures;
@@ -145,5 +147,118 @@ class BookingFeeIT extends AbstractPostgresIT {
         badDebts.approve(w.id(), null);
         assertThatThrownBy(() -> tx.executeWithoutResult(s -> bookings.cancel(fixtures.tenantId(), b.getId(), renterUser)))
                 .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("booking.feeWrittenOff"));
+    }
+
+    /** Break-it R3 ops3 F7: the same renter, amenity and day cannot be booked twice, and a second fee is never posted. */
+    @Test
+    void theSameAmenityAndDayCannotBeBookedOrApprovedTwice() {
+        PropertyAmenity pool = amenity("PoolFee", "PER_BOOKING", "100");
+        LocalDate day = LocalDate.now().plusDays(14);
+        BookingRequest first = book(pool, day);
+        tx.execute(s -> bookings.approve(fixtures.tenantId(), first.getId(), UUID.randomUUID(), null));
+
+        assertThatThrownBy(() -> book(pool, day))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.SlotConflictException.class)
+                .satisfies(e -> assertThat(((com.datagami.rentaxis.api.exception.SlotConflictException) e).getCode())
+                        .isEqualTo("booking.alreadyBooked"));
+
+        // A clashing request that got in some other way (legacy row) is refused at approval.
+        BookingRequest legacy = tx.execute(s -> {
+            BookingRequest b = new BookingRequest();
+            b.setTenantId(fixtures.tenantId());
+            b.setUnitId(fixtures.unit().getId());
+            b.setRenterUserId(renterUser);
+            b.setResourceType(BookingResourceType.AMENITY);
+            b.setAmenityId(pool.getId());
+            b.setPropertyId(pool.getPropertyId());
+            b.setPreferredDate(day);
+            b.setPreferredStartTime(LocalTime.of(11, 0));
+            b.setPreferredEndTime(LocalTime.of(12, 0));
+            b.setFeeAmount(new BigDecimal("100.00"));
+            b.setStatus(com.datagami.rentaxis.domain.entity.enums.BookingRequestStatus.PENDING);
+            return bookingRepo.saveAndFlush(b);
+        });
+        assertThatThrownBy(() -> tx.execute(s -> bookings.approve(fixtures.tenantId(), legacy.getId(), UUID.randomUUID(), null)))
+                .satisfies(e -> assertThat(((com.datagami.rentaxis.api.exception.SlotConflictException) e).getCode())
+                        .isEqualTo("booking.renterAlreadyBooked"));
+        assertThat(jdbc.queryForObject("select count(*) from penalty_assessments where source_type = 'BOOKING' and tenant_id = ?",
+                Integer.class, fixtures.tenantId())).isOne();
+    }
+
+    /** Break-it R3 ops3 F8: past dates and dates outside the contract are refused on request and on approval. */
+    @Test
+    void aPastOrOutOfContractBookingIsRefused() {
+        PropertyAmenity pool = amenity("PoolFee", "PER_BOOKING", "100");
+        assertThatThrownBy(() -> book(pool, LocalDate.now(BookingService.DUBAI).minusDays(1)))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("booking.dateInPast"));
+        // The contract ends 2027-04-30.
+        assertThatThrownBy(() -> book(pool, LocalDate.of(2027, 5, 10)))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("booking.outsideLease"));
+
+        BookingRequest stale = tx.execute(s -> {
+            BookingRequest b = new BookingRequest();
+            b.setTenantId(fixtures.tenantId());
+            b.setUnitId(fixtures.unit().getId());
+            b.setRenterUserId(renterUser);
+            b.setResourceType(BookingResourceType.AMENITY);
+            b.setAmenityId(pool.getId());
+            b.setPropertyId(pool.getPropertyId());
+            b.setPreferredDate(LocalDate.of(2020, 1, 1));
+            b.setFeeAmount(new BigDecimal("100.00"));
+            b.setStatus(com.datagami.rentaxis.domain.entity.enums.BookingRequestStatus.PENDING);
+            return bookingRepo.saveAndFlush(b);
+        });
+        assertThatThrownBy(() -> tx.execute(s -> bookings.approve(fixtures.tenantId(), stale.getId(), UUID.randomUUID(), null)))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("booking.dateInPast"));
+        assertThat(jdbc.queryForObject("select count(*) from penalty_assessments where source_type = 'BOOKING' and tenant_id = ?",
+                Integer.class, fixtures.tenantId())).isZero();
+    }
+
+    /**
+     * Review r3C I1: an early-posted renewal flips the running lease to RENEWED while its
+     * term still runs; the renter can still book inside it, and a request made before the
+     * renewal can still be approved.
+     */
+    @Test
+    void anEarlyPostedRenewalStillLetsTheRenterBookInTheCurrentTerm() {
+        PropertyAmenity pool = amenity("PoolFee", "PER_BOOKING", "100");
+        BookingRequest before = book(pool, LocalDate.now().plusDays(10));
+
+        // The renewal (2027-05-01 → 2028-04-30) is posted early; the running lease becomes RENEWED.
+        fixtures.postedLease(LocalDate.of(2026, 9, 1), LocalDate.of(2027, 5, 1), LocalDate.of(2028, 4, 30),
+                List.of(vatLine("RENT", "120000")), 4, null);
+        int flipped = jdbc.update("update leases set status = 'RENEWED' where tenant_id = ? and start_date = ?",
+                fixtures.tenantId(), LocalDate.of(2026, 5, 1));
+        assertThat(flipped).isOne();
+
+        BookingRequest approved = tx.execute(s -> bookings.approve(fixtures.tenantId(), before.getId(), UUID.randomUUID(), null));
+        assertThat(approved.getChargeId()).isNotNull();
+        PropertyAmenity gym = amenity("Gym", "FREE", null);
+        assertThat(book(gym, LocalDate.now().plusDays(20)).getId()).isNotNull();
+        // Into the renewal's term as well.
+        PropertyAmenity bbq = amenity("BBQ", "FREE", null);   // one pending per amenity: a second one
+        assertThat(book(bbq, LocalDate.of(2027, 6, 1)).getId()).isNotNull();
+    }
+
+    /**
+     * Coordinator R3 round 1: one rule for "the renter's current contract" (bookings, gate
+     * passes, tickets): live and today inside the term. An ended lease still marked ACTIVE
+     * is not current; the running term of an early-posted renewal (RENEWED) is.
+     */
+    private int current(UUID t, LocalDate day) {
+        Integer n = tx.execute(s -> leaseRepo.findCurrentForRenterUser(t, renterUser, day).size());
+        return n == null ? 0 : n;
+    }
+
+    @Test
+    void theCurrentContractRuleIsTodayInsideALiveTerm() {
+        UUID t = fixtures.tenantId();
+        assertThat(current(t, LocalDate.now())).isOne();
+        // The term ended 2027-04-30; still ACTIVE (no expiry job ran) — not current.
+        assertThat(current(t, LocalDate.of(2027, 5, 10))).isZero();
+        // An early-posted renewal flips the running term to RENEWED: still current until it ends.
+        jdbc.update("update leases set status = 'RENEWED' where tenant_id = ?", t);
+        assertThat(current(t, LocalDate.now())).isOne();
+        assertThat(current(t, LocalDate.of(2027, 5, 10))).isZero();
     }
 }

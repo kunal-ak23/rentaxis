@@ -22,6 +22,7 @@ import {
 } from "@/lib/api/listings";
 import type { UnitListingSummaryDTO, ListingStatus } from "@/types/listing";
 import { InterestsDrawer } from "./_components/InterestsDrawer";
+import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 
 type SortDir = 'asc' | 'desc';
 
@@ -61,6 +62,7 @@ export default function ListingsPage() {
 
 function ListingsContent() {
   const t = useTranslations('Listings');
+  const tCommon = useTranslations('Common');
   const { data: session } = useSession();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -136,7 +138,9 @@ function ListingsContent() {
       onConfirm: async () => {
         setConfirmOpen(false);
         setActionLoading(`publish-${listing.id}`);
-        try { await publishListing(listing.id, token); await loadListings(); } catch {}
+        try { await publishListing(listing.id, token); await loadListings(); }
+        // Break-it R3 ops3 F10: say why a let unit was not published (listing.unitLet).
+        catch (err) { setError(codedOf(err).code ? serverText(tCommon, err) : t('saveError')); }
         finally { setActionLoading(null); }
       },
     });

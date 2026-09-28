@@ -7,7 +7,7 @@ import LeaseDialog from "@/components/leases/LeaseDialog";
 import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { todayIso } from "@/components/leases/leaseMath";
-import { isBeyondManualPostingWindow, maxManualPostingDateIso } from "@/lib/businessDate";
+import { businessTodayIso, isAfterBusinessToday } from "@/lib/businessDate";
 import { differenceOf } from "@/lib/money";
 import { fmtAmount } from "@/lib/api/ledger";
 import { leaseTakesNewRows } from "@/components/cheques/registerActions";
@@ -145,7 +145,9 @@ export default function ReceiveCashDialog({ open, initialLeaseId, onClose, onDon
      * Null while `leaseApi.get` is still in flight, which is neither yes nor no.
      */
     const leaseTakesRow = lease == null ? null : leaseTakesNewRows(lease.status);
-    const dateTooFar = isBeyondManualPostingWindow(date);
+    // Break-it R3 money3 N2: a counter receipt is money that has arrived — not after
+    // today (the server's EVENT rule), not merely within a year.
+    const dateTooFar = isAfterBusinessToday(date);
     const aboveOutstanding = outstanding !== null && amount > outstanding;
     const needsAdvanceConfirm = aboveOutstanding && advanceConfirmedFor !== amount;
 
@@ -277,13 +279,13 @@ export default function ReceiveCashDialog({ open, initialLeaseId, onClose, onDon
                             type="date"
                             className={field}
                             value={date}
-                            max={maxManualPostingDateIso()}
+                            max={businessTodayIso()}
                             aria-invalid={dateTooFar}
                             onChange={e => setDate(e.target.value)}
                         />
                         {dateTooFar && (
                             <p role="alert" data-testid="cash-receipt-date-error" className="mt-1 text-[11px] text-error">
-                                {tm("dateTooFar", { max: formatDate(maxManualPostingDateIso()) })}
+                                {t("eventAfterToday", { today: formatDate(businessTodayIso()) })}
                             </p>
                         )}
                     </div>

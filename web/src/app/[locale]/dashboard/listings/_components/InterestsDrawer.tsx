@@ -6,6 +6,8 @@ import { useSession } from "next-auth/react";
 
 import { X, Download, Loader2, ChevronLeft, ChevronRight, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { downloadCsv } from "@/lib/csv";
+import { interestsCsv } from "./interestsCsv";
 import { createLeaseFromInterest, fetchInterests } from "@/lib/api/listings";
 import { ApiError } from "@/lib/api/facilities";
 import { serverText } from "@/components/finance/bankrec/serverText";
@@ -90,28 +92,7 @@ export function InterestsDrawer({ listingId, listingTitle, onClose }: InterestsD
     setExporting(true);
     try {
       const all = await fetchInterests(listingId, token, 0, 1000);
-      const headers = [
-        t('interestName'), t('interestEmail'), t('interestPhone'),
-        t('interestNote'), t('interestDate'), t('interestStatus'),
-      ];
-      const rows = all.content.map(i => [
-        i.renterName ?? '',
-        i.renterEmail ?? '',
-        i.renterPhone ?? '',
-        i.note ?? '',
-        new Date(i.createdAt).toLocaleDateString(),
-        i.status,
-      ]);
-      const csv = [headers, ...rows]
-        .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
-        .join('\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `interests-${listingId}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadCsv(`interests-${listingId}.csv`, interestsCsv(all.content, t));
     } catch {
       // silent — user can retry
     } finally {

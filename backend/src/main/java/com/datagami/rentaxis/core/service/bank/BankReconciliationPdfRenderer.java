@@ -59,6 +59,16 @@ public class BankReconciliationPdfRenderer {
         put("csvUnpresented", "Unpresented payment", "دفعة لم تقدم بعد");
         put("csvUnrecordedItem", "Unrecorded statement item", "بند كشف غير مسجل");
         put("yes", "yes", "نعم");
+        // Break-it R3 data3 F2: the statement-lines CSV's own labels.
+        put("linesValueDate", "Value date", "تاريخ القيمة");
+        put("linesDescription", "Description", "الوصف");
+        put("linesReference", "Reference", "المرجع");
+        put("linesChequeNo", "Cheque no", "رقم الشيك");
+        put("linesBalance", "Balance", "الرصيد");
+        put("linesMatch", "Match", "المطابقة");
+        put("matchUNMATCHED", "Unmatched", "غير مطابق");
+        put("matchSUGGESTED", "Suggested", "مقترح");
+        put("matchCONFIRMED", "Confirmed", "مؤكد");
         put("leaves", "Ledger accounts", "حسابات الأستاذ");
         put("period", "Period", "الفترة");
         put("status", "Status", "الحالة");
@@ -258,7 +268,8 @@ public class BankReconciliationPdfRenderer {
             }, "Noto Sans");
             // Only inline data: URIs load; no http(s), no file:, no jar:.
             PdfResourcePolicy.apply(builder);
-            builder.withHtmlContent(html, null);
+            // Shared sanitiser: no bidi controls or glyph-less characters (R3 portal3 F11).
+            builder.withHtmlContent(com.datagami.rentaxis.core.util.PdfText.clean(html), null);
             builder.toStream(baos);
             builder.run();
             return baos.toByteArray();

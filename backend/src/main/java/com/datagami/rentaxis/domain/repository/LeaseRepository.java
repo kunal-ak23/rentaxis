@@ -300,6 +300,30 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
                            com.datagami.rentaxis.domain.entity.enums.LeaseStatus.NOTICE_GIVEN)""")
     List<Lease> findLiveEndingOn(@Param("tenantId") UUID tenantId, @Param("endDate") java.time.LocalDate endDate);
 
+    /**
+     * Break-it R3 portal3 F1: the renter user's <em>current</em> contracts — live
+     * (ACTIVE, or ACTIVE with notice given: the renter still occupies the unit) and
+     * with {@code today} inside the term — with unit and property loaded. What a
+     * renter may raise a ticket (or anything else unit-bound) against.
+     *
+     * <p>Review r3C I1: RENEWED counts too. Posting a renewal early flips the running
+     * lease to RENEWED at once while its term still runs (the successor starts later);
+     * with today inside that term it is still the renter's current contract.
+     */
+    @Query("""
+        select l from Lease l join fetch l.unit u join fetch u.property
+        where l.tenantId = :tenantId
+          and l.renter.userId = :userId
+          and l.status in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.ACTIVE,
+                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.NOTICE_GIVEN,
+                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.RENEWED)
+          and (l.startDate is null or l.startDate <= :today)
+          and (l.endDate is null or l.endDate >= :today)
+        """)
+    List<Lease> findCurrentForRenterUser(@Param("tenantId") UUID tenantId,
+                                         @Param("userId") UUID userId,
+                                         @Param("today") java.time.LocalDate today);
+
     @Query("SELECT COALESCE(MAX(l.contractNumber), 0) FROM Lease l WHERE l.tenantId = :tenantId")
     Long findMaxContractNumberForTenant(@Param("tenantId") UUID tenantId);
 

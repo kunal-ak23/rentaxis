@@ -109,4 +109,25 @@ class BuildingControllerIT extends AbstractPostgresIT {
         assertThat(res.getStatusCode().value()).isEqualTo(400);
         assertThat(buildingsOfA()).isZero();
     }
+
+    /** Break-it R3 ops3 F3: floors are 1..200 inclusive; -3, 0 and 99 999 were saved as typed. */
+    @Test
+    void floorsOutsideOneToTwoHundredAreRefusedAndTheBoundsAreAccepted() {
+        for (int floors : new int[] {-3, 0, 201, 99999}) {
+            Map<String, Object> b = body(propertyId);
+            b.put("floors", floors);
+            var res = http.call(admin, HttpMethod.POST, "/api/v1/buildings", b);
+            assertThat(res.getStatusCode().value()).as("floors %d", floors).isEqualTo(400);
+            assertThat(res.getBody().get("message")).isEqualTo("Floors must be a whole number from 1 to 200");
+            assertThat(res.getBody().get("code")).isEqualTo("building.floorsOutOfRange");
+        }
+        assertThat(buildingsOfA()).isZero();
+        for (int floors : new int[] {1, 200}) {
+            Map<String, Object> b = body(propertyId);
+            b.put("floors", floors);
+            b.put("nameEn", "Tower " + floors);
+            assertThat(http.call(admin, HttpMethod.POST, "/api/v1/buildings", b).getStatusCode().value()).isEqualTo(200);
+        }
+        assertThat(buildingsOfA()).isEqualTo(2);
+    }
 }

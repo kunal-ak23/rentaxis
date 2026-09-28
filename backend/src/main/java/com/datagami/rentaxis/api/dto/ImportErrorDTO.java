@@ -46,6 +46,18 @@ public class ImportErrorDTO {
     private Severity severity = Severity.ERROR;
 
     /**
+     * Break-it R3 data3 F4: a stable key the web translates the message by
+     * ({@code import.alreadyRunning}, {@code import.failedRef}, …) — null for a
+     * message that is only in English. {@code args} holds its values
+     * ({@code reference}). See {@code ImportFailures}.
+     */
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private String code;
+
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private java.util.Map<String, String> args;
+
+    /**
      * The four-argument shape every producer already uses. Kept as its own
      * constructor rather than as a generated all-args one so that adding
      * {@code severity} did not silently break ~40 call sites.

@@ -14,9 +14,15 @@ export type ListLoad<T> =
     | { kind: "forbidden" }
     | { kind: "failed"; status: number };
 
-export async function loadList<T>(url: string): Promise<ListLoad<T>> {
+/**
+ * `signal` (break round 3, F1) lets a page abort the read on unmount or when a
+ * newer read supersedes it; an aborted read comes back as "failed", so the
+ * caller must check its request is still current (useLatestRequest's
+ * `isCurrent`) before showing anything.
+ */
+export async function loadList<T>(url: string, signal?: AbortSignal): Promise<ListLoad<T>> {
     try {
-        const res = await fetch(url);
+        const res = await fetch(url, signal ? { signal } : undefined);
         if (res.ok) return { kind: "ok", items: (await res.json()) as T[] };
         res.body?.cancel().catch(() => {});
         if (res.status === 403) return { kind: "forbidden" };

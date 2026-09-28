@@ -6,9 +6,11 @@ import com.datagami.rentaxis.domain.repository.GatePassRepository;
 import com.datagami.rentaxis.domain.repository.GatePassScanRepository;
 import com.datagami.rentaxis.domain.repository.GuardPropertyAssignmentRepository;
 import com.datagami.rentaxis.domain.repository.LeaseInteractionRepository;
+import com.datagami.rentaxis.domain.repository.MaintenanceTicketRepository;
 import com.datagami.rentaxis.domain.repository.NotificationRepository;
 import com.datagami.rentaxis.domain.repository.PromoAdEventRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
+import com.datagami.rentaxis.domain.repository.UserRepository;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
@@ -55,6 +57,9 @@ public class UserReferenceReleaser {
     private final DeviceTokenRepository deviceTokenRepository;
     private final NotificationRepository notificationRepository;
     private final GuardPropertyAssignmentRepository guardPropertyAssignmentRepository;
+    private final MaintenanceTicketRepository ticketRepository;
+    private final UserRepository userRepository;
+    private final com.datagami.rentaxis.domain.repository.MeetingRepository meetingRepository;
 
     public UserReferenceReleaser(RenterRepository renterRepository,
             PromoAdEventRepository promoAdEventRepository,
@@ -64,7 +69,13 @@ public class UserReferenceReleaser {
             LeaseInteractionRepository leaseInteractionRepository,
             DeviceTokenRepository deviceTokenRepository,
             NotificationRepository notificationRepository,
-            GuardPropertyAssignmentRepository guardPropertyAssignmentRepository) {
+            GuardPropertyAssignmentRepository guardPropertyAssignmentRepository,
+            MaintenanceTicketRepository ticketRepository,
+            UserRepository userRepository,
+            com.datagami.rentaxis.domain.repository.MeetingRepository meetingRepository) {
+        this.meetingRepository = meetingRepository;
+        this.ticketRepository = ticketRepository;
+        this.userRepository = userRepository;
         this.renterRepository = renterRepository;
         this.promoAdEventRepository = promoAdEventRepository;
         this.bookingRequestRepository = bookingRequestRepository;
@@ -100,9 +111,49 @@ public class UserReferenceReleaser {
         promoAdEventRepository.deleteByRenterUserId(userId);
         bookingRequestRepository.deleteByRenterUserId(userId);
 
+        // Break-it R3 ops3 F5: open work goes back to the queue. A ticket used to stay
+        // ASSIGNED to nobody — "Assigned" badge, "Assigned To: Unassigned", in no one's
+        // list. Each release is recorded in the ticket's history first.
+        releaseOpenTickets(userId);
+
         // Business records survive, de-identified.
         gatePassRepository.detachCreatedBy(userId);
         gatePassScanRepository.detachScannedBy(userId);
         leaseInteractionRepository.detachCreatedBy(userId);
+    }
+
+    static final String TICKET_RELEASE_NOTE = "Assignee's account was deleted; ticket returned to the unassigned queue";
+
+    private void releaseOpenTickets(UUID userId) {
+        UUID performer = currentUserId();
+        if (performer == null) performer = userId; // the user deleting their own account
+        String performerName = userRepository.findDisplayNameById(performer).orElse(null);
+        ticketRepository.recordReleaseOfOpenAssignedTo(userId, performer, performerName, TICKET_RELEASE_NOTE);
+        ticketRepository.releaseOpenAssignedTo(userId);
+    }
+
+    private static UUID currentUserId() {
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof String s)) return null;
+        try {
+            return UUID.fromString(s);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Break-it R3 ops3 F5: what deleting this user will do to work they hold, for the
+     * delete dialog. {@code openTickets} go back to the unassigned queue;
+     * {@code meetings} (hosted or requested) keep their history and refuse the delete.
+     */
+    public record Impact(long openTickets, long meetings) {
+    }
+
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public Impact impact(UUID userId) {
+        return new Impact(ticketRepository.countOpenAssignedTo(userId),
+                meetingRepository.countByParticipantUnfiltered(userId));
     }
 }

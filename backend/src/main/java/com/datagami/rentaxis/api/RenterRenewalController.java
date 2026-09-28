@@ -93,7 +93,9 @@ public class RenterRenewalController {
                     o != null ? o.getId() : null,
                     o != null ? o.getStage().name() : null,
                     o != null && o.getIntent() != null ? o.getIntent().name() : null,
-                    rems));
+                    rems,
+                    com.datagami.rentaxis.core.service.renewal.LeaseEnded.hasEnded(l, today),
+                    com.datagami.rentaxis.core.service.renewal.LeaseEnded.daysSinceEnded(l, today)));
         }
         return new RenewalSummaryDTO(views);
     }

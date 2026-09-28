@@ -49,6 +49,8 @@ class TicketCallerIdentityIT extends AbstractPostgresIT {
     @Autowired MaintenanceTicketService ticketService;
     @Autowired PropertyRepository propertyRepo;
     @Autowired RenterRepository renterRepo;
+    @Autowired com.datagami.rentaxis.domain.repository.UnitRepository unitRepo;
+    @Autowired com.datagami.rentaxis.domain.repository.LeaseRepository leaseRepo;
     @Autowired UserRepository userRepo;
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired JdbcTemplate jdbc;
@@ -65,19 +67,22 @@ class TicketCallerIdentityIT extends AbstractPostgresIT {
         tenantId = orgRepo.save(org).getId();
         TenantContextHolder.setTenantId(tenantId);
 
+        Property p = new Property();
+        p.setNameEn("Tower " + UUID.randomUUID());
+        p.setEmirate(Emirate.DUBAI);
+        p = propertyRepo.save(p);
+        propertyId = p.getId();
+
         renterA = user(UserRole.RENTER);
         victim = user(UserRole.RENTER);
         for (User u : List.of(renterA, victim)) {
             Renter r = new Renter();
             r.setNameEn("Renter " + u.getId());
             r.setUserId(u.getId());
-            renterRepo.save(r);
+            // A renter raises tickets only on a current contract of theirs (R3 portal3 F1).
+            com.datagami.rentaxis.testsupport.CurrentLeaseFixture.currentLease(
+                    unitRepo, leaseRepo, tenantId, p, renterRepo.save(r));
         }
-
-        Property p = new Property();
-        p.setNameEn("Tower " + UUID.randomUUID());
-        p.setEmirate(Emirate.DUBAI);
-        propertyId = propertyRepo.save(p).getId();
         TenantContextHolder.clear();
     }
 

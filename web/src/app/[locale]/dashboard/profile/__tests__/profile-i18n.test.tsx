@@ -126,3 +126,29 @@ describe("ProfilePage — phone", () => {
         expect((await screen.findByRole("alert")).textContent).toBe(ar.Profile.phoneInvalid);
     });
 });
+
+// Break-it R3 portal3 F6: a blank or invisible name is refused before sending; a real one is sent normalised.
+describe("ProfilePage — name", () => {
+    it.each([["spaces", "    "], ["zero-width", "​​​"], ["NBSP", "  "]])(
+        "refuses a %s-only name with an inline error and sends nothing", async (_label, value) => {
+            put = () => json(200, profile);
+            await saveWith("en", { name: value });
+            expect(await screen.findByText(en.Profile.nameRequired)).toBeTruthy();
+            expect(puts).toHaveLength(0);
+            expect(screen.queryByText(en.Profile.saved)).toBeNull();
+        });
+
+    it("says it in Arabic under /ar", async () => {
+        put = () => json(200, profile);
+        await saveWith("ar", { name: "   " });
+        expect(await screen.findByText(ar.Profile.nameRequired)).toBeTruthy();
+        expect(puts).toHaveLength(0);
+    });
+
+    it("sends the trimmed name without invisible characters", async () => {
+        put = () => json(200, { ...profile, name: "Rajesh Kumar" });
+        await saveWith("en", { name: "  Rajesh  Kumar​ " });
+        await screen.findByDisplayValue("Rajesh Kumar");
+        expect(JSON.parse(puts[0].body as string).name).toBe("Rajesh Kumar");
+    });
+});

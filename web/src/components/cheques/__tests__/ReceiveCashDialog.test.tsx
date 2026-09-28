@@ -30,6 +30,7 @@ vi.mock("@/components/finance/SettlementAccountPicker", () => ({
 }));
 
 import ReceiveCashDialog from "../ReceiveCashDialog";
+import { businessTodayIso } from "@/lib/businessDate";
 
 function lease(id: string, status: LeaseStatus, unit: string): LeaseDetail {
     return {
@@ -152,13 +153,21 @@ describe("ReceiveCashDialog money guards", () => {
         expect(api.cashReceipt).not.toHaveBeenCalled();
     });
 
-    it("refuses a date more than a year ahead", async () => {
+    it("refuses a date after today (break-it R3 money3 N2: money that arrived)", async () => {
         await openOnActive();
         fireEvent.change(screen.getByTestId("cash-receipt-amount"), { target: { value: "1500" } });
         fireEvent.change(screen.getByTestId("cash-receipt-date"), { target: { value: "2126-09-28" } });
         expect(screen.getByTestId("cash-receipt-date-error").textContent).toMatch(/\(\d{2}\/\d{2}\/\d{4}\)/);
         expect(screen.getByTestId("cash-receipt-confirm")).toBeDisabled();
-        expect(screen.getByTestId("cash-receipt-date").getAttribute("max")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        const today = businessTodayIso();
+        expect(screen.getByTestId("cash-receipt-date").getAttribute("max")).toBe(today);
+        const d = new Date(`${today}T00:00:00Z`);
+        d.setUTCDate(d.getUTCDate() + 1);
+        fireEvent.change(screen.getByTestId("cash-receipt-date"), { target: { value: d.toISOString().slice(0, 10) } });
+        expect(screen.getByTestId("cash-receipt-date-error")).toBeInTheDocument();
+        expect(screen.getByTestId("cash-receipt-confirm")).toBeDisabled();
+        fireEvent.change(screen.getByTestId("cash-receipt-date"), { target: { value: today } });
+        expect(screen.queryByTestId("cash-receipt-date-error")).toBeNull();
     });
 
     it("asks before recording more than is outstanding, then records it as an advance", async () => {

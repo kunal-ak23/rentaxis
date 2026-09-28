@@ -228,6 +228,15 @@ describe("the reconciliation statement", () => {
     });
 });
 
+describe("the reconciliation CSV export follows the screen's language (break-it R3 data3 F2)", () => {
+    it.each(["en", "ar"] as const)("links /reconciliations/{id}.csv?lang=%s", async (locale) => {
+        stubFetch([{ match: "/bank-accounts/ba-1/reconciliations", body: ROWS }, { match: "/reconciliations/rec-9", body: SEPT }]);
+        renderIn(locale, <ReconciliationPanel bankAccountId="ba-1" />);
+        const link = await screen.findByTestId("rec-csv-rec-9");
+        expect(link.getAttribute("href")).toMatch(new RegExp(`/reconciliations/rec-9\\.csv\\?lang=${locale}$`));
+    });
+});
+
 describe("the reconciliation panel refresh (F14-47)", () => {
     it("re-fetches the panel's figures after the workspace confirms a match, not just on first load", async () => {
         const ws = {
