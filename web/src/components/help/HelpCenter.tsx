@@ -25,6 +25,7 @@ import {
   type HelpArticle,
 } from '@/lib/help';
 import HelpSearch from './HelpSearch';
+import HelpTabs from './HelpTabs';
 import RoleFilter from './RoleFilter';
 import TourTrigger from '@/components/tour/TourTrigger';
 import { useTour } from '@/components/tour/TourProvider';
@@ -91,7 +92,7 @@ export default function HelpCenter({ articles }: HelpCenterProps) {
   return (
     <div>
       {/* Header */}
-      <div className="mb-8">
+      <div className="mb-6">
         <div className="flex items-center gap-3 mb-2">
           <div className="p-2 rounded-lg bg-primary/10">
             <BookOpen size={24} className="text-primary" />
@@ -104,6 +105,8 @@ export default function HelpCenter({ articles }: HelpCenterProps) {
           </div>
         </div>
       </div>
+
+      <HelpTabs active="articles" />
 
       {/* Two-column layout */}
       <div className="flex flex-col lg:flex-row gap-8">

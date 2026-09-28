@@ -3528,7 +3528,34 @@
     "retakeTour": "Retake Tour",
     "welcomeTitle": "Welcome to RentAxis!",
     "welcomeDesc": "Take a quick tour to learn your way around the portal.",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "tabs": {
+      "label": "Help sections",
+      "articles": "Articles",
+      "videos": "Video tutorials"
+    },
+    "videos": {
+      "searchPlaceholder": "Search video tutorials...",
+      "topicsLabel": "Topics",
+      "allTopics": "All topics",
+      "topics": {
+        "getting-started": "Getting started",
+        "portfolio": "Portfolio",
+        "leasing": "Leasing",
+        "collections": "Collections",
+        "accounting": "Accounting",
+        "operations": "Operations",
+        "tenant-portal": "Tenant portal"
+      },
+      "comingSoon": "Video tutorials are coming soon",
+      "comingSoonDesc": "Short narrated walkthroughs of each workflow will appear here. Until then, the articles cover the same ground.",
+      "noMatch": "No video tutorials match your search.",
+      "noneForRole": "No video tutorials are available for your role yet.",
+      "play": "Play: {title}",
+      "thumbnailAlt": "Video thumbnail: {title}",
+      "close": "Close video",
+      "watchVideo": "Watch the video"
+    }
   },
   "PropertyReports": {
     "balanceSheet": "Balance sheet",

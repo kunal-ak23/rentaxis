@@ -3528,7 +3528,34 @@
     "retakeTour": "إعادة الجولة",
     "welcomeTitle": "مرحبًا بك في RentAxis!",
     "welcomeDesc": "خذ جولة سريعة لتتعرّف على البوابة.",
-    "dismiss": "إغلاق"
+    "dismiss": "إغلاق",
+    "tabs": {
+      "label": "أقسام المساعدة",
+      "articles": "المقالات",
+      "videos": "الشروحات المرئية"
+    },
+    "videos": {
+      "searchPlaceholder": "ابحث في الشروحات المرئية...",
+      "topicsLabel": "المواضيع",
+      "allTopics": "جميع المواضيع",
+      "topics": {
+        "getting-started": "البدء",
+        "portfolio": "المحفظة العقارية",
+        "leasing": "التأجير",
+        "collections": "التحصيل",
+        "accounting": "المحاسبة",
+        "operations": "العمليات",
+        "tenant-portal": "بوابة المستأجر"
+      },
+      "comingSoon": "الشروحات المرئية قادمة قريبًا",
+      "comingSoonDesc": "ستظهر هنا شروحات مرئية قصيرة لكل خطوات العمل. وحتى ذلك الحين، تغطي المقالات الموضوعات نفسها.",
+      "noMatch": "لا توجد شروحات مرئية مطابقة لبحثك.",
+      "noneForRole": "لا توجد شروحات مرئية متاحة لدورك بعد.",
+      "play": "تشغيل: {title}",
+      "thumbnailAlt": "صورة مصغّرة للفيديو: {title}",
+      "close": "إغلاق الفيديو",
+      "watchVideo": "شاهد الفيديو"
+    }
   },
   "PropertyReports": {
     "balanceSheet": "الميزانية العمومية",
