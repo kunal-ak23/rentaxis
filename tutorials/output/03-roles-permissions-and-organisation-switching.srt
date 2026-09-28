@@ -1,0 +1,188 @@
+1
+00:00:00,000 --> 00:00:03,460
+Miftah separates access by organisation,
+role, and property assignment.
+
+2
+00:00:03,460 --> 00:00:07,689
+This tutorial shows how those boundaries
+shape the interface, and why
+
+3
+00:00:07,689 --> 00:00:11,918
+a missing menu is usually correct
+behaviour rather than an error.
+
+4
+00:00:11,918 --> 00:00:13,840
+Start as the System Admin.
+
+5
+00:00:13,840 --> 00:00:17,685
+The role is shown under the name, and the
+organisation
+
+6
+00:00:17,685 --> 00:00:21,529
+switcher at the top of the side panel
+reads Administering.
+
+7
+00:00:21,529 --> 00:00:22,298
+Open it.
+
+8
+00:00:22,298 --> 00:00:26,911
+A System Admin can work in Global View or
+inside one organisation,
+
+9
+00:00:26,911 --> 00:00:31,140
+here Oasis Crest Properties, which is
+ticked as the active one.
+
+10
+00:00:31,140 --> 00:00:34,985
+Switching organisation never copies or
+merges records between organisations, so
+
+11
+00:00:34,985 --> 00:00:35,369
+always
+
+12
+00:00:35,369 --> 00:00:39,598
+check the name here before you create,
+edit, or delete anything.
+
+13
+00:00:39,598 --> 00:00:41,136
+Next, the Company Admin.
+
+14
+00:00:41,136 --> 00:00:43,442
+This role runs one organisation: its
+
+15
+00:00:43,442 --> 00:00:45,749
+portfolio, leasing, collections,
+accounting, and settings.
+
+16
+00:00:45,749 --> 00:00:46,518
+Open Settings.
+
+17
+00:00:46,518 --> 00:00:49,978
+The Company Admin sees Organisation, Users
+and staff, Rent
+
+18
+00:00:49,978 --> 00:00:53,438
+and fines, and Payments, but not the
+Administration section,
+
+19
+00:00:53,438 --> 00:00:56,898
+with Organisations and Users, that the
+System Admin has.
+
+20
+00:00:56,898 --> 00:00:58,436
+Now the Property Manager.
+
+21
+00:00:58,436 --> 00:01:02,280
+The rail has no Settings, and Properties
+lists only the
+
+22
+00:01:02,280 --> 00:01:05,740
+property assigned to this manager, Oasis
+Crest Residence Tower.
+
+23
+00:01:05,740 --> 00:01:09,585
+Opening the address of an unassigned
+property directly does not
+
+24
+00:01:09,585 --> 00:01:13,429
+get around that: Miftah reports that the
+property was not
+
+25
+00:01:13,429 --> 00:01:17,274
+found, or that you may not have access to
+it.
+
+26
+00:01:17,274 --> 00:01:18,427
+Next, the Tenant.
+
+27
+00:01:18,427 --> 00:01:21,503
+A tenant signs in to the Tenant Portal,
+
+28
+00:01:21,503 --> 00:01:24,578
+with their tenancy contracts, payments,
+penalties, tickets, listings,
+
+29
+00:01:24,578 --> 00:01:27,654
+and meetings, and none of the internal
+administration.
+
+30
+00:01:27,654 --> 00:01:31,883
+Two more roles are described in Help,
+under Roles and Permissions.
+
+31
+00:01:31,883 --> 00:01:36,111
+A Company User has limited access, to
+their assigned unit details.
+
+32
+00:01:36,111 --> 00:01:39,187
+A Security Guard manages gate access at
+assigned
+
+33
+00:01:39,187 --> 00:01:41,878
+properties, scanning passes and handling
+approved visitors.
+
+34
+00:01:41,878 --> 00:01:45,723
+Finish back as the System Admin: open the
+switcher and
+
+35
+00:01:45,723 --> 00:01:49,567
+confirm that Oasis Crest Properties is
+still the active organisation.
+
+36
+00:01:49,567 --> 00:01:51,489
+The safe habit is simple.
+
+37
+00:01:51,489 --> 00:01:54,180
+Check the organisation, the role, and the
+
+38
+00:01:54,180 --> 00:01:56,487
+property assignment before every sensitive
+action.
+
+39
+00:01:56,487 --> 00:02:00,332
+If access looks wrong, do not borrow a
+broader account;
+
+40
+00:02:00,332 --> 00:02:04,176
+ask an administrator to correct the role
+or the assignment.
