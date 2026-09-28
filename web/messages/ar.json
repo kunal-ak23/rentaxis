@@ -428,7 +428,9 @@
     "createAccountFailed": "تعذّر إنشاء الحساب",
     "updateAccountFailed": "تعذّر تحديث الحساب",
     "deleteAccountFailed": "تعذّر حذف الحساب",
-    "importAccountsFailed": "تعذّر استيراد الحسابات"
+    "importAccountsFailed": "تعذّر استيراد الحسابات",
+    "importAccountsDone": "{created, plural, one {تم استيراد حساب واحد} two {تم استيراد حسابين} few {تم استيراد # حسابات} many {تم استيراد # حسابًا} other {تم استيراد # حساب}}{skipped, plural, =0 {} one {؛ تم تخطي سطر فارغ واحد} two {؛ تم تخطي سطرين فارغين} other {؛ تم تخطي # أسطر فارغة}}.",
+    "importAccountsNone": "لم يتم استيراد أي حساب — لا يحتوي الملف على أسطر حسابات."
   },
   "Emirates": {
     "DUBAI": "دبي",

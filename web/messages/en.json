@@ -428,7 +428,9 @@
     "createAccountFailed": "Failed to create account",
     "updateAccountFailed": "Failed to update account",
     "deleteAccountFailed": "Failed to delete account",
-    "importAccountsFailed": "Failed to import accounts"
+    "importAccountsFailed": "Failed to import accounts",
+    "importAccountsDone": "{created, plural, one {# account imported} other {# accounts imported}}{skipped, plural, =0 {} one {; # blank row skipped} other {; # blank rows skipped}}.",
+    "importAccountsNone": "No accounts were imported — the file has no account rows."
   },
   "Emirates": {
     "DUBAI": "Dubai",

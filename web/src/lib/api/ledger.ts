@@ -342,6 +342,9 @@ export type ManualJournalBody = {
   }[];
 };
 
+/** Break-it R3 data3 F7: what POST /finance/accounts/import did (AccountImportService.Result). */
+export type AccountImportResult = { created: number; skipped: number; accounts: Account[] };
+
 export const ledgerApi = {
   accounts: {
     list: () => apiGet<Account[]>("/finance/accounts"),
@@ -357,7 +360,7 @@ export const ledgerApi = {
       fd.append("file", file);
       const res = await fetch(`${BASE}/finance/accounts/import`, { method: "POST", body: fd });
       await throwIfNotOk(res);
-      return res.json() as Promise<Account[]>;
+      return res.json() as Promise<AccountImportResult>;
     },
   },
   propertyAccounts: {

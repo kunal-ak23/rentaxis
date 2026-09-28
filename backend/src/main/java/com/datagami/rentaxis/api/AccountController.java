@@ -167,7 +167,8 @@ public class AccountController {
     }
 
     @PostMapping("/import")
-    public ResponseEntity<List<Account>> importAccounts(@RequestParam("file") MultipartFile file) throws Exception {
+    /** Break-it R3 data3 F7: {@code {created, skipped, accounts}} so the dialog can say what happened. */
+    public ResponseEntity<AccountImportService.Result> importAccounts(@RequestParam("file") MultipartFile file) throws Exception {
         String filename = file.getOriginalFilename();
         if (filename != null && (filename.endsWith(".xlsx") || filename.endsWith(".xls"))) {
             return ResponseEntity.ok(importService.importFromExcel(file));

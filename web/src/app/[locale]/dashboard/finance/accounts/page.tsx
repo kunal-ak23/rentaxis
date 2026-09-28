@@ -100,6 +100,8 @@ export default function AccountsPage() {
     const [editId, setEditId] = useState<string | null>(null);
     // Backend {message} surfaced inside the open modal (add/edit/import)…
     const [formError, setFormError] = useState<string | null>(null);
+    /** Break-it R3 data3 F7: what the last import did, shown after the dialog closes. */
+    const [importNotice, setImportNotice] = useState<string | null>(null);
     // …and at page level for modal-less actions (delete, seed).
     const [pageError, setPageError] = useState<string | null>(null);
     const [forbidden, setForbidden] = useState(false);
@@ -380,10 +382,16 @@ export default function AccountsPage() {
         setImporting(true);
         setFormError(null);
         try {
-            await ledgerApi.accounts.import(importFile);
+            const result = await ledgerApi.accounts.import(importFile);
+            // Break-it R3 data3 F7: a 2xx that created nothing is not a success.
+            if (!result || !(result.created > 0)) {
+                setFormError(t("importAccountsNone"));
+                return;
+            }
             invalidateAccounts();
             setShowImportModal(false);
             setImportFile(null);
+            setImportNotice(t("importAccountsDone", { created: result.created, skipped: result.skipped ?? 0 }));
             fetchAccounts();
         } catch (err) {
             setFormError(err instanceof ApiError ? err.message : t("importAccountsFailed"));
@@ -699,7 +707,7 @@ export default function AccountsPage() {
                         </button>
                     )}
                     <button
-                        onClick={() => { setFormError(null); setShowImportModal(true); }}
+                        onClick={() => { setFormError(null); setImportNotice(null); setShowImportModal(true); }}
                         className="flex items-center gap-2 bg-surface text-foreground border border-border px-5 py-2.5 rounded-full text-xs font-bold hover:bg-input transition-all duration-200 shadow-sm active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
                     >
                         <Upload size={14} />
@@ -714,6 +722,16 @@ export default function AccountsPage() {
                     </button>
                 </div>
             </div>
+
+            {importNotice && (
+                <div
+                    role="status"
+                    data-testid="import-accounts-done"
+                    className="mb-4 bg-success/10 border border-success/20 text-success text-xs font-medium rounded-lg p-3"
+                >
+                    {importNotice}
+                </div>
+            )}
 
             {/* ── Page-level errors (e.g. failed delete/seed) ── */}
             {pageError && (
