@@ -61,7 +61,10 @@ class LandlordOrgStaleEditIT extends AbstractPostgresIT {
     @AfterEach
     void tearDown() {
         TenantContextHolder.clear();
+        pool.shutdownNow();
     }
+
+    private final java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
 
     private String status() {
         return jdbc.queryForObject("select status from landlord_org where id = ?", String.class, org);
@@ -154,38 +157,43 @@ class LandlordOrgStaleEditIT extends AbstractPostgresIT {
      * transaction open, not yet committed) when tab A's address edit arrives. The edit
      * used to read ACTIVE, wait on the row at its UPDATE, and then write every column
      * back — status ACTIVE included. Now it reads under the lock, after B commits.
+     *
+     * <p>Deterministic (review round 2, N1): B commits only once tab A's request is
+     * seen in pg_stat_activity waiting on a lock — at its locked read with the fix, at
+     * its UPDATE without it — so A has always started before B commits.</p>
      */
     @Test
     void aDeactivationCommittingDuringAnEditLeavesTheOrganisationInactive() throws Exception {
         java.util.concurrent.CountDownLatch deactivating = new java.util.concurrent.CountDownLatch(1);
-        java.util.concurrent.CountDownLatch editSent = new java.util.concurrent.CountDownLatch(1);
-        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
-        try {
-            java.util.concurrent.Future<?> tabB = pool.submit(() ->
-                    new org.springframework.transaction.support.TransactionTemplate(txm).executeWithoutResult(tx -> {
-                        var o = orgRepo.findByIdForUpdate(org).orElseThrow();
-                        o.setStatus("INACTIVE");
-                        orgRepo.saveAndFlush(o);
-                        deactivating.countDown();
-                        try {
-                            editSent.await(10, java.util.concurrent.TimeUnit.SECONDS);
-                            Thread.sleep(1500); // tab A's request is in flight, waiting on the row
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                        }
-                    }));
-            assertThat(deactivating.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        java.util.concurrent.CountDownLatch tabAWaiting = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.Future<?> tabB = pool.submit(() ->
+                new org.springframework.transaction.support.TransactionTemplate(txm).executeWithoutResult(tx -> {
+                    var o = orgRepo.findByIdForUpdate(org).orElseThrow();
+                    o.setStatus("INACTIVE");
+                    orgRepo.saveAndFlush(o);
+                    deactivating.countDown();
+                    try {
+                        assertThat(tabAWaiting.await(20, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }));
+        assertThat(deactivating.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
 
-            java.util.concurrent.Future<Integer> tabA = java.util.concurrent.Executors.newSingleThreadExecutor().submit(() ->
-                    http.call(superAdmin, HttpMethod.PUT, "/api/admin/tenants/" + org,
-                            Map.of("address", "Edited during deactivation", "status", "ACTIVE")).getStatusCode().value());
-            editSent.countDown();
+        java.util.concurrent.Future<Integer> tabA = pool.submit(() ->
+                http.call(superAdmin, HttpMethod.PUT, "/api/admin/tenants/" + org,
+                        Map.of("address", "Edited during deactivation", "status", "ACTIVE")).getStatusCode().value());
 
-            tabB.get(20, java.util.concurrent.TimeUnit.SECONDS);
-            assertThat(tabA.get(20, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(200);
-        } finally {
-            pool.shutdownNow();
+        long deadline = System.currentTimeMillis() + 15_000;
+        while (jdbc.queryForObject("select count(*) from pg_stat_activity where wait_event_type = 'Lock'"
+                + " and query ilike '%landlord_org%'", Long.class) == 0) {
+            assertThat(System.currentTimeMillis()).as("tab A never reached the row lock").isLessThan(deadline);
+            Thread.sleep(20);
         }
+        tabAWaiting.countDown();
+
+        tabB.get(20, java.util.concurrent.TimeUnit.SECONDS);
+        assertThat(tabA.get(20, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(200);
         assertThat(status()).isEqualTo("INACTIVE");
         assertThat(address()).isEqualTo("Edited during deactivation");
     }
