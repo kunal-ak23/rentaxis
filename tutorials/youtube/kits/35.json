@@ -2,7 +2,7 @@
   "id": "35",
   "slug": "register-and-clear-cheques",
   "title": "Miftah tutorial 35 · Register and clear cheques",
-  "description": "Bank a cheque, clear it, record a returned cheque and replace it with new cheques.\n\nWho this is for: Accountant, Company Admin, Property Manager.\n\nChapters:\n0:00 Introduction\n0:32 Select the rows you are taking to\n1:06 RentAxis debits your bank account and credits\n1:40 A returned cheque is usually settled with\n\nPart of the Miftah web course — playlist: Miftah · Collections\n\nأودع الشيك في البنك، وسجّل تحصيله، وسجّل الشيك المرتجع واستبدله بشيكات جديدة.",
+  "description": "Bank a cheque, clear it, record a returned cheque and replace it with new cheques.\n\nWho this is for: Accountant, Company Admin, Property Manager.\n\nChapters:\n0:00 Open the Cheque Register\n0:21 Filter to What Matures Now\n0:57 Clear a Cheque\n1:23 Return a Cheque the Bank Sent Back\n1:38 Replace It with New Paper\n2:05 Penalties Are Never Automatic\n\nPart of the Miftah web course — playlist: Miftah · Collections\n\nأودع الشيك في البنك، وسجّل تحصيله، وسجّل الشيك المرتجع واستبدله بشيكات جديدة.",
   "tags": [
     "miftah",
     "property management",
@@ -28,22 +28,32 @@
     {
       "startSec": 0,
       "start": "0:00",
-      "label": "Introduction"
+      "label": "Open the Cheque Register"
     },
     {
-      "startSec": 32.934,
-      "start": "0:32",
-      "label": "Select the rows you are taking to"
+      "startSec": 21.338,
+      "start": "0:21",
+      "label": "Filter to What Matures Now"
     },
     {
-      "startSec": 66.796,
-      "start": "1:06",
-      "label": "RentAxis debits your bank account and credits"
+      "startSec": 57.519,
+      "start": "0:57",
+      "label": "Clear a Cheque"
     },
     {
-      "startSec": 100.195,
-      "start": "1:40",
-      "label": "A returned cheque is usually settled with"
+      "startSec": 83.959,
+      "start": "1:23",
+      "label": "Return a Cheque the Bank Sent Back"
+    },
+    {
+      "startSec": 98.339,
+      "start": "1:38",
+      "label": "Replace It with New Paper"
+    },
+    {
+      "startSec": 125.707,
+      "start": "2:05",
+      "label": "Penalties Are Never Automatic"
     }
   ],
   "durationSec": 136,

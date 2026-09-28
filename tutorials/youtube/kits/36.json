@@ -2,7 +2,7 @@
   "id": "36",
   "slug": "month-end-recognition",
   "title": "Miftah tutorial 36 · Month-end recognition",
-  "description": "Run recognition to a cut-off date and watch advance rent move into rental income, period by period.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 Introduction\n0:39 Every row shows its period, its day\n1:05 Read the total before you post it\n1:39 Open the General Ledger and filter to\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nشغّل الاعتراف بالإيراد حتى تاريخ الإقفال، وشاهد انتقال الإيجار المقدم إلى إيراد الإيجار فترة بعد فترة.",
+  "description": "Run recognition to a cut-off date and watch advance rent move into rental income, period by period.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 Read the Recognition Schedule\n0:20 A Short First Period and a Rounding Row\n0:54 Preview the Close\n1:09 Run It\n1:35 Watch Advance Rent Fall\n1:51 It Also Runs Nightly\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nشغّل الاعتراف بالإيراد حتى تاريخ الإقفال، وشاهد انتقال الإيجار المقدم إلى إيراد الإيجار فترة بعد فترة.",
   "tags": [
     "miftah",
     "property management",
@@ -28,22 +28,32 @@
     {
       "startSec": 0,
       "start": "0:00",
-      "label": "Introduction"
+      "label": "Read the Recognition Schedule"
     },
     {
-      "startSec": 39.14,
-      "start": "0:39",
-      "label": "Every row shows its period, its day"
+      "startSec": 20.847,
+      "start": "0:20",
+      "label": "A Short First Period and a Rounding Row"
     },
     {
-      "startSec": 65.092,
-      "start": "1:05",
-      "label": "Read the total before you post it"
+      "startSec": 54.031,
+      "start": "0:54",
+      "label": "Preview the Close"
     },
     {
-      "startSec": 99.128,
-      "start": "1:39",
-      "label": "Open the General Ledger and filter to"
+      "startSec": 69.347,
+      "start": "1:09",
+      "label": "Run It"
+    },
+    {
+      "startSec": 95.299,
+      "start": "1:35",
+      "label": "Watch Advance Rent Fall"
+    },
+    {
+      "startSec": 111.891,
+      "start": "1:51",
+      "label": "It Also Runs Nightly"
     }
   ],
   "durationSec": 128,

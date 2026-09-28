@@ -1,0 +1,63 @@
+{
+  "id": "06",
+  "slug": "create-a-project-and-property-portfolio",
+  "title": "Miftah tutorial 06 · Create a project and property portfolio",
+  "description": "Set up projects and properties with bilingual names, emirate, address and Makani number, and review them as cards or a table.\n\nWho this is for: Company Admin, Property Manager.\n\nChapters:\n0:00 Properties & Units\n0:22 Add Project\n0:47 Create\n1:16 Open the Project\n1:39 Cards and Table\n\nPart of the Miftah web course — playlist: Miftah · Portfolio\n\nأنشئ المشاريع والعقارات بأسماء عربية وإنجليزية، مع الإمارة والعنوان ورقم مكاني، واعرضها كبطاقات أو جدول.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "property portfolio",
+    "buildings",
+    "units",
+    "bulk import",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Portfolio",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "Properties & Units"
+    },
+    {
+      "startSec": 22.514,
+      "start": "0:22",
+      "label": "Add Project"
+    },
+    {
+      "startSec": 47.485,
+      "start": "0:47",
+      "label": "Create"
+    },
+    {
+      "startSec": 76.958,
+      "start": "1:16",
+      "label": "Open the Project"
+    },
+    {
+      "startSec": 99.063,
+      "start": "1:39",
+      "label": "Cards and Table"
+    }
+  ],
+  "durationSec": 117,
+  "roles": [
+    "TENANT_ADMIN",
+    "PROPERTY_MANAGER"
+  ],
+  "topic": "portfolio",
+  "captionsFile": "tutorials/output/06-create-a-project-and-property-portfolio.srt",
+  "videoFile": "tutorials/output/06-create-a-project-and-property-portfolio.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/06.png"
+}

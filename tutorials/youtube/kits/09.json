@@ -1,0 +1,62 @@
+{
+  "id": "09",
+  "slug": "manage-tenants-and-portal-access",
+  "title": "Miftah tutorial 09 · Manage Tenants and portal access",
+  "description": "Create Tenant profiles with bilingual names, contacts and preferred language, and give a Tenant a portal account.\n\nWho this is for: Company Admin, Property Manager.\n\nChapters:\n0:00 Tenants\n0:10 Add Tenant\n0:37 Invite Sent\n0:59 The Tenant Page\n1:30 The Profile Stays\n\nPart of the Miftah web course — playlist: Miftah · Leasing\n\nأنشئ ملفات المستأجرين بالأسماء العربية والإنجليزية وبيانات الاتصال واللغة المفضلة، وامنح المستأجر حسابًا في البوابة.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "tenancy contract",
+    "lease agreement",
+    "tenant management",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Leasing",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "Tenants"
+    },
+    {
+      "startSec": 10.886,
+      "start": "0:10",
+      "label": "Add Tenant"
+    },
+    {
+      "startSec": 37.376,
+      "start": "0:37",
+      "label": "Invite Sent"
+    },
+    {
+      "startSec": 59.511,
+      "start": "0:59",
+      "label": "The Tenant Page"
+    },
+    {
+      "startSec": 90.355,
+      "start": "1:30",
+      "label": "The Profile Stays"
+    }
+  ],
+  "durationSec": 104,
+  "roles": [
+    "TENANT_ADMIN",
+    "PROPERTY_MANAGER"
+  ],
+  "topic": "leasing",
+  "captionsFile": "tutorials/output/09-manage-tenants-and-portal-access.srt",
+  "videoFile": "tutorials/output/09-manage-tenants-and-portal-access.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/09.png"
+}

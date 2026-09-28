@@ -1,0 +1,73 @@
+{
+  "id": "07",
+  "slug": "buildings-units-contacts-amenities-and-parking",
+  "title": "Miftah tutorial 07 · Buildings, units, contacts, amenities and parking",
+  "description": "Add buildings and floors, define units and their rents, and record property contacts, amenities and parking spots.\n\nWho this is for: Company Admin, Property Manager.\n\nChapters:\n0:00 Inside a Project\n0:18 Add Building\n0:31 Add Unit\n0:48 Add Contact\n1:07 Add Amenity\n1:26 Add Spot\n1:38 Retire, Don’t Delete\n\nPart of the Miftah web course — playlist: Miftah · Portfolio\n\nأضف المباني والطوابق، وحدّد الوحدات وإيجاراتها، وسجّل جهات اتصال العقار ومرافقه ومواقف السيارات.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "property portfolio",
+    "buildings",
+    "units",
+    "bulk import",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Portfolio",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "Inside a Project"
+    },
+    {
+      "startSec": 18.605,
+      "start": "0:18",
+      "label": "Add Building"
+    },
+    {
+      "startSec": 31.668,
+      "start": "0:31",
+      "label": "Add Unit"
+    },
+    {
+      "startSec": 48.69,
+      "start": "0:48",
+      "label": "Add Contact"
+    },
+    {
+      "startSec": 67.69,
+      "start": "1:07",
+      "label": "Add Amenity"
+    },
+    {
+      "startSec": 86.295,
+      "start": "1:26",
+      "label": "Add Spot"
+    },
+    {
+      "startSec": 98.567,
+      "start": "1:38",
+      "label": "Retire, Don’t Delete"
+    }
+  ],
+  "durationSec": 127,
+  "roles": [
+    "TENANT_ADMIN",
+    "PROPERTY_MANAGER"
+  ],
+  "topic": "portfolio",
+  "captionsFile": "tutorials/output/07-buildings-units-contacts-amenities-and-parking.srt",
+  "videoFile": "tutorials/output/07-buildings-units-contacts-amenities-and-parking.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/07.png"
+}

@@ -2,7 +2,7 @@
   "id": "03",
   "slug": "roles-permissions-and-organisation-switching",
   "title": "Miftah tutorial 03 · Roles, permissions and switching organisation",
-  "description": "See what each role can do, from Company Admin to Tenant and security guard, and switch between organisations safely.\n\nWho this is for: Company Admin, System Admin.\n\nChapters:\n0:00 Introduction\n0:31 Switching organisation never copies or merges records\n1:05 Opening the address of an unassigned property\n1:31 A Company User has limited access, to\n\nPart of the Miftah web course — playlist: Miftah · Getting started\n\nتعرّف على ما يستطيع كل دور القيام به، من مدير المؤسسة إلى المستأجر وحارس الأمن، وبدّل بين المؤسسات بأمان.",
+  "description": "See what each role can do, from Company Admin to Tenant and security guard, and switch between organisations safely.\n\nWho this is for: Company Admin, System Admin.\n\nChapters:\n0:00 System Admin\n0:39 Company Admin\n0:57 Property Manager\n1:17 Tenant\n1:28 Company User and Security Guard\n1:46 Back to the Controlled Context\n\nPart of the Miftah web course — playlist: Miftah · Getting started\n\nتعرّف على ما يستطيع كل دور القيام به، من مدير المؤسسة إلى المستأجر وحارس الأمن، وبدّل بين المؤسسات بأمان.",
   "tags": [
     "miftah",
     "property management",
@@ -27,22 +27,32 @@
     {
       "startSec": 0,
       "start": "0:00",
-      "label": "Introduction"
+      "label": "System Admin"
     },
     {
-      "startSec": 31.14,
-      "start": "0:31",
-      "label": "Switching organisation never copies or merges records"
+      "startSec": 39.759,
+      "start": "0:39",
+      "label": "Company Admin"
     },
     {
-      "startSec": 65.74,
-      "start": "1:05",
-      "label": "Opening the address of an unassigned property"
+      "startSec": 57.129,
+      "start": "0:57",
+      "label": "Property Manager"
     },
     {
-      "startSec": 91.883,
-      "start": "1:31",
-      "label": "A Company User has limited access, to"
+      "startSec": 77.587,
+      "start": "1:17",
+      "label": "Tenant"
+    },
+    {
+      "startSec": 88.009,
+      "start": "1:28",
+      "label": "Company User and Security Guard"
+    },
+    {
+      "startSec": 106.152,
+      "start": "1:46",
+      "label": "Back to the Controlled Context"
     }
   ],
   "durationSec": 125,

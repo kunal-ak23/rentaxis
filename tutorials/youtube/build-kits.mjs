@@ -262,15 +262,15 @@ function titleCase(text) {
 }
 
 /**
- * Derive YouTube chapters from SRT cue groups. Since the recorder's per-scene
- * timing log is pruned from disk after a tutorial passes QA (see
- * tutorials/work/infra-report.md "Retention"), we fall back to the SRT: pick
- * chapter boundaries at natural pauses between cues (scene-caption
- * boundaries) nearest to evenly spaced target points, snapping every
- * boundary to a cue start so chapters always begin on a caption. Guarantees
- * >=3 chapters, each >=10s, first at 0:00.
+ * FALLBACK ONLY — used when a tutorial has no tutorials/capture/scenarios/<id>.mjs
+ * (no scene data to work from). Derives YouTube chapters purely from SRT cue
+ * groups: pick chapter boundaries at natural pauses between cues nearest to
+ * evenly spaced target points, snapping every boundary to a cue start.
+ * Labels are caption fragments, not real scene titles — see
+ * deriveChaptersFromScenes for the preferred path. Guarantees >=3 chapters,
+ * each >=10s, first at 0:00.
  */
-function deriveChapters(cues, durationSec) {
+function deriveChaptersFromSrtOnly(cues, durationSec) {
     const MIN_CHAPTER_SEC = 10;
     const numChapters = Math.max(3, Math.min(7, Math.round(durationSec / 35)));
 
@@ -370,6 +370,350 @@ function validateChapters(chapters, durationSec, context) {
 }
 
 // ---------------------------------------------------------------------------
+// Scene-based chapters (preferred path)
+//
+// Real chapters come from the capture scenario (tutorials/capture/scenarios/
+// <id>.mjs), not from SRT cue fragments. Each scene there carries a short
+// `title` (e.g. "Company Admin", "Add Building") and a `body` (the on-screen
+// callout text, close to but not verbatim the spoken narration). We parse the
+// scenario source statically (regex/bracket-matching — we never execute it;
+// it needs a live recorder context, auth state, seed manifest, etc. that this
+// read-only script has no business touching) to recover an ordered list of
+// {title, body, weight, role, continues} per scene, then locate each scene's
+// opening in the rendered tutorials/output/<slug>.srt by fuzzy word-overlap
+// matching (title + first sentence of body, stripped of stopwords, against a
+// sliding window of the caption text), snapping to the containing cue's start
+// time. A scene that cannot be matched with reasonable confidence is folded
+// into the previous chapter rather than guessed at.
+// ---------------------------------------------------------------------------
+const SCENARIOS_DIR = path.join(REPO_ROOT, "tutorials/capture/scenarios");
+const SCENE_CTOR_RE = /\b(roleRouteScene|stepScene|routeScene|publicRouteScene)\s*\(/g;
+
+/**
+ * Extracts the balanced (…)/{…}/[…] block starting at src[openIdx], skipping
+ * over string/template literals and comments so brackets inside them don't
+ * confuse the depth count. Returns the substring including both delimiters.
+ */
+function extractBalanced(src, openIdx) {
+    const CLOSE = { "(": ")", "{": "}", "[": "]" };
+    if (!CLOSE[src[openIdx]]) fail(`extractBalanced: expected an opening bracket at ${openIdx}`);
+    const stack = [src[openIdx]];
+    let i = openIdx + 1;
+    while (i < src.length && stack.length) {
+        const c = src[i];
+        if (c === '"' || c === "'") {
+            const q = c;
+            i++;
+            while (i < src.length && src[i] !== q) i += src[i] === "\\" ? 2 : 1;
+            i++;
+            continue;
+        }
+        if (c === "`") {
+            i++;
+            let templateDepth = 0;
+            while (i < src.length) {
+                if (src[i] === "\\") { i += 2; continue; }
+                if (src[i] === "`" && templateDepth === 0) { i++; break; }
+                if (src[i] === "$" && src[i + 1] === "{") { templateDepth++; i += 2; continue; }
+                if (src[i] === "}" && templateDepth > 0) { templateDepth--; i++; continue; }
+                i++;
+            }
+            continue;
+        }
+        if (c === "/" && src[i + 1] === "/") { while (i < src.length && src[i] !== "\n") i++; continue; }
+        if (c === "/" && src[i + 1] === "*") { i += 2; while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) i++; i += 2; continue; }
+        if (c === "(" || c === "{" || c === "[") { stack.push(c); i++; continue; }
+        if (c === ")" || c === "}" || c === "]") {
+            stack.pop();
+            i++;
+            if (stack.length === 0) return src.slice(openIdx, i);
+            continue;
+        }
+        i++;
+    }
+    fail(`extractBalanced: unterminated block starting at ${openIdx}`);
+}
+
+/** Splits the inside of a call's parens on top-level commas only. */
+function splitTopLevelArgs(argsSrc) {
+    const parts = [];
+    let depth = 0;
+    let cur = "";
+    let i = 0;
+    while (i < argsSrc.length) {
+        const c = argsSrc[i];
+        if (c === '"' || c === "'") {
+            const q = c;
+            let j = i + 1;
+            while (j < argsSrc.length && argsSrc[j] !== q) j += argsSrc[j] === "\\" ? 2 : 1;
+            cur += argsSrc.slice(i, j + 1);
+            i = j + 1;
+            continue;
+        }
+        if (c === "`") {
+            let j = i + 1;
+            let templateDepth = 0;
+            while (j < argsSrc.length) {
+                if (argsSrc[j] === "\\") { j += 2; continue; }
+                if (argsSrc[j] === "`" && templateDepth === 0) { j++; break; }
+                if (argsSrc[j] === "$" && argsSrc[j + 1] === "{") { templateDepth++; j += 2; continue; }
+                if (argsSrc[j] === "}" && templateDepth > 0) { templateDepth--; j++; continue; }
+                j++;
+            }
+            cur += argsSrc.slice(i, j);
+            i = j;
+            continue;
+        }
+        if (c === "(" || c === "{" || c === "[") depth++;
+        else if (c === ")" || c === "}" || c === "]") depth--;
+        if (c === "," && depth === 0) {
+            parts.push(cur);
+            cur = "";
+            i++;
+            continue;
+        }
+        cur += c;
+        i++;
+    }
+    if (cur.trim().length > 0 || parts.length > 0) parts.push(cur);
+    return parts;
+}
+
+function unescapeJsString(inner) {
+    return inner.replace(/\\(.)/g, (_, c) => {
+        if (c === "n") return "\n";
+        if (c === "t") return "\t";
+        return c;
+    });
+}
+
+/** Parses a single string-literal argument ('...' or "...") to its value, or null if it isn't one. */
+function stringArg(raw) {
+    if (raw == null) return null;
+    const s = raw.trim();
+    const m = /^(['"])((?:\\.|(?!\1).)*)\1$/.exec(s);
+    if (!m) return null;
+    return unescapeJsString(m[2]);
+}
+
+function sceneFromCall(fnName, args, defaultRole) {
+    let title = null;
+    let body = null;
+    let roleArg = null;
+    let optionsSrc = null;
+    let continues = false;
+    if (fnName === "roleRouteScene") {
+        roleArg = stringArg(args[0]);
+        title = stringArg(args[2]);
+        body = stringArg(args[3]);
+        optionsSrc = args[4] ?? null;
+    } else if (fnName === "routeScene") {
+        title = stringArg(args[1]);
+        body = stringArg(args[2]);
+    } else if (fnName === "publicRouteScene") {
+        title = stringArg(args[1]);
+        body = stringArg(args[2]);
+    } else if (fnName === "stepScene") {
+        title = stringArg(args[0]);
+        body = stringArg(args[1]);
+        optionsSrc = args[3] ?? null;
+        continues = true;
+    }
+    if (!title || !body) return null; // defensive: skip anything we can't confidently parse
+    let weight = 1;
+    if (optionsSrc) {
+        const wm = /\bweight\s*:\s*([\d.]+)/.exec(optionsSrc);
+        if (wm) weight = Number(wm[1]);
+    }
+    let role = roleArg;
+    if (!role && optionsSrc) {
+        const rm = /\brole\s*:\s*'([^']+)'/.exec(optionsSrc);
+        if (rm) role = rm[1];
+    }
+    if (!role) role = defaultRole;
+    return { title, body, weight, role, continues };
+}
+
+/**
+ * Statically parses tutorials/capture/scenarios/<id>.mjs for its ordered
+ * scene list. Returns null (never throws) if the file is missing or its
+ * shape can't be recognised — callers fall back to the SRT-only path.
+ */
+function loadScenarioScenes(id) {
+    const scenarioPath = path.join(SCENARIOS_DIR, `${id}.mjs`);
+    if (!existsSync(scenarioPath)) return null;
+    try {
+        const src = readFileSync(scenarioPath, "utf8");
+        const roleMatch = /export\s+default\s*\{\s*role\s*:\s*'([^']+)'/.exec(src);
+        const defaultRole = roleMatch ? roleMatch[1] : null;
+        const arrMatch = /\bconst\s+scenes\s*=\s*\[/.exec(src);
+        if (!arrMatch) throw new Error("no 'const scenes = [' array found");
+        const openIdx = arrMatch.index + arrMatch[0].length - 1;
+        const arrBlock = extractBalanced(src, openIdx);
+        const arrBody = arrBlock.slice(1, -1);
+
+        const scenes = [];
+        SCENE_CTOR_RE.lastIndex = 0;
+        let m;
+        while ((m = SCENE_CTOR_RE.exec(arrBody))) {
+            const fnName = m[1];
+            const openParenIdx = m.index + m[0].length - 1;
+            const callBlock = extractBalanced(arrBody, openParenIdx);
+            const args = splitTopLevelArgs(callBlock.slice(1, -1));
+            const scene = sceneFromCall(fnName, args, defaultRole);
+            if (scene) scenes.push(scene);
+            SCENE_CTOR_RE.lastIndex = openParenIdx + callBlock.length;
+        }
+        if (scenes.length === 0) throw new Error("no scenes parsed");
+        return scenes;
+    } catch (err) {
+        console.warn(`warning: could not parse scene data from tutorials/capture/scenarios/${id}.mjs (${err.message}) — falling back to SRT-derived chapters`);
+        return null;
+    }
+}
+
+const STOPWORDS = new Set([
+    "a", "an", "the", "and", "or", "but", "nor", "so", "to", "of", "in", "on", "for", "at", "as", "by", "with",
+    "is", "are", "was", "were", "be", "been", "being", "this", "that", "these", "those", "your", "you", "it",
+    "its", "their", "them", "they", "from", "into", "onto", "up", "down", "over", "under", "before", "after",
+    "here", "there", "not", "no", "do", "does", "did", "has", "have", "had", "can", "could", "would", "should",
+    "will", "shall", "may", "might", "than", "then", "now", "one", "two", "each", "every", "any", "all", "when",
+    "while", "if", "else", "per", "via", "vs", "back", "next", "open", "opens",
+]);
+
+function normalizeWords(text) {
+    return text
+        .toLowerCase()
+        .replace(/['’]/g, "")
+        .replace(/[^a-z0-9]+/g, " ")
+        .split(/\s+/)
+        .filter(Boolean);
+}
+
+function contentWords(text) {
+    return normalizeWords(text).filter((w) => w.length > 1 && !STOPWORDS.has(w));
+}
+
+function firstSentence(text) {
+    const m = /^(.*?[.!?])(\s|$)/.exec(text.trim());
+    return m ? m[1] : text;
+}
+
+/**
+ * Flattens SRT cues into a word list, each word tagged with the index of the
+ * cue it came from, so a matched word position can be snapped back to a cue
+ * start time.
+ */
+function buildNarrationWordIndex(cues) {
+    const words = [];
+    cues.forEach((cue, cueIdx) => {
+        for (const word of normalizeWords(cue.text)) words.push({ word, cueIdx });
+    });
+    return words;
+}
+
+const SCENE_MATCH_MIN_SCORE = 0.5;
+const SCENE_MATCH_MIN_QUERY_WORDS = 3;
+
+/**
+ * Finds the earliest position at/after minIdx in narrWords whose window has
+ * strong word overlap with queryWords. Returns { idx, score } or null if
+ * nothing meets the confidence bar (queries under 3 content words never
+ * match — too generic to trust).
+ */
+function findSceneOpening(queryWords, narrWords, minIdx) {
+    if (queryWords.length < SCENE_MATCH_MIN_QUERY_WORDS) return null;
+    const queryCounts = new Map();
+    for (const w of queryWords) queryCounts.set(w, (queryCounts.get(w) || 0) + 1);
+    const windowLen = Math.min(40, Math.max(8, Math.round(queryWords.length * 2.5)));
+
+    let best = null;
+    for (let start = minIdx; start < narrWords.length; start++) {
+        const end = Math.min(narrWords.length, start + windowLen);
+        const windowSet = new Set();
+        for (let i = start; i < end; i++) windowSet.add(narrWords[i].word);
+        let matched = 0;
+        for (const [word, count] of queryCounts) if (windowSet.has(word)) matched += count;
+        const score = matched / queryWords.length;
+        if (!best || score > best.score) best = { idx: start, end, score };
+        if (score >= 0.85) break; // strong enough; earliest such position wins
+        if (end >= narrWords.length) break;
+    }
+    if (!best || best.score < SCENE_MATCH_MIN_SCORE) return null;
+    // The window itself can start a few words before the scene's own content
+    // (its tail can still be inside the tail of the previous scene's
+    // narration), which would push the chapter boundary too early. Anchor
+    // instead to the first word inside the window that is actually part of
+    // the query — the true onset of this scene's vocabulary.
+    let anchorIdx = best.idx;
+    for (let i = best.idx; i < best.end; i++) {
+        if (queryCounts.has(narrWords[i].word)) { anchorIdx = i; break; }
+    }
+    return { idx: anchorIdx, score: best.score };
+}
+
+const SMALL_TITLE_WORDS = new Set(["a", "an", "and", "as", "at", "but", "by", "for", "in", "nor", "of", "on", "or", "per", "so", "the", "to", "up", "via", "vs", "with"]);
+
+function toTitleCase(text) {
+    const words = text.split(/\s+/).filter(Boolean);
+    return words
+        .map((word, i) => {
+            const bare = word.replace(/[^A-Za-z']/g, "");
+            const isSmall = SMALL_TITLE_WORDS.has(bare.toLowerCase());
+            if (isSmall && i !== 0 && i !== words.length - 1) return word.toLowerCase();
+            return word.charAt(0).toUpperCase() + word.slice(1);
+        })
+        .join(" ");
+}
+
+function chapterLabelFromScene(scene) {
+    let label = toTitleCase(scene.title.trim());
+    if (label.length > 60) label = label.slice(0, 57).trimEnd() + "…";
+    return label;
+}
+
+/**
+ * Derives YouTube chapters from the tutorial's real scenes (preferred path
+ * — see the block comment above). Walks the scenario's scenes in order,
+ * fuzzy-matches each one's opening (title + first sentence of its on-screen
+ * body, stopwords stripped) against the SRT caption text, and snaps to the
+ * containing cue's start time. The first scene is always 0:00. A scene that
+ * can't be matched with confidence — or whose match falls inside the
+ * previous chapter's minimum length — is merged into the previous chapter.
+ */
+function deriveChaptersFromScenes(scenes, cues, durationSec) {
+    const MIN_CHAPTER_SEC = 10;
+    const narrWords = buildNarrationWordIndex(cues);
+
+    const raw = [{ startSec: 0, label: chapterLabelFromScene(scenes[0]) }];
+    let searchFloor = 0;
+    for (let i = 1; i < scenes.length; i++) {
+        const scene = scenes[i];
+        const query = [...contentWords(scene.title), ...contentWords(firstSentence(scene.body))];
+        const match = findSceneOpening(query, narrWords, searchFloor);
+        if (!match) continue; // can't match confidently: folds into the previous chapter
+        searchFloor = match.idx;
+        const cueIdx = narrWords[match.idx]?.cueIdx ?? 0;
+        const startSec = cues[cueIdx].start;
+        raw.push({ startSec, label: chapterLabelFromScene(scene) });
+    }
+
+    // Drop boundaries closer than MIN_CHAPTER_SEC to the previous one —
+    // that scene's content effectively belongs in the prior chapter.
+    const filtered = [raw[0]];
+    for (let i = 1; i < raw.length; i++) {
+        if (raw[i].startSec - filtered[filtered.length - 1].startSec >= MIN_CHAPTER_SEC) {
+            filtered.push(raw[i]);
+        }
+    }
+    // Same check for the tail chapter against the tutorial's end.
+    while (filtered.length > 1 && durationSec - filtered[filtered.length - 1].startSec < MIN_CHAPTER_SEC) {
+        filtered.pop();
+    }
+    return filtered;
+}
+
+// ---------------------------------------------------------------------------
 // Kit assembly
 // ---------------------------------------------------------------------------
 function buildTitle(entry) {
@@ -413,9 +757,15 @@ function buildTags(entry) {
     return unique;
 }
 
-function buildKit(entry, cues, mp4RelPath, srtRelPath) {
+function buildKit(entry, cues, mp4RelPath, srtRelPath, scenarioScenes) {
     const durationSec = Math.max(entry.durationSec, Math.ceil(cues[cues.length - 1].end));
-    const chapters = deriveChapters(cues, durationSec);
+    let chapters;
+    if (scenarioScenes && scenarioScenes.length > 0) {
+        chapters = deriveChaptersFromScenes(scenarioScenes, cues, durationSec);
+    } else {
+        console.warn(`warning: tutorial ${entry.id} has no scene data (tutorials/capture/scenarios/${entry.id}.mjs) — using caption-derived chapters (SRT fallback)`);
+        chapters = deriveChaptersFromSrtOnly(cues, durationSec);
+    }
     validateChapters(chapters, durationSec, `tutorial ${entry.id}`);
 
     const title = buildTitle(entry);
@@ -625,8 +975,9 @@ async function main() {
         const cues = parseSrt(srtPath);
         const mp4RelPath = path.relative(REPO_ROOT, mp4Path);
         const srtRelPath = path.relative(REPO_ROOT, srtPath);
+        const scenarioScenes = loadScenarioScenes(id);
 
-        const kit = buildKit(entry, cues, mp4RelPath, srtRelPath);
+        const kit = buildKit(entry, cues, mp4RelPath, srtRelPath, scenarioScenes);
 
         // Guard against stale terminology creeping into anything we generated
         // ourselves (title, chapter labels — catalog copy is checked separately).
