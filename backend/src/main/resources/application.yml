@@ -93,6 +93,13 @@ rentaxis:
     upcoming-job:
       # 02:00 promotion of listings to UPCOMING when the lease ends within 30 days.
       enabled: ${RENTAXIS_LISTING_UPCOMING_JOB_ENABLED:true}
+  executed-copy-sweep:
+    job:
+      # 01:30 retry of executed contract copies missed at posting (ExecutedCopySweepJob):
+      # leases posted in the last 7 days, after the org's stamp was set, at most 3 tries each.
+      enabled: ${RENTAXIS_EXECUTED_COPY_SWEEP_JOB_ENABLED:true}
+    # Spring cron (sec min hour day month weekday), server time zone.
+    cron: ${RENTAXIS_EXECUTED_COPY_SWEEP_CRON:0 30 1 * * *}
 
 azure:
   storage:

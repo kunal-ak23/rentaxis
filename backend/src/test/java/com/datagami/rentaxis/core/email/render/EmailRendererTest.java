@@ -67,6 +67,26 @@ class EmailRendererTest extends AbstractPostgresIT {
         assertThat(result.html()).contains("dir=\"rtl\"");
     }
 
+    /** Miftah rebrand (2026-09-28): the chrome, subject and no-organisation fallback name Miftah / مفتاح. */
+    @Test
+    void anInviteWithNoOrganisationNamesMiftahInEnglishAndArabic() {
+        java.util.function.Function<Locale, EmailRenderResult> render = locale -> renderer.render(new EmailTemplateContext(
+                EmailEventType.USER_INVITED, locale, UUID.randomUUID(), "Sara", "sara@example.com", "https://app.test",
+                null, null,
+                Map.of("setPasswordUrl", "https://app.test/set-password?token=xyz",
+                        "__subjectArgs", com.datagami.rentaxis.core.email.dispatch.PayloadVarsExtractor
+                                .extract(EmailEventType.USER_INVITED, null, "https://app.test", locale.getLanguage())
+                                .get("__subjectArgs")),
+                null));
+        EmailRenderResult en = render.apply(Locale.ENGLISH);
+        EmailRenderResult ar = render.apply(new Locale("ar"));
+        assertThat(en.subject()).contains("Miftah").doesNotContain("RentAxis");
+        assertThat(en.html()).contains("<b>Miftah</b>").contains("Miftah Property Management System")
+                .doesNotContain("RentAxis");
+        assertThat(ar.subject()).contains("مفتاح").doesNotContain("RentAxis");
+        assertThat(ar.html()).contains("<b>مفتاح</b>").doesNotContain("RentAxis");
+    }
+
     /** Break-it R2 re-review N2: a termination that withdrew a renewal awaiting signature says so, EN and AR. */
     @Test
     void leaseTerminatedNamesAWithdrawnRenewalInEnglishAndArabic() {

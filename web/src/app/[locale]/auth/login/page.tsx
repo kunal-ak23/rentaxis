@@ -134,8 +134,8 @@ export default function LoginPage() {
             >
                 <div className="text-center mb-10">
                     <Image
-                        src="/logo.png"
-                        alt="RentAxis"
+                        src="/miftah-wordmark.png"
+                        alt="Miftah"
                         width={180}
                         height={52}
                         className="mx-auto mb-4 object-contain"
@@ -253,7 +253,7 @@ export default function LoginPage() {
 
                 <div className="mt-8 pt-8 border-t border-border/50 text-center">
                     <p className="text-[11px] text-muted font-medium">
-                        New to RentAxis?{" "}
+                        New to Miftah?{" "}
                         <Link href="/auth/register" className="text-accent font-bold uppercase tracking-widest ml-1 hover:brightness-110">Create Account</Link>
                     </p>
                 </div>

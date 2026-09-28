@@ -5,7 +5,7 @@ import { registerArticle } from './helpLoader';
 // ─── Getting Started ────────────────────────────────────────────────────────
 
 registerArticle('getting-started--welcome', `---
-title: Welcome to RentAxis
+title: Welcome to Miftah
 description: Get started with your property management portal
 category: getting-started
 roles: [SUPER_ADMIN, TENANT_ADMIN, PROPERTY_MANAGER, SECURITY_GUARD, TENANT_USER, RENTER]
@@ -13,9 +13,9 @@ order: 1
 relatedTour: admin-onboarding
 ---
 
-## Welcome to RentAxis
+## Welcome to Miftah
 
-RentAxis is your all-in-one property management platform built for UAE landlords. Whether you manage a single building or an entire portfolio, RentAxis helps you stay on top of your properties, contracts, and finances.
+Miftah is your all-in-one property management platform built for UAE landlords. Whether you manage a single building or an entire portfolio, Miftah helps you stay on top of your properties, contracts, and finances.
 
 ### What You Can Do
 
@@ -40,7 +40,7 @@ Click the **?** button in the bottom-right corner and select "Take a Tour" to wa
 
 registerArticle('getting-started--roles-and-permissions', `---
 title: Roles & Permissions
-description: Understanding the different user roles in RentAxis
+description: Understanding the different user roles in Miftah
 category: getting-started
 roles: [SUPER_ADMIN, TENANT_ADMIN, PROPERTY_MANAGER, SECURITY_GUARD, TENANT_USER, RENTER]
 order: 2
@@ -48,7 +48,7 @@ order: 2
 
 ## Roles & Permissions
 
-RentAxis uses role-based access control to ensure each user sees only what they need.
+Miftah uses role-based access control to ensure each user sees only what they need.
 
 ### Role Hierarchy
 
@@ -99,7 +99,7 @@ relatedTour: property-workflow
 
 ## Setting Up Your First Property
 
-Follow these steps to get your first property up and running in RentAxis.
+Follow these steps to get your first property up and running in Miftah.
 
 ### Step 1: Add a Property
 
@@ -133,7 +133,7 @@ If your property has multiple buildings:
 
 1. Go to **Leasing › Tenants**
 2. Click **Add Tenant**
-3. Enter the renter's name, email, phone, and Emirates ID
+3. Enter the tenant's name, email, phone, and Emirates ID
 
 ### Step 5: Create a Tenancy Contract
 
@@ -243,8 +243,8 @@ Buildings help organize units within larger properties that have multiple struct
 // ─── Leases ─────────────────────────────────────────────────────────────────
 
 registerArticle('leases--creating-a-lease', `---
-title: Creating a Lease
-description: Step-by-step guide to creating and activating a lease
+title: Creating a Tenancy Contract
+description: Step-by-step guide to creating and activating a tenancy contract
 category: leases
 roles: [TENANT_ADMIN, PROPERTY_MANAGER]
 order: 1
@@ -253,7 +253,7 @@ relatedTour: lease-workflow
 
 ## Creating a Tenancy Contract
 
-Tenancy Contracts are the core of RentAxis — they link a tenant to a unit with payment terms.
+Tenancy Contracts are the core of Miftah — they link a tenant to a unit with payment terms.
 
 ### Creating a New Tenancy Contract
 
@@ -269,7 +269,7 @@ Tenancy Contracts are the core of RentAxis — they link a tenant to a unit with
 
 ### Payment Schedule
 
-When you create a contract, RentAxis automatically generates a payment schedule based on:
+When you create a contract, Miftah automatically generates a payment schedule based on:
 - The contract duration
 - Monthly rent amount
 - Selected payment method
@@ -286,8 +286,8 @@ You can review and edit the payment schedule before posting the contract.
 `);
 
 registerArticle('leases--lease-lifecycle', `---
-title: Lease Lifecycle
-description: Understanding lease statuses and transitions
+title: Tenancy Contract Lifecycle
+description: Understanding contract statuses and transitions
 category: leases
 roles: [TENANT_ADMIN, PROPERTY_MANAGER]
 order: 2
@@ -295,7 +295,7 @@ order: 2
 
 ## Tenancy Contract Lifecycle
 
-Every contract in RentAxis follows a defined lifecycle.
+Every contract in Miftah follows a defined lifecycle.
 
 ### Status Flow
 
@@ -346,7 +346,7 @@ Each contract has an associated payment schedule that tracks all expected rent p
 
 ### Auto-Generated Schedule
 
-When a contract is created, RentAxis automatically generates monthly payment entries:
+When a contract is created, Miftah automatically generates monthly payment entries:
 - The first month is pro-rated if the contract doesn't start on the 1st
 - Each entry includes: due date, amount, payment method, and status
 
@@ -383,11 +383,11 @@ relatedTour: finance-overview
 
 ## Chart of Accounts
 
-The Chart of Accounts is the foundation of your financial tracking in RentAxis.
+The Chart of Accounts is the foundation of your financial tracking in Miftah.
 
 ### Account Types
 
-RentAxis uses standard double-entry accounting with five account types:
+Miftah uses standard double-entry accounting with five account types:
 
 | Type | Purpose | Example |
 |------|---------|---------|
@@ -415,7 +415,7 @@ Accounts form a tree: each account names its parent, group accounts hold childre
 
 ### Account Roles and Mappings
 
-Roles tell RentAxis which account to post to when it raises an entry — rental income, rent receivable, bank, security deposits, and so on. You never pick accounts entry by entry; you map the roles once.
+Roles tell Miftah which account to post to when it raises an entry — rental income, rent receivable, bank, security deposits, and so on. You never pick accounts entry by entry; you map the roles once.
 
 - **Accounting › One-time setup › Property account template** sets, for each role, the name pattern and the parent group under which each property's leaf is created.
 - A property's **Accounts** tab shows the leaf resolved for each role on that property, and lets you re-map one to a different account or generate the ones that are missing.
@@ -429,7 +429,7 @@ Posted entries are immutable. A mistake is corrected by reversing the entry from
 // ─── Renter Portal ──────────────────────────────────────────────────────────
 
 registerArticle('renter--renter-portal-overview', `---
-title: Renter Portal Overview
+title: Tenant Portal Overview
 description: Your self-service portal for managing your tenancy
 category: renter
 roles: [RENTER]
@@ -587,7 +587,7 @@ Configure your organisation's settings from **Settings** on the left rail — on
 
 ### Property account template
 
-Map your chart of accounts to RentAxis's automatic transaction types:
+Map your chart of accounts to Miftah's automatic transaction types:
 1. Go to **Accounting › One-time setup › Property account template**
 2. Set the default accounts for rent income, receivables, and deposits
 3. These mappings are used when payments are automatically recorded
@@ -620,7 +620,7 @@ relatedTour: super-admin
 
 ## Super Admin Guide
 
-As a System Admin, you have full access across all tenants in RentAxis.
+As a System Admin, you have full access across all tenants in Miftah.
 
 ### Managing Tenants
 

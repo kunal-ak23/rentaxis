@@ -1,5 +1,5 @@
 ---
-title: Welcome to RentAxis
+title: Welcome to Miftah
 description: Get started with your property management portal
 category: getting-started
 roles: [SUPER_ADMIN, TENANT_ADMIN, PROPERTY_MANAGER, SECURITY_GUARD, TENANT_USER, RENTER]
@@ -7,9 +7,9 @@ order: 1
 relatedTour: admin-onboarding
 ---
 
-## Welcome to RentAxis
+## Welcome to Miftah
 
-RentAxis is your all-in-one property management platform built for UAE landlords. Whether you manage a single building or an entire portfolio, RentAxis helps you stay on top of your properties, contracts, and finances.
+Miftah is your all-in-one property management platform built for UAE landlords. Whether you manage a single building or an entire portfolio, Miftah helps you stay on top of your properties, contracts, and finances.
 
 ### What You Can Do
 

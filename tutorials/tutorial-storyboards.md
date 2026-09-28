@@ -17,191 +17,186 @@ integrated with UI audio muted. macOS `say` remains a draft-only fallback.
 Arabic-localization segments remain narrated in English unless an Arabic voice
 track is commissioned separately.
 
-## 01 — Sign in and navigate RentAxis
+## 01 — Sign in and navigate Miftah
 
 - Audience: all users; 2–3 minutes.
-- Capture: sign in, identify the role-specific sidebar, switch EN → AR → EN,
-  open My Profile, update the phone number, log out, and sign in again.
-- Narration: “Welcome to RentAxis. In this tutorial, you will sign in, identify
-  the navigation for your role, change the interface language, review your
-  profile, and sign out safely. Start at the RentAxis sign-in page. Enter the
-  email address and password supplied by your administrator, then select Sign
-  In. Never use another person’s account, and do not save a password on a shared
-  computer. After authentication, RentAxis opens the landing page allowed for
-  your role. The menu is permission-aware. A super administrator, tenant
-  administrator, property manager, renter, and security guard will not see the
-  same options. This is expected and helps keep each person inside their
-  authorized workflow. Take a moment to identify the current organization and
-  the main navigation. On a smaller screen, open the menu before selecting a
-  destination. Now use the language control and switch from English to Arabic.
-  Notice that labels change and the page direction moves from left-to-right to
-  right-to-left. Open one menu, confirm the Arabic layout, then switch back to
-  English so the remaining tutorials match the recording. Next, open the user
-  menu and choose My Profile. Review your name, email address, role, and phone
-  number. Update the phone number only if it is incorrect, save the change, and
-  wait for the confirmation message before leaving the page. Password controls
-  are also available here when your account supports password authentication.
-  Use a unique password and never share it in a ticket, note, or screen
-  recording. Finally, open the user menu and select Logout. Confirm that the
-  protected navigation disappears and the sign-in page returns. Sign in once
-  more to verify the account still works. You now know the common navigation
-  pattern used throughout RentAxis. At the end of every session on a shared
-  device, return to this menu and log out.”
+- Capture: sign in as the Company Admin, point out the role label, the
+  organisation and the rail, open Leasing, switch EN → AR → EN, open the account
+  menu and My Profile, log out.
+- Narration: “Welcome to Miftah. In this tutorial you will sign in, find your
+  way around the navigation, switch the interface to Arabic and back, review
+  your profile, and sign out safely. Start on the sign-in page. Enter the email
+  address and password your administrator gave you, then select Sign In. Never
+  use another person’s account, and do not save a password on a shared
+  computer. Miftah opens the home page for your role. Your role is shown under
+  your name at the top right; this account is a Company Admin. The organisation
+  you are working in, Oasis Crest Properties, is shown at the top of the side
+  panel. The rail on the left holds the main areas: Home, Leasing, Collection,
+  Accounting, Operations, Settings, and More. Each person sees only the areas
+  their role allows, so a Property Manager or a Tenant sees a shorter menu.
+  Select Leasing. The side panel now lists its pages: Tenancy Contracts,
+  Tenants, Properties and Units, and Enquiry, with pinned views underneath. Now
+  select AR in the header. The labels change to Arabic, and the whole layout
+  mirrors from left-to-right to right-to-left, with the rail moving to the
+  right-hand side. Select EN to return to English. Next, open the menu under
+  your name. It shows your email address, Update Profile, and Logout. Select
+  Update Profile. My Profile shows your name, email address, and role. You can
+  correct your full name or phone number and select Save Changes. Only an
+  administrator can change your email address. The Password card holds Change
+  Password. Use a unique password, and never share it in a ticket, a note, or a
+  screen recording. Finally, open the menu again and select Logout. The
+  protected pages close and the sign-in page returns. At the end of every
+  session on a shared device, log out the same way.”
 
 ## 02 — Dashboard, search, notifications, and help
 
 - Audience: all web users; 2–3 minutes.
-- Capture: explain KPIs, open the command palette with Ctrl/Cmd+K, find a lease,
-  open notifications, mark one read, open Help Center, and search an article.
-- Narration: “This tutorial introduces four tools you will use throughout
-  RentAxis: the dashboard, global search, notifications, and the Help Center.
-  Begin on the dashboard. The cards at the top summarize the active organization
-  and the work visible to your role. Read each label before interpreting a
-  number. A collection total, occupancy figure, renewal follow-up, or open ticket
-  count represents a different operational question. Filters and the active
-  organization determine which records contribute to the result. Use dashboard
-  figures as signals, then open the related list or report when you need the
-  underlying records. Next, open global search from the header. You can also use
-  Control K on Windows or Command K on macOS. Enter part of a known lease,
-  renter, cheque, or payment identifier. Search results are role-aware and
-  tenant-scoped, so you will only receive destinations you are allowed to open.
-  A super administrator can also find organizations. Choose the prepared demo
-  lease and confirm that RentAxis opens the correct lease detail instead of a
-  general search-results page. Return to the dashboard and open Notifications.
-  The unread indicator shows items that have not yet been acknowledged. Select
-  one notification, review its title, time, and message, then follow the related
-  record when a link is available. Return to the notification list and mark the
-  item as read. It should leave the Unread view immediately while remaining
-  available in the full history. Use Mark All Read only after reviewing the
-  outstanding items; it is not a substitute for completing the work they
-  describe. Now open the Help Center. Help content is organized around roles and
-  capabilities. Search for Security Guard, open the matching article, and
-  compare its responsibilities with the available navigation. Guided tours can
-  point to controls inside the running application, while articles explain the
-  wider workflow and safety rules. If search returns nothing, check spelling and
-  confirm that the feature is enabled for the organization. To finish, return to
-  the dashboard and open global search once more with the keyboard shortcut.
-  Remember the pattern: use dashboard totals to identify work, search to reach a
-  record quickly, notifications to respond to events, and Help whenever you
-  need the approved process.”
+- Capture: as the Company Admin, read Home › Today (Contract pipeline, Needs
+  you now, summary cards), open global search from the header, find Ahmed and
+  open his tenancy contract, preview notifications, open the full history and
+  filter to Unread (nothing is marked read), open the Help Center, search for
+  roles and open Roles & Permissions.
+- Narration: “This tutorial introduces four tools you will use every day in
+  Miftah: the home dashboard, global search, notifications, and the Help
+  Center. Begin on Home, Today. The Contract pipeline counts contracts by stage:
+  draft and to sign, upcoming, active, expiring within sixty days, on notice,
+  and settlement due. Below it, Needs you now lists the work waiting for you:
+  cheques to deposit, overdue payments, contracts to post, and open tickets.
+  Each row opens the records behind it. The cards underneath summarise
+  collections, pending dues, unit status, and overdue amounts for the
+  organisation. Treat these figures as signals, then open the underlying list
+  when you need the detail. Next, open global search. Select the search box in
+  the header, or press Command K on a Mac or Control K on Windows. Type part of
+  a tenant name, unit, contract, or cheque number. Typing Ahmed returns his
+  tenancy contract for unit A-101 and each of his cheques, grouped by type.
+  Results only include records your role can open. Select the contract. Miftah
+  opens the tenancy contract for unit A-101 directly, not a page of search
+  results. Now open the bell in the header. The badge counts unread
+  notifications, and the preview lists the latest ones: a booking request and
+  meeting updates. Select View All Notifications. The full history can be
+  filtered to Unread, which shows only the items no one has acknowledged yet.
+  Review each item before you use Mark All as Read; marking an item as read
+  does not complete the work it describes. Finally, open the Help Center with
+  the question mark in the header. Articles are grouped by topic and tagged
+  with the roles they apply to. Search for roles, and open Roles and
+  Permissions. It explains what each role, from System Admin to Tenant, can see
+  and do. Remember the pattern: the dashboard shows what needs attention,
+  search takes you to a record, notifications tell you what changed, and Help
+  explains how to do it.”
 
-## 03 — Roles, permissions, and organization switching
+## 03 — Roles, permissions, and organisation switching
 
-- Audience: super admins and organization admins; 2–3 minutes.
-- Capture: show Super Admin, Tenant Admin, Property Manager, Tenant User,
-  Renter, and Security Guard scopes; switch the active organization; compare
-  navigation using prepared accounts.
-- Narration: “RentAxis separates access by organization, role, and property
-  assignment. This tutorial shows how those boundaries affect the interface and
-  why an unavailable menu is often correct behavior rather than an error. Start
-  with the prepared Super Admin account. A super administrator can provision
-  organizations and move between tenant contexts for authorized support and
-  administration. Open the organization switcher and note the currently active
-  organization before selecting the Tutorial Demo organization. The page
-  reloads inside that tenant context. Switching context does not copy, merge, or
-  expose records from another organization. Always verify the organization name
-  before creating, editing, or deleting data. Next, sign in with the prepared
-  Tenant Admin account. This role manages users, portfolio data, leasing,
-  finance, settings, and enabled services for one organization, but it cannot
-  provision unrelated tenants or grant itself platform-level authority. Compare
-  the sidebar with the Super Admin view. Now use the Property Manager account.
-  Property managers operate only the properties assigned to them. Open the
-  property list and confirm that an unassigned demo property is absent. Directly
-  navigating to an unassigned record must not bypass that restriction. The
-  Tenant User role is more limited and should be used for staff who need a
-  defined operational surface without tenant-wide administration. Continue with
-  the Renter account. The renter sees their tenancy, payments, maintenance,
-  meetings, resident services, and marketplace features rather than internal
-  administration. Finally, review the Security Guard role. A guard works with
-  assigned-property visitor queues, scans, approvals, admissions, and exits.
-  They do not receive access to leases, finance, or tenant configuration. Feature
-  access also affects navigation. Listings, Meetings, Email Notifications,
-  Lease Renewals, and Gate Pass can be enabled per organization, so a role may
-  be valid while its related feature remains intentionally hidden. Finish by
-  returning to the Super Admin account and switching back to the original
-  organization context. The safe operating habit is simple: check the tenant,
-  check the role, and check the property assignment before every sensitive
-  action. If access appears wrong, do not borrow a broader account. Ask an
-  authorized administrator to correct the role or assignment.”
+- Audience: System Admins and Company Admins; 2–3 minutes.
+- Capture: System Admin opens the organisation switcher (Administering, Global
+  View, Oasis Crest Properties ticked); Company Admin opens Settings (no
+  Administration section); Property Manager sees one assigned property and a
+  direct link to the unassigned one is refused; Tenant lands on the Tenant
+  Portal; Help › Roles & Permissions for the Company User and Security Guard;
+  back to the System Admin switcher.
+- Narration: “Miftah separates access by organisation, role, and property
+  assignment. This tutorial shows how those boundaries shape the interface, and
+  why a missing menu is usually correct behaviour rather than an error. Start as
+  the System Admin. The role is shown under the name, and the organisation
+  switcher at the top of the side panel reads Administering. Open it. A System
+  Admin can work in Global View or inside one organisation, here Oasis Crest
+  Properties, which is ticked as the active one. Switching organisation never
+  copies or merges records between organisations, so always check the name here
+  before you create, edit, or delete anything. Next, the Company Admin. This
+  role runs one organisation: its portfolio, leasing, collections, accounting,
+  and settings. Open Settings. The Company Admin sees Organisation, Users and
+  staff, Rent and fines, and Payments, but not the Administration section, with
+  Organisations and Users, that the System Admin has. Now the Property Manager.
+  The rail has no Settings, and Properties lists only the property assigned to
+  this manager, Oasis Crest Residence Tower. Opening the address of an
+  unassigned property directly does not get around that: Miftah reports that
+  the property was not found, or that you may not have access to it. Next, the
+  Tenant. A tenant signs in to the Tenant Portal, with their tenancy contracts,
+  payments, penalties, tickets, listings, and meetings, and none of the
+  internal administration. Two more roles are described in Help, under Roles
+  and Permissions. A Company User has limited access, to their assigned unit
+  details. A Security Guard manages gate access at assigned properties,
+  scanning passes and handling approved visitors. Finish back as the System
+  Admin: open the switcher and confirm that Oasis Crest Properties is still the
+  active organisation. The safe habit is simple. Check the organisation, the
+  role, and the property assignment before every sensitive action. If access
+  looks wrong, do not borrow a broader account; ask an administrator to correct
+  the role or the assignment.”
 
-## 04 — Provision organizations and manage feature access
+## 04 — Provision organisations and manage feature access
 
-- Audience: super admins; 2–3 minutes.
-- Capture: create a synthetic organization, enter address/TRN/phone, save,
-  switch into it, explain all five toggles, enable the required demo features.
-- Narration: “In this tutorial, a super administrator creates a synthetic
-  organization and enables the services required for the tutorial tenant. Sign
-  in as Super Admin and open Organizations. Before creating anything, search for
-  the planned Tutorial Demo name so you do not create a duplicate. Select Create
-  Organization and enter the approved synthetic legal name. Complete the
-  address, phone number, email, and tax registration fields with demo data only.
-  These values can appear on documents and communications, so production
-  customer details must be verified before a real tenant is saved. Review the
-  selected status and submit the form once. Wait for the success confirmation
-  and open the new organization from the list. Confirm that its identifier,
-  legal details, and active state match the form. Next, use the organization
-  switcher to enter the new tenant context. Verify the organization name in the
-  header before continuing. Return to the Super Admin organization settings and
-  open feature access. RentAxis keeps optional capabilities disabled until they
-  are deliberately assigned. Listings enables publication and marketplace
-  discovery. Meetings enables scheduling between property teams and renters.
-  Email Notifications enables supported outbound delivery. Lease Renewals
-  enables renewal opportunities, reminders, and renter intent. Gate Pass enables
-  resident visitor credentials and security operations. Turn on only the five
-  features required for this isolated Tutorial Demo tenant. Save, wait for the
-  confirmation, and refresh the feature view. Each selected toggle should remain
-  enabled after the reload. Switch into the organization again and verify that
-  the corresponding navigation appears for an authorized tenant administrator.
-  If a menu is still absent, check both the feature toggle and the signed-in
-  user’s role. Do not enable a capability on a real customer tenant simply to
-  make a tutorial screen visible. Feature access should match the contracted
-  plan and the customer’s operational readiness. To finish, return to the
-  organization record and show where legal details can be corrected and where
-  an organization can be deactivated. Do not deactivate the tutorial tenant
-  while dependent recording fixtures still exist. The organization is now ready
-  for users, portfolio data, and the remaining tutorial workflows.”
+- Audience: System Admins; 2–3 minutes.
+- Capture: Settings › Administration › Organisations, search for the planned
+  name (no match), Provision New Organisation "Palm Vista Real Estate" with
+  address, TRN and phone, Create Organisation, open Feature Toggles (all off),
+  turn on Meetings & Scheduling and Gate Passes & Security, close and reopen to
+  confirm, switch into the organisation (empty dashboard), open Edit and the
+  Deactivate confirmation and cancel both. A leftover Palm Vista from an
+  earlier take is deleted off camera before the first frame.
+- Narration: “In this tutorial, a System Admin provisions a new organisation
+  and chooses the optional features it can use. Open Settings, then
+  Organisations under Administration. The list shows every organisation on the
+  platform, with its address, tax registration number, and status. Before you
+  create anything, search for the planned name. Nothing comes back, so the name
+  is free and you will not create a duplicate. Select Provision New
+  Organisation. Enter the organisation name, Palm Vista Real Estate, then the
+  office address, the TRN, and the phone number. These details appear on
+  receipts and contracts, so enter them exactly as they appear on the trade
+  licence. Ticket Closure OTP is on by default: tenants share a one-time code
+  before a maintenance ticket can be closed. Select Create Organisation. Palm
+  Vista Real Estate joins the list with its own ID and the status Active. Now
+  open Feature Toggles for the new organisation. Every optional feature starts
+  off. Listings publishes vacant units to the marketplace. Meetings and
+  Scheduling lets tenants book meetings with the property team. Email
+  Notifications sends supported emails. Renewals and Reminders handles contract
+  renewal reminders. Gate Passes and Security runs visitor passes and the
+  Security app. Mobile finance screens stays off. Turn on only what the
+  organisation has signed up for; here, Meetings and Scheduling, and Gate
+  Passes and Security. Each switch saves as soon as you select it. Close the
+  panel and open it again: both features are still on. Next, open the
+  organisation switcher and choose Palm Vista Real Estate. The switcher now
+  names it, and the dashboard is empty, with no properties or contracts yet.
+  Back on Organisations, Edit opens the same form, so legal details can be
+  corrected later with Save Changes. Deactivate asks for confirmation first:
+  everyone in the organisation is signed out and cannot sign in until it is
+  activated again. Cancel both. The organisation is ready for its users,
+  properties, and tenancy contracts.”
 
 ## 05 — Create users and staff
 
-- Audience: super admins and tenant admins; 3–4 minutes.
-- Capture: create a property manager, assign a property, edit the profile,
-  demonstrate role restrictions, remove the assignment, then show staff record
-  creation and activation status.
-- Narration: “This tutorial explains the difference between application users
-  and staff records, then creates a property manager with the correct property
-  assignment. Begin in the Tutorial Demo organization and verify its name in
-  the header. Open Users and search for the synthetic manager email before
-  selecting Create User. Duplicate accounts create confusion and should be
-  avoided. Enter the manager’s demo name, unique email address, and phone number.
-  Choose Property Manager rather than Tenant Admin because this person will
-  operate assigned properties without organization-wide control. The safest
-  rule is to grant the lowest role that covers the person’s real work. Save the
-  user once and wait for the success message. Open the new user detail and review
-  the role, tenant, and account status. If onboarding credentials are displayed,
-  deliver them through an approved secure channel and never expose them in a
-  recording. Now open Property Assignments. Select the prepared Tutorial Demo
-  property, add the assignment, and confirm that it appears in the current list.
-  Sign in with the manager account in a separate prepared session. The property
-  should be visible, while an unassigned property must remain unavailable from
-  both navigation and a direct link. Return to the administrator session and
-  edit the manager’s phone number or display name. Save and confirm the update.
-  Demonstrate the role boundary by opening the role selector: a tenant
-  administrator must not be able to create or promote a Super Admin, and cannot
-  administer a user belonging to another tenant. Do not weaken the role simply
-  to make a test pass. Next, remove the demo property assignment. Confirm the
-  removal and refresh the page; the assignment should not return. Add it again
-  only if later tutorial workflows require this manager account. Now open Staff.
-  A staff record represents a worker associated with property operations and is
-  distinct from an account that can sign in. Create a synthetic staff profile,
-  enter its job and contact details, associate the appropriate property, and
-  save. Review the Active status and show where it can be changed. A person may
-  have a staff profile without application access, and an application user does
-  not automatically become staff. When responsibilities change, update property
-  assignments promptly. When someone leaves, deactivate access instead of
-  sharing or recycling the account. Preserve historical staff records required
-  for audit, and delete only synthetic test records that are safe to remove.
-  Finish by confirming the manager user and staff profile are clearly identified
-  as Tutorial Demo data.”
+- Audience: System Admins and Company Admins; 2–3 minutes.
+- Capture: in Oasis Crest Properties, Settings › Users & staff: search for the
+  planned email (no match), New User "Layla Haddad" as Property Manager for
+  Oasis Crest Marina Heights, Provision User, Edit to add Oasis Crest Residence
+  Tower, confirm the manager on the Marina Heights overview, Add Staff "Khalid
+  Rahman", then offboard: mark the staff record Inactive and delete the user.
+  Leftovers from an earlier take are removed off camera before the first
+  frame; the phone column of the users table is hidden in capture.
+- Narration: “This tutorial explains the difference between users and staff,
+  and creates a Property Manager with the right property assignment. Open
+  Settings, then Users and staff, and check that the organisation above the
+  side panel is Oasis Crest Properties. Users are the people who can sign in.
+  Staff Management holds employment records such as designation, property, and
+  salary, and a staff record does not give anyone a sign-in. Before creating a
+  user, search for their email address. Nothing matches, so there is no
+  duplicate. Select New User. Enter the full name, Layla Haddad, a unique email
+  address, and a phone number. No password is set here: the new user receives
+  an email invite and chooses their own. For the role, choose Property Manager
+  rather than Company Admin. Always grant the lowest role that covers the
+  person’s real work. Choose the organisation, then assign the property this
+  manager runs, Oasis Crest Marina Heights. Select Provision User. Layla Haddad
+  appears in the list as a Property Manager. Responsibilities change, so select
+  Edit, add a second property, Oasis Crest Residence Tower, and select Update
+  User. Open Oasis Crest Marina Heights under Properties and Units. The overview
+  now lists Layla Haddad as its Property Manager. A Property Manager only sees
+  the properties assigned to them. Back in Users and staff, select Add Staff.
+  Enter the name, Khalid Rahman, an employee ID, the designation, Maintenance
+  Supervisor, the department, the monthly salary, and the assigned property. New
+  staff records start Active. Select Add Staff, and the record joins the table
+  with the status Active. When someone leaves, keep the history and remove the
+  access. Edit the staff record, clear Active, and save: the status changes to
+  Inactive, and the record stays for payroll and audit. Then find the user,
+  select Delete, and confirm Delete User. The account can no longer sign in.
+  Never share or recycle an account between people.”
 
 ## 06 — Create a project and property portfolio
 
@@ -346,40 +341,38 @@ track is commissioned separately.
   person. Finish by confirming the Tutorial Demo renter is active and ready to
   be selected in the lease wizard.”
 
-## 10 — Draft a lease and preview its payment plan
+## 10 — Draft a tenancy contract and generate its cheques
 
-- Audience: tenant admins and property managers; 2–3 minutes.
-- Capture: complete all five wizard steps: parties, terms, charges, payment
-  plan, and final review; save as draft and open the lease.
-- Narration: “This tutorial creates a complete draft lease and reviews its
-  payment plan before any unit is occupied. Open Leases and select Create Lease.
-  The wizard is divided into five stages, and the review at the end is as
-  important as the data entry. In Parties, choose the Tutorial Demo property,
-  then select the prepared vacant unit and renter. Confirm the unit number and
-  resident rather than choosing the first search result. Continue to Terms.
-  Enter the approved start and end dates and verify that the end follows the
-  start. Add the monthly or annual rent according to the form, the security
-  deposit, payment method, and any Ejari or reference fields available at the
-  draft stage. In Charges, review the tax treatment and add only approved
-  recurring or one-time charges. Identify each charge clearly so the renter and
-  finance team can understand it later. Do not hide a charge inside the base
-  rent. Continue to Payment Plan. Choose the required number of installments
-  and the distribution strategy. RentAxis generates due dates and amounts from
-  the lease terms. Inspect every installment, including the first and final
-  amount. Confirm that due dates fall inside the intended period and that the
-  total reconciles with rent, tax, and included charges. If the final installment
-  carries a rounding difference, verify that the overall total is still correct.
-  Use Preview when available to test another installment configuration before
-  committing it. Move to Final Review and read the summary from top to bottom:
-  organization, property, unit, renter, dates, rent, deposit, taxes, additional
-  charges, and payment schedule. Go back to the relevant step if anything is
-  wrong. Select Save as Draft once and wait for confirmation. Open the resulting
-  lease detail. Its status should be Draft, the selected unit should remain
-  eligible until the activation or acceptance workflow, and the payment-plan
-  preview should match the wizard. A draft is the safe state for correction; it
-  is not proof of a signed agreement. Demonstrate an allowed metadata edit and
-  verify the schedule again. Finish on the lease overview, ready for contract
-  preview, generation, and renter signature in the next tutorial.”
+- Audience: Company Admins and Property Managers; 2–3 minutes.
+- Capture: open Leasing › Tenancy Contracts, run all five wizard steps (Parties,
+  Terms, Charges, Cheques, Review) for a vacant unit, save the draft, generate
+  and number the cheques, stop at Ready to post, open the draft contract and its
+  Cheques tab.
+- Narration: “This tutorial drafts a tenancy contract in the five-step wizard
+  and checks its cheques before anything is posted. Open Leasing, then Tenancy
+  Contracts. The status pills count the contracts that are drafts or awaiting
+  signature, active, expiring, on notice, and ended. Select Draft Tenancy
+  Contract. Step one is Parties. The unit list offers vacant units only. Choose
+  unit A-201, and its property, Oasis Crest Residence Tower, appears underneath. Then
+  choose the tenant, Rajesh Kumar, and select Next. Step two is Terms. The
+  contract date is filled in with today. Enter a start date of the first of
+  October and an end date of the thirtieth of September the following year.
+  Number of cheques is four, and the payment method is Cheque. Ejari number and
+  payment reference are optional. Select Next. Step three is Charges, with one
+  line per charge. Choose Rent and enter 96,000. Select Add line, choose
+  Security Deposit, and enter 5,000. The contract value is now 101,000. Select
+  Save draft. The contract is saved as a draft, and step four, Cheques, opens
+  with an empty cheque grid. Select Generate Cheques, keep four instalments, and
+  generate. Four post-dated cheques appear, with the deposit added to the first,
+  and the grid confirms that the cheques match the contract value. Each
+  post-dated cheque needs a number, so select Generate Cheque Numbers and enter
+  the first one. The rows are numbered 500101 to 500104. Select Next. Step five,
+  Review, shows the unit, tenant, dates, contract value, VAT, and cheque total,
+  and reports Ready to post. Posting has its own tutorial, so select Open the
+  contract instead. The contract opens with the status Draft, its dates, its
+  value, and four cheques, and each charge line shows the account it credits.
+  Open the Cheques tab to see the same four numbered cheques. Until the contract
+  is posted, the draft can still be edited.”
 
 ## 11 — Generate, review, and sign a tenancy contract
 

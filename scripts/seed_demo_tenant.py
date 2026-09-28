@@ -56,6 +56,9 @@ DEMO_EMAIL_DOMAIN = os.environ.get("DEMO_EMAIL_DOMAIN", "alashramdemo.com")
 DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "Demo@1234")
 ADMIN_EMAIL = os.environ.get("DEMO_ADMIN_EMAIL", f"admin@{DEMO_EMAIL_DOMAIN}")
 ADMIN_PASSWORD = DEMO_PASSWORD
+# The Company Admin's display name. The dashboard greets by first name, so a
+# branded demo sets a person's name; unset, the historical "<brand> Demo Admin".
+ADMIN_NAME = os.environ.get("DEMO_ADMIN_NAME") or f"{DEMO_BRAND} Demo Admin"
 OUT_FILE = Path(
     os.environ.get(
         "DEMO_OUTPUT_FILE",
@@ -74,6 +77,54 @@ OUT_FILE = Path(
 DUBAI = ZoneInfo("Asia/Dubai")
 TODAY = dt.datetime.now(DUBAI).date()
 REDACT_CREDENTIALS = "--redact-credentials" in sys.argv
+
+# Organisation details printed on receipts, tax invoices and contracts. Every
+# one is optional: unset, the seed behaves exactly as before (the production
+# demo tenant keeps its address and phone, and gets no TRN, logo or stamp).
+# DEMO_ORG_LOGO / DEMO_ORG_STAMP are local PNG/JPEG paths, uploaded through the
+# app's own asset endpoint; an org that already has one keeps it unless the
+# run passes --refresh-branding.
+ORG_ADDRESS = os.environ.get("DEMO_ORG_ADDRESS", "Sheikh Zayed Road, Dubai, UAE")
+ORG_PHONE = os.environ.get("DEMO_ORG_PHONE", "+971-4-555-0100")
+ORG_TRN = os.environ.get("DEMO_ORG_TRN")
+ORG_LOGO = os.environ.get("DEMO_ORG_LOGO")
+ORG_STAMP = os.environ.get("DEMO_ORG_STAMP")
+REFRESH_BRANDING = "--refresh-branding" in sys.argv
+# Optional naming for a branded demo (defaults are the historical names).
+DEMO_BRAND_AR = os.environ.get("DEMO_BRAND_AR")
+BUILDING_NAME_EN = os.environ.get("DEMO_BUILDING_NAME", "Palm Court")
+BUILDING_NAME_AR = os.environ.get("DEMO_BUILDING_NAME_AR", "بالم كورت")
+MAINTENANCE_DESK = os.environ.get("DEMO_MAINTENANCE_DESK", "Building Maintenance Desk")
+MAINTENANCE_EMAIL = os.environ.get("DEMO_MAINTENANCE_EMAIL", "maintenance@palmcourt.example.com")
+
+# Names earlier versions of this seed gave its operational fixtures. They showed
+# "Tutorial" on screen; a re-run against an organisation seeded with them finds the
+# record under its old name and renames it where the API allows (so nothing is
+# created twice), and otherwise keeps it as it is.
+LEGACY_BUILDING_NAMES = ("Tutorial Operations Tower",)
+AMENITY_DESCRIPTION = "Residents' gym with cardio and free-weights areas. Book a slot in advance."
+LEGACY_MAINTENANCE_DESKS = ("Tutorial Maintenance Desk",)
+PARKING_SPOT = "B2-18"
+LEGACY_PARKING_SPOTS = ("TUTORIAL-B2-18",)
+STAFF_EMPLOYEE_ID = "OPS-001"
+LEGACY_STAFF_EMPLOYEE_IDS = ("TUTORIAL-OPS-001",)
+TICKET_TITLE = "Leaking kitchen tap"
+LEGACY_TICKET_TITLES = ("Tutorial: Leaking kitchen tap",)
+PROMO_BUSINESS_EN = "Palm Corner Cafe"
+PROMO_BUSINESS_AR = "مقهى زاوية النخيل"
+LEGACY_PROMO_BUSINESSES = ("Tutorial Community Cafe",)
+PROMO_AD_TITLE_EN = "20% off for residents"
+LEGACY_PROMO_AD_TITLES = ("20% off for Tutorial Residents",)
+
+
+def find_named(items, key, name, legacy=()):
+    """The record whose ``key`` is ``name`` or one of its ``legacy`` names, and
+    whether it was found under a legacy name (and so wants renaming)."""
+    for wanted, is_legacy in [(name, False)] + [(old, True) for old in legacy]:
+        for item in items:
+            if item.get(key) == wanted:
+                return item, is_legacy
+    return None, False
 
 
 def load_env():
@@ -391,8 +442,9 @@ def main():
     sa.put(
         f"/api/admin/tenants/{tenant_id}",
         json={
-            "address": "Sheikh Zayed Road, Dubai, UAE",
-            "phone": "+971-4-555-0100",
+            "address": ORG_ADDRESS,
+            "phone": ORG_PHONE,
+            **({"trn": ORG_TRN} if ORG_TRN else {}),
         },
     )
 
@@ -425,7 +477,7 @@ def main():
             json={
                 "email": ADMIN_EMAIL,
                 "password": ADMIN_PASSWORD,
-                "name": f"{DEMO_BRAND} Demo Admin",
+                "name": ADMIN_NAME,
                 "role": "TENANT_ADMIN",
                 "tenantId": tenant_id,
                 "phoneNumber": "+971501110000",
@@ -434,6 +486,16 @@ def main():
         log(f"tenant admin created: {ADMIN_EMAIL}")
     except RuntimeError:
         log(f"tenant admin already exists: {ADMIN_EMAIL}")
+        # Keep a re-run's display name in step with DEMO_ADMIN_NAME.
+        existing = next(
+            (u for u in (sa.get("/api/admin/users") or [])
+             if (u.get("email") or "").lower() == ADMIN_EMAIL.lower()
+             and str(u.get("tenantId")) == str(tenant_id)),
+            None,
+        )
+        if existing and existing.get("name") != ADMIN_NAME:
+            sa.put(f"/api/admin/users/{existing['id']}", json={"name": ADMIN_NAME})
+            log(f"tenant admin renamed to {ADMIN_NAME}")
     out["adminLogin"] = {"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
 
     # ── 2. Tenant admin: properties + units ─────────────────────────────────
@@ -441,6 +503,40 @@ def main():
     admin_user = api.login(ADMIN_EMAIL, ADMIN_PASSWORD)
     admin_user_id = admin_user["id"]
     out["adminUserId"] = admin_user_id
+
+    # Branding: upload as the tenant admin (the asset lands in this tenant's
+    # own container, the only place the PDF renderers read a logo from), then
+    # point the org at it as the superadmin.
+    if ORG_LOGO or ORG_STAMP:
+        current = next(
+            (t for t in (sa.get("/api/admin/tenants") or []) if t["id"] == tenant_id), {}
+        )
+        branding = {}
+        for key, file_path in (("logoUrl", ORG_LOGO), ("stampImageUrl", ORG_STAMP)):
+            if not file_path:
+                continue
+            if current.get(key) and not REFRESH_BRANDING:
+                log(f"{key} already set, kept (pass --refresh-branding to replace)")
+                continue
+            kind = "image/jpeg" if file_path.lower().endswith((".jpg", ".jpeg")) else "image/png"
+            with open(file_path, "rb") as fh:
+                uploaded = api.post(
+                    "/api/v1/assets/upload",
+                    files={"file": (os.path.basename(file_path), fh, kind)},
+                    data={"folder": "assets"},
+                )
+            branding[key] = uploaded["url"]
+        if branding:
+            sa.put(f"/api/admin/tenants/{tenant_id}", json=branding)
+            stored = next(
+                (t for t in (sa.get("/api/admin/tenants") or []) if t["id"] == tenant_id), {}
+            )
+            for key, url in branding.items():
+                if stored.get(key) == url:
+                    log(f"{key} uploaded and set")
+                else:
+                    log(f"WARNING {key} uploaded but the org did not store it "
+                        f"(PUT /api/admin/tenants/{{id}} has no write path for it)")
 
     # Chart of accounts + the per-property account template + the tenant-level
     # role defaults + the charge-type catalogue: one call since accounting v2
@@ -512,10 +608,14 @@ def main():
         return p
 
     tower = make_property(
-        f"{DEMO_BRAND} Residence Tower", "برج رنت أكسيس السكني", "Al Barsha 1, Dubai"
+        f"{DEMO_BRAND} Residence Tower",
+        f"برج {DEMO_BRAND_AR} السكني" if DEMO_BRAND_AR else "برج رنت أكسيس السكني",
+        "Al Barsha 1, Dubai",
     )
     marina = make_property(
-        f"{DEMO_BRAND} Marina Heights", "أبراج رنت أكسيس مارينا", "Dubai Marina, Dubai"
+        f"{DEMO_BRAND} Marina Heights",
+        f"أبراج {DEMO_BRAND_AR} مارينا" if DEMO_BRAND_AR else "أبراج رنت أكسيس مارينا",
+        "Dubai Marina, Dubai",
     )
     log(f"properties: {tower['nameEn']}, {marina['nameEn']}")
 
@@ -1276,32 +1376,35 @@ def main():
     }
     log("2 meetings ensured (cheque replacement approved, viewing requested)")
 
-    # ── 8. Operational tutorial fixtures ───────────────────────────────────
+    # ── 8. Operational fixtures ─────────────────────────────────────────────
     # These records keep the property, staff, ticket, booking, promotions, and
     # gate-pass tutorial screens useful without requiring a live customer.
     buildings = api.get(f"/api/v1/buildings/property/{tower['id']}") or []
-    building = next(
-        (b for b in buildings if b.get("nameEn") == "Tutorial Operations Tower"),
-        None,
-    )
+    # No rename endpoint for buildings: an organisation seeded under the legacy
+    # name keeps that building rather than getting a second one.
+    building, _ = find_named(buildings, "nameEn", BUILDING_NAME_EN, LEGACY_BUILDING_NAMES)
     if not building:
         building = api.post("/api/v1/buildings", json={
             "property": {"id": tower["id"]},
-            "nameEn": "Tutorial Operations Tower",
-            "nameAr": "برج العمليات التجريبي",
+            "nameEn": BUILDING_NAME_EN,
+            "nameAr": BUILDING_NAME_AR,
             "floors": 12,
         })
 
     contacts = api.get(f"/api/v1/properties/{tower['id']}/contacts") or []
-    if not any(c.get("name") == "Tutorial Maintenance Desk" for c in contacts):
-        api.post(f"/api/v1/properties/{tower['id']}/contacts", json={
-            "category": "BUILDING_MAINTENANCE",
-            "name": "Tutorial Maintenance Desk",
-            "phone": "+971500000003",
-            "email": "maintenance@tutorial.example.com",
-            "notes": "Available around the clock",
-            "sortOrder": 0,
-        })
+    desk_payload = {
+        "category": "BUILDING_MAINTENANCE",
+        "name": MAINTENANCE_DESK,
+        "phone": "+971500000003",
+        "email": MAINTENANCE_EMAIL,
+        "notes": "Available around the clock",
+        "sortOrder": 0,
+    }
+    desk, desk_is_legacy = find_named(contacts, "name", MAINTENANCE_DESK, LEGACY_MAINTENANCE_DESKS)
+    if not desk:
+        api.post(f"/api/v1/properties/{tower['id']}/contacts", json=desk_payload)
+    elif desk_is_legacy:
+        api.put(f"/api/v1/properties/{tower['id']}/contacts/{desk['id']}", json=desk_payload)
 
     amenities = page_items(api.get(f"/api/v1/amenities?propertyId={tower['id']}"))
     amenity = next(
@@ -1313,27 +1416,25 @@ def main():
             "propertyId": tower["id"],
             "nameEn": "Residents Fitness Centre",
             "nameAr": "مركز لياقة السكان",
-            "description": "Bookable resident gym for tutorial demonstrations.",
+            "description": AMENITY_DESCRIPTION,
             "bookable": True,
             "buildingIds": [],
         })
     else:
         amenity = api.put(
             f"/api/v1/amenities/{amenity['id']}",
-            json={"buildingIds": [], "active": True, "bookable": True},
+            json={"buildingIds": [], "active": True, "bookable": True,
+                  "description": AMENITY_DESCRIPTION},
         )
 
     parking_spots = page_items(
         api.get(f"/api/v1/parking-spots?propertyId={tower['id']}")
     )
-    parking = next(
-        (p for p in parking_spots if p.get("spotNumber") == "TUTORIAL-B2-18"),
-        None,
-    )
+    parking, _ = find_named(parking_spots, "spotNumber", PARKING_SPOT, LEGACY_PARKING_SPOTS)
     if not parking:
         parking = api.post("/api/v1/parking-spots", json={
             "propertyId": tower["id"],
-            "spotNumber": "TUTORIAL-B2-18",
+            "spotNumber": PARKING_SPOT,
             "level": "B2",
             "covered": True,
             "buildingIds": [],
@@ -1341,31 +1442,39 @@ def main():
     else:
         parking = api.put(
             f"/api/v1/parking-spots/{parking['id']}",
-            json={"buildingIds": [], "active": True},
+            json={"buildingIds": [], "active": True, "spotNumber": PARKING_SPOT},
         )
 
     staff = api.get(f"/api/v1/staff/by-property/{tower['id']}") or []
-    if not any(s.get("employeeId") == "TUTORIAL-OPS-001" for s in staff):
-        api.post("/api/v1/staff", json={
-            "nameEn": "Omar Tutorial",
-            "nameAr": "عمر التجريبي",
-            "employeeId": "TUTORIAL-OPS-001",
-            "designation": "Facilities Coordinator",
-            "department": "Operations",
-            "monthlySalary": 7500,
-            "joinDate": iso(TODAY - dt.timedelta(days=120)),
-            "phone": "+971500000004",
-            "emiratesId": "",
-            "passportNumber": "",
-            "active": True,
-            "property": {"id": tower["id"]},
-        })
+    staff_member, staff_is_legacy = find_named(
+        staff, "employeeId", STAFF_EMPLOYEE_ID, LEGACY_STAFF_EMPLOYEE_IDS)
+    staff_payload = {
+        "nameEn": "Omar Haddad",
+        "nameAr": "عمر حداد",
+        "employeeId": STAFF_EMPLOYEE_ID,
+        "designation": "Facilities Coordinator",
+        "department": "Operations",
+        "monthlySalary": 7500,
+        "joinDate": (staff_member or {}).get("joinDate") or iso(TODAY - dt.timedelta(days=120)),
+        "phone": "+971500000004",
+        "emiratesId": "",
+        "passportNumber": "",
+        "active": True,
+        "property": {"id": tower["id"]},
+    }
+    if not staff_member:
+        api.post("/api/v1/staff", json=staff_payload)
+    elif staff_is_legacy:
+        api.put(f"/api/v1/staff/{staff_member['id']}", json=staff_payload)
     log("property operations ready: building, contact, amenity, parking, staff")
 
     existing_users = api.get("/api/admin/users") or []
 
-    def ensure_operator(email, name, role, phone_number):
+    def ensure_operator(email, name, role, phone_number, legacy_names=()):
         user = next((u for u in existing_users if u.get("email") == email), None)
+        if user and user.get("name") in legacy_names:
+            # Name only: role, organisation and property assignments stay as they are.
+            user = api.put(f"/api/admin/users/{user['id']}", json={"name": name}) or user
         if not user:
             user = api.post("/api/admin/users", json={
                 "email": email,
@@ -1385,15 +1494,17 @@ def main():
 
     manager = ensure_operator(
         f"manager@{DEMO_EMAIL_DOMAIN}",
-        "Maya Tutorial Manager",
+        "Maya Khoury",
         "PROPERTY_MANAGER",
         os.environ.get("DEMO_MANAGER_PHONE", "+971500000006"),
+        legacy_names=("Maya Tutorial Manager",),
     )
     guard = ensure_operator(
         f"guard@{DEMO_EMAIL_DOMAIN}",
-        "Samir Tutorial Guard",
+        "Samir Nasser",
         "SECURITY_GUARD",
         os.environ.get("DEMO_GUARD_PHONE", "+971500000007"),
+        legacy_names=("Samir Tutorial Guard",),
     )
     api.put(
         f"/api/v1/gatepass/guards/{guard['id']}/properties",
@@ -1419,11 +1530,11 @@ def main():
             "resourceId": amenity["id"],
             "unitId": a101["id"],
             "preferredDate": iso(TODAY + dt.timedelta(days=7)),
-            "note": "Tutorial family fitness session",
+            "note": "Family fitness session",
         })
         api.post(
             f"/api/v1/bookings/{amenity_booking['id']}/approve",
-            json={"adminNote": "Approved tutorial booking"},
+            json={"adminNote": "Approved — enjoy your session"},
         )
     out["amenityBookingId"] = amenity_booking["id"]
     out["amenityId"] = amenity["id"]
@@ -1432,17 +1543,15 @@ def main():
 
     ticket_payload = resident_api.get("/api/v1/tickets") or []
     tickets = page_items(ticket_payload)
-    ticket = next(
-        (t for t in tickets if t.get("title") == "Tutorial: Leaking kitchen tap"),
-        None,
-    )
+    # Tickets have no title edit: one raised under the legacy title is kept.
+    ticket, _ = find_named(tickets, "title", TICKET_TITLE, LEGACY_TICKET_TITLES)
     if not ticket:
         ticket = resident_api.post("/api/v1/tickets", json={
             "propertyId": tower["id"],
             "unitId": a101["id"],
             "leaseId": lease_ahmed["id"],
-            "title": "Tutorial: Leaking kitchen tap",
-            "description": "The kitchen tap is leaking continuously. Synthetic tutorial request.",
+            "title": TICKET_TITLE,
+            "description": "The kitchen tap has been leaking continuously since this morning.",
             "category": "PLUMBING",
             "priority": "HIGH",
         })
@@ -1454,48 +1563,52 @@ def main():
     log("open maintenance ticket and renter reply ready")
 
     businesses = page_items(api.get("/api/v1/promotions/businesses?size=100"))
-    business = next(
-        (b for b in businesses if b.get("nameEn") == "Tutorial Community Cafe"),
-        None,
-    )
+    business_payload = {
+        "nameEn": PROMO_BUSINESS_EN,
+        "nameAr": PROMO_BUSINESS_AR,
+        "category": "DINING",
+        "phoneE164": "+971500000006",
+        "whatsappE164": "+971500000006",
+        "allowedDomains": ["example.com"],
+        "active": True,
+    }
+    business, business_is_legacy = find_named(
+        businesses, "nameEn", PROMO_BUSINESS_EN, LEGACY_PROMO_BUSINESSES)
     if not business:
-        business = api.post("/api/v1/promotions/businesses", json={
-            "nameEn": "Tutorial Community Cafe",
-            "nameAr": "مقهى المجتمع التجريبي",
-            "category": "DINING",
-            "phoneE164": "+971500000006",
-            "whatsappE164": "+971500000006",
-            "allowedDomains": ["example.com"],
-            "active": True,
-        })
+        business = api.post("/api/v1/promotions/businesses", json=business_payload)
+    elif business_is_legacy:
+        business = api.put(f"/api/v1/promotions/businesses/{business['id']}", json=business_payload)
     ads = page_items(
         api.get(f"/api/v1/promotions/ads?businessId={business['id']}&size=100")
     )
-    promotion_ad = next(
-        (a for a in ads if a.get("titleEn") == "20% off for Tutorial Residents"),
-        None,
-    )
+    promotion_ad, ad_is_legacy = find_named(
+        ads, "titleEn", PROMO_AD_TITLE_EN, LEGACY_PROMO_AD_TITLES)
+    ad_payload = {
+        "businessId": business["id"],
+        "titleEn": PROMO_AD_TITLE_EN,
+        "titleAr": "خصم 20٪ للسكان",
+        "subtitleEn": "Coffee, breakfast and fresh juices, a short walk from your door.",
+        "accentColor": "#2563EB",
+        "ctaType": "COUPON",
+        "ctaLabelEn": "Copy code",
+        "couponCode": "RESIDENT20",
+        "couponTermsEn": "One use per visit. Dine-in only.",
+        "startsAt": (dt.datetime.now(dt.UTC) - dt.timedelta(hours=1)).isoformat(),
+        "endsAt": (dt.datetime.now(dt.UTC) + dt.timedelta(days=30)).isoformat(),
+        "priority": 8,
+        "placement": "HOME_AND_OFFERS",
+        "propertyIds": [tower["id"]],
+        "active": True,
+    }
     if not promotion_ad:
-        promotion_ad = api.post("/api/v1/promotions/ads", json={
-            "businessId": business["id"],
-            "titleEn": "20% off for Tutorial Residents",
-            "titleAr": "خصم 20٪ لسكان العرض التجريبي",
-            "subtitleEn": "A synthetic resident offer for platform tutorials.",
-            "accentColor": "#2563EB",
-            "ctaType": "COUPON",
-            "ctaLabelEn": "Copy code",
-            "couponCode": "TUTORIAL20",
-            "couponTermsEn": "Tutorial use only",
-            "startsAt": (dt.datetime.now(dt.UTC) - dt.timedelta(hours=1)).isoformat(),
-            "endsAt": (dt.datetime.now(dt.UTC) + dt.timedelta(days=30)).isoformat(),
-            "priority": 8,
-            "placement": "HOME_AND_OFFERS",
-            "propertyIds": [tower["id"]],
-            "active": True,
-        })
+        promotion_ad = api.post("/api/v1/promotions/ads", json=ad_payload)
+    elif ad_is_legacy:
+        promotion_ad = api.put(f"/api/v1/promotions/ads/{promotion_ad['id']}", json=ad_payload)
     out["promotionBusinessId"] = business["id"]
+    out["promotionBusinessName"] = business.get("nameEn") or PROMO_BUSINESS_EN
+    out["parkingSpotNumber"] = parking.get("spotNumber") or PARKING_SPOT
     out["promotionAdId"] = promotion_ad["id"]
-    log("tutorial business and active resident coupon ready")
+    log("promotion business and active resident coupon ready")
 
     api.put(f"/api/v1/gatepass/policies?propertyId={tower['id']}", json={
         "requireUnregisteredApproval": True,
@@ -1509,7 +1622,8 @@ def main():
         api.post("/api/v1/gatepass/visitors/registration", json={
             "propertyId": tower["id"],
             "unitId": a101["id"],
-            "name": "Tutorial Service Vendor",
+            # Upserted by phone, so a re-run also renames an older registration.
+            "name": "Rapid Fix Technical Services",
             "phone": visitor_phone,
             "visitorType": "SERVICE_VENDOR",
             "validFrom": (dt.datetime.now(dt.UTC) - dt.timedelta(hours=1)).isoformat(),
@@ -1528,10 +1642,10 @@ def main():
     if not gate_pass:
         gate_pass = resident_api.post("/api/v1/gatepass", json={
             "unitId": a101["id"],
-            "guestName": "Tutorial Guest",
+            "guestName": "Layla Mansour",
             "guestPhone": "+971500000005",
-            "purpose": "Tutorial visitor access",
-            "vehicleNumber": "TUTORIAL-01",
+            "purpose": "Family visit",
+            "vehicleNumber": "DXB A 24518",
             "passType": "RECURRING",
             "validFrom": (dt.datetime.now(dt.UTC) - dt.timedelta(minutes=5)).isoformat(),
             "validTo": (dt.datetime.now(dt.UTC) + dt.timedelta(days=1)).isoformat(),

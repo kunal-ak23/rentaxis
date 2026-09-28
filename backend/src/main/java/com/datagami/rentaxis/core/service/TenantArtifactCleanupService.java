@@ -114,8 +114,10 @@ public class TenantArtifactCleanupService {
             Map.entry("LEASE_ATTACHMENT", Set.of("lease-docs/")),
             Map.entry("TICKET_ATTACHMENT", Set.of("ticket-attachments/")),
             Map.entry("SETTLEMENT_ATTACHMENT", Set.of("settlement-deductions/")),
-            Map.entry("ORG_LOGO", Set.of("assets/")),
-            Map.entry("ORG_STAMP", Set.of("assets/")),
+            // Branding lives in the org's own container under branding/ (local:
+            // private/branding/<orgId>/) since the private-storage fix; assets/ for older uploads.
+            Map.entry("ORG_LOGO", Set.of("assets/", "branding/", "private/branding/")),
+            Map.entry("ORG_STAMP", Set.of("assets/", "branding/", "private/branding/")),
             Map.entry("PROMO_BUSINESS", Set.of("assets/", "promo-businesses/", "promotions/")),
             Map.entry("PROMO_AD", Set.of("assets/", "promo-ads/", "promotions/"))
     );
@@ -269,6 +271,12 @@ public class TenantArtifactCleanupService {
 
             if (candidate.url().startsWith(LOCAL_ASSET_PREFIX)) {
                 String relative = candidate.url().substring(LOCAL_ASSET_PREFIX.length());
+                if (relative.startsWith("private/branding/") && !relative.startsWith("private/branding/" + tenantId + "/")) {
+                    // Another organisation's (or staged) branding is never this org's to delete.
+                    log.warn("tenant_artifact_cleanup capture skipped source={} reason=branding_ownership",
+                            candidate.source());
+                    continue;
+                }
                 addIfAllowed(exact, candidate.source(), LOCAL_ASSET, "", relative, candidate.url());
                 continue;
             }

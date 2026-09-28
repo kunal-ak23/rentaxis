@@ -1,207 +1,180 @@
 1
-00:00:00,000 --> 00:00:04,362
+00:00:00,000 --> 00:00:03,999
 This tutorial introduces four tools you
-will use throughout RentAxis:
+will use every day in
 
 2
-00:00:04,362 --> 00:00:08,288
-the dashboard, global search,
+00:00:03,999 --> 00:00:07,998
+Miftah: the home dashboard, global search,
 notifications, and the Help Center.
 
 3
-00:00:08,288 --> 00:00:10,033
-Begin on the dashboard.
+00:00:07,998 --> 00:00:09,452
+Begin on Home, Today.
 
 4
-00:00:10,033 --> 00:00:13,523
-The cards at the top summarize the active
+00:00:09,452 --> 00:00:13,450
+The Contract pipeline counts contracts by
+stage: draft and to sign,
 
 5
-00:00:13,523 --> 00:00:17,013
-organization and the work visible to your
-role.
+00:00:13,450 --> 00:00:17,449
+upcoming, active, expiring within sixty
+days, on notice, and settlement due.
 
 6
-00:00:17,013 --> 00:00:20,066
-Read each label before interpreting a
-number.
+00:00:17,449 --> 00:00:21,448
+Below it, Needs you now lists the work
+waiting for you:
 
 7
-00:00:20,066 --> 00:00:23,556
-A collection total, occupancy figure,
-renewal follow-up, or
+00:00:21,448 --> 00:00:25,447
+cheques to deposit, overdue payments,
+contracts to post, and open tickets.
 
 8
-00:00:23,556 --> 00:00:27,046
-open ticket count represents a different
-operational question.
+00:00:25,447 --> 00:00:27,991
+Each row opens the records behind it.
 
 9
-00:00:27,046 --> 00:00:29,663
-Filters and the active organization
-determine
+00:00:27,991 --> 00:00:30,899
+The cards underneath summarise
+collections, pending dues, unit
 
 10
-00:00:29,663 --> 00:00:32,281
-which records contribute to the result.
+00:00:30,899 --> 00:00:33,444
+status, and overdue amounts for the
+organisation.
 
 11
-00:00:32,281 --> 00:00:36,207
-Use dashboard figures as signals, then
-open the related
+00:00:33,444 --> 00:00:36,352
+Treat these figures as signals, then open
+the
 
 12
-00:00:36,207 --> 00:00:40,133
-list or report when you need the
-underlying records.
+00:00:36,352 --> 00:00:38,897
+underlying list when you need the detail.
 
 13
-00:00:40,133 --> 00:00:43,186
-Next, open global search from the header.
+00:00:38,897 --> 00:00:40,351
+Next, open global search.
 
 14
-00:00:43,186 --> 00:00:46,240
-You can also use Control K on
+00:00:40,351 --> 00:00:43,986
+Select the search box in the header, or
+press Command
 
 15
-00:00:46,240 --> 00:00:48,857
-Windows or Command K on macOS.
+00:00:43,986 --> 00:00:47,258
+K on a Mac or Control K on Windows.
 
 16
-00:00:48,857 --> 00:00:53,655
-Enter part of a known lease, renter,
-cheque, or payment identifier.
+00:00:47,258 --> 00:00:51,257
+Type part of a tenant name, unit,
+contract, or cheque number.
 
 17
-00:00:53,655 --> 00:00:57,581
-Search results are role-aware and
-tenant-scoped, so you will
+00:00:51,257 --> 00:00:54,528
+Typing Ahmed returns his tenancy contract
+for unit A-101
 
 18
-00:00:57,581 --> 00:01:01,071
-only receive destinations you are allowed
-to open.
+00:00:54,528 --> 00:00:57,437
+and each of his cheques, grouped by type.
 
 19
-00:01:01,071 --> 00:01:04,125
-A super administrator can also find
-organizations.
+00:00:57,437 --> 00:01:00,345
+Results only include records your role can
+open.
 
 20
-00:01:04,125 --> 00:01:08,487
-Choose the prepared demo lease and confirm
-that RentAxis opens
+00:01:00,345 --> 00:01:01,435
+Select the contract.
 
 21
-00:01:08,487 --> 00:01:12,849
-the correct lease detail instead of a
-general search-results page.
+00:01:01,435 --> 00:01:04,344
+Miftah opens the tenancy contract for unit
+A-101
 
 22
-00:01:12,849 --> 00:01:15,903
-Return to the dashboard and open
-Notifications.
+00:01:04,344 --> 00:01:06,888
+directly, not a page of search results.
 
 23
-00:01:15,903 --> 00:01:20,701
-The unread indicator shows items that have
-not yet been acknowledged.
+00:01:06,888 --> 00:01:09,433
+Now open the bell in the header.
 
 24
-00:01:20,701 --> 00:01:25,064
-Select one notification, review its title,
-time, and message, then
+00:01:09,433 --> 00:01:12,705
+The badge counts unread notifications, and
+the preview lists
 
 25
-00:01:25,064 --> 00:01:28,990
-follow the related record when a link is
-available.
+00:01:12,705 --> 00:01:15,976
+the latest ones: a booking request and
+meeting updates.
 
 26
-00:01:28,990 --> 00:01:33,788
-Return to the notification list and mark
-the item as read.
+00:01:15,976 --> 00:01:17,430
+Select View All Notifications.
 
 27
-00:01:33,788 --> 00:01:36,842
-It should leave the Unread view
-immediately
+00:01:17,430 --> 00:01:20,702
+The full history can be filtered to
+Unread, which
 
 28
-00:01:36,842 --> 00:01:39,895
-while remaining available in the full
-history.
+00:01:20,702 --> 00:01:23,974
+shows only the items no one has
+acknowledged yet.
 
 29
-00:01:39,895 --> 00:01:44,694
-Use Mark All Read only after reviewing the
-outstanding items; it
+00:01:23,974 --> 00:01:27,973
+Review each item before you use Mark All
+as Read; marking
 
 30
-00:01:44,694 --> 00:01:49,056
-is not a substitute for completing the
-work they describe.
+00:01:27,973 --> 00:01:31,971
+an item as read does not complete the work
+it describes.
 
 31
-00:01:49,056 --> 00:01:51,237
-Now open the Help Center.
+00:01:31,971 --> 00:01:36,334
+Finally, open the Help Center with the
+question mark in the header.
 
 32
-00:01:51,237 --> 00:01:54,727
-Help content is organized around roles and
-capabilities.
+00:01:36,334 --> 00:01:38,878
+Articles are grouped by topic and tagged
 
 33
-00:01:54,727 --> 00:01:58,217
-Search for Security Guard, open the
-matching article,
+00:01:38,878 --> 00:01:41,059
+with the roles they apply to.
 
 34
-00:01:58,217 --> 00:02:01,706
-and compare its responsibilities with the
-available navigation.
+00:01:41,059 --> 00:01:43,968
+Search for roles, and open Roles and
+Permissions.
 
 35
-00:02:01,706 --> 00:02:06,069
-Guided tours can point to controls inside
-the running application,
+00:01:43,968 --> 00:01:46,512
+It explains what each role, from System
 
 36
-00:02:06,069 --> 00:02:09,995
-while articles explain the wider workflow
-and safety rules.
+00:01:46,512 --> 00:01:49,057
+Admin to Tenant, can see and do.
 
 37
-00:02:09,995 --> 00:02:13,484
-If search returns nothing, check spelling
-and confirm
+00:01:49,057 --> 00:01:52,329
+Remember the pattern: the dashboard shows
+what needs attention,
 
 38
-00:02:13,484 --> 00:02:16,974
-that the feature is enabled for the
-organization.
+00:01:52,329 --> 00:01:55,600
+search takes you to a record,
+notifications tell you
 
 39
-00:02:16,974 --> 00:02:20,464
-To finish, return to the dashboard and
-open
-
-40
-00:02:20,464 --> 00:02:23,954
-global search once more with the keyboard
-shortcut.
-
-41
-00:02:23,954 --> 00:02:28,316
-Remember the pattern: use dashboard totals
-to identify work, search
-
-42
-00:02:28,316 --> 00:02:32,242
-to reach a record quickly, notifications
-to respond to
-
-43
-00:02:32,242 --> 00:02:36,168
-events, and Help whenever you need the
-approved process.
+00:01:55,600 --> 00:01:58,872
+what changed, and Help explains how to do
+it.

@@ -242,6 +242,230 @@ public class BlobStorageService {
     }
 
     /**
+     * Organisation branding (logo, stamp) never sits in a publicly readable place:
+     * in Azure it is {@code tenant-<orgId>/branding/<uuid>} (tenant containers are
+     * private); an organisation not yet created stages in the private
+     * {@value #BRANDING_STAGING_CONTAINER} container until it exists
+     * ({@link #adoptStagedBranding}). Without Azure it is under the local root's
+     * {@code private/branding/<orgId|staging>/}, which the public serve route never
+     * serves. It reaches browsers and PDFs only through the app
+     * ({@code OrgBrandImages}).
+     */
+    public static final String BRANDING_FOLDER = "branding";
+    public static final String BRANDING_STAGING_CONTAINER = "branding-staging";
+    static final String LOCAL_BRANDING_FOLDER = "private/" + BRANDING_FOLDER;
+    private static final String STAGING = "staging";
+
+    private static final String LOCAL_SERVE_PREFIX = "/api/v1/assets/serve/";
+
+    @Value("${rentaxis.assets.storage-path:./data/assets}")
+    private String localAssetsPath = "./data/assets";
+
+    private boolean azure() {
+        return (connectionString != null && !connectionString.isBlank()) || serviceClient != null;
+    }
+
+    /**
+     * Stores a verified logo or stamp for {@code orgId} (null: an organisation not
+     * yet created, staged privately). {@code contentType} is the sniffed type.
+     */
+    public String uploadBranding(UUID orgId, byte[] bytes, String contentType) {
+        String ext = switch (contentType) {
+            case "image/jpeg" -> ".jpg";
+            case "image/gif" -> ".gif";
+            default -> ".png";
+        };
+        String name = UUID.randomUUID() + ext;
+        if (!azure()) {
+            String relative = LOCAL_BRANDING_FOLDER + "/" + (orgId != null ? orgId : STAGING) + "/" + name;
+            try {
+                java.nio.file.Path file = localRoot().resolve(relative).normalize();
+                java.nio.file.Files.createDirectories(file.getParent());
+                java.nio.file.Files.write(file, bytes);
+            } catch (IOException e) {
+                throw new BlobStorageException("Failed to store branding locally", e);
+            }
+            return LOCAL_SERVE_PREFIX + relative;
+        }
+        String container = orgId != null ? containerPrefix + orgId : BRANDING_STAGING_CONTAINER;
+        try {
+            BlobContainerClient containerClient = getServiceClient().getBlobContainerClient(container);
+            if (!containerClient.exists()) {
+                containerClient.create(); // private: no public access level
+            }
+            String blobPath = BRANDING_FOLDER + "/" + name;
+            BlobClient blob = containerClient.getBlobClient(blobPath);
+            blob.uploadWithResponse(new com.azure.storage.blob.options.BlobParallelUploadOptions(
+                            com.azure.core.util.BinaryData.fromBytes(bytes))
+                            .setHeaders(new com.azure.storage.blob.models.BlobHttpHeaders().setContentType(contentType)),
+                    null, com.azure.core.util.Context.NONE);
+            // Unencoded slashes, as AssetController writes them (getBlobUrl() encodes them).
+            return getServiceClient().getAccountUrl() + "/" + container + "/" + blobPath;
+        } catch (com.azure.storage.blob.models.BlobStorageException e) {
+            throw new BlobStorageException("Failed to upload branding to " + container, e);
+        }
+    }
+
+    /** A branding file staged for an organisation not yet created (see {@link #uploadBranding}). */
+    public boolean isStagedBranding(String url) {
+        if (url == null) return false;
+        if (url.startsWith(LOCAL_SERVE_PREFIX + LOCAL_BRANDING_FOLDER + "/" + STAGING + "/")) return true;
+        return parseOwnedBlobUrl(url).map(l -> l.containerName().equals(BRANDING_STAGING_CONTAINER)).orElse(false);
+    }
+
+    /**
+     * Moves a staged branding file into {@code orgId}'s own private storage and
+     * returns its new URL (so it is purged with that organisation). Anything that
+     * is not a staged file of ours is returned as it is.
+     */
+    public String adoptStagedBranding(UUID orgId, String url) {
+        String moved = copyStagedBranding(orgId, url);
+        if (!moved.equals(url)) {
+            deleteBrandingQuietly(url);
+        }
+        return moved;
+    }
+
+    /**
+     * Deletes a branding file of ours (staged, or in an org's branding folder),
+     * logging rather than failing — used to compensate a rolled-back save and to
+     * clear a staged file once its copy has committed.
+     */
+    public void deleteBrandingQuietly(String url) {
+        try {
+            if (url == null) return;
+            if (url.startsWith(LOCAL_SERVE_PREFIX)) {
+                String relative = url.substring(LOCAL_SERVE_PREFIX.length());
+                java.nio.file.Path file = localRoot().resolve(relative).normalize();
+                if (!relative.contains("..") && file.startsWith(localRoot().resolve(LOCAL_BRANDING_FOLDER))) {
+                    java.nio.file.Files.deleteIfExists(file);
+                }
+                return;
+            }
+            parseOwnedBlobUrl(url)
+                    .filter(l -> l.blobPath().startsWith(BRANDING_FOLDER + "/"))
+                    .filter(l -> l.containerName().equals(BRANDING_STAGING_CONTAINER)
+                            || l.containerName().startsWith(containerPrefix.toLowerCase(Locale.ROOT)))
+                    .ifPresent(l -> getServiceClient().getBlobContainerClient(l.containerName())
+                            .getBlobClient(l.blobPath()).deleteIfExists());
+        } catch (IOException | RuntimeException e) {
+            log.warn("Branding file not removed: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Staged uploads of a "new organisation" dialog that was cancelled are never
+     * adopted; anything staged longer ago than {@code olderThan} is deleted.
+     * Returns how many files went.
+     */
+    public int purgeStagedBranding(java.time.Duration olderThan) {
+        java.time.Instant cutoff = java.time.Instant.now().minus(olderThan);
+        int purged = 0;
+        if (!azure()) {
+            java.nio.file.Path dir = localRoot().resolve(LOCAL_BRANDING_FOLDER).resolve(STAGING);
+            if (!java.nio.file.Files.isDirectory(dir)) return 0;
+            try (var files = java.nio.file.Files.list(dir)) {
+                for (java.nio.file.Path f : files.toList()) {
+                    if (java.nio.file.Files.getLastModifiedTime(f).toInstant().isBefore(cutoff)) {
+                        java.nio.file.Files.deleteIfExists(f);
+                        purged++;
+                    }
+                }
+            } catch (IOException e) {
+                log.warn("Staged branding purge failed: {}", e.getMessage());
+            }
+            return purged;
+        }
+        BlobContainerClient staging = getServiceClient().getBlobContainerClient(BRANDING_STAGING_CONTAINER);
+        if (!staging.exists()) return 0;
+        for (var item : staging.listBlobs()) {
+            var modified = item.getProperties().getLastModified();
+            if (modified != null && modified.toInstant().isBefore(cutoff)) {
+                staging.getBlobClient(item.getName()).deleteIfExists();
+                purged++;
+            }
+        }
+        return purged;
+    }
+
+    /**
+     * The copy half of {@link #adoptStagedBranding}: the staged file copied into
+     * {@code orgId}'s own storage, the staged source left in place (the caller
+     * removes it once its save has committed). Anything not staged comes back as it is.
+     */
+    public String copyStagedBranding(UUID orgId, String url) {
+        if (orgId == null || !isStagedBranding(url)) {
+            return url;
+        }
+        byte[] bytes;
+        if (url.startsWith(LOCAL_SERVE_PREFIX)) {
+            java.nio.file.Path file = localRoot().resolve(url.substring(LOCAL_SERVE_PREFIX.length())).normalize();
+            if (!file.startsWith(localRoot().resolve(LOCAL_BRANDING_FOLDER + "/" + STAGING))) return url;
+            try {
+                bytes = java.nio.file.Files.readAllBytes(file);
+            } catch (IOException e) {
+                throw new BlobStorageException("Could not read the staged image", e);
+            }
+            String type = com.datagami.rentaxis.core.util.ImageTypes.sniff(bytes)
+                    .orElseThrow(() -> new BlobStorageException("The staged file is not an image"));
+            return uploadBranding(orgId, bytes, type);
+        }
+        BlobLocation staged = parseOwnedBlobUrl(url).orElseThrow();
+        BlobClient source = getServiceClient().getBlobContainerClient(staged.containerName())
+                .getBlobClient(staged.blobPath());
+        bytes = source.downloadContent().toBytes();
+        String type = com.datagami.rentaxis.core.util.ImageTypes.sniff(bytes)
+                .orElseThrow(() -> new BlobStorageException("The staged file is not an image"));
+        return uploadBranding(orgId, bytes, type);
+    }
+
+    private java.nio.file.Path localRoot() {
+        return java.nio.file.Path.of(localAssetsPath).toAbsolutePath().normalize();
+    }
+
+    /**
+     * Reads a file named by a local-storage URL ({@code /api/v1/assets/serve/...})
+     * from inside the local root: the public {@code assets/} folder, or the private
+     * branding folder of {@code tenantId} itself. Anything else (traversal, another
+     * organisation's branding, staging, another folder, a query, over
+     * {@code maxBytes}) is {@link Optional#empty()}. The local-disk twin of
+     * {@link #downloadOwnedUrl}, for deployments without Azure.
+     */
+    public Optional<DownloadResult> readLocalAsset(UUID tenantId, String url, long maxBytes) {
+        if (url == null || !url.startsWith(LOCAL_SERVE_PREFIX)) {
+            return Optional.empty();
+        }
+        String relative = url.substring(LOCAL_SERVE_PREFIX.length());
+        if (relative.isEmpty() || relative.contains("..") || relative.contains("\\") || relative.contains("%")
+                || relative.contains("?") || relative.contains("#") || relative.startsWith("/")) {
+            return Optional.empty();
+        }
+        java.nio.file.Path root = localRoot();
+        java.nio.file.Path file = root.resolve(relative).normalize();
+        if (!file.startsWith(root)) {
+            return Optional.empty();
+        }
+        java.nio.file.Path rel = root.relativize(file);
+        boolean publicAsset = rel.getNameCount() >= 2
+                && rel.getName(0).toString().equalsIgnoreCase(AssetController.PUBLIC_PREFIX);
+        boolean ownBranding = tenantId != null && rel.getNameCount() == 4
+                && rel.getName(0).toString().equals("private")
+                && rel.getName(1).toString().equals(BRANDING_FOLDER)
+                && rel.getName(2).toString().equals(tenantId.toString());
+        if (!publicAsset && !ownBranding) {
+            return Optional.empty();
+        }
+        try {
+            if (!java.nio.file.Files.isRegularFile(file) || java.nio.file.Files.size(file) > maxBytes) {
+                return Optional.empty();
+            }
+            return Optional.of(new DownloadResult(java.nio.file.Files.readAllBytes(file), null));
+        } catch (IOException e) {
+            return Optional.empty();
+        }
+    }
+
+    /**
      * A blob under {@link AssetController#PUBLIC_PREFIX}{@code /}. Case-insensitive
      * because {@code AssetController} accepts the folder case-insensitively.
      */

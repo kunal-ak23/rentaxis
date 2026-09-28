@@ -201,13 +201,13 @@ export default function RenterPortalPage() {
         try {
             const res = await fetch("/api/proxy/v1/online-payments/my-payments", { signal });
             if (res.ok) {
-                const payments = await res.json();
+                const payments: RenterCheque[] = await res.json();
                 if (!isCurrent()) return;
 
                 // Group all payments by lease so we can show the full schedule on
                 // the PENDING_SIGNATURE acceptance card before the renter signs.
-                const grouped: Record<string, any[]> = {};
-                payments.forEach((p: any) => {
+                const grouped: Record<string, RenterCheque[]> = {};
+                payments.forEach(p => {
                     if (!grouped[p.leaseId]) grouped[p.leaseId] = [];
                     grouped[p.leaseId].push(p);
                 });
@@ -219,9 +219,14 @@ export default function RenterPortalPage() {
                 // RenterChequeDTO's own `due` flag (accounting-v2) replaces the v1
                 // PENDING/OVERDUE status strings, which this endpoint no longer
                 // returns — a cheque row is REGISTERED, DEPOSITED, CLEARED, etc.
+                // The next payment is the earliest row the Tenant can actually
+                // pay: `due` is the Tenant's side of the rules (a cheque already
+                // at the bank is not due from them), and `payable > 0` guards the
+                // card against ever reading "AED 0 · N days overdue" again
+                // (tutorial bug 2026-09-28-03).
                 const pending = payments
-                    .filter((p: any) => p.due)
-                    .sort((a: any, b: any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+                    .filter(p => p.due && Number(p.payable) > 0)
+                    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
                 if (pending.length > 0) {
                     const next = pending[0];
@@ -237,7 +242,7 @@ export default function RenterPortalPage() {
                     // days on this card and 625 on My Payments.
                     setNextPayment({
                         dueDate: next.dueDate,
-                        amount: next.payable ?? next.amount,
+                        amount: next.payable,
                         daysUntilDue: diffDays,
                         isOverdue: !!next.overdue,
                         daysOverdue: next.daysOverdue ?? 0,

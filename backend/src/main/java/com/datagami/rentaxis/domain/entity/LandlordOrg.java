@@ -39,6 +39,21 @@ public class LandlordOrg {
     @Column(name = "stamp_image_url", columnDefinition = "text")
     private String stampImageUrl;
 
+    /**
+     * When the current stamp was saved (null: none, or saved before this was
+     * recorded). The executed-copy sweep only retries leases posted after it.
+     */
+    @Column(name = "stamp_set_at")
+    private java.time.Instant stampSetAt;
+
+    public java.time.Instant getStampSetAt() {
+        return stampSetAt;
+    }
+
+    public void setStampSetAt(java.time.Instant stampSetAt) {
+        this.stampSetAt = stampSetAt;
+    }
+
     @Column(name = "ticket_otp_required")
     private Boolean ticketOtpRequired = true;
 

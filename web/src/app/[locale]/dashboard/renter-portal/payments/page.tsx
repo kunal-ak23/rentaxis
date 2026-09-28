@@ -8,10 +8,11 @@ import {
     DollarSign,
     CheckCircle,
     AlertTriangle,
+    Clock,
     Download,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatCurrencyCompact } from "@/lib/format";
+import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { fmtAmount } from "@/lib/api/ledger";
@@ -30,8 +31,16 @@ import RenterTaxInvoices from "@/components/renter/RenterTaxInvoices";
  * screen — a bounce is replaced from the register, not re-paid online).
  */
 
+/**
+ * Owed by the Tenant now: the server's Tenant-side `due` (a DEPOSITED cheque is at
+ * the bank, not due from them) with something actually payable on it.
+ */
+function owedNow(r: RenterCheque): boolean {
+    return r.due && r.payable > 0;
+}
+
 function pickNextDue(rows: RenterCheque[]): RenterCheque | null {
-    const due = rows.filter(r => r.due);
+    const due = rows.filter(owedNow);
     if (due.length === 0) return null;
     return [...due].sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
 }
@@ -94,8 +103,10 @@ export default function RenterPaymentsPage() {
         fetchPayments();
     };
 
-    const dueRows = rows.filter(r => r.due);
-    const historyRows = rows.filter(r => r.status === "CLEARED" || r.status === "BOUNCED");
+    const dueRows = rows.filter(owedNow);
+    // DEPOSITED: handed over and at the bank — not owed, not yet cleared. Listed
+    // with the history so it does not vanish from the screen while it clears.
+    const historyRows = rows.filter(r => r.status === "CLEARED" || r.status === "BOUNCED" || r.status === "DEPOSITED");
     const nextDue = pickNextDue(rows);
 
     // PACT-style running total — a cumulative "amount due so far" per row, in
@@ -239,6 +250,12 @@ export default function RenterPaymentsPage() {
                                                     {t("overdueSince", { date: fmtIsoDate(row.dueDate, locale) })}
                                                 </p>
                                             )}
+                                            {row.onlineEnabled && row.onlineRefusal && t.has(`errors.${row.onlineRefusal}`) && (
+                                                // Review m-a: why the Pay button is missing on a row that is owed.
+                                                <p className="text-[11px] text-foreground mt-1" data-testid={`online-refusal-${row.id}`}>
+                                                    {t(`errors.${row.onlineRefusal}`, { amount: formatCurrency(row.payable) })}
+                                                </p>
+                                            )}
                                         </div>
                                     );
                                 })}
@@ -261,10 +278,12 @@ export default function RenterPaymentsPage() {
                                                 <div
                                                     className={cn(
                                                         "w-10 h-10 rounded-xl flex items-center justify-center border",
-                                                        row.status === "BOUNCED" ? "bg-error/10 text-error border-error/20" : "bg-success/10 text-success border-success/20",
+                                                        row.status === "BOUNCED" ? "bg-error/10 text-error border-error/20"
+                                                            : row.status === "DEPOSITED" ? "bg-accent/10 text-accent border-accent/20"
+                                                            : "bg-success/10 text-success border-success/20",
                                                     )}
                                                 >
-                                                    {row.status === "BOUNCED" ? <AlertTriangle size={18} /> : <CheckCircle size={18} />}
+                                                    {row.status === "BOUNCED" ? <AlertTriangle size={18} /> : row.status === "DEPOSITED" ? <Clock size={18} /> : <CheckCircle size={18} />}
                                                 </div>
                                                 <div>
                                                     <h4 className="text-xs font-bold text-foreground">{t("cheque", { n: row.installmentNumber })}</h4>
@@ -292,6 +311,11 @@ export default function RenterPaymentsPage() {
                                                 )}
                                             </div>
                                         </div>
+                                        {row.status === "DEPOSITED" && (
+                                            <p className="text-[11px] italic text-muted mt-2" data-testid={`at-bank-${row.id}`}>
+                                                {t("atTheBank")}
+                                            </p>
+                                        )}
                                         {row.status === "BOUNCED" && (
                                             <p className="text-[11px] italic text-error mt-2">
                                                 {t("bouncedOn", { date: fmtIsoDate(row.statusChangedAt, locale) })}

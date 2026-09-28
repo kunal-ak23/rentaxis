@@ -37,10 +37,10 @@ export default function MvpHeader() {
                 >
                     <Link href="/" className="flex items-center gap-2 mr-4 cursor-pointer">
                         <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-primary-foreground font-black text-xs shadow-md shadow-primary/20">
-                            R
+                            M
                         </div>
                         <span className="text-base font-black text-foreground tracking-tight">
-                            RentAxis
+                            Miftah
                         </span>
                     </Link>
 

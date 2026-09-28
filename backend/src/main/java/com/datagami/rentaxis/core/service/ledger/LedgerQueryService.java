@@ -77,6 +77,15 @@ public class LedgerQueryService {
         this.lines = lines; this.accounts = accounts; this.vendors = vendors;
     }
 
+    /**
+     * Whether {@link #accountLedger} can read this account — the same lookup it makes,
+     * answered instead of thrown, for callers that must not mark their transaction
+     * rollback-only on a dangling account id.
+     */
+    public boolean accountExists(UUID accountId) {
+        return accountId != null && accounts.findById(accountId).isPresent();
+    }
+
     public AccountLedgerDTO accountLedger(UUID accountId, LedgerFilter filter) {
         LedgerFilter f = filter.normalised();
         UUID tenantId = TenantContextHolder.getTenantId();

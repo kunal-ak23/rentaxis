@@ -1309,6 +1309,13 @@ export type RenterCheque = {
   failureReason: ChequeFailureReason | null;
   clearedAt: string | null;
   statusChangedAt: string | null;
+  /**
+   * Why a row the Tenant owes cannot be paid online although the property takes
+   * online payments — a code under `OnlinePayments.errors` (`payment.bouncePartlySettled`:
+   * pay the remaining `payable` at the office; `payment.bounceBalanceUnknown`). Optional:
+   * an older server does not send it.
+   */
+  onlineRefusal?: string | null;
 };
 
 /** CreateOrderResponseDTO. */

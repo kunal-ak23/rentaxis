@@ -2,6 +2,7 @@
 
 import { focusFirstInvalidMoney } from "@/components/ui/NumberInput";
 import { useCallback, useEffect, useState } from "react";
+import { ContractDocuments } from "@/components/leases/ContractDocuments";
 import { useParams, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
@@ -580,7 +581,9 @@ export default function LeaseDetailPage() {
         writeOff: { label: tA("writeOff"), testId: "lease-write-off", icon: CircleSlash, onSelect: () => setDrawer("writeOff") },
         downloadContract: {
             label: tMaster("downloadContract"), testId: "lease-download-contract", icon: Download,
-            onSelect: () => downloadBlob(`/api/proxy/v1/leases/${leaseId}/documents`, `contract-${leaseId.slice(0, 8)}.pdf`),
+            // The contract endpoint (the executed copy when there is one, else the signed
+            // contract) — this used to download the documents LIST as a ".pdf".
+            onSelect: () => downloadBlob(`/api/proxy/v1/leases/${leaseId}/contract`, `contract-${leaseId.slice(0, 8)}.pdf`),
         },
         ledger: { label: t("ledger"), testId: "lease-ledger", icon: BookOpen, href: `/dashboard/finance/tenant-ledger?renterId=${lease.renterId}&leaseId=${lease.id}` },
         delete: { label: t("deleteDraft"), testId: "lease-delete", icon: Trash2, onSelect: () => setDeleteOpen(true), destructive: true },
@@ -966,6 +969,7 @@ export default function LeaseDetailPage() {
                                         </Link>
                                     </div>
                                     {contractError && <p className="text-xs text-error">{contractError}</p>}
+                                    <ContractDocuments leaseId={leaseId} canIssue={canGenerateContract && !!lease.postedAt} leaseStatus={lease.status} />
                                     {lease.ejariNumber && (
                                         <p className="text-xs text-muted">
                                             <span className="font-medium text-foreground">{t("ejariNumber")}:</span> {lease.ejariNumber}

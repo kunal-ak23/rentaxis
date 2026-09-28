@@ -145,4 +145,90 @@ class ChequeDueRulesTest {
                     .isEqualTo(overdue);
         }
     }
+    // ------------------------------------------------------------------
+    // the Tenant's side (tutorial bug 2026-09-28-03)
+    // ------------------------------------------------------------------
+
+    /**
+     * What the Tenant still owes and can settle today. The landlord's {@link ChequeDueRules#due}
+     * keeps a DEPOSITED cheque "due" because the money has not arrived; for the Tenant
+     * the paper is at the bank and there is nothing left for them to do. The portal
+     * used to show "AED 0 · 84 days overdue" for exactly that row.
+     */
+    @ParameterizedTest(name = "{0} dated {1} → tenant owes={2}")
+    @CsvSource({
+            "REGISTERED,     -84, true",
+            "REGISTERED,       0, true",
+            // A post-dated cheque the landlord is holding: not owed until its date.
+            "REGISTERED,      30, false",
+            "ONLINE_PENDING,  -3, true",
+            "ONLINE_PENDING,   3, false",
+            "BOUNCED,        -84, true",
+            "BOUNCED,         10, true",
+            // Handed over and at the bank, or already paid: nothing to pay.
+            "DEPOSITED,      -84, false",
+            "DEPOSITED,        0, false",
+            "CLEARED,        -84, false",
+            "REPLACED,       -84, false",
+            "CANCELLED,      -84, false",
+            "RETURNED,       -84, false",
+            "DRAFT,          -84, false",
+            "TRANSFERRED,    -84, false",
+    })
+    void tenantOwes_onlyWhatTheTenantCanStillSettle(ChequeStatus status, int offsetDays, boolean expected) {
+        assertThat(ChequeDueRules.tenantOwes(cheque(status, TODAY.plusDays(offsetDays)), TODAY)).isEqualTo(expected);
+    }
+
+    @ParameterizedTest(name = "{0} dated {1}, grace 5 → tenant overdue={2}")
+    @CsvSource({
+            "REGISTERED,  -84, true",
+            "REGISTERED,   -5, false",   // inside grace
+            "REGISTERED,   -6, true",
+            "REGISTERED,   30, false",   // held post-dated cheque, not yet due
+            "BOUNCED,     -84, true",
+            "ONLINE_PENDING, -84, true",
+            "DEPOSITED,   -84, false",   // the bug: at the bank, not late for the Tenant
+            "CLEARED,     -84, false",
+            "REPLACED,    -84, false",
+    })
+    void tenantOverdue_onlyWhenSomethingIsPayableAndGraceHasPassed(ChequeStatus status, int offsetDays, boolean expected) {
+        assertThat(ChequeDueRules.tenantOverdue(cheque(status, TODAY.plusDays(offsetDays)), 5, TODAY))
+                .isEqualTo(expected);
+    }
+
+    /** The landlord's view is untouched: a deposited cheque that never cleared is still chased. */
+    @Test
+    void landlordViewStillCountsAnUnclearedDepositAsOverdue() {
+        assertThat(ChequeDueRules.overdue(cheque(ChequeStatus.DEPOSITED, TODAY.minusDays(84)), 5, TODAY)).isTrue();
+    }
+
+    /** Review I1 (F14-52): what the ledger still carries on a bounce decides what the Tenant owes. */
+    @ParameterizedTest(name = "bounce of 1000 with {0} open → owes={1}, overdue={2}, payable={3}")
+    @CsvSource({
+            // null: unknown — the face value.
+            ",      true,  true,  1000",
+            "1000,  true,  true,  1000",
+            "400,   true,  true,  400",
+            "0,     false, false, 0",
+            "-50,   false, false, 0",
+    })
+    void bounce_isOwedOnlyWhatTheLedgerStillCarries(java.math.BigDecimal open, boolean owes, boolean overdue,
+                                                    java.math.BigDecimal payable) {
+        Cheque c = cheque(ChequeStatus.BOUNCED, TODAY.minusDays(30));
+        c.setAmount(new java.math.BigDecimal("1000"));
+        assertThat(ChequeDueRules.tenantOwes(c, TODAY, open)).isEqualTo(owes);
+        assertThat(ChequeDueRules.tenantOverdue(c, 5, TODAY, open)).isEqualTo(overdue);
+        assertThat(ChequeDueRules.tenantPayable(c, TODAY, open)).isEqualByComparingTo(payable);
+    }
+
+    /** The open amount only ever speaks for a bounce; other rows are owed in full or not at all. */
+    @Test
+    void openAmountIsIgnoredForRowsThatAreNotBounced() {
+        Cheque registered = cheque(ChequeStatus.REGISTERED, TODAY.minusDays(30));
+        registered.setAmount(new java.math.BigDecimal("1000"));
+        assertThat(ChequeDueRules.tenantPayable(registered, TODAY, java.math.BigDecimal.ZERO)).isEqualByComparingTo("1000");
+        Cheque deposited = cheque(ChequeStatus.DEPOSITED, TODAY.minusDays(30));
+        deposited.setAmount(new java.math.BigDecimal("1000"));
+        assertThat(ChequeDueRules.tenantPayable(deposited, TODAY, null)).isEqualByComparingTo("0");
+    }
 }

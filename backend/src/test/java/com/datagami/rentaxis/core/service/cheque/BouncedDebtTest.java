@@ -71,4 +71,21 @@ class BouncedDebtTest {
 
         assertThat(new BouncedDebt(closure).openAmounts(List.of(a)).get(a.getId())).isEqualByComparingTo("15500");
     }
+
+    /** Review I2 / m-b: an unreadable receivable leaves its bounces out ("unknown") instead of throwing. */
+    @Test
+    void knownAmountsLeaveOutTheBouncesOfALeaseWhoseReceivableCannotBeRead() {
+        Cheque a = row(ChequeStatus.BOUNCED, "1000", LocalDate.of(2025, 3, 1));
+        Lease other = lease();
+        Cheque b = row(ChequeStatus.BOUNCED, "500", LocalDate.of(2025, 4, 1));
+        b.setLease(other);
+        Cheque paper = row(ChequeStatus.REGISTERED, "300", null);
+        when(closure.receivableBalanceIfKnown(lease)).thenReturn(java.util.Optional.empty());
+        when(closure.receivableBalanceIfKnown(other)).thenReturn(java.util.Optional.of(new BigDecimal("200")));
+
+        Map<UUID, BigDecimal> known = new BouncedDebt(closure).knownBouncedOpenAmounts(List.of(a, b, paper));
+
+        assertThat(known).doesNotContainKey(a.getId()).doesNotContainKey(paper.getId());
+        assertThat(known.get(b.getId())).isEqualByComparingTo("200");
+    }
 }

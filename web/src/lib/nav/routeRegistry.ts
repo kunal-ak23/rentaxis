@@ -27,7 +27,7 @@ const ticketsAllow = (role: UserRole) =>
  * truth. A moved page is NOT listed here; it is a `from` in routeMap.ts.
  */
 export const DASHBOARD_ROUTES: RouteEntry[] = [
-    r(D, "authenticated"), r(`${D}/help`, "authenticated"), r(`${D}/help/[slug]`, "authenticated"),
+    r(D, "authenticated"), r(`${D}/help`, "authenticated"), r(`${D}/help/[slug]`, "authenticated"), r(`${D}/help/videos`, "authenticated"),
     r(`${D}/notifications`, "authenticated"), r(`${D}/profile`, "authenticated"),
     // ACCOUNTANT reads properties and renters (PropertyController / RenterController
     // GETs admit it); the pages render read-only for that role.

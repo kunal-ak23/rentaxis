@@ -24,7 +24,7 @@ public class UnsubscribeController {
                 .map(uid -> {
                     log.info("email.unsubscribe user_id={} source=link", uid);
                     return ResponseEntity.ok("<html><body><h2>You've been unsubscribed</h2>" +
-                            "<p>You will no longer receive marketing emails from RentAxis. " +
+                            "<p>You will no longer receive marketing emails from Miftah. " +
                             "You will continue to receive transactional emails (lease, payment, etc).</p></body></html>");
                 })
                 .orElseGet(() -> ResponseEntity.status(404).body("<html><body>Unknown token</body></html>"));

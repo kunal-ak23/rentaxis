@@ -33,9 +33,9 @@ const ARTICLE: Article = {
     category: "leases", roles: ["TENANT_ADMIN"], order: 1, relatedTour: "admin-onboarding",
     content: "## Creating a lease\n\nOpen the lease wizard and follow the steps.",
 };
-// Content, not chrome: the article and tour text, and the brand name.
+// Content, not chrome: the article and tour text (the brand is مفتاح in Arabic).
 const CONTENT = [ARTICLE.title, ARTICLE.description, "Creating a lease", "Open the lease wizard and follow the steps.",
-    TOUR.name, TOUR.description, "RentAxis"];
+    TOUR.name, TOUR.description];
 
 afterEach(() => {
     cleanup();

@@ -236,6 +236,102 @@ public class ContractGenerationService {
         return true;
     }
 
+    /**
+     * The executed copy (Kunal, 2026-09-28, "Executed copy at posting"): once a
+     * contract is signed and posted, the organisation's digital stamp is added by
+     * issuing a NEW document — the signed CONTRACT PDF is never touched.
+     *
+     * <p>Made only when there is something to add and something to copy: the
+     * organisation has a stamp that loads from our own storage, the lease is in a
+     * signed state ({@link #stampPrints}), and it has a stored signed contract
+     * (a renewal or an imported lease has none; its contract is rendered on
+     * demand, already stamped). Idempotent: an existing copy is returned as it is
+     * (and changeset 158 makes a second row impossible). Tenant-scoped like every
+     * other read here.</p>
+     *
+     * @return the executed copy, or empty when none is due
+     */
+    @Transactional
+    public Optional<LeaseDocumentDTO> createExecutedCopy(UUID leaseId) {
+        Lease lease = leaseRepository.findById(leaseId)
+                .orElseThrow(() -> new NotFoundException("Lease not found"));
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId != null && !tenantId.equals(lease.getTenantId())) {
+            throw new NotFoundException("Lease not found");
+        }
+        List<LeaseDocument> docs = leaseDocumentRepository.findByLeaseId(leaseId);
+        Optional<LeaseDocument> existing = docs.stream()
+                .filter(d -> d.getType() == DocumentType.EXECUTED_COPY).findFirst();
+        if (existing.isPresent()) {
+            clearSweepAttempts(leaseId);
+            return existing.map(this::mapToDTO);
+        }
+        Optional<LeaseDocument> signed = docs.stream()
+                .filter(d -> d.getType() == DocumentType.CONTRACT)
+                .max(Comparator.comparing(LeaseDocument::getCreatedAt));
+        if (!stampPrints(lease) || signed.isEmpty()) {
+            return Optional.empty();
+        }
+        LandlordOrg org = landlordOrgRepository.findById(lease.getTenantId()).orElse(null);
+        Optional<OrgBrandImages.Image> stamp = org == null ? Optional.empty()
+                : OrgBrandImages.load(blobStorageService, lease.getTenantId(), org.getStampImageUrl());
+        if (stamp.isEmpty()) {
+            return Optional.empty();
+        }
+        // R3-I1: the signed PDF itself, plus the stamp — never a fresh render of
+        // today's lease data (which may have drifted since signing).
+        byte[] signedBytes;
+        try {
+            signedBytes = readStoredBytes(signed.get());
+        } catch (RuntimeException e) {
+            log.warn("Executed copy not issued for lease {}: the signed contract could not be read", leaseId);
+            return Optional.empty();
+        }
+        LocalDate on = lease.getPostedAt() != null
+                ? lease.getPostedAt().atZone(java.time.ZoneId.systemDefault()).toLocalDate() : LocalDate.now();
+        Optional<byte[]> stamped = ExecutedCopyStamper.stamp(signedBytes, stamp.get().bytes(),
+                "Executed copy \u00B7 " + formatDate(on));
+        if (stamped.isEmpty()) {
+            log.warn("Executed copy not issued for lease {}: no stamp area found in the signed contract", leaseId);
+            return Optional.empty();
+        }
+        byte[] pdf = stamped.get();
+        String number = lease.getContractNumber() != null ? String.valueOf(lease.getContractNumber()) : "x";
+        String fileName = "RA-" + number + "-executed-" + System.currentTimeMillis() + ".pdf";
+        String url = useAzureStorage()
+                ? uploadToAzure(lease.getTenantId(), fileName, pdf)
+                : saveToLocalDisk(fileName, pdf);
+        // A rollback (e.g. a concurrent copy won the unique index) removes the file.
+        scheduleReplacementCleanup(lease.getTenantId(), List.of(), url);
+        LeaseDocument doc = new LeaseDocument();
+        doc.setLease(lease);
+        doc.setDocumentUrl(url);
+        doc.setType(DocumentType.EXECUTED_COPY);
+        LeaseDocument saved = leaseDocumentRepository.saveAndFlush(doc);
+        log.info("Executed copy issued for lease {}", leaseId);
+        clearSweepAttempts(leaseId);
+        return Optional.of(mapToDTO(saved));
+    }
+
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setJdbcTemplate(org.springframework.jdbc.core.JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
+    }
+
+    /**
+     * The lease has its executed copy — whichever path made it (posting, the
+     * manual action, the nightly sweep) — so its failed-sweep record goes: a
+     * lease the sweep gave up on and an admin then fixed by hand is no longer
+     * "permanently skipped". Keyed by the lease just tenant-checked above.
+     */
+    private void clearSweepAttempts(UUID leaseId) {
+        if (jdbc != null) {
+            jdbc.update("DELETE FROM executed_copy_sweep_attempts WHERE lease_id = ?", leaseId);
+        }
+    }
+
     @Transactional
     public byte[] previewContract(UUID leaseId) {
         Lease lease = leaseRepository.findById(leaseId)
@@ -305,6 +401,19 @@ public class ContractGenerationService {
         values.put("LANDLORD_NAME", escapeUserText(org.getName()));
         values.put("LANDLORD_ADDRESS", escapeUserText(org.getAddress()));
         values.put("LANDLORD_PHONE", escapeUserText(org.getPhone()));
+        // Organisation branding, each only when set — otherwise the placeholder is
+        // empty and the page is exactly as before. The TRN rides the phone line so
+        // the header keeps its height (no 12-cheque contract gains a page).
+        values.put("LANDLORD_TRN", trnSuffix(org));
+        values.put("LANDLORD_LOGO_CELL", brandImage(lease.getTenantId(), org.getLogoUrl())
+                .map(src -> "<td style=\"width:70pt; text-align:left; vertical-align:middle;\">"
+                        + "<img src=\"" + escapeUserText(src) + "\" alt=\"\" style=\"max-width:70pt; max-height:40pt;\"/></td>")
+                .orElse(""));
+        values.put("LANDLORD_STAMP", (stampPrints(lease)
+                ? brandImage(lease.getTenantId(), org.getStampImageUrl()) : java.util.Optional.<String>empty())
+                .map(src -> "<div style=\"text-align:right;\"><img src=\"" + escapeUserText(src)
+                        + "\" alt=\"\" style=\"max-width:110pt; max-height:34pt;\"/></div>")
+                .orElse("&#160;"));
         values.put("CONTRACT_NUMBER", escapeUserText(contractNumberDisplay));
         values.put("AGREEMENT_DATE", formatDate(agreementDate));
         values.put("BUILDING_NAME", escapeUserText(property.getNameEn()));
@@ -323,6 +432,54 @@ public class ContractGenerationService {
         values.put("TERMS_TABLE", termsTable);
 
         return substituteAll(template, values);
+    }
+
+    /**
+     * Whether the organisation's digital stamp may print on this contract (Kunal,
+     * 2026-09-28): only once it is signed. DRAFT and PENDING_SIGNATURE never carry
+     * it, so a contract awaiting signature cannot look executed and the wet stamp
+     * of the hand-signing workflow (5971b0e2) still has its empty space. ACTIVE,
+     * NOTICE_GIVEN, RENEWED and EXPIRED were on the books; TERMINATED and CLOSED
+     * only when the lease got there after signing (posted, or accepted by the
+     * renter) — a draft withdrawn as terminated stays unstamped.
+     */
+    static boolean stampPrints(Lease lease) {
+        LeaseStatus status = lease.getStatus();
+        if (status == null) {
+            return false;
+        }
+        return switch (status) {
+            case DRAFT, PENDING_SIGNATURE -> false;
+            case ACTIVE, NOTICE_GIVEN, RENEWED, EXPIRED -> true;
+            case TERMINATED, CLOSED -> lease.getPostedAt() != null || lease.getRenterAcceptedAt() != null;
+        };
+    }
+
+    /** "  |  TRN: …" after the phone, "TRN: …" alone without one, or nothing. */
+    static String trnSuffix(LandlordOrg org) {
+        String trn = org.getTrn();
+        if (trn == null || trn.isBlank()) {
+            return "";
+        }
+        String label = "TRN: " + escapeUserText(trn.strip());
+        String phone = org.getPhone();
+        return phone == null || phone.isBlank() ? label : "&#160;&#160;|&#160;&#160;" + label;
+    }
+
+    /**
+     * The organisation's logo or stamp as an inline data: image, read only from our
+     * own storage for this lease's tenant ({@link OrgBrandImages}); a URL anywhere
+     * else is refused and the image is simply left off.
+     */
+    private java.util.Optional<String> brandImage(UUID tenantId, String url) {
+        return OrgBrandImages.dataUri(blobStorageService, tenantId, url);
+    }
+
+    private BlobStorageService blobStorageService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setBlobStorageService(BlobStorageService blobStorageService) {
+        this.blobStorageService = blobStorageService;
     }
 
     private static final Pattern TERM_LI = Pattern.compile(
@@ -862,15 +1019,28 @@ public class ContractGenerationService {
                 .orElse(null);
         leaseAccessPolicy.requireReadable(lease);
 
-        Optional<LeaseDocument> stored = leaseDocumentRepository.findByLeaseId(leaseId).stream()
-                .filter(d -> d.getType() == DocumentType.CONTRACT)
-                .findFirst();
-        if (stored.isPresent()) {
-            return getDocumentContent(stored.get().getId());
+        // The executed copy (the signed PDF plus the stamp) when there is one and the
+        // caller may see it, else the signed contract — never a 404 while a signed
+        // contract the caller may see exists (R3-I1). PR #359 R1 applies to both: a
+        // renter after an assignment sees only documents of their own side, and the
+        // executed copy counts as dated like the contract it copies.
+        List<LeaseDocument> docs = leaseDocumentRepository.findByLeaseId(leaseId);
+        var window = leaseAccessPolicy.renterWindow(lease);
+        for (DocumentType type : List.of(DocumentType.EXECUTED_COPY, DocumentType.CONTRACT)) {
+            Optional<LeaseDocument> candidate = docs.stream()
+                    .filter(d -> d.getType() == type)
+                    .filter(d -> visibleInWindow(window, effectiveDate(d, docs)))
+                    .max(Comparator.comparing(LeaseDocument::getCreatedAt));
+            if (candidate.isEmpty()) continue;
+            try {
+                return readStoredBytes(candidate.get());
+            } catch (RuntimeException e) {
+                if (type == DocumentType.CONTRACT) throw e;
+                log.warn("Executed copy of lease {} unreadable; serving the signed contract", leaseId);
+            }
         }
         // PR #359 R1: a rendered contract names today's renter over the whole term;
         // after an assignment neither side's portal gets it.
-        var window = leaseAccessPolicy.renterWindow(lease);
         if (window != null && window.bounded()) {
             throw new NotFoundException("No contract has been issued for this lease yet");
         }
@@ -901,9 +1071,12 @@ public class ContractGenerationService {
         // PR #359 R1: after an assignment each renter sees their own side of the date.
         var window = leaseAccessPolicy.renterWindow(lease);
 
-        return leaseDocumentRepository.findByLeaseId(leaseId).stream()
-                .filter(d -> window == null || !window.bounded()
-                        || window.contains(d.getCreatedAt().atZone(java.time.ZoneOffset.UTC).toLocalDate()))
+        List<LeaseDocument> all = leaseDocumentRepository.findByLeaseId(leaseId);
+        return all.stream()
+                .filter(d -> visibleInWindow(window, effectiveDate(d, all)))
+                // The executed copy first (it is what "the contract" means once issued), then the signed one.
+                .sorted(Comparator.comparingInt((LeaseDocument d) -> d.getType() == DocumentType.EXECUTED_COPY ? 0
+                        : d.getType() == DocumentType.CONTRACT ? 1 : 2))
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
     }
@@ -916,12 +1089,37 @@ public class ContractGenerationService {
         // The download takes a document id directly, so guarding the list alone
         // would leave it reachable.
         leaseAccessPolicy.requireReadable(doc.getLease());
-        leaseAccessPolicy.requireInRenterWindow(doc.getLease(), doc.getCreatedAt());
+        leaseAccessPolicy.requireInRenterWindow(doc.getLease(),
+                effectiveDate(doc, leaseDocumentRepository.findByLeaseId(doc.getLease().getId())));
 
+        log.info("Downloading document {}", docId);
+        return readStoredBytes(doc);
+    }
+
+    /**
+     * The date a document counts as made on for the PR #359 renter window: its own,
+     * except an executed copy, which is the signed contract plus a stamp and so
+     * belongs to that contract's side of an assignment (the earliest CONTRACT).
+     */
+    static java.time.Instant effectiveDate(LeaseDocument doc, List<LeaseDocument> all) {
+        if (doc.getType() != DocumentType.EXECUTED_COPY) return doc.getCreatedAt();
+        return all.stream().filter(d -> d.getType() == DocumentType.CONTRACT)
+                .map(LeaseDocument::getCreatedAt).filter(java.util.Objects::nonNull)
+                .min(Comparator.naturalOrder()).orElse(doc.getCreatedAt());
+    }
+
+    private static boolean visibleInWindow(com.datagami.rentaxis.core.security.LeaseAccessPolicy.RenterWindow window,
+                                           java.time.Instant madeAt) {
+        return window == null || !window.bounded()
+                || (madeAt != null && window.contains(madeAt.atZone(java.time.ZoneOffset.UTC).toLocalDate()));
+    }
+
+    /** The stored bytes of a lease document (Azure or local disk), without access checks. */
+    private byte[] readStoredBytes(LeaseDocument doc) {
+        UUID docId = doc.getId();
         String url = doc.getDocumentUrl();
         // documentUrl can contain a bearer-style SAS signature. Never write it
         // to application logs; the document id is enough to correlate failures.
-        log.info("Downloading document {}", docId);
 
         // Azure Blob URL
         if (url.startsWith("https://") && url.contains(".blob.core.windows.net")) {
@@ -1055,6 +1253,14 @@ public class ContractGenerationService {
         dto.setLeaseId(doc.getLease().getId());
         dto.setDocumentUrl(doc.getDocumentUrl());
         dto.setType(doc.getType());
+        dto.setCreatedAt(doc.getCreatedAt());
+        dto.setLabel(switch (doc.getType()) {
+            // Not "signed" while nobody has signed it yet (R3 minor 4).
+            case CONTRACT -> doc.getLease() != null && (doc.getLease().getStatus() == LeaseStatus.DRAFT
+                    || doc.getLease().getStatus() == LeaseStatus.PENDING_SIGNATURE) ? "Contract" : "Signed contract";
+            case EXECUTED_COPY -> "Executed copy";
+            default -> doc.getType().name();
+        });
         return dto;
     }
 }

@@ -107,6 +107,17 @@ class TenantFeatureServiceTest {
         assertThat(listings.label()).isEqualTo("Listings (Marketplace)");
     }
 
+    /** Current terminology: contracts and tenants, not leases and renters (tutorial 04 prep). */
+    @Test
+    void featureLabelsUseCurrentTerminology() {
+        when(repository.findByTenantId(tenantId)).thenReturn(List.of());
+        List<FeatureToggleDTO> result = service.getAll(tenantId);
+        assertThat(result.stream().filter(f -> f.feature() == TenantFeature.LEASE_RENEWALS).findFirst().orElseThrow()
+                .label()).isEqualTo("Contract Renewals & Reminders");
+        assertThat(result).allSatisfy(f -> assertThat(f.label()).doesNotContainIgnoringCase("lease")
+                .doesNotContainIgnoringCase("renter"));
+    }
+
     @Test
     void getAll_returnsDefaults_whenNoDbRows() {
         when(repository.findByTenantId(tenantId)).thenReturn(List.of());

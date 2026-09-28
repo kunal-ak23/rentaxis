@@ -22,6 +22,12 @@ import java.util.UUID;
  *
  * @param installmentNumber the row's position on the lease's schedule ({@code seqNo}).
  * @param dueDate the date on the instrument — when the money is owed.
+ * @param due the Tenant owes this row now and can still settle it
+ *        ({@code ChequeDueRules.tenantOwes}) — true exactly when {@code payable > 0}.
+ *        Not the landlord's {@code due}: a DEPOSITED cheque is at the bank, so it is
+ *        neither due from nor overdue for the Tenant, although the register still
+ *        chases it until it clears.
+ * @param overdue {@code due} and past the grace window ({@code ChequeDueRules.tenantOverdue}).
  * @param payable what the renter still owes on this row today, by whatever means:
  *        the amount for a due row they can actually settle, zero otherwise. A
  *        BOUNCED row <em>is</em> payable — {@code createOrder} supersedes it with
@@ -44,6 +50,11 @@ import java.util.UUID;
  *        pay button for every property nobody has configured.
  * @param penaltyAssessmentId set when this row <em>is</em> a penalty collection row,
  *        so the screen can label it as a fine rather than as rent.
+ * @param onlineRefusal why a row the Tenant owes cannot be paid online although the
+ *        property takes online payments, as a client-translatable code
+ *        ({@code payment.bouncePartlySettled}: pay the rest, {@code payable}, at the office;
+ *        {@code payment.bounceBalanceUnknown}: the ledger balance of the returned cheque
+ *        cannot be read); null otherwise.
  * @param leaseStatus the contract's own status. What a row still admits belongs to
  *        the lease and not to the instrument — a CLOSED tenancy refuses every
  *        transition, so a portal that reads only {@code status} offers Pay-now on
@@ -75,5 +86,6 @@ public record RenterChequeDTO(UUID id,
                               UUID penaltyAssessmentId,
                               ChequeFailureReason failureReason,
                               LocalDate clearedAt,
-                              String statusChangedAt) {
+                              String statusChangedAt,
+                              String onlineRefusal) {
 }

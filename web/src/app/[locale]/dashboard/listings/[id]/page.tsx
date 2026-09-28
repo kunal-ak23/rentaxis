@@ -972,7 +972,8 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
                   {form.seoTitle || form.titleEn || '—'}
                 </p>
                 <p className="text-[11px] text-green-700 mb-1">
-                  rentaxis.com › listings › {listing?.slug ?? 'new-listing'}
+                  {/* This deployment's own host, not a hard-coded (old-brand) domain; the block only renders after hydration. */}
+                  {typeof window !== 'undefined' ? window.location.host : ''} › listings › {listing?.slug ?? 'new-listing'}
                 </p>
                 <p className="text-xs text-muted line-clamp-2">
                   {form.seoDescription || form.descriptionEn || ''}

@@ -3,8 +3,11 @@ package com.datagami.rentaxis.core.service.cheque;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.EnumSet;
+import java.util.Set;
 
 /**
  * "Is this money late?" — the one place the answer is computed, so the register
@@ -17,8 +20,18 @@ import java.time.temporal.ChronoUnit;
  */
 public final class ChequeDueRules {
 
+    /**
+     * The statuses a Tenant can still settle: an uncleared instalment they have not
+     * handed over, a checkout they started and may start again, and a bounce. A
+     * DEPOSITED cheque is absent on purpose — the paper is at the bank and will
+     * clear there; collecting it twice is what the register exists to prevent.
+     */
+    public static final Set<ChequeStatus> TENANT_COLLECTABLE = EnumSet.of(
+            ChequeStatus.REGISTERED, ChequeStatus.BOUNCED, ChequeStatus.ONLINE_PENDING);
+
     private ChequeDueRules() {
     }
+
 
     /**
      * The cheque's money is owed now.
@@ -69,5 +82,59 @@ public final class ChequeDueRules {
     public static int daysOverdue(Cheque cheque, int graceDays, LocalDate today) {
         long days = ChronoUnit.DAYS.between(cheque.getChequeDate().plusDays(graceDays), today);
         return (int) Math.max(0, days);
+    }
+
+    /**
+     * The Tenant's side of {@link #due}: the row is owed now <em>and</em> the Tenant
+     * can still pay it. Where the landlord's {@code due} keeps a DEPOSITED cheque
+     * because the funds have not arrived, the Tenant has already handed the paper
+     * over — nothing is payable by them, so nothing is due from them. A post-dated
+     * cheque the landlord is holding is not owed before its date.
+     */
+    public static boolean tenantOwes(Cheque cheque, LocalDate today) {
+        return due(cheque, today) && TENANT_COLLECTABLE.contains(cheque.getStatus());
+    }
+
+    /**
+     * The Tenant's side of {@link #overdue}: something is payable by them and the
+     * grace window has closed. Without the first half the portal told a Tenant they
+     * owed AED 0 and were 84 days late on the same card (tutorial bug 2026-09-28-03).
+     */
+    public static boolean tenantOverdue(Cheque cheque, int graceDays, LocalDate today) {
+        return tenantOwes(cheque, today) && overdue(cheque, graceDays, today);
+    }
+
+    /**
+     * {@link #tenantOwes} knowing what the ledger still carries on a bounce.
+     *
+     * @param bouncedOpen for a BOUNCED row, the debt the ledger still carries on it
+     *        ({@code ChequeQueryService.bouncedOpenAmounts}); null when unknown, which
+     *        counts the face value. A bounce settled in the ledger (F14-52) — absorbed
+     *        into a settlement, or paid by a receipt that was not a replacement — is
+     *        not owed by the Tenant, whatever the register row still says.
+     */
+    public static boolean tenantOwes(Cheque cheque, LocalDate today, BigDecimal bouncedOpen) {
+        return tenantOwes(cheque, today) && !(isBounced(cheque) && bouncedOpen != null && bouncedOpen.signum() <= 0);
+    }
+
+    /** {@link #tenantOverdue} knowing what the ledger still carries on a bounce. */
+    public static boolean tenantOverdue(Cheque cheque, int graceDays, LocalDate today, BigDecimal bouncedOpen) {
+        return tenantOwes(cheque, today, bouncedOpen) && overdue(cheque, graceDays, today);
+    }
+
+    /**
+     * What the Tenant still owes on the row today: nothing unless {@link #tenantOwes};
+     * the open part of a partly settled bounce; the face value otherwise.
+     */
+    public static BigDecimal tenantPayable(Cheque cheque, LocalDate today, BigDecimal bouncedOpen) {
+        if (!tenantOwes(cheque, today, bouncedOpen)) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal amount = cheque.getAmount() == null ? BigDecimal.ZERO : cheque.getAmount();
+        return isBounced(cheque) && bouncedOpen != null ? bouncedOpen.max(BigDecimal.ZERO).min(amount) : amount;
+    }
+
+    private static boolean isBounced(Cheque cheque) {
+        return cheque.getStatus() == ChequeStatus.BOUNCED;
     }
 }

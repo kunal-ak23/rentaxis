@@ -1,6 +1,6 @@
 {
   "Index": {
-    "title": "مرحباً بك في رينت أكسس",
+    "title": "مرحباً بك في مفتاح",
     "portal": "بوابة المالك",
     "featureToggles": "إدارة الميزات",
     "noFeaturesAvailable": "لا توجد ميزات متاحة.",
@@ -63,6 +63,7 @@
     "delete": "حذف",
     "deleteDraft": "حذف المسودة",
     "deleteDraftTitle": "حذف مسودة العقد؟",
+    "deleteDraftDescription": "سيؤدي هذا إلى حذف مسودة العقد نهائياً مع جدول الدفعات والمرفقات والسجل. لا يمكن التراجع عن هذا الإجراء.",
     "depositPaymentMethod": "طريقة دفع التأمين",
     "docs": "المستندات",
     "documentNamePlaceholder": "مثال: الهوية الإماراتية، الرخصة التجارية، الاتفاقية",
@@ -105,8 +106,17 @@
     "noDocumentsYet": "لم يتم إرفاق أي مستندات بعد.",
     "noEmailProvided": "لم يتم تقديم بريد إلكتروني",
     "noLeases": "لا توجد عقود",
+    "tabOverview": "نظرة عامة",
+    "tabBuildings": "المباني",
+    "tabUnits": "الوحدات",
+    "tabContracts": "العقود",
+    "contractPeriod": "المدة",
+    "rentAed": "الإيجار (درهم)",
+    "noContractsForProperty": "لا توجد عقود إيجار لهذا العقار.",
+    "noManagersAssigned": "لم يتم تعيين مدير عقار.",
     "noLeasesFound": "لم يتم العثور على عقود",
     "noPermissionDeleteLease": "ليس لديك صلاحية حذف هذا العقد.",
+    "noPermissionGenerateContract": "ليست لديك صلاحية إنشاء عقد لهذا الإيجار.",
     "noPhoneProvided": "لم يتم تقديم رقم هاتف",
     "noProjects": "لا توجد مشاريع",
     "noProjectsFound": "لم يتم العثور على مشاريع",
@@ -547,6 +557,8 @@
     "nextChequeDue": "الشيك القادم",
     "nextChequeOverdue": "الشيك القادم · متأخر",
     "allCaughtUp": "كل شيء على ما يرام — لا توجد شيكات مستحقة حالياً.",
+    "atTheBank": "لدى البنك — بانتظار التحصيل. لا يوجد مبلغ مستحق عليك.",
+    "errors": {"payment": {"bounceSettled": "تمت تسوية هذا الشيك المرتجع بالفعل، ولا يوجد مبلغ متبقٍ للدفع.", "bouncePartlySettled": "تمت تسوية جزء من هذا الشيك المرتجع. يرجى دفع المبلغ المتبقي {amount} في المكتب.", "bounceBalanceUnknown": "لا يمكن دفع هذا الشيك المرتجع إلكترونياً حالياً. يرجى التواصل مع مكتب العقار."}},
     "depositedOn": "تم الإيداع في {date}",
     "collectedOn": "تم الاستلام في {date}",
     "bouncedOn": "ارتدّ الشيك في {date}",
@@ -2700,8 +2712,12 @@
     "orgClose": "إغلاق",
     "orgLogo": "شعار المؤسسة",
     "orgUploadLogo": "رفع شعار الشركة",
+    "orgLogoHint": "PNG أو JPG أو GIF. الحد الأقصى 2 ميغابايت. اسحب الملف وأفلته أو انقر للاختيار.",
+    "orgStamp": "ختم الشركة",
+    "orgUploadStamp": "رفع ختم الشركة",
+    "orgStampHint": "PNG أو JPG. الحد الأقصى 2 ميغابايت. يُطبع بجانب توقيع المالك على النسخة المعتمدة من العقد، التي تصدر عند ترحيل العقد. لا يتغيّر العقد الموقّع نفسه.",
     "orgName": "اسم المؤسسة",
-    "orgNamePlaceholder": "مثال: الفطيم العقارية",
+    "orgNamePlaceholder": "مثال: عقارات ساندستون كرست",
     "orgAddress": "العنوان",
     "orgAddressPlaceholder": "عنوان المكتب (يظهر على الإيصالات)",
     "orgTrn": "رقم التسجيل الضريبي (TRN)",
@@ -2719,6 +2735,9 @@
     "orgCopyId": "نسخ المعرّف",
     "orgEditButton": "تعديل",
     "orgEmpty": "لم يتم إنشاء أي مؤسسة بعد.",
+    "orgNoMatch": "لا توجد مؤسسات تطابق بحثك.",
+    "orgBrandingNotSaved": "تم إنشاء المؤسسة، لكن تعذّر حفظ شعارها أو ختمها. عدّلها لرفعهما مرة أخرى.",
+    "featureLabels": {"LISTINGS": "الإعلانات (السوق)", "MEETINGS": "الاجتماعات والمواعيد", "EMAIL_NOTIFICATIONS": "إشعارات البريد الإلكتروني", "LEASE_RENEWALS": "تجديد العقود والتذكيرات", "GATEPASS": "تصاريح الدخول والأمن", "MOBILE_FINANCE": "الشاشات المالية في تطبيق الجوال"},
     "orgRetry": "إعادة المحاولة",
     "orgLoadDenied": "ليست لديك صلاحية لعرض المؤسسات، أو انتهت جلستك.",
     "orgLoadFailed": "تعذّر تحميل المؤسسات. حاول مرة أخرى.",
@@ -3501,7 +3520,7 @@
   },
   "Help": {
     "title": "مركز المساعدة",
-    "subtitle": "اعثر على أدلة وشروحات لاستخدام RentAxis",
+    "subtitle": "اعثر على أدلة وشروحات لاستخدام مفتاح",
     "allArticles": "جميع المقالات",
     "categories": {"getting-started": "البدء", "properties": "العقارات", "leases": "عقود الإيجار", "finance": "المالية", "renter": "بوابة المستأجر", "admin": "الإدارة"},
     "showAllRoles": "عرض جميع الأدوار",
@@ -3526,9 +3545,36 @@
     "closeHelp": "إغلاق المساعدة",
     "startTour": "بدء الجولة",
     "retakeTour": "إعادة الجولة",
-    "welcomeTitle": "مرحبًا بك في RentAxis!",
+    "welcomeTitle": "مرحبًا بك في مفتاح!",
     "welcomeDesc": "خذ جولة سريعة لتتعرّف على البوابة.",
-    "dismiss": "إغلاق"
+    "dismiss": "إغلاق",
+    "tabs": {
+      "label": "أقسام المساعدة",
+      "articles": "المقالات",
+      "videos": "الشروحات المرئية"
+    },
+    "videos": {
+      "searchPlaceholder": "ابحث في الشروحات المرئية...",
+      "topicsLabel": "المواضيع",
+      "allTopics": "جميع المواضيع",
+      "topics": {
+        "getting-started": "البدء",
+        "portfolio": "المحفظة العقارية",
+        "leasing": "التأجير",
+        "collections": "التحصيل",
+        "accounting": "المحاسبة",
+        "operations": "العمليات",
+        "tenant-portal": "بوابة المستأجر"
+      },
+      "comingSoon": "الشروحات المرئية قادمة قريبًا",
+      "comingSoonDesc": "ستظهر هنا شروحات مرئية قصيرة لكل خطوات العمل. وحتى ذلك الحين، تغطي المقالات الموضوعات نفسها.",
+      "noMatch": "لا توجد شروحات مرئية مطابقة لبحثك.",
+      "noneForRole": "لا توجد شروحات مرئية متاحة لدورك بعد.",
+      "play": "تشغيل: {title}",
+      "thumbnailAlt": "صورة مصغّرة للفيديو: {title}",
+      "close": "إغلاق الفيديو",
+      "watchVideo": "شاهد الفيديو"
+    }
   },
   "PropertyReports": {
     "balanceSheet": "الميزانية العمومية",
@@ -4847,5 +4893,15 @@
     "import_failedRef": "فشل الاستيراد — المرجع {reference}",
     "post_alreadyRunning": "يجري ترحيل هذا بالفعل — حدّث الصفحة لرؤية النتيجة",
     "post_failedRef": "فشل الترحيل — المرجع {reference}"
+  },
+  "ContractDocuments": {
+      "title": "مستندات العقد",
+      "contract": "العقد",
+      "signedContract": "العقد الموقّع",
+      "executedCopy": "النسخة المعتمدة",
+      "download": "تنزيل",
+      "issue": "إصدار النسخة المعتمدة",
+      "notDue": "لا توجد نسخة معتمدة مستحقة: لا يوجد ختم للمؤسسة، أو لم يُوقَّع العقد بعد.",
+      "issueFailed": "تعذّر إصدار النسخة المعتمدة. حاول مرة أخرى."
   }
 }

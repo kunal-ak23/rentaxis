@@ -1,6 +1,6 @@
 ---
 title: Roles & Permissions
-description: Understanding the different user roles in RentAxis
+description: Understanding the different user roles in Miftah
 category: getting-started
 roles: [SUPER_ADMIN, TENANT_ADMIN, PROPERTY_MANAGER, SECURITY_GUARD, TENANT_USER, RENTER]
 order: 2
@@ -8,7 +8,7 @@ order: 2
 
 ## Roles & Permissions
 
-RentAxis uses role-based access control to ensure each user sees only what they need.
+Miftah uses role-based access control to ensure each user sees only what they need.
 
 ### Role Hierarchy
 

@@ -1,6 +1,6 @@
 ---
-title: Lease Lifecycle
-description: Understanding lease statuses and transitions
+title: Tenancy Contract Lifecycle
+description: Understanding contract statuses and transitions
 category: leases
 roles: [TENANT_ADMIN, PROPERTY_MANAGER]
 order: 2
@@ -8,7 +8,7 @@ order: 2
 
 ## Tenancy Contract Lifecycle
 
-Every contract in RentAxis follows a defined lifecycle.
+Every contract in Miftah follows a defined lifecycle.
 
 ### Status Flow
 

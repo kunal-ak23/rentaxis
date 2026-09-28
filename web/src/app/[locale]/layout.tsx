@@ -7,10 +7,13 @@ import { Providers } from '@/components/Providers';
 import { FontLinks } from '@/components/FontLinks';
 import "../globals.css";
 
-export const metadata: Metadata = {
-  title: "RentAxis",
-  description: "Multi-Tenant Lease Management Platform",
-};
+/** The product name in the page's own language: مفتاح under /ar, Miftah otherwise. */
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
+  const { locale } = await params;
+  return locale === "ar"
+    ? { title: "مفتاح", description: "مفتاح — إدارة العقارات لملاك العقارات في الإمارات" }
+    : { title: "Miftah", description: "Miftah — property management for UAE landlords" };
+}
 
 export default async function RootLayout({
   children,

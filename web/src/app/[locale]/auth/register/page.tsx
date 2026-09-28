@@ -68,15 +68,15 @@ export default function RegisterPage() {
             >
                 <div className="text-center mb-10">
                     <Image
-                        src="/logo.png"
-                        alt="RentAxis"
+                        src="/miftah-wordmark.png"
+                        alt="Miftah"
                         width={180}
                         height={52}
                         className="mx-auto mb-4 object-contain"
                         priority
                     />
                     <h1 className="text-2xl font-bold text-foreground tracking-tight mb-2" style={{ fontFamily: 'Cinzel, serif' }}>Create Account</h1>
-                    <p className="text-[13px] text-muted font-medium">Join the RentAxis Network</p>
+                    <p className="text-[13px] text-muted font-medium">Join the Miftah Network</p>
                 </div>
 
                 <form onSubmit={handleRegister} className="space-y-4">
@@ -111,7 +111,7 @@ export default function RegisterPage() {
                                     type="text"
                                     value={formData.companyName}
                                     onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
-                                    placeholder="Al Futtaim"
+                                    placeholder="Sandstone Crest Properties"
                                     className="w-full border border-border rounded-lg bg-surface p-3.5 pl-11 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-medium"
                                 />
                             </div>

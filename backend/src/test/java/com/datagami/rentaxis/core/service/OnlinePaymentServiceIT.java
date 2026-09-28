@@ -113,6 +113,7 @@ class OnlinePaymentServiceIT extends AbstractPostgresIT {
     @Autowired PenaltyAssessmentService penalties;
     @Autowired TenantGatewayConfigService gatewayConfigService;
     @Autowired LeasePostingService posting;
+    @Autowired com.datagami.rentaxis.core.service.ledger.PostingService journal;
     @Autowired ChequeGenerationService generation;
     @Autowired LeaseService leaseService;
     @Autowired AccountService accountService;
@@ -995,6 +996,202 @@ class OnlinePaymentServiceIT extends AbstractPostgresIT {
         RenterChequeDTO future = row(rows, futureId);
         assertThat(future.due()).isFalse();
         assertThat(future.payable()).isEqualByComparingTo("0");
+    }
+
+    /**
+     * Tutorial bug 2026-09-28-03: the portal showed "Next payment AED 0 · 84 days
+     * overdue" for a cheque already at the bank. A deposited cheque is neither due
+     * from nor overdue for the Tenant — they handed the paper over — while the next
+     * instalment, a post-dated cheque the landlord is holding, is not due before its
+     * date either.
+     */
+    @Test
+    void aDepositedChequeIsNeitherDueNorOverdueForTheTenant() {
+        UUID chequeId = firstCheque();
+        UUID heldId = registerRows().get(1).id();
+        RenterChequeDTO before = row(myPayments(), chequeId);
+        assertThat(before.overdue()).as("precondition: matured and past grace").isTrue();
+
+        chequeService.deposit(chequeId, ChequeActionRequest.on(TODAY));
+
+        List<RenterChequeDTO> rows = myPayments();
+        RenterChequeDTO deposited = row(rows, chequeId);
+        assertThat(deposited.status()).isEqualTo(ChequeStatus.DEPOSITED);
+        assertThat(deposited.payable()).isEqualByComparingTo("0");
+        assertThat(deposited.due()).isFalse();
+        assertThat(deposited.overdue()).isFalse();
+        assertThat(deposited.daysOverdue()).isZero();
+        assertThat(deposited.payableOnline()).isFalse();
+
+        RenterChequeDTO held = row(rows, heldId);
+        assertThat(held.dueDate()).isAfter(TODAY);
+        assertThat(held.due()).isFalse();
+        assertThat(held.overdue()).isFalse();
+        assertThat(held.daysOverdue()).isZero();
+
+        assertThat(rows).as("nothing on this lease is owed by the Tenant today")
+                .noneMatch(RenterChequeDTO::due)
+                .noneMatch(RenterChequeDTO::overdue);
+    }
+
+    @Test
+    void aClearedChequeIsNeitherDueNorOverdue() {
+        UUID chequeId = firstCheque();
+        chequeService.deposit(chequeId, ChequeActionRequest.on(TODAY));
+        chequeService.clear(chequeId, ChequeActionRequest.on(TODAY));
+
+        RenterChequeDTO cleared = row(myPayments(), chequeId);
+        assertThat(cleared.status()).isEqualTo(ChequeStatus.CLEARED);
+        assertThat(cleared.due()).isFalse();
+        assertThat(cleared.overdue()).isFalse();
+        assertThat(cleared.daysOverdue()).isZero();
+        assertThat(cleared.payable()).isEqualByComparingTo("0");
+    }
+
+    /** A bounce is owed and late; once replaced, only the replacement counts, on its own date. */
+    @Test
+    void aBouncedChequeIsOverdueAndItsReplacementIsJudgedOnItsOwnDate() {
+        UUID bouncedId = bounceFirstCheque();
+        RenterChequeDTO bounced = row(myPayments(), bouncedId);
+        assertThat(bounced.due()).isTrue();
+        assertThat(bounced.overdue()).isTrue();
+        assertThat(bounced.daysOverdue()).isPositive();
+        assertThat(bounced.payable()).isEqualByComparingTo(INSTALMENT);
+
+        LocalDate replacementDate = TODAY.plusDays(20);
+        List<ChequeDTO> replacements = chequeService.replace(bouncedId, new com.datagami.rentaxis.api.dto.cheque.ReplaceChequeRequest(
+                List.of(new com.datagami.rentaxis.api.dto.lease.ChequeRowInput(null, null, TODAY,
+                        LeaseTestFixtures.nextChequeNumber(), replacementDate, "Emirates NBD", null, null,
+                        INSTALMENT, "Replacement", ChequeMode.PDC)), TODAY, "Replaced"));
+
+        List<RenterChequeDTO> rows = myPayments();
+        assertThat(rows).extracting(RenterChequeDTO::id).doesNotContain(bouncedId);
+        RenterChequeDTO replacement = row(rows, replacements.get(0).id());
+        assertThat(replacement.status()).isEqualTo(ChequeStatus.REGISTERED);
+        assertThat(replacement.due()).as("a post-dated replacement is not owed before its date").isFalse();
+        assertThat(replacement.overdue()).isFalse();
+        assertThat(replacement.payable()).isEqualByComparingTo("0");
+    }
+
+    /**
+     * Part of the schedule paid: the first instalment cleared, a counter row still
+     * open and dated today. The open row is owed (not yet late); the cleared one is
+     * not — the next payment is the one actually payable.
+     */
+    @Test
+    void aPartlyPaidScheduleOwesOnlyItsOpenRows() {
+        UUID clearedId = firstCheque();
+        chequeService.deposit(clearedId, ChequeActionRequest.on(TODAY));
+        chequeService.clear(clearedId, ChequeActionRequest.on(TODAY));
+        UUID openId = counterRow(ChequeMode.CASH, "750");
+
+        List<RenterChequeDTO> rows = myPayments();
+        assertThat(rows).filteredOn(RenterChequeDTO::due).extracting(RenterChequeDTO::id)
+                .containsExactly(openId);
+        RenterChequeDTO open = row(rows, openId);
+        assertThat(open.payable()).isEqualByComparingTo("750");
+        assertThat(open.overdue()).as("dated today: inside grace").isFalse();
+    }
+
+    /**
+     * Review I1 (F14-52 on the Tenant's side): a bounce whose debt the ledger has
+     * settled — a receipt against the lease receivable that was not a replacement,
+     * or a settlement that absorbed it — is not owed by the Tenant, is not overdue
+     * and cannot be paid online, whatever the register row still says.
+     */
+    @Test
+    void aBounceTheLedgerHasSettledIsNotOwedByTheTenant() {
+        UUID bouncedId = bounceFirstCheque();
+        assertThat(row(myPayments(), bouncedId).payable()).as("precondition").isEqualByComparingTo(INSTALMENT);
+
+        receiptAgainstTheLease(INSTALMENT);
+
+        RenterChequeDTO settled = row(myPayments(), bouncedId);
+        assertThat(settled.status()).isEqualTo(ChequeStatus.BOUNCED);
+        assertThat(settled.due()).isFalse();
+        assertThat(settled.overdue()).isFalse();
+        assertThat(settled.daysOverdue()).isZero();
+        assertThat(settled.payable()).isEqualByComparingTo("0");
+        assertThat(settled.payableOnline()).isFalse();
+        assertThatThrownBy(() -> onlinePayments.createOrder(bouncedId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("already settled")
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode())
+                        .isEqualTo("payment.bounceSettled"));
+        assertThat(settled.onlineRefusal()).as("nothing owed, nothing to explain").isNull();
+    }
+
+    /** A partly settled bounce is owed, and late, for what is left of it — at the counter. */
+    @Test
+    void aPartlySettledBounceIsOwedOnlyItsOpenPart() {
+        UUID bouncedId = bounceFirstCheque();
+
+        receiptAgainstTheLease(new BigDecimal("5000"));
+
+        RenterChequeDTO partly = row(myPayments(), bouncedId);
+        assertThat(partly.due()).isTrue();
+        assertThat(partly.overdue()).isTrue();
+        assertThat(partly.payable()).isEqualByComparingTo("7000");
+        assertThat(partly.amount()).isEqualByComparingTo(INSTALMENT);
+        assertThat(partly.payableOnline()).as("the gateway would take the full face value").isFalse();
+        assertThat(partly.onlineRefusal()).as("My Payments says why").isEqualTo("payment.bouncePartlySettled");
+        assertThatThrownBy(() -> onlinePayments.createOrder(bouncedId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("AED 7,000.00")
+                .satisfies(e -> {
+                    BusinessRuleViolationException b = (BusinessRuleViolationException) e;
+                    assertThat(b.getCode()).isEqualTo("payment.bouncePartlySettled");
+                    assertThat(b.getArgs()).containsEntry("amount", "AED 7,000.00");
+                });
+    }
+
+    /**
+     * Review m-b: a lease whose receivable account cannot be resolved (no lease override,
+     * no property or default RENT_RECEIVABLE mapping) must not turn My Payments into a
+     * 500. The bounce shows as owed at face value; online payment is refused, readably.
+     */
+    @Test
+    void anUnmappedReceivableShowsTheBounceAtFaceValueAndRefusesOnlinePayment() {
+        UUID bouncedId = bounceFirstCheque();
+        tx.executeWithoutResult(s -> {
+            var c = chequeRepo.findById(bouncedId).orElseThrow();
+            jdbc.update("update leases set receivable_account_id = null where id = ?", c.getLease().getId());
+            jdbc.update("delete from property_account_mappings where property_id = ? and role = 'RENT_RECEIVABLE'",
+                    c.getProperty().getId());
+            jdbc.update("delete from tenant_default_account_mappings where tenant_id = ? and role = 'RENT_RECEIVABLE'",
+                    c.getTenantId());
+        });
+
+        RenterChequeDTO row = row(myPayments(), bouncedId);
+        assertThat(row.due()).isTrue();
+        assertThat(row.overdue()).isTrue();
+        assertThat(row.payable()).isEqualByComparingTo(INSTALMENT);
+        assertThat(row.payableOnline()).isFalse();
+        assertThat(row.onlineRefusal()).isEqualTo("payment.bounceBalanceUnknown");
+        assertThatThrownBy(() -> onlinePayments.createOrder(bouncedId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode())
+                        .isEqualTo("payment.bounceBalanceUnknown"));
+    }
+
+    /**
+     * Cash received against the lease receivable, outside the cheque's own flow — the
+     * way a counter receipt or a settlement reduces the bounced debt the ledger carries.
+     */
+    private void receiptAgainstTheLease(BigDecimal amount) {
+        tx.executeWithoutResult(s -> {
+            var lease = chequeRepo.findByLease_IdOrderBySeqNoAsc(leaseId()).get(0).getLease();
+            var dims = new com.datagami.rentaxis.core.service.ledger.PostingRequest.Dimensions(
+                    fixtures.property().getId(), lease.getUnit().getId(), lease.getId(), lease.getRenter().getId(), null);
+            var receivable = lease.getReceivableAccountId() != null
+                    ? com.datagami.rentaxis.core.service.ledger.PostingRequest.cr(lease.getReceivableAccountId(), amount)
+                    : com.datagami.rentaxis.core.service.ledger.PostingRequest.cr(AccountRole.RENT_RECEIVABLE, amount);
+            journal.post(new com.datagami.rentaxis.core.service.ledger.PostingRequest(JournalDocType.JV, TODAY,
+                    "Counter receipt for the returned cheque", dims,
+                    com.datagami.rentaxis.domain.entity.enums.JournalSourceType.MANUAL, null, null, List.of(
+                            com.datagami.rentaxis.core.service.ledger.PostingRequest.dr(AccountRole.CASH, amount),
+                            receivable)));
+        });
     }
 
     @Test

@@ -7,7 +7,6 @@ import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.RentReceiptPayload;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
-import com.datagami.rentaxis.core.util.ImageTypes;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.Lease;
@@ -65,10 +64,10 @@ public class RentReceiptService {
 
     /**
      * The largest logo inlined into a receipt: anything bigger is left off rather
-     * than base64-inflated into every PDF. The upload form caps logos at 2 MB, but
-     * a receipt logo is 40 px tall and 1 MB is already generous.
+     * than base64-inflated into every PDF. The upload form's own 2 MB cap, so a logo
+     * the form accepted is never silently missing from the receipt.
      */
-    static final long MAX_LOGO_BYTES = 1024L * 1024;
+    static final long MAX_LOGO_BYTES = OrgBrandImages.MAX_BYTES;
 
     /**
      * @param chequeId a CLEARED row on a lease the caller may read. A renter passes
@@ -222,19 +221,9 @@ public class RentReceiptService {
         if (url == null || url.isBlank()) {
             return "";
         }
-        String src;
-        if (url.strip().regionMatches(true, 0, "data:image/", 0, 11)) {
-            src = url.strip();
-        } else {
-            // The stored content type is ignored: uploads have been stored as
-            // application/octet-stream, and it is the uploader's claim anyway. The
-            // bytes decide, and the data: URI carries the type they prove.
-            src = blobStorageService.downloadOwnedUrl(tenantId, url.strip(), MAX_LOGO_BYTES)
-                    .filter(d -> d.bytes() != null && d.bytes().length <= MAX_LOGO_BYTES)
-                    .flatMap(d -> ImageTypes.sniff(d.bytes())
-                            .map(type -> "data:" + type + ";base64," + Base64.getEncoder().encodeToString(d.bytes())))
-                    .orElse(null);
-        }
+        // Shared with the contract and the tax invoice (OrgBrandImages): our own
+        // storage only, and the bytes, not the stored type, decide.
+        String src = OrgBrandImages.dataUri(blobStorageService, tenantId, url).orElse(null);
         if (src == null) {
             return "";
         }

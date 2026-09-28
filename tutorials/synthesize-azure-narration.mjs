@@ -49,8 +49,11 @@ if (!Number.isInteger(speechRate) || speechRate < 80 || speechRate > 220) {
   throw new Error('Speech rate must be a whole number from 80 to 220 words per minute.');
 }
 
-const voice = voiceArg || process.env.AZURE_SPEECH_VOICE || 'en-US-Harper:MAI-Voice-2';
-const style = process.env.AZURE_SPEECH_STYLE || 'hopeful';
+const voice = voiceArg || process.env.AZURE_SPEECH_VOICE || 'en-US-Ava:DragonHDLatestNeural';
+// No speaking style unless one is asked for: `none` or an empty value means
+// plain prosody. Dragon HD voices reject <mstts:express-as> outright.
+const requestedStyle = (process.env.AZURE_SPEECH_STYLE ?? '').trim();
+const style = requestedStyle && requestedStyle.toLowerCase() !== 'none' ? requestedStyle : '';
 const narration = fs.readFileSync(narrationPath, 'utf8').trim();
 const spokenIntro = process.env.TUTORIAL_SPOKEN_INTRO?.trim();
 const ratePercent = Math.round((speechRate / 135 - 1) * 100);
@@ -87,5 +90,5 @@ fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 fs.writeFileSync(outputPath, audio);
 console.log(`region=${region}`);
 console.log(`voice=${voice}`);
-console.log(`style=${style || 'default'}`);
+console.log(`style=${style || 'none'}`);
 console.log(`audio=${outputPath}`);

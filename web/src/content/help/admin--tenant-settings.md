@@ -12,7 +12,7 @@ Configure your organisation's settings from **Settings** on the left rail — on
 
 ### Property account template
 
-Map your chart of accounts to RentAxis's automatic transaction types:
+Map your chart of accounts to Miftah's automatic transaction types:
 1. Go to **Accounting › One-time setup › Property account template**
 2. Set the default accounts for rent income, receivables, and deposits
 3. These mappings are used when payments are automatically recorded

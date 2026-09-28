@@ -170,3 +170,40 @@ describe("PayOnlineButton checkout flow", () => {
         await waitFor(() => expect(api.cancel).toHaveBeenCalledWith("c1"));
     });
 });
+
+/**
+ * Review m-a: a refusal from a stale page (the row was partly settled since it loaded)
+ * reads in the Tenant's language with the server's formatted amount, not the raw
+ * English exception text.
+ */
+describe("PayOnlineButton — coded refusals", () => {
+    function refuse() {
+        return import("@/lib/api/leasing").then(({ ApiError }) => {
+            api.createOrder.mockRejectedValue(new ApiError(400,
+                "Part of this returned cheque is already settled. Pay the remaining AED 7,000.00 at the office.",
+                JSON.stringify({ code: "payment.bouncePartlySettled", args: { amount: "AED 7,000.00" },
+                    message: "Part of this returned cheque is already settled. Pay the remaining AED 7,000.00 at the office." })));
+        });
+    }
+
+    it("shows the Arabic text with the formatted amount under /ar", async () => {
+        await refuse();
+        const ar = (await import("../../../../messages/ar.json")).default;
+        render(
+            <NextIntlClientProvider locale="ar" messages={ar}>
+                <PayOnlineButton cheque={cheque({ status: "BOUNCED" })} onPaid={vi.fn()} />
+            </NextIntlClientProvider>,
+        );
+        screen.getByRole("button").click();
+        expect(await screen.findByText(
+            ar.OnlinePayments.errors.payment.bouncePartlySettled.replace("{amount}", "AED 7,000.00"))).toBeInTheDocument();
+    });
+
+    it("falls back to the server's message for a code this client does not know", async () => {
+        const { ApiError } = await import("@/lib/api/leasing");
+        api.createOrder.mockRejectedValue(new ApiError(400, "Something new", JSON.stringify({ code: "payment.unknown" })));
+        renderButton();
+        screen.getByRole("button").click();
+        expect(await screen.findByText("Something new")).toBeInTheDocument();
+    });
+});

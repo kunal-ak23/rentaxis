@@ -10,13 +10,13 @@ task_video=$1
 task_narration=$2
 task_output=$3
 task_voice=${4:-${TUTORIAL_VOICE:-}}
-task_speech_rate=${5:-125}
+task_speech_rate=${5:-140}
 task_tts_provider=${TUTORIAL_TTS_PROVIDER:-openai}
 task_subtitle=${TUTORIAL_SUBTITLE_FILE:-}
 
 if [[ -z "$task_voice" ]]; then
   case "$task_tts_provider" in
-    azure) task_voice=${AZURE_SPEECH_VOICE:-en-US-Harper:MAI-Voice-2} ;;
+    azure) task_voice=${AZURE_SPEECH_VOICE:-en-US-Ava:DragonHDLatestNeural} ;;
     mac) task_voice=Samantha ;;
     *) task_voice=marin ;;
   esac
@@ -40,8 +40,15 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
   exit 2
 fi
 
-task_tmp=$(mktemp -d)
-trap 'rm -rf "$task_tmp"' EXIT
+# Intermediates stay inside the repo (tutorials/work/), never the system temp
+# dir: an interrupted render must remain reviewable.
+task_work_root=${TUTORIAL_WORK_DIR:-"$(cd "$(dirname "$0")" && pwd)/work"}
+mkdir -p "$task_work_root"
+task_tmp=$(mktemp -d "$task_work_root/render-XXXXXX")
+case "$task_tmp" in
+  "$task_work_root"/render-??????) trap 'rm -rf -- "$task_tmp"' EXIT ;;
+  *) echo "Unexpected render work dir: $task_tmp" >&2; exit 1 ;;
+esac
 
 case "$task_tts_provider" in
   openai)

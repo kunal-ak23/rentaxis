@@ -3,7 +3,25 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import Cookies from "js-cookie";
 
-export type Org = { id: string; name: string };
+/**
+ * An organisation the user may act in. logoVersion is set when it has a logo;
+ * the header loads the image from the app (orgLogoSrc), never from storage.
+ */
+export type Org = { id: string; name: string; logoVersion?: string | null };
+
+/**
+ * The current organisation's logo, streamed by the backend from our own storage
+ * (tenant containers are private). The version busts the browser cache when the
+ * logo changes; the organisation is the request's own (the active one).
+ */
+export function orgLogoSrc(org: Pick<Org, "id" | "logoVersion"> | null | undefined): string | null {
+    // The organisation is part of the address: the backend refuses (404) when it is
+    // not the session's current one, so a tab left on org 1 after another tab
+    // switched to org 2 can never cache org 2's image under org 1's key.
+    return org?.logoVersion
+        ? `/api/proxy/v1/org/branding/logo?org=${encodeURIComponent(org.id)}&v=${encodeURIComponent(org.logoVersion)}`
+        : null;
+}
 
 /**
  * GET /auth/me/tenants, once per signed-in session (PR #363 R1): the header's
@@ -31,6 +49,18 @@ export function resetMyOrgsCache() {
     cache = null;
 }
 
+const listeners = new Set<() => void>();
+
+/**
+ * The list changed (an organisation was created, renamed, activated,
+ * deactivated or deleted on this page): drop the cache and have every mounted
+ * switcher fetch it again, so a new organisation is pickable without a reload.
+ */
+export function refreshMyOrgs() {
+    cache = null;
+    listeners.forEach(listener => listener());
+}
+
 /**
  * The saved context, then the user's own organisation, then the first membership.
  *
@@ -51,12 +81,18 @@ export function useMyOrgs(): { orgs: Org[] | null; active: Org | null } {
     const user = session?.user as { id?: string; email?: string | null; role?: string; tenantId?: string } | undefined;
     const key = user ? `${user.id ?? user.email ?? ""}|${user.role ?? ""}|${user.tenantId ?? ""}` : "";
     const [state, setState] = useState<{ key: string; orgs: Org[] } | null>(null);
+    const [generation, setGeneration] = useState(0);
+    useEffect(() => {
+        const bump = () => setGeneration(g => g + 1);
+        listeners.add(bump);
+        return () => { listeners.delete(bump); };
+    }, []);
     useEffect(() => {
         if (!key) return;
         let alive = true;
         void loadMyOrgs(key).then(orgs => { if (alive) setState({ key, orgs }); });
         return () => { alive = false; };
-    }, [key]);
+    }, [key, generation]);
     const orgs = state && state.key === key ? state.orgs : null;
     return { orgs, active: orgs ? pickActiveOrg(orgs, user?.tenantId, user?.role) : null };
 }

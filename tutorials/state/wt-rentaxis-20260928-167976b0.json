@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 2,
+  "runId": "wt-rentaxis-20260928-167976b0",
+  "product": "rentaxis",
+  "environment": "local",
+  "createdAt": "2026-09-28T14:47:44Z",
+  "productionApproved": false,
+  "roles": [],
+  "records": {
+    "organisation": {
+      "id": "6eb48bbb-2eb2-4572-be11-4ae28209a902",
+      "name": "Oasis Crest Properties",
+      "slug": "oasis-crest-properties",
+      "createdBy": "scripts/seed_demo_tenant.py via tutorials/recording-stack.sh seed",
+      "note": "Reseeded with --reset for branding; local recording stack only; retained as the recording tenant."
+    }
+  },
+  "created": [
+    {
+      "type": "organisation",
+      "id": "fada80a8-521d-4f1a-83ac-e3ccbb64b60f",
+      "name": "Oasis Crest Properties"
+    },
+    {
+      "type": "organisation",
+      "id": "6eb48bbb-2eb2-4572-be11-4ae28209a902",
+      "name": "Oasis Crest Properties"
+    }
+  ],
+  "artifacts": {
+    "raw": [],
+    "approved": [],
+    "rejected": [],
+    "qa": []
+  },
+  "cleanup": {
+    "authorized": false,
+    "completedAt": null,
+    "removed": [
+      {
+        "type": "organisation",
+        "id": "fada80a8-521d-4f1a-83ac-e3ccbb64b60f",
+        "how": "seed_demo_tenant.py --reset (DELETE /api/admin/tenants/{id}?confirmName=...)"
+      }
+    ],
+    "retained": []
+  },
+  "stack": {
+    "web": "http://localhost:3004",
+    "backend": "http://localhost:8084",
+    "database": "rentaxis_tutorials",
+    "builtFrom": "15523cc",
+    "seedManifest": "tutorials/work/seed/oasis-crest.out.json"
+  }
+}

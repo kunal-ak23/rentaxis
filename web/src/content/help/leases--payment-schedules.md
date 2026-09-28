@@ -12,7 +12,7 @@ Each contract has an associated payment schedule that tracks all expected rent p
 
 ### Auto-Generated Schedule
 
-When a contract is created, RentAxis automatically generates monthly payment entries:
+When a contract is created, Miftah automatically generates monthly payment entries:
 - The first month is pro-rated if the contract doesn't start on the 1st
 - Each entry includes: due date, amount, payment method, and status
 

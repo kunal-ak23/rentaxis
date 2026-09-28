@@ -40,7 +40,19 @@ public class LandlordOrgController {
         // persist them too instead of silently dropping everything but the name.
         // Under the row lock like every other write of an existing row (review r3B I1).
         if (applyOptionalFields(new LandlordOrg(), payload)) {
-            org = service.updateLocked(org.getId(), o -> applyOptionalFields(o, payload));
+            UUID id = org.getId();
+            try {
+                org = service.updateLocked(id, o -> applyOptionalFields(o, payload));
+            } catch (BrandingNotSavedException e) {
+                // R3 minor 2: the organisation exists now; answering 400 would invite a
+                // retry that creates a second one. Save everything else and say which
+                // part is missing (the dialog asks for the logo/stamp to be uploaded again).
+                Map<String, Object> rest = new java.util.HashMap<>(payload);
+                rest.remove("logoUrl");
+                rest.remove("stampImageUrl");
+                LandlordOrg saved = service.updateLocked(id, o -> applyOptionalFields(o, rest));
+                return ResponseEntity.ok().header(BRANDING_HEADER, "not-saved").body(saved);
+            }
         }
         return ResponseEntity.ok(org);
     }
@@ -115,6 +127,7 @@ public class LandlordOrgController {
             case "trn" -> org.getTrn();
             case "phone" -> org.getPhone();
             case "logoUrl" -> org.getLogoUrl();
+            case "stampImageUrl" -> org.getStampImageUrl();
             case "ticketOtpRequired" -> org.getTicketOtpRequired() == null || org.getTicketOtpRequired();
             case "status" -> org.getStatus();
             default -> throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
@@ -173,7 +186,19 @@ public class LandlordOrgController {
             }
         }
         if (payload.containsKey("logoUrl")) {
-            org.setLogoUrl(stringValue(payload.get("logoUrl")));
+            org.setLogoUrl(adoptStaged(org, stringValue(payload.get("logoUrl"))));
+            changed = true;
+        }
+        // The stamp printed beside the landlord signature on the contract: saved
+        // exactly like the logo (same upload, same role, this organisation only).
+        // The contract renderer only ever inlines it from our own storage.
+        if (payload.containsKey("stampImageUrl")) {
+            String stamp = adoptStaged(org, stringValue(payload.get("stampImageUrl")));
+            if (!java.util.Objects.equals(blankToNull(stamp), blankToNull(org.getStampImageUrl()))) {
+                // A new (or removed) stamp restarts the executed-copy sweep's clock.
+                org.setStampSetAt(blankToNull(stamp) == null ? null : java.time.Instant.now());
+            }
+            org.setStampImageUrl(stamp);
             changed = true;
         }
         if (payload.containsKey("phone")) {
@@ -186,6 +211,58 @@ public class LandlordOrgController {
         }
         return changed;
     }
+
+    private com.datagami.rentaxis.core.service.BlobStorageService blobs;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setBlobStorageService(com.datagami.rentaxis.core.service.BlobStorageService blobs) {
+        this.blobs = blobs;
+    }
+
+    /**
+     * A logo or stamp uploaded in the "new organisation" dialog was staged in
+     * private storage (the organisation had no container yet); saving it on the
+     * organisation moves it into that organisation's own container, where its PDFs
+     * and header read it and its purge removes it. Anything else is kept as sent.
+     */
+    private String adoptStaged(LandlordOrg target, String url) {
+        if (blobs == null || target.getId() == null || url == null || url.isBlank()) {
+            return url;
+        }
+        String moved;
+        try {
+            moved = blobs.copyStagedBranding(target.getId(), url);
+        } catch (RuntimeException e) {
+            throw new BrandingNotSavedException();
+        }
+        if (moved.equals(url)) {
+            return url;
+        }
+        // R3 minor 5: the staged source goes only once the save has committed; a
+        // rolled-back save removes the copy instead, so neither side is orphaned.
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override
+                        public void afterCompletion(int status) {
+                            blobs.deleteBrandingQuietly(status == STATUS_COMMITTED ? url : moved);
+                        }
+                    });
+        } else {
+            blobs.deleteBrandingQuietly(url);
+        }
+        return moved;
+    }
+
+    /** A staged logo or stamp could not be moved into the organisation's storage. */
+    static final class BrandingNotSavedException extends com.datagami.rentaxis.api.exception.BusinessRuleViolationException {
+        BrandingNotSavedException() {
+            super("The uploaded image could not be stored for this organisation. Upload it again.");
+        }
+    }
+
+    /** Response header on a create whose organisation exists but whose logo/stamp could not be kept. */
+    public static final String BRANDING_HEADER = "X-Org-Branding";
 
     private static String stringValue(Object value) {
         return value == null ? null : String.valueOf(value);

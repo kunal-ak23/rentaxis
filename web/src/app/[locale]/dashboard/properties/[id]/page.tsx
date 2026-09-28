@@ -173,6 +173,10 @@ export default function PropertyDetailPage() {
 
     const fetchUnits = () => fetchList(beginUnits(), `/api/proxy/v1/units/property/${propertyId}`, setUnits);
 
+    // The card is "Property Manager": the server lists only PROPERTY_MANAGER
+    // assignees, and a row carrying another role (a security guard assigned to
+    // the building) is never shown under that heading.
+    const propertyManagers = managers.filter(m => !m.role || m.role === "PROPERTY_MANAGER");
     const fetchManagers = () => fetchList(beginManagers(), `/api/proxy/v1/properties/${propertyId}/managers`, setManagers);
 
     const fetchContacts = () => fetchList<PropertyContact>(beginContacts(), `/api/proxy/v1/properties/${propertyId}/contacts`, setContacts);
@@ -309,10 +313,10 @@ export default function PropertyDetailPage() {
             {/* Tabs */}
             <div className="flex items-center gap-6 mb-8 border-b border-border">
                 {[
-                    { id: "overview", label: "Overview", icon: Home },
-                    { id: "buildings", label: "Buildings", icon: Building2 },
-                    { id: "units", label: "Units", icon: Home },
-                    { id: "leases", label: "Leases", icon: FileText },
+                    { id: "overview", label: t("tabOverview"), icon: Home },
+                    { id: "buildings", label: t("tabBuildings"), icon: Building2 },
+                    { id: "units", label: t("tabUnits"), icon: Home },
+                    { id: "leases", label: t("tabContracts"), icon: FileText },
                     // Gated behind the same canManageFacilities flag passed as
                     // `canManage` to AmenitiesTab/ParkingTab below, so the nav
                     // tabs and the in-tab edit controls can't drift out of sync.
@@ -358,7 +362,7 @@ export default function PropertyDetailPage() {
                                 {t("propertyManager")}
                             </p>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                {managers.length > 0 ? managers.map(m => (
+                                {propertyManagers.length > 0 ? propertyManagers.map(m => (
                                     <div key={m.id} className="bg-surface p-4 rounded-xl border border-border hover:shadow-md transition-all duration-200 flex flex-col gap-1">
                                         <p className="text-sm font-bold text-foreground">{m.name}</p>
                                         <p className="text-[11px] font-bold text-muted">{m.email}</p>
@@ -367,7 +371,7 @@ export default function PropertyDetailPage() {
                                         )}
                                     </div>
                                 )) : (
-                                    <p className="text-xs font-medium text-muted italic">No managers assigned.</p>
+                                    <p className="text-xs font-medium text-muted italic">{t("noManagersAssigned")}</p>
                                 )}
                             </div>
                         </div>
@@ -963,16 +967,16 @@ function LeasesTab({ propertyId }: { propertyId: string }) {
 
     return (
         <div>
-            <h2 className="text-lg font-bold mb-6">Leases</h2>
+            <h2 className="text-lg font-bold mb-6">{t("leases")}</h2>
             <div className="bg-surface border border-border rounded-xl overflow-hidden">
-                <table className="w-full text-left text-sm">
+                <table className="w-full text-start text-sm">
                     <thead className="bg-background text-muted text-xs font-semibold uppercase tracking-[0.15em]">
                         <tr>
-                            <th className="px-6 py-4">Unit</th>
-                            <th className="px-6 py-4">Renter</th>
-                            <th className="px-6 py-4">Status</th>
-                            <th className="px-6 py-4">Period</th>
-                            <th className="px-6 py-4 text-right">Rent (AED)</th>
+                            <th className="px-6 py-4 text-start">{t("unit")}</th>
+                            <th className="px-6 py-4 text-start">{t("renter")}</th>
+                            <th className="px-6 py-4 text-start">{t("status")}</th>
+                            <th className="px-6 py-4 text-start">{t("contractPeriod")}</th>
+                            <th className="px-6 py-4 text-end">{t("rentAed")}</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
@@ -992,7 +996,7 @@ function LeasesTab({ propertyId }: { propertyId: string }) {
                                     <Calendar size={12} className="text-muted" />
                                     {new Date(l.startDate).toLocaleDateString()} - {new Date(l.endDate).toLocaleDateString()}
                                 </td>
-                                <td className="px-6 py-4 text-right font-bold flex items-center justify-end gap-1">
+                                <td className="px-6 py-4 text-end font-bold flex items-center justify-end gap-1">
                                     <DollarSign size={12} className="text-muted" />
                                     {formatCurrencyCompact(l.rentAmount)}
                                 </td>
@@ -1001,7 +1005,7 @@ function LeasesTab({ propertyId }: { propertyId: string }) {
                     </tbody>
                 </table>
                 {leases.length === 0 && (
-                    <div className="text-center py-12 text-muted font-medium text-xs">No leases found for this property.</div>
+                    <div className="text-center py-12 text-muted font-medium text-xs">{t("noContractsForProperty")}</div>
                 )}
             </div>
         </div>

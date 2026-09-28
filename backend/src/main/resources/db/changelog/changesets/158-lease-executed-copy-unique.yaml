@@ -1,0 +1,17 @@
+# Executed copy at posting (Kunal, 2026-09-28): a lease has at most one
+# EXECUTED_COPY document — the signed contract re-issued with the organisation's
+# digital stamp. ContractGenerationService.createExecutedCopy checks first; this
+# partial index is the backstop for two runs at the same moment (a retry racing
+# the after-commit issue). No existing row has the type, so it cannot fail.
+databaseChangeLog:
+  - changeSet:
+      id: 158-lease-executed-copy-unique
+      author: claude
+      changes:
+        - sql:
+            sql: >-
+              CREATE UNIQUE INDEX uq_lease_documents_executed_copy
+              ON lease_documents (lease_id) WHERE type = 'EXECUTED_COPY'
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS uq_lease_documents_executed_copy

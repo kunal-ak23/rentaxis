@@ -1,0 +1,53 @@
+{
+  "id": "37",
+  "slug": "tenant-ledger",
+  "title": "Miftah tutorial 37 · Tenant ledger",
+  "description": "Read a Tenant's ledger for a posted contract, see how a returned cheque reopens it and check the trial balance.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 Introduction\n0:33 The tenancy contract debited it with the\n1:17 The contract credited the whole year, and\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nاقرأ دفتر أستاذ المستأجر لعقد مرحَّل، وتعرّف على أثر الشيك المرتجع، وتحقّق من ميزان المراجعة.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "chart of accounts",
+    "journal voucher",
+    "financial reports",
+    "accounting software",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Accounting",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "Introduction"
+    },
+    {
+      "startSec": 33.837,
+      "start": "0:33",
+      "label": "The tenancy contract debited it with the"
+    },
+    {
+      "startSec": 77.469,
+      "start": "1:17",
+      "label": "The contract credited the whole year, and"
+    }
+  ],
+  "durationSec": 118,
+  "roles": [
+    "TENANT_ADMIN",
+    "ACCOUNTANT"
+  ],
+  "topic": "accounting",
+  "captionsFile": "tutorials/output/37-tenant-ledger.srt",
+  "videoFile": "tutorials/output/37-tenant-ledger.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/37.png"
+}

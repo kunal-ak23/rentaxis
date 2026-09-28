@@ -66,6 +66,7 @@ public class LeaseController {
 
     private final LeaseService leaseService;
     private final ContractGenerationService contractGenerationService;
+    private final com.datagami.rentaxis.core.service.lease.ExecutedContractCopyService executedCopies;
     private final SettlementService settlementService;
     private final RenewalOpportunityService renewalOpportunityService;
     private final LeaseInteractionService leaseInteractionService;
@@ -632,6 +633,21 @@ public class LeaseController {
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"lease-preview.pdf\"")
                 .body(pdf);
+    }
+
+    /**
+     * Issue the executed copy (the signed contract with the organisation's stamp)
+     * now — for when the automatic issue at posting failed, or the stamp was added
+     * after posting. Returns the copy (the existing one if already issued); 409 when
+     * none is due (no stamp, not signed, or no stored signed contract).
+     */
+    @PostMapping("/{id}/executed-copy")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<LeaseDocumentDTO> issueExecutedCopy(@PathVariable UUID id) {
+        return executedCopies.issue(id).map(ResponseEntity::ok).orElseThrow(() ->
+                new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT,
+                        "No executed copy is due: the organisation has no stamp, the contract is not signed, "
+                                + "or it has no stored signed contract."));
     }
 
     @GetMapping("/{id}/documents")

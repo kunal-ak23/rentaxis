@@ -1,5 +1,5 @@
 ---
-title: Renter Portal Overview
+title: Tenant Portal Overview
 description: Your self-service portal for managing your tenancy
 category: renter
 roles: [RENTER]

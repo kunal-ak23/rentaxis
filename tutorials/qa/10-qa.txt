@@ -1,0 +1,10 @@
+QA 10-draft-a-tenancy-contract-and-generate-its-cheques.mp4
+  PASS  gate 1 readable, 124.160000s
+  PASS  gate 2 decodes clean
+  PASS  gate 3 streams: h264,video aac,audio mov_text,subtitle 
+  PASS  gate 4 a/v aligned (v=124.160000 a=124.152000)
+  PASS  gate 5 contact sheet /Users/kunalsharma/datagami/rentaxis/tutorials/qa/10-contact-sheet.jpg  <- LOOK AT THIS
+  PASS  gate 6 srt ok (39 cues, last ends 124.176s)
+  PASS  gate 7 luma 176.262
+
+ALL GATES PASSED

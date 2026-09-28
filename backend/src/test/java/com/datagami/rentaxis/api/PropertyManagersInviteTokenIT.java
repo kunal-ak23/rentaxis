@@ -51,6 +51,7 @@ class PropertyManagersInviteTokenIT extends AbstractPostgresIT {
     private UUID foreignPropertyId;
     private User callerPm;
     private User accountant;
+    private User guard;
     private User victim;
     private String victimToken;
 
@@ -72,6 +73,8 @@ class PropertyManagersInviteTokenIT extends AbstractPostgresIT {
         assign(victim, propertyId);
         assign(callerPm, propertyId);
         assign(victim, otherPropertyInTenant);
+        guard = user(tenant, UserRole.SECURITY_GUARD, null);
+        assign(guard, propertyId);
         TenantContextHolder.clear();
     }
 
@@ -143,5 +146,22 @@ class PropertyManagersInviteTokenIT extends AbstractPostgresIT {
     void anotherTenantsPropertyIsNotFound() {
         assertThat(get(callerPm, "/api/v1/properties/" + foreignPropertyId + "/managers")
                 .getStatusCode().value()).isEqualTo(404);
+    }
+
+    /**
+     * Tutorial bug 2026-09-28: the property page's Property Manager card listed the
+     * building's security guard. Guards are assigned to properties through the same
+     * table, but only PROPERTY_MANAGER assignees are managers — on the property's
+     * managers endpoint and on the property list alike.
+     */
+    @Test
+    void aSecurityGuardAssignedToTheBuildingIsNotListedAsAManager() {
+        ResponseEntity<String> managers = get(callerPm, "/api/v1/properties/" + propertyId + "/managers");
+        ResponseEntity<String> list = get(accountant, "/api/v1/properties");
+
+        assertThat(managers.getStatusCode().value()).isEqualTo(200);
+        assertThat(managers.getBody()).contains(victim.getEmail()).contains(callerPm.getEmail())
+                .doesNotContain(guard.getEmail()).doesNotContain("SECURITY_GUARD");
+        assertThat(list.getBody()).contains(victim.getEmail()).doesNotContain(guard.getEmail());
     }
 }

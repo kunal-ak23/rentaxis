@@ -11,12 +11,13 @@ import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { isAbortError } from "@/lib/api/abort";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { changedFields } from "@/lib/changedFields";
+import { refreshMyOrgs } from "@/components/nav/orgStore";
 
-type Tenant = { id: string; name: string; status: string; address?: string; trn?: string; logoUrl?: string; ticketOtpRequired?: boolean; phone?: string; createdAt: string };
+type Tenant = { id: string; name: string; status: string; address?: string; trn?: string; logoUrl?: string; stampImageUrl?: string; ticketOtpRequired?: boolean; phone?: string; createdAt: string };
 
-type OrgForm = { name: string; address: string; trn: string; logoUrl: string; ticketOtpRequired: boolean; phone: string };
+type OrgForm = { name: string; address: string; trn: string; logoUrl: string; stampImageUrl: string; ticketOtpRequired: boolean; phone: string };
 
-const EMPTY_FORM: OrgForm = { name: "", address: "", trn: "", logoUrl: "", ticketOtpRequired: true, phone: "" };
+const EMPTY_FORM: OrgForm = { name: "", address: "", trn: "", logoUrl: "", stampImageUrl: "", ticketOtpRequired: true, phone: "" };
 
 /**
  * The editable fields. Status is not one of them (break-it R3 ops3 F6): a dialog
@@ -24,7 +25,7 @@ const EMPTY_FORM: OrgForm = { name: "", address: "", trn: "", logoUrl: "", ticke
  * back and re-activated it. Status moves only through the Activate / Deactivate
  * action, which names the status it saw.
  */
-const ORG_FIELDS = ["name", "address", "trn", "logoUrl", "ticketOtpRequired", "phone"] as const;
+const ORG_FIELDS = ["name", "address", "trn", "logoUrl", "stampImageUrl", "ticketOtpRequired", "phone"] as const;
 
 function formOf(tenant: Tenant): OrgForm {
     return {
@@ -32,6 +33,7 @@ function formOf(tenant: Tenant): OrgForm {
         address: tenant.address || "",
         trn: tenant.trn || "",
         logoUrl: tenant.logoUrl || "",
+        stampImageUrl: tenant.stampImageUrl || "",
         ticketOtpRequired: tenant.ticketOtpRequired !== false,
         phone: tenant.phone || "",
     };
@@ -73,6 +75,8 @@ export default function SuperAdminTenantsPage() {
     // flips to the opposite action under the cursor) and cannot be confirmed again.
     const [statusStale, setStatusStale] = useState(false);
     const [formError, setFormError] = useState("");
+    // R3 minor 2: created, but its logo/stamp could not be kept (header X-Org-Branding).
+    const [notice, setNotice] = useState("");
     // Deleting an organization is irreversible and takes everything inside it,
     // so the dialog asks for the name rather than a yes/no — the same
     // confirmation the API itself requires via ?confirmName=.
@@ -124,6 +128,7 @@ export default function SuperAdminTenantsPage() {
             if (res.ok || res.status === 404) {
                 // 404 means it is already gone — the desired end state either way.
                 closeDelete();
+                refreshMyOrgs();
                 await fetchTenants();
                 return;
             }
@@ -167,6 +172,20 @@ export default function SuperAdminTenantsPage() {
         return null;
     };
 
+    // Branding lands in the storage of the organisation being edited — not the one
+    // this super admin is acting in (review I1) — or, for one not yet created, the
+    // shared public folder. The backend checks the bytes are PNG/JPEG/GIF.
+    const brandingUploadPath = editingTenant
+        ? `/api/admin/tenants/${editingTenant.id}/branding`
+        : "/api/admin/tenants/branding";
+    // A saved image may sit in a private container: preview it through the app.
+    const brandingPreview = (kind: "logo" | "stamp", value: string) => {
+        const saved = kind === "logo" ? editingTenant?.logoUrl : editingTenant?.stampImageUrl;
+        return editingTenant && value && value === saved
+            ? `/api/proxy/admin/tenants/${editingTenant.id}/branding/${kind}?v=${encodeURIComponent(value.slice(-24))}`
+            : undefined;
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.name) return;
@@ -194,7 +213,11 @@ export default function SuperAdminTenantsPage() {
                 body: JSON.stringify(body),
             });
             if (res.ok) {
+                setNotice(!editingTenant && res.headers?.get("X-Org-Branding") === "not-saved"
+                    ? tSa("orgBrandingNotSaved") : "");
                 resetForm();
+                // The header's switcher lists the new or renamed organisation at once.
+                refreshMyOrgs();
                 fetchTenants();
             } else if (res.status === 409 && editingTenant) {
                 const data = await res.json().catch(() => ({}));
@@ -255,6 +278,7 @@ export default function SuperAdminTenantsPage() {
             });
             if (res.ok) {
                 closeStatus();
+                refreshMyOrgs();
                 fetchTenants();
                 return;
             }
@@ -362,6 +386,14 @@ export default function SuperAdminTenantsPage() {
                 </div>
             </div>
 
+            {notice && (
+                <div role="status" data-testid="org-notice"
+                    className="mb-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
+                    <AlertTriangle size={14} className="flex-shrink-0" />
+                    {notice}
+                </div>
+            )}
+
             {/* Create / Edit Modal */}
             {showForm && (
                 <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
@@ -389,17 +421,38 @@ export default function SuperAdminTenantsPage() {
                         )}
 
                         <form onSubmit={handleSubmit} className="space-y-4">
-                            {/* Logo Upload */}
-                            <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgLogo")}</label>
-                                <FileUpload
-                                    value={formData.logoUrl}
-                                    onChange={(url) => setFormData({ ...formData, logoUrl: url })}
-                                    onRemove={() => setFormData({ ...formData, logoUrl: "" })}
-                                    folder="assets"
-                                    label={tSa("orgUploadLogo")}
-                                    hint="PNG, JPG or SVG. Max 2MB. Drag & drop or click to browse."
-                                />
+                            {/* Logo, then the stamp right below it (stacked: the upload previews need the full width) */}
+                            <div className="grid grid-cols-1 gap-4">
+                                <div className="min-w-0">
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgLogo")}</label>
+                                    <FileUpload
+                                        value={formData.logoUrl}
+                                        onChange={(url) => setFormData(f => ({ ...f, logoUrl: url }))}
+                                        onRemove={() => setFormData(f => ({ ...f, logoUrl: "" }))}
+                                        folder="assets"
+                                        accept="image/png,image/jpeg,image/gif"
+                                        uploadPath={brandingUploadPath}
+                                        previewSrc={brandingPreview("logo", formData.logoUrl)}
+                                        label={tSa("orgUploadLogo")}
+                                        hint={tSa("orgLogoHint")}
+                                    />
+                                </div>
+                                {/* The stamp printed beside the landlord signature on the tenancy
+                                    contract. PNG/JPG only (the server also refuses SVG). */}
+                                <div className="min-w-0" data-testid="org-stamp-upload">
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgStamp")}</label>
+                                    <FileUpload
+                                        value={formData.stampImageUrl}
+                                        onChange={(url) => setFormData(f => ({ ...f, stampImageUrl: url }))}
+                                        onRemove={() => setFormData(f => ({ ...f, stampImageUrl: "" }))}
+                                        folder="assets"
+                                        accept="image/png,image/jpeg"
+                                        uploadPath={brandingUploadPath}
+                                        previewSrc={brandingPreview("stamp", formData.stampImageUrl)}
+                                        label={tSa("orgUploadStamp")}
+                                        hint={tSa("orgStampHint")}
+                                    />
+                                </div>
                             </div>
 
                             <div>
@@ -587,7 +640,7 @@ export default function SuperAdminTenantsPage() {
                             {loadError ? <XCircle size={32} /> : <ShieldCheck size={32} />}
                         </div>
                         <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">
-                            {loadError || tSa("orgEmpty")}
+                            {loadError || (tenants.length > 0 && searchQuery ? tSa("orgNoMatch") : tSa("orgEmpty"))}
                         </p>
                         {loadError && (
                             <button
@@ -641,7 +694,9 @@ export default function SuperAdminTenantsPage() {
                         {features.map(f => (
                           <div key={f.feature} className="flex items-center justify-between gap-4">
                             <div>
-                              <p className="text-sm font-medium text-neutral-800">{f.label}</p>
+                              <p className="text-sm font-medium text-neutral-800">
+                                {tSa.has(`featureLabels.${f.feature}`) ? tSa(`featureLabels.${f.feature}`) : f.label}
+                              </p>
                               <p className="text-xs text-neutral-400 mt-0.5">
                                 {t("default")}: {f.defaultEnabled ? t("on") : t("off")}
                               </p>

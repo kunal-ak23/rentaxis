@@ -829,7 +829,27 @@ public class UserService {
     }
 
     /**
-     * The users assigned to a property.
+     * {@link #getAssignedManagers} for several properties in two queries (the properties
+     * list asked once per property). Properties with nobody assigned map to an empty list.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Map<UUID, List<User>> getAssignedManagersByProperty(java.util.Collection<UUID> propertyIds) {
+        java.util.Map<UUID, List<User>> out = new java.util.HashMap<>();
+        if (propertyIds == null || propertyIds.isEmpty()) return out;
+        List<UserPropertyAssignment> assignments = propertyAssignmentRepository.findByPropertyIdIn(propertyIds);
+        java.util.Map<UUID, User> users = new java.util.HashMap<>();
+        userRepository.findAllById(assignments.stream().map(UserPropertyAssignment::getUserId).distinct().toList())
+                .stream().filter(UserService::isPropertyManager)
+                .forEach(u -> users.put(u.getId(), u));
+        for (UserPropertyAssignment a : assignments) {
+            User u = users.get(a.getUserId());
+            if (u != null) out.computeIfAbsent(a.getPropertyId(), k -> new java.util.ArrayList<>()).add(u);
+        }
+        return out;
+    }
+
+    /**
+     * The PROPERTY_MANAGER users assigned to a property.
      *
      * <p>{@code @Transactional} for the third instance of the shape this hotfix is
      * about: neither repository call names a tenant, and
@@ -844,29 +864,23 @@ public class UserService {
      * caller may see before it gets here (PR #342 review C2).
      */
     @Transactional(readOnly = true)
-    /**
-     * {@link #getAssignedManagers} for several properties in two queries (the properties
-     * list asked once per property). Properties with nobody assigned map to an empty list.
-     */
-    public java.util.Map<UUID, List<User>> getAssignedManagersByProperty(java.util.Collection<UUID> propertyIds) {
-        java.util.Map<UUID, List<User>> out = new java.util.HashMap<>();
-        if (propertyIds == null || propertyIds.isEmpty()) return out;
-        List<UserPropertyAssignment> assignments = propertyAssignmentRepository.findByPropertyIdIn(propertyIds);
-        java.util.Map<UUID, User> users = new java.util.HashMap<>();
-        userRepository.findAllById(assignments.stream().map(UserPropertyAssignment::getUserId).distinct().toList())
-                .forEach(u -> users.put(u.getId(), u));
-        for (UserPropertyAssignment a : assignments) {
-            User u = users.get(a.getUserId());
-            if (u != null) out.computeIfAbsent(a.getPropertyId(), k -> new java.util.ArrayList<>()).add(u);
-        }
-        return out;
-    }
-
     public List<User> getAssignedManagers(UUID propertyId) {
         List<UUID> userIds = propertyAssignmentRepository.findByPropertyId(propertyId)
                 .stream()
                 .map(UserPropertyAssignment::getUserId)
                 .toList();
-        return userRepository.findAllById(userIds);
+        return userRepository.findAllById(userIds).stream()
+                .filter(UserService::isPropertyManager)
+                .toList();
+    }
+
+    /**
+     * The property-assignment table holds every user scoped to a building — security
+     * guards included — but "managers" means the PROPERTY_MANAGER assignees: the
+     * property page's Property Manager card listed the guard, and the meeting
+     * modal would have booked a guard as the host (tutorial bug, 2026-09-28).
+     */
+    private static boolean isPropertyManager(User user) {
+        return user.getRole() == UserRole.PROPERTY_MANAGER;
     }
 }

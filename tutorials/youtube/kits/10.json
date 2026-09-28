@@ -1,0 +1,57 @@
+{
+  "id": "10",
+  "slug": "draft-a-tenancy-contract-and-generate-its-cheques",
+  "title": "Miftah tutorial 10 · Draft a tenancy contract and generate its cheques",
+  "description": "Choose the Tenant and unit, set dates, rent, VAT and charges, and generate the cheque grid before saving the draft.\n\nWho this is for: Company Admin, Property Manager.\n\nChapters:\n0:00 Introduction\n0:30 Step two is Terms\n1:01 The contract value is now 101,000\n1:34 Step five, Review, shows the unit, tenant\n\nPart of the Miftah web course — playlist: Miftah · Leasing\n\nاختر المستأجر والوحدة، وحدّد التواريخ والإيجار وضريبة القيمة المضافة والرسوم، وأنشئ جدول الشيكات قبل حفظ المسودة.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "tenancy contract",
+    "lease agreement",
+    "tenant management",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Leasing",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "Introduction"
+    },
+    {
+      "startSec": 30.944,
+      "start": "0:30",
+      "label": "Step two is Terms"
+    },
+    {
+      "startSec": 61.485,
+      "start": "1:01",
+      "label": "The contract value is now 101,000"
+    },
+    {
+      "startSec": 94.036,
+      "start": "1:34",
+      "label": "Step five, Review, shows the unit, tenant"
+    }
+  ],
+  "durationSec": 125,
+  "roles": [
+    "TENANT_ADMIN",
+    "PROPERTY_MANAGER"
+  ],
+  "topic": "leasing",
+  "captionsFile": "tutorials/output/10-draft-a-tenancy-contract-and-generate-its-cheques.srt",
+  "videoFile": "tutorials/output/10-draft-a-tenancy-contract-and-generate-its-cheques.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/10.png"
+}

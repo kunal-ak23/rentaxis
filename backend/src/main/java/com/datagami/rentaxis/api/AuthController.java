@@ -401,7 +401,7 @@ public class AuthController {
         // SUPER_ADMIN sees all tenants
         if (user.getRole() == UserRole.SUPER_ADMIN) {
             List<TenantInfo> allTenants = orgService.listAllTenants().stream()
-                    .map(org -> new TenantInfo(org.getId().toString(), org.getName(), org.getSlug()))
+                    .map(org -> TenantInfo.of(org))
                     .toList();
             return ResponseEntity.ok(allTenants);
         }
@@ -412,13 +412,24 @@ public class AuthController {
                 .map(tid -> orgService.findById(tid))
                 .filter(Optional::isPresent)
                 .map(opt -> (LandlordOrg) opt.get())
-                .map(org -> new TenantInfo(org.getId().toString(), org.getName(), org.getSlug()))
+                .map(org -> TenantInfo.of(org))
                 .toList();
 
         return ResponseEntity.ok(tenants);
     }
 
-    public record TenantInfo(String id, String name, String slug) {
+    /**
+     * One organisation the caller may act in. {@code logoVersion} is set when the
+     * organisation has a logo: the web header then loads it from
+     * {@code /api/v1/org/branding/logo?v=<logoVersion>} (streamed from our own
+     * storage — tenant containers are private, so the stored URL itself is never
+     * handed to the browser). It changes whenever the logo does.
+     */
+    public record TenantInfo(String id, String name, String slug, String logoVersion) {
+        static TenantInfo of(LandlordOrg org) {
+            return new TenantInfo(org.getId().toString(), org.getName(), org.getSlug(),
+                    OrgBrandingController.versionOf(org.getLogoUrl()));
+        }
     }
 
     // --- Self-Service Profile ---

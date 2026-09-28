@@ -99,8 +99,18 @@ class RentReceiptLogoTest {
     }
 
     @Test
-    void aDataUriLogoIsKeptButCannotBreakOutOfTheAttribute() {
+    void aDataUriLogoCannotBreakOutOfTheAttribute() {
+        // Not base64 of an image: left off entirely (it used to be escaped and kept).
         String img = service.logoImg(org("data:image/png;base64,AA\"/><img src=\"http://x/"), tenantId);
-        assertThat(img).contains("&quot;").doesNotContain("src=\"http://x/");
+        assertThat(img).doesNotContain("src=\"http://x/").doesNotContain("<img src=\"http");
+    }
+
+    @Test
+    void aDataUriLogoIsKeptOnlyWhenItsBytesAreAnImage() {
+        String png = "data:image/png;base64," + Base64.getEncoder().encodeToString(PNG);
+        assertThat(service.logoImg(org(png), tenantId)).startsWith("<img src=\"" + png + "\"");
+        String html = "data:image/png;base64," + Base64.getEncoder().encodeToString(
+                "<svg onload=x>".getBytes(StandardCharsets.UTF_8));
+        assertThat(service.logoImg(org(html), tenantId)).isEmpty();
     }
 }

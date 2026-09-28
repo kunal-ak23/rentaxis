@@ -4,6 +4,17 @@ import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { Loader2, CreditCard } from "lucide-react";
 import { ApiError, onlinePayApi, type RenterCheque } from "@/lib/api/leasing";
+import { serverText } from "@/components/finance/bankrec/serverText";
+
+/**
+ * A refusal in the Tenant's language: coded refusals (`payment.bouncePartlySettled`
+ * and friends) are translated under `OnlinePayments.errors`, with their args — money
+ * already formatted by the server as the app formats it ("AED 7,000.00"); anything
+ * else falls back to the server's English message.
+ */
+function refusalText(t: Parameters<typeof serverText>[0], e: ApiError): string {
+    return serverText(t, e) || e.message;
+}
 
 /**
  * The renter's "Pay" button for one due cheque row.
@@ -103,7 +114,7 @@ export default function PayOnlineButton({ cheque, onPaid }: Props) {
                             gatewaySignature: response.razorpay_signature,
                         })
                         .then(() => onPaid())
-                        .catch(e => setError(e instanceof ApiError ? e.message : t("payFailed")))
+                        .catch(e => setError(e instanceof ApiError ? refusalText(t, e) : t("payFailed")))
                         .finally(() => setBusy(false));
                 },
                 modal: {
@@ -119,7 +130,7 @@ export default function PayOnlineButton({ cheque, onPaid }: Props) {
             });
             checkout.open();
         } catch (e) {
-            setError(e instanceof ApiError ? e.message : t("payFailed"));
+            setError(e instanceof ApiError ? refusalText(t, e) : t("payFailed"));
             setBusy(false);
         }
     };

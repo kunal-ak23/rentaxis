@@ -57,6 +57,28 @@ public class AsyncConfig {
     }
 
     /**
+     * Document work that follows a committed business action off the request
+     * thread — today the executed copy of a contract issued after posting
+     * ({@code ExecutedContractCopyService}). A saturated queue drops the task with a
+     * log line: the copy can always be issued again from the lease, and the post
+     * it follows has already committed.
+     */
+    @Bean(name = "documentExecutor")
+    public Executor documentExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(200);
+        executor.setThreadNamePrefix("document-");
+        executor.setTaskDecorator(tenantContextResetDecorator());
+        executor.setRejectedExecutionHandler((r, e) ->
+                LoggerFactory.getLogger(AsyncConfig.class)
+                        .warn("document.task_rejected reason=executor_saturated queue={}", e.getQueue().size()));
+        executor.initialize();
+        return executor;
+    }
+
+    /**
      * Delivery of login OTPs, off the request thread
      * ({@code OtpDeliveryListener}). Isolated from {@code importExecutor} on
      * purpose: a portfolio import is a long, heavy job, and queueing a 5-minute
