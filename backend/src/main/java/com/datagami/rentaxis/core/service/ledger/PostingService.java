@@ -81,21 +81,10 @@ public class PostingService {
         this.vatLock = vatLock;
     }
 
-    /**
-     * Break-it round 2 (money2) F1: "today" for {@link #requireNumberableDate}, on the
-     * app clock (Asia/Dubai). Setter-injected so hand-built instances need no new argument.
-     */
-    private java.time.Clock clock = java.time.Clock.system(ManualPostingDates.BUSINESS_ZONE);
-
-    @org.springframework.beans.factory.annotation.Autowired
-    public void setClock(java.time.Clock clock) {
-        this.clock = clock;
-    }
-
-    /** Years before today's year a journal may be dated (break-it R2 money2 F1). */
-    public static final int YEARS_BACK = 49;
-    /** Years after today's year a journal may be dated; the lease term cap is 50. */
-    public static final int YEARS_AHEAD = 50;
+    /** The first date a journal may carry (break-it R2 money2 F1, round 2 ruling). */
+    public static final LocalDate EARLIEST_ENTRY_DATE = LocalDate.of(2000, 1, 1);
+    /** The last date a journal may carry. */
+    public static final LocalDate LATEST_ENTRY_DATE = LocalDate.of(2099, 12, 31);
 
     /**
      * Break-it round 2 (money2) F1: every journal's number carries a two-digit year
@@ -103,15 +92,16 @@ public class PostingService {
      * typed for 2026 — draws a counter whose numbers are already on the books, and
      * either fails as a bare {@code uq_journal_entries_number} conflict or, in a
      * fresh series, takes the number and poisons that series for the real year.
-     * Refused here, before a number is drawn, whoever posts: the entry year must be
-     * in [today − {@value #YEARS_BACK}, today + {@value #YEARS_AHEAD}] — exactly 100
-     * distinct years, so no two dates allowed at once share a two-digit year. Lease
-     * schedules fit (the term cap is 50 years); cut-over history fits (decades).
+     * Refused here, before a number is drawn, whoever posts: the date must lie in
+     * the fixed century 2000-01-01 .. 2099-12-31. A fixed range (not one rolling
+     * with today) means no two dates ever allowed, at any time, share a two-digit
+     * year; it is also the range the ledger and cheque queries default to
+     * ({@code LedgerQueryService}, {@code ChequeQueryService}).
      */
-    public static void requireNumberableDate(LocalDate date, LocalDate today) {
-        if (date == null || today == null) return;
-        int earliest = today.getYear() - YEARS_BACK;
-        int latest = today.getYear() + YEARS_AHEAD;
+    public static void requireNumberableDate(LocalDate date) {
+        if (date == null) return;
+        int earliest = EARLIEST_ENTRY_DATE.getYear();
+        int latest = LATEST_ENTRY_DATE.getYear();
         if (date.getYear() < earliest || date.getYear() > latest) {
             String shown = date.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
             throw new BusinessRuleViolationException(
@@ -125,7 +115,7 @@ public class PostingService {
     @Transactional
     public JournalEntry post(PostingRequest r) {
         validateShape(r);
-        requireNumberableDate(r.entryDate(), LocalDate.now(clock));
+        requireNumberableDate(r.entryDate());
         // YEC joins OB as a doc-type-keyed lock exemption (spec 2026-09-24 §3), with
         // the same reachability argument as the OB note in reverse(): only
         // YearEndCloseService produces a YEC, no request body carries a doc type, and
@@ -278,7 +268,7 @@ public class PostingService {
         if (original.getReversalOfId() != null) throw new BusinessRuleViolationException("Cannot reverse a reversal entry");
         if (original.getStatus() == JournalStatus.REVERSED) throw new BusinessRuleViolationException("Entry " + original.getEntryNumber() + " is already reversed");
         // Break-it R2 money2 F1: a mirror is numbered like any entry.
-        requireNumberableDate(date, LocalDate.now(clock));
+        requireNumberableDate(date);
         // Same two exemptions post() grants, for the same reason and because an entry
         // that could be posted into a closed period has to be removable from it.
         // An OB journal is dated the day BEFORE the books open, which is locked by
