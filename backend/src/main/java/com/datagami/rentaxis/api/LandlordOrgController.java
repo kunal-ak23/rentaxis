@@ -38,8 +38,9 @@ public class LandlordOrgController {
         LandlordOrg org = service.provisionTenant(name);
         // The provisioning form also collects address/TRN/phone/logo/OTP toggle —
         // persist them too instead of silently dropping everything but the name.
-        if (applyOptionalFields(org, payload)) {
-            org = service.save(org);
+        // Under the row lock like every other write of an existing row (review r3B I1).
+        if (applyOptionalFields(new LandlordOrg(), payload)) {
+            org = service.updateLocked(org.getId(), o -> applyOptionalFields(o, payload));
         }
         return ResponseEntity.ok(org);
     }
@@ -53,24 +54,26 @@ public class LandlordOrgController {
     public ResponseEntity<LandlordOrg> updateTenant(
             @PathVariable UUID id,
             @RequestBody Map<String, Object> payload) {
-        java.util.Optional<LandlordOrg> orgOpt = service.findById(id);
-        if (orgOpt.isEmpty()) {
+        if (service.findById(id).isEmpty()) {
             return ResponseEntity.notFound().build();
         }
-        LandlordOrg org = orgOpt.get();
-        // Break-it R3 ops3 F6: a stale dialog refused. "expected" carries the values
-        // the dialog loaded for the fields it changes; if any moved meanwhile the
-        // edit is refused with org.changed rather than overwriting it.
-        requireUnchanged(org, payload.get("expected"));
-        String name = stringValue(payload.get("name"));
-        if (name != null && !name.isBlank()) {
-            org.setName(name);
-        }
-        // Never the status: an edit dialog opened before another tab deactivated the
-        // organisation sent its old "ACTIVE" back and re-activated it. Status moves
-        // only through PUT /{id}/status. Older clients still send the key; it is ignored.
-        applyOptionalFields(org, payload, false);
-        return ResponseEntity.ok(service.save(org));
+        // Review r3B I1: read, check and write under the row lock in one transaction —
+        // an entity read before a concurrent deactivation, merged afterwards, wrote the
+        // old status back.
+        return ResponseEntity.ok(service.updateLocked(id, org -> {
+            // Break-it R3 ops3 F6: a stale dialog refused. "expected" carries the values
+            // the dialog loaded for the fields it changes; if any moved meanwhile the
+            // edit is refused with org.changed rather than overwriting it.
+            requireUnchanged(org, payload.get("expected"));
+            String name = stringValue(payload.get("name"));
+            if (name != null && !name.isBlank()) {
+                org.setName(name);
+            }
+            // Never the status: an edit dialog opened before another tab deactivated the
+            // organisation sent its old "ACTIVE" back and re-activated it. Status moves
+            // only through PUT /{id}/status. Older clients still send the key; it is ignored.
+            applyOptionalFields(org, payload, false);
+        }));
     }
 
     public static final String ORG_CHANGED = "org.changed";
@@ -86,8 +89,7 @@ public class LandlordOrgController {
      */
     @PutMapping("/{id}/status")
     public ResponseEntity<LandlordOrg> setStatus(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
-        java.util.Optional<LandlordOrg> orgOpt = service.findById(id);
-        if (orgOpt.isEmpty()) {
+        if (service.findById(id).isEmpty()) {
             return ResponseEntity.notFound().build();
         }
         String status = stringValue(body.get("status"));
@@ -95,16 +97,14 @@ public class LandlordOrgController {
             throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
                     "Status must be ACTIVE or INACTIVE");
         }
-        LandlordOrg org = orgOpt.get();
-        if (body.containsKey("expectedStatus")
-                && !java.util.Objects.equals(stringValue(body.get("expectedStatus")), org.getStatus())) {
-            throw new com.datagami.rentaxis.api.exception.FiguresChangedException(ORG_CHANGED, ORG_CHANGED_MESSAGE);
-        }
-        if (status.equals(org.getStatus())) {
-            return ResponseEntity.ok(org);
-        }
-        org.setStatus(status);
-        return ResponseEntity.ok(service.save(org));
+        // Checked and written under the same row lock as an edit (review r3B I1).
+        return ResponseEntity.ok(service.updateLocked(id, org -> {
+            if (body.containsKey("expectedStatus")
+                    && !java.util.Objects.equals(stringValue(body.get("expectedStatus")), org.getStatus())) {
+                throw new com.datagami.rentaxis.api.exception.FiguresChangedException(ORG_CHANGED, ORG_CHANGED_MESSAGE);
+            }
+            org.setStatus(status);
+        }));
     }
 
     /** The fields an edit may name in {@code expected}, read from the organisation as they are now. */

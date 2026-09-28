@@ -42,6 +42,7 @@ class LandlordOrgStaleEditIT extends AbstractPostgresIT {
     @Autowired PropertyAccountService propertyAccountService;
     @Autowired PropertyService propertyService;
     @Autowired JdbcTemplate jdbc;
+    @Autowired org.springframework.transaction.PlatformTransactionManager txm;
 
     private CrossTenantHttp http;
     private User superAdmin;
@@ -146,5 +147,46 @@ class LandlordOrgStaleEditIT extends AbstractPostgresIT {
         assertThat(http.call(admin, HttpMethod.PUT, "/api/admin/tenants/" + org + "/status",
                 Map.of("status", "INACTIVE")).getStatusCode().value()).isEqualTo(403);
         assertThat(status()).isEqualTo("ACTIVE");
+    }
+
+    /**
+     * Review r3B I1: the race behind F6. Tab B's deactivation holds the row (its
+     * transaction open, not yet committed) when tab A's address edit arrives. The edit
+     * used to read ACTIVE, wait on the row at its UPDATE, and then write every column
+     * back — status ACTIVE included. Now it reads under the lock, after B commits.
+     */
+    @Test
+    void aDeactivationCommittingDuringAnEditLeavesTheOrganisationInactive() throws Exception {
+        java.util.concurrent.CountDownLatch deactivating = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch editSent = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            java.util.concurrent.Future<?> tabB = pool.submit(() ->
+                    new org.springframework.transaction.support.TransactionTemplate(txm).executeWithoutResult(tx -> {
+                        var o = orgRepo.findByIdForUpdate(org).orElseThrow();
+                        o.setStatus("INACTIVE");
+                        orgRepo.saveAndFlush(o);
+                        deactivating.countDown();
+                        try {
+                            editSent.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                            Thread.sleep(1500); // tab A's request is in flight, waiting on the row
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }));
+            assertThat(deactivating.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+
+            java.util.concurrent.Future<Integer> tabA = java.util.concurrent.Executors.newSingleThreadExecutor().submit(() ->
+                    http.call(superAdmin, HttpMethod.PUT, "/api/admin/tenants/" + org,
+                            Map.of("address", "Edited during deactivation", "status", "ACTIVE")).getStatusCode().value());
+            editSent.countDown();
+
+            tabB.get(20, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(tabA.get(20, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(200);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(status()).isEqualTo("INACTIVE");
+        assertThat(address()).isEqualTo("Edited during deactivation");
     }
 }
