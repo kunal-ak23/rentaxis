@@ -172,3 +172,88 @@ describe("installProxyFetchGuard — backend refusal reason (batch 2 follow-up)"
         expect(onBackendUnauthorized).toHaveBeenCalledWith("", "NOT_A_MEMBER");
     });
 });
+
+/**
+ * Break round 3, F1: leaving the page (a full navigation — link to another
+ * document, typed URL, reload) cancels every in-flight fetch, and Chrome
+ * rejects each with `TypeError: Failed to fetch` AFTER pagehide/unload but
+ * while microtasks still run — so each page's `catch (err) { console.error(err) }`
+ * logged it. Verified in Chromium: order is beforeunload → pagehide → unload →
+ * rejection → microtasks (timers no longer run). The guard swallows rejections
+ * that land while the page is going away; a real network failure before that
+ * still rejects.
+ */
+describe("installProxyFetchGuard — page leaving (break round 3, F1)", () => {
+    const NEVER = Symbol("never");
+    const settledOrNever = (p: Promise<unknown>) =>
+        Promise.race([p.then(v => v, e => e), new Promise(r => setTimeout(() => r(NEVER), 30))]);
+    const pagehide = (persisted = false) => {
+        const e = new Event("pagehide") as PageTransitionEvent;
+        Object.defineProperty(e, "persisted", { value: persisted });
+        window.dispatchEvent(e);
+    };
+    const pageshow = () => window.dispatchEvent(new Event("pageshow"));
+    const failing = () => {
+        window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); }) as unknown as typeof fetch;
+    };
+    afterEach(() => pageshow());
+
+    it("a real network failure (page not leaving) still rejects", async () => {
+        failing();
+        install();
+        const out = await settledOrNever(fetch("/api/proxy/v1/leases"));
+        expect(out).toBeInstanceOf(TypeError);
+    });
+
+    it("a fetch cancelled because the page is being unloaded never settles (nothing for the page to log)", async () => {
+        failing();
+        install();
+        pagehide();
+        expect(await settledOrNever(fetch("/api/proxy/v1/leases"))).toBe(NEVER);
+        // Non-proxy calls made by the page are cancelled the same way.
+        expect(await settledOrNever(fetch("/api/auth/session"))).toBe(NEVER);
+    });
+
+    it("the rejection that lands after pagehide is swallowed even when the fetch started before it", async () => {
+        let reject!: (e: unknown) => void;
+        window.fetch = vi.fn(() => new Promise((_, r) => { reject = r; })) as unknown as typeof fetch;
+        install();
+        const p = fetch("/api/proxy/v1/units/property/p1");
+        pagehide();
+        reject(new TypeError("Failed to fetch"));
+        expect(await settledOrNever(p)).toBe(NEVER);
+    });
+
+    it("a body read cancelled by the unload is swallowed too", async () => {
+        window.fetch = vi.fn(async () => {
+            const res = new Response("{}", { status: 200 });
+            res.json = () => Promise.reject(new TypeError("network error"));
+            return res;
+        }) as unknown as typeof fetch;
+        install();
+        const res = await fetch("/api/proxy/v1/dashboard/summary");
+        pagehide();
+        expect(await settledOrNever(res.json())).toBe(NEVER);
+    });
+
+    it("a body read that fails while the page stays still rejects", async () => {
+        window.fetch = vi.fn(async () => {
+            const res = new Response("{}", { status: 200 });
+            res.json = () => Promise.reject(new SyntaxError("bad json"));
+            return res;
+        }) as unknown as typeof fetch;
+        install();
+        const res = await fetch("/api/proxy/v1/dashboard/summary");
+        expect(await settledOrNever(res.json())).toBeInstanceOf(SyntaxError);
+    });
+
+    it("a page put in the back/forward cache (persisted) is not leaving; pageshow resets", async () => {
+        failing();
+        install();
+        pagehide(true);
+        expect(await settledOrNever(fetch("/api/proxy/v1/leases"))).toBeInstanceOf(TypeError);
+        pagehide();
+        pageshow();
+        expect(await settledOrNever(fetch("/api/proxy/v1/leases"))).toBeInstanceOf(TypeError);
+    });
+});

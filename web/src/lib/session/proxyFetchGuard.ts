@@ -34,6 +34,37 @@ export type ProxyFetchGuardOptions = {
 
 const GUARD = Symbol.for("rentaxis.proxyFetchGuard");
 
+/**
+ * Break round 3, F1: a full navigation (a link to another document, a typed
+ * URL, a reload) cancels every in-flight fetch of the page being left. Chrome
+ * rejects each with `TypeError: Failed to fetch` after pagehide/unload, while
+ * microtasks still run, so every page's `catch (err) { console.error(err) }`
+ * logged a failure nobody will ever see. A rejection that lands while the page
+ * is going away is swallowed: the promise simply never settles (the document is
+ * being destroyed). A page put in the back/forward cache (`persisted`) is not
+ * destroyed, so it is not treated as leaving; pageshow resets either way.
+ * A real network failure — the page staying put — still rejects.
+ */
+function never<T>(): Promise<T> {
+    return new Promise<T>(() => {});
+}
+
+const BODY_READERS = ["json", "text", "blob", "arrayBuffer", "formData"] as const;
+
+/** Body reads cancelled by the unload are swallowed the same way (headers may land before it). */
+function silenceBodyOnLeave(res: Response, leaving: () => boolean): Response {
+    for (const name of BODY_READERS) {
+        const read = res[name];
+        if (typeof read !== "function") continue;
+        (res as unknown as Record<string, () => Promise<unknown>>)[name] = () =>
+            (read as () => Promise<unknown>).call(res).catch((err: unknown) => {
+                if (leaving()) return never();
+                throw err;
+            });
+    }
+    return res;
+}
+
 function proxyPath(input: RequestInfo | URL): string | null {
     const raw = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     let url: URL;
@@ -51,8 +82,24 @@ function proxyPath(input: RequestInfo | URL): string | null {
 
 export function installProxyFetchGuard(opts: ProxyFetchGuardOptions): () => void {
     const original = window.fetch;
+    let leaving = false;
+    const isLeaving = () => leaving;
+    const onPageHide = (e: PageTransitionEvent) => { if (!e.persisted) leaving = true; };
+    const onPageShow = () => { leaving = false; };
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onPageShow);
+    // The original fetch, with rejections (and body-read rejections) caused by leaving the page swallowed.
+    const send = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
+        original(input, init).then(
+            res => silenceBodyOnLeave(res, isLeaving),
+            (err: unknown) => {
+                if (leaving) return never<Response>();
+                throw err;
+            },
+        );
+
     const guarded = async function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-        if (!proxyPath(input)) return original(input, init);
+        if (!proxyPath(input)) return send(input, init);
 
         const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
         let nextInput = input;
@@ -70,7 +117,7 @@ export function installProxyFetchGuard(opts: ProxyFetchGuardOptions): () => void
             }
         }
 
-        const res = await original(nextInput, nextInit);
+        const res = await send(nextInput, nextInit);
         // The proxy's own signals count only on a response it answered itself
         // (not stamped as forwarded to the backend).
         const proxyOwn = !res.headers.has(FORWARDED_HEADER);
@@ -91,6 +138,8 @@ export function installProxyFetchGuard(opts: ProxyFetchGuardOptions): () => void
     window.fetch = guarded;
 
     return () => {
+        window.removeEventListener("pagehide", onPageHide);
+        window.removeEventListener("pageshow", onPageShow);
         if (window.fetch === guarded) window.fetch = original;
     };
 }
