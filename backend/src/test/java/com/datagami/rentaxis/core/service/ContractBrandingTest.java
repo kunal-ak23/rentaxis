@@ -50,6 +50,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -73,6 +74,9 @@ class ContractBrandingTest {
     private LandlordOrg landlord;
     private Lease lease;
     private ContractGenerationService svc;
+    private final LeaseDocumentRepository docRepo = mock(LeaseDocumentRepository.class);
+    private final java.util.List<com.datagami.rentaxis.domain.entity.LeaseDocument> storedDocs = new ArrayList<>();
+    private Path contractsDir;
 
     private static LeaseLine line(int seq, String name, ChargeBehaviour b, String amt, boolean vat) {
         ChargeType t = new ChargeType();
@@ -160,9 +164,30 @@ class ContractBrandingTest {
                 line(4, "Parking / Remote", ChargeBehaviour.FEE, "300", true)));
 
         svc = new ContractGenerationService(leaseRepo,
-                mock(com.datagami.rentaxis.core.security.LeaseAccessPolicy.class), mock(LeaseDocumentRepository.class),
+                mock(com.datagami.rentaxis.core.security.LeaseAccessPolicy.class), docRepo,
                 orgRepo, chequeRepo, lineRepo, mock(ApplicationEventPublisher.class));
         svc.setBlobStorageService(blobs);
+        when(leaseRepo.findById(lease.getId())).thenReturn(Optional.of(lease));
+        when(docRepo.findByLeaseId(lease.getId())).thenAnswer(inv -> new ArrayList<>(storedDocs));
+        when(docRepo.saveAndFlush(any(com.datagami.rentaxis.domain.entity.LeaseDocument.class))).thenAnswer(inv -> {
+            com.datagami.rentaxis.domain.entity.LeaseDocument d = inv.getArgument(0);
+            d.setId(UUID.randomUUID());
+            storedDocs.add(d);
+            return d;
+        });
+        when(docRepo.findById(any())).thenAnswer(inv -> storedDocs.stream()
+                .filter(d -> d.getId().equals(inv.getArgument(0))).findFirst());
+        try {
+            contractsDir = Files.createTempDirectory("executed-copy-");
+            for (String[] f : new String[][]{{"storagePath", contractsDir.toString()}, {"azureConnectionString", ""},
+                    {"containerPrefix", "tenant-"}}) {
+                Field field = ContractGenerationService.class.getDeclaredField(f[0]);
+                field.setAccessible(true);
+                field.set(svc, f[1]);
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private static int imagesOn(PDPage page) throws Exception {
@@ -271,6 +296,123 @@ class ContractBrandingTest {
             lease.setStatus(st);
             ContractGenerationService.stampPrints(lease);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Executed copy at posting (Kunal, 2026-09-28)
+    // ------------------------------------------------------------------
+
+    /** The signed contract as generateContract stored it: unstamped, before posting. */
+    private com.datagami.rentaxis.domain.entity.LeaseDocument storeSignedContract() throws Exception {
+        lease.setStatus(LeaseStatus.PENDING_SIGNATURE);
+        lease.setContractNumber(1234L);
+        byte[] signed = svc.renderPdf(svc.renderContractHtml(lease, "1234"));
+        Path file = contractsDir.resolve("signed.pdf");
+        Files.write(file, signed);
+        com.datagami.rentaxis.domain.entity.LeaseDocument doc = new com.datagami.rentaxis.domain.entity.LeaseDocument();
+        doc.setId(UUID.randomUUID());
+        doc.setLease(lease);
+        doc.setType(com.datagami.rentaxis.domain.entity.enums.DocumentType.CONTRACT);
+        doc.setDocumentUrl(file.toString());
+        storedDocs.add(doc);
+        return doc;
+    }
+
+    private void stampSet() throws Exception {
+        landlord.setStampImageUrl(STAMP);
+        when(blobs.downloadOwnedUrl(eq(tenantId), eq(STAMP), anyLong())).thenReturn(Optional.of(
+                new BlobStorageService.DownloadResult(png(300, 300, new Color(0x1F, 0x3A, 0x93)), "image/png")));
+    }
+
+    private void posted() {
+        lease.setStatus(LeaseStatus.ACTIVE);
+        lease.setPostedAt(java.time.Instant.parse("2026-04-24T08:00:00Z"));
+    }
+
+    @Test
+    void postingIssuesAStampedExecutedCopyAndLeavesTheSignedContractAlone() throws Exception {
+        var signed = storeSignedContract();
+        byte[] signedBytes = Files.readAllBytes(Path.of(signed.getDocumentUrl()));
+        stampSet();
+        posted();
+
+        var copy = svc.createExecutedCopy(lease.getId());
+
+        assertThat(copy).isPresent();
+        assertThat(copy.get().getType()).isEqualTo(com.datagami.rentaxis.domain.entity.enums.DocumentType.EXECUTED_COPY);
+        assertThat(copy.get().getLabel()).isEqualTo("Executed copy");
+        assertThat(storedDocs).hasSize(2).contains(signed);
+        // The signed PDF is untouched: same file, same bytes, still there.
+        assertThat(Files.readAllBytes(Path.of(signed.getDocumentUrl()))).isEqualTo(signedBytes);
+        verify(docRepo, never()).delete(any());
+        verify(docRepo, never()).deleteAll(any());
+
+        byte[] executed = svc.currentContractPdf(lease.getId()); // downloads default to the copy
+        keep("executed-copy.pdf", executed);
+        try (PDDocument doc = Loader.loadPDF(executed); PDDocument orig = Loader.loadPDF(signedBytes)) {
+            assertThat(doc.getNumberOfPages()).isEqualTo(TWELVE_CHEQUE_PAGES).isEqualTo(orig.getNumberOfPages());
+            // The stamp is in the footer of every page; the signed original has none.
+            assertThat(imagesOn(doc.getPage(0))).isEqualTo(1);
+            assertThat(imagesOn(doc.getPage(TWELVE_CHEQUE_PAGES - 1))).isEqualTo(1);
+            assertThat(imagesOn(orig.getPage(0))).isZero();
+            String page1 = new PDFTextStripper() {{ setStartPage(1); setEndPage(1); }}.getText(doc);
+            assertThat(page1).contains("Executed copy").contains("1234").contains("OASIS CREST PROPERTIES LLC");
+            assertThat(new PDFTextStripper().getText(orig)).doesNotContain("Executed copy");
+        }
+    }
+
+    @Test
+    void issuingAgainReturnsTheSameCopy() throws Exception {
+        storeSignedContract();
+        stampSet();
+        posted();
+        var first = svc.createExecutedCopy(lease.getId()).orElseThrow();
+        var second = svc.createExecutedCopy(lease.getId()).orElseThrow();
+        assertThat(second.getId()).isEqualTo(first.getId());
+        assertThat(storedDocs).hasSize(2);
+        verify(docRepo, times(1)).saveAndFlush(any());
+    }
+
+    @Test
+    void noCopyWithoutAStampASignatureOrASignedContract() throws Exception {
+        // No stamp.
+        storeSignedContract();
+        posted();
+        assertThat(svc.createExecutedCopy(lease.getId())).isEmpty();
+        // A stamp that is not in our storage.
+        landlord.setStampImageUrl("https://evil.example/stamp.png");
+        assertThat(svc.createExecutedCopy(lease.getId())).isEmpty();
+        // Not signed yet.
+        stampSet();
+        for (LeaseStatus st : new LeaseStatus[]{LeaseStatus.DRAFT, LeaseStatus.PENDING_SIGNATURE}) {
+            lease.setStatus(st);
+            assertThat(svc.createExecutedCopy(lease.getId())).as(st.name()).isEmpty();
+        }
+        // No stored signed contract (a renewal or an imported lease).
+        posted();
+        storedDocs.clear();
+        assertThat(svc.createExecutedCopy(lease.getId())).isEmpty();
+        verify(docRepo, never()).saveAndFlush(any());
+        // Without a copy, the download is the signed contract.
+        var signed = storeSignedContract();
+        posted();
+        landlord.setStampImageUrl(null);
+        assertThat(svc.currentContractPdf(lease.getId())).isEqualTo(Files.readAllBytes(Path.of(signed.getDocumentUrl())));
+    }
+
+    @Test
+    void anotherOrganisationCannotIssueIt() throws Exception {
+        storeSignedContract();
+        stampSet();
+        posted();
+        com.datagami.rentaxis.core.tenant.TenantContextHolder.setTenantId(UUID.randomUUID());
+        try {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> svc.createExecutedCopy(lease.getId()))
+                    .isInstanceOf(com.datagami.rentaxis.api.exception.NotFoundException.class);
+        } finally {
+            com.datagami.rentaxis.core.tenant.TenantContextHolder.clear();
+        }
+        verify(docRepo, never()).saveAndFlush(any());
     }
 
     @Test

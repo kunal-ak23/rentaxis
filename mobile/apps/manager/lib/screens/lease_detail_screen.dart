@@ -1518,7 +1518,7 @@ class _DocumentRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  doc['name'] ?? l.document,
+                  l.documentName(doc),
                   style: _body(l.ar, size: 13.5, color: m.textPrimary),
                 ),
                 Text(
@@ -1742,6 +1742,15 @@ class _L {
   String get documents => ar ? 'المستندات' : 'Documents';
   String get noDocuments => ar ? 'لا توجد مستندات' : 'No documents available';
   String get document => ar ? 'مستند' : 'Document';
+  String get signedContract => ar ? 'العقد الموقّع' : 'Signed contract';
+  String get executedCopy => ar ? 'النسخة المعتمدة' : 'Executed copy';
+
+  /// The document's name: the contract kinds by type (translated), else the file name.
+  String documentName(Map<String, dynamic> doc) => switch (doc['type']) {
+        'CONTRACT' => signedContract,
+        'EXECUTED_COPY' => executedCopy,
+        _ => (doc['name'] as String?) ?? document,
+      };
 
   String get attachments => ar ? 'المرفقات' : 'Attachments';
   String get add => ar ? 'إضافة' : 'Add';

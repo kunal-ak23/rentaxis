@@ -11,4 +11,7 @@ public class LeaseDocumentDTO {
     private UUID leaseId;
     private String documentUrl;
     private DocumentType type;
+    /** "Signed contract" or "Executed copy" (the web and apps translate by type). */
+    private String label;
+    private java.time.Instant createdAt;
 }

@@ -236,6 +236,59 @@ public class ContractGenerationService {
         return true;
     }
 
+    /**
+     * The executed copy (Kunal, 2026-09-28, "Executed copy at posting"): once a
+     * contract is signed and posted, the organisation's digital stamp is added by
+     * issuing a NEW document — the signed CONTRACT PDF is never touched.
+     *
+     * <p>Made only when there is something to add and something to copy: the
+     * organisation has a stamp that loads from our own storage, the lease is in a
+     * signed state ({@link #stampPrints}), and it has a stored signed contract
+     * (a renewal or an imported lease has none; its contract is rendered on
+     * demand, already stamped). Idempotent: an existing copy is returned as it is
+     * (and changeset 158 makes a second row impossible). Tenant-scoped like every
+     * other read here.</p>
+     *
+     * @return the executed copy, or empty when none is due
+     */
+    @Transactional
+    public Optional<LeaseDocumentDTO> createExecutedCopy(UUID leaseId) {
+        Lease lease = leaseRepository.findById(leaseId)
+                .orElseThrow(() -> new NotFoundException("Lease not found"));
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId != null && !tenantId.equals(lease.getTenantId())) {
+            throw new NotFoundException("Lease not found");
+        }
+        List<LeaseDocument> docs = leaseDocumentRepository.findByLeaseId(leaseId);
+        Optional<LeaseDocument> existing = docs.stream()
+                .filter(d -> d.getType() == DocumentType.EXECUTED_COPY).findFirst();
+        if (existing.isPresent()) {
+            return existing.map(this::mapToDTO);
+        }
+        if (!stampPrints(lease) || docs.stream().noneMatch(d -> d.getType() == DocumentType.CONTRACT)) {
+            return Optional.empty();
+        }
+        LandlordOrg org = landlordOrgRepository.findById(lease.getTenantId()).orElse(null);
+        if (org == null || brandImage(lease.getTenantId(), org.getStampImageUrl()).isEmpty()) {
+            return Optional.empty();
+        }
+        String number = lease.getContractNumber() != null ? String.valueOf(lease.getContractNumber()) : "—";
+        byte[] pdf = renderPdf(renderContractHtml(lease, number, true));
+        String fileName = "RA-" + number + "-executed-" + System.currentTimeMillis() + ".pdf";
+        String url = useAzureStorage()
+                ? uploadToAzure(lease.getTenantId(), fileName, pdf)
+                : saveToLocalDisk(fileName, pdf);
+        // A rollback (e.g. a concurrent copy won the unique index) removes the file.
+        scheduleReplacementCleanup(lease.getTenantId(), List.of(), url);
+        LeaseDocument doc = new LeaseDocument();
+        doc.setLease(lease);
+        doc.setDocumentUrl(url);
+        doc.setType(DocumentType.EXECUTED_COPY);
+        LeaseDocument saved = leaseDocumentRepository.saveAndFlush(doc);
+        log.info("Executed copy issued for lease {}", leaseId);
+        return Optional.of(mapToDTO(saved));
+    }
+
     @Transactional
     public byte[] previewContract(UUID leaseId) {
         Lease lease = leaseRepository.findById(leaseId)
@@ -258,6 +311,10 @@ public class ContractGenerationService {
 
     // Package-private for tests: lets us assert on the substituted HTML without rendering PDF.
     String renderContractHtml(Lease lease, String contractNumberDisplay) {
+        return renderContractHtml(lease, contractNumberDisplay, false);
+    }
+
+    String renderContractHtml(Lease lease, String contractNumberDisplay, boolean executedCopy) {
         // Load landlord org for this tenant
         LandlordOrg org = landlordOrgRepository.findById(lease.getTenantId())
                 .orElseThrow(() -> new NotFoundException("Landlord organization not found for tenant"));
@@ -334,6 +391,8 @@ public class ContractGenerationService {
         values.put("GRAND_TOTAL", formatAmount(grandTotal));
         values.put("PRINT_DATETIME", formatPrintDateTime(java.time.LocalDateTime.now()));
         values.put("TERMS_TABLE", termsTable);
+        // On the print line, so page 1 keeps its height.
+        values.put("COPY_LABEL", executedCopy ? "&#160;&#160;|&#160;&#160;Executed copy" : "");
 
         return substituteAll(template, values);
     }
@@ -923,9 +982,12 @@ public class ContractGenerationService {
                 .orElse(null);
         leaseAccessPolicy.requireReadable(lease);
 
-        Optional<LeaseDocument> stored = leaseDocumentRepository.findByLeaseId(leaseId).stream()
-                .filter(d -> d.getType() == DocumentType.CONTRACT)
-                .findFirst();
+        // The executed copy (stamped at posting) when there is one, else the signed contract.
+        List<LeaseDocument> docs = leaseDocumentRepository.findByLeaseId(leaseId);
+        Optional<LeaseDocument> stored = docs.stream()
+                .filter(d -> d.getType() == DocumentType.EXECUTED_COPY)
+                .findFirst()
+                .or(() -> docs.stream().filter(d -> d.getType() == DocumentType.CONTRACT).findFirst());
         if (stored.isPresent()) {
             return getDocumentContent(stored.get().getId());
         }
@@ -965,6 +1027,9 @@ public class ContractGenerationService {
         return leaseDocumentRepository.findByLeaseId(leaseId).stream()
                 .filter(d -> window == null || !window.bounded()
                         || window.contains(d.getCreatedAt().atZone(java.time.ZoneOffset.UTC).toLocalDate()))
+                // The executed copy first (it is what "the contract" means once issued), then the signed one.
+                .sorted(Comparator.comparingInt((LeaseDocument d) -> d.getType() == DocumentType.EXECUTED_COPY ? 0
+                        : d.getType() == DocumentType.CONTRACT ? 1 : 2))
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
     }
@@ -1116,6 +1181,12 @@ public class ContractGenerationService {
         dto.setLeaseId(doc.getLease().getId());
         dto.setDocumentUrl(doc.getDocumentUrl());
         dto.setType(doc.getType());
+        dto.setCreatedAt(doc.getCreatedAt());
+        dto.setLabel(switch (doc.getType()) {
+            case CONTRACT -> "Signed contract";
+            case EXECUTED_COPY -> "Executed copy";
+            default -> doc.getType().name();
+        });
         return dto;
     }
 }

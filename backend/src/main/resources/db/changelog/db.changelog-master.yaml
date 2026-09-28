@@ -319,3 +319,5 @@ databaseChangeLog:
       file: db/changelog/changesets/155-renter-created-at.yaml
   - include:
       file: db/changelog/changesets/157-unit-number-unique.yaml
+  - include:
+      file: db/changelog/changesets/158-lease-executed-copy-unique.yaml

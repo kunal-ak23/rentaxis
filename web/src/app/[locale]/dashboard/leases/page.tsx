@@ -520,23 +520,18 @@ function LeasesList() {
     const handleDownloadContract = async (id: string) => {
         setActionLoading(`download-${id}`);
         try {
-            const res = await fetch(`/api/proxy/v1/leases/${id}/documents`);
-            if (res.ok) {
-                const docs = await res.json();
-                if (docs.length > 0) {
-                    const pdfRes = await fetch(`/api/proxy/v1/leases/documents/${docs[0].id}/download`);
-                    if (pdfRes.ok) {
-                        const blob = await pdfRes.blob();
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `contract-${id}.pdf`;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
-                    }
-                }
+            // The executed copy when there is one, else the signed contract (#38).
+            const pdfRes = await fetch(`/api/proxy/v1/leases/${id}/contract`);
+            if (pdfRes.ok) {
+                const blob = await pdfRes.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `contract-${id}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
             }
         } catch (err) {
             console.error(err);
