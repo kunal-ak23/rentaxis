@@ -224,10 +224,11 @@ async function goto(page, pathname) {
  *   never appears in a frame. The lease overview prints the renter's email and
  *   phone in a card beside the charge lines, on a page short enough to fit a
  *   1080-tall frame whole — there is nowhere to scroll them to. Those two rows
- *   are hidden for the accounting tutorials, which are the ones that hold on
- *   that page. The renter's NAME stays: it is what names the contract.
+ *   are hidden for the accounting tutorials and for tutorial 10 (which ends on
+ *   the draft it creates), the ones that hold on that page. The renter's NAME
+ *   stays: it is what names the contract.
  */
-const PRIVACY_SENSITIVE_TUTORIALS = new Set(['34', '35', '36', '37']);
+const PRIVACY_SENSITIVE_TUTORIALS = new Set(['10', '34', '35', '36', '37']);
 
 const CAPTURE_STYLE_RULES = [
   'nextjs-portal, [data-nextjs-toast], #__next-build-watcher { display: none !important; }',
@@ -259,6 +260,38 @@ function routeScene(pathname, title, body, afterNavigation, verifyTenantContext 
       if (afterNavigation) await afterNavigation(page);
     },
   };
+}
+
+/**
+ * A scene that carries on in the page the previous scene left behind: no new
+ * browser context, no navigation. Use it for a flow whose state lives only in
+ * the page — a modal wizard, say — where starting over in a fresh context
+ * would mean replaying every earlier step on camera. Consecutive scenes of the
+ * same role share one context and so one video clip.
+ */
+function stepScene(title, body, run, options = {}) {
+  return {
+    title,
+    body,
+    run,
+    continues: true,
+    role: options.role,
+    weight: options.weight,
+    verifyTenantContext: options.verifyTenantContext ?? true,
+  };
+}
+
+/** Fail the proof unless the locator matches exactly `expected` elements. */
+async function expectCount(locator, expected, what) {
+  const actual = await locator.count();
+  if (actual !== expected) throw new Error(`Expected ${expected} ${what}, found ${actual}.`);
+}
+
+/** Fail the proof unless the element's text contains `text` (whitespace-normalised). */
+async function expectText(locator, text, what) {
+  await locator.waitFor({ state: 'visible', timeout: navTimeoutMs });
+  const actual = (await locator.innerText()).replace(/\s+/g, ' ').trim();
+  if (!actual.includes(text)) throw new Error(`${what}: expected "${text}", found "${actual}".`);
 }
 
 function publicRouteScene(pathname, title, body, afterNavigation) {
@@ -426,6 +459,43 @@ async function openPreparedBookingApproval(page) {
   await drawer.waitFor({ state: 'visible' });
   await drawer.getByRole('textbox').fill('Approved for the tutorial resident after checking unit and availability.');
   return drawer;
+}
+
+// ── tutorial 10: draft a tenancy contract ────────────────────────────────────
+// The wizard is a create-only modal on the contracts list, so the whole flow
+// runs in one page (see `stepScene`). It saves a real DRAFT at the Charges
+// step; a draft posts nothing to the ledger, and the run prints its id so the
+// take can be accounted for (and deleted) afterwards. The unit must be VACANT —
+// the wizard's unit list offers nothing else — and a draft does not occupy it,
+// so the same unit serves every take.
+const draftUnitNumber = process.env.TUTORIAL_DRAFT_UNIT || 'A-201';
+const draftTenantName = process.env.TUTORIAL_DRAFT_TENANT || 'Rajesh Kumar';
+const draftStartDate = process.env.TUTORIAL_DRAFT_START || '2026-10-01';
+const draftEndDate = process.env.TUTORIAL_DRAFT_END || '2027-09-30';
+const draftFirstChequeNo = '500101';
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * A beat for the viewer: lets the narration reach an action before the page
+ * performs it. Skipped when only validating — the proof does not need it.
+ */
+const pace = (page, ms) => (validateOnly ? Promise.resolve() : page.waitForTimeout(ms));
+
+/** Pick an option in the wizard's searchable unit (0) or tenant (1) select. */
+async function pickInWizard(page, index, query) {
+  const wizard = page.getByTestId('lease-wizard');
+  await wizard.getByRole('combobox').nth(index).click();
+  await wizard.getByRole('combobox').nth(index + 1).fill(query);
+  await page.getByRole('option', { name: new RegExp(escapeRegExp(query), 'i') }).first().click();
+}
+
+/** Wait until an input inside `rowSelector` holds `value` (grid cells are inputs). */
+async function waitForInputValue(page, rowSelector, value) {
+  await page.waitForFunction(
+    ({ rowSelector, value }) => [...document.querySelectorAll(`${rowSelector} input`)].some((input) => input.value === value),
+    { rowSelector, value },
+    { timeout: navTimeoutMs },
+  );
 }
 
 const scenarios = {
@@ -651,16 +721,112 @@ const scenarios = {
     routeScene('/en/dashboard/renters', 'Portal access', 'Use the renter directory as the starting point for authorised portal access, while keeping credentials out of recordings.'),
   ],
   '10': [
-    routeScene('/en/dashboard/leases', 'Lease workspace', 'Start from a vacant unit and a verified renter, then preview the draft-lease wizard without saving a new record.', async (page) => {
-      await page.getByTestId('lease-new').click();
+    // Weights follow the narration: each is roughly the seconds its part of the
+    // script takes to speak, so the wizard never runs ahead of the voice.
+    roleRouteScene('tenantAdmin', '/en/dashboard/leases', 'Tenancy Contracts',
+      'Leasing › Tenancy Contracts lists every contract, and the status pills count them by stage.', {
+      weight: 39,
+      afterNavigation: async (page) => {
+        await page.getByTestId('contract-pills').waitFor({ state: 'visible', timeout: navTimeoutMs });
+        await page.getByTestId('lease-new').waitFor({ state: 'visible' });
+        await expectText(page.locator('h1').first(), 'Tenancy Contracts', 'Page heading');
+      },
     }),
-    routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Pending-signature lease', 'Review rent, deposit, dates, payment method, and installment distribution before activation.', async (page) => {
-      await page.evaluate(() => { document.body.style.zoom = '85%'; });
-    }),
-    routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Payment-plan preview', 'Confirm every schedule row before generating or signing the tenancy contract.', async (page) => {
-      await page.evaluate(() => { document.body.style.zoom = '85%'; });
-      await page.waitForTimeout(250);
-    }),
+    stepScene('Step 1 · Parties',
+      'Draft Tenancy Contract opens the wizard. Only vacant units are offered; then choose the tenant.',
+      async (page) => {
+        await page.getByTestId('lease-new').click();
+        const wizard = page.getByTestId('lease-wizard');
+        await expectText(wizard.locator('h2').first(), 'New Contract — Parties', 'Wizard step');
+        await pace(page, 3000);
+        await pickInWizard(page, 0, draftUnitNumber);
+        await page.getByTestId('wizard-unit-property').waitFor({ state: 'visible' });
+        await pace(page, 4000);
+        await pickInWizard(page, 1, draftTenantName);
+        await expectText(wizard, draftTenantName, 'Chosen tenant');
+      }, { weight: 32 }),
+    stepScene('Step 2 · Terms',
+      'Enter the start and end dates. Four cheques, paid by cheque. Ejari # and Payment Reference # are optional.',
+      async (page) => {
+        await page.getByTestId('wizard-next').click();
+        await expectText(page.getByTestId('lease-wizard').locator('h2').first(), 'New Contract — Terms', 'Wizard step');
+        await pace(page, 3000);
+        await page.getByTestId('wizard-start-date').fill(draftStartDate);
+        await page.getByTestId('wizard-end-date').fill(draftEndDate);
+        if (await page.getByTestId('wizard-end-date').inputValue() !== draftEndDate) {
+          throw new Error('The end date did not take.');
+        }
+      }, { weight: 49 }),
+    stepScene('Step 3 · Charges',
+      'One line per charge: Rent 96,000 and a Security Deposit of 5,000 make a contract value of 101,000.00.',
+      async (page) => {
+        await page.getByTestId('wizard-next').click();
+        await page.getByTestId('lease-line-type-0').waitFor({ state: 'visible', timeout: navTimeoutMs });
+        await page.getByTestId('lease-line-type-0').selectOption({ label: 'Rent' });
+        await page.getByTestId('lease-line-amount-0').fill('96000');
+        await pace(page, 2000);
+        await page.getByTestId('lease-lines-add').click();
+        await page.getByTestId('lease-line-type-1').selectOption({ label: 'Security Deposit' });
+        await page.getByTestId('lease-line-amount-1').fill('5000');
+        await expectText(page.getByTestId('lease-lines-contract-value'), '101,000.00', 'Contract value');
+      }, { weight: 27 }),
+    stepScene('Save the draft, then generate cheques',
+      'Save draft stores the contract as a draft. Generate Cheques builds four post-dated cheques that match the contract value.',
+      async (page) => {
+        await page.getByTestId('wizard-next').click();
+        await page.getByTestId('cheque-grid').waitFor({ state: 'visible', timeout: navTimeoutMs });
+        await expectText(page.getByTestId('lease-wizard').locator('h2').first(), 'New Contract — Cheques', 'Wizard step');
+        // Hold on the empty grid while the narration says so.
+        await pace(page, 8000);
+        await page.getByTestId('cheque-grid-generate').click();
+        await page.getByTestId('cheque-generate-confirm').click();
+        await page.getByTestId('cheque-row-3').waitFor({ state: 'visible', timeout: navTimeoutMs });
+        await expectCount(page.locator('[data-testid^="cheque-row-"]'), 4, 'cheque rows');
+        await expectText(page.getByTestId('cheque-grid-match'), 'Cheques match the contract value of 101,000.00', 'Cheque total check');
+      }, { weight: 46 }),
+    stepScene('Number the cheques',
+      'Generate Cheque Numbers fills every row, counting up from the first cheque number.',
+      async (page) => {
+        await pace(page, 3000);
+        await page.getByTestId('cheque-grid-numbers').click();
+        await page.getByTestId('cheque-numbers-form').locator('input').first().fill(draftFirstChequeNo);
+        await page.getByTestId('cheque-numbers-confirm').click();
+        await waitForInputValue(page, '[data-testid="cheque-row-0"]', draftFirstChequeNo);
+        await waitForInputValue(page, '[data-testid="cheque-row-3"]', '500104');
+      }, { weight: 23 }),
+    stepScene('Step 5 · Review',
+      'Check unit, tenant, dates, contract value, VAT and the cheque total. The review reports Ready to post.',
+      async (page) => {
+        await page.getByTestId('wizard-next').click();
+        const review = page.getByTestId('wizard-review');
+        await review.waitFor({ state: 'visible', timeout: navTimeoutMs });
+        await page.getByTestId('wizard-dry-run-ok').waitFor({ state: 'visible', timeout: navTimeoutMs });
+        await expectText(review, `${draftUnitNumber} • `, 'Review unit');
+        await expectText(review, draftTenantName, 'Review tenant');
+        await expectText(review, 'Cheques Total 101,000.00', 'Review cheque total');
+      }, { weight: 17 }),
+    stepScene('Open the draft contract',
+      'Status Draft, four cheques, and each charge line with the account it credits.',
+      async (page) => {
+        await page.getByRole('button', { name: 'Open the contract', exact: true }).click();
+        await page.waitForURL(/\/en\/dashboard\/leases\/[0-9a-f-]{36}$/, { timeout: navTimeoutMs });
+        await waitForApp(page);
+        await applyCaptureStyles(page);
+        await expectText(page.getByTestId('lease-status'), 'Draft', 'Contract status');
+        await expectText(page.getByTestId('lease-lines-contract-value'), '101,000.00', 'Contract value');
+        console.log(`draft_contract_id=${page.url().split('/').pop()}`);
+      }, { weight: 31 }),
+    stepScene('Cheques tab',
+      'The same four numbered cheques. The draft stays editable until it is posted.',
+      async (page) => {
+        await page.getByTestId('lease-tab-payments').click();
+        await page.getByTestId('cheque-row-3').waitFor({ state: 'visible', timeout: navTimeoutMs });
+        await expectCount(page.locator('[data-testid^="cheque-row-"]'), 4, 'cheque rows');
+        await expectText(page.getByTestId('cheque-grid-match'), '101,000.00', 'Cheque total check');
+        await page.waitForFunction(() => document.body.innerText.includes('500104')
+          || [...document.querySelectorAll('[data-testid^="cheque-row-"] input')].some((input) => input.value === '500104'),
+        null, { timeout: navTimeoutMs });
+      }, { weight: 25 }),
   ],
   '11': [
     routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Contract-ready lease', 'Confirm the renter, unit, dates, rent, deposit, and payment plan before reviewing the contract.'),
@@ -1325,102 +1491,123 @@ async function authenticatedStorageState(role) {
   return state;
 }
 
+// One browser context (and so one video clip) per scene, except that a scene
+// marked `continues` (see `stepScene`) carries on in the previous scene's
+// context and page when both run as the same role.
+let live = null;
+
+async function closeLive() {
+  if (!live) return;
+  const { context, page, video } = live;
+  live = null;
+  await page.close();
+  if (video) recordedVideoPaths.push(await video.path());
+  await context.close();
+}
+
+async function openLive(role, sceneIndex, scene, host) {
+  const storageState = await authenticatedStorageState(role);
+  const contextOptions = {
+    baseURL,
+    storageState,
+    viewport: { width: 1920, height: 1080 },
+    colorScheme: 'light',
+    locale: 'en-AE',
+  };
+  if (!validateOnly) {
+    contextOptions.recordVideo = { dir: videoDir, size: { width: 1920, height: 1080 } };
+  }
+  const context = await browser.newContext(contextOptions);
+  await suppressAutomaticOnboarding(context);
+  if (!validateOnly && sceneIndex === 0) {
+    const introTitle = String(scene.title || 'RentAxis tutorial').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+    await context.addInitScript({
+      content: `(() => {
+        try {
+          if (sessionStorage.getItem('rentaxisRecordingIntroShown')) return;
+          sessionStorage.setItem('rentaxisRecordingIntroShown', '1');
+        } catch {}
+        const mount = () => {
+          if (document.querySelector('[data-rentaxis-recording-intro]')) return;
+          const root = document.createElement('div');
+          root.dataset.rentaxisRecordingIntro = 'true';
+          root.innerHTML = '<div style="font-size:18px;letter-spacing:.18em;text-transform:uppercase;color:#f59e0b;margin-bottom:18px">RentAxis tutorial</div><div style="font-size:42px;line-height:1.1;font-weight:700;max-width:900px">${introTitle}</div>';
+          Object.assign(root.style, {
+            position: 'fixed', inset: '0', zIndex: '2147483647', display: 'flex',
+            flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
+            textAlign: 'center', padding: '48px', color: '#f8fafc',
+            background: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)',
+            fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+          });
+          const mountTarget = document.body;
+          if (mountTarget) mountTarget.append(root);
+        };
+        if (document.body) mount();
+        else document.addEventListener('DOMContentLoaded', mount, { once: true });
+      })();`,
+    });
+  }
+  await context.addCookies([
+    {
+      name: 'active_tenant_id',
+      value: tenantId,
+      domain: host,
+      path: '/',
+      httpOnly: false,
+      secure: baseURL.startsWith('https:'),
+      sameSite: 'Lax',
+    },
+  ]);
+  const page = await context.newPage();
+  const video = validateOnly ? null : page.video();
+  return { role, context, page, video };
+}
+
 try {
   const defaultRole = roleByTutorial[tutorialId] || 'superadmin';
   const host = new URL(baseURL).hostname;
 
   for (const [sceneIndex, scene] of scenes.entries()) {
     const role = scene.role || defaultRole;
-    const storageState = await authenticatedStorageState(role);
-    const contextOptions = {
-      baseURL,
-      storageState,
-      viewport: { width: 1920, height: 1080 },
-      colorScheme: 'light',
-      locale: 'en-AE',
-    };
-    if (!validateOnly) {
-      contextOptions.recordVideo = { dir: videoDir, size: { width: 1920, height: 1080 } };
+    if (!scene.continues || !live || live.role !== role) {
+      if (scene.continues) {
+        throw new Error(`Scene ${sceneIndex + 1} continues a page, but no page of role ${role} is open.`);
+      }
+      await closeLive();
+      live = await openLive(role, sceneIndex, scene, host);
     }
-    const context = await browser.newContext(contextOptions);
-    await suppressAutomaticOnboarding(context);
-    if (!validateOnly && sceneIndex === 0) {
-      const introTitle = String(scene.title || 'RentAxis tutorial').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-      await context.addInitScript({
-        content: `(() => {
-          try {
-            if (sessionStorage.getItem('rentaxisRecordingIntroShown')) return;
-            sessionStorage.setItem('rentaxisRecordingIntroShown', '1');
-          } catch {}
-          const mount = () => {
-            if (document.querySelector('[data-rentaxis-recording-intro]')) return;
-            const root = document.createElement('div');
-            root.dataset.rentaxisRecordingIntro = 'true';
-            root.innerHTML = '<div style="font-size:18px;letter-spacing:.18em;text-transform:uppercase;color:#f59e0b;margin-bottom:18px">RentAxis tutorial</div><div style="font-size:42px;line-height:1.1;font-weight:700;max-width:900px">${introTitle}</div>';
-            Object.assign(root.style, {
-              position: 'fixed', inset: '0', zIndex: '2147483647', display: 'flex',
-              flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
-              textAlign: 'center', padding: '48px', color: '#f8fafc',
-              background: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)',
-              fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
-            });
-            const mountTarget = document.body;
-            if (mountTarget) mountTarget.append(root);
-          };
-          if (document.body) mount();
-          else document.addEventListener('DOMContentLoaded', mount, { once: true });
-        })();`,
-      });
-    }
-    await context.addCookies([
-      {
-        name: 'active_tenant_id',
-        value: tenantId,
-        domain: host,
-        path: '/',
-        httpOnly: false,
-        secure: baseURL.startsWith('https:'),
-        sameSite: 'Lax',
-      },
-    ]);
-    const page = await context.newPage();
-    const video = validateOnly ? null : page.video();
+    const { page } = live;
 
-    try {
-      const startedAt = Date.now();
-      await scene.run(page);
-      const activeTourCount = await page.locator('.shepherd-element:visible').count();
-      if (activeTourCount > 0 && !scene.allowTour) {
-        throw new Error(`An onboarding tour opened unexpectedly in scene ${sceneIndex + 1}; recording stopped.`);
-      }
-      await auditVisibleDialogContrast(page);
-      if (scene.verifyTenantContext !== false) {
-        // Role-specific sessions fetch their tenant membership after the
-        // application shell is visible. Wait for that asynchronous label
-        // before deciding the context is wrong, otherwise a healthy session
-        // can fail the preflight during a slow production response.
-        await page.getByText(tenantName, { exact: true }).first().waitFor({ state: 'visible', timeout: 10_000 });
-      }
-      if (qaDir) {
-        fs.mkdirSync(qaDir, { recursive: true });
-        const qaName = `${tutorialId}-${String(sceneIndex + 1).padStart(2, '0')}-${scene.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}.png`;
-        await page.screenshot({ path: path.join(qaDir, qaName), fullPage: false });
-      }
-      await addCallout(page, scene.title, scene.body);
-      const sceneDuration = validateOnly
-        ? 0.5
-        : Math.max(1, targetDuration * (sceneWeights[sceneIndex] / totalSceneWeight) - clipOverheadSeconds);
-      const elapsedSeconds = (Date.now() - startedAt) / 1000;
-      await page.waitForTimeout(Math.max(500, (sceneDuration - elapsedSeconds) * 1000));
-      await clearCallout(page);
-      await page.waitForTimeout(validateOnly ? 100 : 400);
-    } finally {
-      await page.close();
-      if (video) recordedVideoPaths.push(await video.path());
-      await context.close();
+    const startedAt = Date.now();
+    await scene.run(page);
+    const activeTourCount = await page.locator('.shepherd-element:visible').count();
+    if (activeTourCount > 0 && !scene.allowTour) {
+      throw new Error(`An onboarding tour opened unexpectedly in scene ${sceneIndex + 1}; recording stopped.`);
     }
+    await auditVisibleDialogContrast(page);
+    if (scene.verifyTenantContext !== false) {
+      // Role-specific sessions fetch their tenant membership after the
+      // application shell is visible. Wait for that asynchronous label
+      // before deciding the context is wrong, otherwise a healthy session
+      // can fail the preflight during a slow production response.
+      await page.getByText(tenantName, { exact: true }).first().waitFor({ state: 'visible', timeout: 10_000 });
+    }
+    if (qaDir) {
+      fs.mkdirSync(qaDir, { recursive: true });
+      const qaName = `${tutorialId}-${String(sceneIndex + 1).padStart(2, '0')}-${scene.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}.png`;
+      await page.screenshot({ path: path.join(qaDir, qaName), fullPage: false });
+    }
+    await addCallout(page, scene.title, scene.body);
+    const sceneDuration = validateOnly
+      ? 0.5
+      : Math.max(1, targetDuration * (sceneWeights[sceneIndex] / totalSceneWeight) - (scene.continues ? 0 : clipOverheadSeconds));
+    const elapsedSeconds = (Date.now() - startedAt) / 1000;
+    await page.waitForTimeout(Math.max(500, (sceneDuration - elapsedSeconds) * 1000));
+    await clearCallout(page);
+    await page.waitForTimeout(validateOnly ? 100 : 400);
   }
 } finally {
+  await closeLive().catch(() => {});
   await browser.close();
 }
 
@@ -1429,8 +1616,9 @@ if (validateOnly) {
   console.log(`tenant=${tenantName}`);
   console.log('scenario_validation=passed');
 } else {
-  if (recordedVideoPaths.length !== scenes.length || recordedVideoPaths.some((videoPath) => !fs.existsSync(videoPath))) {
-    throw new Error(`Playwright produced ${recordedVideoPaths.length} clips for ${scenes.length} tutorial scenes.`);
+  const expectedClips = scenes.filter((scene) => !scene.continues).length;
+  if (recordedVideoPaths.length !== expectedClips || recordedVideoPaths.some((videoPath) => !fs.existsSync(videoPath))) {
+    throw new Error(`Playwright produced ${recordedVideoPaths.length} clips for ${expectedClips} tutorial contexts.`);
   }
   if (recordedVideoPaths.length === 1) {
     fs.copyFileSync(recordedVideoPaths[0], outputPath);

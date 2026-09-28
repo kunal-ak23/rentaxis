@@ -346,40 +346,38 @@ track is commissioned separately.
   person. Finish by confirming the Tutorial Demo renter is active and ready to
   be selected in the lease wizard.”
 
-## 10 — Draft a lease and preview its payment plan
+## 10 — Draft a tenancy contract and generate its cheques
 
-- Audience: tenant admins and property managers; 2–3 minutes.
-- Capture: complete all five wizard steps: parties, terms, charges, payment
-  plan, and final review; save as draft and open the lease.
-- Narration: “This tutorial creates a complete draft lease and reviews its
-  payment plan before any unit is occupied. Open Leases and select Create Lease.
-  The wizard is divided into five stages, and the review at the end is as
-  important as the data entry. In Parties, choose the Tutorial Demo property,
-  then select the prepared vacant unit and renter. Confirm the unit number and
-  resident rather than choosing the first search result. Continue to Terms.
-  Enter the approved start and end dates and verify that the end follows the
-  start. Add the monthly or annual rent according to the form, the security
-  deposit, payment method, and any Ejari or reference fields available at the
-  draft stage. In Charges, review the tax treatment and add only approved
-  recurring or one-time charges. Identify each charge clearly so the renter and
-  finance team can understand it later. Do not hide a charge inside the base
-  rent. Continue to Payment Plan. Choose the required number of installments
-  and the distribution strategy. RentAxis generates due dates and amounts from
-  the lease terms. Inspect every installment, including the first and final
-  amount. Confirm that due dates fall inside the intended period and that the
-  total reconciles with rent, tax, and included charges. If the final installment
-  carries a rounding difference, verify that the overall total is still correct.
-  Use Preview when available to test another installment configuration before
-  committing it. Move to Final Review and read the summary from top to bottom:
-  organization, property, unit, renter, dates, rent, deposit, taxes, additional
-  charges, and payment schedule. Go back to the relevant step if anything is
-  wrong. Select Save as Draft once and wait for confirmation. Open the resulting
-  lease detail. Its status should be Draft, the selected unit should remain
-  eligible until the activation or acceptance workflow, and the payment-plan
-  preview should match the wizard. A draft is the safe state for correction; it
-  is not proof of a signed agreement. Demonstrate an allowed metadata edit and
-  verify the schedule again. Finish on the lease overview, ready for contract
-  preview, generation, and renter signature in the next tutorial.”
+- Audience: Company Admins and Property Managers; 2–3 minutes.
+- Capture: open Leasing › Tenancy Contracts, run all five wizard steps (Parties,
+  Terms, Charges, Cheques, Review) for a vacant unit, save the draft, generate
+  and number the cheques, stop at Ready to post, open the draft contract and its
+  Cheques tab.
+- Narration: “This tutorial drafts a tenancy contract in the five-step wizard
+  and checks its cheques before anything is posted. Open Leasing, then Tenancy
+  Contracts. The status pills count the contracts that are drafts or awaiting
+  signature, active, expiring, on notice, and ended. Select Draft Tenancy
+  Contract. Step one is Parties. The unit list offers vacant units only. Choose
+  unit A-201, and its property, R3Dry Residence Tower, appears underneath. Then
+  choose the tenant, Rajesh Kumar, and select Next. Step two is Terms. The
+  contract date is filled in with today. Enter a start date of the first of
+  October and an end date of the thirtieth of September the following year.
+  Number of cheques is four, and the payment method is Cheque. Ejari number and
+  payment reference are optional. Select Next. Step three is Charges, with one
+  line per charge. Choose Rent and enter 96,000. Select Add line, choose
+  Security Deposit, and enter 5,000. The contract value is now 101,000. Select
+  Save draft. The contract is saved as a draft, and step four, Cheques, opens
+  with an empty cheque grid. Select Generate Cheques, keep four instalments, and
+  generate. Four post-dated cheques appear, with the deposit added to the first,
+  and the grid confirms that the cheques match the contract value. Each
+  post-dated cheque needs a number, so select Generate Cheque Numbers and enter
+  the first one. The rows are numbered 500101 to 500104. Select Next. Step five,
+  Review, shows the unit, tenant, dates, contract value, VAT, and cheque total,
+  and reports Ready to post. Posting has its own tutorial, so select Open the
+  contract instead. The contract opens with the status Draft, its dates, its
+  value, and four cheques, and each charge line shows the account it credits.
+  Open the Cheques tab to see the same four numbered cheques. Until the contract
+  is posted, the draft can still be edited.”
 
 ## 11 — Generate, review, and sign a tenancy contract
 
