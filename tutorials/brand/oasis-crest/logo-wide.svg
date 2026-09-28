@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 240" width="960" height="240" role="img" aria-label="Oasis Crest Properties (fictional demo logo, wide)">
+  <title>Oasis Crest Properties — fictional demo logo (wide)</title>
+  <g transform="translate(120 122) scale(0.78)">
+    <path d="M0 -140 C 62 -140 104 -124 118 -112 C 118 -34 96 62 0 120 C -96 62 -118 -34 -118 -112 C -104 -124 -62 -140 0 -140 Z" fill="#0F5F5A"/>
+    <path d="M0 -122 C 52 -122 88 -109 100 -99 C 100 -32 82 50 0 100 C -82 50 -100 -32 -100 -99 C -88 -109 -52 -122 0 -122 Z" fill="none" stroke="#E7D3AE" stroke-width="4"/>
+    <clipPath id="oc-inner-w"><path d="M0 -122 C 52 -122 88 -109 100 -99 C 100 -32 82 50 0 100 C -82 50 -100 -32 -100 -99 C -88 -109 -52 -122 0 -122 Z"/></clipPath>
+    <g clip-path="url(#oc-inner-w)">
+    <circle cx="0" cy="-22" r="38" fill="#E2BE7E"/>
+    <path d="M-120 18 Q -60 -18 0 18 T 120 18" fill="none" stroke="#F4E7CF" stroke-width="12" stroke-linecap="round"/>
+    <path d="M-120 50 Q -60 18 0 50 T 120 50" fill="none" stroke="#7FC4B8" stroke-width="10" stroke-linecap="round"/>
+    </g>
+  </g>
+  <text x="248" y="128" font-family="'Montserrat','Helvetica Neue',Arial,sans-serif" font-weight="700" font-size="84" letter-spacing="7" fill="#0F5F5A">OASIS CREST</text>
+  <text x="252" y="178" font-family="'Montserrat','Helvetica Neue',Arial,sans-serif" font-weight="600" font-size="30" letter-spacing="15" fill="#B08A4E">PROPERTIES</text>
+</svg>

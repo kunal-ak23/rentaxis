@@ -75,6 +75,25 @@ DUBAI = ZoneInfo("Asia/Dubai")
 TODAY = dt.datetime.now(DUBAI).date()
 REDACT_CREDENTIALS = "--redact-credentials" in sys.argv
 
+# Organisation details printed on receipts, tax invoices and contracts. Every
+# one is optional: unset, the seed behaves exactly as before (the production
+# demo tenant keeps its address and phone, and gets no TRN, logo or stamp).
+# DEMO_ORG_LOGO / DEMO_ORG_STAMP are local PNG/JPEG paths, uploaded through the
+# app's own asset endpoint; an org that already has one keeps it unless the
+# run passes --refresh-branding.
+ORG_ADDRESS = os.environ.get("DEMO_ORG_ADDRESS", "Sheikh Zayed Road, Dubai, UAE")
+ORG_PHONE = os.environ.get("DEMO_ORG_PHONE", "+971-4-555-0100")
+ORG_TRN = os.environ.get("DEMO_ORG_TRN")
+ORG_LOGO = os.environ.get("DEMO_ORG_LOGO")
+ORG_STAMP = os.environ.get("DEMO_ORG_STAMP")
+REFRESH_BRANDING = "--refresh-branding" in sys.argv
+# Optional naming for a branded demo (defaults are the historical names).
+DEMO_BRAND_AR = os.environ.get("DEMO_BRAND_AR")
+BUILDING_NAME_EN = os.environ.get("DEMO_BUILDING_NAME", "Tutorial Operations Tower")
+BUILDING_NAME_AR = os.environ.get("DEMO_BUILDING_NAME_AR", "برج العمليات التجريبي")
+MAINTENANCE_DESK = os.environ.get("DEMO_MAINTENANCE_DESK", "Tutorial Maintenance Desk")
+MAINTENANCE_EMAIL = os.environ.get("DEMO_MAINTENANCE_EMAIL", "maintenance@tutorial.example.com")
+
 
 def load_env():
     env_file = REPO_ROOT / "web" / "e2e-prod" / ".env.local"
@@ -391,8 +410,9 @@ def main():
     sa.put(
         f"/api/admin/tenants/{tenant_id}",
         json={
-            "address": "Sheikh Zayed Road, Dubai, UAE",
-            "phone": "+971-4-555-0100",
+            "address": ORG_ADDRESS,
+            "phone": ORG_PHONE,
+            **({"trn": ORG_TRN} if ORG_TRN else {}),
         },
     )
 
@@ -441,6 +461,40 @@ def main():
     admin_user = api.login(ADMIN_EMAIL, ADMIN_PASSWORD)
     admin_user_id = admin_user["id"]
     out["adminUserId"] = admin_user_id
+
+    # Branding: upload as the tenant admin (the asset lands in this tenant's
+    # own container, the only place the PDF renderers read a logo from), then
+    # point the org at it as the superadmin.
+    if ORG_LOGO or ORG_STAMP:
+        current = next(
+            (t for t in (sa.get("/api/admin/tenants") or []) if t["id"] == tenant_id), {}
+        )
+        branding = {}
+        for key, file_path in (("logoUrl", ORG_LOGO), ("stampImageUrl", ORG_STAMP)):
+            if not file_path:
+                continue
+            if current.get(key) and not REFRESH_BRANDING:
+                log(f"{key} already set, kept (pass --refresh-branding to replace)")
+                continue
+            kind = "image/jpeg" if file_path.lower().endswith((".jpg", ".jpeg")) else "image/png"
+            with open(file_path, "rb") as fh:
+                uploaded = api.post(
+                    "/api/v1/assets/upload",
+                    files={"file": (os.path.basename(file_path), fh, kind)},
+                    data={"folder": "assets"},
+                )
+            branding[key] = uploaded["url"]
+        if branding:
+            sa.put(f"/api/admin/tenants/{tenant_id}", json=branding)
+            stored = next(
+                (t for t in (sa.get("/api/admin/tenants") or []) if t["id"] == tenant_id), {}
+            )
+            for key, url in branding.items():
+                if stored.get(key) == url:
+                    log(f"{key} uploaded and set")
+                else:
+                    log(f"WARNING {key} uploaded but the org did not store it "
+                        f"(PUT /api/admin/tenants/{{id}} has no write path for it)")
 
     # Chart of accounts + the per-property account template + the tenant-level
     # role defaults + the charge-type catalogue: one call since accounting v2
@@ -512,10 +566,14 @@ def main():
         return p
 
     tower = make_property(
-        f"{DEMO_BRAND} Residence Tower", "برج رنت أكسيس السكني", "Al Barsha 1, Dubai"
+        f"{DEMO_BRAND} Residence Tower",
+        f"برج {DEMO_BRAND_AR} السكني" if DEMO_BRAND_AR else "برج رنت أكسيس السكني",
+        "Al Barsha 1, Dubai",
     )
     marina = make_property(
-        f"{DEMO_BRAND} Marina Heights", "أبراج رنت أكسيس مارينا", "Dubai Marina, Dubai"
+        f"{DEMO_BRAND} Marina Heights",
+        f"أبراج {DEMO_BRAND_AR} مارينا" if DEMO_BRAND_AR else "أبراج رنت أكسيس مارينا",
+        "Dubai Marina, Dubai",
     )
     log(f"properties: {tower['nameEn']}, {marina['nameEn']}")
 
@@ -1281,24 +1339,24 @@ def main():
     # gate-pass tutorial screens useful without requiring a live customer.
     buildings = api.get(f"/api/v1/buildings/property/{tower['id']}") or []
     building = next(
-        (b for b in buildings if b.get("nameEn") == "Tutorial Operations Tower"),
+        (b for b in buildings if b.get("nameEn") == BUILDING_NAME_EN),
         None,
     )
     if not building:
         building = api.post("/api/v1/buildings", json={
             "property": {"id": tower["id"]},
-            "nameEn": "Tutorial Operations Tower",
-            "nameAr": "برج العمليات التجريبي",
+            "nameEn": BUILDING_NAME_EN,
+            "nameAr": BUILDING_NAME_AR,
             "floors": 12,
         })
 
     contacts = api.get(f"/api/v1/properties/{tower['id']}/contacts") or []
-    if not any(c.get("name") == "Tutorial Maintenance Desk" for c in contacts):
+    if not any(c.get("name") == MAINTENANCE_DESK for c in contacts):
         api.post(f"/api/v1/properties/{tower['id']}/contacts", json={
             "category": "BUILDING_MAINTENANCE",
-            "name": "Tutorial Maintenance Desk",
+            "name": MAINTENANCE_DESK,
             "phone": "+971500000003",
-            "email": "maintenance@tutorial.example.com",
+            "email": MAINTENANCE_EMAIL,
             "notes": "Available around the clock",
             "sortOrder": 0,
         })
