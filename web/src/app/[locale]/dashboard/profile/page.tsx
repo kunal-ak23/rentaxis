@@ -5,6 +5,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { User, Phone, Mail, Loader2, Check, Lock } from "lucide-react";
 import { getRoleLabel, getRoleLabelKey, type UserRole } from "@/lib/rbac";
 import { isPlausiblePhone, normalizePhone } from "@/lib/phone";
+import { normalizePersonName } from "@/lib/personName";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { isAbortError } from "@/lib/api/abort";
 
@@ -13,8 +14,9 @@ import { isAbortError } from "@/lib/api/abort";
  * generic line; under /en the server's own sentence may follow it, under /ar
  * never (it is English).
  */
-function refusalKey(message: string): "nameTooLong" | "phoneInvalid" | null {
+function refusalKey(message: string): "nameTooLong" | "nameRequired" | "phoneInvalid" | null {
     if (/phone/i.test(message)) return "phoneInvalid";
+    if (/name is required/i.test(message)) return "nameRequired";
     if (/too long|at most \d+ characters/i.test(message)) return "nameTooLong";
     return null;
 }
@@ -92,16 +94,25 @@ export default function ProfilePage() {
             setSaveError(t("phoneInvalid"));
             return;
         }
+        // Break-it R3 portal3 F6: the name the server will store (invisible
+        // characters gone, Unicode spaces trimmed). Nothing left means no name —
+        // refused here, never a "Saved" that saved nothing.
+        const normalizedName = normalizePersonName(name);
+        if (!normalizedName) {
+            setSaveError(t("nameRequired"));
+            return;
+        }
         setSaving(true);
         try {
             const res = await fetch("/api/proxy/auth/me", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name, phoneNumber: normalizedPhone }),
+                body: JSON.stringify({ name: normalizedName, phoneNumber: normalizedPhone }),
             });
             if (res.ok) {
                 const data = await res.json();
                 setProfile(data);
+                setName(data.name || normalizedName);
                 setSaved(true);
                 setTimeout(() => setSaved(false), 3000);
             } else {

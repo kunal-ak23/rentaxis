@@ -4768,6 +4768,7 @@
     "amendNoChanges": "Nothing has changed yet — edit a line to amend."
   },
   "Profile": {
+    "nameRequired": "Enter your name. It can't be only spaces or invisible characters.",
     "saveChanges": "Save Changes",
     "saved": "Saved",
     "saveFailed": "Your profile was not saved. Please try again.",
