@@ -14,19 +14,25 @@ import UsersManager from "../UsersManager";
  *  - F5: the delete dialog says how many open tickets go back to the queue, and
  *    refuses (disabled) when the user has meetings on record.
  */
-const USERS = [{ id: "uA", name: "Alice PM", email: "a@x.test", role: "PROPERTY_MANAGER", tenantId: "t1", phoneNumber: "" }];
+const USERS = [
+    { id: "uA", name: "Alice PM", email: "a@x.test", role: "PROPERTY_MANAGER", tenantId: "t1", phoneNumber: "" },
+    { id: "uB", name: "Bob PM", email: "b@x.test", role: "PROPERTY_MANAGER", tenantId: "t1", phoneNumber: "" },
+];
 const PROPS = [{ property: { id: "id-PropA", nameEn: "PropA" } }, { property: { id: "id-PropB", nameEn: "PropB" } }];
 
 let sent: { url: string; method: string; body: Record<string, unknown> }[] = [];
 let assignments: string[] = ["id-PropA", "id-PropB"];
 let putResponse: () => Response = () => new Response("{}");
 let preview = { openTickets: 0, meetings: 0 };
+/** uB's assignments read: "fail" answers 500, "hold" never answers. */
+let bobAssignments: "ok" | "fail" | "hold" = "ok";
 
 beforeEach(() => {
     sent = [];
     assignments = ["id-PropA", "id-PropB"];
     putResponse = () => new Response("{}");
     preview = { openTickets: 0, meetings: 0 };
+    bobAssignments = "ok";
     global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         const method = init?.method ?? "GET";
@@ -40,6 +46,11 @@ beforeEach(() => {
         }
         if (url.endsWith("/admin/users")) return new Response(JSON.stringify(USERS));
         if (url.endsWith("/admin/users/uA/properties")) return new Response(JSON.stringify(assignments));
+        if (url.endsWith("/admin/users/uB/properties")) {
+            if (bobAssignments === "fail") return new Response("{}", { status: 500 });
+            if (bobAssignments === "hold") return new Promise<Response>(() => {});
+            return new Response(JSON.stringify(["id-PropB"]));
+        }
         if (url.endsWith("/admin/users/uA/delete-preview")) return new Response(JSON.stringify(preview));
         if (url.endsWith("/v1/properties")) return new Response(JSON.stringify(PROPS));
         return new Response("[]");
@@ -48,7 +59,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 const chips = (name: string) => screen.queryAllByText(name).filter(el => el.tagName === "DIV");
-const row = () => screen.getByText("Alice PM").closest("tr")!;
+const row = (name = "Alice PM") => screen.getByText(name).closest("tr")!;
 
 async function openEdit() {
     render(<UsersManager />);
@@ -112,5 +123,54 @@ describe("UsersManager delete dialog states the user's open work (F5)", () => {
         const dialog = screen.getByRole("dialog");
         const confirm = within(dialog).getAllByRole("button").find(b => /delete/i.test(b.textContent ?? ""))!;
         expect(confirm).toBeDisabled();
+    });
+});
+
+describe("UsersManager never sends another user's property list (review r3B I2)", () => {
+    async function editAliceThenClose(close: "x" | "backdrop") {
+        render(<UsersManager />);
+        await screen.findByText("Alice PM");
+        fireEvent.click(within(row()).getByRole("button", { name: /^edit$/i }));
+        await waitFor(() => expect(chips("PropA")).toHaveLength(1));
+        if (close === "x") fireEvent.click(screen.getByRole("button", { name: /^close$/i }));
+        else fireEvent.click(document.querySelector(".backdrop-blur-sm")!);
+        await waitFor(() => expect(screen.queryByRole("button", { name: /update user/i })).toBeNull());
+    }
+
+    for (const close of ["x", "backdrop"] as const) {
+        it(`closed with ${close}, then Bob's assignments fail to load: a name change leaves them alone`, async () => {
+            await editAliceThenClose(close);
+            bobAssignments = "fail";
+            fireEvent.click(within(row("Bob PM")).getByRole("button", { name: /^edit$/i }));
+            expect(await screen.findByTestId("assignments-failed")).toBeInTheDocument();
+            expect(chips("PropA")).toHaveLength(0);
+            fireEvent.change(screen.getByDisplayValue("Bob PM"), { target: { value: "Bob Renamed" } });
+            fireEvent.click(screen.getByRole("button", { name: /update user/i }));
+            await waitFor(() => expect(sent).toHaveLength(1));
+            expect(sent[0].url).toContain("/admin/users/uB");
+            expect(sent[0].body).toEqual({ name: "Bob Renamed" });
+        });
+    }
+
+    it("Save waits while Bob's assignments are loading", async () => {
+        await editAliceThenClose("x");
+        bobAssignments = "hold";
+        fireEvent.click(within(row("Bob PM")).getByRole("button", { name: /^edit$/i }));
+        const save = await screen.findByRole("button", { name: /update user/i });
+        expect(save).toBeDisabled();
+        expect(chips("PropA")).toHaveLength(0);
+        fireEvent.click(save);
+        expect(sent).toHaveLength(0);
+    });
+
+    it("a property change always goes with the set this panel loaded", async () => {
+        render(<UsersManager />);
+        await screen.findByText("Bob PM");
+        fireEvent.click(within(row("Bob PM")).getByRole("button", { name: /^edit$/i }));
+        await waitFor(() => expect(chips("PropB")).toHaveLength(1));
+        fireEvent.click(within(chips("PropB")[0]).getByRole("button"));
+        fireEvent.click(screen.getByRole("button", { name: /update user/i }));
+        await waitFor(() => expect(sent).toHaveLength(1));
+        expect(sent[0].body).toEqual({ propertyIds: [], expectedPropertyIds: ["id-PropB"] });
     });
 });

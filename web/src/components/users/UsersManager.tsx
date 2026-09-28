@@ -121,6 +121,10 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
     // made meanwhile is refused (409 user.changed) rather than undone.
     const [loadedUser, setLoadedUser] = useState<LoadedUser | null>(null);
     const [loadedPropertyIds, setLoadedPropertyIds] = useState<string[] | null>(null);
+    // Review r3B I2: the edited user's own assignments — until they load, Save
+    // waits; if they fail, the assignments are left untouched (never a list left
+    // over from another user).
+    const [assignmentsLoad, setAssignmentsLoad] = useState<"idle" | "loading" | "ok" | "failed">("idle");
 
     // Break round 3, F1: every load aborts on unmount and when a newer one
     // supersedes it (a quick organisation change, or Edit on another user), so
@@ -206,6 +210,7 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
         setEditingUserId(null);
         setLoadedUser(null);
         setLoadedPropertyIds(null);
+        setAssignmentsLoad("idle");
         // Non-super-admins can only provision into their own tenant.
         setEmail(""); setPassword(""); setName(""); setTenantId(isSuperAdmin ? "" : currentTenantId); setRole("TENANT_USER"); setSelectedPropertyIds([]);
         setPhoneNumber("");
@@ -228,13 +233,13 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
             if (password && (editingUserId || PASSWORD_ON_CREATE_ROLES.has(role))) bodyData.password = password;
 
             if (role === 'PROPERTY_MANAGER') {
-                if (!editingUserId || loadedPropertyIds === null) {
-                    // A new manager, or assignments that never loaded: send the list
-                    // (including []) — the backend skips the sync when it is absent.
+                if (!editingUserId) {
+                    // A new manager: send the list (including []).
                     bodyData.propertyIds = selectedPropertyIds;
-                } else if (!sameIdSet(selectedPropertyIds, loadedPropertyIds) || loadedUser?.role !== role) {
-                    // Only when the list was touched (or the user just became a
-                    // manager), with the set this panel loaded.
+                } else if (loadedPropertyIds !== null && !sameIdSet(selectedPropertyIds, loadedPropertyIds)) {
+                    // Only when this user's own assignments loaded and the admin
+                    // changed them, always with the set this panel loaded. Never
+                    // while they are loading or failed to load (review r3B I2).
                     bodyData.propertyIds = selectedPropertyIds;
                     bodyData.expectedPropertyIds = loadedPropertyIds;
                 }
@@ -332,8 +337,15 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
         }
     };
 
+    const closeForm = () => {
+        setShowForm(false);
+        resetForm();
+    };
+
     const handleEdit = async (user: User) => {
         setFormError(null);
+        // Review r3B I2: nothing from the previous panel survives into this one.
+        setSelectedPropertyIds([]);
         setEditingUserId(user.id);
         setName(user.name);
         setEmail(user.email);
@@ -350,31 +362,37 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
             tenantId: isSuperAdmin ? (user.tenantId || "") : currentTenantId,
             phoneNumber: (user as { phoneNumber?: string }).phoneNumber || "",
         });
-        setLoadedPropertyIds(user.role === 'PROPERTY_MANAGER' ? null : []);
-
-        // Fetch existing assignments if it's a Property Manager. Editing another
-        // user before this answers supersedes it: a slow answer for the first
-        // user must never become the second user's assignments.
-        const { signal, isCurrent } = beginAssignments();
-        if (user.role === 'PROPERTY_MANAGER') {
-            try {
-                const res = await fetch(`/api/proxy/admin/users/${user.id}/properties`, { signal });
-                if (res.ok) {
-                    const ids = await res.json();
-                    if (!isCurrent()) return;
-                    setSelectedPropertyIds(ids);
-                    setLoadedPropertyIds(ids);
-                }
-            } catch (e) {
-                if (isAbortError(e) || !isCurrent()) return;
-                console.error("Failed to fetch property assignments:", e);
-            }
-        } else {
-            setSelectedPropertyIds([]);
-        }
-
+        setLoadedPropertyIds(null);
+        setAssignmentsLoad("loading");
         setShowForm(true);
+
+        // The user's current assignments, whatever the role — a user made a manager
+        // here may still hold rows from an earlier spell as one (review r3B M10).
+        // Editing another user before this answers supersedes it: a slow answer for
+        // the first user must never become the second user's assignments.
+        const { signal, isCurrent } = beginAssignments();
+        try {
+            const res = await fetch(`/api/proxy/admin/users/${user.id}/properties`, { signal });
+            if (!isCurrent()) return;
+            if (!res.ok) {
+                setAssignmentsLoad("failed");
+                return;
+            }
+            const ids: string[] = await res.json();
+            if (!isCurrent()) return;
+            setSelectedPropertyIds(ids);
+            setLoadedPropertyIds(ids);
+            setAssignmentsLoad("ok");
+        } catch (e) {
+            if (isAbortError(e) || !isCurrent()) return;
+            console.error("Failed to fetch property assignments:", e);
+            setAssignmentsLoad("failed");
+        }
     };
+
+    // An edit of a manager waits for their assignments (review r3B I2).
+    const assignmentsPending = !!editingUserId && role === 'PROPERTY_MANAGER' && assignmentsLoad === "loading";
+    const assignmentsFailed = !!editingUserId && assignmentsLoad === "failed";
 
     const filteredUsers = searchQuery
         ? users.filter((u) =>
@@ -527,7 +545,7 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
             {/* Slide-over Form Overlay */}
             {showForm && (
                 <div className="fixed inset-0 z-[100] flex justify-end">
-                    <div className="absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity" onClick={() => setShowForm(false)} />
+                    <div className="absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity" onClick={closeForm} />
 
                     <div className="relative w-full max-w-md bg-surface h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
                         <div className="flex items-center justify-between p-6 border-b border-border">
@@ -538,7 +556,7 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                                 <p className="text-[11px] font-medium text-muted uppercase tracking-wider">{isSuperAdmin ? tU("systemAdministration") : tU("organisationUsers")}</p>
                             </div>
                             <button
-                                onClick={() => setShowForm(false)}
+                                onClick={closeForm}
                                 aria-label={tU("close")}
                                 className="w-8 h-8 bg-input rounded-lg flex items-center justify-center text-muted hover:bg-input/80 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
                             >
@@ -618,7 +636,12 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                                         ))}
                                     </select>
                                 </div>
-                                {role === 'PROPERTY_MANAGER' && (
+                                {role === 'PROPERTY_MANAGER' && assignmentsFailed && (
+                                    <p role="alert" data-testid="assignments-failed" className="text-xs text-error font-medium">
+                                        {tU("assignmentsLoadFailed")}
+                                    </p>
+                                )}
+                                {role === 'PROPERTY_MANAGER' && !assignmentsFailed && (
                                     <div className="space-y-3">
                                         <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1 ml-1">{tU("assignProperties")}</label>
                                         <div className="flex flex-wrap gap-2 p-2 bg-input border border-border rounded-lg min-h-[44px]">
@@ -697,7 +720,7 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                             <button
                                 type="submit"
                                 form="user-form"
-                                disabled={submitting}
+                                disabled={submitting || assignmentsPending}
                                 className="w-full py-3 bg-primary text-primary-foreground rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {submitting ? <Loader2 size={14} className="animate-spin" /> : <Users size={14} />}

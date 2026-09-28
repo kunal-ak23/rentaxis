@@ -4607,6 +4607,7 @@
     "userChanged": "Someone else changed this user's properties while you had the form open. The form now shows their current properties; make your change again.",
     "deleteOpenTickets": "{count, plural, one {# open ticket assigned to this user goes} other {# open tickets assigned to this user go}} back to the unassigned queue.",
     "deleteHasMeetings": "This user hosts or requested {count, plural, one {# meeting} other {# meetings}}. Meeting history is kept, so this user cannot be deleted.",
+    "assignmentsLoadFailed": "This user's properties could not be loaded, so they will be left as they are. Close and reopen the form to change them.",
     "deleteConfirm": "Delete User"
   },
   "ListActions": {
