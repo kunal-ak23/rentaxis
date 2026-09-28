@@ -371,6 +371,22 @@ class GatePassControllerTest extends AbstractPostgresIT {
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 
+    /** Break-it R3 portal3 F1: an ACTIVE lease whose term is over is not a current contract. */
+    @Test
+    void createRejectsUnitWhoseLeaseTermHasEnded() {
+        Fixture f = makeFixture();
+        Lease lease = leaseRepo.findByUnitId(f.unit().getId()).get(0);
+        lease.setStartDate(LocalDate.now().minusYears(1));
+        lease.setEndDate(LocalDate.now().minusDays(40));
+        leaseRepo.save(lease);
+
+        Instant now = Instant.now();
+        ResponseEntity<String> res = call(HttpMethod.POST, "/api/v1/gatepass", f.renterUser(),
+                passBody(f.unit().getId(), "Guest Zeta", "SINGLE_USE", now, now.plus(2, ChronoUnit.HOURS)));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
     // ------------------------------------------------------- request validation
 
     /**

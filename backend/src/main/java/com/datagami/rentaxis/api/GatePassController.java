@@ -26,7 +26,6 @@ import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.GatePassStatus;
 import com.datagami.rentaxis.domain.entity.enums.GatePassOrigin;
-import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.repository.GatePassRepository;
 import com.datagami.rentaxis.domain.repository.GatePassScanRepository;
@@ -472,14 +471,13 @@ public class GatePassController {
             throw new NotFoundException("No renter profile linked to this user");
         }
 
-        Lease lease = leaseRepository.findByUnitIdAndStatus(unitId, LeaseStatus.ACTIVE).stream()
-                .filter(l -> tenantId.equals(l.getTenantId()))
-                .filter(l -> l.getRenter().getId().equals(renter.getId()))
+        // Break-it R3 portal3 F1: a current contract — live and today inside its term —
+        // not merely ACTIVE (an ended lease no expiry job has closed yet stays ACTIVE).
+        // The query fetches unit and property: this runs outside a transaction (OSIV off).
+        return leaseRepository.findCurrentForRenterUser(tenantId, userId, java.time.LocalDate.now()).stream()
+                .filter(l -> unitId.equals(l.getUnit().getId()))
+                .map(Lease::getUnit)
                 .findFirst()
-                .orElseThrow(() -> new NotFoundException("Unit is not on an active lease of yours"));
-        // The row, not the lease's proxy: this runs outside a transaction (OSIV off), so
-        // the proxy could not load its property afterwards.
-        return unitRepository.findById(lease.getUnit().getId())
                 .orElseThrow(() -> new NotFoundException("Unit is not on an active lease of yours"));
     }
 
