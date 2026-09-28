@@ -75,6 +75,9 @@ class ContractBrandingTest {
     private Lease lease;
     private ContractGenerationService svc;
     private final LeaseDocumentRepository docRepo = mock(LeaseDocumentRepository.class);
+    private final com.datagami.rentaxis.core.security.LeaseAccessPolicy policy =
+            mock(com.datagami.rentaxis.core.security.LeaseAccessPolicy.class);
+    private final List<Cheque> cheques = new ArrayList<>();
     private final java.util.List<com.datagami.rentaxis.domain.entity.LeaseDocument> storedDocs = new ArrayList<>();
     private Path contractsDir;
 
@@ -144,7 +147,6 @@ class ContractBrandingTest {
         lease.setDepositAmount(new BigDecimal("6000"));
         lease.setStatus(LeaseStatus.DRAFT);
 
-        List<Cheque> cheques = new ArrayList<>();
         for (int i = 1; i <= 12; i++) {
             Cheque c = new Cheque();
             c.setSeqNo(i);
@@ -156,7 +158,7 @@ class ContractBrandingTest {
             c.setStatus(ChequeStatus.DRAFT);
             cheques.add(c);
         }
-        when(chequeRepo.findByLease_IdOrderBySeqNoAsc(any())).thenReturn(cheques);
+        when(chequeRepo.findByLease_IdOrderBySeqNoAsc(any())).thenAnswer(inv -> cheques);
         when(lineRepo.findByLease_IdOrderBySeqNoAsc(any())).thenReturn(List.of(
                 line(1, "Rent", ChargeBehaviour.RENT, "120000", true),
                 line(2, "Security Deposit", ChargeBehaviour.DEPOSIT, "6000", false),
@@ -164,7 +166,7 @@ class ContractBrandingTest {
                 line(4, "Parking / Remote", ChargeBehaviour.FEE, "300", true)));
 
         svc = new ContractGenerationService(leaseRepo,
-                mock(com.datagami.rentaxis.core.security.LeaseAccessPolicy.class), docRepo,
+                policy, docRepo,
                 orgRepo, chequeRepo, lineRepo, mock(ApplicationEventPublisher.class));
         svc.setBlobStorageService(blobs);
         when(leaseRepo.findById(lease.getId())).thenReturn(Optional.of(lease));
@@ -329,12 +331,54 @@ class ContractBrandingTest {
         lease.setPostedAt(java.time.Instant.parse("2026-04-24T08:00:00Z"));
     }
 
+    private static String text(byte[] pdf) throws Exception {
+        try (PDDocument d = Loader.loadPDF(pdf)) {
+            return new PDFTextStripper().getText(d);
+        }
+    }
+
+    private static String squash(String s) {
+        return s.replaceAll("\\s+", " ").trim();
+    }
+
+    /**
+     * R3-I1: the executed copy IS the signed PDF plus the stamp. Its bytes begin
+     * with the signed file's (an incremental update), its text is the signed text
+     * plus the mark, its page count is the same, and every page carries the stamp.
+     */
+    private void assertExecutedCopyOf(byte[] signedBytes, byte[] executed, String label) throws Exception {
+        assertThat(executed.length).as(label).isGreaterThan(signedBytes.length);
+        assertThat(java.util.Arrays.copyOf(executed, signedBytes.length)).as(label + ": signed bytes untouched")
+                .isEqualTo(signedBytes);
+        String mark = "Executed copy \u00B7 24 Apr 2026";
+        String signedText = text(signedBytes);
+        String executedText = text(executed);
+        assertThat(signedText).doesNotContain("Executed copy");
+        assertThat(executedText).contains(mark);
+        assertThat(squash(executedText.replace(mark, ""))).as(label + ": text layer").isEqualTo(squash(signedText));
+        try (PDDocument doc = Loader.loadPDF(executed); PDDocument orig = Loader.loadPDF(signedBytes)) {
+            assertThat(doc.getNumberOfPages()).as(label).isEqualTo(orig.getNumberOfPages());
+            for (int i = 0; i < doc.getNumberOfPages(); i++) {
+                assertThat(imagesOn(doc.getPage(i))).as(label + " page " + (i + 1)).isEqualTo(imagesOn(orig.getPage(i)) + 1);
+            }
+        }
+    }
+
     @Test
-    void postingIssuesAStampedExecutedCopyAndLeavesTheSignedContractAlone() throws Exception {
+    void theExecutedCopyIsTheSignedPdfPlusTheStampAndTheSignedFileStaysAlone() throws Exception {
         var signed = storeSignedContract();
         byte[] signedBytes = Files.readAllBytes(Path.of(signed.getDocumentUrl()));
         stampSet();
         posted();
+        // What drifts after signing must not reach the copy: a new cheque row and a renamed renter.
+        Cheque late = new Cheque();
+        late.setSeqNo(13);
+        late.setChequeDate(LocalDate.of(2027, 4, 1));
+        late.setChequeNumber("REPLACEMENT-99");
+        late.setAmount(new BigDecimal("1"));
+        late.setStatus(ChequeStatus.DRAFT);
+        cheques.add(late);
+        lease.getRenter().setNameEn("SOMEONE ELSE ENTIRELY");
 
         var copy = svc.createExecutedCopy(lease.getId());
 
@@ -342,23 +386,114 @@ class ContractBrandingTest {
         assertThat(copy.get().getType()).isEqualTo(com.datagami.rentaxis.domain.entity.enums.DocumentType.EXECUTED_COPY);
         assertThat(copy.get().getLabel()).isEqualTo("Executed copy");
         assertThat(storedDocs).hasSize(2).contains(signed);
-        // The signed PDF is untouched: same file, same bytes, still there.
         assertThat(Files.readAllBytes(Path.of(signed.getDocumentUrl()))).isEqualTo(signedBytes);
         verify(docRepo, never()).delete(any());
         verify(docRepo, never()).deleteAll(any());
 
         byte[] executed = svc.currentContractPdf(lease.getId()); // downloads default to the copy
         keep("executed-copy.pdf", executed);
-        try (PDDocument doc = Loader.loadPDF(executed); PDDocument orig = Loader.loadPDF(signedBytes)) {
-            assertThat(doc.getNumberOfPages()).isEqualTo(TWELVE_CHEQUE_PAGES).isEqualTo(orig.getNumberOfPages());
-            // The stamp is in the footer of every page; the signed original has none.
-            assertThat(imagesOn(doc.getPage(0))).isEqualTo(1);
-            assertThat(imagesOn(doc.getPage(TWELVE_CHEQUE_PAGES - 1))).isEqualTo(1);
-            assertThat(imagesOn(orig.getPage(0))).isZero();
-            String page1 = new PDFTextStripper() {{ setStartPage(1); setEndPage(1); }}.getText(doc);
-            assertThat(page1).contains("Executed copy").contains("1234").contains("OASIS CREST PROPERTIES LLC");
-            assertThat(new PDFTextStripper().getText(orig)).doesNotContain("Executed copy");
+        assertExecutedCopyOf(signedBytes, executed, "12 cheques");
+        assertThat(text(executed)).doesNotContain("REPLACEMENT-99").doesNotContain("SOMEONE ELSE")
+                .contains("FATHIMA RISWANA AHAMED KABEER");
+    }
+
+    /** 1, 7 and 8 pages; English and Arabic names: the stamp lands in the stamp area of every page. */
+    @Test
+    void theStampLandsOnEveryPageWhateverTheLengthAndLanguage() throws Exception {
+        stampSet();
+        byte[] stampPng = png(300, 300, new Color(0x1F, 0x3A, 0x93));
+        String mark = "Executed copy \u00B7 24 Apr 2026";
+        record Case(String label, int cheques, boolean arabic, boolean onePage, int pages) {}
+        for (Case c : List.of(
+                new Case("1-page", 12, false, true, 1),
+                new Case("7-page EN", 12, false, false, 7),
+                new Case("7-page AR", 12, true, false, 7),
+                new Case("8-page AR", 40, true, false, 8))) {
+            while (cheques.size() > c.cheques()) cheques.remove(cheques.size() - 1);
+            while (cheques.size() < c.cheques()) {
+                Cheque x = new Cheque();
+                x.setSeqNo(cheques.size() + 1);
+                x.setChequeDate(LocalDate.of(2026, 4, 24).plusMonths(cheques.size()));
+                x.setChequeNumber("00" + (cheques.size() + 1));
+                x.setPayeeBank("\u0628\u0646\u0643 \u0627\u0644\u0625\u0645\u0627\u0631\u0627\u062A");
+                x.setAmount(new BigDecimal("3000"));
+                x.setNarration("RENT");
+                x.setStatus(ChequeStatus.DRAFT);
+                cheques.add(x);
+            }
+            lease.getRenter().setNameEn(c.arabic() ? "\u0641\u0627\u0637\u0645\u0629 \u0627\u0644\u0632\u0647\u0631\u0627\u0621" : "FATHIMA RISWANA AHAMED KABEER");
+            String html = svc.renderContractHtml(lease, "1234");
+            if (c.onePage()) {
+                html = html.substring(0, html.indexOf("<div class=\"terms-page-break\">")) + "</body></html>";
+            }
+            byte[] signedBytes = svc.renderPdf(html);
+            try (PDDocument d = Loader.loadPDF(signedBytes)) {
+                assertThat(d.getNumberOfPages()).as(c.label()).isEqualTo(c.pages());
+            }
+            byte[] executed = ExecutedCopyStamper.stamp(signedBytes, stampPng, mark).orElseThrow();
+            keep("stamped-" + c.label().replace(' ', '-') + ".pdf", executed);
+            assertExecutedCopyOf(signedBytes, executed, c.label());
         }
+    }
+
+    @Test
+    void noStampAreaNoCopy() throws Exception {
+        byte[] notAContract = svc.renderPdf("<html><body><p>Hello</p></body></html>");
+        assertThat(ExecutedCopyStamper.stamp(notAContract, png(10, 10, Color.RED), "x")).isEmpty();
+        assertThat(ExecutedCopyStamper.stamp("not a pdf".getBytes(), png(10, 10, Color.RED), "x")).isEmpty();
+        assertThat(ExecutedCopyStamper.stamp(notAContract, new byte[0], "x")).isEmpty();
+    }
+
+    /** R3-I1: never a 404 while a signed contract exists — an unreadable copy falls back. */
+    @Test
+    void theDownloadFallsBackToTheSignedContract() throws Exception {
+        var signed = storeSignedContract();
+        stampSet();
+        posted();
+        var copy = svc.createExecutedCopy(lease.getId()).orElseThrow();
+        var copyDoc = storedDocs.stream().filter(d -> d.getId().equals(copy.getId())).findFirst().orElseThrow();
+        Files.delete(Path.of(copyDoc.getDocumentUrl()));
+        assertThat(svc.currentContractPdf(lease.getId())).isEqualTo(Files.readAllBytes(Path.of(signed.getDocumentUrl())));
+    }
+
+    /**
+     * PR #359 R1 for the executed copy: it is dated like the contract it copies, so
+     * after an assignment the outgoing renter gets it and the incoming one gets
+     * neither it nor the signed contract naming someone else.
+     */
+    @Test
+    void anAssignmentKeepsTheExecutedCopyWithTheRenterWhoSignedIt() throws Exception {
+        var signed = storeSignedContract();
+        signed.setCreatedAt(java.time.Instant.parse("2026-04-01T08:00:00Z"));
+        stampSet();
+        posted();
+        svc.createExecutedCopy(lease.getId()).orElseThrow(); // made "now", long after the assignment
+        LocalDate assignedOn = LocalDate.of(2026, 7, 1);
+
+        // Outgoing renter: their side of the assignment ends on it.
+        when(policy.renterWindow(lease)).thenReturn(
+                new com.datagami.rentaxis.core.security.LeaseAccessPolicy.RenterWindow(null, assignedOn));
+        byte[] outgoing = svc.currentContractPdf(lease.getId());
+        assertThat(text(outgoing)).contains("Executed copy");
+        assertThat(svc.getDocuments(lease.getId())).extracting(d -> d.getType().name())
+                .containsExactly("EXECUTED_COPY", "CONTRACT");
+
+        // Incoming renter: from the assignment on. Neither document names them.
+        when(policy.renterWindow(lease)).thenReturn(
+                new com.datagami.rentaxis.core.security.LeaseAccessPolicy.RenterWindow(assignedOn, null));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> svc.currentContractPdf(lease.getId()))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.NotFoundException.class);
+        assertThat(svc.getDocuments(lease.getId())).isEmpty();
+    }
+
+    @Test
+    void contractLabelsFollowTheLeaseStatus() throws Exception {
+        storeSignedContract(); // PENDING_SIGNATURE
+        assertThat(svc.getDocuments(lease.getId())).extracting(d -> d.getLabel()).containsExactly("Contract");
+        lease.setStatus(LeaseStatus.DRAFT);
+        assertThat(svc.getDocuments(lease.getId())).extracting(d -> d.getLabel()).containsExactly("Contract");
+        posted();
+        assertThat(svc.getDocuments(lease.getId())).extracting(d -> d.getLabel()).containsExactly("Signed contract");
     }
 
     @Test
