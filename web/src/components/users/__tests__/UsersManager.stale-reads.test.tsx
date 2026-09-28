@@ -46,8 +46,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 async function loadComponent(): Promise<ComponentType> {
-    const override = process.env.UM_UNDER_TEST;
-    const mod = override ? await import(/* @vite-ignore */ override) : await import("../UsersManager");
+    const mod = await import("../UsersManager");
     return mod.default;
 }
 

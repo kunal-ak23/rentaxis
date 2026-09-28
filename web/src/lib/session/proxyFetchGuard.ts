@@ -46,7 +46,8 @@ const GUARD = Symbol.for("rentaxis.proxyFetchGuard");
  * Safety net (review M1): the page becoming visible again also resets it — a
  * real unload only ever goes hidden, so this never un-silences one, but if some
  * engine fired a non-persisted pagehide and kept the page, failed requests
- * would otherwise hang (spinners forever) until the next pageshow.
+ * would otherwise hang (spinners forever) until the page was shown or became
+ * visible again.
  *
  * Only fetch() and the Response body readers are covered. A caller reading
  * `res.body.getReader()` or a `res.clone()` directly is not (review M2); no
