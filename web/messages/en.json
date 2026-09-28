@@ -2705,6 +2705,13 @@
     "orgNetworkError": "Network error. Please check your connection and try again.",
     "orgSaveDenied": "You don't have permission to do this, or your session expired. Please sign in again.",
     "orgGone": "This organisation no longer exists. Close the dialog and refresh the list.",
+    "orgChanged": "Someone else changed this organisation while you had it open. It now shows the current details; make your change again.",
+    "orgActivate": "Activate",
+    "orgDeactivate": "Deactivate",
+    "orgActivateTitle": "Activate this organisation?",
+    "orgDeactivateTitle": "Deactivate this organisation?",
+    "orgActivateBody": "{name} and its users will be able to sign in again.",
+    "orgDeactivateBody": "Everyone in {name} is signed out on their next action and cannot sign in until the organisation is activated again.",
     "orgInvalid": "Invalid organisation details. Organisation name is required.",
     "orgSaveFailed": "Failed to save the organisation. Please try again."
   },
