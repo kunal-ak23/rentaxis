@@ -95,24 +95,19 @@ public class UserController {
         String effectiveTenantId = authorizeRoleAssignment(effectiveRole, requestedTenant);
 
         // Break-it R3 ops3 F4: a panel that loaded other assignments than the user
-        // has now is refused before anything is written.
+        // has now is refused before anything is written — the check, the fields and
+        // the assignments in one transaction under the user-row lock (review r3B M1).
         boolean replacesAssignments = effectiveRole == UserRole.PROPERTY_MANAGER && request.propertyIds() != null;
-        if (replacesAssignments) {
-            userService.requireAssignmentsUnchanged(id, request.expectedPropertyIds());
-        }
-
-        User user = userService.updateUser(
+        User user = userService.updateUserWithAssignments(
                 id,
                 request.email(),
                 request.password(),
                 request.name(),
                 effectiveRole,
                 effectiveTenantId,
-                request.phoneNumber());
-
-        if (replacesAssignments) {
-            userService.replacePropertyAssignments(id, request.propertyIds(), request.expectedPropertyIds());
-        }
+                request.phoneNumber(),
+                replacesAssignments ? request.propertyIds() : null,
+                request.expectedPropertyIds());
 
         return ResponseEntity.ok(UserResponseDTO.from(user));
     }

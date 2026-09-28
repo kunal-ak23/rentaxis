@@ -746,6 +746,28 @@ public class UserService {
      * {@link #requireAssignmentsUnchanged} does: two panels saving at once cannot both
      * pass the check.
      */
+    /**
+     * Review r3B M1: the whole edit in one transaction under the user-row lock — the
+     * assignment check first, then the fields, then the assignments — so a 409
+     * user.changed leaves nothing half-saved.
+     *
+     * @param propertyIds null leaves the assignments alone
+     */
+    @Transactional
+    public User updateUserWithAssignments(UUID id, String email, String rawPassword, String name, UserRole role,
+                                          String tenantId, String phoneNumber,
+                                          java.util.Collection<UUID> propertyIds, java.util.Collection<UUID> expected) {
+        userRepository.lockById(id);
+        if (propertyIds != null) {
+            requireAssignmentsUnchanged(id, expected);
+        }
+        User user = updateUser(id, email, rawPassword, name, role, tenantId, phoneNumber);
+        if (propertyIds != null) {
+            replacePropertyAssignments(id, propertyIds, expected);
+        }
+        return user;
+    }
+
     @Transactional
     public void replacePropertyAssignments(UUID userId, java.util.Collection<UUID> propertyIds,
                                            java.util.Collection<UUID> expected) {
