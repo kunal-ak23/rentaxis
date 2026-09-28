@@ -32,7 +32,7 @@ const FINANCE: UserRole[] = ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT"];
 
 export const TUTORIALS: Tutorial[] = [
     {
-        id: "01", slug: "sign-in-and-navigate", topic: "getting-started", roles: ALL, durationSec: 150, youtubeId: null,
+        id: "01", slug: "sign-in-and-navigate", topic: "getting-started", roles: ALL, durationSec: 112, youtubeId: null,
         title: { en: "Sign in and find your way around", ar: "تسجيل الدخول والتنقل في النظام" },
         description: {
             en: "Sign in, read the menu for your role, switch between English and Arabic, and manage your profile and password.",
@@ -41,7 +41,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["getting-started--welcome"],
     },
     {
-        id: "02", slug: "dashboard-search-notifications-and-help", topic: "getting-started", roles: ALL, durationSec: 156, youtubeId: null,
+        id: "02", slug: "dashboard-search-notifications-and-help", topic: "getting-started", roles: ALL, durationSec: 119, youtubeId: null,
         title: { en: "Dashboard, search, notifications and help", ar: "لوحة التحكم والبحث والإشعارات والمساعدة" },
         description: {
             en: "Read the dashboard, find records with global search, work through notifications and use the Help center and guided tours.",
@@ -49,7 +49,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "03", slug: "roles-permissions-and-organisation-switching", topic: "getting-started", roles: ADMINS, durationSec: 167, youtubeId: null,
+        id: "03", slug: "roles-permissions-and-organisation-switching", topic: "getting-started", roles: ADMINS, durationSec: 125, youtubeId: null,
         title: { en: "Roles, permissions and switching organisation", ar: "الأدوار والصلاحيات والتبديل بين المؤسسات" },
         description: {
             en: "See what each role can do, from Company Admin to Tenant and security guard, and switch between organisations safely.",
@@ -58,7 +58,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["getting-started--roles-and-permissions"],
     },
     {
-        id: "04", slug: "provision-organisations-and-feature-access", topic: "getting-started", roles: ["SUPER_ADMIN"], durationSec: 165, youtubeId: null,
+        id: "04", slug: "provision-organisations-and-feature-access", topic: "getting-started", roles: ["SUPER_ADMIN"], durationSec: 123, youtubeId: null,
         title: { en: "Set up organisations and feature access", ar: "إعداد المؤسسات وإتاحة الميزات" },
         description: {
             en: "Create and edit an organisation, then turn features such as listings, meetings and gate passes on or off.",
@@ -67,7 +67,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["admin--super-admin-guide"],
     },
     {
-        id: "05", slug: "create-users-and-staff", topic: "getting-started", roles: ADMINS, durationSec: 178, youtubeId: null,
+        id: "05", slug: "create-users-and-staff", topic: "getting-started", roles: ADMINS, durationSec: 120, youtubeId: null,
         title: { en: "Create users and staff", ar: "إنشاء المستخدمين والموظفين" },
         description: {
             en: "Add users with the right role, assign them to properties and keep staff records active or inactive.",
