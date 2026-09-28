@@ -51,3 +51,33 @@ describe("RentSettings — a slow read for the previous property never fills the
         expect(posted[0].body).toMatchObject({ dueDayOfMonth: 9 });
     });
 });
+
+describe("RentSettings under StrictMode (review M3)", () => {
+    it("the aborted first effect run does not end the initial load before the real one answers", async () => {
+        const { StrictMode } = await import("react");
+        const heldProps: ((body: unknown) => void)[] = [];
+        global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            if (url.includes("/v1/properties")) {
+                return new Promise<Response>((resolve, reject) => {
+                    init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+                    heldProps.push(body => resolve(new Response(JSON.stringify(body))));
+                });
+            }
+            if (url.includes("/v1/settings/fines")) {
+                return new Promise<Response>((resolve, reject) => {
+                    init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+                    setTimeout(() => resolve(new Response("{}", { status: 404 })), 50);
+                });
+            }
+            return Promise.resolve(new Response("[]"));
+        }) as unknown as typeof fetch;
+
+        render(<StrictMode><RentSettings embedded /></StrictMode>);
+        await waitFor(() => expect(heldProps.length).toBe(2)); // one per (double-invoked) effect run
+        await act(async () => { await new Promise(r => setTimeout(r, 80)); }); // first run aborted, fines answered
+        expect(screen.queryByRole("heading", { name: /rent collection settings/i })).toBeNull(); // still the skeleton
+        await act(async () => { heldProps[1]([{ property: { id: "pA", nameEn: "Alpha" } }]); });
+        expect(await screen.findByText("Alpha")).toBeTruthy();
+    });
+});

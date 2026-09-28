@@ -43,6 +43,14 @@ const GUARD = Symbol.for("rentaxis.proxyFetchGuard");
  * is going away is swallowed: the promise simply never settles (the document is
  * being destroyed). A page put in the back/forward cache (`persisted`) is not
  * destroyed, so it is not treated as leaving; pageshow resets either way.
+ * Safety net (review M1): the page becoming visible again also resets it — a
+ * real unload only ever goes hidden, so this never un-silences one, but if some
+ * engine fired a non-persisted pagehide and kept the page, failed requests
+ * would otherwise hang (spinners forever) until the next pageshow.
+ *
+ * Only fetch() and the Response body readers are covered. A caller reading
+ * `res.body.getReader()` or a `res.clone()` directly is not (review M2); no
+ * page does that today.
  * A real network failure — the page staying put — still rejects.
  */
 function never<T>(): Promise<T> {
@@ -86,8 +94,10 @@ export function installProxyFetchGuard(opts: ProxyFetchGuardOptions): () => void
     const isLeaving = () => leaving;
     const onPageHide = (e: PageTransitionEvent) => { if (!e.persisted) leaving = true; };
     const onPageShow = () => { leaving = false; };
+    const onVisibility = () => { if (document.visibilityState === "visible") leaving = false; };
     window.addEventListener("pagehide", onPageHide);
     window.addEventListener("pageshow", onPageShow);
+    document.addEventListener("visibilitychange", onVisibility);
     // The original fetch, with rejections (and body-read rejections) caused by leaving the page swallowed.
     const send = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
         original(input, init).then(
@@ -140,6 +150,7 @@ export function installProxyFetchGuard(opts: ProxyFetchGuardOptions): () => void
     return () => {
         window.removeEventListener("pagehide", onPageHide);
         window.removeEventListener("pageshow", onPageShow);
+        document.removeEventListener("visibilitychange", onVisibility);
         if (window.fetch === guarded) window.fetch = original;
     };
 }

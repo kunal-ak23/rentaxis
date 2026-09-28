@@ -247,6 +247,21 @@ describe("installProxyFetchGuard — page leaving (break round 3, F1)", () => {
         expect(await settledOrNever(res.json())).toBeInstanceOf(SyntaxError);
     });
 
+    it("safety net (review M1): the page becoming visible again resets leaving; going hidden does not", async () => {
+        failing();
+        install();
+        const setVisibility = (state: DocumentVisibilityState) => {
+            Object.defineProperty(document, "visibilityState", { value: state, configurable: true });
+            document.dispatchEvent(new Event("visibilitychange"));
+        };
+        pagehide();
+        setVisibility("hidden"); // what a real unload does next: still leaving
+        expect(await settledOrNever(fetch("/api/proxy/v1/leases"))).toBe(NEVER);
+        setVisibility("visible"); // a page that is still alive and shown is not leaving
+        expect(await settledOrNever(fetch("/api/proxy/v1/leases"))).toBeInstanceOf(TypeError);
+        Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    });
+
     it("a page put in the back/forward cache (persisted) is not leaving; pageshow resets", async () => {
         failing();
         install();

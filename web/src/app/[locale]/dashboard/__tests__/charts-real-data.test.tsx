@@ -124,6 +124,24 @@ describe("DashboardPage charts use real data", () => {
         expect(screen.queryByText("+25.0%")).toBeNull();
     });
 
+    it("a monthly series that fails to parse leaves the summary cards filled (break round 3 review M4)", async () => {
+        vi.spyOn(console, "error").mockImplementation(() => {});
+        global.fetch = vi.fn(async (url: unknown) => {
+            const u = String(url);
+            if (u.includes("/dashboard/monthly-collections")) {
+                return { ok: true, json: async () => { throw new SyntaxError("bad json"); } } as unknown as Response;
+            }
+            return { ok: true, json: async () => SUMMARY } as Response;
+        }) as unknown as typeof fetch;
+
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <DashboardPage />
+            </NextIntlClientProvider>,
+        );
+        await waitFor(() => expect(screen.getByTestId("kpi-unit-status")).toHaveTextContent("8 occupied · 0 expiring · 2 vacant"));
+    });
+
     it("does not render the old hardcoded mock deltas", async () => {
         render(
             <NextIntlClientProvider locale="en" messages={en}>

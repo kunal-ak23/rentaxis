@@ -78,10 +78,14 @@ export default function RentSettings({ embedded = false, hideOnlinePaymentToggle
     const beginSettings = useLatestRequest();
 
     useEffect(() => {
+        // Review M3: under StrictMode the first (aborted) run must not end the
+        // initial load; only a run whose reads are still current does.
         Promise.all([
             fetchProperties(),
             fetchOrgFines(),
-        ]).finally(() => setInitialLoading(false));
+        ]).then(([a, b]) => {
+            if (a || b) setInitialLoading(false); // both false only when the component went away
+        });
         // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/selection loads; the useLatestRequest gate is stable
     }, []);
 
@@ -96,7 +100,8 @@ export default function RentSettings({ embedded = false, hideOnlinePaymentToggle
         // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/selection loads; the useLatestRequest gate is stable
     }, [selectedPropertyId]);
 
-    const fetchOrgFines = async () => {
+    /** Resolves false when the read was abandoned (unmount / superseded). */
+    const fetchOrgFines = async (): Promise<boolean> => {
         const { signal, isCurrent } = beginFines();
         try {
             const res = await fetch("/api/proxy/v1/settings/fines", { signal });
@@ -107,23 +112,24 @@ export default function RentSettings({ embedded = false, hideOnlinePaymentToggle
         } catch {
             // use defaults
         }
+        return isCurrent();
     };
 
-    const fetchProperties = async () => {
+    const fetchProperties = async (): Promise<boolean> => {
         const { signal, isCurrent } = beginProperties();
         try {
             const res = await fetch("/api/proxy/v1/properties", { signal });
             if (res.ok) {
                 const data = await res.json();
-                if (!isCurrent()) return;
+                if (!isCurrent()) return false;
                 // API returns PropertyStats[] with nested property object
                 const props = data.map((s: { property: Property }) => s.property);
                 setProperties(props);
             }
         } catch (err) {
-            if (isAbortError(err) || !isCurrent()) return;
-            console.error("Failed to fetch properties", err);
+            if (!isAbortError(err) && isCurrent()) console.error("Failed to fetch properties", err);
         }
+        return isCurrent();
     };
 
     const fetchSettings = async (propertyId: string) => {

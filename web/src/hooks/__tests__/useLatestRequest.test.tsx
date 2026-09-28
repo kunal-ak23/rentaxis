@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useEffect, useState } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { isAbortError } from "@/lib/api/abort";
 
@@ -122,6 +122,34 @@ describe("useLatestRequest", () => {
         await flush();
         expect(screen.getByText("load failed")).toBeTruthy();
         expect(console.error).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe("useLatestRequest under StrictMode (review M5)", () => {
+    it("the double-invoked effect aborts the first run silently; one set, loading clears", async () => {
+        let sets = 0;
+        function Counted() {
+            const begin = useLatestRequest();
+            const [rows, setRows] = useState<string[] | null>(null);
+            useEffect(() => {
+                const { signal, isCurrent } = begin();
+                fetch("/api/proxy/v1/things", { signal })
+                    .then(r => r.json())
+                    .then((d: string[]) => { if (isCurrent()) { sets++; setRows(d); } })
+                    .catch(err => { if (isAbortError(err) || !isCurrent()) return; console.error(err); });
+            }, [begin]);
+            return <p>{rows ? rows.join(",") : "loading"}</p>;
+        }
+        render(<StrictMode><Counted /></StrictMode>);
+        expect(pending).toHaveLength(2);
+        expect(pending[0].signal?.aborted).toBe(true);
+        expect(pending[1].signal?.aborted).toBe(false);
+        pending[1].resolve(["r1"]);
+        pending[0].resolve(["stale"]);
+        await flush();
+        expect(screen.getByText("r1")).toBeTruthy();
+        expect(sets).toBe(1);
+        expect(console.error).not.toHaveBeenCalled();
     });
 });
 

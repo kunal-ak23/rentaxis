@@ -200,11 +200,18 @@ export default function DashboardPage() {
           fetch("/api/proxy/v1/dashboard/summary", { signal }),
           fetch("/api/proxy/v1/dashboard/monthly-collections", { signal }),
         ]);
-        const summaryBody = summaryRes.ok ? await summaryRes.json() : null;
-        const monthlyBody = monthlyRes.ok ? await monthlyRes.json() : null;
-        if (!isCurrent()) return;
-        if (summaryBody) setSummary(summaryBody);
-        if (monthlyRes.ok) setMonthly(Array.isArray(monthlyBody) ? monthlyBody : []);
+        // Review M4: each body is read and set on its own, as before — a bad
+        // monthly body must not keep the summary cards empty.
+        if (summaryRes.ok) {
+          const summaryBody = await summaryRes.json();
+          if (!isCurrent()) return;
+          setSummary(summaryBody);
+        }
+        if (monthlyRes.ok) {
+          const monthlyBody = await monthlyRes.json();
+          if (!isCurrent()) return;
+          setMonthly(Array.isArray(monthlyBody) ? monthlyBody : []);
+        }
       } catch (err) {
         if (isAbortError(err) || !isCurrent()) return;
         console.error(err);
