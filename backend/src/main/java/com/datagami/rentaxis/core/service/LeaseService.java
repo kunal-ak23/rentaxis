@@ -982,6 +982,57 @@ public class LeaseService {
         return rentFreePeriods == null ? List.of() : rentFreePeriods.findByLease_IdOrderByFromDateAsc(leaseId);
     }
 
+    // ---- meeting / ticket detach on withdrawal (break-it round 2 M9) -----------
+
+    private MeetingRepository meetingRepository;
+    private MaintenanceTicketRepository maintenanceTicketRepository;
+
+    /** Setter-injected so the unit tests' hand-built service needs no new argument. */
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setMeetingRepository(MeetingRepository repo) {
+        this.meetingRepository = repo;
+    }
+
+    /** Setter-injected so the unit tests' hand-built service needs no new argument. */
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setMaintenanceTicketRepository(MaintenanceTicketRepository repo) {
+        this.maintenanceTicketRepository = repo;
+    }
+
+    /**
+     * {@code meetings.lease_id} ({@code fk_meeting_lease}) and
+     * {@code maintenance_tickets.lease_id} ({@code fk_ticket_lease}) have no ON DELETE,
+     * and a renter (or a manager) may point either at a PENDING_SIGNATURE renewal —
+     * both clients only offer ACTIVE leases, but the API does not enforce that
+     * (break-it round 2 M9). Left alone, that FK makes the *predecessor* lease
+     * untermin­able once the renewal is withdrawn, and the renewal itself cannot be
+     * deleted either.
+     *
+     * <p>When the lease being removed is a renewal ({@code renewedFromLeaseId} set),
+     * its meetings/tickets are repointed to the predecessor: that lease is still
+     * there (a termination only changes its status) and is exactly what the
+     * meeting/ticket is now about — the renter's one ongoing tenancy. A plain
+     * DRAFT with no predecessor has nothing sensible to repoint to, so its
+     * meetings/tickets are simply detached (lease set to null); the row stays
+     * visible under its property/unit and reporter.</p>
+     */
+    private void detachLeaseReferences(UUID leaseId, UUID predecessorLeaseId) {
+        Lease predecessor = predecessorLeaseId == null ? null
+                : leaseRepository.findById(predecessorLeaseId).orElse(null);
+        if (meetingRepository != null) {
+            for (Meeting m : meetingRepository.findByLease_Id(leaseId)) {
+                m.setLease(predecessor);
+                meetingRepository.save(m);
+            }
+        }
+        if (maintenanceTicketRepository != null) {
+            for (MaintenanceTicket t : maintenanceTicketRepository.findByLease_Id(leaseId)) {
+                t.setLease(predecessor);
+                maintenanceTicketRepository.save(t);
+            }
+        }
+    }
+
     /**
      * The contract's own RENT line: a RENT line no addendum charged, dated from the
      * lease's start (or undated). Extension and addendum rent lines are not it.
@@ -1661,6 +1712,10 @@ public class LeaseService {
     /** The lease row and everything that hangs off it; the caller has checked it was never posted. */
     private void removeUnposted(Lease lease) {
         UUID leaseId = lease.getId();
+        // Break-it round 2 M9: detach any meeting/ticket pointed at this lease before
+        // it goes, or the FK (no ON DELETE) blocks this delete, and later the
+        // predecessor's termination too. See detachLeaseReferences.
+        detachLeaseReferences(leaseId, lease.getRenewedFromLeaseId());
         // A DRAFT lease shouldn't have any contract documents (defensive); a
         // PENDING_SIGNATURE one being withdrawn has the contract it was sent. Drop the rows.
         leaseDocumentRepository.deleteAll(leaseDocumentRepository.findByLeaseId(leaseId));

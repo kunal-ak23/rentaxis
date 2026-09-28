@@ -22,6 +22,9 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 
     Page<Meeting> findByTenantId(UUID tenantId, Pageable pageable);
 
+    /** Break-it round 2 M9: meetings hung off a lease being withdrawn/deleted, so the caller can detach them. */
+    List<Meeting> findByLease_Id(UUID leaseId);
+
     /** A property manager's meetings: their own, plus those on their buildings (round 5, audit P1-6). */
     @Query(value = "SELECT m FROM Meeting m LEFT JOIN m.property p LEFT JOIN m.unit u LEFT JOIN u.property up " +
            "LEFT JOIN m.lease l LEFT JOIN l.unit lu LEFT JOIN lu.property lup " +
