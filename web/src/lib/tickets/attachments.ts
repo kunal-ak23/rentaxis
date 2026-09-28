@@ -16,6 +16,12 @@ export const TICKET_CREATE_ACCEPT = "image/*,video/*,.pdf";
 /** What the ticket detail page accepts. */
 export const TICKET_DETAIL_ACCEPT = "image/*,video/*,.pdf,.doc,.docx";
 
+/** Extensions standing in for a wildcard MIME family when the browser gives no usable type. */
+const WILDCARD_EXTENSIONS: Record<string, string[]> = {
+    "image/*": [".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".bmp", ".tif", ".tiff", ".avif"],
+    "video/*": [".mp4", ".mov", ".m4v", ".3gp", ".3g2", ".webm", ".mkv", ".avi"],
+};
+
 export type AttachmentRejection = "empty" | "tooLarge" | "wrongType";
 
 /**
@@ -27,13 +33,21 @@ export type AttachmentRejection = "empty" | "tooLarge" | "wrongType";
 export function matchesAccept(file: File, accept: string): boolean {
     const name = file.name.toLowerCase();
     const type = (file.type || "").toLowerCase();
+    // A browser that doesn't know the format (HEIC on many Android/desktop
+    // browsers, some phone videos) reports "" or a generic binary type; the
+    // extension decides then, so a real phone photo is never refused.
+    const typeUnknown = type === "" || type === "application/octet-stream";
+    const ext = name.includes(".") ? name.slice(name.lastIndexOf(".")) : "";
     return accept
         .split(",")
         .map(s => s.trim().toLowerCase())
         .filter(Boolean)
         .some(token => {
             if (token.startsWith(".")) return name.endsWith(token);
-            if (token.endsWith("/*")) return type.startsWith(token.slice(0, -1));
+            if (token.endsWith("/*")) {
+                if (type.startsWith(token.slice(0, -1))) return true;
+                return typeUnknown && (WILDCARD_EXTENSIONS[token] ?? []).includes(ext);
+            }
             return type === token;
         });
 }

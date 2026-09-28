@@ -89,11 +89,24 @@ const jpg = (name: string, size = 16) => new File([new Uint8Array(size)], name, 
 
 async function openFormAndTitle() {
     render(<TicketsPage />);
-    // The single-lease renter's property is auto-filled once their leases load.
-    await waitFor(() => expect(calls.some(c => c.url.includes("my-leases"))).toBe(true));
-    await act(async () => { await new Promise(r => setTimeout(r, 0)); });
-    fireEvent.click(await screen.findByRole("button", { name: /create ticket/i }));
-    fireEvent.change(screen.getByPlaceholderText(/brief summary/i), { target: { value: "Leak" } });
+    // The single-lease renter's property is auto-filled from their leases at
+    // the moment the form opens, and the submit button stays disabled until
+    // there is a title and a property. Gate on that observable state: open the
+    // form, give it a title, and if the button is still disabled (leases not
+    // loaded yet when it opened) cancel, let the page settle, and reopen.
+    // (Not inside waitFor: its DOM-mutation re-runs would starve the timers.)
+    const submitButton = () => {
+        const buttons = screen.getAllByRole("button", { name: /create ticket/i }) as HTMLButtonElement[];
+        return buttons[buttons.length - 1];
+    };
+    for (let attempt = 0; ; attempt++) {
+        fireEvent.click(await screen.findByRole("button", { name: /create ticket/i }));
+        fireEvent.change(screen.getByPlaceholderText(/brief summary/i), { target: { value: "Leak" } });
+        if (!submitButton().disabled) break;
+        if (attempt >= 100) throw new Error("the renter's lease never filled in the ticket's property");
+        fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
+        await act(async () => { await new Promise(r => setTimeout(r, 20)); });
+    }
     return document.querySelector('input[type="file"]') as HTMLInputElement;
 }
 
@@ -188,6 +201,19 @@ describe("Create Ticket — attachments (break R2 portal2 F1)", () => {
         submit();
         await waitFor(() => expect(calls.filter(c => c.url.startsWith("/api/upload"))).toHaveLength(1));
         expect(((calls.find(c => c.url.startsWith("/api/upload"))!.body as FormData).get("file") as File).name).toBe("fine.jpg");
+    });
+
+    it("accepts a phone photo or video the browser gave no MIME type, by extension", async () => {
+        const input = await openFormAndTitle();
+        selectFiles(input, [
+            new File(["x"], "IMG_0001.HEIC", { type: "" }),
+            new File(["x"], "clip.mov", { type: "application/octet-stream" }),
+            new File(["MZ"], "payload.exe", { type: "" }),
+        ]);
+        expect(await screen.findByText("IMG_0001.HEIC")).toBeTruthy();
+        expect(screen.getByText("clip.mov")).toBeTruthy();
+        expect(screen.getByTestId("ticket-attachment-errors").textContent).toContain("payload.exe");
+        expect(screen.getByTestId("ticket-attachment-errors").textContent).not.toContain("HEIC");
     });
 
     it("accepts a PDF picked by extension even when the browser gives no MIME type", async () => {
