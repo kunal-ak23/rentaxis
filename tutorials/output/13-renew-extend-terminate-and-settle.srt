@@ -1,0 +1,214 @@
+1
+00:00:00,000 --> 00:00:03,674
+This tutorial covers the end of a tenancy
+contract: renewing
+
+2
+00:00:03,674 --> 00:00:07,347
+it, extending it, or ending it and
+settling the deposit.
+
+3
+00:00:07,347 --> 00:00:10,653
+As a Company Admin, open Leasing, then
+Tenancy Contracts.
+
+4
+00:00:10,653 --> 00:00:13,592
+Start with Ahmed Hassan's contract for
+unit A-101,
+
+5
+00:00:13,592 --> 00:00:16,164
+which ends on the thirty-first of
+December.
+
+6
+00:00:16,164 --> 00:00:16,899
+Select Renew.
+
+7
+00:00:16,899 --> 00:00:20,205
+The next term, all of next year, is filled
+
+8
+00:00:20,205 --> 00:00:23,144
+in, and the charge lines are copied
+across.
+
+9
+00:00:23,144 --> 00:00:25,715
+Choose By percent and enter 5, and
+
+10
+00:00:25,715 --> 00:00:28,287
+the rent goes from 85,000 to 89,250.
+
+11
+00:00:28,287 --> 00:00:32,328
+The deposit is carried forward, so it is
+not collected again.
+
+12
+00:00:32,328 --> 00:00:33,062
+Select Renew.
+
+13
+00:00:33,062 --> 00:00:35,634
+A new draft opens for next year,
+
+14
+00:00:35,634 --> 00:00:37,838
+linked to the contract it renews.
+
+15
+00:00:37,838 --> 00:00:41,144
+It is signed and posted like any other
+draft.
+
+16
+00:00:41,144 --> 00:00:45,185
+An extension is for a shorter stay on the
+same contract.
+
+17
+00:00:45,185 --> 00:00:47,757
+Open Sara Mansour's contract for M-1501,
+and
+
+18
+00:00:47,757 --> 00:00:49,961
+under More actions, select Extend
+Contract.
+
+19
+00:00:49,961 --> 00:00:53,634
+Set the new end date to the thirty-first
+of January.
+
+20
+00:00:53,634 --> 00:00:56,941
+Add a Rent line of 9,500 for the extra
+
+21
+00:00:56,941 --> 00:00:59,880
+month, and the cheque that pays for it.
+
+22
+00:00:59,880 --> 00:01:00,982
+Select Extend Contract.
+
+23
+00:01:00,982 --> 00:01:05,023
+The end date moves, and the extension
+posts its own entries.
+
+24
+00:01:05,023 --> 00:01:07,594
+Ending a contract starts with a notice.
+
+25
+00:01:07,594 --> 00:01:10,166
+Open Rajesh Kumar's contract for A-103,
+and
+
+26
+00:01:10,166 --> 00:01:12,370
+under More actions, select Give notice.
+
+27
+00:01:12,370 --> 00:01:15,309
+Rajesh gave notice on the thirty-first of
+July,
+
+28
+00:01:15,309 --> 00:01:18,247
+to move out on the thirty-first of August.
+
+29
+00:01:18,247 --> 00:01:21,921
+Select Give notice, and the contract is
+marked Notice Given.
+
+30
+00:01:21,921 --> 00:01:24,125
+It keeps collecting until it ends.
+
+31
+00:01:24,125 --> 00:01:26,697
+Now select Terminate, and set the
+termination
+
+32
+00:01:26,697 --> 00:01:28,901
+date to the thirty-first of August.
+
+33
+00:01:28,901 --> 00:01:32,207
+The figures show the rent earned to that
+date,
+
+34
+00:01:32,207 --> 00:01:35,146
+and the unearned rent that will be
+reversed.
+
+35
+00:01:35,146 --> 00:01:38,452
+Cheques dated up to the move-out are kept
+for
+
+36
+00:01:38,452 --> 00:01:41,758
+collection, and later ones go back to the
+tenant.
+
+37
+00:01:41,758 --> 00:01:44,330
+Add a note, select Terminate, and confirm.
+
+38
+00:01:44,330 --> 00:01:47,269
+The contract is terminated, and the
+settlement opens.
+
+39
+00:01:47,269 --> 00:01:50,575
+It shows the deposit held, and a
+receivable balance
+
+40
+00:01:50,575 --> 00:01:53,881
+below zero, because the landlord owes
+Rajesh a little.
+
+41
+00:01:53,881 --> 00:01:56,453
+Add a deduction for cleaning, of 1,500,
+
+42
+00:01:56,453 --> 00:01:58,657
+and the refund drops to 11,612.33.
+
+43
+00:01:58,657 --> 00:02:01,596
+Save draft keeps it for someone to review.
+
+44
+00:02:01,596 --> 00:02:04,535
+Three kept cheques are still being
+collected, so
+
+45
+00:02:04,535 --> 00:02:07,474
+tick the confirmation, then select
+Finalize, and confirm.
+
+46
+00:02:07,474 --> 00:02:10,412
+The settlement is finalized with its own
+journal,
+
+47
+00:02:10,412 --> 00:02:12,984
+and the refund is ready to pay.
