@@ -1,0 +1,52 @@
+{
+  "id": "05",
+  "slug": "create-users-and-staff",
+  "title": "Miftah tutorial 05 · Create users and staff",
+  "description": "Add users with the right role, assign them to properties and keep staff records active or inactive.\n\nWho this is for: Company Admin, System Admin.\n\nChapters:\n0:00 Introduction\n0:38 No password is set here: the new\n1:20 Back in Users and staff, select Add\n\nPart of the Miftah web course — playlist: Miftah · Getting started\n\nأضف المستخدمين بالدور المناسب، وخصّصهم للعقارات، وحافظ على سجلات الموظفين نشطة أو غير نشطة.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "onboarding",
+    "sign in",
+    "roles and permissions",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Getting started",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "Introduction"
+    },
+    {
+      "startSec": 38.101,
+      "start": "0:38",
+      "label": "No password is set here: the new"
+    },
+    {
+      "startSec": 80.012,
+      "start": "1:20",
+      "label": "Back in Users and staff, select Add"
+    }
+  ],
+  "durationSec": 120,
+  "roles": [
+    "SUPER_ADMIN",
+    "TENANT_ADMIN"
+  ],
+  "topic": "getting-started",
+  "captionsFile": "tutorials/output/05-create-users-and-staff.srt",
+  "videoFile": "tutorials/output/05-create-users-and-staff.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/05.png"
+}

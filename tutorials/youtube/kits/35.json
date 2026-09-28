@@ -1,0 +1,59 @@
+{
+  "id": "35",
+  "slug": "register-and-clear-cheques",
+  "title": "Miftah tutorial 35 · Register and clear cheques",
+  "description": "Bank a cheque, clear it, record a returned cheque and replace it with new cheques.\n\nWho this is for: Accountant, Company Admin, Property Manager.\n\nChapters:\n0:00 Introduction\n0:32 Select the rows you are taking to\n1:06 RentAxis debits your bank account and credits\n1:40 A returned cheque is usually settled with\n\nPart of the Miftah web course — playlist: Miftah · Collections\n\nأودع الشيك في البنك، وسجّل تحصيله، وسجّل الشيك المرتجع واستبدله بشيكات جديدة.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "rent collection",
+    "cheques",
+    "online payments",
+    "penalties",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Collections",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "Introduction"
+    },
+    {
+      "startSec": 32.934,
+      "start": "0:32",
+      "label": "Select the rows you are taking to"
+    },
+    {
+      "startSec": 66.796,
+      "start": "1:06",
+      "label": "RentAxis debits your bank account and credits"
+    },
+    {
+      "startSec": 100.195,
+      "start": "1:40",
+      "label": "A returned cheque is usually settled with"
+    }
+  ],
+  "durationSec": 136,
+  "roles": [
+    "TENANT_ADMIN",
+    "PROPERTY_MANAGER",
+    "ACCOUNTANT"
+  ],
+  "topic": "collections",
+  "captionsFile": "tutorials/output/35-register-and-clear-cheques.srt",
+  "videoFile": "tutorials/output/35-register-and-clear-cheques.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/35.png"
+}

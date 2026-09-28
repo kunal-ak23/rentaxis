@@ -1,0 +1,58 @@
+{
+  "id": "34",
+  "slug": "post-a-tenancy-contract",
+  "title": "Miftah tutorial 34 · Post a tenancy contract",
+  "description": "Post a draft contract with its lines and cheque grid, and see the contract become active with its recognition schedule planned.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 Introduction\n0:39 The second grid is the cheque register\n0:59 If it does not, posting is refused\n1:39 Open the Journals tab and read them\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nرحّل مسودة العقد مع بنودها وجدول شيكاتها، وشاهد العقد يصبح نشطًا مع جدولة الاعتراف بالإيراد.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "chart of accounts",
+    "journal voucher",
+    "financial reports",
+    "accounting software",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Accounting",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "Introduction"
+    },
+    {
+      "startSec": 39.692,
+      "start": "0:39",
+      "label": "The second grid is the cheque register"
+    },
+    {
+      "startSec": 59.97,
+      "start": "0:59",
+      "label": "If it does not, posting is refused"
+    },
+    {
+      "startSec": 99.663,
+      "start": "1:39",
+      "label": "Open the Journals tab and read them"
+    }
+  ],
+  "durationSec": 130,
+  "roles": [
+    "TENANT_ADMIN",
+    "ACCOUNTANT"
+  ],
+  "topic": "accounting",
+  "captionsFile": "tutorials/output/34-post-a-tenancy-contract.srt",
+  "videoFile": "tutorials/output/34-post-a-tenancy-contract.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/34.png"
+}

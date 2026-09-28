@@ -1,0 +1,58 @@
+{
+  "id": "36",
+  "slug": "month-end-recognition",
+  "title": "Miftah tutorial 36 · Month-end recognition",
+  "description": "Run recognition to a cut-off date and watch advance rent move into rental income, period by period.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 Introduction\n0:39 Every row shows its period, its day\n1:05 Read the total before you post it\n1:39 Open the General Ledger and filter to\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nشغّل الاعتراف بالإيراد حتى تاريخ الإقفال، وشاهد انتقال الإيجار المقدم إلى إيراد الإيجار فترة بعد فترة.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "chart of accounts",
+    "journal voucher",
+    "financial reports",
+    "accounting software",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Accounting",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "Introduction"
+    },
+    {
+      "startSec": 39.14,
+      "start": "0:39",
+      "label": "Every row shows its period, its day"
+    },
+    {
+      "startSec": 65.092,
+      "start": "1:05",
+      "label": "Read the total before you post it"
+    },
+    {
+      "startSec": 99.128,
+      "start": "1:39",
+      "label": "Open the General Ledger and filter to"
+    }
+  ],
+  "durationSec": 128,
+  "roles": [
+    "TENANT_ADMIN",
+    "ACCOUNTANT"
+  ],
+  "topic": "accounting",
+  "captionsFile": "tutorials/output/36-month-end-recognition.srt",
+  "videoFile": "tutorials/output/36-month-end-recognition.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/36.png"
+}
