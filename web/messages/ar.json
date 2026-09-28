@@ -547,6 +547,7 @@
     "nextChequeDue": "الشيك القادم",
     "nextChequeOverdue": "الشيك القادم · متأخر",
     "allCaughtUp": "كل شيء على ما يرام — لا توجد شيكات مستحقة حالياً.",
+    "atTheBank": "لدى البنك — بانتظار التحصيل. لا يوجد مبلغ مستحق عليك.",
     "depositedOn": "تم الإيداع في {date}",
     "collectedOn": "تم الاستلام في {date}",
     "bouncedOn": "ارتدّ الشيك في {date}",

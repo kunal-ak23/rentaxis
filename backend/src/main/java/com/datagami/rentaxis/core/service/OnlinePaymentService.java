@@ -50,6 +50,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -116,8 +117,7 @@ public class OnlinePaymentService {
      * accepts, and the ones {@link #payable} puts an amount against. DEPOSITED is
      * absent on purpose: the paper is at the bank and will clear there.
      */
-    private static final Set<ChequeStatus> COLLECTABLE = EnumSet.of(
-            ChequeStatus.REGISTERED, ChequeStatus.BOUNCED, ChequeStatus.ONLINE_PENDING);
+    private static final Set<ChequeStatus> COLLECTABLE = ChequeDueRules.TENANT_COLLECTABLE;
 
     /**
      * The gateway took the money. A payment in one of these never goes backwards:
@@ -142,6 +142,13 @@ public class OnlinePaymentService {
     private final NotificationService notificationService;
     private final ApplicationEventPublisher events;
 
+    /** The renter-facing "today" is the Dubai date; a seam so tests can pin it. */
+    private Clock clock = Clock.system(ChequeDueRules.BUSINESS_ZONE);
+
+    void setClock(Clock clock) {
+        this.clock = clock;
+    }
+
     // ------------------------------------------------------------------
     // the renter's list
     // ------------------------------------------------------------------
@@ -165,7 +172,7 @@ public class OnlinePaymentService {
         List<Cheque> rows = chequeRepository
                 .findByRenter_IdAndStatusInOrderByChequeDateAsc(renter.getId(), VISIBLE);
 
-        LocalDate today = LocalDate.now();
+        LocalDate today = ChequeDueRules.today(clock);
         Map<UUID, BigDecimal> penaltyByLease = penaltyOutstandingByLease(rows);
         Map<UUID, Boolean> onlineByProperty = new HashMap<>();
 
@@ -176,8 +183,12 @@ public class OnlinePaymentService {
                 continue;
             }
             int grace = lease.getGracePeriodDays();
-            boolean due = ChequeDueRules.due(c, today);
-            boolean overdue = ChequeDueRules.overdue(c, grace, today);
+            // The Tenant's side of the rules, not the landlord's: a DEPOSITED cheque
+            // is still money the landlord is waiting for, but the Tenant has handed
+            // the paper over and can pay nothing on it. Using the landlord's rule
+            // here showed "AED 0 · 84 days overdue" on the portal (bug 2026-09-28-03).
+            boolean due = ChequeDueRules.tenantOwes(c, today);
+            boolean overdue = ChequeDueRules.tenantOverdue(c, grace, today);
             Property property = c.getProperty();
             Unit unit = c.getUnit();
             boolean onlineEnabled = property == null || onlineByProperty.computeIfAbsent(
@@ -387,7 +398,7 @@ public class OnlinePaymentService {
                 .orElseThrow(() -> new NotFoundException("Cheque not found"));
         requireGatewayAccess(cheque);
 
-        LocalDate today = LocalDate.now();
+        LocalDate today = ChequeDueRules.today(clock);
         if (!ChequeDueRules.due(cheque, today)) {
             throw new BusinessRuleViolationException(
                     "This instalment is not due yet; it can be paid from " + cheque.getChequeDate() + ".");

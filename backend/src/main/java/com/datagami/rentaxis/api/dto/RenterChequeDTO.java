@@ -22,6 +22,12 @@ import java.util.UUID;
  *
  * @param installmentNumber the row's position on the lease's schedule ({@code seqNo}).
  * @param dueDate the date on the instrument — when the money is owed.
+ * @param due the Tenant owes this row now and can still settle it
+ *        ({@code ChequeDueRules.tenantOwes}) — true exactly when {@code payable > 0}.
+ *        Not the landlord's {@code due}: a DEPOSITED cheque is at the bank, so it is
+ *        neither due from nor overdue for the Tenant, although the register still
+ *        chases it until it clears.
+ * @param overdue {@code due} and past the grace window ({@code ChequeDueRules.tenantOverdue}).
  * @param payable what the renter still owes on this row today, by whatever means:
  *        the amount for a due row they can actually settle, zero otherwise. A
  *        BOUNCED row <em>is</em> payable — {@code createOrder} supersedes it with

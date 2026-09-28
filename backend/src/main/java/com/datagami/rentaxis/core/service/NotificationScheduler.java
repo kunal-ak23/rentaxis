@@ -235,7 +235,10 @@ public class NotificationScheduler {
                     for (Cheque cheque : slice) {
                         Lease lease = cheque.getLease();
                         int graceDays = lease == null ? 0 : lease.getGracePeriodDays();
-                        if (!ChequeDueRules.overdue(cheque, graceDays, today)) {
+                        // The Tenant's side of the rule: a cheque already deposited with the
+                        // bank is overdue for the landlord until it clears, but there is
+                        // nothing the Tenant can pay on it (tutorial bug 2026-09-28-03).
+                        if (!ChequeDueRules.tenantOverdue(cheque, graceDays, today)) {
                             continue;
                         }
                         // A row the renter is in the middle of paying online is owed but not yet

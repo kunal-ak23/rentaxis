@@ -3,8 +3,12 @@ package com.datagami.rentaxis.core.service.cheque;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.EnumSet;
+import java.util.Set;
 
 /**
  * "Is this money late?" — the one place the answer is computed, so the register
@@ -17,7 +21,24 @@ import java.time.temporal.ChronoUnit;
  */
 public final class ChequeDueRules {
 
+    /** The business day is the UAE's, whatever zone the JVM runs in. */
+    public static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Dubai");
+
+    /**
+     * The statuses a Tenant can still settle: an uncleared instalment they have not
+     * handed over, a checkout they started and may start again, and a bounce. A
+     * DEPOSITED cheque is absent on purpose — the paper is at the bank and will
+     * clear there; collecting it twice is what the register exists to prevent.
+     */
+    public static final Set<ChequeStatus> TENANT_COLLECTABLE = EnumSet.of(
+            ChequeStatus.REGISTERED, ChequeStatus.BOUNCED, ChequeStatus.ONLINE_PENDING);
+
     private ChequeDueRules() {
+    }
+
+    /** Today's date in {@link #BUSINESS_ZONE}. */
+    public static LocalDate today(Clock clock) {
+        return LocalDate.now(clock.withZone(BUSINESS_ZONE));
     }
 
     /**
@@ -69,5 +90,25 @@ public final class ChequeDueRules {
     public static int daysOverdue(Cheque cheque, int graceDays, LocalDate today) {
         long days = ChronoUnit.DAYS.between(cheque.getChequeDate().plusDays(graceDays), today);
         return (int) Math.max(0, days);
+    }
+
+    /**
+     * The Tenant's side of {@link #due}: the row is owed now <em>and</em> the Tenant
+     * can still pay it. Where the landlord's {@code due} keeps a DEPOSITED cheque
+     * because the funds have not arrived, the Tenant has already handed the paper
+     * over — nothing is payable by them, so nothing is due from them. A post-dated
+     * cheque the landlord is holding is not owed before its date.
+     */
+    public static boolean tenantOwes(Cheque cheque, LocalDate today) {
+        return due(cheque, today) && TENANT_COLLECTABLE.contains(cheque.getStatus());
+    }
+
+    /**
+     * The Tenant's side of {@link #overdue}: something is payable by them and the
+     * grace window has closed. Without the first half the portal told a Tenant they
+     * owed AED 0 and were 84 days late on the same card (tutorial bug 2026-09-28-03).
+     */
+    public static boolean tenantOverdue(Cheque cheque, int graceDays, LocalDate today) {
+        return tenantOwes(cheque, today) && overdue(cheque, graceDays, today);
     }
 }

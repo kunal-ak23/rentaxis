@@ -6,6 +6,7 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../providers/promotion_provider.dart';
 import '../widgets/home_ads_strip.dart';
+import 'next_payment.dart';
 
 final _leaseServiceProvider = Provider<LeaseService>((ref) {
   final client = ref.watch(apiClientProvider);
@@ -128,31 +129,6 @@ Map<String, dynamic>? _findActiveLease(List<dynamic> leases) {
     return leases.first as Map<String, dynamic>;
   }
   return null;
-}
-
-Map<String, dynamic>? _nextPaymentFor(List<dynamic> payments, String? leaseId) {
-  if (leaseId == null) return null;
-  // OVERDUE takes priority, then PENDING, then ONLINE_PENDING (checkout in
-  // flight) — mirrors the web renter portal's nextPayment selection.
-  const statusPriority = {'OVERDUE': 0, 'PENDING': 1, 'ONLINE_PENDING': 2};
-  final mine =
-      payments
-          .whereType<Map<String, dynamic>>()
-          .where(
-            (p) =>
-                p['leaseId'] == leaseId &&
-                statusPriority.containsKey(p['status']),
-          )
-          .toList()
-        ..sort((a, b) {
-          final ap = statusPriority[a['status']] ?? 9;
-          final bp = statusPriority[b['status']] ?? 9;
-          if (ap != bp) return ap.compareTo(bp);
-          final ad = (a['installmentNumber'] ?? 0) as num;
-          final bd = (b['installmentNumber'] ?? 0) as num;
-          return ad.compareTo(bd);
-        });
-  return mine.isEmpty ? null : mine.first;
 }
 
 int _clearedCount(List<dynamic> payments, String? leaseId) {
@@ -296,7 +272,7 @@ class _MaybeHero extends StatelessWidget {
         final payments = paymentsAsync.valueOrNull ?? const [];
         return _HeroBalanceCard(
           lease: lease,
-          next: _nextPaymentFor(payments, leaseId),
+          next: nextPaymentFor(payments, leaseId),
           clearedCount: _clearedCount(payments, leaseId),
           totalCount: _totalInstalmentsFor(payments, leaseId),
           clearedAmount: _clearedAmountFor(payments, leaseId),
@@ -385,11 +361,13 @@ class _HeroBalanceCard extends ConsumerWidget {
     final l = _L(context.isAr);
     final auth = ref.watch(authProvider);
 
-    final amount = (next?['amount'] ?? 0) as num;
+    final amount = (next?['payable'] ?? next?['amount'] ?? 0) as num;
     final dueRaw = next?['dueDate']?.toString();
     final daysToDue = _daysUntil(dueRaw);
     final status = next?['status']?.toString();
-    final isOverdue = status == 'OVERDUE' || daysToDue == 'overdue';
+    // The server's grace-aware flag, not the calendar: a row past its date but
+    // inside the grace window is due, not overdue.
+    final isOverdue = isOverdueForTenant(next);
     final isInFlight = status == 'ONLINE_PENDING';
     final totalAmount = scheduleTotal > 0
         ? scheduleTotal
@@ -402,6 +380,9 @@ class _HeroBalanceCard extends ConsumerWidget {
       pillLabel = l.overdue;
     } else if (isInFlight) {
       pillLabel = l.processing;
+    } else if (daysToDue == 'overdue') {
+      // Past its date but inside the grace window: owed now, not yet late.
+      pillLabel = l.dueNow;
     } else if (daysToDue == 'today') {
       pillLabel = l.dueToday;
     } else {
@@ -990,6 +971,7 @@ class _L {
   String get overdue => ar ? 'متأخر' : 'OVERDUE';
   String get processing => ar ? 'قيد المعالجة' : 'PROCESSING';
   String get dueToday => ar ? 'مستحق اليوم' : 'DUE TODAY';
+  String get dueNow => ar ? 'مستحق الآن' : 'DUE NOW';
   String due(String duration) =>
       ar ? 'مستحق $duration' : 'DUE ${duration.toUpperCase()}';
   String get allCaughtUp => ar ? 'لا توجد مستحقات حالياً' : 'All caught up';

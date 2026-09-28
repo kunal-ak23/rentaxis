@@ -145,4 +145,68 @@ class ChequeDueRulesTest {
                     .isEqualTo(overdue);
         }
     }
+    // ------------------------------------------------------------------
+    // the Tenant's side (tutorial bug 2026-09-28-03)
+    // ------------------------------------------------------------------
+
+    /**
+     * What the Tenant still owes and can settle today. The landlord's {@link ChequeDueRules#due}
+     * keeps a DEPOSITED cheque "due" because the money has not arrived; for the Tenant
+     * the paper is at the bank and there is nothing left for them to do. The portal
+     * used to show "AED 0 · 84 days overdue" for exactly that row.
+     */
+    @ParameterizedTest(name = "{0} dated {1} → tenant owes={2}")
+    @CsvSource({
+            "REGISTERED,     -84, true",
+            "REGISTERED,       0, true",
+            // A post-dated cheque the landlord is holding: not owed until its date.
+            "REGISTERED,      30, false",
+            "ONLINE_PENDING,  -3, true",
+            "ONLINE_PENDING,   3, false",
+            "BOUNCED,        -84, true",
+            "BOUNCED,         10, true",
+            // Handed over and at the bank, or already paid: nothing to pay.
+            "DEPOSITED,      -84, false",
+            "DEPOSITED,        0, false",
+            "CLEARED,        -84, false",
+            "REPLACED,       -84, false",
+            "CANCELLED,      -84, false",
+            "RETURNED,       -84, false",
+            "DRAFT,          -84, false",
+            "TRANSFERRED,    -84, false",
+    })
+    void tenantOwes_onlyWhatTheTenantCanStillSettle(ChequeStatus status, int offsetDays, boolean expected) {
+        assertThat(ChequeDueRules.tenantOwes(cheque(status, TODAY.plusDays(offsetDays)), TODAY)).isEqualTo(expected);
+    }
+
+    @ParameterizedTest(name = "{0} dated {1}, grace 5 → tenant overdue={2}")
+    @CsvSource({
+            "REGISTERED,  -84, true",
+            "REGISTERED,   -5, false",   // inside grace
+            "REGISTERED,   -6, true",
+            "REGISTERED,   30, false",   // held post-dated cheque, not yet due
+            "BOUNCED,     -84, true",
+            "ONLINE_PENDING, -84, true",
+            "DEPOSITED,   -84, false",   // the bug: at the bank, not late for the Tenant
+            "CLEARED,     -84, false",
+            "REPLACED,    -84, false",
+    })
+    void tenantOverdue_onlyWhenSomethingIsPayableAndGraceHasPassed(ChequeStatus status, int offsetDays, boolean expected) {
+        assertThat(ChequeDueRules.tenantOverdue(cheque(status, TODAY.plusDays(offsetDays)), 5, TODAY))
+                .isEqualTo(expected);
+    }
+
+    /** The landlord's view is untouched: a deposited cheque that never cleared is still chased. */
+    @Test
+    void landlordViewStillCountsAnUnclearedDepositAsOverdue() {
+        assertThat(ChequeDueRules.overdue(cheque(ChequeStatus.DEPOSITED, TODAY.minusDays(84)), 5, TODAY)).isTrue();
+    }
+
+    /** Asia/Dubai, not the JVM's zone: at 22:30 UTC it is already tomorrow in Dubai. */
+    @Test
+    void todayIsTheDubaiDate() {
+        java.time.Clock lateUtc = java.time.Clock.fixed(
+                java.time.Instant.parse("2026-09-18T22:30:00Z"), java.time.ZoneOffset.UTC);
+        assertThat(ChequeDueRules.today(lateUtc)).isEqualTo(LocalDate.of(2026, 9, 19));
+    }
 }

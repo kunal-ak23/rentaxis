@@ -1,5 +1,5 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../../../../messages/en.json";
 import type { RenterCheque } from "@/lib/api/leasing";
@@ -77,10 +77,11 @@ describe("RenterPaymentsPage — due rows", () => {
         expect(screen.queryByTestId("pay-online-cash")).not.toBeInTheDocument();
     });
 
-    it("never shows Pay on a fully-paid (payable = 0) row even if flagged due", async () => {
+    it("never lists or offers Pay on a nothing-to-pay (payable = 0) row even if flagged due", async () => {
         api.myPayments.mockResolvedValue([row({ id: "zero", due: true, onlineEnabled: true, payable: 0 })]);
         renderPage();
-        await waitFor(() => expect(screen.getByTestId("due-row-zero")).toBeInTheDocument());
+        expect(await screen.findByText(/All caught up/i)).toBeInTheDocument();
+        expect(screen.queryByTestId("due-row-zero")).not.toBeInTheDocument();
         expect(screen.queryByTestId("pay-online-zero")).not.toBeInTheDocument();
     });
 
@@ -110,6 +111,37 @@ describe("RenterPaymentsPage — history", () => {
         await waitFor(() => expect(screen.getByTestId("history-row-b1")).toBeInTheDocument());
         expect(screen.queryByTestId("receipt-link-b1")).not.toBeInTheDocument();
         expect(screen.getByTestId("history-row-b1")).toHaveTextContent("Bounced");
+    });
+});
+
+/**
+ * Tutorial bug 2026-09-28-03: My Payments read "NEXT CHEQUE · OVERDUE 0.00 … 84 DAYS
+ * OVERDUE … TOTAL PAYABLE AED 0" for a cheque already deposited with the bank.
+ */
+describe("RenterPaymentsPage — a cheque at the bank", () => {
+    const deposited = { id: "dep", status: "DEPOSITED" as const, dueDate: "2026-07-01", amount: 21250, payable: 0, payableOnline: false };
+
+    it("lists a DEPOSITED cheque as at the bank, not as due", async () => {
+        api.myPayments.mockResolvedValue([row({ ...deposited, due: false, overdue: false, daysOverdue: 0 })]);
+        renderPage();
+        expect(await screen.findByTestId("history-row-dep")).toBeInTheDocument();
+        expect(screen.getByTestId("at-bank-dep")).toHaveTextContent(en.OnlinePayments.atTheBank);
+        expect(screen.queryByTestId("due-row-dep")).not.toBeInTheDocument();
+        expect(screen.getByText(/All caught up/i)).toBeInTheDocument();
+        expect(screen.queryByText(/overdue/i)).not.toBeInTheDocument();
+    });
+
+    it("never calls a nothing-to-pay row the overdue next cheque, even from an older server", async () => {
+        api.myPayments.mockResolvedValue([
+            row({ ...deposited, due: true, overdue: true, daysOverdue: 84 }),
+            row({ id: "next", status: "REGISTERED", dueDate: "2026-09-01", amount: 21250, payable: 21250, due: true, overdue: false }),
+        ]);
+        renderPage();
+        expect(await screen.findByTestId("due-row-next")).toBeInTheDocument();
+        expect(screen.queryByTestId("due-row-dep")).not.toBeInTheDocument();
+        expect(screen.queryByText(en.OnlinePayments.nextChequeOverdue)).not.toBeInTheDocument();
+        expect(screen.queryByText(/84/)).not.toBeInTheDocument();
+        expect(screen.getByTestId("amount-due-total")).toHaveTextContent("21,250.00");
     });
 });
 

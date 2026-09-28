@@ -997,6 +997,101 @@ class OnlinePaymentServiceIT extends AbstractPostgresIT {
         assertThat(future.payable()).isEqualByComparingTo("0");
     }
 
+    /**
+     * Tutorial bug 2026-09-28-03: the portal showed "Next payment AED 0 · 84 days
+     * overdue" for a cheque already at the bank. A deposited cheque is neither due
+     * from nor overdue for the Tenant — they handed the paper over — while the next
+     * instalment, a post-dated cheque the landlord is holding, is not due before its
+     * date either.
+     */
+    @Test
+    void aDepositedChequeIsNeitherDueNorOverdueForTheTenant() {
+        UUID chequeId = firstCheque();
+        UUID heldId = registerRows().get(1).id();
+        RenterChequeDTO before = row(myPayments(), chequeId);
+        assertThat(before.overdue()).as("precondition: matured and past grace").isTrue();
+
+        chequeService.deposit(chequeId, ChequeActionRequest.on(TODAY));
+
+        List<RenterChequeDTO> rows = myPayments();
+        RenterChequeDTO deposited = row(rows, chequeId);
+        assertThat(deposited.status()).isEqualTo(ChequeStatus.DEPOSITED);
+        assertThat(deposited.payable()).isEqualByComparingTo("0");
+        assertThat(deposited.due()).isFalse();
+        assertThat(deposited.overdue()).isFalse();
+        assertThat(deposited.daysOverdue()).isZero();
+        assertThat(deposited.payableOnline()).isFalse();
+
+        RenterChequeDTO held = row(rows, heldId);
+        assertThat(held.dueDate()).isAfter(TODAY);
+        assertThat(held.due()).isFalse();
+        assertThat(held.overdue()).isFalse();
+        assertThat(held.daysOverdue()).isZero();
+
+        assertThat(rows).as("nothing on this lease is owed by the Tenant today")
+                .noneMatch(RenterChequeDTO::due)
+                .noneMatch(RenterChequeDTO::overdue);
+    }
+
+    @Test
+    void aClearedChequeIsNeitherDueNorOverdue() {
+        UUID chequeId = firstCheque();
+        chequeService.deposit(chequeId, ChequeActionRequest.on(TODAY));
+        chequeService.clear(chequeId, ChequeActionRequest.on(TODAY));
+
+        RenterChequeDTO cleared = row(myPayments(), chequeId);
+        assertThat(cleared.status()).isEqualTo(ChequeStatus.CLEARED);
+        assertThat(cleared.due()).isFalse();
+        assertThat(cleared.overdue()).isFalse();
+        assertThat(cleared.daysOverdue()).isZero();
+        assertThat(cleared.payable()).isEqualByComparingTo("0");
+    }
+
+    /** A bounce is owed and late; once replaced, only the replacement counts, on its own date. */
+    @Test
+    void aBouncedChequeIsOverdueAndItsReplacementIsJudgedOnItsOwnDate() {
+        UUID bouncedId = bounceFirstCheque();
+        RenterChequeDTO bounced = row(myPayments(), bouncedId);
+        assertThat(bounced.due()).isTrue();
+        assertThat(bounced.overdue()).isTrue();
+        assertThat(bounced.daysOverdue()).isPositive();
+        assertThat(bounced.payable()).isEqualByComparingTo(INSTALMENT);
+
+        LocalDate replacementDate = TODAY.plusDays(20);
+        List<ChequeDTO> replacements = chequeService.replace(bouncedId, new com.datagami.rentaxis.api.dto.cheque.ReplaceChequeRequest(
+                List.of(new com.datagami.rentaxis.api.dto.lease.ChequeRowInput(null, null, TODAY,
+                        LeaseTestFixtures.nextChequeNumber(), replacementDate, "Emirates NBD", null, null,
+                        INSTALMENT, "Replacement", ChequeMode.PDC)), TODAY, "Replaced"));
+
+        List<RenterChequeDTO> rows = myPayments();
+        assertThat(rows).extracting(RenterChequeDTO::id).doesNotContain(bouncedId);
+        RenterChequeDTO replacement = row(rows, replacements.get(0).id());
+        assertThat(replacement.status()).isEqualTo(ChequeStatus.REGISTERED);
+        assertThat(replacement.due()).as("a post-dated replacement is not owed before its date").isFalse();
+        assertThat(replacement.overdue()).isFalse();
+        assertThat(replacement.payable()).isEqualByComparingTo("0");
+    }
+
+    /**
+     * Part of the schedule paid: the first instalment cleared, a counter row still
+     * open and dated today. The open row is owed (not yet late); the cleared one is
+     * not — the next payment is the one actually payable.
+     */
+    @Test
+    void aPartlyPaidScheduleOwesOnlyItsOpenRows() {
+        UUID clearedId = firstCheque();
+        chequeService.deposit(clearedId, ChequeActionRequest.on(TODAY));
+        chequeService.clear(clearedId, ChequeActionRequest.on(TODAY));
+        UUID openId = counterRow(ChequeMode.CASH, "750");
+
+        List<RenterChequeDTO> rows = myPayments();
+        assertThat(rows).filteredOn(RenterChequeDTO::due).extracting(RenterChequeDTO::id)
+                .containsExactly(openId);
+        RenterChequeDTO open = row(rows, openId);
+        assertThat(open.payable()).isEqualByComparingTo("750");
+        assertThat(open.overdue()).as("dated today: inside grace").isFalse();
+    }
+
     @Test
     void myPaymentsHidesRowsTheRenterHasNoClaimOnAndKeepsBouncedOnesPayable() {
         UUID bouncedId = bounceFirstCheque();

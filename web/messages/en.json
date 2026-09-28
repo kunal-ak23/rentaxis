@@ -547,6 +547,7 @@
     "nextChequeDue": "Next cheque due",
     "nextChequeOverdue": "Next cheque · Overdue",
     "allCaughtUp": "All caught up — no cheques due right now.",
+    "atTheBank": "At the bank — awaiting clearance. Nothing to pay.",
     "depositedOn": "Deposited on {date}",
     "collectedOn": "Collected on {date}",
     "bouncedOn": "Bounced on {date}",

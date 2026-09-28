@@ -83,3 +83,29 @@ describe("Renter home next-payment card (#37)", () => {
         expect(screen.queryByText(/overdue/)).not.toBeInTheDocument();
     });
 });
+
+/**
+ * Tutorial bug 2026-09-28-03: "Next payment AED 0 · 84 days overdue" for a cheque
+ * already deposited with the bank. The card shows the earliest row the Tenant can
+ * actually pay, and a row with nothing payable is never it.
+ */
+describe("Renter home next-payment card — a cheque at the bank (2026-09-28-03)", () => {
+    const deposited = { id: "dep", status: "DEPOSITED", dueDate: isoDaysAgo(89), amount: 21250, payable: 0 };
+
+    it("skips a deposited cheque and shows the next payable instalment", async () => {
+        serve([
+            cheque({ ...deposited, due: false, overdue: false, daysOverdue: 0 }),
+            cheque({ id: "next", installmentNumber: 4, dueDate: isoDaysAgo(1), amount: 21250, payable: 21250, overdue: false, daysOverdue: 0 }),
+        ]);
+        renderPage();
+        expect(await screen.findByText(en.RenterHome.dueInGrace)).toBeInTheDocument();
+        expect(screen.queryByText(/days overdue/)).not.toBeInTheDocument();
+    });
+
+    it("says nothing is due when the only open row is at the bank, even if an older server flags it overdue", async () => {
+        serve([cheque({ ...deposited, due: true, overdue: true, daysOverdue: 84 })]);
+        renderPage();
+        expect(await screen.findByText(en.RenterHome.allPaymentsUpToDate)).toBeInTheDocument();
+        expect(screen.queryByText("84 days overdue")).not.toBeInTheDocument();
+    });
+});
