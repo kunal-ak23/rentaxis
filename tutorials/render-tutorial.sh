@@ -40,8 +40,15 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
   exit 2
 fi
 
-task_tmp=$(mktemp -d)
-trap 'rm -rf "$task_tmp"' EXIT
+# Intermediates stay inside the repo (tutorials/work/), never the system temp
+# dir: an interrupted render must remain reviewable.
+task_work_root=${TUTORIAL_WORK_DIR:-"$(cd "$(dirname "$0")" && pwd)/work"}
+mkdir -p "$task_work_root"
+task_tmp=$(mktemp -d "$task_work_root/render-XXXXXX")
+case "$task_tmp" in
+  "$task_work_root"/render-??????) trap 'rm -rf -- "$task_tmp"' EXIT ;;
+  *) echo "Unexpected render work dir: $task_tmp" >&2; exit 1 ;;
+esac
 
 case "$task_tts_provider" in
   openai)

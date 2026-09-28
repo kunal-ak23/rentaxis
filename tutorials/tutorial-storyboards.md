@@ -358,7 +358,7 @@ track is commissioned separately.
   Contracts. The status pills count the contracts that are drafts or awaiting
   signature, active, expiring, on notice, and ended. Select Draft Tenancy
   Contract. Step one is Parties. The unit list offers vacant units only. Choose
-  unit A-201, and its property, R3Dry Residence Tower, appears underneath. Then
+  unit A-201, and its property, Oasis Crest Residence Tower, appears underneath. Then
   choose the tenant, Rajesh Kumar, and select Next. Step two is Terms. The
   contract date is filled in with today. Enter a start date of the first of
   October and an end date of the thirtieth of September the following year.

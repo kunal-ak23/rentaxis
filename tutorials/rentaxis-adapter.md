@@ -7,6 +7,7 @@ Hand-written for the accounting v2 cut-over; regenerate with `walkthrough-adapte
 | Env | Base URLs | Default |
 |---|---|---|
 | local | web `http://localhost:3000`, backend `http://localhost:8081` (a stale instance squats on 8080) | yes |
+| local-recording | web `http://localhost:3004`, backend `http://localhost:8084`, DB `rentaxis_tutorials`, tenant "Oasis Crest Properties" — `tutorials/recording-stack.sh`, `tutorials/record-local.sh` (see `tutorials/README.md`) | for tutorial recordings |
 | staging | none — this product has no staging tier | |
 | production | `https://rentaxis.uaenorth.cloudapp.azure.com` | gated — needs per-run confirmation |
 
