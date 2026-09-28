@@ -71,4 +71,36 @@ describe("Period lock date", () => {
         expect(await screen.findByTestId("fiscal-lock-confirm")).toBeEnabled();
         expect(screen.queryByTestId("fiscal-lock-big-jump")).toBeNull();
     });
+
+    /** Review M9: a first lock asks for the same tick. */
+    it("asks for a tick before a first lock", async () => {
+        api.get.mockResolvedValue({ fiscalYearStartMonth: 1, booksStartDate: null, booksLockedThrough: null });
+        renderPage();
+        fireEvent.change(await screen.findByTestId("fiscal-lock-through"), { target: { value: "2022-06-30" } });
+        fireEvent.click(screen.getByTestId("fiscal-lock-open"));
+        expect(await screen.findByTestId("fiscal-lock-big-jump")).toHaveTextContent("first period lock");
+        expect(screen.getByTestId("fiscal-lock-confirm")).toBeDisabled();
+    });
+
+    /** Review M5: a lock already after today (saved before the rule) is named on load. */
+    it("names a lock that is already after today", async () => {
+        api.get.mockResolvedValue({ fiscalYearStartMonth: 1, booksStartDate: null, booksLockedThrough: "2062-09-30" });
+        renderPage("ar");
+        expect(await screen.findByTestId("fiscal-lock-ahead")).toHaveTextContent("30/09/2062");
+    });
+
+    /** Review I2: the server's coded refusal is shown in Arabic, not its English message. */
+    it("shows a coded server refusal in Arabic", async () => {
+        const { ApiError } = await import("@/lib/api/facilities");
+        api.lock.mockRejectedValueOnce(new ApiError(400, "The period lock date 01/01/2022 is in the future (today is ...).",
+            JSON.stringify({ code: "date.inFuture", args: { what: "period lock", date: "01/01/2022", today: "31/12/2021" },
+                message: "The period lock date 01/01/2022 is in the future" })));
+        renderPage("ar");
+        fireEvent.change(await screen.findByTestId("fiscal-lock-through"), { target: { value: "2021-06-30" } });
+        fireEvent.click(screen.getByTestId("fiscal-lock-open"));
+        fireEvent.click(await screen.findByTestId("fiscal-lock-confirm"));
+        const alert = await screen.findByText(/لم يحدث هذا بعد/);
+        expect(alert.textContent).toContain("01/01/2022");
+        expect(alert.textContent).not.toContain("period lock");
+    });
 });

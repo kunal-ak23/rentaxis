@@ -435,7 +435,8 @@ describe("A settlement changed in another window", () => {
         api.finalize.mockRejectedValueOnce(new ApiError(409, "changed",
             JSON.stringify({ code: "settlement.changed", message: "This settlement changed since you opened it" })));
         renderPage();
-        fireEvent.click(await screen.findByTestId("settlement-finalize"));
+        await waitFor(() => expect(screen.getByTestId("settlement-finalize")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("settlement-finalize"));
         expect(await screen.findByTestId("settlement-finalize-net")).toHaveTextContent("10,164.38");
         api.statement.mockResolvedValue(statement({ netRefund: 8164.38, totalDeductions: 2000 }));
         fireEvent.click(await screen.findByTestId("settlement-finalize-confirm"));

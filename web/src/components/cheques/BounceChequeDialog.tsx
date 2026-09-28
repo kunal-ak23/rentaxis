@@ -7,6 +7,7 @@ import { fmtAmount } from "@/lib/api/ledger";
 import { businessTodayIso, isAfterBusinessToday } from "@/lib/businessDate";
 import { ApiError, chequeApi, type Cheque, type ChequeFailureReason } from "@/lib/api/leasing";
 import { chequeTitle } from "./chequeLabel";
+import { serverText } from "@/components/finance/bankrec/serverText";
 
 /**
  * A cheque bounced — from DEPOSITED (the ordinary case) or from CLEARED, PDC
@@ -38,6 +39,7 @@ type Props = {
 export default function BounceChequeDialog({ cheque, onClose, onDone }: Props) {
     const t = useTranslations("Cheques");
     const tl = useTranslations("Leasing");
+    const tCommon = useTranslations("Common");
 
     const [date, setDate] = useState(businessTodayIso());
     const [failureReason, setFailureReason] = useState<ChequeFailureReason>("BOUNCE");
@@ -66,7 +68,7 @@ export default function BounceChequeDialog({ cheque, onClose, onDone }: Props) {
             });
             onDone(date);
         } catch (e) {
-            setError(e instanceof ApiError ? e.message : t("actionFailed"));
+            setError(e instanceof ApiError ? serverText(tCommon, e) || e.message : t("actionFailed"));
         } finally {
             setBusy(false);
         }

@@ -10,7 +10,7 @@ import { fmtAmount } from "@/lib/api/ledger";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { fmtIsoDate, todayIso } from "@/components/leases/leaseMath";
 import LeaseDialog from "@/components/leases/LeaseDialog";
-import { codedOf } from "@/components/finance/bankrec/serverText";
+import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 import { isBeyondManualPostingWindow, maxManualPostingDateIso } from "@/lib/businessDate";
 import { formatDate } from "@/lib/format";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
@@ -58,6 +58,7 @@ type Props = {
 export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: Props) {
     const t = useTranslations("Cheques");
     const tm = useTranslations("MoneyInput");
+    const tCommon = useTranslations("Common");
     const tl = useTranslations("Leasing");
     const tLedger = useTranslations("Ledger");
     const locale = useLocale();
@@ -146,7 +147,7 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                 setActionError(t("penaltyChanged"));
                 return;
             }
-            setActionError(e instanceof ApiError ? e.message : t("actionFailed"));
+            setActionError(e instanceof ApiError ? serverText(tCommon, e) || e.message : t("actionFailed"));
         } finally {
             setBusyId(null);
         }

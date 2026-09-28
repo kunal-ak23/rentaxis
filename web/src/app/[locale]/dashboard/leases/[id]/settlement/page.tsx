@@ -17,7 +17,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import AccountPicker from "@/components/finance/AccountPicker";
 import { assetSrc } from "@/lib/assetUrl";
-import { codedOf } from "@/components/finance/bankrec/serverText";
+import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 import { clampIso, fmtIsoDate, isoDayAfter, maxIso, todayIso } from "@/components/leases/leaseMath";
 import {
     netRefundOf, round2, toSaveLines, totalOf, totalVatOf, withLineVat, type SettlementRow,
@@ -209,6 +209,7 @@ export default function SettlementPage() {
     const tLeasing = useTranslations("Leasing");
     const tCheques = useTranslations("Cheques");
     const tLedger = useTranslations("Ledger");
+    const tCommon = useTranslations("Common");
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
 
@@ -473,7 +474,8 @@ export default function SettlementPage() {
                 return;
             }
             const message = e instanceof ApiError ? e.message : t("finalizeFailed");
-            setFinalizeError(message);
+            // Review I2: a coded refusal in the user's language; English is the fallback.
+            setFinalizeError(e instanceof ApiError ? serverText(tCommon, e) || message : message);
             // The one refusal the screen can answer with a control rather than
             // with an apology.
             if (e instanceof ApiError && refusedForAcknowledgement(message)) {
@@ -987,12 +989,13 @@ export default function SettlementPage() {
                 cancelText={tLedger("cancel")}
                 confirmTestId="settlement-finalize-confirm"
             >
-                {/* Break-it R2 money2 F5: the figure being finalised, not only the date. */}
-                {shown && (
+                {/* Break-it R2 money2 F5 / review M4: the figure being finalised — the server's
+                    statement.netRefund, the same figure sent as expectedNetRefund. */}
+                {statement && (
                     <p className="text-xs font-semibold tabular-nums" data-testid="settlement-finalize-net">
-                        {netRefund >= 0
-                            ? t("confirmRefund", { amount: fmtAmount(netRefund) })
-                            : t("confirmBalanceDue", { amount: fmtAmount(-netRefund) })}
+                        {statement.netRefund >= 0
+                            ? t("confirmRefund", { amount: fmtAmount(statement.netRefund) })
+                            : t("confirmBalanceDue", { amount: fmtAmount(-statement.netRefund) })}
                     </p>
                 )}
             </ConfirmDialog>

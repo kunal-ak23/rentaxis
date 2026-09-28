@@ -10,6 +10,7 @@ import { ApiError } from "@/lib/api/facilities";
 import { ledgerApi, type FiscalSettings } from "@/lib/api/ledger";
 import { formatDate } from "@/lib/format";
 import { businessTodayIso, isAfterBusinessToday } from "@/lib/businessDate";
+import { serverText } from "@/components/finance/bankrec/serverText";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { BankLocksCard } from "@/components/finance/bankrec/BankLocksCard";
 import FiscalYearsCard from "@/components/finance/FiscalYearsCard";
@@ -100,6 +101,12 @@ export default function FiscalSettingsPage() {
     const lockBase = settings?.booksLockedThrough ?? null;
     const bigJumpMonths = lockThrough && lockBase ? monthsBetween(lockBase, lockThrough) : 0;
     const bigJump = bigJumpMonths > 12;
+    // Review M9: a first lock closes everything up to its date too — asked the same way.
+    const firstLock = !!lockThrough && !lockBase;
+    const needsTick = bigJump || firstLock;
+    // Review M5: an organisation whose lock is already after today (a typo saved
+    // before the rule) is told, rather than meeting "cannot move backwards" blind.
+    const lockAheadOfToday = isAfterBusinessToday(lockBase);
 
     const lock = async () => {
         setLocking(true);
@@ -111,7 +118,7 @@ export default function FiscalSettingsPage() {
         } catch (err) {
             // The backend rejects a lock date earlier than the current one with a
             // 400; its message is the only thing that explains why.
-            setLockError(err instanceof ApiError ? err.message : tCommon("loadFailed"));
+            setLockError(err instanceof ApiError ? serverText(tCommon, err) || err.message : tCommon("loadFailed"));
         } finally {
             setLocking(false);
         }
@@ -244,6 +251,11 @@ export default function FiscalSettingsPage() {
                         <p className="mt-2 text-[11px] text-muted" data-testid="fiscal-lock-rule">
                             {t("lockRule", { today: formatDate(businessTodayIso()) })}
                         </p>
+                        {lockAheadOfToday && lockBase && (
+                            <p role="alert" className="mt-1 text-xs font-semibold text-warning" data-testid="fiscal-lock-ahead">
+                                {t("lockAheadOfToday", { date: formatDate(lockBase) })}
+                            </p>
+                        )}
                         {lockAfterToday && (
                             <p role="alert" className="mt-1 text-xs font-semibold text-error" data-testid="fiscal-lock-after-today">
                                 {t("lockAfterToday")}
@@ -278,19 +290,23 @@ export default function FiscalSettingsPage() {
                 description={t("lockWarning")}
                 confirmText={t("lockThrough")}
                 cancelText={t("cancel")}
-                confirmDisabled={lockAfterToday || (bigJump && !bigJumpChecked)}
+                confirmDisabled={lockAfterToday || (needsTick && !bigJumpChecked)}
                 confirmTestId="fiscal-lock-confirm"
             >
                 <div>
                     <div className={label}>{t("lockThrough")}</div>
                     <div className="text-sm font-semibold text-foreground tabular-nums">{lockThrough ? formatDate(lockThrough) : "—"}</div>
                 </div>
-                {bigJump && lockBase && (
+                {needsTick && (
                     <label className="flex items-start gap-2 text-xs text-warning" data-testid="fiscal-lock-big-jump">
                         <input type="checkbox" className="mt-0.5" checked={bigJumpChecked}
                             data-testid="fiscal-lock-big-jump-ack"
                             onChange={e => setBigJumpChecked(e.target.checked)} />
-                        <span>{t("lockBigJump", { months: bigJumpMonths, from: formatDate(lockBase), to: formatDate(lockThrough) })}</span>
+                        <span>
+                            {lockBase
+                                ? t("lockBigJump", { months: bigJumpMonths, from: formatDate(lockBase), to: formatDate(lockThrough) })
+                                : t("lockFirst", { to: formatDate(lockThrough) })}
+                        </span>
                     </label>
                 )}
                 {lockError && <p role="alert" className="text-xs font-semibold text-error">{lockError}</p>}

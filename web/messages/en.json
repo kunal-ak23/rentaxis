@@ -1852,6 +1852,8 @@
     "TENANT_USER": "Company User"
   },
   "Ledger": {
+    "lockFirst": "This is the first period lock: nothing dated up to {to} can be posted afterwards. Tick to confirm the date is right.",
+    "lockAheadOfToday": "The books are locked through {date}, which is after today, so nothing can be posted. Re-open the latest closed fiscal year or ask support to correct the lock.",
     "lockRule": "Only a period that has already ended can be locked: the latest date is today ({today}).",
     "lockAfterToday": "This date is after today. Check the year.",
     "lockBigJump": "This moves the lock {months} months forward, from {from} to {to}. Nothing dated up to {to} can be posted afterwards. Tick to confirm the date is right.",
@@ -2553,11 +2555,22 @@
     "notOnStatement": "This entry is not on the imported statement",
     "postAnyway": "Post anyway",
     "errors": {
+      "date": {
+        "inFuture": "The date {date} is after today ({today}): this has not happened yet, so nothing was saved."
+      },
+      "posting": {
+        "dateOutOfRange": "The date {date} is not between {earliest} and {latest}. Check the year.",
+        "numberTaken": "The journal number for this date is already taken, so nothing was posted. Check the date — a mistyped year shares this year's numbers.",
+        "dateTooFarAhead": "The date {date} is more than a year ahead (the latest is {latest}). Check the year."
+      },
+      "settlement": {
+        "changed": "This settlement changed since you opened it. Review it again; nothing was posted."
+      },
       "listing": {
         "interestWithdrawn": "This enquiry was withdrawn.","interestConverted": "This enquiry already has a draft lease."},
       "booking": {
         "feeWrittenOff": "This booking's fee was written off as a bad debt; it can no longer be cancelled.","feeType": "Unknown fee type {type}.", "feeAmount": "A fee needs an amount greater than zero.", "noLease": "The renter has no live lease on this unit to charge the booking fee to.", "slotStarted": "The booking's slot has started; it can no longer be cancelled."},
-      "ticket": {"billNotLinkable": "Only a posted purchase invoice not linked to another ticket can be linked.", "noLease": "This ticket's unit has no live lease to recharge.", "rechargeAmount": "Enter the amount to recharge."},
+      "ticket": {"rechargeExceedsBill": "Only {remaining} of this ticket's bills ({bills}) is left to recharge. Nothing was recharged.", "billNotLinkable": "Only a posted purchase invoice not linked to another ticket can be linked.", "noLease": "This ticket's unit has no live lease to recharge.", "rechargeAmount": "Enter the amount to recharge."},
       "badDebt": {"itemNotOpen": "Instalment {row} is {status}; only an unpaid or bounced item can be written off.", "vatNotDeclared": "Instalment {row} carries VAT not declared yet; post the VAT tax points through its date first.", "itemsChanged": "The items have changed since the write-off was proposed; reject it and propose again.", "nothingOpen": "This lease has nothing open to write off.", "recoveredCannotReverse": "Money was recovered on this write-off; it cannot be reversed.", "reverseBeforeWriteOff": "A reversal cannot be dated before the write-off ({date}).", "recoveryTooMuch": "Only {left} of this write-off is left to recover.", "recoveryAccount": "Choose the bank or cash account the money went into.", "wrongStatus": "This write-off is {status}.", "reasonRequired": "Give a reason.", "itemSettled": "Instalment {row} has been settled in the books (the lease's receivable no longer carries it); it cannot be written off.", "recoveryAccountProperty": "Account {account} cannot take money for this lease's property; choose one of its bank or cash accounts."},
       "vat": {"outputCheckFailed": "Output VAT per the tax invoices and credit notes does not match the Output VAT account (difference {difference}). Give a reason to file anyway.", "outputCheckChanged": "The output difference is now {difference}; review the return again before filing it.", "overrideReasonShort": "Explain the difference in at least {min} characters.", "overrideReason": "Keep the reason under 500 characters.", "periodFiled": "The VAT return for {from} – {to} is filed, so VAT dated {date} cannot change. Date the correction on or after {next}.", "periodStart": "A VAT period starts on the first day of a month.", "periodNotEnded": "A VAT period can be filed once it has ended.", "alreadyFiled": "This VAT period is already filed.", "periodOverlaps": "This VAT period overlaps one already filed.", "reopenReason": "Give a reason for re-opening the VAT return.", "notFiled": "This VAT return is not filed."},
       "ledger": {"propertyUnbalanced": "This journal does not balance per property (out by {amount}); a journal spanning properties needs an inter-property clearing leg in each."},
@@ -2581,6 +2594,7 @@
         "receiveBeforeBooked": "{row} was put on the books on {booked}; it cannot be received or cleared on {date}, before that date. Receive it on or after {booked}."
       },
       "penalty": {
+        "changed": "This charge changed since you opened it. Review it again; nothing was charged.",
         "collectionClosed": "This charge's collection row is closed; it cannot be reversed.",
         "collected": "This charge was already collected; issue a refund or credit instead.",
         "writtenOff": "This charge was written off as a bad debt; reverse the write-off first.",
