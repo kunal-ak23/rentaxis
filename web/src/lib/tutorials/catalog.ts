@@ -3,7 +3,9 @@ import type { UserRole } from "../rbac";
 
 /**
  * The Help center's video tutorial catalogue. One entry per web tutorial
- * (tutorials/tutorial-storyboards.md 01–28 and 34–37; 29–33 are mobile-only).
+ * (tutorials/tutorial-storyboards.md 01–28 and 34–37; 29–33 are mobile-only; 38–46 are the accounting
+ * track, .superpowers/accounting-tutorials.md). The Help center lists a topic's entries in array order,
+ * so the accounting entries sit in track order (38, the overview, first) rather than id order.
  * An entry with `youtubeId: null` is not published yet and is never shown.
  */
 export const TUTORIAL_TOPICS = [
@@ -146,10 +148,10 @@ export const TUTORIALS: Tutorial[] = [
     },
     {
         id: "14", slug: "penalties-and-cheque-failure-fines", topic: "collections", roles: [...PORTFOLIO, "ACCOUNTANT", "RENTER"], durationSec: 150, youtubeId: null,
-        title: { en: "Penalties and cheque-failure fines", ar: "الغرامات وغرامات الشيكات المرتجعة" },
+        title: { en: "Penalties, fines and recharges", ar: "الغرامات وإعادة تحميل تكاليف الصيانة" },
         description: {
-            en: "Configure fines, review the penalties raised on a contract and see how a Tenant pays or has one waived.",
-            ar: "اضبط إعدادات الغرامات، وراجع الغرامات المفروضة على العقد، وتعرّف على كيفية سدادها أو إعفاء المستأجر منها.",
+            en: "Configure fines, approve or waive proposed penalties and maintenance recharges, and see the journal each decision writes.",
+            ar: "اضبط إعدادات الغرامات، واعتمد الغرامات المقترحة وتكاليف الصيانة المعاد تحميلها أو أعفِ منها، وتعرّف على القيد الذي يُنشئه كل قرار.",
         },
     },
     {
@@ -171,20 +173,92 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["admin--tenant-settings"],
     },
     {
-        id: "17", slug: "chart-of-accounts-template-and-charge-types", topic: "accounting", roles: FINANCE, durationSec: 150, youtubeId: null,
-        title: { en: "Chart of accounts, account template and charge types", ar: "دليل الحسابات وقالب الحسابات وأنواع الرسوم" },
+        id: "38", slug: "how-accounting-works-in-miftah", topic: "accounting", roles: FINANCE, durationSec: 150, youtubeId: null,
+        title: { en: "How accounting works in Miftah", ar: "كيف تعمل المحاسبة في مفتاح" },
         description: {
-            en: "Build the account hierarchy, set each property's account template and see which account every charge type posts to.",
-            ar: "أنشئ هيكل الحسابات، واضبط قالب الحسابات لكل عقار، وتعرّف على الحساب الذي يُرحَّل إليه كل نوع من الرسوم.",
+            en: "Follow one tenancy contract's money from posting to the reports, and see where each step shows in the tenant ledger, general ledger, trial balance and profit and loss.",
+            ar: "تتبّع أموال عقد إيجار واحد من الترحيل إلى التقارير، وتعرّف على موضع كل خطوة في دفتر أستاذ المستأجر ودفتر الأستاذ العام وميزان المراجعة وقائمة الأرباح والخسائر.",
+        },
+    },
+    {
+        id: "39", slug: "start-your-books-opening-balances-and-cut-over", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 140, youtubeId: null,
+        title: { en: "Start your books: opening balances and cut-over", ar: "بدء الدفاتر: الأرصدة الافتتاحية والانتقال إلى النظام" },
+        description: {
+            en: "Set the date Miftah takes over your books, enter opening balances, bring running contracts across and reconcile against your old system.",
+            ar: "حدّد تاريخ بدء الدفاتر في مفتاح، وأدخل الأرصدة الافتتاحية، وانقل العقود السارية، وطابق النتائج مع نظامك السابق.",
+        },
+    },
+    {
+        id: "17", slug: "chart-of-accounts-template-and-charge-types", topic: "accounting", roles: FINANCE, durationSec: 150, youtubeId: null,
+        title: { en: "Chart of accounts, property account sets and charge types", ar: "دليل الحسابات ومجموعات حسابات العقارات وأنواع الرسوم" },
+        description: {
+            en: "See how the chart of accounts is organised, how every property gets its own set of accounts, and which account each charge on a contract posts to.",
+            ar: "تعرّف على تنظيم دليل الحسابات، وكيف يحصل كل عقار على مجموعة حساباته الخاصة، وإلى أي حساب يُرحَّل كل بند من بنود العقد.",
         },
         relatedArticles: ["finance--chart-of-accounts"],
     },
     {
-        id: "18", slug: "journal-vouchers-create-read-and-reverse", topic: "accounting", roles: FINANCE, durationSec: 150, youtubeId: null,
-        title: { en: "Journal vouchers: create, read and reverse", ar: "سندات القيد: الإنشاء والقراءة والعكس" },
+        id: "34", slug: "post-a-tenancy-contract", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 129, youtubeId: null,
+        title: { en: "Post a tenancy contract", ar: "ترحيل عقد الإيجار" },
         description: {
-            en: "Post a balanced journal voucher, read its lines and correct a mistake by reversing it.",
-            ar: "رحّل سند قيد متوازنًا، واقرأ بنوده، وصحّح الخطأ بعكس القيد.",
+            en: "Post a draft contract with its lines and cheque grid, and see the contract become active with its recognition schedule planned.",
+            ar: "رحّل مسودة العقد مع بنودها وجدول شيكاتها، وشاهد العقد يصبح نشطًا مع جدولة الاعتراف بالإيراد.",
+        },
+    },
+    {
+        id: "35", slug: "register-and-clear-cheques", topic: "collections", roles: ["TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT"], durationSec: 136, youtubeId: null,
+        title: { en: "Register, bank and clear cheques", ar: "تسجيل الشيكات وإيداعها وتحصيلها" },
+        description: {
+            en: "Bank a batch of cheques, clear them when the bank confirms, and see the journal each step writes.",
+            ar: "أودع مجموعة من الشيكات في البنك، وسجّل تحصيلها عند تأكيد البنك، وتعرّف على القيد الذي تُنشئه كل خطوة.",
+        },
+    },
+    {
+        id: "40", slug: "returned-cheques-replace-settle-write-off-and-recover", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 150, youtubeId: null,
+        title: { en: "Returned cheques: replace, settle in cash, write off and recover", ar: "الشيكات المرتجعة: الاستبدال والتسوية النقدية والشطب والتحصيل" },
+        description: {
+            en: "Handle a cheque the bank returns: replace it, take cash instead, or write the debt off and record what you later recover.",
+            ar: "تعامل مع الشيك الذي يرتجعه البنك: استبدله، أو اقبل مبلغه نقدًا، أو اشطب الدين كدين معدوم وسجّل ما تحصّله لاحقًا.",
+        },
+    },
+    {
+        id: "36", slug: "month-end-recognition", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 128, youtubeId: null,
+        title: { en: "Month-end recognition", ar: "الاعتراف بالإيراد في نهاية الشهر" },
+        description: {
+            en: "Run recognition to a cut-off date and watch advance rent move into rental income, period by period.",
+            ar: "شغّل الاعتراف بالإيراد حتى تاريخ الإقفال، وشاهد انتقال الإيجار المقدم إلى إيراد الإيجار فترة بعد فترة.",
+        },
+    },
+    {
+        id: "41", slug: "vat-per-instalment-and-the-vat-return", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 150, youtubeId: null,
+        title: { en: "VAT per instalment and the VAT return", ar: "ضريبة القيمة المضافة لكل دفعة والإقرار الضريبي" },
+        description: {
+            en: "See how 5% VAT on a commercial contract waits as not yet due until each instalment's date, then file the quarter's VAT return.",
+            ar: "تعرّف على كيفية بقاء ضريبة القيمة المضافة بنسبة 5% على العقد التجاري غير مستحقة حتى تاريخ كل دفعة، ثم قدّم الإقرار الضريبي للربع.",
+        },
+    },
+    {
+        id: "42", slug: "termination-settlement-and-deposit-refunds-in-the-books", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 150, youtubeId: null,
+        title: { en: "Termination, settlement and deposit refunds in the books", ar: "إنهاء العقد والتسوية واسترداد التأمين في الدفاتر" },
+        description: {
+            en: "Terminate a contract early, read the unearned-rent reversal, finalise the settlement and pay the deposit refund.",
+            ar: "أنهِ العقد مبكرًا، واقرأ قيد عكس الإيجار غير المكتسب، واعتمد التسوية النهائية، وادفع مبلغ التأمين المسترد.",
+        },
+    },
+    {
+        id: "43", slug: "renewals-rent-free-periods-and-unit-transfers-in-the-books", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 150, youtubeId: null,
+        title: { en: "Renewals, rent-free periods and unit transfers in the books", ar: "التجديد وفترات الإعفاء من الإيجار ونقل الوحدات في الدفاتر" },
+        description: {
+            en: "Renew a contract with an increase and a renewal fee, give a rent-free fit-out month, and move a Tenant to another unit without losing a dirham.",
+            ar: "جدّد العقد بزيادة في الإيجار ورسوم تجديد، وامنح شهرًا معفى من الإيجار لفترة التجهيز، وانقل المستأجر إلى وحدة أخرى دون أن يضيع درهم واحد.",
+        },
+    },
+    {
+        id: "44", slug: "supplier-bills-payment-runs-and-issued-cheques", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 150, youtubeId: null,
+        title: { en: "Supplier bills, payment runs and issued cheques", ar: "فواتير الموردين ودفعات السداد والشيكات الصادرة" },
+        description: {
+            en: "Post supplier bills with input VAT, pay what is due in a payment run, and follow a post-dated supplier cheque until the bank pays it.",
+            ar: "رحّل فواتير الموردين مع ضريبة المدخلات، وسدّد المستحق من خلال دفعة سداد، وتابع الشيك المؤجل الصادر للمورد حتى يصرفه البنك.",
         },
     },
     {
@@ -196,11 +270,43 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "20", slug: "dashboards-and-financial-reports", topic: "accounting", roles: FINANCE, durationSec: 150, youtubeId: null,
-        title: { en: "Dashboards and financial reports", ar: "لوحات المعلومات والتقارير المالية" },
+        id: "45", slug: "bank-reconciliation", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 150, youtubeId: null,
+        title: { en: "Bank reconciliation", ar: "التسوية البنكية" },
         description: {
-            en: "Read collection and occupancy figures, then run the profit and loss, balance sheet, trial balance and ageing reports.",
-            ar: "اقرأ مؤشرات التحصيل والإشغال، ثم استخرج تقارير الأرباح والخسائر والميزانية العمومية وميزان المراجعة وأعمار الذمم.",
+            en: "Import a bank statement, match it to the books, book the bank-only lines and finalise the month.",
+            ar: "استورد كشف الحساب البنكي، وطابقه مع الدفاتر، وسجّل البنود الواردة في كشف البنك فقط، واعتمد تسوية الشهر.",
+        },
+    },
+    {
+        id: "18", slug: "journal-vouchers-create-read-and-reverse", topic: "accounting", roles: FINANCE, durationSec: 150, youtubeId: null,
+        title: { en: "Journal vouchers: create, read and reverse", ar: "سندات القيد: الإنشاء والقراءة والعكس" },
+        description: {
+            en: "Post a balanced journal voucher, read its lines and correct a mistake by reversing it.",
+            ar: "رحّل سند قيد متوازنًا، واقرأ بنوده، وصحّح الخطأ بعكس القيد.",
+        },
+    },
+    {
+        id: "37", slug: "tenant-ledger", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 118, youtubeId: null,
+        title: { en: "Tenant ledger, control account and trial balance", ar: "دفتر أستاذ المستأجر والحساب الرقابي وميزان المراجعة" },
+        description: {
+            en: "Read a Tenant's ledger, tie it to the Rent Receivable control account in the general ledger, and check the trial balance.",
+            ar: "اقرأ دفتر أستاذ المستأجر، وطابقه مع حساب الإيجار المستحق الرقابي في دفتر الأستاذ العام، وتحقّق من ميزان المراجعة.",
+        },
+    },
+    {
+        id: "20", slug: "dashboards-and-financial-reports", topic: "accounting", roles: FINANCE, durationSec: 150, youtubeId: null,
+        title: { en: "Financial reports: profit and loss, balance sheet, owner statement and aging", ar: "التقارير المالية: الأرباح والخسائر والميزانية العمومية وكشف حساب المالك وأعمار الذمم" },
+        description: {
+            en: "Read the Profit & Loss, the Property Profit Report by building, the Balance Sheet, the Owner Statement and receivable and payable aging.",
+            ar: "اقرأ قائمة الأرباح والخسائر وتقرير أرباح العقار لكل مبنى والميزانية العمومية وكشف حساب المالك وأعمار الذمم المدينة والدائنة.",
+        },
+    },
+    {
+        id: "46", slug: "period-lock-and-year-end-close", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 150, youtubeId: null,
+        title: { en: "Period lock and year-end close", ar: "إقفال الفترات وإقفال نهاية السنة" },
+        description: {
+            en: "Lock closed months, close the fiscal year into retained earnings, and re-open it if you must.",
+            ar: "أقفل الأشهر المنتهية، وأقفل السنة المالية بترحيل نتيجتها إلى الأرباح المحتجزة، وأعد فتحها عند الحاجة.",
         },
     },
     {
@@ -267,38 +373,6 @@ export const TUTORIALS: Tutorial[] = [
         description: {
             en: "Create a promotion, target it, add images and copy, and see how Tenants find offers and use coupons.",
             ar: "أنشئ عرضًا ترويجيًا، وحدّد جمهوره، وأضف الصور والنصوص، وتعرّف على كيفية وصول المستأجرين إلى العروض واستخدام القسائم.",
-        },
-    },
-    {
-        id: "34", slug: "post-a-tenancy-contract", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 129, youtubeId: null,
-        title: { en: "Post a tenancy contract", ar: "ترحيل عقد الإيجار" },
-        description: {
-            en: "Post a draft contract with its lines and cheque grid, and see the contract become active with its recognition schedule planned.",
-            ar: "رحّل مسودة العقد مع بنودها وجدول شيكاتها، وشاهد العقد يصبح نشطًا مع جدولة الاعتراف بالإيراد.",
-        },
-    },
-    {
-        id: "35", slug: "register-and-clear-cheques", topic: "collections", roles: ["TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT"], durationSec: 136, youtubeId: null,
-        title: { en: "Register and clear cheques", ar: "تسجيل الشيكات وتحصيلها" },
-        description: {
-            en: "Bank a cheque, clear it, record a returned cheque and replace it with new cheques.",
-            ar: "أودع الشيك في البنك، وسجّل تحصيله، وسجّل الشيك المرتجع واستبدله بشيكات جديدة.",
-        },
-    },
-    {
-        id: "36", slug: "month-end-recognition", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 128, youtubeId: null,
-        title: { en: "Month-end recognition", ar: "الاعتراف بالإيراد في نهاية الشهر" },
-        description: {
-            en: "Run recognition to a cut-off date and watch advance rent move into rental income, period by period.",
-            ar: "شغّل الاعتراف بالإيراد حتى تاريخ الإقفال، وشاهد انتقال الإيجار المقدم إلى إيراد الإيجار فترة بعد فترة.",
-        },
-    },
-    {
-        id: "37", slug: "tenant-ledger", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 118, youtubeId: null,
-        title: { en: "Tenant ledger", ar: "دفتر أستاذ المستأجر" },
-        description: {
-            en: "Read a Tenant's ledger for a posted contract, see how a returned cheque reopens it and check the trial balance.",
-            ar: "اقرأ دفتر أستاذ المستأجر لعقد مرحَّل، وتعرّف على أثر الشيك المرتجع، وتحقّق من ميزان المراجعة.",
         },
     },
 ];

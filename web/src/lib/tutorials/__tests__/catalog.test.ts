@@ -27,9 +27,18 @@ const tut = (over: Partial<Tutorial>): Tutorial => ({
 });
 
 describe("tutorial catalogue shape", () => {
-    it("seeds exactly the web tutorials 01–28 and 34–37, in order", () => {
-        const want = [...Array.from({ length: 28 }, (_, i) => String(i + 1).padStart(2, "0")), "34", "35", "36", "37"];
-        expect(TUTORIALS.map((t) => t.id)).toEqual(want);
+    it("seeds exactly the web tutorials 01–28 and 34–46, the accounting track in track order", () => {
+        const ids = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => String(from + i).padStart(2, "0"));
+        const track = ["38", "39", "17", "34", "35", "40", "36", "41", "42", "43", "44", "19", "45", "18", "37", "20", "46"];
+        expect(TUTORIALS.map((t) => t.id)).toEqual([...ids(1, 16), ...track, ...ids(21, 28)]);
+    });
+
+    it("opens the accounting topic with the overview and follows an accountant's year", () => {
+        // .superpowers/accounting-tutorials.md: overview, books start, chart, posting, … year-end close.
+        const accounting = TUTORIALS.filter((t) => t.topic === "accounting").map((t) => t.id);
+        expect(accounting[0]).toBe("38");
+        expect(accounting.at(-1)).toBe("46");
+        expect(accounting).toEqual(["38", "39", "17", "34", "40", "36", "41", "42", "43", "44", "19", "45", "18", "37", "20", "46"]);
     });
 
     it.each(TUTORIALS.map((t) => [t.id, t] as const))("%s is complete and well-formed", (_id, t) => {
