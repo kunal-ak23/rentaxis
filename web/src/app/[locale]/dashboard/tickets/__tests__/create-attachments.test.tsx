@@ -72,6 +72,7 @@ function installFetch() {
         const method = init?.method ?? "GET";
         calls.push({ url: u, method, body: init?.body });
         if (u.includes("/v1/leases/my-leases")) {
+            if (leasesGate) await leasesGate;
             return { ok: true, status: 200, json: async () => [{ id: "l1", status: "ACTIVE", propertyId: "p1", propertyName: "Tower", unitId: "u1", unitIdentifier: "101" }] } as unknown as Response;
         }
         if (u.startsWith("/api/upload")) {
@@ -87,26 +88,21 @@ function installFetch() {
 
 const jpg = (name: string, size = 16) => new File([new Uint8Array(size)], name, { type: "image/jpeg" });
 
+const submitButton = () => {
+    const buttons = screen.getAllByRole("button", { name: /create ticket/i }) as HTMLButtonElement[];
+    return buttons[buttons.length - 1];
+};
+
+let leasesGate: Promise<void> | null = null;
+
 async function openFormAndTitle() {
     render(<TicketsPage />);
-    // The single-lease renter's property is auto-filled from their leases at
-    // the moment the form opens, and the submit button stays disabled until
-    // there is a title and a property. Gate on that observable state: open the
-    // form, give it a title, and if the button is still disabled (leases not
-    // loaded yet when it opened) cancel, let the page settle, and reopen.
-    // (Not inside waitFor: its DOM-mutation re-runs would starve the timers.)
-    const submitButton = () => {
-        const buttons = screen.getAllByRole("button", { name: /create ticket/i }) as HTMLButtonElement[];
-        return buttons[buttons.length - 1];
-    };
-    for (let attempt = 0; ; attempt++) {
-        fireEvent.click(await screen.findByRole("button", { name: /create ticket/i }));
-        fireEvent.change(screen.getByPlaceholderText(/brief summary/i), { target: { value: "Leak" } });
-        if (!submitButton().disabled) break;
-        if (attempt >= 100) throw new Error("the renter's lease never filled in the ticket's property");
-        fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
-        await act(async () => { await new Promise(r => setTimeout(r, 20)); });
-    }
+    // The single-lease renter's property fills in as soon as their leases
+    // load — even when the form was opened first (round 2) — and Submit is
+    // enabled once there is a title and a property.
+    fireEvent.click(await screen.findByRole("button", { name: /create ticket/i }));
+    fireEvent.change(screen.getByPlaceholderText(/brief summary/i), { target: { value: "Leak" } });
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
     return document.querySelector('input[type="file"]') as HTMLInputElement;
 }
 
@@ -125,6 +121,7 @@ describe("Create Ticket — attachments (break R2 portal2 F1)", () => {
     beforeEach(() => {
         sessionState = { role: "RENTER" };
         uploadReplies = [];
+        leasesGate = null;
         installFetch();
     });
 
@@ -201,6 +198,33 @@ describe("Create Ticket — attachments (break R2 portal2 F1)", () => {
         submit();
         await waitFor(() => expect(calls.filter(c => c.url.startsWith("/api/upload"))).toHaveLength(1));
         expect(((calls.find(c => c.url.startsWith("/api/upload"))!.body as FormData).get("file") as File).name).toBe("fine.jpg");
+    });
+
+    it("fills the property when the renter opened the form before their leases loaded (round 2)", async () => {
+        let releaseLeases: () => void = () => {};
+        leasesGate = new Promise<void>(r => { releaseLeases = r; });
+        render(<TicketsPage />);
+        await waitFor(() => expect(calls.some(c => c.url.includes("my-leases"))).toBe(true));
+
+        // Open before the leases arrive: the property field says it is loading
+        // and Submit is disabled.
+        fireEvent.click(await screen.findByRole("button", { name: /create ticket/i }));
+        fireEvent.change(screen.getByPlaceholderText(/brief summary/i), { target: { value: "Leak" } });
+        expect(screen.getByTestId("ticket-renter-leases-loading")).toBeTruthy();
+        expect(submitButton().disabled).toBe(true);
+
+        // The leases arrive while the form is open: property filled, Submit enabled,
+        // no need to close and reopen.
+        await act(async () => { releaseLeases(); });
+        await waitFor(() => expect(submitButton().disabled).toBe(false));
+        expect(screen.queryByTestId("ticket-renter-leases-loading")).toBeNull();
+        expect(screen.getByText(/Tower/)).toBeTruthy();
+
+        selectFiles(document.querySelector('input[type="file"]') as HTMLInputElement, [jpg("late.jpg")]);
+        fireEvent.click(submitButton());
+        await waitFor(() => expect(calls.some(c => c.url === "/api/upload?path=/api/v1/tickets/t-1/attachments")).toBe(true));
+        const post = calls.find(c => c.url.endsWith("/v1/tickets") && c.method === "POST")!;
+        expect(JSON.parse(String(post.body))).toMatchObject({ propertyId: "p1", unitId: "u1" });
     });
 
     it("accepts a phone photo or video the browser gave no MIME type, by extension", async () => {

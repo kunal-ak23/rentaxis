@@ -222,6 +222,9 @@ function TicketsPageInner() {
     // the ticket stands, the user is told which files to add again.
     const [uploadFailure, setUploadFailure] = useState<{ ticketId: string; files: string[] } | null>(null);
     const [renterLeases, setRenterLeases] = useState<{ id: string; propertyId: string; propertyName: string; unitId: string; unitIdentifier: string }[]>([]);
+    // Whether the renter's my-leases read has finished (either way), so the
+    // form can tell "still loading" from "no active lease".
+    const [renterLeasesLoaded, setRenterLeasesLoaded] = useState(false);
     const isRenter = userRole === "RENTER";
     const isStaffUser = userRole === "TENANT_USER";
     const canPage = canUsePagedTickets(userRole);
@@ -331,8 +334,22 @@ function TicketsPageInner() {
                     unitIdentifier: l.unitIdentifier,
                 })));
             }
-        } catch {}
+        } catch {
+        } finally {
+            setRenterLeasesLoaded(true);
+        }
     }, [isRenter]);
+
+    // A single-lease renter's property and unit are filled in for them. Done
+    // here rather than when the Create button is clicked (break R2 round 2):
+    // a renter who opened the form before my-leases answered never got a
+    // property, so Submit stayed disabled until they closed and reopened it.
+    // Only an empty property is filled; a choice already made is kept.
+    useEffect(() => {
+        if (!showForm || !isRenter || renterLeases.length !== 1) return;
+        const lease = renterLeases[0];
+        setForm(f => (f.propertyId ? f : { ...f, propertyId: lease.propertyId, unitId: lease.unitId }));
+    }, [showForm, isRenter, renterLeases]);
 
     useEffect(() => {
         Promise.all([fetchProperties(), fetchRenterLeases()]).finally(() => {});
@@ -492,10 +509,7 @@ function TicketsPageInner() {
                     )}
                     <button
                         onClick={() => {
-                            // Auto-fill for renter with single lease
-                            if (isRenter && renterLeases.length === 1) {
-                                setForm(f => ({ ...f, propertyId: renterLeases[0].propertyId, unitId: renterLeases[0].unitId }));
-                            }
+                            // A single-lease renter's property is filled by the effect above.
                             setCreateError(null);
                             setAttachmentErrors([]);
                             setUploadFailure(null);
@@ -740,7 +754,16 @@ function TicketsPageInner() {
                             </div>
 
                             {/* Property & Unit row */}
-                            {isRenter && renterLeases.length === 1 ? (
+                            {isRenter && !renterLeasesLoaded ? (
+                                <div data-testid="ticket-renter-leases-loading" className="flex items-center gap-2 bg-input/50 rounded-lg px-4 py-3 border border-border">
+                                    <Loader2 size={12} className="animate-spin text-muted" />
+                                    <p className="text-xs text-muted">{t("renterLeasesLoading")}</p>
+                                </div>
+                            ) : isRenter && renterLeases.length === 0 ? (
+                                <div className="bg-input/50 rounded-lg px-4 py-3 border border-border">
+                                    <p className="text-xs text-muted">{t("noActiveLease")}</p>
+                                </div>
+                            ) : isRenter && renterLeases.length === 1 ? (
                                 /* Single lease renter — auto-filled, read-only */
                                 <div className="bg-input/50 rounded-lg px-4 py-3 border border-border">
                                     <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">{t("propertyAndUnit")}</p>

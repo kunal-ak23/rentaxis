@@ -3203,6 +3203,8 @@
     "priorityLabel": "الأولوية",
     "attachmentsLabel": "الصور / المرفقات",
     "clickToAttach": "انقر لإرفاق ملفات",
+    "renterLeasesLoading": "جارٍ تحميل وحدتك…",
+    "noActiveLease": "ليس لديك عقد إيجار نشط، لذا لا يمكن إنشاء تذكرة هنا بعد.",
     "attachmentEmpty": "الملف «{name}» فارغ (0 بايت) ولم تتم إضافته.",
     "attachmentTooLarge": "حجم الملف «{name}» أكبر من {max} ميغابايت ولم تتم إضافته.",
     "attachmentWrongType": "الملف «{name}» ليس صورة أو فيديو أو ملف PDF ولم تتم إضافته.",
