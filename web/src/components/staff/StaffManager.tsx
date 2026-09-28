@@ -70,6 +70,7 @@ export default function StaffManager({ embedded = false }: { embedded?: boolean 
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
+    const [deleteError, setDeleteError] = useState(false);
     // Break round 1, F8: a 403 is "you may not see staff", not a load failure or "no staff".
     const [forbidden, setForbidden] = useState(false);
     const [showModal, setShowModal] = useState(false);
@@ -219,13 +220,17 @@ export default function StaffManager({ embedded = false }: { embedded?: boolean 
             isDestructive: true,
             onConfirm: async () => {
                 setConfirmDialog(null);
+                setDeleteError(false);
                 try {
                     const res = await fetch(`/api/proxy/v1/staff/${member.id}`, {
                         method: "DELETE",
                     });
+                    // Break-it R2 sweep: a refused delete used to say nothing.
                     if (res.ok) fetchStaff();
+                    else setDeleteError(true);
                 } catch (err) {
                     console.error(err);
+                    setDeleteError(true);
                 }
             },
         });
@@ -273,6 +278,11 @@ export default function StaffManager({ embedded = false }: { embedded?: boolean 
     return (
         <div>
             {loadError && <LoadErrorBanner message={loadError} onRetry={reload} />}
+            {deleteError && (
+                <div role="alert" className="mb-4 bg-error/10 border border-error/20 text-error text-xs font-medium rounded-lg px-4 py-3">
+                    {t("deleteFailed")}
+                </div>
+            )}
             {/* Header */}
             <div className="flex items-center justify-between mb-8">
                 <div>

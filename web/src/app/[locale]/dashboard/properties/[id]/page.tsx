@@ -96,6 +96,7 @@ export default function PropertyDetailPage() {
     const [units, setUnits] = useState<any[]>([]);
     const [managers, setManagers] = useState<any[]>([]);
     const [contacts, setContacts] = useState<PropertyContact[]>([]);
+    const [contactDeleteError, setContactDeleteError] = useState(false);
     const [showContactForm, setShowContactForm] = useState(false);
     const [editingContact, setEditingContact] = useState<PropertyContact | null>(null);
     const [contactFormData, setContactFormData] = useState(EMPTY_CONTACT_FORM);
@@ -212,8 +213,15 @@ export default function PropertyDetailPage() {
 
     const handleDeleteContact = async (contactId: string) => {
         if (!confirm('Delete this contact?')) return;
-        const res = await fetch(`/api/proxy/v1/properties/${propertyId}/contacts/${contactId}`, { method: 'DELETE' });
-        if (res.ok) fetchContacts();
+        // Break-it R2 sweep: a refused delete used to leave the card with no word.
+        setContactDeleteError(false);
+        try {
+            const res = await fetch(`/api/proxy/v1/properties/${propertyId}/contacts/${contactId}`, { method: 'DELETE' });
+            if (res.ok) fetchContacts();
+            else setContactDeleteError(true);
+        } catch {
+            setContactDeleteError(true);
+        }
     };
 
     if (propertyLoad === "notFound") {
@@ -366,6 +374,9 @@ export default function PropertyDetailPage() {
                             )}
                         </div>
 
+                        {contactDeleteError && (
+                            <p role="alert" className="mb-3 text-xs text-error">{t("contactDeleteFailed")}</p>
+                        )}
                         {contacts.length > 0 ? (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                 {contacts.map(contact => {

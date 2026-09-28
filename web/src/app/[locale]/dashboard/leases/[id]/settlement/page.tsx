@@ -245,6 +245,7 @@ export default function SettlementPage() {
     const [closure, setClosure] = useState<"CLOSED" | "OPEN" | null>(null);
     const [previewAttachment, setPreviewAttachment] = useState<DeductionAttachment | null>(null);
     const [uploadingId, setUploadingId] = useState<string | null>(null);
+    const [attachmentError, setAttachmentError] = useState<string | null>(null);
     const nextKey = useRef(1);
 
     /** The stored lines, as the editable grid. */
@@ -481,8 +482,10 @@ export default function SettlementPage() {
         setRows(prev => prev.map(r => (r.id === deductionId ? { ...r, attachments: next } : r)));
     };
 
+    // Break-it R2 sweep: a refused upload/delete used to vanish without a word.
     const uploadAttachment = async (deductionId: string, file: File) => {
         setUploadingId(deductionId);
+        setAttachmentError(null);
         try {
             const form = new FormData();
             form.append("file", file);
@@ -492,14 +495,23 @@ export default function SettlementPage() {
                 body: form,
             });
             if (res.ok) await reloadAttachments(deductionId);
+            else setAttachmentError(t("attachmentUploadFailed", { name: file.name }));
+        } catch {
+            setAttachmentError(t("attachmentUploadFailed", { name: file.name }));
         } finally {
             setUploadingId(null);
         }
     };
 
     const deleteAttachment = async (attachmentId: string, deductionId: string) => {
-        const res = await fetch(`/api/proxy/v1/settlements/attachments/${attachmentId}`, { method: "DELETE" });
-        if (res.ok) await reloadAttachments(deductionId);
+        setAttachmentError(null);
+        try {
+            const res = await fetch(`/api/proxy/v1/settlements/attachments/${attachmentId}`, { method: "DELETE" });
+            if (res.ok) await reloadAttachments(deductionId);
+            else setAttachmentError(t("attachmentDeleteFailed"));
+        } catch {
+            setAttachmentError(t("attachmentDeleteFailed"));
+        }
     };
 
     if (userRole && !canView) {
@@ -746,6 +758,11 @@ export default function SettlementPage() {
                         </button>
                     )}
                 </div>
+                {attachmentError && (
+                    <p role="alert" data-testid="settlement-attachment-error" className="px-4 py-2 text-xs text-error border-b border-border">
+                        {attachmentError}
+                    </p>
+                )}
                 <LineTable
                     rows={deductionRows}
                     allRows={rows}
