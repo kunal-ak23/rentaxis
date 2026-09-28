@@ -76,7 +76,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["admin--managing-staff"],
     },
     {
-        id: "06", slug: "create-a-project-and-property-portfolio", topic: "portfolio", roles: PORTFOLIO, durationSec: 150, youtubeId: null,
+        id: "06", slug: "create-a-project-and-property-portfolio", topic: "portfolio", roles: PORTFOLIO, durationSec: 117, youtubeId: null,
         title: { en: "Create a project and property portfolio", ar: "إنشاء مشروع ومحفظة عقارية" },
         description: {
             en: "Set up projects and properties with bilingual names, emirate, address and Makani number, and review them as cards or a table.",
@@ -85,7 +85,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["properties--managing-properties", "getting-started--first-property-setup"],
     },
     {
-        id: "07", slug: "buildings-units-contacts-amenities-and-parking", topic: "portfolio", roles: PORTFOLIO, durationSec: 150, youtubeId: null,
+        id: "07", slug: "buildings-units-contacts-amenities-and-parking", topic: "portfolio", roles: PORTFOLIO, durationSec: 127, youtubeId: null,
         title: { en: "Buildings, units, contacts, amenities and parking", ar: "المباني والوحدات وجهات الاتصال والمرافق والمواقف" },
         description: {
             en: "Add buildings and floors, define units and their rents, and record property contacts, amenities and parking spots.",
@@ -94,7 +94,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["properties--units-and-buildings"],
     },
     {
-        id: "08", slug: "import-a-property-portfolio-in-bulk", topic: "portfolio", roles: ["TENANT_ADMIN"], durationSec: 150, youtubeId: null,
+        id: "08", slug: "import-a-property-portfolio-in-bulk", topic: "portfolio", roles: ["TENANT_ADMIN"], durationSec: 100, youtubeId: null,
         title: { en: "Import a property portfolio in bulk", ar: "استيراد المحفظة العقارية دفعة واحدة" },
         description: {
             en: "Download the template, upload your portfolio, fix rows that fail validation and check what was created.",
@@ -102,7 +102,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "09", slug: "manage-tenants-and-portal-access", topic: "leasing", roles: PORTFOLIO, durationSec: 150, youtubeId: null,
+        id: "09", slug: "manage-tenants-and-portal-access", topic: "leasing", roles: PORTFOLIO, durationSec: 104, youtubeId: null,
         title: { en: "Manage Tenants and portal access", ar: "إدارة المستأجرين والوصول إلى البوابة" },
         description: {
             en: "Create Tenant profiles with bilingual names, contacts and preferred language, and give a Tenant a portal account.",
