@@ -217,12 +217,12 @@ class LeaseVersionGuardIT extends AbstractPostgresIT {
     }
 
     /**
-     * The wizard's path: the version on the draft it created, then the grid cut and
-     * numbered, then post. The DTO's version must be the row's, and cutting a grid
-     * must not move it — otherwise every wizard post would be refused.
+     * The wizard's path over HTTP: create, cut the grid (which moves the version —
+     * review A M3 — and says where to in X-Lease-Version), number it, post with the
+     * version the wizard adopted. The create's own version is stale by then.
      */
     @Test
-    void theVersionACreateReturnsSurvivesTheGridAndPosts() {
+    void theWizardAdoptsTheVersionEachGridWriteReturnsAndPosts() {
         var created = call(HttpMethod.POST, "/api/v1/leases",
                 form("60000", END, null), null);
         assertThat(created.getStatusCode().value()).isEqualTo(201);
@@ -230,10 +230,17 @@ class LeaseVersionGuardIT extends AbstractPostgresIT {
         long v = ((Number) created.getBody().get("version")).longValue();
         assertThat(v).isEqualTo(dbVersion(id));
 
-        fixtures.generateGrid(id, 4, START);
-        assertThat(dbVersion(id)).isEqualTo(v);
+        var gen = callList(HttpMethod.POST, "/api/v1/leases/" + id + "/cheques/generate",
+                Map.of("installments", 4), "\"" + v + "\"");
+        assertThat(gen.getStatusCode().value()).isEqualTo(200);
+        long afterGrid = headerVersion(gen);
+        assertThat(afterGrid).isGreaterThan(v).isEqualTo(dbVersion(id));
 
-        assertThat(call(HttpMethod.POST, "/api/v1/leases/" + id + "/post", Map.of("version", v), null)
+        assertThat(callList(HttpMethod.POST, "/api/v1/leases/" + id + "/cheques/numbers",
+                Map.of("startingNumber", "910001"), null).getStatusCode().value()).isEqualTo(200);
+
+        assertChanged(call(HttpMethod.POST, "/api/v1/leases/" + id + "/post", Map.of("version", v), null));
+        assertThat(call(HttpMethod.POST, "/api/v1/leases/" + id + "/post", Map.of("version", afterGrid), null)
                 .getStatusCode().value()).isEqualTo(200);
     }
 
@@ -292,12 +299,102 @@ class LeaseVersionGuardIT extends AbstractPostgresIT {
                 String.valueOf(stale)));
         assertThat(jdbc.queryForObject("select count(*) from cheques where lease_id = ?", Long.class, id)).isZero();
 
-        assertThat(callList(HttpMethod.POST, "/api/v1/leases/" + id + "/cheques/generate",
-                Map.of("installments", 4), "\"" + current + "\"").getStatusCode().value()).isEqualTo(200);
-        assertThat(callList(HttpMethod.PUT, "/api/v1/leases/" + id + "/cheques", rows, String.valueOf(current))
+        var gen = callList(HttpMethod.POST, "/api/v1/leases/" + id + "/cheques/generate",
+                Map.of("installments", 4), "\"" + current + "\"");
+        assertThat(gen.getStatusCode().value()).isEqualTo(200);
+        // The same tab carries on with the version the write answered with.
+        var save = callList(HttpMethod.PUT, "/api/v1/leases/" + id + "/cheques", rows, String.valueOf(headerVersion(gen)));
+        assertThat(save.getStatusCode().value()).isEqualTo(200);
+        assertThat(call(HttpMethod.PUT, "/api/v1/leases/" + id + "/rent-free-periods", List.of(),
+                String.valueOf(headerVersion(save))).getStatusCode().value()).isEqualTo(200);
+    }
+
+    // ---- review A C1: writes that touch only the lease's child rows ----------
+
+    /** A fee-only edit leaves the leases row's own columns alone; it must still move the version. */
+    @Test
+    void aFeeOnlyEditMovesTheVersionSoAStalePostIsRefused() {
+        UUID id = draftWithGrid("60000");
+        long seenByA = versionOf(id);
+
+        var edit = call(HttpMethod.PUT, "/api/v1/leases/" + id, formWithFee("18000", seenByA), null);
+        assertThat(edit.getStatusCode().value()).isEqualTo(200);
+        assertThat(dbRent(id)).isEqualByComparingTo("60000");
+        assertThat(((Number) edit.getBody().get("version")).longValue()).isEqualTo(dbVersion(id)).isNotEqualTo(seenByA);
+
+        // Posted straight away: the version check runs before anything else, so only the fee edit is in play.
+        assertChanged(call(HttpMethod.POST, "/api/v1/leases/" + id + "/post", Map.of("version", seenByA), null));
+        assertThat(dbStatus(id)).isEqualTo("DRAFT");
+        assertThat(tcoCount(id)).isZero();
+    }
+
+    /** Two tabs at the same version, each editing only a fee: the second is refused and the first fee kept. */
+    @Test
+    void aFeeOnlyEditFromAStaleVersionIsRefused() {
+        UUID id = draftWithGrid("60000");
+        long v = versionOf(id);
+
+        assertThat(call(HttpMethod.PUT, "/api/v1/leases/" + id, formWithFee("18000", v), null)
                 .getStatusCode().value()).isEqualTo(200);
-        assertThat(call(HttpMethod.PUT, "/api/v1/leases/" + id + "/rent-free-periods", List.of(), String.valueOf(current))
-                .getStatusCode().value()).isEqualTo(200);
+        assertChanged(call(HttpMethod.PUT, "/api/v1/leases/" + id, formWithFee("2000", v), null));
+        assertThat(lineTotal(id)).isEqualByComparingTo("83000");
+    }
+
+    /** Rent-free periods live in their own table; a change there must move the version even when the leases row stays put. */
+    @Test
+    void aRentFreeChangeMovesTheVersion() {
+        UUID id = draftWithGrid("60000");
+        long v = versionOf(id);
+
+        var res = call(HttpMethod.PUT, "/api/v1/leases/" + id + "/rent-free-periods",
+                // A zero concession: the periods table changes, the RENT line and the leases row do not.
+                List.of(Map.of("fromDate", START.toString(), "toDate", START.plusDays(29).toString(),
+                        "concessionOverride", 0)),
+                String.valueOf(v));
+        assertThat(res.getStatusCode().value()).isEqualTo(200);
+        long returned = ((Number) res.getBody().get("version")).longValue();
+        assertThat(returned).isEqualTo(dbVersion(id)).isNotEqualTo(v);
+
+        assertChanged(call(HttpMethod.PUT, "/api/v1/leases/" + id + "/rent-free-periods", List.of(), String.valueOf(v)));
+    }
+
+    /** review A M3: a cheque-only save (dates, numbers) moves the version; a tab that saw the old grid cannot post. */
+    @Test
+    void aChequeOnlySaveMovesTheVersionAndSaysWhereTo() {
+        UUID id = draftWithGrid("60000");
+        long v = versionOf(id);
+
+        var save = callList(HttpMethod.PUT, "/api/v1/leases/" + id + "/cheques",
+                List.of(chequeRow("60000", START), chequeRow("5000", START)), String.valueOf(v));
+        assertThat(save.getStatusCode().value()).isEqualTo(200);
+        long after = headerVersion(save);
+        assertThat(after).isEqualTo(dbVersion(id)).isNotEqualTo(v);
+
+        assertChanged(callAsMap(HttpMethod.PUT, "/api/v1/leases/" + id + "/cheques",
+                List.of(chequeRow("60000", START.plusDays(1)), chequeRow("5000", START)), String.valueOf(v)));
+        assertChanged(call(HttpMethod.POST, "/api/v1/leases/" + id + "/post", Map.of("version", v), null));
+        assertThat(dbStatus(id)).isEqualTo("DRAFT");
+    }
+
+    @SuppressWarnings("rawtypes")
+    private static long headerVersion(ResponseEntity<? extends Object> res) {
+        String h = res.getHeaders().getFirst("X-Lease-Version");
+        assertThat(h).as("X-Lease-Version").isNotNull();
+        return Long.parseLong(h);
+    }
+
+    private CreateLeaseDTO formWithFee(String fee, Long version) {
+        CreateLeaseDTO dto = fixtures.draftDto(START, END,
+                List.of(line("RENT", "60000"), line("SECURITY_DEPOSIT", "5000"), line("ADMIN_FEE", fee)));
+        dto.setContractDate(CONTRACT_DATE);
+        dto.setFirstDueDate(START);
+        dto.setVersion(version);
+        return dto;
+    }
+
+    private BigDecimal lineTotal(UUID leaseId) {
+        return jdbc.queryForObject("select coalesce(sum(gross_amount), 0) from lease_lines where lease_id = ?",
+                BigDecimal.class, leaseId);
     }
 
     /** A list endpoint's 409 is still a JSON object; read it as one. */

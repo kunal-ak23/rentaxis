@@ -69,6 +69,9 @@ public class RentFreeService {
             throw new BusinessRuleViolationException(
                     "Rent-free periods can be changed on a draft lease only; this one is " + lease.getStatus() + ".");
         }
+        // Review A C1: the periods live in their own table and a zero concession leaves
+        // the leases row untouched, so the version is moved explicitly.
+        leaseService.bumpVersion(lease);
         List<LeaseRentFreePeriod> fresh = new ArrayList<>();
         for (RentFreePeriodDTO in : input == null ? List.<RentFreePeriodDTO>of() : input) {
             if (in == null) continue;

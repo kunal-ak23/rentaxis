@@ -189,6 +189,42 @@ class RenewalAfterTerminationIT extends AbstractPostgresIT {
         assertThat(tx.execute(s -> settlements.statement(first)).depositsHeld()).isEqualByComparingTo("5000");
     }
 
+    /**
+     * Review A I2: a renewal already sent for signature (PENDING_SIGNATURE, here even
+     * accepted by the renter) is withdrawn with the termination — nothing of it is on
+     * the books, and left behind it could be neither posted nor deleted while the
+     * renter could still accept it. The preview says so first, the history of the
+     * terminated lease records it, and the renter can no longer reach it.
+     */
+    @Test
+    void terminatingWithdrawsARenewalAwaitingSignature() {
+        UUID first = postedWithDeposit();
+        UUID successor = renewalDraft(first);
+        fixtures.generateGrid(successor, 4, RENEWAL_START);
+        tx.executeWithoutResult(s -> {
+            Lease l = leaseRepo.findById(successor).orElseThrow();
+            l.setStatus(LeaseStatus.PENDING_SIGNATURE);
+            l.setRenterAcceptedAt(java.time.Instant.now());
+            leaseRepo.save(l);
+        });
+
+        assertThat(termination.preview(first, T).notices()).singleElement().satisfies(n -> assertThat(n)
+                .contains("awaiting the renter's signature").contains("02/10/2027").contains("will be withdrawn"));
+
+        termination.terminate(first, new TerminateLeaseRequest(T, null, null, "Leaving early"), null);
+
+        assertThat(reread(first).getStatus()).isEqualTo(LeaseStatus.TERMINATED);
+        assertThat(reread(successor)).isNull();
+        List<Lease> left = tx.execute(s -> leaseRepo.findByRenewedFromLeaseId(first));
+        assertThat(left).isEmpty();
+        assertThatThrownBy(() -> leaseService.acceptLease(successor, UUID.randomUUID()))
+                .isInstanceOf(NotFoundException.class);
+        assertThat(leaseService.getLeaseEvents(first)).anySatisfy(e -> assertThat(e.getNotes())
+                .contains("Renewal for 02/10/2027").contains("awaiting the renter's signature")
+                .contains("withdrawn on termination"));
+        assertThat(tx.execute(s -> settlements.statement(first)).depositsHeld()).isEqualByComparingTo("5000");
+    }
+
     /** A lease with no renewal draft previews no notice. */
     @Test
     void noRenewalDraftNoNotice() {

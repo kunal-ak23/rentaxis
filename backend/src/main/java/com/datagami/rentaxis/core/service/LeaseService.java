@@ -798,6 +798,25 @@ public class LeaseService {
     }
 
     /**
+     * Review A C1/M3 (break-it round 2): every write to a draft's money moves the
+     * lease's version — including those that touch only its child rows (lease lines,
+     * rent-free periods, the cheque grid) and so leave the leases row's own columns,
+     * and with them {@code @Version}, where they were. A Post dialog or another tab
+     * holding the old version is then refused (409 lease.changed) instead of posting
+     * or overwriting figures its user never saw.
+     *
+     * <p>PESSIMISTIC_FORCE_INCREMENT issues the versioned UPDATE now (so it also takes
+     * the row lock, and a writer that committed since the read fails with the usual
+     * optimistic-lock 409) and sets the new version on the entity, so the response
+     * mapped after the final flush carries the version the next write must name. A
+     * dirty entity is updated again on flush, which moves the version once more — any
+     * change is enough, the number itself means nothing.</p>
+     */
+    public void bumpVersion(Lease lease) {
+        em.lock(lease, jakarta.persistence.LockModeType.PESSIMISTIC_FORCE_INCREMENT);
+    }
+
+    /**
      * An {@code If-Match} value as a lease version: {@code "7"}, {@code 7} or
      * {@code W/"7"}; null or {@code *} means "not checked".
      */
@@ -830,6 +849,9 @@ public class LeaseService {
         // revert another tab's rent. A change that commits after this check is caught
         // by the row's @Version when this edit flushes.
         requireVersion(lease, dto.getVersion());
+        // Review A C1: a fee/VAT/discount-only edit rewrites lease_lines and leaves the
+        // leases row's own columns alone, so @Version would not move on its own.
+        bumpVersion(lease);
 
         // F14-58: an edit is judged like the draft it replaces — the renewal must
         // start after its predecessor, and the unit must be free for the (possibly
@@ -1613,8 +1635,34 @@ public class LeaseService {
         if (lease.getStatus() != LeaseStatus.DRAFT) {
             throw new BusinessRuleViolationException("Only DRAFT leases can be deleted");
         }
-        // Defensive: a DRAFT lease shouldn't have any contract documents, but
-        // if a previous flow left one behind, drop the row(s) too.
+        removeUnposted(lease);
+    }
+
+    /**
+     * Review A I2 (break-it round 2): withdraw a renewal that was never posted — a
+     * DRAFT, or one sent to the renter and awaiting (or even given) their signature —
+     * when the lease it renews is terminated. Nothing of it is on the books (a
+     * PENDING_SIGNATURE lease has no journal and only DRAFT cheque rows), and left
+     * behind it could be neither posted nor deleted while the renter could still
+     * accept it. Not a user-facing delete: {@code LeaseTerminationService} calls it
+     * in the termination's transaction and records it on the terminated lease.
+     */
+    @Transactional
+    public void withdrawUnpostedLease(UUID leaseId) {
+        Lease lease = findLeaseWithTenantCheck(leaseId);
+        if ((lease.getStatus() != LeaseStatus.DRAFT && lease.getStatus() != LeaseStatus.PENDING_SIGNATURE)
+                || lease.getPostingJournalId() != null) {
+            throw new BusinessRuleViolationException("Only a lease that was never posted can be withdrawn; this one is "
+                    + lease.getStatus() + ".");
+        }
+        removeUnposted(lease);
+    }
+
+    /** The lease row and everything that hangs off it; the caller has checked it was never posted. */
+    private void removeUnposted(Lease lease) {
+        UUID leaseId = lease.getId();
+        // A DRAFT lease shouldn't have any contract documents (defensive); a
+        // PENDING_SIGNATURE one being withdrawn has the contract it was sent. Drop the rows.
         leaseDocumentRepository.deleteAll(leaseDocumentRepository.findByLeaseId(leaseId));
         leaseAttachmentRepository.deleteAll(leaseAttachmentRepository.findByLeaseId(leaseId));
         // lease_lines cascades on delete, but cheques.lease_id does not — a draft

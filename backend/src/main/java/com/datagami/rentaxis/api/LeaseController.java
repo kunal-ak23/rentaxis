@@ -267,7 +267,7 @@ public class LeaseController {
             @PathVariable UUID id,
             @RequestBody(required = false) GenerateChequesRequest request,
             @RequestHeader(value = "If-Match", required = false) String ifMatch) {
-        return ResponseEntity.ok(chequeGenerationService.generate(id, request, LeaseService.versionFromIfMatch(ifMatch)));
+        return withLeaseVersion(chequeGenerationService.generate(id, request, LeaseService.versionFromIfMatch(ifMatch)));
     }
 
     /** Number the draft PDC rows sequentially from the renter's first cheque. */
@@ -286,8 +286,22 @@ public class LeaseController {
             @PathVariable UUID id,
             @RequestBody List<@Valid ChequeRowInput> rows,
             @RequestHeader(value = "If-Match", required = false) String ifMatch) {
-        return ResponseEntity.ok(chequeGenerationService.saveRows(id, rows, LeaseService.versionFromIfMatch(ifMatch)));
+        return withLeaseVersion(chequeGenerationService.saveRows(id, rows, LeaseService.versionFromIfMatch(ifMatch)));
     }
+
+    /**
+     * Review A M3: a grid write moves the lease's version; the rows go back as before
+     * and the new version rides in {@code X-Lease-Version}, so the screen that wrote
+     * them names it on its next write instead of refusing itself (409 lease.changed).
+     */
+    private static ResponseEntity<List<ChequeDTO>> withLeaseVersion(ChequeGenerationService.VersionedCheques r) {
+        ResponseEntity.BodyBuilder ok = ResponseEntity.ok();
+        if (r.leaseVersion() != null) ok = ok.header(LEASE_VERSION_HEADER, String.valueOf(r.leaseVersion()));
+        return ok.body(r.cheques());
+    }
+
+    /** Review A M3: the response header that carries the lease version a grid write left behind. */
+    public static final String LEASE_VERSION_HEADER = "X-Lease-Version";
 
     // --- Termination (spec §9.1) -------------------------------------------
 
