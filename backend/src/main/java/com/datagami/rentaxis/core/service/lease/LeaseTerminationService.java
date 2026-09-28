@@ -217,8 +217,8 @@ public class LeaseTerminationService {
         VatTaxPointService.TerminationVat vat = vatTaxPoints.settleForTermination(lease, t, plan.unearnedVat());
         UUID tcrId = postUnearnedReversal(lease, plan, vat, t);
 
-        discardRenewalDrafts(lease);
-        return leaseService.markTerminated(leaseId, t, r.notes(), tcrId, byUser);
+        String withdrawn = discardRenewalDrafts(lease);
+        return leaseService.markTerminated(leaseId, t, r.notes(), tcrId, byUser, withdrawn);
     }
 
     // ------------------------------------------------------------------
@@ -251,7 +251,13 @@ public class LeaseTerminationService {
         return notices;
     }
 
-    private void discardRenewalDrafts(Lease lease) {
+    /**
+     * Discards/withdraws the unposted renewals; answers the terms of those the renter
+     * had been sent to sign (joined, or null when none) — the LEASE_TERMINATED email
+     * tells them it was withdrawn (review A N2). A DRAFT the renter never saw is not named.
+     */
+    private String discardRenewalDrafts(Lease lease) {
+        List<String> sentToRenter = new ArrayList<>();
         for (Lease s : renewalSuccessors(lease.getId())) {
             String term = termOf(s);
             boolean draft = s.getStatus() == LeaseStatus.DRAFT;
@@ -259,7 +265,9 @@ public class LeaseTerminationService {
             leaseService.recordLeaseEvent(lease, lease.getStatus(), lease.getStatus(), draft
                     ? "Renewal draft for " + term + " discarded on termination"
                     : "Renewal for " + term + " awaiting the renter's signature withdrawn on termination");
+            if (!draft) sentToRenter.add(term);
         }
+        return sentToRenter.isEmpty() ? null : String.join(", ", sentToRenter);
     }
 
     private static String termOf(Lease l) {

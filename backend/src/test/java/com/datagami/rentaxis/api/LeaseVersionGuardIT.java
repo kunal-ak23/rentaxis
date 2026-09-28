@@ -65,6 +65,8 @@ class LeaseVersionGuardIT extends AbstractPostgresIT {
     @Autowired PropertyAccountService propertyAccountService;
     @Autowired ChargeTypeService chargeTypeService;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository imageUploads;
+    @Autowired org.springframework.transaction.support.TransactionTemplate tx;
 
     private static final LocalDate CONTRACT_DATE = LocalDate.of(2026, 9, 16);
     private static final LocalDate START = LocalDate.of(2026, 10, 2);
@@ -374,6 +376,82 @@ class LeaseVersionGuardIT extends AbstractPostgresIT {
                 List.of(chequeRow("60000", START.plusDays(1)), chequeRow("5000", START)), String.valueOf(v)));
         assertChanged(call(HttpMethod.POST, "/api/v1/leases/" + id + "/post", Map.of("version", v), null));
         assertThat(dbStatus(id)).isEqualTo("DRAFT");
+    }
+
+    // ---- re-review N1: bulk attach on the draft grid ---------------------------
+
+    /** bulk-attach writes the number and date a DRAFT row posts with: it moves the version too. */
+    @Test
+    void aBulkAttachOnADraftRowMovesTheVersion() {
+        UUID id = draftWithGrid("60000");
+        long v = versionOf(id);
+        UUID row = jdbc.queryForObject("select id from cheques where lease_id = ? and mode = 'PDC' and status = 'DRAFT'"
+                + " order by seq_no limit 1", UUID.class, id);
+        com.datagami.rentaxis.domain.entity.ChequeImageUpload scan = new com.datagami.rentaxis.domain.entity.ChequeImageUpload();
+        scan.setTenantId(fixtures.tenantId());
+        scan.setBlobPath("cheques/" + UUID.randomUUID() + ".jpg");
+        scan.setImageUrl("https://blob/" + scan.getBlobPath());
+        imageUploads.save(scan);
+
+        var res = call(HttpMethod.POST, "/api/v1/leases/" + id + "/cheques/bulk-attach", Map.of("items", List.of(Map.of(
+                "chequeId", row.toString(), "chequeNumber", "990001", "chequeDate", START.plusDays(3).toString(),
+                "bankName", "Emirates NBD", "imageUrl", scan.getImageUrl(), "imageBlobPath", scan.getBlobPath(),
+                "imageUploadedAt", "2026-09-20T10:00:00Z"))), null);
+        assertThat(res.getStatusCode().value()).isEqualTo(200);
+        assertThat(dbVersion(id)).isNotEqualTo(v);
+
+        assertChanged(call(HttpMethod.POST, "/api/v1/leases/" + id + "/post", Map.of("version", v), null));
+        assertThat(dbStatus(id)).isEqualTo("DRAFT");
+    }
+
+    // ---- re-review N4: the loser of a race between two guarded writes ---------
+
+    /**
+     * Both tabs saw version v and both pass the version check; A commits first. B's
+     * versioned UPDATE then matches no row. B must hear "this contract changed"
+     * (lease.changed, so the screen reloads), not the generic "try again".
+     */
+    @Test
+    @SuppressWarnings("rawtypes")
+    void theLoserOfARaceBetweenTwoGuardedEditsIsToldTheContractChanged() throws Exception {
+        UUID id = draftWithGrid("60000");
+        long v = versionOf(id);
+        UUID tenant = fixtures.tenantId();
+        java.util.concurrent.CountDownLatch aHoldsTheRow = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch releaseA = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            java.util.concurrent.Future<?> a = pool.submit(() -> {
+                TenantContextHolder.setTenantId(tenant);
+                LeaseTestFixtures.authenticateAsTenantAdmin();
+                try {
+                    tx.executeWithoutResult(st -> {
+                        leaseService.updateDraftLease(id, formWithFee("18000", v));
+                        aHoldsTheRow.countDown();
+                        try {
+                            releaseA.await(30, java.util.concurrent.TimeUnit.SECONDS);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    });
+                } finally {
+                    TenantContextHolder.clear();
+                    LeaseTestFixtures.clearAuth();
+                }
+            });
+            assertThat(aHoldsTheRow.await(30, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            java.util.concurrent.Future<ResponseEntity<Map>> b = pool.submit(() ->
+                    call(HttpMethod.PUT, "/api/v1/leases/" + id, formWithFee("2000", v), null));
+            // B has read version v (A is uncommitted) and now waits on A's row lock.
+            Thread.sleep(1500);
+            releaseA.countDown();
+            a.get(30, java.util.concurrent.TimeUnit.SECONDS);
+            assertChanged(b.get(30, java.util.concurrent.TimeUnit.SECONDS));
+        } finally {
+            releaseA.countDown();
+            pool.shutdownNow();
+        }
+        assertThat(lineTotal(id)).isEqualByComparingTo("83000");
     }
 
     @SuppressWarnings("rawtypes")

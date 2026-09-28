@@ -82,6 +82,9 @@ public class ChequeDetailsService {
     private final com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints;
     private final ChequeNumberClash numberClash;
 
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager em;
+
     public ChequeDetailsService(ChequeRepository chequeRepository,
                                 LeaseRepository leaseRepository,
                                 LeaseAccessPolicy leaseAccessPolicy,
@@ -313,6 +316,14 @@ public class ChequeDetailsService {
         // per statement, so swapping two rows' numbers would collide on a value that
         // is about to be freed.
         List<Cheque> targets = ids.stream().map(byId::get).toList();
+        // Break-it R2 review A N1: a DRAFT row is the contract's cheque grid, and the
+        // number and date written here are what the post carries into the PDRs. Like
+        // every other draft grid write it moves the lease's version (see
+        // LeaseService#bumpVersion), so a Post dialog or tab that saw the old grid is
+        // refused with 409 lease.changed.
+        if (targets.stream().anyMatch(c -> c.getStatus() == ChequeStatus.DRAFT)) {
+            em.lock(lease, jakarta.persistence.LockModeType.PESSIMISTIC_FORCE_INCREMENT);
+        }
         targets.forEach(c -> c.setChequeNumber(null));
         chequeRepository.saveAll(targets);
         chequeRepository.flush();

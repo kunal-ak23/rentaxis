@@ -45,6 +45,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * renewal draft, and the termination preview says so first.
  */
 @SpringBootTest
+@org.springframework.test.context.event.RecordApplicationEvents
 class RenewalAfterTerminationIT extends AbstractPostgresIT {
 
     @Autowired LeaseRenewalService renewal;
@@ -63,6 +64,7 @@ class RenewalAfterTerminationIT extends AbstractPostgresIT {
     @Autowired PropertyAccountService propertyAccountService;
     @Autowired ChargeTypeService chargeTypeService;
     @Autowired TransactionTemplate tx;
+    @Autowired org.springframework.test.context.event.ApplicationEvents appEvents;
 
     private LeaseTestFixtures fixtures;
 
@@ -187,6 +189,8 @@ class RenewalAfterTerminationIT extends AbstractPostgresIT {
         assertThat(reread(successor)).isNull();
         assertThatThrownBy(() -> posting.post(successor)).isInstanceOf(NotFoundException.class);
         assertThat(tx.execute(s -> settlements.statement(first)).depositsHeld()).isEqualByComparingTo("5000");
+        // A draft the renter never saw is not mentioned to them.
+        assertThat(terminatedEmailPayload(first).withdrawnRenewalTerm()).isNull();
     }
 
     /**
@@ -223,6 +227,16 @@ class RenewalAfterTerminationIT extends AbstractPostgresIT {
                 .contains("Renewal for 02/10/2027").contains("awaiting the renter's signature")
                 .contains("withdrawn on termination"));
         assertThat(tx.execute(s -> settlements.statement(first)).depositsHeld()).isEqualByComparingTo("5000");
+        // Re-review N2: the renter's termination email says the renewal they were asked to sign is withdrawn.
+        assertThat(terminatedEmailPayload(first).withdrawnRenewalTerm()).isEqualTo("02/10/2027 – 01/10/2028");
+    }
+
+    private com.datagami.rentaxis.core.email.event.payload.LeasePayload terminatedEmailPayload(UUID leaseId) {
+        return appEvents.stream(com.datagami.rentaxis.core.email.event.EmailEvent.class)
+                .filter(e -> e.getType() == com.datagami.rentaxis.core.email.EmailEventType.LEASE_TERMINATED)
+                .map(e -> (com.datagami.rentaxis.core.email.event.payload.LeasePayload) e.getPayload())
+                .filter(p -> p.leaseId().equals(leaseId))
+                .findFirst().orElseThrow();
     }
 
     /** A lease with no renewal draft previews no notice. */

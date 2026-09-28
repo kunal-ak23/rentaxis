@@ -66,4 +66,23 @@ class EmailRendererTest extends AbstractPostgresIT {
 
         assertThat(result.html()).contains("dir=\"rtl\"");
     }
+
+    /** Break-it R2 re-review N2: a termination that withdrew a renewal awaiting signature says so, EN and AR. */
+    @Test
+    void leaseTerminatedNamesAWithdrawnRenewalInEnglishAndArabic() {
+        java.util.function.BiFunction<Locale, String, String> html = (locale, term) -> {
+            Map<String, Object> vars = new java.util.HashMap<>(Map.of(
+                    "unitLabel", "A-203", "propertyName", "Tower", "ctaUrl", "https://app.test/en/dashboard/leases/x",
+                    "__subjectArgs", new Object[]{"A-203", "Tower"}));
+            if (term != null) vars.put("withdrawnRenewalTerm", term);
+            return renderer.render(new EmailTemplateContext(EmailEventType.LEASE_TERMINATED, locale, UUID.randomUUID(),
+                    "Ahmed", "ahmed@example.com", "https://app.test", new TenantBranding("Acme PM", null),
+                    "https://app.test/api/v1/email/unsubscribe?token=abc", vars, null)).html();
+        };
+        assertThat(html.apply(Locale.ENGLISH, "02/10/2027 – 01/10/2028"))
+                .contains("The renewal for <b>02/10/2027 – 01/10/2028</b> that was awaiting your signature has been withdrawn");
+        assertThat(html.apply(new Locale("ar"), "02/10/2027 – 01/10/2028"))
+                .contains("تم سحب تجديد العقد للفترة <b>02/10/2027 – 01/10/2028</b>");
+        assertThat(html.apply(Locale.ENGLISH, null)).doesNotContain("withdrawn");
+    }
 }

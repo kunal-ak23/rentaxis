@@ -1971,6 +1971,17 @@ public class LeaseService {
     @Transactional
     public LeaseDTO markTerminated(UUID leaseId, LocalDate terminatedOn, String notes,
                                    UUID terminationJournalId, UUID byUser) {
+        return markTerminated(leaseId, terminatedOn, notes, terminationJournalId, byUser, null);
+    }
+
+    /**
+     * The same; {@code withdrawnRenewalTerm} names a renewal awaiting the renter's
+     * signature that the termination withdrew (review A N2), so the LEASE_TERMINATED
+     * email tells the renter; null when there was none.
+     */
+    @Transactional
+    public LeaseDTO markTerminated(UUID leaseId, LocalDate terminatedOn, String notes,
+                                   UUID terminationJournalId, UUID byUser, String withdrawnRenewalTerm) {
         Lease lease = findLeaseWithTenantCheck(leaseId);
         // Object-level authorisation of its own, even though the one production
         // caller has already asked the same question. A public method that ends a
@@ -2000,7 +2011,7 @@ public class LeaseService {
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.LEASE_TERMINATED,
                 savedLease.getTenantId(),
-                buildLeasePayload(savedLease),
+                buildLeasePayload(savedLease, withdrawnRenewalTerm),
                 "LEASE_TERMINATED:" + savedLease.getId() + ":" + Instant.now().toEpochMilli()));
 
         // Clear listing availability and notify interested renters
@@ -2462,6 +2473,10 @@ public class LeaseService {
     }
 
     private LeasePayload buildLeasePayload(Lease lease) {
+        return buildLeasePayload(lease, null);
+    }
+
+    private LeasePayload buildLeasePayload(Lease lease, String withdrawnRenewalTerm) {
         BigDecimal monthly = monthlyRentOf(lease);
         return new LeasePayload(
                 lease.getId(),
@@ -2472,7 +2487,8 @@ public class LeaseService {
                 lease.getStartDate() != null ? lease.getStartDate().toString() : null,
                 lease.getEndDate() != null ? lease.getEndDate().toString() : null,
                 monthly != null ? monthly.toPlainString() : null,
-                null   // contractSignedUrl — not available at runtime; template uses safe-nav
+                null,  // contractSignedUrl — not available at runtime; template uses safe-nav
+                withdrawnRenewalTerm
         );
     }
 }
