@@ -17,7 +17,7 @@ const org = {
 };
 const enabledFeatures = ['Meetings & Scheduling', 'Gate Passes & Security'];
 const featureLabels = ['Listings (Marketplace)', 'Meetings & Scheduling', 'Email Notifications',
-  'Lease Renewals & Reminders', 'Gate Passes & Security', 'Mobile finance screens'];
+  'Contract Renewals & Reminders', 'Gate Passes & Security', 'Mobile finance screens'];
 
 /** Hard-delete any organisation of this name left by an earlier take (API, off camera). */
 async function removeLeftoverOrganisation(page) {
@@ -48,17 +48,18 @@ async function expectFeatures(page, onLabels) {
 }
 
 const scenes = [
-  // Weights follow the narration: roughly the seconds each part takes to speak.
+  // Weights are the seconds of narration each scene covers (Ava DragonHD at
+  // "140" speaks ~165 wpm), measured from the rendered subtitles.
   {
     ...roleRouteScene('superadmin', '/en/superadmin/tenants', 'Organisations',
-      'Settings › Administration › Organisations. Search first, so you never provision a duplicate.', { weight: 27 }),
+      'Settings › Administration › Organisations. Search first, so you never provision a duplicate.', { weight: 24.2 }),
     run: async (page) => {
       await goto(page, '/en/superadmin/tenants');
       await removeLeftoverOrganisation(page);
       await goto(page, '/en/superadmin/tenants');
       await orgRow(page).or(page.getByRole('row').filter({ hasText: tenantName })).first()
         .waitFor({ state: 'visible', timeout: navTimeoutMs });
-      await pace(page, 8000);
+      await pace(page, 11500);
       await page.getByPlaceholder('Search...').fill('Palm Vista');
       await expectCount(orgRow(page), 0, `${org.name} rows`);
       await restPointer(page, 1100, 620);
@@ -75,9 +76,9 @@ const scenes = [
       await page.getByPlaceholder('Office address (shown on receipts)').fill(org.address);
       await page.getByPlaceholder('e.g. 100XXXXXXXXX').fill(org.trn);
       await page.getByPlaceholder('+971 50 123 4567').fill(org.phone);
-      await pace(page, 3000);
+      await pace(page, 11500);
       await pointAt(page.getByText('Ticket Closure OTP', { exact: true }));
-    }, { weight: 26 }),
+    }, { weight: 22.3 }),
   stepScene('Create Organisation',
     'The new organisation joins the list, Active, with its own ID.',
     async (page) => {
@@ -86,7 +87,7 @@ const scenes = [
       await expectText(orgRow(page), 'Active', 'New organisation status');
       await expectText(orgRow(page), org.trn, 'New organisation TRN');
       await restPointer(page, 1100, 640);
-    }, { weight: 11 }),
+    }, { weight: 6.8 }),
   stepScene('Feature Toggles',
     'Optional features start off. Turn on only what the organisation has signed up for; each switch saves at once.',
     async (page) => {
@@ -103,19 +104,21 @@ const scenes = [
         );
         await pace(page, 1500);
       }
+      await pace(page, 3000);
       // Close and reopen: the switches come back from the server.
       await page.keyboard.press('Escape');
       await featuresDrawer(page).waitFor({ state: 'detached' });
       await orgRow(page).getByRole('button', { name: 'Feature Toggles' }).click();
       await expectFeatures(page, enabledFeatures);
       await restPointer(page, 1500, 560);
-    }, { weight: 46 }),
-  roleRouteScene('superadmin', '/en/dashboard', 'Switch into the organisation',
-    'The switcher now names the new organisation. It has no properties or contracts yet.', {
-    weight: 20,
-    // The page ends inside the new organisation, not the recording one.
-    verifyTenantContext: false,
-    afterNavigation: async (page) => {
+    }, { weight: 37.7 }),
+  // Same page session as the create: the switcher lists the new organisation
+  // without a reload (tutorials/bugs/2026-09-28-04.md, fixed in 913f150b).
+  stepScene('Switch into the organisation',
+    'The switcher now names the new organisation. It has no properties or contracts yet.',
+    async (page) => {
+      await page.keyboard.press('Escape');
+      await featuresDrawer(page).waitFor({ state: 'detached' });
       await page.getByTestId('org-switcher-button').click();
       await page.getByPlaceholder('Search organizations...').fill('Palm');
       await page.getByRole('button', { name: org.name }).click();
@@ -129,11 +132,10 @@ const scenes = [
       await expectText(page.locator('main'), 'Nothing needs you right now.', 'Empty organisation');
       await expectText(page.locator('main'), '0 properties', 'Empty organisation');
       await restPointer(page, 1100, 620);
-    },
-  }),
+    }, { weight: 10.2, verifyTenantContext: false }),
   roleRouteScene('superadmin', '/en/superadmin/tenants', 'Correct or deactivate',
     'Edit corrects legal details. Deactivate signs everyone in the organisation out until it is activated again.', {
-    weight: 30,
+    weight: 21.7,
     afterNavigation: async (page) => {
       await orgRow(page).waitFor({ state: 'visible', timeout: navTimeoutMs });
       await orgRow(page).getByRole('button', { name: 'Edit' }).click();
