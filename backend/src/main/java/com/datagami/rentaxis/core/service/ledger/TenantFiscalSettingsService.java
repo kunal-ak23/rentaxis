@@ -136,14 +136,6 @@ public class TenantFiscalSettingsService {
     }
 
     /**
-     * Close the books through {@code date}.
-     *
-     * <p><b>Refused while a VAT tax point dated on or before {@code date} is still
-     * PLANNED</b> (spec 2026-09-24 §1): the nightly job skips a locked date, so the
-     * point's VAT would sit in {@code OUTPUT_VAT_DEFERRED} for ever, undeclared. Post
-     * the tax points through {@code date} first.</p>
-     */
-    /**
      * Break-it round 2 (money2) F3: the lock as a user sets it, from the fiscal
      * page. A period that has not happened yet cannot be closed — 2062 typed for
      * 2026 used to be accepted, refuse every posting in the organisation, and could
@@ -165,6 +157,14 @@ public class TenantFiscalSettingsService {
         this.manualDates = manualDates;
     }
 
+    /**
+     * Close the books through {@code date}.
+     *
+     * <p><b>Refused while a VAT tax point dated on or before {@code date} is still
+     * PLANNED</b> (spec 2026-09-24 §1): the nightly job skips a locked date, so the
+     * point's VAT would sit in {@code OUTPUT_VAT_DEFERRED} for ever, undeclared. Post
+     * the tax points through {@code date} first.</p>
+     */
     @Transactional
     public TenantFiscalSettings lockThrough(LocalDate date) {
         TenantFiscalSettings s = get();

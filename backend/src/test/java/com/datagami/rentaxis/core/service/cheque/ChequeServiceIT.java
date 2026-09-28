@@ -339,22 +339,6 @@ class ChequeServiceIT extends AbstractPostgresIT {
         }
     }
 
-    /** Its own date has not arrived: it cannot have been banked on it, and nothing in the run is. */
-    @Test
-    void depositBatchOnOwnDatesRefusesARowDatedInTheFuture() {
-        PostLeaseResponse r = postedInThePast();
-        List<UUID> ids = r.cheques().stream().map(ChequeDTO::id).toList();
-        assertThat(r.cheques()).anySatisfy(c -> assertThat(c.chequeDate()).isAfter(LocalDate.now()));
-
-        assertThatThrownBy(() -> service.depositBatch(new DepositBatchRequest(ids, LocalDate.now(), null, true)))
-                .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("has not arrived yet");
-
-        for (UUID id : ids) {
-            assertThat(reread(id).getStatus()).isEqualTo(ChequeStatus.REGISTERED);
-        }
-    }
-
     /** Banking on the day the cheque falls due is the ordinary case, not an edge. */
     @Test
     void aChequeCanBeBankedOnItsOwnDate() {

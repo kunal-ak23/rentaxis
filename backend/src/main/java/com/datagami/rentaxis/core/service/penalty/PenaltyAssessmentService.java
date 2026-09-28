@@ -401,7 +401,7 @@ public class PenaltyAssessmentService {
         // the answer is "settle it", not "charge it".
         requireChargeable(lease);
 
-        LocalDate on = date != null ? date : LocalDate.now();
+        LocalDate on = date != null ? date : manualDates.today();
         // Break-it R2 money2 F1/F2: the manual-date window every other journal has.
         manualDates.requireWithinAYear(on, "A penalty charge");
         BigDecimal amount = a.getAmount();

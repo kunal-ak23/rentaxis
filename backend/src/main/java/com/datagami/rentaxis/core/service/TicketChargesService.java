@@ -115,6 +115,9 @@ public class TicketChargesService {
     @Transactional
     public TicketCharges unlink(UUID ticketId, UUID voucherId) {
         MaintenanceTicket t = ticket(ticketId);
+        // Review M6: serialised with recharge, so a recharge never lands against a
+        // bill that is being unlinked at the same moment.
+        lockTicketRow(t);
         jdbc.update("update vouchers set maintenance_ticket_id = null where tenant_id = :t and id = :v and maintenance_ticket_id = :ticket",
                 params().addValue("ticket", t.getId()).addValue("v", voucherId));
         return get(ticketId);
@@ -131,8 +134,7 @@ public class TicketChargesService {
         }
         // Break-it R2 money2 F6: the ticket row, FOR UPDATE, serialises recharges of its
         // bills — two tabs both reading "750 left" and both proposing 750 cannot happen.
-        jdbc.queryForList("select id from maintenance_tickets where tenant_id = :t and id = :ticket for update",
-                params().addValue("ticket", t.getId()));
+        lockTicketRow(t);
         TicketCharges now = get(ticketId);
         BigDecimal amount = r != null && r.amount() != null ? r.amount() : now.rechargeable();
         if (amount == null || amount.signum() <= 0) {
@@ -154,6 +156,16 @@ public class TicketChargesService {
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /**
+     * The ticket row, FOR NO KEY UPDATE: serialises recharge and unlink on one ticket
+     * without blocking inserts that reference it (comments, attachments take FOR KEY
+     * SHARE through their foreign key).
+     */
+    private void lockTicketRow(MaintenanceTicket t) {
+        jdbc.queryForList("select id from maintenance_tickets where tenant_id = :t and id = :ticket for no key update",
+                params().addValue("ticket", t.getId()));
+    }
 
     private static BusinessRuleViolationException overRecharge(TicketCharges now) {
         String left = now.rechargeable().toPlainString();

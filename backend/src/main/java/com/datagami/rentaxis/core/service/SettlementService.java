@@ -535,16 +535,6 @@ public class SettlementService {
     // finalise
     // ------------------------------------------------------------------
 
-    /**
-     * Post the {@code STL} and close the settlement (spec §9.2).
-     *
-     * <p>One transaction, under the lease's own row lock. The lease goes CLOSED
-     * only if nothing is outstanding on its register once this has run — see
-     * {@link LeaseClosureService}. When the renter still owes, the CASH row raised
-     * for the balance is itself outstanding; when §9.1's keep list left an
-     * instrument for collection, so is that; either way the contract closes later,
-     * when the last of them clears.</p>
-     */
     /** Break-it round 2 (money2) F5: the 409 code for a settlement changed since the page showed it. */
     public static final String SETTLEMENT_CHANGED = "settlement.changed";
 
@@ -567,6 +557,16 @@ public class SettlementService {
         }
     }
 
+    /**
+     * Post the {@code STL} and close the settlement (spec §9.2).
+     *
+     * <p>One transaction, under the lease's own row lock. The lease goes CLOSED
+     * only if nothing is outstanding on its register once this has run — see
+     * {@link LeaseClosureService}. When the renter still owes, the CASH row raised
+     * for the balance is itself outstanding; when §9.1's keep list left an
+     * instrument for collection, so is that; either way the contract closes later,
+     * when the last of them clears.</p>
+     */
     @Transactional
     public SettlementResponseDTO finalizeSettlement(UUID leaseId, FinalizeSettlementRequest request, UUID settledBy) {
         if (request == null || request.settlementDate() == null) {

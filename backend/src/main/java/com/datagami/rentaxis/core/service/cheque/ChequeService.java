@@ -414,7 +414,6 @@ public class ChequeService {
         // Read before the loop so the rows can be checked against the date the
         // clerk actually chose, not just against each other. With
         // useChequeDates (#10) that is each row's own cheque date instead.
-        LocalDate today = LocalDate.now(clock);
         // Break-it R2 money2 F1/F2: one slip date for the pile, and it has happened.
         if (!Boolean.TRUE.equals(request.useChequeDates())) {
             manualDates.requireNotAfterToday(request.dateOrToday(), "deposit", DEPOSIT_NOT_YET);
@@ -439,7 +438,7 @@ public class ChequeService {
             } else if (c.getMode() != ChequeMode.PDC) {
                 problems.add(label(c) + " is a " + c.getMode() + " receipt, not a cheque");
             } else if (Boolean.TRUE.equals(request.useChequeDates()) && c.getChequeDate() != null
-                    && c.getChequeDate().isAfter(today)) {
+                    && manualDates.isAfterToday(c.getChequeDate())) {
                 // Its own date is still to come: it cannot have been banked, and
                 // banking it today would be the early presentation below.
                 problems.add(label(c) + " is dated " + c.getChequeDate()

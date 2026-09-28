@@ -123,6 +123,26 @@ class ChequeBankEventDatesIT extends AbstractPostgresIT {
         assertThat(cheques.clearBatch(new ClearBatchRequest(two, TODAY, null))).hasSize(2);
     }
 
+    /**
+     * #10, moved here from ChequeServiceIT (review M2): on each cheque's own date, a row
+     * whose date has not arrived cannot have been banked — asked of the same shared
+     * rule, on the real today — and nothing in the run is deposited.
+     */
+    @Test
+    void depositBatchOnOwnDatesRefusesARowDatedInTheFuture() {
+        LocalDate start = TODAY.minusMonths(7).withDayOfMonth(1);
+        PostLeaseResponse r = fixtures.postedLease(start.minusDays(10), start, start.plusYears(1).minusDays(1),
+                List.of(line("RENT", "40000")), 4, "300500");
+        List<UUID> ids = r.cheques().stream().map(c -> c.id()).toList();
+        assertThat(r.cheques()).anySatisfy(c -> assertThat(c.chequeDate()).isAfter(TODAY));
+
+        assertThatThrownBy(() -> cheques.depositBatch(new DepositBatchRequest(ids, TODAY, null, true)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("has not arrived yet");
+        assertThat(jdbc.queryForObject("select count(*) from cheques where lease_id = ? and status = 'DEPOSITED'",
+                Long.class, r.lease().getId())).isZero();
+    }
+
     /** C2 / P1: the century typo is refused before a CBR number is drawn; today's bounce still works. */
     @Test
     void aBounceDatedAfterTodayIsRefusedBeforeANumberIsDrawn() {

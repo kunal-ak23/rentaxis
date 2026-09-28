@@ -59,6 +59,14 @@ public class ManualPostingDates {
     }
 
     /**
+     * The "not after today" question without the refusal, for a caller that collects
+     * one problem per row (the batch deposit on each cheque's own date). Null is not.
+     */
+    public boolean isAfterToday(LocalDate date) {
+        return date != null && date.isAfter(today());
+    }
+
+    /**
      * Break-it round 2 (money2) F1/F2/F3: the one "not after today" rule for events
      * that record something that has already happened — a cheque deposited, cleared
      * or bounced, a debt written off, a period locked. Batch Clear had it on its own;
@@ -68,9 +76,9 @@ public class ManualPostingDates {
      * @param why  what the user should know, e.g. "Funds cannot have cleared yet, and nothing was cleared."
      */
     public void requireNotAfterToday(LocalDate date, String what, String why) {
-        if (date == null) return;
+        if (!isAfterToday(date)) return;
         LocalDate today = today();
-        if (date.isAfter(today)) {
+        {
             throw new BusinessRuleViolationException(
                     "The " + what + " date " + date.format(DMY) + " is in the future (today is "
                             + today.format(DMY) + "). " + why,
