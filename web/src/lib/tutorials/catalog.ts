@@ -32,7 +32,7 @@ const FINANCE: UserRole[] = ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT"];
 
 export const TUTORIALS: Tutorial[] = [
     {
-        id: "01", slug: "sign-in-and-navigate", topic: "getting-started", roles: ALL, durationSec: 112, youtubeId: null,
+        id: "01", slug: "sign-in-and-navigate", topic: "getting-started", roles: ALL, durationSec: 114, youtubeId: null,
         title: { en: "Sign in and find your way around", ar: "تسجيل الدخول والتنقل في النظام" },
         description: {
             en: "Sign in, read the menu for your role, switch between English and Arabic, and manage your profile and password.",
@@ -41,7 +41,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["getting-started--welcome"],
     },
     {
-        id: "02", slug: "dashboard-search-notifications-and-help", topic: "getting-started", roles: ALL, durationSec: 119, youtubeId: null,
+        id: "02", slug: "dashboard-search-notifications-and-help", topic: "getting-started", roles: ALL, durationSec: 121, youtubeId: null,
         title: { en: "Dashboard, search, notifications and help", ar: "لوحة التحكم والبحث والإشعارات والمساعدة" },
         description: {
             en: "Read the dashboard, find records with global search, work through notifications and use the Help center and guided tours.",
@@ -58,7 +58,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["getting-started--roles-and-permissions"],
     },
     {
-        id: "04", slug: "provision-organisations-and-feature-access", topic: "getting-started", roles: ["SUPER_ADMIN"], durationSec: 123, youtubeId: null,
+        id: "04", slug: "provision-organisations-and-feature-access", topic: "getting-started", roles: ["SUPER_ADMIN"], durationSec: 118, youtubeId: null,
         title: { en: "Set up organisations and feature access", ar: "إعداد المؤسسات وإتاحة الميزات" },
         description: {
             en: "Create and edit an organisation, then turn features such as listings, meetings and gate passes on or off.",
@@ -110,7 +110,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "10", slug: "draft-a-tenancy-contract-and-generate-its-cheques", topic: "leasing", roles: PORTFOLIO, durationSec: 125, youtubeId: null,
+        id: "10", slug: "draft-a-tenancy-contract-and-generate-its-cheques", topic: "leasing", roles: PORTFOLIO, durationSec: 127, youtubeId: null,
         title: { en: "Draft a tenancy contract and generate its cheques", ar: "صياغة عقد إيجار وإنشاء شيكاته" },
         description: {
             en: "Choose the Tenant and unit, set dates, rent, VAT and charges, and generate the cheque grid before saving the draft.",

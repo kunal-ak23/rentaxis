@@ -7,25 +7,25 @@ voice=en-US-Ava:DragonHDLatestNeural
 style=none
 audio=/Users/kunalsharma/datagami/rentaxis/tutorials/audio-generated/02-dashboard-search-notifications-and-help-azure.mp3
 subtitle_cues=39
-subtitle_duration=118.872
+subtitle_duration=121.440
 subtitle_file=/Users/kunalsharma/datagami/rentaxis/tutorials/output/02-dashboard-search-notifications-and-help.srt
 scene=1 starts_at=0.0s title=Home · Today
-scene=2 starts_at=38.1s title=Global search
-scene=3 starts_at=59.5s title=Open the tenancy contract
-scene=4 starts_at=66.1s title=Notifications
-scene=5 starts_at=75.2s title=Notification history
-scene=6 starts_at=91.2s title=Help Center
-scene=7 starts_at=101.8s title=Roles & Permissions
+scene=2 starts_at=38.9s title=Global search
+scene=3 starts_at=60.8s title=Open the tenancy contract
+scene=4 starts_at=67.6s title=Notifications
+scene=5 starts_at=76.8s title=Notification history
+scene=6 starts_at=93.1s title=Help Center
+scene=7 starts_at=103.7s title=Roles & Permissions
 tutorial=02
 tenant=Oasis Crest Properties
-target_duration=120.87
+target_duration=123.44
 silent_video=/Users/kunalsharma/datagami/rentaxis/tutorials/output/02-dashboard-search-notifications-and-help-silent.webm
-raw_video_dir=/Users/kunalsharma/datagami/rentaxis/tutorials/raw/tutorial-02-vXj1l2
+raw_video_dir=/Users/kunalsharma/datagami/rentaxis/tutorials/raw/tutorial-02-tzqso3
 tts_provider=external
 video_codec=h264
 audio_codec=aac
 dimensions=1920x1080
-duration=118.840000
+duration=121.440000
 subtitle_codec=mov_text
 subtitle_file=/Users/kunalsharma/datagami/rentaxis/tutorials/output/02-dashboard-search-notifications-and-help.srt
 tutorial=02

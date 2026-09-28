@@ -1,41 +1,41 @@
 auth_state=/Users/kunalsharma/datagami/rentaxis/tutorials/.auth/superadmin-local.json
-draft_contract_id=ee735209-7edb-4c9c-af7c-808ab657c0da
+draft_contract_id=a6de1edb-e919-4118-98de-d06e83a82f90
 tutorial=10
 tenant=Oasis Crest Properties
 scenario_validation=passed
-draft ee735209-7edb-4c9c-af7c-808ab657c0da: deleted
+draft a6de1edb-e919-4118-98de-d06e83a82f90: deleted
 region=centralindia
 voice=en-US-Ava:DragonHDLatestNeural
 style=none
 audio=/Users/kunalsharma/datagami/rentaxis/tutorials/audio-generated/10-draft-a-tenancy-contract-and-generate-its-cheques-azure.mp3
 subtitle_cues=39
-subtitle_duration=124.176
+subtitle_duration=126.888
 subtitle_file=/Users/kunalsharma/datagami/rentaxis/tutorials/output/10-draft-a-tenancy-contract-and-generate-its-cheques.srt
 scene=1 starts_at=0.0s title=Tenancy Contracts
-scene=2 starts_at=16.4s title=Step 1 · Parties
-scene=3 starts_at=30.8s title=Step 2 · Terms
-scene=4 starts_at=52.3s title=Step 3 · Charges
-scene=5 starts_at=64.3s title=Save the draft, then generate cheques
-scene=6 starts_at=84.7s title=Number the cheques
-scene=7 starts_at=94.7s title=Step 5 · Review
-scene=8 starts_at=102.7s title=Open the draft contract
-draft_contract_id=ecad655e-5560-4853-999f-e4efb9c80ebf
-scene=9 starts_at=116.7s title=Cheques tab
+scene=2 starts_at=16.7s title=Step 1 · Parties
+scene=3 starts_at=31.5s title=Step 2 · Terms
+scene=4 starts_at=53.4s title=Step 3 · Charges
+scene=5 starts_at=65.6s title=Save the draft, then generate cheques
+scene=6 starts_at=86.5s title=Number the cheques
+scene=7 starts_at=96.7s title=Step 5 · Review
+scene=8 starts_at=104.9s title=Open the draft contract
+draft_contract_id=632faf25-b996-44d7-8b02-a2f785bf310e
+scene=9 starts_at=119.1s title=Cheques tab
 tutorial=10
 tenant=Oasis Crest Properties
-target_duration=126.18
+target_duration=128.89
 silent_video=/Users/kunalsharma/datagami/rentaxis/tutorials/output/10-draft-a-tenancy-contract-and-generate-its-cheques-silent.webm
-raw_video_dir=/Users/kunalsharma/datagami/rentaxis/tutorials/raw/tutorial-10-Bjr4oI
+raw_video_dir=/Users/kunalsharma/datagami/rentaxis/tutorials/raw/tutorial-10-RALYed
 tts_provider=external
 video_codec=h264
 audio_codec=aac
 dimensions=1920x1080
-duration=124.160000
+duration=126.880000
 subtitle_codec=mov_text
 subtitle_file=/Users/kunalsharma/datagami/rentaxis/tutorials/output/10-draft-a-tenancy-contract-and-generate-its-cheques.srt
 tutorial=10
 output=/Users/kunalsharma/datagami/rentaxis/tutorials/output/10-draft-a-tenancy-contract-and-generate-its-cheques.mp4
 audio=/Users/kunalsharma/datagami/rentaxis/tutorials/audio-generated/10-draft-a-tenancy-contract-and-generate-its-cheques-azure.mp3
 subtitles=/Users/kunalsharma/datagami/rentaxis/tutorials/output/10-draft-a-tenancy-contract-and-generate-its-cheques.srt
-draft ecad655e-5560-4853-999f-e4efb9c80ebf: deleted
-draft ee735209-7edb-4c9c-af7c-808ab657c0da: already gone
+draft 632faf25-b996-44d7-8b02-a2f785bf310e: deleted
+draft a6de1edb-e919-4118-98de-d06e83a82f90: already gone

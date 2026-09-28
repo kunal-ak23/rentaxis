@@ -1,10 +1,10 @@
 QA 05-create-users-and-staff.mp4
-  PASS  gate 1 readable, 119.240000s
+  PASS  gate 1 readable, 121.360000s
   PASS  gate 2 decodes clean
   PASS  gate 3 streams: h264,video aac,audio mov_text,subtitle 
-  PASS  gate 4 a/v aligned (v=119.240000 a=119.233000)
+  PASS  gate 4 a/v aligned (v=121.360000 a=121.352000)
   PASS  gate 5 contact sheet /Users/kunalsharma/datagami/rentaxis/tutorials/qa/05-contact-sheet.jpg  <- LOOK AT THIS
-  PASS  gate 6 srt ok (37 cues, last ends 119.256s)
-  PASS  gate 7 luma 218.816
+  PASS  gate 6 srt ok (37 cues, last ends 121.392s)
+  PASS  gate 7 luma 218.852
 
 ALL GATES PASSED

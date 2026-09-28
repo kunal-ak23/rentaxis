@@ -7,25 +7,26 @@ voice=en-US-Ava:DragonHDLatestNeural
 style=none
 audio=/Users/kunalsharma/datagami/rentaxis/tutorials/audio-generated/05-create-users-and-staff-azure.mp3
 subtitle_cues=37
-subtitle_duration=119.256
+subtitle_duration=121.392
 subtitle_file=/Users/kunalsharma/datagami/rentaxis/tutorials/output/05-create-users-and-staff.srt
 scene=1 starts_at=0.0s title=Users & staff
-scene=2 starts_at=31.1s title=Provision New User
-scene=3 starts_at=59.6s title=Provision User
-scene=4 starts_at=64.4s title=Edit the assignment
-scene=5 starts_at=72.6s title=The property shows its manager
-scene=6 starts_at=84.3s title=Add Staff
-scene=7 starts_at=101.6s title=When someone leaves
+scene=2 starts_at=31.6s title=Provision New User
+scene=3 starts_at=60.0s title=Provision User
+scene=4 starts_at=64.8s title=Edit the assignment
+scene=5 starts_at=73.3s title=The property shows its manager
+scene=6 starts_at=85.1s title=Add Staff
+scene=7 starts_at=102.8s title=When someone leaves
+clip_lead_ins=0.00,1.69,1.38
 tutorial=05
 tenant=Oasis Crest Properties
-target_duration=121.26
+target_duration=123.39
 silent_video=/Users/kunalsharma/datagami/rentaxis/tutorials/output/05-create-users-and-staff-silent.webm
-raw_video_dir=/Users/kunalsharma/datagami/rentaxis/tutorials/raw/tutorial-05-BYANSb
+raw_video_dir=/Users/kunalsharma/datagami/rentaxis/tutorials/raw/tutorial-05-stnkay
 tts_provider=external
 video_codec=h264
 audio_codec=aac
 dimensions=1920x1080
-duration=119.240000
+duration=121.360000
 subtitle_codec=mov_text
 subtitle_file=/Users/kunalsharma/datagami/rentaxis/tutorials/output/05-create-users-and-staff.srt
 tutorial=05

@@ -7,24 +7,25 @@ voice=en-US-Ava:DragonHDLatestNeural
 style=none
 audio=/Users/kunalsharma/datagami/rentaxis/tutorials/audio-generated/04-provision-organisations-and-manage-feature-access-azure.mp3
 subtitle_cues=39
-subtitle_duration=122.568
+subtitle_duration=118.296
 subtitle_file=/Users/kunalsharma/datagami/rentaxis/tutorials/output/04-provision-organisations-and-manage-feature-access.srt
 scene=1 starts_at=0.0s title=Organisations
-scene=2 starts_at=23.9s title=Provision New Organisation
-scene=3 starts_at=46.5s title=Create Organisation
-scene=4 starts_at=53.4s title=Feature Toggles
-scene=5 starts_at=91.6s title=Switch into the organisation
-scene=6 starts_at=102.9s title=Correct or deactivate
+scene=2 starts_at=23.1s title=Provision New Organisation
+scene=3 starts_at=45.5s title=Create Organisation
+scene=4 starts_at=52.2s title=Feature Toggles
+scene=5 starts_at=89.1s title=Switch into the organisation
+scene=6 starts_at=100.0s title=Correct or deactivate
+clip_lead_ins=0.00,1.34
 tutorial=04
 tenant=Oasis Crest Properties
-target_duration=124.57
+target_duration=120.30
 silent_video=/Users/kunalsharma/datagami/rentaxis/tutorials/output/04-provision-organisations-and-manage-feature-access-silent.webm
-raw_video_dir=/Users/kunalsharma/datagami/rentaxis/tutorials/raw/tutorial-04-gGjsSV
+raw_video_dir=/Users/kunalsharma/datagami/rentaxis/tutorials/raw/tutorial-04-cAb29o
 tts_provider=external
 video_codec=h264
 audio_codec=aac
 dimensions=1920x1080
-duration=122.560000
+duration=118.280000
 subtitle_codec=mov_text
 subtitle_file=/Users/kunalsharma/datagami/rentaxis/tutorials/output/04-provision-organisations-and-manage-feature-access.srt
 tutorial=04

@@ -1,10 +1,10 @@
 QA 04-provision-organisations-and-manage-feature-access.mp4
-  PASS  gate 1 readable, 122.560000s
+  PASS  gate 1 readable, 118.280000s
   PASS  gate 2 decodes clean
   PASS  gate 3 streams: h264,video aac,audio mov_text,subtitle 
-  PASS  gate 4 a/v aligned (v=122.560000 a=122.560000)
+  PASS  gate 4 a/v aligned (v=118.280000 a=118.276000)
   PASS  gate 5 contact sheet /Users/kunalsharma/datagami/rentaxis/tutorials/qa/04-contact-sheet.jpg  <- LOOK AT THIS
-  PASS  gate 6 srt ok (39 cues, last ends 122.568s)
-  PASS  gate 7 luma 167.867
+  PASS  gate 6 srt ok (39 cues, last ends 118.29599999999999s)
+  PASS  gate 7 luma 167.863
 
 ALL GATES PASSED
