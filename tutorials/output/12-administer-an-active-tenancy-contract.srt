@@ -1,0 +1,146 @@
+1
+00:00:00,000 --> 00:00:02,586
+This tutorial covers the everyday work on
+
+2
+00:00:02,586 --> 00:00:05,172
+a tenancy contract once it is active.
+
+3
+00:00:05,172 --> 00:00:08,127
+As a Company Admin, open the contract for
+
+4
+00:00:08,127 --> 00:00:10,713
+unit M-1501, posted in the previous
+tutorial.
+
+5
+00:00:10,713 --> 00:00:12,191
+Its status is Active.
+
+6
+00:00:12,191 --> 00:00:15,515
+Record payment and Renew sit at the top,
+and
+
+7
+00:00:15,515 --> 00:00:18,840
+More actions holds the rest: extend,
+amend, add a
+
+8
+00:00:18,840 --> 00:00:22,165
+charge, transfer, give notice, terminate,
+and the tenant's ledger.
+
+9
+00:00:22,165 --> 00:00:24,751
+A posted contract is never edited
+directly;
+
+10
+00:00:24,751 --> 00:00:26,967
+each change is its own entry.
+
+11
+00:00:26,967 --> 00:00:29,923
+Sara is taking a second parking bay from
+
+12
+00:00:29,923 --> 00:00:32,878
+the first of October, so select Add
+charge.
+
+13
+00:00:32,878 --> 00:00:35,833
+Set the effective date, enter the Ejari
+number
+
+14
+00:00:35,833 --> 00:00:38,419
+of the addendum, and give a reason.
+
+15
+00:00:38,419 --> 00:00:41,375
+Add a Parking Fee line of 750, which
+
+16
+00:00:41,375 --> 00:00:44,330
+is earned over the rest of the term.
+
+17
+00:00:44,330 --> 00:00:48,393
+Then enter the cheque that pays for it,
+number 500406, for
+
+18
+00:00:48,393 --> 00:00:52,088
+the same amount, and the cheques match the
+addendum's value.
+
+19
+00:00:52,088 --> 00:00:53,196
+Select Add charge.
+
+20
+00:00:53,196 --> 00:00:57,629
+The contract value rises to 140,750, and
+there are now six cheques.
+
+21
+00:00:57,629 --> 00:00:59,106
+Open the Attachments tab.
+
+22
+00:00:59,106 --> 00:01:02,062
+Under Addenda and Ejari, the addendum is
+listed
+
+23
+00:01:02,062 --> 00:01:05,017
+with its own journal and its Ejari number.
+
+24
+00:01:05,017 --> 00:01:07,972
+Supporting documents keep the paperwork
+with the contract.
+
+25
+00:01:07,972 --> 00:01:11,667
+Type a name, Move-in inspection report,
+and attach the file.
+
+26
+00:01:11,667 --> 00:01:15,361
+It is listed with buttons to download or
+delete it.
+
+27
+00:01:15,361 --> 00:01:18,316
+Open the Activities tab and select Log
+interaction.
+
+28
+00:01:18,316 --> 00:01:21,641
+Choose Call and Outbound, and write a
+short summary.
+
+29
+00:01:21,641 --> 00:01:24,227
+Set the outcome to Positive, and save.
+
+30
+00:01:24,227 --> 00:01:27,921
+The note records who logged it and when,
+so whoever
+
+31
+00:01:27,921 --> 00:01:31,615
+picks up the contract next can see what
+was agreed.
+
+32
+00:01:31,615 --> 00:01:36,048
+Keep notes factual, and never put
+passwords or card details in them.
