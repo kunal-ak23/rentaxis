@@ -127,3 +127,60 @@ describe("TransferLeaseDialog rent guard (F1/F2)", () => {
         expect(api.transfer.mock.calls[0][1].rent).toBe(41589.04);
     });
 });
+
+/**
+ * Round-2 forms2 Finding 2's own note: the same gap it found in RenewLeaseDialog
+ * "likely exists in TransferLeaseDialog... though only Renew was exercised
+ * end-to-end". The successor's term is the day after the move date through the
+ * chosen end date — the same two dates `LeaseService.applyHeader` runs through
+ * `requireSaneTerm` when the transfer draft is created.
+ */
+describe("TransferLeaseDialog term-length guard (forms2 Finding 2)", () => {
+    async function openToEndDate() {
+        lookup.searchUnits.mockResolvedValue([unit("u-201", "A-201")]);
+        api.transferPreview.mockResolvedValue(PREVIEW);
+        renderDialog();
+        fireEvent.change(screen.getByTestId("transfer-move-date"), { target: { value: "2026-05-15" } });
+        fireEvent.click(screen.getByTestId("transfer-unit"));
+        fireEvent.click(await screen.findByText("A-201"));
+        await waitFor(() => expect((screen.getByTestId("transfer-rent") as HTMLInputElement).value).toBe("37808.22"));
+    }
+
+    it("blocks an end date more than 50 years after the new term's own start (move date + 1)", async () => {
+        await openToEndDate();
+        fireEvent.change(screen.getByTestId("transfer-end-date"), { target: { value: "2999-06-01" } });
+        expect(screen.getByTestId("transfer-confirm")).toBeDisabled();
+        expect(screen.getByTestId("transfer-term-too-long")).toHaveTextContent(
+            en.Leasing.errTermTooLong.replace("{max}", "50"),
+        );
+    });
+
+    it("warns past 5 years and requires a continue before Confirm is live", async () => {
+        api.transfer.mockResolvedValue({ id: "lease-b" });
+        await openToEndDate();
+        fireEvent.change(screen.getByTestId("transfer-end-date"), { target: { value: "2032-11-15" } });
+
+        expect(screen.getByTestId("transfer-confirm")).toBeDisabled();
+        expect(screen.getByTestId("transfer-long-term-confirm")).toHaveTextContent(
+            en.Leasing.longTermConfirm.replace("{years}", "6"),
+        );
+
+        fireEvent.click(screen.getByTestId("transfer-long-term-continue"));
+        expect(screen.queryByTestId("transfer-long-term-confirm")).not.toBeInTheDocument();
+        expect(screen.getByTestId("transfer-confirm")).toBeEnabled();
+
+        fireEvent.click(screen.getByTestId("transfer-confirm"));
+        await waitFor(() => expect(api.transfer).toHaveBeenCalled());
+    });
+
+    it("re-arms once the end date changes again after acknowledging it", async () => {
+        await openToEndDate();
+        fireEvent.change(screen.getByTestId("transfer-end-date"), { target: { value: "2032-11-15" } });
+        fireEvent.click(screen.getByTestId("transfer-long-term-continue"));
+        expect(screen.getByTestId("transfer-confirm")).toBeEnabled();
+
+        fireEvent.change(screen.getByTestId("transfer-end-date"), { target: { value: "2033-11-15" } });
+        expect(screen.getByTestId("transfer-confirm")).toBeDisabled();
+        expect(screen.getByTestId("transfer-long-term-confirm")).toBeInTheDocument();
+    });
+});

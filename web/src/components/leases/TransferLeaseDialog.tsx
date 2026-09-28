@@ -2,14 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
+import { AlertTriangle } from "lucide-react";
 import LeaseDialog from "./LeaseDialog";
 import { UnitPicker } from "@/components/pickers/UnitPicker";
 import { serverText } from "@/components/finance/bankrec/serverText";
 import { fmtAmount } from "@/lib/api/ledger";
 import { parseMoneyInput } from "@/lib/money";
 import { MoneyFieldError } from "@/components/ui/NumberInput";
-import { fmtIsoDate, round2 } from "./leaseMath";
+import { fmtIsoDate, isoDayAfter, round2 } from "./leaseMath";
 import { ApiError, leaseApi, type LeaseDetail, type TransferPreview } from "@/lib/api/leasing";
+import { CONFIRM_TERM_YEARS, MAX_TERM_YEARS, termExceedsYears, termYears } from "@/lib/leaseTerm";
 
 /**
  * Spec 2026-09-24 §2 (#52): move the renter to another unit mid-lease. Step 1 is
@@ -62,6 +64,14 @@ export default function TransferLeaseDialog({ open, lease, onClose, onDrafted }:
     const [preview, setPreview] = useState<TransferPreview | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    /**
+     * forms2 Finding 2: the wizard's and Renew dialog's own guard (`leaseTerm.ts`),
+     * checked against the SAME two dates the backend runs through
+     * `LeaseService.applyHeader` → `requireSaneTerm` when the draft is created —
+     * the new term's own start (the day after the move date), not the source
+     * lease's dates.
+     */
+    const [termAck, setTermAck] = useState<string | null>(null);
 
     useEffect(() => {
         if (!open) return;
@@ -73,6 +83,7 @@ export default function TransferLeaseDialog({ open, lease, onClose, onDrafted }:
         setDispositions({});
         setPreview(null);
         setError(null);
+        setTermAck(null);
     }, [open, lease.endDate]);
 
     useEffect(() => {
@@ -104,6 +115,16 @@ export default function TransferLeaseDialog({ open, lease, onClose, onDrafted }:
     const ready = !!preview && problems.length === 0 && rentNum != null && rentNum > 0;
     const bdi = (v: number | null | undefined) => <bdi dir="ltr">{fmtAmount(v ?? 0)}</bdi>;
 
+    // The new term's own start/end — `LeaseTransferService.draft` sets
+    // `start = moveDate + 1` and `end = endDate ?? source lease's endDate`.
+    const newStart = isoDayAfter(moveDate);
+    const newEnd = endDate || lease.endDate;
+    const termTooLong = !!newStart && !!newEnd && newEnd > newStart
+        && termExceedsYears(newStart, newEnd, MAX_TERM_YEARS);
+    const termKey = `${newStart}|${newEnd}`;
+    const termNeedsConfirm = !termTooLong && !!newStart && !!newEnd && newEnd > newStart
+        && termExceedsYears(newStart, newEnd, CONFIRM_TERM_YEARS) && termAck !== termKey;
+
     const submit = async () => {
         setBusy(true);
         setError(null);
@@ -134,7 +155,7 @@ export default function TransferLeaseDialog({ open, lease, onClose, onDrafted }:
             onConfirm={submit}
             confirmText={t("transfer.createDraft")}
             cancelText={t("cancel")}
-            confirmDisabled={!ready}
+            confirmDisabled={!ready || termTooLong || termNeedsConfirm}
             busy={busy}
             confirmTestId="transfer-confirm"
             width="xl"
@@ -160,7 +181,7 @@ export default function TransferLeaseDialog({ open, lease, onClose, onDrafted }:
                             </div>
                             <div>
                                 <label className={label} htmlFor="transfer-end">{t("transfer.endDate")}</label>
-                                <input id="transfer-end" type="date" className={field}
+                                <input id="transfer-end" data-testid="transfer-end-date" type="date" className={field}
                                        value={endDate} onChange={e => setEndDate(e.target.value)} />
                             </div>
                             <div>
@@ -178,6 +199,22 @@ export default function TransferLeaseDialog({ open, lease, onClose, onDrafted }:
                                 )}
                             </div>
                         </div>
+                        {termTooLong && (
+                            <p role="alert" data-testid="transfer-term-too-long" className="mt-2 text-[11px] font-semibold text-error">
+                                {t("errTermTooLong", { max: MAX_TERM_YEARS })}
+                            </p>
+                        )}
+                        {termNeedsConfirm && newStart && newEnd && (
+                            <span className="mt-2 inline-flex flex-wrap items-center gap-2 text-[11px] text-warning" role="alert"
+                                data-testid="transfer-long-term-confirm">
+                                <AlertTriangle size={12} /> {t("longTermConfirm", { years: termYears(newStart, newEnd) })}
+                                <button type="button" data-testid="transfer-long-term-continue"
+                                    onClick={() => setTermAck(termKey)}
+                                    className="px-2.5 py-1 rounded-md border border-warning/40 font-semibold text-foreground hover:bg-warning/10 cursor-pointer">
+                                    {t("longTermContinue")}
+                                </button>
+                            </span>
+                        )}
                     </li>
 
                     {preview && (

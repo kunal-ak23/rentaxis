@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Plus, Trash2 } from "lucide-react";
 import LeaseDialog from "./LeaseDialog";
 import LeaseLinesGrid from "./LeaseLinesGrid";
 import { isOneOff, linesAreValid, renewalRows, sameTermEnd, splitLineErrors, toInputs, todayIso, withCarriedDeposit, type LineRow } from "./leaseMath";
@@ -13,6 +13,7 @@ import {
 import { fmtAmount } from "@/lib/api/ledger";
 import { moneyInputError, parseMoneyInput } from "@/lib/money";
 import { MoneyFieldError } from "@/components/ui/NumberInput";
+import { CONFIRM_TERM_YEARS, MAX_TERM_YEARS, termExceedsYears, termYears } from "@/lib/leaseTerm";
 
 /**
  * Spec §4c: the one-off lines a renewal will not copy (an admin fee, last
@@ -105,6 +106,14 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
     const [previewError, setPreviewError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [errors, setErrors] = useState<string[]>([]);
+    /**
+     * forms2 Finding 2: the wizard warns past `CONFIRM_TERM_YEARS` and hard-blocks
+     * at `MAX_TERM_YEARS` (`web/src/lib/leaseTerm.ts`); this dialog had neither, so
+     * a typo'd end date (`2999-06-01`) reached `LeaseRenewalService.requireSaneTerm`
+     * with no warning on the way. `termAck` remembers which start/end pair the
+     * operator has already clicked past — changing either date re-arms it.
+     */
+    const [termAck, setTermAck] = useState<string | null>(null);
 
     const skipped = skippedOneOffCharges(lease.lines ?? []);
     const extraTypes = useMemo(
@@ -131,6 +140,7 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
         setPreview(null);
         setPreviewError(null);
         setErrors([]);
+        setTermAck(null);
     }, [open, lease.startDate, lease.endDate, lease.lines]);
 
     // The live preview of the rent change (spec §4a). Only with copied lines: a
@@ -166,6 +176,15 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
         || (mode === "PERCENT" && num(percent) != null)
         || (mode === "AMOUNT" && (money(amount) ?? 0) > 0);
     const extrasReady = extras.every(x => x.chargeTypeId && (money(x.amount) ?? 0) > 0);
+
+    // Same bounds and wording as the create wizard (`LeaseWizard.tsx`) and the
+    // backend's `LeaseService.requireSaneTerm`, which the successor's own
+    // start/end run through (`LeaseRenewalService.requireSaneTerm`, line 153).
+    const termTooLong = !!startDate && !!endDate && endDate > startDate
+        && termExceedsYears(startDate, endDate, MAX_TERM_YEARS);
+    const termKey = `${startDate}|${endDate}`;
+    const termNeedsConfirm = !termTooLong && !!startDate && !!endDate && endDate > startDate
+        && termExceedsYears(startDate, endDate, CONFIRM_TERM_YEARS) && termAck !== termKey;
 
     const submit = async () => {
         setBusy(true);
@@ -207,7 +226,7 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
             confirmText={t("renew")}
             cancelText={t("cancel")}
             confirmDisabled={!startDate || !endDate || endDate <= startDate || (!copyLines && !linesAreValid(rows))
-                || (copyLines && !rentChangeReady) || !extrasReady}
+                || (copyLines && !rentChangeReady) || !extrasReady || termTooLong || termNeedsConfirm}
             busy={busy}
             confirmTestId="renew-lease-confirm"
             width={copyLines ? "lg" : "xl"}
@@ -231,6 +250,23 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                             value={endDate} onChange={e => setEndDate(e.target.value)} />
                     </div>
                 </div>
+
+                {termTooLong && (
+                    <p role="alert" data-testid="renew-term-too-long" className="text-[11px] font-semibold text-error">
+                        {t("errTermTooLong", { max: MAX_TERM_YEARS })}
+                    </p>
+                )}
+                {termNeedsConfirm && (
+                    <span className="inline-flex flex-wrap items-center gap-2 text-[11px] text-warning" role="alert"
+                        data-testid="renew-long-term-confirm">
+                        <AlertTriangle size={12} /> {t("longTermConfirm", { years: termYears(startDate, endDate) })}
+                        <button type="button" data-testid="renew-long-term-continue"
+                            onClick={() => setTermAck(termKey)}
+                            className="px-2.5 py-1 rounded-md border border-warning/40 font-semibold text-foreground hover:bg-warning/10 cursor-pointer">
+                            {t("longTermContinue")}
+                        </button>
+                    </span>
+                )}
 
                 <label className="flex items-center gap-2 text-xs text-foreground">
                     <input type="checkbox" data-testid="renew-copy-lines" checked={copyLines}
