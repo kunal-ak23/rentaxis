@@ -61,6 +61,7 @@ class BookingFeeIT extends AbstractPostgresIT {
     @Autowired UnitRepository unitRepo;
     @Autowired JdbcTemplate jdbc;
     @Autowired com.datagami.rentaxis.domain.repository.BookingRequestRepository bookingRepo;
+    @Autowired com.datagami.rentaxis.domain.repository.LeaseRepository leaseRepo;
     @Autowired TransactionTemplate tx;
 
     private LeaseTestFixtures fixtures;
@@ -237,5 +238,27 @@ class BookingFeeIT extends AbstractPostgresIT {
         // Into the renewal's term as well.
         PropertyAmenity bbq = amenity("BBQ", "FREE", null);   // one pending per amenity: a second one
         assertThat(book(bbq, LocalDate.of(2027, 6, 1)).getId()).isNotNull();
+    }
+
+    /**
+     * Coordinator R3 round 1: one rule for "the renter's current contract" (bookings, gate
+     * passes, tickets): live and today inside the term. An ended lease still marked ACTIVE
+     * is not current; the running term of an early-posted renewal (RENEWED) is.
+     */
+    private int current(UUID t, LocalDate day) {
+        Integer n = tx.execute(s -> leaseRepo.findCurrentForRenterUser(t, renterUser, day).size());
+        return n == null ? 0 : n;
+    }
+
+    @Test
+    void theCurrentContractRuleIsTodayInsideALiveTerm() {
+        UUID t = fixtures.tenantId();
+        assertThat(current(t, LocalDate.now())).isOne();
+        // The term ended 2027-04-30; still ACTIVE (no expiry job ran) — not current.
+        assertThat(current(t, LocalDate.of(2027, 5, 10))).isZero();
+        // An early-posted renewal flips the running term to RENEWED: still current until it ends.
+        jdbc.update("update leases set status = 'RENEWED' where tenant_id = ?", t);
+        assertThat(current(t, LocalDate.now())).isOne();
+        assertThat(current(t, LocalDate.of(2027, 5, 10))).isZero();
     }
 }

@@ -156,36 +156,44 @@ class BookingControllerTest {
     // ------------------------------------------------------------- create
 
     @Test
-    void createBooking_unitNotOnCallerActiveLease_throwsNotFound() {
+    void createBooking_unitNotOnCallersCurrentContract_throwsNotFound() {
         when(renterRepository.findByUserId(renterUserId)).thenReturn(Optional.of(renter));
-        // Non-empty on purpose: the unit IS actively leased, just not by this caller.
-        // An empty list can't distinguish the renter-id filter from dead code — a
-        // mutant deleting that filter would still throw on an empty stream.
-        Renter otherRenter = new Renter();
-        otherRenter.setId(UUID.randomUUID());
-        otherRenter.setTenantId(tenantId);
-        otherRenter.setUserId(UUID.randomUUID());
-        when(leaseRepository.findByUnitIdAndStatus(unit.getId(), LeaseStatus.ACTIVE))
-                .thenReturn(List.of(activeLeaseForRenter(otherRenter)));
+        // Non-empty on purpose: the caller has a current contract, just on another unit —
+        // an empty list could not tell the unit filter from dead code.
+        Unit other = new Unit();
+        other.setId(UUID.randomUUID());
+        other.setProperty(unit.getProperty());
+        Lease elsewhere = activeLease();
+        elsewhere.setUnit(other);
+        when(leaseRepository.findCurrentForRenterUser(eq(tenantId), eq(renterUserId), any()))
+                .thenReturn(List.of(elsewhere));
 
         assertThatThrownBy(() -> controller.create(new BookingCreateRequest(
                 BookingResourceType.AMENITY, UUID.randomUUID(), unit.getId(), null, null)))
                 .isInstanceOf(NotFoundException.class);
     }
 
+    /**
+     * Coordinator (R3 round 1): an ACTIVE lease whose term has ended (no expiry job has
+     * closed it yet) is not a current contract — the renter cannot book against it. The
+     * shared findCurrentForRenterUser rule decides, not the bare ACTIVE status.
+     */
     @Test
-    void createBooking_leaseBelongsToForeignTenant_throwsNotFound() {
+    void createBooking_endedButStillActiveLease_throwsNotFound() {
         when(renterRepository.findByUserId(renterUserId)).thenReturn(Optional.of(renter));
-        // Same renter as the caller, but the lease row is stamped with a different
-        // tenant — exercises the tenant filter independently of the renter-id filter.
-        Lease foreignTenantLease = activeLease();
-        foreignTenantLease.setTenantId(UUID.randomUUID());
-        when(leaseRepository.findByUnitIdAndStatus(unit.getId(), LeaseStatus.ACTIVE))
-                .thenReturn(List.of(foreignTenantLease));
+        Lease ended = activeLease();
+        ended.setStartDate(java.time.LocalDate.now().minusYears(2));
+        ended.setEndDate(java.time.LocalDate.now().minusDays(3));
+        lenient().when(leaseRepository.findByUnitIdAndStatus(unit.getId(), LeaseStatus.ACTIVE))
+                .thenReturn(List.of(ended));
+        // The shared rule (today inside the term) finds nothing current.
+        when(leaseRepository.findCurrentForRenterUser(eq(tenantId), eq(renterUserId), any()))
+                .thenReturn(List.of());
 
         assertThatThrownBy(() -> controller.create(new BookingCreateRequest(
                 BookingResourceType.AMENITY, UUID.randomUUID(), unit.getId(), null, null)))
                 .isInstanceOf(NotFoundException.class);
+        verify(bookingService, never()).create(any(), any(), any(), any());
     }
 
     @Test
@@ -204,7 +212,7 @@ class BookingControllerTest {
     @Test
     void createBooking_activeLease_delegatesAndReturns201() {
         when(renterRepository.findByUserId(renterUserId)).thenReturn(Optional.of(renter));
-        when(leaseRepository.findByUnitIdAndStatus(unit.getId(), LeaseStatus.ACTIVE))
+        when(leaseRepository.findCurrentForRenterUser(eq(tenantId), eq(renterUserId), any()))
                 .thenReturn(List.of(activeLease()));
         BookingRequest saved = booking(BookingResourceType.AMENITY);
         when(bookingService.create(eq(tenantId), eq(renterUserId), eq(unit), any())).thenReturn(saved);
@@ -447,7 +455,7 @@ class BookingControllerTest {
     void myFacilities_mapsCountsHeldAndPropertyNameViaBatchQueries() {
         when(renterRepository.findByUserId(renterUserId)).thenReturn(Optional.of(renter));
         Lease lease = activeLease();
-        when(leaseRepository.findByRenterId(renter.getId())).thenReturn(List.of(lease));
+        when(leaseRepository.findCurrentForRenterUser(eq(tenantId), eq(renterUserId), any())).thenReturn(List.of(lease));
         PropertyAmenity a = new PropertyAmenity();
         a.setId(UUID.randomUUID());
         a.setPropertyId(propertyId);
@@ -515,7 +523,7 @@ class BookingControllerTest {
     @Test
     void myFacilities_noActiveLeases_returnsEmptyCollectionsWithoutBatchQueries() {
         when(renterRepository.findByUserId(renterUserId)).thenReturn(Optional.of(renter));
-        when(leaseRepository.findByRenterId(renter.getId())).thenReturn(List.of());
+        when(leaseRepository.findCurrentForRenterUser(eq(tenantId), eq(renterUserId), any())).thenReturn(List.of());
 
         ResponseEntity<MyFacilitiesDTO> response = controller.myFacilities();
 

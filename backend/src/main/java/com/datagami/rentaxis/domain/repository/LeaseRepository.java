@@ -305,13 +305,18 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
      * (ACTIVE, or ACTIVE with notice given: the renter still occupies the unit) and
      * with {@code today} inside the term — with unit and property loaded. What a
      * renter may raise a ticket (or anything else unit-bound) against.
+     *
+     * <p>Review r3C I1: RENEWED counts too. Posting a renewal early flips the running
+     * lease to RENEWED at once while its term still runs (the successor starts later);
+     * with today inside that term it is still the renter's current contract.
      */
     @Query("""
         select l from Lease l join fetch l.unit u join fetch u.property
         where l.tenantId = :tenantId
           and l.renter.userId = :userId
           and l.status in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.ACTIVE,
-                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.NOTICE_GIVEN)
+                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.NOTICE_GIVEN,
+                           com.datagami.rentaxis.domain.entity.enums.LeaseStatus.RENEWED)
           and (l.startDate is null or l.startDate <= :today)
           and (l.endDate is null or l.endDate >= :today)
         """)
