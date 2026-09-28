@@ -5,7 +5,7 @@ import { moneyValueOrNull } from "@/lib/money";
 
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { AlertTriangle, CheckCircle2, Download, FileText, Lock, Plus, RotateCcw, Trash2, XCircle } from "lucide-react";
 import { ApiError } from "@/lib/api/facilities";
 import {
@@ -322,11 +322,12 @@ function DraftEdit({ rec, busy, onSave }: {
 
 function Downloads({ id }: { id: string }) {
     const t = useTranslations("BankRec");
+    const locale = useLocale();
     return (
         <span className="inline-flex gap-1">
             <a className={small} href={bankRecApi.reconciliationPdfUrl(id, "en")} download data-testid={`rec-pdf-en-${id}`}><Download size={12} />PDF EN</a>
             <a className={small} href={bankRecApi.reconciliationPdfUrl(id, "ar")} download data-testid={`rec-pdf-ar-${id}`}><Download size={12} />PDF عربي</a>
-            <a className={small} href={bankRecApi.reconciliationCsvUrl(id)} download><Download size={12} />{t("exportCsv")}</a>
+            <a className={small} href={bankRecApi.reconciliationCsvUrl(id, locale)} download data-testid={`rec-csv-${id}`}><Download size={12} />{t("exportCsv")}</a>
         </span>
     );
 }

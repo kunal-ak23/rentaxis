@@ -386,7 +386,8 @@ export const bankRecApi = {
     reopenReconciliation: (recId: string, reason: string) =>
         apiSend<Reconciliation>("POST", `${ROOT}/reconciliations/${recId}/reopen`, { reason }),
     reconciliationPdfUrl: (recId: string, lang: "en" | "ar") => `${BASE}${ROOT}/reconciliations/${recId}.pdf${qs({ lang })}`,
-    reconciliationCsvUrl: (recId: string) => `${BASE}${ROOT}/reconciliations/${recId}.csv`,
+    /** Break-it R3 data3 F2: `lang` (the screen's locale) so the statement's labels come back in it, like the PDF. */
+    reconciliationCsvUrl: (recId: string, lang: string) => `${BASE}${ROOT}/reconciliations/${recId}.csv${qs({ lang })}`,
     openingItems: (id: string) => apiGet<OpeningItem[]>(`${ROOT}/bank-accounts/${id}/opening-items`),
     addOpeningItem: (id: string, body: OpeningItemInput) => apiSend<OpeningItem>("POST", `${ROOT}/bank-accounts/${id}/opening-items`, body),
     deleteOpeningItem: (id: string, itemId: string) => apiSend<void>("DELETE", `${ROOT}/bank-accounts/${id}/opening-items/${itemId}`),
