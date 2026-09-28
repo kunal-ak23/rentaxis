@@ -248,6 +248,7 @@ class TicketClosureOtpIT extends AbstractPostgresIT {
 
     @Test
     void staffCannotCloseARenterReportedTicketThroughTheStatusRoute() {
+        leaseFor(renter); // a renter raises tickets on a current contract (R3 portal3 F1)
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
                 renterUser.getId().toString(), null, List.of(new SimpleGrantedAuthority("ROLE_RENTER"))));
         CreateTicketDTO dto = new CreateTicketDTO();
@@ -355,7 +356,8 @@ class TicketClosureOtpIT extends AbstractPostgresIT {
         Renter otherRenter = new Renter();
         otherRenter.setNameEn("Other Renter");
         otherRenter.setUserId(other.getId());
-        renterRepo.save(otherRenter);
+        // They hold a contract of their own (R3 portal3 F1), just not this one.
+        leaseFor(renterRepo.save(otherRenter));
         as(other);
         CreateTicketDTO dto = new CreateTicketDTO();
         dto.setPropertyId(propertyId);

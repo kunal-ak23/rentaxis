@@ -244,6 +244,51 @@ public class MaintenanceTicketService {
         visibleTicket(ticketId, Access.READ);
     }
 
+    /** Shown (and mapped to the translated text by the web) when a renter has no current contract. */
+    static final String NO_CURRENT_CONTRACT =
+            "You have no current contract, so a ticket can't be raised.";
+
+    /**
+     * Break-it R3 portal3 F1: the renter's current contract (ACTIVE or notice given,
+     * today inside the term) the new ticket is about. {@code leaseId}, when sent,
+     * must be one of them; otherwise the unit (or, with no unit, the property) must
+     * identify exactly one. No current contract at all is a 403; a unit, property or
+     * lease that is not one of theirs is the same 404 as one that does not exist.
+     */
+    private Lease renterCurrentLease(CreateTicketDTO dto, Property property, UUID renterUserId) {
+        // The caller's tenant, not the named property's: a property id from another
+        // organisation then finds none of their contracts in it — the plain 404.
+        UUID tenantId = TenantContextHolder.getTenantId() != null
+                ? TenantContextHolder.getTenantId() : property.getTenantId();
+        List<Lease> current = leaseRepository.findCurrentForRenterUser(tenantId, renterUserId, LocalDate.now());
+        if (current.isEmpty()) {
+            throw new AccessDeniedException(NO_CURRENT_CONTRACT);
+        }
+        List<Lease> inProperty = current.stream()
+                .filter(l -> l.getUnit() != null && l.getUnit().getProperty() != null
+                        && property.getId().equals(l.getUnit().getProperty().getId()))
+                .toList();
+        if (dto.getLeaseId() != null) {
+            Lease lease = inProperty.stream().filter(l -> dto.getLeaseId().equals(l.getId())).findFirst()
+                    .orElseThrow(() -> new NotFoundException("Lease not found"));
+            if (dto.getUnitId() != null && !dto.getUnitId().equals(lease.getUnit().getId())) {
+                throw new NotFoundException("Lease not found");
+            }
+            return lease;
+        }
+        if (dto.getUnitId() != null) {
+            return inProperty.stream().filter(l -> dto.getUnitId().equals(l.getUnit().getId())).findFirst()
+                    .orElseThrow(() -> new NotFoundException("Unit not found"));
+        }
+        if (inProperty.isEmpty()) {
+            throw new NotFoundException("Property not found");
+        }
+        if (inProperty.size() > 1) {
+            throw new BusinessRuleViolationException("Choose the unit this ticket is about");
+        }
+        return inProperty.get(0);
+    }
+
     /** The journal_entry_sequences series for ticket references (#20). */
     static final String TICKET_SERIES = "TKT";
 
@@ -259,6 +304,10 @@ public class MaintenanceTicketService {
         Property property = propertyRepository.findById(dto.getPropertyId())
                 .orElseThrow(() -> new NotFoundException("Property not found"));
         propertyScope.requireCanAccessProperty(property.getId());
+        if (dto.getOnBehalfOfRenterId() != null && callerIsRenter()) {
+            // A renter reports for themselves (#19), whatever contracts they hold.
+            throw new BusinessRuleViolationException("Only staff can log a ticket on a renter's behalf");
+        }
 
         MaintenanceTicket ticket = new MaintenanceTicket();
         ticket.setProperty(property);
@@ -272,14 +321,22 @@ public class MaintenanceTicketService {
         // be scoped: a manager of building A could name building B's lease, and
         // B's renter became the closure-OTP holder of a ticket they never raised.
         Unit unit = null;
-        if (dto.getUnitId() != null) {
+        if (callerIsRenter()) {
+            // Break-it R3 portal3 F1 (P0): a renter raises tickets only on one of
+            // their own current contracts, and the ticket always carries it — the
+            // lease's renter holds the closure OTP, so a ticket on a neighbour's
+            // unit must not exist with its reporter holding that OTP.
+            Lease lease = renterCurrentLease(dto, property, reportedBy);
+            ticket.setUnit(lease.getUnit());
+            ticket.setLease(lease);
+        } else if (dto.getUnitId() != null) {
             unit = unitRepository.findById(dto.getUnitId())
                     .filter(u -> u.getProperty() != null && property.getId().equals(u.getProperty().getId()))
                     .orElseThrow(() -> new NotFoundException("Unit not found"));
             ticket.setUnit(unit);
         }
 
-        if (dto.getLeaseId() != null) {
+        if (!callerIsRenter() && dto.getLeaseId() != null) {
             Lease lease = leaseRepository.findById(dto.getLeaseId())
                     .orElseThrow(() -> new NotFoundException("Lease not found"));
             Unit leaseUnit = lease.getUnit();
@@ -289,16 +346,8 @@ public class MaintenanceTicketService {
             if (!inProperty || !onUnit) {
                 throw new NotFoundException("Lease not found");
             }
-            // A lease's renter holds its tickets' closure OTP, so a renter may
-            // only raise a ticket on their own contract, and staff only on one
-            // they manage.
-            if (callerIsRenter()) {
-                if (lease.getRenter() == null || !reportedBy.equals(lease.getRenter().getUserId())) {
-                    throw new NotFoundException("Lease not found");
-                }
-            } else {
-                propertyScope.requireCanAccessLease(lease);
-            }
+            // Staff only on a lease they manage (renters are resolved above).
+            propertyScope.requireCanAccessLease(lease);
             ticket.setLease(lease);
         }
 
