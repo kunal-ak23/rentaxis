@@ -1,0 +1,179 @@
+1
+00:00:00,000 --> 00:00:02,771
+This tutorial fills in a project: its
+
+2
+00:00:02,771 --> 00:00:05,542
+buildings, units, key contacts, amenities,
+and parking.
+
+3
+00:00:05,542 --> 00:00:09,896
+As a Company Admin, open Properties and
+Units and select Manage
+
+4
+00:00:09,896 --> 00:00:14,251
+on Oasis Crest Creek Gardens, the project
+from the previous tutorial.
+
+5
+00:00:14,251 --> 00:00:18,605
+The Overview shows no property manager and
+no key contacts yet.
+
+6
+00:00:18,605 --> 00:00:20,980
+Open Buildings and select Add Building.
+
+7
+00:00:20,980 --> 00:00:24,543
+Enter the English name, Creek Gardens,
+Block A, the
+
+8
+00:00:24,543 --> 00:00:27,710
+Arabic name, and the number of floors,
+fourteen.
+
+9
+00:00:27,710 --> 00:00:31,668
+Select Save, and the building appears with
+its floor count.
+
+10
+00:00:31,668 --> 00:00:33,647
+On Units, select Add Unit.
+
+11
+00:00:33,647 --> 00:00:37,606
+Enter the unit number, A-1402, choose 1
+BHK, and enter
+
+12
+00:00:37,606 --> 00:00:41,564
+the size and the expected yearly rent of
+74,000 dirhams.
+
+13
+00:00:41,564 --> 00:00:45,127
+Choose the building, Block A, and select
+Save Unit.
+
+14
+00:00:45,127 --> 00:00:48,690
+The unit is listed in Block A as Vacant.
+
+15
+00:00:48,690 --> 00:00:52,252
+Key contacts are the numbers your team
+needs on
+
+16
+00:00:52,252 --> 00:00:55,815
+site, such as security, maintenance, or
+the nearest clinic.
+
+17
+00:00:55,815 --> 00:00:57,794
+They are not user accounts.
+
+18
+00:00:57,794 --> 00:01:00,169
+Back on Overview, select Add Contact.
+
+19
+00:01:00,169 --> 00:01:02,940
+Choose the category, Security, then enter
+the
+
+20
+00:01:02,940 --> 00:01:05,711
+name, the phone number, and a note.
+
+21
+00:01:05,711 --> 00:01:07,690
+Save Contact adds the card.
+
+22
+00:01:07,690 --> 00:01:09,670
+On Amenities, select Add Amenity.
+
+23
+00:01:09,670 --> 00:01:13,628
+Enter the English and Arabic names and a
+short description.
+
+24
+00:01:13,628 --> 00:01:17,191
+Bookable is already on, and the fee stays
+Free.
+
+25
+00:01:17,191 --> 00:01:20,358
+Under Towers, select Block A so the pool
+
+26
+00:01:20,358 --> 00:01:23,128
+belongs to that building, then select
+Save.
+
+27
+00:01:23,128 --> 00:01:26,295
+The pool is listed as Bookable and Active.
+
+28
+00:01:26,295 --> 00:01:28,275
+On Parking, select Add Spot.
+
+29
+00:01:28,275 --> 00:01:31,837
+Enter the spot number, P1-014, and the
+level, P1.
+
+30
+00:01:31,837 --> 00:01:35,004
+Tick Covered, choose Block A, and select
+Save.
+
+31
+00:01:35,004 --> 00:01:38,567
+The spot is listed as covered, available,
+and Active.
+
+32
+00:01:38,567 --> 00:01:43,317
+When something is no longer offered,
+retire it rather than delete it.
+
+33
+00:01:43,317 --> 00:01:46,088
+Suppose the pool closes for the season.
+
+34
+00:01:46,088 --> 00:01:48,463
+On Amenities, select Deactivate and
+confirm.
+
+35
+00:01:48,463 --> 00:01:52,421
+The pool stays on record, now Inactive,
+instead of disappearing.
+
+36
+00:01:52,421 --> 00:01:55,192
+A contact card that is simply wrong
+
+37
+00:01:55,192 --> 00:01:57,963
+can be deleted with its bin icon.
+
+38
+00:01:57,963 --> 00:02:02,318
+The project now has a building, units, a
+contact, an amenity,
+
+39
+00:02:02,318 --> 00:02:06,672
+and a parking spot, ready for tenancy
+contracts and resident bookings.

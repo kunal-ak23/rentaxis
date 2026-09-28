@@ -1,185 +1,185 @@
 1
-00:00:00,000 --> 00:00:03,447
+00:00:00,000 --> 00:00:03,327
 In this tutorial, a System Admin
 provisions a new
 
 2
-00:00:03,447 --> 00:00:06,894
+00:00:03,327 --> 00:00:06,654
 organisation and chooses the optional
 features it can use.
 
 3
-00:00:06,894 --> 00:00:09,193
+00:00:06,654 --> 00:00:08,872
 Open Settings, then Organisations under
 Administration.
 
 4
-00:00:09,193 --> 00:00:12,257
+00:00:08,872 --> 00:00:11,830
 The list shows every organisation on the
 platform,
 
 5
-00:00:12,257 --> 00:00:15,321
+00:00:11,830 --> 00:00:14,787
 with its address, tax registration number,
 and status.
 
 6
-00:00:15,321 --> 00:00:18,768
+00:00:14,787 --> 00:00:18,114
 Before you create anything, search for the
 planned name.
 
 7
-00:00:18,768 --> 00:00:21,832
+00:00:18,114 --> 00:00:21,071
 Nothing comes back, so the name is free
 
 8
-00:00:21,832 --> 00:00:24,514
+00:00:21,071 --> 00:00:23,659
 and you will not create a duplicate.
 
 9
-00:00:24,514 --> 00:00:26,046
+00:00:23,659 --> 00:00:25,138
 Select Provision New Organisation.
 
 10
-00:00:26,046 --> 00:00:29,493
+00:00:25,138 --> 00:00:28,465
 Enter the organisation name, Palm Vista
 Real Estate, then
 
 11
-00:00:29,493 --> 00:00:32,940
+00:00:28,465 --> 00:00:31,792
 the office address, the TRN, and the phone
 number.
 
 12
-00:00:32,940 --> 00:00:36,387
+00:00:31,792 --> 00:00:35,119
 These details appear on receipts and
 contracts, so enter
 
 13
-00:00:36,387 --> 00:00:39,835
+00:00:35,119 --> 00:00:38,446
 them exactly as they appear on the trade
 licence.
 
 14
-00:00:39,835 --> 00:00:43,665
+00:00:38,446 --> 00:00:42,143
 Ticket Closure OTP is on by default:
 tenants share a
 
 15
-00:00:43,665 --> 00:00:47,112
+00:00:42,143 --> 00:00:45,470
 one-time code before a maintenance ticket
 can be closed.
 
 16
-00:00:47,112 --> 00:00:48,261
+00:00:45,470 --> 00:00:46,579
 Select Create Organisation.
 
 17
-00:00:48,261 --> 00:00:51,325
+00:00:46,579 --> 00:00:49,536
 Palm Vista Real Estate joins the list with
 
 18
-00:00:51,325 --> 00:00:54,007
+00:00:49,536 --> 00:00:52,124
 its own ID and the status Active.
 
 19
-00:00:54,007 --> 00:00:57,071
+00:00:52,124 --> 00:00:55,082
 Now open Feature Toggles for the new
 organisation.
 
 20
-00:00:57,071 --> 00:00:58,986
+00:00:55,082 --> 00:00:56,930
 Every optional feature starts off.
 
 21
-00:00:58,986 --> 00:01:01,667
+00:00:56,930 --> 00:00:59,518
 Listings publishes vacant units to the
 marketplace.
 
 22
-00:01:01,667 --> 00:01:05,880
+00:00:59,518 --> 00:01:03,584
 Meetings and Scheduling lets tenants book
 meetings with the property team.
 
 23
-00:01:05,880 --> 00:01:07,795
+00:01:03,584 --> 00:01:05,432
 Email Notifications sends supported
 emails.
 
 24
-00:01:07,795 --> 00:01:10,860
+00:01:05,432 --> 00:01:08,390
 Contract Renewals and Reminders handles
 contract renewal reminders.
 
 25
-00:01:10,860 --> 00:01:15,073
+00:01:08,390 --> 00:01:12,456
 Gate Passes and Security runs visitor
 passes and the Security app.
 
 26
-00:01:15,073 --> 00:01:16,988
+00:01:12,456 --> 00:01:14,305
 Mobile finance screens stays off.
 
 27
-00:01:16,988 --> 00:01:20,818
+00:01:14,305 --> 00:01:18,001
 Turn on only what the organisation has
 signed up for;
 
 28
-00:01:20,818 --> 00:01:24,266
+00:01:18,001 --> 00:01:21,328
 here, Meetings and Scheduling, and Gate
 Passes and Security.
 
 29
-00:01:24,266 --> 00:01:27,713
+00:01:21,328 --> 00:01:24,656
 Each switch saves as soon as you select
 it.
 
 30
-00:01:27,713 --> 00:01:32,309
+00:01:24,656 --> 00:01:29,092
 Close the panel and open it again: both
 features are still on.
 
 31
-00:01:32,309 --> 00:01:36,522
+00:01:29,092 --> 00:01:33,158
 Next, open the organisation switcher and
 choose Palm Vista Real Estate.
 
 32
-00:01:36,522 --> 00:01:39,587
+00:01:33,158 --> 00:01:36,115
 The switcher now names it, and the
 dashboard
 
 33
-00:01:39,587 --> 00:01:42,651
+00:01:36,115 --> 00:01:39,073
 is empty, with no properties or contracts
 yet.
 
 34
-00:01:42,651 --> 00:01:46,098
+00:01:39,073 --> 00:01:42,400
 Back on Organisations, Edit opens the same
 form, so
 
 35
-00:01:46,098 --> 00:01:49,545
+00:01:42,400 --> 00:01:45,727
 legal details can be corrected later with
 Save Changes.
 
 36
-00:01:49,545 --> 00:01:53,758
+00:01:45,727 --> 00:01:49,793
 Deactivate asks for confirmation first:
 everyone in the organisation is signed
 
 37
-00:01:53,758 --> 00:01:57,589
+00:01:49,793 --> 00:01:53,490
 out and cannot sign in until it is
 activated again.
 
 38
-00:01:57,589 --> 00:01:58,355
+00:01:53,490 --> 00:01:54,230
 Cancel both.
 
 39
-00:01:58,355 --> 00:02:02,568
+00:01:54,230 --> 00:01:58,296
 The organisation is ready for its users,
 properties, and tenancy contracts.

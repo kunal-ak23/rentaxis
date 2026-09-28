@@ -2,7 +2,7 @@
   "id": "04",
   "slug": "provision-organisations-and-feature-access",
   "title": "Miftah tutorial 04 · Set up organisations and feature access",
-  "description": "Create and edit an organisation, then turn features such as listings, meetings and gate passes on or off.\n\nWho this is for: System Admin.\n\nChapters:\n0:00 Introduction\n0:32 These details appear on receipts and contracts\n1:01 Meetings and Scheduling lets tenants book meetings\n1:32 Next, open the organisation switcher and choose\n\nPart of the Miftah web course — playlist: Miftah · Getting started\n\nأنشئ مؤسسة وعدّل بياناتها، ثم فعّل أو أوقف ميزات مثل الإعلانات والاجتماعات وتصاريح الدخول.",
+  "description": "Create and edit an organisation, then turn features such as listings, meetings and gate passes on or off.\n\nWho this is for: System Admin.\n\nChapters:\n0:00 Organisations\n0:23 Provision New Organisation\n0:45 Create Organisation\n1:29 Switch Into the Organisation\n\nPart of the Miftah web course — playlist: Miftah · Getting started\n\nأنشئ مؤسسة وعدّل بياناتها، ثم فعّل أو أوقف ميزات مثل الإعلانات والاجتماعات وتصاريح الدخول.",
   "tags": [
     "miftah",
     "property management",
@@ -27,25 +27,25 @@
     {
       "startSec": 0,
       "start": "0:00",
-      "label": "Introduction"
+      "label": "Organisations"
     },
     {
-      "startSec": 32.94,
-      "start": "0:32",
-      "label": "These details appear on receipts and contracts"
+      "startSec": 23.659,
+      "start": "0:23",
+      "label": "Provision New Organisation"
     },
     {
-      "startSec": 61.667,
-      "start": "1:01",
-      "label": "Meetings and Scheduling lets tenants book meetings"
+      "startSec": 45.47,
+      "start": "0:45",
+      "label": "Create Organisation"
     },
     {
-      "startSec": 92.309,
-      "start": "1:32",
-      "label": "Next, open the organisation switcher and choose"
+      "startSec": 89.092,
+      "start": "1:29",
+      "label": "Switch Into the Organisation"
     }
   ],
-  "durationSec": 123,
+  "durationSec": 119,
   "roles": [
     "SUPER_ADMIN"
   ],

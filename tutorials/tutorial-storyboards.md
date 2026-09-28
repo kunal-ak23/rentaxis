@@ -200,146 +200,139 @@ track is commissioned separately.
 
 ## 06 — Create a project and property portfolio
 
-- Audience: tenant admins and property managers; 2–3 minutes.
-- Capture: create a project/property, add bilingual names, type, emirate,
-  address, Makani number and fixed expenses; switch card/table views.
-- Narration: “This tutorial creates the portfolio structure that later supports
-  units, leases, tickets, listings, finance, and resident services. Begin in the
-  Tutorial Demo organization and open Properties. Search for the planned project
-  and property names before creating new records. Select Create Project and use
-  a synthetic bilingual name that is easy to recognize during recording. Add
-  the English name first, then the Arabic name if your organization maintains
-  both. Save the project and wait for its confirmation. Open the project and
-  choose Add Property. Enter the property’s English and Arabic names exactly as
-  approved. Choose the correct property type rather than relying on a default,
-  because type can affect how the portfolio is presented and filtered. Select
-  the emirate, enter the full demo address, and add a valid synthetic Makani
-  number in the format expected by the form. Makani and address information help
-  operations teams identify the physical site; do not copy a real customer
-  location into tutorial data. Continue to the financial fields and enter the
-  prepared fixed-expense values. These values contribute to property reporting,
-  so use a documented amount and currency rather than an arbitrary production
-  figure. Review the form from top to bottom. Confirm the project, bilingual
-  names, type, emirate, address, Makani number, and expenses before saving once.
-  When the success message appears, open the property detail and compare the
-  saved values with the source fixture. Return to the portfolio list. Use Card
-  view to scan property names, occupancy, and summary information visually.
-  Switch to Table view when you need compact comparison across a larger
-  portfolio. Apply a search or filter and confirm that the new Tutorial Demo
-  property appears in both views. Open it from the table, then return and open
-  it from the card to prove both destinations resolve to the same record. If the
-  property will be assigned to a manager, verify that assignment separately
-  rather than sharing a tenant-admin account. Finish on the property detail
-  page. The portfolio foundation is now ready for buildings, units, contacts,
-  amenities, parking, leases, and listings.”
+- Audience: Company Admins and property managers; about 2 minutes.
+- Capture: as the Company Admin in Oasis Crest Properties, Properties & Units:
+  search "Creek Gardens" (no match), More › Add Project "Oasis Crest Creek
+  Gardens" (Arabic name, Dubai, Residential, address, Makani number, fixed
+  expenses), Create, Add Property CG-101 (2 BHK, Vacant, AED 98,000), Manage ›
+  Units, then Cards and Table. A project an earlier take created is purged from
+  the local tutorial database before the first frame (the app cannot delete
+  projects or units).
+- Narration: “This tutorial creates a new project and adds its first property.
+  As a Company Admin, open Leasing, then Properties and Units. Each row is a
+  project: one site, with its units, vacancies, occupancy, and revenue. Before
+  creating anything, search for the name you plan to use. Nothing matches Creek
+  Gardens, so there is no duplicate. Open More, then Add Project. A project
+  groups the properties on one site. Enter the English name, Oasis Crest Creek
+  Gardens, and the Arabic name. Choose the emirate, Dubai, and the type,
+  Residential. Add the street address and the Makani number, the ten-digit
+  number that identifies the building's entrance. Fixed expenses holds the
+  site's yearly running costs, such as service charges. Select Create. The
+  project joins the list, with no units yet. Now add its first property. Select
+  Add Property. Here, a property is one rentable unit inside a project. Select
+  the project, enter the unit number, CG-101, and choose the type, 2 BHK. Enter
+  the size in square feet. New properties start Vacant. Enter the expected
+  yearly rent, 98,000 dirhams, and select Create. The project's Units and Vacant
+  columns now count one. Select Manage to open the project. The header shows its
+  name, type, address, and Makani number, and the tabs hold its buildings,
+  units, contracts, amenities, parking, and ledger accounts. On Units, CG-101 is
+  listed as a vacant 2 BHK at 98,000 dirhams. Back on the list, Cards shows each
+  project as a card with its units, vacancies, occupancy, and revenue, which is
+  quick to scan. Table lines the projects up in columns, which is better for
+  comparing a larger portfolio. The new project is ready for buildings,
+  contacts, amenities, and parking, which the next tutorial adds.”
 
 ## 07 — Buildings, units, contacts, amenities, and parking
 
-- Audience: tenant admins and property managers; 2–3 minutes.
-- Capture: add a building and floor count, create a unit, add an emergency
-  contact, create a bookable amenity and parking spot, edit each, then explain
-  deactivation versus deletion.
-- Narration: “In this tutorial, we complete the operational structure inside a
-  property: buildings, units, contacts, amenities, and parking. Open the prepared
-  Tutorial Demo property and start with Buildings. Select Add Building, enter a
-  clear bilingual name, and provide the correct floor count. Save, reopen the
-  building, and confirm the floor information. Next, open Units and create a
-  synthetic vacant unit. Select the building and floor, enter the unit number,
-  type, bedroom or layout details when available, and the prepared expected-rent
-  value. Choose the correct currency and status. Unit status matters throughout
-  RentAxis: a vacant unit can be selected for a new lease or listing, while an
-  occupied unit should reflect an active tenancy. Save and verify that the unit
-  appears under the intended building. Edit one non-critical demo field, save,
-  and confirm the change persists. Continue to Contacts. Add an emergency or
-  operations contact with a synthetic name, role, phone number, and email. Use
-  the contact type that matches its purpose so staff can find it quickly during
-  an incident. Do not enter personal details that are not approved for the
-  tenant directory. Now open Amenities or Facilities and create a bookable demo
-  amenity. Enter English and Arabic names, a useful description, operating
-  hours, capacity, and any booking rules exposed by the form. Mark it Active and
-  Bookable so the renter request flow can use it later. If fees or time-slot
-  settings are present, use the prepared fixture values and explain that they
-  determine availability. Save, reopen, and confirm the amenity is visible in
-  the property inventory. Move to Parking and create a synthetic parking spot.
-  Provide the label, location or level, vehicle restrictions if configured, and
-  the current availability state. Mark it bookable or assignable only when
-  residents are allowed to request it. Save and verify the result. Demonstrate
-  an edit on each inventory type without deleting the record. Deactivation is
-  the safer choice for a building contact, amenity, or parking spot that should
-  no longer be used but still appears in historical operations. Deletion should
-  be reserved for an erroneous synthetic record with no dependencies. Finish by
-  returning to the property overview. Confirm that the building, vacant unit,
-  contact, amenity, and parking spot all belong to the same Tutorial Demo
-  property. This inventory now supports leasing, facility requests, parking
-  allocation, listings, and property operations.”
+- Audience: Company Admins and property managers; about 2.5 minutes.
+- Capture: inside Oasis Crest Creek Gardens (rebuilt off camera to 06's end
+  state): Add Building "Creek Gardens — Block A" (14 floors), Add Unit A-1402 in
+  it, Add Contact (Security desk), Add Amenity "Residents' Pool" (bookable,
+  free, Block A), Add Spot P1-014 (P1, covered, Block A), then Deactivate the
+  pool (Inactive, kept on record).
+- Narration: “This tutorial fills in a project: its buildings, units, key
+  contacts, amenities, and parking. As a Company Admin, open Properties and
+  Units and select Manage on Oasis Crest Creek Gardens, the project from the
+  previous tutorial. The Overview shows no property manager and no key contacts
+  yet. Open Buildings and select Add Building. Enter the English name, Creek
+  Gardens, Block A, the Arabic name, and the number of floors, fourteen. Select
+  Save, and the building appears with its floor count. On Units, select Add
+  Unit. Enter the unit number, A-1402, choose 1 BHK, and enter the size and the
+  expected yearly rent of 74,000 dirhams. Choose the building, Block A, and
+  select Save Unit. The unit is listed in Block A as Vacant. Key contacts are
+  the numbers your team needs on site, such as security, maintenance, or the
+  nearest clinic. They are not user accounts. Back on Overview, select Add
+  Contact. Choose the category, Security, then enter the name, the phone number,
+  and a note. Save Contact adds the card. On Amenities, select Add Amenity.
+  Enter the English and Arabic names and a short description. Bookable is
+  already on, and the fee stays Free. Under Towers, select Block A so the pool
+  belongs to that building, then select Save. The pool is listed as Bookable and
+  Active. On Parking, select Add Spot. Enter the spot number, P1-014, and the
+  level, P1. Tick Covered, choose Block A, and select Save. The spot is listed
+  as covered, available, and Active. When something is no longer offered, retire
+  it rather than delete it. Suppose the pool closes for the season. On
+  Amenities, select Deactivate and confirm. The pool stays on record, now
+  Inactive, instead of disappearing. A contact card that is simply wrong can be
+  deleted with its bin icon. The project now has a building, units, a contact,
+  an amenity, and a parking spot, ready for tenancy contracts and resident
+  bookings.”
 
 ## 08 — Import a property portfolio in bulk
 
-- Audience: tenant admins; 2–3 minutes.
-- Capture: download the current template, show required columns, upload a
-  synthetic workbook, review validation errors, correct them, and verify the
-  resulting property/unit/renter/lease counts.
-- Narration: “Bulk portfolio import is intended for controlled onboarding and
-  migration. It can create many connected records, so prepare and validate the
-  workbook before uploading it. Open Bulk Import from the portfolio area and
-  download a fresh template from the running version of RentAxis. Do not reuse
-  an old template because required columns and accepted values can change. Open
-  the downloaded workbook outside the browser and identify the sheets and
-  required headings. The template may include projects, properties, buildings,
-  units, renters, leases, and payment schedules. Preserve the column names and
-  do not insert decorative rows. Enter only synthetic Tutorial Demo data for
-  this walkthrough. Use stable reference values so a unit points to the correct
-  building, a lease points to the correct renter and unit, and installment totals
-  reconcile with the lease. Save a deliberately invalid copy first. Return to
-  RentAxis, choose the file, and upload it for validation. Review the reported
-  row number, column, and message. A validation failure should not silently
-  create a partial portfolio. Correct every issue in the workbook rather than
-  editing around the error in production. Upload the corrected copy and wait for
-  validation to finish. Review the preview or import summary before confirming.
-  Compare the counts for projects, properties, buildings, units, renters,
-  leases, and installments with the prepared source totals. Start the import
-  once and keep the page open until RentAxis reports completion. If an import is
-  still processing, do not submit the same workbook again. After success, open
-  the resulting property and inspect representative records. Confirm one unit’s
-  type, rent, and status; one renter’s contact details; one lease’s dates and
-  amount; and the complete payment schedule. Add the installments and verify
-  they reconcile with the lease total and configured charges. Review the import
-  history so the operator, time, source file, and result remain auditable. Bulk
-  import is not a substitute for unsupervised recurring edits. For later
-  corrections, use the normal record workflows unless an approved migration
-  procedure says otherwise. Finish by identifying the imported records as
-  Tutorial Demo data and retaining the source workbook securely for
-  reconciliation.”
+- Audience: Company Admins; about 2 minutes.
+- Capture: Properties & Units › More › Import Portfolio: Download Template,
+  upload a workbook with two deliberate mistakes (Validation Failed, nothing
+  created), Try Again with the corrected workbook (1 property, 2 buildings, 4
+  units, 2 tenants), open Oasis Crest Garden Villas › Units, then Tenants.
+  Workbooks: tutorials/capture/fixtures/ (fictional, generated from the app
+  template). Earlier imports are purged off camera; tenant email and phone are
+  hidden.
+- Narration: “Bulk import brings a whole portfolio into Miftah in one step,
+  which suits onboarding a new organisation or moving from another system. As a
+  Company Admin, open Properties and Units, then More, then Import Portfolio.
+  Always start from a fresh template: select Download Template, so the columns
+  and accepted values match the version you are running. The workbook has a
+  sheet each for properties, units, tenants, and tenancy contracts. Keep the
+  column headings as they are, and make every unit name a property from the
+  Properties sheet. Upload a copy with mistakes first, to see what happens.
+  Choose the file and select Upload and Import. Miftah checks the whole workbook
+  before it creates anything. Validation Failed lists each problem with its
+  sheet, row, column, and cause. Row three has a unit type that is not on the
+  list, and row five names a property that is not in the Properties sheet.
+  Nothing was created. Fix the mistakes in the workbook itself, then select Try
+  Again and upload the corrected copy. Keep the window open while it runs, and
+  upload a workbook only once. Import Successful shows the counts: one property,
+  two buildings, four units, and two tenants. This workbook has no tenancy
+  contracts. Close the dialog. Oasis Crest Garden Villas is now in the list.
+  Select Manage and open Units. All four units are there, each in the building
+  the workbook named, vacant, with its expected rent. Open Tenants. Omar Al
+  Mansoori and Leila Farouk have joined the list, ready to be chosen for a
+  tenancy contract. Imported tenants get no portal invitation; the next tutorial
+  covers portal access. For later changes, edit records one at a time rather
+  than importing again.”
 
-## 09 — Manage renters and portal access
+## 09 — Manage tenants and portal access
 
-- Audience: tenant admins and property managers; 2–3 minutes.
-- Capture: create a renter with bilingual name, email, phone and language,
-  enable the portal account, show the generated onboarding credential, edit the
-  profile, and explain secure delivery.
-- Narration: “This tutorial creates a renter profile and enables resident portal
-  access. Open Renters inside the Tutorial Demo organization and search for the
-  planned email address first. Select Create Renter and enter a synthetic English
-  name, Arabic name, email address, and phone number. Confirm each contact value
-  carefully because notifications and account onboarding may use them. Select
-  the preferred language so supported communication is presented appropriately.
-  Add any required identification or address fields using approved demo data;
-  never place a real identity document number in a tutorial tenant. Review the
-  form and save once. Open the new renter detail and verify that the bilingual
-  name, contacts, language, organization, and active status match the fixture.
-  Next, choose the portal-account action. Explain that the renter profile stores
-  tenancy and contact information, while the portal account grants the ability
-  to sign in. Confirm the account creation. If RentAxis displays a temporary
-  onboarding credential, hide it from the recording and deliver a real
-  credential only through an approved secure channel. The resident should change
-  a temporary password at first sign-in. Use the prepared renter session to sign
-  in and confirm that only renter navigation appears. Return to the administrator
-  session and edit a safe demo field such as the preferred language or phone
-  number. Save, refresh, and verify the update. Show the portal-access status and
-  where an authorized administrator can disable the account without erasing the
-  renter’s lease history. Do not recycle an old resident account for a new
-  person. Finish by confirming the Tutorial Demo renter is active and ready to
-  be selected in the lease wizard.”
+- Audience: Company Admins and property managers; about 2 minutes.
+- Capture: Tenants: search "Mariam" (no match), Add Tenant "Mariam Al Nuaimi"
+  (Arabic name, email, phone, Arabic, Create Portal Account), Invite sent ›
+  Done, View (Invite pending), Settings › Users & staff: delete her Tenant user,
+  back on her page the invite is gone and the profile stays. Tenant email and
+  phone are hidden in every frame; leftovers from an earlier take are removed
+  off camera.
+- Narration: “This tutorial adds a tenant, invites them to the tenant portal,
+  and later withdraws that access. As a Company Admin, open Leasing, then
+  Tenants. A tenant profile holds the person's names, contact details, and
+  preferred language. Before adding someone, search for them. No tenants match
+  Mariam, so there is no duplicate. Select Add Tenant. Enter the English name,
+  Mariam Al Nuaimi, and the Arabic name. Enter her email address and mobile
+  number, and check them carefully, because the portal invitation goes to that
+  email. They are hidden in this video. Choose Arabic as the preferred language.
+  Create Portal Account is ticked, so Miftah will invite her to the tenant
+  portal. Select Create. The confirmation says an invite was emailed. The link
+  lets her set her own password, so no password is shown to you or shared by
+  anyone. Select Done. Mariam joins the list with Arabic as her language, and
+  Resend invite is there in case the email goes astray or the link expires.
+  Select View to open her page. Invite pending stays until she sets her
+  password. Her contracts, cheques, and tickets will collect here, and Ledger
+  opens her account statement. For now there are none. Portal access is a user
+  account with the Tenant role. If a tenant should no longer sign in, for
+  example after they move out, remove the account, not the tenant. Open
+  Settings, then Users and staff, and search for Mariam. Her account shows the
+  role Tenant. Select Delete, then confirm Delete User. Back on her tenant page,
+  Invite pending and Resend invite are gone, because she no longer has a sign-
+  in. Her profile stays, and so does her history. Never reuse one tenant's
+  account for another person.”
 
 ## 10 — Draft a tenancy contract and generate its cheques
 

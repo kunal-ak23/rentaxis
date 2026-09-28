@@ -32,7 +32,7 @@ const FINANCE: UserRole[] = ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT"];
 
 export const TUTORIALS: Tutorial[] = [
     {
-        id: "01", slug: "sign-in-and-navigate", topic: "getting-started", roles: ALL, durationSec: 112, youtubeId: null,
+        id: "01", slug: "sign-in-and-navigate", topic: "getting-started", roles: ALL, durationSec: 114, youtubeId: "Ieo6R_6q_kE",
         title: { en: "Sign in and find your way around", ar: "تسجيل الدخول والتنقل في النظام" },
         description: {
             en: "Sign in, read the menu for your role, switch between English and Arabic, and manage your profile and password.",
@@ -41,7 +41,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["getting-started--welcome"],
     },
     {
-        id: "02", slug: "dashboard-search-notifications-and-help", topic: "getting-started", roles: ALL, durationSec: 119, youtubeId: null,
+        id: "02", slug: "dashboard-search-notifications-and-help", topic: "getting-started", roles: ALL, durationSec: 121, youtubeId: "Hno2stETeqU",
         title: { en: "Dashboard, search, notifications and help", ar: "لوحة التحكم والبحث والإشعارات والمساعدة" },
         description: {
             en: "Read the dashboard, find records with global search, work through notifications and use the Help center and guided tours.",
@@ -49,7 +49,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "03", slug: "roles-permissions-and-organisation-switching", topic: "getting-started", roles: ADMINS, durationSec: 125, youtubeId: null,
+        id: "03", slug: "roles-permissions-and-organisation-switching", topic: "getting-started", roles: ADMINS, durationSec: 125, youtubeId: "0LwTc07Vpn8",
         title: { en: "Roles, permissions and switching organisation", ar: "الأدوار والصلاحيات والتبديل بين المؤسسات" },
         description: {
             en: "See what each role can do, from Company Admin to Tenant and security guard, and switch between organisations safely.",
@@ -58,7 +58,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["getting-started--roles-and-permissions"],
     },
     {
-        id: "04", slug: "provision-organisations-and-feature-access", topic: "getting-started", roles: ["SUPER_ADMIN"], durationSec: 123, youtubeId: null,
+        id: "04", slug: "provision-organisations-and-feature-access", topic: "getting-started", roles: ["SUPER_ADMIN"], durationSec: 118, youtubeId: "OfZjCTNnvww",
         title: { en: "Set up organisations and feature access", ar: "إعداد المؤسسات وإتاحة الميزات" },
         description: {
             en: "Create and edit an organisation, then turn features such as listings, meetings and gate passes on or off.",
@@ -67,7 +67,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["admin--super-admin-guide"],
     },
     {
-        id: "05", slug: "create-users-and-staff", topic: "getting-started", roles: ADMINS, durationSec: 120, youtubeId: null,
+        id: "05", slug: "create-users-and-staff", topic: "getting-started", roles: ADMINS, durationSec: 120, youtubeId: "h0oUPeedez4",
         title: { en: "Create users and staff", ar: "إنشاء المستخدمين والموظفين" },
         description: {
             en: "Add users with the right role, assign them to properties and keep staff records active or inactive.",
@@ -76,7 +76,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["admin--managing-staff"],
     },
     {
-        id: "06", slug: "create-a-project-and-property-portfolio", topic: "portfolio", roles: PORTFOLIO, durationSec: 150, youtubeId: null,
+        id: "06", slug: "create-a-project-and-property-portfolio", topic: "portfolio", roles: PORTFOLIO, durationSec: 117, youtubeId: "6Fc437Wa_1g",
         title: { en: "Create a project and property portfolio", ar: "إنشاء مشروع ومحفظة عقارية" },
         description: {
             en: "Set up projects and properties with bilingual names, emirate, address and Makani number, and review them as cards or a table.",
@@ -85,7 +85,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["properties--managing-properties", "getting-started--first-property-setup"],
     },
     {
-        id: "07", slug: "buildings-units-contacts-amenities-and-parking", topic: "portfolio", roles: PORTFOLIO, durationSec: 150, youtubeId: null,
+        id: "07", slug: "buildings-units-contacts-amenities-and-parking", topic: "portfolio", roles: PORTFOLIO, durationSec: 127, youtubeId: "Bi9IFBiKd48",
         title: { en: "Buildings, units, contacts, amenities and parking", ar: "المباني والوحدات وجهات الاتصال والمرافق والمواقف" },
         description: {
             en: "Add buildings and floors, define units and their rents, and record property contacts, amenities and parking spots.",
@@ -94,7 +94,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["properties--units-and-buildings"],
     },
     {
-        id: "08", slug: "import-a-property-portfolio-in-bulk", topic: "portfolio", roles: ["TENANT_ADMIN"], durationSec: 150, youtubeId: null,
+        id: "08", slug: "import-a-property-portfolio-in-bulk", topic: "portfolio", roles: ["TENANT_ADMIN"], durationSec: 100, youtubeId: "RY9eEIEY1bM",
         title: { en: "Import a property portfolio in bulk", ar: "استيراد المحفظة العقارية دفعة واحدة" },
         description: {
             en: "Download the template, upload your portfolio, fix rows that fail validation and check what was created.",
@@ -102,7 +102,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "09", slug: "manage-tenants-and-portal-access", topic: "leasing", roles: PORTFOLIO, durationSec: 150, youtubeId: null,
+        id: "09", slug: "manage-tenants-and-portal-access", topic: "leasing", roles: PORTFOLIO, durationSec: 104, youtubeId: "aNcKWqSNRF8",
         title: { en: "Manage Tenants and portal access", ar: "إدارة المستأجرين والوصول إلى البوابة" },
         description: {
             en: "Create Tenant profiles with bilingual names, contacts and preferred language, and give a Tenant a portal account.",
@@ -110,7 +110,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "10", slug: "draft-a-tenancy-contract-and-generate-its-cheques", topic: "leasing", roles: PORTFOLIO, durationSec: 125, youtubeId: null,
+        id: "10", slug: "draft-a-tenancy-contract-and-generate-its-cheques", topic: "leasing", roles: PORTFOLIO, durationSec: 127, youtubeId: "Wag-eszCzqM",
         title: { en: "Draft a tenancy contract and generate its cheques", ar: "صياغة عقد إيجار وإنشاء شيكاته" },
         description: {
             en: "Choose the Tenant and unit, set dates, rent, VAT and charges, and generate the cheque grid before saving the draft.",

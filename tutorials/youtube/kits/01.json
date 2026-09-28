@@ -2,7 +2,7 @@
   "id": "01",
   "slug": "sign-in-and-navigate",
   "title": "Miftah tutorial 01 · Sign in and find your way around",
-  "description": "Sign in, read the menu for your role, switch between English and Arabic, and manage your profile and password.\n\nWho this is for: Accountant, Company Admin, Company User, Property Manager, Security Guard, System Admin, Tenant.\n\nChapters:\n0:00 Introduction\n0:39 The rail on the left holds the\n1:15 It shows your email address, Update Profile\n\nPart of the Miftah web course — playlist: Miftah · Getting started\n\nسجّل الدخول، وتعرّف على القائمة الخاصة بدورك، وبدّل بين العربية والإنجليزية، وأدِر ملفك الشخصي وكلمة المرور.",
+  "description": "Sign in, read the menu for your role, switch between English and Arabic, and manage your profile and password.\n\nWho this is for: Accountant, Company Admin, Company User, Property Manager, Security Guard, System Admin, Tenant.\n\nChapters:\n0:00 Sign In\n0:23 Your Home Page\n0:53 Leasing\n1:14 Your Account Menu\n1:41 Log Out\n\nPart of the Miftah web course — playlist: Miftah · Getting started\n\nسجّل الدخول، وتعرّف على القائمة الخاصة بدورك، وبدّل بين العربية والإنجليزية، وأدِر ملفك الشخصي وكلمة المرور.",
   "tags": [
     "miftah",
     "property management",
@@ -27,20 +27,30 @@
     {
       "startSec": 0,
       "start": "0:00",
-      "label": "Introduction"
+      "label": "Sign In"
     },
     {
-      "startSec": 39.266,
-      "start": "0:39",
-      "label": "The rail on the left holds the"
+      "startSec": 23.983,
+      "start": "0:23",
+      "label": "Your Home Page"
     },
     {
-      "startSec": 75.596,
-      "start": "1:15",
-      "label": "It shows your email address, Update Profile"
+      "startSec": 53.962,
+      "start": "0:53",
+      "label": "Leasing"
+    },
+    {
+      "startSec": 74.572,
+      "start": "1:14",
+      "label": "Your Account Menu"
+    },
+    {
+      "startSec": 101.553,
+      "start": "1:41",
+      "label": "Log Out"
     }
   ],
-  "durationSec": 112,
+  "durationSec": 114,
   "roles": [
     "SUPER_ADMIN",
     "TENANT_ADMIN",

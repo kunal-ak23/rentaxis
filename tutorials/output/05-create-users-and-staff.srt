@@ -1,172 +1,172 @@
 1
-00:00:00,000 --> 00:00:03,810
+00:00:00,000 --> 00:00:03,878
 This tutorial explains the difference
 between users and staff, and
 
 2
-00:00:03,810 --> 00:00:07,239
+00:00:03,878 --> 00:00:07,369
 creates a Property Manager with the right
 property assignment.
 
 3
-00:00:07,239 --> 00:00:11,049
+00:00:07,369 --> 00:00:11,247
 Open Settings, then Users and staff, and
 check that the
 
 4
-00:00:11,049 --> 00:00:14,478
+00:00:11,247 --> 00:00:14,738
 organisation above the side panel is Oasis
 Crest Properties.
 
 5
-00:00:14,478 --> 00:00:17,526
+00:00:14,738 --> 00:00:17,840
 Users are the people who can sign in.
 
 6
-00:00:17,526 --> 00:00:21,718
+00:00:17,840 --> 00:00:22,107
 Staff Management holds employment records
 such as designation, property, and salary,
 
 7
-00:00:21,718 --> 00:00:25,528
+00:00:22,107 --> 00:00:25,985
 and a staff record does not give anyone a
 sign-in.
 
 8
-00:00:25,528 --> 00:00:28,957
+00:00:25,985 --> 00:00:29,475
 Before creating a user, search for their
 email address.
 
 9
-00:00:28,957 --> 00:00:31,624
+00:00:29,475 --> 00:00:32,190
 Nothing matches, so there is no duplicate.
 
 10
-00:00:31,624 --> 00:00:32,767
+00:00:32,190 --> 00:00:33,354
 Select New User.
 
 11
-00:00:32,767 --> 00:00:35,434
+00:00:33,354 --> 00:00:36,069
 Enter the full name, Layla Haddad, a
 
 12
-00:00:35,434 --> 00:00:38,101
+00:00:36,069 --> 00:00:38,783
 unique email address, and a phone number.
 
 13
-00:00:38,101 --> 00:00:41,149
+00:00:38,783 --> 00:00:41,886
 No password is set here: the new user
 
 14
-00:00:41,149 --> 00:00:44,197
+00:00:41,886 --> 00:00:44,989
 receives an email invite and chooses their
 own.
 
 15
-00:00:44,197 --> 00:00:48,007
+00:00:44,989 --> 00:00:48,867
 For the role, choose Property Manager
 rather than Company Admin.
 
 16
-00:00:48,007 --> 00:00:52,198
+00:00:48,867 --> 00:00:53,133
 Always grant the lowest role that covers
 the person’s real work.
 
 17
-00:00:52,198 --> 00:00:54,865
+00:00:53,133 --> 00:00:55,848
 Choose the organisation, then assign the
 property
 
 18
-00:00:54,865 --> 00:00:57,532
+00:00:55,848 --> 00:00:58,563
 this manager runs, Oasis Crest Marina
 Heights.
 
 19
-00:00:57,532 --> 00:00:58,675
+00:00:58,563 --> 00:00:59,726
 Select Provision User.
 
 20
-00:00:58,675 --> 00:01:02,486
+00:00:59,726 --> 00:01:03,605
 Layla Haddad appears in the list as a
 Property Manager.
 
 21
-00:01:02,486 --> 00:01:05,915
+00:01:03,605 --> 00:01:07,095
 Responsibilities change, so select Edit,
 add a second property,
 
 22
-00:01:05,915 --> 00:01:08,963
+00:01:07,095 --> 00:01:10,198
 Oasis Crest Residence Tower, and select
 Update User.
 
 23
-00:01:08,963 --> 00:01:12,392
+00:01:10,198 --> 00:01:13,688
 Open Oasis Crest Marina Heights under
 Properties and Units.
 
 24
-00:01:12,392 --> 00:01:16,202
+00:01:13,688 --> 00:01:17,567
 The overview now lists Layla Haddad as its
 Property Manager.
 
 25
-00:01:16,202 --> 00:01:20,012
+00:01:17,567 --> 00:01:21,445
 A Property Manager only sees the
 properties assigned to them.
 
 26
-00:01:20,012 --> 00:01:23,060
+00:01:21,445 --> 00:01:24,548
 Back in Users and staff, select Add Staff.
 
 27
-00:01:23,060 --> 00:01:27,251
+00:01:24,548 --> 00:01:28,814
 Enter the name, Khalid Rahman, an employee
 ID, the designation, Maintenance
 
 28
-00:01:27,251 --> 00:01:31,061
+00:01:28,814 --> 00:01:32,692
 Supervisor, the department, the monthly
 salary, and the assigned property.
 
 29
-00:01:31,061 --> 00:01:32,966
+00:01:32,692 --> 00:01:34,631
 New staff records start Active.
 
 30
-00:01:32,966 --> 00:01:35,633
+00:01:34,631 --> 00:01:37,346
 Select Add Staff, and the record joins
 
 31
-00:01:35,633 --> 00:01:37,919
+00:01:37,346 --> 00:01:39,673
 the table with the status Active.
 
 32
-00:01:37,919 --> 00:01:41,730
+00:01:39,673 --> 00:01:43,552
 When someone leaves, keep the history and
 remove the access.
 
 33
-00:01:41,730 --> 00:01:45,921
+00:01:43,552 --> 00:01:47,818
 Edit the staff record, clear Active, and
 save: the status changes
 
 34
-00:01:45,921 --> 00:01:49,731
+00:01:47,818 --> 00:01:51,696
 to Inactive, and the record stays for
 payroll and audit.
 
 35
-00:01:49,731 --> 00:01:53,541
+00:01:51,696 --> 00:01:55,574
 Then find the user, select Delete, and
 confirm Delete User.
 
 36
-00:01:53,541 --> 00:01:56,208
+00:01:55,574 --> 00:01:58,289
 The account can no longer sign in.
 
 37
-00:01:56,208 --> 00:01:59,256
+00:01:58,289 --> 00:02:01,392
 Never share or recycle an account between
 people.

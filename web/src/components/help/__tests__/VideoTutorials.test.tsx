@@ -127,9 +127,10 @@ describe("VideoTutorials", () => {
         expect(screen.queryByPlaceholderText(en.Help.videos.searchPlaceholder)).not.toBeInTheDocument();
     });
 
-    it("the real catalogue renders the empty state today", () => {
+    it("the real catalogue renders its published videos, not the empty state", () => {
         renderIn("en", <VideoTutorials />);
-        expect(screen.getByText("Video tutorials are coming soon")).toBeInTheDocument();
+        expect(screen.queryByText("Video tutorials are coming soon")).not.toBeInTheDocument();
+        expect(cardTitles().length).toBeGreaterThan(0);
     });
 
     it("empty state and tabs in Arabic", () => {

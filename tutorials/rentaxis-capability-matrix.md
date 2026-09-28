@@ -31,7 +31,7 @@ mobile evidence classifications.
 | 06. Create a project and property portfolio | Web, Manager | Tenant admin, property manager | Projects, properties, English/Arabic names, type, emirate, address, Makani, expenses, card/table views | Prod E2E (property); production browser spec prepared for bilingual project creation, all project fields, table/card portfolio views, and assigned-manager property detail; Local E2E |
 | 07. Buildings, units, contacts, amenities, and parking | Web, Manager | Tenant admin, property manager | Buildings/floors, unit types/rents/status, property contacts, amenities, parking spots | Prod E2E (building/unit/contact/amenity/parking lifecycle); production browser spec prepared for all corresponding property tabs; Local E2E |
 | 08. Import a property portfolio in bulk | Web | Tenant admin | Download template, upload portfolio, validate rows, monitor import, verify created entities | Prod E2E |
-| 09. Manage renters and portal access | Web, Manager | Tenant admin, property manager | Renter profiles, bilingual names, contacts, preferred language, portal account creation | Prod E2E (API and UI); Local E2E |
+| 09. Manage tenants and portal access | Web, Manager | Tenant admin, property manager | Renter profiles, bilingual names, contacts, preferred language, portal account creation | Prod E2E (API and UI); Local E2E |
 
 ## Leasing and renewals
 
