@@ -124,3 +124,29 @@ describe("Save cheque grid gate on a draft contract", () => {
         );
     });
 });
+
+/**
+ * Review A M3: a grid save moves the lease's version. The page adopts the version
+ * the save answered with (X-Lease-Version, surfaced by leaseApi.saveCheques), so
+ * saving the grid twice from one tab never refuses itself with 409 lease.changed.
+ */
+describe("a cheque save adopts the version it answered with", () => {
+    it("names the new version on the next save, without re-reading the lease", async () => {
+        api.get.mockImplementation(async () => ({ ...DRAFT, version: 7 }));
+        api.cheques.mockImplementation(async () => [draftCheque({})]);
+        api.saveCheques.mockResolvedValueOnce({ cheques: [draftCheque({})], version: 8 })
+            .mockResolvedValueOnce({ cheques: [draftCheque({})], version: 9 });
+        await renderPage();
+        await waitFor(() => expect(screen.getByTestId("lease-save-cheques")).toBeEnabled());
+
+        fireEvent.click(screen.getByTestId("lease-save-cheques"));
+        await waitFor(() => expect(api.saveCheques).toHaveBeenCalledTimes(1));
+        expect(api.saveCheques.mock.calls[0][2]).toBe(7);
+
+        await waitFor(() => expect(screen.getByTestId("lease-save-cheques")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("lease-save-cheques"));
+        await waitFor(() => expect(api.saveCheques).toHaveBeenCalledTimes(2));
+        expect(api.saveCheques.mock.calls[1][2]).toBe(8);
+        expect(api.get).toHaveBeenCalledTimes(1);
+    });
+});

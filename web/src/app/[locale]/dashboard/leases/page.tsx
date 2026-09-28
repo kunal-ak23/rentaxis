@@ -16,6 +16,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import LeaseDialog from "@/components/leases/LeaseDialog";
 import { runPool } from "@/lib/pool";
 import { BULK_POST_CONCURRENCY, withOneRetry } from "@/lib/leases/bulkPost";
+import { isLeaseChanged } from "@/lib/leases/leaseVersion";
+import { serverText } from "@/components/finance/bankrec/serverText";
 import {
     ApiError, chequeApi, leaseApi,
     type LeaseChequeStats, type LeaseDetail, type LeaseStatus,
@@ -52,7 +54,12 @@ const STATUSES: LeaseStatus[] = [
 const TERMINABLE: LeaseStatus[] = ["ACTIVE", "NOTICE_GIVEN"];
 
 /** One row of the bulk-post run: what was attempted, and what came back. */
-type PostResult = { leaseId: string; label: string; ok: boolean; message: string };
+/**
+ * `changed`: refused with 409 lease.changed — the draft moved after it was selected
+ * (review A M5). Never retried from here: a retry would post figures nobody reviewed;
+ * the user opens it, reviews it and posts it on its own.
+ */
+type PostResult = { leaseId: string; label: string; ok: boolean; message: string; changed?: boolean };
 
 type LeaseAttachment = {
     id: string;
@@ -116,6 +123,7 @@ function LeasesList() {
     const tl = useTranslations("Leasing");
     const tList = useTranslations("ListActions");
     const tc = useTranslations("ContractList");
+    const tCommon = useTranslations("Common");
     const locale = useLocale();
     const [leases, setLeases] = useState<Lease[]>([]);
     const [wizardOpen, setWizardOpen] = useState(false);
@@ -375,6 +383,10 @@ function LeasesList() {
                 const res = await withOneRetry(() => leaseApi.post(lease.id, lease.version));
                 return { leaseId: lease.id, label, ok: true, message: res.tcoEntryNumber };
             } catch (e) {
+                if (isLeaseChanged(e)) {
+                    // Common.errors.lease.changed, translated; listed, not retried (see PostResult.changed).
+                    return { leaseId: lease.id, label, ok: false, changed: true, message: serverText(tCommon, e) || (e as ApiError).message };
+                }
                 return { leaseId: lease.id, label, ok: false, message: e instanceof ApiError ? e.message : tl("postFailed") };
             }
         }, done => setPostProgress({ done, total: targets.length }));
@@ -386,11 +398,13 @@ function LeasesList() {
         fetchLeases();
     };
     const handleBulkPost = () => runBulkPost(filteredLeases.filter(l => selected.has(l.id) && l.status === "DRAFT"));
+    // Review A M5: only failures a second attempt can fix. A lease.changed row moved after it
+    // was selected; retrying it — least of all with the version the re-read list shows —
+    // would post figures nobody reviewed. Retries keep the version the user selected.
+    const retryablePosts = (postResults ?? []).filter(r => !r.ok && !r.changed);
     const retryFailedPosts = () => {
-        const failed = new Set((postResults ?? []).filter(r => !r.ok).map(r => r.leaseId));
-        // The list was re-read after the run: retry with the rows (and versions) it shows now.
-        const shown = new Map(filteredLeases.map(l => [l.id, l]));
-        runBulkPost(postTargets.filter(l => failed.has(l.id)).map(l => shown.get(l.id) ?? l), postResults ?? []);
+        const failed = new Set(retryablePosts.map(r => r.leaseId));
+        runBulkPost(postTargets.filter(l => failed.has(l.id)), postResults ?? []);
     };
 
     const toggleSelected = (id: string) =>
@@ -1247,10 +1261,12 @@ function LeasesList() {
                 {(postResults ?? []).some(r => !r.ok) && (
                     <div className="mb-3 flex items-center justify-between gap-3 text-xs">
                         <span className="text-muted">{tl("bulkPostFailedCount", { n: (postResults ?? []).filter(r => !r.ok).length })}</span>
-                        <button type="button" data-testid="bulk-post-retry-failed" onClick={retryFailedPosts} disabled={!!postProgress}
-                            className="px-3 py-1.5 rounded-lg border border-border font-semibold hover:bg-input/40 cursor-pointer disabled:opacity-50">
-                            {tl("bulkPostRetryFailed")}
-                        </button>
+                        {retryablePosts.length > 0 && (
+                            <button type="button" data-testid="bulk-post-retry-failed" onClick={retryFailedPosts} disabled={!!postProgress}
+                                className="px-3 py-1.5 rounded-lg border border-border font-semibold hover:bg-input/40 cursor-pointer disabled:opacity-50">
+                                {tl("bulkPostRetryFailed")}
+                            </button>
+                        )}
                     </div>
                 )}
                 <ul className="space-y-2 text-xs" data-testid="bulk-post-results">
@@ -1259,6 +1275,7 @@ function LeasesList() {
                             key={r.leaseId}
                             data-testid={`bulk-post-result-${r.leaseId}`}
                             data-ok={r.ok ? "true" : "false"}
+                            data-changed={r.changed ? "true" : undefined}
                             className={cn(
                                 "flex items-start justify-between gap-3 rounded-lg border px-3 py-2",
                                 r.ok ? "border-success/30 bg-success/5" : "border-error/30 bg-error/5",

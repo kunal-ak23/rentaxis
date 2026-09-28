@@ -263,6 +263,29 @@ export type DraftLeaseInput = {
  * Break-it R2 F2/F3: `If-Match` for a write checked against the lease version the
  * screen loaded. No version (an older server's lease) → no header, not checked.
  */
+/**
+ * Review A M3 (break-it round 2): a cheque-grid write moves the lease's version, and
+ * the backend says where to in `X-Lease-Version`. The screen adopts it so its next
+ * write (another save, the post) names the version it now holds instead of
+ * refusing itself with 409 lease.changed. Null when the header is absent (an older
+ * backend) — the screen then keeps the version it had.
+ */
+export type ChequeWrite = { cheques: Cheque[]; version: number | null };
+
+async function sendChequeWrite(method: "POST" | "PUT", path: string, body: unknown,
+                               extraHeaders?: Record<string, string>): Promise<ChequeWrite> {
+  const headers: Record<string, string> = { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...extraHeaders };
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: Object.keys(headers).length ? headers : undefined,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  await throwIfNotOk(res);
+  const raw = res.headers?.get?.("X-Lease-Version") ?? null;
+  const n = raw == null || raw.trim() === "" ? NaN : Number(raw);
+  return { cheques: await res.json(), version: Number.isFinite(n) ? n : null };
+}
+
 function ifMatch(version?: number | null): Record<string, string> | undefined {
   return version == null ? undefined : { "If-Match": `"${version}"` };
 }
@@ -1428,12 +1451,14 @@ export const leaseApi = {
   recordAddendumEjari: (id: string, addendumId: string, ejariNumber: string) =>
     send<LeaseAddendum>("PATCH", `/leases/${id}/addenda/${addendumId}/ejari`, { ejariNumber }),
   cheques: (id: string) => get<Cheque[]>(`/leases/${id}/cheques`),
+  /** Review A M3: answers with the rows and the lease version the write left behind (adopt it). */
   generateCheques: (id: string, req?: GenerateChequesRequest, version?: number | null) =>
-    send<Cheque[]>("POST", `/leases/${id}/cheques/generate`, req, ifMatch(version)),
+    sendChequeWrite("POST", `/leases/${id}/cheques/generate`, req, ifMatch(version)),
   generateChequeNumbers: (id: string, startingNumber: string) =>
     send<Cheque[]>("POST", `/leases/${id}/cheques/numbers`, { startingNumber }),
+  /** Review A M3: as generateCheques — a save that changes only dates or numbers still moves the version. */
   saveCheques: (id: string, rows: ChequeRowInput[], version?: number | null) =>
-    send<Cheque[]>("PUT", `/leases/${id}/cheques`, rows, ifMatch(version)),
+    sendChequeWrite("PUT", `/leases/${id}/cheques`, rows, ifMatch(version)),
   /** GET /finance/journals?leaseId — the plan-1 journals list, filtered to one lease. */
   journals: (leaseId: string, q: { page?: number; size?: number } = {}) =>
     get<Page<JournalEntry>>(`/finance/journals${qs({ leaseId, page: q.page ?? 0, size: q.size ?? 25 })}`),

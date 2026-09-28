@@ -30,7 +30,7 @@ import { chequeApi } from "@/lib/api/leasing";
 import type { RegisterAction } from "@/components/cheques/registerActions";
 import BulkChequeUploadFlow from "@/components/cheques/BulkChequeUploadFlow";
 import PostLeaseDialog from "@/components/leases/PostLeaseDialog";
-import { isLeaseChanged } from "@/lib/leases/leaseVersion";
+import { isLeaseChanged, withVersion } from "@/lib/leases/leaseVersion";
 import { serverText } from "@/components/finance/bankrec/serverText";
 import AmendLinesDialog from "@/components/leases/AmendLinesDialog";
 import RenewLeaseDialog from "@/components/leases/RenewLeaseDialog";
@@ -51,7 +51,7 @@ import VatScheduleTab from "@/components/leases/VatScheduleTab";
 import { defaultInstallmentsFor, fmtIsoDate, toRows, totalsOf } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi, settlementApi, terminationApi,
-    type ChargeType, type Cheque, type GiveNoticeInput, type LeaseAddendum, type LeaseDetail, type LeaseStatus, type SettlementResponse,
+    type ChargeType, type Cheque, type ChequeWrite, type GiveNoticeInput, type LeaseAddendum, type LeaseDetail, type LeaseStatus, type SettlementResponse,
 } from "@/lib/api/leasing";
 
 /**
@@ -333,11 +333,20 @@ export default function LeaseDetailPage() {
         window.history.replaceState(window.history.state, "", url.toString());
     };
 
-    const runCheques = async (fn: () => Promise<Cheque[]>) => {
+    const runCheques = async (fn: () => Promise<Cheque[] | ChequeWrite>) => {
         setChequeBusy(true);
         setChequeError(null);
         try {
-            setCheques(await fn());
+            const r = await fn();
+            if (Array.isArray(r)) {
+                setCheques(r);
+            } else {
+                setCheques(r.cheques);
+                // Review A M3: a grid write moved the lease's version; this tab holds the new one,
+                // so its next save or its Post names it rather than refusing itself (409 lease.changed).
+                const version = r.version;
+                if (version != null) setLease(prev => (prev ? withVersion(prev, version) : prev));
+            }
         } catch (e) {
             if (isLeaseChanged(e)) {
                 // Break-it R2 F3: the contract changed in another tab — say so and show it as it now is.

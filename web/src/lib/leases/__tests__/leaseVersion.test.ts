@@ -50,4 +50,16 @@ describe("leaseApi sends the version it was given", () => {
         await leaseApi.saveCheques("L1", []);
         expect(fetchMock.mock.calls[3][1]!.headers).not.toHaveProperty("If-Match");
     });
+
+    it("cheque grid writes answer with the version they left behind (review A M3)", async () => {
+        vi.stubGlobal("fetch", vi.fn(async () => new Response("[{\"id\":\"c1\"}]",
+            { status: 200, headers: { "X-Lease-Version": "9" } })));
+        await expect(leaseApi.saveCheques("L1", [], 7)).resolves.toEqual({ cheques: [{ id: "c1" }], version: 9 });
+        await expect(leaseApi.generateCheques("L1", undefined, 7)).resolves.toEqual({ cheques: [{ id: "c1" }], version: 9 });
+    });
+
+    it("no X-Lease-Version (an older backend): version null, the screen keeps its own", async () => {
+        vi.stubGlobal("fetch", vi.fn(async () => new Response("[]", { status: 200 })));
+        await expect(leaseApi.saveCheques("L1", [], 7)).resolves.toEqual({ cheques: [], version: null });
+    });
 });

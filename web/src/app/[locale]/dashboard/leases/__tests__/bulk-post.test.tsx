@@ -176,7 +176,47 @@ describe("Leases list — bulk post", () => {
         expect(api.post).toHaveBeenCalledWith("v1", 4);
         expect(api.post).toHaveBeenCalledWith("v2", 9);
         expect(api.post).toHaveBeenCalledTimes(2);
-        expect(screen.getByTestId("bulk-post-result-v2")).toHaveTextContent("This contract changed since you opened it");
+        expect(screen.getByTestId("bulk-post-result-v2")).toHaveTextContent("This contract changed since you opened it — review it again.");
+        expect(screen.getByTestId("bulk-post-result-v2")).toHaveAttribute("data-changed", "true");
+        // Nothing a retry could fix: no Retry failed.
+        expect(screen.queryByTestId("bulk-post-retry-failed")).toBeNull();
+    });
+
+    it("review A M5: Retry failed leaves lease.changed rows alone and keeps the version the user selected", async () => {
+        const { ApiError } = await import("@/lib/api/leasing");
+        let reads = 0;
+        // The list is re-read after each run; by then both drafts show a newer version.
+        api.paged.mockImplementation(async () => {
+            reads++;
+            const bump = reads > 1 ? 1 : 0;
+            const rows = [lease({ id: "v1", unitIdentifier: "C-1", version: 4 + bump }),
+                lease({ id: "v2", unitIdentifier: "C-2", version: 9 + bump })];
+            return { content: rows, totalElements: 2, totalPages: 1, number: 0, size: 25 };
+        });
+        let secondRun = false;
+        api.post.mockImplementation(async (id: string) => {
+            if (id === "v2") {
+                throw new ApiError(409, "This contract changed since you opened it — review it again",
+                    '{"error":true,"status":409,"code":"lease.changed","message":"This contract changed since you opened it — review it again"}');
+            }
+            if (!secondRun) throw new ApiError(500, "Internal error", '{"message":"could not obtain lock on row"}');
+            return { lease: ROWS[0], tcoJournalId: "j", tcoEntryNumber: `TCO-${id}`, cheques: [] };
+        });
+        renderPage();
+        fireEvent.click(await screen.findByTestId("bulk-post-select-v1"));
+        fireEvent.click(screen.getByTestId("bulk-post-select-v2"));
+        fireEvent.click(screen.getByTestId("bulk-post"));
+        await waitFor(() => expect(screen.getByTestId("bulk-post-results")).toBeInTheDocument(), { timeout: 5000 });
+        expect(screen.getByTestId("bulk-post-result-v1")).toHaveAttribute("data-ok", "false");
+        expect(screen.getByTestId("bulk-post-result-v2")).toHaveAttribute("data-changed", "true");
+
+        secondRun = true;
+        api.post.mockClear();
+        fireEvent.click(screen.getByTestId("bulk-post-retry-failed"));
+        await waitFor(() => expect(screen.getByTestId("bulk-post-result-v1")).toHaveAttribute("data-ok", "true"), { timeout: 5000 });
+        expect(api.post.mock.calls).toEqual([["v1", 4]]);
+        expect(screen.getByTestId("bulk-post-result-v2")).toHaveAttribute("data-changed", "true");
+        expect(screen.queryByTestId("bulk-post-retry-failed")).toBeNull();
     });
 
     it("does not retry a refusal on the merits (400)", async () => {

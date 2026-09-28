@@ -21,12 +21,12 @@ import ChequeGrid, { draftRowsAreValid, toChequeRows } from "@/components/leases
 import { blankLine, followRentVat, linesAreValid, splitLineErrors, toInputs, toRows, todayIso, totalsOf, withRentVat, type LineRow } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi,
-    type ChargeType, type Cheque, type DraftLeaseInput, type DraftPaymentMethod,
+    type ChargeType, type Cheque, type ChequeWrite, type DraftLeaseInput, type DraftPaymentMethod,
     type GenerateChequesRequest, type InstallmentDistribution, type LeaseDetail,
     type PostLeaseDryRunResponse,
 } from "@/lib/api/leasing";
 import type { RenterOption, UnitOption } from "@/lib/api/lookup";
-import { isLeaseChanged } from "@/lib/leases/leaseVersion";
+import { isLeaseChanged, withVersion } from "@/lib/leases/leaseVersion";
 import { serverText } from "@/components/finance/bankrec/serverText";
 import { CONFIRM_TERM_YEARS, MAX_TERM_YEARS, termExceedsYears, termYears } from "@/lib/leaseTerm";
 
@@ -78,6 +78,35 @@ const initialTerms: Terms = {
     paymentReferenceNumber: "",
     rentVatApplicable: false,
 };
+
+/** Only the two the draft endpoint admits — see `DraftPaymentMethod`. */
+function asDraftMethod(v: string | null | undefined): DraftPaymentMethod {
+    return v === "ONLINE" ? "ONLINE" : "CHEQUE";
+}
+
+/**
+ * Review A M4: the Terms step as the saved draft has it. After a 409 lease.changed
+ * the wizard re-reads the draft; keeping the header it had would write those stale
+ * dates and payment terms back with the new version on the next save.
+ */
+function termsFromLease(lease: LeaseDetail): Terms {
+    return {
+        agreementDate: (lease.agreementDate || "").slice(0, 10),
+        contractDate: (lease.contractDate || "").slice(0, 10),
+        startDate: (lease.startDate || "").slice(0, 10),
+        endDate: (lease.endDate || "").slice(0, 10),
+        // An inherited grace stays null so it keeps inheriting (as the draft editor does).
+        gracePeriodDays: lease.gracePeriodOverridden === false ? null : lease.gracePeriodDays ?? null,
+        paymentTerms: lease.paymentTerms ?? initialTerms.paymentTerms,
+        firstDueDate: (lease.firstDueDate || "").slice(0, 10),
+        installmentDistribution: lease.installmentDistribution ?? initialTerms.installmentDistribution,
+        paymentMethod: asDraftMethod(lease.paymentMethod),
+        depositPaymentMethod: asDraftMethod(lease.depositPaymentMethod),
+        ejariNumber: lease.ejariNumber ?? "",
+        paymentReferenceNumber: lease.paymentReferenceNumber ?? "",
+        rentVatApplicable: !!lease.rentVatApplicable,
+    };
+}
 
 const STEPS = [
     { key: "parties", labelKey: "stepParties", icon: User },
@@ -237,6 +266,21 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     const reloadChanged = async (id: string) => {
         const fresh = await leaseApi.get(id);
         setLease(fresh);
+        // Review A M4: the header too — parties and terms — not only the lines.
+        setTerms(termsFromLease(fresh));
+        setContractDateTouched(true);
+        setLongTermAck(`${(fresh.startDate || "").slice(0, 10)}|${(fresh.endDate || "").slice(0, 10)}`);
+        if (fresh.unitId !== unitId) {
+            setUnitId(fresh.unitId);
+            setSelectedUnit({
+                id: fresh.unitId, unitNumber: fresh.unitIdentifier ?? "", propertyId: fresh.propertyId,
+                propertyName: fresh.propertyName, propertyType: null, buildingId: null, buildingName: null, status: null,
+            });
+        }
+        if (fresh.renterId !== renterId) {
+            setRenterId(fresh.renterId);
+            setSelectedRenter({ id: fresh.renterId, nameEn: fresh.renterName ?? "", nameAr: null, phone: null, email: null });
+        }
         setRows(toRows(fresh.lines));
         setCheques(await leaseApi.cheques(id));
         if (STEPS[stepIdx].key === "review") setDry(await leaseApi.dryRunPost(id));
@@ -280,11 +324,19 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         }
     };
 
-    const runCheques = async (fn: () => Promise<Cheque[]>) => {
+    const runCheques = async (fn: () => Promise<Cheque[] | ChequeWrite>) => {
         setBusy(true);
         setChequeError(null);
         try {
-            setCheques(await fn());
+            const r = await fn();
+            if (Array.isArray(r)) {
+                setCheques(r);
+            } else {
+                setCheques(r.cheques);
+                // Review A M3: the grid write moved the draft's version; the next save and the post name the new one.
+                const version = r.version;
+                if (version != null) setLease(prev => (prev ? withVersion(prev, version) : prev));
+            }
             setChequeNotice(null);
         } catch (e) {
             if (lease && isLeaseChanged(e)) {

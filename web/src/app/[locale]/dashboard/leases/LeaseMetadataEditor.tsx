@@ -1,7 +1,7 @@
 "use client";
 
 import { focusFirstInvalidMoney } from "@/components/ui/NumberInput";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { AlertTriangle, CheckCircle2, ChevronRight, Loader2, RefreshCw, Save } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -14,7 +14,7 @@ import {
     type ChargeType, type DraftLeaseInput, type DraftPaymentMethod,
     type InstallmentDistribution, type LeaseDetail,
 } from "@/lib/api/leasing";
-import { isLeaseChanged } from "@/lib/leases/leaseVersion";
+import { isLeaseChanged, sameExceptVersion } from "@/lib/leases/leaseVersion";
 import { serverText } from "@/components/finance/bankrec/serverText";
 
 /**
@@ -108,7 +108,15 @@ export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, onSta
 
     const editable = lease.status === "DRAFT" || lease.status === "PENDING_SIGNATURE";
 
+    // Review A M3: a cheque-grid write hands the page a new version of the same lease;
+    // that is not a new draft to show, so the form (and what the user is typing) stays.
+    const formSource = useRef(lease);
     useEffect(() => {
+        if (sameExceptVersion(formSource.current, lease)) {
+            formSource.current = lease;
+            return;
+        }
+        formSource.current = lease;
         setHeader(toHeader(lease));
         setRows(toRows(lease.lines));
     }, [lease]);

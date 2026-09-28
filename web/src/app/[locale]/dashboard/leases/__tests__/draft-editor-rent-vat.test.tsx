@@ -149,3 +149,36 @@ describe("draft editor: the version it loaded (break-it R2 F3)", () => {
         expect(onSaved).not.toHaveBeenCalled();
     });
 });
+
+/**
+ * Review A M3: a cheque-grid save hands the page the same lease at a new version.
+ * The editor adopts it for its next save but keeps the form the user is typing;
+ * a lease that really changed (a reload) still resets it.
+ */
+describe("draft editor: a version-only change keeps the form (review A M3)", () => {
+    it("keeps unsaved edits and saves with the new version; a changed lease resets", async () => {
+        updateDraft.mockResolvedValue({});
+        const { withVersion } = await import("@/lib/leases/leaseVersion");
+        const lease = {
+            id: "lease-1", version: 3, unitId: "u1", renterId: "r1", propertyId: "p1", status: "DRAFT",
+            startDate: "2026-10-01", endDate: "2027-09-30", rentVatApplicable: false, lines: [line({})],
+        } as unknown as LeaseDetail;
+        const ui = (l: LeaseDetail) => (
+            <NextIntlClientProvider locale="en" messages={en}>
+                <LeaseMetadataEditor lease={l} chargeTypes={CHARGE_TYPES} />
+            </NextIntlClientProvider>
+        );
+        const { rerender } = render(ui(lease));
+        fireEvent.click(screen.getByText("Edit draft"));
+        fireEvent.change(screen.getByTestId("edit-end-date"), { target: { value: "2027-08-31" } });
+
+        rerender(ui(withVersion(lease, 4)));
+        expect((screen.getByTestId("edit-end-date") as HTMLInputElement).value).toBe("2027-08-31");
+        fireEvent.click(screen.getByTestId("lease-draft-save"));
+        await waitFor(() => expect(updateDraft).toHaveBeenCalled());
+        expect(updateDraft.mock.calls[0][1]).toMatchObject({ version: 4, endDate: "2027-08-31" });
+
+        rerender(ui({ ...lease, version: 5, endDate: "2027-07-31" } as LeaseDetail));
+        expect((screen.getByTestId("edit-end-date") as HTMLInputElement).value).toBe("2027-07-31");
+    });
+});
