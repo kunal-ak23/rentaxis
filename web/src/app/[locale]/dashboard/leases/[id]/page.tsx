@@ -188,6 +188,7 @@ export default function LeaseDetailPage() {
     const [chargeTypes, setChargeTypes] = useState<ChargeType[]>([]);
     const [renter, setRenter] = useState<Renter | null>(null);
     const [attachments, setAttachments] = useState<Attachment[]>([]);
+    const [docError, setDocError] = useState<string | null>(null);
     const [tickets, setTickets] = useState<Ticket[]>([]);
     const [settlement, setSettlement] = useState<SettlementResponse | null>(null);
     // F15-22: what has been written off as bad debt, shown apart from the settlement's balance due.
@@ -459,9 +460,11 @@ export default function LeaseDetailPage() {
         }
     };
 
+    // Break-it R2 silent-mutation sweep: a refused upload/delete used to vanish without a word.
     const handleDocUpload = async (file: File) => {
         if (!docName.trim()) return;
         setUploadingDoc(true);
+        setDocError(null);
         try {
             const fd = new FormData();
             fd.append("file", file);
@@ -470,9 +473,25 @@ export default function LeaseDetailPage() {
             if (res.ok) {
                 setDocName("");
                 await loadAttachments();
+            } else {
+                setDocError(tMaster("documentUploadFailed", { name: file.name }));
             }
+        } catch {
+            setDocError(tMaster("documentUploadFailed", { name: file.name }));
         } finally {
             setUploadingDoc(false);
+        }
+    };
+
+    const handleDocDelete = async (attachmentId: string) => {
+        setDocError(null);
+        try {
+            const res = await fetch(`/api/proxy/v1/leases/attachments/${attachmentId}`, { method: "DELETE" });
+            // A refused delete keeps the row: the list is only re-read when it went.
+            if (res.ok) await loadAttachments();
+            else setDocError(tMaster("documentDeleteFailed"));
+        } catch {
+            setDocError(tMaster("documentDeleteFailed"));
         }
     };
 
@@ -963,6 +982,9 @@ export default function LeaseDetailPage() {
                                     </h2>
                                 </div>
                                 <div className="p-4">
+                                    {docError && (
+                                        <p role="alert" data-testid="lease-doc-error" className="mb-3 text-xs text-error">{docError}</p>
+                                    )}
                                     {attachments.length > 0 ? (
                                         <div className="space-y-2 mb-4">
                                             {attachments.map(doc => (
@@ -980,10 +1002,7 @@ export default function LeaseDetailPage() {
                                                             <Download size={13} />
                                                         </button>
                                                         <button
-                                                            onClick={async () => {
-                                                                await fetch(`/api/proxy/v1/leases/attachments/${doc.id}`, { method: "DELETE" });
-                                                                await loadAttachments();
-                                                            }}
+                                                            onClick={() => handleDocDelete(doc.id)}
                                                             aria-label={tMaster("delete")}
                                                             className="p-1 text-error hover:text-error/80 cursor-pointer"
                                                         >

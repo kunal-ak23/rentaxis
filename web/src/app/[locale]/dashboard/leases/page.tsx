@@ -191,6 +191,8 @@ function LeasesList() {
     const [uploadingDoc, setUploadingDoc] = useState(false);
     const [docName, setDocName] = useState("");
     const [docsLeaseId, setDocsLeaseId] = useState<string | null>(null); // Standalone docs modal
+    // Break-it R2 silent-mutation sweep: a refused upload/delete used to vanish without a word.
+    const [docError, setDocError] = useState<string | null>(null);
 
     // ConfirmDialog state
     const [confirmOpen, setConfirmOpen] = useState(false);
@@ -532,6 +534,7 @@ function LeasesList() {
     const openDocsModal = (leaseId: string) => {
         setDocsLeaseId(leaseId);
         setDocName("");
+        setDocError(null);
         fetchAttachments(leaseId);
     };
 
@@ -539,6 +542,7 @@ function LeasesList() {
         setDocsLeaseId(null);
         setAttachments([]);
         setDocName("");
+        setDocError(null);
     };
 
     const fetchAttachments = async (leaseId: string) => {
@@ -551,6 +555,7 @@ function LeasesList() {
     const handleDocUpload = async (leaseId: string, file: File) => {
         if (!docName.trim()) return;
         setUploadingDoc(true);
+        setDocError(null);
         try {
             const formData = new FormData();
             formData.append("file", file);
@@ -562,17 +567,26 @@ function LeasesList() {
             if (res.ok) {
                 setDocName("");
                 fetchAttachments(leaseId);
+            } else {
+                setDocError(t("documentUploadFailed", { name: file.name }));
             }
-        } catch {} finally {
+        } catch {
+            setDocError(t("documentUploadFailed", { name: file.name }));
+        } finally {
             setUploadingDoc(false);
         }
     };
 
     const handleDocDelete = async (attachmentId: string, leaseId: string) => {
+        setDocError(null);
         try {
             const res = await fetch(`/api/proxy/v1/leases/attachments/${attachmentId}`, { method: "DELETE" });
+            // A refused delete keeps the row: the list is only re-read when it went.
             if (res.ok) fetchAttachments(leaseId);
-        } catch {}
+            else setDocError(t("documentDeleteFailed"));
+        } catch {
+            setDocError(t("documentDeleteFailed"));
+        }
     };
 
     const handleDocDownload = async (attachmentId: string, fileName: string) => {
@@ -1177,6 +1191,9 @@ function LeasesList() {
                         </button>
                         <h2 className="text-lg font-bold text-foreground mb-1">{t("supportingDocuments")}</h2>
                         <p className="text-xs text-muted mb-5">{t("supportingDocumentsDesc")}</p>
+                        {docError && (
+                            <p role="alert" data-testid="leases-doc-error" className="mb-4 text-xs text-error">{docError}</p>
+                        )}
 
                         {/* Existing attachments */}
                         {attachments.length > 0 && (
@@ -1224,7 +1241,7 @@ function LeasesList() {
                                         : "bg-input text-muted cursor-not-allowed"
                                 )}>
                                     {uploadingDoc ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
-                                    Attach File
+                                    {t("attachFile")}
                                     <input
                                         type="file"
                                         className="hidden"
