@@ -44,6 +44,7 @@ import sys
 import datetime as dt
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -62,7 +63,16 @@ OUT_FILE = Path(
     )
 )
 
-TODAY = dt.date.today()
+# Break-it round 2 M8: every business date this script derives (books-start,
+# fiscal year bounds, cheque dates, "today or earlier" clamps, ...) has to agree
+# with the server's own idea of "today", which runs on Asia/Dubai (see
+# businessDate.ts / requireNotAfterToday). dt.date.today() reads the local
+# machine clock, so a run from India (IST, UTC+5:30 — 1.5h ahead of Dubai,
+# UTC+4:00) between 00:00 and 01:30 IST computed a date that was still tomorrow
+# in Dubai. ChequeService's date.inFuture guard then refused the very first
+# deposit/clear/bounce call the script makes and it aborted partway through.
+DUBAI = ZoneInfo("Asia/Dubai")
+TODAY = dt.datetime.now(DUBAI).date()
 REDACT_CREDENTIALS = "--redact-credentials" in sys.argv
 
 
