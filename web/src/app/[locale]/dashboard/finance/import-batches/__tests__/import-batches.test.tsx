@@ -520,6 +520,60 @@ describe("bulk post", () => {
         fireEvent.click(dialog);
         await waitFor(() => expect(api.post).toHaveBeenCalledWith("b-draft"));
     });
+
+    /**
+     * F4 (round-2 contracts2): double-clicking the confirm button before
+     * `cutoverApi.batches.post` resolves must fire exactly one request. The
+     * dialog itself closes on the very first click (`startPost` clears
+     * `confirmPost` before it does anything else), so the second and third
+     * clicks land on a detached node — proving those clicks reach nothing at
+     * all is the real guard here (the ref check inside `startPost`), not just
+     * a visual disable a fast double-click could still slip past.
+     */
+    it("sends a single request when the Post-batch confirm is double-clicked", async () => {
+        let resolvePost: (v: { jobId: string; batchId: string }) => void = () => {};
+        api.post.mockReturnValue(
+            new Promise(res => {
+                resolvePost = res;
+            }),
+        );
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        fireEvent.click(screen.getByTestId("post-batch-b-draft"));
+
+        const confirmBtn = await screen.findByTestId("confirm-post-batch");
+        fireEvent.click(confirmBtn);
+        fireEvent.click(confirmBtn);
+        fireEvent.click(confirmBtn);
+
+        expect(api.post).toHaveBeenCalledTimes(1);
+        await waitFor(() => expect(screen.queryByTestId("confirm-post-batch")).not.toBeInTheDocument());
+
+        resolvePost({ jobId: "post-job-1", batchId: "b-posted" });
+        await waitFor(() => expect(api.postStatus).toHaveBeenCalled());
+        // Still just the one post call once the job has started polling.
+        expect(api.post).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * The second half of F4: a refused second request (the server's own
+     * "already posted/being worked on" 409) must not clobber the panel that is
+     * already tracking the job the first request started. With the in-flight
+     * guard in place a second request can never even be sent from this
+     * button, so the panel only ever reflects the one job that started.
+     */
+    it("does not let a stale post error overwrite an already-started job's panel", async () => {
+        renderPage();
+        await screen.findByTestId("batch-row-b-draft");
+        fireEvent.click(screen.getByTestId("post-batch-b-draft"));
+        const confirmBtn = await screen.findByTestId("confirm-post-batch");
+        fireEvent.click(confirmBtn);
+        fireEvent.click(confirmBtn);
+
+        await screen.findByTestId("post-results-table");
+        expect(api.post).toHaveBeenCalledTimes(1);
+        expect(screen.queryByTestId("post-job-error")).not.toBeInTheDocument();
+    });
 });
 
 /** S16-14 (backend PR #376): a building bought after go-live. */

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
 import {
@@ -252,7 +252,23 @@ export default function ImportBatchesPage() {
         return [...leases].sort((a, b) => OUTCOME_ORDER[a.outcome] - OUTCOME_ORDER[b.outcome]);
     }, [postJob.job]);
 
+    /**
+     * F4 (round-2 contracts2): the confirm's `onClick` fires straight from the
+     * dialog, so a double-click can dispatch two `startPost` calls before
+     * React re-renders the button as disabled. `posting` alone would not stop
+     * that — both clicks would read the same stale `false` state. The ref is
+     * checked and set synchronously, so the second call bails before it does
+     * anything, including before it touches `postBatchId`/`postJob`, which is
+     * also what keeps a refused second request from ever being in a position
+     * to overwrite the first job's panel.
+     */
+    const postingRef = useRef(false);
+    const [posting, setPosting] = useState(false);
+
     const startPost = (b: ImportBatch, acquisitionDateArg: string | null) => {
+        if (postingRef.current) return;
+        postingRef.current = true;
+        setPosting(true);
         setPostError(null);
         setDiscard(null);
         setResultPage(0);
@@ -263,7 +279,11 @@ export default function ImportBatchesPage() {
             : cutoverApi.batches.post(b.id);
         started
             .then(({ jobId }) => postJob.start(jobId))
-            .catch(e => setPostError(e instanceof ApiError ? e.message : tCommon("loadFailed")));
+            .catch(e => setPostError(e instanceof ApiError ? e.message : tCommon("loadFailed")))
+            .finally(() => {
+                postingRef.current = false;
+                setPosting(false);
+            });
     };
 
     const runDiscard = (b: ImportBatch) => {
@@ -963,6 +983,7 @@ export default function ImportBatchesPage() {
                     confirmPost &&
                     startPost(confirmPost, isFreshDraftPost && cutoverKind === "acquisition" ? acquisitionDate : null)
                 }
+                isLoading={posting}
                 confirmDisabled={isFreshDraftPost && cutoverKind === "acquisition" && !acquisitionDate}
                 title={
                     confirmPost && isRepost(confirmPost.status)
