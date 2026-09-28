@@ -49,13 +49,13 @@ async function save(locale: "en" | "ar" = "en") {
 }
 
 describe("ProfilePage — a refused save is shown", () => {
-    it("shows the server's message when the save is refused", async () => {
-        putResponse = () => new Response(JSON.stringify({ error: true, status: 400, message: "One of the values is too long for its field." }),
+    it("shows the server's message after the generic line (EN) when the save is refused", async () => {
+        putResponse = () => new Response(JSON.stringify({ error: true, status: 400, message: "Something unexpected happened." }),
             { status: 400, headers: { "Content-Type": "application/json" } });
         await save();
         const alert = await screen.findByRole("alert");
         expect(alert).toHaveTextContent(en.Profile.saveFailed);
-        expect(alert).toHaveTextContent("One of the values is too long for its field.");
+        expect(alert).toHaveTextContent("Something unexpected happened.");
         expect(screen.queryByText(/^saved$/i)).toBeNull();
     });
 

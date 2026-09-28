@@ -4710,6 +4710,28 @@
   "Profile": {
     "saveChanges": "Save Changes",
     "saved": "Saved",
-    "saveFailed": "Your profile was not saved. Please try again."
+    "saveFailed": "Your profile was not saved. Please try again.",
+    "title": "My Profile",
+    "subtitle": "Manage your account details and password.",
+    "loadFailed": "Unable to load profile",
+    "fullName": "Full Name",
+    "phoneNumber": "Phone Number",
+    "emailAddress": "Email Address",
+    "emailHint": "Contact your administrator to change email.",
+    "nameTooLong": "The name is too long. Use at most 255 characters.",
+    "phoneInvalid": "Enter a valid phone number: digits, spaces, +, - and parentheses only (7 to 15 digits).",
+    "password": "Password",
+    "passwordHint": "Change your account password",
+    "changePassword": "Change Password",
+    "currentPassword": "Current Password",
+    "newPassword": "New Password",
+    "confirmNewPassword": "Confirm New Password",
+    "updatePassword": "Update Password",
+    "cancel": "Cancel",
+    "passwordsDoNotMatch": "New passwords do not match",
+    "passwordTooShort": "Password must be at least 8 characters",
+    "passwordUpdated": "Password updated successfully",
+    "currentPasswordIncorrect": "Current password is incorrect",
+    "passwordUpdateFailed": "Failed to update password"
   }
 }

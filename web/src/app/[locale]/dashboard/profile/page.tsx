@@ -1,11 +1,21 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useTranslations } from "next-intl";
-import { useSession } from "next-auth/react";
-import { User, Phone, Mail, Shield, Loader2, Check, Lock } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useLocale, useTranslations } from "next-intl";
+import { User, Phone, Mail, Loader2, Check, Lock } from "lucide-react";
 import { getRoleLabel, getRoleLabelKey, type UserRole } from "@/lib/rbac";
+import { isPlausiblePhone } from "@/lib/phone";
+
+/**
+ * The refusals a user can act on, in their language. Anything else is the
+ * generic line; under /en the server's own sentence may follow it, under /ar
+ * never (it is English).
+ */
+function refusalKey(message: string): "nameTooLong" | "phoneInvalid" | null {
+    if (/phone/i.test(message)) return "phoneInvalid";
+    if (/too long|at most \d+ characters/i.test(message)) return "nameTooLong";
+    return null;
+}
 
 type Profile = {
     id: string;
@@ -22,7 +32,7 @@ export default function ProfilePage() {
     // English fallback rather than letting next-intl throw.
     const roleLabel = (role: string) =>
         tRoles.has(getRoleLabelKey(role)) ? tRoles(getRoleLabelKey(role)) : getRoleLabel(role);
-    const { data: session } = useSession();
+    const locale = useLocale();
     const [profile, setProfile] = useState<Profile | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -62,9 +72,13 @@ export default function ProfilePage() {
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
-        setSaving(true);
         setSaved(false);
         setSaveError("");
+        if (!isPlausiblePhone(phoneNumber)) {
+            setSaveError(t("phoneInvalid"));
+            return;
+        }
+        setSaving(true);
         try {
             const res = await fetch("/api/proxy/auth/me", {
                 method: "PUT",
@@ -78,11 +92,14 @@ export default function ProfilePage() {
                 setTimeout(() => setSaved(false), 3000);
             } else {
                 // Break-it round 2 (portal2) F2: a refused save used to stop
-                // the spinner and say nothing. Say so in the user's language,
-                // plus the server's reason when it gives one (e.g. too long).
+                // the spinner and say nothing. Say so in the user's language:
+                // a reason they can act on is mapped; otherwise the generic
+                // line, followed by the server's (English) sentence only in EN.
                 const body = await res.json().catch(() => null) as { message?: unknown } | null;
                 const detail = typeof body?.message === "string" ? body.message.trim() : "";
-                setSaveError(detail ? `${t("saveFailed")} ${detail}` : t("saveFailed"));
+                const known = refusalKey(detail);
+                setSaveError(known ? t(known)
+                    : detail && locale === "en" ? `${t("saveFailed")} ${detail}` : t("saveFailed"));
             }
         } catch (err) {
             console.error(err);
@@ -98,11 +115,11 @@ export default function ProfilePage() {
         setPasswordSuccess("");
 
         if (newPassword !== confirmPassword) {
-            setPasswordError("New passwords do not match");
+            setPasswordError(t("passwordsDoNotMatch"));
             return;
         }
         if (newPassword.length < 8) {
-            setPasswordError("Password must be at least 8 characters");
+            setPasswordError(t("passwordTooShort"));
             return;
         }
 
@@ -114,18 +131,21 @@ export default function ProfilePage() {
                 body: JSON.stringify({ currentPassword, newPassword }),
             });
             if (res.ok) {
-                setPasswordSuccess("Password updated successfully");
+                setPasswordSuccess(t("passwordUpdated"));
                 setCurrentPassword("");
                 setNewPassword("");
                 setConfirmPassword("");
                 setChangingPassword(false);
                 setTimeout(() => setPasswordSuccess(""), 3000);
             } else {
-                const data = await res.json();
-                setPasswordError(data.error || "Failed to update password");
+                const data = await res.json().catch(() => null) as { error?: unknown } | null;
+                const reason = typeof data?.error === "string" ? data.error : "";
+                setPasswordError(/current password is incorrect/i.test(reason) ? t("currentPasswordIncorrect")
+                    : /at least \d+ characters/i.test(reason) ? t("passwordTooShort")
+                    : t("passwordUpdateFailed"));
             }
-        } catch (err) {
-            setPasswordError("Something went wrong");
+        } catch {
+            setPasswordError(t("passwordUpdateFailed"));
         } finally {
             setSavingPassword(false);
         }
@@ -142,7 +162,7 @@ export default function ProfilePage() {
     if (!profile) {
         return (
             <div className="text-center py-24 bg-surface border border-dashed border-border rounded-xl">
-                <p className="text-sm text-muted">Unable to load profile</p>
+                <p className="text-sm text-muted">{t("loadFailed")}</p>
             </div>
         );
     }
@@ -150,8 +170,8 @@ export default function ProfilePage() {
     return (
         <div className="max-w-2xl">
             <div className="mb-8">
-                <h1 className="mb-1">My Profile</h1>
-                <p className="text-sm text-muted">Manage your account details and password.</p>
+                <h1 className="mb-1">{t("title")}</h1>
+                <p className="text-sm text-muted">{t("subtitle")}</p>
             </div>
 
             {/* Profile Card */}
@@ -176,16 +196,16 @@ export default function ProfilePage() {
                 <form onSubmit={handleSave} className="p-6 space-y-5">
                     <div>
                         <label className="block text-[11px] font-semibold text-muted uppercase tracking-wider mb-1.5">
-                            Full Name
+                            {t("fullName")}
                         </label>
                         <div className="relative">
-                            <User size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+                            <User size={15} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-muted" />
                             <input
                                 type="text"
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
                                 maxLength={255}
-                                className="w-full border border-border rounded-lg bg-background pl-10 pr-4 py-3 text-sm text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all"
+                                className="w-full border border-border rounded-lg bg-background ps-10 pe-4 py-3 text-sm text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all"
                                 required
                             />
                         </div>
@@ -193,34 +213,36 @@ export default function ProfilePage() {
 
                     <div>
                         <label className="block text-[11px] font-semibold text-muted uppercase tracking-wider mb-1.5">
-                            Phone Number
+                            {t("phoneNumber")}
                         </label>
-                        <div className="relative">
-                            <Phone size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+                        {/* A phone / email reads left-to-right in Arabic too; the icon follows it. */}
+                        <div className="relative" dir="ltr">
+                            <Phone size={15} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-muted" />
                             <input
                                 type="tel"
                                 value={phoneNumber}
                                 onChange={(e) => setPhoneNumber(e.target.value)}
                                 placeholder="+971 50 123 4567"
-                                className="w-full border border-border rounded-lg bg-background pl-10 pr-4 py-3 text-sm text-foreground placeholder:text-muted/40 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all"
+                                className="w-full border border-border rounded-lg bg-background ps-10 pe-4 py-3 text-sm text-foreground placeholder:text-muted/40 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all"
                             />
                         </div>
                     </div>
 
                     <div>
                         <label className="block text-[11px] font-semibold text-muted uppercase tracking-wider mb-1.5">
-                            Email Address
+                            {t("emailAddress")}
                         </label>
-                        <div className="relative">
-                            <Mail size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted/50" />
+                        {/* A phone / email reads left-to-right in Arabic too; the icon follows it. */}
+                        <div className="relative" dir="ltr">
+                            <Mail size={15} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-muted/50" />
                             <input
                                 type="email"
                                 value={profile.email}
                                 disabled
-                                className="w-full border border-border rounded-lg bg-input pl-10 pr-4 py-3 text-sm text-muted cursor-not-allowed"
+                                className="w-full border border-border rounded-lg bg-input ps-10 pe-4 py-3 text-sm text-muted cursor-not-allowed"
                             />
                         </div>
-                        <p className="text-[10px] text-muted mt-1 ml-1">Contact your administrator to change email.</p>
+                        <p className="text-[10px] text-muted mt-1 ms-1">{t("emailHint")}</p>
                     </div>
 
                     {saveError && (
@@ -254,8 +276,8 @@ export default function ProfilePage() {
                             <Lock size={16} className="text-warning" />
                         </div>
                         <div>
-                            <h3 className="text-sm font-semibold text-foreground">Password</h3>
-                            <p className="text-xs text-muted">Change your account password</p>
+                            <h3 className="text-sm font-semibold text-foreground">{t("password")}</h3>
+                            <p className="text-xs text-muted">{t("passwordHint")}</p>
                         </div>
                     </div>
                     {!changingPassword && (
@@ -263,7 +285,7 @@ export default function ProfilePage() {
                             onClick={() => setChangingPassword(true)}
                             className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors cursor-pointer focus:outline-none"
                         >
-                            Change Password
+                            {t("changePassword")}
                         </button>
                     )}
                 </div>
@@ -278,7 +300,7 @@ export default function ProfilePage() {
                     <form onSubmit={handlePasswordChange} className="p-6 space-y-4">
                         <div>
                             <label className="block text-[11px] font-semibold text-muted uppercase tracking-wider mb-1.5">
-                                Current Password
+                                {t("currentPassword")}
                             </label>
                             <input
                                 type="password"
@@ -290,7 +312,7 @@ export default function ProfilePage() {
                         </div>
                         <div>
                             <label className="block text-[11px] font-semibold text-muted uppercase tracking-wider mb-1.5">
-                                New Password
+                                {t("newPassword")}
                             </label>
                             <input
                                 type="password"
@@ -303,7 +325,7 @@ export default function ProfilePage() {
                         </div>
                         <div>
                             <label className="block text-[11px] font-semibold text-muted uppercase tracking-wider mb-1.5">
-                                Confirm New Password
+                                {t("confirmNewPassword")}
                             </label>
                             <input
                                 type="password"
@@ -327,7 +349,7 @@ export default function ProfilePage() {
                                 className="flex items-center gap-2 bg-accent text-accent-foreground px-6 py-2.5 rounded-lg text-sm font-semibold hover:brightness-110 transition-all disabled:opacity-60 cursor-pointer focus:ring-2 focus:ring-accent/20 focus:outline-none"
                             >
                                 {savingPassword && <Loader2 size={14} className="animate-spin" />}
-                                Update Password
+                                {t("updatePassword")}
                             </button>
                             <button
                                 type="button"
@@ -340,7 +362,7 @@ export default function ProfilePage() {
                                 }}
                                 className="text-sm font-medium text-muted hover:text-foreground transition-colors cursor-pointer"
                             >
-                                Cancel
+                                {t("cancel")}
                             </button>
                         </div>
                     </form>
