@@ -102,7 +102,7 @@ public class PostingService {
         if (date == null) return;
         int earliest = EARLIEST_ENTRY_DATE.getYear();
         int latest = LATEST_ENTRY_DATE.getYear();
-        if (date.getYear() < earliest || date.getYear() > latest) {
+        if (!isNumberable(date)) {
             String shown = date.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
             throw new BusinessRuleViolationException(
                     "Posting date is out of range: " + shown + " is not between " + earliest + " and " + latest
@@ -110,6 +110,20 @@ public class PostingService {
                     "posting.dateOutOfRange",
                     Map.of("date", shown, "earliest", String.valueOf(earliest), "latest", String.valueOf(latest)));
         }
+    }
+
+    /** True when a journal may carry {@code date} (null is left to the caller). Review N2: importers ask first. */
+    public static boolean isNumberable(LocalDate date) {
+        return date == null || (!date.isBefore(EARLIEST_ENTRY_DATE) && !date.isAfter(LATEST_ENTRY_DATE));
+    }
+
+    /**
+     * Review N2: the row-error sentence for an import date the ledger could not
+     * number, so a pre-2000 contract fails at preview rather than at posting.
+     */
+    public static String outOfRangeSentence(String field, LocalDate date) {
+        return field + " " + date + " is outside " + EARLIEST_ENTRY_DATE + " to " + LATEST_ENTRY_DATE
+                + ", the dates the ledger can post. Check the year.";
     }
 
     @Transactional

@@ -79,6 +79,20 @@ class PortfolioImportServiceTest {
                         "BookingDeposit_Date", "BookingDeposit_Bank");
     }
 
+    /** Break-it R2 money2 review N2: a contract the ledger could not date is a row error at preview. */
+    @Test
+    void aLeaseDatedBefore2000IsARowError() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Leases", 1, "StartDate", "1999-12-31");
+        setCell(wb, "Leases", 1, "EndDate", "2000-12-30");
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
+        assertThat(errors).anySatisfy(e -> {
+            assertThat(e.getField()).isEqualTo("StartDate");
+            assertThat(e.getMessage()).contains("outside 2000-01-01 to 2099-12-31");
+        });
+        assertThat(errors).extracting(ImportErrorDTO::getField).doesNotContain("EndDate");
+    }
+
     @Test
     void rentXor_bothSet_isError() {
         Workbook wb = buildLegacyWorkbook();

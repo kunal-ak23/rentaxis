@@ -141,4 +141,15 @@ class TenantFiscalSettingsServiceTest {
         assertThat(service.lockThroughAsUser(LocalDate.of(2026, 9, 28)).getBooksLockedThrough())
                 .isEqualTo(LocalDate.of(2026, 9, 28));
     }
+
+    /** Break-it R2 money2 review N2: the OB journal is dated the day before the books start, so that day must be postable. */
+    @Test
+    void theBooksCannotStartBeforeTheSecondOfJanuary2000() {
+        when(repo.findById(tenant)).thenReturn(Optional.of(settings(1, null)));
+        assertThatThrownBy(() -> service.setBooksStartDate(LocalDate.of(2000, 1, 1)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("cannot start on 2000-01-01")
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("fiscal.booksStartOutOfRange"));
+        assertThat(service.setBooksStartDate(LocalDate.of(2000, 1, 2)).getBooksStartDate()).isEqualTo(LocalDate.of(2000, 1, 2));
+    }
 }

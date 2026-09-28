@@ -300,6 +300,16 @@ public class TenantFiscalSettingsService {
         if (changing && importBatches.existsByStatus(ImportBatchStatus.POSTED)) {
             throw new BusinessRuleViolationException(BOOKS_START_FROZEN_BY_A_POSTED_BATCH);
         }
+        // Break-it R2 money2 review N2: the opening-balance journal is dated the day
+        // before the books start, so that day must be one the ledger can post.
+        if (changing && date != null && !PostingService.isNumberable(date.minusDays(1))) {
+            throw new BusinessRuleViolationException("The books cannot start on " + date + ": the opening-balance"
+                    + " journal is dated the day before, and the ledger posts from " + PostingService.EARLIEST_ENTRY_DATE
+                    + " to " + PostingService.LATEST_ENTRY_DATE + ". Check the year.",
+                    "fiscal.booksStartOutOfRange", java.util.Map.of("date", date.toString(),
+                            "earliest", PostingService.EARLIEST_ENTRY_DATE.plusDays(1).toString(),
+                            "latest", PostingService.LATEST_ENTRY_DATE.plusDays(1).toString()));
+        }
         s.setBooksStartDate(date);
         if (date != null && s.getBooksLockedThrough() == null) s.setBooksLockedThrough(date.minusDays(1));
         return repo.save(s);

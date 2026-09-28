@@ -1079,6 +1079,10 @@ public class ContractImportValidator {
         if (d == null) {
             errors.add(new ImportErrorDTO(sheet, rowNum, field,
                     field + " '" + raw.trim() + "' is not a date; use YYYY-MM-DD"));
+        } else if (!com.datagami.rentaxis.core.service.ledger.PostingService.isNumberable(d)) {
+            // Break-it R2 money2 review N2: caught at preview, not as posting.dateOutOfRange at bulk post.
+            errors.add(new ImportErrorDTO(sheet, rowNum, field,
+                    com.datagami.rentaxis.core.service.ledger.PostingService.outOfRangeSentence(field, d)));
         }
         return d;
     }

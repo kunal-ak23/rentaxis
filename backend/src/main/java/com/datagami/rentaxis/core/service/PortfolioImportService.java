@@ -295,6 +295,10 @@ public class PortfolioImportService {
                 startDate = parseDate(startDateStr);
                 if (startDate == null) {
                     errors.add(new ImportErrorDTO("Leases", rowNum, "StartDate", DATE_HELP));
+                } else if (!com.datagami.rentaxis.core.service.ledger.PostingService.isNumberable(startDate)) {
+                    // Break-it R2 money2 review N2: the posted contract would be refused later.
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "StartDate",
+                            com.datagami.rentaxis.core.service.ledger.PostingService.outOfRangeSentence("StartDate", startDate)));
                 }
             }
             if (endDateStr.isEmpty()) {
@@ -303,6 +307,9 @@ public class PortfolioImportService {
                 endDate = parseDate(endDateStr);
                 if (endDate == null) {
                     errors.add(new ImportErrorDTO("Leases", rowNum, "EndDate", DATE_HELP));
+                } else if (!com.datagami.rentaxis.core.service.ledger.PostingService.isNumberable(endDate)) {
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "EndDate",
+                            com.datagami.rentaxis.core.service.ledger.PostingService.outOfRangeSentence("EndDate", endDate)));
                 }
             }
             if (startDate != null && endDate != null && !endDate.isAfter(startDate)) {

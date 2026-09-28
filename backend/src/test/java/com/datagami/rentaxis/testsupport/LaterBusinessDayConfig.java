@@ -21,7 +21,9 @@ import java.time.LocalDate;
  * today" and the one-year window on manual dates (journal vouchers, vouchers,
  * payment runs, cash receipts, penalty and bad-debt dates) — to that day. No other
  * clock in the context moves ({@code PostingService}'s century window, the
- * statement's as-of, recognition stay on the real clock).</p>
+ * statement's as-of, recognition stay on the real clock). So in these suites a
+ * default-dated penalty approval ({@code approve(id, null)}) posts its PEN on
+ * {@link #TODAY}, about five years ahead, not on the real date.</p>
  *
  * <p>{@code @Import} it on such a suite; suites sharing it share one Spring context.
  * The rules themselves against the real today are held by suites that do not import

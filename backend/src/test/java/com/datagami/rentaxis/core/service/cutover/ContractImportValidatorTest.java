@@ -221,6 +221,27 @@ class ContractImportValidatorTest {
         return v;
     }
 
+    /** Break-it R2 money2 review N2: a pre-2000 contract or bank date fails at preview, not at bulk post. */
+    @Test
+    void aDateBefore2000IsARowError() throws Exception {
+        try (Workbook wb = workbook(true)) {
+            assertThat(errors(wb)).isEmpty();
+            set(wb, "Contracts", 1, 6, "1999-12-31");
+            List<ImportErrorDTO> errs = errors(wb);
+            assertThat(errs).anySatisfy(e -> {
+                assertThat(e.getField()).isEqualTo("ContractDate");
+                assertThat(e.getMessage()).contains("outside 2000-01-01 to 2099-12-31");
+            });
+        }
+        try (Workbook wb = workbook(true)) {
+            set(wb, "Cheques", 1, 11, "1999-06-01");
+            assertThat(errors(wb)).anySatisfy(e -> {
+                assertThat(e.getField()).isEqualTo("DepositedDate");
+                assertThat(e.getMessage()).contains("outside");
+            });
+        }
+    }
+
     /** Break-it R2 money2 review M1: a cut-over bank event dated after today is a row error, not a future CRT/CBR. */
     @Test
     void aBankDateAfterTodayIsARowError() throws Exception {
