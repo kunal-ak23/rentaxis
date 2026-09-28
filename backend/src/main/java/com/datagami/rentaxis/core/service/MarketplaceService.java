@@ -3,6 +3,9 @@ package com.datagami.rentaxis.core.service;
 import com.datagami.rentaxis.api.dto.MarketplaceSearchRequest;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
+import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
+import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.entity.UnitListing;
 import com.datagami.rentaxis.domain.entity.enums.ListingStatus;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
@@ -37,6 +40,13 @@ public class MarketplaceService {
 
     private final UnitListingRepository listingRepository;
     private final LandlordOrgRepository landlordOrgRepository;
+    private LeaseRepository leaseRepository;
+
+    /** Setter-injected: hand-built unit-test instances need no new argument. */
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setLeaseRepository(LeaseRepository leaseRepository) {
+        this.leaseRepository = leaseRepository;
+    }
 
     public MarketplaceService(UnitListingRepository listingRepository,
                               LandlordOrgRepository landlordOrgRepository) {
@@ -81,6 +91,10 @@ public class MarketplaceService {
         if (listing.getStatus() != ListingStatus.PUBLISHED && listing.getStatus() != ListingStatus.UPCOMING) {
             throw new NotFoundException("Listing not found: " + slug);
         }
+        // Break-it R3 ops3 F10: a let unit is not on the marketplace, even by its direct link.
+        if (letOnAvailableFrom(listing)) {
+            throw new NotFoundException("Listing not found: " + slug);
+        }
         return listing;
     }
 
@@ -97,6 +111,37 @@ public class MarketplaceService {
                 .orElseThrow(() -> new NotFoundException("Listing not found: " + listingId));
     }
 
+    /**
+     * Break-it R3 ops3 F10: a current (active or notice-given) lease on the listing's unit
+     * that runs on or past its available-from date — or any, when there is none ("available now").
+     */
+    private static jakarta.persistence.criteria.Subquery<Integer> letOnAvailableFrom(
+            jakarta.persistence.criteria.Root<UnitListing> root,
+            jakarta.persistence.criteria.CriteriaQuery<?> query,
+            jakarta.persistence.criteria.CriteriaBuilder cb,
+            UUID tenantId) {
+        jakarta.persistence.criteria.Subquery<Integer> sq = query.subquery(Integer.class);
+        jakarta.persistence.criteria.Root<Lease> lease = sq.from(Lease.class);
+        jakarta.persistence.criteria.Path<java.time.LocalDate> end = lease.get("endDate");
+        jakarta.persistence.criteria.Path<java.time.LocalDate> from = root.get("availableFrom");
+        sq.select(cb.literal(1)).where(
+                cb.equal(lease.get("tenantId"), tenantId),
+                cb.equal(lease.get("unit").get("id"), root.get("unitId")),
+                lease.get("status").in(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN),
+                cb.or(cb.isNull(from), cb.isNull(end), cb.greaterThanOrEqualTo(end, from)));
+        return sq;
+    }
+
+    /** The single-listing form of {@link #letOnAvailableFrom}. */
+    private boolean letOnAvailableFrom(UnitListing listing) {
+        if (listing.getUnitId() == null || leaseRepository == null) return false;
+        java.time.LocalDate from = listing.getAvailableFrom();
+        return leaseRepository.findByUnitIdAndStatusIn(listing.getUnitId(),
+                        java.util.EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN)).stream()
+                .filter(l -> java.util.Objects.equals(l.getTenantId(), listing.getTenantId()))
+                .anyMatch(l -> from == null || l.getEndDate() == null || !from.isAfter(l.getEndDate()));
+    }
+
     // ---- Spec builder ----
 
     private Specification<UnitListing> buildSpec(UUID tenantId, MarketplaceSearchRequest req) {
@@ -108,6 +153,10 @@ public class MarketplaceService {
 
             // Always PUBLISHED
             predicates.add(cb.equal(root.get("status"), ListingStatus.PUBLISHED));
+
+            // Break-it R3 ops3 F10: never a unit that is still let on its available-from date
+            // (a listing published before the publish guard existed).
+            predicates.add(cb.not(cb.exists(letOnAvailableFrom(root, query, cb, tenantId))));
 
             if (req != null) {
                 if (req.minBedrooms() != null) {

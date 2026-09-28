@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.dto.InterestDTO;
 import com.datagami.rentaxis.api.dto.UnitListingCreateRequest;
 import com.datagami.rentaxis.api.dto.UnitListingMediaDTO;
 import com.datagami.rentaxis.api.dto.UnitListingUpdateRequest;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.event.ListingPublishedEvent;
 import com.datagami.rentaxis.core.event.ListingUnlistedEvent;
@@ -274,7 +275,13 @@ public class UnitListingService {
 
     public UnitListing update(UUID tenantId, UUID id, UnitListingUpdateRequest req) {
         UnitListing listing = get(tenantId, id);
+        LocalDate availableBefore = listing.getAvailableFrom();
         applyUpdate(listing, req);
+        // Break-it R3 ops3 F10: a live listing cannot be moved to a date the unit is still let.
+        boolean live = listing.getStatus() == ListingStatus.PUBLISHED || listing.getStatus() == ListingStatus.UPCOMING;
+        if (live && !Objects.equals(availableBefore, listing.getAvailableFrom())) {
+            requireUnitFreeBy(listing);
+        }
         UnitListing saved = listingRepository.save(listing);
         if (req.amenities() != null) {
             replaceAmenities(saved.getId(), req.amenities());
@@ -284,10 +291,39 @@ public class UnitListingService {
 
     public void publish(UUID tenantId, UUID id) {
         UnitListing listing = get(tenantId, id);
+        // Break-it R3 ops3 F10: never advertise a let unit as available.
+        requireUnitFreeBy(listing);
         listing.setStatus(ListingStatus.PUBLISHED);
         listing.setPublishedAt(LocalDateTime.now());
         listingRepository.save(listing);
         eventPublisher.publishEvent(new ListingPublishedEvent(listing.getId(), tenantId));
+    }
+
+    /** Break-it R3 ops3 F10: the lease statuses that occupy a unit. */
+    static final Set<LeaseStatus> OCCUPYING = java.util.EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN);
+
+    /**
+     * Break-it R3 ops3 F10: a listing may be published only while its unit is free by
+     * its available-from date — no current (active or notice-given) lease that runs on
+     * or past that date. Pre-marketing is fine: available-from after the lease ends.
+     * A listing with no available-from reads "available now", so any current lease refuses it.
+     */
+    private void requireUnitFreeBy(UnitListing listing) {
+        if (listing.getUnitId() == null) return;
+        LocalDate from = listing.getAvailableFrom();
+        java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        leaseRepository.findByUnitIdAndStatusIn(listing.getUnitId(), OCCUPYING).stream()
+                .filter(l -> Objects.equals(l.getTenantId(), listing.getTenantId()))
+                .filter(l -> from == null || l.getEndDate() == null || !from.isAfter(l.getEndDate()))
+                .findFirst()
+                .ifPresent(l -> {
+                    String end = l.getEndDate() == null ? "—" : l.getEndDate().format(dmy);
+                    String next = l.getEndDate() == null ? "—" : l.getEndDate().plusDays(1).format(dmy);
+                    throw new BusinessRuleViolationException(
+                            "This unit is let until " + end + ". Set \"Available from\" to " + next
+                                    + " or later to publish the listing.",
+                            "listing.unitLet", Map.of("end", end, "next", next));
+                });
     }
 
     public void unlist(UUID tenantId, UUID id) {

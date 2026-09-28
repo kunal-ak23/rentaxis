@@ -37,6 +37,7 @@ import { InterestsDrawer } from "../_components/InterestsDrawer";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatCurrencyCompact } from "@/lib/format";
 import { UnitPicker } from "@/components/pickers/UnitPicker";
+import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 
 // ──────────── Amenity groups ────────────
 const AMENITY_GROUPS: { key: string; amenities: ListingAmenity[] }[] = [
@@ -102,6 +103,7 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
   const { id } = use(params);
   const isNew = id === 'new';
   const t = useTranslations('Listings');
+  const tCommon = useTranslations('Common');
   const router = useRouter();
   const { data: session } = useSession();
   const token = (session?.user as { accessToken?: string })?.accessToken;
@@ -272,8 +274,9 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
       const updated = await fetchListing(listing.id, token);
       setListing(updated);
       showToast('success', t('publishSuccess'));
-    } catch {
-      showToast('error', t('saveError'));
+    } catch (err) {
+      // Break-it R3 ops3 F10: a let unit is refused with the reason (listing.unitLet).
+      showToast('error', codedOf(err).code ? serverText(tCommon, err) : t('saveError'));
     } finally {
       setActionLoading(null);
     }

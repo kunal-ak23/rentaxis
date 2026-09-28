@@ -1,4 +1,4 @@
-import { ApiError } from '@/lib/api/facilities'
+import { ApiError, throwIfNotOk } from '@/lib/api/facilities'
 import { cache } from 'react'
 import type {
   UnitListingSummaryDTO,
@@ -191,7 +191,8 @@ export async function publishListing(id: string, token?: string): Promise<void> 
   const headers: HeadersInit = {}
   if (token) headers['Authorization'] = `Bearer ${token}`
   const res = await fetch(`${BASE}/${id}/publish`, { method: 'POST', headers })
-  if (!res.ok) throw new Error(`Failed to publish listing: ${res.status}`)
+  // Break-it R3 ops3 F10: keep the server's refusal (listing.unitLet) so the page can show the reason.
+  await throwIfNotOk(res)
 }
 
 export async function unlistListing(id: string, token?: string): Promise<void> {
