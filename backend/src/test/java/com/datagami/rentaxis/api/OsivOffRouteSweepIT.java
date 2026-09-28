@@ -246,6 +246,9 @@ class OsivOffRouteSweepIT extends AbstractPostgresIT {
         listing.setTitleEn("Sunny one-bed");
         listing.setSlug("sunny-one-bed-" + UUID.randomUUID().toString().substring(0, 6));
         listing.setAnnualRent(new BigDecimal("60000"));
+        // Break-it R3 ops3 F10: the unit is let, so the marketplace shows it only when
+        // pre-marketed from the day after the lease ends.
+        listing.setAvailableFrom(LocalDate.now().minusMonths(1).withDayOfMonth(1).plusYears(1));
         listing = listingRepo.save(listing);
 
         Vendor v = new Vendor();
