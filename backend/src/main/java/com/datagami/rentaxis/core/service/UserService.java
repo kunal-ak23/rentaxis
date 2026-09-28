@@ -854,6 +854,7 @@ public class UserService {
         List<UserPropertyAssignment> assignments = propertyAssignmentRepository.findByPropertyIdIn(propertyIds);
         java.util.Map<UUID, User> users = new java.util.HashMap<>();
         userRepository.findAllById(assignments.stream().map(UserPropertyAssignment::getUserId).distinct().toList())
+                .stream().filter(UserService::isPropertyManager)
                 .forEach(u -> users.put(u.getId(), u));
         for (UserPropertyAssignment a : assignments) {
             User u = users.get(a.getUserId());
@@ -867,6 +868,18 @@ public class UserService {
                 .stream()
                 .map(UserPropertyAssignment::getUserId)
                 .toList();
-        return userRepository.findAllById(userIds);
+        return userRepository.findAllById(userIds).stream()
+                .filter(UserService::isPropertyManager)
+                .toList();
+    }
+
+    /**
+     * The property-assignment table holds every user scoped to a building — security
+     * guards included — but "managers" means the PROPERTY_MANAGER assignees: the
+     * property page's Property Manager card listed the guard, and the meeting
+     * modal would have booked a guard as the host (tutorial bug, 2026-09-28).
+     */
+    private static boolean isPropertyManager(User user) {
+        return user.getRole() == UserRole.PROPERTY_MANAGER;
     }
 }

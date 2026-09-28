@@ -82,3 +82,37 @@ describe("property detail — managers request is role-gated (F: managers 403 fo
         expect(await screen.findByText("Manny Manager")).toBeInTheDocument();
     });
 });
+
+/**
+ * Tutorial bug 2026-09-28: the Property Manager card listed the building's security
+ * guard. Only PROPERTY_MANAGER assignees belong under that heading.
+ */
+describe("property detail — the Property Manager card lists property managers only", () => {
+    function serveAssignees(rows: unknown[]) {
+        global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.endsWith("/v1/properties/p1")) {
+                return { ok: true, status: 200, json: async () => ({ id: "p1", nameEn: "Belle Vue", emirate: "DUBAI", type: "RESIDENTIAL" }) } as unknown as Response;
+            }
+            if (url.endsWith("/managers")) return { ok: true, status: 200, json: async () => rows } as unknown as Response;
+            return { ok: true, status: 200, json: async () => ([]) } as unknown as Response;
+        }) as unknown as typeof fetch;
+    }
+
+    it("does not show a security guard assigned to the building", async () => {
+        serveAssignees([
+            { id: "m1", name: "Manny Manager", email: "manny@x.com", role: "PROPERTY_MANAGER" },
+            { id: "g1", name: "Gary Guard", email: "gary@x.com", role: "SECURITY_GUARD" },
+        ]);
+        renderPage();
+        expect(await screen.findByText("Manny Manager")).toBeInTheDocument();
+        expect(screen.queryByText("Gary Guard")).not.toBeInTheDocument();
+    });
+
+    it("says no property manager is assigned when only a guard is", async () => {
+        serveAssignees([{ id: "g1", name: "Gary Guard", email: "gary@x.com", role: "SECURITY_GUARD" }]);
+        renderPage();
+        expect(await screen.findByText(en.MasterData.noManagersAssigned)).toBeInTheDocument();
+        expect(screen.queryByText("Gary Guard")).not.toBeInTheDocument();
+    });
+});

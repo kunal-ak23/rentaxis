@@ -113,6 +113,7 @@
     "contractPeriod": "المدة",
     "rentAed": "الإيجار (درهم)",
     "noContractsForProperty": "لا توجد عقود إيجار لهذا العقار.",
+    "noManagersAssigned": "لم يتم تعيين مدير عقار.",
     "noLeasesFound": "لم يتم العثور على عقود",
     "noPermissionDeleteLease": "ليس لديك صلاحية حذف هذا العقد.",
     "noPhoneProvided": "لم يتم تقديم رقم هاتف",

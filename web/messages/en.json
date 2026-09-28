@@ -113,6 +113,7 @@
     "contractPeriod": "Period",
     "rentAed": "Rent (AED)",
     "noContractsForProperty": "No tenancy contracts for this property.",
+    "noManagersAssigned": "No property manager assigned.",
     "noLeasesFound": "No Tenancy Contracts Found",
     "noPermissionDeleteLease": "You don't have permission to delete this contract.",
     "noPhoneProvided": "No phone provided",

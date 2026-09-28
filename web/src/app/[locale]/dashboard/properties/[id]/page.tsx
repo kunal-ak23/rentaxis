@@ -173,6 +173,10 @@ export default function PropertyDetailPage() {
 
     const fetchUnits = () => fetchList(beginUnits(), `/api/proxy/v1/units/property/${propertyId}`, setUnits);
 
+    // The card is "Property Manager": the server lists only PROPERTY_MANAGER
+    // assignees, and a row carrying another role (a security guard assigned to
+    // the building) is never shown under that heading.
+    const propertyManagers = managers.filter(m => !m.role || m.role === "PROPERTY_MANAGER");
     const fetchManagers = () => fetchList(beginManagers(), `/api/proxy/v1/properties/${propertyId}/managers`, setManagers);
 
     const fetchContacts = () => fetchList<PropertyContact>(beginContacts(), `/api/proxy/v1/properties/${propertyId}/contacts`, setContacts);
@@ -358,7 +362,7 @@ export default function PropertyDetailPage() {
                                 {t("propertyManager")}
                             </p>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                {managers.length > 0 ? managers.map(m => (
+                                {propertyManagers.length > 0 ? propertyManagers.map(m => (
                                     <div key={m.id} className="bg-surface p-4 rounded-xl border border-border hover:shadow-md transition-all duration-200 flex flex-col gap-1">
                                         <p className="text-sm font-bold text-foreground">{m.name}</p>
                                         <p className="text-[11px] font-bold text-muted">{m.email}</p>
@@ -367,7 +371,7 @@ export default function PropertyDetailPage() {
                                         )}
                                     </div>
                                 )) : (
-                                    <p className="text-xs font-medium text-muted italic">No managers assigned.</p>
+                                    <p className="text-xs font-medium text-muted italic">{t("noManagersAssigned")}</p>
                                 )}
                             </div>
                         </div>
