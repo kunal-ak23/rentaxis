@@ -263,6 +263,7 @@ public class ContractGenerationService {
         Optional<LeaseDocument> existing = docs.stream()
                 .filter(d -> d.getType() == DocumentType.EXECUTED_COPY).findFirst();
         if (existing.isPresent()) {
+            clearSweepAttempts(leaseId);
             return existing.map(this::mapToDTO);
         }
         Optional<LeaseDocument> signed = docs.stream()
@@ -308,7 +309,27 @@ public class ContractGenerationService {
         doc.setType(DocumentType.EXECUTED_COPY);
         LeaseDocument saved = leaseDocumentRepository.saveAndFlush(doc);
         log.info("Executed copy issued for lease {}", leaseId);
+        clearSweepAttempts(leaseId);
         return Optional.of(mapToDTO(saved));
+    }
+
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setJdbcTemplate(org.springframework.jdbc.core.JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
+    }
+
+    /**
+     * The lease has its executed copy — whichever path made it (posting, the
+     * manual action, the nightly sweep) — so its failed-sweep record goes: a
+     * lease the sweep gave up on and an admin then fixed by hand is no longer
+     * "permanently skipped". Keyed by the lease just tenant-checked above.
+     */
+    private void clearSweepAttempts(UUID leaseId) {
+        if (jdbc != null) {
+            jdbc.update("DELETE FROM executed_copy_sweep_attempts WHERE lease_id = ?", leaseId);
+        }
     }
 
     @Transactional

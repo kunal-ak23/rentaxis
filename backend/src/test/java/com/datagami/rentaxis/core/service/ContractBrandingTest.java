@@ -496,6 +496,23 @@ class ContractBrandingTest {
         assertThat(svc.getDocuments(lease.getId())).extracting(d -> d.getLabel()).containsExactly("Signed contract");
     }
 
+    /** Any path that ends with a copy clears the lease's failed-sweep record; no copy, no clearing. */
+    @Test
+    void aCopyFromAnyPathClearsTheSweepAttempts() throws Exception {
+        org.springframework.jdbc.core.JdbcTemplate jdbc = mock(org.springframework.jdbc.core.JdbcTemplate.class);
+        svc.setJdbcTemplate(jdbc);
+        String clear = "DELETE FROM executed_copy_sweep_attempts WHERE lease_id = ?";
+        storeSignedContract();
+        posted();
+        assertThat(svc.createExecutedCopy(lease.getId())).isEmpty(); // no stamp yet
+        verify(jdbc, never()).update(eq(clear), any(Object[].class));
+
+        stampSet();
+        svc.createExecutedCopy(lease.getId()).orElseThrow();           // issued
+        svc.createExecutedCopy(lease.getId()).orElseThrow();           // already there
+        verify(jdbc, times(2)).update(clear, lease.getId());
+    }
+
     @Test
     void issuingAgainReturnsTheSameCopy() throws Exception {
         storeSignedContract();
