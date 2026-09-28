@@ -301,9 +301,11 @@
 
 <!-- Per-page footer rendered in the @page @bottom-center margin box.
      Signature lines + print stamp repeat on every page. The stamp area
-     between the signatures carries the organisation's stamp beside the
-     landlord signature when one is set; otherwise it stays empty for the
-     physical wet stamp applied after printing. -->
+     between the signatures stays empty for the physical wet stamp applied
+     after printing (5971b0e2). The organisation's digital stamp prints there
+     only on a SIGNED contract (Kunal, 2026-09-28): never on DRAFT or
+     PENDING_SIGNATURE, so hand-stamping still works and a contract awaiting
+     signature never looks executed (ContractGenerationService.stampPrints). -->
 <div class="page-footer">
     <table class="sig-row">
         <tr>

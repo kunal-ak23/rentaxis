@@ -198,6 +198,7 @@ class ContractBrandingTest {
         landlord.setLogoUrl(LOGO);
         landlord.setStampImageUrl(STAMP);
         landlord.setTrn(TRN);
+        lease.setStatus(LeaseStatus.ACTIVE); // the stamp prints only once signed
         // A wide logo and a round stamp: the renderer must fit both into their boxes.
         when(blobs.downloadOwnedUrl(eq(tenantId), eq(LOGO), anyLong())).thenReturn(Optional.of(
                 new BlobStorageService.DownloadResult(png(600, 150, new Color(0xEE, 0xC0, 0x46)), "application/octet-stream")));
@@ -223,6 +224,53 @@ class ContractBrandingTest {
         // Read for this lease's own tenant, through the storage SDK, never by URL fetch.
         verify(blobs).downloadOwnedUrl(tenantId, LOGO, OrgBrandImages.MAX_BYTES);
         verify(blobs).downloadOwnedUrl(tenantId, STAMP, OrgBrandImages.MAX_BYTES);
+    }
+
+    /**
+     * Kunal, 2026-09-28: the digital stamp prints only on a signed contract. DRAFT
+     * and PENDING_SIGNATURE never carry it (hand-stamping, 5971b0e2); TERMINATED and
+     * CLOSED only when the lease was signed first. The logo and TRN print always.
+     */
+    @Test
+    void theStampPrintsOnlyOnASignedContract() throws Exception {
+        landlord.setLogoUrl(LOGO);
+        landlord.setStampImageUrl(STAMP);
+        when(blobs.downloadOwnedUrl(eq(tenantId), eq(LOGO), anyLong())).thenReturn(Optional.of(
+                new BlobStorageService.DownloadResult(png(60, 20, Color.ORANGE), null)));
+        when(blobs.downloadOwnedUrl(eq(tenantId), eq(STAMP), anyLong())).thenReturn(Optional.of(
+                new BlobStorageService.DownloadResult(png(30, 30, Color.BLUE), null)));
+        java.util.Map<String, Boolean> seen = new java.util.LinkedHashMap<>();
+        java.time.Instant when = java.time.Instant.parse("2026-04-20T08:00:00Z");
+        Object[][] cases = {
+                {LeaseStatus.DRAFT, null, null, false},
+                {LeaseStatus.PENDING_SIGNATURE, null, null, false},
+                // Accepted by the renter but not yet on the books: still awaiting signature.
+                {LeaseStatus.PENDING_SIGNATURE, when, null, false},
+                {LeaseStatus.ACTIVE, when, when, true},
+                {LeaseStatus.NOTICE_GIVEN, when, when, true},
+                {LeaseStatus.RENEWED, when, when, true},
+                {LeaseStatus.EXPIRED, when, when, true},
+                {LeaseStatus.TERMINATED, when, when, true},
+                {LeaseStatus.TERMINATED, null, null, false},   // withdrawn before signing
+                {LeaseStatus.CLOSED, null, when, true},
+                {LeaseStatus.CLOSED, null, null, false},
+        };
+        for (Object[] c : cases) {
+            lease.setStatus((LeaseStatus) c[0]);
+            lease.setRenterAcceptedAt((java.time.Instant) c[1]);
+            lease.setPostedAt((java.time.Instant) c[2]);
+            String html = svc.renderContractHtml(lease, "1234");
+            int images = html.split("src=\"data:image/png;base64,", -1).length - 1;
+            String label = c[0] + (c[2] != null ? "/posted" : c[1] != null ? "/accepted" : "");
+            seen.put(label, images == 2);
+            assertThat(images).as(label).isEqualTo((Boolean) c[3] ? 2 : 1); // the logo always
+        }
+        assertThat(seen).containsEntry("DRAFT", false).containsEntry("ACTIVE/posted", true);
+        // Declared for every status: a new status must be decided on, not default to printing.
+        for (LeaseStatus st : LeaseStatus.values()) {
+            lease.setStatus(st);
+            ContractGenerationService.stampPrints(lease);
+        }
     }
 
     @Test

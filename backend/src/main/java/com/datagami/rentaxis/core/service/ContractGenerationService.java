@@ -313,7 +313,8 @@ public class ContractGenerationService {
                 .map(src -> "<td style=\"width:70pt; text-align:left; vertical-align:middle;\">"
                         + "<img src=\"" + escapeUserText(src) + "\" alt=\"\" style=\"max-width:70pt; max-height:40pt;\"/></td>")
                 .orElse(""));
-        values.put("LANDLORD_STAMP", brandImage(lease.getTenantId(), org.getStampImageUrl())
+        values.put("LANDLORD_STAMP", (stampPrints(lease)
+                ? brandImage(lease.getTenantId(), org.getStampImageUrl()) : java.util.Optional.<String>empty())
                 .map(src -> "<div style=\"text-align:right;\"><img src=\"" + escapeUserText(src)
                         + "\" alt=\"\" style=\"max-width:110pt; max-height:34pt;\"/></div>")
                 .orElse("&#160;"));
@@ -335,6 +336,27 @@ public class ContractGenerationService {
         values.put("TERMS_TABLE", termsTable);
 
         return substituteAll(template, values);
+    }
+
+    /**
+     * Whether the organisation's digital stamp may print on this contract (Kunal,
+     * 2026-09-28): only once it is signed. DRAFT and PENDING_SIGNATURE never carry
+     * it, so a contract awaiting signature cannot look executed and the wet stamp
+     * of the hand-signing workflow (5971b0e2) still has its empty space. ACTIVE,
+     * NOTICE_GIVEN, RENEWED and EXPIRED were on the books; TERMINATED and CLOSED
+     * only when the lease got there after signing (posted, or accepted by the
+     * renter) — a draft withdrawn as terminated stays unstamped.
+     */
+    static boolean stampPrints(Lease lease) {
+        LeaseStatus status = lease.getStatus();
+        if (status == null) {
+            return false;
+        }
+        return switch (status) {
+            case DRAFT, PENDING_SIGNATURE -> false;
+            case ACTIVE, NOTICE_GIVEN, RENEWED, EXPIRED -> true;
+            case TERMINATED, CLOSED -> lease.getPostedAt() != null || lease.getRenterAcceptedAt() != null;
+        };
     }
 
     /** "  |  TRN: …" after the phone, "TRN: …" alone without one, or nothing. */
