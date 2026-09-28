@@ -11,6 +11,7 @@ import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { isAbortError } from "@/lib/api/abort";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { changedFields } from "@/lib/changedFields";
+import { refreshMyOrgs } from "@/components/nav/orgStore";
 
 type Tenant = { id: string; name: string; status: string; address?: string; trn?: string; logoUrl?: string; stampImageUrl?: string; ticketOtpRequired?: boolean; phone?: string; createdAt: string };
 
@@ -125,6 +126,7 @@ export default function SuperAdminTenantsPage() {
             if (res.ok || res.status === 404) {
                 // 404 means it is already gone — the desired end state either way.
                 closeDelete();
+                refreshMyOrgs();
                 await fetchTenants();
                 return;
             }
@@ -210,6 +212,8 @@ export default function SuperAdminTenantsPage() {
             });
             if (res.ok) {
                 resetForm();
+                // The header's switcher lists the new or renamed organisation at once.
+                refreshMyOrgs();
                 fetchTenants();
             } else if (res.status === 409 && editingTenant) {
                 const data = await res.json().catch(() => ({}));
@@ -270,6 +274,7 @@ export default function SuperAdminTenantsPage() {
             });
             if (res.ok) {
                 closeStatus();
+                refreshMyOrgs();
                 fetchTenants();
                 return;
             }
@@ -623,7 +628,7 @@ export default function SuperAdminTenantsPage() {
                             {loadError ? <XCircle size={32} /> : <ShieldCheck size={32} />}
                         </div>
                         <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">
-                            {loadError || tSa("orgEmpty")}
+                            {loadError || (tenants.length > 0 && searchQuery ? tSa("orgNoMatch") : tSa("orgEmpty"))}
                         </p>
                         {loadError && (
                             <button
@@ -677,7 +682,9 @@ export default function SuperAdminTenantsPage() {
                         {features.map(f => (
                           <div key={f.feature} className="flex items-center justify-between gap-4">
                             <div>
-                              <p className="text-sm font-medium text-neutral-800">{f.label}</p>
+                              <p className="text-sm font-medium text-neutral-800">
+                                {tSa.has(`featureLabels.${f.feature}`) ? tSa(`featureLabels.${f.feature}`) : f.label}
+                              </p>
                               <p className="text-xs text-neutral-400 mt-0.5">
                                 {t("default")}: {f.defaultEnabled ? t("on") : t("off")}
                               </p>

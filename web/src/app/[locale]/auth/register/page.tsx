@@ -111,7 +111,7 @@ export default function RegisterPage() {
                                     type="text"
                                     value={formData.companyName}
                                     onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
-                                    placeholder="Al Futtaim"
+                                    placeholder="Sandstone Crest Properties"
                                     className="w-full border border-border rounded-lg bg-surface p-3.5 pl-11 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-medium"
                                 />
                             </div>

@@ -11,7 +11,7 @@ test.describe('Registration Page', () => {
     await expect(page.locator('input[type="password"]')).toBeVisible();
     // Full name and company name fields
     await expect(page.locator('input[placeholder*="John" i], input[placeholder*="name" i]').first()).toBeVisible();
-    await expect(page.locator('input[placeholder*="company" i], input[placeholder*="Al Futtaim" i]').first()).toBeVisible();
+    await expect(page.locator('input[placeholder*="company" i], input[placeholder*="Sandstone Crest" i]').first()).toBeVisible();
   });
 
   test('has sign in link', async ({ page }) => {

@@ -44,6 +44,18 @@ export function resetMyOrgsCache() {
     cache = null;
 }
 
+const listeners = new Set<() => void>();
+
+/**
+ * The list changed (an organisation was created, renamed, activated,
+ * deactivated or deleted on this page): drop the cache and have every mounted
+ * switcher fetch it again, so a new organisation is pickable without a reload.
+ */
+export function refreshMyOrgs() {
+    cache = null;
+    listeners.forEach(listener => listener());
+}
+
 /**
  * The saved context, then the user's own organisation, then the first membership.
  *
@@ -64,12 +76,18 @@ export function useMyOrgs(): { orgs: Org[] | null; active: Org | null } {
     const user = session?.user as { id?: string; email?: string | null; role?: string; tenantId?: string } | undefined;
     const key = user ? `${user.id ?? user.email ?? ""}|${user.role ?? ""}|${user.tenantId ?? ""}` : "";
     const [state, setState] = useState<{ key: string; orgs: Org[] } | null>(null);
+    const [generation, setGeneration] = useState(0);
+    useEffect(() => {
+        const bump = () => setGeneration(g => g + 1);
+        listeners.add(bump);
+        return () => { listeners.delete(bump); };
+    }, []);
     useEffect(() => {
         if (!key) return;
         let alive = true;
         void loadMyOrgs(key).then(orgs => { if (alive) setState({ key, orgs }); });
         return () => { alive = false; };
-    }, [key]);
+    }, [key, generation]);
     const orgs = state && state.key === key ? state.orgs : null;
     return { orgs, active: orgs ? pickActiveOrg(orgs, user?.tenantId, user?.role) : null };
 }
