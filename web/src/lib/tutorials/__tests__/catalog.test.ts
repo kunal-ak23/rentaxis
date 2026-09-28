@@ -92,8 +92,10 @@ describe("catalogue helpers", () => {
         expect(publishedTutorials(list).map((t) => t.id)).toEqual(["01", "04"]);
     });
 
-    it("the real catalogue publishes nothing yet", () => {
-        expect(publishedTutorials(TUTORIALS)).toEqual([]);
+    it("the real catalogue publishes 01-10, each with an 11-character YouTube id", () => {
+        const published = publishedTutorials(TUTORIALS);
+        expect(published.map((t) => t.id)).toEqual(["01", "02", "03", "04", "05", "06", "07", "08", "09", "10"]);
+        for (const t of published) expect(t.youtubeId).toMatch(/^[A-Za-z0-9_-]{11}$/);
     });
 
     it("filterTutorialsByRole keeps only the role's entries, none without a role", () => {
