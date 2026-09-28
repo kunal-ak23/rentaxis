@@ -10,7 +10,7 @@ import ar from "../../../messages/ar.json";
 const CODES = [
     "booking.dateInPast", "booking.rangeTooLong", "booking.outsideLease", "booking.outsideRenterLease",
     "booking.noActiveLease", "booking.alreadyBooked", "booking.renterAlreadyBooked", "booking.pendingExists",
-    "booking.notPending", "booking.decisionInProgress", "booking.spotTaken", "listing.unitLet",
+    "booking.notPending", "booking.decisionInProgress", "booking.spotTaken", "booking.dateRequired", "listing.unitLet",
 ];
 
 function at(messages: unknown, path: string): unknown {

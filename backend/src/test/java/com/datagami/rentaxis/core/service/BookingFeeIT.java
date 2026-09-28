@@ -212,4 +212,30 @@ class BookingFeeIT extends AbstractPostgresIT {
         assertThat(jdbc.queryForObject("select count(*) from penalty_assessments where source_type = 'BOOKING' and tenant_id = ?",
                 Integer.class, fixtures.tenantId())).isZero();
     }
+
+    /**
+     * Review r3C I1: an early-posted renewal flips the running lease to RENEWED while its
+     * term still runs; the renter can still book inside it, and a request made before the
+     * renewal can still be approved.
+     */
+    @Test
+    void anEarlyPostedRenewalStillLetsTheRenterBookInTheCurrentTerm() {
+        PropertyAmenity pool = amenity("PoolFee", "PER_BOOKING", "100");
+        BookingRequest before = book(pool, LocalDate.now().plusDays(10));
+
+        // The renewal (2027-05-01 → 2028-04-30) is posted early; the running lease becomes RENEWED.
+        fixtures.postedLease(LocalDate.of(2026, 9, 1), LocalDate.of(2027, 5, 1), LocalDate.of(2028, 4, 30),
+                List.of(vatLine("RENT", "120000")), 4, null);
+        int flipped = jdbc.update("update leases set status = 'RENEWED' where tenant_id = ? and start_date = ?",
+                fixtures.tenantId(), LocalDate.of(2026, 5, 1));
+        assertThat(flipped).isOne();
+
+        BookingRequest approved = tx.execute(s -> bookings.approve(fixtures.tenantId(), before.getId(), UUID.randomUUID(), null));
+        assertThat(approved.getChargeId()).isNotNull();
+        PropertyAmenity gym = amenity("Gym", "FREE", null);
+        assertThat(book(gym, LocalDate.now().plusDays(20)).getId()).isNotNull();
+        // Into the renewal's term as well.
+        PropertyAmenity bbq = amenity("BBQ", "FREE", null);   // one pending per amenity: a second one
+        assertThat(book(bbq, LocalDate.of(2027, 6, 1)).getId()).isNotNull();
+    }
 }

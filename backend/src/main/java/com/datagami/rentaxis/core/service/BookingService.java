@@ -73,9 +73,13 @@ public class BookingService {
     /** Break-it R3 ops3 F8: the longest parking range one request may cover. */
     static final int MAX_PARKING_YEARS = 2;
 
-    /** Break-it R3 ops3 F8: the leases a booking must fall inside — the renter's current contract. */
+    /**
+     * Break-it R3 ops3 F8: the leases a booking must fall inside — the renter's current
+     * contract. RENEWED counts (review r3C I1): posting a renewal early flips the running
+     * lease to RENEWED at once while its term still runs, and the successor starts later.
+     */
     private static final EnumSet<LeaseStatus> CURRENT_LEASE =
-            EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN);
+            EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN, LeaseStatus.RENEWED);
 
     static final ZoneId DUBAI = ZoneId.of("Asia/Dubai");
     private static final DateTimeFormatter DMY = DateTimeFormatter.ofPattern("dd/MM/yyyy");
@@ -127,6 +131,13 @@ public class BookingService {
             }
             if (!amenity.isBookable()) {
                 throw new BusinessRuleViolationException("This amenity is not bookable");
+            }
+            // Review r3C m1: an undated booking has no slot to clash with, so a paid amenity
+            // needs a date — otherwise repeat undated requests would each post the fee.
+            if (req.preferredDate() == null && amenity.getFeeType() != null && !"FREE".equals(amenity.getFeeType())
+                    && amenity.getFeeAmount() != null && amenity.getFeeAmount().signum() > 0) {
+                throw new BusinessRuleViolationException("Choose a date: this amenity has a booking fee.",
+                        "booking.dateRequired", Map.of());
             }
             // Break-it R3 ops3 F7: one renter, one amenity, one slot. The same request
             // again is idempotent (a double submit); anything else the renter already
@@ -245,16 +256,17 @@ public class BookingService {
                 .filter(l -> Objects.equals(l.getTenantId(), tenantId))
                 .filter(l -> l.getRenter() != null && Objects.equals(l.getRenter().getUserId(), renterUserId))
                 .toList();
-        if (leases.isEmpty()) {
+        // A RENEWED lease alone is history, not a current contract.
+        if (leases.stream().noneMatch(l -> l.getStatus() != LeaseStatus.RENEWED)) {
             throw new BusinessRuleViolationException(
                     "The renter has no current contract on this unit, so the booking cannot be made.",
                     "booking.noActiveLease", Map.of());
         }
-        boolean inside = leases.stream().anyMatch(l ->
-                (l.getStartDate() == null || !from.isBefore(l.getStartDate()))
-                        && (l.getEndDate() == null || !last.isAfter(l.getEndDate())));
+        // Review r3C I1: the renter's chain on the unit (a renewed term and its renewal)
+        // is one contract period — merge back-to-back terms before checking the range.
+        boolean inside = coveredByChain(leases, from, last);
         if (!inside) {
-            Lease l = leases.getFirst();
+            Lease l = leases.stream().filter(x -> x.getStatus() != LeaseStatus.RENEWED).findFirst().orElse(leases.getFirst());
             String start = l.getStartDate() == null ? "" : l.getStartDate().format(DMY);
             String end = l.getEndDate() == null ? "" : l.getEndDate().format(DMY);
             throw new BusinessRuleViolationException(
@@ -263,6 +275,38 @@ public class BookingService {
                     renterSide ? "booking.outsideLease" : "booking.outsideRenterLease",
                     Map.of("start", start, "end", end));
         }
+    }
+
+    /** Whether [from, last] lies inside one run of back-to-back (or overlapping) lease terms. */
+    static boolean coveredByChain(List<Lease> leases, LocalDate from, LocalDate last) {
+        List<Lease> sorted = leases.stream()
+                .sorted(java.util.Comparator.comparing(Lease::getStartDate,
+                        java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())))
+                .toList();
+        LocalDate runStart = null;
+        LocalDate runEnd = null;
+        boolean open = false;   // the current run has an open (null) end
+        boolean started = false;
+        for (Lease l : sorted) {
+            LocalDate s = l.getStartDate();
+            LocalDate e = l.getEndDate();
+            boolean joins = started && (open || s == null || !s.isAfter(runEnd.plusDays(1)));
+            if (!joins) {
+                if (started && runCovers(runStart, runEnd, open, from, last)) return true;
+                runStart = s;
+                runEnd = e;
+                open = e == null;
+                started = true;
+            } else if (!open) {
+                if (e == null) open = true;
+                else if (e.isAfter(runEnd)) runEnd = e;
+            }
+        }
+        return started && runCovers(runStart, runEnd, open, from, last);
+    }
+
+    private static boolean runCovers(LocalDate start, LocalDate end, boolean open, LocalDate from, LocalDate last) {
+        return (start == null || !from.isBefore(start)) && (open || !last.isAfter(end));
     }
 
     /** The same request again: same date and the same time slot. */

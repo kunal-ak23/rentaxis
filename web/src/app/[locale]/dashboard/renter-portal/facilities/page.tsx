@@ -46,6 +46,8 @@ type RequestTarget = {
     resourceId: string;
     name: string;
     propertyId: string;
+    /** Review r3C m1: a paid amenity needs a date (the server refuses an undated one). */
+    dateRequired?: boolean;
 };
 
 type PendingAction = { kind: "cancel" | "release"; booking: BookingRequestDTO };
@@ -373,7 +375,7 @@ export default function RenterFacilitiesPage() {
                                 )}
                                 {a.bookable && !blocking && (
                                     <button
-                                        onClick={() => openRequest({ resourceType: "AMENITY", resourceId: a.id, name: amenityName(a.nameEn, a.nameAr), propertyId: a.propertyId })}
+                                        onClick={() => openRequest({ resourceType: "AMENITY", resourceId: a.id, name: amenityName(a.nameEn, a.nameAr), propertyId: a.propertyId, dateRequired: !!a.feeType && a.feeType !== "FREE" && Number(a.feeAmount ?? 0) > 0 })}
                                         disabled={noActiveLease}
                                         className="mt-auto self-start px-4 py-2 bg-primary/10 text-primary hover:bg-primary/20 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
@@ -576,6 +578,7 @@ export default function RenterFacilitiesPage() {
                                 <input
                                     type="date"
                                     min={toDateInput(new Date())}
+                                    required={!!target?.dateRequired}
                                     value={preferredDate}
                                     onChange={e => setPreferredDate(e.target.value)}
                                     className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"

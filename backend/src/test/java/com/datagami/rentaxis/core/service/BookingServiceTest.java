@@ -828,4 +828,86 @@ class BookingServiceTest {
         assertThatThrownBy(() -> service.approve(tenantId, b.getId(), UUID.randomUUID(), null))
                 .satisfies(e -> assertThat(codeOf(e)).isEqualTo("booking.notPending"));
     }
+
+    // ---- review r3C I1: an early-posted renewal ----
+
+    private Lease lease(LeaseStatus status, LocalDate start, LocalDate end) {
+        Renter renter = new Renter();
+        renter.setUserId(renterUserId);
+        Lease l = new Lease();
+        l.setTenantId(tenantId);
+        l.setRenter(renter);
+        l.setUnit(unit);
+        l.setStartDate(start);
+        l.setEndDate(end);
+        l.setStatus(status);
+        return l;
+    }
+
+    private void chain(Lease... leases) {
+        LeaseRepository repo = mock(LeaseRepository.class);
+        when(repo.findByUnitIdAndStatusIn(eq(unit.getId()), any())).thenReturn(List.of(leases));
+        service.setLeaseRepository(repo);
+    }
+
+    @Test
+    void renewedTermStillCounts_forRequestAndApproval() {
+        chain(lease(LeaseStatus.RENEWED, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31)),
+                lease(LeaseStatus.ACTIVE, LocalDate.of(2027, 1, 1), LocalDate.of(2027, 12, 31)));
+        PropertyAmenity a = bookableAmenity();
+        // Before the renewal starts.
+        assertThat(service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.AMENITY, a.getId(), unit.getId(),
+                        LocalDate.of(2026, 10, 12), null)).getStatus()).isEqualTo(BookingRequestStatus.PENDING);
+        // A parking range across the renewal boundary.
+        ParkingSpot s = spot(true);
+        when(facilityService.getParkingSpot(tenantId, s.getId())).thenReturn(s);
+        when(facilityService.parkingSpotVisibleToUnit(s, unit)).thenReturn(true);
+        assertThat(service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.PARKING_SPOT, s.getId(), unit.getId(),
+                        LocalDate.of(2026, 11, 1), LocalDate.of(2027, 3, 1), null, null, null)).getStatus())
+                .isEqualTo(BookingRequestStatus.PENDING);
+        // A request made before the renewal is still approvable.
+        BookingRequest pending = amenityBooking(UUID.randomUUID(), BookingRequestStatus.PENDING,
+                LocalDate.of(2026, 9, 20), null, null);
+        when(bookingRepository.findByIdForUpdate(pending.getId())).thenReturn(Optional.of(pending));
+        assertThat(service.approve(tenantId, pending.getId(), UUID.randomUUID(), null).getStatus())
+                .isEqualTo(BookingRequestStatus.APPROVED);
+        // Past the end of the chain is still refused.
+        assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.PARKING_SPOT, s.getId(), unit.getId(),
+                        LocalDate.of(2027, 6, 1), LocalDate.of(2028, 1, 15), null, null, null)))
+                .satisfies(e -> assertThat(codeOf(e)).isEqualTo("booking.outsideLease"));
+    }
+
+    @Test
+    void aGapBetweenTermsIsNotBridged_andRenewedAloneIsNotACurrentContract() {
+        assertThat(BookingService.coveredByChain(List.of(
+                lease(LeaseStatus.RENEWED, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31)),
+                lease(LeaseStatus.ACTIVE, LocalDate.of(2027, 2, 1), LocalDate.of(2027, 12, 31))),
+                LocalDate.of(2026, 12, 20), LocalDate.of(2027, 2, 10))).isFalse();
+        chain(lease(LeaseStatus.RENEWED, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31)));
+        PropertyAmenity a = bookableAmenity();
+        assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.AMENITY, a.getId(), unit.getId(),
+                        LocalDate.of(2026, 10, 12), null)))
+                .satisfies(e -> assertThat(codeOf(e)).isEqualTo("booking.noActiveLease"));
+    }
+
+    // ---- review r3C m1: a paid amenity needs a date ----
+
+    @Test
+    void create_paidAmenityWithoutADate_isRefused() {
+        PropertyAmenity a = bookableAmenity();
+        a.setFeeType("PER_BOOKING");
+        a.setFeeAmount(new java.math.BigDecimal("100"));
+        assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.AMENITY, a.getId(), unit.getId(), null, null)))
+                .satisfies(e -> assertThat(codeOf(e)).isEqualTo("booking.dateRequired"));
+        // A free amenity may still be requested without a date.
+        a.setFeeType("FREE");
+        assertThat(service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.AMENITY, a.getId(), unit.getId(), null, null)).getStatus())
+                .isEqualTo(BookingRequestStatus.PENDING);
+    }
 }
