@@ -83,6 +83,11 @@ export default function PropertyDetailPage() {
     const canManageRentSettings = userRole ? canConfigureRentSettings(userRole) : false;
     const canManageFacilities = hasPermission(userRole, 'canManageFacilities');
     const canManageAccountSetup = hasPermission(userRole, 'canManageAccountSetup');
+    // PropertyController's managers endpoint stays SA/TA/PM-only even though
+    // ACCOUNTANT now reads the property itself — see rbac.ts's
+    // canViewPropertyManagers. Gate both the fetch and the card on it so an
+    // ACCOUNTANT visit doesn't log a 403 on every load.
+    const canViewManagers = hasPermission(userRole, 'canViewPropertyManagers');
 
     const [activeTab, setActiveTab] = useState<"overview" | "buildings" | "units" | "leases" | "amenities" | "parking" | "accounts">("overview");
     const [property, setProperty] = useState<any>(null);
@@ -101,9 +106,10 @@ export default function PropertyDetailPage() {
         fetchProperty();
         fetchBuildings();
         fetchUnits();
-        fetchManagers();
+        if (canViewManagers) fetchManagers();
         fetchContacts();
-    }, [propertyId]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [propertyId, canViewManagers]);
 
     // Break round 1, F5: a 404/403/500 (or a network failure) used to leave
     // `property` null, and the page kept its skeleton forever. The load now
@@ -318,27 +324,29 @@ export default function PropertyDetailPage() {
 
             {/* Content areas */}
             {activeTab === "overview" && (<>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="bg-background rounded-xl p-6 border border-border col-span-1 md:col-span-2">
-                        <p className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-4 flex items-center gap-2">
-                            <Building2 size={12} className="text-primary/40" />
-                            {t("propertyManager")}
-                        </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            {managers.length > 0 ? managers.map(m => (
-                                <div key={m.id} className="bg-surface p-4 rounded-xl border border-border hover:shadow-md transition-all duration-200 flex flex-col gap-1">
-                                    <p className="text-sm font-bold text-foreground">{m.name}</p>
-                                    <p className="text-[11px] font-bold text-muted">{m.email}</p>
-                                    {m.phoneNumber && (
-                                        <p className="text-[11px] font-bold text-primary/70 font-mono mt-1">{m.phoneNumber}</p>
-                                    )}
-                                </div>
-                            )) : (
-                                <p className="text-xs font-medium text-muted italic">No managers assigned.</p>
-                            )}
+                {canViewManagers && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="bg-background rounded-xl p-6 border border-border col-span-1 md:col-span-2">
+                            <p className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-4 flex items-center gap-2">
+                                <Building2 size={12} className="text-primary/40" />
+                                {t("propertyManager")}
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {managers.length > 0 ? managers.map(m => (
+                                    <div key={m.id} className="bg-surface p-4 rounded-xl border border-border hover:shadow-md transition-all duration-200 flex flex-col gap-1">
+                                        <p className="text-sm font-bold text-foreground">{m.name}</p>
+                                        <p className="text-[11px] font-bold text-muted">{m.email}</p>
+                                        {m.phoneNumber && (
+                                            <p className="text-[11px] font-bold text-primary/70 font-mono mt-1">{m.phoneNumber}</p>
+                                        )}
+                                    </div>
+                                )) : (
+                                    <p className="text-xs font-medium text-muted italic">No managers assigned.</p>
+                                )}
+                            </div>
                         </div>
                     </div>
-                </div>
+                )}
 
                 {/* Key Contacts Section */}
                 <div className="mt-6">
