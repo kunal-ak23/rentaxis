@@ -305,6 +305,18 @@ public class ContractGenerationService {
         values.put("LANDLORD_NAME", escapeUserText(org.getName()));
         values.put("LANDLORD_ADDRESS", escapeUserText(org.getAddress()));
         values.put("LANDLORD_PHONE", escapeUserText(org.getPhone()));
+        // Organisation branding, each only when set — otherwise the placeholder is
+        // empty and the page is exactly as before. The TRN rides the phone line so
+        // the header keeps its height (no 12-cheque contract gains a page).
+        values.put("LANDLORD_TRN", trnSuffix(org));
+        values.put("LANDLORD_LOGO_CELL", brandImage(lease.getTenantId(), org.getLogoUrl())
+                .map(src -> "<td style=\"width:90pt; text-align:left; vertical-align:middle;\">"
+                        + "<img src=\"" + escapeUserText(src) + "\" alt=\"\" style=\"max-width:90pt; max-height:40pt;\"/></td>")
+                .orElse(""));
+        values.put("LANDLORD_STAMP", brandImage(lease.getTenantId(), org.getStampImageUrl())
+                .map(src -> "<div style=\"text-align:right;\"><img src=\"" + escapeUserText(src)
+                        + "\" alt=\"\" style=\"max-width:110pt; max-height:34pt;\"/></div>")
+                .orElse("&#160;"));
         values.put("CONTRACT_NUMBER", escapeUserText(contractNumberDisplay));
         values.put("AGREEMENT_DATE", formatDate(agreementDate));
         values.put("BUILDING_NAME", escapeUserText(property.getNameEn()));
@@ -323,6 +335,33 @@ public class ContractGenerationService {
         values.put("TERMS_TABLE", termsTable);
 
         return substituteAll(template, values);
+    }
+
+    /** "  |  TRN: …" after the phone, "TRN: …" alone without one, or nothing. */
+    static String trnSuffix(LandlordOrg org) {
+        String trn = org.getTrn();
+        if (trn == null || trn.isBlank()) {
+            return "";
+        }
+        String label = "TRN: " + escapeUserText(trn.strip());
+        String phone = org.getPhone();
+        return phone == null || phone.isBlank() ? label : "&#160;&#160;|&#160;&#160;" + label;
+    }
+
+    /**
+     * The organisation's logo or stamp as an inline data: image, read only from our
+     * own storage for this lease's tenant ({@link OrgBrandImages}); a URL anywhere
+     * else is refused and the image is simply left off.
+     */
+    private java.util.Optional<String> brandImage(UUID tenantId, String url) {
+        return OrgBrandImages.dataUri(blobStorageService, tenantId, url);
+    }
+
+    private BlobStorageService blobStorageService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setBlobStorageService(BlobStorageService blobStorageService) {
+        this.blobStorageService = blobStorageService;
     }
 
     private static final Pattern TERM_LI = Pattern.compile(

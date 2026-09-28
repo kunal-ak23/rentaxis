@@ -115,6 +115,7 @@ public class LandlordOrgController {
             case "trn" -> org.getTrn();
             case "phone" -> org.getPhone();
             case "logoUrl" -> org.getLogoUrl();
+            case "stampImageUrl" -> org.getStampImageUrl();
             case "ticketOtpRequired" -> org.getTicketOtpRequired() == null || org.getTicketOtpRequired();
             case "status" -> org.getStatus();
             default -> throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
@@ -174,6 +175,13 @@ public class LandlordOrgController {
         }
         if (payload.containsKey("logoUrl")) {
             org.setLogoUrl(stringValue(payload.get("logoUrl")));
+            changed = true;
+        }
+        // The stamp printed beside the landlord signature on the contract: saved
+        // exactly like the logo (same upload, same role, this organisation only).
+        // The contract renderer only ever inlines it from our own storage.
+        if (payload.containsKey("stampImageUrl")) {
+            org.setStampImageUrl(stringValue(payload.get("stampImageUrl")));
             changed = true;
         }
         if (payload.containsKey("phone")) {

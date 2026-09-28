@@ -10,8 +10,9 @@ import { cn } from "@/lib/utils";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { useMyOrgs } from "@/components/nav/orgStore";
 import { announceOrgChange, setPageOrg } from "@/lib/session/orgSync";
+import { OrgAvatar } from "./OrgAvatar";
 
-type Tenant = { id: string; name: string };
+type Tenant = { id: string; name: string; logoUrl?: string | null };
 
 /**
  * The organisation switcher. Since PR #363 R1 it is ONE instance, in the top
@@ -126,6 +127,8 @@ export function TenantSwitcher({ isCollapsed, responsive = false }: { isCollapse
         .slice(0, 2)
         .map((s) => s[0]?.toUpperCase() ?? "")
         .join("") || "OR";
+    // Global View has no organisation, so no logo: it keeps its initials.
+    const orgLogo = isSuperAdmin && !activeTenant ? null : activeTenant?.logoUrl ?? null;
 
     return (
         <div className="relative">
@@ -146,20 +149,10 @@ export function TenantSwitcher({ isCollapsed, responsive = false }: { isCollapse
                 )}
             >
                 {isCollapsed && !responsive ? (
-                    <div
-                        className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-semibold"
-                        style={{ background: 'var(--ink-900)', color: 'var(--gold-500)' }}
-                    >
-                        {orgInitials}
-                    </div>
+                    <OrgAvatar name={orgName} initials={orgInitials} logoUrl={orgLogo} />
                 ) : (
                     <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
-                        <div
-                            className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-semibold shrink-0"
-                            style={{ background: 'var(--ink-900)', color: 'var(--gold-500)' }}
-                        >
-                            {orgInitials}
-                        </div>
+                        <OrgAvatar name={orgName} initials={orgInitials} logoUrl={orgLogo} className="shrink-0" />
                         <div className={cn("flex-col items-start text-start flex-1 min-w-0 leading-tight", responsive ? "hidden xl:flex" : "flex")}>
                             <span className="text-[12px] font-semibold text-[var(--ink-900)] truncate w-full">
                                 {orgName}

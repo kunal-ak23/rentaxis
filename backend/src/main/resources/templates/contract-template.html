@@ -300,9 +300,10 @@
 <body>
 
 <!-- Per-page footer rendered in the @page @bottom-center margin box.
-     Signature lines + print stamp repeat on every page; the stamp area
-     between the signatures stays empty for the physical wet stamp
-     applied after printing. -->
+     Signature lines + print stamp repeat on every page. The stamp area
+     between the signatures carries the organisation's stamp beside the
+     landlord signature when one is set; otherwise it stays empty for the
+     physical wet stamp applied after printing. -->
 <div class="page-footer">
     <table class="sig-row">
         <tr>
@@ -310,7 +311,7 @@
                 <div class="sig-line"></div>
                 Tenant Signature
             </td>
-            <td>&#160;</td>
+            <td>{{LANDLORD_STAMP}}</td>
             <td>
                 <div class="sig-line"></div>
                 Landlord Signature
@@ -328,10 +329,11 @@
 <!-- Landlord header band -->
 <table style="width:100%; border-collapse:collapse; margin-bottom:2pt;">
     <tr>
+        {{LANDLORD_LOGO_CELL}}
         <td style="text-align:center;">
             <div class="landlord-name" style="font-size:14pt; font-weight:bold; text-transform:uppercase;">{{LANDLORD_NAME}}</div>
             <div style="font-size:9pt; margin-top:2pt;">{{LANDLORD_ADDRESS}}</div>
-            <div style="font-size:9pt; margin-top:1pt;">{{LANDLORD_PHONE}}</div>
+            <div style="font-size:9pt; margin-top:1pt;">{{LANDLORD_PHONE}}{{LANDLORD_TRN}}</div>
         </td>
         <td style="text-align:right; vertical-align:bottom; font-size:9pt; width:70pt; white-space:nowrap;">
             Page 1

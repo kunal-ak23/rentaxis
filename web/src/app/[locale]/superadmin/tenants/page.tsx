@@ -12,11 +12,11 @@ import { isAbortError } from "@/lib/api/abort";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { changedFields } from "@/lib/changedFields";
 
-type Tenant = { id: string; name: string; status: string; address?: string; trn?: string; logoUrl?: string; ticketOtpRequired?: boolean; phone?: string; createdAt: string };
+type Tenant = { id: string; name: string; status: string; address?: string; trn?: string; logoUrl?: string; stampImageUrl?: string; ticketOtpRequired?: boolean; phone?: string; createdAt: string };
 
-type OrgForm = { name: string; address: string; trn: string; logoUrl: string; ticketOtpRequired: boolean; phone: string };
+type OrgForm = { name: string; address: string; trn: string; logoUrl: string; stampImageUrl: string; ticketOtpRequired: boolean; phone: string };
 
-const EMPTY_FORM: OrgForm = { name: "", address: "", trn: "", logoUrl: "", ticketOtpRequired: true, phone: "" };
+const EMPTY_FORM: OrgForm = { name: "", address: "", trn: "", logoUrl: "", stampImageUrl: "", ticketOtpRequired: true, phone: "" };
 
 /**
  * The editable fields. Status is not one of them (break-it R3 ops3 F6): a dialog
@@ -24,7 +24,7 @@ const EMPTY_FORM: OrgForm = { name: "", address: "", trn: "", logoUrl: "", ticke
  * back and re-activated it. Status moves only through the Activate / Deactivate
  * action, which names the status it saw.
  */
-const ORG_FIELDS = ["name", "address", "trn", "logoUrl", "ticketOtpRequired", "phone"] as const;
+const ORG_FIELDS = ["name", "address", "trn", "logoUrl", "stampImageUrl", "ticketOtpRequired", "phone"] as const;
 
 function formOf(tenant: Tenant): OrgForm {
     return {
@@ -32,6 +32,7 @@ function formOf(tenant: Tenant): OrgForm {
         address: tenant.address || "",
         trn: tenant.trn || "",
         logoUrl: tenant.logoUrl || "",
+        stampImageUrl: tenant.stampImageUrl || "",
         ticketOtpRequired: tenant.ticketOtpRequired !== false,
         phone: tenant.phone || "",
     };
@@ -389,17 +390,33 @@ export default function SuperAdminTenantsPage() {
                         )}
 
                         <form onSubmit={handleSubmit} className="space-y-4">
-                            {/* Logo Upload */}
-                            <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgLogo")}</label>
-                                <FileUpload
-                                    value={formData.logoUrl}
-                                    onChange={(url) => setFormData({ ...formData, logoUrl: url })}
-                                    onRemove={() => setFormData({ ...formData, logoUrl: "" })}
-                                    folder="assets"
-                                    label={tSa("orgUploadLogo")}
-                                    hint="PNG, JPG or SVG. Max 2MB. Drag & drop or click to browse."
-                                />
+                            {/* Logo, then the stamp right below it (stacked: the upload previews need the full width) */}
+                            <div className="grid grid-cols-1 gap-4">
+                                <div className="min-w-0">
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgLogo")}</label>
+                                    <FileUpload
+                                        value={formData.logoUrl}
+                                        onChange={(url) => setFormData(f => ({ ...f, logoUrl: url }))}
+                                        onRemove={() => setFormData(f => ({ ...f, logoUrl: "" }))}
+                                        folder="assets"
+                                        label={tSa("orgUploadLogo")}
+                                        hint="PNG, JPG or SVG. Max 2MB. Drag & drop or click to browse."
+                                    />
+                                </div>
+                                {/* The stamp printed beside the landlord signature on the tenancy
+                                    contract. PNG/JPG only: the PDF cannot draw an SVG. */}
+                                <div className="min-w-0" data-testid="org-stamp-upload">
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgStamp")}</label>
+                                    <FileUpload
+                                        value={formData.stampImageUrl}
+                                        onChange={(url) => setFormData(f => ({ ...f, stampImageUrl: url }))}
+                                        onRemove={() => setFormData(f => ({ ...f, stampImageUrl: "" }))}
+                                        folder="assets"
+                                        accept="image/png,image/jpeg"
+                                        label={tSa("orgUploadStamp")}
+                                        hint={tSa("orgStampHint")}
+                                    />
+                                </div>
                             </div>
 
                             <div>

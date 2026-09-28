@@ -401,7 +401,7 @@ public class AuthController {
         // SUPER_ADMIN sees all tenants
         if (user.getRole() == UserRole.SUPER_ADMIN) {
             List<TenantInfo> allTenants = orgService.listAllTenants().stream()
-                    .map(org -> new TenantInfo(org.getId().toString(), org.getName(), org.getSlug()))
+                    .map(org -> TenantInfo.of(org))
                     .toList();
             return ResponseEntity.ok(allTenants);
         }
@@ -412,13 +412,22 @@ public class AuthController {
                 .map(tid -> orgService.findById(tid))
                 .filter(Optional::isPresent)
                 .map(opt -> (LandlordOrg) opt.get())
-                .map(org -> new TenantInfo(org.getId().toString(), org.getName(), org.getSlug()))
+                .map(org -> TenantInfo.of(org))
                 .toList();
 
         return ResponseEntity.ok(tenants);
     }
 
-    public record TenantInfo(String id, String name, String slug) {
+    /**
+     * One organisation the caller may act in. {@code logoUrl} is the organisation's
+     * own logo, for the web header and switcher (null: the header shows initials).
+     */
+    public record TenantInfo(String id, String name, String slug, String logoUrl) {
+        static TenantInfo of(LandlordOrg org) {
+            String logo = org.getLogoUrl();
+            return new TenantInfo(org.getId().toString(), org.getName(), org.getSlug(),
+                    logo == null || logo.isBlank() ? null : logo.strip());
+        }
     }
 
     // --- Self-Service Profile ---

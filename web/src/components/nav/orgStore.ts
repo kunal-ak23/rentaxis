@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import Cookies from "js-cookie";
 
-export type Org = { id: string; name: string };
+/** An organisation the user may act in; logoUrl (when set) is shown in the header switcher. */
+export type Org = { id: string; name: string; logoUrl?: string | null };
 
 /**
  * GET /auth/me/tenants, once per signed-in session (PR #363 R1): the header's
