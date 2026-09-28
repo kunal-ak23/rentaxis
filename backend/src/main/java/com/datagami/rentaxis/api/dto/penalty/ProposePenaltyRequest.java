@@ -24,8 +24,7 @@ public record ProposePenaltyRequest(@NotNull UUID leaseId,
                                     UUID chequeId,
                                     @NotNull PenaltyReason reason,
                                     @NotNull @DecimalMin(value = "0.00", inclusive = false)
-                                    @com.datagami.rentaxis.api.validation.Money(positive = true,
-                                            max = com.datagami.rentaxis.api.validation.MoneyAmounts.MAX_12_2)
+                                    @com.datagami.rentaxis.api.validation.Money(positive = true)
                                     BigDecimal amount,
                                     String description,
                                     LocalDate incidentDate,

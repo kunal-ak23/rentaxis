@@ -171,14 +171,29 @@ class MoneyValidatorTest {
         assertThat(messages(validator.validate(settings))).containsExactly(TWELVE_TWO_TOO_LARGE);
     }
 
+    /**
+     * Penalty amounts persist to {@code penalty_assessments.amount}
+     * ({@code decimal(14,2)}) — not the legacy {@code payment_penalties} table,
+     * which is {@code numeric(12,2)} but is not what these DTOs write. They keep
+     * the schema-wide default max, so 1e10 (past the 12,2 ceiling, but well within
+     * 14,2) must still be accepted, and only the true 14,2 ceiling is refused.
+     */
     @Test
-    void penaltyAmountsAreBoundedByTheirTwelveTwoColumn() {
-        ProposePenaltyRequest propose = new ProposePenaltyRequest(UUID.randomUUID(), null, PenaltyReason.OTHER,
+    void penaltyAmountsAreBoundedByTheSchemaWideMaxNotTwelveTwo() {
+        ProposePenaltyRequest oneEnTen = new ProposePenaltyRequest(UUID.randomUUID(), null, PenaltyReason.OTHER,
                 new BigDecimal("10000000000.00"), "d", null, null);
-        assertThat(messages(validator.validate(propose))).contains(TWELVE_TWO_TOO_LARGE);
+        assertThat(validator.validate(oneEnTen)).isEmpty();
 
-        PenaltyAssessmentController.ReducePenaltyRequest reduce =
+        ProposePenaltyRequest tooBig = new ProposePenaltyRequest(UUID.randomUUID(), null, PenaltyReason.OTHER,
+                new BigDecimal("1E12"), "d", null, null);
+        assertThat(messages(validator.validate(tooBig))).contains(MoneyAmounts.TOO_LARGE);
+
+        PenaltyAssessmentController.ReducePenaltyRequest reduceOneEnTen =
                 new PenaltyAssessmentController.ReducePenaltyRequest(new BigDecimal("10000000000.00"), "n");
-        assertThat(messages(validator.validate(reduce))).containsExactly(TWELVE_TWO_TOO_LARGE);
+        assertThat(validator.validate(reduceOneEnTen)).isEmpty();
+
+        PenaltyAssessmentController.ReducePenaltyRequest reduceTooBig =
+                new PenaltyAssessmentController.ReducePenaltyRequest(new BigDecimal("1E12"), "n");
+        assertThat(messages(validator.validate(reduceTooBig))).containsExactly(MoneyAmounts.TOO_LARGE);
     }
 }

@@ -115,8 +115,7 @@ public class PenaltyAssessmentController {
 
     /** F14-28: reduce a proposal (partial waiver) — {"amount": 300, "note": "why"}. */
     public record ReducePenaltyRequest(
-            @com.datagami.rentaxis.api.validation.Money(positive = true,
-                    max = com.datagami.rentaxis.api.validation.MoneyAmounts.MAX_12_2)
+            @com.datagami.rentaxis.api.validation.Money(positive = true)
             java.math.BigDecimal amount,
             String note) { }
 
