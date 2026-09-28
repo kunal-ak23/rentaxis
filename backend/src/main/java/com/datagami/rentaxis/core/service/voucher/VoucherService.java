@@ -620,6 +620,17 @@ public class VoucherService {
         lockLinkedTicket(voucherId);
     }
 
+    /**
+     * Break-it R3 money3 N3: a bill backing a live recharge is not voided or amended —
+     * the renter would stay charged for a bill that no longer stands. Asked under the
+     * ticket lock then the voucher lock (TicketRowLock's order).
+     */
+    private void requireNoLiveRecharge(Voucher original) {
+        if (ticketRowLock != null && original.getDocType() == VoucherType.PISR) {
+            ticketRowLock.requireBillReleasable(original.getId());
+        }
+    }
+
     private com.datagami.rentaxis.core.service.TicketRowLock ticketRowLock;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -736,6 +747,7 @@ public class VoucherService {
             throw new BusinessRuleViolationException(
                     "Only a POSTED voucher can be voided; this one is " + original.getStatus());
         }
+        requireNoLiveRecharge(original);
         if (date == null) throw new BusinessRuleViolationException("A void date is required");
         requireReversible(original, date, reason, manualDates);
         fiscal.assertOpen(date);
@@ -811,6 +823,7 @@ public class VoucherService {
             throw new BusinessRuleViolationException(
                     "Only a POSTED voucher can be amended; this one is " + original.getStatus());
         }
+        requireNoLiveRecharge(original);
         if (reversalDate == null) throw new BusinessRuleViolationException("A reversal date is required");
         // Asked here as well as inside PostingService.reverse so that a reversal
         // dated into a closed period is refused before any of this is written.

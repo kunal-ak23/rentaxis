@@ -86,7 +86,8 @@ class TicketChargesIT extends AbstractPostgresIT {
     private UUID bill(String number, String amount) {
         Vendor v = new Vendor();
         v.setNameEn("Gulf Cool " + number);
-        v.setTrn("100200300400003");
+        // One TRN per vendor in a tenant: derived from the bill number so a test can hold several.
+        v.setTrn("1002003" + String.format("%08d", Math.floorMod(number.hashCode(), 100_000_000)));
         UUID vendor = vendorService.createVendor(v).getId();
         UUID repairs = accountRepo.findAll().stream()
                 .filter(a -> fixtures.property().getId().equals(a.getPropertyId()) && "EXP_REPAIRS_MAINTENANCE".equals(a.getReportLine()))
@@ -154,6 +155,9 @@ class TicketChargesIT extends AbstractPostgresIT {
         UUID other = ticket(lease);
         assertThatThrownBy(() -> service.link(other, billId))
                 .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("ticket.billNotLinkable"));
+        // Break-it R3 money3 N3: not unlinked while its recharge is live; once waived it may go.
+        rechargeLive(() -> service.unlink(ticketId, billId));
+        penalties.waive(charged.recharges().get(0).id(), "raised in error");
         assertThat(service.unlink(ticketId, billId).bills()).isEmpty();
     }
 
@@ -279,5 +283,66 @@ class TicketChargesIT extends AbstractPostgresIT {
         assertThat(service.get(ticketId).rechargeable()).isEqualByComparingTo("0.00");
         assertThatThrownBy(() -> service.recharge(ticketId, new TicketChargesService.RechargeRequest(new BigDecimal("1"), false, null)))
                 .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("ticket.rechargeExceedsBill"));
+    }
+
+    private static void rechargeLive(org.assertj.core.api.ThrowableAssert.ThrowingCallable call) {
+        assertThatThrownBy(call)
+                .isInstanceOf(com.datagami.rentaxis.api.exception.FiguresChangedException.class)
+                .hasMessageContaining("Cancel the recharge first")
+                .satisfies(e -> assertThat(((com.datagami.rentaxis.api.exception.FiguresChangedException) e).getCode())
+                        .isEqualTo(TicketRowLock.RECHARGE_LIVE));
+    }
+
+    /**
+     * Break-it R3 money3 N3 (repro A): unlinking a recharged bill reset the per-ticket
+     * cap — the same 750 bill was recharged on a second ticket, 1,500 for one bill.
+     * The unlink is refused while the recharge is live; a bill the other bills cover
+     * can still go; once the recharge is waived the bill may move.
+     */
+    @Test
+    void aRechargedBillCannotBeUnlinkedUntilItsRechargeIsCancelled() {
+        Lease lease = leaseRepo.findById(fixtures.postedLease(LocalDate.of(2026, 4, 20), LocalDate.of(2026, 5, 1),
+                LocalDate.of(2027, 4, 30), List.of(vatLine("RENT", "120000")), 4, null).lease().getId()).orElseThrow();
+        UUID t1 = ticket(lease);
+        UUID t2 = ticket(lease);
+        UUID bill = bill("GC-N3A", "750.00");
+        service.link(t1, bill);
+        var charged = service.recharge(t1, null);
+        rechargeLive(() -> service.unlink(t1, bill));
+        assertThat(service.get(t1).bills()).extracting(TicketChargesService.Bill::voucherId).containsExactly(bill);
+
+        // A second bill the first one fully covers is not backing the recharge.
+        UUID extra = bill("GC-N3A2", "100.00");
+        service.link(t1, extra);
+        service.unlink(t1, extra);
+
+        penalties.waive(charged.recharges().get(0).id(), "billed in error");
+        service.unlink(t1, bill);
+        service.link(t2, bill);
+        assertThat(service.get(t2).rechargeable()).isEqualByComparingTo("750.00");
+    }
+
+    /**
+     * Break-it R3 money3 N3 (repro B): voiding (or amending) a bill left its proposed
+     * recharge standing — the renter was charged 600 for a VOID bill. Refused while the
+     * recharge is live; after it is waived the void goes through.
+     */
+    @Test
+    void aBillBackingALiveRechargeCannotBeVoidedOrAmended() {
+        Lease lease = leaseRepo.findById(fixtures.postedLease(LocalDate.of(2026, 4, 20), LocalDate.of(2026, 5, 1),
+                LocalDate.of(2027, 4, 30), List.of(vatLine("RENT", "120000")), 4, null).lease().getId()).orElseThrow();
+        UUID ticketId = ticket(lease);
+        UUID bill = bill("GC-N3B", "600.00");
+        service.link(ticketId, bill);
+        var charged = service.recharge(ticketId, null);
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Dubai"));
+
+        rechargeLive(() -> vouchers.voidVoucher(bill, today, "wrong bill"));
+        rechargeLive(() -> vouchers.amend(bill, today, "wrong amount", null));
+        assertThat(service.get(ticketId).bills()).singleElement()
+                .satisfies(b -> assertThat(b.status()).isEqualTo("POSTED"));
+
+        penalties.waive(charged.recharges().get(0).id(), "bill voided");
+        assertThat(vouchers.voidVoucher(bill, today, "wrong bill").getStatus().name()).isEqualTo("VOID");
     }
 }

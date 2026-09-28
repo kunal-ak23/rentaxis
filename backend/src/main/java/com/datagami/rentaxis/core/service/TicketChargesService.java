@@ -118,6 +118,8 @@ public class TicketChargesService {
         // Review M6: serialised with recharge, so a recharge never lands against a
         // bill that is being unlinked at the same moment.
         lockTicketRow(t);
+        // Break-it R3 money3 N3: moving a recharged bill to another ticket reset the cap.
+        rowLock().requireBillReleasable(t.getId(), voucherId);
         jdbc.update("update vouchers set maintenance_ticket_id = null where tenant_id = :t and id = :v and maintenance_ticket_id = :ticket",
                 params().addValue("ticket", t.getId()).addValue("v", voucherId));
         return get(ticketId);
@@ -159,11 +161,11 @@ public class TicketChargesService {
 
     /** The ticket row lock recharge, unlink and bill reversal share ({@link TicketRowLock}). */
     private void lockTicketRow(MaintenanceTicket t) {
-        if (rowLock != null) {
-            rowLock.lock(t.getId());
-        } else {
-            new TicketRowLock(jdbc).lock(t.getId());
-        }
+        rowLock().lock(t.getId());
+    }
+
+    private TicketRowLock rowLock() {
+        return rowLock != null ? rowLock : new TicketRowLock(jdbc);
     }
 
     private TicketRowLock rowLock;
