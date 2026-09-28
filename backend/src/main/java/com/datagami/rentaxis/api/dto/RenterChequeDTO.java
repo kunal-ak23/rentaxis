@@ -50,6 +50,11 @@ import java.util.UUID;
  *        pay button for every property nobody has configured.
  * @param penaltyAssessmentId set when this row <em>is</em> a penalty collection row,
  *        so the screen can label it as a fine rather than as rent.
+ * @param onlineRefusal why a row the Tenant owes cannot be paid online although the
+ *        property takes online payments, as a client-translatable code
+ *        ({@code payment.bouncePartlySettled}: pay the rest, {@code payable}, at the office;
+ *        {@code payment.bounceBalanceUnknown}: the ledger balance of the returned cheque
+ *        cannot be read); null otherwise.
  * @param leaseStatus the contract's own status. What a row still admits belongs to
  *        the lease and not to the instrument — a CLOSED tenancy refuses every
  *        transition, so a portal that reads only {@code status} offers Pay-now on
@@ -81,5 +86,6 @@ public record RenterChequeDTO(UUID id,
                               UUID penaltyAssessmentId,
                               ChequeFailureReason failureReason,
                               LocalDate clearedAt,
-                              String statusChangedAt) {
+                              String statusChangedAt,
+                              String onlineRefusal) {
 }

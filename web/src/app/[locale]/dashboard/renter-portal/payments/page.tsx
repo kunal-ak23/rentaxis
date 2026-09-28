@@ -12,7 +12,7 @@ import {
     Download,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatCurrencyCompact } from "@/lib/format";
+import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { fmtAmount } from "@/lib/api/ledger";
@@ -248,6 +248,12 @@ export default function RenterPaymentsPage() {
                                             {row.overdue && (
                                                 <p className="text-[11px] italic text-muted mt-1">
                                                     {t("overdueSince", { date: fmtIsoDate(row.dueDate, locale) })}
+                                                </p>
+                                            )}
+                                            {row.onlineEnabled && row.onlineRefusal && t.has(`errors.${row.onlineRefusal}`) && (
+                                                // Review m-a: why the Pay button is missing on a row that is owed.
+                                                <p className="text-[11px] text-foreground mt-1" data-testid={`online-refusal-${row.id}`}>
+                                                    {t(`errors.${row.onlineRefusal}`, { amount: formatCurrency(row.payable) })}
                                                 </p>
                                             )}
                                         </div>

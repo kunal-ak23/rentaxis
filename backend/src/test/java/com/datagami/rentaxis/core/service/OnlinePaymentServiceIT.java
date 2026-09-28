@@ -1115,7 +1115,10 @@ class OnlinePaymentServiceIT extends AbstractPostgresIT {
         assertThat(settled.payableOnline()).isFalse();
         assertThatThrownBy(() -> onlinePayments.createOrder(bouncedId))
                 .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("already settled");
+                .hasMessageContaining("already settled")
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode())
+                        .isEqualTo("payment.bounceSettled"));
+        assertThat(settled.onlineRefusal()).as("nothing owed, nothing to explain").isNull();
     }
 
     /** A partly settled bounce is owed, and late, for what is left of it — at the counter. */
@@ -1131,9 +1134,44 @@ class OnlinePaymentServiceIT extends AbstractPostgresIT {
         assertThat(partly.payable()).isEqualByComparingTo("7000");
         assertThat(partly.amount()).isEqualByComparingTo(INSTALMENT);
         assertThat(partly.payableOnline()).as("the gateway would take the full face value").isFalse();
+        assertThat(partly.onlineRefusal()).as("My Payments says why").isEqualTo("payment.bouncePartlySettled");
         assertThatThrownBy(() -> onlinePayments.createOrder(bouncedId))
                 .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("7000");
+                .hasMessageContaining("AED 7,000.00")
+                .satisfies(e -> {
+                    BusinessRuleViolationException b = (BusinessRuleViolationException) e;
+                    assertThat(b.getCode()).isEqualTo("payment.bouncePartlySettled");
+                    assertThat(b.getArgs()).containsEntry("amount", "AED 7,000.00");
+                });
+    }
+
+    /**
+     * Review m-b: a lease whose receivable account cannot be resolved (no lease override,
+     * no property or default RENT_RECEIVABLE mapping) must not turn My Payments into a
+     * 500. The bounce shows as owed at face value; online payment is refused, readably.
+     */
+    @Test
+    void anUnmappedReceivableShowsTheBounceAtFaceValueAndRefusesOnlinePayment() {
+        UUID bouncedId = bounceFirstCheque();
+        tx.executeWithoutResult(s -> {
+            var c = chequeRepo.findById(bouncedId).orElseThrow();
+            jdbc.update("update leases set receivable_account_id = null where id = ?", c.getLease().getId());
+            jdbc.update("delete from property_account_mappings where property_id = ? and role = 'RENT_RECEIVABLE'",
+                    c.getProperty().getId());
+            jdbc.update("delete from tenant_default_account_mappings where tenant_id = ? and role = 'RENT_RECEIVABLE'",
+                    c.getTenantId());
+        });
+
+        RenterChequeDTO row = row(myPayments(), bouncedId);
+        assertThat(row.due()).isTrue();
+        assertThat(row.overdue()).isTrue();
+        assertThat(row.payable()).isEqualByComparingTo(INSTALMENT);
+        assertThat(row.payableOnline()).isFalse();
+        assertThat(row.onlineRefusal()).isEqualTo("payment.bounceBalanceUnknown");
+        assertThatThrownBy(() -> onlinePayments.createOrder(bouncedId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode())
+                        .isEqualTo("payment.bounceBalanceUnknown"));
     }
 
     /**

@@ -504,7 +504,8 @@ public class ChequeQueryService {
      * belong to, by cheque id — {@link BouncedDebt#openAmounts} over every bounced row of
      * those leases, so a lease's receivable is shared newest-first exactly as the
      * register, aging and dashboard share it. Zero means settled (F14-52); less than the
-     * face value means partly settled. Rows that are not BOUNCED are absent.
+     * face value means partly settled. Rows that are not BOUNCED, and the rows of a lease
+     * whose receivable account cannot be read, are absent — unknown, not settled.
      *
      * <p>One register query for all the leases, plus one receivable balance per lease
      * that has a bounce — never a query per row. The lease ids come from rows the caller
@@ -517,7 +518,10 @@ public class ChequeQueryService {
         if (leaseIds.isEmpty()) return java.util.Map.of();
         List<Cheque> bounced = chequeRepository.findRegisterRowsForLeases(leaseIds).stream()
                 .filter(c -> c.getStatus() == ChequeStatus.BOUNCED).toList();
-        return bouncedDebt.openAmounts(bounced);
+        // Only rows whose lease's receivable can be read: an unmapped or dangling account
+        // leaves its rows out (unknown — the callers count the face value) instead of
+        // throwing, which would mark the caller's transaction rollback-only.
+        return bouncedDebt.knownBouncedOpenAmounts(bounced);
     }
 
     /** Whose rows the register's SQL reads: the caller's organisation, or all of them for a SUPER_ADMIN with none selected. */

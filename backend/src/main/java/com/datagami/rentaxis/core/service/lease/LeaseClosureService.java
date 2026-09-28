@@ -335,6 +335,30 @@ public class LeaseClosureService {
         return balance == null ? BigDecimal.ZERO : balance;
     }
 
+    /**
+     * {@link #receivableBalance}, or empty when the lease's receivable account cannot be
+     * found — the property has no RENT_RECEIVABLE mapping, or the lease names an account
+     * that does not exist. Never throws on those: an exception out of the proxied
+     * resolver would mark the caller's transaction rollback-only even if caught, and a
+     * reminder run or a Tenant's payments screen must survive one badly mapped lease.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<BigDecimal> receivableBalanceIfKnown(Lease lease) {
+        UUID accountId = lease.getReceivableAccountId();
+        if (accountId == null) {
+            com.datagami.rentaxis.domain.entity.Account mapped =
+                    accountResolver.resolveOrNull(AccountRole.RENT_RECEIVABLE, propertyIdOf(lease));
+            if (mapped == null) {
+                return java.util.Optional.empty();
+            }
+            accountId = mapped.getId();
+        }
+        if (!ledgerQueryService.accountExists(accountId)) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(balanceOn(accountId, lease.getId()));
+    }
+
     private UUID receivableAccountOf(Lease lease) {
         return lease.getReceivableAccountId() != null
                 ? lease.getReceivableAccountId()

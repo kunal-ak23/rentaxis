@@ -35,6 +35,8 @@ import java.util.UUID;
 @Component
 public class BouncedDebt {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(BouncedDebt.class);
+
     private final LeaseClosureService closure;
 
     public BouncedDebt(LeaseClosureService closure) {
@@ -43,6 +45,33 @@ public class BouncedDebt {
 
     /** The open amount of each row, by cheque id; a row the ledger has closed maps to zero. */
     public Map<UUID, BigDecimal> openAmounts(List<Cheque> due) {
+        return allocate(due, lease -> java.util.Optional.of(closure.receivableBalance(lease)), true);
+    }
+
+    /**
+     * {@link #openAmounts} for the BOUNCED rows only, leaving out every row whose lease's
+     * receivable cannot be read (an unmapped RENT_RECEIVABLE, a dangling account id) —
+     * the caller treats a missing row as "not known" rather than failing. Never throws
+     * for those leases, so it is safe inside a transaction that must still commit.
+     */
+    public Map<UUID, BigDecimal> knownBouncedOpenAmounts(List<Cheque> rows) {
+        Map<UUID, BigDecimal> all = allocate(rows, closure::receivableBalanceIfKnown, false);
+        Map<UUID, BigDecimal> out = new LinkedHashMap<>();
+        for (Cheque c : rows) {
+            if (c.getStatus() == ChequeStatus.BOUNCED && all.containsKey(c.getId())) {
+                out.put(c.getId(), all.get(c.getId()));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * @param keepUnknown whether a row of a lease whose balance is unknown stays at its
+     *        face value (true) or is left out (false).
+     */
+    private Map<UUID, BigDecimal> allocate(List<Cheque> due,
+                                           java.util.function.Function<Lease, java.util.Optional<BigDecimal>> balance,
+                                           boolean keepUnknown) {
         Map<UUID, BigDecimal> open = new LinkedHashMap<>();
         Map<UUID, List<Cheque>> bouncedByLease = new HashMap<>();
         Map<UUID, Lease> leases = new HashMap<>();
@@ -55,7 +84,14 @@ public class BouncedDebt {
             }
         }
         bouncedByLease.forEach((leaseId, rows) -> {
-            BigDecimal left = closure.receivableBalance(leases.get(leaseId)).max(BigDecimal.ZERO);
+            java.util.Optional<BigDecimal> known = balance.apply(leases.get(leaseId));
+            if (known.isEmpty()) {
+                log.warn("bounced-debt: receivable of lease {} cannot be read (unmapped or missing account); "
+                        + "its {} bounced row(s) are counted at face value", leaseId, rows.size());
+                if (!keepUnknown) rows.forEach(c -> open.remove(c.getId()));
+                return;
+            }
+            BigDecimal left = known.get().max(BigDecimal.ZERO);
             rows.sort(Comparator.comparing((Cheque c) -> c.getBouncedAt() == null ? LocalDate.MIN : c.getBouncedAt())
                     .thenComparing(c -> c.getChequeDate() == null ? LocalDate.MIN : c.getChequeDate())
                     .reversed());

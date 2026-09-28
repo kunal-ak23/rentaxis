@@ -145,6 +145,29 @@ describe("RenterPaymentsPage — a cheque at the bank", () => {
     });
 });
 
+/** Review m-a: an owed row with no Pay button says why. */
+describe("RenterPaymentsPage — why a row cannot be paid online", () => {
+    it("tells the Tenant to pay the remaining amount of a partly settled bounce at the office", async () => {
+        api.myPayments.mockResolvedValue([row({
+            id: "pb", status: "BOUNCED", amount: 12000, payable: 7000, due: true, overdue: true, daysOverdue: 40,
+            payableOnline: false, onlineRefusal: "payment.bouncePartlySettled",
+        })]);
+        renderPage();
+        expect(await screen.findByTestId("online-refusal-pb")).toHaveTextContent(
+            en.OnlinePayments.errors.payment.bouncePartlySettled.replace("{amount}", "AED 7,000.00"));
+        expect(screen.queryByTestId("pay-online-pb")).not.toBeInTheDocument();
+    });
+
+    it("says nothing when the property does not take online payments at all", async () => {
+        api.myPayments.mockResolvedValue([row({
+            id: "off", status: "BOUNCED", payableOnline: false, onlineEnabled: false, onlineRefusal: null,
+        })]);
+        renderPage();
+        expect(await screen.findByTestId("due-row-off")).toBeInTheDocument();
+        expect(screen.queryByTestId("online-refusal-off")).not.toBeInTheDocument();
+    });
+});
+
 describe("RenterPaymentsPage — empty and error states", () => {
     it("shows the all-caught-up state when nothing is due", async () => {
         api.myPayments.mockResolvedValue([row({ id: "c3", due: false, status: "CLEARED" })]);

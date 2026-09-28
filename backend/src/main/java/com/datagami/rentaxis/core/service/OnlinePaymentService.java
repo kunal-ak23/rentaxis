@@ -225,12 +225,13 @@ public class OnlinePaymentService {
                     grace,
                     penaltyByLease.getOrDefault(lease.getId(), BigDecimal.ZERO),
                     ChequeDueRules.tenantPayable(c, today, open),
-                    payableOnline(c, due, onlineEnabled) && !partlySettled(c, open),
+                    payableOnline(c, due, onlineEnabled) && bounceRefusal(c, open) == null,
                     onlineEnabled,
                     c.getPenaltyAssessmentId(),
                     c.getFailureReason(),
                     c.getClearedAt(),
-                    c.getStatusChangedAt() != null ? c.getStatusChangedAt().toString() : null));
+                    c.getStatusChangedAt() != null ? c.getStatusChangedAt().toString() : null,
+                    due && onlineEnabled ? bounceRefusal(c, open) : null));
         }
 
         // findByRenter_Id... orders by cheque date; id breaks the tie so two
@@ -254,6 +255,28 @@ public class OnlinePaymentService {
     private static boolean partlySettled(Cheque c, BigDecimal bouncedOpen) {
         return c.getStatus() == ChequeStatus.BOUNCED && bouncedOpen != null && c.getAmount() != null
                 && bouncedOpen.compareTo(c.getAmount()) < 0;
+    }
+
+    static final String BOUNCE_SETTLED = "payment.bounceSettled";
+    static final String BOUNCE_PARTLY_SETTLED = "payment.bouncePartlySettled";
+    static final String BOUNCE_BALANCE_UNKNOWN = "payment.bounceBalanceUnknown";
+
+    /**
+     * Why a BOUNCED row cannot go through the gateway, as a client-translatable code, or
+     * null when it can. {@code bouncedOpen} null on a bounce means its lease's receivable
+     * could not be read (unmapped account): the Tenant still sees it owed at face value,
+     * but nobody collects online what the ledger cannot confirm.
+     */
+    private static String bounceRefusal(Cheque c, BigDecimal bouncedOpen) {
+        if (c.getStatus() != ChequeStatus.BOUNCED) return null;
+        if (bouncedOpen == null) return BOUNCE_BALANCE_UNKNOWN;
+        if (bouncedOpen.signum() <= 0) return BOUNCE_SETTLED;
+        return partlySettled(c, bouncedOpen) ? BOUNCE_PARTLY_SETTLED : null;
+    }
+
+    /** AED 7,000.00 — the app's money format (Latin digits in both languages). */
+    static String aed(BigDecimal amount) {
+        return String.format(java.util.Locale.US, "AED %,.2f", amount);
     }
 
     /**
@@ -412,13 +435,20 @@ public class OnlinePaymentService {
         }
         if (status == ChequeStatus.BOUNCED) {
             BigDecimal open = chequeQueryService.bouncedOpenAmounts(List.of(cheque)).get(cheque.getId());
-            if (open != null && open.signum() <= 0) {
+            String refusal = bounceRefusal(cheque, open);
+            if (BOUNCE_SETTLED.equals(refusal)) {
                 throw new BusinessRuleViolationException(
-                        "This returned cheque is already settled; there is nothing left to pay on it.");
+                        "This returned cheque is already settled; there is nothing left to pay on it.",
+                        BOUNCE_SETTLED, Map.of());
             }
-            if (partlySettled(cheque, open)) {
-                throw new BusinessRuleViolationException("Part of this returned cheque is already settled; "
-                        + "the remaining " + open + " cannot be paid online — please pay it at the office.");
+            if (BOUNCE_PARTLY_SETTLED.equals(refusal)) {
+                throw new BusinessRuleViolationException("Part of this returned cheque is already settled. "
+                        + "Pay the remaining " + aed(open) + " at the office.",
+                        BOUNCE_PARTLY_SETTLED, Map.of("amount", aed(open)));
+            }
+            if (BOUNCE_BALANCE_UNKNOWN.equals(refusal)) {
+                throw new BusinessRuleViolationException("This returned cheque cannot be paid online right now. "
+                        + "Please contact the property office.", BOUNCE_BALANCE_UNKNOWN, Map.of());
             }
         }
         if (cheque.getProperty() != null && !onlinePaymentEnabled(cheque.getProperty().getId())) {
