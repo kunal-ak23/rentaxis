@@ -16,6 +16,7 @@ import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { NumberInput, MoneyTextInput, focusFirstInvalidMoney } from "@/components/ui/NumberInput";
 import { MONEY_MAX_12_2, moneyValueOrNull } from "@/lib/money";
 import { AccessDeniedState, LoadFailedState, NotFoundState } from "@/components/ui/PageStates";
+import { BUILDING_FLOORS_MAX, BUILDING_FLOORS_MIN, floorsInRange, refusalOf, sizeIsValid } from "@/lib/units/unitRules";
 import { useLatestRequest, type RequestTicket } from "@/hooks/useLatestRequest";
 import { isAbortError } from "@/lib/api/abort";
 
@@ -602,6 +603,7 @@ export default function PropertyDetailPage() {
 // ------ BUILDINGS TAB SUB-COMPONENT ------
 
 function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
+    const t = useTranslations("MasterData");
     const [showForm, setShowForm] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
@@ -609,6 +611,11 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
 
     const handleSubmit = async (e: any) => {
         e.preventDefault();
+        // Break-it R3 ops3 F3: -3, 0 and 99 999 floors were saved as typed.
+        if (!floorsInRange(formData.floors)) {
+            setFormError(t("floorsRange", { min: BUILDING_FLOORS_MIN, max: BUILDING_FLOORS_MAX }));
+            return;
+        }
         setSubmitting(true);
         setFormError(null);
         try {
@@ -622,7 +629,10 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
             setFormData({ nameEn: "", nameAr: "", floors: 1 });
             onUpdate();
         } catch (err) {
-            setFormError(err instanceof ApiError ? err.message : "Failed to save building. Please try again.");
+            const refusal = err instanceof ApiError ? refusalOf(err.body) : null;
+            setFormError(refusal?.code === "building.floorsOutOfRange"
+                ? t("floorsRange", { min: BUILDING_FLOORS_MIN, max: BUILDING_FLOORS_MAX })
+                : err instanceof ApiError ? err.message : "Failed to save building. Please try again.");
         } finally {
             setSubmitting(false);
         }
@@ -654,7 +664,7 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Floors</label>
-                        <NumberInput required className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.floors} onChange={(v) => setFormData({ ...formData, floors: v })} />
+                        <NumberInput required min={BUILDING_FLOORS_MIN} max={BUILDING_FLOORS_MAX} step={1} className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.floors} onChange={(v) => setFormData({ ...formData, floors: v })} />
                     </div>
                     {formError && (
                         <div className="col-span-3 bg-error/10 border border-error/30 rounded-lg px-4 py-3 text-xs text-error">
@@ -708,6 +718,11 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
     const handleAddUnit = async (e: any) => {
         e.preventDefault();
         if (focusFirstInvalidMoney(e.currentTarget)) return;
+        // Break-it R3 ops3 F2: the rule the server applies to every unit, said here first.
+        if (!sizeIsValid(unitForm.sizeSqft)) {
+            setAddUnitError(t("unitSizePositive"));
+            return;
+        }
         setSubmitting(true);
         setAddUnitError(null);
         try {
@@ -732,7 +747,11 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
             setUnitForm({ unitNumber: "", type: "STUDIO", sizeSqft: "", expectedRent: "", buildingId: "" });
             onUpdate();
         } catch (err) {
-            setAddUnitError(err instanceof ApiError ? err.message : "Failed to save unit. Please try again.");
+            // Break-it R3 ops3 F1: "Unit 101 already exists in Tower A", in the user's language.
+            const refusal = err instanceof ApiError ? refusalOf(err.body) : null;
+            setAddUnitError(refusal?.code === "unit.numberTaken"
+                ? t("unitNumberTaken", { unitNumber: String(refusal.args.unitNumber ?? unitForm.unitNumber), place: String(refusal.args.place ?? "") })
+                : err instanceof ApiError ? err.message : "Failed to save unit. Please try again.");
         } finally {
             setSubmitting(false);
         }
@@ -811,7 +830,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Size (Sqft)</label>
-                        <input type="number" className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 850" value={unitForm.sizeSqft} onChange={e => setUnitForm({ ...unitForm, sizeSqft: e.target.value })} />
+                        <input type="number" min={0.01} step="any" className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 850" value={unitForm.sizeSqft} onChange={e => setUnitForm({ ...unitForm, sizeSqft: e.target.value })} />
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Expected Rent (AED/year)</label>
