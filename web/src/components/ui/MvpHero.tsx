@@ -276,7 +276,7 @@ export default function MvpHero() {
                             Everything you need to manage<br className="hidden md:block" /> your properties
                         </h2>
                         <p className="mt-4 text-gray-500 font-medium max-w-lg mx-auto">
-                            From lease drafting to financial reporting, RentAxis covers the full property management lifecycle.
+                            From lease drafting to financial reporting, Miftah covers the full property management lifecycle.
                         </p>
                     </AnimateIn>
 
@@ -504,7 +504,7 @@ export default function MvpHero() {
                                 Ready to simplify your<br />property management?
                             </h2>
                             <p className="text-gray-500 font-medium max-w-md mx-auto mb-8">
-                                Join landlords across the UAE who are saving hours every week with RentAxis.
+                                Join landlords across the UAE who are saving hours every week with Miftah.
                             </p>
                             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                                 <Link
@@ -533,9 +533,9 @@ export default function MvpHero() {
                         <div className="md:col-span-1">
                             <div className="flex items-center gap-2 mb-4">
                                 <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center text-primary-foreground font-black text-[10px] shadow-md shadow-primary/20">
-                                    R
+                                    M
                                 </div>
-                                <span className="text-sm font-black text-foreground tracking-tight">RentAxis</span>
+                                <span className="text-sm font-black text-foreground tracking-tight">Miftah</span>
                             </div>
                             <p className="text-xs text-gray-400 font-medium leading-relaxed">
                                 Enterprise lease management platform built for the UAE market.
@@ -579,7 +579,7 @@ export default function MvpHero() {
                     </div>
                     <div className="mt-12 pt-6 border-t border-gray-100 text-center">
                         <p className="text-[11px] text-gray-400 font-medium">
-                            &copy; 2024 RentAxis. All rights reserved.
+                            &copy; 2024 Miftah. All rights reserved.
                         </p>
                     </div>
                 </div>

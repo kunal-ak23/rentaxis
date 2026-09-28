@@ -9,7 +9,7 @@ relatedTour: lease-workflow
 
 ## Creating a Tenancy Contract
 
-Tenancy Contracts are the core of RentAxis — they link a tenant to a unit with payment terms.
+Tenancy Contracts are the core of Miftah — they link a tenant to a unit with payment terms.
 
 ### Creating a New Tenancy Contract
 
@@ -25,7 +25,7 @@ Tenancy Contracts are the core of RentAxis — they link a tenant to a unit with
 
 ### Payment Schedule
 
-When you create a contract, RentAxis automatically generates a payment schedule based on:
+When you create a contract, Miftah automatically generates a payment schedule based on:
 - The contract duration
 - Monthly rent amount
 - Selected payment method

@@ -9,11 +9,11 @@ relatedTour: finance-overview
 
 ## Chart of Accounts
 
-The Chart of Accounts is the foundation of your financial tracking in RentAxis.
+The Chart of Accounts is the foundation of your financial tracking in Miftah.
 
 ### Account Types
 
-RentAxis uses standard double-entry accounting with five account types:
+Miftah uses standard double-entry accounting with five account types:
 
 | Type | Purpose | Example |
 |------|---------|---------|
@@ -41,7 +41,7 @@ Accounts form a tree: each account names its parent, group accounts hold childre
 
 ### Account Roles and Mappings
 
-Roles tell RentAxis which account to post to when it raises an entry — rental income, rent receivable, bank, security deposits, and so on. You never pick accounts entry by entry; you map the roles once.
+Roles tell Miftah which account to post to when it raises an entry — rental income, rent receivable, bank, security deposits, and so on. You never pick accounts entry by entry; you map the roles once.
 
 - **Accounting › One-time setup › Property account template** sets, for each role, the name pattern and the parent group under which each property's leaf is created.
 - A property's **Accounts** tab shows the leaf resolved for each role on that property, and lets you re-map one to a different account or generate the ones that are missing.

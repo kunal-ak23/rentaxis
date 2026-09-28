@@ -69,14 +69,14 @@ export default function RegisterPage() {
                 <div className="text-center mb-10">
                     <Image
                         src="/logo.png"
-                        alt="RentAxis"
+                        alt="Miftah"
                         width={180}
                         height={52}
                         className="mx-auto mb-4 object-contain"
                         priority
                     />
                     <h1 className="text-2xl font-bold text-foreground tracking-tight mb-2" style={{ fontFamily: 'Cinzel, serif' }}>Create Account</h1>
-                    <p className="text-[13px] text-muted font-medium">Join the RentAxis Network</p>
+                    <p className="text-[13px] text-muted font-medium">Join the Miftah Network</p>
                 </div>
 
                 <form onSubmit={handleRegister} className="space-y-4">

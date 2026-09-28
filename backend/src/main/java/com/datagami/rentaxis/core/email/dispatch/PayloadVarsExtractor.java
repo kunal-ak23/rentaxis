@@ -57,7 +57,7 @@ public class PayloadVarsExtractor {
         }
 
         vars.put("ctaUrl", computeCtaUrl(type, vars, portalBaseUrl, localeLang));
-        Object[] subjectArgs = subjectArgsFor(type, vars);
+        Object[] subjectArgs = subjectArgsFor(type, vars, localeLang);
         vars.put("__subjectArgs", subjectArgs);
         return vars;
     }
@@ -92,9 +92,14 @@ public class PayloadVarsExtractor {
         };
     }
 
-    private static Object[] subjectArgsFor(EmailEventType type, Map<String, Object> vars) {
+    /** The product name, for a subject with no organisation to name (email.brand). */
+    static String brand(String localeLang) {
+        return "ar".equalsIgnoreCase(localeLang) ? "مفتاح" : "Miftah";
+    }
+
+    private static Object[] subjectArgsFor(EmailEventType type, Map<String, Object> vars, String localeLang) {
         return switch (type) {
-            case USER_INVITED -> new Object[]{ vars.getOrDefault("companyName", "RentAxis") };
+            case USER_INVITED -> new Object[]{ vars.getOrDefault("companyName", brand(localeLang)) };
             case TENANT_PROVISIONED -> new Object[]{ vars.get("tenantName") };
             case STAFF_ROLE_CHANGED -> new Object[]{ vars.get("userName") };
             case LEASE_CREATED, LEASE_SIGNED, LEASE_ACTIVATED, LEASE_EXPIRING,

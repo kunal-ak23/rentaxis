@@ -9,7 +9,7 @@ relatedTour: property-workflow
 
 ## Setting Up Your First Property
 
-Follow these steps to get your first property up and running in RentAxis.
+Follow these steps to get your first property up and running in Miftah.
 
 ### Step 1: Add a Property
 

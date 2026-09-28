@@ -8,7 +8,7 @@ order: 2
 
 ## Tenancy Contract Lifecycle
 
-Every contract in RentAxis follows a defined lifecycle.
+Every contract in Miftah follows a defined lifecycle.
 
 ### Status Flow
 

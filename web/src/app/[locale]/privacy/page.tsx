@@ -3,7 +3,7 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Privacy Policy | Miftah",
-  description: "Privacy policy for the Miftah mobile applications and RentAxis services.",
+  description: "Privacy policy for the Miftah mobile applications and related Miftah services.",
 };
 
 const sections = [
@@ -60,7 +60,7 @@ export default async function PrivacyPage({ params }: { params: Promise<{ locale
         <h1 className="font-serif text-4xl font-semibold md:text-5xl" style={{ color: "#f7f2e8" }}>Privacy Policy</h1>
         <p className="mt-5 text-sm text-[#bcb5a8]">Effective 7 August 2026</p>
         <p className="mt-8 text-lg leading-8 text-[#ddd6ca]">
-          This policy explains how DTSPL handles information through the Miftah Resident, Miftah Manager and Miftah Security mobile applications and the related RentAxis services.
+          This policy explains how DTSPL handles information through the Miftah Resident, Miftah Manager and Miftah Security mobile applications and the related Miftah services.
         </p>
 
         <div className="mt-12 space-y-10">

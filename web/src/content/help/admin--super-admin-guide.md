@@ -9,7 +9,7 @@ relatedTour: super-admin
 
 ## Super Admin Guide
 
-As a System Admin, you have full access across all tenants in RentAxis.
+As a System Admin, you have full access across all tenants in Miftah.
 
 ### Managing Tenants
 

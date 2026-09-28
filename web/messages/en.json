@@ -1,6 +1,6 @@
 {
   "Index": {
-    "title": "Welcome to RentAxis",
+    "title": "Welcome to Miftah",
     "portal": "Landlord Portal",
     "featureToggles": "Feature Toggles",
     "noFeaturesAvailable": "No features available.",
@@ -3501,7 +3501,7 @@
   },
   "Help": {
     "title": "Help Center",
-    "subtitle": "Find guides and tutorials for using RentAxis",
+    "subtitle": "Find guides and tutorials for using Miftah",
     "allArticles": "All Articles",
     "categories": {"getting-started": "Getting Started", "properties": "Properties", "leases": "Tenancy Contracts", "finance": "Finance", "renter": "Tenant Portal", "admin": "Administration"},
     "showAllRoles": "Show all roles",
@@ -3526,7 +3526,7 @@
     "closeHelp": "Close help",
     "startTour": "Start Tour",
     "retakeTour": "Retake Tour",
-    "welcomeTitle": "Welcome to RentAxis!",
+    "welcomeTitle": "Welcome to Miftah!",
     "welcomeDesc": "Take a quick tour to learn your way around the portal.",
     "dismiss": "Dismiss",
     "tabs": {

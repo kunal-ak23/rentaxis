@@ -3,13 +3,13 @@ import type { TourDef } from './types';
 export const adminOnboardingTour: TourDef = {
   id: 'admin-onboarding',
   name: 'Welcome Tour',
-  description: 'Quick overview of your RentAxis dashboard',
+  description: 'Quick overview of your Miftah dashboard',
   roles: ['TENANT_ADMIN', 'PROPERTY_MANAGER', 'TENANT_USER'],
   steps: [
     {
       id: 'welcome',
       target: '[data-tour="dashboard-header"]',
-      title: 'Welcome to RentAxis!',
+      title: 'Welcome to Miftah!',
       text: 'This is your home page: the contract pipeline, what needs you now, Unit Status and the numbers that matter.',
       position: 'bottom',
     },

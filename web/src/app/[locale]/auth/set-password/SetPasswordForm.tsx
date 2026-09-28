@@ -49,7 +49,7 @@ export default function SetPasswordForm({ token, email, name, locale }: Props) {
 
     return (
         <form onSubmit={submit} style={{ maxWidth: 420, margin: "60px auto", fontFamily: "system-ui", padding: 24 }}>
-            <h1 style={{ marginBottom: 8 }}>Welcome to RentAxis</h1>
+            <h1 style={{ marginBottom: 8 }}>Welcome to Miftah</h1>
             <p style={{ marginTop: 0, color: "#475569" }}>Hi {name}, set a password to activate your account ({email}).</p>
             <label style={{ display: "block", marginTop: 24 }}>
                 <span style={{ display: "block", fontSize: 14, fontWeight: 500, marginBottom: 4 }}>New password</span>

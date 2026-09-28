@@ -1,6 +1,6 @@
 {
   "Index": {
-    "title": "مرحباً بك في رينت أكسس",
+    "title": "مرحباً بك في مفتاح",
     "portal": "بوابة المالك",
     "featureToggles": "إدارة الميزات",
     "noFeaturesAvailable": "لا توجد ميزات متاحة.",
@@ -3501,7 +3501,7 @@
   },
   "Help": {
     "title": "مركز المساعدة",
-    "subtitle": "اعثر على أدلة وشروحات لاستخدام RentAxis",
+    "subtitle": "اعثر على أدلة وشروحات لاستخدام مفتاح",
     "allArticles": "جميع المقالات",
     "categories": {"getting-started": "البدء", "properties": "العقارات", "leases": "عقود الإيجار", "finance": "المالية", "renter": "بوابة المستأجر", "admin": "الإدارة"},
     "showAllRoles": "عرض جميع الأدوار",
@@ -3526,7 +3526,7 @@
     "closeHelp": "إغلاق المساعدة",
     "startTour": "بدء الجولة",
     "retakeTour": "إعادة الجولة",
-    "welcomeTitle": "مرحبًا بك في RentAxis!",
+    "welcomeTitle": "مرحبًا بك في مفتاح!",
     "welcomeDesc": "خذ جولة سريعة لتتعرّف على البوابة.",
     "dismiss": "إغلاق",
     "tabs": {

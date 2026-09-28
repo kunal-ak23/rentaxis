@@ -47,7 +47,7 @@ function Rail({ rail, active, onRailClick, badge }: {
     return (
         <nav data-testid="nav-rail" data-tour="sidebar-nav" className="flex h-full w-16 flex-col items-center gap-1 border-e border-border bg-surface py-3">
             <Link href="/" className="mb-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--gold-500)]/30">
-                <Image src="/logo.png" alt="RentAxis" width={32} height={32} className="h-8 w-8 object-contain" priority />
+                <Image src="/logo-mark.png" alt="Miftah" width={32} height={32} className="h-8 w-8 rounded-md object-contain" priority />
             </Link>
             {rail.map(s => {
                 const Icon = ICONS[s.id] ?? AlertTriangle;

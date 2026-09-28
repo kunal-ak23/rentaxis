@@ -8,8 +8,8 @@ import { FontLinks } from '@/components/FontLinks';
 import "../globals.css";
 
 export const metadata: Metadata = {
-  title: "RentAxis",
-  description: "Multi-Tenant Lease Management Platform",
+  title: "Miftah",
+  description: "Miftah — property management for UAE landlords",
 };
 
 export default async function RootLayout({
