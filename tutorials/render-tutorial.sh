@@ -10,13 +10,13 @@ task_video=$1
 task_narration=$2
 task_output=$3
 task_voice=${4:-${TUTORIAL_VOICE:-}}
-task_speech_rate=${5:-125}
+task_speech_rate=${5:-140}
 task_tts_provider=${TUTORIAL_TTS_PROVIDER:-openai}
 task_subtitle=${TUTORIAL_SUBTITLE_FILE:-}
 
 if [[ -z "$task_voice" ]]; then
   case "$task_tts_provider" in
-    azure) task_voice=${AZURE_SPEECH_VOICE:-en-US-Harper:MAI-Voice-2} ;;
+    azure) task_voice=${AZURE_SPEECH_VOICE:-en-US-Ava:DragonHDLatestNeural} ;;
     mac) task_voice=Samantha ;;
     *) task_voice=marin ;;
   esac

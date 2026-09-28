@@ -7,8 +7,8 @@ if [[ $# -lt 1 || $# -gt 3 ]]; then
 fi
 
 task_output_dir=$1
-task_voice=${2:-${AZURE_SPEECH_VOICE:-en-US-Harper:MAI-Voice-2}}
-task_rate=${3:-125}
+task_voice=${2:-${AZURE_SPEECH_VOICE:-en-US-Ava:DragonHDLatestNeural}}
+task_rate=${3:-140}
 task_root=$(cd "$(dirname "$0")/.." && pwd)
 task_env_file=${TUTORIAL_ENV_FILE:-"$(dirname "$task_output_dir")/.env.local"}
 

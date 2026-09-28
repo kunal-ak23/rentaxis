@@ -9,11 +9,11 @@ fi
 task_id=$(printf '%02d' "$((10#$1))")
 task_tts_provider=${TUTORIAL_TTS_PROVIDER:-openai}
 task_voice=${2:-${TUTORIAL_VOICE:-}}
-task_rate=${3:-${TUTORIAL_SPEECH_RATE:-125}}
+task_rate=${3:-${TUTORIAL_SPEECH_RATE:-140}}
 
 if [[ -z "$task_voice" ]]; then
   case "$task_tts_provider" in
-    azure) task_voice=${AZURE_SPEECH_VOICE:-en-US-Harper:MAI-Voice-2} ;;
+    azure) task_voice=${AZURE_SPEECH_VOICE:-en-US-Ava:DragonHDLatestNeural} ;;
     mac) task_voice=Samantha ;;
     *) task_voice=marin ;;
   esac

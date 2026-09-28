@@ -210,6 +210,16 @@ async function goto(page, pathname) {
   await waitForApp(page);
   await clearRecordingIntro(page);
   await applyCaptureStyles(page);
+  await revealCursor(page);
+}
+
+/** A fresh document draws no cursor until the mouse moves; nudge it in place. */
+async function revealCursor(page) {
+  if (validateOnly) return;
+  const at = pointerAt.get(page);
+  if (!at) return;
+  await page.mouse.move(at.x + 1, at.y);
+  await page.mouse.move(at.x, at.y);
 }
 
 /**
@@ -358,6 +368,126 @@ const lastMonthEnd = () => {
 /** These contracts are dated 1 January; the ledger filters open on this month. */
 const contractYearStart = () => `${new Date().getFullYear()}-01-01`;
 const todayIso = () => isoDate(new Date());
+
+// ── visible cursor and click feedback (capture only) ─────────────────────────
+// Headless Chromium records no pointer, so a viewer cannot see what was
+// clicked. In capture mode every context gets an overlay — an arrow that
+// follows the real mouse, a ripple on mousedown, a ring around the field being
+// typed into — and every Locator action first glides the real mouse onto its
+// target. Validate-only runs get neither: they prove, they do not perform.
+
+/** Runs in the page (init script): draws the cursor, ripple and focus ring. */
+function installCursorOverlay() {
+  if (window.__rentaxisCursor) return;
+  window.__rentaxisCursor = true;
+  const Z = '2147483647';
+  const KEY = 'rentaxisCursorAt';
+  const mount = () => {
+    const host = document.documentElement;
+    if (!host || document.getElementById('rentaxis-cursor')) return;
+    const style = document.createElement('style');
+    style.textContent = `
+      #rentaxis-cursor { position: fixed; left: 0; top: 0; width: 26px; height: 32px; z-index: ${Z};
+        pointer-events: none; transform-origin: 2px 2px; transition: transform 120ms ease-out; display: none;
+        filter: drop-shadow(0 2px 3px rgba(15,23,42,.45)); }
+      #rentaxis-cursor.down { transform: scale(.86); }
+      .rentaxis-ripple { position: fixed; z-index: ${Z}; pointer-events: none; width: 16px; height: 16px;
+        margin: -8px 0 0 -8px; border-radius: 50%; border: 3px solid rgba(238,192,70,.95);
+        background: rgba(238,192,70,.28); animation: rentaxis-ripple 520ms ease-out forwards; }
+      @keyframes rentaxis-ripple { to { transform: scale(3.4); opacity: 0; } }
+      #rentaxis-focus-ring { position: fixed; z-index: 2147483646; pointer-events: none; display: none;
+        border: 3px solid rgba(238,192,70,.95); border-radius: 10px;
+        box-shadow: 0 0 0 5px rgba(238,192,70,.25); transition: opacity 200ms ease-out; }`;
+    const cursor = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    cursor.id = 'rentaxis-cursor';
+    cursor.setAttribute('viewBox', '0 0 26 32');
+    cursor.innerHTML = '<path d="M2 2 L2 25 L8 19.5 L12.2 29 L16.4 27.2 L12.3 17.8 L20.5 17.8 Z" fill="#111827" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>';
+    const ring = document.createElement('div');
+    ring.id = 'rentaxis-focus-ring';
+    host.append(style, ring, cursor);
+
+    const place = (x, y) => {
+      cursor.style.display = 'block';
+      cursor.style.left = `${x - 2}px`;
+      cursor.style.top = `${y - 2}px`;
+      try { sessionStorage.setItem(KEY, JSON.stringify([x, y])); } catch {}
+    };
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(KEY) || 'null');
+      if (Array.isArray(saved)) place(saved[0], saved[1]);
+    } catch {}
+    window.addEventListener('mousemove', (e) => place(e.clientX, e.clientY), true);
+    window.addEventListener('mousedown', (e) => {
+      cursor.classList.add('down');
+      const ripple = document.createElement('div');
+      ripple.className = 'rentaxis-ripple';
+      ripple.style.left = `${e.clientX}px`;
+      ripple.style.top = `${e.clientY}px`;
+      host.append(ripple);
+      setTimeout(() => ripple.remove(), 600);
+    }, true);
+    window.addEventListener('mouseup', () => cursor.classList.remove('down'), true);
+
+    let fadeTimer = null;
+    const typable = (el) => el && el.matches?.('input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]), textarea, select, [contenteditable="true"]');
+    const showRing = (el) => {
+      const r = el.getBoundingClientRect();
+      Object.assign(ring.style, {
+        display: 'block', opacity: '1',
+        left: `${r.left - 4}px`, top: `${r.top - 4}px`, width: `${r.width + 8}px`, height: `${r.height + 8}px`,
+      });
+      clearTimeout(fadeTimer);
+      fadeTimer = setTimeout(() => { ring.style.opacity = '0'; }, 1400);
+    };
+    document.addEventListener('focusin', (e) => { if (typable(e.target)) showRing(e.target); }, true);
+    document.addEventListener('input', (e) => { if (typable(e.target)) showRing(e.target); }, true);
+    document.addEventListener('focusout', () => { ring.style.opacity = '0'; }, true);
+  };
+  if (document.documentElement) mount();
+  else document.addEventListener('DOMContentLoaded', mount, { once: true });
+}
+
+const pointerAt = new WeakMap();
+const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - ((-2 * t + 2) ** 2) / 2);
+
+/** Glide the real mouse to the centre of `locator` with an eased path, then settle. */
+async function glideTo(locator) {
+  const page = locator.page();
+  await locator.scrollIntoViewIfNeeded({ timeout: navTimeoutMs }).catch(() => {});
+  const box = await locator.boundingBox({ timeout: navTimeoutMs }).catch(() => null);
+  if (!box) return;
+  const to = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const from = pointerAt.get(page) || { x: 1500, y: 640 };
+  const distance = Math.hypot(to.x - from.x, to.y - from.y);
+  if (distance > 2) {
+    const steps = 24;
+    const duration = Math.min(600, 380 + distance / 8);
+    for (let i = 1; i <= steps; i += 1) {
+      const t = easeInOut(i / steps);
+      await page.mouse.move(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t);
+      await page.waitForTimeout(duration / steps);
+    }
+  }
+  pointerAt.set(page, to);
+  await page.waitForTimeout(150);
+}
+
+/** Patch Locator actions once, capture mode only, so every scene's clicks are seen. */
+let locatorPatched = false;
+function patchLocatorForCapture(page) {
+  if (locatorPatched || validateOnly) return;
+  locatorPatched = true;
+  const proto = Object.getPrototypeOf(page.locator('body'));
+  for (const name of ['click', 'dblclick', 'fill', 'selectOption', 'check', 'uncheck']) {
+    const original = proto[name];
+    if (typeof original !== 'function') continue;
+    proto[name] = async function glidingAction(...args) {
+      await this.waitFor({ state: 'visible', timeout: navTimeoutMs }).catch(() => {});
+      await glideTo(this);
+      return original.apply(this, args);
+    };
+  }
+}
 
 async function suppressAutomaticOnboarding(context) {
   await context.addInitScript(() => {
@@ -725,7 +855,7 @@ const scenarios = {
     // script takes to speak, so the wizard never runs ahead of the voice.
     roleRouteScene('tenantAdmin', '/en/dashboard/leases', 'Tenancy Contracts',
       'Leasing › Tenancy Contracts lists every contract, and the status pills count them by stage.', {
-      weight: 39,
+      weight: 34,
       afterNavigation: async (page) => {
         await page.getByTestId('contract-pills').waitFor({ state: 'visible', timeout: navTimeoutMs });
         await page.getByTestId('lease-new').waitFor({ state: 'visible' });
@@ -744,7 +874,7 @@ const scenarios = {
         await pace(page, 4000);
         await pickInWizard(page, 1, draftTenantName);
         await expectText(wizard, draftTenantName, 'Chosen tenant');
-      }, { weight: 32 }),
+      }, { weight: 29 }),
     stepScene('Step 2 · Terms',
       'Enter the start and end dates. Four cheques, paid by cheque. Ejari # and Payment Reference # are optional.',
       async (page) => {
@@ -756,7 +886,7 @@ const scenarios = {
         if (await page.getByTestId('wizard-end-date').inputValue() !== draftEndDate) {
           throw new Error('The end date did not take.');
         }
-      }, { weight: 49 }),
+      }, { weight: 43 }),
     stepScene('Step 3 · Charges',
       'One line per charge: Rent 96,000 and a Security Deposit of 5,000 make a contract value of 101,000.00.',
       async (page) => {
@@ -769,7 +899,7 @@ const scenarios = {
         await page.getByTestId('lease-line-type-1').selectOption({ label: 'Security Deposit' });
         await page.getByTestId('lease-line-amount-1').fill('5000');
         await expectText(page.getByTestId('lease-lines-contract-value'), '101,000.00', 'Contract value');
-      }, { weight: 27 }),
+      }, { weight: 24 }),
     stepScene('Save the draft, then generate cheques',
       'Save draft stores the contract as a draft. Generate Cheques builds four post-dated cheques that match the contract value.',
       async (page) => {
@@ -783,7 +913,7 @@ const scenarios = {
         await page.getByTestId('cheque-row-3').waitFor({ state: 'visible', timeout: navTimeoutMs });
         await expectCount(page.locator('[data-testid^="cheque-row-"]'), 4, 'cheque rows');
         await expectText(page.getByTestId('cheque-grid-match'), 'Cheques match the contract value of 101,000.00', 'Cheque total check');
-      }, { weight: 46 }),
+      }, { weight: 41 }),
     stepScene('Number the cheques',
       'Generate Cheque Numbers fills every row, counting up from the first cheque number.',
       async (page) => {
@@ -793,7 +923,7 @@ const scenarios = {
         await page.getByTestId('cheque-numbers-confirm').click();
         await waitForInputValue(page, '[data-testid="cheque-row-0"]', draftFirstChequeNo);
         await waitForInputValue(page, '[data-testid="cheque-row-3"]', '500104');
-      }, { weight: 23 }),
+      }, { weight: 20 }),
     stepScene('Step 5 · Review',
       'Check unit, tenant, dates, contract value, VAT and the cheque total. The review reports Ready to post.',
       async (page) => {
@@ -804,7 +934,10 @@ const scenarios = {
         await expectText(review, `${draftUnitNumber} • `, 'Review unit');
         await expectText(review, draftTenantName, 'Review tenant');
         await expectText(review, 'Cheques Total 101,000.00', 'Review cheque total');
-      }, { weight: 17 }),
+        // Leave the pointer on the summary, not resting where Next was — on this
+        // step that spot is Post Contract, which the tutorial does not press.
+        if (!validateOnly) await glideTo(review.locator('dl').first());
+      }, { weight: 16 }),
     stepScene('Open the draft contract',
       'Status Draft, four cheques, and each charge line with the account it credits.',
       async (page) => {
@@ -815,7 +948,7 @@ const scenarios = {
         await expectText(page.getByTestId('lease-status'), 'Draft', 'Contract status');
         await expectText(page.getByTestId('lease-lines-contract-value'), '101,000.00', 'Contract value');
         console.log(`draft_contract_id=${page.url().split('/').pop()}`);
-      }, { weight: 31 }),
+      }, { weight: 28 }),
     stepScene('Cheques tab',
       'The same four numbered cheques. The draft stays editable until it is posted.',
       async (page) => {
@@ -826,7 +959,7 @@ const scenarios = {
         await page.waitForFunction(() => document.body.innerText.includes('500104')
           || [...document.querySelectorAll('[data-testid^="cheque-row-"] input')].some((input) => input.value === '500104'),
         null, { timeout: navTimeoutMs });
-      }, { weight: 25 }),
+      }, { weight: 18 }),
   ],
   '11': [
     routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Contract-ready lease', 'Confirm the renter, unit, dates, rent, deposit, and payment plan before reviewing the contract.'),
@@ -1495,6 +1628,7 @@ async function authenticatedStorageState(role) {
 // marked `continues` (see `stepScene`) carries on in the previous scene's
 // context and page when both run as the same role.
 let live = null;
+let recordingStartedAt = null;
 
 async function closeLive() {
   if (!live) return;
@@ -1558,8 +1692,15 @@ async function openLive(role, sceneIndex, scene, host) {
       sameSite: 'Lax',
     },
   ]);
+  if (!validateOnly) await context.addInitScript(installCursorOverlay);
   const page = await context.newPage();
   const video = validateOnly ? null : page.video();
+  if (!validateOnly) {
+    patchLocatorForCapture(page);
+    // Park the pointer where the cursor starts, so it is on screen from the first frame.
+    await page.mouse.move(1500, 640);
+    pointerAt.set(page, { x: 1500, y: 640 });
+  }
   return { role, context, page, video };
 }
 
@@ -1579,6 +1720,11 @@ try {
     const { page } = live;
 
     const startedAt = Date.now();
+    recordingStartedAt ??= startedAt;
+    if (!validateOnly) {
+      // Approximate offset into the recording, for checking scenes against subtitle cues.
+      console.log(`scene=${sceneIndex + 1} starts_at=${((startedAt - recordingStartedAt) / 1000).toFixed(1)}s title=${scene.title}`);
+    }
     await scene.run(page);
     const activeTourCount = await page.locator('.shepherd-element:visible').count();
     if (activeTourCount > 0 && !scene.allowTour) {
@@ -1600,7 +1746,10 @@ try {
     await addCallout(page, scene.title, scene.body);
     const sceneDuration = validateOnly
       ? 0.5
-      : Math.max(1, targetDuration * (sceneWeights[sceneIndex] / totalSceneWeight) - (scene.continues ? 0 : clipOverheadSeconds));
+      // A new clip pays Playwright's per-clip overhead; a continuing scene instead
+      // pays the pause after its callout clears (below), which would otherwise
+      // push every later scene behind the narration.
+      : Math.max(1, targetDuration * (sceneWeights[sceneIndex] / totalSceneWeight) - (scene.continues ? 0.4 : clipOverheadSeconds));
     const elapsedSeconds = (Date.now() - startedAt) / 1000;
     await page.waitForTimeout(Math.max(500, (sceneDuration - elapsedSeconds) * 1000));
     await clearCallout(page);
