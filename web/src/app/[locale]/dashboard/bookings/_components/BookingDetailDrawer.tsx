@@ -5,6 +5,7 @@ import { useTranslations, useLocale } from "next-intl";
 import { X, Loader2, CalendarCheck, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fetchBooking, approveBooking, rejectBooking, releaseBooking, ApiError } from "@/lib/api/facilities";
+import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 import type { BookingDetailDTO, BookingRequestDTO, BookingRequestStatus } from "@/types/facility";
 
 /** Locale tag for toLocaleDateString — mirrors gatepass/page.tsx's ar-AE/en-GB split. */
@@ -39,8 +40,23 @@ interface BookingDetailDrawerProps {
   onChanged: (updated: BookingRequestDTO) => void;
 }
 
+/** Pause between re-reads while a competing decision is still committing. */
+export const DECIDED_RETRY_MS = 600;
+
+/** The booked slot as text: the date, plus the time slot or the end date when there is one. */
+function bookedSlot(r: BookingRequestDTO, locale: string): string | null {
+  if (!r.preferredDate) return null;
+  let text = parseDateOnly(r.preferredDate).toLocaleDateString(dateLocale(locale));
+  if (r.preferredEndDate) text += ` – ${parseDateOnly(r.preferredEndDate).toLocaleDateString(dateLocale(locale))}`;
+  if (r.preferredStartTime && r.preferredEndTime) {
+    text += ` · ${r.preferredStartTime.slice(0, 5)}–${r.preferredEndTime.slice(0, 5)}`;
+  }
+  return text;
+}
+
 export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDetailDrawerProps) {
   const t = useTranslations("Bookings");
+  const tCommon = useTranslations("Common");
   const locale = useLocale();
   const [detail, setDetail] = useState<BookingDetailDTO | null>(null);
   const [loading, setLoading] = useState(true);
@@ -80,21 +96,37 @@ export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDe
       setDetail(prev => (prev ? { ...prev, request: updated } : prev));
       onChanged(updated);
     } catch (err) {
-      // 409 (spot already held elsewhere) and 400 (business-rule violation,
-      // e.g. deciding a request that's no longer PENDING) get the localized
-      // copy so the message reads in the active locale; any other ApiError
-      // status falls back to the backend's own (already-parsed) message.
-      if (err instanceof ApiError && err.status === 409) {
-        setError(t("spotConflict"));
-        // The 409 means a competing request just won the spot — re-fetch the
-        // detail so otherRequests shows that competitor with an APPROVED
-        // badge instead of the stale PENDING one fetched when this drawer
-        // opened (mirrors the mobile manager sheet's invalidate-on-409 in
-        // booking_approvals_screen.dart). fetchBooking directly rather than
-        // load(), whose setError(null) would wipe the conflict message.
-        try { setDetail(await fetchBooking(bookingId)); } catch { /* keep the stale detail; the conflict message still shows */ }
+      const { code } = codedOf(err);
+      const status = err instanceof ApiError ? err.status : 0;
+      // Break-it R3 ops3 F9: a 409, or a 400 "not pending", means the server moved on
+      // (another tab decided, or is deciding right now). Re-read the booking and show
+      // its real state; while a competing decision is still committing, read again.
+      if (status === 409 || code === "booking.notPending") {
+        const before = action === "release" ? "APPROVED" : "PENDING";
+        let fresh: BookingDetailDTO | null = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (attempt > 0) await new Promise(r => setTimeout(r, DECIDED_RETRY_MS));
+          try { fresh = await fetchBooking(bookingId); } catch { break; /* keep the stale detail; the message still shows */ }
+          if (fresh.request.status !== before || code !== "booking.decisionInProgress") break;
+        }
+        if (fresh) setDetail(fresh);
+        if (fresh && fresh.request.status !== before) {
+          setError(t("alreadyDecided"));
+          onChanged(fresh.request);
+        } else if (code) {
+          setError(serverText(tCommon, err));
+        } else if (status === 409 && detail?.request.resourceType === "PARKING_SPOT") {
+          // An older server: its only uncoded 409 on a spot is "already assigned".
+          setError(t("spotConflict"));
+        } else if (err instanceof ApiError && status === 409) {
+          setError(err.message);
+        } else {
+          setError(t("actionError"));
+        }
       }
-      else if (err instanceof ApiError && err.status === 400) setError(t("actionError"));
+      // Other refusals (a date in the past, outside the contract…) in the user's language.
+      else if (code) setError(serverText(tCommon, err));
+      else if (err instanceof ApiError && status === 400) setError(t("actionError"));
       else if (err instanceof ApiError) setError(err.message);
       else setError(t("actionError"));
     } finally {
@@ -191,7 +223,7 @@ export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDe
                 {req.preferredDate && (
                   <p className="text-muted">
                     <span className="font-semibold">{t("preferredDate")}:</span>{" "}
-                    {parseDateOnly(req.preferredDate).toLocaleDateString(dateLocale(locale))}
+                    {bookedSlot(req, locale)}
                   </p>
                 )}
                 {req.note && (
@@ -225,7 +257,10 @@ export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDe
                           <p className="text-xs font-semibold text-foreground truncate">{o.renterName ?? "—"}</p>
                           <p className="text-[10px] text-muted">
                             {o.unitNumber ? `${t("colUnit")} ${o.unitNumber} · ` : ""}
-                            {new Date(o.createdAt).toLocaleDateString(dateLocale(locale))}
+                            {/* Break-it R3 ops3 F7: the booked date/slot, so a clash is visible; the request date only when undated. */}
+                            {bookedSlot(o, locale)
+                              ? `${t("bookedFor")} ${bookedSlot(o, locale)}`
+                              : `${t("requestedOn")} ${new Date(o.createdAt).toLocaleDateString(dateLocale(locale))}`}
                           </p>
                         </div>
                         <span className={cn(
@@ -291,6 +326,10 @@ export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDe
               </button>
             )}
           </div>
+        )}
+        {/* The footer is gone once the request is decided — the message must still show (F9). */}
+        {req && error && !(req.status === "PENDING" || (req.status === "APPROVED" && req.resourceType === "PARKING_SPOT")) && (
+          <div role="alert" className="shrink-0 px-6 py-4 border-t border-border text-xs font-semibold text-error">{error}</div>
         )}
         {!loading && !req && error && (
           <div className="px-6 py-4 text-xs font-semibold text-error">{error}</div>
