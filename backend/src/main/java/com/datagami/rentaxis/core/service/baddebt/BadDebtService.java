@@ -193,7 +193,8 @@ public class BadDebtService {
             throw new BusinessRuleViolationException("A lease that was never posted has nothing to write off");
         }
         String reason = requireReason(r.reason());
-        LocalDate date = r.date() != null ? r.date() : LocalDate.now();
+        LocalDate date = r.date() != null ? r.date() : manualDates.today();
+        requireWriteOffDate(date);
         List<Picked> items = pick(lease, r.chequeIds(), date);
         BadDebtWriteOff w = new BadDebtWriteOff();
         w.setTenantId(lease.getTenantId());
@@ -213,6 +214,19 @@ public class BadDebtService {
         return dto(writeOffs.save(w));
     }
 
+    /**
+     * Break-it round 2 (money2) F1/F2: a write-off is recognised when it is decided,
+     * so its date cannot be after today. That also keeps it reversible: a reversal is
+     * dated today and may not predate the write-off, so a BDW dated next year could
+     * not be undone until then. The one-year window is asked too, as on every manual
+     * date — redundant after "not after today", and kept so the rule has one owner.
+     */
+    private void requireWriteOffDate(LocalDate date) {
+        manualDates.requireWithinAYear(date, "A bad-debt write-off");
+        manualDates.requireNotAfterToday(date, "write-off",
+                "A debt is written off when the decision is made; date it today or earlier.");
+    }
+
     /** An organisation admin writes the debt off: the items close and the BDW posts. */
     @Transactional
     public WriteOffDTO approve(UUID id, String note) {
@@ -220,6 +234,9 @@ public class BadDebtService {
         Lease lease = lease(w.getLeaseId());
         access.requireManageable(lease);
         requireStatus(w, Status.PROPOSED);
+        // Asked again at approval: a proposal raised before this rule, or one whose
+        // day has not come, must not post a BDW nobody can reverse until then.
+        requireWriteOffDate(w.getWriteOffDate());
         List<Picked> items = pick(lease, itemIds(w), w.getWriteOffDate());
         BigDecimal amount = sum(items);
         if (amount.compareTo(w.getAmount()) != 0) {
