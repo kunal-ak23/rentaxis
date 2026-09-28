@@ -157,14 +157,20 @@ public class TicketChargesService {
 
     // ------------------------------------------------------------------ helpers
 
-    /**
-     * The ticket row, FOR NO KEY UPDATE: serialises recharge and unlink on one ticket
-     * without blocking inserts that reference it (comments, attachments take FOR KEY
-     * SHARE through their foreign key).
-     */
+    /** The ticket row lock recharge, unlink and bill reversal share ({@link TicketRowLock}). */
     private void lockTicketRow(MaintenanceTicket t) {
-        jdbc.queryForList("select id from maintenance_tickets where tenant_id = :t and id = :ticket for no key update",
-                params().addValue("ticket", t.getId()));
+        if (rowLock != null) {
+            rowLock.lock(t.getId());
+        } else {
+            new TicketRowLock(jdbc).lock(t.getId());
+        }
+    }
+
+    private TicketRowLock rowLock;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setTicketRowLock(TicketRowLock rowLock) {
+        this.rowLock = rowLock;
     }
 
     private static BusinessRuleViolationException overRecharge(TicketCharges now) {

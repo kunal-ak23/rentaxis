@@ -48,6 +48,8 @@ class TicketChargesIT extends AbstractPostgresIT {
 
     @Autowired TicketChargesService service;
     @Autowired com.datagami.rentaxis.core.service.penalty.PenaltyAssessmentService penalties;
+    @Autowired TicketRowLock ticketRowLock;
+    @Autowired org.springframework.transaction.support.TransactionTemplate tx;
     @Autowired MaintenanceTicketRepository tickets;
     @Autowired VoucherService vouchers;
     @Autowired VendorService vendorService;
@@ -215,5 +217,67 @@ class TicketChargesIT extends AbstractPostgresIT {
             pool.shutdownNow();
         }
         assertThat(service.get(ticketId).rechargeable()).isEqualByComparingTo("0.00");
+    }
+
+    /**
+     * Break-it R2 money2 round 2: voiding a bill linked to a ticket takes the ticket
+     * row lock recharge takes. Held by another transaction (a recharge in flight),
+     * the void waits for it; released, the void completes and the next recharge sees
+     * no bill left. Sequential proof of the lock ordering.
+     */
+    @Test
+    void voidingALinkedBillWaitsForTheTicketLockARechargeHolds() throws Exception {
+        Lease lease = leaseRepo.findById(fixtures.postedLease(LocalDate.of(2026, 4, 20), LocalDate.of(2026, 5, 1),
+                LocalDate.of(2027, 4, 30), List.of(vatLine("RENT", "120000")), 4, null).lease().getId()).orElseThrow();
+        UUID ticketId = ticket(lease);
+        UUID billId = bill("GC-VOID", "750.00");
+        service.link(ticketId, billId);
+
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        UUID tenant = TenantContextHolder.getTenantId();
+        java.util.concurrent.CountDownLatch held = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var holder = pool.submit(() -> {
+                TenantContextHolder.setTenantId(tenant);
+                try {
+                    tx.executeWithoutResult(st -> {
+                        ticketRowLock.lock(ticketId);
+                        held.countDown();
+                        try {
+                            release.await(30, java.util.concurrent.TimeUnit.SECONDS);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    });
+                } finally {
+                    TenantContextHolder.clear();
+                }
+                return null;
+            });
+            assertThat(held.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            var voiding = pool.submit(() -> {
+                TenantContextHolder.setTenantId(tenant);
+                org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
+                try {
+                    return vouchers.voidVoucher(billId, LocalDate.now(java.time.ZoneId.of("Asia/Dubai")), "wrong bill").getStatus();
+                } finally {
+                    TenantContextHolder.clear();
+                    org.springframework.security.core.context.SecurityContextHolder.clearContext();
+                }
+            });
+            Thread.sleep(1500);
+            assertThat(voiding.isDone()).as("the void waits for the ticket lock").isFalse();
+            release.countDown();
+            holder.get(30, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(voiding.get(30, java.util.concurrent.TimeUnit.SECONDS).name()).isEqualTo("VOID");
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+        assertThat(service.get(ticketId).rechargeable()).isEqualByComparingTo("0.00");
+        assertThatThrownBy(() -> service.recharge(ticketId, new TicketChargesService.RechargeRequest(new BigDecimal("1"), false, null)))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("ticket.rechargeExceedsBill"));
     }
 }

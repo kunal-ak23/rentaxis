@@ -602,6 +602,31 @@ public class VoucherService {
         return type == VoucherType.BPV || type == VoucherType.PCN;
     }
 
+    /**
+     * Break-it round 2 (money2) F6: a vendor bill linked to a maintenance ticket is
+     * reversed under the ticket's row lock — the lock recharge and unlink take — so a
+     * void or amend racing a recharge cannot leave the ticket's recharges above its
+     * posted bills. Taken before the voucher's own lock, the order unlink uses.
+     */
+    private void lockLinkedTicket(UUID voucherId) {
+        if (ticketRowLock != null) ticketRowLock.lockTicketOfVoucher(voucherId);
+    }
+
+    /**
+     * Linked to another ticket while this call waited for the voucher: lock that one
+     * too (re-locking a row this transaction already holds is a no-op).
+     */
+    private void relockIfTicketMoved(UUID voucherId) {
+        lockLinkedTicket(voucherId);
+    }
+
+    private com.datagami.rentaxis.core.service.TicketRowLock ticketRowLock;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setTicketRowLock(com.datagami.rentaxis.core.service.TicketRowLock ticketRowLock) {
+        this.ticketRowLock = ticketRowLock;
+    }
+
     static void requireReversible(Voucher original, LocalDate date, String reason) {
         requireReversible(original, date, reason, com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system());
     }
@@ -704,7 +729,9 @@ public class VoucherService {
      */
     @Transactional
     public Voucher voidVoucher(UUID voucherId, LocalDate date, String reason) {
+        lockLinkedTicket(voucherId);
         Voucher original = lockForWrite(voucherId);
+        relockIfTicketMoved(voucherId);
         if (original.getStatus() != VoucherStatus.POSTED) {
             throw new BusinessRuleViolationException(
                     "Only a POSTED voucher can be voided; this one is " + original.getStatus());
@@ -777,7 +804,9 @@ public class VoucherService {
     public Voucher amend(UUID voucherId, LocalDate reversalDate, String reason, VoucherInput replacement,
                          List<VoucherAllocationService.AllocationInput> allocations, PostOptions options) {
         PostOptions opts = options == null ? PostOptions.NONE : options;
+        lockLinkedTicket(voucherId);
         Voucher original = lockForWrite(voucherId);
+        relockIfTicketMoved(voucherId);
         if (original.getStatus() != VoucherStatus.POSTED) {
             throw new BusinessRuleViolationException(
                     "Only a POSTED voucher can be amended; this one is " + original.getStatus());
