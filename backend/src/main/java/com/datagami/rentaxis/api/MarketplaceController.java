@@ -106,6 +106,10 @@ public class MarketplaceController {
             @RequestBody(required = false) NoteRequest body) {
         UnitListing listing = marketplaceService.getListingById(id);
         checkEnabled(listing.getTenantId());
+        // Review r3C m4: a listing hidden from the marketplace (its unit still let) takes no enquiries by id.
+        if (!marketplaceService.isPubliclyVisible(listing)) {
+            throw new com.datagami.rentaxis.api.exception.ListingNotAvailableException("Listing not available for interest");
+        }
         UUID renterUserId = currentUserId();
         interestService.addInterest(listing.getTenantId(), id, renterUserId,
                 body != null ? body.note() : null);

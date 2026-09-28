@@ -122,7 +122,12 @@ public class MarketplaceService {
             UUID tenantId) {
         jakarta.persistence.criteria.Subquery<Integer> sq = query.subquery(Integer.class);
         jakarta.persistence.criteria.Root<Lease> lease = sq.from(Lease.class);
-        jakarta.persistence.criteria.Path<java.time.LocalDate> end = lease.get("endDate");
+        // Review r3C I2: under notice, the unit is held until the move-out date when there is one.
+        jakarta.persistence.criteria.Expression<java.time.LocalDate> end = cb.<java.time.LocalDate>selectCase()
+                .when(cb.and(cb.equal(lease.get("status"), LeaseStatus.NOTICE_GIVEN),
+                                cb.isNotNull(lease.get("intendedMoveOutDate"))),
+                        lease.<java.time.LocalDate>get("intendedMoveOutDate"))
+                .otherwise(lease.<java.time.LocalDate>get("endDate"));
         jakarta.persistence.criteria.Path<java.time.LocalDate> from = root.get("availableFrom");
         sq.select(cb.literal(1)).where(
                 cb.equal(lease.get("tenantId"), tenantId),
@@ -132,6 +137,15 @@ public class MarketplaceService {
         return sq;
     }
 
+    /**
+     * Review r3C m4: whether a renter may act on this listing from the marketplace —
+     * live (PUBLISHED or UPCOMING) and not a unit still let on its available-from date.
+     */
+    public boolean isPubliclyVisible(UnitListing listing) {
+        return (listing.getStatus() == ListingStatus.PUBLISHED || listing.getStatus() == ListingStatus.UPCOMING)
+                && !letOnAvailableFrom(listing);
+    }
+
     /** The single-listing form of {@link #letOnAvailableFrom}. */
     private boolean letOnAvailableFrom(UnitListing listing) {
         if (listing.getUnitId() == null || leaseRepository == null) return false;
@@ -139,7 +153,10 @@ public class MarketplaceService {
         return leaseRepository.findByUnitIdAndStatusIn(listing.getUnitId(),
                         java.util.EnumSet.of(LeaseStatus.ACTIVE, LeaseStatus.NOTICE_GIVEN)).stream()
                 .filter(l -> java.util.Objects.equals(l.getTenantId(), listing.getTenantId()))
-                .anyMatch(l -> from == null || l.getEndDate() == null || !from.isAfter(l.getEndDate()));
+                .anyMatch(l -> {
+                    java.time.LocalDate until = UnitListingService.occupiedUntil(l);
+                    return from == null || until == null || !from.isAfter(until);
+                });
     }
 
     // ---- Spec builder ----

@@ -308,17 +308,29 @@ public class UnitListingService {
      * or past that date. Pre-marketing is fine: available-from after the lease ends.
      * A listing with no available-from reads "available now", so any current lease refuses it.
      */
+    /**
+     * Review r3C I2 ruling: the last day a lease holds its unit — the notice's move-out
+     * date when the renter has given notice with one, else the contract end.
+     */
+    public static LocalDate occupiedUntil(Lease l) {
+        if (l.getStatus() == LeaseStatus.NOTICE_GIVEN && l.getIntendedMoveOutDate() != null) {
+            return l.getIntendedMoveOutDate();
+        }
+        return l.getEndDate();
+    }
+
     private void requireUnitFreeBy(UnitListing listing) {
         if (listing.getUnitId() == null) return;
         LocalDate from = listing.getAvailableFrom();
         java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
         leaseRepository.findByUnitIdAndStatusIn(listing.getUnitId(), OCCUPYING).stream()
                 .filter(l -> Objects.equals(l.getTenantId(), listing.getTenantId()))
-                .filter(l -> from == null || l.getEndDate() == null || !from.isAfter(l.getEndDate()))
+                .filter(l -> from == null || occupiedUntil(l) == null || !from.isAfter(occupiedUntil(l)))
                 .findFirst()
                 .ifPresent(l -> {
-                    String end = l.getEndDate() == null ? "—" : l.getEndDate().format(dmy);
-                    String next = l.getEndDate() == null ? "—" : l.getEndDate().plusDays(1).format(dmy);
+                    LocalDate until = occupiedUntil(l);
+                    String end = until == null ? "—" : until.format(dmy);
+                    String next = until == null ? "—" : until.plusDays(1).format(dmy);
                     throw new BusinessRuleViolationException(
                             "This unit is let until " + end + ". Set \"Available from\" to " + next
                                     + " or later to publish the listing.",

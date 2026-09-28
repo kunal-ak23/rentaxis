@@ -159,7 +159,8 @@ class PublicListingControllerTest {
         pub.setStatus(ListingStatus.PUBLISHED);
 
         when(marketplaceService.resolveTenantSlug("acme")).thenReturn(tid);
-        when(listingRepository.findByTenantIdAndStatus(eq(tid), eq(ListingStatus.PUBLISHED), any()))
+        // Review r3C m3: the sitemap lists what the marketplace search shows.
+        when(marketplaceService.search(eq(tid), any(), any()))
                 .thenReturn(new PageImpl<>(List.of(pub)));
 
         ResponseEntity<String> response = controller.sitemap("acme");
@@ -173,7 +174,7 @@ class PublicListingControllerTest {
     void sitemap_returnsEmpty_whenNoPublishedListings() {
         UUID tid = UUID.randomUUID();
         when(marketplaceService.resolveTenantSlug("acme")).thenReturn(tid);
-        when(listingRepository.findByTenantIdAndStatus(any(), any(), any()))
+        when(marketplaceService.search(any(), any(), any()))
                 .thenReturn(Page.empty());
 
         ResponseEntity<String> response = controller.sitemap("acme");

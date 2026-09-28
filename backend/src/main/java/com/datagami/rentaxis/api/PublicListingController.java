@@ -91,8 +91,9 @@ public class PublicListingController {
         UUID tenantId = marketplaceService.resolveTenantSlug(tenantSlug);
         checkEnabled(tenantId);
 
-        Page<UnitListing> page = listingRepository.findByTenantIdAndStatus(
-                tenantId, ListingStatus.PUBLISHED, PageRequest.of(0, 1000));
+        // Review r3C m3: exactly what the marketplace shows — never a unit still let on its
+        // available-from date, whose page would 404.
+        Page<UnitListing> page = marketplaceService.search(tenantId, null, PageRequest.of(0, 1000));
 
         StringBuilder sb = new StringBuilder();
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
