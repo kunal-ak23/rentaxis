@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api.dto.penalty;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /**
@@ -13,10 +14,17 @@ import java.time.LocalDate;
  *
  * @param date the day the decision files under; defaults to today.
  * @param note free text kept on the assessment and used as the reversal's reason.
+ * @param expectedAmount approve only (break-it R2 money2 F5): the amount the queue
+ *             showed when the user confirmed. A proposal reduced since is refused
+ *             with 409 {@code penalty.changed}; absent (an older client) is not checked.
  */
-public record PenaltyDecisionRequest(LocalDate date, String note) {
+public record PenaltyDecisionRequest(LocalDate date, String note, BigDecimal expectedAmount) {
+
+    public PenaltyDecisionRequest(LocalDate date, String note) {
+        this(date, note, null);
+    }
 
     public static PenaltyDecisionRequest empty() {
-        return new PenaltyDecisionRequest(null, null);
+        return new PenaltyDecisionRequest(null, null, null);
     }
 }

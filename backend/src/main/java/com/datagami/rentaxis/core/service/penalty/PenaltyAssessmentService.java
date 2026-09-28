@@ -125,6 +125,18 @@ public class PenaltyAssessmentService {
     /** R2 N3: required, so the reversal-date rule can never be skipped. */
     private final com.datagami.rentaxis.domain.repository.JournalEntryRepository journalEntries;
 
+    /** Break-it round 2 (money2) F5: the 409 code for a proposal changed since the queue showed it. */
+    public static final String PENALTY_CHANGED = "penalty.changed";
+
+    /** Break-it round 2 (money2) F2: the one-year window on the decision date, on the app clock. */
+    private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates =
+            com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setManualPostingDates(com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates) {
+        this.manualDates = manualDates;
+    }
+
     public PenaltyAssessmentService(PenaltyAssessmentRepository repository,
                                     LeaseRepository leaseRepository,
                                     ChequeRepository chequeRepository,
@@ -336,7 +348,18 @@ public class PenaltyAssessmentService {
      */
     @Transactional
     public PenaltyAssessmentDTO approve(UUID id, LocalDate date) {
-        return approve(id, date, true);
+        return approve(id, date, true, null);
+    }
+
+    /**
+     * Break-it round 2 (money2) F5: the same, refused with 409 {@code penalty.changed}
+     * when the proposal no longer carries {@code expectedAmount} — the amount the
+     * queue showed. PenaltyAssessment has no {@code @Version}; the amount is what the
+     * user agreed to charge, so it is the figure compared. Null = not checked.
+     */
+    @Transactional
+    public PenaltyAssessmentDTO approve(UUID id, LocalDate date, BigDecimal expectedAmount) {
+        return approve(id, date, true, expectedAmount);
     }
 
     /**
@@ -346,7 +369,7 @@ public class PenaltyAssessmentService {
      */
     @Transactional
     public PenaltyAssessmentDTO approveBySystem(UUID id, LocalDate date) {
-        return approve(id, date, false);
+        return approve(id, date, false, null);
     }
 
     /** F14-50: a booking cancelled before its slot reverses its fee — possibly at the renter's request. */
@@ -360,11 +383,18 @@ public class PenaltyAssessmentService {
         return repository.findById(id).map(PenaltyAssessment::getStatus).orElse(null);
     }
 
-    private PenaltyAssessmentDTO approve(UUID id, LocalDate date, boolean checkAccess) {
+    private PenaltyAssessmentDTO approve(UUID id, LocalDate date, boolean checkAccess, BigDecimal expectedAmount) {
         PenaltyAssessment a = lock(id);
         Lease lease = a.getLease();
         if (checkAccess) leaseAccessPolicy.requireManageable(lease);
         requireStatus(a, "approve", PenaltyAssessmentStatus.PROPOSED);
+        // Read under the row lock, so a reduce that commits first is seen here.
+        if (expectedAmount != null && expectedAmount.compareTo(a.getAmount()) != 0) {
+            throw new com.datagami.rentaxis.api.exception.FiguresChangedException(PENALTY_CHANGED,
+                    "This charge changed since you opened it: it is now " + a.getAmount().setScale(2, java.math.RoundingMode.HALF_UP).toPlainString()
+                            + ", not " + expectedAmount.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString()
+                            + ". Review it again; nothing was charged.");
+        }
         // Up front, before a single line is posted. A proposal can outlive the
         // contract it was raised on — a cheque bounces in March, the lease
         // terminates in April, finance gets to the worklist in May — and by then
@@ -372,6 +402,8 @@ public class PenaltyAssessmentService {
         requireChargeable(lease);
 
         LocalDate on = date != null ? date : LocalDate.now();
+        // Break-it R2 money2 F1/F2: the manual-date window every other journal has.
+        manualDates.requireWithinAYear(on, "A penalty charge");
         BigDecimal amount = a.getAmount();
         UUID chequeId = a.getCheque() != null ? a.getCheque().getId() : null;
         String narration = narrationFor(a);

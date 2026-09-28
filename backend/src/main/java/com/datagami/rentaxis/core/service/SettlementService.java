@@ -545,6 +545,28 @@ public class SettlementService {
      * instrument for collection, so is that; either way the contract closes later,
      * when the last of them clears.</p>
      */
+    /** Break-it round 2 (money2) F5: the 409 code for a settlement changed since the page showed it. */
+    public static final String SETTLEMENT_CHANGED = "settlement.changed";
+
+    /**
+     * Break-it round 2 (money2) F5: finalise posts the figures the user reviewed, or
+     * nothing. {@code LeaseSettlement} has a {@code @Version}, but it cannot carry
+     * this: a clean page on a contract with no saved draft has no version to send
+     * (the other tab's save is what creates the row), and the refund also moves with
+     * the ledger (a cheque clearing changes the receivable) without touching the row.
+     * The net refund is the figure the STL pays out and the one the page shows, so it
+     * is what is compared, under the lease row lock that serialises save and finalise.
+     */
+    static void requireFiguresSeen(SettlementStatementDTO statement, BigDecimal expectedNetRefund) {
+        if (expectedNetRefund == null) return;
+        if (money(expectedNetRefund).compareTo(money(statement.netRefund())) != 0) {
+            throw new com.datagami.rentaxis.api.exception.FiguresChangedException(SETTLEMENT_CHANGED,
+                    "This settlement changed since you opened it: the net refund is now "
+                            + money(statement.netRefund()).toPlainString() + ", not "
+                            + money(expectedNetRefund).toPlainString() + ". Review it again; nothing was posted.");
+        }
+    }
+
     @Transactional
     public SettlementResponseDTO finalizeSettlement(UUID leaseId, FinalizeSettlementRequest request, UUID settledBy) {
         if (request == null || request.settlementDate() == null) {
@@ -598,6 +620,7 @@ public class SettlementService {
 
         SettlementStatementDTO statement = buildStatement(lease, lines);
         BigDecimal netRefund = statement.netRefund();
+        requireFiguresSeen(statement, request.expectedNetRefund());
         // F14-36: the refund is not paid here. It is owed to the renter (Cr
         // RENTER_REFUND_PAYABLE) and paid by a payment voucher that names this
         // settlement, by cheque (possibly post-dated) or transfer, so the bank moves
