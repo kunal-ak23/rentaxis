@@ -445,6 +445,18 @@ public class AuthController {
             @jakarta.validation.constraints.Pattern(regexp = PHONE_PATTERN,
                     message = "Phone number may contain only digits, spaces, +, - and parentheses (7-15 digits)")
             String phoneNumber) {
+
+        /**
+         * Break-it R2 M6: normalize Unicode spaces (NBSP and friends) and
+         * Arabic-Indic digits before {@code @Pattern} runs, not after — the
+         * canonical constructor runs before Bean Validation sees the record, so
+         * this is what {@code @Pattern} above actually validates. Without it, a
+         * number the web rule (which uses JS's Unicode-aware {@code \s}) accepted
+         * could still 400 here on a plain-ASCII {@code \s} match failure.
+         */
+        public UpdateProfileRequest {
+            phoneNumber = PhoneNumbers.normalizeUnicode(phoneNumber);
+        }
     }
 
     static final String PHONE_PATTERN = "^\\s*$|^\\s*\\+?[\\s()\\-]*(?:\\d[\\s()\\-]*){7,15}$";

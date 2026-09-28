@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { User, Phone, Mail, Loader2, Check, Lock } from "lucide-react";
 import { getRoleLabel, getRoleLabelKey, type UserRole } from "@/lib/rbac";
-import { isPlausiblePhone } from "@/lib/phone";
+import { isPlausiblePhone, normalizePhone } from "@/lib/phone";
 
 /**
  * The refusals a user can act on, in their language. Anything else is the
@@ -74,7 +74,12 @@ export default function ProfilePage() {
         e.preventDefault();
         setSaved(false);
         setSaveError("");
-        if (!isPlausiblePhone(phoneNumber)) {
+        // Break-it R2 M6: normalize (Unicode spaces, Arabic-Indic digits) before
+        // validating and before sending, so the backend's Pattern check (which
+        // normalizes the same way) never disagrees with what this screen just
+        // accepted, and the stored value matches what was validated here.
+        const normalizedPhone = normalizePhone(phoneNumber);
+        if (!isPlausiblePhone(normalizedPhone)) {
             setSaveError(t("phoneInvalid"));
             return;
         }
@@ -83,7 +88,7 @@ export default function ProfilePage() {
             const res = await fetch("/api/proxy/auth/me", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name, phoneNumber }),
+                body: JSON.stringify({ name, phoneNumber: normalizedPhone }),
             });
             if (res.ok) {
                 const data = await res.json();

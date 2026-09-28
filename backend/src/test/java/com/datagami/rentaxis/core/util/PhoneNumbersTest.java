@@ -50,6 +50,41 @@ class PhoneNumbersTest {
         assertThat(PhoneNumbers.compact("050 883-1786")).isEqualTo("0508831786");
     }
 
+    // --- break-it round 2 M6: Unicode spaces and Arabic-Indic digits ------------
+
+    /**
+     * The web side ({@code phone.ts}) uses JS's Unicode-aware {@code \s}, so a
+     * number pasted with a non-breaking space (U+00A0) or narrow no-break space
+     * (U+202F) validated there while this class's old ASCII-only {@code [\s-]}
+     * left it uncompacted (and the AuthController @Pattern rejected it outright).
+     */
+    @ParameterizedTest
+    @CsvSource({
+            "'+971 50 123 4567', +971501234567",
+            "'+971 50 123 4567', +971501234567",
+            "'+971 50 123 4567', +971501234567",
+    })
+    void compactStripsUnicodeSpacesLikeAsciiOnes(String raw, String expected) {
+        assertThat(PhoneNumbers.compact(raw)).isEqualTo(expected);
+    }
+
+    /** Arabic-Indic digits (٠-٩) and extended/Persian ones (۰-۹) map to ASCII digits. */
+    @Test
+    void compactMapsArabicIndicDigitsToAscii() {
+        assertThat(PhoneNumbers.compact("+٩٧١٥٠١٢٣٤٥٦٧")).isEqualTo("+971501234567");
+        assertThat(PhoneNumbers.compact("+۹۷۱۵۰۱۲۳۴۵۶۷")).isEqualTo("+971501234567");
+    }
+
+    @Test
+    void normalizeUnicodePassesNullThrough() {
+        assertThat(PhoneNumbers.normalizeUnicode(null)).isNull();
+    }
+
+    @Test
+    void normalizeUnicodeLeavesAsciiUntouched() {
+        assertThat(PhoneNumbers.normalizeUnicode("+971 50 123 4567")).isEqualTo("+971 50 123 4567");
+    }
+
     // --- toE164: the login-side contract used by FirebaseGuardAuthService ---
 
     @Test
