@@ -1,8 +1,8 @@
 {
   "10": {
-    "youtubeVideoId": null,
-    "uploadedAt": null,
-    "visibility": null
+    "youtubeVideoId": "Wag-eszCzqM",
+    "uploadedAt": "2026-09-28T21:19:25.048Z",
+    "visibility": "unlisted"
   },
   "34": {
     "youtubeVideoId": null,
@@ -25,28 +25,48 @@
     "visibility": null
   },
   "01": {
-    "youtubeVideoId": null,
-    "uploadedAt": null,
-    "visibility": null
+    "youtubeVideoId": "Ieo6R_6q_kE",
+    "uploadedAt": "2026-09-28T20:54:19.302Z",
+    "visibility": "unlisted"
   },
   "02": {
-    "youtubeVideoId": null,
-    "uploadedAt": null,
-    "visibility": null
+    "youtubeVideoId": "Hno2stETeqU",
+    "uploadedAt": "2026-09-28T20:59:02.696Z",
+    "visibility": "unlisted"
   },
   "03": {
-    "youtubeVideoId": null,
-    "uploadedAt": null,
-    "visibility": null
+    "youtubeVideoId": "0LwTc07Vpn8",
+    "uploadedAt": "2026-09-28T21:01:05.300Z",
+    "visibility": "unlisted"
   },
   "04": {
-    "youtubeVideoId": null,
-    "uploadedAt": null,
-    "visibility": null
+    "youtubeVideoId": "OfZjCTNnvww",
+    "uploadedAt": "2026-09-28T21:02:56.077Z",
+    "visibility": "unlisted"
   },
   "05": {
-    "youtubeVideoId": null,
-    "uploadedAt": null,
-    "visibility": null
+    "youtubeVideoId": "h0oUPeedez4",
+    "uploadedAt": "2026-09-28T21:08:09.946Z",
+    "visibility": "unlisted"
+  },
+  "06": {
+    "youtubeVideoId": "6Fc437Wa_1g",
+    "uploadedAt": "2026-09-28T21:10:28.680Z",
+    "visibility": "unlisted"
+  },
+  "07": {
+    "youtubeVideoId": "Bi9IFBiKd48",
+    "uploadedAt": "2026-09-28T21:12:25.408Z",
+    "visibility": "unlisted"
+  },
+  "08": {
+    "youtubeVideoId": "RY9eEIEY1bM",
+    "uploadedAt": "2026-09-28T21:14:27.236Z",
+    "visibility": "unlisted"
+  },
+  "09": {
+    "youtubeVideoId": "aNcKWqSNRF8",
+    "uploadedAt": "2026-09-28T21:16:46.131Z",
+    "visibility": "unlisted"
   }
 }
