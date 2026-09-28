@@ -1,11 +1,15 @@
 "use client";
 
+import { formatDate } from "@/lib/format";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import LeaseDialog from "@/components/leases/LeaseDialog";
 import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { todayIso } from "@/components/leases/leaseMath";
+import { isBeyondManualPostingWindow, maxManualPostingDateIso } from "@/lib/businessDate";
+import { differenceOf } from "@/lib/money";
+import { fmtAmount } from "@/lib/api/ledger";
 import { leaseTakesNewRows } from "@/components/cheques/registerActions";
 import { ApiError, chequeApi, leaseApi, type Cheque, type ChequeMode, type LeaseDetail } from "@/lib/api/leasing";
 
@@ -46,6 +50,7 @@ type Props = {
 export default function ReceiveCashDialog({ open, initialLeaseId, onClose, onDone }: Props) {
     const t = useTranslations("Cheques");
     const tl = useTranslations("Leasing");
+    const tm = useTranslations("MoneyInput");
 
     const [query, setQuery] = useState("");
     const [results, setResults] = useState<LeaseDetail[]>([]);
@@ -60,6 +65,15 @@ export default function ReceiveCashDialog({ open, initialLeaseId, onClose, onDon
     const [debitAccountId, setDebitAccountId] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    /**
+     * Break-it round 1 (money) F3: what the lease still has outstanding on the
+     * register (every live row not yet cleared, bounced ones included), or null
+     * while unknown. A receipt above it is an advance payment — legitimate, so
+     * asked about rather than refused (ruling F3).
+     */
+    const [outstanding, setOutstanding] = useState<number | null>(null);
+    /** The amount the user already confirmed as an advance; any edit asks again. */
+    const [advanceConfirmedFor, setAdvanceConfirmedFor] = useState<number | null>(null);
 
     useEffect(() => {
         if (!open) return;
@@ -72,12 +86,33 @@ export default function ReceiveCashDialog({ open, initialLeaseId, onClose, onDon
         setQuery("");
         setResults([]);
         setFilteredOut(0);
+        setAdvanceConfirmedFor(null);
         if (initialLeaseId) {
             leaseApi.get(initialLeaseId).then(setLease).catch(() => setLease(null));
         } else {
             setLease(null);
         }
     }, [open, initialLeaseId]);
+
+    useEffect(() => {
+        setOutstanding(null);
+        setAdvanceConfirmedFor(null);
+        if (!open || !lease) return;
+        let live = true;
+        chequeApi
+            .statsByLeases([lease.id])
+            .then(rows => {
+                const row = rows.find(r => r.leaseId === lease.id);
+                if (!live || !row) return;
+                const liveAmount = row.liveAmount ?? row.totalAmount;
+                setOutstanding(Math.max(0, differenceOf(liveAmount, row.clearedAmount)));
+            })
+            // Unknown is not "nothing outstanding": no warning rather than a wrong one.
+            .catch(() => {});
+        return () => {
+            live = false;
+        };
+    }, [open, lease]);
 
     useEffect(() => {
         if (!open || lease || query.trim().length < 2) {
@@ -110,9 +145,18 @@ export default function ReceiveCashDialog({ open, initialLeaseId, onClose, onDon
      * Null while `leaseApi.get` is still in flight, which is neither yes nor no.
      */
     const leaseTakesRow = lease == null ? null : leaseTakesNewRows(lease.status);
+    const dateTooFar = isBeyondManualPostingWindow(date);
+    const aboveOutstanding = outstanding !== null && amount > outstanding;
+    const needsAdvanceConfirm = aboveOutstanding && advanceConfirmedFor !== amount;
 
     const submit = async () => {
-        if (!lease) return;
+        if (!lease || dateTooFar) return;
+        if (needsAdvanceConfirm) {
+            // First click on an amount above what is outstanding: say so, and let
+            // the second click record it as an advance.
+            setAdvanceConfirmedFor(amount);
+            return;
+        }
         setBusy(true);
         setError(null);
         try {
@@ -142,10 +186,10 @@ export default function ReceiveCashDialog({ open, initialLeaseId, onClose, onDon
             title={t("cashReceipt")}
             onClose={onClose}
             onConfirm={submit}
-            confirmText={t("cashReceipt")}
+            confirmText={aboveOutstanding && !needsAdvanceConfirm ? tm("recordAnyway") : t("cashReceipt")}
             cancelText={tl("cancel")}
             busy={busy}
-            confirmDisabled={!lease || leaseTakesRow !== true || amount <= 0}
+            confirmDisabled={!lease || leaseTakesRow !== true || amount <= 0 || dateTooFar}
             confirmTestId="cash-receipt-confirm"
         >
             <div className="space-y-3">
@@ -233,19 +277,28 @@ export default function ReceiveCashDialog({ open, initialLeaseId, onClose, onDon
                             type="date"
                             className={field}
                             value={date}
+                            max={maxManualPostingDateIso()}
+                            aria-invalid={dateTooFar}
                             onChange={e => setDate(e.target.value)}
                         />
+                        {dateTooFar && (
+                            <p role="alert" data-testid="cash-receipt-date-error" className="mt-1 text-[11px] text-error">
+                                {tm("dateTooFar", { max: formatDate(maxManualPostingDateIso()) })}
+                            </p>
+                        )}
                     </div>
                     <div>
                         <label className={label} htmlFor="cash-receipt-amount">{tl("amount")}</label>
                         <NumberInput
                             id="cash-receipt-amount"
                             data-testid="cash-receipt-amount"
-                            min={0}
-                            step={0.01}
+                            money
                             className={`${field} text-end tabular-nums`}
                             value={amount}
-                            onChange={setAmount}
+                            onChange={v => {
+                                setAmount(v);
+                                setAdvanceConfirmedFor(null);
+                            }}
                         />
                     </div>
                     <div>
@@ -267,6 +320,19 @@ export default function ReceiveCashDialog({ open, initialLeaseId, onClose, onDon
                         onChange={e => setNarration(e.target.value)}
                     />
                 </div>
+
+                {aboveOutstanding && advanceConfirmedFor === amount && outstanding !== null && (
+                    <p
+                        role="alert"
+                        data-testid="cash-receipt-above-outstanding"
+                        className="rounded-lg bg-warning/10 border border-warning/30 px-3 py-2 text-[11px] text-warning"
+                    >
+                        {tm("aboveOutstanding", {
+                            excess: fmtAmount(differenceOf(amount, outstanding)),
+                            outstanding: fmtAmount(outstanding),
+                        })}
+                    </p>
+                )}
 
                 {error && (
                     <p className="text-[11px] text-error" data-testid="cash-receipt-error">{error}</p>

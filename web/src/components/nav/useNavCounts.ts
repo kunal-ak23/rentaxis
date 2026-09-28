@@ -5,6 +5,7 @@ import { chequeApi } from "@/lib/api/leasing";
 import { ledgerApi } from "@/lib/api/ledger";
 import { isBooksLive } from "@/lib/nav/accountingNav";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { readActiveOrgCookie } from "@/lib/session/orgSync";
 
 export type NavCounts = { collectionBadge: number | null; chequesToDeposit: number | null; booksLockedThrough: string | null; booksLive: boolean };
 
@@ -36,6 +37,10 @@ export function useNavCounts(role: UserRole | undefined, pathname = ""): NavCoun
     const mounted = useRef(true);
     useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
     useEffect(() => {
+        // Break round 1, F7: a super admin in Global View has no organisation;
+        // these endpoints are org-scoped (fiscal-settings 500'd without one,
+        // the cheque counts summed every organisation). No badge instead.
+        if (role === "SUPER_ADMIN" && !readActiveOrgCookie()) return;
         const last = fetched.current;
         if (last && last.role === role && Date.now() - last.at < NAV_COUNTS_MAX_AGE_MS) return;
         fetched.current = { role, at: Date.now() };

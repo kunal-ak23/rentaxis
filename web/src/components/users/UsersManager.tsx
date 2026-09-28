@@ -10,6 +10,8 @@ import { Pagination } from "@/components/ui/Pagination";
 import { assignableRoles, getRoleLabel, getRoleLabelKey, PROVISIONABLE_ROLES, type UserRole } from "@/lib/rbac";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { ResendInviteButton } from "@/components/users/ResendInviteButton";
+import { AccessDeniedState, LoadFailedState } from "@/components/ui/PageStates";
+import { loadList } from "@/lib/api/listLoad";
 
 // Derived from PROVISIONABLE_ROLES rather than hand-listed: a hand-written copy
 // is how ACCOUNTANT came to be grantable by the API but absent from this form.
@@ -48,6 +50,7 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
     const isSuperAdmin = currentRole === "SUPER_ADMIN";
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
+    const [listLoad, setListLoad] = useState<"ok" | "forbidden" | "failed">("ok");
     const [showForm, setShowForm] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -95,8 +98,16 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
 
     useEffect(() => {
         fetchUsers();
-        fetchProperties();
     }, []);
+
+    // The assignment picker lists the properties of the organisation the user is
+    // being put in. A SUPER_ADMIN reads that organisation by id: the org-scoped
+    // /v1/properties answers 400 in Global View (break round 1, F7) and, with an
+    // organisation selected, would list the selected one, not the user's.
+    useEffect(() => {
+        fetchProperties();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isSuperAdmin, tenantId]);
 
     // GET /admin/tenants is SUPER_ADMIN-only: a tenant admin (who now reaches
     // this list from Settings › Users & staff) only ever got a 403 from it and
@@ -107,18 +118,13 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
 
     const fetchUsers = async () => {
         setLoading(true);
-        try {
-            const res = await fetch("/api/proxy/admin/users");
-            if (res.ok) {
-                const data = await res.json();
-                data.sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
-                setUsers(data);
-            }
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setLoading(false);
+        // Break round 1, F8: a refused or failed read is not "no users".
+        const load = await loadList<User>("/api/proxy/admin/users");
+        setListLoad(load.kind);
+        if (load.kind === "ok") {
+            setUsers([...load.items].sort((a, b) => (a.id || '').localeCompare(b.id || '')));
         }
+        setLoading(false);
     };
 
     const fetchTenants = async () => {
@@ -134,8 +140,14 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
     };
 
     const fetchProperties = async () => {
+        if (isSuperAdmin && !tenantId) {
+            setProperties([]);
+            return;
+        }
         try {
-            const res = await fetch("/api/proxy/v1/properties");
+            const res = await fetch(isSuperAdmin
+                ? `/api/proxy/admin/tenants/${encodeURIComponent(tenantId)}/properties`
+                : "/api/proxy/v1/properties");
             if (res.ok) {
                 setProperties(await res.json());
             }
@@ -257,6 +269,9 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
         : users;
 
     const paginatedUsers = filteredUsers.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+    if (listLoad === "forbidden") return <AccessDeniedState />;
+    if (listLoad === "failed" && users.length === 0) return <LoadFailedState onRetry={fetchUsers} />;
 
     return (
         <div className="space-y-6 max-w-5xl mx-auto w-full pb-20">

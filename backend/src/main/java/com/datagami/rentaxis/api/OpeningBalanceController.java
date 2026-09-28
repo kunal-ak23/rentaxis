@@ -104,7 +104,7 @@ public class OpeningBalanceController {
     }
 
     @PutMapping("/opening-balances/{accountId}")
-    public ResponseEntity<Void> setRow(@PathVariable UUID accountId, @RequestBody ManualOpeningBalanceDTO body) {
+    public ResponseEntity<Void> setRow(@PathVariable UUID accountId, @jakarta.validation.Valid @RequestBody ManualOpeningBalanceDTO body) {
         requireTenantSelected();
         service.setRow(accountId, body.debit(), body.credit());
         return ResponseEntity.noContent().build();

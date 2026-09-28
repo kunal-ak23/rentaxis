@@ -6,6 +6,8 @@ import LeaseDialog from "./LeaseDialog";
 import { UnitPicker } from "@/components/pickers/UnitPicker";
 import { serverText } from "@/components/finance/bankrec/serverText";
 import { fmtAmount } from "@/lib/api/ledger";
+import { parseMoneyInput } from "@/lib/money";
+import { MoneyFieldError } from "@/components/ui/NumberInput";
 import { fmtIsoDate, round2 } from "./leaseMath";
 import { ApiError, leaseApi, type LeaseDetail, type TransferPreview } from "@/lib/api/leasing";
 
@@ -89,7 +91,10 @@ export default function TransferLeaseDialog({ open, lease, onClose, onDrafted }:
         return () => { live = false; };
     }, [open, moveDate, targetUnitId, endDate, lease.id, rentTouched, t, tCommon]);
 
-    const rentNum = rent.trim() === "" || !Number.isFinite(Number(rent)) ? null : Number(rent);
+    // Break-it round 1 (money) F1/F2: the shared money parse — 0.001, three decimals
+    // or "41,58" is no rent (null), with the reason under the field, never a rounded one.
+    const rentParsed = parseMoneyInput(rent);
+    const rentNum = rentParsed.ok ? rentParsed.value : null;
     const gap = useMemo(() => preview ? gapFor(preview, dispositions, rentNum, !!lease.rentVatApplicable) : null,
         [preview, dispositions, rentNum, lease.rentVatApplicable]);
     const carried = preview ? round2(preview.cheques
@@ -160,9 +165,11 @@ export default function TransferLeaseDialog({ open, lease, onClose, onDrafted }:
                             </div>
                             <div>
                                 <label className={label} htmlFor="transfer-rent">{t("transfer.rent")}</label>
-                                <input id="transfer-rent" data-testid="transfer-rent" inputMode="decimal"
+                                <input id="transfer-rent" data-testid="transfer-rent" inputMode="decimal" dir="ltr"
+                                       aria-invalid={!rentParsed.ok}
                                        className={`${field} text-end tabular-nums`} value={rent}
                                        onChange={e => { setRent(e.target.value); setRentTouched(true); }} />
+                                {!rentParsed.ok && <MoneyFieldError error={rentParsed.error} />}
                                 {preview?.suggestedRent != null && (
                                     <p className="text-[10px] text-muted mt-1">
                                         {t.rich("transfer.rentHint", { days: preview.newDays,

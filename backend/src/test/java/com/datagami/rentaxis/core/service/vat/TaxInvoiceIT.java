@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service.vat;
 
+import com.datagami.rentaxis.testsupport.TestIdentities;
 import com.datagami.rentaxis.api.dto.vat.TaxInvoiceDTO;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.AccountService;
@@ -243,11 +244,15 @@ class TaxInvoiceIT extends AbstractPostgresIT {
         UUID a = vatLease(fixtures.unit(), fixtures.renter());
         vatTaxPoints.runTo(START, false);
         UUID invoice = taxInvoices.forLease(a).get(0).id();
+        // A real TENANT_USER: the filter grants the stored role, so the renter's own
+        // id under a TENANT_USER header is simply the renter (break round 1, F1).
+        UUID tenantUser = TestIdentities.user(userRepo,
+                com.datagami.rentaxis.domain.entity.enums.UserRole.TENANT_USER, fixtures.tenantId());
         TenantContextHolder.clear();
 
         for (String path : List.of("/api/v1/tax-invoices/mine", "/api/v1/tax-invoices/" + invoice + "/pdf",
                 "/api/v1/leases/" + a + "/tax-invoices")) {
-            assertThat(getAs(fixtures.renter(), "TENANT_USER", path).getStatusCode().value()).as(path).isEqualTo(403);
+            assertThat(getAsUser(tenantUser, "TENANT_USER", path).getStatusCode().value()).as(path).isEqualTo(403);
         }
     }
 
@@ -261,9 +266,13 @@ class TaxInvoiceIT extends AbstractPostgresIT {
     }
 
     private ResponseEntity<byte[]> getAs(Renter renter, String role, String path) {
+        return getAsUser(renter.getUserId(), role, path);
+    }
+
+    private ResponseEntity<byte[]> getAsUser(UUID userId, String role, String path) {
         return RestClient.builder().baseUrl("http://localhost:" + port).build()
                 .get().uri(path)
-                .header("X-User-Id", renter.getUserId().toString())
+                .header("X-User-Id", userId.toString())
                 .header("X-User-Role", role)
                 .header("X-Tenant-Id", fixtures.tenantId().toString())
                 .header("X-User-Tenant-Id", fixtures.tenantId().toString())

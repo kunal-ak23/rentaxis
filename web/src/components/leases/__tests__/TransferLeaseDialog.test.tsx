@@ -96,3 +96,34 @@ describe("TransferLeaseDialog", () => {
         expect(screen.getByTestId("transfer-carry-jul")).toHaveTextContent("نقل");
     });
 });
+
+/** Break-it round 1 (money) F2: a rent of 0.001 drafted a successor with RENT 0. */
+describe("TransferLeaseDialog rent guard (F1/F2)", () => {
+    async function openToRent() {
+        lookup.searchUnits.mockResolvedValue([unit("u-201", "A-201")]);
+        api.transferPreview.mockResolvedValue(PREVIEW);
+        renderDialog();
+        fireEvent.change(screen.getByTestId("transfer-move-date"), { target: { value: "2026-05-15" } });
+        fireEvent.click(screen.getByTestId("transfer-unit"));
+        fireEvent.click(await screen.findByText("A-201"));
+        await waitFor(() => expect((screen.getByTestId("transfer-rent") as HTMLInputElement).value).toBe("37808.22"));
+    }
+
+    it("refuses a rent below one fil, with three decimals or in a mis-grouped form", async () => {
+        await openToRent();
+        for (const [text, key] of [["0.001", "min"], ["0", "min"], ["41589.045", "decimals"], ["41,58", "format"]] as const) {
+            fireEvent.change(screen.getByTestId("transfer-rent"), { target: { value: text } });
+            expect(screen.getByTestId("transfer-confirm"), text).toBeDisabled();
+            expect(screen.getByTestId("money-input-error")).toHaveTextContent(en.MoneyInput[key]);
+        }
+    });
+
+    it("sends a grouped rent exactly", async () => {
+        api.transfer.mockResolvedValue({ id: "lease-b" });
+        await openToRent();
+        fireEvent.change(screen.getByTestId("transfer-rent"), { target: { value: "41,589.04" } });
+        fireEvent.click(screen.getByTestId("transfer-confirm"));
+        await waitFor(() => expect(api.transfer).toHaveBeenCalled());
+        expect(api.transfer.mock.calls[0][1].rent).toBe(41589.04);
+    });
+});

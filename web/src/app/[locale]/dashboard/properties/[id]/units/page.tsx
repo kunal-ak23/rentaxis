@@ -11,8 +11,10 @@ import { formatCurrency, formatCurrencyCompact, formatDate } from "@/lib/format"
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { NumberInput } from "@/components/ui/NumberInput";
+import { MONEY_MAX_12_2 } from "@/lib/money";
 import { TowerSelect } from "@/components/ui/TowerSelect";
 import type { Page } from "@/lib/api/ledger";
+import { idParam, stripInvalidIdParams } from "@/lib/urlIds";
 
 /** The units page's own page size, for the pages-loop below (S16-02). */
 const UNITS_PAGE_SIZE = 200;
@@ -86,7 +88,11 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
     // `history.replaceState`, no full navigation.
     useSearchParams();
     const urlSearch = useSyncExternalStore(subscribeUrl, () => window.location.search, () => "");
-    const buildingFilter = new URLSearchParams(urlSearch).get("buildingId") ?? "";
+    // Break round 1: a malformed ?buildingId= is no filter, and is dropped from the URL.
+    const buildingFilter = idParam(new URLSearchParams(urlSearch).get("buildingId"));
+    useEffect(() => {
+        if (stripInvalidIdParams(["buildingId"])) urlListeners.forEach(l => l());
+    }, [urlSearch]);
     const setBuildingFilter = (id: string) => {
         const url = new URL(window.location.href);
         if (id) url.searchParams.set("buildingId", id); else url.searchParams.delete("buildingId");
@@ -253,7 +259,7 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("expectedRent")}</label>
-                                    <NumberInput placeholder="AED" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.expectedRent} onChange={(v) => setFormData({ ...formData, expectedRent: v })} />
+                                    <NumberInput money={{ allowZero: true, max: MONEY_MAX_12_2 }} showZero placeholder="AED" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.expectedRent} onChange={(v) => setFormData({ ...formData, expectedRent: v })} />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("sizeSqft")}</label>

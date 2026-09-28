@@ -20,3 +20,29 @@ export function businessTodayIso(): string {
         day: "2-digit",
     }).format(new Date());
 }
+
+/**
+ * Break-it round 1 (money) F4: the last date a manual posting — a journal
+ * voucher, a payment or receipt voucher, a cash receipt — may carry: one year
+ * after the business today. The server refuses anything later
+ * (`ManualPostingDates`), because journal numbers carry a two-digit year and a
+ * date a century out (2126 for 2026) would take this year's numbers.
+ *
+ * Java's `LocalDate.plusYears(1)` turns 29 February into 28 February; so does this.
+ */
+export function maxManualPostingDateIso(): string {
+    const [y, m, d] = businessTodayIso().split("-").map(Number);
+    const year = y + 1;
+    const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    const day = m === 2 && d === 29 && !leap ? 28 : d;
+    return `${year}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/** True when an ISO date is after {@link maxManualPostingDateIso}. A blank date is not "beyond" anything. */
+export function isBeyondManualPostingWindow(iso: string | null | undefined): boolean {
+    if (!iso) return false;
+    // A date input accepts five-digit years; "20260-01-01" sorts below "2027-…" as text.
+    const year = iso.split("-")[0];
+    if (year.length > 4) return true;
+    return iso > maxManualPostingDateIso();
+}

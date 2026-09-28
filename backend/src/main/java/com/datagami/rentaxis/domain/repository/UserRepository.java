@@ -98,6 +98,34 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     }
 
     /**
+     * Everything {@code ApiSecurityFilter} judges a request against, in one
+     * round trip: {@link #findTokenStateById}'s columns plus the user's current
+     * role, home tenant and membership tenants (comma-separated, null when there
+     * are none). The legacy X-User-* path takes role and tenant access from here,
+     * not from the headers (break round 1, F1/F2). Native for the same reason as
+     * {@link #findTokenStateById}: no tenant filter may narrow it.
+     */
+    @Query(value = "SELECT u.token_version AS tokenVersion, u.status AS status, u.role AS role, "
+            + "CAST(u.tenant_id AS varchar) AS tenantId, "
+            + "(SELECT string_agg(CAST(m.tenant_id AS varchar), ',') FROM user_tenant_memberships m "
+            + "  WHERE m.user_id = u.id) AS memberTenantIds "
+            + "FROM users u WHERE u.id = :id",
+            nativeQuery = true)
+    Optional<AuthState> findAuthStateById(@Param("id") UUID id);
+
+    interface AuthState {
+        Integer getTokenVersion();
+
+        String getStatus();
+
+        String getRole();
+
+        String getTenantId();
+
+        String getMemberTenantIds();
+    }
+
+    /**
      * Revokes every bearer token issued to this user so far. Atomic increment in
      * SQL (never read-modify-write through the entity; see
      * {@code User.tokenVersion}). Native so the tenant filter cannot turn it into

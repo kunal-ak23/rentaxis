@@ -74,7 +74,7 @@ public class BadDebtController {
     }
 
     @PostMapping("/{id}/recoveries")
-    public WriteOffDTO recover(@PathVariable UUID id, @RequestBody RecoveryRequest r) {
+    public WriteOffDTO recover(@PathVariable UUID id, @jakarta.validation.Valid @RequestBody RecoveryRequest r) {
         return service.recover(id, r);
     }
 }

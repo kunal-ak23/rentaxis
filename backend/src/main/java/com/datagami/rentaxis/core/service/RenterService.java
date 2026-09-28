@@ -106,10 +106,19 @@ public class RenterService {
         return new RenterOptionDTO(r.getId(), r.getNameEn(), r.getNameAr(), r.getPhone(), r.getEmail());
     }
 
+    /**
+     * {@code GET /renters} (unpaged; mobile and back-compat). A property manager gets the
+     * same renters {@link #searchPaged} shows them — with a contract in their buildings, or
+     * with none yet — not the whole organisation (break round 1, F4).
+     */
     @Transactional(readOnly = true)
     public List<RenterDTO> getAllRenters() {
         UUID tenantId = TenantContextHolder.getTenantId();
-        List<Renter> renters = renterRepository.findByTenantId(tenantId);
+        List<UUID> scoped = scoped();
+        List<Renter> renters = scoped == null
+                ? renterRepository.findByTenantId(tenantId)
+                : renterRepository.searchPaged(Search.requireTenant(), null, false, Search.scopeIds(scoped),
+                        org.springframework.data.domain.Pageable.unpaged(BY_CREATED)).getContent();
         // One query for every portal account's invite state rather than one per row.
         Map<UUID, User> users = new HashMap<>();
         List<UUID> userIds = renters.stream().map(Renter::getUserId).filter(java.util.Objects::nonNull).toList();
@@ -123,7 +132,32 @@ public class RenterService {
 
     @Transactional(readOnly = true)
     public RenterDTO getRenterById(UUID id) {
-        return mapToDTO(requireInTenant(id));
+        return mapToDTO(requireReadable(id));
+    }
+
+    /**
+     * 404 unless the caller may read this renter: in their organisation and, for a
+     * property manager, visible under the rule of {@link #searchPaged} and {@link #names}
+     * (a contract in one of their buildings, or no contract at all). Break round 1, F4:
+     * {@code GET /renters/{id}} checked the tenant only, so a manager could read the
+     * profile of any renter in the organisation. The renter's sibling reads
+     * ({@code /renters/{id}/leases}, {@code /renters/{id}/cheques}) call this first too, so
+     * an out-of-scope renter is a 404 everywhere rather than an empty list that confirms it
+     * exists.
+     */
+    @Transactional(readOnly = true)
+    public void requireReadableRenter(UUID id) {
+        requireReadable(id);
+    }
+
+    private Renter requireReadable(UUID id) {
+        Renter renter = requireInTenant(id);
+        List<UUID> scoped = scoped();
+        if (scoped != null && renterRepository.findNamed(renter.getTenantId(), List.of(renter.getId()), false,
+                Search.scopeIds(scoped)).isEmpty()) {
+            throw new NotFoundException("Renter not found");
+        }
+        return renter;
     }
 
     /**

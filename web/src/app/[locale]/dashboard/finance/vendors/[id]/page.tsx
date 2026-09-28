@@ -1,5 +1,6 @@
 "use client";
 
+import { moneyValueOrNull } from "@/lib/money";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -103,7 +104,7 @@ export default function VendorAccountPage() {
             await payablesApi.allocate({
                 paymentId: apply.paymentId,
                 ...(kind === "PISR" ? { invoiceId: id } : { openingItemId: id }),
-                amount: Number.parseFloat(apply.amount),
+                amount: moneyValueOrNull(apply.amount) ?? 0,
             });
             setApply(null);
             await load();
@@ -250,7 +251,7 @@ export default function VendorAccountPage() {
                                                         </select>
                                                         <input aria-label={t("amount")} inputMode="decimal" className={`${field} w-28 text-end`} data-testid="apply-amount"
                                                                value={apply.amount} onChange={e => setApply({ ...apply, amount: e.target.value })} />
-                                                        <button type="button" disabled={busy || !apply.target || !(Number.parseFloat(apply.amount) > 0)} onClick={submitApply}
+                                                        <button type="button" disabled={busy || !apply.target || !((moneyValueOrNull(apply.amount) ?? 0) > 0)} onClick={submitApply}
                                                                 className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-bold cursor-pointer disabled:opacity-50" data-testid="apply-confirm">
                                                             {busy ? <Loader2 size={12} className="animate-spin" /> : t("apply")}
                                                         </button>

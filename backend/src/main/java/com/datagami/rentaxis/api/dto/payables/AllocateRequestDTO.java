@@ -9,4 +9,4 @@ import java.util.UUID;
 
 /** {@code POST /voucher-allocations}: apply a payment (typically an advance) to one invoice or opening item. */
 public record AllocateRequestDTO(@NotNull UUID paymentId, UUID invoiceId, UUID openingItemId,
-                                 @NotNull @Positive BigDecimal amount, LocalDate allocatedOn) { }
+                                 @NotNull @com.datagami.rentaxis.api.validation.Money(positive = true) BigDecimal amount, LocalDate allocatedOn) { }

@@ -43,14 +43,40 @@ class ApiSecurityFilterTest {
      */
     private static final BearerTokenStateCheck ALWAYS_CURRENT = (identity, tenant) -> null;
 
+    /**
+     * The stored users the legacy path checks header assertions against (break
+     * round 1, F1/F2). A user not registered here does not exist (401).
+     * Against real rows: {@code LegacyHeaderIdentityIT}.
+     */
+    private final java.util.Map<UUID, LegacyHeaderIdentityCheck.CurrentUser> users = new java.util.HashMap<>();
+    private final java.util.Set<UUID> inactiveOrgs = new java.util.HashSet<>();
+    private final LegacyHeaderIdentityCheck db = new LegacyHeaderIdentityCheck() {
+        @Override
+        public java.util.Optional<CurrentUser> currentUser(UUID userId) {
+            return java.util.Optional.ofNullable(users.get(userId));
+        }
+
+        @Override
+        public boolean orgActive(UUID tenantId) {
+            return !inactiveOrgs.contains(tenantId);
+        }
+    };
+
+    /** Registers an ACTIVE stored user and returns their id. */
+    private UUID stored(UserRole role, UUID home, UUID... memberships) {
+        UUID id = UUID.randomUUID();
+        users.put(id, new LegacyHeaderIdentityCheck.CurrentUser(role, true, home, java.util.Set.of(memberships)));
+        return id;
+    }
+
     /** Today's production config: no token secret, no proxy secret, legacy allowed. */
     private ApiSecurityFilter legacyOnlyFilter() {
-        return new ApiSecurityFilter(disabledTokens, ALWAYS_CURRENT, "", "allow");
+        return new ApiSecurityFilter(disabledTokens, ALWAYS_CURRENT, db, "", "allow");
     }
 
     /** Phase-1 activated config: token secret set, proxy gate set, legacy still allowed. */
     private ApiSecurityFilter activatedFilter() {
-        return new ApiSecurityFilter(enabledTokens, ALWAYS_CURRENT, PROXY_SECRET, "allow");
+        return new ApiSecurityFilter(enabledTokens, ALWAYS_CURRENT, db, PROXY_SECRET, "allow");
     }
 
     /** Captures what the downstream servlet would observe, before the filter's cleanup. */
@@ -85,13 +111,13 @@ class ApiSecurityFilterTest {
     }
 
     // ------------------------------------------------------------------
-    // Legacy path with NO secrets configured: byte-identical to today.
+    // Legacy path with NO secrets configured.
     // ------------------------------------------------------------------
 
     @Test
     void legacyRenterInOwnTenantPasses() throws Exception {
-        UUID userId = UUID.randomUUID();
         UUID tenant = UUID.randomUUID();
+        UUID userId = stored(UserRole.RENTER, tenant);
         MockHttpServletRequest req = request("/api/v1/properties");
         req.addHeader("X-User-Id", userId.toString());
         req.addHeader("X-User-Role", "RENTER");
@@ -118,8 +144,8 @@ class ApiSecurityFilterTest {
      */
     @Test
     void legacyAccountantInOwnTenantPasses() throws Exception {
-        UUID userId = UUID.randomUUID();
         UUID tenant = UUID.randomUUID();
+        UUID userId = stored(UserRole.ACCOUNTANT, tenant);
         MockHttpServletRequest req = request("/api/v1/finance/journals");
         req.addHeader("X-User-Id", userId.toString());
         req.addHeader("X-User-Role", "ACCOUNTANT");
@@ -144,7 +170,7 @@ class ApiSecurityFilterTest {
     void legacyAccountantWithoutActiveTenantHeaderFallsBackToHomeTenant() throws Exception {
         UUID tenant = UUID.randomUUID();
         MockHttpServletRequest req = request("/api/v1/finance/journals");
-        req.addHeader("X-User-Id", UUID.randomUUID().toString());
+        req.addHeader("X-User-Id", stored(UserRole.ACCOUNTANT, tenant).toString());
         req.addHeader("X-User-Role", "ACCOUNTANT");
         req.addHeader("X-User-Tenant-Id", tenant.toString());
         MockHttpServletResponse res = new MockHttpServletResponse();
@@ -172,7 +198,7 @@ class ApiSecurityFilterTest {
     @Test
     void legacyAccountantWithNoTenantHeadersIs403() throws Exception {
         MockHttpServletRequest req = request("/api/v1/finance/journals");
-        req.addHeader("X-User-Id", UUID.randomUUID().toString());
+        req.addHeader("X-User-Id", stored(UserRole.ACCOUNTANT, null).toString());
         req.addHeader("X-User-Role", "ACCOUNTANT");
         MockHttpServletResponse res = new MockHttpServletResponse();
         CapturingChain chain = new CapturingChain();
@@ -188,7 +214,7 @@ class ApiSecurityFilterTest {
     @Test
     void legacyPropertyManagerWithNoTenantHeadersIs403() throws Exception {
         MockHttpServletRequest req = request("/api/v1/properties");
-        req.addHeader("X-User-Id", UUID.randomUUID().toString());
+        req.addHeader("X-User-Id", stored(UserRole.PROPERTY_MANAGER, null).toString());
         req.addHeader("X-User-Role", "PROPERTY_MANAGER");
         MockHttpServletResponse res = new MockHttpServletResponse();
         CapturingChain chain = new CapturingChain();
@@ -200,12 +226,12 @@ class ApiSecurityFilterTest {
     }
 
     /**
-     * An X-User-Role the filter does not know (a typo, a retired role, a probe) is
-     * refused rather than admitted unscoped — it never matched a branch, so it never
-     * set {@code authorized}.
+     * The role header no longer decides anything: an X-User-Role the filter does
+     * not know (a typo, a retired role, a probe) is simply ignored, and the stored
+     * role is what is granted — or, as here, a user id with no stored row is 401.
      */
     @Test
-    void legacyUnknownRoleWithNoTenantHeadersIs403() throws Exception {
+    void legacyUnknownUserIs401WhateverRoleIsAsserted() throws Exception {
         MockHttpServletRequest req = request("/api/v1/properties");
         req.addHeader("X-User-Id", UUID.randomUUID().toString());
         req.addHeader("X-User-Role", "AUDITOR");
@@ -214,14 +240,15 @@ class ApiSecurityFilterTest {
 
         legacyOnlyFilter().doFilter(req, res, chain);
 
-        assertThat(res.getStatus()).isEqualTo(403);
+        assertThat(res.getStatus()).isEqualTo(401);
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isEqualTo("USER_INACTIVE");
         assertThat(chain.invoked).isFalse();
     }
 
     /** SUPER_ADMIN sets authorized unconditionally, so tightening the 403 leaves it alone. */
     @Test
     void legacySuperAdminWithNoTenantHeadersStillPasses() throws Exception {
-        UUID userId = UUID.randomUUID();
+        UUID userId = stored(UserRole.SUPER_ADMIN, null);
         MockHttpServletRequest req = request("/api/v1/landlord-orgs");
         req.addHeader("X-User-Id", userId.toString());
         req.addHeader("X-User-Role", "SUPER_ADMIN");
@@ -270,7 +297,7 @@ class ApiSecurityFilterTest {
     @Test
     void legacyAccountantRequestingAForeignTenantIs403() throws Exception {
         MockHttpServletRequest req = request("/api/v1/finance/journals");
-        req.addHeader("X-User-Id", UUID.randomUUID().toString());
+        req.addHeader("X-User-Id", stored(UserRole.ACCOUNTANT, UUID.randomUUID()).toString());
         req.addHeader("X-User-Role", "ACCOUNTANT");
         req.addHeader("X-Tenant-Id", UUID.randomUUID().toString());
         req.addHeader("X-User-Tenant-Id", UUID.randomUUID().toString());
@@ -286,7 +313,7 @@ class ApiSecurityFilterTest {
     @Test
     void legacySuperAdminPassesWithoutInternalAuthWhenNoProxySecretConfigured() throws Exception {
         MockHttpServletRequest req = request("/api/v1/landlord-orgs");
-        req.addHeader("X-User-Id", UUID.randomUUID().toString());
+        req.addHeader("X-User-Id", stored(UserRole.SUPER_ADMIN, null).toString());
         req.addHeader("X-User-Role", "SUPER_ADMIN");
         req.addHeader("X-Tenant-Id", UUID.randomUUID().toString());
         MockHttpServletResponse res = new MockHttpServletResponse();
@@ -301,7 +328,7 @@ class ApiSecurityFilterTest {
     @Test
     void legacyForeignTenantIs403() throws Exception {
         MockHttpServletRequest req = request("/api/v1/properties");
-        req.addHeader("X-User-Id", UUID.randomUUID().toString());
+        req.addHeader("X-User-Id", stored(UserRole.RENTER, UUID.randomUUID()).toString());
         req.addHeader("X-User-Role", "RENTER");
         req.addHeader("X-Tenant-Id", UUID.randomUUID().toString());
         req.addHeader("X-User-Tenant-Id", UUID.randomUUID().toString());
@@ -311,6 +338,7 @@ class ApiSecurityFilterTest {
         legacyOnlyFilter().doFilter(req, res, chain);
 
         assertThat(res.getStatus()).isEqualTo(403);
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isEqualTo("NOT_A_MEMBER");
         assertThat(chain.invoked).isFalse();
     }
 
@@ -326,6 +354,7 @@ class ApiSecurityFilterTest {
         legacyOnlyFilter().doFilter(req, res, chain);
 
         assertThat(res.getStatus()).isEqualTo(400);
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isEqualTo("BAD_HEADERS");
         assertThat(chain.invoked).isFalse();
     }
 
@@ -346,8 +375,8 @@ class ApiSecurityFilterTest {
     void bearerHeaderIsIgnoredEntirelyWhileTokenServiceDisabled() throws Exception {
         // Pre-activation compat: a token (even garbage) must not change the
         // legacy path's behaviour while no secret is configured.
-        UUID userId = UUID.randomUUID();
         UUID tenant = UUID.randomUUID();
+        UUID userId = stored(UserRole.RENTER, tenant);
         MockHttpServletRequest req = request("/api/v1/properties");
         req.addHeader("Authorization", "Bearer complete-garbage");
         req.addHeader("X-User-Id", userId.toString());
@@ -361,6 +390,185 @@ class ApiSecurityFilterTest {
 
         assertThat(chain.invoked).isTrue();
         assertThat(chain.auth.getPrincipal()).isEqualTo(userId.toString());
+    }
+
+    // ------------------------------------------------------------------
+    // Legacy path judged against the stored user (break round 1, F1/F2).
+    // ------------------------------------------------------------------
+
+    private MockHttpServletRequest legacy(UUID userId, String role, UUID tenant) {
+        MockHttpServletRequest req = request("/api/v1/properties");
+        req.addHeader("X-User-Id", userId.toString());
+        req.addHeader("X-User-Role", role);
+        if (tenant != null) {
+            req.addHeader("X-Tenant-Id", tenant.toString());
+            req.addHeader("X-User-Tenant-Id", tenant.toString());
+        }
+        return req;
+    }
+
+    @Test
+    void legacyStoredRoleWinsOverAHigherAssertedRole() throws Exception {
+        UUID tenant = UUID.randomUUID();
+        UUID userId = stored(UserRole.PROPERTY_MANAGER, tenant);
+        CapturingChain chain = new CapturingChain();
+
+        legacyOnlyFilter().doFilter(legacy(userId, "TENANT_ADMIN", tenant), new MockHttpServletResponse(), chain);
+
+        assertThat(chain.invoked).isTrue();
+        assertThat(authorities(chain.auth)).containsExactly("ROLE_PROPERTY_MANAGER");
+    }
+
+    @Test
+    void legacyAssertedSuperAdminIsNotGrantedToAStoredTenantAdmin() throws Exception {
+        UUID home = UUID.randomUUID();
+        UUID userId = stored(UserRole.TENANT_ADMIN, home);
+        MockHttpServletRequest req = legacy(userId, "SUPER_ADMIN", null);
+        req.addHeader("X-Tenant-Id", UUID.randomUUID().toString());
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        CapturingChain chain = new CapturingChain();
+
+        legacyOnlyFilter().doFilter(req, res, chain);
+
+        assertThat(res.getStatus()).isEqualTo(403);
+        assertThat(chain.invoked).isFalse();
+    }
+
+    @Test
+    void legacyInactiveUserIs401() throws Exception {
+        UUID tenant = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        users.put(userId, new LegacyHeaderIdentityCheck.CurrentUser(UserRole.TENANT_ADMIN, false, tenant, java.util.Set.of()));
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        CapturingChain chain = new CapturingChain();
+
+        legacyOnlyFilter().doFilter(legacy(userId, "TENANT_ADMIN", tenant), res, chain);
+
+        assertThat(res.getStatus()).isEqualTo(401);
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isEqualTo("USER_INACTIVE");
+        assertThat(chain.invoked).isFalse();
+    }
+
+    @Test
+    void legacyMembershipTenantIsAllowedAndAnyOtherIs403() throws Exception {
+        UUID home = UUID.randomUUID();
+        UUID member = UUID.randomUUID();
+        UUID userId = stored(UserRole.TENANT_ADMIN, home, member);
+
+        CapturingChain ok = new CapturingChain();
+        legacyOnlyFilter().doFilter(legacy(userId, "TENANT_ADMIN", member), new MockHttpServletResponse(), ok);
+        assertThat(ok.invoked).isTrue();
+        assertThat(ok.tenantInContext).isEqualTo(member);
+
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        CapturingChain refused = new CapturingChain();
+        legacyOnlyFilter().doFilter(legacy(userId, "TENANT_ADMIN", UUID.randomUUID()), res, refused);
+        assertThat(res.getStatus()).isEqualTo(403);
+        assertThat(refused.invoked).isFalse();
+    }
+
+    @Test
+    void legacyInactiveOrganisationIs401ExceptForSuperAdmin() throws Exception {
+        UUID tenant = UUID.randomUUID();
+        inactiveOrgs.add(tenant);
+        UUID admin = stored(UserRole.TENANT_ADMIN, tenant);
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        CapturingChain refused = new CapturingChain();
+        legacyOnlyFilter().doFilter(legacy(admin, "TENANT_ADMIN", tenant), res, refused);
+        assertThat(res.getStatus()).isEqualTo(401);
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isEqualTo("ORG_INACTIVE");
+        assertThat(refused.invoked).isFalse();
+
+        UUID superAdmin = stored(UserRole.SUPER_ADMIN, null);
+        MockHttpServletRequest req = legacy(superAdmin, "SUPER_ADMIN", null);
+        req.addHeader("X-Tenant-Id", tenant.toString());
+        CapturingChain ok = new CapturingChain();
+        legacyOnlyFilter().doFilter(req, new MockHttpServletResponse(), ok);
+        assertThat(ok.invoked).isTrue();
+        assertThat(ok.tenantInContext).isEqualTo(tenant);
+    }
+
+    @Test
+    void legacyStoredSuperAdminUnderAnotherAssertedRoleStillNeedsInternalAuth() throws Exception {
+        UUID superAdmin = stored(UserRole.SUPER_ADMIN, null);
+        MockHttpServletRequest req = legacy(superAdmin, "TENANT_ADMIN", null);
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        CapturingChain chain = new CapturingChain();
+
+        activatedFilter().doFilter(req, res, chain);
+
+        assertThat(res.getStatus()).isEqualTo(403);
+        assertThat(chain.invoked).isFalse();
+    }
+
+    @Test
+    void legacySelfServiceProfileSkipsTheOrganisationChecksButNotTheUserCheck() throws Exception {
+        UUID oldHome = UUID.randomUUID();
+        UUID newHome = UUID.randomUUID();
+        inactiveOrgs.add(oldHome);
+        UUID moved = stored(UserRole.TENANT_ADMIN, newHome);
+        MockHttpServletRequest req = legacy(moved, "TENANT_ADMIN", oldHome);
+        req.setRequestURI("/api/auth/me");
+        CapturingChain chain = new CapturingChain();
+
+        legacyOnlyFilter().doFilter(req, new MockHttpServletResponse(), chain);
+
+        assertThat(chain.invoked).isTrue();
+        assertThat(authorities(chain.auth)).containsExactly("ROLE_TENANT_ADMIN");
+        assertThat(chain.tenantInContext).as("no tenant context on the profile routes").isNull();
+
+        MockHttpServletRequest other = legacy(moved, "TENANT_ADMIN", oldHome);
+        MockHttpServletResponse refused = new MockHttpServletResponse();
+        legacyOnlyFilter().doFilter(other, refused, new CapturingChain());
+        assertThat(refused.getStatus()).as("everywhere else the old org stays refused").isEqualTo(403);
+
+        MockHttpServletRequest unknown = legacy(UUID.randomUUID(), "TENANT_ADMIN", newHome);
+        unknown.setRequestURI("/api/auth/me");
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        legacyOnlyFilter().doFilter(unknown, res, new CapturingChain());
+        assertThat(res.getStatus()).isEqualTo(401);
+    }
+
+    @Test
+    void aBearerRejectionNamesItsReason() throws Exception {
+        UUID home = UUID.randomUUID();
+        String token = enabledTokens.issue(UUID.randomUUID(), UserRole.TENANT_ADMIN, home, List.of(home), 0);
+        for (String[] c : new String[][] {
+                {TokenRevocationService.ORG_NOT_ACTIVE, "ORG_INACTIVE"},
+                {TokenRevocationService.USER_GONE, "USER_INACTIVE"},
+                {TokenRevocationService.USER_NOT_ACTIVE, "USER_INACTIVE"},
+                {TokenRevocationService.TOKEN_REVOKED, "BAD_TOKEN"}}) {
+            MockHttpServletRequest req = request("/api/v1/properties");
+            req.addHeader("Authorization", "Bearer " + token);
+            MockHttpServletResponse res = new MockHttpServletResponse();
+            new ApiSecurityFilter(enabledTokens, (identity, tenant) -> c[0], db, PROXY_SECRET, "allow")
+                    .doFilter(req, res, new CapturingChain());
+            assertThat(res.getStatus()).isEqualTo(401);
+            assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).as(c[0]).isEqualTo(c[1]);
+        }
+    }
+
+    @Test
+    void anAdmittedRequestCarriesNoReasonHeader() throws Exception {
+        UUID tenant = UUID.randomUUID();
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        legacyOnlyFilter().doFilter(legacy(stored(UserRole.TENANT_ADMIN, tenant), "TENANT_ADMIN", tenant), res,
+                new CapturingChain());
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isNull();
+    }
+
+    @Test
+    void legacyMalformedUserIdIs400() throws Exception {
+        MockHttpServletRequest req = request("/api/v1/properties");
+        req.addHeader("X-User-Id", "not-a-uuid");
+        req.addHeader("X-User-Role", "RENTER");
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        CapturingChain chain = new CapturingChain();
+
+        legacyOnlyFilter().doFilter(req, res, chain);
+
+        assertThat(res.getStatus()).isEqualTo(400);
+        assertThat(chain.invoked).isFalse();
     }
 
     // ------------------------------------------------------------------
@@ -389,9 +597,10 @@ class ApiSecurityFilterTest {
         MockHttpServletResponse res = new MockHttpServletResponse();
         CapturingChain chain = new CapturingChain();
 
-        new ApiSecurityFilter(enabledTokens, revoked, PROXY_SECRET, "allow").doFilter(req, res, chain);
+        new ApiSecurityFilter(enabledTokens, revoked, db, PROXY_SECRET, "allow").doFilter(req, res, chain);
 
         assertThat(res.getStatus()).isEqualTo(401);
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isEqualTo("BAD_TOKEN");
         assertThat(chain.invoked).isFalse();
         assertThat(askedAbout[0]).as("the check is asked about the tenant the request acts in").isEqualTo(home);
         assertThat(askedVersion[0]).isEqualTo(3);
@@ -461,6 +670,7 @@ class ApiSecurityFilterTest {
         activatedFilter().doFilter(req, res, chain);
 
         assertThat(res.getStatus()).isEqualTo(401);
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isEqualTo("BAD_TOKEN");
         assertThat(chain.invoked).isFalse();
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
@@ -524,6 +734,7 @@ class ApiSecurityFilterTest {
         activatedFilter().doFilter(req, res, chain);
 
         assertThat(res.getStatus()).isEqualTo(403);
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isEqualTo("NOT_A_MEMBER");
         assertThat(chain.invoked).isFalse();
     }
 
@@ -593,6 +804,7 @@ class ApiSecurityFilterTest {
         activatedFilter().doFilter(req, res, chain);
 
         assertThat(res.getStatus()).isEqualTo(403);
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isEqualTo("PROXY_AUTH_REQUIRED");
         assertThat(chain.invoked).isFalse();
     }
 
@@ -613,7 +825,7 @@ class ApiSecurityFilterTest {
 
     @Test
     void legacySuperAdminWithCorrectInternalAuthPasses() throws Exception {
-        UUID userId = UUID.randomUUID();
+        UUID userId = stored(UserRole.SUPER_ADMIN, null);
         MockHttpServletRequest req = request("/api/v1/landlord-orgs");
         req.addHeader("X-User-Id", userId.toString());
         req.addHeader("X-User-Role", "SUPER_ADMIN");
@@ -632,7 +844,7 @@ class ApiSecurityFilterTest {
     void internalProxyGateDoesNotApplyToNonSuperAdminRoles() throws Exception {
         UUID tenant = UUID.randomUUID();
         MockHttpServletRequest req = request("/api/v1/properties");
-        req.addHeader("X-User-Id", UUID.randomUUID().toString());
+        req.addHeader("X-User-Id", stored(UserRole.RENTER, tenant).toString());
         req.addHeader("X-User-Role", "RENTER");
         req.addHeader("X-Tenant-Id", tenant.toString());
         req.addHeader("X-User-Tenant-Id", tenant.toString());
@@ -652,16 +864,17 @@ class ApiSecurityFilterTest {
     void denyModeRejectsLegacyHeadersWithoutBearer() throws Exception {
         UUID tenant = UUID.randomUUID();
         MockHttpServletRequest req = request("/api/v1/properties");
-        req.addHeader("X-User-Id", UUID.randomUUID().toString());
+        req.addHeader("X-User-Id", stored(UserRole.RENTER, tenant).toString());
         req.addHeader("X-User-Role", "RENTER");
         req.addHeader("X-Tenant-Id", tenant.toString());
         req.addHeader("X-User-Tenant-Id", tenant.toString());
         MockHttpServletResponse res = new MockHttpServletResponse();
         CapturingChain chain = new CapturingChain();
 
-        new ApiSecurityFilter(enabledTokens, ALWAYS_CURRENT, "", "deny").doFilter(req, res, chain);
+        new ApiSecurityFilter(enabledTokens, ALWAYS_CURRENT, db, "", "deny").doFilter(req, res, chain);
 
         assertThat(res.getStatus()).isEqualTo(401);
+        assertThat(res.getHeader(ApiSecurityFilter.AUTH_REASON_HEADER)).isEqualTo("LEGACY_DENIED");
         assertThat(chain.invoked).isFalse();
     }
 
@@ -676,7 +889,7 @@ class ApiSecurityFilterTest {
         MockHttpServletResponse res = new MockHttpServletResponse();
         CapturingChain chain = new CapturingChain();
 
-        new ApiSecurityFilter(enabledTokens, ALWAYS_CURRENT, "", "deny").doFilter(req, res, chain);
+        new ApiSecurityFilter(enabledTokens, ALWAYS_CURRENT, db, "", "deny").doFilter(req, res, chain);
 
         assertThat(chain.invoked).isTrue();
         assertThat(chain.auth.getPrincipal()).isEqualTo(user.toString());
@@ -688,7 +901,7 @@ class ApiSecurityFilterTest {
         MockHttpServletResponse res = new MockHttpServletResponse();
         CapturingChain chain = new CapturingChain();
 
-        new ApiSecurityFilter(enabledTokens, ALWAYS_CURRENT, "", "deny").doFilter(req, res, chain);
+        new ApiSecurityFilter(enabledTokens, ALWAYS_CURRENT, db, "", "deny").doFilter(req, res, chain);
 
         assertThat(chain.invoked).isTrue();
     }

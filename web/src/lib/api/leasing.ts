@@ -1158,6 +1158,11 @@ export type LeaseChequeStats = {
   totalAmount: number;
   clearedAmount: number;
   dueAmount: number;
+  /** REGISTERED + DEPOSITED + ONLINE_PENDING. */
+  unclearedAmount?: number;
+  /** Every row that is not REPLACED or CANCELLED. */
+  liveCount?: number;
+  liveAmount?: number;
 };
 
 /** PenaltyAssessmentDTO. */

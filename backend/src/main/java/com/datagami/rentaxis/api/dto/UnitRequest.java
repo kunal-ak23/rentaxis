@@ -25,7 +25,9 @@ public record UnitRequest(
         UnitType type,
         BigDecimal sizeSqft,
         UnitStatus status,
+        @com.datagami.rentaxis.api.validation.Money(max = com.datagami.rentaxis.api.validation.MoneyAmounts.MAX_12_2)
         BigDecimal expectedRent,
+        @com.datagami.rentaxis.api.validation.Money(max = com.datagami.rentaxis.api.validation.MoneyAmounts.MAX_12_2)
         BigDecimal actualRent,
         String currentTenantName,
         IdRef property,

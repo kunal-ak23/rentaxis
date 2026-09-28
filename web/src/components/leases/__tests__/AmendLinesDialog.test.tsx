@@ -100,13 +100,15 @@ describe("AmendLinesDialog", () => {
         expect(confirm).toBeDisabled();
 
         fireEvent.change(screen.getByTestId("amend-reason"), { target: { value: "Parking removed at renewal" } });
-        expect(confirm).toBeEnabled();
+        // Break-it round 1 (money) F5: a reason alone is not an amendment.
+        expect(confirm).toBeDisabled();
 
         // Money moved between the two lines; the contract value is unchanged,
         // which is the only kind of amendment the server accepts.
         fireEvent.change(screen.getByTestId("lease-line-amount-0"), { target: { value: "45000" } });
         fireEvent.change(screen.getByTestId("lease-line-amount-1"), { target: { value: "15000" } });
         expect(screen.getByTestId("amend-match")).toHaveAttribute("data-match", "true");
+        expect(confirm).toBeEnabled();
         fireEvent.click(confirm);
 
         await waitFor(() => expect(amendLines).toHaveBeenCalled());
@@ -123,7 +125,6 @@ describe("AmendLinesDialog", () => {
         renderDialog(MATCHING_CHEQUES);
         const confirm = screen.getByTestId("amend-lines-confirm");
         fireEvent.change(screen.getByTestId("amend-reason"), { target: { value: "Rent increase" } });
-        expect(confirm).toBeEnabled();
 
         fireEvent.change(screen.getByTestId("lease-line-amount-0"), { target: { value: "50000" } });
 
@@ -144,12 +145,47 @@ describe("AmendLinesDialog", () => {
         renderDialog(MATCHING_CHEQUES);
         const confirm = screen.getByTestId("amend-lines-confirm");
         fireEvent.change(screen.getByTestId("amend-reason"), { target: { value: "Parking removed at renewal" } });
+        // A real redistribution first (F5: an unchanged amendment is never enabled).
+        fireEvent.change(screen.getByTestId("lease-line-amount-0"), { target: { value: "45000" } });
+        fireEvent.change(screen.getByTestId("lease-line-amount-1"), { target: { value: "15000" } });
         expect(confirm).toBeEnabled();
 
-        fireEvent.change(screen.getByTestId("lease-line-discount-0"), { target: { value: "40000.01" } });
+        fireEvent.change(screen.getByTestId("lease-line-discount-0"), { target: { value: "45000.01" } });
         expect(confirm).toBeDisabled();
 
         fireEvent.change(screen.getByTestId("lease-line-discount-0"), { target: { value: "0" } });
         expect(confirm).toBeEnabled();
+    });
+});
+
+/**
+ * Break-it round 1 (money) F5: "Amend lines" with nothing changed posted a TCR and
+ * a fresh TCO every time. Save stays shut, and says why, until a line changes.
+ */
+describe("AmendLinesDialog no-op guard (F5)", () => {
+    it("keeps Amend disabled until a line actually changes, and back again when it is undone", () => {
+        renderDialog(MATCHING_CHEQUES);
+        const confirm = screen.getByTestId("amend-lines-confirm");
+        fireEvent.change(screen.getByTestId("amend-reason"), { target: { value: "Nothing really" } });
+        expect(confirm).toBeDisabled();
+        expect(screen.getByTestId("amend-no-changes")).toHaveTextContent(en.MoneyInput.amendNoChanges);
+
+        fireEvent.change(screen.getByTestId("lease-line-amount-0"), { target: { value: "45000" } });
+        fireEvent.change(screen.getByTestId("lease-line-amount-1"), { target: { value: "15000" } });
+        expect(confirm).toBeEnabled();
+        expect(screen.queryByTestId("amend-no-changes")).toBeNull();
+
+        // Typed back to what is posted — "40,000.00" is the same 40,000.
+        fireEvent.change(screen.getByTestId("lease-line-amount-0"), { target: { value: "40,000.00" } });
+        fireEvent.change(screen.getByTestId("lease-line-amount-1"), { target: { value: "20000" } });
+        expect(confirm).toBeDisabled();
+    });
+
+    it("refuses a line amount with three decimals rather than rounding it", () => {
+        renderDialog(MATCHING_CHEQUES);
+        fireEvent.change(screen.getByTestId("amend-reason"), { target: { value: "x" } });
+        fireEvent.change(screen.getByTestId("lease-line-amount-0"), { target: { value: "40000.555" } });
+        expect(screen.getByTestId("money-input-error")).toHaveTextContent(en.MoneyInput.decimals);
+        expect(screen.getByTestId("amend-lines-confirm")).toBeDisabled();
     });
 });

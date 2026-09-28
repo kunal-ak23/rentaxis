@@ -184,10 +184,12 @@ class LeaseControllerPostEndpointsIT extends AbstractPostgresIT {
         assertThat((List<?>) posted.getBody().get("cheques")).hasSize(5);
         assertThat(currentStatus()).isEqualTo(LeaseStatus.ACTIVE);
 
+        // 500 moved from the rent to the fee: an amendment that changes nothing is now
+        // refused (break-it round 1, money F5), and one that re-prices never passed.
         ResponseEntity<Map> amended = body(accountant, HttpMethod.POST, amendPath(), Map.of(
                 "lines", List.of(
-                        Map.of("chargeTypeCode", "RENT", "grossAmount", 51000),
-                        Map.of("chargeTypeCode", "ADMIN_FEE", "grossAmount", 2000)),
+                        Map.of("chargeTypeCode", "RENT", "grossAmount", 50500),
+                        Map.of("chargeTypeCode", "ADMIN_FEE", "grossAmount", 2500)),
                 "reason", "Re-checked against the signed contract"));
         assertThat(amended.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat((String) amended.getBody().get("tcoEntryNumber")).isEqualTo("TCO-26/2");

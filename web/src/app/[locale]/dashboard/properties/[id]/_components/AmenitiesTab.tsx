@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Pagination } from "@/components/ui/Pagination";
 import { fetchAmenities, createAmenity, updateAmenity, deactivateAmenity, ApiError } from "@/lib/api/facilities";
+import { NumberInput } from "@/components/ui/NumberInput";
 import type { AmenityDTO, BookingFeeType } from "@/types/facility";
 
 export type BuildingOption = { id: string; nameEn: string; nameAr?: string | null };
@@ -338,12 +339,13 @@ export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabP
                                 {form.feeType !== "FREE" && (
                                     <label className="text-xs font-semibold text-foreground">
                                         {t("feeAmount")}
-                                        <input
-                                            type="number" min={0} step={0.01}
+                                        <NumberInput
+                                            money={{ allowZero: true }}
+                                            showZero
                                             className="mt-1 w-full bg-input border border-border rounded-lg px-3 py-2 text-xs"
                                             value={form.feeAmount}
                                             data-testid="amenity-fee-amount"
-                                            onChange={e => setForm({ ...form, feeAmount: Number(e.target.value) })}
+                                            onChange={(v) => setForm({ ...form, feeAmount: v })}
                                         />
                                     </label>
                                 )}

@@ -363,7 +363,9 @@ class ScaleListEndpointsIT extends AbstractPostgresIT {
      * PR #366 review P2-3. A SUPER_ADMIN with no organisation selected: the new paged /
      * search / names endpoints refuse (400, "Select an organisation first") rather than
      * answer an empty page; the dashboard, register tiles and aging keep reading across
-     * organisations, as they did before their overdue figures moved to SQL.
+     * organisations, as they did before their overdue figures moved to SQL. (Batch 5
+     * ruling: those three stay platform-wide for SUPER_ADMIN; see
+     * {@code OrganisationRequiredInterceptor.SUPER_ADMIN_PLATFORM_READS}.)
      */
     @Test
     void aSuperAdminWithNoOrganisationIsToldToPickOneOnTheNewListsAndKeepsTheOldTotals() {

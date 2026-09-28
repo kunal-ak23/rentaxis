@@ -44,7 +44,8 @@ class LandlordOrgControllerTest {
 
     @BeforeEach
     void setUp() {
-        controller = new LandlordOrgController(service, tenantFeatureService);
+        controller = new LandlordOrgController(service, tenantFeatureService,
+                org.mockito.Mockito.mock(com.datagami.rentaxis.domain.repository.PropertyRepository.class));
     }
 
     private LandlordOrg orgNamed(String name) {

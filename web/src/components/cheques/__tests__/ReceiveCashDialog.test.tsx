@@ -14,14 +14,14 @@ import type { LeaseDetail, LeaseStatus } from "@/lib/api/leasing";
  * "This lease is EXPIRED; use the cheque grid to add rows until it is posted."
  */
 
-const api = vi.hoisted(() => ({ paged: vi.fn(), get: vi.fn(), cashReceipt: vi.fn() }));
+const api = vi.hoisted(() => ({ paged: vi.fn(), get: vi.fn(), cashReceipt: vi.fn(), statsByLeases: vi.fn() }));
 
 vi.mock("@/lib/api/leasing", async orig => {
     const m = await orig<typeof import("@/lib/api/leasing")>();
     return {
         ...m,
         leaseApi: { ...m.leaseApi, paged: api.paged, get: api.get },
-        chequeApi: { ...m.chequeApi, cashReceipt: api.cashReceipt },
+        chequeApi: { ...m.chequeApi, cashReceipt: api.cashReceipt, statsByLeases: api.statsByLeases },
     };
 });
 
@@ -70,6 +70,13 @@ beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     api.paged.mockResolvedValue({ content: PAGE, totalElements: PAGE.length, totalPages: 1, number: 0, size: 8 });
     api.get.mockImplementation(async (id: string) => PAGE.find(l => l.id === id) ?? null);
+    // 60,000 on the register, 15,000 of it cleared: 45,000 still outstanding.
+    api.statsByLeases.mockImplementation(async (ids: string[]) => ids.map(leaseId => ({
+        leaseId, total: 4, cleared: 1, uncleared: 3, bounced: 0,
+        totalAmount: 60000, clearedAmount: 15000, dueAmount: 15000,
+        unclearedAmount: 45000, liveCount: 4, liveAmount: 60000,
+    })));
+    api.cashReceipt.mockResolvedValue({ id: "c-new" });
 });
 
 afterEach(() => {
@@ -121,5 +128,55 @@ describe("ReceiveCashDialog lease search", () => {
         expect(screen.queryByTestId("cash-receipt-not-posted")).not.toBeInTheDocument();
         fireEvent.change(screen.getByTestId("cash-receipt-amount"), { target: { value: "1500" } });
         expect(screen.getByTestId("cash-receipt-confirm")).toBeEnabled();
+    });
+});
+
+/**
+ * Break-it round 1 (money): F1 1000.555 was saved as 1000.56; F4 a receipt could
+ * be dated a century ahead; F3 999,999,999,999.99 was taken on a 65,000 contract
+ * without a word. Advance payments are legitimate, so above-outstanding asks
+ * for a second click rather than refusing.
+ */
+describe("ReceiveCashDialog money guards", () => {
+    async function openOnActive() {
+        renderDialog({ initialLeaseId: "l-active" });
+        await waitFor(() => expect(screen.getByTestId("cash-receipt-selected-lease")).toBeInTheDocument());
+        await waitFor(() => expect(api.statsByLeases).toHaveBeenCalled());
+    }
+
+    it("refuses three decimals instead of rounding them", async () => {
+        await openOnActive();
+        fireEvent.change(screen.getByTestId("cash-receipt-amount"), { target: { value: "1000.555" } });
+        expect(screen.getByTestId("money-input-error")).toHaveTextContent(en.MoneyInput.decimals);
+        expect(screen.getByTestId("cash-receipt-confirm")).toBeDisabled();
+        expect(api.cashReceipt).not.toHaveBeenCalled();
+    });
+
+    it("refuses a date more than a year ahead", async () => {
+        await openOnActive();
+        fireEvent.change(screen.getByTestId("cash-receipt-amount"), { target: { value: "1500" } });
+        fireEvent.change(screen.getByTestId("cash-receipt-date"), { target: { value: "2126-09-28" } });
+        expect(screen.getByTestId("cash-receipt-date-error").textContent).toMatch(/\(\d{2}\/\d{2}\/\d{4}\)/);
+        expect(screen.getByTestId("cash-receipt-confirm")).toBeDisabled();
+        expect(screen.getByTestId("cash-receipt-date").getAttribute("max")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
+    it("asks before recording more than is outstanding, then records it as an advance", async () => {
+        await openOnActive();
+        fireEvent.change(screen.getByTestId("cash-receipt-amount"), { target: { value: "50000" } });
+        fireEvent.click(screen.getByTestId("cash-receipt-confirm"));
+        expect(api.cashReceipt).not.toHaveBeenCalled();
+        expect(screen.getByTestId("cash-receipt-above-outstanding")).toHaveTextContent("45,000.00");
+        fireEvent.click(screen.getByTestId("cash-receipt-confirm"));
+        await waitFor(() => expect(api.cashReceipt).toHaveBeenCalledTimes(1));
+        expect(api.cashReceipt.mock.calls[0][1].amount).toBe(50000);
+    });
+
+    it("records a receipt within the outstanding amount on the first click", async () => {
+        await openOnActive();
+        fireEvent.change(screen.getByTestId("cash-receipt-amount"), { target: { value: "45000" } });
+        fireEvent.click(screen.getByTestId("cash-receipt-confirm"));
+        await waitFor(() => expect(api.cashReceipt).toHaveBeenCalledTimes(1));
+        expect(screen.queryByTestId("cash-receipt-above-outstanding")).not.toBeInTheDocument();
     });
 });

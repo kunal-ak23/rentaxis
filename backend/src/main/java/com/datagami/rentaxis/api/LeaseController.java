@@ -173,7 +173,7 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<LeaseDTO> replaceRentFreePeriods(
             @PathVariable UUID id,
-            @RequestBody List<com.datagami.rentaxis.api.dto.lease.RentFreePeriodDTO> periods) {
+            @RequestBody List<com.datagami.rentaxis.api.dto.lease.@Valid RentFreePeriodDTO> periods) {
         return ResponseEntity.ok(rentFreeService.replace(id, periods));
     }
 
@@ -271,7 +271,7 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<List<ChequeDTO>> saveChequeRows(
             @PathVariable UUID id,
-            @RequestBody List<ChequeRowInput> rows) {
+            @RequestBody List<@Valid ChequeRowInput> rows) {
         return ResponseEntity.ok(chequeGenerationService.saveRows(id, rows));
     }
 
@@ -463,7 +463,7 @@ public class LeaseController {
     @PostMapping("/{id}/reductions/preview")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<com.datagami.rentaxis.api.dto.lease.ReductionPreviewDTO> previewReduction(
-            @PathVariable UUID id, @RequestBody com.datagami.rentaxis.api.dto.lease.ReduceLeaseRequest request) {
+            @PathVariable UUID id, @Valid @RequestBody com.datagami.rentaxis.api.dto.lease.ReduceLeaseRequest request) {
         return ResponseEntity.ok(leaseReductionService.preview(id, request));
     }
 
@@ -471,7 +471,7 @@ public class LeaseController {
     @PostMapping("/{id}/reductions")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
     public ResponseEntity<AddendumResponse> reduce(@PathVariable UUID id,
-            @RequestBody com.datagami.rentaxis.api.dto.lease.ReduceLeaseRequest request) {
+            @Valid @RequestBody com.datagami.rentaxis.api.dto.lease.ReduceLeaseRequest request) {
         return ResponseEntity.ok(leaseReductionService.reduce(id, request));
     }
 
@@ -485,7 +485,7 @@ public class LeaseController {
     @PostMapping("/{id}/transfer")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<LeaseDTO> transferLease(@PathVariable UUID id,
-            @RequestBody com.datagami.rentaxis.api.dto.lease.TransferLeaseRequest request) {
+            @Valid @RequestBody com.datagami.rentaxis.api.dto.lease.TransferLeaseRequest request) {
         return ResponseEntity.ok(leaseTransferService.draft(id, request, leasePostingService));
     }
 

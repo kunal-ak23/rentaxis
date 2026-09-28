@@ -31,9 +31,17 @@ export function resetMyOrgsCache() {
     cache = null;
 }
 
-/** The saved context, then the user's own organisation, then the first membership. */
-export function pickActiveOrg(orgs: Org[], homeTenantId: string | undefined): Org | null {
-    const preferred = Cookies.get("active_tenant_id") || homeTenantId;
+/**
+ * The saved context, then the user's own organisation, then the first membership.
+ *
+ * A super admin with no saved context is in Global View (null). Break round 1,
+ * F7: falling back to the first organisation here made the switcher re-set the
+ * cookie straight after "Global View" was picked, so it could never stick.
+ */
+export function pickActiveOrg(orgs: Org[], homeTenantId: string | undefined, role?: string): Org | null {
+    const saved = Cookies.get("active_tenant_id");
+    if (role === "SUPER_ADMIN") return saved ? orgs.find(o => o.id === saved) ?? null : null;
+    const preferred = saved || homeTenantId;
     return orgs.find(o => o.id === preferred) ?? orgs[0] ?? null;
 }
 
@@ -50,5 +58,5 @@ export function useMyOrgs(): { orgs: Org[] | null; active: Org | null } {
         return () => { alive = false; };
     }, [key]);
     const orgs = state && state.key === key ? state.orgs : null;
-    return { orgs, active: orgs ? pickActiveOrg(orgs, user?.tenantId) : null };
+    return { orgs, active: orgs ? pickActiveOrg(orgs, user?.tenantId, user?.role) : null };
 }

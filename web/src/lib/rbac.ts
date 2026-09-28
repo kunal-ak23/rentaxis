@@ -10,6 +10,15 @@ export const PERMISSIONS = {
     canManageUsers: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
     canCreateProperties: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
     canViewProperties: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
+    // The property detail page's "Property Manager" card and its
+    // GET /properties/{id}/managers fetch. Narrower than canViewProperties
+    // (ACCOUNTANT reads the property itself — PropertyController.java:62-63 —
+    // but not its manager assignments): mirrors PropertyController#getManagers'
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
+    // (PropertyController.java:68-69). Its own key, not a reuse of
+    // canViewProperties, so a future change to either annotation doesn't
+    // silently widen or narrow the other.
+    canViewPropertyManagers: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
     canCreateUnits: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
     // Draft-lease create/update/delete. NOT widened to ACCOUNTANT for
     // accounting-v2: LeaseController's POST /leases, PUT /{id} and DELETE /{id}

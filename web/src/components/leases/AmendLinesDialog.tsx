@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import LeaseDialog from "./LeaseDialog";
 import LeaseLinesGrid from "./LeaseLinesGrid";
@@ -43,6 +43,26 @@ type Props = {
     onAmended: (res: PostLeaseResponse) => void;
 };
 
+/**
+ * Break-it round 1 (money) F5: the lines as the server will compare them — an
+ * amendment identical to what is posted is refused ("No changes to amend"), and
+ * used to post a TCR and a fresh TCO for nothing. Amounts to the fil, narration
+ * trimmed, so "40,000.00" retyped over 40000 is no change.
+ */
+export function amendSignature(rows: LineRow[]): string {
+    return JSON.stringify(toInputs(rows).map(l => ({
+        chargeTypeId: l.chargeTypeId ?? null,
+        grossAmount: round2(l.grossAmount || 0),
+        discountAmount: round2(l.discountAmount || 0),
+        narration: (l.narration ?? "").trim(),
+        vatApplicable: !!l.vatApplicable,
+        creditAccountId: l.creditAccountId ?? null,
+        periodStart: l.periodStart ?? null,
+        periodEnd: l.periodEnd ?? null,
+        addendumId: l.addendumId ?? null,
+    })));
+}
+
 /** The precondition, stated the same way the backend states it. */
 export function amendBlockedBy(cheques: Cheque[]): Cheque | null {
     return cheques.find(c => c.status !== "REGISTERED") ?? null;
@@ -51,6 +71,7 @@ export function amendBlockedBy(cheques: Cheque[]): Cheque | null {
 export default function AmendLinesDialog({ open, lease, cheques, chargeTypes, onClose, onAmended }: Props) {
     const t = useTranslations("Leasing");
     const tc = useTranslations("Cheques");
+    const tm = useTranslations("MoneyInput");
     const [rows, setRows] = useState<LineRow[]>(() => toRows(lease.lines));
     const [reason, setReason] = useState("");
     const [busy, setBusy] = useState(false);
@@ -70,6 +91,8 @@ export default function AmendLinesDialog({ open, lease, cheques, chargeTypes, on
     const totals = totalsOf(rows, chargeTypes);
     const chequeTotal = cheques.reduce((s, c) => round2(s + (c.amount || 0)), 0);
     const matches = Math.abs(round2(totals.inclVat - chequeTotal)) < 0.005;
+    const postedSignature = useMemo(() => amendSignature(toRows(lease.lines)), [lease.lines]);
+    const unchanged = amendSignature(rows) === postedSignature;
 
     const submit = async () => {
         setBusy(true);
@@ -92,7 +115,7 @@ export default function AmendLinesDialog({ open, lease, cheques, chargeTypes, on
             onConfirm={submit}
             confirmText={t("amendLines")}
             cancelText={t("cancel")}
-            confirmDisabled={!!blocker || !reason.trim() || !linesAreValid(rows) || !matches}
+            confirmDisabled={!!blocker || !reason.trim() || !linesAreValid(rows) || !matches || unchanged}
             busy={busy}
             confirmTestId="amend-lines-confirm"
             width="xl"
@@ -116,6 +139,12 @@ export default function AmendLinesDialog({ open, lease, cheques, chargeTypes, on
                     errors={errors}
                     rentVat={!!lease.rentVatApplicable}
                 />
+
+                {!blocker && unchanged && (
+                    <p className="text-[11px] text-muted" data-testid="amend-no-changes">
+                        {tm("amendNoChanges")}
+                    </p>
+                )}
 
                 <div
                     data-testid="amend-match"

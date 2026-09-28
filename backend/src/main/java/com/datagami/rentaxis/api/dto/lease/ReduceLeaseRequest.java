@@ -1,5 +1,8 @@
 package com.datagami.rentaxis.api.dto.lease;
 
+import com.datagami.rentaxis.api.validation.Money;
+import jakarta.validation.Valid;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -20,12 +23,12 @@ public record ReduceLeaseRequest(LocalDate effectiveFrom,
                                  LocalDate contractDate,
                                  String reason,
                                  String ejariNumber,
-                                 List<LineReduction> lines,
+                                 List<@Valid LineReduction> lines,
                                  String excess,
                                  List<UUID> returnChequeIds,
-                                 List<ChequeRowInput> cheques) {
+                                 List<@Valid ChequeRowInput> cheques) {
 
-    public record LineReduction(UUID lineId, BigDecimal newAmount) {
+    public record LineReduction(UUID lineId, @Money BigDecimal newAmount) {
     }
 
     public static final String EXCESS_CHEQUES = "CHEQUES";

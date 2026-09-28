@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { Mail, Lock, ArrowRight, Loader2, Eye, EyeOff } from "lucide-react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
+import { safeCallbackUrl } from "@/lib/session/proxyFetchGuard";
 
 const LOCKED_OUT_MESSAGES: Record<string, string> = {
     ACCOUNT_INACTIVE: "This account has been deactivated. Contact your administrator.",
@@ -16,7 +17,11 @@ const LOCKED_OUT_MESSAGES: Record<string, string> = {
 
 export default function LoginPage() {
     const router = useRouter();
-    const registered = useSearchParams().get("registered") === "true";
+    const searchParams = useSearchParams();
+    const registered = searchParams.get("registered") === "true";
+    // Break round 1, F6: set when an expired session sent the user here.
+    // Validated against this origin at the moment it is used (safeCallbackUrl).
+    const rawCallbackUrl = searchParams.get("callbackUrl");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
@@ -81,6 +86,13 @@ export default function LoginPage() {
             setError("Invalid email or password. Please try again.");
             setFieldErrors({ email: "Check your email", password: "Check your password" });
             setLoading(false);
+            return;
+        }
+
+        const callbackUrl = safeCallbackUrl(rawCallbackUrl);
+        if (callbackUrl) {
+            // A full path with its locale: navigate outside the locale-prefixing router.
+            window.location.assign(callbackUrl);
             return;
         }
 

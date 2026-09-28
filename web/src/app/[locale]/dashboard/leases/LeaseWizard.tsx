@@ -1,5 +1,6 @@
 "use client";
 
+import { focusFirstInvalidMoney } from "@/components/ui/NumberInput";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "@/i18n/routing";
 import { useTranslations } from "next-intl";
@@ -25,6 +26,7 @@ import {
     type PostLeaseDryRunResponse,
 } from "@/lib/api/leasing";
 import type { RenterOption, UnitOption } from "@/lib/api/lookup";
+import { CONFIRM_TERM_YEARS, MAX_TERM_YEARS, termExceedsYears, termYears } from "@/lib/leaseTerm";
 
 /**
  * Drafting a tenancy contract, in the order the client's accountant fills one
@@ -121,6 +123,10 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [serverErrors, setServerErrors] = useState<string[]>([]);
+    // Break round 1: a term over CONFIRM_TERM_YEARS asks "runs N years —
+    // continue?" once per start/end pair; `longTermAck` is the pair confirmed.
+    const [longTermPrompt, setLongTermPrompt] = useState<number | null>(null);
+    const [longTermAck, setLongTermAck] = useState<string | null>(null);
 
     const reset = useCallback(() => {
         setStepIdx(0);
@@ -139,6 +145,8 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         setBusy(false);
         setError(null);
         setServerErrors([]);
+        setLongTermPrompt(null);
+        setLongTermAck(null);
     }, []);
 
     useEffect(() => {
@@ -193,6 +201,10 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
             case "terms":
                 if (!terms.startDate || !terms.endDate) return t("errDatesRequired");
                 if (terms.endDate <= terms.startDate) return t("errEndAfterStart");
+                // Same bound (and wording) as the backend's LeaseService.requireSaneTerm.
+                if (termExceedsYears(terms.startDate, terms.endDate, MAX_TERM_YEARS)) {
+                    return t("errTermTooLong", { max: MAX_TERM_YEARS });
+                }
                 return null;
             case "lines":
                 if (rows.length === 0) return t("errLinesRequired");
@@ -215,6 +227,9 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
      * second abandoned lease behind.
      */
     const saveLines = async () => {
+        // Break-it round 1 (money) F1: a refused amount (1000.555, "1,5") reports 0;
+        // it must not be saved as that 0 — take the user to it instead.
+        if (focusFirstInvalidMoney(document)) return;
         setBusy(true);
         setError(null);
         setServerErrors([]);
@@ -264,7 +279,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         runCheques(() => leaseApi.generateChequeNumbers(lease.id, startingNumber));
     };
     const saveCheques = () => {
-        if (!lease) return;
+        if (!lease || focusFirstInvalidMoney(document)) return;
         runCheques(() => leaseApi.saveCheques(lease.id, toChequeRows(cheques)));
     };
 
@@ -304,7 +319,9 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     const patch = (next: Partial<Terms>) => {
         setTerms(prev => ({ ...prev, ...next }));
         setError(null);
+        if ("startDate" in next || "endDate" in next) setLongTermPrompt(null);
     };
+    const termKey = `${terms.startDate}|${terms.endDate}`;
     // #54: the header's "Rent carries VAT" flag drives every RENT line's VAT
     // box — when the flag changes (here, or via the unit's property type), and
     // when a line is pointed at a RENT charge. A line whose own box the
@@ -325,6 +342,12 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
             return;
         }
         setError(null);
+        if (step.key === "terms" && longTermAck !== termKey
+            && termExceedsYears(terms.startDate, terms.endDate, CONFIRM_TERM_YEARS)) {
+            setLongTermPrompt(termYears(terms.startDate, terms.endDate));
+            return;
+        }
+        setLongTermPrompt(null);
         if (step.key === "lines") {
             saveLines();
             return;
@@ -599,6 +622,22 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                     {error ? (
                         <span className="inline-flex items-center gap-1.5 text-[11px] text-error" data-testid="wizard-error">
                             <AlertTriangle size={12} /> {error}
+                        </span>
+                    ) : longTermPrompt !== null && step.key === "terms" ? (
+                        <span className="inline-flex flex-wrap items-center gap-2 text-[11px] text-warning" role="alert" data-testid="wizard-long-term-confirm">
+                            <AlertTriangle size={12} /> {t("longTermConfirm", { years: longTermPrompt })}
+                            <button
+                                type="button"
+                                data-testid="wizard-long-term-continue"
+                                onClick={() => {
+                                    setLongTermAck(termKey);
+                                    setLongTermPrompt(null);
+                                    setStepIdx(i => Math.min(i + 1, STEPS.length - 1));
+                                }}
+                                className="px-2.5 py-1 rounded-md border border-warning/40 font-semibold text-foreground hover:bg-warning/10 cursor-pointer"
+                            >
+                                {t("longTermContinue")}
+                            </button>
                         </span>
                     ) : (
                         <span />

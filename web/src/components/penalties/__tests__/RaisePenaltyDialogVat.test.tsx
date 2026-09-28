@@ -30,7 +30,8 @@ describe("RaisePenaltyDialog VAT", () => {
         renderIn("en");
         fireEvent.change(screen.getByLabelText(/Penalty category|Category/i), { target: { value: "SERVICE_RECHARGE" } });
         expect(screen.getByText("Automatic — charged on a VAT contract")).toBeTruthy();
-        fireEvent.change(screen.getByRole("spinbutton"), { target: { value: "200" } });
+        // A money field is a text box now (break-it round 1, money F1), not a spinbutton.
+        fireEvent.change(document.getElementById("raise-penalty-amount")!, { target: { value: "200" } });
         fireEvent.change(screen.getByLabelText("VAT (5%)"), { target: { value: "no" } });
         fireEvent.click(screen.getByTestId("raise-penalty-confirm"));
         await waitFor(() => expect(propose).toHaveBeenCalled());

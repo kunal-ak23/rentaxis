@@ -1,5 +1,7 @@
 "use client";
 
+import { MoneyTextInput, moneyTextInvalid } from "@/components/ui/NumberInput";
+import { moneyValueOrNull } from "@/lib/money";
 import { useCallback, useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { Loader2 } from "lucide-react";
@@ -110,7 +112,8 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
         setDecision({ action, row });
     };
 
-    const reduceAmountNumber = Number(reduceAmount);
+    // Break-it round 1 (money) F1: the shared money parse (3 decimals / "1,5" are no amount).
+    const reduceAmountNumber = moneyValueOrNull(reduceAmount) ?? Number.NaN;
     // Server rule (F14-28): 0 < amount < the current amount.
     const reduceAmountValid = decision?.action === "reduce"
         && reduceAmount !== ""
@@ -367,17 +370,14 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                             <label className={dialogLabel} htmlFor="penalty-reduce-amount">
                                 {t("newAmount")}
                             </label>
-                            <input
+                            <MoneyTextInput
                                 id="penalty-reduce-amount"
                                 data-testid="penalty-reduce-amount"
-                                type="number"
-                                min={0}
-                                step="0.01"
                                 className={dialogField}
                                 value={reduceAmount}
-                                onChange={e => setReduceAmount(e.target.value)}
+                                onChange={setReduceAmount}
                             />
-                            {reduceAmount !== "" && !reduceAmountValid && (
+                            {reduceAmount !== "" && !reduceAmountValid && !moneyTextInvalid(reduceAmount) && (
                                 <p className="text-[10px] text-error mt-1" data-testid="penalty-reduce-amount-error">
                                     {t("reduceAmountInvalid", { amount: fmtAmount(decision.row.amount) })}
                                 </p>

@@ -339,6 +339,27 @@ class ContractImportValidatorTest {
         }
     }
 
+    /** Break round 1: the same 50-year cap as the lease wizard and LeaseService. */
+    @Test
+    void aContractTermOverFiftyYearsIsARowError() throws Exception {
+        try (Workbook wb = workbook(true)) {
+            set(wb, "Contracts", 1, 8, "2999-09-23");
+            assertThat(errors(wb)).anyMatch(e -> "EndDate".equals(e.getField())
+                    && e.getMessage().contains("at most 50 years")
+                    && e.getMessage().contains("24/09/2026") && e.getMessage().contains("23/09/2999"));
+        }
+    }
+
+    @Test
+    void exactlyFiftyYearsIsNotATermError() throws Exception {
+        try (Workbook wb = workbook(true)) {
+            set(wb, "Contracts", 1, 8, "2076-09-23");
+            assertThat(errors(wb)).noneMatch(e -> e.getMessage().contains("at most 50 years"));
+            set(wb, "Contracts", 1, 8, "2076-09-24");
+            assertThat(errors(wb)).anyMatch(e -> e.getMessage().contains("at most 50 years"));
+        }
+    }
+
     /** The PACT exports print dd-MM-yyyy; a pasted cell must not be a parse failure. */
     @Test
     void theClientsOwnDateFormatIsAccepted() throws Exception {

@@ -520,8 +520,7 @@ export default function ChequeGrid({
                                     {editable ? (
                                         <NumberInput
                                             aria-label={`${t("amount")} ${i + 1}`}
-                                            min={0}
-                                            step={0.01}
+                                            money
                                             className={numField}
                                             value={c.amount}
                                             // A new amount clears the row's VAT, so the
@@ -540,13 +539,19 @@ export default function ChequeGrid({
                                                 // figure, so an explicit 0 shows as 0 and "auto" as blank.
                                                 key={`${c.id}-${c.vatAmount == null ? "auto" : "set"}`}
                                                 aria-label={`${t("vatColumn")} ${i + 1}`}
-                                                min={0}
-                                                step={0.01}
+                                                money={{ allowZero: true }}
                                                 className={numField}
                                                 placeholder={t("vatAuto")}
                                                 showZero={c.vatAmount != null}
                                                 value={c.vatAmount ?? 0}
-                                                onChange={v => patch(c.id, { vatAmount: v })}
+                                                onChange={(v, meta) => {
+                                                    // Batch 4 review #1: a refused entry in an "auto" cell reports 0;
+                                                    // taking it would flip the key, remount the field and lose the
+                                                    // refusal — the grid would save an explicit VAT of 0. The cell
+                                                    // stays auto and invalid, so the save gate still sees it.
+                                                    if (meta?.invalid && c.vatAmount == null) return;
+                                                    patch(c.id, { vatAmount: v });
+                                                }}
                                             />
                                         ) : c.vatAmount === null || c.vatAmount === undefined ? (
                                             <span className="text-muted">{t("vatAuto")}</span>

@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api.dto.lease;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 
@@ -32,7 +33,7 @@ import java.util.List;
 public record ExtendLeaseRequest(@NotNull(message = "The extension needs a new end date") LocalDate newEndDate,
                                  LocalDate contractDate,
                                  @NotEmpty(message = "At least one line is required")
-                                 List<LeaseLineInput> lines,
+                                 List<@Valid LeaseLineInput> lines,
                                  @NotEmpty(message = "At least one cheque row is required")
-                                 List<ChequeRowInput> cheques) {
+                                 List<@Valid ChequeRowInput> cheques) {
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { focusFirstInvalidMoney } from "@/components/ui/NumberInput";
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -838,7 +839,11 @@ export default function LeaseDetailPage() {
                                     <button
                                         type="button"
                                         data-testid="lease-save-cheques"
-                                        onClick={() => runCheques(() => leaseApi.saveCheques(leaseId, toChequeRows(cheques)))}
+                                        onClick={() => {
+                                            // Break-it round 1 (money) F1: never save a refused amount as the 0 it reports.
+                                            if (focusFirstInvalidMoney(document)) return;
+                                            runCheques(() => leaseApi.saveCheques(leaseId, toChequeRows(cheques)));
+                                        }}
                                         disabled={chequeBusy || !draftRowsAreValid(cheques)}
                                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border border-border text-foreground hover:bg-input/40 cursor-pointer disabled:opacity-50"
                                     >

@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.testsupport.TestIdentities;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.datagami.rentaxis.api.dto.BulkAttachChequeItem;
 import com.datagami.rentaxis.api.dto.BulkAttachChequesRequest;
@@ -136,7 +137,10 @@ class LeaseChequeBulkAttachControllerTest extends AbstractPostgresIT {
             String role = org.springframework.security.core.context.SecurityContextHolder.getContext()
                     .getAuthentication().getAuthorities().iterator().next().getAuthority()
                     .replace("ROLE_", "");
-            request.addHeader("X-User-Id", UUID.randomUUID().toString());
+            // A real row: the filter grants the stored role (break round 1, F1).
+            UUID userId = TestIdentities.user(userRepo,
+                    com.datagami.rentaxis.domain.entity.enums.UserRole.valueOf(role), tenantId);
+            request.addHeader("X-User-Id", userId.toString());
             request.addHeader("X-User-Role", role);
             request.addHeader("X-Tenant-Id", tenantId.toString());
             request.addHeader("X-User-Tenant-Id", tenantId.toString());

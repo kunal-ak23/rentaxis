@@ -1623,3 +1623,42 @@ describe("VoucherForm: no unbounded unit read (scale PR B, task 5)", () => {
         expect(lookup.searchUnits).toHaveBeenCalledWith(expect.objectContaining({ propertyId: "prop-1" }));
     });
 });
+
+/**
+ * Break-it round 1 (money): F1 a line amount of 1000.555 posted as 1000.56, and
+ * the old parseFloat read "1,000" as 1; F4 a voucher could be dated a century out.
+ */
+describe("VoucherForm — money guards (F1/F4)", () => {
+    async function readyInvoice() {
+        renderForm();
+        await screen.findByTestId("line-amount-0");
+        fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-1" } });
+        fillInvoiceNumber();
+        pickLineAccount(0);
+    }
+
+    it("refuses three decimals on a line with a message, instead of rounding", async () => {
+        await readyInvoice();
+        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "1000.555" } });
+        await waitFor(() => expect(screen.getByTestId("post-voucher")).toBeDisabled());
+        expect(screen.getByTestId("line-amount-error-0")).toHaveTextContent(en.MoneyInput.decimals);
+    });
+
+    it("reads a grouped amount as the whole amount, not as 1", async () => {
+        await readyInvoice();
+        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "1,000" } });
+        await waitFor(() => expect(screen.getByTestId("post-voucher")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("save-draft"));
+        await waitFor(() => expect(api.create).toHaveBeenCalled());
+        expect(api.create.mock.calls.at(-1)![0].lines[0].amount).toBe(1000);
+    });
+
+    it("refuses a document date more than a year ahead", async () => {
+        await readyInvoice();
+        fireEvent.change(screen.getByTestId("line-amount-0"), { target: { value: "2000" } });
+        await waitFor(() => expect(screen.getByTestId("post-voucher")).toBeEnabled());
+        fireEvent.change(screen.getByTestId("doc-date"), { target: { value: "2126-09-28" } });
+        await waitFor(() => expect(screen.getByTestId("post-voucher")).toBeDisabled());
+        expect(screen.getByTestId("voucher-blocker")).toHaveTextContent(/one year/);
+    });
+});

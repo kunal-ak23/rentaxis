@@ -11,6 +11,8 @@ import {
 } from 'react';
 import { ShepherdJourneyProvider, useShepherd } from 'react-shepherd';
 import { useRouter } from '@/i18n/routing';
+import { usePathname } from 'next/navigation';
+import { isDashboardHome } from '@/lib/nav/routeGuard';
 import { getTourById, getToursForRole } from './tours';
 import type { TourDef } from './tours/types';
 import type { UserRole } from '@/lib/rbac';
@@ -40,6 +42,41 @@ function markTourCompleted(tourId: string) {
     ids.push(tourId);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
   }
+}
+
+// Skipped or closed. Kept apart from "completed" so the Help centre and the
+// welcome banner still offer the tour; it only stops the auto-start.
+const DISMISSED_KEY = 'rentaxis_tours_dismissed';
+
+function getDismissedTourIds(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(DISMISSED_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function markTourDismissed(tourId: string) {
+  try {
+    const ids = getDismissedTourIds();
+    if (!ids.includes(tourId)) {
+      ids.push(tourId);
+      localStorage.setItem(DISMISSED_KEY, JSON.stringify(ids));
+    }
+  } catch {
+    // storage blocked: the tour may auto-start again next time, nothing worse
+  }
+}
+
+/**
+ * The onboarding tour starts on the dashboard home, where its first step
+ * lives. Break round 1: it used to auto-open its click-blocking overlay on
+ * whatever page a first-time user landed on (e.g. a ticket detail page).
+ */
+export function isOnboardingHome(pathname: string | null): boolean {
+  return isDashboardHome(pathname);
 }
 
 /** Check whether a tour has been completed (callable outside of React tree). */
@@ -74,11 +111,14 @@ export function useTour(): TourContextValue {
 interface InnerProps {
   children: ReactNode;
   role?: UserRole;
+  /** False while the layout shows access-denied or "select an organisation" instead of the page. */
+  autoStart?: boolean;
 }
 
-function TourProviderInner({ children, role }: InnerProps) {
+function TourProviderInner({ children, role, autoStart = true }: InnerProps) {
   const Shepherd = useShepherd();
   const router = useRouter();
+  const pathname = usePathname();
   const activeTourRef = useRef<InstanceType<typeof Shepherd.Tour> | null>(null);
   const [completedTourIds, setCompletedTourIds] = useState<string[]>([]);
   const autoTriggeredRef = useRef(false);
@@ -156,6 +196,10 @@ function TourProviderInner({ children, role }: InnerProps) {
 
       const tour = new Shepherd.Tour({
         useModalOverlay: true,
+        // Explicit, not left to library defaults: Escape and the arrow keys
+        // always work, and every step carries a visible close icon (below).
+        exitOnEsc: true,
+        keyboardNavigation: true,
         defaultStepOptions: {
           scrollTo: { behavior: 'smooth', block: 'center' },
           cancelIcon: { enabled: true },
@@ -170,6 +214,8 @@ function TourProviderInner({ children, role }: InnerProps) {
       });
 
       tour.on('cancel', () => {
+        // Skip, the close icon or Escape: do not auto-open it again.
+        markTourDismissed(tourId);
         activeTourRef.current = null;
       });
 
@@ -179,27 +225,36 @@ function TourProviderInner({ children, role }: InnerProps) {
     [Shepherd, router],
   );
 
-  // Auto-trigger onboarding tour on first visit
+  // Latest startTour for the auto-start timer, so a re-render that hands us a
+  // new function identity cannot cancel the pending start.
+  const startTourRef = useRef(startTour);
+  useEffect(() => {
+    startTourRef.current = startTour;
+  }, [startTour]);
+
+  // Auto-trigger the onboarding tour on a first visit to the dashboard home only.
   useEffect(() => {
     if (autoTriggeredRef.current) return;
-    if (!role) return;
+    if (!role || !autoStart) return;
+    if (!isOnboardingHome(pathname)) return;
 
-    const completed = getCompletedTourIds();
     const onboardingId = 'admin-onboarding';
     const onboardingDef = getTourById(onboardingId);
 
     if (
       onboardingDef &&
       onboardingDef.roles.includes(role) &&
-      !completed.includes(onboardingId)
+      !getCompletedTourIds().includes(onboardingId) &&
+      !getDismissedTourIds().includes(onboardingId)
     ) {
-      autoTriggeredRef.current = true;
       const timer = setTimeout(() => {
-        startTour(onboardingId);
+        autoTriggeredRef.current = true;
+        startTourRef.current(onboardingId);
       }, 1500);
+      // Leaving the page before it fires cancels it.
       return () => clearTimeout(timer);
     }
-  }, [role, startTour]);
+  }, [role, pathname, autoStart]);
 
   return (
     <TourContext.Provider value={{ startTour, availableTours, completedTourIds }}>
@@ -215,12 +270,13 @@ function TourProviderInner({ children, role }: InnerProps) {
 interface TourProviderProps {
   children: ReactNode;
   role?: UserRole;
+  autoStart?: boolean;
 }
 
-export default function TourProvider({ children, role }: TourProviderProps) {
+export default function TourProvider({ children, role, autoStart = true }: TourProviderProps) {
   return (
     <ShepherdJourneyProvider>
-      <TourProviderInner role={role}>{children}</TourProviderInner>
+      <TourProviderInner role={role} autoStart={autoStart}>{children}</TourProviderInner>
     </ShepherdJourneyProvider>
   );
 }

@@ -233,7 +233,7 @@ public class MaintenanceTicketController {
     @PreAuthorize("hasAnyRole('PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN', 'ACCOUNTANT')")
     public ResponseEntity<com.datagami.rentaxis.core.service.TicketChargesService.TicketCharges> recharge(
             @PathVariable UUID id,
-            @org.springframework.web.bind.annotation.RequestBody(required = false)
+            @jakarta.validation.Valid @org.springframework.web.bind.annotation.RequestBody(required = false)
             com.datagami.rentaxis.core.service.TicketChargesService.RechargeRequest r) {
         return ResponseEntity.ok(ticketCharges.recharge(id, r));
     }

@@ -29,6 +29,7 @@ public class CreateMeetingDTO {
     private UUID[] chequeIds;
     private LocalDate proposedStartDate;
     private LocalDate proposedEndDate;
+    @com.datagami.rentaxis.api.validation.Money
     private BigDecimal proposedRentAmount;
     private String detailNotes;
 }

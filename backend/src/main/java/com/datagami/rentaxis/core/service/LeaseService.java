@@ -1427,6 +1427,37 @@ public class LeaseService {
         leaseAccessPolicy.requireReadable(findLeaseWithTenantCheck(leaseId));
     }
 
+    /** The longest term a contract may run (break round 1: a wizard accepted one to 2999). */
+    public static final int MAX_TERM_YEARS = 50;
+
+    /**
+     * Refuses a term longer than {@link #MAX_TERM_YEARS} years — a typo'd year
+     * (2999 for 2029) that would otherwise put centuries of rent into recognition,
+     * expiry and revenue-at-capacity figures. The end date is inclusive, so a
+     * start of 01/06/2026 may run to 31/05/2076 and not a day longer. Dates that
+     * are missing or out of order are left to the checks that own them.
+     */
+    public static void requireSaneTerm(LocalDate start, LocalDate end) {
+        String problem = termTooLongMessage(start, end);
+        if (problem == null) return;
+        java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        throw new BusinessRuleViolationException(problem,
+                "lease.termTooLong", java.util.Map.of("maxYears", MAX_TERM_YEARS,
+                        "start", start.format(dmy), "end", end.format(dmy)));
+    }
+
+    /**
+     * The refusal {@link #requireSaneTerm} raises, or null for a term within the
+     * cap — the importers report it as a row error with the same words.
+     */
+    public static String termTooLongMessage(LocalDate start, LocalDate end) {
+        if (start == null || end == null || end.isBefore(start)) return null;
+        if (end.isBefore(start.plusYears(MAX_TERM_YEARS))) return null;
+        java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        return "A contract can run for at most " + MAX_TERM_YEARS + " years; this one runs from "
+                + start.format(dmy) + " to " + end.format(dmy) + ". Check the end date.";
+    }
+
     /** Amounts may legitimately be omitted (a zero-value line); null is not an error. */
     private static BigDecimal nonNull(BigDecimal v) {
         return v != null ? v : BigDecimal.ZERO;
@@ -1438,6 +1469,8 @@ public class LeaseService {
      * from the existing value.
      */
     private void applyHeader(Lease lease, CreateLeaseDTO dto, Unit unit) {
+        // Every draft door (create, renewal, transfer, edit) writes its term here.
+        requireSaneTerm(dto.getStartDate(), dto.getEndDate());
         lease.setStartDate(dto.getStartDate());
         lease.setEndDate(dto.getEndDate());
         lease.setEjariNumber(dto.getEjariNumber());

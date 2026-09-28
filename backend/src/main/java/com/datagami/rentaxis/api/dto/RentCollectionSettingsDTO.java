@@ -16,10 +16,14 @@ public class RentCollectionSettingsDTO {
     private Boolean onlinePaymentEnabled;
 
     // Per-property fine overrides (null = use org-level defaults)
+    @com.datagami.rentaxis.api.validation.Money(max = com.datagami.rentaxis.api.validation.MoneyAmounts.MAX_12_2)
     private java.math.BigDecimal fineBounceAmount;
+    @com.datagami.rentaxis.api.validation.Money(max = com.datagami.rentaxis.api.validation.MoneyAmounts.MAX_12_2)
     private java.math.BigDecimal fineSignatureMismatchAmount;
+    @com.datagami.rentaxis.api.validation.Money(max = com.datagami.rentaxis.api.validation.MoneyAmounts.MAX_12_2)
     private java.math.BigDecimal fineAccountClosedAmount;
     private Integer fineGraceDays;
+    @com.datagami.rentaxis.api.validation.Money(max = com.datagami.rentaxis.api.validation.MoneyAmounts.MAX_12_2)
     private java.math.BigDecimal finePerDayRate;
 
     /** Spec §4a: informational threshold for a renewal increase, in percent; null = no notice. */

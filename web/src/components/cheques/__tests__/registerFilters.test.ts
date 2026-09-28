@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 import { EMPTY_REGISTER_FILTERS, filtersFromQuery, queryWithFilters } from "../registerFilters";
 
 describe("register filters <-> URL (#85)", () => {
+    // Break round 1: a malformed property id in the URL is no filter.
+    it("reads a malformed propertyId as no property filter", () => {
+        expect(filtersFromQuery(new URLSearchParams("propertyId=not-a-uuid&status=BOUNCED")).propertyId).toBe("");
+    });
+
     it("reads every filter from the query", () => {
         expect(filtersFromQuery(new URLSearchParams(
-            "status=BOUNCED&mode=PDC&propertyId=p1&from=2026-01-01&to=2026-03-31&search=700102",
-        ))).toEqual({ status: "BOUNCED", mode: "PDC", propertyId: "p1", from: "2026-01-01", to: "2026-03-31", search: "700102" });
+            "status=BOUNCED&mode=PDC&propertyId=b394c93d-94d8-40e2-91b6-0740febaf250&from=2026-01-01&to=2026-03-31&search=700102",
+        ))).toEqual({ status: "BOUNCED", mode: "PDC", propertyId: "b394c93d-94d8-40e2-91b6-0740febaf250", from: "2026-01-01", to: "2026-03-31", search: "700102" });
     });
 
     it("drops what the register cannot ask for: DRAFT, unknown modes, non-ISO dates", () => {

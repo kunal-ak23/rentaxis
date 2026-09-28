@@ -4,6 +4,8 @@ import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../messages/en.json";
 import ar from "../../../../messages/ar.json";
 import ChequeGrid, { toChequeRows } from "../ChequeGrid";
+import { useState } from "react";
+import { focusFirstInvalidMoney } from "@/components/ui/NumberInput";
 import type { Cheque } from "@/lib/api/leasing";
 
 /**
@@ -240,5 +242,33 @@ describe("ChequeGrid keyboard entry (scale #19)", () => {
         bank1.focus();
         fireEvent.keyDown(bank1, { key: "Enter" });
         expect(document.activeElement).toBe(screen.getByLabelText(`${en.Leasing.payeeBank} 2`));
+    });
+});
+
+/**
+ * Batch 4 review #1: a refused entry typed into an "auto" VAT cell used to report
+ * 0, flip the cell's key from auto to set, remount the input and lose the refusal
+ * — the grid then saved an explicit VAT of 0 nobody typed.
+ */
+describe("ChequeGrid VAT cell keeps a refused entry", () => {
+    function Harness() {
+        const [rows, setRows] = useState<Cheque[]>([cheque({ id: "a", seqNo: 1, vatAmount: null })]);
+        return (
+            <NextIntlClientProvider locale="en" messages={en}>
+                <ChequeGrid cheques={rows} editable contractValueInclVat={31500} contractVat={1500} onChange={setRows} />
+                <output data-testid="vat-state">{String(rows[0].vatAmount)}</output>
+            </NextIntlClientProvider>
+        );
+    }
+
+    it.each(["1000.555", "1,5", "."])("stays invalid on %s, reports no explicit VAT, and blocks a save", text => {
+        render(<Harness />);
+        const input = screen.getByLabelText(`${en.Leasing.vatColumn} 1`) as HTMLInputElement;
+        fireEvent.change(input, { target: { value: text } });
+        const after = screen.getByLabelText(`${en.Leasing.vatColumn} 1`) as HTMLInputElement;
+        expect(after.value).toBe(text);
+        expect(after.dataset.moneyInvalid).toBe("true");
+        expect(screen.getByTestId("vat-state")).toHaveTextContent("null");
+        expect(focusFirstInvalidMoney(document)).toBe(true);
     });
 });

@@ -1,5 +1,6 @@
 "use client";
 
+import { formatDate } from "@/lib/format";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
@@ -11,6 +12,23 @@ import { useNameLookup } from "@/components/finance/useNameLookup";
 import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount, ledgerApi, type ManualJournalBody } from "@/lib/api/ledger";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { moneyInputError, parseMoneyInput } from "@/lib/money";
+import { MoneyFieldError } from "@/components/ui/NumberInput";
+import { isBeyondManualPostingWindow, maxManualPostingDateIso } from "@/lib/businessDate";
+
+/**
+ * Break-it round 1 (money) F1/F3: a side of a line through the shared money parse.
+ * Zero is allowed (the other side carries the amount); a refused entry counts as
+ * nothing and blocks Post, with the reason under the field.
+ */
+const sideOptions = { allowZero: true } as const;
+function sideValue(s: string): number {
+    const r = parseMoneyInput(s, sideOptions);
+    return r.ok ? r.value ?? 0 : 0;
+}
+function sideError(s: string) {
+    return s.trim() === "" ? null : moneyInputError(s, sideOptions);
+}
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const today = () => {
@@ -46,6 +64,7 @@ const blankLine = (key: number): DraftLine => ({ key, accountId: null, debit: ""
 export default function NewJournalPage() {
     const t = useTranslations("Ledger");
     const tCommon = useTranslations("Common");
+    const tm = useTranslations("MoneyInput");
     const locale = useLocale();
     const router = useRouter();
     const { data: session } = useSession();
@@ -77,7 +96,7 @@ export default function NewJournalPage() {
     const totals = useMemo(
         () =>
             lines.reduce(
-                (a, l) => ({ dr: a.dr + (Number(l.debit) || 0), cr: a.cr + (Number(l.credit) || 0) }),
+                (a, l) => ({ dr: a.dr + sideValue(l.debit), cr: a.cr + sideValue(l.credit) }),
                 { dr: 0, cr: 0 },
             ),
         [lines],
@@ -86,8 +105,11 @@ export default function NewJournalPage() {
     const outOfBalance = Math.abs(diff) >= 0.005;
     const balanced = !outOfBalance && totals.dr > 0;
     // Exactly one side per line: `!==` on two booleans is XOR.
-    const complete = lines.every(l => l.accountId && (Number(l.debit) > 0) !== (Number(l.credit) > 0));
-    const canPost = balanced && complete && lines.length >= 2 && !submitting;
+    const complete = lines.every(l => l.accountId && (sideValue(l.debit) > 0) !== (sideValue(l.credit) > 0));
+    const moneyInvalid = lines.some(l => sideError(l.debit) !== null || sideError(l.credit) !== null);
+    // F4: a JV dated a century out (2126 for 2026) took this year's numbers.
+    const dateTooFar = isBeyondManualPostingWindow(entryDate);
+    const canPost = balanced && complete && !moneyInvalid && !dateTooFar && lines.length >= 2 && !submitting;
 
     const submit = async (ev: React.FormEvent) => {
         ev.preventDefault();
@@ -101,8 +123,8 @@ export default function NewJournalPage() {
                 ...(propertyId ? { propertyId } : {}),
                 lines: lines.map(l => ({
                     accountId: l.accountId as string,
-                    debit: Number(l.debit) || 0,
-                    credit: Number(l.credit) || 0,
+                    debit: sideValue(l.debit),
+                    credit: sideValue(l.credit),
                     ...(l.narration ? { narration: l.narration } : {}),
                 })),
             };
@@ -155,9 +177,16 @@ export default function NewJournalPage() {
                             type="date"
                             className={field}
                             value={entryDate}
+                            max={maxManualPostingDateIso()}
+                            aria-invalid={dateTooFar}
                             onChange={ev => setEntryDate(ev.target.value)}
                             required
                         />
+                        {dateTooFar && (
+                            <p role="alert" data-testid="jv-date-error" className="mt-1 text-[11px] text-error">
+                                {tm("dateTooFar", { max: formatDate(maxManualPostingDateIso()) })}
+                            </p>
+                        )}
                     </div>
                     <div>
                         <label className={label} htmlFor="jv-property">{t("propertyFilter")}</label>
@@ -209,25 +238,29 @@ export default function NewJournalPage() {
                                     </td>
                                     <td className="px-3 py-2 align-top">
                                         <input
-                                            type="number"
-                                            step="0.01"
-                                            min="0"
+                                            type="text"
+                                            inputMode="decimal"
+                                            dir="ltr"
                                             aria-label={t("debit")}
+                                            aria-invalid={sideError(l.debit) !== null}
                                             className={`${field} text-end tabular-nums`}
                                             value={l.debit}
                                             onChange={ev => patch(l.key, { debit: ev.target.value })}
                                         />
+                                        {sideError(l.debit) && <MoneyFieldError error={sideError(l.debit)!} />}
                                     </td>
                                     <td className="px-3 py-2 align-top">
                                         <input
-                                            type="number"
-                                            step="0.01"
-                                            min="0"
+                                            type="text"
+                                            inputMode="decimal"
+                                            dir="ltr"
                                             aria-label={t("credit")}
+                                            aria-invalid={sideError(l.credit) !== null}
                                             className={`${field} text-end tabular-nums`}
                                             value={l.credit}
                                             onChange={ev => patch(l.key, { credit: ev.target.value })}
                                         />
+                                        {sideError(l.credit) && <MoneyFieldError error={sideError(l.credit)!} />}
                                     </td>
                                     <td className="px-3 py-2 align-top">
                                         <input

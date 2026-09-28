@@ -221,3 +221,41 @@ describe("RenewLeaseDialog default term (F15-05)", () => {
         expect((document.getElementById("renew-end-date") as HTMLInputElement).value).toBe("2026-09-30");
     });
 });
+
+/**
+ * Break-it round 1 (money) F1/F2: a new rent of 0.001 drafted a successor with
+ * RENT 0.00 (and then blocked any further renewal); 3 decimals were rounded.
+ */
+describe("RenewLeaseDialog money guards (F1/F2)", () => {
+    function renderIt() {
+        return render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <RenewLeaseDialog open lease={LEASE} chargeTypes={CHARGE_TYPES} onClose={() => {}} onRenewed={() => {}} />
+            </NextIntlClientProvider>,
+        );
+    }
+
+    it("refuses a new rent below one fil or with three decimals", () => {
+        renderIt();
+        fireEvent.click(screen.getByTestId("renew-mode-AMOUNT"));
+        fireEvent.change(screen.getByTestId("renew-amount"), { target: { value: "0.001" } });
+        expect(screen.getByTestId("renew-lease-confirm")).toBeDisabled();
+        expect(screen.getByTestId("money-input-error")).toHaveTextContent(en.MoneyInput.min);
+        fireEvent.change(screen.getByTestId("renew-amount"), { target: { value: "0" } });
+        expect(screen.getByTestId("renew-lease-confirm")).toBeDisabled();
+        expect(screen.getByTestId("money-input-error")).toHaveTextContent(en.MoneyInput.min);
+        fireEvent.change(screen.getByTestId("renew-amount"), { target: { value: "52000.555" } });
+        expect(screen.getByTestId("renew-lease-confirm")).toBeDisabled();
+        expect(screen.getByTestId("money-input-error")).toHaveTextContent(en.MoneyInput.decimals);
+    });
+
+    it("sends a grouped amount exactly", async () => {
+        renew.mockResolvedValue({ id: "lease-2" });
+        renderIt();
+        fireEvent.click(screen.getByTestId("renew-mode-AMOUNT"));
+        fireEvent.change(screen.getByTestId("renew-amount"), { target: { value: "52,000.50" } });
+        fireEvent.click(screen.getByTestId("renew-lease-confirm"));
+        await waitFor(() => expect(renew).toHaveBeenCalled());
+        expect(renew.mock.calls[0][1].rentChange).toEqual({ mode: "AMOUNT", percent: null, newRentAmount: 52000.5 });
+    });
+});

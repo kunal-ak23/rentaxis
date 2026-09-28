@@ -66,6 +66,14 @@ import java.util.stream.Collectors;
 @Service
 public class PaymentRunService {
 
+    /** Break-it round 1 (money) F4: the one-year window on manual dates, on the app clock. */
+    private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates = com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setManualPostingDates(com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates) {
+        this.manualDates = manualDates;
+    }
+
     static final String SERIES = "PR";
     static final DateTimeFormatter DMY = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
@@ -244,6 +252,8 @@ public class PaymentRunService {
         // A double submission waited on the lock above and finds the work done.
         if (run.getStatus() == PaymentRun.Status.POSTED) return dto(run);
         requireDraft(run);
+        // A draft saved before the one-year rule is held to it when it posts (its vouchers are numbered by this date).
+        manualDates.requireWithinAYear(run.getPaymentDate(), "A payment run");
         if (approved == null || approved.vendors() == null) {
             throw new BusinessRuleViolationException("Preview the run and post what the preview shows");
         }
@@ -579,6 +589,9 @@ public class PaymentRunService {
 
     private void applyHeader(PaymentRun run, PaymentRunInputDTO in) {
         if (in.paymentDate() == null) throw new BusinessRuleViolationException("Choose the payment date");
+        // Batch 4 review #4: checked here, before create() numbers the run from this
+        // date — PR-2126 would take this year's run numbers, like a JV dated 2126 did.
+        manualDates.requireWithinAYear(in.paymentDate(), "A payment run");
         if (in.method() == null) throw new BusinessRuleViolationException("Choose the payment method");
         Account pay = accounts.findById(in.paymentAccountId())
                 .orElseThrow(() -> new NotFoundException("Payment account not found"));

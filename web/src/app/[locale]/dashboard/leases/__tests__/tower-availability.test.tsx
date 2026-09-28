@@ -26,7 +26,7 @@ vi.mock("@/lib/api/leasing", async orig => {
     return { ...m, leaseApi: { ...m.leaseApi, paged: api.paged } };
 });
 vi.mock("@/components/finance/useNameLookup", () => ({
-    useNameLookup: () => ({ options: [{ id: "p1", en: "Sweep House", ar: "Sweep House" }], name: () => "Sweep House", loading: false }),
+    useNameLookup: () => ({ options: [{ id: "11111111-1111-4111-8111-111111111111", en: "Sweep House", ar: "Sweep House" }], name: () => "Sweep House", loading: false }),
 }));
 
 import LeasesPage from "../page";
@@ -55,23 +55,23 @@ afterEach(() => {
 
 describe("Contracts list tower filter — P2-2: no invisible filter with no way to clear", () => {
     it("drops a buildingId from the URL once GET /buildings/property/{id} refuses this role (403)", async () => {
-        window.history.replaceState(null, "", "/en/dashboard/leases?propertyId=p1&buildingId=bA");
+        window.history.replaceState(null, "", "/en/dashboard/leases?propertyId=11111111-1111-4111-8111-111111111111&buildingId=baaaaaaa-0000-4000-8000-00000000000a");
         await act(async () => { renderPage(); });
 
         await waitFor(() => expect(new URL(window.location.href).searchParams.get("buildingId")).toBeNull());
         expect(screen.queryByTestId("lease-building-filter")).toBeNull();
         // The property filter itself is untouched — only the invisible tower
         // filter (a control the caller can no longer see) is dropped.
-        expect(new URL(window.location.href).searchParams.get("propertyId")).toBe("p1");
+        expect(new URL(window.location.href).searchParams.get("propertyId")).toBe("11111111-1111-4111-8111-111111111111");
     });
 
     it("shows a removable chip next to the select while a tower is active", async () => {
         global.fetch = vi.fn(async (url: unknown) => {
             const u = String(url);
-            if (u.includes("/v1/buildings/property/")) return { ok: true, json: async () => [{ id: "bA", nameEn: "Tower A" }] } as unknown as Response;
+            if (u.includes("/v1/buildings/property/")) return { ok: true, json: async () => [{ id: "baaaaaaa-0000-4000-8000-00000000000a", nameEn: "Tower A" }] } as unknown as Response;
             return { ok: true, json: async () => [] } as unknown as Response;
         }) as unknown as typeof fetch;
-        window.history.replaceState(null, "", "/en/dashboard/leases?propertyId=p1&buildingId=bA");
+        window.history.replaceState(null, "", "/en/dashboard/leases?propertyId=11111111-1111-4111-8111-111111111111&buildingId=baaaaaaa-0000-4000-8000-00000000000a");
         await act(async () => { renderPage(); });
 
         const chip = await screen.findByTestId("lease-building-filter-chip");

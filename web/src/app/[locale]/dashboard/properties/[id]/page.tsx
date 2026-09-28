@@ -13,7 +13,9 @@ import { useSession } from "next-auth/react";
 import { hasPermission, canConfigureRentSettings, type UserRole } from "@/lib/rbac";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
-import { NumberInput } from "@/components/ui/NumberInput";
+import { NumberInput, MoneyTextInput, focusFirstInvalidMoney } from "@/components/ui/NumberInput";
+import { MONEY_MAX_12_2, moneyValueOrNull } from "@/lib/money";
+import { AccessDeniedState, LoadFailedState, NotFoundState } from "@/components/ui/PageStates";
 
 type PropertyContact = {
     id: string;
@@ -71,6 +73,7 @@ export default function PropertyDetailPage() {
     const tFacilities = useTranslations("Facilities");
     const tLedger = useTranslations("Ledger");
     const tNav = useTranslations("Navigation");
+    const tState = useTranslations("PageState");
     const locale = useLocale();
     const propertyId = params.id as string;
 
@@ -80,9 +83,15 @@ export default function PropertyDetailPage() {
     const canManageRentSettings = userRole ? canConfigureRentSettings(userRole) : false;
     const canManageFacilities = hasPermission(userRole, 'canManageFacilities');
     const canManageAccountSetup = hasPermission(userRole, 'canManageAccountSetup');
+    // PropertyController's managers endpoint stays SA/TA/PM-only even though
+    // ACCOUNTANT now reads the property itself — see rbac.ts's
+    // canViewPropertyManagers. Gate both the fetch and the card on it so an
+    // ACCOUNTANT visit doesn't log a 403 on every load.
+    const canViewManagers = hasPermission(userRole, 'canViewPropertyManagers');
 
     const [activeTab, setActiveTab] = useState<"overview" | "buildings" | "units" | "leases" | "amenities" | "parking" | "accounts">("overview");
     const [property, setProperty] = useState<any>(null);
+    const [propertyLoad, setPropertyLoad] = useState<"loading" | "ok" | "notFound" | "forbidden" | "failed">("loading");
     const [buildings, setBuildings] = useState<any[]>([]);
     const [units, setUnits] = useState<any[]>([]);
     const [managers, setManagers] = useState<any[]>([]);
@@ -97,29 +106,48 @@ export default function PropertyDetailPage() {
         fetchProperty();
         fetchBuildings();
         fetchUnits();
-        fetchManagers();
+        if (canViewManagers) fetchManagers();
         fetchContacts();
-    }, [propertyId]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [propertyId, canViewManagers]);
 
+    // Break round 1, F5: a 404/403/500 (or a network failure) used to leave
+    // `property` null, and the page kept its skeleton forever. The load now
+    // ends in one of: loaded, not found, access denied, or failed (retry).
     const fetchProperty = async () => {
-        const res = await fetch(`/api/proxy/v1/properties/${propertyId}`);
-        if (res.ok) setProperty(await res.json());
+        setPropertyLoad("loading");
+        try {
+            const res = await fetch(`/api/proxy/v1/properties/${propertyId}`);
+            if (res.ok) {
+                setProperty(await res.json());
+                setPropertyLoad("ok");
+            } else if (res.status === 404 || res.status === 400) {
+                setPropertyLoad("notFound");
+            } else if (res.status === 403) {
+                setPropertyLoad("forbidden");
+            } else {
+                setPropertyLoad("failed");
+            }
+        } catch {
+            setPropertyLoad("failed");
+        }
     };
 
-    const fetchBuildings = async () => {
-        const res = await fetch(`/api/proxy/v1/buildings/property/${propertyId}`);
-        if (res.ok) setBuildings(await res.json());
+    // Secondary reads: a failure leaves the tab empty rather than breaking the page.
+    const fetchList = async <T,>(url: string, set: (rows: T[]) => void) => {
+        try {
+            const res = await fetch(url);
+            if (res.ok) set(await res.json());
+        } catch (err) {
+            console.error("Failed to fetch", url, err);
+        }
     };
 
-    const fetchUnits = async () => {
-        const res = await fetch(`/api/proxy/v1/units/property/${propertyId}`);
-        if (res.ok) setUnits(await res.json());
-    };
+    const fetchBuildings = () => fetchList(`/api/proxy/v1/buildings/property/${propertyId}`, setBuildings);
 
-    const fetchManagers = async () => {
-        const res = await fetch(`/api/proxy/v1/properties/${propertyId}/managers`);
-        if (res.ok) setManagers(await res.json());
-    };
+    const fetchUnits = () => fetchList(`/api/proxy/v1/units/property/${propertyId}`, setUnits);
+
+    const fetchManagers = () => fetchList(`/api/proxy/v1/properties/${propertyId}/managers`, setManagers);
 
     const fetchContacts = async () => {
         try {
@@ -187,6 +215,12 @@ export default function PropertyDetailPage() {
         const res = await fetch(`/api/proxy/v1/properties/${propertyId}/contacts/${contactId}`, { method: 'DELETE' });
         if (res.ok) fetchContacts();
     };
+
+    if (propertyLoad === "notFound") {
+        return <NotFoundState message={tState("propertyNotFound")} backHref="/dashboard/properties" backLabel={tState("backToProperties")} />;
+    }
+    if (propertyLoad === "forbidden") return <AccessDeniedState />;
+    if (propertyLoad === "failed") return <LoadFailedState onRetry={fetchProperty} />;
 
     if (!property) return (
         <div className="p-8 max-w-7xl mx-auto space-y-6">
@@ -290,27 +324,29 @@ export default function PropertyDetailPage() {
 
             {/* Content areas */}
             {activeTab === "overview" && (<>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="bg-background rounded-xl p-6 border border-border col-span-1 md:col-span-2">
-                        <p className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-4 flex items-center gap-2">
-                            <Building2 size={12} className="text-primary/40" />
-                            {t("propertyManager")}
-                        </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            {managers.length > 0 ? managers.map(m => (
-                                <div key={m.id} className="bg-surface p-4 rounded-xl border border-border hover:shadow-md transition-all duration-200 flex flex-col gap-1">
-                                    <p className="text-sm font-bold text-foreground">{m.name}</p>
-                                    <p className="text-[11px] font-bold text-muted">{m.email}</p>
-                                    {m.phoneNumber && (
-                                        <p className="text-[11px] font-bold text-primary/70 font-mono mt-1">{m.phoneNumber}</p>
-                                    )}
-                                </div>
-                            )) : (
-                                <p className="text-xs font-medium text-muted italic">No managers assigned.</p>
-                            )}
+                {canViewManagers && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="bg-background rounded-xl p-6 border border-border col-span-1 md:col-span-2">
+                            <p className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-4 flex items-center gap-2">
+                                <Building2 size={12} className="text-primary/40" />
+                                {t("propertyManager")}
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {managers.length > 0 ? managers.map(m => (
+                                    <div key={m.id} className="bg-surface p-4 rounded-xl border border-border hover:shadow-md transition-all duration-200 flex flex-col gap-1">
+                                        <p className="text-sm font-bold text-foreground">{m.name}</p>
+                                        <p className="text-[11px] font-bold text-muted">{m.email}</p>
+                                        {m.phoneNumber && (
+                                            <p className="text-[11px] font-bold text-primary/70 font-mono mt-1">{m.phoneNumber}</p>
+                                        )}
+                                    </div>
+                                )) : (
+                                    <p className="text-xs font-medium text-muted italic">No managers assigned.</p>
+                                )}
+                            </div>
                         </div>
                     </div>
-                </div>
+                )}
 
                 {/* Key Contacts Section */}
                 <div className="mt-6">
@@ -641,6 +677,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
 
     const handleAddUnit = async (e: any) => {
         e.preventDefault();
+        if (focusFirstInvalidMoney(e.currentTarget)) return;
         setSubmitting(true);
         setAddUnitError(null);
         try {
@@ -648,7 +685,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                 unitNumber: unitForm.unitNumber,
                 type: unitForm.type,
                 sizeSqft: unitForm.sizeSqft ? Number(unitForm.sizeSqft) : null,
-                expectedRent: unitForm.expectedRent ? Number(unitForm.expectedRent) : null,
+                expectedRent: moneyValueOrNull(unitForm.expectedRent, { allowZero: true, max: MONEY_MAX_12_2 }),
                 status: "VACANT",
                 property: { id: propertyId },
             };
@@ -748,7 +785,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Expected Rent (AED/year)</label>
-                        <input type="number" className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 85000" value={unitForm.expectedRent} onChange={e => setUnitForm({ ...unitForm, expectedRent: e.target.value })} />
+                        <MoneyTextInput options={{ allowZero: true, max: MONEY_MAX_12_2 }} className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 85000" value={unitForm.expectedRent} onChange={v => setUnitForm({ ...unitForm, expectedRent: v })} />
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Building</label>

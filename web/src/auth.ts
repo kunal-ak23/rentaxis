@@ -39,9 +39,12 @@ type CurrentUser =
 /**
  * Reads the user's *current* role and tenant from the backend.
  *
- * A 404 means the account is gone, which is the revocation signal. Anything
- * else — a network failure, a 5xx — is reported as unavailable so the caller
- * can fail open: a backend blip must not sign every user out.
+ * A 404 means the account is gone, which is the revocation signal. So is a 401
+ * to a request that carried the full identity: since break round 1 (F1) the
+ * backend checks the named user against their stored row before the controller
+ * runs, and answers 401 for a deleted or deactivated user. Anything else — a
+ * network failure, a 5xx — is reported as unavailable so the caller can fail
+ * open: a backend blip must not sign every user out.
  */
 export async function fetchCurrentUser(
     userId: string | undefined,
@@ -53,10 +56,11 @@ export async function fetchCurrentUser(
     const base = process.env.BACKEND_URL || "http://localhost:8080";
     try {
         // /api/auth/me reads the caller from the backend's verified principal
-        // (PR #342), which ApiSecurityFilter builds on the legacy path from the
-        // full header set, the same one proxy.ts sends: user, role, and the home
-        // tenant a non-SUPER_ADMIN is authorized against. The role sent is the
-        // session's last-known one; the response carries the current one.
+        // (PR #342). On the legacy path ApiSecurityFilter takes the user's role,
+        // status and organisations from the database, not from these headers,
+        // and on /api/auth/me* it skips the organisation checks, so a session
+        // whose home tenant is stale (the user was moved) still gets its answer
+        // — with the current role and tenant — rather than a 403.
         const res = await fetch(`${base}/api/auth/me`, {
             headers: {
                 "X-User-Id": userId,
@@ -70,6 +74,17 @@ export async function fetchCurrentUser(
         });
 
         if (res.status === 404) return { status: "revoked" };
+        // Without a role header the backend never authenticates the request, so
+        // its 401 would say nothing about the user. And only the user's own
+        // state revokes: X-Auth-Reason USER_INACTIVE (or no header, from a backend
+        // older than the reason codes). With app.auth.legacy-headers=deny every
+        // header-authenticated call 401s with LEGACY_DENIED; that must not sign
+        // every web session out.
+        if (res.status === 401 && role) {
+            const reason = res.headers?.get?.("X-Auth-Reason") ?? null;
+            if (reason === null || reason === "USER_INACTIVE") return { status: "revoked" };
+            return { status: "unavailable" };
+        }
         if (!res.ok) return { status: "unavailable" };
 
         const profile = await res.json();

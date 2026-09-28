@@ -1,5 +1,8 @@
 package com.datagami.rentaxis.api.dto.lease;
 
+import com.datagami.rentaxis.api.validation.Money;
+import jakarta.validation.Valid;
+
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -18,8 +21,8 @@ import java.util.UUID;
  * @param rent               with no {@code lines}: the new term's rent in place of the suggested one
  */
 public record TransferLeaseRequest(LocalDate moveDate, UUID targetUnitId, LocalDate endDate, LocalDate contractDate,
-                                   List<LeaseLineInput> lines, List<ChequeDisposition> chequeDispositions,
-                                   java.math.BigDecimal rent) {
+                                   List<@Valid LeaseLineInput> lines, List<ChequeDisposition> chequeDispositions,
+                                   @Money(positive = true) java.math.BigDecimal rent) {
 
     public TransferLeaseRequest(LocalDate moveDate, UUID targetUnitId, LocalDate endDate, LocalDate contractDate,
                                 List<LeaseLineInput> lines, List<ChequeDisposition> chequeDispositions) {

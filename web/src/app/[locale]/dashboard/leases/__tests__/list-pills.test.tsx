@@ -43,7 +43,7 @@ function lease(id: string, status: LeaseStatus, unit: string): LeaseDetail {
         startDate: "2026-01-01", endDate: "2026-12-31", status,
         rentAmount: 60000, depositAmount: null, ejariNumber: null, paymentTerms: 4,
         installmentDistribution: "LAST_LARGER", paymentMethod: "CHEQUE", depositPaymentMethod: "CHEQUE",
-        paymentReferenceNumber: null, propertyId: "p1", propertyName: "L'Olivier", propertyCode: "OLV",
+        paymentReferenceNumber: null, propertyId: "11111111-1111-4111-8111-111111111111", propertyName: "L'Olivier", propertyCode: "OLV",
         hasContract: false, contractNumber: null, displayContractNumber: null,
         agreementDate: null, rentVatApplicable: true, contractDate: "2026-01-01", totalDays: 365,
         gracePeriodDays: 0, firstDueDate: null, renterAcceptedAt: null,
@@ -78,7 +78,7 @@ beforeEach(() => {
     api.statsByLeases.mockImplementation(async () => []);
     global.fetch = vi.fn(async (u: RequestInfo | URL) => ({
         ok: true, status: 200,
-        json: async () => (String(u).endsWith("/v1/properties") ? [{ property: { id: "p1", nameEn: "Marina" } }, { property: { id: "p2", nameEn: "Olivier" } }] : []),
+        json: async () => (String(u).endsWith("/v1/properties") ? [{ property: { id: "11111111-1111-4111-8111-111111111111", nameEn: "Marina" } }, { property: { id: "22222222-2222-4222-8222-222222222222", nameEn: "Olivier" } }] : []),
     })) as unknown as typeof fetch;
 });
 
@@ -166,10 +166,10 @@ describe("contract list pills", () => {
         renderPage();
         await screen.findByTestId("lease-row-l-draft");
         await waitFor(() => expect(within(screen.getByTestId("lease-property-filter")).getAllByRole("option")).toHaveLength(3));
-        fireEvent.change(screen.getByTestId("lease-property-filter"), { target: { value: "p2" } });
-        await waitFor(() => expect(api.paged).toHaveBeenCalledWith(expect.objectContaining({ propertyId: "p2", size: 25 })));
-        await waitFor(() => expect(api.paged).toHaveBeenCalledWith(expect.objectContaining({ propertyId: "p2", status: "DRAFT", size: 1 })));
-        expect(new URL(window.location.href).searchParams.get("propertyId")).toBe("p2");
+        fireEvent.change(screen.getByTestId("lease-property-filter"), { target: { value: "22222222-2222-4222-8222-222222222222" } });
+        await waitFor(() => expect(api.paged).toHaveBeenCalledWith(expect.objectContaining({ propertyId: "22222222-2222-4222-8222-222222222222", size: 25 })));
+        await waitFor(() => expect(api.paged).toHaveBeenCalledWith(expect.objectContaining({ propertyId: "22222222-2222-4222-8222-222222222222", status: "DRAFT", size: 1 })));
+        expect(new URL(window.location.href).searchParams.get("propertyId")).toBe("22222222-2222-4222-8222-222222222222");
     });
 });
 

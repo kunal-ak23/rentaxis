@@ -1,5 +1,6 @@
 "use client";
 
+import { moneyValueOrNull } from "@/lib/money";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
@@ -156,7 +157,7 @@ export default function IssuedChequesPage() {
         try {
             await issuedChequesApi.createOpening({
                 vendorId: opening.vendorId, bankAccountId: opening.bankAccountId, chequeNumber: opening.chequeNumber.trim(),
-                chequeDate: opening.chequeDate, amount: Number(opening.amount),
+                chequeDate: opening.chequeDate, amount: moneyValueOrNull(opening.amount) ?? 0,
             });
             setOpening({ vendorId: "", bankAccountId: opening.bankAccountId, chequeNumber: "", chequeDate: "", amount: "" });
             await load();
@@ -165,7 +166,7 @@ export default function IssuedChequesPage() {
         }
     };
     const openingReady = opening.vendorId && opening.bankAccountId && opening.chequeNumber.trim() && opening.chequeDate
-        && Number(opening.amount) > 0;
+        && (moneyValueOrNull(opening.amount) ?? 0) > 0;
 
     const vendorOptions = useMemo(() => [...vendors].filter(v => v.active !== false)
         .sort((a, b) => a.nameEn.localeCompare(b.nameEn)), [vendors]);

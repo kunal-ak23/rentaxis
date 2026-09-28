@@ -11,6 +11,8 @@ import {
     type RenewalPreview, type RentChangeMode,
 } from "@/lib/api/leasing";
 import { fmtAmount } from "@/lib/api/ledger";
+import { moneyInputError, parseMoneyInput } from "@/lib/money";
+import { MoneyFieldError } from "@/components/ui/NumberInput";
 
 /**
  * Spec §4c: the one-off lines a renewal will not copy (an admin fee, last
@@ -73,6 +75,17 @@ const num = (s: string): number | null => {
     return s.trim() !== "" && Number.isFinite(n) ? n : null;
 };
 
+/**
+ * Break-it round 1 (money) F1/F2: an amount through the shared money parse — the
+ * value, or null when blank or refused (0.001, 3 decimals, "1,5"). Null keeps the
+ * confirm shut; `moneyError` says why under the field.
+ */
+const money = (s: string): number | null => {
+    const r = parseMoneyInput(s);
+    return r.ok ? r.value : null;
+};
+const moneyError = (s: string) => (s.trim() === "" ? null : moneyInputError(s));
+
 export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, onRenewed }: Props) {
     const t = useTranslations("Leasing");
     const tr = useTranslations("Renewal");
@@ -129,7 +142,7 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
             leaseApi.renewalPreview(lease.id, {
                 startDate, endDate, mode,
                 percent: mode === "PERCENT" ? num(percent) : null,
-                amount: mode === "AMOUNT" ? num(amount) : null,
+                amount: mode === "AMOUNT" ? money(amount) : null,
                 carryDeposit,
             }).then(p => {
                 if (!live) return;
@@ -151,15 +164,15 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
 
     const rentChangeReady = mode === "NONE"
         || (mode === "PERCENT" && num(percent) != null)
-        || (mode === "AMOUNT" && (num(amount) ?? 0) > 0);
-    const extrasReady = extras.every(x => x.chargeTypeId && (num(x.amount) ?? 0) > 0);
+        || (mode === "AMOUNT" && (money(amount) ?? 0) > 0);
+    const extrasReady = extras.every(x => x.chargeTypeId && (money(x.amount) ?? 0) > 0);
 
     const submit = async () => {
         setBusy(true);
         setErrors([]);
         try {
             const additionalLines: LeaseLineInput[] = extras.map(x => ({
-                chargeTypeId: x.chargeTypeId, grossAmount: num(x.amount) ?? 0, discountAmount: 0, vatApplicable: x.vat,
+                chargeTypeId: x.chargeTypeId, grossAmount: money(x.amount) ?? 0, discountAmount: 0, vatApplicable: x.vat,
             }));
             const successor = await leaseApi.renew(lease.id, {
                 contractDate: contractDate || null,
@@ -168,7 +181,7 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                 lines: copyLines ? null : toInputs(rows, { keepPeriods: false }),
                 carryDepositForward: carryDeposit,
                 rentChange: copyLines && mode !== "NONE"
-                    ? { mode, percent: mode === "PERCENT" ? num(percent) : null, newRentAmount: mode === "AMOUNT" ? num(amount) : null }
+                    ? { mode, percent: mode === "PERCENT" ? num(percent) : null, newRentAmount: mode === "AMOUNT" ? money(amount) : null }
                     : null,
                 ejariNumber: ejari.trim() || null,
                 additionalLines: additionalLines.length ? additionalLines : null,
@@ -242,8 +255,12 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                                     className={`${field} w-28 text-end`} value={percent} onChange={e => setPercent(e.target.value)} />
                             )}
                             {mode === "AMOUNT" && (
-                                <input aria-label={tr("newRent")} data-testid="renew-amount" type="number" step="0.01" min={0}
-                                    className={`${field} w-36 text-end`} value={amount} onChange={e => setAmount(e.target.value)} />
+                                <span className="inline-flex flex-col">
+                                    <input aria-label={tr("newRent")} data-testid="renew-amount" type="text" inputMode="decimal" dir="ltr"
+                                        aria-invalid={moneyError(amount) !== null}
+                                        className={`${field} w-36 text-end`} value={amount} onChange={e => setAmount(e.target.value)} />
+                                    {moneyError(amount) && <MoneyFieldError error={moneyError(amount)!} />}
+                                </span>
                             )}
                         </div>
                         {preview && preview.baseRent != null && preview.newRent != null && (
@@ -323,9 +340,13 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                                     <option key={c.id} value={c.id}>{(locale === "ar" ? c.nameAr : null) || c.nameEn}</option>
                                 ))}
                             </select>
-                            <input aria-label={tr("amount")} data-testid={`renew-extra-amount-${i}`} type="number" min={0} step="0.01"
-                                className={`${field} text-end`} value={x.amount}
-                                onChange={e => setExtras(prev => prev.map(p => p.key === x.key ? { ...p, amount: e.target.value } : p))} />
+                            <span className="inline-flex flex-col">
+                                <input aria-label={tr("amount")} data-testid={`renew-extra-amount-${i}`} type="text" inputMode="decimal" dir="ltr"
+                                    aria-invalid={moneyError(x.amount) !== null}
+                                    className={`${field} text-end`} value={x.amount}
+                                    onChange={e => setExtras(prev => prev.map(p => p.key === x.key ? { ...p, amount: e.target.value } : p))} />
+                                {moneyError(x.amount) && <MoneyFieldError error={moneyError(x.amount)!} />}
+                            </span>
                             <label className="flex items-center gap-1 text-[11px] text-muted">
                                 <input type="checkbox" checked={x.vat}
                                     onChange={e => setExtras(prev => prev.map(p => p.key === x.key ? { ...p, vat: e.target.checked } : p))} />

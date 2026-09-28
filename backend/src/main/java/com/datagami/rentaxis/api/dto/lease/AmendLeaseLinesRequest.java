@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api.dto.lease;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 
 import java.util.List;
@@ -13,6 +14,6 @@ import java.util.List;
  * than a caller inventing a placeholder.</p>
  */
 public record AmendLeaseLinesRequest(@NotEmpty(message = "At least one line is required")
-                                     List<LeaseLineInput> lines,
+                                     List<@Valid LeaseLineInput> lines,
                                      String reason) {
 }

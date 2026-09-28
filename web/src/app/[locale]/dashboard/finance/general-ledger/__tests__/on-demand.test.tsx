@@ -7,7 +7,7 @@ const general = vi.hoisted(() => vi.fn());
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(query.current) }));
 vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "ACCOUNTANT" } } }) }));
 vi.mock("@/i18n/routing", () => ({ Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => <a href={href} {...rest}>{children}</a> }));
-vi.mock("@/components/finance/useNameLookup", () => ({ useNameLookup: () => ({ options: [{ id: "p1", label: "Belle Vue" }], name: () => "", loading: false }) }));
+vi.mock("@/components/finance/useNameLookup", () => ({ useNameLookup: () => ({ options: [{ id: "11111111-1111-4111-8111-111111111111", label: "Belle Vue" }], name: () => "", loading: false }) }));
 const accounts = Array.from({ length: 21 }, (_, i) => ({ id: `a${i}`, code: `${1100 + i}`, name: `Acct ${i}`, alias: null, group: false, active: true, accountType: "ASSET", accountSubType: null, propertyId: null }));
 vi.mock("@/components/finance/AccountPicker", async orig => {
     const m = await orig<typeof import("@/components/finance/AccountPicker")>();
@@ -90,10 +90,21 @@ describe("General Ledger — on demand", () => {
     });
 
     it("loads straight away from a bookmarked or drill-down URL", async () => {
-        query.current = "accountIds=a3,a4&from=2026-01-01&to=2026-03-31&propertyId=p1";
+        query.current = "accountIds=a3,a4&from=2026-01-01&to=2026-03-31&propertyId=11111111-1111-4111-8111-111111111111";
         render(<Page />);
-        await waitFor(() => expect(general).toHaveBeenCalledWith(expect.objectContaining({ accountIds: ["a3", "a4"], from: "2026-01-01", to: "2026-03-31", propertyId: "p1" })));
+        await waitFor(() => expect(general).toHaveBeenCalledWith(expect.objectContaining({ accountIds: ["a3", "a4"], from: "2026-01-01", to: "2026-03-31", propertyId: "11111111-1111-4111-8111-111111111111" })));
         expect(screen.queryByTestId("ledger-pick-prompt")).toBeNull();
+    });
+
+    // Break round 1 review: a malformed propertyId is no filter and leaves the URL, like the other lists.
+    it("drops a malformed propertyId from the query it sends and from the URL", async () => {
+        query.current = "accountIds=a3&from=2026-01-01&to=2026-03-31&propertyId=not-a-uuid";
+        window.history.replaceState(null, "", `/en/dashboard/finance/general-ledger?${query.current}`);
+        render(<Page />);
+        await waitFor(() => expect(general).toHaveBeenCalled());
+        expect(general.mock.calls[0][0].propertyId).toBeUndefined();
+        await waitFor(() => expect(new URLSearchParams(window.location.search).has("propertyId")).toBe(false));
+        expect(new URLSearchParams(window.location.search).get("accountIds")).toBe("a3");
     });
 
     it("caps a URL with more than 20 accounts to the first 20 and says so", async () => {
@@ -105,7 +116,7 @@ describe("General Ledger — on demand", () => {
     });
 
     it("lets a P&L drill-down name every leaf of its cell", async () => {
-        query.current = `effectiveProperty=true&propertyId=p1&accountIds=${Array.from({ length: 25 }, (_, i) => `a${i % 21}x${i}`).join(",")}`;
+        query.current = `effectiveProperty=true&propertyId=11111111-1111-4111-8111-111111111111&accountIds=${Array.from({ length: 25 }, (_, i) => `a${i % 21}x${i}`).join(",")}`;
         render(<Page />);
         await waitFor(() => expect(general).toHaveBeenCalled());
         expect(general.mock.calls[0][0].accountIds).toHaveLength(25);

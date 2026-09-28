@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service.cheque;
 
+import com.datagami.rentaxis.testsupport.TestIdentities;
 import com.datagami.rentaxis.api.dto.ExtractedChequeDTO;
 import com.datagami.rentaxis.core.service.BlobStorageService;
 import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
@@ -39,10 +40,17 @@ class ChequeExtractionIT extends AbstractPostgresIT {
 
     @org.springframework.beans.factory.annotation.Autowired
     com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository imageUploads;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.domain.repository.UserRepository userRepo;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.domain.repository.LandlordOrgRepository orgRepo;
 
     @Test
     void extract_returns200_withImageAndExtractedData_andUsesTenantScope() throws Exception {
-        UUID tenantId = UUID.randomUUID();
+        // A real organisation and admin: header identities are checked against them (break round 1, F1/F2).
+        UUID tenantId = TestIdentities.org(orgRepo);
+        UUID adminId = TestIdentities.user(userRepo,
+                com.datagami.rentaxis.domain.entity.enums.UserRole.TENANT_ADMIN, tenantId);
         when(blobStorageService.uploadCheque(eq(tenantId), any()))
                 .thenReturn(new BlobStorageService.UploadResult("https://blob/cheques/a.jpg", "cheques/a.jpg"));
         when(chequeExtractor.extract(any(), eq(MediaType.IMAGE_JPEG_VALUE)))
@@ -55,7 +63,7 @@ class ChequeExtractionIT extends AbstractPostgresIT {
 
         mockMvc.perform(multipart("/api/v1/cheques/extract")
                         .file(file)
-                        .header("X-User-Id", UUID.randomUUID().toString())
+                        .header("X-User-Id", adminId.toString())
                         .header("X-User-Role", "TENANT_ADMIN")
                         .header("X-Tenant-Id", tenantId.toString())
                         .header("X-User-Tenant-Id", tenantId.toString()))

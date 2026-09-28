@@ -266,6 +266,31 @@ describe("PropertiesPage portfolio import", () => {
     });
 });
 
+describe("PropertiesPage add-property money guard", () => {
+    it("refuses an expected rent past the unit's own column, and never posts it", async () => {
+        const postedUnits: unknown[] = [];
+        global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            if (url.includes("/v1/units") && init?.method === "POST") {
+                postedUnits.push(JSON.parse(String(init.body)));
+                return jsonStub(true, {}) as unknown as Response;
+            }
+            if (url.includes("/v1/properties")) return jsonStub(true, SAMPLE_STATS) as unknown as Response;
+            return jsonStub(true, null) as unknown as Response;
+        }) as unknown as typeof fetch;
+
+        render(<PropertiesPage />);
+        fireEvent.click(await screen.findByRole("button", { name: en.MasterData.addProperty }));
+        const rent = screen.getByPlaceholderText("50000") as HTMLInputElement;
+        fireEvent.change(rent, { target: { value: "10000000000.00" } });
+        expect(rent.dataset.moneyInvalid).toBe("true");
+        expect(rent.validationMessage).not.toBe("");
+        fireEvent.click(screen.getByRole("button", { name: en.MasterData.create }));
+        await new Promise((r) => setTimeout(r, 0));
+        expect(postedUnits).toHaveLength(0);
+    });
+});
+
 describe("PropertiesPage create project errors", () => {
     it("surfaces the backend message when project creation fails", async () => {
         postPropertiesResponse = jsonStub(false, {

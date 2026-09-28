@@ -15,7 +15,7 @@ import java.util.UUID;
 @Setter
 public class SaveSettlementDTO {
     private String notes;
-    private List<DeductionItemDTO> deductions;
+    private List<@jakarta.validation.Valid DeductionItemDTO> deductions;
 
     @Getter
     @Setter
@@ -25,6 +25,7 @@ public class SaveSettlementDTO {
         private String description;
         @NotNull
         @DecimalMin(value = "0.00", inclusive = true)
+        @com.datagami.rentaxis.api.validation.Money
         private BigDecimal amount;
         private boolean autoCalculated;
         private LineItemType type; // enum: DEDUCTION (default) or ADDITION

@@ -1,6 +1,13 @@
 import { getToken } from "next-auth/jwt";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { AUTH_REASON_HEADER, EXPECTED_TENANT_HEADER } from "@/lib/session/orgHeaders";
+import {
+    backendTarget,
+    orgMismatchResponse,
+    resolveBackendIdentity,
+    sessionEndedResponse,
+} from "@/lib/session/backendIdentity";
 
 export const runtime = "nodejs";
 export const maxDuration = 300; // seconds — allow up to 5 min for large file uploads (up to 250MB)
@@ -8,38 +15,30 @@ export const maxDuration = 300; // seconds — allow up to 5 min for large file 
 const backendUrl = process.env.BACKEND_URL || "http://localhost:8080";
 
 export async function POST(req: NextRequest) {
-    const token = await getToken({ req });
-    if (!token) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const target = backendTarget(req.nextUrl.searchParams.get("path"), backendUrl);
 
-    const targetPath = req.nextUrl.searchParams.get("path");
-    if (!targetPath) {
-        return NextResponse.json({ error: "Missing path parameter" }, { status: 400 });
-    }
-
-    // Build auth headers (fresh object — client headers are never forwarded)
-    const headers: Record<string, string> = {};
-    if (token.id) headers["X-User-Id"] = token.id as string;
-    if (token.role) headers["X-User-Role"] = token.role as string;
-    if (token.tenantId) headers["X-User-Tenant-Id"] = token.tenantId as string;
-
-    // This route asserts X-User-Role from the session (which can be SUPER_ADMIN)
-    // and calls the backend directly over the Docker network, bypassing the
-    // /api/proxy middleware. Attach the internal proxy secret so the backend's
-    // SUPER_ADMIN header gate accepts it. Unset/empty env keeps the gate off.
-    const internalProxySecret = process.env.INTERNAL_PROXY_SECRET;
-    if (internalProxySecret) {
-        headers["X-Internal-Auth"] = internalProxySecret;
-    }
-
+    // The same session, membership and expected-organisation rules as the
+    // /api/proxy middleware (lib/session/backendIdentity.ts, break round 1
+    // batch 5): this route calls the backend directly, bypassing the proxy, and
+    // used to skip the revoked-session check, forward the client-writable org
+    // cookie unchecked, and ignore X-Expected-Tenant-Id.
     const cookieStore = await cookies();
-    const activeTenantId = cookieStore.get("active_tenant_id")?.value;
-    if (activeTenantId) {
-        headers["X-Tenant-Id"] = activeTenantId;
-    } else if (token.tenantId) {
-        headers["X-Tenant-Id"] = token.tenantId as string;
+    const decision = resolveBackendIdentity({
+        token: await getToken({ req }),
+        cookieTenant: cookieStore.get("active_tenant_id")?.value,
+        expectedTenant: req.headers.get(EXPECTED_TENANT_HEADER),
+        method: req.method,
+        internalProxySecret: process.env.INTERNAL_PROXY_SECRET,
+    });
+    if (decision.kind === "session-ended") return sessionEndedResponse(decision.body);
+    if (decision.kind === "org-mismatch") return orgMismatchResponse();
+
+    if (!target) {
+        return NextResponse.json({ error: "Missing or invalid path parameter" }, { status: 400 });
     }
+
+    // A fresh object: client headers are never forwarded.
+    const headers: Record<string, string> = { ...decision.headers };
 
     // Preserve the original content-type (includes multipart boundary)
     const contentType = req.headers.get("content-type");
@@ -50,12 +49,17 @@ export async function POST(req: NextRequest) {
     // Read the entire body as ArrayBuffer and forward to backend
     const body = await req.arrayBuffer();
 
-    const backendRes = await fetch(`${backendUrl}${targetPath}`, {
+    const backendRes = await fetch(target.toString(), {
         method: "POST",
         headers,
         body,
     });
 
     const data = await backendRes.json().catch(() => ({ error: "Backend error" }));
-    return NextResponse.json(data, { status: backendRes.status });
+    const res = NextResponse.json(data, { status: backendRes.status });
+    // The backend's refusal reason is the one header passed on: the browser
+    // guard uses it to choose between signing out and repairing the org.
+    const reason = backendRes.headers.get(AUTH_REASON_HEADER);
+    if (reason) res.headers.set(AUTH_REASON_HEADER, reason);
+    return res;
 }

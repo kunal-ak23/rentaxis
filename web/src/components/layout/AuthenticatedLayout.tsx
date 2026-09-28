@@ -1,7 +1,6 @@
 "use client";
 
 import MvpSidebar from "@/components/ui/MvpSidebar";
-import { cn } from "@/lib/utils";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useRouter } from "@/i18n/routing";
@@ -12,6 +11,10 @@ import TourProvider from "@/components/tour/TourProvider";
 import HelpFAB from "@/components/help/HelpFAB";
 import { NavShellProvider } from "@/components/nav/NavShellContext";
 import type { UserRole } from "@/lib/rbac";
+import { SessionGuards } from "@/components/layout/SessionGuards";
+import { AccessDeniedState, SelectOrgState } from "@/components/ui/PageStates";
+import { isDashboardHome, routeDecision } from "@/lib/nav/routeGuard";
+import { readActiveOrgCookie } from "@/lib/session/orgSync";
 
 export default function AuthenticatedLayout({
     children,
@@ -28,6 +31,18 @@ export default function AuthenticatedLayout({
         }
     }, [status, router]);
 
+    // Review fix 5: a super admin with no organisation selected who opens the
+    // dashboard home (e.g. straight after sign-in) lands on the organisation
+    // list rather than a bare "Select an organisation" card.
+    const role = session?.user?.role as UserRole | undefined;
+    const decision = session && role
+        ? routeDecision(pathname, role, readActiveOrgCookie() !== "")
+        : "allow";
+    const landOnOrgList = decision === "selectOrg" && isDashboardHome(pathname);
+    useEffect(() => {
+        if (landOnOrgList) router.replace("/superadmin/tenants");
+    }, [landOnOrgList, router]);
+
     if (status === "loading") {
         return (
             <div className="min-h-screen bg-background flex items-center justify-center">
@@ -41,8 +56,18 @@ export default function AuthenticatedLayout({
 
     if (!session) return null;
 
+    // Break round 1: the route registry's role rules for every page (F8), and
+    // a super admin in Global View is asked to pick an organisation rather
+    // than mounting a page whose org-scoped calls fail or aggregate every
+    // organisation (F7). The shell stays so the user can navigate or switch.
+    const content = decision === "denied" ? <AccessDeniedState />
+        : landOnOrgList ? null
+        : decision === "selectOrg" ? <SelectOrgState />
+        : children;
+
     return (
-        <TourProvider role={session?.user?.role as UserRole | undefined}>
+        <SessionGuards role={session.user?.role} homeTenantId={session.user?.tenantId}>
+        <TourProvider role={role} autoStart={decision === "allow"}>
             <NavShellProvider>
             <div className="flex h-screen overflow-hidden bg-background">
                 <MvpSidebar />
@@ -61,12 +86,13 @@ export default function AuthenticatedLayout({
                       * physical corner.
                       */}
                     <main className="flex-1 overflow-y-auto thinscroll bg-background px-6 pt-6 pb-24 lg:px-8 lg:pt-7 lg:pb-28">
-                        {children}
+                        {content}
                     </main>
                 </div>
             </div>
             </NavShellProvider>
             <HelpFAB />
         </TourProvider>
+        </SessionGuards>
     );
 }

@@ -214,8 +214,7 @@ export default function LeaseLinesGrid({
                                             <NumberInput
                                                 aria-label={`${t("grossAmount")} ${i + 1}`}
                                                 data-testid={`lease-line-amount-${i}`}
-                                                min={0}
-                                                step={0.01}
+                                                money
                                                 className={numField}
                                                 value={row.grossAmount}
                                                 onChange={v => patch(row.key, { grossAmount: v })}
@@ -229,8 +228,7 @@ export default function LeaseLinesGrid({
                                             <NumberInput
                                                 aria-label={`${t("discount")} ${i + 1}`}
                                                 data-testid={`lease-line-discount-${i}`}
-                                                min={0}
-                                                step={0.01}
+                                                money={{ allowZero: true }}
                                                 className={numField}
                                                 value={row.discountAmount}
                                                 onChange={v => patch(row.key, { discountAmount: v })}

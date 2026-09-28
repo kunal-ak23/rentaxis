@@ -1,5 +1,6 @@
 "use client";
 
+import { moneyValueOrNull } from "@/lib/money";
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
@@ -85,7 +86,7 @@ export default function ApOpeningItemsPage() {
                 invoiceNumber: form.invoiceNumber,
                 invoiceDate: form.invoiceDate,
                 dueDate: form.dueDate || null,
-                amount: Number.parseFloat(form.amount),
+                amount: moneyValueOrNull(form.amount) ?? Number.NaN,
                 propertyId: form.propertyId || null,
             });
             setForm(f => ({ ...blank, vendorId: f.vendorId }));

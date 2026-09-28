@@ -56,3 +56,31 @@ describe("monthsInclusive", () => {
         expect(5000 * monthsInclusive("2026-06-01", "2026-12-31")).toBe(35000);
     });
 });
+
+// Break round 1: a lease wizard accepted a contract to 2999. The term guard
+// uses the backend's rule (LeaseService.requireSaneTerm): the end date is
+// inclusive, so a term "exceeds N years" once the end reaches start + N years.
+describe("term length guards", () => {
+    it("adds whole years, clamping 29 Feb like java.time plusYears", async () => {
+        const { addYearsIso } = await import("../leaseTerm");
+        expect(addYearsIso("2026-06-01", 50)).toBe("2076-06-01");
+        expect(addYearsIso("2028-02-29", 1)).toBe("2029-02-28");
+    });
+
+    it("exactly N years is not over N; one more day is", async () => {
+        const { termExceedsYears } = await import("../leaseTerm");
+        expect(termExceedsYears("2026-06-01", "2076-05-31", 50)).toBe(false);
+        expect(termExceedsYears("2026-06-01", "2076-06-01", 50)).toBe(true);
+        expect(termExceedsYears("2026-06-01", "2999-06-01", 50)).toBe(true);
+        expect(termExceedsYears("2026-06-01", "2031-05-31", 5)).toBe(false);
+        expect(termExceedsYears("2026-06-01", "2031-06-01", 5)).toBe(true);
+        expect(termExceedsYears("", "2031-06-01", 5)).toBe(false);
+    });
+
+    it("counts a term's whole years", async () => {
+        const { termYears } = await import("../leaseTerm");
+        expect(termYears("2026-06-01", "2027-05-31")).toBe(1);
+        expect(termYears("2026-06-01", "2032-05-31")).toBe(6);
+        expect(termYears("2026-06-01", "2999-06-01")).toBe(973);
+    });
+});

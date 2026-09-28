@@ -1,5 +1,6 @@
 import type { LeaseStatus } from "../api/leasing";
 import { EXPIRING_DAYS, plusDays } from "../dashboard/pipeline";
+import { idParam } from "../urlIds";
 
 /** The contract list's status pills (spec §1a): All · Draft · Active · Expiring · Notice · Ended. */
 export type ContractView = "all" | "draft" | "active" | "expiring" | "notice" | "ended";
@@ -35,7 +36,9 @@ export interface ContractListState {
 export function parseContractView(sp: URLSearchParams): ContractListState {
     const raw = (sp.get("status") ?? "").toUpperCase();
     const status = (ALL_STATUSES as string[]).includes(raw) ? (raw as LeaseStatus) : "";
-    const base = { propertyId: sp.get("propertyId") ?? "", buildingId: sp.get("buildingId") ?? "", search: sp.get("search") ?? "" };
+    // Break round 1: a malformed id (hand-edited, truncated) is no filter —
+    // it must never reach the API as a 400.
+    const base = { propertyId: idParam(sp.get("propertyId")), buildingId: idParam(sp.get("buildingId")), search: sp.get("search") ?? "" };
     const v = sp.get("view");
     if (v === "expiring") return { ...base, view: "expiring", subset: null, status: "" };
     if (v === "upcoming") return { ...base, view: "active", subset: "upcoming", status: "" };

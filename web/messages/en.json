@@ -49,6 +49,12 @@
     "create": "Create",
     "createPortalAccount": "Create Portal Account",
     "createRenterProfile": "Create a new tenant profile.",
+    "duplicateRenterTitle": "A tenant with these details already exists",
+    "duplicateRenterBody": "Check this is not the same person before creating another record.",
+    "duplicateMatchEmail": "same email",
+    "duplicateMatchPhone": "same phone",
+    "openExisting": "Open existing",
+    "createAnyway": "Create anyway",
     "delete": "Delete",
     "deleteDraft": "Delete draft",
     "deleteDraftTitle": "Delete draft contract?",
@@ -917,6 +923,7 @@
       "managersLoadError": "Couldn't load the property managers for this property. Please try again.",
       "hostLoadError": "Couldn't find out who hosts meetings. Please try again.",
       "preferredDate": "Preferred Date",
+      "dateInPast": "A meeting can't be booked in the past — pick today or a later date.",
       "availableSlots": "Available Slots",
       "noSlotsReturned": "No slots returned. Please pick a different date.",
       "hostUnknown": "Could not determine host. Please go back and verify your selection.",
@@ -1627,7 +1634,8 @@
     "groupTenants": "Organizations",
     "leaseFallback": "Tenancy Contract",
     "cheque": "Cheque {number}",
-    "installment": "Installment {number}"
+    "installment": "Installment {number}",
+    "selectOrgHint": "Select an organisation to search its contracts and cheques. Organisations are still searched here."
   },
   "ErrorBoundary": {
     "title": "Something went wrong",
@@ -2179,6 +2187,9 @@
     "errSelectRenter": "Select a tenant.",
     "errDatesRequired": "A start date and an end date are both required.",
     "errEndAfterStart": "The end date must be after the start date.",
+    "errTermTooLong": "A contract can run for at most {max} years. Check the end date.",
+    "longTermConfirm": "This contract runs {years} years — continue?",
+    "longTermContinue": "Continue",
     "errLinesRequired": "Add at least one charge line.",
     "errLineNeedsType": "Every line needs a charge type.",
     "errDiscountOverAmount": "A discount cannot be more than the line's amount.",
@@ -4642,5 +4653,36 @@
     "commercial": "Commercial",
     "selectUnit": "Select a unit",
     "selectRenter": "Select a tenant"
+  },
+  "PageState": {
+    "accessDeniedTitle": "Access denied",
+    "accessDeniedBody": "You do not have permission to view this page. Ask your organisation admin if you need access.",
+    "notFoundTitle": "Not found",
+    "propertyNotFound": "Property not found. It may have been removed, or you may not have access to it.",
+    "backToProperties": "Back to properties",
+    "backToDashboard": "Back to the dashboard",
+    "loadFailedTitle": "This page could not be loaded",
+    "loadFailedBody": "Something went wrong while loading. Check your connection and try again.",
+    "retry": "Retry",
+    "selectOrgTitle": "Select an organisation",
+    "selectOrgBody": "You are in Global View. This page shows one organisation's data, so choose an organisation in the switcher at the top to continue.",
+    "orgChangedTitle": "Organisation changed in another tab",
+    "orgChangedBody": "Another tab switched to a different organisation. Reload this tab before you continue, so nothing is saved to or read from the wrong organisation.",
+    "reload": "Reload",
+    "sessionExpired": "Your session has ended. Taking you to sign in…",
+    "orgUnavailableTitle": "This organisation is not available",
+    "orgUnavailableBody": "The organisation this tab was using is inactive or no longer open to you. Reload to continue in your own organisation.",
+    "goToOrganisations": "Choose an organisation"
+  },
+  "MoneyInput": {
+    "format": "Enter an amount such as 1,250.50",
+    "decimals": "Use at most 2 decimal places",
+    "min": "Enter at least 0.01",
+    "negative": "The amount cannot be negative",
+    "max": "The amount is too large (maximum 999,999,999,999.99)",
+    "dateTooFar": "The date can be at most one year from today ({max})",
+    "aboveOutstanding": "This is {excess} more than the {outstanding} still outstanding on this contract. It will be recorded as an advance payment — confirm to continue.",
+    "recordAnyway": "Record anyway",
+    "amendNoChanges": "Nothing has changed yet — edit a line to amend."
   }
 }

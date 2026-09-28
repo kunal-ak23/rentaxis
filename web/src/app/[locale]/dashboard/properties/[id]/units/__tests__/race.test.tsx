@@ -31,14 +31,14 @@ beforeEach(() => {
     global.fetch = vi.fn(async (url: unknown) => {
         const u = String(url);
         if (u.includes("/v1/buildings/property/")) {
-            return { ok: true, json: async () => [{ id: "bA", nameEn: "Tower A" }, { id: "bB", nameEn: "Tower B" }] } as unknown as Response;
+            return { ok: true, json: async () => [{ id: "baaaaaaa-0000-4000-8000-00000000000a", nameEn: "Tower A" }, { id: "bbbbbbbb-0000-4000-8000-00000000000b", nameEn: "Tower B" }] } as unknown as Response;
         }
         if (u.includes("/units/paged")) {
-            if (u.includes("buildingId=bA")) {
+            if (u.includes("buildingId=baaaaaaa-0000-4000-8000-00000000000a")) {
                 await slow;
                 return { ok: true, json: async () => page([unit("u1", "A-101")]) } as unknown as Response;
             }
-            if (u.includes("buildingId=bB")) {
+            if (u.includes("buildingId=bbbbbbbb-0000-4000-8000-00000000000b")) {
                 return { ok: true, json: async () => page([unit("u2", "B-101")]) } as unknown as Response;
             }
             return { ok: true, json: async () => page([unit("u1", "A-101"), unit("u2", "B-101")]) } as unknown as Response;
@@ -72,8 +72,8 @@ describe("Units — P3-1: no stale response wins", () => {
 
         // Tower A hangs; switching straight to Tower B must not let A's
         // (eventually resolved) units replace B's once it lands.
-        fireEvent.change(select, { target: { value: "bA" } });
-        fireEvent.change(select, { target: { value: "bB" } });
+        fireEvent.change(select, { target: { value: "baaaaaaa-0000-4000-8000-00000000000a" } });
+        fireEvent.change(select, { target: { value: "bbbbbbbb-0000-4000-8000-00000000000b" } });
 
         await screen.findByText("#B-101");
         expect(screen.queryByText("#A-101")).toBeNull();

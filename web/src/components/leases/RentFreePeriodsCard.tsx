@@ -1,5 +1,7 @@
 "use client";
 
+import { moneyInputError, moneyValueOrNull } from "@/lib/money";
+import { MoneyFieldError } from "@/components/ui/NumberInput";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { Gift, Loader2, Plus, Trash2 } from "lucide-react";
@@ -40,6 +42,9 @@ type Props = {
  * its headline for the whole term; the concession comes off what the renter pays.
  * Income is recognised straight-line over the whole term, free months included.
  */
+
+/** A concession may be zero (the period is free of nothing) but not negative. */
+const OVERRIDE = { allowZero: true } as const;
 export default function RentFreePeriodsCard({ lease, editable, onSaved }: Props) {
     const t = useTranslations("RentFree");
     const locale = useLocale();
@@ -63,8 +68,14 @@ export default function RentFreePeriodsCard({ lease, editable, onSaved }: Props)
 
     if (!editable && saved.length === 0) return null;
 
+    // Batch 4 review #2: the override drives the TCO, so it goes through the shared
+    // money parse — refused (3 decimals, "1,5", negative) is no override and blocks Save.
+    const overrideError = (r: Draft) =>
+        r.concessionOverride.trim() === "" ? null : moneyInputError(r.concessionOverride, OVERRIDE);
+    const overrideOf = (r: Draft) =>
+        r.concessionOverride.trim() === "" ? null : moneyValueOrNull(r.concessionOverride, OVERRIDE);
     const concessionOf = (r: Draft) =>
-        r.concessionOverride.trim() !== "" ? Number(r.concessionOverride) : computedConcession(headline, daysBetween(r.fromDate, r.toDate), termDays);
+        overrideOf(r) ?? computedConcession(headline, daysBetween(r.fromDate, r.toDate), termDays);
     const total = Math.round(rows.reduce((s, r) => s + (concessionOf(r) || 0), 0) * 100) / 100;
 
     const save = async () => {
@@ -74,7 +85,7 @@ export default function RentFreePeriodsCard({ lease, editable, onSaved }: Props)
             const body: RentFreePeriod[] = rows.map(r => ({
                 fromDate: r.fromDate,
                 toDate: r.toDate,
-                concessionOverride: r.concessionOverride.trim() === "" ? null : Number(r.concessionOverride),
+                concessionOverride: overrideOf(r),
                 note: r.note.trim() || null,
             }));
             onSaved(await leaseApi.setRentFreePeriods(lease.id, body));
@@ -124,11 +135,14 @@ export default function RentFreePeriodsCard({ lease, editable, onSaved }: Props)
                             </div>
                             <div>
                                 <label className={label} htmlFor={`rf-override-${i}`}>{t("override")}</label>
-                                <input id={`rf-override-${i}`} type="number" min={0} step="0.01" className={`${field} text-end`}
+                                <input id={`rf-override-${i}`} type="text" inputMode="decimal" dir="ltr" className={`${field} text-end`}
+                                    aria-invalid={overrideError(r) !== null}
+                                    aria-describedby={overrideError(r) ? `rf-override-error-${i}` : undefined}
                                     placeholder={fmtAmount(computedConcession(headline, daysBetween(r.fromDate, r.toDate), termDays))}
                                     value={r.concessionOverride}
                                     data-testid={`rent-free-override-${i}`}
                                     onChange={e => update(i, { concessionOverride: e.target.value })} />
+                                {overrideError(r) && <MoneyFieldError id={`rf-override-error-${i}`} error={overrideError(r)!} />}
                             </div>
                             <div>
                                 <label className={label} htmlFor={`rf-note-${i}`}>{t("note")}</label>
@@ -152,7 +166,7 @@ export default function RentFreePeriodsCard({ lease, editable, onSaved }: Props)
                             {t.rich("summary", { headline: fmtAmount(headline), concession: fmtAmount(total), payable: fmtAmount(Math.max(0, headline - (rentLine?.discountAmount ?? 0) - total)), ...bdi })}
                         </p>
                         <button type="button" data-testid="rent-free-save" onClick={save}
-                            disabled={busy || rows.some(r => !r.fromDate || !r.toDate)}
+                            disabled={busy || rows.some(r => !r.fromDate || !r.toDate || overrideError(r) !== null)}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-[11px] font-bold cursor-pointer disabled:opacity-50">
                             {busy && <Loader2 size={12} className="animate-spin" />}
                             {t("save")}

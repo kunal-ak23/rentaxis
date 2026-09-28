@@ -76,6 +76,14 @@ import java.util.UUID;
 @Service
 public class BadDebtService {
 
+    /** Break-it round 1 (money) F4: the one-year window on manual dates, on the app clock. */
+    private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates = com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setManualPostingDates(com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates) {
+        this.manualDates = manualDates;
+    }
+
     static final DateTimeFormatter DMY = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     public record Item(UUID chequeId, int seqNo, String chequeNumber, LocalDate date, BigDecimal amount,
@@ -95,7 +103,7 @@ public class BadDebtService {
 
     public record ProposeRequest(UUID leaseId, List<UUID> chequeIds, LocalDate date, String reason) { }
 
-    public record RecoveryRequest(BigDecimal amount, LocalDate date, UUID accountId, String note) { }
+    public record RecoveryRequest(@com.datagami.rentaxis.api.validation.Money(positive = true) BigDecimal amount, LocalDate date, UUID accountId, String note) { }
 
     private final BadDebtWriteOffRepository writeOffs;
     private final BadDebtRecoveryRepository recoveries;
@@ -323,6 +331,8 @@ public class BadDebtService {
                     Map.of("account", bank.getCode() == null ? bank.getName() : bank.getCode()));
         }
         LocalDate on = r.date() != null ? r.date() : LocalDate.now();
+        // Batch 4 review #4: a recovery is a receipt dated by hand; its BDR number carries a two-digit year.
+        manualDates.requireWithinAYear(on, "A bad-debt recovery");
         String narration = "Bad debt recovered" + (r.note() == null || r.note().isBlank() ? "" : ": " + r.note().trim());
         JournalEntry bdr = posting.post(PostingRequest.ofPairs(JournalDocType.BDR, on, narration,
                 LeaseChequeRegistrar.dimensions(lease, null), JournalSourceType.BAD_DEBT, w.getId(), null,

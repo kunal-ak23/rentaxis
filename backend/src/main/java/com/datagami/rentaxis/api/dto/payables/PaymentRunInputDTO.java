@@ -19,5 +19,5 @@ import java.util.UUID;
 public record PaymentRunInputDTO(@NotNull LocalDate paymentDate, @NotNull UUID paymentAccountId,
                                  @NotNull VoucherPaymentMethod method, LocalDate chequeDate, String firstChequeNumber,
                                  String narration, @NotNull @Valid List<Item> items) {
-    public record Item(UUID invoiceId, UUID openingItemId, @NotNull BigDecimal amount, Boolean applyAdvance) { }
+    public record Item(UUID invoiceId, UUID openingItemId, @NotNull @com.datagami.rentaxis.api.validation.Money(positive = true) BigDecimal amount, Boolean applyAdvance) { }
 }

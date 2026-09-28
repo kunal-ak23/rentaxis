@@ -446,8 +446,7 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
                                 <label className={label} htmlFor="cheque-detail-amount">{tl("amount")}</label>
                                 <NumberInput
                                     id="cheque-detail-amount"
-                                    min={0}
-                                    step={0.01}
+                                    money
                                     className={`${field} text-end tabular-nums`}
                                     value={amount}
                                     onChange={setAmount}

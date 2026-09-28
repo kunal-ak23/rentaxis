@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api.dto.lease;
 
+import com.datagami.rentaxis.api.validation.Money;
 import com.datagami.rentaxis.domain.entity.enums.ChequeMode;
 
 import java.math.BigDecimal;
@@ -39,10 +40,10 @@ public record ChequeRowInput(UUID id,
                              String payeeBank,
                              String payerName,
                              UUID debitAccountId,
-                             BigDecimal amount,
+                             @Money(positive = true) BigDecimal amount,
                              String narration,
                              ChequeMode mode,
-                             BigDecimal vatAmount,
+                             @Money BigDecimal vatAmount,
                              com.datagami.rentaxis.domain.entity.enums.ChequeRowKind rowKind) {
 
     /** A row that does not say what it collects. */

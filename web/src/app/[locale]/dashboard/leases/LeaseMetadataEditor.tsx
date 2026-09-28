@@ -1,5 +1,6 @@
 "use client";
 
+import { focusFirstInvalidMoney } from "@/components/ui/NumberInput";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { AlertTriangle, CheckCircle2, ChevronRight, Loader2, RefreshCw, Save } from "lucide-react";
@@ -123,6 +124,8 @@ export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, class
     const { rest: bannerErrors } = splitLineErrors(errors);
 
     const handleSave = async () => {
+        // Break-it round 1 (money) F1: a refused amount reports 0; never save it as that.
+        if (focusFirstInvalidMoney(document)) return;
         if (rows.some(r => !r.chargeTypeId)) {
             setErrors([t("errLineNeedsType")]);
             return;

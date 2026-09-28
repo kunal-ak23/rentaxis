@@ -27,3 +27,36 @@ export function monthsInclusive(startDate: string, endDate: string): number {
     if (end.getDate() < start.getDate()) months -= 1;
     return Math.max(months, 1);
 }
+
+/** Longest term a contract may run — the backend's LeaseService.MAX_TERM_YEARS. */
+export const MAX_TERM_YEARS = 50;
+/** Terms longer than this ask the operator to confirm (a typo'd year is likelier than a 6-year lease). */
+export const CONFIRM_TERM_YEARS = 5;
+
+/**
+ * `iso` (YYYY-MM-DD) plus `years`, as java.time's plusYears: a 29 February
+ * that lands in a common year becomes the 28th.
+ */
+export function addYearsIso(iso: string, years: number): string {
+    const [y, m, d] = iso.split("-").map(Number);
+    const year = y + years;
+    const lastDay = new Date(year, m, 0).getDate();
+    const pad = (n: number, w = 2) => String(n).padStart(w, "0");
+    return `${pad(year, 4)}-${pad(m)}-${pad(Math.min(d, lastDay))}`;
+}
+
+/**
+ * Whether an end-inclusive term runs longer than `years` years — the same
+ * rule as the backend: 01/06/2026 → 31/05/2076 is exactly 50 years; one more
+ * day is over. Missing or malformed dates are left to the other checks.
+ */
+export function termExceedsYears(startDate: string, endDate: string, years: number): boolean {
+    const iso = /^\d{4}-\d{2}-\d{2}$/;
+    if (!iso.test(startDate) || !iso.test(endDate)) return false;
+    return endDate >= addYearsIso(startDate, years);
+}
+
+/** Whole years in an end-inclusive term (1 Jun 2026 → 31 May 2032 is 6). */
+export function termYears(startDate: string, endDate: string): number {
+    return Math.floor(monthsInclusive(startDate, endDate) / 12);
+}

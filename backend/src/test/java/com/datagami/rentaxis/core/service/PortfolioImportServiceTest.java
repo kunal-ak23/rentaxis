@@ -399,6 +399,31 @@ class PortfolioImportServiceTest {
                 .doesNotContain("StartDate", "EndDate", "AgreementDate");
     }
 
+    /** Break round 1: the same 50-year cap as the lease wizard and LeaseService. */
+    @Test
+    void leaseTermOverFiftyYears_isARowError() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Leases", 1, "StartDate", "01/03/2026");
+        setCell(wb, "Leases", 1, "EndDate", "01/03/2999");
+
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
+
+        assertThat(errors).anyMatch(e -> "EndDate".equals(e.getField())
+                && e.getMessage().contains("at most 50 years")
+                && e.getMessage().contains("01/03/2026") && e.getMessage().contains("01/03/2999"));
+    }
+
+    @Test
+    void leaseTermOfExactlyFiftyYears_isAccepted() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Leases", 1, "StartDate", "01/03/2026");
+        setCell(wb, "Leases", 1, "EndDate", "28/02/2076");
+
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
+
+        assertThat(errors).extracting(ImportErrorDTO::getField).doesNotContain("EndDate");
+    }
+
     @Test
     void realExcelDateCells_areAccepted() {
         Workbook wb = buildLegacyWorkbook();

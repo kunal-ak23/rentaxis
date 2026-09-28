@@ -83,7 +83,7 @@ public class UnitListingController {
     }
 
     @PostMapping
-    public ResponseEntity<UnitListingDTO> create(@RequestBody UnitListingCreateRequest req) {
+    public ResponseEntity<UnitListingDTO> create(@jakarta.validation.Valid @RequestBody UnitListingCreateRequest req) {
         checkEnabled();
         UUID tenantId = TenantContextHolder.getTenantId();
         requireUnitInScope(req.unitId());
@@ -93,7 +93,7 @@ public class UnitListingController {
 
     @PutMapping("/{id}")
     public ResponseEntity<UnitListingDTO> update(@PathVariable UUID id,
-                                                 @RequestBody UnitListingUpdateRequest req) {
+                                                 @jakarta.validation.Valid @RequestBody UnitListingUpdateRequest req) {
         checkEnabled();
         requireListingInScope(id);
         UUID tenantId = TenantContextHolder.getTenantId();
