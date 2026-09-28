@@ -59,13 +59,13 @@ class UnitControllerBulkUploadTest {
                 101,BHK1,850,55000,VACANT
                 102,STUDIO,,,
                 """);
-        when(service.bulkCreateUnits(eq(propertyId), eq(null), any())).thenAnswer(inv -> inv.getArgument(2));
+        when(service.bulkCreateUnits(eq(propertyId), eq(null), any(), any())).thenAnswer(inv -> inv.getArgument(2));
 
         ResponseEntity<?> res = controller.bulkUploadUnits(file, propertyId, null);
 
         assertThat(res.getStatusCode().value()).isEqualTo(200);
         ArgumentCaptor<List<Unit>> captor = ArgumentCaptor.forClass(List.class);
-        verify(service).bulkCreateUnits(eq(propertyId), eq(null), captor.capture());
+        verify(service).bulkCreateUnits(eq(propertyId), eq(null), captor.capture(), eq(List.of(2, 3)));
         List<Unit> units = captor.getValue();
         assertThat(units).hasSize(2);
         assertThat(units.get(0).getUnitNumber()).isEqualTo("101");
@@ -96,7 +96,7 @@ class UnitControllerBulkUploadTest {
                 "Row 2: Invalid unit type 'BHK4'",
                 "Row 3: Invalid SizeSqft 'not-a-number'",
                 "Row 4: Invalid status 'SOMEDAY'"));
-        verify(service, never()).bulkCreateUnits(any(), any(), any());
+        verify(service, never()).bulkCreateUnits(any(), any(), any(), any());
     }
 
     @Test
@@ -112,7 +112,7 @@ class UnitControllerBulkUploadTest {
         Map<?, ?> body = (Map<?, ?>) res.getBody();
         assertThat(body).isNotNull();
         assertThat(body.get("errors")).isEqualTo(List.of("Row 2: UnitNumber is required"));
-        verify(service, never()).bulkCreateUnits(any(), any(), any());
+        verify(service, never()).bulkCreateUnits(any(), any(), any(), any());
     }
 
     @Test
@@ -123,6 +123,35 @@ class UnitControllerBulkUploadTest {
         Map<?, ?> body = (Map<?, ?>) res.getBody();
         assertThat(body).isNotNull();
         assertThat(body.get("message")).isEqualTo("CSV file is empty");
-        verify(service, never()).bulkCreateUnits(any(), any(), any());
+        verify(service, never()).bulkCreateUnits(any(), any(), any(), any());
+    }
+
+    /**
+     * Break-it R3 ops3 F2 / data3 F5: the rules Add Unit applies hold per row — a
+     * negative size or rent, and a rent with a third decimal (never rounded), are row
+     * errors and nothing reaches the service.
+     */
+    @Test
+    void negativeSizeNegativeRentAndThirdDecimal_areRowErrors() {
+        MockMultipartFile file = csv("""
+                unitNumber,type,sizeSqft,expectedRent,status
+                OPS-B101,BHK1,-50,-9000,VACANT
+                OPS-B102,BHK1,850,1000.555,VACANT
+                OPS-B103,BHK1,0,-5000,VACANT
+                OPS-B104,BHK1,850,1000.50,VACANT
+                """);
+
+        ResponseEntity<?> res = controller.bulkUploadUnits(file, propertyId, null);
+
+        assertThat(res.getStatusCode().value()).isEqualTo(400);
+        Map<?, ?> body = (Map<?, ?>) res.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.get("errors")).isEqualTo(List.of(
+                "Row 2: Size must be greater than 0",
+                "Row 2: Expected rent: Amounts cannot be negative",
+                "Row 3: Expected rent: Amounts can have at most 2 decimal places",
+                "Row 4: Size must be greater than 0",
+                "Row 4: Expected rent: Amounts cannot be negative"));
+        verify(service, never()).bulkCreateUnits(any(), any(), any(), any());
     }
 }

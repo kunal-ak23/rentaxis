@@ -38,8 +38,10 @@ public class UnitService {
      */
     @Transactional
     public Unit createUnit(UnitRequest r) {
-        if (r.unitNumber() == null || r.unitNumber().isBlank()) {
-            throw new BusinessRuleViolationException("Unit number is required");
+        // Break-it R3 ops3 F2: the field rules the CSV upload shares (UnitRules).
+        List<String> problems = UnitRules.fieldProblems(r.unitNumber(), r.sizeSqft(), r.expectedRent(), r.actualRent());
+        if (!problems.isEmpty()) {
+            throw new BusinessRuleViolationException(problems.get(0));
         }
         if (r.property() == null) {
             throw new BusinessRuleViolationException("property.id is required");
@@ -47,17 +49,74 @@ public class UnitService {
         Property property = refs.propertyOrNull(r.property());
         Building building = r.building() == null ? null : refs.building(r.building().id(), property);
 
+        // Break-it R3 ops3 F1: one unit number once per building (or per property
+        // for a unit in no building), compared normalised.
+        String number = UnitRules.display(r.unitNumber());
+        if (takenNumbers(property, building).contains(UnitRules.normalise(number))) {
+            throw numberTaken(number, property, building, null);
+        }
+
         Unit u = new Unit();
         u.setProperty(property);
         u.setBuilding(building);
-        u.setUnitNumber(r.unitNumber().trim());
+        u.setUnitNumber(number);
         if (r.type() != null) u.setType(r.type());
         u.setSizeSqft(r.sizeSqft());
         if (r.status() != null) u.setStatus(r.status());
         if (r.expectedRent() != null) u.setExpectedRent(r.expectedRent());
         if (r.actualRent() != null) u.setActualRent(r.actualRent());
         u.setCurrentTenantName(r.currentTenantName());
-        return Loaded.with(repository.save(u), Unit::getProperty, Unit::getBuilding);
+        Unit saved = repository.save(u);
+        flushTranslatingNumberClash(number, property, building);
+        return Loaded.with(saved, Unit::getProperty, Unit::getBuilding);
+    }
+
+    /** The normalised unit numbers already taken in the scope a new unit in {@code building} (or none) joins. */
+    private java.util.Set<String> takenNumbers(Property property, Building building) {
+        UUID tenantId = property.getTenantId();
+        List<String> numbers = building != null
+                ? repository.unitNumbersInBuilding(tenantId, building.getId())
+                : repository.unitNumbersWithoutBuilding(tenantId, property.getId());
+        java.util.Set<String> keys = new java.util.HashSet<>();
+        for (String n : numbers) keys.add(UnitRules.normalise(n));
+        return keys;
+    }
+
+    /** "Unit 101 already exists in Tower A" — a 400 naming the clash, with a translatable code. */
+    static BusinessRuleViolationException numberTaken(String number, Property property, Building building, Integer row) {
+        String place = building != null ? building.getNameEn() : property.getNameEn();
+        String message = (row != null ? "Row " + row + ": " : "")
+                + "Unit " + number + " already exists in " + place;
+        java.util.Map<String, Object> args = new java.util.LinkedHashMap<>();
+        args.put("unitNumber", number);
+        args.put("place", place);
+        return new BusinessRuleViolationException(message, UNIT_NUMBER_TAKEN, args);
+    }
+
+    public static final String UNIT_NUMBER_TAKEN = "unit.numberTaken";
+
+    /**
+     * Flushes now so that a second tab which passed the check at the same moment
+     * meets changeset 157's unique index here, and gets the same readable refusal
+     * rather than a constraint name.
+     */
+    private void flushTranslatingNumberClash(String number, Property property, Building building) {
+        try {
+            repository.flush();
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            if (isNumberIndexViolation(e)) {
+                throw numberTaken(number, property, building, null);
+            }
+            throw e;
+        }
+    }
+
+    static boolean isNumberIndexViolation(Throwable e) {
+        int depth = 0;
+        for (Throwable t = e; t != null && depth++ < 16; t = t.getCause()) {
+            if (t.getMessage() != null && t.getMessage().contains("uq_units_number_")) return true;
+        }
+        return false;
     }
 
     /**
@@ -200,12 +259,61 @@ public class UnitService {
      */
     @Transactional
     public List<Unit> bulkCreateUnits(UUID propertyId, UUID buildingId, List<Unit> units) {
+        return bulkCreateUnits(propertyId, buildingId, units, null);
+    }
+
+    /**
+     * Break-it R3 ops3 F1/F2: every row meets the rules Add Unit applies — the field
+     * rules ({@link UnitRules#fieldProblems}) and one unit number once per building
+     * (or per property), against the units already there and the file's other rows.
+     * Any refused row refuses the file: nothing is saved, and
+     * {@link UnitRowsRejectedException} lists every row's reason.
+     *
+     * @param rowNumbers the file row of each unit, for the messages; null numbers them from row 2
+     */
+    @Transactional
+    public List<Unit> bulkCreateUnits(UUID propertyId, UUID buildingId, List<Unit> units, List<Integer> rowNumbers) {
         Property property = refs.property(propertyId);
         Building building = buildingId == null ? null : refs.building(buildingId, property);
-        for (Unit unit : units) {
+        java.util.Set<String> taken = takenNumbers(property, building);
+        java.util.Map<String, Integer> seen = new java.util.HashMap<>();
+        List<String> errors = new java.util.ArrayList<>();
+        for (int i = 0; i < units.size(); i++) {
+            Unit unit = units.get(i);
+            int row = rowNumbers != null ? rowNumbers.get(i) : i + 2;
+            for (String problem : UnitRules.fieldProblems(unit.getUnitNumber(), unit.getSizeSqft(),
+                    unit.getExpectedRent(), unit.getActualRent())) {
+                errors.add("Row " + row + ": " + problem);
+            }
+            String number = UnitRules.display(unit.getUnitNumber());
+            if (number == null || number.isEmpty()) continue;
+            String key = UnitRules.normalise(number);
+            if (taken.contains(key)) {
+                errors.add(numberTaken(number, property, building, row).getMessage());
+            } else if (seen.containsKey(key)) {
+                errors.add("Row " + row + ": Unit " + number + " is listed twice in this file (also row "
+                        + seen.get(key) + ")");
+            } else {
+                seen.put(key, row);
+            }
+            unit.setUnitNumber(number);
             unit.setProperty(property);
             unit.setBuilding(building);
         }
-        return repository.saveAll(units);
+        if (!errors.isEmpty()) {
+            throw new UnitRowsRejectedException(errors);
+        }
+        List<Unit> saved = repository.saveAll(units);
+        try {
+            repository.flush();
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            if (isNumberIndexViolation(e)) {
+                // Another upload or Add Unit took one of these numbers meanwhile.
+                throw new UnitRowsRejectedException(List.of(
+                        "A unit number in this file was just added elsewhere; nothing was saved. Upload again to see which."));
+            }
+            throw e;
+        }
+        return saved;
     }
 }

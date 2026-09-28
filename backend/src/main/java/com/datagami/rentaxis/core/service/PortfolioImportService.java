@@ -188,7 +188,8 @@ public class PortfolioImportService {
             } else if (!propertyName.isEmpty()) {
                 // Composite key: buildingName|unitNumber — allows same unit number in different buildings
                 // Lowercase both so casing differences across sheets don't cause false mismatches
-                String compositeKey = buildingName.toLowerCase() + "|" + unitNumber.toLowerCase();
+                // Break-it R3 ops3 F1: the unit number compared the way Add Unit compares it.
+                String compositeKey = buildingName.toLowerCase() + "|" + UnitRules.normalise(unitNumber);
                 Set<String> units = unitsByProperty.computeIfAbsent(propertyName.toLowerCase(), k -> new HashSet<>());
                 if (!units.add(compositeKey)) {
                     errors.add(new ImportErrorDTO("Units", rowNum, "UnitNumber", "Duplicate unit number '" + unitNumber + "' in building '" + buildingName + "' of property '" + propertyName + "'"));
@@ -199,16 +200,29 @@ public class PortfolioImportService {
                 errors.add(new ImportErrorDTO("Units", rowNum, "UnitType", "Invalid unit type: " + unitType + ". Valid: " + validUnitTypes));
             }
 
+            java.math.BigDecimal size = null;
             if (!sizeSqft.isEmpty()) {
-                try { Double.parseDouble(sizeSqft); } catch (NumberFormatException e) {
+                try { size = new java.math.BigDecimal(sizeSqft.trim()); } catch (NumberFormatException e) {
                     errors.add(new ImportErrorDTO("Units", rowNum, "SizeSqft", "Size must be numeric"));
                 }
             }
 
+            java.math.BigDecimal rent = null;
             if (!expectedRent.isEmpty()) {
-                try { Double.parseDouble(expectedRent); } catch (NumberFormatException e) {
+                try { rent = new java.math.BigDecimal(expectedRent.trim()); } catch (NumberFormatException e) {
                     errors.add(new ImportErrorDTO("Units", rowNum, "ExpectedRent", "Expected rent must be numeric"));
                 }
+            }
+
+            // Break-it R3 ops3 F2: the field rules Add Unit applies (negative, 3 decimals, too large).
+            if (!unitNumber.isEmpty() && UnitRules.numberProblem(unitNumber) != null) {
+                errors.add(new ImportErrorDTO("Units", rowNum, "UnitNumber", UnitRules.numberProblem(unitNumber)));
+            }
+            if (UnitRules.sizeProblem(size) != null) {
+                errors.add(new ImportErrorDTO("Units", rowNum, "SizeSqft", UnitRules.sizeProblem(size)));
+            }
+            if (UnitRules.rentProblem(rent) != null) {
+                errors.add(new ImportErrorDTO("Units", rowNum, "ExpectedRent", UnitRules.rentProblem(rent)));
             }
         }
     }
@@ -270,7 +284,8 @@ public class PortfolioImportService {
                 errors.add(new ImportErrorDTO("Leases", rowNum, "UnitNumber", "Unit number is required"));
             } else if (!propertyName.isEmpty()) {
                 // Use composite key buildingName|unitNumber to match units validation
-                String compositeKey = buildingName.toLowerCase() + "|" + unitNumber.toLowerCase();
+                // Break-it R3 ops3 F1: the unit number compared the way Add Unit compares it.
+                String compositeKey = buildingName.toLowerCase() + "|" + UnitRules.normalise(unitNumber);
                 Set<String> units = unitsByProperty.getOrDefault(propertyName.toLowerCase(), Collections.emptySet());
                 if (!units.contains(compositeKey)) {
                     errors.add(new ImportErrorDTO("Leases", rowNum, "UnitNumber",

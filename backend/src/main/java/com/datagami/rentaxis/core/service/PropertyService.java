@@ -169,6 +169,7 @@ public class PropertyService {
             String line;
             boolean firstLine = true;
             int rowNum = 1;
+            java.util.Map<String, Integer> seenUnits = new java.util.HashMap<>();
 
             while ((line = reader.readLine()) != null) {
                 if (firstLine) {
@@ -231,6 +232,26 @@ public class PropertyService {
                     }
                 }
 
+                // Break-it R3 ops3 F1/F2: the rules Add Unit applies — field values, and
+                // one unit number once per building (per property without one).
+                String fieldProblem = UnitRules.numberProblem(unitNumber);
+                if (fieldProblem == null && !sizeSqftStr.isEmpty()) fieldProblem = UnitRules.sizeProblem(new BigDecimal(sizeSqftStr));
+                if (fieldProblem == null && !expectedRentStr.isEmpty()) {
+                    fieldProblem = UnitRules.rentProblem(new BigDecimal(expectedRentStr));
+                    if (fieldProblem != null) fieldProblem = "Expected rent: " + fieldProblem;
+                }
+                if (fieldProblem != null) {
+                    errors.add("Row " + rowNum + ": " + fieldProblem);
+                    continue;
+                }
+                String unitKey = buildingName.toLowerCase(java.util.Locale.ROOT) + "|" + UnitRules.normalise(unitNumber);
+                Integer firstRow = seenUnits.putIfAbsent(unitKey, rowNum);
+                if (firstRow != null) {
+                    errors.add("Row " + rowNum + ": Unit " + UnitRules.display(unitNumber)
+                            + " is listed twice in this file (also row " + firstRow + ")");
+                    continue;
+                }
+
                 if (!buildingName.isEmpty()) {
                     buildingNames.add(buildingName);
                 }
@@ -279,7 +300,7 @@ public class PropertyService {
             if (!row[0].isEmpty()) {
                 unit.setBuilding(buildingMap.get(row[0]));
             }
-            unit.setUnitNumber(row[1]);
+            unit.setUnitNumber(UnitRules.display(row[1]));
             if (!row[2].isEmpty()) unit.setType(UnitType.valueOf(row[2]));
             if (!row[3].isEmpty()) unit.setSizeSqft(new BigDecimal(row[3]));
             if (!row[4].isEmpty()) unit.setExpectedRent(new BigDecimal(row[4]));

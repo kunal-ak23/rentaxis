@@ -155,7 +155,7 @@ public class PortfolioImportPersistService {
             Property property = propertyMap.get(propertyName.toLowerCase());
             Unit u = new Unit();
             u.setProperty(property);
-            u.setUnitNumber(unitNumber);
+            u.setUnitNumber(UnitRules.display(unitNumber));
             u.setStatus(UnitStatus.VACANT);
 
             if (!buildingName.isEmpty()) {

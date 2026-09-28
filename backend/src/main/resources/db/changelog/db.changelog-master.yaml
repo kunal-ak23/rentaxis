@@ -317,3 +317,5 @@ databaseChangeLog:
       file: db/changelog/changesets/154-acquired-vat-base.yaml
   - include:
       file: db/changelog/changesets/155-renter-created-at.yaml
+  - include:
+      file: db/changelog/changesets/157-unit-number-unique.yaml
