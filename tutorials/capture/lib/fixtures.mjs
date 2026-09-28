@@ -4,13 +4,15 @@ import { seed } from './context.mjs';
 export const towerId = seed.properties?.tower;
 export const towerName = seed.properties?.towerName
   || process.env.TUTORIAL_TOWER_NAME
-  || 'RentAxis Tutorial Residence Tower';
+  || 'Al Ashram Residence Tower';
 export const ahmedLeaseId = seed.leases?.ahmed;
 export const saraLeaseId = seed.leases?.sara;
 export const ticketId = seed.ticketId;
 export const meetingId = seed.meetings?.['Replacement cheque — Fatima Al Zaabi (A-102)'];
 export const listingId = seed.listings?.['Bright 2BR in Al Barsha'];
-export const parkingSpotNumber = 'TUTORIAL-B2-18';
+// Seeded names (scripts/seed_demo_tenant.py); the fallbacks match the seed's defaults.
+export const parkingSpotNumber = seed.parkingSpotNumber || 'B2-18';
+export const promotionBusinessName = seed.promotionBusinessName || 'Palm Corner Cafe';
 export const bookingPreferredDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 // ── accounting v2 (tutorials 34–37) ──────────────────────────────────────────
 // The seed manifest is the contract between `scripts/seed_demo_tenant.py` and
