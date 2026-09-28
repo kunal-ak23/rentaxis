@@ -263,7 +263,7 @@ export default function SuperAdminTenantsPage() {
                 // The list reloads; the row's button is the next action.
                 fetchTenants();
                 setStatusStale(true);
-                setStatusError(tSa("orgChanged"));
+                setStatusError(tSa("orgStatusChanged"));
                 return;
             }
             setStatusError(

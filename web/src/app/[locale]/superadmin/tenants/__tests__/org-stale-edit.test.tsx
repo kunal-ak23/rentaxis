@@ -108,7 +108,7 @@ describe("superadmin: activate / deactivate (F6)", () => {
         putResponse = () => new Response(JSON.stringify({ code: "org.changed", status: 409 }), { status: 409 });
         list = [{ ...ORG, status: "INACTIVE" }];
         fireEvent.click(screen.getByTestId("org-status-confirm"));
-        expect(await screen.findByText(en.SuperAdmin.orgChanged)).toBeInTheDocument();
+        expect(await screen.findByText(en.SuperAdmin.orgStatusChanged)).toBeInTheDocument();
         // Review r3B M9: the dialog keeps its action and cannot be confirmed again.
         expect(screen.getByTestId("org-status-confirm")).toHaveTextContent(en.SuperAdmin.orgDeactivate);
         expect(screen.getByTestId("org-status-confirm")).toBeDisabled();
