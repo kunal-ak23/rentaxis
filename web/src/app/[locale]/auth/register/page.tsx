@@ -68,7 +68,7 @@ export default function RegisterPage() {
             >
                 <div className="text-center mb-10">
                     <Image
-                        src="/logo.png"
+                        src="/miftah-wordmark.png"
                         alt="Miftah"
                         width={180}
                         height={52}

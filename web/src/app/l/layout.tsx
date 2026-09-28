@@ -23,7 +23,7 @@ export default function PublicListingLayout({
         <header className="sticky top-0 z-40 bg-white border-b border-neutral-200 shadow-sm">
           <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
             <a href="/" className="flex items-center">
-              <Image src="/logo.png" alt="Miftah" width={120} height={34} className="object-contain" priority />
+              <Image src="/miftah-wordmark.png" alt="Miftah" width={120} height={34} className="object-contain" priority />
             </a>
             <a
               href="/en/auth/login"
