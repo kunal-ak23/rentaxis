@@ -54,6 +54,6 @@ public class FiscalSettingsController {
     @PostMapping("/lock")
     public ResponseEntity<FiscalSettingsDTO> lock(@RequestBody LockBody body) {
         if (body == null || body.through() == null) throw new BusinessRuleViolationException("'through' is required");
-        return ResponseEntity.ok(dto(service.lockThrough(body.through())));
+        return ResponseEntity.ok(dto(service.lockThroughAsUser(body.through())));
     }
 }

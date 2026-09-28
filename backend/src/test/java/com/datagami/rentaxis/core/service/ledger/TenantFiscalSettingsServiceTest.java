@@ -126,4 +126,19 @@ class TenantFiscalSettingsServiceTest {
                 .isInstanceOf(BusinessRuleViolationException.class);
         assertThat(service.lockThrough(LocalDate.of(2026, 9, 30)).getBooksLockedThrough()).isEqualTo(LocalDate.of(2026, 9, 30));
     }
+
+    /** Break-it R2 money2 F3: a user cannot lock a period that has not happened (2062 for 2026). */
+    @Test
+    void aUserLockCannotBeAfterToday() {
+        service.setManualPostingDates(new ManualPostingDates(java.time.Clock.fixed(
+                java.time.Instant.parse("2026-09-28T08:00:00Z"), ManualPostingDates.BUSINESS_ZONE)));
+        when(repo.findById(tenant)).thenReturn(Optional.of(settings(1, LocalDate.of(2026, 6, 30))));
+        assertThatThrownBy(() -> service.lockThroughAsUser(LocalDate.of(2062, 9, 30)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("period lock date 30/09/2062 is in the future");
+        assertThatThrownBy(() -> service.lockThroughAsUser(LocalDate.of(2026, 9, 29)))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        assertThat(service.lockThroughAsUser(LocalDate.of(2026, 9, 28)).getBooksLockedThrough())
+                .isEqualTo(LocalDate.of(2026, 9, 28));
+    }
 }

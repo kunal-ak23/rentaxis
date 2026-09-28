@@ -143,6 +143,28 @@ public class TenantFiscalSettingsService {
      * point's VAT would sit in {@code OUTPUT_VAT_DEFERRED} for ever, undeclared. Post
      * the tax points through {@code date} first.</p>
      */
+    /**
+     * Break-it round 2 (money2) F3: the lock as a user sets it, from the fiscal
+     * page. A period that has not happened yet cannot be closed — 2062 typed for
+     * 2026 used to be accepted, refuse every posting in the organisation, and could
+     * not be taken back ("cannot move backwards"). The year-end close locks through
+     * a period end it has validated itself and goes through {@link #lockThrough}.
+     */
+    @Transactional
+    public TenantFiscalSettings lockThroughAsUser(LocalDate date) {
+        manualDates.requireNotAfterToday(date, "period lock",
+                "Only a period that has already ended can be locked; nothing was locked.");
+        return lockThrough(date);
+    }
+
+    /** Break-it round 2 (money2) F3: "today" for the lock, on the app clock. */
+    private ManualPostingDates manualDates = ManualPostingDates.system();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setManualPostingDates(ManualPostingDates manualDates) {
+        this.manualDates = manualDates;
+    }
+
     @Transactional
     public TenantFiscalSettings lockThrough(LocalDate date) {
         TenantFiscalSettings s = get();

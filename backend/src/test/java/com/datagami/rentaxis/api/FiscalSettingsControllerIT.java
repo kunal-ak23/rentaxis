@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * its defaults, an accountant moves the fiscal year and books start date, the
  * period lock only ever moves forward, and a property manager is refused.
  */
+@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class FiscalSettingsControllerIT extends AbstractPostgresIT {
 
@@ -118,6 +119,24 @@ class FiscalSettingsControllerIT extends AbstractPostgresIT {
 
         assertThat(lock(accountant, "2026-10-31").get("booksLockedThrough")).isEqualTo("2026-10-31");
         assertThat(get(accountant).get("booksLockedThrough")).isEqualTo("2026-10-31");
+    }
+
+    /**
+     * Break-it R2 money2 F3: a period that has not happened cannot be locked through
+     * the API (2062 typed for 2026 used to lock the organisation out for good).
+     * "Today" here is {@link com.datagami.rentaxis.testsupport.LaterBusinessDayConfig#TODAY}.
+     */
+    @Test
+    void theLockCannotBeAfterToday() {
+        java.time.LocalDate today = com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.TODAY;
+        assertThatThrownBy(() -> lock(accountant, today.plusDays(1).toString()))
+                .isInstanceOf(HttpClientErrorException.BadRequest.class)
+                .hasMessageContaining("date.inFuture");
+        assertThatThrownBy(() -> lock(accountant, "2062-09-30"))
+                .isInstanceOf(HttpClientErrorException.BadRequest.class)
+                .hasMessageContaining("in the future");
+        assertThat(get(accountant).get("booksLockedThrough")).isNull();
+        assertThat(lock(accountant, today.toString()).get("booksLockedThrough")).isEqualTo(today.toString());
     }
 
     @Test
