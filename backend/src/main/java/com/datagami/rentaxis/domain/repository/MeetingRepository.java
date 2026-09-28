@@ -91,4 +91,12 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
                                      @Param("rangeEnd") Instant rangeEnd,
                                      @Param("excluded") List<MeetingStatus> excluded);
 
+
+    /**
+     * Break-it R3 ops3 F5: meetings this user hosts or requested, in every
+     * organisation. Their foreign keys keep the history and refuse the user's delete.
+     */
+    @Query(value = "SELECT count(*) FROM meetings WHERE host_user_id = :userId OR requester_user_id = :userId",
+            nativeQuery = true)
+    long countByParticipantUnfiltered(@Param("userId") UUID userId);
 }

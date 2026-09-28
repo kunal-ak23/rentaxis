@@ -75,10 +75,14 @@ describe("UsersManager — a slow read for the previous selection never lands on
 
         expect(chips("PropB")).toHaveLength(1);
         expect(chips("PropA")).toHaveLength(0);
+        // Touch the list (break-it R3 ops3 F4: assignments go only when touched,
+        // with the set this panel loaded — B's, never A's late answer).
+        fireEvent.click(within(chips("PropB")[0]).getByRole("button"));
         fireEvent.click(screen.getByRole("button", { name: /update user/i }));
         await waitFor(() => expect(sent).toHaveLength(1));
         expect(sent[0].url).toContain("/admin/users/uB");
-        expect(sent[0].body.propertyIds).toEqual(["id-PropB"]);
+        expect(sent[0].body.propertyIds).toEqual([]);
+        expect(sent[0].body.expectedPropertyIds).toEqual(["id-PropB"]);
     });
 
     it("Edit A, then New user: A's late assignments never fill the new user's form", async () => {

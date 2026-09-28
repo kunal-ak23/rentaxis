@@ -114,4 +114,47 @@ public interface MaintenanceTicketRepository extends JpaRepository<MaintenanceTi
             @org.springframework.data.repository.query.Param("unrestricted") boolean unrestricted,
             @org.springframework.data.repository.query.Param("propertyIds") java.util.Collection<UUID> propertyIds,
             org.springframework.data.domain.Pageable pageable);
+
+    // ---- Break-it R3 ops3 F5: a deleted user's open tickets go back to the queue ----
+    //
+    // Keyed by the user's id alone, across organisations, on purpose: a user id is one
+    // person, who may be a member of several organisations, and deleting them must
+    // release every ticket they hold — the same reasoning as
+    // NotificationRepository.deleteByUserIdUnfiltered. Nothing here reads another
+    // organisation's data back to the caller.
+
+    /** Open tickets (not resolved or closed) assigned to this user, in every organisation. */
+    @Query(value = """
+            SELECT count(*) FROM maintenance_tickets
+            WHERE assigned_to = :userId AND status IN ('OPEN', 'ASSIGNED', 'IN_PROGRESS', 'REOPENED')
+            """, nativeQuery = true)
+    long countOpenAssignedTo(@Param("userId") UUID userId);
+
+    /** One UNASSIGNED history row per open ticket the user holds; run before {@link #releaseOpenAssignedTo}. */
+    @org.springframework.data.jpa.repository.Modifying
+    @Query(value = """
+            INSERT INTO ticket_history (id, tenant_id, ticket_id, action, from_status, to_status,
+                                        assigned_from, assigned_to, performed_by, performed_by_name, notes, created_at)
+            SELECT gen_random_uuid(), t.tenant_id, t.id, 'UNASSIGNED', t.status,
+                   CASE WHEN t.status IN ('ASSIGNED', 'IN_PROGRESS') THEN 'OPEN' ELSE t.status END,
+                   t.assigned_to, NULL, :performedBy, :performedByName, :notes, now()
+            FROM maintenance_tickets t
+            WHERE t.assigned_to = :userId AND t.status IN ('OPEN', 'ASSIGNED', 'IN_PROGRESS', 'REOPENED')
+            """, nativeQuery = true)
+    int recordReleaseOfOpenAssignedTo(@Param("userId") UUID userId, @Param("performedBy") UUID performedBy,
+                                      @Param("performedByName") String performedByName, @Param("notes") String notes);
+
+    /**
+     * Unassigns the user's open tickets: ASSIGNED and IN_PROGRESS go back to OPEN (a
+     * ticket in progress needs an assignee), OPEN and REOPENED keep their status.
+     * Bumps the version so a screen holding the ticket reloads rather than overwrites.
+     */
+    @org.springframework.data.jpa.repository.Modifying
+    @Query(value = """
+            UPDATE maintenance_tickets
+            SET status = CASE WHEN status IN ('ASSIGNED', 'IN_PROGRESS') THEN 'OPEN' ELSE status END,
+                assigned_to = NULL, updated_at = now(), version = version + 1
+            WHERE assigned_to = :userId AND status IN ('OPEN', 'ASSIGNED', 'IN_PROGRESS', 'REOPENED')
+            """, nativeQuery = true)
+    int releaseOpenAssignedTo(@Param("userId") UUID userId);
 }

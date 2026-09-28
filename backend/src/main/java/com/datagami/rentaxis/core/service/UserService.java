@@ -566,6 +566,14 @@ public class UserService {
             String phoneNumber) {
         User user = userRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("User not found"));
 
+        // Break-it R3 ops3 F4: the edit panel sends only what the admin changed; a
+        // field left out (null) keeps its current value rather than being blanked
+        // or overwritten with what a stale panel loaded.
+        if (email == null) email = user.getEmail();
+        if (name == null) name = user.getName();
+        if (role == null) role = user.getRole();
+        if (phoneNumber == null) phoneNumber = user.getPhoneNumber();
+
         String normalizedEmail = email.toLowerCase().trim();
         if (!user.getEmail().equals(normalizedEmail)) {
             // Per-tenant uniqueness for tenanted users; global among SUPER_ADMINs.
@@ -712,6 +720,48 @@ public class UserService {
         assignment.setUserId(userId);
         assignment.setPropertyId(propertyId);
         propertyAssignmentRepository.save(assignment);
+    }
+
+    public static final String USER_CHANGED = "user.changed";
+    public static final String USER_CHANGED_MESSAGE =
+            "This user's property assignments were changed by someone else since you opened the form. "
+                    + "Reload and try again.";
+
+    /**
+     * Break-it R3 ops3 F4: refuses with 409 {@code user.changed} when the user's
+     * current property assignments are not {@code expected} (the set the edit panel
+     * loaded). Null {@code expected} checks nothing (older clients).
+     */
+    @Transactional(readOnly = true)
+    public void requireAssignmentsUnchanged(UUID userId, java.util.Collection<UUID> expected) {
+        if (expected == null) return;
+        if (!new java.util.HashSet<>(getAssignedPropertyIds(userId)).equals(new java.util.HashSet<>(expected))) {
+            throw new com.datagami.rentaxis.api.exception.FiguresChangedException(USER_CHANGED, USER_CHANGED_MESSAGE);
+        }
+    }
+
+    /**
+     * Replaces the user's property assignments with {@code propertyIds}, under a lock
+     * on the user row, after checking them against {@code expected} as
+     * {@link #requireAssignmentsUnchanged} does: two panels saving at once cannot both
+     * pass the check.
+     */
+    @Transactional
+    public void replacePropertyAssignments(UUID userId, java.util.Collection<UUID> propertyIds,
+                                           java.util.Collection<UUID> expected) {
+        userRepository.lockById(userId);
+        requireAssignmentsUnchanged(userId, expected);
+        List<UUID> existingIds = getAssignedPropertyIds(userId);
+        for (UUID existingId : existingIds) {
+            if (!propertyIds.contains(existingId)) {
+                removePropertyFromUser(userId, existingId);
+            }
+        }
+        for (UUID newId : new java.util.LinkedHashSet<>(propertyIds)) {
+            if (!existingIds.contains(newId)) {
+                assignPropertyToUser(userId, newId);
+            }
+        }
     }
 
     @Transactional

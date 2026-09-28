@@ -61,7 +61,10 @@ class UserReferenceReleaserTest {
         releaser = new UserReferenceReleaser(renterRepository, promoAdEventRepository,
                 bookingRequestRepository, gatePassRepository, gatePassScanRepository,
                 leaseInteractionRepository, deviceTokenRepository, notificationRepository,
-                guardPropertyAssignmentRepository);
+                guardPropertyAssignmentRepository,
+                mock(com.datagami.rentaxis.domain.repository.MaintenanceTicketRepository.class),
+                mock(com.datagami.rentaxis.domain.repository.UserRepository.class),
+                mock(com.datagami.rentaxis.domain.repository.MeetingRepository.class));
 
         when(renterRepository.findByUserId(any())).thenReturn(Optional.empty());
     }

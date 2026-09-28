@@ -275,4 +275,13 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      * themselves.
      */
     boolean existsByPhoneNumberAndRoleAndIdNot(String phoneNumber, UserRole role, UUID id);
+
+    /**
+     * Break-it R3 ops3 F4: the user row, locked, so that checking a user's property
+     * assignments against what an edit panel loaded and replacing them cannot
+     * interleave with another panel doing the same.
+     */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select u.id from User u where u.id = :id")
+    java.util.Optional<UUID> lockById(@org.springframework.data.repository.query.Param("id") UUID id);
 }

@@ -23,9 +23,12 @@ import java.util.UUID;
 public class UserController {
 
     private final UserService userService;
+    private final com.datagami.rentaxis.core.service.UserReferenceReleaser referenceReleaser;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService,
+            com.datagami.rentaxis.core.service.UserReferenceReleaser referenceReleaser) {
         this.userService = userService;
+        this.referenceReleaser = referenceReleaser;
     }
 
     public record CreateUserRequest(String email, String password, String name, UserRole role, String tenantId,
@@ -68,8 +71,15 @@ public class UserController {
         return ResponseEntity.ok(UserResponseDTO.from(user));
     }
 
+    /**
+     * Every field is optional (break-it R3 ops3 F4): one left out keeps its current
+     * value, so the edit panel sends only what the admin changed. {@code tenantId}
+     * absent keeps the user's organisation; {@code ""} (SUPER_ADMIN only) means none.
+     * {@code expectedPropertyIds}, sent with {@code propertyIds}, is the set the panel
+     * loaded: a different current set is a 409 {@code user.changed}.
+     */
     public record UpdateUserRequest(String email, String password, String name, UserRole role, String tenantId,
-            String phoneNumber, List<UUID> propertyIds) {
+            String phoneNumber, List<UUID> propertyIds, List<UUID> expectedPropertyIds) {
     }
 
     @PutMapping("/{id}")
@@ -78,30 +88,30 @@ public class UserController {
         // the existing user must live in the caller's tenant and sit at or
         // below the caller's privilege level, and the requested new role is
         // subject to the same hierarchy + tenant-scoping rules as creation.
-        authorizeTargetUser(id);
-        String effectiveTenantId = authorizeRoleAssignment(request.role(), request.tenantId());
+        User target = authorizeTargetUser(id);
+        UserRole effectiveRole = request.role() != null ? request.role() : target.getRole();
+        String requestedTenant = request.tenantId() != null ? request.tenantId()
+                : target.getTenantId() == null ? null : target.getTenantId().toString();
+        String effectiveTenantId = authorizeRoleAssignment(effectiveRole, requestedTenant);
+
+        // Break-it R3 ops3 F4: a panel that loaded other assignments than the user
+        // has now is refused before anything is written.
+        boolean replacesAssignments = effectiveRole == UserRole.PROPERTY_MANAGER && request.propertyIds() != null;
+        if (replacesAssignments) {
+            userService.requireAssignmentsUnchanged(id, request.expectedPropertyIds());
+        }
 
         User user = userService.updateUser(
                 id,
                 request.email(),
                 request.password(),
                 request.name(),
-                request.role(),
+                effectiveRole,
                 effectiveTenantId,
                 request.phoneNumber());
 
-        if (request.role() == UserRole.PROPERTY_MANAGER && request.propertyIds() != null) {
-            List<UUID> existingIds = userService.getAssignedPropertyIds(id);
-            for (UUID existingId : existingIds) {
-                if (!request.propertyIds().contains(existingId)) {
-                    userService.removePropertyFromUser(id, existingId);
-                }
-            }
-            for (UUID newId : request.propertyIds()) {
-                if (!existingIds.contains(newId)) {
-                    userService.assignPropertyToUser(id, newId);
-                }
-            }
+        if (replacesAssignments) {
+            userService.replacePropertyAssignments(id, request.propertyIds(), request.expectedPropertyIds());
         }
 
         return ResponseEntity.ok(UserResponseDTO.from(user));
@@ -118,9 +128,30 @@ public class UserController {
         return ResponseEntity.ok(UserResponseDTO.from(userService.resendInvite(id)));
     }
 
+    /**
+     * Break-it R3 ops3 F5: what deleting this user does to work they hold, for the
+     * delete dialog — {@code openTickets} return to the unassigned queue;
+     * {@code meetings} they host or requested keep their history and block the delete.
+     */
+    @GetMapping("/{id}/delete-preview")
+    public ResponseEntity<com.datagami.rentaxis.core.service.UserReferenceReleaser.Impact> deletePreview(
+            @PathVariable UUID id) {
+        authorizeTargetUser(id);
+        return ResponseEntity.ok(referenceReleaser.impact(id));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteUser(@PathVariable UUID id) {
         authorizeTargetUser(id);
+        // Meeting history is kept (changeset 57): its foreign keys refuse the delete.
+        // Said in words here rather than as a constraint name.
+        long meetings = referenceReleaser.impact(id).meetings();
+        if (meetings > 0) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    "This user hosts or requested " + meetings + " meeting(s). Meeting history is kept, so the user"
+                            + " cannot be deleted.",
+                    "user.hasMeetings", java.util.Map.of("count", meetings));
+        }
         userService.deleteUser(id);
         return ResponseEntity.ok().build();
     }

@@ -14,6 +14,22 @@ import { AccessDeniedState, LoadFailedState } from "@/components/ui/PageStates";
 import { loadList } from "@/lib/api/listLoad";
 import { isAbortError } from "@/lib/api/abort";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { changedFields, sameIdSet } from "@/lib/changedFields";
+
+/** The fields the edit panel loaded, to send only what the admin changed (break-it R3 ops3 F4). */
+type LoadedUser = { email: string; name: string; role: string; tenantId: string; phoneNumber: string };
+const USER_FIELDS = ["email", "name", "role", "tenantId", "phoneNumber"] as const;
+
+/** The machine code of an API refusal (`user.changed`, `user.hasMeetings`, ...), if it carries one. */
+function errorCode(e: unknown): string | undefined {
+    if (!(e instanceof ApiError) || !e.body) return undefined;
+    try {
+        const code = JSON.parse(e.body)?.code;
+        return typeof code === "string" ? code : undefined;
+    } catch {
+        return undefined;
+    }
+}
 
 // Derived from PROVISIONABLE_ROLES rather than hand-listed: a hand-written copy
 // is how ACCOUNTANT came to be grantable by the API but absent from this form.
@@ -65,6 +81,9 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
     const [deleting, setDeleting] = useState(false);
     const [userToDelete, setUserToDelete] = useState<string | null>(null);
     const [deleteError, setDeleteError] = useState<string | null>(null);
+    // Break-it R3 ops3 F5: what deleting the user does to their open work.
+    const [deleteImpact, setDeleteImpact] = useState<{ openTickets: number; meetings: number } | null>(null);
+    const beginImpact = useLatestRequest();
 
     // Form error (create/update failures, e.g. duplicate email or 403)
     const [formError, setFormError] = useState<string | null>(null);
@@ -97,6 +116,11 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
     // Properties for Property Manager assignment
     const [properties, setProperties] = useState<any[]>([]);
     const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
+    // What the edit panel loaded (break-it R3 ops3 F4): the PUT sends only what
+    // changed, and assignments go with the set loaded here, so a colleague's change
+    // made meanwhile is refused (409 user.changed) rather than undone.
+    const [loadedUser, setLoadedUser] = useState<LoadedUser | null>(null);
+    const [loadedPropertyIds, setLoadedPropertyIds] = useState<string[] | null>(null);
 
     // Break round 3, F1: every load aborts on unmount and when a newer one
     // supersedes it (a quick organisation change, or Edit on another user), so
@@ -180,6 +204,8 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
     const resetForm = () => {
         beginAssignments(); // drop a previous Edit's assignment read still in flight
         setEditingUserId(null);
+        setLoadedUser(null);
+        setLoadedPropertyIds(null);
         // Non-super-admins can only provision into their own tenant.
         setEmail(""); setPassword(""); setName(""); setTenantId(isSuperAdmin ? "" : currentTenantId); setRole("TENANT_USER"); setSelectedPropertyIds([]);
         setPhoneNumber("");
@@ -191,17 +217,34 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
         setSubmitting(true);
         setFormError(null);
         try {
-            const bodyData: any = { email, name, role, tenantId, phoneNumber };
+            const current: LoadedUser = { email, name, role, tenantId, phoneNumber };
+            // An edit sends only what the admin changed here (break-it R3 ops3 F4); a
+            // new user sends everything.
+            const bodyData: Record<string, unknown> = editingUserId && loadedUser
+                ? changedFields(loadedUser, current, USER_FIELDS).changes
+                : { ...current };
             // #7/#2: a new user of an invited role never gets a password typed in
             // here; the backend emails them a set-password link instead.
             if (password && (editingUserId || PASSWORD_ON_CREATE_ROLES.has(role))) bodyData.password = password;
 
             if (role === 'PROPERTY_MANAGER') {
-                // Always send the list (including []) — the backend skips the
-                // property-assignment sync entirely when propertyIds is null,
-                // so omitting an empty selection would silently keep
-                // assignments the admin believes were revoked.
-                bodyData.propertyIds = selectedPropertyIds;
+                if (!editingUserId || loadedPropertyIds === null) {
+                    // A new manager, or assignments that never loaded: send the list
+                    // (including []) — the backend skips the sync when it is absent.
+                    bodyData.propertyIds = selectedPropertyIds;
+                } else if (!sameIdSet(selectedPropertyIds, loadedPropertyIds) || loadedUser?.role !== role) {
+                    // Only when the list was touched (or the user just became a
+                    // manager), with the set this panel loaded.
+                    bodyData.propertyIds = selectedPropertyIds;
+                    bodyData.expectedPropertyIds = loadedPropertyIds;
+                }
+            }
+
+            if (editingUserId && Object.keys(bodyData).length === 0) {
+                // Nothing changed: nothing to save.
+                setShowForm(false);
+                resetForm();
+                return;
             }
 
             const url = editingUserId
@@ -222,9 +265,31 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
             fetchUsers();
         } catch (e) {
             console.error(e);
-            setFormError(e instanceof ApiError ? e.message : tU("genericError"));
+            if (errorCode(e) === "user.changed" && editingUserId) {
+                // Reload: the panel shows the assignments as they are now.
+                await reloadAssignments(editingUserId);
+                fetchUsers();
+                setFormError(tU("userChanged"));
+            } else {
+                setFormError(e instanceof ApiError ? e.message : tU("genericError"));
+            }
         } finally {
             setSubmitting(false);
+        }
+    };
+
+    const reloadAssignments = async (userId: string) => {
+        const { signal, isCurrent } = beginAssignments();
+        try {
+            const res = await fetch(`/api/proxy/admin/users/${userId}/properties`, { signal });
+            if (!res.ok || !isCurrent()) return;
+            const ids: string[] = await res.json();
+            if (!isCurrent()) return;
+            setSelectedPropertyIds(ids);
+            setLoadedPropertyIds(ids);
+        } catch (e) {
+            if (isAbortError(e) || !isCurrent()) return;
+            console.error("Failed to reload property assignments:", e);
         }
     };
 
@@ -238,18 +303,33 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
             fetchUsers();
         } catch (e) {
             console.error(e);
-            setDeleteError(e instanceof ApiError ? e.message : tU("deleteFailed"));
+            setDeleteError(errorCode(e) === "user.hasMeetings"
+                ? tU("deleteHasMeetings", { count: deleteImpact?.meetings ?? 0 })
+                : e instanceof ApiError ? e.message : tU("deleteFailed"));
         } finally {
             setDeleting(false);
             setDeleteDialogOpen(false);
             setUserToDelete(null);
+            setDeleteImpact(null);
         }
     };
 
-    const handleDeleteClick = (id: string) => {
+    const handleDeleteClick = async (id: string) => {
         setUserToDelete(id);
         setDeleteError(null);
+        setDeleteImpact(null);
         setDeleteDialogOpen(true);
+        // Break-it R3 ops3 F5: say what happens to the user's open work first.
+        const { signal, isCurrent } = beginImpact();
+        try {
+            const res = await fetch(`/api/proxy/admin/users/${id}/delete-preview`, { signal });
+            if (!res.ok) return;
+            const impact = await res.json();
+            if (isCurrent()) setDeleteImpact(impact);
+        } catch (e) {
+            if (isAbortError(e) || !isCurrent()) return;
+            console.error("Failed to load delete preview:", e);
+        }
     };
 
     const handleEdit = async (user: User) => {
@@ -263,6 +343,14 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
         setTenantId(isSuperAdmin ? (user.tenantId || "") : currentTenantId);
         setPhoneNumber((user as any).phoneNumber || "");
         setPassword("");
+        setLoadedUser({
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            tenantId: isSuperAdmin ? (user.tenantId || "") : currentTenantId,
+            phoneNumber: (user as { phoneNumber?: string }).phoneNumber || "",
+        });
+        setLoadedPropertyIds(user.role === 'PROPERTY_MANAGER' ? null : []);
 
         // Fetch existing assignments if it's a Property Manager. Editing another
         // user before this answers supersedes it: a slow answer for the first
@@ -275,6 +363,7 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                     const ids = await res.json();
                     if (!isCurrent()) return;
                     setSelectedPropertyIds(ids);
+                    setLoadedPropertyIds(ids);
                 }
             } catch (e) {
                 if (isAbortError(e) || !isCurrent()) return;
@@ -622,14 +711,26 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
             {/* Confirm Delete Dialog */}
             <ConfirmDialog
                 isOpen={deleteDialogOpen}
-                onClose={() => setDeleteDialogOpen(false)}
+                onClose={() => { setDeleteDialogOpen(false); setDeleteImpact(null); }}
                 onConfirm={confirmDelete}
                 title={tU("deleteTitle")}
                 description={tU("deleteDescription")}
                 confirmText={tU("deleteConfirm")}
                 isDestructive={true}
                 isLoading={deleting}
-            />
+                confirmDisabled={(deleteImpact?.meetings ?? 0) > 0}
+            >
+                {deleteImpact && deleteImpact.openTickets > 0 && (
+                    <p className="text-xs text-foreground" data-testid="delete-open-tickets">
+                        {tU("deleteOpenTickets", { count: deleteImpact.openTickets })}
+                    </p>
+                )}
+                {deleteImpact && deleteImpact.meetings > 0 && (
+                    <p role="alert" className="text-xs text-error font-semibold" data-testid="delete-has-meetings">
+                        {tU("deleteHasMeetings", { count: deleteImpact.meetings })}
+                    </p>
+                )}
+            </ConfirmDialog>
 
         </div>
     );
