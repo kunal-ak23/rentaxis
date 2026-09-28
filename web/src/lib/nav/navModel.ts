@@ -41,6 +41,9 @@ function section(id: RailId, key: string, tourId: string, match: string[], group
  * (MvpSidebar.tsx at 2026-09-25); the model only regroups. A section with no
  * visible item is dropped, so no role sees an empty rail icon.
  */
+/** Where a renter's Home goes (and where one landing on /dashboard is sent). */
+export const RENTER_HOME = "/dashboard/renter-portal";
+
 export function buildNav(ctx: NavModelContext): RailSection[] {
     const { role, isEnabled, tenantSlug, booksLive } = ctx;
     const can = (p: Permission) => hasPermission(role, p);
@@ -48,7 +51,9 @@ export function buildNav(ctx: NavModelContext): RailSection[] {
 
     if (can("canViewRenterPortal")) {
         const items = [
-            pi("today", "/dashboard", N("home"), "sidebar-home", true),
+            // Break-it R3 portal3 F10: the renter's Home is their own home, not the
+            // staff dashboard (whose summary calls a renter is refused).
+            pi("today", RENTER_HOME, N("home"), "sidebar-home", true),
             pi("my-leases", "/dashboard/renter-portal", N("myLeases"), "sidebar-my-leases"),
             pi("my-payments", "/dashboard/renter-portal/payments", { ns: "OnlinePayments", key: "myPayments" }, "sidebar-my-payments"),
             pi("my-penalties", "/dashboard/renter-portal/penalties", N("myPenalties"), "sidebar-my-penalties"),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findRoute, routeDecision } from "../routeGuard";
+import { findRoute, renterHomeRedirect, routeDecision } from "../routeGuard";
 import { buildNav, flattenNav } from "../navModel";
 import type { UserRole } from "../../rbac";
 
@@ -111,5 +111,23 @@ describe("routeDecision — super admin Global View (F7)", () => {
 
     it("never asks other roles to pick an organisation (no cookie = their home org)", () => {
         expect(routeDecision("/en/dashboard/leases", "TENANT_ADMIN", false)).toBe("allow");
+    });
+});
+
+// Break-it R3 portal3 F10: a renter who lands on the staff dashboard is sent to their own home.
+describe("renterHomeRedirect", () => {
+    it("sends a RENTER on the dashboard home to the renter portal, in either locale", () => {
+        for (const p of ["/dashboard", "/en/dashboard", "/ar/dashboard", "/en/dashboard/"]) {
+            expect(renterHomeRedirect(p, "RENTER"), p).toBe("/dashboard/renter-portal");
+        }
+    });
+
+    it("leaves other pages and other roles alone", () => {
+        expect(renterHomeRedirect("/en/dashboard/tickets", "RENTER")).toBeNull();
+        expect(renterHomeRedirect("/en/dashboard/renter-portal", "RENTER")).toBeNull();
+        for (const role of ROLES.filter(r => r !== "RENTER")) {
+            expect(renterHomeRedirect("/en/dashboard", role), role).toBeNull();
+        }
+        expect(renterHomeRedirect("/en/dashboard", undefined)).toBeNull();
     });
 });

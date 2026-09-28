@@ -61,3 +61,13 @@ export function routeDecision(pathname: string, role: UserRole, hasActiveOrg: bo
 export function isDashboardHome(pathname: string | null): boolean {
     return /^(?:\/(?:en|ar))?\/dashboard\/?$/.test(pathname ?? "");
 }
+
+/**
+ * Break-it R3 portal3 F10: a RENTER on the staff dashboard home (a bookmark, a
+ * typed URL) is sent to the renter home before the page mounts — the staff
+ * dashboard's summary endpoints refuse a renter, which showed "Unable to load
+ * dashboard data". Null when no redirect is due.
+ */
+export function renterHomeRedirect(pathname: string | null, role: UserRole | undefined): string | null {
+    return role === "RENTER" && isDashboardHome(pathname) ? "/dashboard/renter-portal" : null;
+}

@@ -29,6 +29,16 @@ function canonical(href: string, role: UserRole): string {
     return canonicalHref(href);
 }
 
+/**
+ * Destinations a role deliberately no longer has. Break-it R3 portal3 F10: the
+ * renter's Home linked to the staff dashboard (/dashboard), whose summary calls
+ * refuse a renter; it now opens the renter home, which they already had.
+ */
+const REMOVED: Partial<Record<UserRole, string[]>> = {
+    RENTER: ["/dashboard"],
+};
+const kept = (role: UserRole) => (h: string) => !(REMOVED[role] ?? []).includes(h);
+
 const pathOnly = (h: string) => h.split("?")[0];
 const HUBS = new Set(["/dashboard/settings", "/dashboard/collections"]);
 
@@ -43,7 +53,7 @@ describe("RBAC parity — every role reaches exactly what it reached before", ()
     it.each(ROLES)("%s loses nothing", role => {
         const before = new Set([...LEGACY_NAV[role], ...HEADER].map(h => canonical(h, role)));
         const after = reachable(role);
-        expect([...before].filter(h => !after.has(h))).toEqual([]);
+        expect([...before].filter(kept(role)).filter(h => !after.has(h))).toEqual([]);
     });
 
     it.each(ROLES)("%s gains nothing", role => {
@@ -72,7 +82,7 @@ describe("RBAC parity with every feature flag off", () => {
     it.each(ROLES)("%s reaches the same destinations as the old sidebar did", role => {
         const before = new Set([...LEGACY_NAV[role].filter(h => !FLAG_GATED.has(h)), ...HEADER].map(h => canonical(h, role)));
         const after = reachable(role, () => false);
-        expect([...before].filter(h => !after.has(h)), "lost").toEqual([]);
+        expect([...before].filter(kept(role)).filter(h => !after.has(h)), "lost").toEqual([]);
         const beforePaths = new Set([...before].map(pathOnly));
         const gained = [...after].filter(h => {
             if (before.has(h)) return false;
