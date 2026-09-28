@@ -92,8 +92,10 @@ public class PostingService {
         this.clock = clock;
     }
 
-    /** How many years either side of today a journal may be dated (break-it R2 money2 F1). */
-    public static final int DATE_RANGE_YEARS = 60;
+    /** Years before today's year a journal may be dated (break-it R2 money2 F1). */
+    public static final int YEARS_BACK = 49;
+    /** Years after today's year a journal may be dated; the lease term cap is 50. */
+    public static final int YEARS_AHEAD = 50;
 
     /**
      * Break-it round 2 (money2) F1: every journal's number carries a two-digit year
@@ -102,13 +104,14 @@ public class PostingService {
      * either fails as a bare {@code uq_journal_entries_number} conflict or, in a
      * fresh series, takes the number and poisons that series for the real year.
      * Refused here, before a number is drawn, whoever posts: the entry year must be
-     * within {@value #DATE_RANGE_YEARS} years of today's. Lease schedules fit (the
-     * term cap is 50 years); cut-over history fits (decades, not a century).
+     * in [today − {@value #YEARS_BACK}, today + {@value #YEARS_AHEAD}] — exactly 100
+     * distinct years, so no two dates allowed at once share a two-digit year. Lease
+     * schedules fit (the term cap is 50 years); cut-over history fits (decades).
      */
     public static void requireNumberableDate(LocalDate date, LocalDate today) {
         if (date == null || today == null) return;
-        int earliest = today.getYear() - DATE_RANGE_YEARS;
-        int latest = today.getYear() + DATE_RANGE_YEARS;
+        int earliest = today.getYear() - YEARS_BACK;
+        int latest = today.getYear() + YEARS_AHEAD;
         if (date.getYear() < earliest || date.getYear() > latest) {
             String shown = date.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
             throw new BusinessRuleViolationException(
