@@ -61,6 +61,8 @@ import java.util.UUID;
 @Service
 public class YearEndCloseService {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(YearEndCloseService.class);
+
     private final FiscalYearCloseRepository closes;
     private final TenantFiscalSettingsService fiscal;
     private final PostingService posting;
@@ -316,7 +318,13 @@ public class YearEndCloseService {
             // Never unlock the pre-cut-over period: it holds the opening balance and imports.
             to = booksStart.minusDays(1);
         }
-        fiscal.reopenTo(to);
+        LocalDate lockWas = fiscal.reopenTo(to);
+        // Break-it R2 money2 F4: re-open is the designed escape hatch (SUPER_ADMIN /
+        // TENANT_ADMIN only) and may drop a later manual lock. The close row keeps who,
+        // when and why; the lock it moved is logged here, as there is no audit table.
+        log.info("Fiscal year {} re-opened for tenant {} by {}: period lock {} -> {}", fiscalYear,
+                row.getTenantId(), currentUserId(), lockWas,
+                lockWas != null && to.isBefore(lockWas) ? to : lockWas);
         row.setStatus(FiscalYearCloseStatus.REOPENED);
         row.setReopenedBy(currentUserId());
         row.setReopenedAt(Instant.now());
