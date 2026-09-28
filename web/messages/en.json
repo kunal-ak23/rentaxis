@@ -2700,6 +2700,7 @@
     "orgClose": "Close",
     "orgLogo": "Organisation Logo",
     "orgUploadLogo": "Upload Company Logo",
+    "orgLogoHint": "PNG, JPG or GIF. Max 2MB. Drag & drop or click to browse.",
     "orgStamp": "Company Stamp",
     "orgUploadStamp": "Upload Company Stamp",
     "orgStampHint": "PNG or JPG. Max 2MB. Printed beside the landlord signature on tenancy contracts.",

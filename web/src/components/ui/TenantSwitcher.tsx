@@ -8,11 +8,11 @@ import { useTranslations } from "next-intl";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasPermission, type UserRole } from "@/lib/rbac";
-import { useMyOrgs } from "@/components/nav/orgStore";
+import { orgLogoSrc, useMyOrgs } from "@/components/nav/orgStore";
 import { announceOrgChange, setPageOrg } from "@/lib/session/orgSync";
 import { OrgAvatar } from "./OrgAvatar";
 
-type Tenant = { id: string; name: string; logoUrl?: string | null };
+type Tenant = { id: string; name: string; logoVersion?: string | null };
 
 /**
  * The organisation switcher. Since PR #363 R1 it is ONE instance, in the top
@@ -128,7 +128,7 @@ export function TenantSwitcher({ isCollapsed, responsive = false }: { isCollapse
         .map((s) => s[0]?.toUpperCase() ?? "")
         .join("") || "OR";
     // Global View has no organisation, so no logo: it keeps its initials.
-    const orgLogo = isSuperAdmin && !activeTenant ? null : activeTenant?.logoUrl ?? null;
+    const orgLogo = isSuperAdmin && !activeTenant ? null : orgLogoSrc(activeTenant);
 
     return (
         <div className="relative">
@@ -149,10 +149,10 @@ export function TenantSwitcher({ isCollapsed, responsive = false }: { isCollapse
                 )}
             >
                 {isCollapsed && !responsive ? (
-                    <OrgAvatar name={orgName} initials={orgInitials} logoUrl={orgLogo} />
+                    <OrgAvatar name={orgName} initials={orgInitials} logoSrc={orgLogo} />
                 ) : (
                     <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
-                        <OrgAvatar name={orgName} initials={orgInitials} logoUrl={orgLogo} className="shrink-0" />
+                        <OrgAvatar name={orgName} initials={orgInitials} logoSrc={orgLogo} className="shrink-0" />
                         <div className={cn("flex-col items-start text-start flex-1 min-w-0 leading-tight", responsive ? "hidden xl:flex" : "flex")}>
                             <span className="text-[12px] font-semibold text-[var(--ink-900)] truncate w-full">
                                 {orgName}

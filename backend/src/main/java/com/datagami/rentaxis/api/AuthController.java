@@ -419,14 +419,16 @@ public class AuthController {
     }
 
     /**
-     * One organisation the caller may act in. {@code logoUrl} is the organisation's
-     * own logo, for the web header and switcher (null: the header shows initials).
+     * One organisation the caller may act in. {@code logoVersion} is set when the
+     * organisation has a logo: the web header then loads it from
+     * {@code /api/v1/org/branding/logo?v=<logoVersion>} (streamed from our own
+     * storage — tenant containers are private, so the stored URL itself is never
+     * handed to the browser). It changes whenever the logo does.
      */
-    public record TenantInfo(String id, String name, String slug, String logoUrl) {
+    public record TenantInfo(String id, String name, String slug, String logoVersion) {
         static TenantInfo of(LandlordOrg org) {
-            String logo = org.getLogoUrl();
             return new TenantInfo(org.getId().toString(), org.getName(), org.getSlug(),
-                    logo == null || logo.isBlank() ? null : logo.strip());
+                    OrgBrandingController.versionOf(org.getLogoUrl()));
         }
     }
 

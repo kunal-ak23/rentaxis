@@ -33,8 +33,25 @@ public final class OrgBrandImages {
     private OrgBrandImages() {
     }
 
+    /** A verified raster image: its bytes and the type they prove. */
+    public record Image(byte[] bytes, String type) {
+        public String dataUri() {
+            return "data:" + type + ";base64," + Base64.getEncoder().encodeToString(bytes);
+        }
+    }
+
     /** A {@code data:image/...;base64,...} URI for the image at {@code url}, or empty. */
     public static Optional<String> dataUri(BlobStorageService blobs, UUID tenantId, String url) {
+        return load(blobs, tenantId, url).map(Image::dataUri);
+    }
+
+    /**
+     * The image at {@code url}, read from our own storage only: Azure (the shared
+     * public-assets folder or {@code tenantId}'s own container) or, without Azure,
+     * the local assets folder. Also used to stream the logo to the browser, so the
+     * header never loads a storage URL itself.
+     */
+    public static Optional<Image> load(BlobStorageService blobs, UUID tenantId, String url) {
         if (url == null || url.isBlank()) {
             return Optional.empty();
         }
@@ -45,9 +62,18 @@ public final class OrgBrandImages {
         if (blobs == null) {
             return Optional.empty();
         }
-        return blobs.downloadOwnedUrl(tenantId, u, MAX_BYTES)
-                .map(BlobStorageService.DownloadResult::bytes)
-                .flatMap(OrgBrandImages::encode);
+        Optional<BlobStorageService.DownloadResult> read = u.startsWith("/api/v1/assets/serve/")
+                ? blobs.readLocalPublicAsset(u, MAX_BYTES)
+                : blobs.downloadOwnedUrl(tenantId, u, MAX_BYTES);
+        return read.map(BlobStorageService.DownloadResult::bytes).flatMap(OrgBrandImages::verify);
+    }
+
+    /** Checks bytes are a PNG, JPEG or GIF within the cap; the upload endpoint uses it too. */
+    public static Optional<Image> verify(byte[] bytes) {
+        if (bytes == null || bytes.length == 0 || bytes.length > MAX_BYTES) {
+            return Optional.empty();
+        }
+        return ImageTypes.sniff(bytes).map(type -> new Image(bytes, type));
     }
 
     /**
@@ -55,23 +81,16 @@ public final class OrgBrandImages {
      * bytes, so only a real raster image survives and nothing of the original string
      * (quotes, markup) reaches the HTML.
      */
-    private static Optional<String> inlineDataUri(String u) {
+    private static Optional<Image> inlineDataUri(String u) {
         int comma = u.indexOf(',');
         if (comma < 0 || !u.substring(0, comma).toLowerCase(java.util.Locale.ROOT).endsWith(";base64")) {
             return Optional.empty();
         }
         try {
-            return encode(Base64.getDecoder().decode(u.substring(comma + 1).strip()));
+            return verify(Base64.getDecoder().decode(u.substring(comma + 1).strip()));
         } catch (IllegalArgumentException e) {
             return Optional.empty();
         }
     }
 
-    private static Optional<String> encode(byte[] bytes) {
-        if (bytes == null || bytes.length == 0 || bytes.length > MAX_BYTES) {
-            return Optional.empty();
-        }
-        return ImageTypes.sniff(bytes)
-                .map(type -> "data:" + type + ";base64," + Base64.getEncoder().encodeToString(bytes));
-    }
 }

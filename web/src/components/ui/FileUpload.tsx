@@ -13,6 +13,14 @@ interface FileUploadProps {
     maxSizeMB?: number;
     label?: string;
     hint?: string;
+    /** Backend path the file is POSTed to (through /api/upload). Default: the public assets upload. */
+    uploadPath?: string;
+    /**
+     * What to show for a stored value the browser cannot load itself (a private
+     * container): an app route that streams it. A file just uploaded here is
+     * previewed from the browser's own copy instead.
+     */
+    previewSrc?: string;
 }
 
 export function FileUpload({
@@ -24,7 +32,11 @@ export function FileUpload({
     maxSizeMB = 2,
     label = "Upload Logo",
     hint = "PNG, JPG or SVG. Drag & drop or click to browse.",
+    uploadPath = "/api/v1/assets/upload",
+    previewSrc,
 }: FileUploadProps) {
+    // The browser's own copy of the file just uploaded, keyed to the URL it got.
+    const [local, setLocal] = useState<{ url: string; objectUrl: string } | null>(null);
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState("");
     const [isDragging, setIsDragging] = useState(false);
@@ -49,13 +61,16 @@ export function FileUpload({
             formData.append("file", file);
             formData.append("folder", folder);
 
-            const res = await fetch("/api/upload?path=/api/v1/assets/upload", {
+            const res = await fetch(`/api/upload?path=${encodeURIComponent(uploadPath)}`, {
                 method: "POST",
                 body: formData,
             });
 
             if (res.ok) {
                 const data = await res.json();
+                if (typeof URL.createObjectURL === "function") {
+                    setLocal({ url: data.url, objectUrl: URL.createObjectURL(file) });
+                }
                 onChange(data.url);
             } else {
                 const data = await res.json().catch(() => ({}));
@@ -66,7 +81,7 @@ export function FileUpload({
         } finally {
             setUploading(false);
         }
-    }, [folder, maxSizeMB, onChange]);
+    }, [folder, maxSizeMB, onChange, uploadPath]);
 
     const handleDrop = useCallback((e: React.DragEvent) => {
         e.preventDefault();
@@ -88,8 +103,9 @@ export function FileUpload({
         return (
             <div className="flex items-center gap-4">
                 <div className="relative group">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- uploaded file / streamed preview */}
                     <img
-                        src={value}
+                        src={local && local.url === value ? local.objectUrl : previewSrc ?? value}
                         alt="Uploaded"
                         className="h-16 max-w-[200px] object-contain rounded-lg border border-border bg-surface p-1"
                     />

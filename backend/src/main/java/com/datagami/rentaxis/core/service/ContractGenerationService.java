@@ -310,8 +310,8 @@ public class ContractGenerationService {
         // the header keeps its height (no 12-cheque contract gains a page).
         values.put("LANDLORD_TRN", trnSuffix(org));
         values.put("LANDLORD_LOGO_CELL", brandImage(lease.getTenantId(), org.getLogoUrl())
-                .map(src -> "<td style=\"width:90pt; text-align:left; vertical-align:middle;\">"
-                        + "<img src=\"" + escapeUserText(src) + "\" alt=\"\" style=\"max-width:90pt; max-height:40pt;\"/></td>")
+                .map(src -> "<td style=\"width:70pt; text-align:left; vertical-align:middle;\">"
+                        + "<img src=\"" + escapeUserText(src) + "\" alt=\"\" style=\"max-width:70pt; max-height:40pt;\"/></td>")
                 .orElse(""));
         values.put("LANDLORD_STAMP", brandImage(lease.getTenantId(), org.getStampImageUrl())
                 .map(src -> "<div style=\"text-align:right;\"><img src=\"" + escapeUserText(src)

@@ -241,6 +241,99 @@ public class BlobStorageService {
         }
     }
 
+    /** Where organisation branding (logo, stamp) is written inside a container or the local assets root. */
+    public static final String BRANDING_FOLDER = AssetController.PUBLIC_PREFIX + "/branding";
+
+    private static final String LOCAL_SERVE_PREFIX = "/api/v1/assets/serve/";
+
+    @Value("${rentaxis.assets.storage-path:./data/assets}")
+    private String localAssetsPath = "./data/assets";
+
+    /**
+     * Stores an organisation's logo or stamp in THAT organisation's own container
+     * ({@code tenant-<orgId>/assets/branding/...}), whichever organisation the
+     * uploader happens to be acting in; {@code orgId == null} (an organisation not
+     * yet created) goes to {@code shared/assets/branding/...}. Without Azure the
+     * file goes under the local assets root, keyed the same way. The bytes must
+     * already have been checked to be an image; {@code contentType} is the sniffed
+     * type and is what the blob is stored with.
+     */
+    public String uploadBranding(UUID orgId, byte[] bytes, String contentType) {
+        String ext = switch (contentType) {
+            case "image/jpeg" -> ".jpg";
+            case "image/gif" -> ".gif";
+            default -> ".png";
+        };
+        String name = UUID.randomUUID() + ext;
+        if (connectionString == null || connectionString.isBlank()) {
+            String relative = BRANDING_FOLDER + "/" + (orgId != null ? orgId : "shared") + "/" + name;
+            try {
+                java.nio.file.Path file = localRoot().resolve(relative).normalize();
+                java.nio.file.Files.createDirectories(file.getParent());
+                java.nio.file.Files.write(file, bytes);
+            } catch (IOException e) {
+                throw new BlobStorageException("Failed to store branding locally", e);
+            }
+            return LOCAL_SERVE_PREFIX + relative;
+        }
+        String container = orgId != null ? containerPrefix + orgId : "shared";
+        try {
+            BlobContainerClient containerClient = getServiceClient().getBlobContainerClient(container);
+            if (!containerClient.exists()) {
+                containerClient.create();
+            }
+            String blobPath = BRANDING_FOLDER + "/" + name;
+            BlobClient blob = containerClient.getBlobClient(blobPath);
+            blob.uploadWithResponse(new com.azure.storage.blob.options.BlobParallelUploadOptions(
+                            com.azure.core.util.BinaryData.fromBytes(bytes))
+                            .setHeaders(new com.azure.storage.blob.models.BlobHttpHeaders().setContentType(contentType)),
+                    null, com.azure.core.util.Context.NONE);
+            // Unencoded slashes, as AssetController writes them (getBlobUrl() encodes them).
+            return getServiceClient().getAccountUrl() + "/" + container + "/" + blobPath;
+        } catch (com.azure.storage.blob.models.BlobStorageException e) {
+            throw new BlobStorageException("Failed to upload branding to " + container, e);
+        }
+    }
+
+    private java.nio.file.Path localRoot() {
+        return java.nio.file.Path.of(localAssetsPath).toAbsolutePath().normalize();
+    }
+
+    /**
+     * Reads a file named by a local-storage serve URL ({@code /api/v1/assets/serve/assets/...}),
+     * but only inside the local assets root and only in its public {@code assets/}
+     * folder; anything else (traversal, another folder, a query, over
+     * {@code maxBytes}) is {@link Optional#empty()}. The local-disk twin of
+     * {@link #downloadOwnedUrl}, for deployments without Azure.
+     */
+    public Optional<DownloadResult> readLocalPublicAsset(String url, long maxBytes) {
+        if (url == null || !url.startsWith(LOCAL_SERVE_PREFIX)) {
+            return Optional.empty();
+        }
+        String relative = url.substring(LOCAL_SERVE_PREFIX.length());
+        if (relative.isEmpty() || relative.contains("..") || relative.contains("\\") || relative.contains("%")
+                || relative.contains("?") || relative.contains("#") || relative.startsWith("/")) {
+            return Optional.empty();
+        }
+        java.nio.file.Path root = localRoot();
+        java.nio.file.Path file = root.resolve(relative).normalize();
+        if (!file.startsWith(root)) {
+            return Optional.empty();
+        }
+        java.nio.file.Path rel = root.relativize(file);
+        if (rel.getNameCount() < 2 || !rel.getName(0).toString().equalsIgnoreCase(AssetController.PUBLIC_PREFIX)) {
+            return Optional.empty();
+        }
+        try {
+            if (!java.nio.file.Files.isRegularFile(file) || java.nio.file.Files.size(file) > maxBytes) {
+                return Optional.empty();
+            }
+            return Optional.of(new DownloadResult(java.nio.file.Files.readAllBytes(file), null));
+        } catch (IOException e) {
+            return Optional.empty();
+        }
+    }
+
     /**
      * A blob under {@link AssetController#PUBLIC_PREFIX}{@code /}. Case-insensitive
      * because {@code AssetController} accepts the folder case-insensitively.

@@ -1,6 +1,13 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// The locale layout's server-only imports, so its generateMetadata can be called here.
+vi.mock("next-intl/server", () => ({ getMessages: vi.fn() }));
+vi.mock("next/navigation", () => ({ notFound: vi.fn() }));
+vi.mock("@/i18n/routing", () => ({ routing: { locales: ["en", "ar"] } }));
+vi.mock("@/components/Providers", () => ({ Providers: () => null }));
+vi.mock("@/components/FontLinks", () => ({ FontLinks: () => null }));
 
 import en from "../../messages/en.json";
 import ar from "../../messages/ar.json";
@@ -63,5 +70,13 @@ describe("brand name", () => {
         ]) {
             expect({ f, old: OLD_BRAND.test(readFileSync(join(root, f), "utf8")) }).toEqual({ f, old: false });
         }
+    });
+});
+
+describe("page title per language", () => {
+    it("is مفتاح under /ar and Miftah under /en", async () => {
+        const { generateMetadata } = await import("@/app/[locale]/layout");
+        expect((await generateMetadata({ params: Promise.resolve({ locale: "ar" }) })).title).toBe("مفتاح");
+        expect((await generateMetadata({ params: Promise.resolve({ locale: "en" }) })).title).toBe("Miftah");
     });
 });

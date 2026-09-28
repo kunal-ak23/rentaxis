@@ -3,8 +3,20 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import Cookies from "js-cookie";
 
-/** An organisation the user may act in; logoUrl (when set) is shown in the header switcher. */
-export type Org = { id: string; name: string; logoUrl?: string | null };
+/**
+ * An organisation the user may act in. logoVersion is set when it has a logo;
+ * the header loads the image from the app (orgLogoSrc), never from storage.
+ */
+export type Org = { id: string; name: string; logoVersion?: string | null };
+
+/**
+ * The current organisation's logo, streamed by the backend from our own storage
+ * (tenant containers are private). The version busts the browser cache when the
+ * logo changes; the organisation is the request's own (the active one).
+ */
+export function orgLogoSrc(org: Pick<Org, "logoVersion"> | null | undefined): string | null {
+    return org?.logoVersion ? `/api/proxy/v1/org/branding/logo?v=${encodeURIComponent(org.logoVersion)}` : null;
+}
 
 /**
  * GET /auth/me/tenants, once per signed-in session (PR #363 R1): the header's

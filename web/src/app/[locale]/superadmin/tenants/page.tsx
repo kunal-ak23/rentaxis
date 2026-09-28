@@ -168,6 +168,20 @@ export default function SuperAdminTenantsPage() {
         return null;
     };
 
+    // Branding lands in the storage of the organisation being edited — not the one
+    // this super admin is acting in (review I1) — or, for one not yet created, the
+    // shared public folder. The backend checks the bytes are PNG/JPEG/GIF.
+    const brandingUploadPath = editingTenant
+        ? `/api/admin/tenants/${editingTenant.id}/branding`
+        : "/api/admin/tenants/branding";
+    // A saved image may sit in a private container: preview it through the app.
+    const brandingPreview = (kind: "logo" | "stamp", value: string) => {
+        const saved = kind === "logo" ? editingTenant?.logoUrl : editingTenant?.stampImageUrl;
+        return editingTenant && value && value === saved
+            ? `/api/proxy/admin/tenants/${editingTenant.id}/branding/${kind}?v=${encodeURIComponent(value.slice(-24))}`
+            : undefined;
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.name) return;
@@ -399,12 +413,15 @@ export default function SuperAdminTenantsPage() {
                                         onChange={(url) => setFormData(f => ({ ...f, logoUrl: url }))}
                                         onRemove={() => setFormData(f => ({ ...f, logoUrl: "" }))}
                                         folder="assets"
+                                        accept="image/png,image/jpeg,image/gif"
+                                        uploadPath={brandingUploadPath}
+                                        previewSrc={brandingPreview("logo", formData.logoUrl)}
                                         label={tSa("orgUploadLogo")}
-                                        hint="PNG, JPG or SVG. Max 2MB. Drag & drop or click to browse."
+                                        hint={tSa("orgLogoHint")}
                                     />
                                 </div>
                                 {/* The stamp printed beside the landlord signature on the tenancy
-                                    contract. PNG/JPG only: the PDF cannot draw an SVG. */}
+                                    contract. PNG/JPG only (the server also refuses SVG). */}
                                 <div className="min-w-0" data-testid="org-stamp-upload">
                                     <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgStamp")}</label>
                                     <FileUpload
@@ -413,6 +430,8 @@ export default function SuperAdminTenantsPage() {
                                         onRemove={() => setFormData(f => ({ ...f, stampImageUrl: "" }))}
                                         folder="assets"
                                         accept="image/png,image/jpeg"
+                                        uploadPath={brandingUploadPath}
+                                        previewSrc={brandingPreview("stamp", formData.stampImageUrl)}
                                         label={tSa("orgUploadStamp")}
                                         hint={tSa("orgStampHint")}
                                     />

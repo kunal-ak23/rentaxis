@@ -12,11 +12,12 @@ vi.mock("@/components/ui/Pagination", () => ({ Pagination: () => null }));
 // The upload itself (POST /api/v1/assets/upload) is FileUpload's; here a stand-in
 // reports an uploaded URL the way the real one does, through onChange.
 vi.mock("@/components/ui/FileUpload", () => ({
-    FileUpload: ({ label, hint, value, accept, onChange, onRemove }: {
-        label: string; hint: string; value?: string; accept?: string;
+    FileUpload: ({ label, hint, value, accept, uploadPath, previewSrc, onChange, onRemove }: {
+        label: string; hint: string; value?: string; accept?: string; uploadPath?: string; previewSrc?: string;
         onChange: (u: string) => void; onRemove: () => void;
     }) => (
-        <div data-testid={`upload-${label}`} data-accept={accept ?? ""} data-value={value ?? ""}>
+        <div data-testid={`upload-${label}`} data-accept={accept ?? ""} data-value={value ?? ""}
+            data-upload-path={uploadPath ?? ""} data-preview={previewSrc ?? ""}>
             <span>{hint}</span>
             <button type="button" onClick={() => onChange(`/api/v1/assets/serve/assets/${label.replace(/\W+/g, "-")}.png`)}>{label}</button>
             <button type="button" onClick={onRemove}>remove {label}</button>
@@ -78,6 +79,23 @@ describe("superadmin: organisation stamp", () => {
         expect(screen.getByText(en.SuperAdmin.orgStampHint)).toBeInTheDocument();
     });
 
+    it("uploads land in the edited organisation's own storage, not the active one (review I1)", async () => {
+        await renderPage();
+        openEdit();
+        for (const label of [en.SuperAdmin.orgUploadLogo, en.SuperAdmin.orgUploadStamp]) {
+            expect(screen.getByTestId(`upload-${label}`)).toHaveAttribute("data-upload-path", "/api/admin/tenants/org-1/branding");
+        }
+        expect(screen.getByTestId(`upload-${en.SuperAdmin.orgUploadLogo}`)).toHaveAttribute("data-accept", "image/png,image/jpeg,image/gif");
+        expect(screen.getByText(en.SuperAdmin.orgLogoHint)).toBeInTheDocument();
+    });
+
+    it("a new organisation's branding goes to the shared folder", async () => {
+        await renderPage();
+        fireEvent.click(screen.getByRole("button", { name: en.SuperAdmin.orgProvision }));
+        expect(screen.getByTestId(`upload-${en.SuperAdmin.orgUploadStamp}`))
+            .toHaveAttribute("data-upload-path", "/api/admin/tenants/branding");
+    });
+
     it("an uploaded stamp is saved with the organisation, naming what the dialog loaded", async () => {
         await renderPage();
         openEdit();
@@ -95,7 +113,10 @@ describe("superadmin: organisation stamp", () => {
         list = [{ ...ORG, stampImageUrl: STAMP }];
         await renderPage();
         openEdit();
-        expect(screen.getByTestId(`upload-${en.SuperAdmin.orgUploadStamp}`)).toHaveAttribute("data-value", STAMP);
+        const stampUpload = screen.getByTestId(`upload-${en.SuperAdmin.orgUploadStamp}`);
+        expect(stampUpload).toHaveAttribute("data-value", STAMP);
+        // The saved stamp may be in a private container: previewed through the app.
+        expect(stampUpload.getAttribute("data-preview")).toMatch(/^\/api\/proxy\/admin\/tenants\/org-1\/branding\/stamp\?v=/);
         fireEvent.click(screen.getByRole("button", { name: `remove ${en.SuperAdmin.orgUploadStamp}` }));
         fireEvent.submit(form());
         await waitFor(() => expect(sent).toHaveLength(1));

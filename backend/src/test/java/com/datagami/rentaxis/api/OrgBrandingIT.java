@@ -28,7 +28,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Organisation branding (2026-09-28): the stamp is saved exactly like the logo —
  * the same organisation endpoint, the same role, one organisation at a time — and
- * the organisation list a signed-in user reads for the header carries the logo.
+ * the organisation list a signed-in user reads for the header carries a logo
+ * version (never the private storage URL).
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class OrgBrandingIT extends AbstractPostgresIT {
@@ -118,12 +119,13 @@ class OrgBrandingIT extends AbstractPostgresIT {
         List<Map<String, Object>> mine = (List) http.request(admin, HttpMethod.GET, "/api/auth/me/tenants")
                 .retrieve().body(List.class);
         assertThat(mine).hasSize(1);
-        assertThat(mine.get(0)).containsEntry("id", orgA.toString()).containsEntry("logoUrl", LOGO);
+        assertThat(mine.get(0)).containsEntry("id", orgA.toString()).containsEntry("logoVersion", OrgBrandingController.versionOf(LOGO))
+                .doesNotContainKey("logoUrl");
 
         @SuppressWarnings({"unchecked", "rawtypes"})
         List<Map<String, Object>> all = (List) http.request(superAdmin, HttpMethod.GET, "/api/auth/me/tenants")
                 .retrieve().body(List.class);
         assertThat(all).anySatisfy(o -> assertThat(o).containsEntry("id", orgB.toString())
-                .containsEntry("logoUrl", LOGO + "?b"));
+                .containsEntry("logoVersion", OrgBrandingController.versionOf(LOGO + "?b")));
     }
 }

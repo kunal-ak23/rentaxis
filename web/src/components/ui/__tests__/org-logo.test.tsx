@@ -8,8 +8,7 @@ const session = { current: { user: { id: "ta", role: "TENANT_ADMIN", tenantId: "
 vi.mock("next-auth/react", () => ({ useSession: () => ({ data: session.current }) }));
 
 import { TenantSwitcher } from "../TenantSwitcher";
-import { safeLogoSrc } from "../OrgAvatar";
-import { resetMyOrgsCache } from "@/components/nav/orgStore";
+import { orgLogoSrc, resetMyOrgsCache } from "@/components/nav/orgStore";
 import { resetPageOrg } from "@/lib/session/orgSync";
 
 /**
@@ -18,14 +17,15 @@ import { resetPageOrg } from "@/lib/session/orgSync";
  * and falls back to the initials when there is none or it cannot load. Super
  * admin Global View is unchanged.
  */
-const LOGO = "/api/v1/assets/serve/assets/oasis-logo.png";
-let orgs: Array<{ id: string; name: string; logoUrl?: string | null }>;
+// Streamed by the app (tenant containers are private), versioned for the cache.
+const LOGO = "/api/proxy/v1/org/branding/logo?v=3f2a9c1d0b7e";
+let orgs: Array<{ id: string; name: string; logoVersion?: string | null }>;
 
 beforeEach(() => {
     resetMyOrgsCache();
     resetPageOrg();
     session.current = { user: { id: "ta", role: "TENANT_ADMIN", tenantId: "org1" } };
-    orgs = [{ id: "org1", name: "Oasis Crest", logoUrl: LOGO }, { id: "org2", name: "Blue Harbour", logoUrl: null }];
+    orgs = [{ id: "org1", name: "Oasis Crest", logoVersion: "3f2a9c1d0b7e" }, { id: "org2", name: "Blue Harbour", logoVersion: null }];
     window.fetch = vi.fn(async () => new Response(JSON.stringify(orgs), { status: 200 })) as unknown as typeof fetch;
     Cookies.set("active_tenant_id", "org1", { path: "/" });
 });
@@ -49,7 +49,7 @@ describe("header organisation logo", () => {
         expect(img).toHaveAttribute("src", LOGO);
         expect(img).toHaveAttribute("width", "32");
         expect(img).toHaveAttribute("height", "32");
-        expect(within(b).getByTestId("org-avatar-logo")).toHaveClass("h-8", "w-8");
+        expect(within(b).getByTestId("org-avatar-logo")).toHaveClass("h-8", "w-8", "rounded-full");
         expect(within(b).queryByText("OC")).toBeNull();
     });
 
@@ -90,15 +90,9 @@ describe("header organisation logo", () => {
         expect(within(b).queryByRole("img")).toBeNull();
     });
 
-    it("a logo URL that is not ours, https or an inline image is not shown", () => {
-        expect(safeLogoSrc("javascript:alert(1)")).toBeNull();
-        expect(safeLogoSrc("http://169.254.169.254/logo.png")).toBeNull();
-        expect(safeLogoSrc("//evil.example/logo.png")).toBeNull();
-        expect(safeLogoSrc("data:image/svg+xml;base64,PHN2Zz4=")).toBeNull();
-        expect(safeLogoSrc("  ")).toBeNull();
-        expect(safeLogoSrc("https://acct.blob.core.windows.net/shared/assets/l.png")).toBe("https://acct.blob.core.windows.net/shared/assets/l.png");
-        expect(safeLogoSrc("/api/v1/assets/serve/assets/l.png")).toBe("/api/v1/assets/serve/assets/l.png");
-        // A private folder goes through the signed-in proxy.
-        expect(safeLogoSrc("/api/v1/assets/serve/tenant-x/l.png")).toBe("/api/proxy/v1/assets/serve/tenant-x/l.png");
+    it("the logo is always the app's own streaming route, never a storage URL", () => {
+        expect(orgLogoSrc({ logoVersion: null })).toBeNull();
+        expect(orgLogoSrc(null)).toBeNull();
+        expect(orgLogoSrc({ logoVersion: "a b&c" })).toBe("/api/proxy/v1/org/branding/logo?v=a%20b%26c");
     });
 });

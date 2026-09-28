@@ -195,6 +195,11 @@ public class AssetController {
             return ResponseEntity.ok()
                     .header("Content-Type", contentType != null ? contentType : "application/octet-stream")
                     .header("Cache-Control", "public, max-age=86400")
+                    // An uploaded SVG (or anything else) opened directly on the app's
+                    // origin must not run script: sandboxed, no content sniffing.
+                    // <img> rendering is unaffected.
+                    .header("Content-Security-Policy", "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox")
+                    .header("X-Content-Type-Options", "nosniff")
                     .body(bytes);
         } catch (IOException e) {
             return ResponseEntity.internalServerError().build();
