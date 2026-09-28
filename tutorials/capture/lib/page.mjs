@@ -117,6 +117,10 @@ export const CAPTURE_STYLE_RULES = [
     ? ['div.justify-between:has(> span > svg.lucide-mail),'
        + ' div.justify-between:has(> span > svg.lucide-phone) { visibility: hidden !important; }']
     : []),
+  // Settings › Users & staff lists every user with a PHONE column, tenants
+  // included; tutorial 05 holds on that table. Only that column's cells are
+  // hidden (its <td>s are the only third-column monospace cells there).
+  ...(tutorialId === '05' ? ['table td.font-mono:nth-child(3) { visibility: hidden !important; }'] : []),
 ].join('\n');
 
 /**

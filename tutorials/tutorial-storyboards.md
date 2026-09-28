@@ -163,45 +163,40 @@ track is commissioned separately.
 
 ## 05 — Create users and staff
 
-- Audience: super admins and tenant admins; 3–4 minutes.
-- Capture: create a property manager, assign a property, edit the profile,
-  demonstrate role restrictions, remove the assignment, then show staff record
-  creation and activation status.
-- Narration: “This tutorial explains the difference between application users
-  and staff records, then creates a property manager with the correct property
-  assignment. Begin in the Tutorial Demo organization and verify its name in
-  the header. Open Users and search for the synthetic manager email before
-  selecting Create User. Duplicate accounts create confusion and should be
-  avoided. Enter the manager’s demo name, unique email address, and phone number.
-  Choose Property Manager rather than Tenant Admin because this person will
-  operate assigned properties without organization-wide control. The safest
-  rule is to grant the lowest role that covers the person’s real work. Save the
-  user once and wait for the success message. Open the new user detail and review
-  the role, tenant, and account status. If onboarding credentials are displayed,
-  deliver them through an approved secure channel and never expose them in a
-  recording. Now open Property Assignments. Select the prepared Tutorial Demo
-  property, add the assignment, and confirm that it appears in the current list.
-  Sign in with the manager account in a separate prepared session. The property
-  should be visible, while an unassigned property must remain unavailable from
-  both navigation and a direct link. Return to the administrator session and
-  edit the manager’s phone number or display name. Save and confirm the update.
-  Demonstrate the role boundary by opening the role selector: a tenant
-  administrator must not be able to create or promote a Super Admin, and cannot
-  administer a user belonging to another tenant. Do not weaken the role simply
-  to make a test pass. Next, remove the demo property assignment. Confirm the
-  removal and refresh the page; the assignment should not return. Add it again
-  only if later tutorial workflows require this manager account. Now open Staff.
-  A staff record represents a worker associated with property operations and is
-  distinct from an account that can sign in. Create a synthetic staff profile,
-  enter its job and contact details, associate the appropriate property, and
-  save. Review the Active status and show where it can be changed. A person may
-  have a staff profile without application access, and an application user does
-  not automatically become staff. When responsibilities change, update property
-  assignments promptly. When someone leaves, deactivate access instead of
-  sharing or recycling the account. Preserve historical staff records required
-  for audit, and delete only synthetic test records that are safe to remove.
-  Finish by confirming the manager user and staff profile are clearly identified
-  as Tutorial Demo data.”
+- Audience: System Admins and Company Admins; 2–3 minutes.
+- Capture: in Oasis Crest Properties, Settings › Users & staff: search for the
+  planned email (no match), New User "Layla Haddad" as Property Manager for
+  Oasis Crest Marina Heights, Provision User, Edit to add Oasis Crest Residence
+  Tower, confirm the manager on the Marina Heights overview, Add Staff "Khalid
+  Rahman", then offboard: mark the staff record Inactive and delete the user.
+  Leftovers from an earlier take are removed off camera before the first
+  frame; the phone column of the users table is hidden in capture.
+- Narration: “This tutorial explains the difference between users and staff,
+  and creates a Property Manager with the right property assignment. Open
+  Settings, then Users and staff, and check that the organisation above the
+  side panel is Oasis Crest Properties. Users are the people who can sign in.
+  Staff Management holds employment records such as designation, property, and
+  salary, and a staff record does not give anyone a sign-in. Before creating a
+  user, search for their email address. Nothing matches, so there is no
+  duplicate. Select New User. Enter the full name, Layla Haddad, a unique email
+  address, and a phone number. No password is set here: the new user receives
+  an email invite and chooses their own. For the role, choose Property Manager
+  rather than Company Admin. Always grant the lowest role that covers the
+  person’s real work. Choose the organisation, then assign the property this
+  manager runs, Oasis Crest Marina Heights. Select Provision User. Layla Haddad
+  appears in the list as a Property Manager. Responsibilities change, so select
+  Edit, add a second property, Oasis Crest Residence Tower, and select Update
+  User. Open Oasis Crest Marina Heights under Properties and Units. The overview
+  now lists Layla Haddad as its Property Manager. A Property Manager only sees
+  the properties assigned to them. Back in Users and staff, select Add Staff.
+  Enter the name, Khalid Rahman, an employee ID, the designation, Maintenance
+  Supervisor, the department, the monthly salary, and the assigned property. New
+  staff records start Active. Select Add Staff, and the record joins the table
+  with the status Active. When someone leaves, keep the history and remove the
+  access. Edit the staff record, clear Active, and save: the status changes to
+  Inactive, and the record stays for payroll and audit. Then find the user,
+  select Delete, and confirm Delete User. The account can no longer sign in.
+  Never share or recycle an account between people.”
 
 ## 06 — Create a project and property portfolio
 
