@@ -75,6 +75,8 @@ export default function SuperAdminTenantsPage() {
     // flips to the opposite action under the cursor) and cannot be confirmed again.
     const [statusStale, setStatusStale] = useState(false);
     const [formError, setFormError] = useState("");
+    // R3 minor 2: created, but its logo/stamp could not be kept (header X-Org-Branding).
+    const [notice, setNotice] = useState("");
     // Deleting an organization is irreversible and takes everything inside it,
     // so the dialog asks for the name rather than a yes/no — the same
     // confirmation the API itself requires via ?confirmName=.
@@ -211,6 +213,8 @@ export default function SuperAdminTenantsPage() {
                 body: JSON.stringify(body),
             });
             if (res.ok) {
+                setNotice(!editingTenant && res.headers?.get("X-Org-Branding") === "not-saved"
+                    ? tSa("orgBrandingNotSaved") : "");
                 resetForm();
                 // The header's switcher lists the new or renamed organisation at once.
                 refreshMyOrgs();
@@ -381,6 +385,14 @@ export default function SuperAdminTenantsPage() {
                     </button>
                 </div>
             </div>
+
+            {notice && (
+                <div role="status" data-testid="org-notice"
+                    className="mb-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
+                    <AlertTriangle size={14} className="flex-shrink-0" />
+                    {notice}
+                </div>
+            )}
 
             {/* Create / Edit Modal */}
             {showForm && (

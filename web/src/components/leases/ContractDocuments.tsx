@@ -17,7 +17,7 @@ type ContractDocument = { id: string; type: string; label?: string; createdAt?: 
  * exists: the automatic issue at posting never blocks posting, so a failure there
  * (or a stamp added later) is put right here.
  */
-export function ContractDocuments({ leaseId, canIssue }: { leaseId: string; canIssue: boolean }) {
+export function ContractDocuments({ leaseId, canIssue, leaseStatus }: { leaseId: string; canIssue: boolean; leaseStatus?: string }) {
     const t = useTranslations("ContractDocuments");
     const locale = useLocale();
     const [docs, setDocs] = useState<ContractDocument[] | null>(null);
@@ -60,6 +60,10 @@ export function ContractDocuments({ leaseId, canIssue }: { leaseId: string; canI
     };
 
     if (docs === null) return null;
+    // Not "signed" while nobody has signed it yet (R3 minor 4).
+    const unsigned = leaseStatus === "DRAFT" || leaseStatus === "PENDING_SIGNATURE";
+    const nameOf = (doc: ContractDocument) =>
+        doc.type === "EXECUTED_COPY" ? t("executedCopy") : unsigned ? t("contract") : t("signedContract");
     const hasSigned = docs.some(d => d.type === "CONTRACT");
     const hasExecuted = docs.some(d => d.type === "EXECUTED_COPY");
     if (!hasSigned && !hasExecuted) return null;
@@ -76,7 +80,7 @@ export function ContractDocuments({ leaseId, canIssue }: { leaseId: string; canI
                             : <FileText size={16} className="shrink-0 text-muted" />}
                         <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-medium text-foreground">
-                                {doc.type === "EXECUTED_COPY" ? t("executedCopy") : t("signedContract")}
+                                {nameOf(doc)}
                             </p>
                             {doc.createdAt && (
                                 <p className="text-[11px] text-muted">
@@ -85,7 +89,7 @@ export function ContractDocuments({ leaseId, canIssue }: { leaseId: string; canI
                             )}
                         </div>
                         <button type="button" onClick={() => download(doc)}
-                            aria-label={`${t("download")} — ${doc.type === "EXECUTED_COPY" ? t("executedCopy") : t("signedContract")}`}
+                            aria-label={`${t("download")} — ${nameOf(doc)}`}
                             className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary/5">
                             <Download size={14} /> {t("download")}
                         </button>

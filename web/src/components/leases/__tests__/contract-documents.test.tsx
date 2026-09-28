@@ -64,6 +64,14 @@ describe("contract documents", () => {
         expect(screen.getByText(ar.ContractDocuments.signedContract)).toBeInTheDocument();
     });
 
+    it("calls an unsigned contract just 'Contract' (R3 minor 4)", async () => {
+        render(<NextIntlClientProvider locale="ar" messages={ar}>
+            <ContractDocuments leaseId="lease-1" canIssue={false} leaseStatus="PENDING_SIGNATURE" />
+        </NextIntlClientProvider>);
+        expect(await screen.findByTestId("contract-doc-CONTRACT")).toHaveTextContent(ar.ContractDocuments.contract);
+        expect(screen.queryByText(ar.ContractDocuments.signedContract)).toBeNull();
+    });
+
     it("shows nothing before a contract exists", async () => {
         docs = [];
         const { container } = renderIt(true);

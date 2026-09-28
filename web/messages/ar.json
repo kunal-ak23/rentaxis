@@ -2736,6 +2736,7 @@
     "orgEditButton": "تعديل",
     "orgEmpty": "لم يتم إنشاء أي مؤسسة بعد.",
     "orgNoMatch": "لا توجد مؤسسات تطابق بحثك.",
+    "orgBrandingNotSaved": "تم إنشاء المؤسسة، لكن تعذّر حفظ شعارها أو ختمها. عدّلها لرفعهما مرة أخرى.",
     "featureLabels": {"LISTINGS": "الإعلانات (السوق)", "MEETINGS": "الاجتماعات والمواعيد", "EMAIL_NOTIFICATIONS": "إشعارات البريد الإلكتروني", "LEASE_RENEWALS": "تجديد العقود والتذكيرات", "GATEPASS": "تصاريح الدخول والأمن", "MOBILE_FINANCE": "الشاشات المالية في تطبيق الجوال"},
     "orgRetry": "إعادة المحاولة",
     "orgLoadDenied": "ليست لديك صلاحية لعرض المؤسسات، أو انتهت جلستك.",
@@ -4895,6 +4896,7 @@
   },
   "ContractDocuments": {
       "title": "مستندات العقد",
+      "contract": "العقد",
       "signedContract": "العقد الموقّع",
       "executedCopy": "النسخة المعتمدة",
       "download": "تنزيل",

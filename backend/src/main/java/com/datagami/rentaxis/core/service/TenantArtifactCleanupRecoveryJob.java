@@ -22,9 +22,19 @@ public class TenantArtifactCleanupRecoveryJob {
     @Value("${rentaxis.tenant-artifact-cleanup.batch-tenants:25}")
     private int batchTenants;
 
+    private BlobStorageService blobStorageService;
+
     public TenantArtifactCleanupRecoveryJob(TenantArtifactCleanupService cleanupService) {
         this.cleanupService = cleanupService;
     }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setBlobStorageService(BlobStorageService blobStorageService) {
+        this.blobStorageService = blobStorageService;
+    }
+
+    /** How long a staged "new organisation" logo/stamp may wait to be adopted (cancelled dialogs). */
+    static final java.time.Duration STAGED_BRANDING_TTL = java.time.Duration.ofHours(24);
 
     @Scheduled(
             initialDelayString = "${rentaxis.tenant-artifact-cleanup.initial-delay-ms:300000}",
@@ -47,6 +57,17 @@ public class TenantArtifactCleanupRecoveryJob {
             }
         } catch (Exception e) {
             log.error("tenant_artifact_cleanup recovery tick failed", e);
+        }
+        // Staged branding from a "new organisation" dialog that was never saved.
+        if (blobStorageService != null) {
+            try {
+                int purged = blobStorageService.purgeStagedBranding(STAGED_BRANDING_TTL);
+                if (purged > 0) {
+                    log.info("staged_branding purge deleted={}", purged);
+                }
+            } catch (Exception e) {
+                log.error("staged_branding purge failed", e);
+            }
         }
     }
 }

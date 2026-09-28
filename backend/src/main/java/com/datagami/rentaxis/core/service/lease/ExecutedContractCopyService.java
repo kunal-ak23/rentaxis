@@ -25,7 +25,8 @@ import java.util.UUID;
  * TERMINATED, CLOSED) all start from ACTIVE.</p>
  *
  * <p><b>Never blocks posting.</b> It runs after the posting transaction has
- * committed, in a transaction of its own, and any failure — the PDF renderer,
+ * committed, off the request thread ({@code documentExecutor}), in a transaction
+ * of its own, and any failure — the PDF renderer,
  * storage, a concurrent duplicate — is logged and swallowed; the lease stays
  * posted and {@link #issue} (the manual "Issue executed copy" action) can make the
  * copy later. Idempotent: a second run finds the copy and returns it.</p>
@@ -43,13 +44,18 @@ public class ExecutedContractCopyService {
         this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
+    @org.springframework.scheduling.annotation.Async("documentExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onPosted(LeasePostedEvent event) {
         UUID previous = TenantContextHolder.getTenantId();
         TenantContextHolder.setTenantId(event.tenantId());
         try {
             newTransaction.execute(status -> contracts.createExecutedCopy(event.leaseId()));
-        } catch (RuntimeException e) {
+        } catch (VirtualMachineError fatal) {
+            throw fatal;
+        } catch (Throwable e) {
+            // Anything else — including an Error from the PDF library — is logged:
+            // the post has committed and the copy can be issued again from the lease.
             log.error("Executed copy not issued for lease {} (posting kept; issue it again from the lease)",
                     event.leaseId(), e);
         } finally {

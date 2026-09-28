@@ -1067,6 +1067,8 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                   if (i > 0) Divider(height: 1, color: m.divider),
                   _DocumentRow(
                     doc: _documents[i],
+                    unsigned: const ['DRAFT', 'PENDING_SIGNATURE']
+                        .contains(_lease?['status']),
                     m: m,
                     l: l,
                     onDownload: () => _downloadDocument(_documents[i]),
@@ -1484,11 +1486,13 @@ class _ChequeTimelineRow extends StatelessWidget {
 
 class _DocumentRow extends StatelessWidget {
   final Map<String, dynamic> doc;
+  final bool unsigned;
   final LegacyMiftahColors m;
   final _L l;
   final VoidCallback onDownload;
   const _DocumentRow({
     required this.doc,
+    this.unsigned = false,
     required this.m,
     required this.l,
     required this.onDownload,
@@ -1518,7 +1522,7 @@ class _DocumentRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  l.documentName(doc),
+                  l.documentName(doc, unsigned: unsigned),
                   style: _body(l.ar, size: 13.5, color: m.textPrimary),
                 ),
                 Text(
@@ -1743,11 +1747,13 @@ class _L {
   String get noDocuments => ar ? 'لا توجد مستندات' : 'No documents available';
   String get document => ar ? 'مستند' : 'Document';
   String get signedContract => ar ? 'العقد الموقّع' : 'Signed contract';
+  String get contract => ar ? 'العقد' : 'Contract';
   String get executedCopy => ar ? 'النسخة المعتمدة' : 'Executed copy';
 
   /// The document's name: the contract kinds by type (translated), else the file name.
-  String documentName(Map<String, dynamic> doc) => switch (doc['type']) {
-        'CONTRACT' => signedContract,
+  String documentName(Map<String, dynamic> doc, {bool unsigned = false}) =>
+      switch (doc['type']) {
+        'CONTRACT' => unsigned ? contract : signedContract,
         'EXECUTED_COPY' => executedCopy,
         _ => (doc['name'] as String?) ?? document,
       };

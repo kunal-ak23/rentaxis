@@ -319,6 +319,81 @@ public class BlobStorageService {
      * is not a staged file of ours is returned as it is.
      */
     public String adoptStagedBranding(UUID orgId, String url) {
+        String moved = copyStagedBranding(orgId, url);
+        if (!moved.equals(url)) {
+            deleteBrandingQuietly(url);
+        }
+        return moved;
+    }
+
+    /**
+     * Deletes a branding file of ours (staged, or in an org's branding folder),
+     * logging rather than failing — used to compensate a rolled-back save and to
+     * clear a staged file once its copy has committed.
+     */
+    public void deleteBrandingQuietly(String url) {
+        try {
+            if (url == null) return;
+            if (url.startsWith(LOCAL_SERVE_PREFIX)) {
+                String relative = url.substring(LOCAL_SERVE_PREFIX.length());
+                java.nio.file.Path file = localRoot().resolve(relative).normalize();
+                if (!relative.contains("..") && file.startsWith(localRoot().resolve(LOCAL_BRANDING_FOLDER))) {
+                    java.nio.file.Files.deleteIfExists(file);
+                }
+                return;
+            }
+            parseOwnedBlobUrl(url)
+                    .filter(l -> l.blobPath().startsWith(BRANDING_FOLDER + "/"))
+                    .filter(l -> l.containerName().equals(BRANDING_STAGING_CONTAINER)
+                            || l.containerName().startsWith(containerPrefix.toLowerCase(Locale.ROOT)))
+                    .ifPresent(l -> getServiceClient().getBlobContainerClient(l.containerName())
+                            .getBlobClient(l.blobPath()).deleteIfExists());
+        } catch (IOException | RuntimeException e) {
+            log.warn("Branding file not removed: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Staged uploads of a "new organisation" dialog that was cancelled are never
+     * adopted; anything staged longer ago than {@code olderThan} is deleted.
+     * Returns how many files went.
+     */
+    public int purgeStagedBranding(java.time.Duration olderThan) {
+        java.time.Instant cutoff = java.time.Instant.now().minus(olderThan);
+        int purged = 0;
+        if (!azure()) {
+            java.nio.file.Path dir = localRoot().resolve(LOCAL_BRANDING_FOLDER).resolve(STAGING);
+            if (!java.nio.file.Files.isDirectory(dir)) return 0;
+            try (var files = java.nio.file.Files.list(dir)) {
+                for (java.nio.file.Path f : files.toList()) {
+                    if (java.nio.file.Files.getLastModifiedTime(f).toInstant().isBefore(cutoff)) {
+                        java.nio.file.Files.deleteIfExists(f);
+                        purged++;
+                    }
+                }
+            } catch (IOException e) {
+                log.warn("Staged branding purge failed: {}", e.getMessage());
+            }
+            return purged;
+        }
+        BlobContainerClient staging = getServiceClient().getBlobContainerClient(BRANDING_STAGING_CONTAINER);
+        if (!staging.exists()) return 0;
+        for (var item : staging.listBlobs()) {
+            var modified = item.getProperties().getLastModified();
+            if (modified != null && modified.toInstant().isBefore(cutoff)) {
+                staging.getBlobClient(item.getName()).deleteIfExists();
+                purged++;
+            }
+        }
+        return purged;
+    }
+
+    /**
+     * The copy half of {@link #adoptStagedBranding}: the staged file copied into
+     * {@code orgId}'s own storage, the staged source left in place (the caller
+     * removes it once its save has committed). Anything not staged comes back as it is.
+     */
+    public String copyStagedBranding(UUID orgId, String url) {
         if (orgId == null || !isStagedBranding(url)) {
             return url;
         }
@@ -333,13 +408,7 @@ public class BlobStorageService {
             }
             String type = com.datagami.rentaxis.core.util.ImageTypes.sniff(bytes)
                     .orElseThrow(() -> new BlobStorageException("The staged file is not an image"));
-            String moved = uploadBranding(orgId, bytes, type);
-            try {
-                java.nio.file.Files.deleteIfExists(file);
-            } catch (IOException e) {
-                log.warn("Staged branding not removed: {}", e.getMessage());
-            }
-            return moved;
+            return uploadBranding(orgId, bytes, type);
         }
         BlobLocation staged = parseOwnedBlobUrl(url).orElseThrow();
         BlobClient source = getServiceClient().getBlobContainerClient(staged.containerName())
@@ -347,9 +416,7 @@ public class BlobStorageService {
         bytes = source.downloadContent().toBytes();
         String type = com.datagami.rentaxis.core.util.ImageTypes.sniff(bytes)
                 .orElseThrow(() -> new BlobStorageException("The staged file is not an image"));
-        String moved = uploadBranding(orgId, bytes, type);
-        source.deleteIfExists();
-        return moved;
+        return uploadBranding(orgId, bytes, type);
     }
 
     private java.nio.file.Path localRoot() {

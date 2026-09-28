@@ -21,7 +21,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -68,26 +70,33 @@ class ExecutedContractCopyIT extends AbstractPostgresIT {
         doAnswer(inv -> { seenTenant.set(TenantContextHolder.getTenantId()); return Optional.empty(); })
                 .when(contracts).createExecutedCopy(lease);
 
+        AtomicReference<String> thread = new AtomicReference<>();
+        doAnswer(inv -> { seenTenant.set(TenantContextHolder.getTenantId()); thread.set(Thread.currentThread().getName());
+            return Optional.empty(); }).when(contracts).createExecutedCopy(lease);
+
         postInTransaction(tenant, lease, false);
 
-        verify(contracts).createExecutedCopy(lease);
+        verify(contracts, timeout(5000)).createExecutedCopy(lease);
         assertThat(seenTenant.get()).isEqualTo(tenant);
-        assertThat(TenantContextHolder.getTenantId()).isNull(); // restored
+        // Off the posting request's thread (R3 minor 1).
+        assertThat(thread.get()).startsWith("document-").isNotEqualTo(Thread.currentThread().getName());
+        assertThat(TenantContextHolder.getTenantId()).isNull(); // the caller's context untouched
     }
 
     @Test
     void notIssuedWhenThePostRollsBack() {
         postInTransaction(UUID.randomUUID(), UUID.randomUUID(), true);
-        verify(contracts, never()).createExecutedCopy(any());
+        verify(contracts, after(1500).never()).createExecutedCopy(any());
     }
 
     @Test
     void aFailureToIssueDoesNotFailThePost() {
         UUID lease = UUID.randomUUID();
-        when(contracts.createExecutedCopy(lease)).thenThrow(new RuntimeException("renderer down"));
+        // An Error, not just an exception (R3 minor 1): e.g. the PDF library overflowing.
+        when(contracts.createExecutedCopy(lease)).thenThrow(new StackOverflowError("renderer down"));
         // Completes without an exception reaching the committer.
         postInTransaction(UUID.randomUUID(), lease, false);
-        verify(contracts).createExecutedCopy(lease);
+        verify(contracts, timeout(5000)).createExecutedCopy(lease);
         // The listener itself swallows it (logged; the copy can be issued by hand).
         org.assertj.core.api.Assertions.assertThatCode(() -> executedCopies.onPosted(
                 new LeasePostedEvent(UUID.randomUUID(), lease, LocalDate.of(2026, 4, 24)))).doesNotThrowAnyException();

@@ -139,6 +139,23 @@ describe("superadmin: organisation stamp", () => {
         });
     });
 
+    it("a created organisation whose image could not be kept says so, once (R3 minor 2)", async () => {
+        global.fetch = vi.fn(async (url: unknown, init?: RequestInit) => {
+            if (init?.method === "POST") {
+                sent.push({ url: String(url), method: init.method, body: JSON.parse(String(init.body)) });
+                return new Response("{}", { status: 200, headers: { "X-Org-Branding": "not-saved" } });
+            }
+            return new Response(JSON.stringify(list), { status: 200 });
+        }) as unknown as typeof fetch;
+        await renderPage();
+        fireEvent.click(screen.getByRole("button", { name: en.SuperAdmin.orgProvision }));
+        fireEvent.change(screen.getByTestId("org-name"), { target: { value: "Sandstone Crest" } });
+        fireEvent.click(screen.getByRole("button", { name: en.SuperAdmin.orgUploadStamp }));
+        fireEvent.submit(form());
+        expect(await screen.findByTestId("org-notice")).toHaveTextContent(en.SuperAdmin.orgBrandingNotSaved);
+        expect(sent).toHaveLength(1);
+    });
+
     it("is labelled in Arabic under /ar", async () => {
         await renderPage("ar");
         const row = screen.getByText(ORG.name).closest("tr")!;

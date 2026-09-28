@@ -273,4 +273,50 @@ class OrgBrandingStorageIT extends AbstractPostgresIT {
         // Leave no pending purge work behind for other tests' recovery runs.
         jdbc.update("delete from tenant_artifact_cleanup_queue where deleted_tenant_id = ?", newOrg);
     }
+
+    /**
+     * R3 minors 2, 3 and 5: an organisation whose staged image cannot be moved is
+     * still created exactly once (200 + X-Org-Branding: not-saved, never a 400 that
+     * invites a duplicate); a save that rolls back leaves no copy behind and keeps
+     * the staged file; staged files nobody adopted are purged after their TTL.
+     */
+    @Test
+    void createIsAtomicWithBrandingAndStagingIsCleanedUp() throws Exception {
+        // A staged URL whose blob has gone: the move fails.
+        String staged = (String) upload(saInA, "/api/admin/tenants/branding", png(3), "gone.png").getBody().get("url");
+        container(BlobStorageService.BRANDING_STAGING_CONTAINER)
+                .getBlobClient(staged.substring(staged.indexOf("/branding/") + 1)).delete();
+        String name = "Brand-store atomic " + UUID.randomUUID();
+        var created = http.call(saInA, HttpMethod.POST, "/api/admin/tenants",
+                Map.of("name", name, "address", "Dubai", "stampImageUrl", staged));
+        assertThat(created.getStatusCode().value()).isEqualTo(200);
+        assertThat(created.getHeaders().getFirst(LandlordOrgController.BRANDING_HEADER)).isEqualTo("not-saved");
+        assertThat(created.getBody().get("address")).isEqualTo("Dubai");
+        assertThat(created.getBody().get("stampImageUrl")).isNull();
+        assertThat(jdbc.queryForObject("select count(*) from landlord_org where name = ?", Integer.class, name)).isEqualTo(1);
+
+        // A save that rolls back after the copy (the phone is too long for its column).
+        String staged2 = (String) upload(saInA, "/api/admin/tenants/branding", png(4), "b.png").getBody().get("url");
+        int before = count("tenant-" + orgB);
+        var failed = http.call(saInA, HttpMethod.PUT, "/api/admin/tenants/" + orgB,
+                Map.of("stampImageUrl", staged2, "phone", "9".repeat(200)));
+        assertThat(failed.getStatusCode().is2xxSuccessful()).isFalse();
+        assertThat(count("tenant-" + orgB)).as("the copy is compensated").isEqualTo(before);
+        assertThat(container(BlobStorageService.BRANDING_STAGING_CONTAINER)
+                .getBlobClient(staged2.substring(staged2.indexOf("/branding/") + 1)).exists()).isTrue();
+
+        // Cancelled dialogs: kept within the TTL, purged after it.
+        assertThat(blobs.purgeStagedBranding(java.time.Duration.ofHours(24))).isZero();
+        assertThat(blobs.purgeStagedBranding(java.time.Duration.ZERO)).isGreaterThanOrEqualTo(1);
+        assertThat(container(BlobStorageService.BRANDING_STAGING_CONTAINER)
+                .getBlobClient(staged2.substring(staged2.indexOf("/branding/") + 1)).exists()).isFalse();
+    }
+
+    private int count(String containerName) {
+        BlobContainerClient c = container(containerName);
+        if (!c.exists()) return 0;
+        int n = 0;
+        for (var ignored : c.listBlobs()) n++;
+        return n;
+    }
 }
