@@ -111,6 +111,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * cheque cleared or was kept. Only {@code receivedTotal} differs (17,750 here
  * against 30,500 there), and nothing is computed from it.</p>
  */
+@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class)
 @SpringBootTest
 class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
 

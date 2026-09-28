@@ -60,6 +60,20 @@ public class GlobalExceptionHandler {
         ));
     }
 
+    /**
+     * Break-it round 2 (money2) F5: a money figure moved since the screen showed it
+     * (penalty.changed, settlement.changed) — reload and review, never retry.
+     */
+    @ExceptionHandler(com.datagami.rentaxis.api.exception.FiguresChangedException.class)
+    public ResponseEntity<Map<String, Object>> handleFiguresChanged(com.datagami.rentaxis.api.exception.FiguresChangedException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "error", true,
+                "message", ex.getReason() != null ? ex.getReason() : "This changed since you opened it; review it again.",
+                "status", 409,
+                "code", ex.getCode()
+        ));
+    }
+
     @ExceptionHandler(BusinessRuleViolationException.class)
     public ResponseEntity<Map<String, Object>> handleBusinessRule(BusinessRuleViolationException ex) {
         if (ex.getCode() == null) {
@@ -366,6 +380,19 @@ public class GlobalExceptionHandler {
             return clientError(VALUE_TOO_LONG, ex);
         }
 
+        // Break-it round 2 (money2) F1: a journal number already taken is not "someone
+        // else changed this" — it is nearly always a date in the wrong century sharing
+        // this year's two-digit numbering. PostingService refuses such dates now; this
+        // is the backstop, in words the user can act on.
+        if (constraint != null && constraint.toLowerCase(java.util.Locale.ROOT).contains("uq_journal_entries_number")) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "error", true,
+                    "status", 409,
+                    "message", JOURNAL_NUMBER_TAKEN,
+                    "code", "posting.numberTaken",
+                    "constraint", constraint));
+        }
+
         Map<String, Object> body = new java.util.HashMap<>();
         body.put("error", true);
         body.put("status", 409);
@@ -377,6 +404,9 @@ public class GlobalExceptionHandler {
         }
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
+
+    static final String JOURNAL_NUMBER_TAKEN = "The journal number for this date is already taken, so nothing was"
+            + " posted. Check the date — a year typed wrongly (2126 for 2026) shares this year's numbers.";
 
     static final String VALUE_TOO_LONG = "One of the values is too long for its field. Shorten it and try again.";
 

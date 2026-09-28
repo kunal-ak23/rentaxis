@@ -72,6 +72,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p><b>Transactions.</b> {@code TenantAspect} only enables the Hibernate tenant
  * filter inside one, so every read-back goes through {@link #tx}.</p>
  */
+@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class)
 @SpringBootTest
 class ChequeQueryServiceIT extends AbstractPostgresIT {
 

@@ -70,4 +70,29 @@ class GlobalExceptionHandlerDataIntegrityTest {
         assertThat(handler.handleDataIntegrityViolation(violation("23503", "fk_pae_user")).getStatusCode().value())
                 .isEqualTo(409);
     }
+
+    /**
+     * Break-it round 2 (money2) F1: a taken journal number (a date in the wrong
+     * century sharing this year's numbering) is a 409 that says so and points at the
+     * date — not "conflicts with existing related records", not "someone changed it".
+     */
+    @Test
+    void aTakenJournalNumberIsA409AboutTheDate() {
+        var response = handler.handleDataIntegrityViolation(violation("23505", "uq_journal_entries_number"));
+        assertThat(response.getStatusCode().value()).isEqualTo(409);
+        String message = (String) response.getBody().get("message");
+        assertThat(message).contains("journal number").contains("Check the date")
+                .doesNotContain("conflicts with existing related records")
+                .doesNotContainIgnoringCase("someone else");
+        assertThat(response.getBody()).containsEntry("code", "posting.numberTaken");
+    }
+
+    /** Break-it round 2 (money2) F5: a stale money figure is a 409 carrying its code for the web. */
+    @Test
+    void aChangedFigureIsA409WithItsCode() {
+        var response = handler.handleFiguresChanged(
+                new com.datagami.rentaxis.api.exception.FiguresChangedException("penalty.changed", "It moved."));
+        assertThat(response.getStatusCode().value()).isEqualTo(409);
+        assertThat(response.getBody()).containsEntry("code", "penalty.changed").containsEntry("message", "It moved.");
+    }
 }

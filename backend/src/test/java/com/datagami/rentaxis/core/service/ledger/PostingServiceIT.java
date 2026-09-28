@@ -97,6 +97,30 @@ class PostingServiceIT extends AbstractPostgresIT {
         assertThat(ls.get(0).getPropertyId()).isEqualTo(propertyId); // header dims copied to lines
     }
 
+    /**
+     * Break-it R2 money2 F1: a century typo is refused in words before a number is
+     * drawn — whoever posts — so the 2026 counter is untouched and the next real
+     * entry is still TCO-26/1. A reversal is held to the same window.
+     */
+    @Test
+    void aDateACenturyOutIsRefusedBeforeANumberIsDrawn() {
+        PostingRequest typo = new PostingRequest(JournalDocType.TCO, LocalDate.of(2126, 1, 15), "typo",
+                Dimensions.ofProperty(propertyId), JournalSourceType.LEASE, UUID.randomUUID(), null,
+                List.of(dr(AccountRole.RENT_RECEIVABLE, new BigDecimal("10")), cr(AccountRole.ADVANCE_RENT, new BigDecimal("10"))));
+        assertThatThrownBy(() -> posting.post(typo))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Posting date is out of range")
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("posting.dateOutOfRange"));
+        assertThat(journalEntryRows()).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from journal_entry_sequences where tenant_id = ?", Long.class, tenantId))
+                .isZero();
+
+        JournalEntry real = posting.post(contract(new BigDecimal("61000.00")));
+        assertThat(real.getEntryNumber()).isEqualTo("TCO-26/1");
+        assertThatThrownBy(() -> posting.reverse(real.getId(), LocalDate.of(2126, 1, 15), "typo"))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("posting.dateOutOfRange"));
+    }
+
     @Test
     void rejectsUnbalancedBeforeTouchingTheDatabase() {
         PostingRequest bad = new PostingRequest(JournalDocType.JV, LocalDate.of(2026, 9, 11), "bad", Dimensions.ofProperty(propertyId),

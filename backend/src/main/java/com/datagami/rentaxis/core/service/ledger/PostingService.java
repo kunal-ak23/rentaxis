@@ -81,9 +81,48 @@ public class PostingService {
         this.vatLock = vatLock;
     }
 
+    /**
+     * Break-it round 2 (money2) F1: "today" for {@link #requireNumberableDate}, on the
+     * app clock (Asia/Dubai). Setter-injected so hand-built instances need no new argument.
+     */
+    private java.time.Clock clock = java.time.Clock.system(ManualPostingDates.BUSINESS_ZONE);
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setClock(java.time.Clock clock) {
+        this.clock = clock;
+    }
+
+    /** How many years either side of today a journal may be dated (break-it R2 money2 F1). */
+    public static final int DATE_RANGE_YEARS = 60;
+
+    /**
+     * Break-it round 2 (money2) F1: every journal's number carries a two-digit year
+     * ({@code CBR-26/1}, {@link EntryNumberService}), so a date a century out — 2126
+     * typed for 2026 — draws a counter whose numbers are already on the books, and
+     * either fails as a bare {@code uq_journal_entries_number} conflict or, in a
+     * fresh series, takes the number and poisons that series for the real year.
+     * Refused here, before a number is drawn, whoever posts: the entry year must be
+     * within {@value #DATE_RANGE_YEARS} years of today's. Lease schedules fit (the
+     * term cap is 50 years); cut-over history fits (decades, not a century).
+     */
+    public static void requireNumberableDate(LocalDate date, LocalDate today) {
+        if (date == null || today == null) return;
+        int earliest = today.getYear() - DATE_RANGE_YEARS;
+        int latest = today.getYear() + DATE_RANGE_YEARS;
+        if (date.getYear() < earliest || date.getYear() > latest) {
+            String shown = date.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+            throw new BusinessRuleViolationException(
+                    "Posting date is out of range: " + shown + " is not between " + earliest + " and " + latest
+                            + ". Check the year.",
+                    "posting.dateOutOfRange",
+                    Map.of("date", shown, "earliest", String.valueOf(earliest), "latest", String.valueOf(latest)));
+        }
+    }
+
     @Transactional
     public JournalEntry post(PostingRequest r) {
         validateShape(r);
+        requireNumberableDate(r.entryDate(), LocalDate.now(clock));
         // YEC joins OB as a doc-type-keyed lock exemption (spec 2026-09-24 §3), with
         // the same reachability argument as the OB note in reverse(): only
         // YearEndCloseService produces a YEC, no request body carries a doc type, and
@@ -235,6 +274,8 @@ public class PostingService {
         JournalEntry original = entries.lockById(entryId).orElseThrow(() -> new NotFoundException("Journal entry not found"));
         if (original.getReversalOfId() != null) throw new BusinessRuleViolationException("Cannot reverse a reversal entry");
         if (original.getStatus() == JournalStatus.REVERSED) throw new BusinessRuleViolationException("Entry " + original.getEntryNumber() + " is already reversed");
+        // Break-it R2 money2 F1: a mirror is numbered like any entry.
+        requireNumberableDate(date, LocalDate.now(clock));
         // Same two exemptions post() grants, for the same reason and because an entry
         // that could be posted into a closed period has to be removable from it.
         // An OB journal is dated the day BEFORE the books open, which is locked by

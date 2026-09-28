@@ -82,6 +82,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * its own tenant, its own lease or its own ids. There is no assertion about a
  * whole table.</p>
  */
+@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class)
 @SpringBootTest
 class LeaseVariationServiceIT extends AbstractPostgresIT {
 

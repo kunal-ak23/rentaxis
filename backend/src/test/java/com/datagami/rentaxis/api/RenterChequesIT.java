@@ -58,6 +58,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * leases, same rows, same fields, same order — for an admin and for a property manager,
  * and a renter of another organisation is a 404.
  */
+@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class RenterChequesIT extends AbstractPostgresIT {
 

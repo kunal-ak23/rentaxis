@@ -53,6 +53,32 @@ public class ManualPostingDates {
         return LocalDate.now(clock).plusYears(1);
     }
 
+    /** Today on the app clock (Asia/Dubai). */
+    public LocalDate today() {
+        return LocalDate.now(clock);
+    }
+
+    /**
+     * Break-it round 2 (money2) F1/F2/F3: the one "not after today" rule for events
+     * that record something that has already happened — a cheque deposited, cleared
+     * or bounced, a debt written off, a period locked. Batch Clear had it on its own;
+     * every such path now asks here. A null date is left to the caller.
+     *
+     * @param what the date, for the sentence ("clearing", "bounce", "write-off")
+     * @param why  what the user should know, e.g. "Funds cannot have cleared yet, and nothing was cleared."
+     */
+    public void requireNotAfterToday(LocalDate date, String what, String why) {
+        if (date == null) return;
+        LocalDate today = today();
+        if (date.isAfter(today)) {
+            throw new BusinessRuleViolationException(
+                    "The " + what + " date " + date.format(DMY) + " is in the future (today is "
+                            + today.format(DMY) + "). " + why,
+                    "date.inFuture",
+                    Map.of("what", what, "date", date.format(DMY), "today", today.format(DMY)));
+        }
+    }
+
     /**
      * Refuses a date more than a year ahead with a 400 the user can act on. A null
      * date is left to the caller's own "a date is required" rule.

@@ -45,6 +45,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * creation maps the new property to an owned leaf instead of generating an orphan
  * one, and a row stamped with an orphan leaf is received into the owned leaf.
  */
+@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class)
 @SpringBootTest
 class ReceiptBankLeafIT extends AbstractPostgresIT {
 

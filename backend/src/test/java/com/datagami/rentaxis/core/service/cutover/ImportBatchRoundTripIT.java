@@ -63,6 +63,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * taking the import off the books would leave a settlement, an amendment or a
  * month-end close standing on journals that no longer exist.</p>
  */
+@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class)
 @SpringBootTest
 class ImportBatchRoundTripIT extends AbstractPostgresIT {
 

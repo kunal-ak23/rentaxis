@@ -58,6 +58,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * cheque and four quarterly rent cheques of 12,750. The deposit and the first two
  * rent cheques have cleared; July and April are still in the drawer.</p>
  */
+@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class)
 @SpringBootTest
 class LeaseAssignmentIT extends AbstractPostgresIT {
 
