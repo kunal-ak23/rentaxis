@@ -53,6 +53,13 @@ public final class UnitRules {
      * The key two unit numbers are compared by. Mirrors the SQL expression of
      * changeset 157: {@code lower(btrim(regexp_replace(translate(unit_number, <digits>,
      * <ascii>), '\s+', ' ', 'g')))}.
+     *
+     * <p>The two agree for ASCII, Arabic letters and Arabic-Indic digits. They can
+     * differ at the edges (review r3B M3): Postgres {@code \s} and {@code lower()}
+     * follow the database locale (e.g. U+2000-U+200A spaces, Turkish dotted I), and
+     * Java's {@code trim()} also strips control characters that {@code btrim} keeps.
+     * Every such disagreement still ends as the same readable refusal: the service
+     * translates a violation of the index into unit.numberTaken.</p>
      */
     public static String normalise(String unitNumber) {
         if (unitNumber == null) return null;

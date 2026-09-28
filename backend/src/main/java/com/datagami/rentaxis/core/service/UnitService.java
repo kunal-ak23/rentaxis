@@ -90,6 +90,9 @@ public class UnitService {
         java.util.Map<String, Object> args = new java.util.LinkedHashMap<>();
         args.put("unitNumber", number);
         args.put("place", place);
+        // Review r3B M7: the Arabic name too, for a client showing the refusal in Arabic.
+        String placeAr = building != null ? building.getNameAr() : property.getNameAr();
+        if (placeAr != null && !placeAr.isBlank()) args.put("placeAr", placeAr);
         return new BusinessRuleViolationException(message, UNIT_NUMBER_TAKEN, args);
     }
 
