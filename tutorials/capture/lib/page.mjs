@@ -81,7 +81,15 @@ export async function goto(page, pathname) {
   await clearRecordingIntro(page);
   await applyCaptureStyles(page);
   await revealCursor(page);
+  if (!pageReadyAt.has(page)) pageReadyAt.set(page, Date.now());
 }
+
+/**
+ * When each page first finished a `goto` (app shell up, capture styles on,
+ * cursor drawn). The runner covers a clip's frames before that moment, the
+ * blank document and the "Loading..." shell, with this first ready frame.
+ */
+export const pageReadyAt = new WeakMap();
 
 /** A fresh document draws no cursor until the mouse moves; nudge it in place. */
 export async function revealCursor(page) {

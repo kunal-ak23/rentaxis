@@ -14,7 +14,9 @@ import {
 } from './lib/context.mjs';
 import { installCursorOverlay, patchLocatorForCapture, pointerAt } from './lib/cursor.mjs';
 import { narrationDurationSeconds } from './lib/narration.mjs';
-import { addCallout, auditVisibleDialogContrast, clearCallout, suppressAutomaticOnboarding } from './lib/page.mjs';
+import {
+  addCallout, auditVisibleDialogContrast, clearCallout, pageReadyAt, suppressAutomaticOnboarding,
+} from './lib/page.mjs';
 
 const scenarioPath = path.join(import.meta.dirname, 'scenarios', `${tutorialId}.mjs`);
 if (!fs.existsSync(scenarioPath)) throw new Error(`Tutorial ${tutorialId} does not have an automated capture scenario yet.`);
@@ -40,6 +42,8 @@ const sceneWeights = scenes.map((scene) => {
 const totalSceneWeight = sceneWeights.reduce((total, weight) => total + weight, 0);
 const browser = await chromium.launch({ headless: true });
 const recordedVideoPaths = [];
+// Seconds of lead-in (blank document, loading shell) at the start of each clip.
+const clipLeadIns = [];
 const storageStateByRole = new Map();
 
 async function authenticatedStorageState(role) {
@@ -89,10 +93,20 @@ let recordingStartedAt = null;
 
 async function closeLive() {
   if (!live) return;
-  const { context, page, video } = live;
+  const { context, page, video, clipStartedAt } = live;
   live = null;
+  const readyAt = pageReadyAt.get(page);
   await page.close();
-  if (video) recordedVideoPaths.push(await video.path());
+  if (video) {
+    // The first clip opens on the intro card, which is meant to be seen. Every
+    // later clip opens on a blank document and the app's loading shell for a
+    // second or so; those frames get replaced by the first ready frame (the
+    // clip keeps its length, so scene timing against the narration is kept).
+    // A small margin lands the cut safely past the ready moment.
+    const leadIn = recordedVideoPaths.length > 0 && readyAt ? (readyAt - clipStartedAt) / 1000 + 0.15 : 0;
+    recordedVideoPaths.push(await video.path());
+    clipLeadIns.push(Math.max(0, leadIn));
+  }
   await context.close();
 }
 
@@ -150,6 +164,8 @@ async function openLive(role, sceneIndex, scene, host) {
     },
   ]);
   if (!validateOnly) await context.addInitScript(installCursorOverlay);
+  // The clip's video starts with the page.
+  const clipStartedAt = Date.now();
   const page = await context.newPage();
   const video = validateOnly ? null : page.video();
   if (!validateOnly) {
@@ -158,7 +174,7 @@ async function openLive(role, sceneIndex, scene, host) {
     await page.mouse.move(1500, 640);
     pointerAt.set(page, { x: 1500, y: 640 });
   }
-  return { role, context, page, video };
+  return { role, context, page, video, clipStartedAt };
 }
 
 try {
@@ -226,7 +242,26 @@ if (validateOnly) {
   if (recordedVideoPaths.length !== expectedClips || recordedVideoPaths.some((videoPath) => !fs.existsSync(videoPath))) {
     throw new Error(`Playwright produced ${recordedVideoPaths.length} clips for ${expectedClips} tutorial contexts.`);
   }
-  if (recordedVideoPaths.length === 1) {
+  if (clipLeadIns.some((seconds) => seconds > 0)) {
+    // Re-encode once: each clip's lead-in becomes a still of its first ready
+    // frame (trim it off, then clone the first remaining frame back over the
+    // same length), and the clips are joined. VP8 at a high bitrate: this is an
+    // intermediate that render-tutorial.sh encodes to H.264 anyway.
+    const inputs = recordedVideoPaths.flatMap((videoPath) => ['-i', videoPath]);
+    const chains = clipLeadIns.map((leadIn, index) => (leadIn > 0
+      ? `[${index}:v]fps=25,trim=start=${leadIn.toFixed(3)},setpts=PTS-STARTPTS,`
+        + `tpad=start_duration=${leadIn.toFixed(3)}:start_mode=clone[v${index}]`
+      : `[${index}:v]fps=25,setpts=PTS-STARTPTS[v${index}]`));
+    const joined = clipLeadIns.map((_, index) => `[v${index}]`).join('');
+    const filter = `${chains.join(';')};${joined}concat=n=${clipLeadIns.length}:v=1:a=0[out]`;
+    execFileSync('ffmpeg', [
+      '-hide_banner', '-loglevel', 'error', '-y', ...inputs,
+      '-filter_complex', filter, '-map', '[out]',
+      '-c:v', 'libvpx', '-b:v', '12M', '-crf', '4', '-deadline', 'good', '-cpu-used', '4', '-threads', '8',
+      outputPath,
+    ]);
+    console.log(`clip_lead_ins=${clipLeadIns.map((seconds) => seconds.toFixed(2)).join(',')}`);
+  } else if (recordedVideoPaths.length === 1) {
     fs.copyFileSync(recordedVideoPaths[0], outputPath);
   } else {
     const concatPath = path.join(videoDir, 'concat.txt');
