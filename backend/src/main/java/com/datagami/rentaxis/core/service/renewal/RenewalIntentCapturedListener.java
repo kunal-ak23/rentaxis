@@ -63,6 +63,8 @@ public class RenewalIntentCapturedListener {
                         ev.tenantId(), null,
                         renterName, unitNumber, propertyName,
                         ev.intent().name()),
-                "RENEWAL_INTENT_CAPTURED:" + ev.opportunityId()));
+                // Break-it R3 portal3 F3: the key carries the answer, so a change of
+                // mind (Renew -> Move out) is e-mailed too; it used to be deduplicated away.
+                ev.emailDedupKey()));
     }
 }

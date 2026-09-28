@@ -15,7 +15,11 @@ public record RenewalSummaryDTO(List<LeaseRenewalView> leases) {
             UUID opportunityId,
             String stage,
             String intent,
-            List<ReminderEntry> reminders
+            List<ReminderEntry> reminders,
+            // Break-it R3 portal3 F8: the contract is over (past its end date, or
+            // terminated/expired/closed) — shown as "ended N days ago", no renewal choice.
+            boolean ended,
+            long endedDaysAgo
     ) {}
 
     public record ReminderEntry(int slot, String status, LocalDate sentAt) {}

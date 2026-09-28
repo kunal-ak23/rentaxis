@@ -1342,6 +1342,10 @@
     "linkLabel": "Open contract"
   },
   "renewals": {
+    "contractEnded": "This contract has already ended, so a renewal choice can't be recorded. Please contact your landlord.",
+    "endedSection": "Ended contracts",
+    "endedHint": "This contract has ended, so there is nothing to renew here. Contact your landlord about a new contract.",
+    "endedDaysAgo": "Contract ended {days, plural, =0 {today} one {# day ago} other {# days ago}} ({date})",
     "pageTitle": "Renewals",
     "within30": "Within 30 days",
     "within60": "Within 60 days",

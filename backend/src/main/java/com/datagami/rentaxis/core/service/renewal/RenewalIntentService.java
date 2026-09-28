@@ -59,7 +59,9 @@ public class RenewalIntentService {
     /** Called from the authenticated renter endpoint. */
     @Transactional
     public RenewalOpportunity captureIntentFromRenter(UUID opportunityId, RenewalIntent intent, UUID renterUserId) {
-        RenewalOpportunity o = opportunityRepository.findById(opportunityId)
+        // Locked (break-it R3 portal3 F3): a double tap on the same answer must see the
+        // first one recorded, not both record it and notify staff twice.
+        RenewalOpportunity o = opportunityRepository.findByIdForUpdate(opportunityId)
                 .orElseThrow(() -> new NotFoundException("Opportunity not found"));
         if (!o.getLease().getRenter().getUserId().equals(renterUserId)) {
             throw new NotFoundException("Opportunity not found");
@@ -67,14 +69,35 @@ public class RenewalIntentService {
         if (o.getStage() == RenewalStage.CLOSED_WON || o.getStage() == RenewalStage.CLOSED_LOST) {
             throw new BusinessRuleViolationException("Renewal is already resolved");
         }
+        if (o.getStage() == RenewalStage.INTENT_CAPTURED && o.getIntent() == intent) {
+            // The same answer again: already on record, nothing new to tell anyone.
+            return o;
+        }
         return applyIntent(o, intent, renterUserId);
     }
 
+    /** Shown when the contract a renewal answer is about has already ended. */
+    static final String CONTRACT_ENDED = "This contract has already ended, so a renewal choice can't be recorded. "
+            + "Please contact your landlord.";
+
+    /**
+     * Break-it R3 portal3 F8: a renewal answer is for a contract still running. One
+     * past its end date (still ACTIVE when no expiry job ran) or terminated is
+     * refused with a readable 400 — the renter's portal shows it as ended.
+     */
+    private static void requireContractNotEnded(RenewalOpportunity o) {
+        if (LeaseEnded.hasEnded(o.getLease(), java.time.LocalDate.now())) {
+            throw new BusinessRuleViolationException(CONTRACT_ENDED, "renewal.contractEnded", java.util.Map.of());
+        }
+    }
+
     private RenewalOpportunity applyIntent(RenewalOpportunity o, RenewalIntent intent, UUID createdBy) {
+        requireContractNotEnded(o);
         RenewalIntent prev = o.getIntent();
+        Instant capturedAt = Instant.now();
         o.setIntent(intent);
         o.setStage(RenewalStage.INTENT_CAPTURED);
-        o.setIntentCapturedAt(Instant.now());
+        o.setIntentCapturedAt(capturedAt);
         opportunityRepository.save(o);
 
         LeaseInteraction i = new LeaseInteraction();
@@ -97,7 +120,7 @@ public class RenewalIntentService {
         }
 
         events.publishEvent(new RenewalIntentCapturedEvent(
-                o.getId(), o.getLease().getId(), o.getTenantId(), intent));
+                o.getId(), o.getLease().getId(), o.getTenantId(), intent, capturedAt));
         return o;
     }
 }

@@ -82,3 +82,31 @@ describe("RenewalCard title null-safety", () => {
         expect(screen.getByText("unitFallback")).toBeTruthy();
     });
 });
+
+// Break-it R3 portal3 F8: a contract that is over shows how long ago it ended and offers no choice.
+describe("RenewalCard for an ended contract", () => {
+    it("says how many days ago it ended, never a negative countdown, and offers no renew choice", () => {
+        render(<RenewalCard {...base} endDate="2026-08-19" daysRemaining={-40} ended endedDaysAgo={40} />);
+        expect(screen.getByText(/endedDaysAgo/)).toBeTruthy();
+        expect(screen.queryByText(/-40/)).toBeNull();
+        expect(screen.queryByText(/endDateLine/)).toBeNull();
+        expect(screen.queryAllByRole("button")).toHaveLength(0);
+    });
+
+    it("hides the choice even when an answer was already recorded", () => {
+        render(<RenewalCard {...base} intent="RENEW" ended endedDaysAgo={3} />);
+        expect(screen.queryAllByRole("button")).toHaveLength(0);
+    });
+});
+
+// Break-it R3 portal3 F3: a double tap cannot post twice.
+describe("RenewalCard while an answer is being saved", () => {
+    it("disables every choice", () => {
+        const onSetIntent = vi.fn();
+        render(<RenewalCard {...base} busy onSetIntent={onSetIntent} />);
+        const buttons = screen.getAllByRole("button");
+        expect(buttons.every(b => (b as HTMLButtonElement).disabled)).toBe(true);
+        fireEvent.click(buttons[0]);
+        expect(onSetIntent).not.toHaveBeenCalled();
+    });
+});
