@@ -140,6 +140,9 @@ export default function TicketDetailPage() {
             return notes.includes("resolved again") ? t("history.otpReissuedResolvedAgain") : t("history.otpReissued");
         }
         if (h.action === "OTP_LOCKED") return t("history.otpLocked");
+        // The assignee's account was deleted and the ticket went back to the queue
+        // (UserReferenceReleaser): the stored note is English, so say it here.
+        if (h.action === "UNASSIGNED") return t("history.unassigned");
         const assigned = /^Ticket (re)?assigned to (.+)$/.exec(notes);
         if (assigned) return t(assigned[1] ? "history.reassigned" : "history.assigned", { name: `\u2068${assigned[2]}\u2069` });
         return notes || h.action;
@@ -159,6 +162,8 @@ export default function TicketDetailPage() {
     const [replyError, setReplyError] = useState<string | null>(null);
     const [ratingError, setRatingError] = useState<string | null>(null);
     const [attachmentDeleteError, setAttachmentDeleteError] = useState<string | null>(null);
+    // Break-it R3 portal3 F7: a failed download used to do nothing at all.
+    const [attachmentDownloadError, setAttachmentDownloadError] = useState<string | null>(null);
     const [sendingReply, setSendingReply] = useState(false);
 
     // Actions
@@ -345,9 +350,10 @@ export default function TicketDetailPage() {
     // ── Download attachment ─────────────────────────────────────────────
 
     const handleDownloadAttachment = async (attachmentId: string, fileName: string) => {
-        const res = await fetch(`/api/proxy/v1/tickets/attachments/${attachmentId}/download`);
-
-        if (res.ok) {
+        setAttachmentDownloadError(null);
+        try {
+            const res = await fetch(`/api/proxy/v1/tickets/attachments/${attachmentId}/download`);
+            if (!res.ok) throw new Error(`download ${res.status}`);
             const blob = await res.blob();
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
@@ -357,6 +363,8 @@ export default function TicketDetailPage() {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+        } catch {
+            setAttachmentDownloadError(t("attachmentDownloadFailed"));
         }
     };
 
@@ -538,6 +546,9 @@ export default function TicketDetailPage() {
                         </label>
                         {attachmentDeleteError && (
                             <p role="alert" className="mt-2 text-[11px] text-error">{attachmentDeleteError}</p>
+                        )}
+                        {attachmentDownloadError && (
+                            <p role="alert" data-testid="ticket-attachment-download-error" className="mt-2 text-[11px] text-error">{attachmentDownloadError}</p>
                         )}
                         {attachmentErrors.length > 0 && (
                             <ul role="alert" data-testid="ticket-attachment-errors" className="mt-2 space-y-0.5 text-[11px] text-error">

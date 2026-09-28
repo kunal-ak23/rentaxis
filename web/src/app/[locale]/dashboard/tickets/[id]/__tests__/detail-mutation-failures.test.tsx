@@ -128,3 +128,37 @@ describe("Ticket detail — refused mutations are shown", () => {
         expect(calls.some(c => c.url.endsWith("/v1/tickets/attachments/att-1") && c.method === "DELETE")).toBe(true);
     });
 });
+
+// Break-it R3 portal3 F7: a failed attachment download used to do nothing at all.
+describe("Ticket detail — a failed attachment download is shown", () => {
+    it.each(["en", "ar"] as const)("says the file could not be downloaded (%s)", async (locale) => {
+        session.role = "RENTER";
+        session.locale = locale;
+        const m = locale === "ar" ? ar : en;
+        render(<TicketDetailPage />);
+        await screen.findByText("Leaking tap");
+        const buttons = await screen.findAllByRole("button", { name: m.Tickets.downloadAttachment });
+        fireEvent.click(buttons[0]);
+        expect(await screen.findByText(m.Tickets.attachmentDownloadFailed)).toBeTruthy();
+        expect(calls.some(c => c.url.endsWith("/attachments/att-1/download"))).toBe(true);
+    });
+});
+
+// Break-it R3 (users): a deleted assignee's open tickets go back to the queue with an UNASSIGNED
+// history row whose stored note is English; the page says it in the user's language.
+describe("Ticket detail — the UNASSIGNED history row", () => {
+    it.each(["en", "ar"] as const)("is rendered from the message key (%s)", async (locale) => {
+        session.locale = locale;
+        const m = locale === "ar" ? ar : en;
+        const history = [{
+            id: "h1", action: "UNASSIGNED", fromStatus: "ASSIGNED", toStatus: "OPEN",
+            notes: "Assignee's account was deleted; ticket returned to the unassigned queue",
+            performedByName: "Admin", createdAt: "2026-09-01T00:00:00Z",
+        }];
+        const base = global.fetch;
+        global.fetch = vi.fn(async (url: unknown, init?: RequestInit) =>
+            String(url).endsWith("/history") ? jsonRes(history) : (base as typeof fetch)(url as string, init)) as unknown as typeof fetch;
+        render(<TicketDetailPage />);
+        expect(await screen.findByText(m.Tickets.history.unassigned)).toBeTruthy();
+    });
+});

@@ -3190,6 +3190,9 @@
     "uploadBlockedByPost": "A batch is being posted. Wait for it to finish before uploading another workbook."
   },
   "Tickets": {
+    "attachmentDownloadFailed": "The file couldn't be downloaded. Please try again.",
+    "retry": "Retry",
+    "renterLeasesFailed": "Couldn't load your contracts. Please try again.",
     "onBehalfOfRenter": "On behalf of tenant (optional)",
     "onBehalfOfNone": "Nobody — staff reported it",
     "onBehalfOfHint": "Pick the tenant who phoned or messaged, so the ticket appears in their record.",
@@ -3321,9 +3324,10 @@
     "byCategory": "By Category",
     "byPriority": "By Priority",
     "count": "Count",
-    "history": {"statusChanged": "Status changed: {from} → {to}", "closedWithOtp": "Ticket closed with OTP verification", "closedNoRenter": "Ticket closed without OTP (no tenant to confirm)", "closedLocked": "Ticket closed without OTP (OTP closure locked after too many wrong codes)", "otpReissued": "A new closure OTP was sent to the tenant", "otpReissuedResolvedAgain": "A new closure OTP was sent to the tenant (ticket resolved again)", "otpLocked": "OTP closure locked after too many wrong codes", "assigned": "Ticket assigned to {name}", "reassigned": "Ticket reassigned to {name}"}
+    "history": {"unassigned": "Assignee's account was deleted; ticket returned to the unassigned queue", "statusChanged": "Status changed: {from} → {to}", "closedWithOtp": "Ticket closed with OTP verification", "closedNoRenter": "Ticket closed without OTP (no tenant to confirm)", "closedLocked": "Ticket closed without OTP (OTP closure locked after too many wrong codes)", "otpReissued": "A new closure OTP was sent to the tenant", "otpReissuedResolvedAgain": "A new closure OTP was sent to the tenant (ticket resolved again)", "otpLocked": "OTP closure locked after too many wrong codes", "assigned": "Ticket assigned to {name}", "reassigned": "Ticket reassigned to {name}"}
   },
   "RenterHome": {
+    "leasesLoadFailed": "Couldn't load your contracts. Please try again.",
     "pastContracts": "Past contracts ({count})",
     "renterFallback": "Tenant",
     "nextPayment": "Next payment",

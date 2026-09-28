@@ -102,6 +102,9 @@ export default function RenterPortalPage() {
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [contractError, setContractError] = useState<string | null>(null);
+    // Break-it R3 portal3 F5: the renter's own contracts failed to load — an
+    // error with Retry, never the "no contracts" empty state.
+    const [leasesFailed, setLeasesFailed] = useState(false);
     const [nextPayment, setNextPayment] = useState<{ dueDate: string; amount: number; daysUntilDue: number; isOverdue: boolean; daysOverdue: number } | null>(null);
     // `/online-payments/my-payments` returns RenterChequeDTO rows. The local
     // shape this used to declare carried a `paymentMethod` the DTO has never
@@ -181,13 +184,13 @@ export default function RenterPortalPage() {
         const { signal, isCurrent } = beginLeases();
         try {
             const res = await fetch("/api/proxy/v1/leases/my-leases", { signal });
-            if (res.ok) {
-                const rows = await res.json();
-                if (isCurrent()) setLeases(rows);
-            }
+            if (!res.ok) throw new Error(`my-leases ${res.status}`);
+            const rows = await res.json();
+            if (isCurrent()) { setLeases(rows); setLeasesFailed(false); }
         } catch (err) {
             if (isAbortError(err) || !isCurrent()) return;
             console.error(err);
+            setLeasesFailed(true);
         } finally {
             if (isCurrent()) setLoading(false);
         }
@@ -730,7 +733,13 @@ export default function RenterPortalPage() {
                 </details>
             )}
 
-            {leases.length === 0 && (
+            {leasesFailed && (
+                <div data-testid="my-leases-failed">
+                    <LoadErrorBanner message={tHome("leasesLoadFailed")} onRetry={() => { void fetchMyLeases(); }} />
+                </div>
+            )}
+
+            {leases.length === 0 && !leasesFailed && (
                 <div className="text-center py-24 bg-background border border-dashed border-border rounded-xl flex flex-col items-center">
                     <div className="w-16 h-16 bg-surface rounded-xl flex items-center justify-center text-muted shadow-sm mb-6">
                         <AlertCircle size={32} />
