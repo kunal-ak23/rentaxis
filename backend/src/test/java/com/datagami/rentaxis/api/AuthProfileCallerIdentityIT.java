@@ -78,6 +78,23 @@ class AuthProfileCallerIdentityIT extends AbstractCallerIdentityIT {
         assertThat(nameOf(userA)).isEqualTo("Hijacked");
     }
 
+    /** Break-it R2 portal2: the body is validated — junk phone and an over-long name are a 400, nothing stored. */
+    @Test
+    void aProfileUpdateWithAJunkPhoneOrAnOverLongNameIsRefused() {
+        String before = nameOf(userA);
+        assertThat(status(forged(HttpMethod.PUT, "/api/auth/me", userA, userA)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("name", "Junk phone", "phoneNumber", "notaphone!!!123")))).isEqualTo(400);
+        assertThat(status(forged(HttpMethod.PUT, "/api/auth/me", userA, userA)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("name", "A".repeat(256))))).isEqualTo(400);
+        assertThat(nameOf(userA)).isEqualTo(before);
+
+        assertThat(status(forged(HttpMethod.PUT, "/api/auth/me", userA, userA)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("name", "Local phone", "phoneNumber", "050 8831786")))).isEqualTo(200);
+    }
+
     @Test
     void aPasswordChangeWithAForgedUserIdDoesNotTouchTheVictim() {
         String victimsHash = hashOf(victim);

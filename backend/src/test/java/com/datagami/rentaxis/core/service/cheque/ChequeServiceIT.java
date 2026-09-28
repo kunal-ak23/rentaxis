@@ -81,6 +81,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p><b>Transactions.</b> {@code TenantAspect} only enables the Hibernate tenant
  * filter inside one, so every read-back goes through {@link #tx}.</p>
  */
+@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class)
 @SpringBootTest
 class ChequeServiceIT extends AbstractPostgresIT {
 
@@ -335,22 +336,6 @@ class ChequeServiceIT extends AbstractPostgresIT {
         for (ChequeDTO c : payable) {
             assertThat(reread(c.id()).getDepositedAt()).isEqualTo(c.chequeDate());
             assertThat(reread(c.id()).getStatus()).isEqualTo(ChequeStatus.DEPOSITED);
-        }
-    }
-
-    /** Its own date has not arrived: it cannot have been banked on it, and nothing in the run is. */
-    @Test
-    void depositBatchOnOwnDatesRefusesARowDatedInTheFuture() {
-        PostLeaseResponse r = postedInThePast();
-        List<UUID> ids = r.cheques().stream().map(ChequeDTO::id).toList();
-        assertThat(r.cheques()).anySatisfy(c -> assertThat(c.chequeDate()).isAfter(LocalDate.now()));
-
-        assertThatThrownBy(() -> service.depositBatch(new DepositBatchRequest(ids, LocalDate.now(), null, true)))
-                .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("has not arrived yet");
-
-        for (UUID id : ids) {
-            assertThat(reread(id).getStatus()).isEqualTo(ChequeStatus.REGISTERED);
         }
     }
 

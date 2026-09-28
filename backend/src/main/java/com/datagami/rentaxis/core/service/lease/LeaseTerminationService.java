@@ -171,7 +171,8 @@ public class LeaseTerminationService {
                 receivableAfter(lease, split.toReturn(), plan.unearned().add(plan.unearnedVat())),
                 new TerminationPreviewDTO.VatSettlement(vat.dueByT(), vat.pending(), vat.reversedFromDeferred(),
                         vat.declaredAtT(), vat.creditedBack()),
-                problems);
+                problems,
+                renewalNotices(leaseId));
     }
 
     // ------------------------------------------------------------------
@@ -216,7 +217,63 @@ public class LeaseTerminationService {
         VatTaxPointService.TerminationVat vat = vatTaxPoints.settleForTermination(lease, t, plan.unearnedVat());
         UUID tcrId = postUnearnedReversal(lease, plan, vat, t);
 
-        return leaseService.markTerminated(leaseId, t, r.notes(), tcrId, byUser);
+        String withdrawn = discardRenewalDrafts(lease);
+        return leaseService.markTerminated(leaseId, t, r.notes(), tcrId, byUser, withdrawn);
+    }
+
+    // ------------------------------------------------------------------
+    // the renewal drafted before the termination (break-it round 2 F1)
+    // ------------------------------------------------------------------
+
+    /**
+     * A terminated lease cannot be renewed, so a renewal drawn up from it and never
+     * posted goes with it — posting it later would carry the leaving renter's deposit
+     * onto a tenancy that has ended (the post refuses that too). A DRAFT is discarded;
+     * one sent to the renter (PENDING_SIGNATURE, accepted or not) is withdrawn (review
+     * A I2): left behind it could be neither posted nor deleted while the renter could
+     * still accept it. Nothing of either is on the books.
+     */
+    private List<Lease> renewalSuccessors(UUID leaseId) {
+        return leaseRepository.findByRenewedFromLeaseId(leaseId).stream()
+                .filter(l -> l.getStatus() == LeaseStatus.DRAFT || l.getStatus() == LeaseStatus.PENDING_SIGNATURE)
+                .toList();
+    }
+
+    private List<String> renewalNotices(UUID leaseId) {
+        List<String> notices = new ArrayList<>();
+        for (Lease s : renewalSuccessors(leaseId)) {
+            String term = termOf(s);
+            notices.add(s.getStatus() == LeaseStatus.DRAFT
+                    ? "The renewal draft for " + term + " will be discarded: a terminated lease cannot be renewed."
+                    : "The renewal for " + term + " awaiting the renter's signature will be withdrawn:"
+                            + " a terminated lease cannot be renewed, and the renter will no longer see it.");
+        }
+        return notices;
+    }
+
+    /**
+     * Discards/withdraws the unposted renewals; answers the terms of those the renter
+     * had been sent to sign (joined, or null when none) — the LEASE_TERMINATED email
+     * tells them it was withdrawn (review A N2). A DRAFT the renter never saw is not named.
+     */
+    private String discardRenewalDrafts(Lease lease) {
+        List<String> sentToRenter = new ArrayList<>();
+        for (Lease s : renewalSuccessors(lease.getId())) {
+            String term = termOf(s);
+            boolean draft = s.getStatus() == LeaseStatus.DRAFT;
+            leaseService.withdrawUnpostedLease(s.getId());
+            leaseService.recordLeaseEvent(lease, lease.getStatus(), lease.getStatus(), draft
+                    ? "Renewal draft for " + term + " discarded on termination"
+                    : "Renewal for " + term + " awaiting the renter's signature withdrawn on termination");
+            if (!draft) sentToRenter.add(term);
+        }
+        return sentToRenter.isEmpty() ? null : String.join(", ", sentToRenter);
+    }
+
+    private static String termOf(Lease l) {
+        java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        return (l.getStartDate() == null ? "?" : l.getStartDate().format(dmy)) + " – "
+                + (l.getEndDate() == null ? "?" : l.getEndDate().format(dmy));
     }
 
     // ------------------------------------------------------------------

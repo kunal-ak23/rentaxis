@@ -5,8 +5,9 @@ import { useTranslations } from "next-intl";
 import LeaseDialog from "@/components/leases/LeaseDialog";
 import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { fmtAmount } from "@/lib/api/ledger";
-import { todayIso } from "@/components/leases/leaseMath";
+import { businessTodayIso, isAfterBusinessToday } from "@/lib/businessDate";
 import { ApiError, chequeApi, type Cheque } from "@/lib/api/leasing";
+import { serverText } from "@/components/finance/bankrec/serverText";
 
 /**
  * The day's deposit run (PACT "Cheque / Cash Collection"): a batch of
@@ -34,8 +35,9 @@ const label = "block text-[10px] font-semibold text-muted uppercase tracking-wid
 export default function DepositBatchDialog({ open, chequeIds, total, propertyId, onClose, onDone }: Props) {
     const t = useTranslations("Cheques");
     const tl = useTranslations("Leasing");
+    const tCommon = useTranslations("Common");
 
-    const [date, setDate] = useState(todayIso());
+    const [date, setDate] = useState(businessTodayIso());
     // #10: one date for the selection (the default), or each cheque's own.
     const [ownDates, setOwnDates] = useState(false);
     const [debitAccountId, setDebitAccountId] = useState<string | null>(null);
@@ -44,7 +46,7 @@ export default function DepositBatchDialog({ open, chequeIds, total, propertyId,
 
     useEffect(() => {
         if (!open) return;
-        setDate(todayIso());
+        setDate(businessTodayIso());
         setOwnDates(false);
         setDebitAccountId(null);
         setError(null);
@@ -59,7 +61,7 @@ export default function DepositBatchDialog({ open, chequeIds, total, propertyId,
             );
             onDone(cheques);
         } catch (e) {
-            setError(e instanceof ApiError ? e.message : t("actionFailed"));
+            setError(e instanceof ApiError ? serverText(tCommon, e) || e.message : t("actionFailed"));
         } finally {
             setBusy(false);
         }
@@ -74,7 +76,7 @@ export default function DepositBatchDialog({ open, chequeIds, total, propertyId,
             confirmText={t("depositBatch")}
             cancelText={tl("cancel")}
             busy={busy}
-            confirmDisabled={chequeIds.length === 0}
+            confirmDisabled={chequeIds.length === 0 || (!ownDates && isAfterBusinessToday(date))}
             confirmTestId="deposit-batch-confirm"
         >
             <div className="space-y-3">
@@ -103,8 +105,15 @@ export default function DepositBatchDialog({ open, chequeIds, total, propertyId,
                             type="date"
                             className={field}
                             value={date}
+                            max={businessTodayIso()}
+                            aria-invalid={isAfterBusinessToday(date)}
                             onChange={e => setDate(e.target.value)}
                         />
+                        {isAfterBusinessToday(date) && (
+                            <p role="alert" className="mt-1 text-[11px] text-error" data-testid="deposit-batch-date-error">
+                                {t("dateAfterToday")}
+                            </p>
+                        )}
                     </div>
                 )}
                 <div>

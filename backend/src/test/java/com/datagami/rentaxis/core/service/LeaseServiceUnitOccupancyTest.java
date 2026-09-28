@@ -35,6 +35,7 @@ import static org.mockito.Mockito.when;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.ArgumentMatchers.eq;
 
 class LeaseServiceUnitOccupancyTest {
@@ -452,6 +453,77 @@ class LeaseServiceUnitOccupancyTest {
         verify(leaseLineRepository).deleteByLease_Id(lease.getId());
         verify(chequeRepository).deleteByLease_IdAndStatus(lease.getId(), ChequeStatus.DRAFT);
         verify(leaseRepository).delete(lease);
+    }
+
+    // ---- withdrawing a renewal moves its meetings/tickets (M9) ----
+
+    /**
+     * A plain draft delete does not touch meetings/tickets: a lease something still
+     * refers to is kept, not silently unlinked (import discard relies on this —
+     * ImportBatchDiscardIT). Only a withdrawn renewal moves them.
+     */
+    @Test
+    void deleteDraftLease_leavesMeetingsAndTicketsAlone() {
+        var meetingRepository = mock(com.datagami.rentaxis.domain.repository.MeetingRepository.class);
+        var ticketRepository = mock(com.datagami.rentaxis.domain.repository.MaintenanceTicketRepository.class);
+        service.setMeetingRepository(meetingRepository);
+        service.setMaintenanceTicketRepository(ticketRepository);
+
+        Lease lease = lease(LeaseStatus.DRAFT);
+        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
+
+        com.datagami.rentaxis.domain.entity.Meeting meeting = new com.datagami.rentaxis.domain.entity.Meeting();
+        meeting.setLease(lease);
+        when(meetingRepository.findByLease_Id(lease.getId())).thenReturn(List.of(meeting));
+
+        com.datagami.rentaxis.domain.entity.MaintenanceTicket ticket =
+                new com.datagami.rentaxis.domain.entity.MaintenanceTicket();
+        ticket.setLease(lease);
+        when(ticketRepository.findByLease_Id(lease.getId())).thenReturn(List.of(ticket));
+
+        service.deleteDraftLease(lease.getId());
+
+        assertThat(meeting.getLease()).isSameAs(lease);
+        assertThat(ticket.getLease()).isSameAs(lease);
+        verify(meetingRepository, never()).save(any());
+        verify(ticketRepository, never()).save(any());
+    }
+
+    /**
+     * A PENDING_SIGNATURE renewal being withdrawn: it has a predecessor still on
+     * file (the termination only changes its status, in the same transaction),
+     * and that is what the meeting/ticket is really about — the renter's one
+     * ongoing tenancy — so they are repointed there instead of losing the link.
+     */
+    @Test
+    void withdrawUnpostedLease_repointsMeetingsAndTicketsToPredecessor() {
+        var meetingRepository = mock(com.datagami.rentaxis.domain.repository.MeetingRepository.class);
+        var ticketRepository = mock(com.datagami.rentaxis.domain.repository.MaintenanceTicketRepository.class);
+        service.setMeetingRepository(meetingRepository);
+        service.setMaintenanceTicketRepository(ticketRepository);
+
+        Lease predecessor = lease(LeaseStatus.ACTIVE);
+        Lease renewal = lease(LeaseStatus.PENDING_SIGNATURE);
+        renewal.setRenewedFromLeaseId(predecessor.getId());
+        when(leaseRepository.findById(renewal.getId())).thenReturn(Optional.of(renewal));
+        when(leaseRepository.findById(predecessor.getId())).thenReturn(Optional.of(predecessor));
+
+        com.datagami.rentaxis.domain.entity.Meeting meeting = new com.datagami.rentaxis.domain.entity.Meeting();
+        meeting.setLease(renewal);
+        when(meetingRepository.findByLease_Id(renewal.getId())).thenReturn(List.of(meeting));
+
+        com.datagami.rentaxis.domain.entity.MaintenanceTicket ticket =
+                new com.datagami.rentaxis.domain.entity.MaintenanceTicket();
+        ticket.setLease(renewal);
+        when(ticketRepository.findByLease_Id(renewal.getId())).thenReturn(List.of(ticket));
+
+        service.withdrawUnpostedLease(renewal.getId());
+
+        assertThat(meeting.getLease()).isEqualTo(predecessor);
+        assertThat(ticket.getLease()).isEqualTo(predecessor);
+        verify(meetingRepository).save(meeting);
+        verify(ticketRepository).save(ticket);
+        verify(leaseRepository).delete(renewal);
     }
 
     /**

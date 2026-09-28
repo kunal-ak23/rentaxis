@@ -259,3 +259,49 @@ describe("RenewLeaseDialog money guards (F1/F2)", () => {
         expect(renew.mock.calls[0][1].rentChange).toEqual({ mode: "AMOUNT", percent: null, newRentAmount: 52000.5 });
     });
 });
+
+/**
+ * Round-2 forms2 Finding 2: the wizard warns at 5 years and hard-blocks at 50
+ * (`web/src/lib/leaseTerm.ts`, `LeaseService.MAX_TERM_YEARS`/backend's
+ * `LeaseRenewalService.requireSaneTerm`); the Renew dialog had neither, so a
+ * `2999-06-01` typo reached the server before anything said so.
+ */
+describe("RenewLeaseDialog term-length guard (forms2 Finding 2)", () => {
+    it("blocks a renewal end date more than 50 years out, same wording as the wizard", () => {
+        renderDialog();
+        fireEvent.change(screen.getByTestId("renew-end-date"), { target: { value: "2999-06-01" } });
+        expect(screen.getByTestId("renew-lease-confirm")).toBeDisabled();
+        expect(screen.getByTestId("renew-term-too-long")).toHaveTextContent(
+            en.Leasing.errTermTooLong.replace("{max}", "50"),
+        );
+    });
+
+    it("warns past 5 years and requires an explicit continue before Confirm is live", async () => {
+        renew.mockResolvedValue({ id: "lease-2" });
+        renderDialog();
+        // Six years from the default 2025-10-01 start.
+        fireEvent.change(screen.getByTestId("renew-end-date"), { target: { value: "2031-09-30" } });
+
+        expect(screen.getByTestId("renew-lease-confirm")).toBeDisabled();
+        const warning = screen.getByTestId("renew-long-term-confirm");
+        expect(warning).toHaveTextContent(en.Leasing.longTermConfirm.replace("{years}", "6"));
+
+        fireEvent.click(screen.getByTestId("renew-long-term-continue"));
+        expect(screen.queryByTestId("renew-long-term-confirm")).not.toBeInTheDocument();
+        expect(screen.getByTestId("renew-lease-confirm")).not.toBeDisabled();
+
+        fireEvent.click(screen.getByTestId("renew-lease-confirm"));
+        await waitFor(() => expect(renew).toHaveBeenCalled());
+    });
+
+    it("re-arms the confirmation once the date changes again after acknowledging it", () => {
+        renderDialog();
+        fireEvent.change(screen.getByTestId("renew-end-date"), { target: { value: "2031-09-30" } });
+        fireEvent.click(screen.getByTestId("renew-long-term-continue"));
+        expect(screen.getByTestId("renew-lease-confirm")).not.toBeDisabled();
+
+        fireEvent.change(screen.getByTestId("renew-end-date"), { target: { value: "2032-09-30" } });
+        expect(screen.getByTestId("renew-lease-confirm")).toBeDisabled();
+        expect(screen.getByTestId("renew-long-term-confirm")).toBeInTheDocument();
+    });
+});

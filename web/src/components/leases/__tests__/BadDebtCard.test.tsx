@@ -39,6 +39,18 @@ describe("BadDebtCard", () => {
         expect(api.propose.mock.calls[0][0]).toMatchObject({ leaseId: "L", chequeIds: ["c1"], reason: "Renter absconded" });
     });
 
+    /** Break-it R2 money2 F2: a write-off dated after today cannot be proposed. */
+    it("refuses a write-off date after today before it is sent", async () => {
+        api.candidates.mockResolvedValue([item]);
+        api.forLease.mockResolvedValue([]);
+        renderIn("en");
+        fireEvent.click(await screen.findByTestId("bd-item-2"));
+        fireEvent.change(screen.getByTestId("bd-reason"), { target: { value: "gone" } });
+        fireEvent.change(screen.getByTestId("bd-date"), { target: { value: "2126-01-01" } });
+        expect(await screen.findByTestId("bd-date-error")).toBeTruthy();
+        expect((screen.getByTestId("bd-propose") as HTMLButtonElement).disabled).toBe(true);
+    });
+
     it("lets an admin approve through the confirm dialog and shows the VAT note in Arabic", async () => {
         api.candidates.mockResolvedValue([]);
         api.forLease.mockResolvedValue([proposed]);

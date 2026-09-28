@@ -69,6 +69,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * are earned (22,076.71), 28,923.29 is left to earn, and the 207 days left at the new
  * rate are worth 22,117.81 — a credit of 6,805.48 (= 12,000 × 207 ÷ 365).</p>
  */
+@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class)
 @SpringBootTest
 class LeaseReductionIT extends AbstractPostgresIT {
 

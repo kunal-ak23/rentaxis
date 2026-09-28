@@ -722,6 +722,10 @@ public class LeaseService {
                 buildLeasePayload(savedLease),
                 "LEASE_CREATED:" + savedLease.getId()));
 
+        // Break-it R2 F2: the DTO's version is what the wizard posts with, so it must
+        // be the row's as committed — flushed, not the in-memory one a pending update
+        // is about to bump.
+        leaseRepository.flush();
         return mapToDTO(savedLease);
     }
 
@@ -780,6 +784,55 @@ public class LeaseService {
         }
     }
 
+    /**
+     * Break-it round 2 F2/F3: contract money carries the lease version the user saw.
+     * {@code expected} null is an older client (mobile) and is accepted; any other
+     * value must be the row's current version, else {@link
+     * com.datagami.rentaxis.api.exception.ContractChangedException} (409).
+     */
+    public static void requireVersion(Lease lease, Long expected) {
+        if (expected == null) return;
+        if (!expected.equals(lease.getVersion())) {
+            throw new com.datagami.rentaxis.api.exception.ContractChangedException();
+        }
+    }
+
+    /**
+     * Review A C1/M3 (break-it round 2): every write to a draft's money moves the
+     * lease's version — including those that touch only its child rows (lease lines,
+     * rent-free periods, the cheque grid) and so leave the leases row's own columns,
+     * and with them {@code @Version}, where they were. A Post dialog or another tab
+     * holding the old version is then refused (409 lease.changed) instead of posting
+     * or overwriting figures its user never saw.
+     *
+     * <p>PESSIMISTIC_FORCE_INCREMENT issues the versioned UPDATE now (so it also takes
+     * the row lock, and a writer that committed since the read fails with the usual
+     * optimistic-lock 409) and sets the new version on the entity, so the response
+     * mapped after the final flush carries the version the next write must name. A
+     * dirty entity is updated again on flush, which moves the version once more — any
+     * change is enough, the number itself means nothing.</p>
+     */
+    public void bumpVersion(Lease lease) {
+        em.lock(lease, jakarta.persistence.LockModeType.PESSIMISTIC_FORCE_INCREMENT);
+    }
+
+    /**
+     * An {@code If-Match} value as a lease version: {@code "7"}, {@code 7} or
+     * {@code W/"7"}; null or {@code *} means "not checked".
+     */
+    public static Long versionFromIfMatch(String ifMatch) {
+        if (ifMatch == null) return null;
+        String v = ifMatch.trim();
+        if (v.isEmpty() || v.equals("*")) return null;
+        if (v.startsWith("W/")) v = v.substring(2);
+        if (v.length() >= 2 && v.startsWith("\"") && v.endsWith("\"")) v = v.substring(1, v.length() - 1);
+        try {
+            return Long.valueOf(v.trim());
+        } catch (NumberFormatException e) {
+            throw new BusinessRuleViolationException("If-Match must be the lease version the screen loaded.");
+        }
+    }
+
     private static String unitLabel(Lease lease) {
         return lease.getUnit() != null && lease.getUnit().getUnitNumber() != null
                 ? lease.getUnit().getUnitNumber() : String.valueOf(lease.getId());
@@ -792,6 +845,13 @@ public class LeaseService {
         if (lease.getStatus() != LeaseStatus.DRAFT) {
             throw new BusinessRuleViolationException("Only DRAFT leases can be edited");
         }
+        // Break-it R2 F3: the form is applied whole, so a stale one would silently
+        // revert another tab's rent. A change that commits after this check is caught
+        // by the row's @Version when this edit flushes.
+        requireVersion(lease, dto.getVersion());
+        // Review A C1: a fee/VAT/discount-only edit rewrites lease_lines and leaves the
+        // leases row's own columns alone, so @Version would not move on its own.
+        bumpVersion(lease);
 
         // F14-58: an edit is judged like the draft it replaces — the renewal must
         // start after its predecessor, and the unit must be free for the (possibly
@@ -840,6 +900,8 @@ public class LeaseService {
 
         recordEvent(savedLease, LeaseStatus.DRAFT, LeaseStatus.DRAFT, "Lease updated");
 
+        // The version the editor saves with next time: the row's once flushed.
+        leaseRepository.flush();
         return mapToDTO(savedLease);
     }
 
@@ -918,6 +980,57 @@ public class LeaseService {
     @Transactional(readOnly = true)
     public List<com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod> rentFreePeriodsOf(UUID leaseId) {
         return rentFreePeriods == null ? List.of() : rentFreePeriods.findByLease_IdOrderByFromDateAsc(leaseId);
+    }
+
+    // ---- meeting / ticket detach on withdrawal (break-it round 2 M9) -----------
+
+    private MeetingRepository meetingRepository;
+    private MaintenanceTicketRepository maintenanceTicketRepository;
+
+    /** Setter-injected so the unit tests' hand-built service needs no new argument. */
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setMeetingRepository(MeetingRepository repo) {
+        this.meetingRepository = repo;
+    }
+
+    /** Setter-injected so the unit tests' hand-built service needs no new argument. */
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setMaintenanceTicketRepository(MaintenanceTicketRepository repo) {
+        this.maintenanceTicketRepository = repo;
+    }
+
+    /**
+     * {@code meetings.lease_id} ({@code fk_meeting_lease}) and
+     * {@code maintenance_tickets.lease_id} ({@code fk_ticket_lease}) have no ON DELETE,
+     * and a renter (or a manager) may point either at a PENDING_SIGNATURE renewal —
+     * both clients only offer ACTIVE leases, but the API does not enforce that
+     * (break-it round 2 M9). Left alone, that FK makes the *predecessor* lease
+     * untermin­able once the renewal is withdrawn, and the renewal itself cannot be
+     * deleted either.
+     *
+     * <p>When the lease being removed is a renewal ({@code renewedFromLeaseId} set),
+     * its meetings/tickets are repointed to the predecessor: that lease is still
+     * there (a termination only changes its status) and is exactly what the
+     * meeting/ticket is now about — the renter's one ongoing tenancy. A plain
+     * DRAFT with no predecessor has nothing sensible to repoint to, so its
+     * meetings/tickets are simply detached (lease set to null); the row stays
+     * visible under its property/unit and reporter.</p>
+     */
+    private void detachLeaseReferences(UUID leaseId, UUID predecessorLeaseId) {
+        Lease predecessor = predecessorLeaseId == null ? null
+                : leaseRepository.findById(predecessorLeaseId).orElse(null);
+        if (meetingRepository != null) {
+            for (Meeting m : meetingRepository.findByLease_Id(leaseId)) {
+                m.setLease(predecessor);
+                meetingRepository.save(m);
+            }
+        }
+        if (maintenanceTicketRepository != null) {
+            for (MaintenanceTicket t : maintenanceTicketRepository.findByLease_Id(leaseId)) {
+                t.setLease(predecessor);
+                maintenanceTicketRepository.save(t);
+            }
+        }
     }
 
     /**
@@ -1573,8 +1686,39 @@ public class LeaseService {
         if (lease.getStatus() != LeaseStatus.DRAFT) {
             throw new BusinessRuleViolationException("Only DRAFT leases can be deleted");
         }
-        // Defensive: a DRAFT lease shouldn't have any contract documents, but
-        // if a previous flow left one behind, drop the row(s) too.
+        removeUnposted(lease);
+    }
+
+    /**
+     * Review A I2 (break-it round 2): withdraw a renewal that was never posted — a
+     * DRAFT, or one sent to the renter and awaiting (or even given) their signature —
+     * when the lease it renews is terminated. Nothing of it is on the books (a
+     * PENDING_SIGNATURE lease has no journal and only DRAFT cheque rows), and left
+     * behind it could be neither posted nor deleted while the renter could still
+     * accept it. Not a user-facing delete: {@code LeaseTerminationService} calls it
+     * in the termination's transaction and records it on the terminated lease.
+     */
+    @Transactional
+    public void withdrawUnpostedLease(UUID leaseId) {
+        Lease lease = findLeaseWithTenantCheck(leaseId);
+        if ((lease.getStatus() != LeaseStatus.DRAFT && lease.getStatus() != LeaseStatus.PENDING_SIGNATURE)
+                || lease.getPostingJournalId() != null) {
+            throw new BusinessRuleViolationException("Only a lease that was never posted can be withdrawn; this one is "
+                    + lease.getStatus() + ".");
+        }
+        // Break-it round 2 M9: move any meeting/ticket pointed at this renewal onto the
+        // lease it renews, or the FK (no ON DELETE) blocks the withdrawal and with it
+        // the predecessor's termination. Only here: a plain draft delete and an import
+        // discard keep a lease something still refers to (ImportBatchDiscardIT).
+        detachLeaseReferences(lease.getId(), lease.getRenewedFromLeaseId());
+        removeUnposted(lease);
+    }
+
+    /** The lease row and everything that hangs off it; the caller has checked it was never posted. */
+    private void removeUnposted(Lease lease) {
+        UUID leaseId = lease.getId();
+        // A DRAFT lease shouldn't have any contract documents (defensive); a
+        // PENDING_SIGNATURE one being withdrawn has the contract it was sent. Drop the rows.
         leaseDocumentRepository.deleteAll(leaseDocumentRepository.findByLeaseId(leaseId));
         leaseAttachmentRepository.deleteAll(leaseAttachmentRepository.findByLeaseId(leaseId));
         // lease_lines cascades on delete, but cheques.lease_id does not — a draft
@@ -1883,6 +2027,17 @@ public class LeaseService {
     @Transactional
     public LeaseDTO markTerminated(UUID leaseId, LocalDate terminatedOn, String notes,
                                    UUID terminationJournalId, UUID byUser) {
+        return markTerminated(leaseId, terminatedOn, notes, terminationJournalId, byUser, null);
+    }
+
+    /**
+     * The same; {@code withdrawnRenewalTerm} names a renewal awaiting the renter's
+     * signature that the termination withdrew (review A N2), so the LEASE_TERMINATED
+     * email tells the renter; null when there was none.
+     */
+    @Transactional
+    public LeaseDTO markTerminated(UUID leaseId, LocalDate terminatedOn, String notes,
+                                   UUID terminationJournalId, UUID byUser, String withdrawnRenewalTerm) {
         Lease lease = findLeaseWithTenantCheck(leaseId);
         // Object-level authorisation of its own, even though the one production
         // caller has already asked the same question. A public method that ends a
@@ -1912,7 +2067,7 @@ public class LeaseService {
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.LEASE_TERMINATED,
                 savedLease.getTenantId(),
-                buildLeasePayload(savedLease),
+                buildLeasePayload(savedLease, withdrawnRenewalTerm),
                 "LEASE_TERMINATED:" + savedLease.getId() + ":" + Instant.now().toEpochMilli()));
 
         // Clear listing availability and notify interested renters
@@ -2213,6 +2368,7 @@ public class LeaseService {
     private LeaseDTO mapToDTO(Lease lease, MapContext ctx) {
         LeaseDTO dto = new LeaseDTO();
         dto.setId(lease.getId());
+        dto.setVersion(lease.getVersion());
         dto.setUnitId(lease.getUnit().getId());
         dto.setRenterId(lease.getRenter().getId());
         dto.setUnitIdentifier(lease.getUnit().getUnitNumber());
@@ -2373,6 +2529,10 @@ public class LeaseService {
     }
 
     private LeasePayload buildLeasePayload(Lease lease) {
+        return buildLeasePayload(lease, null);
+    }
+
+    private LeasePayload buildLeasePayload(Lease lease, String withdrawnRenewalTerm) {
         BigDecimal monthly = monthlyRentOf(lease);
         return new LeasePayload(
                 lease.getId(),
@@ -2383,7 +2543,8 @@ public class LeaseService {
                 lease.getStartDate() != null ? lease.getStartDate().toString() : null,
                 lease.getEndDate() != null ? lease.getEndDate().toString() : null,
                 monthly != null ? monthly.toPlainString() : null,
-                null   // contractSignedUrl — not available at runtime; template uses safe-nav
+                null,  // contractSignedUrl — not available at runtime; template uses safe-nav
+                withdrawnRenewalTerm
         );
     }
 }

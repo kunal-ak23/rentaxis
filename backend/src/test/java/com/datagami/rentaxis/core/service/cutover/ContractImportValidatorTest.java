@@ -199,11 +199,62 @@ class ContractImportValidatorTest {
     }
 
     private List<ImportErrorDTO> errors(Workbook wb) {
-        return new ContractImportValidator().validate(wb, lookups()).errors();
+        return validator(LATER_TODAY).validate(wb, lookups()).errors();
     }
 
     private List<ImportErrorDTO> warnings(Workbook wb) {
-        return new ContractImportValidator().validate(wb, lookups()).warnings();
+        return validator(LATER_TODAY).validate(wb, lookups()).warnings();
+    }
+
+    /**
+     * This sheet's timeline runs into 2027; its bank dates are history only once
+     * "today" is after them (break-it R2 money2 review M1), so the validator is given
+     * a day well after it. The rule itself is held below against a pinned today.
+     */
+    private static final LocalDate LATER_TODAY = LocalDate.of(2030, 1, 1);
+
+    private static ContractImportValidator validator(LocalDate today) {
+        ContractImportValidator v = new ContractImportValidator();
+        v.setManualPostingDates(new com.datagami.rentaxis.core.service.ledger.ManualPostingDates(java.time.Clock.fixed(
+                today.atTime(10, 0).atZone(com.datagami.rentaxis.core.service.ledger.ManualPostingDates.BUSINESS_ZONE).toInstant(),
+                com.datagami.rentaxis.core.service.ledger.ManualPostingDates.BUSINESS_ZONE)));
+        return v;
+    }
+
+    /** Break-it R2 money2 review N2: a pre-2000 contract or bank date fails at preview, not at bulk post. */
+    @Test
+    void aDateBefore2000IsARowError() throws Exception {
+        try (Workbook wb = workbook(true)) {
+            assertThat(errors(wb)).isEmpty();
+            set(wb, "Contracts", 1, 6, "1999-12-31");
+            List<ImportErrorDTO> errs = errors(wb);
+            assertThat(errs).anySatisfy(e -> {
+                assertThat(e.getField()).isEqualTo("ContractDate");
+                assertThat(e.getMessage()).contains("outside 2000-01-01 to 2099-12-31");
+            });
+        }
+        try (Workbook wb = workbook(true)) {
+            set(wb, "Cheques", 1, 11, "1999-06-01");
+            assertThat(errors(wb)).anySatisfy(e -> {
+                assertThat(e.getField()).isEqualTo("DepositedDate");
+                assertThat(e.getMessage()).contains("outside");
+            });
+        }
+    }
+
+    /** Break-it R2 money2 review M1: a cut-over bank event dated after today is a row error, not a future CRT/CBR. */
+    @Test
+    void aBankDateAfterTodayIsARowError() throws Exception {
+        try (Workbook wb = workbook(true)) {
+            // Row 1 is CLEARED with DepositedDate 2026-09-24 and ClearedDate 2026-09-25.
+            assertThat(validator(LocalDate.of(2026, 9, 25)).validate(wb, lookups()).errors()).isEmpty();
+            List<ImportErrorDTO> errs = validator(LocalDate.of(2026, 9, 24)).validate(wb, lookups()).errors();
+            assertThat(errs).extracting(ImportErrorDTO::getField).containsExactly("ClearedDate");
+            assertThat(errs.get(0).getMessage()).contains("after today");
+            set(wb, "Cheques", 1, 12, "2126-09-25");
+            assertThat(validator(LocalDate.of(2026, 9, 28)).validate(wb, lookups()).errors())
+                    .extracting(ImportErrorDTO::getField).contains("ClearedDate");
+        }
     }
 
     private static void set(Workbook wb, String sheet, int row, int col, String value) {

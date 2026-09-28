@@ -132,6 +132,41 @@ class BadDebtIT extends AbstractPostgresIT {
         assertThat(onAccount(AccountRole.BAD_DEBT_RECOVERED)).isZero();
     }
 
+    /**
+     * Break-it R2 money2 F1/F2: a write-off is recognised when decided, so its date
+     * cannot be after today — tomorrow and a century typo are refused at proposal,
+     * today is not. That is also what keeps it reversible (a reversal is dated today
+     * and may not predate the write-off).
+     */
+    @Test
+    void aWriteOffCannotBeDatedAfterToday() {
+        UUID leaseId = lease();
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Dubai"));
+        assertThatThrownBy(() -> service.propose(new ProposeRequest(leaseId, null, today.plusDays(1), "gone")))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("date.inFuture"));
+        assertThatThrownBy(() -> service.propose(new ProposeRequest(leaseId, null, today.plusYears(1).plusDays(1), "gone")))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("posting.dateTooFarAhead"));
+        assertThatThrownBy(() -> service.propose(new ProposeRequest(leaseId, null, LocalDate.of(2126, 1, 1), "gone")))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        assertThat(jdbc.queryForObject("select count(*) from bad_debt_write_offs where lease_id = ?", Integer.class, leaseId)).isZero();
+
+        WriteOffDTO w = service.approve(service.propose(new ProposeRequest(leaseId, null, today, "gone")).id(), null);
+        // Reversible the same day: the case BD5 could not reach.
+        assertThat(service.reverse(w.id(), null, "wrong").status()).isEqualTo(Status.REVERSED);
+    }
+
+    /** A proposal stored with a future date (before this rule) is refused at approval; nothing posts. */
+    @Test
+    void aFutureDatedProposalIsRefusedAtApproval() {
+        UUID leaseId = lease();
+        WriteOffDTO p = service.propose(new ProposeRequest(leaseId, null, ON, "gone"));
+        LocalDate tomorrow = LocalDate.now(java.time.ZoneId.of("Asia/Dubai")).plusDays(1);
+        jdbc.update("update bad_debt_write_offs set write_off_date = ? where id = ?", tomorrow, p.id());
+        assertThatThrownBy(() -> service.approve(p.id(), null))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("date.inFuture"));
+        assertThat(onAccount(AccountRole.BAD_DEBT)).isZero();
+    }
+
     @Test
     void theUnpaidRowsAreWrittenOffRecoveredInPartAndClosed() {
         UUID leaseId = lease();

@@ -20,10 +20,12 @@ async function get<T>(path: string): Promise<T> {
   await throwIfNotOk(res);
   return res.json();
 }
-async function send<T>(method: "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T> {
+async function send<T>(method: "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown,
+                       extraHeaders?: Record<string, string>): Promise<T> {
+  const headers: Record<string, string> = { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...extraHeaders };
   const res = await fetch(`${BASE}${path}`, {
     method,
-    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    headers: Object.keys(headers).length ? headers : undefined,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   await throwIfNotOk(res);
@@ -253,11 +255,46 @@ export type DraftLeaseInput = {
   agreementDate?: string | null;
   rentVatApplicable?: boolean | null;
   lines: LeaseLineInput[];
+  /** Break-it R2 F3: on an update, the lease version the editor loaded; a stale one is refused (409 lease.changed). */
+  version?: number | null;
 };
+
+/**
+ * Break-it R2 F2/F3: `If-Match` for a write checked against the lease version the
+ * screen loaded. No version (an older server's lease) → no header, not checked.
+ */
+/**
+ * Review A M3 (break-it round 2): a cheque-grid write moves the lease's version, and
+ * the backend says where to in `X-Lease-Version`. The screen adopts it so its next
+ * write (another save, the post) names the version it now holds instead of
+ * refusing itself with 409 lease.changed. Null when the header is absent (an older
+ * backend) — the screen then keeps the version it had.
+ */
+export type ChequeWrite = { cheques: Cheque[]; version: number | null };
+
+async function sendChequeWrite(method: "POST" | "PUT", path: string, body: unknown,
+                               extraHeaders?: Record<string, string>): Promise<ChequeWrite> {
+  const headers: Record<string, string> = { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...extraHeaders };
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: Object.keys(headers).length ? headers : undefined,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  await throwIfNotOk(res);
+  const raw = res.headers?.get?.("X-Lease-Version") ?? null;
+  const n = raw == null || raw.trim() === "" ? NaN : Number(raw);
+  return { cheques: await res.json(), version: Number.isFinite(n) ? n : null };
+}
+
+function ifMatch(version?: number | null): Record<string, string> | undefined {
+  return version == null ? undefined : { "If-Match": `"${version}"` };
+}
 
 /** LeaseDTO — the lease as read back, including its posting/renewal-chain state and lines. */
 export type LeaseDetail = {
   id: string;
+  /** Break-it R2 F2/F3: the row's optimistic-lock version; sent back by the editor, the cheque grid and Post. */
+  version?: number | null;
   unitId: string;
   renterId: string;
   unitIdentifier: string | null;
@@ -830,6 +867,8 @@ export type TerminationPreview = {
    * `unearnedVat`: an older server's answer must read as "none", not `undefined.length`.
    */
   problems?: string[];
+  /** Break-it round 2 F1: what terminate also does that is not a refusal — e.g. discard a renewal draft. */
+  notices?: string[];
 };
 
 export type TerminationVatSettlement = {
@@ -1043,6 +1082,12 @@ export type SaveSettlementInput = {
 export type FinalizeSettlementInput = {
   settlementDate: string;
   acknowledgeOutstanding?: boolean;
+  /**
+   * Break-it R2 money2 F5: the statement's `netRefund` the page showed. A settlement
+   * changed since (another tab saved a deduction) is refused with 409
+   * `settlement.changed` instead of posting figures nobody reviewed.
+   */
+  expectedNetRefund?: number;
 };
 
 /** PostLeaseResponse — the lease and its cheques re-read after a post, an amend, or an extend. */
@@ -1382,9 +1427,11 @@ export const leaseApi = {
   createDraft: (body: DraftLeaseInput) => send<LeaseDetail>("POST", "/leases", body),
   updateDraft: (id: string, body: DraftLeaseInput) => send<LeaseDetail>("PUT", `/leases/${id}`, body),
   /** Spec §4b: replace a DRAFT's rent-free periods; returns the lease with the concession applied. */
-  setRentFreePeriods: (id: string, periods: RentFreePeriod[]) =>
-    send<LeaseDetail>("PUT", `/leases/${id}/rent-free-periods`, periods),
-  post: (id: string) => send<PostLeaseResponse>("POST", `/leases/${id}/post`),
+  setRentFreePeriods: (id: string, periods: RentFreePeriod[], version?: number | null) =>
+    send<LeaseDetail>("PUT", `/leases/${id}/rent-free-periods`, periods, ifMatch(version)),
+  /** Break-it R2 F2: `version` is the lease version the Post dialog loaded; a stale one is refused (409 lease.changed). */
+  post: (id: string, version?: number | null) =>
+    send<PostLeaseResponse>("POST", `/leases/${id}/post`, version == null ? undefined : { version }),
   /** `?dryRun=true` — every validation a post would run, nothing written. */
   dryRunPost: (id: string) => send<PostLeaseDryRunResponse>("POST", `/leases/${id}/post${qs({ dryRun: true })}`),
   amendLines: (id: string, body: AmendLeaseLinesInput) => send<PostLeaseResponse>("POST", `/leases/${id}/amend-lines`, body),
@@ -1410,11 +1457,14 @@ export const leaseApi = {
   recordAddendumEjari: (id: string, addendumId: string, ejariNumber: string) =>
     send<LeaseAddendum>("PATCH", `/leases/${id}/addenda/${addendumId}/ejari`, { ejariNumber }),
   cheques: (id: string) => get<Cheque[]>(`/leases/${id}/cheques`),
-  generateCheques: (id: string, req?: GenerateChequesRequest) =>
-    send<Cheque[]>("POST", `/leases/${id}/cheques/generate`, req),
+  /** Review A M3: answers with the rows and the lease version the write left behind (adopt it). */
+  generateCheques: (id: string, req?: GenerateChequesRequest, version?: number | null) =>
+    sendChequeWrite("POST", `/leases/${id}/cheques/generate`, req, ifMatch(version)),
   generateChequeNumbers: (id: string, startingNumber: string) =>
     send<Cheque[]>("POST", `/leases/${id}/cheques/numbers`, { startingNumber }),
-  saveCheques: (id: string, rows: ChequeRowInput[]) => send<Cheque[]>("PUT", `/leases/${id}/cheques`, rows),
+  /** Review A M3: as generateCheques — a save that changes only dates or numbers still moves the version. */
+  saveCheques: (id: string, rows: ChequeRowInput[], version?: number | null) =>
+    sendChequeWrite("PUT", `/leases/${id}/cheques`, rows, ifMatch(version)),
   /** GET /finance/journals?leaseId — the plan-1 journals list, filtered to one lease. */
   journals: (leaseId: string, q: { page?: number; size?: number } = {}) =>
     get<Page<JournalEntry>>(`/finance/journals${qs({ leaseId, page: q.page ?? 0, size: q.size ?? 25 })}`),
@@ -1523,7 +1573,12 @@ export const chequeApi = {
 export const penaltyApi = {
   list: (q: PenaltyListQuery) => get<Page<PenaltyAssessment>>(`/penalties${qs(q)}`),
   propose: (body: ProposePenaltyInput) => send<PenaltyAssessment>("POST", "/penalties", body),
-  approve: (id: string, date?: string) => send<PenaltyAssessment>("POST", `/penalties/${id}/approve`, { date }),
+  /**
+   * Break-it R2 money2 F5: `expectedAmount` is the amount the queue showed; a proposal
+   * reduced since is refused with 409 `penalty.changed` rather than charged.
+   */
+  approve: (id: string, date?: string, expectedAmount?: number) =>
+    send<PenaltyAssessment>("POST", `/penalties/${id}/approve`, { date, expectedAmount }),
   waive: (id: string, note?: string) => send<PenaltyAssessment>("POST", `/penalties/${id}/waive`, { note }),
   /** F14-28: PROPOSED only; 0 < amount < the current amount; note required. Status stays PROPOSED. */
   reduce: (id: string, amount: number, note: string) => send<PenaltyAssessment>("POST", `/penalties/${id}/reduce`, { amount, note }),

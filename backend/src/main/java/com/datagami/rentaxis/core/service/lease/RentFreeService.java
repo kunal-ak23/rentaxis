@@ -56,12 +56,22 @@ public class RentFreeService {
      */
     @Transactional
     public LeaseDTO replace(UUID leaseId, List<RentFreePeriodDTO> input) {
+        return replace(leaseId, input, null);
+    }
+
+    /** Break-it round 2 F3: refused (409) when the lease moved past {@code expectedVersion}; null = not checked. */
+    @Transactional
+    public LeaseDTO replace(UUID leaseId, List<RentFreePeriodDTO> input, Long expectedVersion) {
         Lease lease = posting.lockLease(leaseId);
         access.requireManageable(lease);
+        LeaseService.requireVersion(lease, expectedVersion);
         if (lease.getStatus() != LeaseStatus.DRAFT) {
             throw new BusinessRuleViolationException(
                     "Rent-free periods can be changed on a draft lease only; this one is " + lease.getStatus() + ".");
         }
+        // Review A C1: the periods live in their own table and a zero concession leaves
+        // the leases row untouched, so the version is moved explicitly.
+        leaseService.bumpVersion(lease);
         List<LeaseRentFreePeriod> fresh = new ArrayList<>();
         for (RentFreePeriodDTO in : input == null ? List.<RentFreePeriodDTO>of() : input) {
             if (in == null) continue;

@@ -65,7 +65,9 @@ public record TerminationPreviewDTO(LocalDate terminationDate,
                                     BigDecimal receivableAfter,
                                     VatSettlement vatSettlement,
                                     /* #369 R1 nit: what terminate would refuse (e.g. no TRN for the credit note), listed rather than thrown. */
-                                    List<String> problems) {
+                                    List<String> problems,
+                                    /* Break-it round 2 F1: what terminate will also do that is not a refusal (e.g. discard a renewal draft). */
+                                    List<String> notices) {
 
     /** See {@code VatTaxPointService.TerminationVat}; amounts are positive. */
     public record VatSettlement(BigDecimal dueByTerminationDate,

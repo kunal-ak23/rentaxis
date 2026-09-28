@@ -335,6 +335,13 @@ public class ContractImportPostService {
         if (a.isAfter(LocalDate.now(clock))) {
             throw new BusinessRuleViolationException("The acquisition date " + a + " is in the future.");
         }
+        // Break-it R2 money2 review N2: the acquisition's journals are dated on it.
+        if (!com.datagami.rentaxis.core.service.ledger.PostingService.isNumberable(a)) {
+            throw new BusinessRuleViolationException(
+                    com.datagami.rentaxis.core.service.ledger.PostingService.outOfRangeSentence("The acquisition date", a),
+                    "posting.dateOutOfRange", java.util.Map.of("date", a.toString(),
+                            "earliest", "2000", "latest", "2099"));
+        }
         java.util.Set<UUID> propertyIds = new java.util.LinkedHashSet<>();
         for (Plan row : plan) {
             leases.findByIdScopedToTenant(row.leaseId())

@@ -429,6 +429,25 @@ describe("Settlement statement", () => {
  * already requires a FINALIZED settlement, so a CLOSED lease is a statement to
  * read, never one to finalise.
  */
+/** Break-it R2 money2 F5 (ST2): finalise carries the figure shown; a settlement changed elsewhere reloads. */
+describe("A settlement changed in another window", () => {
+    it("sends the net refund it showed, shows it in the confirm, and reloads on settlement.changed", async () => {
+        api.finalize.mockRejectedValueOnce(new ApiError(409, "changed",
+            JSON.stringify({ code: "settlement.changed", message: "This settlement changed since you opened it" })));
+        renderPage();
+        await waitFor(() => expect(screen.getByTestId("settlement-finalize")).toBeEnabled());
+        fireEvent.click(screen.getByTestId("settlement-finalize"));
+        expect(await screen.findByTestId("settlement-finalize-net")).toHaveTextContent("10,164.38");
+        api.statement.mockResolvedValue(statement({ netRefund: 8164.38, totalDeductions: 2000 }));
+        fireEvent.click(await screen.findByTestId("settlement-finalize-confirm"));
+        await waitFor(() => expect(api.finalize).toHaveBeenCalledWith("lease-1",
+            expect.objectContaining({ expectedNetRefund: 10164.38 })));
+        expect(await screen.findByTestId("settlement-finalize-error")).toHaveTextContent(/changed in another window/i);
+        expect(api.statement.mock.calls.length).toBeGreaterThanOrEqual(2);
+        expect(api.finalize).toHaveBeenCalledTimes(1);
+    });
+});
+
 describe("Which contracts may be settled", () => {
     it("settles a RENEWED predecessor", async () => {
         api.lease.mockResolvedValue({ ...LEASE, status: "RENEWED" });

@@ -9,6 +9,11 @@ export type TicketBill = {
 export type TicketCharges = {
   ticketId: string; reference: string | null; leaseId: string | null; bills: TicketBill[]; candidates: TicketBill[];
   billsNet: number; recharges: PenaltyAssessment[];
+  /**
+   * Break-it R2 money2 F6: the bills' net less every live recharge (never below 0) —
+   * what may still be recharged. Absent from an older server: read it as `billsNet`.
+   */
+  rechargeable?: number;
 };
 
 export const ticketChargesApi = {

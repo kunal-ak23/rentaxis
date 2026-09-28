@@ -82,6 +82,27 @@ describe("FiscalYearsCard", () => {
         expect(screen.getByTestId("fiscal-close-confirm")).toBeDisabled();
     });
 
+    /** Break-it R2 money2 F4: the re-open states the lock it leaves, including a later manual lock it drops. */
+    it("says where the re-open moves the period lock", async () => {
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <FiscalYearsCard canReopen lockedThrough="2026-06-30" booksStartDate="2023-01-01" />
+            </NextIntlClientProvider>,
+        );
+        fireEvent.click(await screen.findByTestId("fiscal-year-reopen-2024"));
+        expect(screen.getByTestId("fiscal-reopen-lock-move"))
+            .toHaveTextContent("Period lock will move from 30/06/2026 to 31/12/2023");
+        cleanup();
+        // Never before the books start.
+        render(
+            <NextIntlClientProvider locale="ar" messages={ar}>
+                <FiscalYearsCard canReopen lockedThrough="2024-12-31" booksStartDate="2024-07-01" />
+            </NextIntlClientProvider>,
+        );
+        fireEvent.click(await screen.findByTestId("fiscal-year-reopen-2024"));
+        expect(screen.getByTestId("fiscal-reopen-lock-move")).toHaveTextContent("30/06/2024");
+    });
+
     it("re-opens only the latest closed year, with a reason, for an admin", async () => {
         api.reopen.mockResolvedValue(year(2024, "REOPENED"));
         renderCard();

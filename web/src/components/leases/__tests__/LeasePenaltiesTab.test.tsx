@@ -98,7 +98,7 @@ describe("LeasePenaltiesTab role gating", () => {
         // are both strings, and decisionNote defaults to "" — which is itself a
         // String — so a swap that wired the note in place of the date would still
         // satisfy expect.any(String) here.
-        await waitFor(() => expect(api.approve).toHaveBeenCalledWith("pen-1", todayIso()));
+        await waitFor(() => expect(api.approve).toHaveBeenCalledWith("pen-1", todayIso(), 500));
         await waitFor(() =>
             expect(screen.getByTestId("penalty-error")).toHaveTextContent("This penalty has already been waived."),
         );

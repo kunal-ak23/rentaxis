@@ -81,9 +81,55 @@ public class PostingService {
         this.vatLock = vatLock;
     }
 
+    /** The first date a journal may carry (break-it R2 money2 F1, round 2 ruling). */
+    public static final LocalDate EARLIEST_ENTRY_DATE = LocalDate.of(2000, 1, 1);
+    /** The last date a journal may carry. */
+    public static final LocalDate LATEST_ENTRY_DATE = LocalDate.of(2099, 12, 31);
+
+    /**
+     * Break-it round 2 (money2) F1: every journal's number carries a two-digit year
+     * ({@code CBR-26/1}, {@link EntryNumberService}), so a date a century out — 2126
+     * typed for 2026 — draws a counter whose numbers are already on the books, and
+     * either fails as a bare {@code uq_journal_entries_number} conflict or, in a
+     * fresh series, takes the number and poisons that series for the real year.
+     * Refused here, before a number is drawn, whoever posts: the date must lie in
+     * the fixed century 2000-01-01 .. 2099-12-31. A fixed range (not one rolling
+     * with today) means no two dates ever allowed, at any time, share a two-digit
+     * year; it is also the range the ledger and cheque queries default to
+     * ({@code LedgerQueryService}, {@code ChequeQueryService}).
+     */
+    public static void requireNumberableDate(LocalDate date) {
+        if (date == null) return;
+        int earliest = EARLIEST_ENTRY_DATE.getYear();
+        int latest = LATEST_ENTRY_DATE.getYear();
+        if (!isNumberable(date)) {
+            String shown = date.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+            throw new BusinessRuleViolationException(
+                    "Posting date is out of range: " + shown + " is not between " + earliest + " and " + latest
+                            + ". Check the year.",
+                    "posting.dateOutOfRange",
+                    Map.of("date", shown, "earliest", String.valueOf(earliest), "latest", String.valueOf(latest)));
+        }
+    }
+
+    /** True when a journal may carry {@code date} (null is left to the caller). Review N2: importers ask first. */
+    public static boolean isNumberable(LocalDate date) {
+        return date == null || (!date.isBefore(EARLIEST_ENTRY_DATE) && !date.isAfter(LATEST_ENTRY_DATE));
+    }
+
+    /**
+     * Review N2: the row-error sentence for an import date the ledger could not
+     * number, so a pre-2000 contract fails at preview rather than at posting.
+     */
+    public static String outOfRangeSentence(String field, LocalDate date) {
+        return field + " " + date + " is outside " + EARLIEST_ENTRY_DATE + " to " + LATEST_ENTRY_DATE
+                + ", the dates the ledger can post. Check the year.";
+    }
+
     @Transactional
     public JournalEntry post(PostingRequest r) {
         validateShape(r);
+        requireNumberableDate(r.entryDate());
         // YEC joins OB as a doc-type-keyed lock exemption (spec 2026-09-24 §3), with
         // the same reachability argument as the OB note in reverse(): only
         // YearEndCloseService produces a YEC, no request body carries a doc type, and
@@ -235,6 +281,8 @@ public class PostingService {
         JournalEntry original = entries.lockById(entryId).orElseThrow(() -> new NotFoundException("Journal entry not found"));
         if (original.getReversalOfId() != null) throw new BusinessRuleViolationException("Cannot reverse a reversal entry");
         if (original.getStatus() == JournalStatus.REVERSED) throw new BusinessRuleViolationException("Entry " + original.getEntryNumber() + " is already reversed");
+        // Break-it R2 money2 F1: a mirror is numbered like any entry.
+        requireNumberableDate(date);
         // Same two exemptions post() grants, for the same reason and because an entry
         // that could be posted into a closed period has to be removable from it.
         // An OB journal is dated the day BEFORE the books open, which is locked by

@@ -10,6 +10,9 @@ import { fmtAmount } from "@/lib/api/ledger";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { fmtIsoDate, todayIso } from "@/components/leases/leaseMath";
 import LeaseDialog from "@/components/leases/LeaseDialog";
+import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
+import { isBeyondManualPostingWindow, maxManualPostingDateIso } from "@/lib/businessDate";
+import { formatDate } from "@/lib/format";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { Pagination } from "@/components/ui/Pagination";
 import {
@@ -54,6 +57,8 @@ type Props = {
 
 export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: Props) {
     const t = useTranslations("Cheques");
+    const tm = useTranslations("MoneyInput");
+    const tCommon = useTranslations("Common");
     const tl = useTranslations("Leasing");
     const tLedger = useTranslations("Ledger");
     const locale = useLocale();
@@ -126,18 +131,30 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
         setBusyId(row.id);
         setActionError(null);
         try {
-            if (action === "approve") await penaltyApi.approve(row.id, decisionDate);
+            // Break-it R2 money2 F5: the amount this dialog showed; a proposal reduced
+            // in another tab since is refused (409 penalty.changed), not charged.
+            if (action === "approve") await penaltyApi.approve(row.id, decisionDate, row.amount);
             else if (action === "waive") await penaltyApi.waive(row.id, decisionNote || undefined);
             else if (action === "reduce") await penaltyApi.reduce(row.id, reduceAmountNumber, decisionNote.trim());
             else await penaltyApi.reverse(row.id, { date: decisionDate, note: decisionNote.trim() });
             setDecision(null);
             await load();
         } catch (e) {
-            setActionError(e instanceof ApiError ? e.message : t("actionFailed"));
+            if (e instanceof ApiError && codedOf(e).code === "penalty.changed") {
+                // Show the amount it has now; never retry the old one.
+                setDecision(null);
+                await load();
+                setActionError(t("penaltyChanged"));
+                return;
+            }
+            setActionError(e instanceof ApiError ? serverText(tCommon, e) || e.message : t("actionFailed"));
         } finally {
             setBusyId(null);
         }
     };
+
+    // Break-it R2 money2 F1/F2: approval is a manual posting date — at most a year ahead.
+    const approveDateTooFar = decision?.action === "approve" && isBeyondManualPostingWindow(decisionDate);
 
     const dialogTitle = decision
         ? `${t(decision.action)} — ${decision.row.renterName || decision.row.chequeNumber || ""} · ${fmtAmount(decision.row.amount)}`
@@ -332,7 +349,8 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                 confirmText={decision ? t(decision.action) : ""}
                 cancelText={tl("cancel")}
                 confirmDisabled={
-                    (decision?.action === "waive" && !decisionNote.trim())
+                    approveDateTooFar
+                    || (decision?.action === "waive" && !decisionNote.trim())
                     // F14-28: the server now requires a note on Reverse.
                     || (decision?.action === "reverse" && !decisionNote.trim())
                     || (decision?.action === "reduce" && (!reduceAmountValid || !decisionNote.trim()))
@@ -361,8 +379,15 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                                 type="date"
                                 className={dialogField}
                                 value={decisionDate}
+                                max={decision?.action === "approve" ? maxManualPostingDateIso() : undefined}
+                                aria-invalid={approveDateTooFar}
                                 onChange={e => setDecisionDate(e.target.value)}
                             />
+                            {approveDateTooFar && (
+                                <p role="alert" className="text-[10px] text-error mt-1" data-testid="penalty-decision-date-error">
+                                    {tm("dateTooFar", { max: formatDate(maxManualPostingDateIso()) })}
+                                </p>
+                            )}
                         </div>
                     )}
                     {decision?.action === "reduce" && (

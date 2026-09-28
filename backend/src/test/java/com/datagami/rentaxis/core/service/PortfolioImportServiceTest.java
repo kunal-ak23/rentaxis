@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.ImportErrorDTO;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.ImportJob;
 import com.datagami.rentaxis.domain.repository.ImportJobRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.io.ByteArrayOutputStream;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
@@ -25,6 +27,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class PortfolioImportServiceTest {
@@ -73,6 +77,20 @@ class PortfolioImportServiceTest {
                         "DepositPaymentMethod", "AgreementDate",
                         "BookingDeposit_Amount", "BookingDeposit_Number",
                         "BookingDeposit_Date", "BookingDeposit_Bank");
+    }
+
+    /** Break-it R2 money2 review N2: a contract the ledger could not date is a row error at preview. */
+    @Test
+    void aLeaseDatedBefore2000IsARowError() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Leases", 1, "StartDate", "1999-12-31");
+        setCell(wb, "Leases", 1, "EndDate", "2000-12-30");
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
+        assertThat(errors).anySatisfy(e -> {
+            assertThat(e.getField()).isEqualTo("StartDate");
+            assertThat(e.getMessage()).contains("outside 2000-01-01 to 2099-12-31");
+        });
+        assertThat(errors).extracting(ImportErrorDTO::getField).doesNotContain("EndDate");
     }
 
     @Test
@@ -581,5 +599,45 @@ class PortfolioImportServiceTest {
         assertThat(PortfolioImportService.sheetTotalProblem(new java.math.BigDecimal("98000.00"), monthly)).isNull();
         assertThat(PortfolioImportService.sheetTotalProblem(new java.math.BigDecimal("98000.12"), monthly))
                 .contains("MonthlyRent 8166.67 × 12 months");
+    }
+
+    /**
+     * Round-2 F5: a cut-over workbook uploaded through the cut-over endpoint but
+     * missing its own {@code Contracts} sheet must be told THAT sheet is
+     * missing — not sent down {@link PortfolioImportService#validateAll}'s sniff,
+     * which sees no {@code Contracts} sheet and checks for the v1 template's
+     * {@code Leases} sheet instead (a sheet the cut-over template never has).
+     * {@code processCutoverImportAsync} is the cut-over endpoint's own entry
+     * point precisely so it never takes that fork: it always validates via
+     * {@code contractValidator}, sniff or no sniff.
+     */
+    @Test
+    void cutoverUpload_missingContractsSheet_isValidatedAsCutover_notPortfolio() throws Exception {
+        // Only the sheets the two templates share; the discriminator (Contracts)
+        // is the one thing left out, same as I01 in round-2-contracts2.md.
+        Workbook wb = new XSSFWorkbook();
+        wb.createSheet("Properties");
+        wb.createSheet("Units");
+        wb.createSheet("Renters");
+        wb.createSheet("Cheques");
+        byte[] bytes = toBytes(wb);
+
+        when(contractValidator.validate(any())).thenReturn(new PortfolioImportService.ValidationOutcome(
+                List.of(ImportErrorDTO.file("Contracts", "Sheet", "Sheet 'Contracts' is missing")),
+                Collections.emptyList()));
+
+        ImportJob job = new ImportJob();
+        service.processCutoverImportAsync(bytes, job, UUID.randomUUID());
+
+        verify(contractValidator).validate(any());
+        assertThat(job.getStatus()).isEqualTo("VALIDATION_FAILED");
+        assertThat(job.getErrors()).contains("Sheet 'Contracts' is missing");
+        assertThat(job.getErrors()).doesNotContain("Leases");
+    }
+
+    private static byte[] toBytes(Workbook wb) throws java.io.IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        wb.write(out);
+        return out.toByteArray();
     }
 }

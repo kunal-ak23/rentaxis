@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
+import { AlertTriangle } from "lucide-react";
 import LeaseDialog from "./LeaseDialog";
 import LeaseLinesGrid from "./LeaseLinesGrid";
 import ChequeRowsEditor, { blankChequeRow, chequeTotalOf, stripKey, type ChequeDraft } from "@/components/cheques/ChequeRowsEditor";
@@ -9,6 +10,7 @@ import { blankLine, linesAreValid, round2, splitLineErrors, toInputs, todayIso, 
 import { chequeRowsAreValid } from "@/components/cheques/chequeRowRules";
 import { ApiError, leaseApi, type ChargeType, type LeaseDetail, type PostLeaseResponse } from "@/lib/api/leasing";
 import { formatDate } from "@/lib/format";
+import { CONFIRM_TERM_YEARS, MAX_TERM_YEARS, termExceedsYears, termYears } from "@/lib/leaseTerm";
 
 /**
  * Push the end date out and charge for the extra months.
@@ -40,6 +42,13 @@ export default function ExtendLeaseDialog({ open, lease, chargeTypes, onClose, o
     const [cheques, setCheques] = useState<ChequeDraft[]>([]);
     const [busy, setBusy] = useState(false);
     const [errors, setErrors] = useState<string[]>([]);
+    /**
+     * forms2 Finding 2: same guard as `RenewLeaseDialog`, checked against the
+     * SAME two dates the backend uses — the lease's original start, not the
+     * extension's own span (`LeaseRenewalService.requireSaneTerm(lease.getStartDate(),
+     * r.newEndDate())`).
+     */
+    const [termAck, setTermAck] = useState<string | null>(null);
 
     useEffect(() => {
         if (!open) return;
@@ -48,6 +57,7 @@ export default function ExtendLeaseDialog({ open, lease, chargeTypes, onClose, o
         setRows([blankLine(0)]);
         setCheques([blankChequeRow(0)]);
         setErrors([]);
+        setTermAck(null);
     }, [open]);
 
     const totals = totalsOf(rows, chargeTypes);
@@ -55,6 +65,12 @@ export default function ExtendLeaseDialog({ open, lease, chargeTypes, onClose, o
     const chequeRows = cheques.map(stripKey);
     const { rest } = splitLineErrors(errors);
     const endDateNotAfterCurrent = !!newEndDate && newEndDate <= lease.endDate;
+
+    const termTooLong = !!newEndDate && !endDateNotAfterCurrent
+        && termExceedsYears(lease.startDate, newEndDate, MAX_TERM_YEARS);
+    const termKey = `${lease.startDate}|${newEndDate}`;
+    const termNeedsConfirm = !termTooLong && !!newEndDate && !endDateNotAfterCurrent
+        && termExceedsYears(lease.startDate, newEndDate, CONFIRM_TERM_YEARS) && termAck !== termKey;
 
     const submit = async () => {
         setBusy(true);
@@ -87,7 +103,9 @@ export default function ExtendLeaseDialog({ open, lease, chargeTypes, onClose, o
                 newEndDate <= lease.endDate ||
                 !matches ||
                 !linesAreValid(rows) ||
-                !chequeRowsAreValid(chequeRows)
+                !chequeRowsAreValid(chequeRows) ||
+                termTooLong ||
+                termNeedsConfirm
             }
             busy={busy}
             confirmTestId="extend-lease-confirm"
@@ -127,6 +145,23 @@ export default function ExtendLeaseDialog({ open, lease, chargeTypes, onClose, o
                         />
                     </div>
                 </div>
+
+                {termTooLong && (
+                    <p role="alert" data-testid="extend-term-too-long" className="text-[11px] font-semibold text-error">
+                        {t("errTermTooLong", { max: MAX_TERM_YEARS })}
+                    </p>
+                )}
+                {termNeedsConfirm && (
+                    <span className="inline-flex flex-wrap items-center gap-2 text-[11px] text-warning" role="alert"
+                        data-testid="extend-long-term-confirm">
+                        <AlertTriangle size={12} /> {t("longTermConfirm", { years: termYears(lease.startDate, newEndDate) })}
+                        <button type="button" data-testid="extend-long-term-continue"
+                            onClick={() => setTermAck(termKey)}
+                            className="px-2.5 py-1 rounded-md border border-warning/40 font-semibold text-foreground hover:bg-warning/10 cursor-pointer">
+                            {t("longTermContinue")}
+                        </button>
+                    </span>
+                )}
 
                 <section>
                     <h4 className="text-[11px] font-semibold text-muted uppercase tracking-wider mb-2">{t("extensionLines")}</h4>

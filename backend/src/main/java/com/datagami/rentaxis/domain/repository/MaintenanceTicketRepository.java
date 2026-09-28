@@ -34,6 +34,9 @@ public interface MaintenanceTicketRepository extends JpaRepository<MaintenanceTi
 
     List<MaintenanceTicket> findByPropertyIdIn(List<UUID> propertyIds);
 
+    /** Break-it round 2 M9: tickets hung off a lease being withdrawn/deleted, so the caller can detach them. */
+    List<MaintenanceTicket> findByLease_Id(UUID leaseId);
+
     // Unit-scoped variants of each role branch above.
     //
     // The lease detail page needs the tickets for one unit. It used to fetch

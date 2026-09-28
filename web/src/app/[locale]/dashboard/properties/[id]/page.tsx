@@ -57,9 +57,11 @@ function getCategoryIcon(category: string) {
     return map[category] || HelpCircle;
 }
 
-function getCategoryLabel(category: string, customLabel?: string) {
+function getCategoryLabel(category: string, customLabel: string | undefined, tc: (key: string) => string, has: (key: string) => boolean) {
     if (category === 'OTHER' && customLabel) return customLabel;
-    return CONTACT_CATEGORIES.find(c => c.value === category)?.label || category;
+    // The category's translated name; its English label only for a value the catalog does not know.
+    const key = `categories.${category}`;
+    return has(key) ? tc(key) : CONTACT_CATEGORIES.find(c => c.value === category)?.label || category;
 }
 
 const EMPTY_CONTACT_FORM = { category: 'PLUMBER', customLabel: '', name: '', phone: '', email: '', address: '', notes: '' };
@@ -74,6 +76,9 @@ export default function PropertyDetailPage() {
     const tLedger = useTranslations("Ledger");
     const tNav = useTranslations("Navigation");
     const tState = useTranslations("PageState");
+    const tc = useTranslations("PropertyContacts");
+    const categoryLabel = (category: string, customLabel?: string) =>
+        getCategoryLabel(category, customLabel, (k) => tc(k as never), (k) => tc.has(k as never));
     const locale = useLocale();
     const propertyId = params.id as string;
 
@@ -96,6 +101,7 @@ export default function PropertyDetailPage() {
     const [units, setUnits] = useState<any[]>([]);
     const [managers, setManagers] = useState<any[]>([]);
     const [contacts, setContacts] = useState<PropertyContact[]>([]);
+    const [contactDeleteError, setContactDeleteError] = useState(false);
     const [showContactForm, setShowContactForm] = useState(false);
     const [editingContact, setEditingContact] = useState<PropertyContact | null>(null);
     const [contactFormData, setContactFormData] = useState(EMPTY_CONTACT_FORM);
@@ -204,16 +210,23 @@ export default function PropertyDetailPage() {
             setContactFormData(EMPTY_CONTACT_FORM);
             fetchContacts();
         } catch (err) {
-            setContactFormError(err instanceof ApiError ? err.message : 'Failed to save contact. Please try again.');
+            setContactFormError(err instanceof ApiError ? err.message : tc("saveFailed"));
         } finally {
             setContactSubmitting(false);
         }
     };
 
     const handleDeleteContact = async (contactId: string) => {
-        if (!confirm('Delete this contact?')) return;
-        const res = await fetch(`/api/proxy/v1/properties/${propertyId}/contacts/${contactId}`, { method: 'DELETE' });
-        if (res.ok) fetchContacts();
+        if (!confirm(tc("deleteConfirm"))) return;
+        // Break-it R2 sweep: a refused delete used to leave the card with no word.
+        setContactDeleteError(false);
+        try {
+            const res = await fetch(`/api/proxy/v1/properties/${propertyId}/contacts/${contactId}`, { method: 'DELETE' });
+            if (res.ok) fetchContacts();
+            else setContactDeleteError(true);
+        } catch {
+            setContactDeleteError(true);
+        }
     };
 
     if (propertyLoad === "notFound") {
@@ -354,18 +367,21 @@ export default function PropertyDetailPage() {
                         <div className="flex items-center justify-between mb-4">
                             <p className="text-xs font-semibold text-muted uppercase tracking-[0.15em] flex items-center gap-2">
                                 <Phone size={12} className="text-primary/40" />
-                                Key Contacts
+                                {tc("title")}
                             </p>
                             {canCreate && (
                                 <button
                                     onClick={openAddContact}
                                     className="flex items-center gap-2 bg-primary text-primary-foreground px-3 py-1.5 rounded-full text-[11px] font-bold hover:opacity-90 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                 >
-                                    <Plus size={12} /> Add Contact
+                                    <Plus size={12} /> {tc("add")}
                                 </button>
                             )}
                         </div>
 
+                        {contactDeleteError && (
+                            <p role="alert" className="mb-3 text-xs text-error">{t("contactDeleteFailed")}</p>
+                        )}
                         {contacts.length > 0 ? (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                 {contacts.map(contact => {
@@ -376,19 +392,21 @@ export default function PropertyDetailPage() {
                                                 <div className="flex items-center gap-2">
                                                     <CategoryIcon size={14} className="text-primary/60" />
                                                     <span className="text-[10px] font-bold uppercase tracking-widest text-muted">
-                                                        {getCategoryLabel(contact.category, contact.customLabel)}
+                                                        {categoryLabel(contact.category, contact.customLabel)}
                                                     </span>
                                                 </div>
                                                 {canCreate && (
                                                     <div className="flex items-center gap-1">
                                                         <button
                                                             onClick={() => openEditContact(contact)}
+                                                            aria-label={tc("edit")}
                                                             className="p-1 rounded hover:bg-background text-muted hover:text-foreground transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                                         >
                                                             <Pencil size={12} />
                                                         </button>
                                                         <button
                                                             onClick={() => handleDeleteContact(contact.id)}
+                                                            aria-label={tc("delete")}
                                                             className="p-1 rounded hover:bg-error/10 text-muted hover:text-error transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                                         >
                                                             <Trash2 size={12} />
@@ -418,7 +436,7 @@ export default function PropertyDetailPage() {
                                 })}
                             </div>
                         ) : (
-                            <p className="text-xs font-medium text-muted italic">No key contacts added yet. Add contacts like plumber, electrician, nearest hospital, etc.</p>
+                            <p className="text-xs font-medium text-muted italic">{tc("empty")}</p>
                         )}
                     </div>
                 </div>
@@ -428,27 +446,27 @@ export default function PropertyDetailPage() {
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowContactForm(false)} onKeyDown={(e) => { if (e.key === 'Escape') setShowContactForm(false); }}>
                         <div className="bg-surface rounded-xl border border-border shadow-xl w-full max-w-lg mx-4 p-6" onClick={(e) => e.stopPropagation()}>
                             <h3 className="text-lg font-bold text-foreground mb-4">
-                                {editingContact ? 'Edit Contact' : 'Add Contact'}
+                                {editingContact ? tc("edit") : tc("add")}
                             </h3>
                             <form onSubmit={handleContactSubmit} className="space-y-4">
                                 <div>
-                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Category</label>
+                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{tc("category")}</label>
                                     <select
                                         className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
                                         value={contactFormData.category}
                                         onChange={e => setContactFormData({ ...contactFormData, category: e.target.value })}
                                     >
                                         {CONTACT_CATEGORIES.map(c => (
-                                            <option key={c.value} value={c.value}>{c.label}</option>
+                                            <option key={c.value} value={c.value}>{categoryLabel(c.value)}</option>
                                         ))}
                                     </select>
                                 </div>
                                 {contactFormData.category === 'OTHER' && (
                                     <div>
-                                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Custom Label</label>
+                                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{tc("customLabel")}</label>
                                         <input
                                             className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
-                                            placeholder="e.g. Pest Control"
+                                            placeholder={tc("customLabelPlaceholder")}
                                             value={contactFormData.customLabel}
                                             onChange={e => setContactFormData({ ...contactFormData, customLabel: e.target.value })}
                                         />
@@ -456,17 +474,17 @@ export default function PropertyDetailPage() {
                                 )}
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Name *</label>
+                                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{tc("name")}</label>
                                         <input
                                             required
                                             className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
-                                            placeholder="Contact name"
+                                            placeholder={tc("namePlaceholder")}
                                             value={contactFormData.name}
                                             onChange={e => setContactFormData({ ...contactFormData, name: e.target.value })}
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Phone *</label>
+                                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{tc("phone")}</label>
                                         <input
                                             required
                                             className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
@@ -477,7 +495,7 @@ export default function PropertyDetailPage() {
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Email</label>
+                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{tc("email")}</label>
                                     <input
                                         type="email"
                                         className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
@@ -487,21 +505,21 @@ export default function PropertyDetailPage() {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Address</label>
+                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{tc("address")}</label>
                                     <textarea
                                         className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 resize-none"
                                         rows={2}
-                                        placeholder="Street address or location"
+                                        placeholder={tc("addressPlaceholder")}
                                         value={contactFormData.address}
                                         onChange={e => setContactFormData({ ...contactFormData, address: e.target.value })}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Notes</label>
+                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{tc("notes")}</label>
                                     <textarea
                                         className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 resize-none"
                                         rows={2}
-                                        placeholder="Any additional notes"
+                                        placeholder={tc("notesPlaceholder")}
                                         value={contactFormData.notes}
                                         onChange={e => setContactFormData({ ...contactFormData, notes: e.target.value })}
                                     />
@@ -517,14 +535,14 @@ export default function PropertyDetailPage() {
                                         onClick={() => { setShowContactForm(false); setEditingContact(null); }}
                                         className="px-4 py-2 text-xs font-bold text-muted cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg transition-all duration-200"
                                     >
-                                        Cancel
+                                        {tc("cancel")}
                                     </button>
                                     <button
                                         type="submit"
                                         disabled={contactSubmitting}
                                         className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
-                                        {contactSubmitting ? 'Saving...' : (editingContact ? 'Update Contact' : 'Save Contact')}
+                                        {contactSubmitting ? tc("saving") : (editingContact ? tc("update") : tc("save"))}
                                     </button>
                                 </div>
                             </form>

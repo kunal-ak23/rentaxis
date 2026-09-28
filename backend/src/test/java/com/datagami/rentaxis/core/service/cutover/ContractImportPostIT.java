@@ -73,7 +73,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * it is the precondition for both.</p>
  */
 @SpringBootTest
-@Import(ContractImportPostIT.EmailRecorder.class)
+@Import({ContractImportPostIT.EmailRecorder.class, com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class})
 class ContractImportPostIT extends AbstractPostgresIT {
 
     /**

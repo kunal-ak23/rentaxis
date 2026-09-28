@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../messages/en.json";
+import ar from "../../../../messages/ar.json";
 import type { Cheque } from "@/lib/api/leasing";
 
 /**
@@ -51,6 +52,33 @@ describe("BounceChequeDialog", () => {
         );
         expect(screen.queryByTestId("account-picker")).not.toBeInTheDocument();
         expect(screen.queryByText("Leave empty to use the cheque's bank account.")).not.toBeInTheDocument();
+    });
+
+    /** Break-it R2 money2 F1: a 2126 typo is refused before it can take this year's CBR number. */
+    it("refuses a bounce date after today before it is sent", async () => {
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <BounceChequeDialog cheque={CHEQUE} onClose={() => {}} onDone={() => {}} />
+            </NextIntlClientProvider>,
+        );
+        fireEvent.change(screen.getByTestId("bounce-date"), { target: { value: "2126-01-15" } });
+        expect(await screen.findByTestId("bounce-date-error")).toBeInTheDocument();
+        expect(screen.getByTestId("cheque-bounce-confirm")).toBeDisabled();
+        expect(api.bounce).not.toHaveBeenCalled();
+    });
+
+    /** Review I2: a coded refusal (a taken journal number) is shown in Arabic. */
+    it("shows the server's coded refusal in Arabic", async () => {
+        const { ApiError } = await import("@/lib/api/facilities");
+        api.bounce.mockRejectedValueOnce(new ApiError(409, "The journal number for this date is already taken",
+            JSON.stringify({ code: "posting.numberTaken", message: "The journal number for this date is already taken" })));
+        render(
+            <NextIntlClientProvider locale="ar" messages={ar}>
+                <BounceChequeDialog cheque={CHEQUE} onClose={() => {}} onDone={() => {}} />
+            </NextIntlClientProvider>,
+        );
+        fireEvent.click(screen.getByTestId("cheque-bounce-confirm"));
+        expect(await screen.findByTestId("bounce-error")).toHaveTextContent("رقم القيد لهذا التاريخ مستخدم بالفعل");
     });
 
     it("sends the date, the reason and the note — and no account", async () => {

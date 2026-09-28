@@ -99,6 +99,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p><b>Transactions.</b> {@code TenantAspect} only enables the Hibernate tenant
  * filter inside one, so every read-back goes through {@link #tx}.</p>
  */
+@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class)
 @SpringBootTest
 class PenaltyAssessmentServiceIT extends AbstractPostgresIT {
 
@@ -481,6 +482,56 @@ class PenaltyAssessmentServiceIT extends AbstractPostgresIT {
 
         assertThat(linesOf(approved.journalId()).get(1).getAccountId())
                 .isEqualTo(leaf(AccountRole.RENT_PENALTY).getId());
+    }
+
+    /**
+     * Break-it R2 money2 F5: tab B reduced 500 to 100; tab A, still showing 500,
+     * approves. Refused with 409 penalty.changed and nothing posted; approving with
+     * the amount now shown works, and an older client that sends none is unchecked.
+     */
+    @Test
+    void anApprovalOfTheAmountTheQueueShowedIsRefusedWhenTheProposalWasReducedSince() {
+        PostLeaseResponse r = posted();
+        PenaltyAssessmentDTO proposed = proposal(r.lease().getId(), null, PenaltyReason.OTHER, "500");
+        service.reduce(proposed.id(), new BigDecimal("100"), "tab B");
+        long before = journalEntryRows();
+
+        assertThatThrownBy(() -> service.approve(proposed.id(), APPROVE_DATE, new BigDecimal("500.00")))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.FiguresChangedException.class)
+                .hasMessageContaining("now 100.00, not 500.00")
+                .satisfies(e -> {
+                    var f = (com.datagami.rentaxis.api.exception.FiguresChangedException) e;
+                    assertThat(f.getCode()).isEqualTo("penalty.changed");
+                    assertThat(f.getStatusCode().value()).isEqualTo(409);
+                });
+        assertThat(journalEntryRows()).isEqualTo(before);
+        assertThat(reread(proposed.id()).getStatus()).isEqualTo(PenaltyAssessmentStatus.PROPOSED);
+
+        PenaltyAssessmentDTO approved = service.approve(proposed.id(), APPROVE_DATE, new BigDecimal("100"));
+        assertThat(approved.status()).isEqualTo(PenaltyAssessmentStatus.APPROVED);
+        assertThat(approved.amount()).isEqualByComparingTo("100");
+
+        PenaltyAssessmentDTO older = proposal(r.lease().getId(), null, PenaltyReason.OTHER, "70");
+        assertThat(service.approve(older.id(), APPROVE_DATE, null).status()).isEqualTo(PenaltyAssessmentStatus.APPROVED);
+    }
+
+    /**
+     * Break-it R2 money2 F1/F2: the decision date gets the one-year window. A year
+     * from today posts; a year and a day is refused before a PEN number is drawn.
+     */
+    @Test
+    void anApprovalDatedMoreThanAYearAheadIsRefusedAndAYearAheadIsNot() {
+        PostLeaseResponse r = posted();
+        LocalDate today = com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.TODAY;
+        PenaltyAssessmentDTO tooFar = proposal(r.lease().getId(), null, PenaltyReason.OTHER, "300");
+        long before = journalEntryRows();
+        assertThatThrownBy(() -> service.approve(tooFar.id(), today.plusYears(1).plusDays(1)))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("posting.dateTooFarAhead"));
+        assertThatThrownBy(() -> service.approve(tooFar.id(), LocalDate.of(2126, 1, 1)))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("posting.dateTooFarAhead"));
+        assertThat(journalEntryRows()).isEqualTo(before);
+
+        assertThat(service.approve(tooFar.id(), today.plusYears(1)).status()).isEqualTo(PenaltyAssessmentStatus.APPROVED);
     }
 
     @Test

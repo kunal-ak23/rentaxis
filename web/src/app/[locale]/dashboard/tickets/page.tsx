@@ -19,6 +19,12 @@ import {
     Plus, X, Search, Loader2, Eye, Upload, Wrench, BarChart3,
 } from "lucide-react";
 import { idParam, isIdParam } from "@/lib/urlIds";
+import {
+    TICKET_ATTACHMENT_MAX_MB,
+    TICKET_CREATE_ACCEPT,
+    partitionAttachments,
+    uploadTicketAttachment,
+} from "@/lib/tickets/attachments";
 
 /**
  * S16-02/S16-03: staff (SA/TA/PM/ACCOUNTANT) read `GET /tickets/paged` — search,
@@ -210,7 +216,15 @@ function TicketsPageInner() {
         reportedDate: businessTodayIso(),
     });
     const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
+    // Files refused at selection (empty, over the size cap, wrong type), one readable line each.
+    const [attachmentErrors, setAttachmentErrors] = useState<string[]>([]);
+    // A ticket that was created but some of whose files did not upload (F1):
+    // the ticket stands, the user is told which files to add again.
+    const [uploadFailure, setUploadFailure] = useState<{ ticketId: string; files: string[] } | null>(null);
     const [renterLeases, setRenterLeases] = useState<{ id: string; propertyId: string; propertyName: string; unitId: string; unitIdentifier: string }[]>([]);
+    // Whether the renter's my-leases read has finished (either way), so the
+    // form can tell "still loading" from "no active lease".
+    const [renterLeasesLoaded, setRenterLeasesLoaded] = useState(false);
     const isRenter = userRole === "RENTER";
     const isStaffUser = userRole === "TENANT_USER";
     const canPage = canUsePagedTickets(userRole);
@@ -320,8 +334,22 @@ function TicketsPageInner() {
                     unitIdentifier: l.unitIdentifier,
                 })));
             }
-        } catch {}
+        } catch {
+        } finally {
+            setRenterLeasesLoaded(true);
+        }
     }, [isRenter]);
+
+    // A single-lease renter's property and unit are filled in for them. Done
+    // here rather than when the Create button is clicked (break R2 round 2):
+    // a renter who opened the form before my-leases answered never got a
+    // property, so Submit stayed disabled until they closed and reopened it.
+    // Only an empty property is filled; a choice already made is kept.
+    useEffect(() => {
+        if (!showForm || !isRenter || renterLeases.length !== 1) return;
+        const lease = renterLeases[0];
+        setForm(f => (f.propertyId ? f : { ...f, propertyId: lease.propertyId, unitId: lease.unitId }));
+    }, [showForm, isRenter, renterLeases]);
 
     useEffect(() => {
         Promise.all([fetchProperties(), fetchRenterLeases()]).finally(() => {});
@@ -400,19 +428,20 @@ function TicketsPageInner() {
             });
             if (res.ok) {
                 const created = await res.json();
-                // Upload attachments if any
+                // Upload attachments one by one and keep the names of any that
+                // did not make it (break R2 portal2 F1: the result used to be
+                // ignored). The ticket already exists, so a failed file never
+                // re-opens the form for a duplicate submit; the user is told
+                // which files to add again on the ticket itself.
+                const failed: string[] = [];
                 for (const file of attachmentFiles) {
-                    const formData = new FormData();
-                    formData.append("file", file);
-                    formData.append("name", file.name);
-                    await fetch(`/api/upload?path=/api/v1/tickets/${created.id}/attachments`, {
-                        method: "POST",
-                        body: formData,
-                    });
+                    if (!(await uploadTicketAttachment(created.id, file))) failed.push(file.name);
                 }
+                setUploadFailure(failed.length > 0 ? { ticketId: created.id, files: failed } : null);
                 setShowForm(false);
                 setForm({ title: "", description: "", propertyId: "", unitId: "", category: "OTHER", priority: "MEDIUM", onBehalfOfRenterId: "", reportedDate: businessTodayIso() });
                 setAttachmentFiles([]);
+                setAttachmentErrors([]);
                 fetchTickets();
             } else {
                 const errData = await res.json().catch(() => null);
@@ -443,6 +472,24 @@ function TicketsPageInner() {
     return (
         <div>
             {loadError && <LoadErrorBanner message={loadError} onRetry={fetchTickets} />}
+            {uploadFailure && (
+                <div role="alert" className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-error/30 bg-error/5 px-4 py-3 text-xs text-error">
+                    <p>
+                        {t("attachmentsUploadFailed", { files: uploadFailure.files.join(", ") })}{" "}
+                        <Link href={`/dashboard/tickets/${uploadFailure.ticketId}`} className="font-semibold underline">
+                            {t("openTicketToRetry")}
+                        </Link>
+                    </p>
+                    <button
+                        type="button"
+                        onClick={() => setUploadFailure(null)}
+                        aria-label={t("close")}
+                        className="shrink-0 text-error/70 hover:text-error cursor-pointer"
+                    >
+                        <X size={12} />
+                    </button>
+                </div>
+            )}
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
                 <div>
@@ -462,11 +509,10 @@ function TicketsPageInner() {
                     )}
                     <button
                         onClick={() => {
-                            // Auto-fill for renter with single lease
-                            if (isRenter && renterLeases.length === 1) {
-                                setForm(f => ({ ...f, propertyId: renterLeases[0].propertyId, unitId: renterLeases[0].unitId }));
-                            }
+                            // A single-lease renter's property is filled by the effect above.
                             setCreateError(null);
+                            setAttachmentErrors([]);
+                            setUploadFailure(null);
                             setShowForm(true);
                         }}
                         className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer"
@@ -708,7 +754,16 @@ function TicketsPageInner() {
                             </div>
 
                             {/* Property & Unit row */}
-                            {isRenter && renterLeases.length === 1 ? (
+                            {isRenter && !renterLeasesLoaded ? (
+                                <div data-testid="ticket-renter-leases-loading" className="flex items-center gap-2 bg-input/50 rounded-lg px-4 py-3 border border-border">
+                                    <Loader2 size={12} className="animate-spin text-muted" />
+                                    <p className="text-xs text-muted">{t("renterLeasesLoading")}</p>
+                                </div>
+                            ) : isRenter && renterLeases.length === 0 ? (
+                                <div className="bg-input/50 rounded-lg px-4 py-3 border border-border">
+                                    <p className="text-xs text-muted">{t("noActiveLease")}</p>
+                                </div>
+                            ) : isRenter && renterLeases.length === 1 ? (
                                 /* Single lease renter — auto-filled, read-only */
                                 <div className="bg-input/50 rounded-lg px-4 py-3 border border-border">
                                     <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">{t("propertyAndUnit")}</p>
@@ -830,21 +885,37 @@ function TicketsPageInner() {
                                         type="file"
                                         multiple
                                         className="hidden"
-                                        accept="image/*,video/*,.pdf"
+                                        accept={TICKET_CREATE_ACCEPT}
+                                        data-testid="ticket-attachment-input"
                                         onChange={(e) => {
-                                            if (e.target.files) {
-                                                setAttachmentFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
-                                            }
-                                            if (e.target) e.target.value = "";
+                                            // Copy the selection *now*: clearing the input's value
+                                            // (so the same file can be picked again) empties its
+                                            // FileList, and a state updater that read
+                                            // `e.target.files` later saw nothing (break R2 F1).
+                                            const picked = Array.from(e.target.files ?? []);
+                                            e.target.value = "";
+                                            const { accepted, rejected } = partitionAttachments(picked, TICKET_CREATE_ACCEPT);
+                                            if (accepted.length > 0) setAttachmentFiles((prev) => [...prev, ...accepted]);
+                                            setAttachmentErrors(rejected.map(({ name, reason }) =>
+                                                reason === "empty" ? t("attachmentEmpty", { name })
+                                                    : reason === "tooLarge" ? t("attachmentTooLarge", { name, max: TICKET_ATTACHMENT_MAX_MB })
+                                                        : t("attachmentWrongType", { name })));
                                         }}
                                     />
                                 </label>
+                                {attachmentErrors.length > 0 && (
+                                    <ul data-testid="ticket-attachment-errors" className="mt-2 space-y-0.5 text-[11px] text-error">
+                                        {attachmentErrors.map((msg, i) => <li key={i}>{msg}</li>)}
+                                    </ul>
+                                )}
                                 {attachmentFiles.length > 0 && (
                                     <div className="mt-2 space-y-1">
                                         {attachmentFiles.map((f, i) => (
                                             <div key={i} className="flex items-center justify-between bg-input/50 rounded-lg px-3 py-1.5 text-xs">
                                                 <span className="truncate text-foreground">{f.name}</span>
                                                 <button
+                                                    type="button"
+                                                    aria-label={t("removeAttachment", { name: f.name })}
                                                     onClick={() => setAttachmentFiles((prev) => prev.filter((_, idx) => idx !== i))}
                                                     className="text-muted hover:text-error shrink-0 ms-2 cursor-pointer"
                                                 >

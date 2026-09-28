@@ -31,6 +31,13 @@ import java.util.UUID;
 @Data
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class CreateLeaseDTO {
+    /**
+     * Break-it round 2 F3: on an update, the lease version the editor loaded
+     * ({@code LeaseDTO.version}). A draft that moved on since is refused with 409
+     * rather than overwritten; absent (an older client) is accepted. Ignored on create.
+     */
+    private Long version;
+
     @NotNull
     private UUID unitId;
 

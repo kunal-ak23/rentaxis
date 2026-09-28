@@ -433,8 +433,33 @@ public class AuthController {
                                    String tenantId, String orgName) {
     }
 
-    public record UpdateProfileRequest(String name, String phoneNumber) {
+    /**
+     * Break-it R2 portal2: "notaphone!!!123" was stored as a phone and a
+     * 500-character name overflowed users.name. The phone rule is lenient on
+     * purpose — digits, spaces, "+", "-", parentheses, 7-15 digits — so local UAE
+     * forms and every format in existing data stay valid (blank clears it);
+     * guards' E.164 rule still applies in PhoneNumbers.normalizeForRole.
+     */
+    public record UpdateProfileRequest(
+            @Size(max = 255, message = "Name must be at most 255 characters") String name,
+            @jakarta.validation.constraints.Pattern(regexp = PHONE_PATTERN,
+                    message = "Phone number may contain only digits, spaces, +, - and parentheses (7-15 digits)")
+            String phoneNumber) {
+
+        /**
+         * Break-it R2 M6: normalize Unicode spaces (NBSP and friends) and
+         * Arabic-Indic digits before {@code @Pattern} runs, not after — the
+         * canonical constructor runs before Bean Validation sees the record, so
+         * this is what {@code @Pattern} above actually validates. Without it, a
+         * number the web rule (which uses JS's Unicode-aware {@code \s}) accepted
+         * could still 400 here on a plain-ASCII {@code \s} match failure.
+         */
+        public UpdateProfileRequest {
+            phoneNumber = PhoneNumbers.normalizeUnicode(phoneNumber);
+        }
     }
+
+    static final String PHONE_PATTERN = "^\\s*$|^\\s*\\+?[\\s()\\-]*(?:\\d[\\s()\\-]*){7,15}$";
 
     public record ChangePasswordRequest(String currentPassword, String newPassword) {
     }
@@ -465,7 +490,7 @@ public class AuthController {
     @PutMapping("/me")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ProfileResponse> updateMyProfile(
-            @RequestBody UpdateProfileRequest request) {
+            @Valid @RequestBody UpdateProfileRequest request) {
         UUID userId = callerId();
         Optional<User> userOpt = userService.findById(userId);
         if (userOpt.isEmpty()) {

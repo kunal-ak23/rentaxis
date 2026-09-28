@@ -9,12 +9,13 @@ import { serverText } from "@/components/finance/bankrec/serverText";
 import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount } from "@/lib/api/ledger";
 import { formatDate } from "@/lib/format";
+import { businessTodayIso, isAfterBusinessToday } from "@/lib/businessDate";
 import { badDebtsApi, type BadDebtItem, type BadDebtWriteOff, type RecoveryAccount } from "@/lib/api/badDebts";
 
 const label = "block text-[11px] font-semibold text-muted mb-1";
 const field = "bg-input border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none";
 const btn = "px-3 py-1.5 rounded-lg text-xs font-semibold border border-border hover:bg-input disabled:opacity-50";
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => businessTodayIso();
 
 type Pending = { kind: "approve" | "reject" | "reverse" | "recover"; w: BadDebtWriteOff } | null;
 
@@ -117,12 +118,17 @@ export default function BadDebtCard({ leaseId, canApprove, loadingText }: { leas
                     <div className="flex flex-wrap items-end gap-2 pt-2">
                         <input className={`${field} flex-1 min-w-[12rem]`} placeholder={t("reason")} value={reason}
                                aria-label={t("reason")} onChange={e => setReason(e.target.value)} data-testid="bd-reason" />
-                        <input type="date" className={field} value={date} aria-label={t("date")} onChange={e => setDate(e.target.value)} />
-                        <button type="button" className={btn} disabled={busy || picked.size === 0 || !reason.trim()} data-testid="bd-propose"
+                        <input type="date" className={field} value={date} aria-label={t("date")} max={businessTodayIso()}
+                               aria-invalid={isAfterBusinessToday(date)} onChange={e => setDate(e.target.value)} data-testid="bd-date" />
+                        <button type="button" className={btn} disabled={busy || picked.size === 0 || !reason.trim() || isAfterBusinessToday(date)} data-testid="bd-propose"
                                 onClick={() => run(() => badDebtsApi.propose({ leaseId, chequeIds: [...picked], date, reason }))}>
                             {t("propose", { amount: fmtAmount(total) })}
                         </button>
                     </div>
+                    {/* Break-it R2 money2 F2: a write-off is recognised when decided, and a later one could not be reversed. */}
+                    {isAfterBusinessToday(date) && (
+                        <p role="alert" className="text-[11px] text-error" data-testid="bd-date-error">{t("dateAfterToday")}</p>
+                    )}
                 </div>
             )}
             {writeOffs.length > 0 && (

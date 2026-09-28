@@ -118,6 +118,7 @@ import static org.assertj.core.api.Assertions.tuple;
  * <p><b>Transactions.</b> {@code TenantAspect} enables the Hibernate tenant filter
  * only inside one, so every read-back goes through {@link #tx}.</p>
  */
+@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class)
 @SpringBootTest
 class SettlementServiceIT extends AbstractPostgresIT {
 
@@ -844,6 +845,33 @@ class SettlementServiceIT extends AbstractPostgresIT {
         assertThat(creditOn(stlOf(leaseId), leaf(AccountRole.RENTER_REFUND_PAYABLE).getId())).isEqualByComparingTo("4239.73");
         assertThat(lease(leaseId).getStatus()).isEqualTo(LeaseStatus.CLOSED);
         assertTrialBalanceBalances();
+    }
+
+    /**
+     * Break-it R2 money2 F5 (ST2): tab A opens a clean settlement (net refund
+     * 8,239.73); tab B saves a 2,000 deduction; A finalises on the figure it showed.
+     * Refused with 409 settlement.changed and nothing posted; finalising on the
+     * figure now shown works. A request without the figure (older client) is unchecked.
+     */
+    @Test
+    void aFinaliseOnTheNetRefundTheUserSawIsRefusedWhenAnotherTabChangedIt() {
+        UUID leaseId = terminatedGalah();
+        BigDecimal seenByA = settlement.statement(leaseId).netRefund();
+        assertThat(seenByA).isEqualByComparingTo("8239.73");
+        saveDraft(leaseId, deduction(DeductionCategory.CLEANING, "2000"));
+
+        assertThatThrownBy(() -> settlement.finalizeSettlement(leaseId,
+                new FinalizeSettlementRequest(SETTLED_ON, null, false, seenByA), null))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.FiguresChangedException.class)
+                .hasMessageContaining("now 6239.73, not 8239.73")
+                .satisfies(e -> assertThat(((com.datagami.rentaxis.api.exception.FiguresChangedException) e).getCode())
+                        .isEqualTo("settlement.changed"));
+        assertThat(tx.execute(st -> settlement.buildSettlementResponse(leaseId)).getJournalId()).isNull();
+        assertThat(lease(leaseId).getStatus()).isNotEqualTo(LeaseStatus.CLOSED);
+
+        SettlementResponseDTO response = settlement.finalizeSettlement(leaseId,
+                new FinalizeSettlementRequest(SETTLED_ON, null, false, new BigDecimal("6239.73")), null);
+        assertThat(response.getRefundAmount()).isEqualByComparingTo("6239.73");
     }
 
     /**

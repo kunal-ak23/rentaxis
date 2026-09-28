@@ -6,7 +6,7 @@ import LeaseDialog from "@/components/leases/LeaseDialog";
 import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { fmtAmount, ledgerApi } from "@/lib/api/ledger";
-import { todayIso } from "@/components/leases/leaseMath";
+import { businessTodayIso, isAfterBusinessToday } from "@/lib/businessDate";
 import {
     ApiError,
     chequeApi,
@@ -44,6 +44,9 @@ import { StatementCoverNotice } from "@/components/finance/StatementCoverNotice"
  * simpler single-row case.
  */
 
+/** Break-it R2 money2 F1/F2: actions that record a bank event, which cannot be dated after today. */
+const BANK_EVENTS = new Set<string>(["deposit", "clear", "bounce"]);
+
 const field =
     "w-full bg-input border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200";
 const label = "block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5";
@@ -77,7 +80,7 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
         return `${o.code ? o.code + " " : ""}${name} · ${kind}`;
     };
 
-    const [date, setDate] = useState(todayIso());
+    const [date, setDate] = useState(businessTodayIso());
     const [notes, setNotes] = useState("");
     const [failureReason, setFailureReason] = useState<ChequeFailureReason>("BOUNCE");
     const [debitAccountId, setDebitAccountId] = useState<string | null>(null);
@@ -93,7 +96,7 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
 
     useEffect(() => {
         if (!action || !cheque) return;
-        setDate(todayIso());
+        setDate(businessTodayIso());
         setNotes("");
         setFailureReason("BOUNCE");
         // A receive starts with no account: the server's settlement target fills it
@@ -253,6 +256,9 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
 
     const title = chequeTitle(t(action), cheque, fmtAmount(cheque.amount));
 
+    // Break-it R2 money2 F1/F2: the bank has already done what these record.
+    const bankDateAfterToday = BANK_EVENTS.has(action) && isAfterBusinessToday(date);
+
     return (
         <LeaseDialog
             open
@@ -268,6 +274,7 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
                 || (action === "cancel" && vatMove !== null && !moveVatTo)
                 // R2 N-3: nothing to confirm until the server has said where it posts.
                 || (action === "receive" && !settlement)
+                || bankDateAfterToday
             }
             confirmTestId={`cheque-${action}-confirm`}
         >
@@ -294,8 +301,15 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
                             type="date"
                             className={field}
                             value={date}
+                            max={BANK_EVENTS.has(action) ? businessTodayIso() : undefined}
+                            aria-invalid={bankDateAfterToday}
                             onChange={e => setDate(e.target.value)}
                         />
+                        {bankDateAfterToday && (
+                            <p role="alert" className="mt-1 text-[11px] text-error" data-testid="cheque-action-date-error">
+                                {t("dateAfterToday")}
+                            </p>
+                        )}
                     </div>
                 )}
 

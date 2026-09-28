@@ -124,6 +124,15 @@ public class ContractImportValidator {
     private final CutoverRenterMatcher renterMatcher;
     private final com.datagami.rentaxis.domain.repository.LandlordOrgRepository orgs;
 
+    /** Break-it R2 money2 review M1: "today" for the bank-event dates, on the app clock. */
+    private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates =
+            com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setManualPostingDates(com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates) {
+        this.manualDates = manualDates;
+    }
+
     /**
      * {@code @Autowired} is load-bearing, not decoration: there are two
      * constructors, and without it Spring takes the no-argument one and every
@@ -934,6 +943,18 @@ public class ContractImportValidator {
 
         if (!known) return;
 
+        // Break-it R2 money2 review M1: a cut-over records what the bank has already
+        // done. The replay skips the live "not after today" rule, so a mistyped future
+        // DepositedDate / ClearedDate / BouncedDate would post a future CRT or CBR.
+        for (Object[] d : new Object[][]{{"DepositedDate", deposited}, {"ClearedDate", cleared}, {"BouncedDate", bounced}}) {
+            LocalDate on = (LocalDate) d[1];
+            if (manualDates.isAfterToday(on)) {
+                errors.add(new ImportErrorDTO("Cheques", rowNum, (String) d[0],
+                        d[0] + " " + on + " is after today (" + manualDates.today()
+                                + "): the bank cannot have done this yet. Check the year."));
+            }
+        }
+
         // A date the status does not account for is a row somebody edited halfway:
         // the replay would ignore it, and the register would then disagree with the
         // spreadsheet it came from about what happened to the money.
@@ -1058,6 +1079,10 @@ public class ContractImportValidator {
         if (d == null) {
             errors.add(new ImportErrorDTO(sheet, rowNum, field,
                     field + " '" + raw.trim() + "' is not a date; use YYYY-MM-DD"));
+        } else if (!com.datagami.rentaxis.core.service.ledger.PostingService.isNumberable(d)) {
+            // Break-it R2 money2 review N2: caught at preview, not as posting.dateOutOfRange at bulk post.
+            errors.add(new ImportErrorDTO(sheet, rowNum, field,
+                    com.datagami.rentaxis.core.service.ledger.PostingService.outOfRangeSentence(field, d)));
         }
         return d;
     }

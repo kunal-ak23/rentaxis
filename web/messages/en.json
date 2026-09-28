@@ -12,6 +12,11 @@
   "MasterData": {
     "contractUnavailable": "The contract could not be downloaded. Please try again, or ask your property manager for a copy.",
     "acceptFailed": "The contract could not be accepted. It may have been updated since you opened it — review the current contract and try again.",
+    "acceptUnavailable": "This contract is no longer available — your landlord has withdrawn it. Contact them if you have questions.",
+    "documentUploadFailed": "Couldn't attach {name}. Check the file and try again.",
+    "documentDeleteFailed": "The document was not removed. Please try again.",
+    "rejectFailed": "The contract was not rejected. Please try again.",
+    "contactDeleteFailed": "The contact was not deleted. Please try again.",
     "acceptLease": "Accept Tenancy Contract",
     "actions": "Actions",
     "activate": "Activate",
@@ -706,6 +711,9 @@
     "addStaff": "Add Staff",
     "editStaff": "Edit Staff",
     "deleteStaff": "Delete Staff",
+    "deleteFailed": "The staff member was not deleted. Please try again.",
+    "deleteTitle": "Delete Staff Member",
+    "deleteConfirmButton": "Delete",
     "confirmDelete": "Are you sure you want to delete this staff member?",
     "nameEn": "Name (English)",
     "nameAr": "Name (Arabic)",
@@ -1844,6 +1852,11 @@
     "TENANT_USER": "Company User"
   },
   "Ledger": {
+    "lockFirst": "This is the first period lock: nothing dated up to {to} can be posted afterwards. Tick to confirm the date is right.",
+    "lockAheadOfToday": "The books are locked through {date}, which is after today, so nothing can be posted. Re-open the latest closed fiscal year or ask support to correct the lock.",
+    "lockRule": "Only a period that has already ended can be locked: the latest date is today ({today}).",
+    "lockAfterToday": "This date is after today. Check the year.",
+    "lockBigJump": "This moves the lock {months} months forward, from {from} to {to}. Nothing dated up to {to} can be posted afterwards. Tick to confirm the date is right.",
     "interPropertyRepairCancel": "Cancel",
     "interPropertyUnbalanced": "{count, plural, one {# journal does} other {# journals do}} not balance per property, so a property's trial balance is out. Post a clearing journal for each.",
     "interPropertyRepair": "Post clearing journals",
@@ -2340,6 +2353,8 @@
     "runFailed": "The VAT tax points could not be posted."
   },
   "Cheques": {
+    "dateAfterToday": "The date cannot be after today: the bank has not done this yet.",
+    "penaltyChanged": "This charge changed in another window. It has been reloaded with its current amount; review it and approve again.",
     "breakdownGross": "Total with VAT",
     "breakdownVat": "VAT",
     "breakdownNet": "Net",
@@ -2540,11 +2555,22 @@
     "notOnStatement": "This entry is not on the imported statement",
     "postAnyway": "Post anyway",
     "errors": {
+      "date": {
+        "inFuture": "The date {date} is after today ({today}): this has not happened yet, so nothing was saved."
+      },
+      "posting": {
+        "dateOutOfRange": "The date {date} is not between {earliest} and {latest}. Check the year.",
+        "numberTaken": "The journal number for this date is already taken, so nothing was posted. Check the date — a mistyped year shares this year's numbers.",
+        "dateTooFarAhead": "The date {date} is more than a year ahead (the latest is {latest}). Check the year."
+      },
+      "settlement": {
+        "changed": "This settlement changed since you opened it. Review it again; nothing was posted."
+      },
       "listing": {
         "interestWithdrawn": "This enquiry was withdrawn.","interestConverted": "This enquiry already has a draft lease."},
       "booking": {
         "feeWrittenOff": "This booking's fee was written off as a bad debt; it can no longer be cancelled.","feeType": "Unknown fee type {type}.", "feeAmount": "A fee needs an amount greater than zero.", "noLease": "The renter has no live lease on this unit to charge the booking fee to.", "slotStarted": "The booking's slot has started; it can no longer be cancelled."},
-      "ticket": {"billNotLinkable": "Only a posted purchase invoice not linked to another ticket can be linked.", "noLease": "This ticket's unit has no live lease to recharge.", "rechargeAmount": "Enter the amount to recharge."},
+      "ticket": {"rechargeExceedsBill": "Only {remaining} of this ticket's bills ({bills}) is left to recharge. Nothing was recharged.", "billNotLinkable": "Only a posted purchase invoice not linked to another ticket can be linked.", "noLease": "This ticket's unit has no live lease to recharge.", "rechargeAmount": "Enter the amount to recharge."},
       "badDebt": {"itemNotOpen": "Instalment {row} is {status}; only an unpaid or bounced item can be written off.", "vatNotDeclared": "Instalment {row} carries VAT not declared yet; post the VAT tax points through its date first.", "itemsChanged": "The items have changed since the write-off was proposed; reject it and propose again.", "nothingOpen": "This lease has nothing open to write off.", "recoveredCannotReverse": "Money was recovered on this write-off; it cannot be reversed.", "reverseBeforeWriteOff": "A reversal cannot be dated before the write-off ({date}).", "recoveryTooMuch": "Only {left} of this write-off is left to recover.", "recoveryAccount": "Choose the bank or cash account the money went into.", "wrongStatus": "This write-off is {status}.", "reasonRequired": "Give a reason.", "itemSettled": "Instalment {row} has been settled in the books (the lease's receivable no longer carries it); it cannot be written off.", "recoveryAccountProperty": "Account {account} cannot take money for this lease's property; choose one of its bank or cash accounts."},
       "vat": {"outputCheckFailed": "Output VAT per the tax invoices and credit notes does not match the Output VAT account (difference {difference}). Give a reason to file anyway.", "outputCheckChanged": "The output difference is now {difference}; review the return again before filing it.", "overrideReasonShort": "Explain the difference in at least {min} characters.", "overrideReason": "Keep the reason under 500 characters.", "periodFiled": "The VAT return for {from} – {to} is filed, so VAT dated {date} cannot change. Date the correction on or after {next}.", "periodStart": "A VAT period starts on the first day of a month.", "periodNotEnded": "A VAT period can be filed once it has ended.", "alreadyFiled": "This VAT period is already filed.", "periodOverlaps": "This VAT period overlaps one already filed.", "reopenReason": "Give a reason for re-opening the VAT return.", "notFiled": "This VAT return is not filed."},
       "ledger": {"propertyUnbalanced": "This journal does not balance per property (out by {amount}); a journal spanning properties needs an inter-property clearing leg in each."},
@@ -2568,6 +2594,7 @@
         "receiveBeforeBooked": "{row} was put on the books on {booked}; it cannot be received or cleared on {date}, before that date. Receive it on or after {booked}."
       },
       "penalty": {
+        "changed": "This charge changed since you opened it. Review it again; nothing was charged.",
         "collectionClosed": "This charge's collection row is closed; it cannot be reversed.",
         "collected": "This charge was already collected; issue a refund or credit instead.",
         "writtenOff": "This charge was written off as a bad debt; reverse the write-off first.",
@@ -2610,7 +2637,8 @@
         "assignmentPending": "This lease has a draft assignment to another renter; post or delete it first.",
         "successorRenterMismatch": "This contract continues a lease that now belongs to {renter}; the new contract must be in that renter's name.",
         "assignmentFuture": "An assignment cannot take effect after today; post it on or after {date}.",
-        "transferFeeChargedTwice": "{charge} was charged on the old lease for its whole term and is carried in the balance; remove it from the new lease."
+        "transferFeeChargedTwice": "{charge} was charged on the old lease for its whole term and is carried in the balance; remove it from the new lease.",
+        "changed": "This contract changed since you opened it — review it again."
       }
     },
     "paginationShowing": "Showing {start}-{end} of {total}",
@@ -2776,6 +2804,9 @@
     "previewOnly": "You can price a termination on this contract, but ending it posts journals and is limited to finance roles."
   },
   "Settlement": {
+    "changedReloaded": "This settlement changed in another window. The figures have been reloaded; review them and finalize again.",
+    "confirmRefund": "Refund owed to the tenant: {amount}",
+    "confirmBalanceDue": "Balance the tenant owes: {amount}",
     "stillDue": "Still due from tenant",
     "writtenOff": "Written off as bad debt",
     "title": "Settlement",
@@ -2809,6 +2840,8 @@
     "noDeductions": "No deductions.",
     "noAdditions": "No additions.",
     "attachments": "Attachments",
+    "attachmentUploadFailed": "Couldn't attach {name}. Check the file and try again.",
+    "attachmentDeleteFailed": "Couldn't remove the attachment. Please try again.",
     "addFiles": "Add files",
     "saveDraftToAttach": "Save the draft to attach files.",
     "totalDeductions": "Total deductions",
@@ -3201,6 +3234,21 @@
     "priorityLabel": "Priority",
     "attachmentsLabel": "Photos / Attachments",
     "clickToAttach": "Click to attach files",
+    "replyFailed": "Your reply wasn't sent. It's still in the box — please try again.",
+    "ratingFailed": "Your rating wasn't saved. Please try again.",
+    "attachmentDeleteFailed": "The attachment wasn't removed. Please try again.",
+    "deleteAttachment": "Delete attachment",
+    "downloadAttachment": "Download attachment",
+    "renterLeasesLoading": "Loading your unit…",
+    "noActiveLease": "You have no active contract, so a ticket can’t be raised here yet.",
+    "attachmentEmpty": "“{name}” is empty (0 bytes) and was not added.",
+    "attachmentTooLarge": "“{name}” is larger than {max} MB and was not added.",
+    "attachmentWrongType": "“{name}” is not a photo, video or PDF and was not added.",
+    "attachmentWrongTypeDetail": "“{name}” is not a photo, video, PDF or Word document and was not added.",
+    "attachmentsUploadFailed": "The ticket was created, but these files could not be attached: {files}.",
+    "openTicketToRetry": "Open the ticket to add them again.",
+    "attachmentUploadFailed": "“{name}” could not be uploaded. Please try again.",
+    "removeAttachment": "Remove {name}",
     "notFound": "Ticket not found.",
     "backToTickets": "Back to Tickets",
     "unitInline": "Unit {unit}",
@@ -3355,6 +3403,7 @@
   },
   "Notifications": {
     "title": "Notifications",
+    "markReadFailed": "Could not mark as read. Please try again.",
     "subtitle": "Stay up to date with activity across your properties",
     "markAllRead": "Mark All as Read",
     "filterAll": "All",
@@ -4286,6 +4335,8 @@
     "droppedDiscount": "Discount <n>{amount}</n> on the current contract does not renew"
   },
   "FiscalYears": {
+    "reopenLockMove": "Period lock will move from <n>{from}</n> to <n>{to}</n>.",
+    "reopenLockStays": "Period lock stays at <n>{from}</n>.",
     "title": "Fiscal years",
     "description": "Closing a year moves its income and expense into Retained Earnings (one line per property) and locks it. Re-opening reverses that entry.",
     "year": "Year",
@@ -4372,6 +4423,7 @@
     "history": "Filing history"
   },
   "BadDebts": {
+    "dateAfterToday": "A write-off cannot be dated after today: it is recorded when the decision is made.",
     "reversedBy": "reversed by",
     "noRecoveryAccounts": "No bank or cash account can take money for this contract's property. Attach its bank leaf to a bank account first.",
     "chooseAccount": "Choose an account",
@@ -4396,6 +4448,8 @@
     "cancel": "Cancel"
   },
   "TicketCharges": {
+    "remaining": "Left to recharge: {amount}",
+    "overRemaining": "Only {amount} of the bills is left to recharge.",
     "title": "Bill and recharge",
     "bills": "Vendor bill",
     "noBills": "No bill linked yet.",
@@ -4684,5 +4738,67 @@
     "aboveOutstanding": "This is {excess} more than the {outstanding} still outstanding on this contract. It will be recorded as an advance payment — confirm to continue.",
     "recordAnyway": "Record anyway",
     "amendNoChanges": "Nothing has changed yet — edit a line to amend."
+  },
+  "Profile": {
+    "saveChanges": "Save Changes",
+    "saved": "Saved",
+    "saveFailed": "Your profile was not saved. Please try again.",
+    "title": "My Profile",
+    "subtitle": "Manage your account details and password.",
+    "loadFailed": "Unable to load profile",
+    "fullName": "Full Name",
+    "phoneNumber": "Phone Number",
+    "emailAddress": "Email Address",
+    "emailHint": "Contact your administrator to change email.",
+    "nameTooLong": "The name is too long. Use at most 255 characters.",
+    "phoneInvalid": "Enter a valid phone number: digits, spaces, +, - and parentheses only (7 to 15 digits).",
+    "password": "Password",
+    "passwordHint": "Change your account password",
+    "changePassword": "Change Password",
+    "currentPassword": "Current Password",
+    "newPassword": "New Password",
+    "confirmNewPassword": "Confirm New Password",
+    "updatePassword": "Update Password",
+    "cancel": "Cancel",
+    "passwordsDoNotMatch": "New passwords do not match",
+    "passwordTooShort": "Password must be at least 8 characters",
+    "passwordUpdated": "Password updated successfully",
+    "currentPasswordIncorrect": "Current password is incorrect",
+    "passwordUpdateFailed": "Failed to update password"
+  },
+  "PropertyContacts": {
+    "title": "Key Contacts",
+    "add": "Add Contact",
+    "edit": "Edit Contact",
+    "delete": "Delete contact",
+    "deleteConfirm": "Delete this contact?",
+    "empty": "No key contacts added yet. Add contacts like plumber, electrician, nearest hospital, etc.",
+    "category": "Category",
+    "customLabel": "Custom Label",
+    "customLabelPlaceholder": "e.g. Pest Control",
+    "name": "Name *",
+    "namePlaceholder": "Contact name",
+    "phone": "Phone *",
+    "email": "Email",
+    "address": "Address",
+    "addressPlaceholder": "Street address or location",
+    "notes": "Notes",
+    "notesPlaceholder": "Any additional notes",
+    "cancel": "Cancel",
+    "saving": "Saving...",
+    "save": "Save Contact",
+    "update": "Update Contact",
+    "saveFailed": "Failed to save contact. Please try again.",
+    "categories": {
+      "PLUMBER": "Plumber",
+      "ELECTRICIAN": "Electrician",
+      "HANDYMAN": "Handyman",
+      "SECURITY": "Security",
+      "HOSPITAL_CLINIC": "Hospital / Clinic",
+      "PHARMACY": "Pharmacy",
+      "BUILDING_MAINTENANCE": "Building Maintenance",
+      "CIVIL_DEFENSE": "Civil Defense",
+      "OTHER": "Other"
+    }
   }
 }

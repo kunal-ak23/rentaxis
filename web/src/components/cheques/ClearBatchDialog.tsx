@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import LeaseDialog from "@/components/leases/LeaseDialog";
 import { fmtAmount } from "@/lib/api/ledger";
-import { todayIso } from "@/components/leases/leaseMath";
+import { businessTodayIso, isAfterBusinessToday } from "@/lib/businessDate";
 import { ApiError, chequeApi, type Cheque } from "@/lib/api/leasing";
 import { useStatementCoverGuard } from "@/lib/statementCoverGuard";
+import { serverText } from "@/components/finance/bankrec/serverText";
 import { StatementCoverNotice } from "@/components/finance/StatementCoverNotice";
 
 /**
@@ -38,14 +39,14 @@ export default function ClearBatchDialog({ open, chequeIds, total, onClose, onDo
     const tCommon = useTranslations("Common");
     const cover = useStatementCoverGuard(tCommon);
 
-    const [date, setDate] = useState(todayIso());
+    const [date, setDate] = useState(businessTodayIso());
     const [narration, setNarration] = useState("");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         if (!open) return;
-        setDate(todayIso());
+        setDate(businessTodayIso());
         setNarration("");
         setError(null);
         cover.reset();
@@ -67,7 +68,7 @@ export default function ClearBatchDialog({ open, chequeIds, total, onClose, onDo
             if (cover.catchStatementCover(e)) {
                 // The notice + checkbox is now showing; the user resubmits.
             } else {
-                setError(e instanceof ApiError ? e.message : t("actionFailed"));
+                setError(e instanceof ApiError ? serverText(tCommon, e) || e.message : t("actionFailed"));
             }
         } finally {
             setBusy(false);
@@ -83,7 +84,7 @@ export default function ClearBatchDialog({ open, chequeIds, total, onClose, onDo
             confirmText={t("clearBatch")}
             cancelText={tl("cancel")}
             busy={busy}
-            confirmDisabled={chequeIds.length === 0 || !date}
+            confirmDisabled={chequeIds.length === 0 || !date || isAfterBusinessToday(date)}
             confirmTestId="clear-batch-confirm"
         >
             <div className="space-y-3">
@@ -98,8 +99,15 @@ export default function ClearBatchDialog({ open, chequeIds, total, onClose, onDo
                         type="date"
                         className={field}
                         value={date}
+                        max={businessTodayIso()}
+                        aria-invalid={isAfterBusinessToday(date)}
                         onChange={e => setDate(e.target.value)}
                     />
+                    {isAfterBusinessToday(date) && (
+                        <p role="alert" className="mt-1 text-[11px] text-error" data-testid="clear-batch-date-error">
+                            {t("dateAfterToday")}
+                        </p>
+                    )}
                 </div>
                 <div>
                     <label className={label} htmlFor="clear-batch-narration">{tl("narration")}</label>

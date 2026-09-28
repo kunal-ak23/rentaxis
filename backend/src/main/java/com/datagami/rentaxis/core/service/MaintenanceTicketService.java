@@ -1169,6 +1169,7 @@ public class MaintenanceTicketService {
     @Transactional
     public TicketAttachmentDTO uploadAttachment(UUID ticketId, MultipartFile file) throws IOException {
         MaintenanceTicket ticket = visibleTicket(ticketId, Access.WRITE);
+        requireAcceptableAttachment(file);
 
         byte[] bytes = file.getBytes();
         String ext = getExtension(file.getOriginalFilename());
@@ -1190,6 +1191,52 @@ public class MaintenanceTicketService {
         attachment.setUploadedAt(Instant.now());
 
         return mapAttachmentToDTO(attachmentRepository.save(attachment));
+    }
+
+    /**
+     * Extensions refused for a ticket attachment: executables, installers,
+     * scripts, and markup a browser would run when the stored file is opened
+     * (the stored name keeps the client's extension). Deliberately a blocklist:
+     * the manager app's picker sends any file, and the mobile apps send photos
+     * (incl. HEIC), videos, PDFs and office documents as
+     * application/octet-stream — none of those may be refused.
+     */
+    private static final Set<String> BLOCKED_ATTACHMENT_EXTENSIONS = Set.of(
+            ".exe", ".msi", ".com", ".scr", ".bat", ".cmd", ".pif", ".cpl", ".dll", ".sys",
+            ".ps1", ".psm1", ".vbs", ".vbe", ".js", ".mjs", ".jse", ".wsf", ".wsh", ".hta",
+            ".sh", ".bash", ".zsh", ".csh", ".command", ".jar", ".apk", ".app", ".dmg", ".pkg", ".deb", ".rpm",
+            ".html", ".htm", ".xhtml", ".shtml", ".svg", ".svgz", ".xml", ".php", ".jsp", ".asp", ".aspx", ".py", ".pl", ".rb");
+
+    /** Content types refused whatever the extension says (and the extension is checked whatever this says). */
+    private static final Set<String> BLOCKED_ATTACHMENT_CONTENT_TYPES = Set.of(
+            "application/x-msdownload", "application/x-msdos-program", "application/x-ms-installer",
+            "application/x-msi", "application/x-dosexec", "application/x-executable", "application/x-sh",
+            "application/x-bat", "application/javascript", "text/javascript", "application/ecmascript",
+            "text/html", "application/xhtml+xml", "image/svg+xml", "application/xml", "text/xml",
+            "application/java-archive", "application/vnd.android.package-archive", "application/x-httpd-php");
+
+    /**
+     * Break R2 portal2 F1 (review M3): an empty file used to be stored as a
+     * 0-byte attachment, and any type was accepted. Refused with a readable 400
+     * when the file is empty, or when either its extension or its declared
+     * content type is on the blocklist — both are checked, so a harmless-looking
+     * content type never launders a dangerous extension, or the reverse.
+     */
+    private static void requireAcceptableAttachment(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessRuleViolationException("The file is empty (0 bytes) and was not attached.");
+        }
+        String name = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().trim().toLowerCase(java.util.Locale.ROOT);
+        int dot = name.lastIndexOf('.');
+        String ext = dot >= 0 ? name.substring(dot) : "";
+        String type = file.getContentType() == null ? "" : file.getContentType().toLowerCase(java.util.Locale.ROOT);
+        int semi = type.indexOf(';');
+        if (semi >= 0) type = type.substring(0, semi);
+        type = type.trim();
+        if (BLOCKED_ATTACHMENT_EXTENSIONS.contains(ext) || BLOCKED_ATTACHMENT_CONTENT_TYPES.contains(type)) {
+            throw new BusinessRuleViolationException(
+                    "This type of file is not allowed as a ticket attachment. Attach a photo, video, PDF or document.");
+        }
     }
 
     /** An attachment on a ticket the caller cannot reach is "not found" to them. */

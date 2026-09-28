@@ -1,7 +1,7 @@
 "use client";
 
 import { focusFirstInvalidMoney } from "@/components/ui/NumberInput";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { AlertTriangle, CheckCircle2, ChevronRight, Loader2, RefreshCw, Save } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,8 @@ import {
     type ChargeType, type DraftLeaseInput, type DraftPaymentMethod,
     type InstallmentDistribution, type LeaseDetail,
 } from "@/lib/api/leasing";
+import { isLeaseChanged, sameExceptVersion } from "@/lib/leases/leaseVersion";
+import { serverText } from "@/components/finance/bankrec/serverText";
 
 /**
  * Editing a draft contract in place: its header fields and its particulars
@@ -84,11 +86,18 @@ type Props = {
     chargeTypes: ChargeType[];
     /** Called with the saved lease so the page can re-read its cheque grid too. */
     onSaved?: (saved: LeaseDetail) => void;
+    /**
+     * Break-it R2 F3: the draft changed in another tab since this form loaded it
+     * (409 lease.changed). The page reloads the lease, which resets the form to
+     * the saved contract; the message stays so the user knows why.
+     */
+    onStale?: () => void;
     className?: string;
 };
 
-export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, className }: Props) {
+export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, onStale, className }: Props) {
     const t = useTranslations("Leasing");
+    const tCommon = useTranslations("Common");
     const [header, setHeader] = useState<Header>(() => toHeader(lease));
     const propertyDefaultGrace = usePropertyDefaultGrace(lease.propertyId);
     const [rows, setRows] = useState<LineRow[]>(() => toRows(lease.lines));
@@ -99,7 +108,15 @@ export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, class
 
     const editable = lease.status === "DRAFT" || lease.status === "PENDING_SIGNATURE";
 
+    // Review A M3: a cheque-grid write hands the page a new version of the same lease;
+    // that is not a new draft to show, so the form (and what the user is typing) stays.
+    const formSource = useRef(lease);
     useEffect(() => {
+        if (sameExceptVersion(formSource.current, lease)) {
+            formSource.current = lease;
+            return;
+        }
+        formSource.current = lease;
         setHeader(toHeader(lease));
         setRows(toRows(lease.lines));
     }, [lease]);
@@ -159,11 +176,18 @@ export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, class
                 paymentReferenceNumber: header.paymentReferenceNumber || null,
                 rentVatApplicable: header.rentVatApplicable,
                 lines: toInputs(rows, { keepPeriods: false }),
+                // Break-it R2 F3: the version this form was loaded from; a newer draft is refused, not overwritten.
+                version: lease.version ?? null,
             };
             const updated = await leaseApi.updateDraft(lease.id, body);
             setSaved(true);
             onSaved?.(updated);
         } catch (e) {
+            if (isLeaseChanged(e)) {
+                setErrors([serverText(tCommon, e) || (e as ApiError).message]);
+                onStale?.();
+                return;
+            }
             setErrors(e instanceof ApiError ? [e.message] : [t("saveFailed")]);
         } finally {
             setSaving(false);

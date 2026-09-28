@@ -30,6 +30,8 @@ import { chequeApi } from "@/lib/api/leasing";
 import type { RegisterAction } from "@/components/cheques/registerActions";
 import BulkChequeUploadFlow from "@/components/cheques/BulkChequeUploadFlow";
 import PostLeaseDialog from "@/components/leases/PostLeaseDialog";
+import { isLeaseChanged, withVersion } from "@/lib/leases/leaseVersion";
+import { serverText } from "@/components/finance/bankrec/serverText";
 import AmendLinesDialog from "@/components/leases/AmendLinesDialog";
 import RenewLeaseDialog from "@/components/leases/RenewLeaseDialog";
 import ExtendLeaseDialog from "@/components/leases/ExtendLeaseDialog";
@@ -49,7 +51,7 @@ import VatScheduleTab from "@/components/leases/VatScheduleTab";
 import { defaultInstallmentsFor, fmtIsoDate, toRows, totalsOf } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi, settlementApi, terminationApi,
-    type ChargeType, type Cheque, type GiveNoticeInput, type LeaseAddendum, type LeaseDetail, type LeaseStatus, type SettlementResponse,
+    type ChargeType, type Cheque, type ChequeWrite, type GiveNoticeInput, type LeaseAddendum, type LeaseDetail, type LeaseStatus, type SettlementResponse,
 } from "@/lib/api/leasing";
 
 /**
@@ -159,6 +161,7 @@ export default function LeaseDetailPage() {
     const leaseId = params.id as string;
 
     const t = useTranslations("Leasing");
+    const tCommon = useTranslations("Common");
     const tChequesReason = useTranslations("Cheques");
     const tMaster = useTranslations("MasterData");
     const tBulkUpload = useTranslations("bulkChequeUpload");
@@ -185,6 +188,7 @@ export default function LeaseDetailPage() {
     const [chargeTypes, setChargeTypes] = useState<ChargeType[]>([]);
     const [renter, setRenter] = useState<Renter | null>(null);
     const [attachments, setAttachments] = useState<Attachment[]>([]);
+    const [docError, setDocError] = useState<string | null>(null);
     const [tickets, setTickets] = useState<Ticket[]>([]);
     const [settlement, setSettlement] = useState<SettlementResponse | null>(null);
     // F15-22: what has been written off as bad debt, shown apart from the settlement's balance due.
@@ -330,12 +334,27 @@ export default function LeaseDetailPage() {
         window.history.replaceState(window.history.state, "", url.toString());
     };
 
-    const runCheques = async (fn: () => Promise<Cheque[]>) => {
+    const runCheques = async (fn: () => Promise<Cheque[] | ChequeWrite>) => {
         setChequeBusy(true);
         setChequeError(null);
         try {
-            setCheques(await fn());
+            const r = await fn();
+            if (Array.isArray(r)) {
+                setCheques(r);
+            } else {
+                setCheques(r.cheques);
+                // Review A M3: a grid write moved the lease's version; this tab holds the new one,
+                // so its next save or its Post names it rather than refusing itself (409 lease.changed).
+                const version = r.version;
+                if (version != null) setLease(prev => (prev ? withVersion(prev, version) : prev));
+            }
         } catch (e) {
+            if (isLeaseChanged(e)) {
+                // Break-it R2 F3: the contract changed in another tab — say so and show it as it now is.
+                setChequeError(serverText(tCommon, e) || (e as ApiError).message);
+                await loadLease();
+                return;
+            }
             setChequeError(e instanceof ApiError ? e.message : t("saveFailed"));
         } finally {
             setChequeBusy(false);
@@ -441,9 +460,11 @@ export default function LeaseDetailPage() {
         }
     };
 
+    // Break-it R2 silent-mutation sweep: a refused upload/delete used to vanish without a word.
     const handleDocUpload = async (file: File) => {
         if (!docName.trim()) return;
         setUploadingDoc(true);
+        setDocError(null);
         try {
             const fd = new FormData();
             fd.append("file", file);
@@ -452,9 +473,25 @@ export default function LeaseDetailPage() {
             if (res.ok) {
                 setDocName("");
                 await loadAttachments();
+            } else {
+                setDocError(tMaster("documentUploadFailed", { name: file.name }));
             }
+        } catch {
+            setDocError(tMaster("documentUploadFailed", { name: file.name }));
         } finally {
             setUploadingDoc(false);
+        }
+    };
+
+    const handleDocDelete = async (attachmentId: string) => {
+        setDocError(null);
+        try {
+            const res = await fetch(`/api/proxy/v1/leases/attachments/${attachmentId}`, { method: "DELETE" });
+            // A refused delete keeps the row: the list is only re-read when it went.
+            if (res.ok) await loadAttachments();
+            else setDocError(tMaster("documentDeleteFailed"));
+        } catch {
+            setDocError(tMaster("documentDeleteFailed"));
         }
     };
 
@@ -738,6 +775,7 @@ export default function LeaseDetailPage() {
                                     onSaved={async () => {
                                         await loadLease();
                                     }}
+                                    onStale={() => { void loadLease(); }}
                                 />
                             </div>
                         )}
@@ -798,6 +836,7 @@ export default function LeaseDetailPage() {
                                     lease={lease}
                                     editable={lease.status === "DRAFT" && canDraft}
                                     onSaved={async () => { await loadLease(); }}
+                                    onStale={() => { void loadLease(); }}
                                 />
 
                             </div>
@@ -814,7 +853,7 @@ export default function LeaseDetailPage() {
                                     cheques={cheques}
                                     editable={drafting && canCheques && !readOnly}
                                     onChange={setCheques}
-                                    onGenerate={req => runCheques(() => leaseApi.generateCheques(leaseId, req))}
+                                    onGenerate={req => runCheques(() => leaseApi.generateCheques(leaseId, req, lease.version))}
                                     onGenerateNumbers={n => runCheques(() => leaseApi.generateChequeNumbers(leaseId, n))}
                                     propertyId={lease.propertyId}
                                     contractValueInclVat={totals.inclVat}
@@ -842,7 +881,7 @@ export default function LeaseDetailPage() {
                                         onClick={() => {
                                             // Break-it round 1 (money) F1: never save a refused amount as the 0 it reports.
                                             if (focusFirstInvalidMoney(document)) return;
-                                            runCheques(() => leaseApi.saveCheques(leaseId, toChequeRows(cheques)));
+                                            runCheques(() => leaseApi.saveCheques(leaseId, toChequeRows(cheques), lease.version));
                                         }}
                                         disabled={chequeBusy || !draftRowsAreValid(cheques)}
                                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border border-border text-foreground hover:bg-input/40 cursor-pointer disabled:opacity-50"
@@ -943,6 +982,9 @@ export default function LeaseDetailPage() {
                                     </h2>
                                 </div>
                                 <div className="p-4">
+                                    {docError && (
+                                        <p role="alert" data-testid="lease-doc-error" className="mb-3 text-xs text-error">{docError}</p>
+                                    )}
                                     {attachments.length > 0 ? (
                                         <div className="space-y-2 mb-4">
                                             {attachments.map(doc => (
@@ -960,10 +1002,7 @@ export default function LeaseDetailPage() {
                                                             <Download size={13} />
                                                         </button>
                                                         <button
-                                                            onClick={async () => {
-                                                                await fetch(`/api/proxy/v1/leases/attachments/${doc.id}`, { method: "DELETE" });
-                                                                await loadAttachments();
-                                                            }}
+                                                            onClick={() => handleDocDelete(doc.id)}
                                                             aria-label={tMaster("delete")}
                                                             className="p-1 text-error hover:text-error/80 cursor-pointer"
                                                         >
@@ -1115,6 +1154,7 @@ export default function LeaseDetailPage() {
                 open={postOpen}
                 lease={lease}
                 onClose={() => setPostOpen(false)}
+                onStale={() => { void loadLease(); }}
                 onPosted={async res => {
                     setPostOpen(false);
                     setBanner(t("postedBanner", { tco: res.tcoEntryNumber }));

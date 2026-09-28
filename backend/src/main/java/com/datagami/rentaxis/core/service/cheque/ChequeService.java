@@ -108,6 +108,9 @@ import java.util.UUID;
 @Service
 public class ChequeService {
 
+    private static final String DEPOSIT_NOT_YET = "A cheque cannot have been banked yet, and nothing was deposited.";
+    private static final String CLEAR_NOT_YET = "Funds cannot have cleared yet, and nothing was cleared.";
+
     /** Break-it round 1 (money) F4: the one-year window on manual dates, on the app clock. */
     private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates = com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system();
 
@@ -369,6 +372,8 @@ public class ChequeService {
         requireStatus(cheque, "deposit", ChequeStatus.REGISTERED);
         requireDepositable(cheque);
         if (replay == null) {
+            // Break-it R2 money2 F1/F2: the slip records a visit to the bank that happened.
+            manualDates.requireNotAfterToday(r.dateOrToday(), "deposit", DEPOSIT_NOT_YET);
             requireNotPresentedEarly(cheque, r.dateOrToday());
             // F14-64: the slip cannot predate the row, the same rule clearing applies.
             requireNotDepositedBeforeBooked(cheque, bookedOn(cheque), r.dateOrToday());
@@ -409,7 +414,10 @@ public class ChequeService {
         // Read before the loop so the rows can be checked against the date the
         // clerk actually chose, not just against each other. With
         // useChequeDates (#10) that is each row's own cheque date instead.
-        LocalDate today = LocalDate.now();
+        // Break-it R2 money2 F1/F2: one slip date for the pile, and it has happened.
+        if (!Boolean.TRUE.equals(request.useChequeDates())) {
+            manualDates.requireNotAfterToday(request.dateOrToday(), "deposit", DEPOSIT_NOT_YET);
+        }
         List<String> problems = new ArrayList<>();
         for (UUID id : ids) {
             Cheque c = byId.get(id);
@@ -430,7 +438,7 @@ public class ChequeService {
             } else if (c.getMode() != ChequeMode.PDC) {
                 problems.add(label(c) + " is a " + c.getMode() + " receipt, not a cheque");
             } else if (Boolean.TRUE.equals(request.useChequeDates()) && c.getChequeDate() != null
-                    && c.getChequeDate().isAfter(today)) {
+                    && manualDates.isAfterToday(c.getChequeDate())) {
                 // Its own date is still to come: it cannot have been banked, and
                 // banking it today would be the early presentation below.
                 problems.add(label(c) + " is dated " + c.getChequeDate()
@@ -498,10 +506,7 @@ public class ChequeService {
         // also hand the late-payment rule a day that has not happened yet.
         LocalDate today = LocalDate.now(clock);
         LocalDate date = request.clearingDate() != null ? request.clearingDate() : today;
-        if (date.isAfter(today)) {
-            throw new BusinessRuleViolationException("The clearing date " + date
-                    + " is in the future. Funds cannot have cleared yet, and nothing was cleared.");
-        }
+        manualDates.requireNotAfterToday(date, "clearing", CLEAR_NOT_YET);
 
         List<Cheque> cheques;
         try {
@@ -587,7 +592,11 @@ public class ChequeService {
         Cheque cheque = lock(chequeId);
         Lease lease = managedLeaseOf(cheque);
         requireStatus(cheque, "clear", ChequeStatus.DEPOSITED);
-        if (replay == null) requireNotClearedEarly(cheque, r.dateOrToday());
+        if (replay == null) {
+            // Break-it R2 money2 F2: the batch clear's rule, now on the single clear too.
+            manualDates.requireNotAfterToday(r.dateOrToday(), "clearing", CLEAR_NOT_YET);
+            requireNotClearedEarly(cheque, r.dateOrToday());
+        }
 
         applyClearing(lease, cheque, r.dateOrToday(), r.debitAccountId(), r.notes(), replay, false, false,
                 replay == null ? evidence : StatementEvidence.EXEMPT);
@@ -700,6 +709,11 @@ public class ChequeService {
         }
 
         LocalDate date = r.dateOrToday();
+        // Break-it R2 money2 F1: a return the bank has not made yet cannot be recorded
+        // (and a 2126 typo used to take CBR-26/1 and block every 2026 bounce).
+        if (replay == null) {
+            manualDates.requireNotAfterToday(date, "bounce", "A cheque cannot have been returned yet, and nothing was bounced.");
+        }
         BigDecimal amount = cheque.getAmount();
         String narration = LeaseChequeRegistrar.narrationOf(cheque);
         Line credit;

@@ -103,7 +103,8 @@ public class PenaltyAssessmentController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
     public ResponseEntity<PenaltyAssessmentDTO> approve(@PathVariable UUID id,
                                                         @RequestBody(required = false) PenaltyDecisionRequest request) {
-        return ResponseEntity.ok(service.approve(id, body(request).date()));
+        PenaltyDecisionRequest r = body(request);
+        return ResponseEntity.ok(service.approve(id, r.date(), r.expectedAmount()));
     }
 
     @PostMapping("/{id}/waive")

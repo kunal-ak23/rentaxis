@@ -44,8 +44,19 @@ public class TicketChargesService {
     public record Bill(UUID voucherId, String voucherNumber, String invoiceNumber, LocalDate date, String vendor,
                        String vendorAr, BigDecimal net, BigDecimal vat, String status) { }
 
+    /**
+     * @param rechargeable break-it R2 money2 F6: what may still be recharged — the posted
+     *                     bills' net less every live recharge (proposed, approved or
+     *                     written off; waived and reversed ones are gone), never below 0.
+     */
     public record TicketCharges(UUID ticketId, String reference, UUID leaseId, List<Bill> bills, List<Bill> candidates,
-                                BigDecimal billsNet, List<PenaltyAssessmentDTO> recharges) { }
+                                BigDecimal billsNet, List<PenaltyAssessmentDTO> recharges, BigDecimal rechargeable) { }
+
+    /** Recharges that still stand against the bill: not waived, not reversed. */
+    private static final EnumSet<com.datagami.rentaxis.domain.entity.enums.PenaltyAssessmentStatus> LIVE_RECHARGE =
+            EnumSet.of(com.datagami.rentaxis.domain.entity.enums.PenaltyAssessmentStatus.PROPOSED,
+                    com.datagami.rentaxis.domain.entity.enums.PenaltyAssessmentStatus.APPROVED,
+                    com.datagami.rentaxis.domain.entity.enums.PenaltyAssessmentStatus.WRITTEN_OFF);
 
     public record RechargeRequest(@com.datagami.rentaxis.api.validation.Money(positive = true) BigDecimal amount, Boolean vatable, String description) { }
 
@@ -74,8 +85,12 @@ public class TicketChargesService {
         BigDecimal net = bills.stream().filter(b -> "POSTED".equals(b.status())).map(Bill::net)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         Lease lease = leaseOf(t);
+        List<PenaltyAssessmentDTO> recharges = charges.forSource(SOURCE, t.getId());
+        BigDecimal recharged = recharges.stream().filter(c -> LIVE_RECHARGE.contains(c.status()))
+                .map(PenaltyAssessmentDTO::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal rechargeable = net.subtract(recharged).max(BigDecimal.ZERO).setScale(2, java.math.RoundingMode.HALF_UP);
         return new TicketCharges(t.getId(), t.getReference(), lease == null ? null : lease.getId(), bills, bills(t, false),
-                net, charges.forSource(SOURCE, t.getId()));
+                net, recharges, rechargeable);
     }
 
     /** Links a purchase invoice to the ticket (one ticket per invoice). */
@@ -100,6 +115,9 @@ public class TicketChargesService {
     @Transactional
     public TicketCharges unlink(UUID ticketId, UUID voucherId) {
         MaintenanceTicket t = ticket(ticketId);
+        // Review M6: serialised with recharge, so a recharge never lands against a
+        // bill that is being unlinked at the same moment.
+        lockTicketRow(t);
         jdbc.update("update vouchers set maintenance_ticket_id = null where tenant_id = :t and id = :v and maintenance_ticket_id = :ticket",
                 params().addValue("ticket", t.getId()).addValue("v", voucherId));
         return get(ticketId);
@@ -114,10 +132,20 @@ public class TicketChargesService {
             throw new BusinessRuleViolationException("This ticket's unit has no live lease to recharge.",
                     "ticket.noLease", Map.of());
         }
+        // Break-it R2 money2 F6: the ticket row, FOR UPDATE, serialises recharges of its
+        // bills — two tabs both reading "750 left" and both proposing 750 cannot happen.
+        lockTicketRow(t);
         TicketCharges now = get(ticketId);
-        BigDecimal amount = r != null && r.amount() != null ? r.amount() : now.billsNet();
+        BigDecimal amount = r != null && r.amount() != null ? r.amount() : now.rechargeable();
         if (amount == null || amount.signum() <= 0) {
+            if (now.rechargeable().signum() <= 0 && (r == null || r.amount() == null)) {
+                throw overRecharge(now);
+            }
             throw new BusinessRuleViolationException("Enter the amount to recharge.", "ticket.rechargeAmount", Map.of());
+        }
+        // Σ live recharges ≤ the bills' net: a bill is recharged at most once over.
+        if (amount.compareTo(now.rechargeable()) > 0) {
+            throw overRecharge(now);
         }
         String ref = t.getReference() != null ? t.getReference() : t.getId().toString().substring(0, 8);
         String description = "Maintenance recharge – ticket " + ref + (t.getTitle() == null ? "" : ": " + t.getTitle())
@@ -128,6 +156,30 @@ public class TicketChargesService {
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /** The ticket row lock recharge, unlink and bill reversal share ({@link TicketRowLock}). */
+    private void lockTicketRow(MaintenanceTicket t) {
+        if (rowLock != null) {
+            rowLock.lock(t.getId());
+        } else {
+            new TicketRowLock(jdbc).lock(t.getId());
+        }
+    }
+
+    private TicketRowLock rowLock;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setTicketRowLock(TicketRowLock rowLock) {
+        this.rowLock = rowLock;
+    }
+
+    private static BusinessRuleViolationException overRecharge(TicketCharges now) {
+        String left = now.rechargeable().toPlainString();
+        String bills = now.billsNet().setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
+        return new BusinessRuleViolationException("Only " + left + " of this ticket's bills (" + bills
+                + ") is left to recharge; the rest has already been recharged. Nothing was recharged.",
+                "ticket.rechargeExceedsBill", Map.of("remaining", left, "bills", bills));
+    }
 
     private MaintenanceTicket ticket(UUID id) {
         MaintenanceTicket t = tickets.findById(id).orElseThrow(() -> new NotFoundException("Ticket not found"));

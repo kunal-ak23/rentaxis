@@ -28,11 +28,56 @@ public final class PhoneNumbers {
     /** E.164: a leading '+' then 8-15 digits. Applied after stripping spaces/hyphens. */
     private static final Pattern E164 = Pattern.compile("\\+\\d{8,15}");
 
+    /** Arabic-Indic digits ٠-٩ (U+0660-0669). */
+    private static final int ARABIC_INDIC_ZERO = 0x0660;
+    private static final int ARABIC_INDIC_NINE = 0x0669;
+    /** Extended (Persian) Arabic-Indic digits ۰-۹ (U+06F0-06F9). */
+    private static final int EXT_ARABIC_INDIC_ZERO = 0x06F0;
+    private static final int EXT_ARABIC_INDIC_NINE = 0x06F9;
+
     private PhoneNumbers() {
     }
 
     /**
-     * Strips spaces and hyphens; maps blank to {@code null}.
+     * Break-it round 2 M6: the web rule ({@code web/src/lib/phone.ts}) is a JS
+     * regex whose {@code \s} matches every Unicode space — including the
+     * non-breaking space (U+00A0) and narrow no-break space (U+202F) that a phone
+     * pasted from iOS or WhatsApp carries between groups — while everything below
+     * used Java's ASCII-only {@code \s} and {@code \d}. A number that passed the
+     * web check could still 400 here, in English, on a UI that had just accepted
+     * it; the reverse also let non-ASCII (Arabic-Indic) digits reach storage.
+     *
+     * <p>Maps every Unicode space/whitespace character to a plain {@code ' '} and
+     * every Arabic-Indic or extended (Persian) Arabic-Indic digit to its ASCII
+     * digit, before anything is pattern-matched or stored. Called first by every
+     * normalizer below, and by {@code UpdateProfileRequest}'s canonical
+     * constructor so the {@code @Pattern} validation on {@code PUT /auth/me} sees
+     * the same normalized text this class stores — normalize-then-validate, not
+     * validate-then-normalize.
+     */
+    public static String normalizeUnicode(String phone) {
+        if (phone == null) {
+            return null;
+        }
+        StringBuilder out = new StringBuilder(phone.length());
+        for (int i = 0; i < phone.length(); i++) {
+            char c = phone.charAt(i);
+            if (c >= ARABIC_INDIC_ZERO && c <= ARABIC_INDIC_NINE) {
+                out.append((char) ('0' + (c - ARABIC_INDIC_ZERO)));
+            } else if (c >= EXT_ARABIC_INDIC_ZERO && c <= EXT_ARABIC_INDIC_NINE) {
+                out.append((char) ('0' + (c - EXT_ARABIC_INDIC_ZERO)));
+            } else if (Character.isSpaceChar(c) || Character.isWhitespace(c)) {
+                out.append(' ');
+            } else {
+                out.append(c);
+            }
+        }
+        return out.toString();
+    }
+
+    /**
+     * Normalizes Unicode spaces/digits (see {@link #normalizeUnicode}), then strips
+     * spaces and hyphens; maps blank to {@code null}.
      *
      * <p>Lossless in the only sense that matters here — it removes presentation,
      * never digits — so it is safe to apply to every role. Blank collapses to
@@ -44,7 +89,7 @@ public final class PhoneNumbers {
         if (phone == null) {
             return null;
         }
-        String compacted = phone.replaceAll("[\\s-]", "");
+        String compacted = normalizeUnicode(phone).replaceAll("[\\s-]", "");
         return compacted.isEmpty() ? null : compacted;
     }
 

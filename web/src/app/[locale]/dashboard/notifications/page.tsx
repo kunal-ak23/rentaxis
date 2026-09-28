@@ -59,6 +59,7 @@ export default function NotificationsPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(25);
     const [markingAll, setMarkingAll] = useState(false);
+    const [markError, setMarkError] = useState(false);
     // Monotonic request id. Reads and tab/page switches both fire fetches, and
     // responses can land out of order — an older unreadOnly payload arriving
     // last used to resurrect an already-read row, or overwrite the All tab with
@@ -117,8 +118,14 @@ export default function NotificationsPage() {
 
     const markAllRead = async () => {
         setMarkingAll(true);
+        setMarkError(false);
         try {
-            await fetch("/api/proxy/v1/notifications/read-all", { method: "PUT" });
+            const res = await fetch("/api/proxy/v1/notifications/read-all", { method: "PUT" });
+            // A refused PUT used to mark everything read on screen anyway.
+            if (!res.ok) {
+                setMarkError(true);
+                return;
+            }
             if (filter === "UNREAD") {
                 setNotifications([]);
                 setTotalItems(0);
@@ -126,7 +133,9 @@ export default function NotificationsPage() {
             } else {
                 setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
             }
-        } catch { /* ignore */ } finally {
+        } catch {
+            setMarkError(true);
+        } finally {
             setMarkingAll(false);
         }
     };
@@ -134,9 +143,12 @@ export default function NotificationsPage() {
     const handleClick = async (n: Notification) => {
         // Mark as read
         if (!n.isRead) {
+            setMarkError(false);
             try {
-                await fetch(`/api/proxy/v1/notifications/${n.id}/read`, { method: "PUT" });
-                if (filter === "UNREAD") {
+                const res = await fetch(`/api/proxy/v1/notifications/${n.id}/read`, { method: "PUT" });
+                if (!res.ok) {
+                    setMarkError(true);
+                } else if (filter === "UNREAD") {
                     // Drop the row locally for immediate feedback, then re-sync
                     // from the server. totalItems is an *inference* (see
                     // fetchNotifications): a full page adds a synthetic +1 so the
@@ -155,7 +167,9 @@ export default function NotificationsPage() {
                         prev.map((x) => (x.id === n.id ? { ...x, isRead: true } : x))
                     );
                 }
-            } catch { /* ignore */ }
+            } catch {
+                setMarkError(true);
+            }
         }
 
         // Navigate based on referenceType
@@ -211,6 +225,12 @@ export default function NotificationsPage() {
                     </button>
                 )}
             </div>
+
+            {markError && (
+                <div role="alert" className="mb-4 bg-error/10 border border-error/20 text-error text-xs font-medium rounded-lg px-4 py-3">
+                    {t("markReadFailed")}
+                </div>
+            )}
 
             {/* Filter Tabs */}
             <div className="flex items-center gap-2 mb-6">

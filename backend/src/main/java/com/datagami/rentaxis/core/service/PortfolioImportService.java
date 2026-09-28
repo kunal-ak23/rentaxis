@@ -295,6 +295,10 @@ public class PortfolioImportService {
                 startDate = parseDate(startDateStr);
                 if (startDate == null) {
                     errors.add(new ImportErrorDTO("Leases", rowNum, "StartDate", DATE_HELP));
+                } else if (!com.datagami.rentaxis.core.service.ledger.PostingService.isNumberable(startDate)) {
+                    // Break-it R2 money2 review N2: the posted contract would be refused later.
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "StartDate",
+                            com.datagami.rentaxis.core.service.ledger.PostingService.outOfRangeSentence("StartDate", startDate)));
                 }
             }
             if (endDateStr.isEmpty()) {
@@ -303,6 +307,9 @@ public class PortfolioImportService {
                 endDate = parseDate(endDateStr);
                 if (endDate == null) {
                     errors.add(new ImportErrorDTO("Leases", rowNum, "EndDate", DATE_HELP));
+                } else if (!com.datagami.rentaxis.core.service.ledger.PostingService.isNumberable(endDate)) {
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "EndDate",
+                            com.datagami.rentaxis.core.service.ledger.PostingService.outOfRangeSentence("EndDate", endDate)));
                 }
             }
             if (startDate != null && endDate != null && !endDate.isAfter(startDate)) {
@@ -706,7 +713,7 @@ public class PortfolioImportService {
 
     @Async("importExecutor")
     public void processImportAsync(byte[] fileBytes, ImportJob job, UUID tenantId) {
-        process(fileBytes, job, tenantId, null);
+        process(fileBytes, job, tenantId, null, false);
     }
 
     /**
@@ -718,10 +725,27 @@ public class PortfolioImportService {
      */
     @Async("importExecutor")
     public void processImportAsync(byte[] fileBytes, ImportJob job, UUID tenantId, Authentication auth) {
-        process(fileBytes, job, tenantId, auth);
+        process(fileBytes, job, tenantId, auth, false);
     }
 
-    private void process(byte[] fileBytes, ImportJob job, UUID tenantId, Authentication auth) {
+    /**
+     * The cut-over upload's own entry point ({@code PortfolioImportController#importCutOver},
+     * {@code /import/portfolio/cutover}). Unlike the shared overloads above, this
+     * never sniffs the workbook to pick a dialect — the caller already knows, from
+     * the endpoint it hit, that the file is meant to be a cut-over workbook. A
+     * workbook uploaded here that is missing its {@code Contracts} sheet is
+     * therefore validated (and fails) as a cut-over workbook, naming the sheet
+     * this dialect actually expects, rather than falling through to the v1
+     * portfolio sheet set (which is what {@link ContractImportValidator#isV2Workbook}
+     * would otherwise decide, seeing no {@code Contracts} sheet) and reporting a
+     * missing {@code Leases} sheet the cut-over template never had (round-2 F5).
+     */
+    @Async("importExecutor")
+    public void processCutoverImportAsync(byte[] fileBytes, ImportJob job, UUID tenantId) {
+        process(fileBytes, job, tenantId, null, true);
+    }
+
+    private void process(byte[] fileBytes, ImportJob job, UUID tenantId, Authentication auth, boolean forceCutover) {
         // Set tenant context for this async thread
         TenantContextHolder.setTenantId(tenantId);
         // Through WorkbookGuard, never `new XSSFWorkbook` directly: an uploaded
@@ -734,7 +758,7 @@ public class PortfolioImportService {
             job.setStatus("VALIDATING");
             importJobRepository.save(job);
 
-            ValidationOutcome outcome = validateAll(workbook);
+            ValidationOutcome outcome = forceCutover ? contractValidator.validate(workbook) : validateAll(workbook);
             if (!outcome.errors().isEmpty()) {
                 job.setStatus("VALIDATION_FAILED");
                 job.setErrors(objectMapper.writeValueAsString(outcome.errors()));

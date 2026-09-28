@@ -254,4 +254,75 @@ class MaintenanceTicketServiceTest {
         assertThat(dto.getFileSize()).isEqualTo(2048L);
         assertThat(dto.getUploadedAt()).isEqualTo(Instant.parse("2026-08-01T10:00:00Z"));
     }
+
+    // ---- uploadAttachment: break R2 portal2 F1 / review M3 ----
+    // Empty files and clearly dangerous types are refused with a readable 400;
+    // anything a phone or the manager app's any-file picker sends (images incl.
+    // HEIC, videos, PDF, office docs — often as application/octet-stream,
+    // Dio's default) is still stored.
+
+    @org.junit.jupiter.api.io.TempDir
+    java.nio.file.Path attachmentDir;
+
+    private MaintenanceTicket reachableTicket() {
+        MaintenanceTicket t = ticket(UUID.randomUUID(), null);
+        when(ticketRepository.findById(t.getId())).thenReturn(Optional.of(t));
+        when(attachmentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "localStoragePath", attachmentDir.toString());
+        return t;
+    }
+
+    private static org.springframework.mock.web.MockMultipartFile upload(String name, String type, int size) {
+        return new org.springframework.mock.web.MockMultipartFile("file", name, type, new byte[size]);
+    }
+
+    @Test
+    void uploadAttachment_refusesAnEmptyFile() {
+        MaintenanceTicket t = reachableTicket();
+        assertThatThrownBy(() -> service.uploadAttachment(t.getId(), upload("photo.jpg", "image/jpeg", 0)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("empty");
+        verify(attachmentRepository, never()).save(any());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+            "payload.exe, application/octet-stream",
+            "payload.exe, image/jpeg",               // a lying content type does not launder a dangerous extension
+            "photo.jpg, application/x-msdownload",   // nor does a harmless extension launder a dangerous type
+            "page.html, text/html",
+            "page.jpg, text/html",
+            "script.js, application/javascript",
+            "run.sh, application/octet-stream",
+            "drawing.svg, image/svg+xml",
+            "app.apk, application/vnd.android.package-archive",
+    })
+    void uploadAttachment_refusesADangerousType(String name, String type) {
+        MaintenanceTicket t = reachableTicket();
+        assertThatThrownBy(() -> service.uploadAttachment(t.getId(), upload(name, type, 16)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("not allowed");
+        verify(attachmentRepository, never()).save(any());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+            "photo.jpg, image/jpeg",
+            "IMG_0001.HEIC, application/octet-stream",
+            "IMG_0002.heif, image/heif",
+            "clip.mov, application/octet-stream",
+            "clip.mp4, video/mp4",
+            "report.pdf, application/pdf",
+            "quote.docx, application/octet-stream",
+            "costs.xlsx, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "notes.txt, text/plain",
+            "noext, application/octet-stream",
+            "photo.png, ''",
+    })
+    void uploadAttachment_storesWhatThePhoneAndManagerAppsSend(String name, String type) throws Exception {
+        MaintenanceTicket t = reachableTicket();
+        TicketAttachmentDTO dto = service.uploadAttachment(t.getId(), upload(name, type, 16));
+        assertThat(dto.getFileSize()).isEqualTo(16L);
+        verify(attachmentRepository).save(any());
+    }
 }

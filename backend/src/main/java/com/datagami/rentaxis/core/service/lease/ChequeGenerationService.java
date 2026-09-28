@@ -381,7 +381,30 @@ public class ChequeGenerationService {
      */
     @Transactional
     public List<ChequeDTO> generate(UUID leaseId, GenerateChequesRequest request) {
-        return generateForSystemImport(draftLease(leaseId), request);
+        return generate(leaseId, request, null).cheques();
+    }
+
+    /**
+     * What an interactive grid write answers with: the rows, and the lease version
+     * the write left behind (review A M3) — the screen names it on its next write.
+     */
+    public record VersionedCheques(List<ChequeDTO> cheques, Long leaseVersion) {
+    }
+
+    /**
+     * Break-it round 2 F3: the same, refused (409) when the lease is no longer at
+     * {@code expectedVersion} — the version the grid's screen loaded; null = not checked.
+     * Review A M3: the grid is the contract's payment plan, so cutting it moves the
+     * lease's version (a Post dialog opened on the old grid is refused).
+     */
+    @Transactional
+    public VersionedCheques generate(UUID leaseId, GenerateChequesRequest request, Long expectedVersion) {
+        Lease lease = draftLease(leaseId);
+        com.datagami.rentaxis.core.service.LeaseService.requireVersion(lease, expectedVersion);
+        leaseService.bumpVersion(lease);
+        List<ChequeDTO> rows = generateForSystemImport(lease, request);
+        leaseRepository.flush();
+        return new VersionedCheques(rows, lease.getVersion());
     }
 
     /**
@@ -662,7 +685,21 @@ public class ChequeGenerationService {
      */
     @Transactional
     public List<ChequeDTO> saveRows(UUID leaseId, List<ChequeRowInput> rows) {
-        return saveRowsForSystemImport(draftLease(leaseId), rows);
+        return saveRows(leaseId, rows, null).cheques();
+    }
+
+    /**
+     * Break-it round 2 F3: {@link #saveRows} checked against the version the grid loaded (null = not checked).
+     * Review A M3: a save that changes only cheque dates or numbers still moves the lease's version.
+     */
+    @Transactional
+    public VersionedCheques saveRows(UUID leaseId, List<ChequeRowInput> rows, Long expectedVersion) {
+        Lease lease = draftLease(leaseId);
+        com.datagami.rentaxis.core.service.LeaseService.requireVersion(lease, expectedVersion);
+        leaseService.bumpVersion(lease);
+        List<ChequeDTO> saved = saveRowsForSystemImport(lease, rows);
+        leaseRepository.flush();
+        return new VersionedCheques(saved, lease.getVersion());
     }
 
     /**

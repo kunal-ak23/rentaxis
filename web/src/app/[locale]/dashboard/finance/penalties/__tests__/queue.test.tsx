@@ -104,6 +104,28 @@ describe("Penalties queue page — access", () => {
 });
 
 describe("Penalties queue page — decisions", () => {
+    /** Break-it R2 money2 F5 (PN5): tab B reduced it; tab A's approve is refused, reloads and says so. */
+    it("a proposal changed in another tab is reloaded, not charged", async () => {
+        const { ApiError } = await import("@/lib/api/leasing");
+        api.approve.mockRejectedValueOnce(new ApiError(409, "changed",
+            JSON.stringify({ code: "penalty.changed", message: "This charge changed since you opened it" })));
+        renderPage();
+        (await screen.findByTestId("penalty-approve-0")).click();
+        (await screen.findByTestId("penalty-approve-confirm")).click();
+        expect(await screen.findByTestId("penalty-error")).toHaveTextContent(/changed in another window/i);
+        expect(api.list.mock.calls.length).toBeGreaterThanOrEqual(2);
+        expect(api.approve).toHaveBeenCalledTimes(1);
+    });
+
+    /** Break-it R2 money2 F2: an approval dated more than a year ahead is refused before it is sent. */
+    it("an approval date more than a year ahead cannot be confirmed", async () => {
+        renderPage();
+        (await screen.findByTestId("penalty-approve-0")).click();
+        fireEvent.change(await screen.findByTestId("penalty-decision-date"), { target: { value: "2126-01-01" } });
+        expect(await screen.findByTestId("penalty-decision-date-error")).toBeInTheDocument();
+        expect(screen.getByTestId("penalty-approve-confirm")).toBeDisabled();
+    });
+
     it("Approve needs a confirm with a date before it calls the API", async () => {
         renderPage();
         (await screen.findByTestId("penalty-approve-0")).click();
@@ -115,7 +137,7 @@ describe("Penalties queue page — decisions", () => {
         // are both strings, and decisionNote defaults to "" — which is itself a
         // String — so a swap that wired the note in place of the date would still
         // satisfy expect.any(String) here.
-        await waitFor(() => expect(api.approve).toHaveBeenCalledWith("pen-1", todayIso()));
+        await waitFor(() => expect(api.approve).toHaveBeenCalledWith("pen-1", todayIso(), 500));
     });
 
     it("Waive needs a confirm with a note before it calls the API", async () => {

@@ -21,11 +21,13 @@ import ChequeGrid, { draftRowsAreValid, toChequeRows } from "@/components/leases
 import { blankLine, followRentVat, linesAreValid, splitLineErrors, toInputs, toRows, todayIso, totalsOf, withRentVat, type LineRow } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi,
-    type ChargeType, type Cheque, type DraftLeaseInput, type DraftPaymentMethod,
+    type ChargeType, type Cheque, type ChequeWrite, type DraftLeaseInput, type DraftPaymentMethod,
     type GenerateChequesRequest, type InstallmentDistribution, type LeaseDetail,
     type PostLeaseDryRunResponse,
 } from "@/lib/api/leasing";
 import type { RenterOption, UnitOption } from "@/lib/api/lookup";
+import { isLeaseChanged, withVersion } from "@/lib/leases/leaseVersion";
+import { serverText } from "@/components/finance/bankrec/serverText";
 import { CONFIRM_TERM_YEARS, MAX_TERM_YEARS, termExceedsYears, termYears } from "@/lib/leaseTerm";
 
 /**
@@ -77,6 +79,35 @@ const initialTerms: Terms = {
     rentVatApplicable: false,
 };
 
+/** Only the two the draft endpoint admits — see `DraftPaymentMethod`. */
+function asDraftMethod(v: string | null | undefined): DraftPaymentMethod {
+    return v === "ONLINE" ? "ONLINE" : "CHEQUE";
+}
+
+/**
+ * Review A M4: the Terms step as the saved draft has it. After a 409 lease.changed
+ * the wizard re-reads the draft; keeping the header it had would write those stale
+ * dates and payment terms back with the new version on the next save.
+ */
+function termsFromLease(lease: LeaseDetail): Terms {
+    return {
+        agreementDate: (lease.agreementDate || "").slice(0, 10),
+        contractDate: (lease.contractDate || "").slice(0, 10),
+        startDate: (lease.startDate || "").slice(0, 10),
+        endDate: (lease.endDate || "").slice(0, 10),
+        // An inherited grace stays null so it keeps inheriting (as the draft editor does).
+        gracePeriodDays: lease.gracePeriodOverridden === false ? null : lease.gracePeriodDays ?? null,
+        paymentTerms: lease.paymentTerms ?? initialTerms.paymentTerms,
+        firstDueDate: (lease.firstDueDate || "").slice(0, 10),
+        installmentDistribution: lease.installmentDistribution ?? initialTerms.installmentDistribution,
+        paymentMethod: asDraftMethod(lease.paymentMethod),
+        depositPaymentMethod: asDraftMethod(lease.depositPaymentMethod),
+        ejariNumber: lease.ejariNumber ?? "",
+        paymentReferenceNumber: lease.paymentReferenceNumber ?? "",
+        rentVatApplicable: !!lease.rentVatApplicable,
+    };
+}
+
 const STEPS = [
     { key: "parties", labelKey: "stepParties", icon: User },
     { key: "terms", labelKey: "stepTerms", icon: Calendar },
@@ -95,6 +126,7 @@ type Props = {
 
 export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     const t = useTranslations("Leasing");
+    const tCommon = useTranslations("Common");
     const router = useRouter();
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
@@ -226,6 +258,34 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
      * existing draft is a PUT — coming back to the charges must not leave a
      * second abandoned lease behind.
      */
+    /**
+     * Break-it R2 F2/F3: the draft changed elsewhere since this wizard last read it
+     * (409 lease.changed). Read it back — its lines, grid and (at review) its
+     * figures — so the user reviews what is saved now rather than overwriting it.
+     */
+    const reloadChanged = async (id: string) => {
+        const fresh = await leaseApi.get(id);
+        setLease(fresh);
+        // Review A M4: the header too — parties and terms — not only the lines.
+        setTerms(termsFromLease(fresh));
+        setContractDateTouched(true);
+        setLongTermAck(`${(fresh.startDate || "").slice(0, 10)}|${(fresh.endDate || "").slice(0, 10)}`);
+        if (fresh.unitId !== unitId) {
+            setUnitId(fresh.unitId);
+            setSelectedUnit({
+                id: fresh.unitId, unitNumber: fresh.unitIdentifier ?? "", propertyId: fresh.propertyId,
+                propertyName: fresh.propertyName, propertyType: null, buildingId: null, buildingName: null, status: null,
+            });
+        }
+        if (fresh.renterId !== renterId) {
+            setRenterId(fresh.renterId);
+            setSelectedRenter({ id: fresh.renterId, nameEn: fresh.renterName ?? "", nameAr: null, phone: null, email: null });
+        }
+        setRows(toRows(fresh.lines));
+        setCheques(await leaseApi.cheques(id));
+        if (STEPS[stepIdx].key === "review") setDry(await leaseApi.dryRunPost(id));
+    };
+
     const saveLines = async () => {
         // Break-it round 1 (money) F1: a refused amount (1000.555, "1,5") reports 0;
         // it must not be saved as that 0 — take the user to it instead.
@@ -235,7 +295,9 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         setServerErrors([]);
         try {
             const had = cheques.length > 0;
-            const saved = lease ? await leaseApi.updateDraft(lease.id, body()) : await leaseApi.createDraft(body());
+            const saved = lease
+                ? await leaseApi.updateDraft(lease.id, { ...body(), version: lease.version ?? null })
+                : await leaseApi.createDraft(body());
             setLease(saved);
             // The server fills each line's credit account from the property's
             // role mapping; reading the lines back is how the grid learns it.
@@ -246,7 +308,12 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
             onCreated();
             setStepIdx(3);
         } catch (e) {
-            if (e instanceof ApiError) {
+            if (lease && isLeaseChanged(e)) {
+                const m = serverText(tCommon, e) || (e as ApiError).message;
+                setServerErrors([m]);
+                setError(m);
+                await reloadChanged(lease.id).catch(() => undefined);
+            } else if (e instanceof ApiError) {
                 setServerErrors([e.message]);
                 setError(e.message);
             } else {
@@ -257,13 +324,26 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         }
     };
 
-    const runCheques = async (fn: () => Promise<Cheque[]>) => {
+    const runCheques = async (fn: () => Promise<Cheque[] | ChequeWrite>) => {
         setBusy(true);
         setChequeError(null);
         try {
-            setCheques(await fn());
+            const r = await fn();
+            if (Array.isArray(r)) {
+                setCheques(r);
+            } else {
+                setCheques(r.cheques);
+                // Review A M3: the grid write moved the draft's version; the next save and the post name the new one.
+                const version = r.version;
+                if (version != null) setLease(prev => (prev ? withVersion(prev, version) : prev));
+            }
             setChequeNotice(null);
         } catch (e) {
+            if (lease && isLeaseChanged(e)) {
+                setChequeError(serverText(tCommon, e) || (e as ApiError).message);
+                await reloadChanged(lease.id).catch(() => undefined);
+                return;
+            }
             setChequeError(e instanceof ApiError ? e.message : t("saveFailed"));
         } finally {
             setBusy(false);
@@ -272,7 +352,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
 
     const generate = (req: GenerateChequesRequest) => {
         if (!lease) return;
-        runCheques(() => leaseApi.generateCheques(lease.id, req));
+        runCheques(() => leaseApi.generateCheques(lease.id, req, lease.version));
     };
     const generateNumbers = (startingNumber: string) => {
         if (!lease) return;
@@ -280,7 +360,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     };
     const saveCheques = () => {
         if (!lease || focusFirstInvalidMoney(document)) return;
-        runCheques(() => leaseApi.saveCheques(lease.id, toChequeRows(cheques)));
+        runCheques(() => leaseApi.saveCheques(lease.id, toChequeRows(cheques), lease.version));
     };
 
     const toReview = async () => {
@@ -302,11 +382,17 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         setBusy(true);
         setError(null);
         try {
-            const res = await leaseApi.post(lease.id);
+            // Break-it R2 F2: the version the review step priced.
+            const res = await leaseApi.post(lease.id, lease.version);
             onCreated();
             router.push(`/dashboard/leases/${res.lease.id}?posted=${encodeURIComponent(res.tcoEntryNumber)}`);
             onClose();
         } catch (e) {
+            if (isLeaseChanged(e)) {
+                setError(serverText(tCommon, e) || (e as ApiError).message);
+                await reloadChanged(lease.id).catch(() => undefined);
+                return;
+            }
             setError(e instanceof ApiError ? e.message : t("postFailed"));
         } finally {
             setBusy(false);

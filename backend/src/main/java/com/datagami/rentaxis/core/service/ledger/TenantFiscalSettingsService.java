@@ -136,6 +136,28 @@ public class TenantFiscalSettingsService {
     }
 
     /**
+     * Break-it round 2 (money2) F3: the lock as a user sets it, from the fiscal
+     * page. A period that has not happened yet cannot be closed — 2062 typed for
+     * 2026 used to be accepted, refuse every posting in the organisation, and could
+     * not be taken back ("cannot move backwards"). The year-end close locks through
+     * a period end it has validated itself and goes through {@link #lockThrough}.
+     */
+    @Transactional
+    public TenantFiscalSettings lockThroughAsUser(LocalDate date) {
+        manualDates.requireNotAfterToday(date, "period lock",
+                "Only a period that has already ended can be locked; nothing was locked.");
+        return lockThrough(date);
+    }
+
+    /** Break-it round 2 (money2) F3: "today" for the lock, on the app clock. */
+    private ManualPostingDates manualDates = ManualPostingDates.system();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setManualPostingDates(ManualPostingDates manualDates) {
+        this.manualDates = manualDates;
+    }
+
+    /**
      * Close the books through {@code date}.
      *
      * <p><b>Refused while a VAT tax point dated on or before {@code date} is still
@@ -277,6 +299,16 @@ public class TenantFiscalSettingsService {
         }
         if (changing && importBatches.existsByStatus(ImportBatchStatus.POSTED)) {
             throw new BusinessRuleViolationException(BOOKS_START_FROZEN_BY_A_POSTED_BATCH);
+        }
+        // Break-it R2 money2 review N2: the opening-balance journal is dated the day
+        // before the books start, so that day must be one the ledger can post.
+        if (changing && date != null && !PostingService.isNumberable(date.minusDays(1))) {
+            throw new BusinessRuleViolationException("The books cannot start on " + date + ": the opening-balance"
+                    + " journal is dated the day before, and the ledger posts from " + PostingService.EARLIEST_ENTRY_DATE
+                    + " to " + PostingService.LATEST_ENTRY_DATE + ". Check the year.",
+                    "fiscal.booksStartOutOfRange", java.util.Map.of("date", date.toString(),
+                            "earliest", PostingService.EARLIEST_ENTRY_DATE.plusDays(1).toString(),
+                            "latest", PostingService.LATEST_ENTRY_DATE.plusDays(1).toString()));
         }
         s.setBooksStartDate(date);
         if (date != null && s.getBooksLockedThrough() == null) s.setBooksLockedThrough(date.minusDays(1));

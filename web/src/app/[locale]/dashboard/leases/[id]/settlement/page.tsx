@@ -17,6 +17,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import AccountPicker from "@/components/finance/AccountPicker";
 import { assetSrc } from "@/lib/assetUrl";
+import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 import { clampIso, fmtIsoDate, isoDayAfter, maxIso, todayIso } from "@/components/leases/leaseMath";
 import {
     netRefundOf, round2, toSaveLines, totalOf, totalVatOf, withLineVat, type SettlementRow,
@@ -208,6 +209,7 @@ export default function SettlementPage() {
     const tLeasing = useTranslations("Leasing");
     const tCheques = useTranslations("Cheques");
     const tLedger = useTranslations("Ledger");
+    const tCommon = useTranslations("Common");
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
 
@@ -245,6 +247,7 @@ export default function SettlementPage() {
     const [closure, setClosure] = useState<"CLOSED" | "OPEN" | null>(null);
     const [previewAttachment, setPreviewAttachment] = useState<DeductionAttachment | null>(null);
     const [uploadingId, setUploadingId] = useState<string | null>(null);
+    const [attachmentError, setAttachmentError] = useState<string | null>(null);
     const nextKey = useRef(1);
 
     /** The stored lines, as the editable grid. */
@@ -450,6 +453,9 @@ export default function SettlementPage() {
             const saved = await settlementApi.finalize(leaseId, {
                 settlementDate,
                 acknowledgeOutstanding: needsAcknowledgement ? acknowledged : false,
+                // Break-it R2 money2 F5: the net refund this page showed; a settlement
+                // changed since (another tab saved a deduction) is refused, not posted.
+                expectedNetRefund: statement?.netRefund,
             });
             setStoredRow(saved);
             setRows(rowsOf(saved));
@@ -460,8 +466,16 @@ export default function SettlementPage() {
             if (detail) setLease(detail);
             setClosure(detail?.status === "CLOSED" ? "CLOSED" : "OPEN");
         } catch (e) {
+            if (e instanceof ApiError && codedOf(e).code === "settlement.changed") {
+                // Reload the figures the server now has and say so; never retry.
+                setConfirmOpen(false);
+                await load();
+                setFinalizeError(t("changedReloaded"));
+                return;
+            }
             const message = e instanceof ApiError ? e.message : t("finalizeFailed");
-            setFinalizeError(message);
+            // Review I2: a coded refusal in the user's language; English is the fallback.
+            setFinalizeError(e instanceof ApiError ? serverText(tCommon, e) || message : message);
             // The one refusal the screen can answer with a control rather than
             // with an apology.
             if (e instanceof ApiError && refusedForAcknowledgement(message)) {
@@ -481,8 +495,10 @@ export default function SettlementPage() {
         setRows(prev => prev.map(r => (r.id === deductionId ? { ...r, attachments: next } : r)));
     };
 
+    // Break-it R2 sweep: a refused upload/delete used to vanish without a word.
     const uploadAttachment = async (deductionId: string, file: File) => {
         setUploadingId(deductionId);
+        setAttachmentError(null);
         try {
             const form = new FormData();
             form.append("file", file);
@@ -492,14 +508,23 @@ export default function SettlementPage() {
                 body: form,
             });
             if (res.ok) await reloadAttachments(deductionId);
+            else setAttachmentError(t("attachmentUploadFailed", { name: file.name }));
+        } catch {
+            setAttachmentError(t("attachmentUploadFailed", { name: file.name }));
         } finally {
             setUploadingId(null);
         }
     };
 
     const deleteAttachment = async (attachmentId: string, deductionId: string) => {
-        const res = await fetch(`/api/proxy/v1/settlements/attachments/${attachmentId}`, { method: "DELETE" });
-        if (res.ok) await reloadAttachments(deductionId);
+        setAttachmentError(null);
+        try {
+            const res = await fetch(`/api/proxy/v1/settlements/attachments/${attachmentId}`, { method: "DELETE" });
+            if (res.ok) await reloadAttachments(deductionId);
+            else setAttachmentError(t("attachmentDeleteFailed"));
+        } catch {
+            setAttachmentError(t("attachmentDeleteFailed"));
+        }
     };
 
     if (userRole && !canView) {
@@ -746,6 +771,11 @@ export default function SettlementPage() {
                         </button>
                     )}
                 </div>
+                {attachmentError && (
+                    <p role="alert" data-testid="settlement-attachment-error" className="px-4 py-2 text-xs text-error border-b border-border">
+                        {attachmentError}
+                    </p>
+                )}
                 <LineTable
                     rows={deductionRows}
                     allRows={rows}
@@ -958,7 +988,17 @@ export default function SettlementPage() {
                 confirmText={t("finalize")}
                 cancelText={tLedger("cancel")}
                 confirmTestId="settlement-finalize-confirm"
-            />
+            >
+                {/* Break-it R2 money2 F5 / review M4: the figure being finalised — the server's
+                    statement.netRefund, the same figure sent as expectedNetRefund. */}
+                {statement && (
+                    <p className="text-xs font-semibold tabular-nums" data-testid="settlement-finalize-net">
+                        {statement.netRefund >= 0
+                            ? t("confirmRefund", { amount: fmtAmount(statement.netRefund) })
+                            : t("confirmBalanceDue", { amount: fmtAmount(-statement.netRefund) })}
+                    </p>
+                )}
+            </ConfirmDialog>
 
             <AttachmentPreviewDialog attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} />
         </div>

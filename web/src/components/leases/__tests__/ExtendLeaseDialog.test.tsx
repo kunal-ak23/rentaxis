@@ -34,7 +34,7 @@ vi.mock("@/components/leases/leaseMath", async orig => {
 import ExtendLeaseDialog from "../ExtendLeaseDialog";
 
 const LEASE = {
-    id: "lease-1", propertyId: "p1", endDate: "2026-12-31",
+    id: "lease-1", propertyId: "p1", startDate: "2026-01-01", endDate: "2026-12-31",
 } as unknown as LeaseDetail;
 
 const CHARGE_TYPES: ChargeType[] = [];
@@ -117,5 +117,55 @@ describe("ExtendLeaseDialog current end date (F14-34)", () => {
 
         fireEvent.change(screen.getByTestId("extend-new-end-date"), { target: { value: "2027-06-30" } });
         expect(screen.queryByTestId("extend-new-end-date-error")).not.toBeInTheDocument();
+    });
+});
+
+/**
+ * Round-2 forms2 Finding 2 (and its own note: "the same gap likely exists in
+ * TransferLeaseDialog... though only Renew was exercised end-to-end"). The
+ * server checks the WHOLE term from the lease's original start
+ * (`LeaseRenewalService.requireSaneTerm(lease.getStartDate(), r.newEndDate())`,
+ * line 574) — the client warning has to use the same two dates, not just the
+ * extension's own span.
+ */
+describe("ExtendLeaseDialog term-length guard (forms2 Finding 2)", () => {
+    it("blocks a new end date more than 50 years past the lease's original start", () => {
+        renderDialog();
+        fireEvent.change(screen.getByTestId("extend-new-end-date"), { target: { value: "2999-06-01" } });
+        fireEvent.change(screen.getByLabelText("Amount 1"), { target: { value: "1000" } });
+        expect(screen.getByTestId("extend-match")).toHaveAttribute("data-match", "true");
+
+        expect(screen.getByTestId("extend-lease-confirm")).toBeDisabled();
+        expect(screen.getByTestId("extend-term-too-long")).toHaveTextContent(
+            en.Leasing.errTermTooLong.replace("{max}", "50"),
+        );
+    });
+
+    it("warns past 5 years (from the ORIGINAL start, not the extension's own length) and requires a continue", () => {
+        renderDialog();
+        fireEvent.change(screen.getByTestId("extend-new-end-date"), { target: { value: "2032-06-30" } });
+        fireEvent.change(screen.getByLabelText("Amount 1"), { target: { value: "1000" } });
+        expect(screen.getByTestId("extend-match")).toHaveAttribute("data-match", "true");
+
+        expect(screen.getByTestId("extend-lease-confirm")).toBeDisabled();
+        expect(screen.getByTestId("extend-long-term-confirm")).toHaveTextContent(
+            en.Leasing.longTermConfirm.replace("{years}", "6"),
+        );
+
+        fireEvent.click(screen.getByTestId("extend-long-term-continue"));
+        expect(screen.queryByTestId("extend-long-term-confirm")).not.toBeInTheDocument();
+        expect(screen.getByTestId("extend-lease-confirm")).toBeEnabled();
+    });
+
+    it("re-arms once the new end date changes again", () => {
+        renderDialog();
+        fireEvent.change(screen.getByTestId("extend-new-end-date"), { target: { value: "2032-06-30" } });
+        fireEvent.change(screen.getByLabelText("Amount 1"), { target: { value: "1000" } });
+        fireEvent.click(screen.getByTestId("extend-long-term-continue"));
+        expect(screen.getByTestId("extend-lease-confirm")).toBeEnabled();
+
+        fireEvent.change(screen.getByTestId("extend-new-end-date"), { target: { value: "2033-06-30" } });
+        expect(screen.getByTestId("extend-lease-confirm")).toBeDisabled();
+        expect(screen.getByTestId("extend-long-term-confirm")).toBeInTheDocument();
     });
 });

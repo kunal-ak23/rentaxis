@@ -141,8 +141,11 @@ public class LeaseController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
-    public ResponseEntity<LeaseDTO> updateDraftLease(@PathVariable UUID id, @Valid @RequestBody CreateLeaseDTO dto) {
-        return ResponseEntity.ok(leaseService.updateDraftLease(id, dto));
+    public ResponseEntity<LeaseDTO> updateDraftLease(@PathVariable UUID id, @Valid @RequestBody CreateLeaseDTO dto,
+                                                     @RequestHeader(value = "If-Match", required = false) String ifMatch) {
+        // Break-it R2 F3: the version the editor loaded, in the body or If-Match.
+        if (dto.getVersion() == null) dto.setVersion(LeaseService.versionFromIfMatch(ifMatch));
+        return ResponseEntity.ok(guardedLeaseWrite(dto.getVersion(), () -> leaseService.updateDraftLease(id, dto)));
     }
 
     /**
@@ -173,8 +176,10 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<LeaseDTO> replaceRentFreePeriods(
             @PathVariable UUID id,
-            @RequestBody List<com.datagami.rentaxis.api.dto.lease.@Valid RentFreePeriodDTO> periods) {
-        return ResponseEntity.ok(rentFreeService.replace(id, periods));
+            @RequestBody List<com.datagami.rentaxis.api.dto.lease.@Valid RentFreePeriodDTO> periods,
+            @RequestHeader(value = "If-Match", required = false) String ifMatch) {
+        Long expected = LeaseService.versionFromIfMatch(ifMatch);
+        return ResponseEntity.ok(guardedLeaseWrite(expected, () -> rentFreeService.replace(id, periods, expected)));
     }
 
     @DeleteMapping("/{id}")
@@ -185,6 +190,10 @@ public class LeaseController {
     }
 
     // --- Posting -----------------------------------------------------------
+
+    /** Break-it R2 F2: the optional body of a post — the lease version the dialog loaded. */
+    public record PostLeaseRequest(Long version) {
+    }
     //
     // PUT /{id}/activate is gone. A lease used to become ACTIVE by a status change
     // with no journal behind it, so "active" and "on the books" were two separate
@@ -204,10 +213,14 @@ public class LeaseController {
     @PostMapping("/{id}/post")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
     public ResponseEntity<Object> postLease(@PathVariable UUID id,
-                                            @RequestParam(name = "dryRun", defaultValue = "false") boolean dryRun) {
+                                            @RequestParam(name = "dryRun", defaultValue = "false") boolean dryRun,
+                                            @RequestBody(required = false) PostLeaseRequest body,
+                                            @RequestHeader(value = "If-Match", required = false) String ifMatch) {
+        // Break-it R2 F2: the version the Post dialog loaded; absent = an older client, not checked.
+        Long expected = body != null && body.version() != null ? body.version() : LeaseService.versionFromIfMatch(ifMatch);
         return ResponseEntity.ok(dryRun
                 ? leasePostingService.dryRun(id)
-                : leasePostingService.post(id));
+                : guardedLeaseWrite(expected, () -> leasePostingService.post(id, expected)));
     }
 
     /**
@@ -253,8 +266,10 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<List<ChequeDTO>> generateCheques(
             @PathVariable UUID id,
-            @RequestBody(required = false) GenerateChequesRequest request) {
-        return ResponseEntity.ok(chequeGenerationService.generate(id, request));
+            @RequestBody(required = false) GenerateChequesRequest request,
+            @RequestHeader(value = "If-Match", required = false) String ifMatch) {
+        Long expected = LeaseService.versionFromIfMatch(ifMatch);
+        return withLeaseVersion(guardedLeaseWrite(expected, () -> chequeGenerationService.generate(id, request, expected)));
     }
 
     /** Number the draft PDC rows sequentially from the renter's first cheque. */
@@ -271,9 +286,63 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<List<ChequeDTO>> saveChequeRows(
             @PathVariable UUID id,
-            @RequestBody List<@Valid ChequeRowInput> rows) {
-        return ResponseEntity.ok(chequeGenerationService.saveRows(id, rows));
+            @RequestBody List<@Valid ChequeRowInput> rows,
+            @RequestHeader(value = "If-Match", required = false) String ifMatch) {
+        Long expected = LeaseService.versionFromIfMatch(ifMatch);
+        return withLeaseVersion(guardedLeaseWrite(expected, () -> chequeGenerationService.saveRows(id, rows, expected)));
     }
+
+    /**
+     * Review A M3: a grid write moves the lease's version; the rows go back as before
+     * and the new version rides in {@code X-Lease-Version}, so the screen that wrote
+     * them names it on its next write instead of refusing itself (409 lease.changed).
+     */
+    private static ResponseEntity<List<ChequeDTO>> withLeaseVersion(ChequeGenerationService.VersionedCheques r) {
+        ResponseEntity.BodyBuilder ok = ResponseEntity.ok();
+        if (r.leaseVersion() != null) ok = ok.header(LEASE_VERSION_HEADER, String.valueOf(r.leaseVersion()));
+        return ok.body(r.cheques());
+    }
+
+    /**
+     * Review A N4: a write that named the lease version it saw and lost a race to
+     * another writer — both passed {@code requireVersion}, the other committed first,
+     * and this one's versioned UPDATE (the forced increment, or the flush) matched no
+     * row — is the same answer as a stale version: 409 {@code lease.changed}, so the
+     * screen reloads instead of offering "try again" on figures it never saw. Only
+     * the lease's own optimistic-lock failure is mapped, and only for a request that
+     * named a version; everything else keeps the generic concurrency 409.
+     */
+    static <T> T guardedLeaseWrite(Long expectedVersion, java.util.function.Supplier<T> write) {
+        try {
+            return write.get();
+        } catch (RuntimeException e) {
+            if (expectedVersion != null && isLeaseOptimisticLockFailure(e)) {
+                throw new com.datagami.rentaxis.api.exception.ContractChangedException();
+            }
+            throw e;
+        }
+    }
+
+    static boolean isLeaseOptimisticLockFailure(Throwable e) {
+        String lease = com.datagami.rentaxis.domain.entity.Lease.class.getName();
+        for (Throwable c = e; c != null; c = c.getCause() == c ? null : c.getCause()) {
+            if (c instanceof org.springframework.orm.ObjectOptimisticLockingFailureException o
+                    && lease.equals(o.getPersistentClassName())) {
+                return true;
+            }
+            if (c instanceof jakarta.persistence.OptimisticLockException o
+                    && o.getEntity() instanceof com.datagami.rentaxis.domain.entity.Lease) {
+                return true;
+            }
+            if (c instanceof org.hibernate.StaleObjectStateException so && lease.equals(so.getEntityName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Review A M3: the response header that carries the lease version a grid write left behind. */
+    public static final String LEASE_VERSION_HEADER = "X-Lease-Version";
 
     // --- Termination (spec §9.1) -------------------------------------------
 

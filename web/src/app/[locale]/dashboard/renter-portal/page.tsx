@@ -243,7 +243,13 @@ export default function RenterPortalPage() {
                     const query = contractDocumentId
                         ? `?documentId=${encodeURIComponent(contractDocumentId)}` : "";
                     const res = await fetch(`/api/proxy/v1/leases/${id}/accept${query}`, { method: "PUT" });
-                    if (!res.ok) {
+                    if (res.status === 404) {
+                        // Break-it R2 re-review N2: the contract is gone — a renewal the
+                        // landlord withdrew when the lease it renewed was terminated.
+                        // "Review the current contract and try again" would send the
+                        // renter looking for one that does not exist.
+                        setContractError(t("acceptUnavailable"));
+                    } else if (!res.ok) {
                         // A stale version is refused; reload so the card shows
                         // the contract that is current now.
                         setContractError(t("acceptFailed"));
@@ -265,11 +271,16 @@ export default function RenterPortalPage() {
             isDestructive: true,
             onConfirm: async () => {
                 setConfirmDialog(null);
+                setContractError(null);
                 try {
                     const res = await fetch(`/api/proxy/v1/leases/${id}/reject`, { method: "PUT" });
+                    // A refused reject used to close the dialog and say nothing:
+                    // the renter believed the contract was rejected.
                     if (res.ok) fetchMyLeases();
+                    else setContractError(t("rejectFailed"));
                 } catch (err) {
                     console.error(err);
+                    setContractError(t("rejectFailed"));
                 }
             },
         });

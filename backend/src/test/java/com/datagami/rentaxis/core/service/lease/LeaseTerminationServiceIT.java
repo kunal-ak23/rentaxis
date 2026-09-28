@@ -108,6 +108,7 @@ import static org.assertj.core.api.Assertions.tuple;
  * <p><b>Transactions.</b> {@code TenantAspect} enables the Hibernate tenant filter
  * only inside one, so every read-back goes through {@link #tx}.</p>
  */
+@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class)
 @SpringBootTest
 class LeaseTerminationServiceIT extends AbstractPostgresIT {
 

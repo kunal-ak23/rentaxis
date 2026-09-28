@@ -2,6 +2,7 @@ package com.datagami.rentaxis.api.dto.settlement;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -32,10 +33,24 @@ import java.util.UUID;
  *                             flag" into a 400 about a malformed body rather than
  *                             the refusal that explains what is outstanding. Read
  *                             it through {@link #acknowledged()}.</p>
+ * @param expectedNetRefund     break-it R2 money2 F5: the net refund the page showed
+ *                             (negative when the renter owes); null = not checked.
  */
 public record FinalizeSettlementRequest(LocalDate settlementDate,
                                         UUID refundBankAccountId,
-                                        Boolean acknowledgeOutstanding) {
+                                        Boolean acknowledgeOutstanding,
+                                        BigDecimal expectedNetRefund) {
+
+    /**
+     * Break-it round 2 (money2) F5: {@code expectedNetRefund} is the statement's
+     * {@code netRefund} the page showed when the user confirmed. A settlement whose
+     * figures moved since (another tab saved a deduction, a cheque cleared) is
+     * refused with 409 {@code settlement.changed}; absent (an older client) is not
+     * checked.
+     */
+    public FinalizeSettlementRequest(LocalDate settlementDate, UUID refundBankAccountId, Boolean acknowledgeOutstanding) {
+        this(settlementDate, refundBankAccountId, acknowledgeOutstanding, null);
+    }
 
     /** Absent or null is "not acknowledged": this flag is opt-in and fails closed. */
     @JsonIgnore

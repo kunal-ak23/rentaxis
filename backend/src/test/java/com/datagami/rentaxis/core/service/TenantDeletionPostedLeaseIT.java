@@ -64,6 +64,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * exception": a purge that swallowed the ledger tables and left their rows
  * behind would orphan journals against a landlord_org that no longer exists.</p>
  */
+@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class)
 @SpringBootTest
 class TenantDeletionPostedLeaseIT extends AbstractPostgresIT {
 

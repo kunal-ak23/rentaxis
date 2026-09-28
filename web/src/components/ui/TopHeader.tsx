@@ -60,6 +60,7 @@ export function TopHeader() {
     const [unreadCount, setUnreadCount] = useState(0);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [showDropdown, setShowDropdown] = useState(false);
+    const [markError, setMarkError] = useState(false);
 
     const fetchUnreadCount = useCallback(async () => {
         try {
@@ -102,21 +103,33 @@ export function TopHeader() {
         }
     };
 
+    // Break-it R2 sweep: a refused PUT used to zero the badge anyway.
     const markAllRead = async () => {
+        setMarkError(false);
         try {
-            await fetch("/api/proxy/v1/notifications/read-all", { method: "PUT" });
+            const res = await fetch("/api/proxy/v1/notifications/read-all", { method: "PUT" });
+            if (!res.ok) {
+                setMarkError(true);
+                return;
+            }
             setUnreadCount(0);
             setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-        } catch { /* ignore */ }
+        } catch {
+            setMarkError(true);
+        }
     };
 
     const handleNotificationClick = async (n: Notification) => {
         // Mark as read
         if (!n.isRead) {
             try {
-                await fetch(`/api/proxy/v1/notifications/${n.id}/read`, { method: "PUT" });
-                setNotifications((prev) => prev.map((x) => x.id === n.id ? { ...x, isRead: true } : x));
-                setUnreadCount((prev) => Math.max(0, prev - 1));
+                const res = await fetch(`/api/proxy/v1/notifications/${n.id}/read`, { method: "PUT" });
+                // The dropdown closes and the user navigates on; a refused
+                // mark-read just leaves the row unread.
+                if (res.ok) {
+                    setNotifications((prev) => prev.map((x) => x.id === n.id ? { ...x, isRead: true } : x));
+                    setUnreadCount((prev) => Math.max(0, prev - 1));
+                }
             } catch { /* ignore */ }
         }
         setShowDropdown(false);
@@ -220,6 +233,11 @@ export function TopHeader() {
                                                 <button onClick={markAllRead} className="text-[10px] text-primary font-semibold cursor-pointer">{tNotifications("markAllRead")}</button>
                                             )}
                                         </div>
+                                        {markError && (
+                                            <p role="alert" className="px-4 py-2 text-[11px] text-error border-b border-border">
+                                                {tNotifications("markReadFailed")}
+                                            </p>
+                                        )}
                                         <div className="max-h-80 overflow-y-auto divide-y divide-border">
                                             {notifications.map((n) => {
                                                 const text = notificationText(n, tNotifications, locale, tMeetings);
