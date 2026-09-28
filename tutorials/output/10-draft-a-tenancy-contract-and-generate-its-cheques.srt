@@ -1,0 +1,180 @@
+1
+00:00:00,000 --> 00:00:03,617
+This tutorial drafts a tenancy contract in
+the five-step
+
+2
+00:00:03,617 --> 00:00:07,234
+wizard and checks its cheques before
+anything is posted.
+
+3
+00:00:07,234 --> 00:00:09,243
+Open Leasing, then Tenancy Contracts.
+
+4
+00:00:09,243 --> 00:00:12,860
+The status pills count the contracts that
+are drafts
+
+5
+00:00:12,860 --> 00:00:16,476
+or awaiting signature, active, expiring,
+on notice, and ended.
+
+6
+00:00:16,476 --> 00:00:18,084
+Select Draft Tenancy Contract.
+
+7
+00:00:18,084 --> 00:00:19,691
+Step one is Parties.
+
+8
+00:00:19,691 --> 00:00:22,504
+The unit list offers vacant units only.
+
+9
+00:00:22,504 --> 00:00:24,916
+Choose unit A-201, and its property,
+
+10
+00:00:24,916 --> 00:00:27,327
+Oasis Crest Residence Tower, appears
+underneath.
+
+11
+00:00:27,327 --> 00:00:30,944
+Then choose the tenant, Rajesh Kumar, and
+select Next.
+
+12
+00:00:30,944 --> 00:00:32,551
+Step two is Terms.
+
+13
+00:00:32,551 --> 00:00:35,766
+The contract date is filled in with today.
+
+14
+00:00:35,766 --> 00:00:40,186
+Enter a start date of the first of October
+and an
+
+15
+00:00:40,186 --> 00:00:44,205
+end date of the thirtieth of September the
+following year.
+
+16
+00:00:44,205 --> 00:00:48,626
+Number of cheques is four, and the payment
+method is Cheque.
+
+17
+00:00:48,626 --> 00:00:51,439
+Ejari number and payment reference are
+optional.
+
+18
+00:00:51,439 --> 00:00:52,242
+Select Next.
+
+19
+00:00:52,242 --> 00:00:55,859
+Step three is Charges, with one line per
+charge.
+
+20
+00:00:55,859 --> 00:00:57,868
+Choose Rent and enter 96,000.
+
+21
+00:00:57,868 --> 00:01:01,485
+Select Add line, choose Security Deposit,
+and enter 5,000.
+
+22
+00:01:01,485 --> 00:01:03,896
+The contract value is now 101,000.
+
+23
+00:01:03,896 --> 00:01:05,102
+Select Save draft.
+
+24
+00:01:05,102 --> 00:01:08,719
+The contract is saved as a draft, and step
+
+25
+00:01:08,719 --> 00:01:11,934
+four, Cheques, opens with an empty cheque
+grid.
+
+26
+00:01:11,934 --> 00:01:15,149
+Select Generate Cheques, keep four
+instalments, and generate.
+
+27
+00:01:15,149 --> 00:01:19,569
+Four post-dated cheques appear, with the
+deposit added to the first,
+
+28
+00:01:19,569 --> 00:01:23,990
+and the grid confirms that the cheques
+match the contract value.
+
+29
+00:01:23,990 --> 00:01:27,205
+Each post-dated cheque needs a number, so
+select
+
+30
+00:01:27,205 --> 00:01:30,419
+Generate Cheque Numbers and enter the
+first one.
+
+31
+00:01:30,419 --> 00:01:33,232
+The rows are numbered 500101 to 500104.
+
+32
+00:01:33,232 --> 00:01:34,036
+Select Next.
+
+33
+00:01:34,036 --> 00:01:38,055
+Step five, Review, shows the unit, tenant,
+dates, contract value,
+
+34
+00:01:38,055 --> 00:01:41,672
+VAT, and cheque total, and reports Ready
+to post.
+
+35
+00:01:41,672 --> 00:01:46,092
+Posting has its own tutorial, so select
+Open the contract instead.
+
+36
+00:01:46,092 --> 00:01:50,914
+The contract opens with the status Draft,
+its dates, its value, and
+
+37
+00:01:50,914 --> 00:01:55,335
+four cheques, and each charge line shows
+the account it credits.
+
+38
+00:01:55,335 --> 00:01:59,755
+Open the Cheques tab to see the same four
+numbered cheques.
+
+39
+00:01:59,755 --> 00:02:04,176
+Until the contract is posted, the draft
+can still be edited.
