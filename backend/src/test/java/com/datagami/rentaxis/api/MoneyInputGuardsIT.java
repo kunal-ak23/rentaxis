@@ -453,4 +453,20 @@ class MoneyInputGuardsIT extends AbstractPostgresIT {
                         "graceDays", 0, "perDayRate", 0)), "2 decimal places");
     }
 
+    // ---- Final round: @Money's max narrowed to the actual decimal(12,2) columns ----
+
+    @Test
+    void aUnitExpectedRentPastTheColumnIs400NotAnOverflow() {
+        Map<String, Object> tooBig = m("unitNumber", "OVR-1",
+                "property", m("id", fixtures.property().getId().toString()),
+                "expectedRent", new BigDecimal("10000000000.00"));
+        assertRefused(callAs(tenantAdmin, HttpMethod.POST, "/api/v1/units", tooBig), "too large");
+
+        Map<String, Object> atLimit = m("unitNumber", "OVR-2",
+                "property", m("id", fixtures.property().getId().toString()),
+                "expectedRent", new BigDecimal("9999999999.99"));
+        ResponseEntity<Map> ok = callAs(tenantAdmin, HttpMethod.POST, "/api/v1/units", atLimit);
+        assertThat(ok.getStatusCode().value()).as(String.valueOf(ok.getBody())).isEqualTo(200);
+    }
+
 }

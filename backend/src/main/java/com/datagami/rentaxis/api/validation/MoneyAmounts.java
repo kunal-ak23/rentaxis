@@ -27,6 +27,14 @@ public final class MoneyAmounts {
     /** The largest amount a numeric(14,2) column holds. */
     public static final BigDecimal MAX = new BigDecimal("999999999999.99");
 
+    /**
+     * The largest amount a {@code decimal(12,2)}/{@code numeric(12,2)} column holds —
+     * pass this string as {@link Money#max()} for a field backed by one of those
+     * narrower columns (units.expected_rent/actual_rent, properties.fixed_expenses,
+     * landlord_org / rent_collection_settings fine_*, payment_penalties.amount).
+     */
+    public static final String MAX_12_2 = "9999999999.99";
+
     /** One fil: the smallest positive amount. */
     public static final BigDecimal MIN = new BigDecimal("0.01");
 
@@ -43,13 +51,34 @@ public final class MoneyAmounts {
      * @param allowNegative a negative amount is acceptable (its magnitude is still bounded)
      */
     public static String problem(BigDecimal amount, boolean positive, boolean allowNegative) {
+        return problem(amount, positive, allowNegative, MAX);
+    }
+
+    /**
+     * As {@link #problem(BigDecimal, boolean, boolean)}, but against a caller-supplied
+     * ceiling narrower (or wider) than {@link #MAX} — e.g. a {@code decimal(12,2)}
+     * column's own limit, so the message names the field's real maximum rather than
+     * the schema-wide one.
+     */
+    public static String problem(BigDecimal amount, boolean positive, boolean allowNegative, BigDecimal max) {
         if (amount == null) return null;
         // Below one fil first: for 0.001 "at least 0.01" is the sentence that helps.
         if (positive && amount.compareTo(MIN) < 0) return BELOW_MINIMUM;
         if (amount.stripTrailingZeros().scale() > 2) return TOO_MANY_DECIMALS;
-        if (amount.abs().compareTo(MAX) > 0) return TOO_LARGE;
+        if (amount.abs().compareTo(max) > 0) return tooLarge(max);
         if (!positive && !allowNegative && amount.signum() < 0) return NEGATIVE;
         return null;
+    }
+
+    private static String tooLarge(BigDecimal max) {
+        if (max.compareTo(MAX) == 0) return TOO_LARGE;
+        return "The amount is too large (the maximum is " + format(max) + ")";
+    }
+
+    private static String format(BigDecimal max) {
+        // Thousands-grouped, e.g. 9,999,999,999.99 — matches TOO_LARGE's own wording.
+        java.text.DecimalFormat fmt = new java.text.DecimalFormat("#,##0.00");
+        return fmt.format(max);
     }
 
     /** The same rule for service code: throws the refusal as a 400. */

@@ -28,6 +28,15 @@ public @interface Money {
     /** May be below zero (a signed adjustment). Ignored when {@link #positive()}. */
     boolean allowNegative() default false;
 
+    /**
+     * The field's own ceiling, as a plain decimal string (e.g. {@code "9999999999.99"}
+     * for a {@code decimal(12,2)} column). Empty (the default) uses
+     * {@link MoneyAmounts#MAX} — a {@code numeric(14,2)} column. Set this whenever the
+     * backing column is narrower than that, or a request past the column overflows
+     * the database instead of being refused with a readable 400.
+     */
+    String max() default "";
+
     String message() default "Invalid amount";
 
     Class<?>[] groups() default {};

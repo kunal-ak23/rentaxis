@@ -1,11 +1,18 @@
 package com.datagami.rentaxis.api.validation;
 
+import com.datagami.rentaxis.api.PenaltyAssessmentController;
+import com.datagami.rentaxis.api.dto.CreatePropertyDTO;
+import com.datagami.rentaxis.api.dto.FineConfigDTO;
+import com.datagami.rentaxis.api.dto.RentCollectionSettingsDTO;
+import com.datagami.rentaxis.api.dto.UnitRequest;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
 import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest;
 import com.datagami.rentaxis.api.dto.lease.TransferLeaseRequest;
 import com.datagami.rentaxis.api.dto.ledger.ManualJournalRequest;
+import com.datagami.rentaxis.api.dto.penalty.ProposePenaltyRequest;
 import com.datagami.rentaxis.api.dto.voucher.VoucherLineInputDTO;
+import com.datagami.rentaxis.domain.entity.enums.PenaltyReason;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -125,5 +132,53 @@ class MoneyValidatorTest {
         VoucherLineInputDTO line = new VoucherLineInputDTO(UUID.randomUUID(), null, new BigDecimal("0.001"),
                 null, null, null, null);
         assertThat(messages(validator.validate(line))).contains(MoneyAmounts.BELOW_MINIMUM);
+    }
+
+    // ---- Final round: fields backed by a decimal(12,2) column reject their own,
+    // narrower, ceiling rather than the schema-wide numeric(14,2) one. -------------
+
+    private static final String TWELVE_TWO_TOO_LARGE =
+            "The amount is too large (the maximum is 9,999,999,999.99)";
+
+    @Test
+    void unitRentsAreBoundedByTheColumnsTwelveTwoNotTheSchemaWideMax() {
+        UnitRequest overTwelveTwo = new UnitRequest("U-1", null, null, null,
+                new BigDecimal("10000000000.00"), null, null, null, null);
+        assertThat(messages(validator.validate(overTwelveTwo))).containsExactly(TWELVE_TWO_TOO_LARGE);
+
+        UnitRequest atTwelveTwo = new UnitRequest("U-1", null, null, null,
+                new BigDecimal("9999999999.99"), new BigDecimal("9999999999.99"), null, null, null);
+        assertThat(validator.validate(atTwelveTwo)).isEmpty();
+    }
+
+    @Test
+    void propertyFixedExpensesIsBoundedByItsTwelveTwoColumn() {
+        CreatePropertyDTO dto = new CreatePropertyDTO();
+        dto.setNameEn("P");
+        dto.setType(com.datagami.rentaxis.domain.entity.enums.PropertyType.RESIDENTIAL);
+        dto.setFixedExpenses(new BigDecimal("10000000000.00"));
+        assertThat(messages(validator.validate(dto))).contains(TWELVE_TWO_TOO_LARGE);
+    }
+
+    @Test
+    void orgAndPropertyFineAmountsAreBoundedByTheirTwelveTwoColumns() {
+        FineConfigDTO fines = new FineConfigDTO(new BigDecimal("10000000000.00"), BigDecimal.ONE,
+                BigDecimal.ONE, 0, BigDecimal.ONE, null, null, null);
+        assertThat(messages(validator.validate(fines))).contains(TWELVE_TWO_TOO_LARGE);
+
+        RentCollectionSettingsDTO settings = new RentCollectionSettingsDTO();
+        settings.setFineBounceAmount(new BigDecimal("10000000000.00"));
+        assertThat(messages(validator.validate(settings))).containsExactly(TWELVE_TWO_TOO_LARGE);
+    }
+
+    @Test
+    void penaltyAmountsAreBoundedByTheirTwelveTwoColumn() {
+        ProposePenaltyRequest propose = new ProposePenaltyRequest(UUID.randomUUID(), null, PenaltyReason.OTHER,
+                new BigDecimal("10000000000.00"), "d", null, null);
+        assertThat(messages(validator.validate(propose))).contains(TWELVE_TWO_TOO_LARGE);
+
+        PenaltyAssessmentController.ReducePenaltyRequest reduce =
+                new PenaltyAssessmentController.ReducePenaltyRequest(new BigDecimal("10000000000.00"), "n");
+        assertThat(messages(validator.validate(reduce))).containsExactly(TWELVE_TWO_TOO_LARGE);
     }
 }
