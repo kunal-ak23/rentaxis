@@ -42,20 +42,23 @@ const staffForm = (page) => page.locator('form').filter({ has: page.getByText('E
 const staffField = (page, label) => staffForm(page).locator(`xpath=.//label[normalize-space()="${label}"]/following-sibling::*[1]`);
 
 const scenes = [
-  // Weights follow the narration: roughly the seconds each part takes to speak.
+  // Weights are the seconds of narration each scene covers (Ava DragonHD at
+  // "140" speaks ~165 wpm), measured from the rendered subtitles.
   {
     ...roleRouteScene('superadmin', usersPage, 'Users & staff',
-      'Users can sign in; staff records hold employment details. Search before you create, to avoid duplicates.', { weight: 30 }),
+      'Users can sign in; staff records hold employment details. Search before you create, to avoid duplicates.', { weight: 31.9 }),
     run: async (page) => {
       await goto(page, usersPage);
       await removeLeftovers(page);
       await goto(page, usersPage);
       await page.getByText('Staff Management', { exact: true }).waitFor({ state: 'visible', timeout: navTimeoutMs });
       await page.getByRole('button', { name: 'New User', exact: true }).waitFor({ state: 'visible' });
-      await pace(page, 9000);
-      await page.getByPlaceholder('Search users...').fill('layla');
+      await pace(page, 14000);
+      await pointAt(page.getByText('Staff Management', { exact: true }));
+      await pace(page, 7500);
+      await page.getByPlaceholder('Search users...').fill(manager.email);
       await expectCount(userRow(page), 0, `${manager.name} rows`);
-      await restPointer(page, 1300, 520);
+      await restPointer(page, 1700, 520);
     },
   },
   stepScene('Provision New User',
@@ -67,26 +70,28 @@ const scenes = [
       await page.getByPlaceholder('e.g. Acme Corp Admin').fill(manager.name);
       await page.getByPlaceholder('e.g. admin@acmecorp.com').fill(manager.email);
       await page.getByPlaceholder('e.g. +971 50 123 4567').fill(manager.phone);
+      await pace(page, 6000);
       const role = userForm(page).locator('select').filter({ has: page.locator('option', { hasText: 'Property Manager' }) });
       await role.selectOption({ label: 'Property Manager' });
+      await pace(page, 7000);
       // The property picker lists the chosen organisation's properties, so the
       // organisation comes first.
       await userForm(page).locator('select').filter({ has: page.locator('option', { hasText: 'None (System Admin context)' }) })
         .selectOption({ label: 'Oasis Crest Properties' });
-      await pace(page, 4000);
+      await pace(page, 2500);
       await userForm(page).locator('select').filter({ has: page.locator('option', { hasText: 'Add property...' }) })
         .selectOption({ label: marinaName });
       await assignmentChip(page, marinaName).waitFor({ state: 'visible', timeout: navTimeoutMs });
       await pace(page, 2000);
-    }, { weight: 36 }),
+    }, { weight: 26.1 }),
   stepScene('Provision User',
     'The new user appears as a Property Manager. They receive an email invite to set their own password.',
     async (page) => {
       await page.getByRole('button', { name: 'Provision User', exact: true }).click();
       await userRow(page).waitFor({ state: 'visible', timeout: navTimeoutMs });
       await expectText(userRow(page), 'Property Manager', 'New user role');
-      await restPointer(page, 1300, 620);
-    }, { weight: 13 }),
+      await restPointer(page, 1700, 620);
+    }, { weight: 4.8 }),
   stepScene('Edit the assignment',
     'Edit reopens the form. Add a second property, then select Update User.',
     async (page) => {
@@ -99,11 +104,11 @@ const scenes = [
       await assignmentChip(page, towerName).waitFor({ state: 'visible', timeout: navTimeoutMs });
       await page.getByRole('button', { name: 'Update User', exact: true }).click();
       await page.getByText('Edit User', { exact: true }).waitFor({ state: 'hidden', timeout: navTimeoutMs });
-      await restPointer(page, 1300, 620);
-    }, { weight: 14 }),
+      await restPointer(page, 1700, 620);
+    }, { weight: 6.7 }),
   roleRouteScene('superadmin', `/en/dashboard/properties/${marinaId}`, 'The property shows its manager',
     'The property overview now lists the new Property Manager.', {
-    weight: 13,
+    weight: 11.1,
     afterNavigation: async (page) => {
       if (!marinaId) throw new Error('The seed manifest has no marina property id.');
       await expectText(page.locator('main'), marinaName, 'Property');
@@ -113,7 +118,7 @@ const scenes = [
   }),
   roleRouteScene('superadmin', usersPage, 'Add Staff',
     'A staff record: name, employee ID, designation, department, salary and property. It gives no sign-in.', {
-    weight: 30,
+    weight: 18.1,
     afterNavigation: async (page) => {
       await page.getByText('Staff Management', { exact: true }).waitFor({ state: 'visible', timeout: navTimeoutMs });
       await page.getByRole('button', { name: 'Add Staff', exact: true }).click();
@@ -130,30 +135,33 @@ const scenes = [
       await staffRow(page).waitFor({ state: 'visible', timeout: navTimeoutMs });
       await expectText(staffRow(page), 'Active', 'New staff status');
       await expectText(staffRow(page), staff.designation, 'New staff designation');
-      await restPointer(page, 1300, 560);
+      await restPointer(page, 1700, 560);
     },
   }),
   stepScene('When someone leaves',
     'Mark the staff record Inactive to keep its history, and delete the user so the account can no longer sign in.',
     async (page) => {
+      await pace(page, 1500);
       await staffRow(page).getByRole('button', { name: 'Edit Staff' }).click();
       await staffField(page, 'Name (English)').waitFor({ state: 'visible' });
       await staffForm(page).getByRole('checkbox').uncheck();
       await pace(page, 2000);
       await staffForm(page).getByRole('button', { name: 'Edit Staff', exact: true }).click();
       await staffForm(page).waitFor({ state: 'detached', timeout: navTimeoutMs });
+      // The table refetches after the form closes: wait for the saved status.
+      await staffRow(page).filter({ hasText: 'Inactive' }).waitFor({ state: 'visible', timeout: navTimeoutMs });
       await expectText(staffRow(page), 'Inactive', 'Staff status');
-      await pace(page, 3000);
-      await page.getByPlaceholder('Search users...').fill('layla');
+      await pace(page, 3500);
+      await page.getByPlaceholder('Search users...').fill(manager.email);
       await userRow(page).getByRole('button', { name: 'Delete', exact: true }).click();
       await page.getByText('Delete User', { exact: true }).first().waitFor({ state: 'visible' });
-      await pace(page, 3000);
+      await pace(page, 2000);
       await page.getByRole('button', { name: 'Delete User', exact: true }).click();
       await page.getByRole('button', { name: 'Delete User', exact: true }).waitFor({ state: 'detached', timeout: navTimeoutMs });
       await userRow(page).waitFor({ state: 'detached', timeout: navTimeoutMs });
       await page.getByPlaceholder('Search users...').fill('');
-      await restPointer(page, 1300, 560);
-    }, { weight: 30 }),
+      await restPointer(page, 1700, 560);
+    }, { weight: 23.5 }),
 ];
 
 export default { role: 'superadmin', scenes };
