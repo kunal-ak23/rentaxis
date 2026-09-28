@@ -193,7 +193,12 @@ public class LandlordOrgController {
         // exactly like the logo (same upload, same role, this organisation only).
         // The contract renderer only ever inlines it from our own storage.
         if (payload.containsKey("stampImageUrl")) {
-            org.setStampImageUrl(adoptStaged(org, stringValue(payload.get("stampImageUrl"))));
+            String stamp = adoptStaged(org, stringValue(payload.get("stampImageUrl")));
+            if (!java.util.Objects.equals(blankToNull(stamp), blankToNull(org.getStampImageUrl()))) {
+                // A new (or removed) stamp restarts the executed-copy sweep's clock.
+                org.setStampSetAt(blankToNull(stamp) == null ? null : java.time.Instant.now());
+            }
+            org.setStampImageUrl(stamp);
             changed = true;
         }
         if (payload.containsKey("phone")) {

@@ -105,23 +105,6 @@ public class LeaseExpirationJob {
             return;
         }
         runFor(LocalDate.now(clock));
-        // The same nightly slot catches up executed contract copies whose issue
-        // after posting was dropped (saturated document executor) or failed.
-        if (executedCopies != null) {
-            try {
-                executedCopies.sweepMissing(com.datagami.rentaxis.core.service.lease.ExecutedContractCopyService.SWEEP_MAX,
-                        com.datagami.rentaxis.core.service.lease.ExecutedContractCopyService.SWEEP_MAX_PER_ORG);
-            } catch (RuntimeException e) {
-                log.error("Executed copy sweep failed; lease expiry is unaffected", e);
-            }
-        }
-    }
-
-    private com.datagami.rentaxis.core.service.lease.ExecutedContractCopyService executedCopies;
-
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    public void setExecutedCopies(com.datagami.rentaxis.core.service.lease.ExecutedContractCopyService executedCopies) {
-        this.executedCopies = executedCopies;
     }
 
     /**

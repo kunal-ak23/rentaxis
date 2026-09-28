@@ -92,8 +92,15 @@ public class ExecutedContractCopyService {
                 FROM leases l
                 JOIN landlord_org o ON o.id = l.tenant_id
                WHERE l.posted_at IS NOT NULL
+                 -- Only a retry of the issue AT POSTING (review R5-I1): posted in the
+                 -- last 7 days, and after the organisation's current stamp was set, so
+                 -- adding a stamp never stamps historical leases.
+                 AND l.posted_at >= now() - interval '7 days'
+                 AND o.stamp_set_at IS NOT NULL AND l.posted_at > o.stamp_set_at
                  AND l.status IN ('ACTIVE','NOTICE_GIVEN','RENEWED','EXPIRED','TERMINATED','CLOSED')
                  AND o.stamp_image_url IS NOT NULL AND btrim(o.stamp_image_url) <> ''
+                 AND NOT EXISTS (SELECT 1 FROM executed_copy_sweep_attempts f
+                                  WHERE f.lease_id = l.id AND f.attempts >= ?)
                  AND EXISTS (SELECT 1 FROM lease_documents d
                               WHERE d.lease_id = l.id AND d.tenant_id = l.tenant_id AND d.type = 'CONTRACT')
                  AND NOT EXISTS (SELECT 1 FROM lease_documents d
@@ -105,7 +112,7 @@ public class ExecutedContractCopyService {
             """;
 
     /**
-     * The daily catch-up (run by {@code LeaseExpirationJob}): issues the missing
+     * The daily catch-up (run by {@code ExecutedCopySweepJob}): issues the missing
      * executed copies, one organisation at a time with that organisation's tenant
      * context, each lease in its own transaction. A failure is that lease's own —
      * logged, the sweep carries on (the next night retries it). Idempotent: an
@@ -116,7 +123,7 @@ public class ExecutedContractCopyService {
         jdbc.query(MISSING_SQL, rs -> {
             byOrg.computeIfAbsent(rs.getObject(1, UUID.class), k -> new java.util.ArrayList<>())
                     .add(rs.getObject(2, UUID.class));
-        }, maxPerOrg, max);
+        }, MAX_ATTEMPTS, maxPerOrg, max);
         int issued = 0, none = 0, failed = 0;
         UUID previous = TenantContextHolder.getTenantId();
         try {
@@ -126,13 +133,20 @@ public class ExecutedContractCopyService {
                     try {
                         Optional<LeaseDocumentDTO> copy =
                                 newTransaction.execute(status -> contracts.createExecutedCopy(leaseId));
-                        if (copy != null && copy.isPresent()) issued++; else none++;
+                        if (copy != null && copy.isPresent()) {
+                            issued++;
+                            jdbc.update("DELETE FROM executed_copy_sweep_attempts WHERE lease_id = ?", leaseId);
+                        } else {
+                            none++;
+                            recordFailedAttempt(org.getKey(), leaseId, "no copy could be made");
+                        }
                     } catch (VirtualMachineError fatal) {
                         throw fatal;
                     } catch (Throwable e) {
                         failed++;
                         log.error("Executed copy sweep: lease {} of organisation {} failed; the sweep carries on",
                                 leaseId, org.getKey(), e);
+                        recordFailedAttempt(org.getKey(), leaseId, String.valueOf(e));
                     }
                 }
             }
@@ -144,6 +158,29 @@ public class ExecutedContractCopyService {
                     byOrg.size(), issued, none, failed);
         }
         return new SweepRun(byOrg.size(), issued, none, failed);
+    }
+
+    /** After this many failed sweep attempts a lease is left to the manual "Issue executed copy". */
+    public static final int MAX_ATTEMPTS = 3;
+
+    private void recordFailedAttempt(UUID tenantId, UUID leaseId, String error) {
+        try {
+            Integer attempts = jdbc.queryForObject("""
+                    INSERT INTO executed_copy_sweep_attempts (lease_id, tenant_id, attempts, last_error, updated_at)
+                    VALUES (?, ?, 1, ?, now())
+                    ON CONFLICT (lease_id) DO UPDATE
+                       SET attempts = executed_copy_sweep_attempts.attempts + 1,
+                           last_error = EXCLUDED.last_error, updated_at = now()
+                    RETURNING attempts
+                    """, Integer.class, leaseId, tenantId, error == null ? null : error.substring(0, Math.min(error.length(), 500)));
+            if (attempts != null && attempts == MAX_ATTEMPTS) {
+                // Logged once, on the attempt that crosses the limit.
+                log.warn("Executed copy sweep: lease {} of organisation {} permanently skipped after {} failed attempts "
+                        + "(issue it by hand from the lease)", leaseId, tenantId, MAX_ATTEMPTS);
+            }
+        } catch (RuntimeException e) {
+            log.warn("Executed copy sweep: could not record the failed attempt for lease {}: {}", leaseId, e.getMessage());
+        }
     }
 
     /** The manual action: issue the copy now if it is due (returns the existing one if already issued). */

@@ -1,0 +1,54 @@
+# Executed-copy sweep (review R5-I1, Kunal): the nightly sweep only retries copies
+# missed AT POSTING. It must never stamp historical leases when an organisation
+# first adds a stamp, so it needs to know when the stamp was set.
+#
+# 1. landlord_org.stamp_set_at: when the current stamp was saved. Backfilled NULL on
+#    purpose — an organisation with a stamp today has no recorded time, so none of
+#    its existing leases can qualify; only a stamp saved from now on starts the clock.
+# 2. executed_copy_sweep_attempts: per-lease failed sweep attempts; after 3 the
+#    sweep gives up on the lease (a manual "Issue executed copy" still works).
+databaseChangeLog:
+  - changeSet:
+      id: 159-executed-copy-sweep-scope
+      author: claude
+      changes:
+        - addColumn:
+            tableName: landlord_org
+            columns:
+              - column:
+                  name: stamp_set_at
+                  type: timestamptz
+                  constraints:
+                    nullable: true
+        - createTable:
+            tableName: executed_copy_sweep_attempts
+            columns:
+              - column:
+                  name: lease_id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+                    foreignKeyName: fk_exec_copy_attempt_lease
+                    referencedTableName: leases
+                    referencedColumnNames: id
+                    deleteCascade: true
+              - column:
+                  name: tenant_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: attempts
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_error
+                  type: TEXT
+              - column:
+                  name: updated_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false

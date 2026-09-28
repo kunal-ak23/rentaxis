@@ -76,10 +76,16 @@ class OrgBrandingIT extends AbstractPostgresIT {
         assertThat(save.getBody().get("stampImageUrl")).isEqualTo(STAMP);
         assertThat(stamp(orgA)).isEqualTo(STAMP);
         assertThat(stamp(orgB)).isNull();
+        // R5-I1: saving a stamp records when (the executed-copy sweep only retries later posts).
+        java.sql.Timestamp setAt = jdbc.queryForObject("select stamp_set_at from landlord_org where id = ?",
+                java.sql.Timestamp.class, orgA);
+        assertThat(setAt).isNotNull();
 
         // A save that does not name the stamp leaves it alone (partial update).
         http.call(superAdmin, HttpMethod.PUT, "/api/admin/tenants/" + orgA, Map.of("address", "Somewhere"));
         assertThat(stamp(orgA)).isEqualTo(STAMP);
+        assertThat(jdbc.queryForObject("select stamp_set_at from landlord_org where id = ?",
+                java.sql.Timestamp.class, orgA)).isEqualTo(setAt);
 
         // A stale dialog is refused like any other field.
         var stale = http.call(superAdmin, HttpMethod.PUT, "/api/admin/tenants/" + orgA,
@@ -91,6 +97,8 @@ class OrgBrandingIT extends AbstractPostgresIT {
                 Map.of("stampImageUrl", "", "expected", Map.of("stampImageUrl", STAMP)));
         assertThat(clear.getStatusCode().value()).isEqualTo(200);
         assertThat(stamp(orgA)).isNullOrEmpty();
+        assertThat(jdbc.queryForObject("select stamp_set_at from landlord_org where id = ?",
+                java.sql.Timestamp.class, orgA)).isNull();
     }
 
     @Test
