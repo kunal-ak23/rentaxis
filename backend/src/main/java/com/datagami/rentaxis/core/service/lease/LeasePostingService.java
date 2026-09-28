@@ -354,6 +354,11 @@ public class LeasePostingService {
             // here so no cut-over path can defer a fee.
             lease.setFeeTiming(FeeTiming.AT_POSTING);
         }
+        if (checks != Preconditions.FOR_IMPORT_POST) {
+            // Break-it round 2 F1: before anything is written, and before the deposit
+            // carry-forward below could move a terminated lease's deposit onto this one.
+            renewalPredecessorProblem(lease).ifPresent(m -> { throw new BusinessRuleViolationException(m); });
+        }
         if (lease.predecessorId() != null && checks != Preconditions.FOR_IMPORT_POST) {
             // PR #359 R1 P2-3: refused before anything is written (coded for the web).
             leaseRepository.findByIdScopedToTenant(lease.predecessorId())
@@ -492,6 +497,7 @@ public class LeasePostingService {
         // the post, asked the same way, so "Ready to post" cannot precede it.
         if (lease.getStatus() == LeaseStatus.DRAFT || lease.getStatus() == LeaseStatus.PENDING_SIGNATURE) {
             leaseService.postingConflict(lease).ifPresent(errors::add);
+            renewalPredecessorProblem(lease).ifPresent(errors::add);
         }
         // What "carry the deposit forward" is actually worth today. Shown because
         // it is not the figure on last year's contract — a partly refunded deposit
@@ -1541,6 +1547,27 @@ public class LeasePostingService {
         // raises for a lease with no open opportunity — an early renewal, or one
         // already closed by hand — would mark this whole post rollback-only.
         renewalOpportunities.markRenewedIfOpen(predecessor.getId());
+    }
+
+    /**
+     * Break-it round 2 F1: why this renewal can no longer post, if it cannot. The
+     * renew endpoint only lets an ACTIVE, EXPIRED or NOTICE_GIVEN lease be renewed,
+     * but the draft it cuts can sit for weeks; if the predecessor is terminated (or
+     * renewed by a sibling) meanwhile, posting the draft carried the leaving renter's
+     * deposit onto a contract for a tenancy that had ended, and the terminated lease's
+     * settlement had nothing left to refund. The post refuses with this; the dry run
+     * lists it, so the Post dialog says it before the button.
+     */
+    public Optional<String> renewalPredecessorProblem(Lease lease) {
+        if (lease.getRenewedFromLeaseId() == null) return Optional.empty();
+        if (lease.getStatus() != LeaseStatus.DRAFT && lease.getStatus() != LeaseStatus.PENDING_SIGNATURE) {
+            return Optional.empty();
+        }
+        Lease predecessor = leaseRepository.findByIdScopedToTenant(lease.getRenewedFromLeaseId()).orElse(null);
+        if (predecessor == null || RENEWABLE_PREDECESSOR.contains(predecessor.getStatus())) return Optional.empty();
+        return Optional.of("This renewal can no longer be posted: the lease it renews is " + predecessor.getStatus()
+                + ", and only an ACTIVE, EXPIRED or NOTICE_GIVEN lease can be renewed."
+                + " Delete this draft and draft a new contract instead.");
     }
 
     /** What a lease must be for a successor's post to retire it (spec §6.6). */

@@ -171,7 +171,8 @@ public class LeaseTerminationService {
                 receivableAfter(lease, split.toReturn(), plan.unearned().add(plan.unearnedVat())),
                 new TerminationPreviewDTO.VatSettlement(vat.dueByT(), vat.pending(), vat.reversedFromDeferred(),
                         vat.declaredAtT(), vat.creditedBack()),
-                problems);
+                problems,
+                renewalNotices(leaseId));
     }
 
     // ------------------------------------------------------------------
@@ -216,7 +217,53 @@ public class LeaseTerminationService {
         VatTaxPointService.TerminationVat vat = vatTaxPoints.settleForTermination(lease, t, plan.unearnedVat());
         UUID tcrId = postUnearnedReversal(lease, plan, vat, t);
 
+        discardRenewalDrafts(lease);
         return leaseService.markTerminated(leaseId, t, r.notes(), tcrId, byUser);
+    }
+
+    // ------------------------------------------------------------------
+    // the renewal drafted before the termination (break-it round 2 F1)
+    // ------------------------------------------------------------------
+
+    /**
+     * A terminated lease cannot be renewed, so a renewal drafted from it and never
+     * posted is discarded with it — posting it later would carry the leaving renter's
+     * deposit onto a tenancy that has ended (the post refuses that too). Drafts only:
+     * nothing of theirs is on the books. One awaiting the renter's signature is left
+     * where it is (the post will refuse it) and the preview says so.
+     */
+    private List<Lease> renewalSuccessors(UUID leaseId) {
+        return leaseRepository.findByRenewedFromLeaseId(leaseId).stream()
+                .filter(l -> l.getStatus() == LeaseStatus.DRAFT || l.getStatus() == LeaseStatus.PENDING_SIGNATURE)
+                .toList();
+    }
+
+    private List<String> renewalNotices(UUID leaseId) {
+        List<String> notices = new ArrayList<>();
+        for (Lease s : renewalSuccessors(leaseId)) {
+            String term = termOf(s);
+            notices.add(s.getStatus() == LeaseStatus.DRAFT
+                    ? "The renewal draft for " + term + " will be discarded: a terminated lease cannot be renewed."
+                    : "The renewal for " + term + " is awaiting the renter's signature; it can no longer be posted"
+                            + " once this lease is terminated.");
+        }
+        return notices;
+    }
+
+    private void discardRenewalDrafts(Lease lease) {
+        for (Lease s : renewalSuccessors(lease.getId())) {
+            if (s.getStatus() != LeaseStatus.DRAFT) continue;
+            String term = termOf(s);
+            leaseService.deleteDraftLease(s.getId());
+            leaseService.recordLeaseEvent(lease, lease.getStatus(), lease.getStatus(),
+                    "Renewal draft for " + term + " discarded on termination");
+        }
+    }
+
+    private static String termOf(Lease l) {
+        java.time.format.DateTimeFormatter dmy = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        return (l.getStartDate() == null ? "?" : l.getStartDate().format(dmy)) + " – "
+                + (l.getEndDate() == null ? "?" : l.getEndDate().format(dmy));
     }
 
     // ------------------------------------------------------------------

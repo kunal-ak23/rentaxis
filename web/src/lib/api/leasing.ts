@@ -830,6 +830,8 @@ export type TerminationPreview = {
    * `unearnedVat`: an older server's answer must read as "none", not `undefined.length`.
    */
   problems?: string[];
+  /** Break-it round 2 F1: what terminate also does that is not a refusal — e.g. discard a renewal draft. */
+  notices?: string[];
 };
 
 export type TerminationVatSettlement = {

@@ -244,6 +244,13 @@ describe("Termination page", () => {
         expect(screen.getByTestId("terminate-submit")).toBeDisabled();
     });
 
+    it("break-it R2 F1: lists the preview's notices (a renewal draft to be discarded) without blocking terminate", async () => {
+        api.preview.mockResolvedValue({ ...PREVIEW, notices: ["The renewal draft for 02/10/2027 – 01/10/2028 will be discarded: a terminated lease cannot be renewed."] });
+        renderPage();
+        expect(await screen.findByTestId("terminate-notices")).toHaveTextContent("The renewal draft for 02/10/2027");
+        expect(screen.getByTestId("terminate-submit")).not.toBeDisabled();
+    });
+
     it("F-16: a clean preview (no problems) leaves the terminate button enabled", async () => {
         renderPage();
         await screen.findByTestId("terminate-receivable-after");

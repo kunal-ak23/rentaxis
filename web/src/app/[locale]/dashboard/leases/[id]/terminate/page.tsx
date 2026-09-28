@@ -183,6 +183,8 @@ export default function TerminateLeasePage() {
     const vatSettlement = preview?.vatSettlement ?? null;
     /** Refusals a real termination would raise (a missing TRN, a date before the latest amendment, …). */
     const problems = preview?.problems ?? [];
+    /** Break-it R2 F1: what terminate also does (e.g. discards a renewal draft); informs, never blocks. */
+    const notices = preview?.notices ?? [];
     const returnedCount = rows.filter(c => decisions[c.id] === "RETURN").length;
 
     const submit = async () => {
@@ -393,6 +395,15 @@ export default function TerminateLeasePage() {
                                     className="bg-error/10 border border-error/30 text-error rounded-xl px-5 py-3 text-sm space-y-1"
                                 >
                                     {problems.map((p, i) => <li key={i}>{p}</li>)}
+                                </ul>
+                            )}
+
+                            {notices.length > 0 && (
+                                <ul
+                                    data-testid="terminate-notices"
+                                    className="bg-warning/10 border border-warning/30 text-warning rounded-xl px-5 py-3 text-sm space-y-1"
+                                >
+                                    {notices.map((n, i) => <li key={i}>{n}</li>)}
                                 </ul>
                             )}
 
