@@ -98,6 +98,7 @@ function MoneyNumberInput({ value, onChange, showZero = false, money, onBlur, ..
     // aria-describedby is read then), not on every intermediate keystroke.
     const [announce, setAnnounce] = useState(false);
     const lastReported = useRef(value);
+    const inputRef = useRef<HTMLInputElement>(null);
     const moneyOptions: MoneyInputOptions = money === true || money === undefined ? {} : money;
 
     useEffect(() => {
@@ -105,6 +106,11 @@ function MoneyNumberInput({ value, onChange, showZero = false, money, onBlur, ..
         lastReported.current = value;
         setText(asText(value));
         setMoneyError(null);
+        // The value reset outside this field's own onChange (a cancel, a reload, a
+        // save that reverts to the saved amount) — clear the stale native message
+        // along with the visible one, or a real <form> keeps refusing to submit a
+        // field that looks clean.
+        inputRef.current?.setCustomValidity("");
         // eslint-disable-next-line react-hooks/exhaustive-deps -- asText is derived from showZero, which does not change for a mounted field
     }, [value]);
 
@@ -114,6 +120,7 @@ function MoneyNumberInput({ value, onChange, showZero = false, money, onBlur, ..
         <>
             <input
                 {...rest}
+                ref={inputRef}
                 type="text"
                 inputMode="decimal"
                 dir={rest.dir ?? "ltr"}

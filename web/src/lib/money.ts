@@ -152,6 +152,15 @@ export function isZeroAmount(n: AmountLike): boolean {
 /** The largest amount a `numeric(14,2)` ledger column holds — the server's `MoneyAmounts.MAX`. */
 export const MONEY_MAX = 999_999_999_999.99;
 
+/**
+ * The largest amount a `decimal(12,2)`/`numeric(12,2)` column holds — the
+ * server's `MoneyAmounts.MAX_12_2`. Pass this as `{ max }` for a field backed by
+ * one of those narrower columns (a unit's expected/actual rent, a property's
+ * fixed expenses, an org or property fine amount, a penalty amount), so an
+ * oversized entry is refused in the form rather than reaching the server.
+ */
+export const MONEY_MAX_12_2 = 9_999_999_999.99;
+
 /** One fil: the smallest positive amount. */
 export const MONEY_MIN = 0.01;
 
@@ -165,6 +174,8 @@ export type MoneyInputOptions = {
     allowZero?: boolean;
     /** A signed adjustment. Implies `allowZero`. */
     allowNegative?: boolean;
+    /** The field's own ceiling, narrower than {@link MONEY_MAX} (e.g. {@link MONEY_MAX_12_2}). */
+    max?: number;
 };
 
 /** Arabic-Indic (U+0660–0669) and Extended/Persian (U+06F0–06F9) digits, and the Arabic separators. */
@@ -230,7 +241,7 @@ export function parseMoneyInput(raw: string | number | null | undefined, opts: M
     if (fils === null) return { ok: false, error: "format" };
     const value = fromFils(negative ? -fils : fils);
 
-    if (Math.abs(value) > MONEY_MAX) return { ok: false, error: "max" };
+    if (Math.abs(value) > (opts.max ?? MONEY_MAX)) return { ok: false, error: "max" };
     if (value < 0 && !opts.allowNegative) return { ok: false, error: "negative" };
     if (value === 0 && !opts.allowZero && !opts.allowNegative) return { ok: false, error: "min" };
     // Normalise -0 to 0.

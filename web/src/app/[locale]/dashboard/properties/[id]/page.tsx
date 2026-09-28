@@ -13,7 +13,8 @@ import { useSession } from "next-auth/react";
 import { hasPermission, canConfigureRentSettings, type UserRole } from "@/lib/rbac";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
-import { NumberInput } from "@/components/ui/NumberInput";
+import { NumberInput, MoneyTextInput, focusFirstInvalidMoney } from "@/components/ui/NumberInput";
+import { MONEY_MAX_12_2, moneyValueOrNull } from "@/lib/money";
 import { AccessDeniedState, LoadFailedState, NotFoundState } from "@/components/ui/PageStates";
 
 type PropertyContact = {
@@ -668,6 +669,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
 
     const handleAddUnit = async (e: any) => {
         e.preventDefault();
+        if (focusFirstInvalidMoney(e.currentTarget)) return;
         setSubmitting(true);
         setAddUnitError(null);
         try {
@@ -675,7 +677,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                 unitNumber: unitForm.unitNumber,
                 type: unitForm.type,
                 sizeSqft: unitForm.sizeSqft ? Number(unitForm.sizeSqft) : null,
-                expectedRent: unitForm.expectedRent ? Number(unitForm.expectedRent) : null,
+                expectedRent: moneyValueOrNull(unitForm.expectedRent, { allowZero: true, max: MONEY_MAX_12_2 }),
                 status: "VACANT",
                 property: { id: propertyId },
             };
@@ -775,7 +777,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Expected Rent (AED/year)</label>
-                        <input type="number" className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 85000" value={unitForm.expectedRent} onChange={e => setUnitForm({ ...unitForm, expectedRent: e.target.value })} />
+                        <MoneyTextInput options={{ allowZero: true, max: MONEY_MAX_12_2 }} className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 85000" value={unitForm.expectedRent} onChange={v => setUnitForm({ ...unitForm, expectedRent: v })} />
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Building</label>

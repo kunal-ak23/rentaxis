@@ -11,6 +11,7 @@ import { formatCurrency, formatCurrencyCompact, formatDate } from "@/lib/format"
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { NumberInput } from "@/components/ui/NumberInput";
+import { MONEY_MAX_12_2 } from "@/lib/money";
 import { TowerSelect } from "@/components/ui/TowerSelect";
 import type { Page } from "@/lib/api/ledger";
 import { idParam, stripInvalidIdParams } from "@/lib/urlIds";
@@ -258,7 +259,7 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("expectedRent")}</label>
-                                    <NumberInput placeholder="AED" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.expectedRent} onChange={(v) => setFormData({ ...formData, expectedRent: v })} />
+                                    <NumberInput money={{ allowZero: true, max: MONEY_MAX_12_2 }} showZero placeholder="AED" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.expectedRent} onChange={(v) => setFormData({ ...formData, expectedRent: v })} />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("sizeSqft")}</label>

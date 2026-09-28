@@ -16,6 +16,7 @@ import {
     ApiError,
     MAX_BULK_SPOT_NUMBERS,
 } from "@/lib/api/facilities";
+import { NumberInput } from "@/components/ui/NumberInput";
 import type { ParkingSpotDTO } from "@/types/facility";
 import type { BuildingOption } from "./AmenitiesTab";
 
@@ -399,9 +400,9 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
                                     {feeType !== "FREE" && (
                                         <label className="text-xs font-semibold text-foreground">
                                             {t("feeAmount")}
-                                            <input type="number" min={0} step={0.01} data-testid="spot-fee-amount"
+                                            <NumberInput money={{ allowZero: true }} showZero data-testid="spot-fee-amount"
                                                    className="mt-1 w-full bg-input border border-border rounded-lg px-3 py-2 text-xs"
-                                                   value={feeAmount} onChange={e => setFeeAmount(Number(e.target.value))} />
+                                                   value={feeAmount} onChange={(v) => setFeeAmount(v)} />
                                         </label>
                                     )}
                                 </div>

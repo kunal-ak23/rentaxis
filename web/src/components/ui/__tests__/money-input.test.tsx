@@ -118,3 +118,35 @@ describe("NumberInput money mode accessibility", () => {
         expect(input().getAttribute("aria-describedby")).toBeNull();
     });
 });
+
+/**
+ * Final round: an external reset (the parent setting `value` back, e.g. after a
+ * dialog cancel or a successful save) clears the visible error state, but used to
+ * leave the native `setCustomValidity` message in place — the field looked clean
+ * yet still blocked a real `<form>`'s native submit.
+ */
+function ResetHarness() {
+    const [value, setValue] = useState(250);
+    return (
+        <NextIntlClientProvider locale="en" messages={en}>
+            <NumberInput aria-label="amount" money={true} value={value} onChange={setValue} />
+            <button type="button" onClick={() => setValue(250)}>
+                reset
+            </button>
+        </NextIntlClientProvider>
+    );
+}
+
+describe("NumberInput money mode: external reset", () => {
+    it("clears the stale native validity message, not just the visible error", () => {
+        render(<ResetHarness />);
+        type("1000.555");
+        expect(input().validationMessage).not.toBe("");
+        // The parent resets the field back to its prior value (a cancel, a reload) —
+        // different from the 0 this invalid entry last reported, so the field's
+        // resync effect runs.
+        fireEvent.click(screen.getByText("reset"));
+        expect(screen.queryByTestId("money-input-error")).toBeNull();
+        expect(input().validationMessage).toBe("");
+    });
+});

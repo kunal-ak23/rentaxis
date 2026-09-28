@@ -13,6 +13,7 @@ import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { Pagination } from "@/components/ui/Pagination";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { NumberInput } from "@/components/ui/NumberInput";
+import { MONEY_MAX_12_2 } from "@/lib/money";
 import { useUrlState } from "@/hooks/useUrlState";
 
 type Property = {
@@ -627,7 +628,7 @@ function PropertiesPageInner() {
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">
                                     {t("fixedExpenses")}
                                 </label>
-                                <NumberInput placeholder="0" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.fixedExpenses} onChange={(v) => setProjectFormData({ ...projectFormData, fixedExpenses: v })} />
+                                <NumberInput money={{ allowZero: true, max: MONEY_MAX_12_2 }} showZero placeholder="0" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.fixedExpenses} onChange={(v) => setProjectFormData({ ...projectFormData, fixedExpenses: v })} />
                             </div>
                             {projectFormError && (
                                 <div className="col-span-2 flex items-center gap-2 bg-error/10 border border-error/30 text-error rounded-xl px-4 py-3 text-xs font-medium">
@@ -695,13 +696,13 @@ function PropertiesPageInner() {
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">{t("expectedRent")}</label>
-                                <NumberInput placeholder="50000" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.expectedRent} onChange={(v) => setPropertyFormData({ ...propertyFormData, expectedRent: v })} />
+                                <NumberInput money={{ allowZero: true, max: MONEY_MAX_12_2 }} showZero placeholder="50000" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.expectedRent} onChange={(v) => setPropertyFormData({ ...propertyFormData, expectedRent: v })} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ms-1">
                                     {t("actualRent")}
                                 </label>
-                                <NumberInput placeholder="0" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.actualRent} onChange={(v) => setPropertyFormData({ ...propertyFormData, actualRent: v })} />
+                                <NumberInput money={{ allowZero: true, max: MONEY_MAX_12_2 }} showZero placeholder="0" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.actualRent} onChange={(v) => setPropertyFormData({ ...propertyFormData, actualRent: v })} />
                             </div>
                             {propertyFormError && (
                                 <div className="col-span-2 flex items-center gap-2 bg-error/10 border border-error/30 text-error rounded-xl px-4 py-3 text-xs font-medium">

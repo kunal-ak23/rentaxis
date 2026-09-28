@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MONEY_MAX, parseMoneyInput } from "@/lib/money";
+import { MONEY_MAX, MONEY_MAX_12_2, parseMoneyInput } from "@/lib/money";
 
 /**
  * Break-it round 1 (money) F1–F3: the one parse every money field uses. It never
@@ -68,6 +68,16 @@ describe("parseMoneyInput", () => {
         expect(parseMoneyInput("١٬٢٣٤٫٥٠")).toEqual({ ok: true, value: 1234.5 });
         expect(parseMoneyInput("۱۲۳")).toEqual({ ok: true, value: 123 });
         expect(parseMoneyInput("١٢٣٫٤٥٦")).toEqual({ ok: false, error: "decimals" });
+    });
+
+    it("refuses beyond a caller-supplied ceiling, for a field on a narrower column", () => {
+        expect(parseMoneyInput("9999999999.99", { max: MONEY_MAX_12_2 }))
+            .toEqual({ ok: true, value: MONEY_MAX_12_2 });
+        expect(parseMoneyInput("10000000000.00", { max: MONEY_MAX_12_2 }))
+            .toEqual({ ok: false, error: "max" });
+        // Within the ledger-wide max but past this field's own, narrower one.
+        expect(parseMoneyInput("999999999999.99", { max: MONEY_MAX_12_2 }))
+            .toEqual({ ok: false, error: "max" });
     });
 
     it("takes a number as well as text", () => {
