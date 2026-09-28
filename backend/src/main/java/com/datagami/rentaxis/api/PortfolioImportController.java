@@ -192,7 +192,7 @@ public class PortfolioImportController {
         job.setCreatedBy(userId);
         ImportJob savedJob = importJobRepository.save(job);
 
-        importService.processImportAsync(fileBytes, savedJob, tenantId);
+        importService.processCutoverImportAsync(fileBytes, savedJob, tenantId);
         return ResponseEntity.ok(new ImportJobStartedDTO(savedJob.getId()));
     }
 
