@@ -11,6 +11,7 @@ import { businessTodayIso } from "@/lib/businessDate";
 
 vi.mock("next-intl", () => ({
     useTranslations: () => (key: string) => key,
+    useLocale: () => "en",
 }));
 
 const staffSession = { user: { role: "TENANT_ADMIN" } };

@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { X, Loader2, ChevronLeft, ChevronRight, CalendarDays, Building2, MapPin } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { formatSlotInDubai } from "@/lib/meetings/slotText";
 import { cn } from "@/lib/utils";
 import { businessTodayIso } from "@/lib/businessDate";
 
@@ -86,6 +87,7 @@ function buildSlotGrid(slotsFromApi: Slot[]): Slot[] {
 
 export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session }: Props) {
     const t = useTranslations("Meetings");
+    const locale = useLocale();
     const isRenter = session?.user?.role === "RENTER";
 
     // Step
@@ -438,8 +440,11 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
 
             if (res.status === 409) {
                 const err = await res.json().catch(() => ({}));
-                setConflictMessage(err.error ?? t("create.slotTaken"));
-                setSuggestedSlot(err.nextAvailableSlot ?? null);
+                // Break-it R3 portal3 F4: the message is ours (translated); the
+                // server's next free slot is an ISO instant, shown in Dubai time
+                // in the user's locale — never the raw UTC string.
+                setConflictMessage(t("create.slotTaken"));
+                setSuggestedSlot(formatSlotInDubai(err.nextAvailableSlot, locale));
                 setSubmitting(false);
                 return;
             }

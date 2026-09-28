@@ -94,8 +94,10 @@ public class MeetingService {
                 dto.getHostUserId(), TenantContextHolder.getTenantId(), dto.getSlotStart(), INACTIVE_STATUSES);
         if (!conflicts.isEmpty()) {
             Instant nextSlot = findNextAvailableSlot(dto.getHostUserId(), dto.getSlotStart());
-            throw new SlotConflictException(
-                    "Slot is already taken for this host. Next available: " + nextSlot, nextSlot);
+            // Break-it R3 portal3 F4: the next free slot travels as data (the
+            // response's ISO nextAvailableSlot, formatted by the client in Dubai
+            // time) — no longer baked into the English message as raw UTC.
+            throw new SlotConflictException("Slot is already taken for this host.", nextSlot, "meeting.slotTaken");
         }
 
         Meeting meeting = new Meeting();

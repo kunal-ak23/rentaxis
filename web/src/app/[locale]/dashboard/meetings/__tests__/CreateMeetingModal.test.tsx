@@ -5,6 +5,7 @@ import CreateMeetingModal from "../CreateMeetingModal";
 // Mock next-intl's useTranslations to return the key directly.
 vi.mock("next-intl", () => ({
     useTranslations: () => (key: string) => key,
+    useLocale: () => "en",
 }));
 
 afterEach(() => {
