@@ -167,8 +167,11 @@ public class ContractImportPostJobService {
 
     private String errorJson(RuntimeException e) {
         try {
-            return objectMapper.writeValueAsString(List.of(ImportErrorDTO.file("Batch", "Post",
-                    e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage())));
+            // Break-it R3 data3 F4: never the raw exception text (SQL, ids) — a refusal
+            // written for users as is, a unique-key race as "already being posted",
+            // anything else as a reference whose detail is only in the log.
+            return objectMapper.writeValueAsString(List.of(com.datagami.rentaxis.core.service.ImportFailures.fileError(
+                    e, com.datagami.rentaxis.core.service.ImportFailures.Kind.POST, log, "Bulk-post job", "Batch", "Post")));
         } catch (Exception jsonEx) {
             return "[{\"sheet\":\"Batch\",\"row\":null,\"field\":\"Post\","
                     + "\"message\":\"The bulk post failed\"}]";

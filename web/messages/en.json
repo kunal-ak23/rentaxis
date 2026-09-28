@@ -4803,5 +4803,11 @@
       "CIVIL_DEFENSE": "Civil Defense",
       "OTHER": "Other"
     }
+  },
+  "ImportErrors": {
+    "import_alreadyRunning": "This file is already being imported — refresh to see the result",
+    "import_failedRef": "Import failed — reference {reference}",
+    "post_alreadyRunning": "This is already being posted — refresh to see the result",
+    "post_failedRef": "Posting failed — reference {reference}"
   }
 }

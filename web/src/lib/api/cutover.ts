@@ -302,6 +302,9 @@ export type ImportError = {
     row: number | null;
     field: string;
     message: string;
+    /** Break-it R3 data3 F4: a key the message is translated by (`importErrorText`); absent for English-only text. */
+    code?: string | null;
+    args?: Record<string, string> | null;
 };
 
 /**
@@ -357,6 +360,9 @@ export type LeaseOutcome = {
     externalContractRef: string | null;
     outcome: LeaseOutcomeStatus;
     reason: string | null;
+    /** Break-it R3 data3 F4: translation key/values for `reason` (`importErrorText`). */
+    reasonCode?: string | null;
+    reasonArgs?: Record<string, string> | null;
     journals: number;
     chequesDeposited: number;
     chequesCleared: number;

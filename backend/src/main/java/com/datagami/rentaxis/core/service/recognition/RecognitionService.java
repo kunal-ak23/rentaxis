@@ -1144,7 +1144,12 @@ public class RecognitionService {
                 // take down with it, which is the whole point of the separate bean.
                 log.warn("Recognition entry {} ({}–{}) could not be posted: {}",
                         row.id(), row.periodStart(), row.periodEnd(), e.getMessage());
-                errors.add("Entry " + row.periodStart() + "–" + row.periodEnd() + ": " + e.getMessage());
+                // Break-it R3 data3 F4: a refusal written for users as is; anything else
+                // (SQL, ids) is logged under a reference and only the reference is shown.
+                errors.add("Entry " + row.periodStart() + "–" + row.periodEnd() + ": "
+                        + com.datagami.rentaxis.core.service.ImportFailures.safe(e,
+                                com.datagami.rentaxis.core.service.ImportFailures.Kind.POST, log,
+                                "Recognition entry " + row.id()).message());
             }
         }
         return new RecognitionRunResult(preview, preview ? 0 : done.size(), done.size(),

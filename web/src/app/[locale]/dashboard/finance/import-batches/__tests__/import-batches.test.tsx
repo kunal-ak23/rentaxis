@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../../../../messages/en.json";
+import ar from "../../../../../../../messages/ar.json";
 import type { ImportBatch } from "@/lib/api/cutover";
 
 /**
@@ -965,5 +966,54 @@ describe("bulk post: resume and contention", () => {
 
         await waitFor(() => expect(screen.getByTestId("post-batch-b-draft")).toBeDisabled());
         expect(screen.getByTestId("post-blocked")).toHaveTextContent(en.Cutover.postBlockedByUpload);
+    });
+});
+
+describe("job errors never show raw internals (break-it R3 data3 F4)", () => {
+    function renderIn(locale: "en" | "ar") {
+        return render(
+            <NextIntlClientProvider locale={locale} messages={locale === "ar" ? ar : en}>
+                <ImportBatchesPage />
+            </NextIntlClientProvider>,
+        );
+    }
+
+    it("shows the lost two-tab race as 'already being imported' in Arabic and re-reads the batch list", async () => {
+        api.status.mockResolvedValue(jobResult({
+            status: "FAILED", importBatchId: null,
+            errors: [{ sheet: "General", row: null, field: "File",
+                message: "This file is already being imported — refresh to see the result", code: "import.alreadyRunning" }],
+        }));
+        renderIn("ar");
+        await screen.findByTestId("batch-row-b-draft");
+        expect(api.list).toHaveBeenCalledTimes(1);
+        pickWorkbook();
+
+        const row = await screen.findByTestId("import-error-0");
+        expect(row).toHaveTextContent(ar.ImportErrors.import_alreadyRunning);
+        expect(row).not.toHaveTextContent("already being imported");
+        // The winning tab's batch is in the list without a reload.
+        await waitFor(() => expect(api.list).toHaveBeenCalledTimes(2));
+    });
+
+    it("shows a failed contract's reference, translated, in the outcomes table", async () => {
+        const base = postJob();
+        api.postStatus.mockResolvedValue({
+            ...base,
+            result: {
+                ...base.result,
+                leases: base.result.leases.map(l => l.outcome === "FAILED"
+                    ? { ...l, reason: "Posting failed — reference 1A2B3C4D", reasonCode: "post.failedRef", reasonArgs: { reference: "1A2B3C4D" } }
+                    : l),
+            },
+        });
+        renderIn("ar");
+        await screen.findByTestId("batch-row-b-draft");
+        fireEvent.click(screen.getByTestId("post-batch-b-draft"));
+        fireEvent.click(await screen.findByTestId("confirm-post-batch"));
+
+        await screen.findByTestId("post-results-table");
+        const failed = screen.getByTestId("post-result-0");
+        expect(failed).toHaveTextContent(ar.ImportErrors.post_failedRef.replace("{reference}", "1A2B3C4D"));
     });
 });

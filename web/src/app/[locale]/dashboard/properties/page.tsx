@@ -5,6 +5,7 @@ import { useTranslations, useLocale } from "next-intl";
 import { Plus, MapPin, Building2, Hash, ArrowRight, X, Users, DollarSign, PieChart, Activity, List, LayoutGrid, Search, AlertCircle, RefreshCw, Upload, FileSpreadsheet, CheckCircle2, Loader2, Download } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
+import { importErrorText, type CodedMessage } from "@/lib/importErrorText";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import ActionsMenu from "@/components/ui/ActionsMenu";
 import { useSession } from "next-auth/react";
@@ -76,6 +77,7 @@ function PropertiesPageInner() {
     const tList = useTranslations("ListActions");
     const e = useTranslations("Emirates");
     const tCommon = useTranslations("Common");
+    const tImportErr = useTranslations("ImportErrors");
     // Enum codes to labels; an unknown code falls back to its readable form.
     const propertyTypeLabel = (code: string | null | undefined) =>
         code && t.has(`propertyType${code}`) ? t(`propertyType${code}`) : (code ?? "").replace(/_/g, " ");
@@ -938,7 +940,7 @@ function PropertiesPageInner() {
                                                                         {rowLabel(err.row)}
                                                                     </span>
                                                                     {err.field && <span className="text-[10px] font-semibold text-error shrink-0">{err.field}:</span>}
-                                                                    <span className="text-foreground">{err.message}</span>
+                                                                    <span className="text-foreground">{importErrorText(tImportErr, err as CodedMessage)}</span>
                                                                 </div>
                                                             ))}
                                                         </div>

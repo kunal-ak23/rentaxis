@@ -829,7 +829,7 @@ public class PortfolioImportService {
             job.setCompletedAt(Instant.now());
             importJobRepository.save(job);
         } catch (Exception e) {
-            log.error("Portfolio import failed: jobId={}", job.getId(), e);
+            log.info("Portfolio import failed: jobId={} (detail logged by ImportFailures)", job.getId());
             job.setStatus("FAILED");
             // Reset counts — the @Transactional on persistWorkbook rolled back all DB writes,
             // so any counts mutated before the exception must not appear on the failed job record
@@ -843,10 +843,14 @@ public class PortfolioImportService {
             // gone too; a job still pointing at it would send the web to a 404.
             job.setImportBatchId(null);
             try {
-                job.setErrors(objectMapper.writeValueAsString(
-                        List.of(ImportErrorDTO.file("General", "File", e.getMessage()))));
+                // Break-it R3 data3 F4: never e.getMessage() — for the two-tab race that is
+                // Hibernate's batch insert with columns, values and the organisation id. A
+                // unique-key race reads "already being imported"; anything else a reference
+                // whose detail is only in the log.
+                job.setErrors(objectMapper.writeValueAsString(List.of(ImportFailures.fileError(
+                        e, ImportFailures.Kind.IMPORT, log, "Portfolio import job " + job.getId(), "General", "File"))));
             } catch (Exception jsonEx) {
-                job.setErrors("[{\"sheet\":\"General\",\"row\":0,\"field\":\"\",\"message\":\"Import failed\"}]");
+                job.setErrors("[{\"sheet\":\"General\",\"row\":null,\"field\":\"File\",\"message\":\"Import failed\"}]");
             }
             job.setCompletedAt(Instant.now());
             importJobRepository.save(job);

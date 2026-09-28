@@ -11,6 +11,7 @@ import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { Pagination } from "@/components/ui/Pagination";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { ApiError } from "@/lib/api/facilities";
+import { importErrorText } from "@/lib/importErrorText";
 import { Link } from "@/i18n/routing";
 import {
     cutoverApi,
@@ -82,6 +83,7 @@ export default function ImportBatchesPage() {
     const t = useTranslations("Cutover");
     const tLedger = useTranslations("Ledger");
     const tCommon = useTranslations("Common");
+    const tImportErr = useTranslations("ImportErrors");
     const locale = useLocale();
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
@@ -210,6 +212,16 @@ export default function ImportBatchesPage() {
         if (!importedBatchId) return;
         load();
     }, [importedBatchId, load]);
+
+    /**
+     * Break-it R3 data3 F4: an upload that lost a race with another tab fails, but
+     * the other tab's batch is real — re-read the table once so it shows up.
+     */
+    const failedImportJobId = importJob.job?.status === "FAILED" ? importJob.job.jobId : null;
+    useEffect(() => {
+        if (!failedImportJobId) return;
+        load();
+    }, [failedImportJobId, load]);
 
     /**
      * Review item (e): the highlight survives dismissing the import panel. It is
@@ -534,7 +546,7 @@ export default function ImportBatchesPage() {
                                                         <td className={td}>{err.sheet}</td>
                                                         <td className={`${td} text-end tabular-nums`}>{err.row || "—"}</td>
                                                         <td className={`${td} font-mono text-muted`}>{err.field || "—"}</td>
-                                                        <td className={td}>{err.message}</td>
+                                                        <td className={td}>{importErrorText(tImportErr, err)}</td>
                                                     </tr>
                                                 );
                                             })}
@@ -678,7 +690,7 @@ export default function ImportBatchesPage() {
                     {postJob.job.errors.length > 0 && (
                         <ul className="mt-2 list-disc ms-5 text-xs text-error space-y-0.5">
                             {postJob.job.errors.map((e, i) => (
-                                <li key={i}>{e.message}</li>
+                                <li key={i}>{importErrorText(tImportErr, e)}</li>
                             ))}
                         </ul>
                     )}
@@ -726,7 +738,7 @@ export default function ImportBatchesPage() {
                                                             {r.externalContractRef ?? r.leaseId.slice(0, 8)}
                                                         </td>
                                                         <td className={td}>{t(`outcome${r.outcome}`)}</td>
-                                                        <td className={`${td} text-muted`}>{r.reason ?? "—"}</td>
+                                                        <td className={`${td} text-muted`}>{r.reason ? importErrorText(tImportErr, { message: r.reason, code: r.reasonCode, args: r.reasonArgs }) : "—"}</td>
                                                     </tr>
                                                 );
                                             })}

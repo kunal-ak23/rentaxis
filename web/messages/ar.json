@@ -4803,5 +4803,11 @@
       "CIVIL_DEFENSE": "الدفاع المدني",
       "OTHER": "أخرى"
     }
+  },
+  "ImportErrors": {
+    "import_alreadyRunning": "يجري استيراد هذا الملف بالفعل — حدّث الصفحة لرؤية النتيجة",
+    "import_failedRef": "فشل الاستيراد — المرجع {reference}",
+    "post_alreadyRunning": "يجري ترحيل هذا بالفعل — حدّث الصفحة لرؤية النتيجة",
+    "post_failedRef": "فشل الترحيل — المرجع {reference}"
   }
 }
