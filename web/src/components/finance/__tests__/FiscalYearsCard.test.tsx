@@ -4,6 +4,7 @@ import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../messages/en.json";
 import ar from "../../../../messages/ar.json";
 import type { FiscalYear, YearClosePreview } from "@/lib/api/ledger";
+import { ApiError } from "@/lib/api/facilities";
 
 const api = vi.hoisted(() => ({ list: vi.fn(), preview: vi.fn(), close: vi.fn(), reopen: vi.fn() }));
 vi.mock("@/lib/api/ledger", async orig => {
@@ -112,11 +113,37 @@ describe("FiscalYearsCard", () => {
         expect(confirm).toBeDisabled();
         fireEvent.change(screen.getByTestId("fiscal-reopen-reason"), { target: { value: "Missed invoice" } });
         fireEvent.click(confirm);
-        await waitFor(() => expect(api.reopen).toHaveBeenCalledWith(2024, "Missed invoice"));
+        await waitFor(() => expect(api.reopen).toHaveBeenCalledWith(2024, "Missed invoice", null));
         cleanup();
         renderCard(false);
         await screen.findByTestId("fiscal-years-table");
         expect(screen.queryByTestId("fiscal-year-reopen-2024")).toBeNull();
+    });
+
+    /**
+     * Break-it R3 money3 N6: the re-open carries the lock the dialog showed; a lock
+     * moved by another tab since answers 409 fiscal.changed — nothing re-opened, the
+     * card and the page reload, and the user is told why.
+     */
+    it("sends the lock it showed and reloads when the server says it changed", async () => {
+        const body = JSON.stringify({ error: true, status: 409, code: "fiscal.changed", message: "The period lock changed" });
+        api.reopen.mockRejectedValue(new ApiError(409, "The period lock changed", body));
+        const onChanged = vi.fn();
+        render(
+            <NextIntlClientProvider locale="ar" messages={ar}>
+                <FiscalYearsCard canReopen lockedThrough="2025-12-31" booksStartDate="2023-01-01" onChanged={onChanged} />
+            </NextIntlClientProvider>,
+        );
+        fireEvent.click(await screen.findByTestId("fiscal-year-reopen-2024"));
+        fireEvent.change(screen.getByTestId("fiscal-reopen-reason"), { target: { value: "Missed invoice" } });
+        const listCalls = api.list.mock.calls.length;
+        fireEvent.click(screen.getByTestId("fiscal-reopen-confirm"));
+        await waitFor(() => expect(api.reopen).toHaveBeenCalledWith(2024, "Missed invoice", "2025-12-31"));
+        expect(await screen.findByText(ar.Common.errors.fiscal.changed)).toBeTruthy();
+        expect(onChanged).toHaveBeenCalled();
+        expect(api.list.mock.calls.length).toBeGreaterThan(listCalls);
+        // Still open: the user reviews the move from the current lock.
+        expect(screen.getByTestId("fiscal-reopen-confirm")).toBeTruthy();
     });
 
     it("reads in Arabic", async () => {

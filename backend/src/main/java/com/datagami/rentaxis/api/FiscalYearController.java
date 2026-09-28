@@ -33,7 +33,11 @@ public class FiscalYearController {
     public record CloseRequest(boolean overrideWarnings) {
     }
 
-    public record ReopenRequest(String reason) {
+    /** {@code expectedLockedThrough}: the lock the dialog showed (break-it R3 money3 N6); optional. */
+    public record ReopenRequest(String reason, LocalDate expectedLockedThrough) {
+        public ReopenRequest(String reason) {
+            this(reason, null);
+        }
     }
 
     @GetMapping
@@ -54,6 +58,7 @@ public class FiscalYearController {
     @PostMapping("/{fy}/reopen")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<FiscalYearDTO> reopen(@PathVariable int fy, @RequestBody ReopenRequest body) {
-        return ResponseEntity.ok(service.reopen(fy, body == null ? null : body.reason(), LocalDate.now()));
+        return ResponseEntity.ok(service.reopen(fy, body == null ? null : body.reason(), LocalDate.now(),
+                body == null ? null : body.expectedLockedThrough()));
     }
 }

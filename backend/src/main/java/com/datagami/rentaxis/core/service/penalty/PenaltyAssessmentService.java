@@ -403,7 +403,7 @@ public class PenaltyAssessmentService {
 
         LocalDate on = date != null ? date : manualDates.today();
         // Break-it R2 money2 F1/F2: the manual-date window every other journal has.
-        manualDates.requireWithinAYear(on, "A penalty charge");
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.PENALTY_CHARGE, on);
         BigDecimal amount = a.getAmount();
         UUID chequeId = a.getCheque() != null ? a.getCheque().getId() : null;
         String narration = narrationFor(a);
@@ -586,7 +586,14 @@ public class PenaltyAssessmentService {
         if (note == null || note.isBlank()) {
             throw new BusinessRuleViolationException("A reversal needs a reason");
         }
-        LocalDate on = date != null ? date : LocalDate.now();
+        LocalDate on = date != null ? date : manualDates.today();
+        // Break-it R3 money3 sweep: a reversal is a manual entry (the one-year window);
+        // one that also cancels a registered collection row records that cancellation,
+        // which cannot be dated after today — asked here, before anything is posted.
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.PENALTY_REVERSAL, on);
+        if (collection != null && collection.getStatus() == ChequeStatus.REGISTERED) {
+            manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.CHEQUE_CANCEL, on);
+        }
         // R1 P2-3 (the F14-41 rule): not before the penalty was charged.
         com.datagami.rentaxis.domain.entity.JournalEntry pen = journalEntries.findById(a.getJournalId())
                 .orElseThrow(() -> new IllegalStateException("Penalty journal " + a.getJournalId() + " not found"));

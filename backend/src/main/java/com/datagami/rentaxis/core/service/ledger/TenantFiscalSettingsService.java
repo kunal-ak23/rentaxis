@@ -144,8 +144,7 @@ public class TenantFiscalSettingsService {
      */
     @Transactional
     public TenantFiscalSettings lockThroughAsUser(LocalDate date) {
-        manualDates.requireNotAfterToday(date, "period lock",
-                "Only a period that has already ended can be locked; nothing was locked.");
+        manualDates.require(PostingDatePath.PERIOD_LOCK, date);
         return lockThrough(date);
     }
 
@@ -173,8 +172,13 @@ public class TenantFiscalSettingsService {
         // below sees every point such a writer has committed, and none can be created
         // behind it at a date this lock covers (PR #348 review P3-3).
         entityManager.refresh(s, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
-        if (s.getBooksLockedThrough() != null && date.isBefore(s.getBooksLockedThrough())) {
-            throw new BusinessRuleViolationException("Period lock cannot move backwards (currently " + s.getBooksLockedThrough() + ")");
+        // Break-it R3 money3 N1: the lock protects posted journals; while the organisation
+        // has none there is nothing to protect, so a lock set by mistake can be taken back.
+        if (s.getBooksLockedThrough() != null && date.isBefore(s.getBooksLockedThrough()) && hasJournals()) {
+            String was = s.getBooksLockedThrough().format(DMY);
+            throw new BusinessRuleViolationException("Period lock cannot move backwards (currently " + was
+                    + "): journals are posted inside it. Re-open the latest closed fiscal year instead.",
+                    "fiscal.lockBackwards", java.util.Map.of("current", was));
         }
         vatTaxPoints.findFirstByTenantIdAndStatusAndTaxPointDateLessThanEqualOrderByTaxPointDateAsc(
                         s.getTenantId(), VatTaxPointStatus.PLANNED, date)
@@ -310,9 +314,32 @@ public class TenantFiscalSettingsService {
                             "earliest", PostingService.EARLIEST_ENTRY_DATE.plusDays(1).toString(),
                             "latest", PostingService.LATEST_ENTRY_DATE.plusDays(1).toString()));
         }
+        // Break-it R3 money3 N1: the books start implies the first lock (the day before
+        // it), so it may be at most three months ahead — 2062 typed for 2026 locked the
+        // organisation out of every posting.
+        if (changing) manualDates.requireBooksStart(date);
         s.setBooksStartDate(date);
-        if (date != null && s.getBooksLockedThrough() == null) s.setBooksLockedThrough(date.minusDays(1));
+        if (date != null) {
+            if (s.getBooksLockedThrough() == null) {
+                s.setBooksLockedThrough(date.minusDays(1));
+            } else if (changing && !hasJournals()) {
+                // N1 ruling: with nothing posted yet the implied lock follows the books
+                // start both ways — the way back from a mistyped year. Once journals
+                // exist the lock only moves forward (lockThrough) or by a year re-open.
+                s.setBooksLockedThrough(date.minusDays(1));
+            }
+        }
         return repo.save(s);
+    }
+
+    private static final java.time.format.DateTimeFormatter DMY = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
+    /** True once this tenant has any journal entry (posted or reversed); the tenant is bound explicitly. */
+    @Transactional(readOnly = true)
+    public boolean hasJournals() {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId == null) return true;
+        return journals.existsByTenantId(tenantId);
     }
 
     /** Ruling R21's sentence, shared so the guard and its test cannot drift apart. */

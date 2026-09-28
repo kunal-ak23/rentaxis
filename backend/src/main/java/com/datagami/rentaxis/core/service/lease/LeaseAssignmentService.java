@@ -83,6 +83,15 @@ public class LeaseAssignmentService {
     @org.springframework.beans.factory.annotation.Autowired
     private com.datagami.rentaxis.core.service.ledger.AccountResolver accountResolver;
 
+    /** Break-it R3 money3: the shared posting-date policy ({@link com.datagami.rentaxis.core.service.ledger.PostingDatePath}), on the app clock. */
+    private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates =
+            com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setManualPostingDates(com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates) {
+        this.manualDates = manualDates;
+    }
+
     public LeaseAssignmentService(LeaseRepository leaseRepository, LeaseAssignmentRepository assignments,
                                   RenterRepository renters, ChequeRepository chequeRepository, LeaseService leaseService,
                                   LeasePostingService leasePostingService, PostingService postingService,
@@ -275,7 +284,7 @@ public class LeaseAssignmentService {
         // PR #359 R2: the renter, the open cheques and the portal move at once, so the
         // hand-over cannot be dated ahead of today (instalments before it would be
         // collected and invoiced in the new renter's name).
-        if (r.effectiveDate().isAfter(LocalDate.now())) {
+        if (!manualDates.allows(com.datagami.rentaxis.core.service.ledger.PostingDatePath.LEASE_ASSIGNMENT, r.effectiveDate())) {
             throw new BusinessRuleViolationException("An assignment cannot take effect after today; post it on or after "
                     + r.effectiveDate() + ".", "lease.assignmentFuture", Map.of("date",
                     r.effectiveDate().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))));

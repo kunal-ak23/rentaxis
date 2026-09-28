@@ -88,6 +88,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * filter inside one, so every read-back goes through {@link #tx}.</p>
  */
 @SpringBootTest
+// Break-it R3 money3: a fixed 2026–27 timeline; settlements, addenda and penalty reversals
+// that record past events are refused "in the future" against the real today.
+@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class)
 class LeaseRenewalServiceIT extends AbstractPostgresIT {
 
     @Autowired LeaseRenewalService renewal;

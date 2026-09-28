@@ -88,6 +88,56 @@ public class ManualPostingDates {
     }
 
     /**
+     * Break-it round 3 (money3): the one entry point every posting path asks, by its
+     * classification in {@link PostingDatePath}. A null date is left to the caller.
+     * EVENT → not after today; PLANNED → not more than a year ahead; SCHEDULE → the
+     * 2000–2099 range {@link PostingService} enforces on every entry anyway.
+     */
+    public void require(PostingDatePath path, LocalDate date) {
+        if (date == null) return;
+        switch (path.dateClass()) {
+            case EVENT -> requireNotAfterToday(date, path.label(), path.why());
+            case PLANNED -> requireWithinAYear(date, path.label());
+            case SCHEDULE -> PostingService.requireNumberableDate(date);
+        }
+    }
+
+    /**
+     * The same question as {@link #require} without the refusal, for a path that keeps
+     * its own long-standing coded sentence (the assignment's, bank reconciliation's).
+     */
+    public boolean allows(PostingDatePath path, LocalDate date) {
+        if (date == null) return true;
+        return switch (path.dateClass()) {
+            case EVENT -> !isAfterToday(date);
+            case PLANNED -> !date.isAfter(latestAllowed());
+            case SCHEDULE -> PostingService.isNumberable(date);
+        };
+    }
+
+    /** The latest books start date: three months after today (break-it R3 money3 N1 ruling). */
+    public LocalDate latestBooksStart() {
+        return today().plusMonths(3);
+    }
+
+    /**
+     * Break-it R3 money3 N1: the books start date implies the first period lock (the
+     * day before it), so 2062 typed for 2026 locked the organisation out. It may be at
+     * most three months ahead — a new organisation preparing its opening balances.
+     */
+    public void requireBooksStart(LocalDate date) {
+        if (date == null) return;
+        LocalDate latest = latestBooksStart();
+        if (date.isAfter(latest)) {
+            throw new BusinessRuleViolationException(
+                    "The books cannot start on " + date.format(DMY) + ": that is more than three months ahead (the latest is "
+                            + latest.format(DMY) + "). Check the year.",
+                    "fiscal.booksStartTooFar",
+                    Map.of("date", date.format(DMY), "latest", latest.format(DMY)));
+        }
+    }
+
+    /**
      * Refuses a date more than a year ahead with a 400 the user can act on. A null
      * date is left to the caller's own "a date is required" rule.
      *

@@ -223,8 +223,7 @@ public class BadDebtService {
      */
     private void requireWriteOffDate(LocalDate date) {
         manualDates.requireWithinAYear(date, "A bad-debt write-off");
-        manualDates.requireNotAfterToday(date, "write-off",
-                "A debt is written off when the decision is made; date it today or earlier.");
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.BAD_DEBT_WRITE_OFF, date);
     }
 
     /** An organisation admin writes the debt off: the items close and the BDW posts. */
@@ -285,7 +284,9 @@ public class BadDebtService {
             throw new BusinessRuleViolationException("Money was recovered on this write-off; it cannot be reversed.",
                     "badDebt.recoveredCannotReverse", Map.of());
         }
-        LocalDate on = date != null ? date : LocalDate.now();
+        LocalDate on = date != null ? date : manualDates.today();
+        // Break-it R3 money3 sweep: a reversal is a manual entry — the one-year window.
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.BAD_DEBT_REVERSAL, on);
         if (on.isBefore(w.getWriteOffDate())) {
             throw new BusinessRuleViolationException("A reversal cannot be dated before the write-off ("
                     + w.getWriteOffDate().format(DMY) + ")", "badDebt.reverseBeforeWriteOff",
@@ -347,9 +348,10 @@ public class BadDebtService {
                     + " choose one of its bank or cash accounts.", "badDebt.recoveryAccountProperty",
                     Map.of("account", bank.getCode() == null ? bank.getName() : bank.getCode()));
         }
-        LocalDate on = r.date() != null ? r.date() : LocalDate.now();
-        // Batch 4 review #4: a recovery is a receipt dated by hand; its BDR number carries a two-digit year.
+        LocalDate on = r.date() != null ? r.date() : manualDates.today();
+        // Batch 4 review #4 / R3 money3 sweep: a recovery is money received — not after today.
         manualDates.requireWithinAYear(on, "A bad-debt recovery");
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.BAD_DEBT_RECOVERY, on);
         String narration = "Bad debt recovered" + (r.note() == null || r.note().isBlank() ? "" : ": " + r.note().trim());
         JournalEntry bdr = posting.post(PostingRequest.ofPairs(JournalDocType.BDR, on, narration,
                 LeaseChequeRegistrar.dimensions(lease, null), JournalSourceType.BAD_DEBT, w.getId(), null,

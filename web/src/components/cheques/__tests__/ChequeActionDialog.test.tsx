@@ -52,6 +52,7 @@ vi.mock("@/lib/api/leasing", async orig => {
 });
 
 import ChequeActionDialog from "../ChequeActionDialog";
+import { businessTodayIso } from "@/lib/businessDate";
 
 function cheque(over: Partial<Cheque> = {}): Cheque {
     return {
@@ -217,6 +218,28 @@ describe("ChequeActionDialog — receive account (F14-17)", () => {
         expect((screen.getByTestId("cheque-receive-confirm") as HTMLButtonElement).disabled).toBe(true);
         resolve({ target: CASH, options: [CASH] });
         await waitFor(() => expect((screen.getByTestId("cheque-receive-confirm") as HTMLButtonElement).disabled).toBe(false));
+    });
+});
+
+/** Break-it R3 money3 N2: a receipt and a cancellation record what has happened — not after today. */
+describe("ChequeActionDialog — receive and cancel are not dated after today (money3 N2)", () => {
+    const tomorrow = () => {
+        const d = new Date(`${businessTodayIso()}T00:00:00Z`);
+        d.setUTCDate(d.getUTCDate() + 1);
+        return d.toISOString().slice(0, 10);
+    };
+
+    it.each(["receive", "cancel"] as const)("%s: max is today and a later date blocks the confirm", async action => {
+        const CASH = { id: "acc-cash", code: "A-02-05-001", name: "Cash in hand", nameAr: null, kind: "CASH" as const, bankAccount: null };
+        api.settlementTarget.mockResolvedValue({ target: CASH, options: [CASH] });
+        renderDialog(action, { mode: "CASH", status: "REGISTERED" });
+        const input = screen.getByTestId("cheque-action-date");
+        expect(input).toHaveAttribute("max", businessTodayIso());
+        fireEvent.change(input, { target: { value: tomorrow() } });
+        expect(screen.getByTestId("cheque-action-date-error")).toHaveTextContent("this has not happened yet");
+        await waitFor(() => expect(screen.getByTestId(`cheque-${action}-confirm`)).toBeDisabled());
+        fireEvent.change(input, { target: { value: "2099-12-31" } });
+        expect(screen.getByTestId("cheque-action-date-error")).toBeInTheDocument();
     });
 });
 

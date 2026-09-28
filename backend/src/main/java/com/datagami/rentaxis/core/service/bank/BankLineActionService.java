@@ -127,7 +127,8 @@ public class BankLineActionService {
     }
 
     private void requireNotFuture(LocalDate d) {
-        if (d.isAfter(LocalDate.now(clock))) {
+        // Break-it R3 money3: the shared policy's "not after today", in bank-rec's own coded words.
+        if (!new com.datagami.rentaxis.core.service.ledger.ManualPostingDates(clock).allows(com.datagami.rentaxis.core.service.ledger.PostingDatePath.BANK_STATEMENT_LINE, d)) {
             throw BankRecRefusal.refuse("lineInFuture", "The line is dated in the future; nothing can be booked from it yet");
         }
     }

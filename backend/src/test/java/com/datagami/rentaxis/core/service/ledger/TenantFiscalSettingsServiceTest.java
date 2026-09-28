@@ -103,9 +103,81 @@ class TenantFiscalSettingsServiceTest {
         assertThat(opened.getBooksStartDate()).isEqualTo(LocalDate.of(2026, 4, 1));
         assertThat(opened.getBooksLockedThrough()).isEqualTo(LocalDate.of(2026, 3, 31));
 
+        // Once journals exist, an existing lock is left alone (it only moves forward).
+        when(journals.existsByTenantId(tenant)).thenReturn(true);
         when(repo.findById(tenant)).thenReturn(Optional.of(settings(1, LocalDate.of(2026, 8, 31))));
         TenantFiscalSettings alreadyLocked = service.setBooksStartDate(LocalDate.of(2026, 4, 1));
         assertThat(alreadyLocked.getBooksLockedThrough()).isEqualTo(LocalDate.of(2026, 8, 31));
+    }
+
+    private void today(String instant) {
+        service.setManualPostingDates(new ManualPostingDates(java.time.Clock.fixed(
+                java.time.Instant.parse(instant), ManualPostingDates.BUSINESS_ZONE)));
+    }
+
+    /**
+     * Break-it R3 money3 N1 (BS1–BS3): the books start implied a far-future lock —
+     * 2062-10-01 locked the organisation through 2062-09-30. At most three months
+     * ahead (Dubai), with a readable coded refusal; nothing is saved.
+     */
+    @Test
+    void theBooksStartIsAtMostThreeMonthsAhead() {
+        today("2026-09-28T08:00:00Z");
+        when(repo.findById(tenant)).thenReturn(Optional.of(settings(1, null)));
+        for (LocalDate typo : new LocalDate[]{LocalDate.of(2062, 10, 1), LocalDate.of(2099, 12, 31), LocalDate.of(2027, 9, 29),
+                LocalDate.of(2026, 12, 29)}) {
+            assertThatThrownBy(() -> service.setBooksStartDate(typo))
+                    .isInstanceOf(BusinessRuleViolationException.class)
+                    .hasMessageContaining("more than three months ahead")
+                    .satisfies(e -> {
+                        BusinessRuleViolationException b = (BusinessRuleViolationException) e;
+                        assertThat(b.getCode()).isEqualTo("fiscal.booksStartTooFar");
+                        assertThat(b.getArgs()).containsEntry("latest", "28/12/2026");
+                    });
+        }
+        verify(repo, never()).save(any());
+        TenantFiscalSettings ok = service.setBooksStartDate(LocalDate.of(2026, 12, 28));
+        assertThat(ok.getBooksLockedThrough()).isEqualTo(LocalDate.of(2026, 12, 27));
+    }
+
+    /**
+     * Break-it R3 money3 N1 (BS4, the recovery path): an organisation already locked
+     * to 2062 by the old bug, with nothing posted, sets its books start back to
+     * 2026-01-01 — the implied lock follows (2025-12-31), and a lock through a past
+     * date then works. Both directions move freely while there are no journals.
+     */
+    @Test
+    void withNoJournalsTheBooksStartMovesTheImpliedLockBothWays() {
+        today("2026-09-28T08:00:00Z");
+        TenantFiscalSettings stuck = settings(1, LocalDate.of(2062, 9, 30));
+        stuck.setBooksStartDate(LocalDate.of(2062, 10, 1));
+        when(repo.findById(tenant)).thenReturn(Optional.of(stuck));
+        when(journals.existsByTenantId(tenant)).thenReturn(false);
+
+        TenantFiscalSettings back = service.setBooksStartDate(LocalDate.of(2026, 1, 1));
+        assertThat(back.getBooksLockedThrough()).isEqualTo(LocalDate.of(2025, 12, 31));
+        assertThat(service.lockThroughAsUser(LocalDate.of(2026, 9, 27)).getBooksLockedThrough())
+                .isEqualTo(LocalDate.of(2026, 9, 27));
+        // Forward again (still nothing posted): the lock follows the start.
+        assertThat(service.setBooksStartDate(LocalDate.of(2026, 10, 1)).getBooksLockedThrough())
+                .isEqualTo(LocalDate.of(2026, 9, 30));
+        // And a user lock may move back while nothing is posted.
+        assertThat(service.lockThroughAsUser(LocalDate.of(2026, 3, 31)).getBooksLockedThrough())
+                .isEqualTo(LocalDate.of(2026, 3, 31));
+    }
+
+    /** Break-it R3 money3 N1: once journals exist the lock only moves forward, with a coded, readable refusal. */
+    @Test
+    void onceJournalsExistTheLockCannotMoveBack() {
+        today("2026-09-28T08:00:00Z");
+        when(journals.existsByTenantId(tenant)).thenReturn(true);
+        when(repo.findById(tenant)).thenReturn(Optional.of(settings(1, LocalDate.of(2026, 6, 30))));
+        assertThatThrownBy(() -> service.lockThroughAsUser(LocalDate.of(2026, 3, 31)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("cannot move backwards (currently 30/06/2026)")
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("fiscal.lockBackwards"));
+        TenantFiscalSettings s = service.setBooksStartDate(LocalDate.of(2026, 1, 1));
+        assertThat(s.getBooksLockedThrough()).isEqualTo(LocalDate.of(2026, 6, 30));
     }
 
     @Test
@@ -121,6 +193,7 @@ class TenantFiscalSettingsServiceTest {
 
     @Test
     void lockThroughCannotMoveBackwards() {
+        when(journals.existsByTenantId(tenant)).thenReturn(true);
         when(repo.findById(tenant)).thenReturn(Optional.of(settings(1, LocalDate.of(2026, 8, 31))));
         assertThatThrownBy(() -> service.lockThrough(LocalDate.of(2026, 7, 31)))
                 .isInstanceOf(BusinessRuleViolationException.class);

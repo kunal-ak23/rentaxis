@@ -162,4 +162,75 @@ class ChequeBankEventDatesIT extends AbstractPostgresIT {
                 .isEqualTo(ChequeStatus.BOUNCED);
         assertThat(cbrCount()).isEqualTo(2);
     }
+
+    // ------------------------------------------------------------------
+    // break-it R3 money3 N2 and the sweep
+    // ------------------------------------------------------------------
+
+    private PostLeaseResponse runningLease(String firstNumber) {
+        LocalDate start = TODAY.minusMonths(7).withDayOfMonth(1);
+        return fixtures.postedLease(start.minusDays(10), start, start.plusYears(1).minusDays(1),
+                List.of(line("RENT", "40000")), 4, firstNumber);
+    }
+
+    private static com.datagami.rentaxis.api.dto.lease.ChequeRowInput cashRow(LocalDate posting, LocalDate on, String amount) {
+        return new com.datagami.rentaxis.api.dto.lease.ChequeRowInput(null, null, posting, null, on, null, null, null,
+                new java.math.BigDecimal(amount), "cash at the counter", com.datagami.rentaxis.domain.entity.enums.ChequeMode.CASH);
+    }
+
+    private long journalsAfterToday(String docType) {
+        return jdbc.queryForObject("select count(*) from journal_entries where tenant_id = ? and doc_type = ? and entry_date > ?",
+                Long.class, fixtures.tenantId(), docType, TODAY);
+    }
+
+    /**
+     * RC1–RC3: Receive on a CASH row took CRT-99/1 dated 31/12/2099 (and a receipt three
+     * months ahead) — the clear's "not after today" rule was never asked there.
+     */
+    @Test
+    void aReceiptDatedAfterTodayIsRefusedAndTodayIsNot() {
+        PostLeaseResponse r = runningLease("301100");
+        UUID cash = cheques.addRowToPostedLease(r.lease().getId(), cashRow(TODAY.minusDays(3), TODAY.minusDays(3), "500")).id();
+        inFuture(() -> cheques.receive(cash, ChequeActionRequest.on(TODAY.plusDays(1))));
+        inFuture(() -> cheques.receive(cash, ChequeActionRequest.on(TODAY.plusMonths(3))));
+        inFuture(() -> cheques.receive(cash, ChequeActionRequest.on(LocalDate.of(2099, 12, 31))));
+        assertThat(journalsAfterToday("CRT")).isZero();
+        assertThat(cheques.receive(cash, ChequeActionRequest.on(TODAY)).status()).isEqualTo(ChequeStatus.CLEARED);
+    }
+
+    /** CN1/CN2: a cancellation reversed the PDR as PDR-99/1 dated 31/12/2099. */
+    @Test
+    void aCancellationDatedAfterTodayIsRefusedAndTodayIsNot() {
+        PostLeaseResponse r = runningLease("301200");
+        UUID pdc = r.cheques().stream().filter(c -> c.chequeDate().isAfter(TODAY)).findFirst().orElseThrow().id();
+        long pdrMirrorsBefore = journalsAfterToday("PDR");
+        inFuture(() -> cheques.cancel(pdc, ChequeActionRequest.on(TODAY.plusYears(1).plusDays(1))));
+        inFuture(() -> cheques.cancel(pdc, ChequeActionRequest.on(LocalDate.of(2099, 12, 31))));
+        inFuture(() -> cheques.cancel(pdc, ChequeActionRequest.on(TODAY.plusDays(1))));
+        assertThat(journalsAfterToday("PDR")).isEqualTo(pdrMirrorsBefore);
+        assertThat(cheques.cancel(pdc, ChequeActionRequest.on(TODAY)).status()).isEqualTo(ChequeStatus.CANCELLED);
+    }
+
+    /** N2 ruling: a counter receipt is money that has arrived — not after today, not merely within a year. */
+    @Test
+    void aCounterReceiptIsNotDatedAfterToday() {
+        PostLeaseResponse r = runningLease("301300");
+        inFuture(() -> cheques.cashReceipt(r.lease().getId(), cashRow(null, TODAY.plusDays(1), "700")));
+        assertThat(cheques.cashReceipt(r.lease().getId(), cashRow(null, TODAY, "700")).status()).isEqualTo(ChequeStatus.CLEARED);
+    }
+
+    /** Sweep: a row added to a posted lease posts its PDR on its posting date — the one-year window. */
+    @Test
+    void aRowAddedToAPostedLeaseCannotPostMoreThanAYearAhead() {
+        PostLeaseResponse r = runningLease("301400");
+        var row = new com.datagami.rentaxis.api.dto.lease.ChequeRowInput(null, null, LocalDate.of(2099, 12, 31),
+                LeaseTestFixtures.nextChequeNumber(), TODAY.plusMonths(2), "Emirates NBD", null, null,
+                new java.math.BigDecimal("900"), null, null);
+        assertThatThrownBy(() -> cheques.addRowToPostedLease(r.lease().getId(), row))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("posting.dateTooFarAhead"));
+        assertThat(jdbc.queryForObject(
+                "select count(*) from journal_entries where tenant_id = ? and doc_type = 'PDR' and entry_date > ?",
+                Long.class, fixtures.tenantId(), TODAY.plusYears(1))).isZero();
+    }
 }

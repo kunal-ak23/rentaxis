@@ -88,6 +88,15 @@ public class LeaseVariationService {
     @org.springframework.beans.factory.annotation.Autowired
     private com.datagami.rentaxis.domain.repository.LeaseAddendumCreditRepository credits;
 
+    /** Break-it R3 money3: the shared posting-date policy ({@link com.datagami.rentaxis.core.service.ledger.PostingDatePath}), on the app clock. */
+    private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates =
+            com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setManualPostingDates(com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates) {
+        this.manualDates = manualDates;
+    }
+
     public LeaseVariationService(LeaseRepository leaseRepository,
                                  LeaseLineRepository leaseLineRepository,
                                  ChequeRepository chequeRepository,
@@ -152,6 +161,9 @@ public class LeaseVariationService {
                     + lease.getStartDate() + " to " + lease.getEndDate() + "), not " + effectiveFrom + ".");
         }
         LocalDate entryDate = r.contractDate() != null ? r.contractDate() : LocalDate.now();
+        // Break-it R3 money3 sweep: the addendum's TCO and its new rows' PDRs post on these dates.
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.LEASE_ADDENDUM, entryDate);
+        if (r.cheques() != null) for (ChequeRowInput row : r.cheques()) if (row != null) manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.LEASE_ADDENDUM, row.postingDate());
 
         // ---- stage 1: the request, with nothing written -------------------
         List<LeaseLineInput> inputs = charges.dated(r.lines(), effectiveFrom, lease.getEndDate(),

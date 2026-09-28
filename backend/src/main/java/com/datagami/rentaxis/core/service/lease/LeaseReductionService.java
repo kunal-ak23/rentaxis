@@ -107,6 +107,15 @@ public class LeaseReductionService {
     private final EntryNumberService entryNumbers;
     private final LeaseAccessPolicy leaseAccessPolicy;
 
+    /** Break-it R3 money3: the shared posting-date policy ({@link com.datagami.rentaxis.core.service.ledger.PostingDatePath}), on the app clock. */
+    private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates =
+            com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setManualPostingDates(com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates) {
+        this.manualDates = manualDates;
+    }
+
     public LeaseReductionService(LeaseRepository leaseRepository, LeaseLineRepository leaseLineRepository,
                                  ChequeRepository chequeRepository, LeaseAddendumRepository addendumRepository,
                                  LeaseAddendumCreditRepository creditRepository,
@@ -220,6 +229,9 @@ public class LeaseReductionService {
         requireReducible(lease, r);
         LocalDate e = r.effectiveFrom();
         LocalDate entryDate = r.contractDate() != null ? r.contractDate() : LocalDate.now();
+        // Break-it R3 money3 sweep: the credit addendum's TCC and its new rows post on these dates.
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.LEASE_ADDENDUM, entryDate);
+        for (ChequeRowInput row : rows(r)) if (row != null) manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.LEASE_ADDENDUM, row.postingDate());
         if (entryDate.isBefore(lease.getContractDate() == null ? entryDate : lease.getContractDate())) {
             throw new BusinessRuleViolationException("The credit addendum cannot be dated before the contract ("
                     + lease.getContractDate() + ").");

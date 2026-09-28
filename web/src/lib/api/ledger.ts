@@ -414,7 +414,13 @@ export const ledgerApi = {
     preview: (fy: number) => apiGet<YearClosePreview>(`/finance/fiscal-years/${fy}/close-preview`),
     close: (fy: number, overrideWarnings: boolean) =>
       apiSend<FiscalYear>("POST", `/finance/fiscal-years/${fy}/close`, { overrideWarnings }),
-    reopen: (fy: number, reason: string) => apiSend<FiscalYear>("POST", `/finance/fiscal-years/${fy}/reopen`, { reason }),
+    /**
+     * Break-it R3 money3 N6: `expectedLockedThrough` is the lock the dialog showed; the
+     * server answers 409 `fiscal.changed` when it has moved since.
+     */
+    reopen: (fy: number, reason: string, expectedLockedThrough?: string | null) =>
+        apiSend<FiscalYear>("POST", `/finance/fiscal-years/${fy}/reopen`,
+            expectedLockedThrough ? { reason, expectedLockedThrough } : { reason }),
   },
 };
 

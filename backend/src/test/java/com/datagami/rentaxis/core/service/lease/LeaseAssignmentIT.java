@@ -199,13 +199,16 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
         assertTrialBalanceBalances();
     }
 
-    /** PR #359 R2: a hand-over dated after today is refused. */
+    /**
+     * PR #359 R2: a hand-over dated after today is refused. Break-it R3 money3: "today" is the
+     * shared posting-date policy's (this suite's LaterBusinessDayConfig.TODAY), no longer the JVM's.
+     */
     @Test
     void anAssignmentCannotTakeEffectAfterToday() {
         UUID leaseId = lease(true);
         Renter b = fixtures.createRenter("Heir");
         assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(b.getId(),
-                LocalDate.now().plusDays(1), "Heir", null)))
+                com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.TODAY.plusDays(1), "Heir", null)))
                 .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.assignmentFuture");
     }
 

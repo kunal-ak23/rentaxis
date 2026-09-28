@@ -112,10 +112,10 @@ class FiscalSettingsControllerIT extends AbstractPostgresIT {
         // Setting the books start date closes everything before it.
         assertThat(updated.get("booksLockedThrough")).isEqualTo("2026-09-30");
 
-        // The lock never moves backwards.
-        assertThatThrownBy(() -> lock(accountant, "2026-08-31"))
-                .isInstanceOf(HttpClientErrorException.BadRequest.class)
-                .hasMessageContaining("backwards");
+        // Break-it R3 money3 N1: while nothing is posted the lock may move back (the way out of
+        // a mistyped books start); once journals exist it only moves forward
+        // (TenantFiscalSettingsServiceTest.onceJournalsExistTheLockCannotMoveBack).
+        assertThat(lock(accountant, "2026-08-31").get("booksLockedThrough")).isEqualTo("2026-08-31");
 
         assertThat(lock(accountant, "2026-10-31").get("booksLockedThrough")).isEqualTo("2026-10-31");
         assertThat(get(accountant).get("booksLockedThrough")).isEqualTo("2026-10-31");

@@ -77,7 +77,7 @@ public class JournalService {
     @Transactional
     public JournalEntryDTO postManual(ManualJournalRequest r) {
         // Break-it round 1 (money) F4: 2126 for 2026 took this year's numbers.
-        manualDates.requireWithinAYear(r.entryDate(), "A journal voucher");
+        manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.MANUAL_JOURNAL, r.entryDate());
         if (r.lines() == null || r.lines().isEmpty()) {
             throw new BusinessRuleViolationException("At least two lines are required");
         }
@@ -177,7 +177,7 @@ public class JournalService {
         // F4: a reversal is a manual posting too — except on the entry's own date,
         // so an entry already dated far ahead can still be undone.
         if (!date.equals(entry.getEntryDate())) {
-            manualDates.requireWithinAYear(date, "A reversal");
+            manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.JOURNAL_REVERSAL, date);
         }
         bankLock.assertOpenForEntry(id, date);
         // PostingService owns the rest of the immutability rule: an entry that is

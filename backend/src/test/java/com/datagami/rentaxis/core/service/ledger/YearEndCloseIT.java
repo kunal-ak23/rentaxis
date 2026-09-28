@@ -271,6 +271,33 @@ class YearEndCloseIT extends AbstractPostgresIT {
         assertThat(balance(FY24_END, AccountRole.RETAINED_EARNINGS, false)).isEqualByComparingTo("-19150");
     }
 
+    /**
+     * Break-it R3 money3 N6 (FY2): the re-open dialog showed the lock at 31/12/2024;
+     * another tab then locked through 30/06/2025. The stale re-open is refused 409
+     * fiscal.changed — nothing reversed, the newer lock kept — and a re-open carrying
+     * the current lock goes through. An older client (no expected lock) is unchanged.
+     */
+    @Test
+    void aReopenFromAStaleDialogIsRefusedAndKeepsTheNewerLock() {
+        twoYears(true);
+        FiscalYearDTO closed = closes.close(2024, false, TODAY);
+        assertThat(lock()).isEqualTo(FY24_END);
+        fiscal.lockThrough(LocalDate.of(2025, 6, 30));
+
+        assertThatThrownBy(() -> closes.reopen(2024, "Missed a supplier invoice", TODAY, FY24_END))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.FiguresChangedException.class)
+                .hasMessageContaining("30/06/2025")
+                .satisfies(e -> assertThat(((com.datagami.rentaxis.api.exception.FiguresChangedException) e).getCode())
+                        .isEqualTo(YearEndCloseService.FISCAL_CHANGED));
+        assertThat(lock()).isEqualTo(LocalDate.of(2025, 6, 30));
+        assertThat(statusOf(closed.journalId())).isEqualTo(JournalStatus.POSTED);
+        assertThat(year(2024).status()).isEqualTo("CLOSED");
+
+        FiscalYearDTO reopened = closes.reopen(2024, "Missed a supplier invoice", TODAY, LocalDate.of(2025, 6, 30));
+        assertThat(reopened.status()).isEqualTo("REOPENED");
+        assertThat(lock()).isEqualTo(LocalDate.of(2023, 12, 31));
+    }
+
     @Test
     void plannedRecognitionBlocksTheClose() {
         twoYears(false);

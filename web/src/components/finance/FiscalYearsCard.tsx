@@ -8,6 +8,7 @@ import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount, ledgerApi, type FiscalYear, type YearCloseIssue, type YearClosePreview } from "@/lib/api/ledger";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 
 type Props = {
     /** TENANT_ADMIN / SUPER_ADMIN: may re-open a closed year (spec §3). */
@@ -115,13 +116,20 @@ export default function FiscalYearsCard({ canReopen, onChanged, lockedThrough, b
         setBusy(true);
         setActionError(null);
         try {
-            await ledgerApi.fiscalYears.reopen(reopening.fiscalYear, reason.trim());
+            await ledgerApi.fiscalYears.reopen(reopening.fiscalYear, reason.trim(), lockedThrough ?? null);
             setReopening(null);
             setReason("");
             await load();
             onChanged?.();
         } catch (e) {
-            setActionError(e instanceof ApiError ? e.message : tCommon("loadFailed"));
+            // Break-it R3 money3 N6: the lock moved since this dialog read it (another tab
+            // locked a later period). Nothing was re-opened; reload so the dialog states
+            // the move from the current lock, and say why.
+            if (e instanceof ApiError && codedOf(e).code === "fiscal.changed") {
+                await load();
+                onChanged?.();
+            }
+            setActionError(e instanceof ApiError ? serverText(tCommon, e) || e.message : tCommon("loadFailed"));
         } finally {
             setBusy(false);
         }

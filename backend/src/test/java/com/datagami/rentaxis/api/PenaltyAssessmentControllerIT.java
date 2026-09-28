@@ -61,6 +61,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ledger. A RENTER reaches neither — only their own approved list.</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+// Break-it R3 money3: a fixed 2026–27 timeline; settlements, addenda and penalty reversals
+// that record past events are refused "in the future" against the real today.
+@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class)
 class PenaltyAssessmentControllerIT extends AbstractPostgresIT {
 
     @LocalServerPort int port;
