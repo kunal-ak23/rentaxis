@@ -154,6 +154,11 @@ export default function TicketDetailPage() {
 
     // Reply input
     const [replyText, setReplyText] = useState("");
+    // Break R2 sweep: a refused reply / rating / attachment delete used to do
+    // nothing visible. Each has its own message; what the user typed is kept.
+    const [replyError, setReplyError] = useState<string | null>(null);
+    const [ratingError, setRatingError] = useState<string | null>(null);
+    const [attachmentDeleteError, setAttachmentDeleteError] = useState<string | null>(null);
     const [sendingReply, setSendingReply] = useState(false);
 
     // Actions
@@ -245,9 +250,14 @@ export default function TicketDetailPage() {
             });
             if (res.ok) {
                 setReplyText("");
+                setReplyError(null);
                 fetchReplies();
+            } else {
+                setReplyError(t("replyFailed"));
             }
-        } catch { /* ignore */ } finally {
+        } catch {
+            setReplyError(t("replyFailed"));
+        } finally {
             setSendingReply(false);
         }
     };
@@ -353,8 +363,15 @@ export default function TicketDetailPage() {
     const handleDeleteAttachment = async (attachmentId: string) => {
         try {
             const res = await fetch(`/api/proxy/v1/tickets/attachments/${attachmentId}`, { method: "DELETE" });
-            if (res.ok) fetchAttachments();
-        } catch {}
+            if (res.ok) {
+                setAttachmentDeleteError(null);
+                fetchAttachments();
+            } else {
+                setAttachmentDeleteError(t("attachmentDeleteFailed"));
+            }
+        } catch {
+            setAttachmentDeleteError(t("attachmentDeleteFailed"));
+        }
     };
 
     // ── Rating ──────────────────────────────────────────────────────────
@@ -368,8 +385,16 @@ export default function TicketDetailPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ rating: ratingValue, comment: ratingComment }),
             });
-            if (res.ok) { fetchTicket(); fetchHistory(); }
-        } catch { /* ignore */ } finally {
+            if (res.ok) {
+                setRatingError(null);
+                fetchTicket();
+                fetchHistory();
+            } else {
+                setRatingError(t("ratingFailed"));
+            }
+        } catch {
+            setRatingError(t("ratingFailed"));
+        } finally {
             setRatingSubmitting(false);
         }
     };
@@ -491,8 +516,8 @@ export default function TicketDetailPage() {
                                                 <div className="flex items-center justify-between">
                                                     <p className="text-[9px] text-white font-medium truncate flex-1">{t("fileSizeKb", { size: (att.fileSize / 1024).toFixed(0) })}</p>
                                                     <div className="flex items-center gap-1">
-                                                        <button onClick={(e) => { e.stopPropagation(); handleDownloadAttachment(att.id, att.fileUrl.split("/").pop() || "file"); }} className="p-1 text-white hover:text-white/80 cursor-pointer"><Download size={11} /></button>
-                                                        <button onClick={(e) => { e.stopPropagation(); handleDeleteAttachment(att.id); }} className="p-1 text-red-400 hover:text-red-300 cursor-pointer"><Trash2 size={11} /></button>
+                                                        <button type="button" aria-label={t("downloadAttachment")} onClick={(e) => { e.stopPropagation(); handleDownloadAttachment(att.id, att.fileUrl.split("/").pop() || "file"); }} className="p-1 text-white hover:text-white/80 cursor-pointer"><Download size={11} /></button>
+                                                        <button type="button" aria-label={t("deleteAttachment")} onClick={(e) => { e.stopPropagation(); handleDeleteAttachment(att.id); }} className="p-1 text-red-400 hover:text-red-300 cursor-pointer"><Trash2 size={11} /></button>
                                                     </div>
                                                 </div>
                                             </div>
@@ -511,6 +536,9 @@ export default function TicketDetailPage() {
                                 onChange={(e) => { const picked = Array.from(e.target.files ?? []); e.target.value = ""; if (picked.length > 0) void handleUploadAttachments(picked); }}
                             />
                         </label>
+                        {attachmentDeleteError && (
+                            <p role="alert" className="mt-2 text-[11px] text-error">{attachmentDeleteError}</p>
+                        )}
                         {attachmentErrors.length > 0 && (
                             <ul role="alert" data-testid="ticket-attachment-errors" className="mt-2 space-y-0.5 text-[11px] text-error">
                                 {attachmentErrors.map((msg, i) => <li key={i}>{msg}</li>)}
@@ -554,6 +582,7 @@ export default function TicketDetailPage() {
                                 className={cn("flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer", ratingValue === 0 || ratingSubmitting ? "bg-input text-muted cursor-not-allowed" : "bg-primary text-primary-foreground hover:bg-primary/90")}>
                                 {ratingSubmitting && <Loader2 size={12} className="animate-spin" />} {t("submitRating")}
                             </button>
+                            {ratingError && <p role="alert" className="mt-2 text-[11px] text-error">{ratingError}</p>}
                         </div>
                     )}
 
@@ -598,6 +627,7 @@ export default function TicketDetailPage() {
                                     {sendingReply ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} className="rtl:-scale-x-100" />} {t("send")}
                                 </button>
                             </div>
+                            {replyError && <p role="alert" className="mt-2 text-[11px] text-error">{replyError}</p>}
                         </div>
                     </div>
                 </div>
