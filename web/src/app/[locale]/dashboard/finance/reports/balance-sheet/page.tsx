@@ -10,14 +10,13 @@ import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount } from "@/lib/api/ledger";
 import { propertyReportsApi, TOTAL, type BalanceSheet, type BalanceSheetQuery } from "@/lib/api/propertyReports";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { businessTodayIso } from "@/lib/businessDate";
 
 const input = "px-3 py-2 rounded-lg border border-border bg-background text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none";
 const button = "flex items-center gap-1.5 px-4 py-2 rounded-lg bg-surface text-foreground border border-border text-xs font-bold hover:bg-input transition-all focus:ring-2 focus:ring-primary/20 focus:outline-none";
 
-const today = () => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
+/** Break-it R3 money3 N4: the business (Dubai) date, not the browser's. */
+const today = () => businessTodayIso();
 
 /**
  * Finance → Reports → Balance sheet (F14-10): assets, liabilities and equity as

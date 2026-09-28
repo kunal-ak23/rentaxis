@@ -14,12 +14,10 @@ import { journalStatusClass } from "@/components/finance/journalStatus";
 import { ApiError } from "@/lib/api/facilities";
 import { accountName, fmtAmount, ledgerApi, type JournalEntry } from "@/lib/api/ledger";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { businessTodayIso } from "@/lib/businessDate";
 
-const pad = (n: number) => String(n).padStart(2, "0");
-const today = () => {
-    const d = new Date();
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
+/** Break-it R3 money3 N4: the business (Dubai) date, not the browser's. */
+const today = () => businessTodayIso();
 
 const th = "text-start px-4 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider";
 const td = "px-4 py-2.5 text-xs text-foreground";

@@ -10,6 +10,7 @@ import { ApiError } from "@/lib/api/facilities";
 import { downloadCsv, toCsv } from "@/lib/csv";
 import { accountName, fmtAmount, ledgerApi, type TrialBalanceRow } from "@/lib/api/ledger";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { businessTodayIso } from "@/lib/businessDate";
 
 const TYPE_ORDER = ["ASSET", "LIABILITY", "INCOME", "EXPENSE", "EQUITY"] as const;
 type TbType = (typeof TYPE_ORDER)[number];
@@ -23,11 +24,8 @@ const num = `${td} text-end tabular-nums`;
 const field = "bg-input border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200";
 const label = "block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5";
 
-const pad = (n: number) => String(n).padStart(2, "0");
-const todayIso = () => {
-    const d = new Date();
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
+/** Break-it R3 money3 N4: the business (Dubai) date, not the browser's. */
+const todayIso = () => businessTodayIso();
 
 export default function TrialBalancePage() {
     const t = useTranslations("Ledger");

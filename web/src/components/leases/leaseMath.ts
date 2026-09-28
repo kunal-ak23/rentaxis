@@ -11,6 +11,7 @@
  */
 
 import type { ChargeBehaviour, ChargeRecognition, ChargeType, LeaseLine, LeaseLineInput, PostedRecognition } from "@/lib/api/leasing";
+import { businessTodayIso } from "@/lib/businessDate";
 
 /** UAE standard rate. Not configurable: a change is a tax event, not a setting. */
 export const VAT_RATE = 0.05;
@@ -387,11 +388,13 @@ export function fmtIsoDate(iso: string | null | undefined, locale: string): stri
     return new Date(y, m - 1, d).toLocaleDateString(target);
 }
 
-/** Today in the `yyyy-MM-dd` shape every date input and date field expects. */
+/**
+ * Today in the `yyyy-MM-dd` shape every date input and date field expects — the
+ * business (Asia/Dubai) date the server validates against, not the browser's
+ * (break-it R3 money3 N4: a browser in Honolulu pre-filled yesterday).
+ */
 export function todayIso(): string {
-    const d = new Date();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    return businessTodayIso();
 }
 
 /**

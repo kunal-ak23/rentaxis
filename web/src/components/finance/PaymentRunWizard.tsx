@@ -23,6 +23,7 @@ import {
     type RunPreview,
     type RunProblem,
 } from "@/lib/api/payables";
+import { businessTodayIso } from "@/lib/businessDate";
 
 const th = "px-3 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider whitespace-nowrap text-start";
 const td = "px-3 py-2 text-xs";
@@ -35,8 +36,9 @@ const pad = (n: number) => String(n).padStart(2, "0");
 function isoOf(d: Date): string {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
+/** Break-it R3 money3 N4: the business (Dubai) date, not the browser's. */
 export function todayIso(): string {
-    return isoOf(new Date());
+    return businessTodayIso();
 }
 /** Spec §2 step 1: due on or before today + 7 by default. */
 export function defaultDueBefore(): string {

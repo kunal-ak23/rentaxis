@@ -30,7 +30,7 @@ import { StatementCoverNotice } from "@/components/finance/StatementCoverNotice"
 import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 import { moneyInputError, parseMoneyInput } from "@/lib/money";
 import { MoneyFieldError } from "@/components/ui/NumberInput";
-import { isBeyondManualPostingWindow, maxManualPostingDateIso } from "@/lib/businessDate";
+import { isBeyondManualPostingWindow, maxManualPostingDateIso, businessTodayIso } from "@/lib/businessDate";
 
 /**
  * One form for both voucher documents (spec §10.1, §11): a Purchase/Service
@@ -135,10 +135,9 @@ const newLine = (propertyId = ""): DraftLine => ({
     shared: false,
 });
 
-const pad = (n: number) => String(n).padStart(2, "0");
+/** Break-it R3 money3 N4: the business (Dubai) date, not the browser's. */
 function todayIso(): string {
-    const d = new Date();
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    return businessTodayIso();
 }
 
 /** "" and "abc" are 0, so an empty line reads as incomplete rather than as NaN. */

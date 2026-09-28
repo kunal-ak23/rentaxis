@@ -11,16 +11,16 @@ import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount } from "@/lib/api/ledger";
 import { payablesApi, type AgingFigures, type PayablesAging } from "@/lib/api/payables";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { businessTodayIso } from "@/lib/businessDate";
 
 const th = "px-3 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider whitespace-nowrap";
 const td = "px-3 py-2 text-xs";
 const field = "bg-input border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none";
 const button = "flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface text-foreground border border-border text-xs font-bold hover:bg-input transition-all cursor-pointer";
 
-const pad = (n: number) => String(n).padStart(2, "0");
+/** Break-it R3 money3 N4: the business (Dubai) date, not the browser's. */
 function todayIso(): string {
-    const d = new Date();
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    return businessTodayIso();
 }
 
 const BUCKETS: (keyof AgingFigures)[] = ["current", "d1to30", "d31to60", "d61to90", "d90plus"];
