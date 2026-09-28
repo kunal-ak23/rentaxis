@@ -97,10 +97,13 @@ public final class SheetCells {
      * is the kind of error that surfaces a year later as a rent period nobody can
      * explain.</p>
      */
+    // Break-it R3 data3 F3: STRICT resolution for every form (ISO_LOCAL_DATE already is).
+    // A SMART day-first pattern turned 31/11/2026 into 2026-11-30 and posted a lease on
+    // a date nobody typed; the bank-statement importer's strict formatter is reused.
     private static final List<DateTimeFormatter> DATE_FORMATS = List.of(
             DateTimeFormatter.ISO_LOCAL_DATE,
-            DateTimeFormatter.ofPattern("dd-MM-uuuu", Locale.ROOT),
-            DateTimeFormatter.ofPattern("dd/MM/uuuu", Locale.ROOT));
+            com.datagami.rentaxis.core.service.bank.StatementValues.formatter("dd-MM-uuuu"),
+            com.datagami.rentaxis.core.service.bank.StatementValues.formatter("dd/MM/uuuu"));
 
     /** The date this cell holds, or null when it is blank or in none of {@link #DATE_FORMATS}. */
     public static LocalDate parseDateOrNull(String raw) {
