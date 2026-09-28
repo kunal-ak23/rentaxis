@@ -16,6 +16,7 @@ import {
     throwIfNotOk,
     ApiError,
 } from "@/lib/api/facilities";
+import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 import type {
     MyFacilitiesDTO,
     BookingRequestDTO,
@@ -75,6 +76,7 @@ function toDateInput(date: Date): string {
 export default function RenterFacilitiesPage() {
     const t = useTranslations("Facilities");
     const tB = useTranslations("Bookings");
+    const tCommon = useTranslations("Common");
     const locale = useLocale();
     const { status: sessionStatus } = useSession();
 
@@ -171,8 +173,11 @@ export default function RenterFacilitiesPage() {
             // 409 (spot already held elsewhere) gets the localized copy; 400
             // (e.g. requesting a non-bookable amenity) and any other ApiError
             // status surface the backend's own already-parsed message.
+            // Break-it R3 ops3 F7/F8: a coded refusal (already booked, a past date,
+            // outside the contract…) reads in the renter's language.
+            const { code } = codedOf(err);
             if (err instanceof ApiError && err.status === 409) {
-                setDialogError(tB("spotConflict"));
+                setDialogError(code ? serverText(tCommon, err) : tB("spotConflict"));
                 // The spot became APPROVED for someone else after this page's
                 // data was fetched, so the card behind the dialog still says
                 // "Available" with an enabled Request button inviting another
@@ -183,6 +188,7 @@ export default function RenterFacilitiesPage() {
                     await Promise.all([loadFacilities(), loadBookings()]);
                 } catch { /* best-effort resync; the conflict message still shows */ }
             }
+            else if (code) setDialogError(serverText(tCommon, err));
             else if (err instanceof ApiError) setDialogError(err.message);
             else setDialogError(t("requestError"));
             setSubmitting(false);

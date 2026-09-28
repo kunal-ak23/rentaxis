@@ -98,6 +98,16 @@ public class FacilityService {
         return amenityRepository.findById(id).filter(a -> Objects.equals(a.getTenantId(), tenantId));
     }
 
+    /**
+     * Break-it R3 ops3 F7: takes the amenity's row lock for the caller's transaction
+     * (a booking approval), so concurrent approvals of the same amenity run their
+     * overlap check one after the other. Joins the caller's transaction.
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public void lockAmenity(UUID tenantId, UUID id) {
+        amenityRepository.findByIdForUpdate(tenantId, id);
+    }
+
     public PropertyAmenity createAmenity(UUID tenantId, AmenityCreateRequest req) {
         if (req.propertyId() == null) {
             throw new BusinessRuleViolationException("propertyId is required");

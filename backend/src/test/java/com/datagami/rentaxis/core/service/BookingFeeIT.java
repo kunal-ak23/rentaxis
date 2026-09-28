@@ -60,6 +60,7 @@ class BookingFeeIT extends AbstractPostgresIT {
     @Autowired RenterRepository renterRepo;
     @Autowired UnitRepository unitRepo;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.datagami.rentaxis.domain.repository.BookingRequestRepository bookingRepo;
     @Autowired TransactionTemplate tx;
 
     private LeaseTestFixtures fixtures;
@@ -145,5 +146,70 @@ class BookingFeeIT extends AbstractPostgresIT {
         badDebts.approve(w.id(), null);
         assertThatThrownBy(() -> tx.executeWithoutResult(s -> bookings.cancel(fixtures.tenantId(), b.getId(), renterUser)))
                 .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("booking.feeWrittenOff"));
+    }
+
+    /** Break-it R3 ops3 F7: the same renter, amenity and day cannot be booked twice, and a second fee is never posted. */
+    @Test
+    void theSameAmenityAndDayCannotBeBookedOrApprovedTwice() {
+        PropertyAmenity pool = amenity("PoolFee", "PER_BOOKING", "100");
+        LocalDate day = LocalDate.now().plusDays(14);
+        BookingRequest first = book(pool, day);
+        tx.execute(s -> bookings.approve(fixtures.tenantId(), first.getId(), UUID.randomUUID(), null));
+
+        assertThatThrownBy(() -> book(pool, day))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.SlotConflictException.class)
+                .satisfies(e -> assertThat(((com.datagami.rentaxis.api.exception.SlotConflictException) e).getCode())
+                        .isEqualTo("booking.alreadyBooked"));
+
+        // A clashing request that got in some other way (legacy row) is refused at approval.
+        BookingRequest legacy = tx.execute(s -> {
+            BookingRequest b = new BookingRequest();
+            b.setTenantId(fixtures.tenantId());
+            b.setUnitId(fixtures.unit().getId());
+            b.setRenterUserId(renterUser);
+            b.setResourceType(BookingResourceType.AMENITY);
+            b.setAmenityId(pool.getId());
+            b.setPropertyId(pool.getPropertyId());
+            b.setPreferredDate(day);
+            b.setPreferredStartTime(LocalTime.of(11, 0));
+            b.setPreferredEndTime(LocalTime.of(12, 0));
+            b.setFeeAmount(new BigDecimal("100.00"));
+            b.setStatus(com.datagami.rentaxis.domain.entity.enums.BookingRequestStatus.PENDING);
+            return bookingRepo.saveAndFlush(b);
+        });
+        assertThatThrownBy(() -> tx.execute(s -> bookings.approve(fixtures.tenantId(), legacy.getId(), UUID.randomUUID(), null)))
+                .satisfies(e -> assertThat(((com.datagami.rentaxis.api.exception.SlotConflictException) e).getCode())
+                        .isEqualTo("booking.renterAlreadyBooked"));
+        assertThat(jdbc.queryForObject("select count(*) from penalty_assessments where source_type = 'BOOKING' and tenant_id = ?",
+                Integer.class, fixtures.tenantId())).isOne();
+    }
+
+    /** Break-it R3 ops3 F8: past dates and dates outside the contract are refused on request and on approval. */
+    @Test
+    void aPastOrOutOfContractBookingIsRefused() {
+        PropertyAmenity pool = amenity("PoolFee", "PER_BOOKING", "100");
+        assertThatThrownBy(() -> book(pool, LocalDate.now(BookingService.DUBAI).minusDays(1)))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("booking.dateInPast"));
+        // The contract ends 2027-04-30.
+        assertThatThrownBy(() -> book(pool, LocalDate.of(2027, 5, 10)))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("booking.outsideLease"));
+
+        BookingRequest stale = tx.execute(s -> {
+            BookingRequest b = new BookingRequest();
+            b.setTenantId(fixtures.tenantId());
+            b.setUnitId(fixtures.unit().getId());
+            b.setRenterUserId(renterUser);
+            b.setResourceType(BookingResourceType.AMENITY);
+            b.setAmenityId(pool.getId());
+            b.setPropertyId(pool.getPropertyId());
+            b.setPreferredDate(LocalDate.of(2020, 1, 1));
+            b.setFeeAmount(new BigDecimal("100.00"));
+            b.setStatus(com.datagami.rentaxis.domain.entity.enums.BookingRequestStatus.PENDING);
+            return bookingRepo.saveAndFlush(b);
+        });
+        assertThatThrownBy(() -> tx.execute(s -> bookings.approve(fixtures.tenantId(), stale.getId(), UUID.randomUUID(), null)))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("booking.dateInPast"));
+        assertThat(jdbc.queryForObject("select count(*) from penalty_assessments where source_type = 'BOOKING' and tenant_id = ?",
+                Integer.class, fixtures.tenantId())).isZero();
     }
 }

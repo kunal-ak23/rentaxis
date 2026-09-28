@@ -7,13 +7,17 @@ import com.datagami.rentaxis.api.exception.SlotConflictException;
 import com.datagami.rentaxis.core.event.BookingDecidedEvent;
 import com.datagami.rentaxis.core.event.BookingRequestedEvent;
 import com.datagami.rentaxis.domain.entity.BookingRequest;
+import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.ParkingSpot;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.PropertyAmenity;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.BookingRequestStatus;
 import com.datagami.rentaxis.domain.entity.enums.BookingResourceType;
+import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.repository.BookingRequestRepository;
+import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -21,6 +25,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.PessimisticLockingFailureException;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
@@ -54,6 +59,9 @@ class BookingServiceTest {
         facilityService = mock(FacilityService.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
         service = new BookingService(bookingRepository, facilityService, eventPublisher);
+        // Break-it R3 ops3 F8: "today" is pinned so dated fixtures stay in the future.
+        service.setClock(Clock.fixed(LocalDate.of(2026, 8, 1).atStartOfDay(BookingService.DUBAI).toInstant(),
+                BookingService.DUBAI));
 
         // Create and every locked transition write through saveAndFlush (not save) so the
         // constraint-race translation can catch DataIntegrityViolationException at the
@@ -261,9 +269,9 @@ class BookingServiceTest {
         BookingRequest existing = booking(BookingResourceType.AMENITY, BookingRequestStatus.PENDING);
         when(facilityService.getAmenity(tenantId, a.getId())).thenReturn(a);
         when(facilityService.amenityVisibleToUnit(a, unit)).thenReturn(true);
-        when(bookingRepository.findFirstByTenantIdAndRenterUserIdAndAmenityIdAndStatus(
-                tenantId, renterUserId, a.getId(), BookingRequestStatus.PENDING))
-                .thenReturn(Optional.of(existing));
+        when(bookingRepository.findByTenantIdAndRenterUserIdAndAmenityIdAndStatusIn(
+                eq(tenantId), eq(renterUserId), eq(a.getId()), any()))
+                .thenReturn(List.of(existing));
 
         BookingRequest result = service.create(tenantId, renterUserId, unit,
                 new BookingCreateRequest(BookingResourceType.AMENITY, a.getId(), unit.getId(), null, null));
@@ -587,5 +595,237 @@ class BookingServiceTest {
                 eq(b.getParkingSpotId()), any())).thenReturn(List.of(b, sibling));
 
         assertThat(service.otherRequests(b)).containsExactly(sibling);
+    }
+
+    // ---- break-it R3 ops3 F7: one renter, one amenity, one slot ----
+
+    private BookingRequest amenityBooking(UUID amenityId, BookingRequestStatus status, LocalDate day,
+                                          LocalTime start, LocalTime end) {
+        BookingRequest b = booking(BookingResourceType.AMENITY, status);
+        b.setAmenityId(amenityId);
+        b.setPreferredDate(day);
+        b.setPreferredStartTime(start);
+        b.setPreferredEndTime(end);
+        return b;
+    }
+
+    private PropertyAmenity bookableAmenity() {
+        PropertyAmenity a = amenity(true, true);
+        when(facilityService.getAmenity(tenantId, a.getId())).thenReturn(a);
+        when(facilityService.amenityVisibleToUnit(a, unit)).thenReturn(true);
+        return a;
+    }
+
+    private static String codeOf(Throwable e) {
+        if (e instanceof BusinessRuleViolationException b) return b.getCode();
+        if (e instanceof SlotConflictException c) return c.getCode();
+        return null;
+    }
+
+    @Test
+    void create_amenity_sameDayAsAnApprovedBooking_isRefused() {
+        PropertyAmenity a = bookableAmenity();
+        LocalDate day = LocalDate.of(2026, 10, 12);
+        when(bookingRepository.findByTenantIdAndRenterUserIdAndAmenityIdAndStatusIn(
+                eq(tenantId), eq(renterUserId), eq(a.getId()), any()))
+                .thenReturn(List.of(amenityBooking(a.getId(), BookingRequestStatus.APPROVED, day, null, null)));
+
+        assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.AMENITY, a.getId(), unit.getId(), day, null)))
+                .isInstanceOf(SlotConflictException.class)
+                .satisfies(e -> assertThat(codeOf(e)).isEqualTo("booking.alreadyBooked"));
+        verify(bookingRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void create_amenity_nonOverlappingSlotSameDay_isAllowed() {
+        PropertyAmenity a = bookableAmenity();
+        LocalDate day = LocalDate.of(2026, 10, 12);
+        when(bookingRepository.findByTenantIdAndRenterUserIdAndAmenityIdAndStatusIn(
+                eq(tenantId), eq(renterUserId), eq(a.getId()), any()))
+                .thenReturn(List.of(amenityBooking(a.getId(), BookingRequestStatus.APPROVED, day,
+                        LocalTime.of(9, 0), LocalTime.of(10, 0))));
+
+        BookingRequest created = service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.AMENITY, a.getId(), unit.getId(), day,
+                        LocalTime.of(10, 0), LocalTime.of(11, 0), null));
+        assertThat(created.getStatus()).isEqualTo(BookingRequestStatus.PENDING);
+    }
+
+    @Test
+    void create_amenity_pendingForAnotherSlot_isRefusedNotHandedBack() {
+        PropertyAmenity a = bookableAmenity();
+        when(bookingRepository.findByTenantIdAndRenterUserIdAndAmenityIdAndStatusIn(
+                eq(tenantId), eq(renterUserId), eq(a.getId()), any()))
+                .thenReturn(List.of(amenityBooking(a.getId(), BookingRequestStatus.PENDING,
+                        LocalDate.of(2026, 10, 1), null, null)));
+
+        assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.AMENITY, a.getId(), unit.getId(),
+                        LocalDate.of(2026, 10, 5), null)))
+                .isInstanceOf(SlotConflictException.class)
+                .satisfies(e -> assertThat(codeOf(e)).isEqualTo("booking.pendingExists"));
+    }
+
+    @Test
+    void approve_amenity_overlappingAnApprovedBookingOfTheSameRenter_isRefusedUnderTheAmenityLock() {
+        UUID amenityId = UUID.randomUUID();
+        LocalDate day = LocalDate.of(2026, 10, 12);
+        BookingRequest b = amenityBooking(amenityId, BookingRequestStatus.PENDING, day, null, null);
+        when(bookingRepository.findByIdForUpdate(b.getId())).thenReturn(Optional.of(b));
+        when(bookingRepository.findByTenantIdAndRenterUserIdAndAmenityIdAndStatusIn(
+                eq(tenantId), eq(renterUserId), eq(amenityId), any()))
+                .thenReturn(List.of(b, amenityBooking(amenityId, BookingRequestStatus.APPROVED, day,
+                        LocalTime.of(18, 0), LocalTime.of(19, 0))));
+
+        assertThatThrownBy(() -> service.approve(tenantId, b.getId(), UUID.randomUUID(), null))
+                .isInstanceOf(SlotConflictException.class)
+                .satisfies(e -> assertThat(codeOf(e)).isEqualTo("booking.renterAlreadyBooked"));
+        verify(facilityService).lockAmenity(tenantId, amenityId);
+        verify(bookingRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void approve_amenity_otherDay_passes() {
+        UUID amenityId = UUID.randomUUID();
+        BookingRequest b = amenityBooking(amenityId, BookingRequestStatus.PENDING, LocalDate.of(2026, 10, 12), null, null);
+        when(bookingRepository.findByIdForUpdate(b.getId())).thenReturn(Optional.of(b));
+        when(bookingRepository.findByTenantIdAndRenterUserIdAndAmenityIdAndStatusIn(
+                eq(tenantId), eq(renterUserId), eq(amenityId), any()))
+                .thenReturn(List.of(amenityBooking(amenityId, BookingRequestStatus.APPROVED,
+                        LocalDate.of(2026, 10, 13), null, null)));
+
+        assertThat(service.approve(tenantId, b.getId(), UUID.randomUUID(), null).getStatus())
+                .isEqualTo(BookingRequestStatus.APPROVED);
+    }
+
+    @Test
+    void slotsOverlap_rules() {
+        UUID id = UUID.randomUUID();
+        LocalDate d = LocalDate.of(2026, 10, 12);
+        BookingRequest wholeDay = amenityBooking(id, BookingRequestStatus.APPROVED, d, null, null);
+        BookingRequest nine = amenityBooking(id, BookingRequestStatus.APPROVED, d, LocalTime.of(9, 0), LocalTime.of(10, 0));
+        BookingRequest nineThirty = amenityBooking(id, BookingRequestStatus.APPROVED, d, LocalTime.of(9, 30), LocalTime.of(11, 0));
+        BookingRequest ten = amenityBooking(id, BookingRequestStatus.APPROVED, d, LocalTime.of(10, 0), LocalTime.of(11, 0));
+        BookingRequest otherDay = amenityBooking(id, BookingRequestStatus.APPROVED, d.plusDays(1), null, null);
+        BookingRequest undated = amenityBooking(id, BookingRequestStatus.APPROVED, null, null, null);
+        assertThat(BookingService.slotsOverlap(wholeDay, nine)).isTrue();
+        assertThat(BookingService.slotsOverlap(nine, nineThirty)).isTrue();
+        assertThat(BookingService.slotsOverlap(nine, ten)).isFalse();   // back to back
+        assertThat(BookingService.slotsOverlap(wholeDay, otherDay)).isFalse();
+        assertThat(BookingService.slotsOverlap(undated, undated)).isFalse();
+    }
+
+    // ---- break-it R3 ops3 F8: dates on request and on approval ----
+
+    @Test
+    void create_dateBeforeToday_isRefused() {
+        PropertyAmenity a = bookableAmenity();
+        assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.AMENITY, a.getId(), unit.getId(),
+                        LocalDate.of(2026, 7, 31), null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .satisfies(e -> assertThat(codeOf(e)).isEqualTo("booking.dateInPast"));
+        // Today itself is fine.
+        assertThat(service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.AMENITY, a.getId(), unit.getId(),
+                        LocalDate.of(2026, 8, 1), null)).getStatus()).isEqualTo(BookingRequestStatus.PENDING);
+    }
+
+    @Test
+    void create_parkingRangeOverTwoYears_isRefused() {
+        ParkingSpot s = spot(true);
+        when(facilityService.getParkingSpot(tenantId, s.getId())).thenReturn(s);
+        when(facilityService.parkingSpotVisibleToUnit(s, unit)).thenReturn(true);
+        LocalDate from = LocalDate.of(2026, 9, 1);
+        assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.PARKING_SPOT, s.getId(), unit.getId(),
+                        from, from.plusYears(100), null, null, null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .satisfies(e -> assertThat(codeOf(e)).isEqualTo("booking.rangeTooLong"));
+        // Exactly two years is fine.
+        assertThat(service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.PARKING_SPOT, s.getId(), unit.getId(),
+                        from, from.plusYears(2), null, null, null)).getStatus()).isEqualTo(BookingRequestStatus.PENDING);
+    }
+
+    @Test
+    void approve_requestLeftPendingPastItsDate_isRefused() {
+        BookingRequest b = amenityBooking(UUID.randomUUID(), BookingRequestStatus.PENDING,
+                LocalDate.of(2020, 1, 1), null, null);
+        when(bookingRepository.findByIdForUpdate(b.getId())).thenReturn(Optional.of(b));
+        assertThatThrownBy(() -> service.approve(tenantId, b.getId(), UUID.randomUUID(), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .satisfies(e -> assertThat(codeOf(e)).isEqualTo("booking.dateInPast"));
+        verify(bookingRepository, never()).saveAndFlush(any());
+    }
+
+    private LeaseRepository leaseOn(LocalDate start, LocalDate end) {
+        LeaseRepository leases = mock(LeaseRepository.class);
+        Renter renter = new Renter();
+        renter.setUserId(renterUserId);
+        Lease lease = new Lease();
+        lease.setTenantId(tenantId);
+        lease.setRenter(renter);
+        lease.setUnit(unit);
+        lease.setStartDate(start);
+        lease.setEndDate(end);
+        lease.setStatus(LeaseStatus.ACTIVE);
+        when(leases.findByUnitIdAndStatusIn(eq(unit.getId()), any())).thenReturn(List.of(lease));
+        service.setLeaseRepository(leases);
+        return leases;
+    }
+
+    @Test
+    void create_dateOutsideTheRentersContract_isRefused() {
+        leaseOn(LocalDate.of(2026, 9, 1), LocalDate.of(2027, 8, 31));
+        PropertyAmenity a = bookableAmenity();
+        // Before the contract starts: no fee dated before the lease.
+        assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.AMENITY, a.getId(), unit.getId(),
+                        LocalDate.of(2026, 8, 20), null)))
+                .satisfies(e -> assertThat(codeOf(e)).isEqualTo("booking.outsideLease"));
+        // A parking range running past the contract end.
+        ParkingSpot s = spot(true);
+        when(facilityService.getParkingSpot(tenantId, s.getId())).thenReturn(s);
+        when(facilityService.parkingSpotVisibleToUnit(s, unit)).thenReturn(true);
+        assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.PARKING_SPOT, s.getId(), unit.getId(),
+                        LocalDate.of(2026, 9, 1), LocalDate.of(2027, 9, 30), null, null, null)))
+                .satisfies(e -> assertThat(codeOf(e)).isEqualTo("booking.outsideLease"));
+        // Inside the contract.
+        assertThat(service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.AMENITY, a.getId(), unit.getId(),
+                        LocalDate.of(2026, 9, 1), null)).getStatus()).isEqualTo(BookingRequestStatus.PENDING);
+    }
+
+    @Test
+    void approve_dateOutsideTheRentersContract_isRefused() {
+        leaseOn(LocalDate.of(2026, 9, 1), LocalDate.of(2027, 8, 31));
+        BookingRequest b = amenityBooking(UUID.randomUUID(), BookingRequestStatus.PENDING,
+                LocalDate.of(2026, 8, 15), null, null);
+        when(bookingRepository.findByIdForUpdate(b.getId())).thenReturn(Optional.of(b));
+        assertThatThrownBy(() -> service.approve(tenantId, b.getId(), UUID.randomUUID(), null))
+                .satisfies(e -> assertThat(codeOf(e)).isEqualTo("booking.outsideRenterLease"));
+    }
+
+    @Test
+    void approve_renterWithNoCurrentContract_isRefused() {
+        LeaseRepository leases = mock(LeaseRepository.class);
+        when(leases.findByUnitIdAndStatusIn(any(), any())).thenReturn(List.of());
+        service.setLeaseRepository(leases);
+        BookingRequest b = amenityBooking(UUID.randomUUID(), BookingRequestStatus.PENDING,
+                LocalDate.of(2026, 9, 15), null, null);
+        when(bookingRepository.findByIdForUpdate(b.getId())).thenReturn(Optional.of(b));
+        assertThatThrownBy(() -> service.approve(tenantId, b.getId(), UUID.randomUUID(), null))
+                .satisfies(e -> assertThat(codeOf(e)).isEqualTo("booking.noActiveLease"));
+    }
+
+    @Test
+    void approve_alreadyDecided_carriesTheNotPendingCode() {
+        BookingRequest b = booking(BookingResourceType.AMENITY, BookingRequestStatus.APPROVED);
+        when(bookingRepository.findByIdForUpdate(b.getId())).thenReturn(Optional.of(b));
+        assertThatThrownBy(() -> service.approve(tenantId, b.getId(), UUID.randomUUID(), null))
+                .satisfies(e -> assertThat(codeOf(e)).isEqualTo("booking.notPending"));
     }
 }

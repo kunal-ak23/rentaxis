@@ -34,9 +34,19 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(SlotConflictException.class)
     public ResponseEntity<Map<String, Object>> handleSlotConflict(SlotConflictException ex) {
+        String next = ex.getNextAvailableSlot() != null ? ex.getNextAvailableSlot().toString() : "unavailable";
+        if (ex.getCode() == null) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "error", ex.getMessage(),
+                    "nextAvailableSlot", next
+            ));
+        }
+        // Break-it R3 ops3 F7/F9: a coded conflict also carries its key and the message.
         return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
                 "error", ex.getMessage(),
-                "nextAvailableSlot", ex.getNextAvailableSlot() != null ? ex.getNextAvailableSlot().toString() : "unavailable"
+                "message", ex.getMessage(),
+                "code", ex.getCode(),
+                "nextAvailableSlot", next
         ));
     }
 
