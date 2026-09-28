@@ -57,7 +57,7 @@ class ExecutedContractCopyIT extends AbstractPostgresIT {
         tx.executeWithoutResult(status -> {
             events.publishEvent(new LeasePostedEvent(tenantId, leaseId, LocalDate.of(2026, 4, 24)));
             // Nothing is issued while the posting transaction is still open.
-            verify(contracts, never()).createExecutedCopy(any());
+            verify(contracts, never()).createExecutedCopy(leaseId);
             if (rollback) status.setRollbackOnly();
         });
     }
@@ -85,8 +85,9 @@ class ExecutedContractCopyIT extends AbstractPostgresIT {
 
     @Test
     void notIssuedWhenThePostRollsBack() {
-        postInTransaction(UUID.randomUUID(), UUID.randomUUID(), true);
-        verify(contracts, after(1500).never()).createExecutedCopy(any());
+        UUID lease = UUID.randomUUID();
+        postInTransaction(UUID.randomUUID(), lease, true);
+        verify(contracts, after(1500).never()).createExecutedCopy(lease);
     }
 
     @Test
@@ -97,9 +98,6 @@ class ExecutedContractCopyIT extends AbstractPostgresIT {
         // Completes without an exception reaching the committer.
         postInTransaction(UUID.randomUUID(), lease, false);
         verify(contracts, timeout(5000)).createExecutedCopy(lease);
-        // The listener itself swallows it (logged; the copy can be issued by hand).
-        org.assertj.core.api.Assertions.assertThatCode(() -> executedCopies.onPosted(
-                new LeasePostedEvent(UUID.randomUUID(), lease, LocalDate.of(2026, 4, 24)))).doesNotThrowAnyException();
         assertThat(TenantContextHolder.getTenantId()).isNull();
     }
 
@@ -108,5 +106,78 @@ class ExecutedContractCopyIT extends AbstractPostgresIT {
         String def = jdbc.queryForObject(
                 "select indexdef from pg_indexes where indexname = 'uq_lease_documents_executed_copy'", String.class);
         assertThat(def).startsWith("CREATE UNIQUE INDEX").contains("(lease_id)").contains("'EXECUTED_COPY'");
+    }
+
+    // ------------------------------------------------------------------
+    // The nightly sweep for copies whose after-commit issue was dropped
+    // ------------------------------------------------------------------
+
+    private UUID org(boolean stamp) {
+        UUID id = UUID.randomUUID();
+        jdbc.update("insert into landlord_org (id, name, slug, status, stamp_image_url) values (?, ?, ?, 'ACTIVE', ?)",
+                id, "Sweep " + id, "sweep-" + id, stamp ? "https://acct.blob.core.windows.net/tenant-" + id + "/branding/s.png" : null);
+        return id;
+    }
+
+    private UUID lease(UUID tenantId, String status, boolean posted, String... docTypes) {
+        UUID property = UUID.randomUUID(), unit = UUID.randomUUID(), renter = UUID.randomUUID(), lease = UUID.randomUUID();
+        jdbc.update("INSERT INTO properties (id, tenant_id, name_en, emirate) VALUES (?,?,?,?)",
+                property, tenantId, "P-" + property, "DUBAI");
+        jdbc.update("INSERT INTO units (id, tenant_id, property_id, unit_number) VALUES (?,?,?,?)",
+                unit, tenantId, property, "U-" + unit);
+        jdbc.update("INSERT INTO renters (id, tenant_id, name_en) VALUES (?,?,?)", renter, tenantId, "R-" + renter);
+        jdbc.update("INSERT INTO leases (id, tenant_id, unit_id, renter_id, start_date, end_date, status,"
+                        + " rent_amount, deposit_amount, posted_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                lease, tenantId, unit, renter, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), status,
+                new java.math.BigDecimal("1200.00"), java.math.BigDecimal.ZERO,
+                posted ? java.sql.Timestamp.from(java.time.Instant.parse("2026-01-01T08:00:00Z")) : null);
+        for (String type : docTypes) {
+            jdbc.update("insert into lease_documents (id, tenant_id, lease_id, document_url, type) values (?,?,?,?,?)",
+                    UUID.randomUUID(), tenantId, lease, type.toLowerCase() + ".pdf", type);
+        }
+        return lease;
+    }
+
+    @Test
+    void theNightlySweepIssuesOnlyMissingCopiesOrganisationByOrganisation() {
+        UUID a = org(true), b = org(true), c = org(false);
+        UUID a1 = lease(a, "ACTIVE", true, "CONTRACT");                        // missing: issued
+        UUID a2 = lease(a, "ACTIVE", true, "CONTRACT", "EXECUTED_COPY");       // already has one
+        UUID a3 = lease(a, "PENDING_SIGNATURE", false, "CONTRACT");            // not signed
+        UUID a4 = lease(a, "ACTIVE", true);                                    // no stored contract
+        UUID b1 = lease(b, "TERMINATED", true, "CONTRACT");                    // missing, but fails
+        UUID c1 = lease(c, "ACTIVE", true, "CONTRACT");                        // org has no stamp
+        java.util.Map<UUID, UUID> seenTenant = new java.util.concurrent.ConcurrentHashMap<>();
+        doAnswer(inv -> {
+            UUID id = inv.getArgument(0);
+            seenTenant.put(id, TenantContextHolder.getTenantId());
+            if (id.equals(b1)) throw new IllegalStateException("renderer down");
+            if (id.equals(a1)) {
+                var dto = new com.datagami.rentaxis.api.dto.LeaseDocumentDTO();
+                dto.setId(UUID.randomUUID());
+                return Optional.of(dto);
+            }
+            return Optional.empty();
+        }).when(contracts).createExecutedCopy(any());
+
+        var run = executedCopies.sweepMissing(ExecutedContractCopyService.SWEEP_MAX, ExecutedContractCopyService.SWEEP_MAX_PER_ORG);
+
+        verify(contracts).createExecutedCopy(a1);
+        verify(contracts).createExecutedCopy(b1);
+        for (UUID notDue : new UUID[]{a2, a3, a4, c1}) verify(contracts, never()).createExecutedCopy(notDue);
+        // Each in its own organisation's context; B's failure did not stop A.
+        assertThat(seenTenant).containsEntry(a1, a).containsEntry(b1, b);
+        assertThat(run.issued()).isGreaterThanOrEqualTo(1);
+        assertThat(run.failed()).isGreaterThanOrEqualTo(1);
+        assertThat(TenantContextHolder.getTenantId()).isNull();
+
+        // Bounded per organisation: with a cap of one, A contributes one lease a night.
+        UUID a5 = lease(a, "ACTIVE", true, "CONTRACT");
+        reset(contracts);
+        when(contracts.createExecutedCopy(any())).thenReturn(Optional.empty());
+        executedCopies.sweepMissing(ExecutedContractCopyService.SWEEP_MAX, 1);
+        long fromA = org.mockito.Mockito.mockingDetails(contracts).getInvocations().stream()
+                .filter(i -> i.getArguments()[0].equals(a1) || i.getArguments()[0].equals(a5)).count();
+        assertThat(fromA).isEqualTo(1);
     }
 }
