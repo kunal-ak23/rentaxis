@@ -43,6 +43,11 @@ public final class PdfResourcePolicy {
 
     /** Applies the policy to a builder. Call on every {@link PdfRendererBuilder}. */
     public static PdfRendererBuilder apply(PdfRendererBuilder builder) {
+        // Not a resource rule, but this is the one call every PDF builder makes:
+        // Arabic text is split into bidi runs, reordered and shaped (joined letter
+        // forms), instead of printing isolated letters left to right (R3 portal3 F11).
+        builder.useUnicodeBidiSplitter(new com.openhtmltopdf.bidi.support.ICUBidiSplitter.ICUBidiSplitterFactory());
+        builder.useUnicodeBidiReorderer(new com.openhtmltopdf.bidi.support.ICUBidiReorderer());
         builder.useUriResolver(URI_RESOLVER);
         builder.useExternalResourceAccessControl(
                 (uri, type) -> isAllowed(uri), ExternalResourceControlPriority.RUN_BEFORE_RESOLVING_URI);

@@ -134,7 +134,8 @@ public class PropertyStatementPdfRenderer {
             }, "Noto Sans");
             // Only inline data: URIs load; no http(s), no file:, no jar:.
             PdfResourcePolicy.apply(builder);
-            builder.withHtmlContent(html, null);
+            // Shared sanitiser: no bidi controls or glyph-less characters (R3 portal3 F11).
+            builder.withHtmlContent(com.datagami.rentaxis.core.util.PdfText.clean(html), null);
             builder.toStream(baos);
             builder.run();
             return baos.toByteArray();
