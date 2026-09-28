@@ -56,6 +56,9 @@ DEMO_EMAIL_DOMAIN = os.environ.get("DEMO_EMAIL_DOMAIN", "alashramdemo.com")
 DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "Demo@1234")
 ADMIN_EMAIL = os.environ.get("DEMO_ADMIN_EMAIL", f"admin@{DEMO_EMAIL_DOMAIN}")
 ADMIN_PASSWORD = DEMO_PASSWORD
+# The Company Admin's display name. The dashboard greets by first name, so a
+# branded demo sets a person's name; unset, the historical "<brand> Demo Admin".
+ADMIN_NAME = os.environ.get("DEMO_ADMIN_NAME") or f"{DEMO_BRAND} Demo Admin"
 OUT_FILE = Path(
     os.environ.get(
         "DEMO_OUTPUT_FILE",
@@ -474,7 +477,7 @@ def main():
             json={
                 "email": ADMIN_EMAIL,
                 "password": ADMIN_PASSWORD,
-                "name": f"{DEMO_BRAND} Demo Admin",
+                "name": ADMIN_NAME,
                 "role": "TENANT_ADMIN",
                 "tenantId": tenant_id,
                 "phoneNumber": "+971501110000",
@@ -483,6 +486,16 @@ def main():
         log(f"tenant admin created: {ADMIN_EMAIL}")
     except RuntimeError:
         log(f"tenant admin already exists: {ADMIN_EMAIL}")
+        # Keep a re-run's display name in step with DEMO_ADMIN_NAME.
+        existing = next(
+            (u for u in (sa.get("/api/admin/users") or [])
+             if (u.get("email") or "").lower() == ADMIN_EMAIL.lower()
+             and str(u.get("tenantId")) == str(tenant_id)),
+            None,
+        )
+        if existing and existing.get("name") != ADMIN_NAME:
+            sa.put(f"/api/admin/users/{existing['id']}", json={"name": ADMIN_NAME})
+            log(f"tenant admin renamed to {ADMIN_NAME}")
     out["adminLogin"] = {"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
 
     # ── 2. Tenant admin: properties + units ─────────────────────────────────

@@ -150,7 +150,7 @@ seed() {
   PROD_BASE_URL="$backend_url" DEMO_WEB_BASE_URL="$web_url" \
   PROD_SUPERADMIN_EMAIL=admin@rentaxis.com PROD_SUPERADMIN_PASSWORD=admin123 \
   DEMO_TENANT_NAME="Oasis Crest Properties" DEMO_BRAND="Oasis Crest" \
-  DEMO_EMAIL_DOMAIN=oasiscrest.example \
+  DEMO_EMAIL_DOMAIN=oasiscrest.example DEMO_ADMIN_NAME="Noura Al Suwaidi" \
   DEMO_MANAGER_PHONE=+971500009511 DEMO_GUARD_PHONE=+971500009512 \
   DEMO_BRAND_AR="قمة الواحة" \
   DEMO_ORG_ADDRESS="Office 1407, Crest Tower, Marasi Drive, Business Bay, Dubai, United Arab Emirates, P.O. Box 00000" \
