@@ -541,7 +541,9 @@ public class PortfolioImportPersistService {
                 unnumbered += p.generatedUnnumbered().size();
             } catch (RuntimeException e) {
                 log.info("Imported lease {} (row {}) left as draft: {}", p.leaseId(), p.rowNum(), e.getMessage());
-                warnings.add(importedAsDraft(p.rowNum(), e.getMessage()));
+                // Break-it R3 data3 F4 (review r3-E): the job's warnings are shown to the user.
+                warnings.add(importedAsDraft(p.rowNum(), ImportFailures.safe(e, ImportFailures.Kind.POST, log,
+                        "Portfolio lease " + p.leaseId() + " post").message()));
             }
         }
         details.setLeasesPosted(posted);

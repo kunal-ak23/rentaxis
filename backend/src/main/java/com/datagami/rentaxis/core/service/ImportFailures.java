@@ -89,7 +89,9 @@ public final class ImportFailures {
 
     /** A Postgres unique violation (SQLState 23505) anywhere in the cause chain, or a Spring DuplicateKeyException. */
     static boolean isUniqueViolation(Throwable e) {
-        for (Throwable t = e; t != null; t = t.getCause() == t ? null : t.getCause()) {
+        // Bounded: a cyclic cause chain must answer, not spin.
+        int depth = 0;
+        for (Throwable t = e; t != null && depth++ < 32; t = t.getCause() == t ? null : t.getCause()) {
             if (t instanceof org.springframework.dao.DuplicateKeyException) return true;
             if (t instanceof SQLException sql) {
                 for (SQLException s = sql; s != null; s = s.getNextException()) {

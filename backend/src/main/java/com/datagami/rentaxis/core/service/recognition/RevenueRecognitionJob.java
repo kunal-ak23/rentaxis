@@ -238,7 +238,7 @@ public class RevenueRecognitionJob {
             // One organisation's mapping gap is not the other forty's problem.
             log.error("Revenue recognition failed for tenant {}: {}", tenantId, e.getMessage(), e);
             try {
-                runLog.record(tenantId, today, 0, List.of("The pass failed: " + e.getMessage()));
+                runLog.record(tenantId, today, 0, List.of(failureLine(e, tenantId)));
             } catch (RuntimeException ignored) {
                 // The log line above is the record of last resort.
             }
@@ -246,6 +246,18 @@ public class RevenueRecognitionJob {
         } finally {
             TenantContextHolder.clear();
         }
+    }
+
+    /**
+     * Break-it R3 data3 F4 (review r3-E): the line the recognition screen shows for a
+     * pass that blew up ({@code GET /finance/recognition/status} → lastRunErrors). A
+     * refusal written for users as is; anything else (SQL, ids) only as a reference
+     * whose detail is in the log — never {@code e.getMessage()}.
+     */
+    static String failureLine(Exception e, UUID tenantId) {
+        return "The pass failed: " + com.datagami.rentaxis.core.service.ImportFailures.safe(e,
+                com.datagami.rentaxis.core.service.ImportFailures.Kind.POST, log,
+                "Revenue recognition pass for tenant " + tenantId).message();
     }
 
     /**

@@ -932,8 +932,11 @@ public class VatTaxPointService {
                 total = total.add(row.vatAmount());
             } catch (RuntimeException e) {
                 log.warn("VAT tax point {} ({}) could not be posted: {}", row.id(), row.taxPointDate(), e.getMessage());
+                // Break-it R3 data3 F4 (review r3-E): never raw exception text in a run result.
                 errors.add("Tax point " + row.taxPointDate() + (row.chequeNumber() == null ? "" : " (" + row.chequeNumber() + ")")
-                        + ": " + e.getMessage());
+                        + ": " + com.datagami.rentaxis.core.service.ImportFailures.safe(e,
+                                com.datagami.rentaxis.core.service.ImportFailures.Kind.POST, log,
+                                "VAT tax point " + row.id()).message());
             }
         }
         return new VatTaxPointRunResult(preview, preview ? 0 : done.size(), done.size(), s2(total), done, skipped,
