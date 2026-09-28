@@ -154,4 +154,20 @@ class UnitControllerBulkUploadTest {
                 "Row 4: Expected rent: Amounts cannot be negative"));
         verify(service, never()).bulkCreateUnits(any(), any(), any(), any());
     }
+    /** Break-it R3 data3 F4 (review round 2): a reader failure never echoes the exception text. */
+    @Test
+    @SuppressWarnings("unchecked")
+    void anUnreadableFileIsASentenceWithAReferenceNotTheExceptionText() throws Exception {
+        org.springframework.web.multipart.MultipartFile file = org.mockito.Mockito.mock(org.springframework.web.multipart.MultipartFile.class);
+        when(file.isEmpty()).thenReturn(false);
+        when(file.getInputStream()).thenThrow(new java.io.IOException("/var/lib/rentaxis/tmp/upload_7f3a.tmp (Permission denied)"));
+
+        ResponseEntity<?> res = controller.bulkUploadUnits(file, propertyId, null);
+
+        assertThat(res.getStatusCode().value()).isEqualTo(400);
+        String message = String.valueOf(((Map<String, Object>) res.getBody()).get("message"));
+        assertThat(message).startsWith("The file could not be read as a CSV").containsPattern("reference [0-9A-F]{8}$");
+        assertThat(message).doesNotContain("/var/lib").doesNotContain("Permission denied");
+        verify(service, never()).bulkCreateUnits(any(), any(), any(), any());
+    }
 }

@@ -28,6 +28,8 @@ import java.util.stream.Collectors;
 @Service
 public class PropertyService {
 
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(PropertyService.class);
+
     /**
      * Name of the partial unique index added in migration 60b. Kept as a
      * constant so the catch-block in {@link #createProperty(Property)} stays
@@ -259,7 +261,8 @@ public class PropertyService {
                 parsedRows.add(new String[]{buildingName, unitNumber, unitTypeStr, sizeSqftStr, expectedRentStr, statusStr});
             }
         } catch (Exception e) {
-            errors.add("Failed to read CSV file: " + e.getMessage());
+            // Break-it R3 data3 F4 (review round 2): no reader exception text on screen.
+            errors.add(ImportFailures.unreadableFile(e, LOG, "Property import CSV"));
         }
 
         // If validation errors, return early without saving anything

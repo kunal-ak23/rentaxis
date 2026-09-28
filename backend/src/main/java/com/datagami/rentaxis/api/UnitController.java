@@ -23,6 +23,8 @@ import java.util.UUID;
 @RequestMapping("/api/v1/units")
 public class UnitController {
 
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(UnitController.class);
+
     private final UnitService service;
 
     public UnitController(UnitService service) {
@@ -123,7 +125,8 @@ public class UnitController {
         } catch (IOException e) {
             return ResponseEntity.badRequest().body(Map.of(
                     "error", true,
-                    "message", "Failed to read CSV file: " + e.getMessage(),
+                    // Break-it R3 data3 F4 (review round 2): no reader exception text on screen.
+                    "message", com.datagami.rentaxis.core.service.ImportFailures.unreadableFile(e, LOG, "Unit bulk CSV"),
                     "status", 400
             ));
         }

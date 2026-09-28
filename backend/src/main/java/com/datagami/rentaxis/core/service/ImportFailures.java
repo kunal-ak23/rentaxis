@@ -73,6 +73,17 @@ public final class ImportFailures {
         return new Safe(kind.failed + " — reference " + ref, kind.prefix + ".failedRef", Map.of("reference", ref));
     }
 
+    /**
+     * Break-it R3 data3 F4 (review round 2): a file the importer could not read.
+     * The reader's own exception text (paths, parser internals, bytes of the file)
+     * goes to the log under a reference; the user gets a sentence they can act on.
+     */
+    public static String unreadableFile(Throwable e, Logger log, String context) {
+        String ref = reference();
+        log.warn("{}: file could not be read, reference {}", context, ref, e);
+        return "The file could not be read as a CSV; save it as CSV (UTF-8) and try again — reference " + ref;
+    }
+
     /** {@link #safe} as a file-level row of the job's error list. */
     public static ImportErrorDTO fileError(Throwable e, Kind kind, Logger log, String context, String sheet, String field) {
         Safe s = safe(e, kind, log, context);
