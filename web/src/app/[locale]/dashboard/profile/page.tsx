@@ -17,6 +17,7 @@ type Profile = {
 
 export default function ProfilePage() {
     const tRoles = useTranslations("Roles");
+    const t = useTranslations("Profile");
     // t.has guards a role the catalogue does not know; getRoleLabel is the
     // English fallback rather than letting next-intl throw.
     const roleLabel = (role: string) =>
@@ -26,6 +27,7 @@ export default function ProfilePage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
+    const [saveError, setSaveError] = useState("");
 
     const [name, setName] = useState("");
     const [phoneNumber, setPhoneNumber] = useState("");
@@ -62,6 +64,7 @@ export default function ProfilePage() {
         e.preventDefault();
         setSaving(true);
         setSaved(false);
+        setSaveError("");
         try {
             const res = await fetch("/api/proxy/auth/me", {
                 method: "PUT",
@@ -73,9 +76,17 @@ export default function ProfilePage() {
                 setProfile(data);
                 setSaved(true);
                 setTimeout(() => setSaved(false), 3000);
+            } else {
+                // Break-it round 2 (portal2) F2: a refused save used to stop
+                // the spinner and say nothing. Say so in the user's language,
+                // plus the server's reason when it gives one (e.g. too long).
+                const body = await res.json().catch(() => null) as { message?: unknown } | null;
+                const detail = typeof body?.message === "string" ? body.message.trim() : "";
+                setSaveError(detail ? `${t("saveFailed")} ${detail}` : t("saveFailed"));
             }
         } catch (err) {
             console.error(err);
+            setSaveError(t("saveFailed"));
         } finally {
             setSaving(false);
         }
@@ -173,6 +184,7 @@ export default function ProfilePage() {
                                 type="text"
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
+                                maxLength={255}
                                 className="w-full border border-border rounded-lg bg-background pl-10 pr-4 py-3 text-sm text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all"
                                 required
                             />
@@ -211,6 +223,12 @@ export default function ProfilePage() {
                         <p className="text-[10px] text-muted mt-1 ml-1">Contact your administrator to change email.</p>
                     </div>
 
+                    {saveError && (
+                        <div role="alert" className="bg-error/10 text-error text-xs font-semibold px-4 py-2.5 rounded-lg border border-error/20">
+                            {saveError}
+                        </div>
+                    )}
+
                     <div className="flex items-center gap-3 pt-2">
                         <button
                             type="submit"
@@ -222,7 +240,7 @@ export default function ProfilePage() {
                             ) : saved ? (
                                 <Check size={14} />
                             ) : null}
-                            {saved ? "Saved" : "Save Changes"}
+                            {saved ? t("saved") : t("saveChanges")}
                         </button>
                     </div>
                 </form>

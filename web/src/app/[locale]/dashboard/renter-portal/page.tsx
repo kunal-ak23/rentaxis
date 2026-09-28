@@ -265,11 +265,16 @@ export default function RenterPortalPage() {
             isDestructive: true,
             onConfirm: async () => {
                 setConfirmDialog(null);
+                setContractError(null);
                 try {
                     const res = await fetch(`/api/proxy/v1/leases/${id}/reject`, { method: "PUT" });
+                    // A refused reject used to close the dialog and say nothing:
+                    // the renter believed the contract was rejected.
                     if (res.ok) fetchMyLeases();
+                    else setContractError(t("rejectFailed"));
                 } catch (err) {
                     console.error(err);
+                    setContractError(t("rejectFailed"));
                 }
             },
         });

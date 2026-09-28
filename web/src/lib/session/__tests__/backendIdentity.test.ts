@@ -38,6 +38,42 @@ describe("resolveBackendIdentity", () => {
             .toBe("org-mismatch");
     });
 
+    /**
+     * Break-it round 2 (portal2) F2 was first read as a sign-in race: the page
+     * snapshots its org from the active_tenant_id cookie before the switcher
+     * has set it (GET /auth/me/tenants still in flight), so the first
+     * mutation is stamped "none". Reproduced against the stack: that request
+     * is forwarded (200); the 409 was the backend refusing a 256+ character
+     * name. These pin why the stamp cannot race: an absent stamp, an absent
+     * cookie and the home organisation all resolve to the same tenant.
+     */
+    it("never refuses a first mutation stamped before the org cookie was set", () => {
+        const renter = jwt({ id: "r", role: "RENTER", tenantId: "home", tenantIds: ["home"] });
+        const ta = jwt({ id: "u", role: "TENANT_ADMIN", tenantId: "home", tenantIds: ["home", "m"] });
+        const put = (token: JWT, expectedTenant: string, cookieTenant: string | undefined) =>
+            resolveBackendIdentity({ ...base, token, expectedTenant, cookieTenant, method: "PUT" }).kind;
+        for (const token of [renter, ta]) {
+            // Snapshot "none"; cookie still absent, or since set to the resolved default (home).
+            expect(put(token, "none", undefined)).toBe("ok");
+            expect(put(token, "none", "home")).toBe("ok");
+            // Snapshot home (the switcher's setPageOrg); cookie absent (cleared) or home.
+            expect(put(token, "home", undefined)).toBe("ok");
+            // A leftover cookie from another account resolves to home on both sides.
+            expect(put(token, "foreign", "foreign")).toBe("ok");
+            expect(put(token, "none", "foreign")).toBe("ok");
+        }
+    });
+
+    it("still refuses a form loaded for one org after another tab switched (F3)", () => {
+        const ta = jwt({ id: "u", role: "TENANT_ADMIN", tenantId: "home", tenantIds: ["home", "m"] });
+        const put = (expectedTenant: string, cookieTenant: string | undefined) =>
+            resolveBackendIdentity({ ...base, token: ta, expectedTenant, cookieTenant, method: "PUT" }).kind;
+        expect(put("none", "m")).toBe("org-mismatch");
+        expect(put("home", "m")).toBe("org-mismatch");
+        expect(put("m", "home")).toBe("org-mismatch");
+        expect(put("m", undefined)).toBe("org-mismatch");
+    });
+
     it("attaches the internal secret only when configured", () => {
         const token = jwt({ id: "u", role: "RENTER", tenantId: "h" });
         const withSecret = resolveBackendIdentity({ ...base, token, internalProxySecret: "s" });

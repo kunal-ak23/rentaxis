@@ -12,6 +12,7 @@
   "MasterData": {
     "contractUnavailable": "The contract could not be downloaded. Please try again, or ask your property manager for a copy.",
     "acceptFailed": "The contract could not be accepted. It may have been updated since you opened it — review the current contract and try again.",
+    "rejectFailed": "The contract was not rejected. Please try again.",
     "acceptLease": "Accept Tenancy Contract",
     "actions": "Actions",
     "activate": "Activate",
@@ -3364,6 +3365,7 @@
   },
   "Notifications": {
     "title": "Notifications",
+    "markReadFailed": "Could not mark as read. Please try again.",
     "subtitle": "Stay up to date with activity across your properties",
     "markAllRead": "Mark All as Read",
     "filterAll": "All",
@@ -4693,5 +4695,10 @@
     "aboveOutstanding": "This is {excess} more than the {outstanding} still outstanding on this contract. It will be recorded as an advance payment — confirm to continue.",
     "recordAnyway": "Record anyway",
     "amendNoChanges": "Nothing has changed yet — edit a line to amend."
+  },
+  "Profile": {
+    "saveChanges": "Save Changes",
+    "saved": "Saved",
+    "saveFailed": "Your profile was not saved. Please try again."
   }
 }
