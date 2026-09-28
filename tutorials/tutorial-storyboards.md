@@ -84,44 +84,43 @@ track is commissioned separately.
   search takes you to a record, notifications tell you what changed, and Help
   explains how to do it.”
 
-## 03 — Roles, permissions, and organization switching
+## 03 — Roles, permissions, and organisation switching
 
-- Audience: super admins and organization admins; 2–3 minutes.
-- Capture: show Super Admin, Tenant Admin, Property Manager, Tenant User,
-  Renter, and Security Guard scopes; switch the active organization; compare
-  navigation using prepared accounts.
-- Narration: “RentAxis separates access by organization, role, and property
-  assignment. This tutorial shows how those boundaries affect the interface and
-  why an unavailable menu is often correct behavior rather than an error. Start
-  with the prepared Super Admin account. A super administrator can provision
-  organizations and move between tenant contexts for authorized support and
-  administration. Open the organization switcher and note the currently active
-  organization before selecting the Tutorial Demo organization. The page
-  reloads inside that tenant context. Switching context does not copy, merge, or
-  expose records from another organization. Always verify the organization name
-  before creating, editing, or deleting data. Next, sign in with the prepared
-  Tenant Admin account. This role manages users, portfolio data, leasing,
-  finance, settings, and enabled services for one organization, but it cannot
-  provision unrelated tenants or grant itself platform-level authority. Compare
-  the sidebar with the Super Admin view. Now use the Property Manager account.
-  Property managers operate only the properties assigned to them. Open the
-  property list and confirm that an unassigned demo property is absent. Directly
-  navigating to an unassigned record must not bypass that restriction. The
-  Tenant User role is more limited and should be used for staff who need a
-  defined operational surface without tenant-wide administration. Continue with
-  the Renter account. The renter sees their tenancy, payments, maintenance,
-  meetings, resident services, and marketplace features rather than internal
-  administration. Finally, review the Security Guard role. A guard works with
-  assigned-property visitor queues, scans, approvals, admissions, and exits.
-  They do not receive access to leases, finance, or tenant configuration. Feature
-  access also affects navigation. Listings, Meetings, Email Notifications,
-  Lease Renewals, and Gate Pass can be enabled per organization, so a role may
-  be valid while its related feature remains intentionally hidden. Finish by
-  returning to the Super Admin account and switching back to the original
-  organization context. The safe operating habit is simple: check the tenant,
-  check the role, and check the property assignment before every sensitive
-  action. If access appears wrong, do not borrow a broader account. Ask an
-  authorized administrator to correct the role or assignment.”
+- Audience: System Admins and Company Admins; 2–3 minutes.
+- Capture: System Admin opens the organisation switcher (Administering, Global
+  View, Oasis Crest Properties ticked); Company Admin opens Settings (no
+  Administration section); Property Manager sees one assigned property and a
+  direct link to the unassigned one is refused; Tenant lands on the Tenant
+  Portal; Help › Roles & Permissions for the Company User and Security Guard;
+  back to the System Admin switcher.
+- Narration: “Miftah separates access by organisation, role, and property
+  assignment. This tutorial shows how those boundaries shape the interface, and
+  why a missing menu is usually correct behaviour rather than an error. Start as
+  the System Admin. The role is shown under the name, and the organisation
+  switcher at the top of the side panel reads Administering. Open it. A System
+  Admin can work in Global View or inside one organisation, here Oasis Crest
+  Properties, which is ticked as the active one. Switching organisation never
+  copies or merges records between organisations, so always check the name here
+  before you create, edit, or delete anything. Next, the Company Admin. This
+  role runs one organisation: its portfolio, leasing, collections, accounting,
+  and settings. Open Settings. The Company Admin sees Organisation, Users and
+  staff, Rent and fines, and Payments, but not the Administration section, with
+  Organisations and Users, that the System Admin has. Now the Property Manager.
+  The rail has no Settings, and Properties lists only the property assigned to
+  this manager, Oasis Crest Residence Tower. Opening the address of an
+  unassigned property directly does not get around that: Miftah reports that
+  the property was not found, or that you may not have access to it. Next, the
+  Tenant. A tenant signs in to the Tenant Portal, with their tenancy contracts,
+  payments, penalties, tickets, listings, and meetings, and none of the
+  internal administration. Two more roles are described in Help, under Roles
+  and Permissions. A Company User has limited access, to their assigned unit
+  details. A Security Guard manages gate access at assigned properties,
+  scanning passes and handling approved visitors. Finish back as the System
+  Admin: open the switcher and confirm that Oasis Crest Properties is still the
+  active organisation. The safe habit is simple. Check the organisation, the
+  role, and the property assignment before every sensitive action. If access
+  looks wrong, do not borrow a broader account; ask an administrator to correct
+  the role or the assignment.”
 
 ## 04 — Provision organizations and manage feature access
 
