@@ -494,15 +494,30 @@ public class ChequeQueryService {
      * every bounced row of the lease shares its receivable balance, newest first.
      */
     public java.util.Set<UUID> ledgerSettled(Collection<Cheque> rows) {
+        java.util.Set<UUID> out = new java.util.HashSet<>();
+        bouncedOpenAmounts(rows).forEach((id, open) -> { if (open.signum() <= 0) out.add(id); });
+        return out;
+    }
+
+    /**
+     * The debt the ledger still carries on each BOUNCED row of the leases {@code rows}
+     * belong to, by cheque id — {@link BouncedDebt#openAmounts} over every bounced row of
+     * those leases, so a lease's receivable is shared newest-first exactly as the
+     * register, aging and dashboard share it. Zero means settled (F14-52); less than the
+     * face value means partly settled. Rows that are not BOUNCED are absent.
+     *
+     * <p>One register query for all the leases, plus one receivable balance per lease
+     * that has a bounce — never a query per row. The lease ids come from rows the caller
+     * already read under its own tenant scope.</p>
+     */
+    public java.util.Map<UUID, java.math.BigDecimal> bouncedOpenAmounts(Collection<Cheque> rows) {
         java.util.Set<UUID> leaseIds = rows.stream()
                 .filter(c -> c.getStatus() == ChequeStatus.BOUNCED && c.getLease() != null)
                 .map(c -> c.getLease().getId()).collect(java.util.stream.Collectors.toSet());
-        if (leaseIds.isEmpty()) return java.util.Set.of();
+        if (leaseIds.isEmpty()) return java.util.Map.of();
         List<Cheque> bounced = chequeRepository.findRegisterRowsForLeases(leaseIds).stream()
                 .filter(c -> c.getStatus() == ChequeStatus.BOUNCED).toList();
-        java.util.Set<UUID> out = new java.util.HashSet<>();
-        bouncedDebt.openAmounts(bounced).forEach((id, open) -> { if (open.signum() <= 0) out.add(id); });
-        return out;
+        return bouncedDebt.openAmounts(bounced);
     }
 
     /** Whose rows the register's SQL reads: the caller's organisation, or all of them for a SUPER_ADMIN with none selected. */

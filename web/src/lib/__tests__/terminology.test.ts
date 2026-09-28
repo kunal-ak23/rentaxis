@@ -130,10 +130,13 @@ describe("PACT terminology", () => {
         walk(join(root, "components"));
         const jsxText = />([^<>{}]*)<\//g;
         const prop = /\b(?:label|title|placeholder|aria-label|description)\s*[:=]\s*["']([^"']*)["']/g;
+        // alert("…"), confirm("…"), toast.error("…"), setError("…") — messages a person reads.
+        const call = /\b(?:alert|confirm|toast\.\w+|setError)\(\s*(["'`])((?:(?!\1).)*)\1/g;
         const stale = files.flatMap(f => readFileSync(f, "utf8").split("\n").flatMap((line, i) =>
-            [...line.matchAll(jsxText), ...line.matchAll(prop)]
-                .filter(m => STALE_WORD.test(m[1]))
-                .map(m => `${f.slice(root.length + 1)}:${i + 1}: ${m[1].trim()}`)));
+            [...[...line.matchAll(jsxText), ...line.matchAll(prop)].map(m => m[1]),
+                ...[...line.matchAll(call)].map(m => m[2])]
+                .filter(text => STALE_WORD.test(text))
+                .map(text => `${f.slice(root.length + 1)}:${i + 1}: ${text.trim()}`)));
         expect(stale).toEqual([]);
     });
 

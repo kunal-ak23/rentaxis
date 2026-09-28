@@ -55,6 +55,9 @@ public class NotificationScheduler {
     private final OnlinePaymentRepository onlinePaymentRepository;
     private final LandlordOrgRepository orgRepository;
     private final PlatformTransactionManager transactionManager;
+    private final com.datagami.rentaxis.core.service.cheque.ChequeQueryService chequeQueryService;
+    /** The application clock ({@code ClockConfig}, zoned to {@code app.time-zone}). */
+    private final java.time.Clock clock;
 
     /**
      * S16-12: kill switch for the 08:00 run (payment-due reminders, overdue notices,
@@ -89,7 +92,7 @@ public class NotificationScheduler {
 
     private void checkPaymentDueReminders() {
         log.info("Checking payment due reminders...");
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
 
         // Get all rent collection settings to find reminder day configurations
         List<RentCollectionSettings> allSettings = readOnly().execute(s -> rentSettingsRepository.findAll());
@@ -217,7 +220,7 @@ public class NotificationScheduler {
      */
     private void checkOverduePayments() {
         log.info("Checking overdue payments...");
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
 
         int sent = 0;
         Instant now = Instant.now();
@@ -232,13 +235,18 @@ public class NotificationScheduler {
                 more = Boolean.TRUE.equals(readOnly().execute(s -> {
                     org.springframework.data.domain.Slice<Cheque> slice = chequeRepository.findAllDue(tenantId, today,
                             org.springframework.data.domain.PageRequest.of(p, DUE_PAGE));
+                    // F14-52: what the ledger still carries on each bounce on this page, in one
+                    // batch — a settled bounce is not the Tenant's to be chased for.
+                    java.util.Map<java.util.UUID, java.math.BigDecimal> bouncedOpen =
+                            bouncedOpenFor(tenantId, slice.getContent());
                     for (Cheque cheque : slice) {
                         Lease lease = cheque.getLease();
                         int graceDays = lease == null ? 0 : lease.getGracePeriodDays();
                         // The Tenant's side of the rule: a cheque already deposited with the
                         // bank is overdue for the landlord until it clears, but there is
                         // nothing the Tenant can pay on it (tutorial bug 2026-09-28-03).
-                        if (!ChequeDueRules.tenantOverdue(cheque, graceDays, today)) {
+                        java.math.BigDecimal open = bouncedOpen.get(cheque.getId());
+                        if (!ChequeDueRules.tenantOverdue(cheque, graceDays, today, open)) {
                             continue;
                         }
                         // A row the renter is in the middle of paying online is owed but not yet
@@ -251,7 +259,10 @@ public class NotificationScheduler {
                         }
                         int daysOverdue = ChequeDueRules.daysOverdue(cheque, graceDays, today);
                         if (shouldRemind(daysOverdue)) {
-                            batch.add(Reminder.of(cheque).withDays(daysOverdue));
+                            // A partly settled bounce is chased for what is left of it.
+                            batch.add(Reminder.of(cheque)
+                                    .withAmount(ChequeDueRules.tenantPayable(cheque, today, open))
+                                    .withDays(daysOverdue));
                         }
                     }
                     return slice.hasNext();
@@ -283,9 +294,31 @@ public class NotificationScheduler {
         log.info("Sent {} overdue payment notifications", sent);
     }
 
+    /**
+     * {@code ChequeQueryService.bouncedOpenAmounts} for one organisation's rows. The
+     * receivable balance behind it is read by the ledger under the organisation in
+     * context, and this job runs with none — without one the ledger answers zero and
+     * every bounce would read as settled. So the organisation is put in context for the
+     * read and the caller's context restored after it.
+     */
+    private java.util.Map<java.util.UUID, java.math.BigDecimal> bouncedOpenFor(java.util.UUID tenantId,
+                                                                             List<Cheque> rows) {
+        java.util.UUID previous = com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId();
+        com.datagami.rentaxis.core.tenant.TenantContextHolder.setTenantId(tenantId);
+        try {
+            return chequeQueryService.bouncedOpenAmounts(rows);
+        } finally {
+            if (previous == null) {
+                com.datagami.rentaxis.core.tenant.TenantContextHolder.clear();
+            } else {
+                com.datagami.rentaxis.core.tenant.TenantContextHolder.setTenantId(previous);
+            }
+        }
+    }
+
     private void checkExpiringLeases() {
         log.info("Checking expiring leases...");
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
         int[] daysBeforeExpiry = {90, 60, 30};
 
         for (int daysBefore : daysBeforeExpiry) {
@@ -343,6 +376,10 @@ public class NotificationScheduler {
         static Reminder of(Cheque c) {
             return new Reminder(c.getId(), c.getTenantId(), NotificationScheduler.renterUserId(c), c.getSeqNo(), c.getAmount(),
                     c.getChequeNumber(), 0);
+        }
+
+        Reminder withAmount(java.math.BigDecimal a) {
+            return new Reminder(id, tenantId, renterUserId, seqNo, a, chequeNumber, days);
         }
 
         Reminder withDays(int d) {

@@ -116,6 +116,7 @@
     "noManagersAssigned": "لم يتم تعيين مدير عقار.",
     "noLeasesFound": "لم يتم العثور على عقود",
     "noPermissionDeleteLease": "ليس لديك صلاحية حذف هذا العقد.",
+    "noPermissionGenerateContract": "ليست لديك صلاحية إنشاء عقد لهذا الإيجار.",
     "noPhoneProvided": "لم يتم تقديم رقم هاتف",
     "noProjects": "لا توجد مشاريع",
     "noProjectsFound": "لم يتم العثور على مشاريع",

@@ -202,11 +202,33 @@ class ChequeDueRulesTest {
         assertThat(ChequeDueRules.overdue(cheque(ChequeStatus.DEPOSITED, TODAY.minusDays(84)), 5, TODAY)).isTrue();
     }
 
-    /** Asia/Dubai, not the JVM's zone: at 22:30 UTC it is already tomorrow in Dubai. */
+    /** Review I1 (F14-52): what the ledger still carries on a bounce decides what the Tenant owes. */
+    @ParameterizedTest(name = "bounce of 1000 with {0} open → owes={1}, overdue={2}, payable={3}")
+    @CsvSource({
+            // null: unknown — the face value.
+            ",      true,  true,  1000",
+            "1000,  true,  true,  1000",
+            "400,   true,  true,  400",
+            "0,     false, false, 0",
+            "-50,   false, false, 0",
+    })
+    void bounce_isOwedOnlyWhatTheLedgerStillCarries(java.math.BigDecimal open, boolean owes, boolean overdue,
+                                                    java.math.BigDecimal payable) {
+        Cheque c = cheque(ChequeStatus.BOUNCED, TODAY.minusDays(30));
+        c.setAmount(new java.math.BigDecimal("1000"));
+        assertThat(ChequeDueRules.tenantOwes(c, TODAY, open)).isEqualTo(owes);
+        assertThat(ChequeDueRules.tenantOverdue(c, 5, TODAY, open)).isEqualTo(overdue);
+        assertThat(ChequeDueRules.tenantPayable(c, TODAY, open)).isEqualByComparingTo(payable);
+    }
+
+    /** The open amount only ever speaks for a bounce; other rows are owed in full or not at all. */
     @Test
-    void todayIsTheDubaiDate() {
-        java.time.Clock lateUtc = java.time.Clock.fixed(
-                java.time.Instant.parse("2026-09-18T22:30:00Z"), java.time.ZoneOffset.UTC);
-        assertThat(ChequeDueRules.today(lateUtc)).isEqualTo(LocalDate.of(2026, 9, 19));
+    void openAmountIsIgnoredForRowsThatAreNotBounced() {
+        Cheque registered = cheque(ChequeStatus.REGISTERED, TODAY.minusDays(30));
+        registered.setAmount(new java.math.BigDecimal("1000"));
+        assertThat(ChequeDueRules.tenantPayable(registered, TODAY, java.math.BigDecimal.ZERO)).isEqualByComparingTo("1000");
+        Cheque deposited = cheque(ChequeStatus.DEPOSITED, TODAY.minusDays(30));
+        deposited.setAmount(new java.math.BigDecimal("1000"));
+        assertThat(ChequeDueRules.tenantPayable(deposited, TODAY, null)).isEqualByComparingTo("0");
     }
 }

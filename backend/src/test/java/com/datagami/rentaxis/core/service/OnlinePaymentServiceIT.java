@@ -113,6 +113,7 @@ class OnlinePaymentServiceIT extends AbstractPostgresIT {
     @Autowired PenaltyAssessmentService penalties;
     @Autowired TenantGatewayConfigService gatewayConfigService;
     @Autowired LeasePostingService posting;
+    @Autowired com.datagami.rentaxis.core.service.ledger.PostingService journal;
     @Autowired ChequeGenerationService generation;
     @Autowired LeaseService leaseService;
     @Autowired AccountService accountService;
@@ -1090,6 +1091,69 @@ class OnlinePaymentServiceIT extends AbstractPostgresIT {
         RenterChequeDTO open = row(rows, openId);
         assertThat(open.payable()).isEqualByComparingTo("750");
         assertThat(open.overdue()).as("dated today: inside grace").isFalse();
+    }
+
+    /**
+     * Review I1 (F14-52 on the Tenant's side): a bounce whose debt the ledger has
+     * settled — a receipt against the lease receivable that was not a replacement,
+     * or a settlement that absorbed it — is not owed by the Tenant, is not overdue
+     * and cannot be paid online, whatever the register row still says.
+     */
+    @Test
+    void aBounceTheLedgerHasSettledIsNotOwedByTheTenant() {
+        UUID bouncedId = bounceFirstCheque();
+        assertThat(row(myPayments(), bouncedId).payable()).as("precondition").isEqualByComparingTo(INSTALMENT);
+
+        receiptAgainstTheLease(INSTALMENT);
+
+        RenterChequeDTO settled = row(myPayments(), bouncedId);
+        assertThat(settled.status()).isEqualTo(ChequeStatus.BOUNCED);
+        assertThat(settled.due()).isFalse();
+        assertThat(settled.overdue()).isFalse();
+        assertThat(settled.daysOverdue()).isZero();
+        assertThat(settled.payable()).isEqualByComparingTo("0");
+        assertThat(settled.payableOnline()).isFalse();
+        assertThatThrownBy(() -> onlinePayments.createOrder(bouncedId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("already settled");
+    }
+
+    /** A partly settled bounce is owed, and late, for what is left of it — at the counter. */
+    @Test
+    void aPartlySettledBounceIsOwedOnlyItsOpenPart() {
+        UUID bouncedId = bounceFirstCheque();
+
+        receiptAgainstTheLease(new BigDecimal("5000"));
+
+        RenterChequeDTO partly = row(myPayments(), bouncedId);
+        assertThat(partly.due()).isTrue();
+        assertThat(partly.overdue()).isTrue();
+        assertThat(partly.payable()).isEqualByComparingTo("7000");
+        assertThat(partly.amount()).isEqualByComparingTo(INSTALMENT);
+        assertThat(partly.payableOnline()).as("the gateway would take the full face value").isFalse();
+        assertThatThrownBy(() -> onlinePayments.createOrder(bouncedId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("7000");
+    }
+
+    /**
+     * Cash received against the lease receivable, outside the cheque's own flow — the
+     * way a counter receipt or a settlement reduces the bounced debt the ledger carries.
+     */
+    private void receiptAgainstTheLease(BigDecimal amount) {
+        tx.executeWithoutResult(s -> {
+            var lease = chequeRepo.findByLease_IdOrderBySeqNoAsc(leaseId()).get(0).getLease();
+            var dims = new com.datagami.rentaxis.core.service.ledger.PostingRequest.Dimensions(
+                    fixtures.property().getId(), lease.getUnit().getId(), lease.getId(), lease.getRenter().getId(), null);
+            var receivable = lease.getReceivableAccountId() != null
+                    ? com.datagami.rentaxis.core.service.ledger.PostingRequest.cr(lease.getReceivableAccountId(), amount)
+                    : com.datagami.rentaxis.core.service.ledger.PostingRequest.cr(AccountRole.RENT_RECEIVABLE, amount);
+            journal.post(new com.datagami.rentaxis.core.service.ledger.PostingRequest(JournalDocType.JV, TODAY,
+                    "Counter receipt for the returned cheque", dims,
+                    com.datagami.rentaxis.domain.entity.enums.JournalSourceType.MANUAL, null, null, List.of(
+                            com.datagami.rentaxis.core.service.ledger.PostingRequest.dr(AccountRole.CASH, amount),
+                            receivable)));
+        });
     }
 
     @Test

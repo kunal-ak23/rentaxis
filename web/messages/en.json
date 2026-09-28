@@ -116,6 +116,7 @@
     "noManagersAssigned": "No property manager assigned.",
     "noLeasesFound": "No Tenancy Contracts Found",
     "noPermissionDeleteLease": "You don't have permission to delete this contract.",
+    "noPermissionGenerateContract": "You don't have permission to generate a contract for this tenancy.",
     "noPhoneProvided": "No phone provided",
     "noProjects": "No Projects",
     "noProjectsFound": "No Projects Found",

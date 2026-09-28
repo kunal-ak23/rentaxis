@@ -49,6 +49,9 @@ class NotificationSchedulerOverdueIT extends AbstractPostgresIT {
     @Autowired RenterRepository renterRepo;
     @Autowired UnitRepository unitRepo;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.datagami.rentaxis.core.service.ledger.PostingService journal;
+    @Autowired org.springframework.transaction.support.TransactionTemplate tx;
+    @Autowired com.datagami.rentaxis.domain.repository.ChequeRepository chequeRepo;
 
     @AfterEach
     void tearDown() {
@@ -60,7 +63,13 @@ class NotificationSchedulerOverdueIT extends AbstractPostgresIT {
     }
 
     /** One instalment dated seven days ago on a no-grace contract: a day-7 reminder is due. */
+    private enum Then { NOTHING, DEPOSIT, BOUNCE, BOUNCE_AND_SETTLE }
+
     private Posted sevenDaysLate(boolean deposit) {
+        return sevenDaysLate(deposit ? Then.DEPOSIT : Then.NOTHING);
+    }
+
+    private Posted sevenDaysLate(Then then) {
         LeaseTestFixtures f = new LeaseTestFixtures(orgRepo, userRepo, renterRepo, unitRepo,
                 propertyService, accountService, propertyAccountService, chargeTypeService)
                 .bootstrap().withLeaseServices(leaseService, generation, posting);
@@ -70,8 +79,31 @@ class NotificationSchedulerOverdueIT extends AbstractPostgresIT {
         jdbc.update("update leases set grace_period_days = 0 where id = ?", posted.lease().getId());
         UUID chequeId = posted.cheques().get(0).id();
         assertThat(posted.cheques().get(0).chequeDate()).isEqualTo(start);
-        if (deposit) {
+        if (then != Then.NOTHING) {
             chequeService.deposit(chequeId, ChequeActionRequest.on(LocalDate.now()));
+        }
+        if (then == Then.BOUNCE || then == Then.BOUNCE_AND_SETTLE) {
+            chequeService.bounce(chequeId, ChequeActionRequest.on(LocalDate.now()));
+        }
+        if (then == Then.BOUNCE_AND_SETTLE) {
+            // A counter receipt against the lease receivable pays the bounced debt (F14-52).
+            tx.executeWithoutResult(s -> {
+                var c = chequeRepo.findById(chequeId).orElseThrow();
+                var lease = c.getLease();
+                var dims = new com.datagami.rentaxis.core.service.ledger.PostingRequest.Dimensions(
+                        c.getProperty().getId(), lease.getUnit().getId(), lease.getId(), lease.getRenter().getId(), null);
+                var amount = c.getAmount();
+                var receivable = lease.getReceivableAccountId() != null
+                        ? com.datagami.rentaxis.core.service.ledger.PostingRequest.cr(lease.getReceivableAccountId(), amount)
+                        : com.datagami.rentaxis.core.service.ledger.PostingRequest.cr(
+                                com.datagami.rentaxis.domain.entity.enums.AccountRole.RENT_RECEIVABLE, amount);
+                journal.post(new com.datagami.rentaxis.core.service.ledger.PostingRequest(
+                        com.datagami.rentaxis.domain.entity.enums.JournalDocType.JV, LocalDate.now(), "Counter receipt", dims,
+                        com.datagami.rentaxis.domain.entity.enums.JournalSourceType.MANUAL, null, null, List.of(
+                                com.datagami.rentaxis.core.service.ledger.PostingRequest.dr(
+                                        com.datagami.rentaxis.domain.entity.enums.AccountRole.CASH, amount),
+                                receivable)));
+            });
         }
         return new Posted(chequeId, f.renter().getUserId());
     }
@@ -92,5 +124,19 @@ class NotificationSchedulerOverdueIT extends AbstractPostgresIT {
 
         assertThat(overdueNotices(unpaid)).as("control: an unpaid cheque 7 days late is chased").isEqualTo(1);
         assertThat(overdueNotices(deposited)).as("a cheque at the bank is not the Tenant's to pay").isZero();
+    }
+
+    /** Review I1: a bounce the ledger has settled gets no reminder; an unsettled one still does. */
+    @Test
+    void aBounceSettledInTheLedgerIsNotRemindedButAnUnsettledOneIs() {
+        Posted settled = sevenDaysLate(Then.BOUNCE_AND_SETTLE);
+        Posted open = sevenDaysLate(Then.BOUNCE);
+        TenantContextHolder.clear();
+        LeaseTestFixtures.clearAuth();
+
+        scheduler.sendDailyNotifications();
+
+        assertThat(overdueNotices(open)).as("control: an unsettled bounce is chased").isEqualTo(1);
+        assertThat(overdueNotices(settled)).as("the ledger has settled it").isZero();
     }
 }

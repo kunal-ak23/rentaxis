@@ -500,7 +500,7 @@ function LeasesList() {
             if (res.ok) {
                 fetchLeases();
             } else if (res.status === 403) {
-                alert("You don't have permission to generate a contract for this lease.");
+                alert(t("noPermissionGenerateContract"));
             } else {
                 let detail: string | null = null;
                 try {

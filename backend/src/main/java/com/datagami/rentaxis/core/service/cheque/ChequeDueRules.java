@@ -3,9 +3,8 @@ package com.datagami.rentaxis.core.service.cheque;
 import com.datagami.rentaxis.domain.entity.Cheque;
 import com.datagami.rentaxis.domain.entity.enums.ChequeStatus;
 
-import java.time.Clock;
+import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.EnumSet;
 import java.util.Set;
@@ -21,9 +20,6 @@ import java.util.Set;
  */
 public final class ChequeDueRules {
 
-    /** The business day is the UAE's, whatever zone the JVM runs in. */
-    public static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Dubai");
-
     /**
      * The statuses a Tenant can still settle: an uncleared instalment they have not
      * handed over, a checkout they started and may start again, and a bounce. A
@@ -36,10 +32,6 @@ public final class ChequeDueRules {
     private ChequeDueRules() {
     }
 
-    /** Today's date in {@link #BUSINESS_ZONE}. */
-    public static LocalDate today(Clock clock) {
-        return LocalDate.now(clock.withZone(BUSINESS_ZONE));
-    }
 
     /**
      * The cheque's money is owed now.
@@ -110,5 +102,39 @@ public final class ChequeDueRules {
      */
     public static boolean tenantOverdue(Cheque cheque, int graceDays, LocalDate today) {
         return tenantOwes(cheque, today) && overdue(cheque, graceDays, today);
+    }
+
+    /**
+     * {@link #tenantOwes} knowing what the ledger still carries on a bounce.
+     *
+     * @param bouncedOpen for a BOUNCED row, the debt the ledger still carries on it
+     *        ({@code ChequeQueryService.bouncedOpenAmounts}); null when unknown, which
+     *        counts the face value. A bounce settled in the ledger (F14-52) — absorbed
+     *        into a settlement, or paid by a receipt that was not a replacement — is
+     *        not owed by the Tenant, whatever the register row still says.
+     */
+    public static boolean tenantOwes(Cheque cheque, LocalDate today, BigDecimal bouncedOpen) {
+        return tenantOwes(cheque, today) && !(isBounced(cheque) && bouncedOpen != null && bouncedOpen.signum() <= 0);
+    }
+
+    /** {@link #tenantOverdue} knowing what the ledger still carries on a bounce. */
+    public static boolean tenantOverdue(Cheque cheque, int graceDays, LocalDate today, BigDecimal bouncedOpen) {
+        return tenantOwes(cheque, today, bouncedOpen) && overdue(cheque, graceDays, today);
+    }
+
+    /**
+     * What the Tenant still owes on the row today: nothing unless {@link #tenantOwes};
+     * the open part of a partly settled bounce; the face value otherwise.
+     */
+    public static BigDecimal tenantPayable(Cheque cheque, LocalDate today, BigDecimal bouncedOpen) {
+        if (!tenantOwes(cheque, today, bouncedOpen)) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal amount = cheque.getAmount() == null ? BigDecimal.ZERO : cheque.getAmount();
+        return isBounced(cheque) && bouncedOpen != null ? bouncedOpen.max(BigDecimal.ZERO).min(amount) : amount;
+    }
+
+    private static boolean isBounced(Cheque cheque) {
+        return cheque.getStatus() == ChequeStatus.BOUNCED;
     }
 }

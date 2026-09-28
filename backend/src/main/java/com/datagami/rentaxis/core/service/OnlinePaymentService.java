@@ -15,6 +15,7 @@ import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.OnlinePaymentPayload;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.service.cheque.ChequeDueRules;
+import com.datagami.rentaxis.core.service.cheque.ChequeQueryService;
 import com.datagami.rentaxis.core.service.cheque.ChequeGatewayRules;
 import com.datagami.rentaxis.core.service.cheque.ChequeService;
 import com.datagami.rentaxis.core.service.gateway.PaymentGatewayFactory;
@@ -114,7 +115,7 @@ public class OnlinePaymentService {
 
     /**
      * A row the renter can settle right now — the statuses {@link #createOrder}
-     * accepts, and the ones {@link #payable} puts an amount against. DEPOSITED is
+     * accepts, and the ones {@code ChequeDueRules.tenantPayable} puts an amount against. DEPOSITED is
      * absent on purpose: the paper is at the bank and will clear there.
      */
     private static final Set<ChequeStatus> COLLECTABLE = ChequeDueRules.TENANT_COLLECTABLE;
@@ -141,13 +142,9 @@ public class OnlinePaymentService {
     private final RenterRepository renterRepository;
     private final NotificationService notificationService;
     private final ApplicationEventPublisher events;
-
-    /** The renter-facing "today" is the Dubai date; a seam so tests can pin it. */
-    private Clock clock = Clock.system(ChequeDueRules.BUSINESS_ZONE);
-
-    void setClock(Clock clock) {
-        this.clock = clock;
-    }
+    private final ChequeQueryService chequeQueryService;
+    /** The application clock ({@code ClockConfig}, zoned to {@code app.time-zone}, Asia/Dubai). */
+    private final Clock clock;
 
     // ------------------------------------------------------------------
     // the renter's list
@@ -172,7 +169,11 @@ public class OnlinePaymentService {
         List<Cheque> rows = chequeRepository
                 .findByRenter_IdAndStatusInOrderByChequeDateAsc(renter.getId(), VISIBLE);
 
-        LocalDate today = ChequeDueRules.today(clock);
+        LocalDate today = LocalDate.now(clock);
+        // F14-52 on the Tenant's side: what the ledger still carries on each bounce,
+        // for every lease on this list in one batch — the same derivation the register
+        // uses to stop calling a settled bounce overdue.
+        Map<UUID, BigDecimal> bouncedOpen = chequeQueryService.bouncedOpenAmounts(rows);
         Map<UUID, BigDecimal> penaltyByLease = penaltyOutstandingByLease(rows);
         Map<UUID, Boolean> onlineByProperty = new HashMap<>();
 
@@ -187,8 +188,11 @@ public class OnlinePaymentService {
             // is still money the landlord is waiting for, but the Tenant has handed
             // the paper over and can pay nothing on it. Using the landlord's rule
             // here showed "AED 0 · 84 days overdue" on the portal (bug 2026-09-28-03).
-            boolean due = ChequeDueRules.tenantOwes(c, today);
-            boolean overdue = ChequeDueRules.tenantOverdue(c, grace, today);
+            // A bounce the ledger has settled (F14-52) is not owed either, and a partly
+            // settled one is owed only its open part.
+            BigDecimal open = bouncedOpen.get(c.getId());
+            boolean due = ChequeDueRules.tenantOwes(c, today, open);
+            boolean overdue = ChequeDueRules.tenantOverdue(c, grace, today, open);
             Property property = c.getProperty();
             Unit unit = c.getUnit();
             boolean onlineEnabled = property == null || onlineByProperty.computeIfAbsent(
@@ -220,8 +224,8 @@ public class OnlinePaymentService {
                     overdue ? ChequeDueRules.daysOverdue(c, grace, today) : 0,
                     grace,
                     penaltyByLease.getOrDefault(lease.getId(), BigDecimal.ZERO),
-                    payable(c, due),
-                    payableOnline(c, due, onlineEnabled),
+                    ChequeDueRules.tenantPayable(c, today, open),
+                    payableOnline(c, due, onlineEnabled) && !partlySettled(c, open),
                     onlineEnabled,
                     c.getPenaltyAssessmentId(),
                     c.getFailureReason(),
@@ -236,22 +240,20 @@ public class OnlinePaymentService {
         return result;
     }
 
+    // What the renter still owes on a row today is ChequeDueRules.tenantPayable: a
+    // BOUNCED row is payable (createOrder supersedes it with an ONLINE replacement
+    // carrying its own PDR) unless the ledger has settled it; an ONLINE_PENDING row is
+    // an abandoned checkout they may start again; a DEPOSITED row is at the bank. That
+    // is the amount, not the door — payableOnline is the door.
+
     /**
-     * What the renter still owes on this row today, by whatever means.
-     *
-     * <p>A {@code BOUNCED} row is payable although its PDC receivable is long
-     * reversed: {@link #createOrder} supersedes it with an ONLINE replacement that
-     * carries its own {@code PDR}, which is the balance the capture then clears.
-     * An {@code ONLINE_PENDING} row is payable because a checkout the renter
-     * abandoned is an unpaid instalment they may simply start again. A
-     * {@code DEPOSITED} row is not — the paper is at the bank, and collecting it
-     * twice is exactly what the register exists to prevent.</p>
-     *
-     * <p>This is the <em>amount</em>, not the door: a CASH rent row is payable and
-     * is paid at the counter. {@link #payableOnline} is the door.</p>
+     * A bounce the ledger has already reduced — the gateway would collect its full face
+     * value ({@link #createOrder} replaces it with an ONLINE row of the same amount), so
+     * only the rest is paid, at the counter.
      */
-    private static BigDecimal payable(Cheque c, boolean due) {
-        return due && COLLECTABLE.contains(c.getStatus()) ? c.getAmount() : BigDecimal.ZERO;
+    private static boolean partlySettled(Cheque c, BigDecimal bouncedOpen) {
+        return c.getStatus() == ChequeStatus.BOUNCED && bouncedOpen != null && c.getAmount() != null
+                && bouncedOpen.compareTo(c.getAmount()) < 0;
     }
 
     /**
@@ -398,7 +400,7 @@ public class OnlinePaymentService {
                 .orElseThrow(() -> new NotFoundException("Cheque not found"));
         requireGatewayAccess(cheque);
 
-        LocalDate today = ChequeDueRules.today(clock);
+        LocalDate today = LocalDate.now(clock);
         if (!ChequeDueRules.due(cheque, today)) {
             throw new BusinessRuleViolationException(
                     "This instalment is not due yet; it can be paid from " + cheque.getChequeDate() + ".");
@@ -407,6 +409,17 @@ public class OnlinePaymentService {
         if (!COLLECTABLE.contains(status)) {
             throw new BusinessRuleViolationException(
                     "This instalment cannot be paid online (current: " + status + ")");
+        }
+        if (status == ChequeStatus.BOUNCED) {
+            BigDecimal open = chequeQueryService.bouncedOpenAmounts(List.of(cheque)).get(cheque.getId());
+            if (open != null && open.signum() <= 0) {
+                throw new BusinessRuleViolationException(
+                        "This returned cheque is already settled; there is nothing left to pay on it.");
+            }
+            if (partlySettled(cheque, open)) {
+                throw new BusinessRuleViolationException("Part of this returned cheque is already settled; "
+                        + "the remaining " + open + " cannot be paid online — please pay it at the office.");
+            }
         }
         if (cheque.getProperty() != null && !onlinePaymentEnabled(cheque.getProperty().getId())) {
             throw new BusinessRuleViolationException("Online payment is switched off for this property");
