@@ -214,9 +214,9 @@ export default function StaffManager({ embedded = false }: { embedded?: boolean 
 
     const handleDelete = (member: Staff) => {
         setConfirmDialog({
-            title: "Delete Staff Member",
-            description: "Are you sure you want to delete this staff member?",
-            confirmText: "Delete",
+            title: t("deleteTitle"),
+            description: t("confirmDelete"),
+            confirmText: t("deleteConfirmButton"),
             isDestructive: true,
             onConfirm: async () => {
                 setConfirmDialog(null);
