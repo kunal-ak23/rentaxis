@@ -69,6 +69,9 @@ export default function SuperAdminTenantsPage() {
     const [statusTarget, setStatusTarget] = useState<Tenant | null>(null);
     const [statusSaving, setStatusSaving] = useState(false);
     const [statusError, setStatusError] = useState("");
+    // Review r3B M9: after org.changed the dialog stays as it was (its button never
+    // flips to the opposite action under the cursor) and cannot be confirmed again.
+    const [statusStale, setStatusStale] = useState(false);
     const [formError, setFormError] = useState("");
     // Deleting an organization is irreversible and takes everything inside it,
     // so the dialog asks for the name rather than a yes/no — the same
@@ -234,6 +237,7 @@ export default function SuperAdminTenantsPage() {
 
     const closeStatus = () => {
         setStatusTarget(null);
+        setStatusStale(false);
         setStatusError("");
     };
 
@@ -256,8 +260,9 @@ export default function SuperAdminTenantsPage() {
             }
             const data = await res.json().catch(() => ({}));
             if (res.status === 409 && data?.code === "org.changed") {
-                const fresh = (await fetchTenants())?.find((t) => t.id === statusTarget.id);
-                if (fresh) setStatusTarget(fresh);
+                // The list reloads; the row's button is the next action.
+                fetchTenants();
+                setStatusStale(true);
                 setStatusError(tSa("orgChanged"));
                 return;
             }
@@ -741,6 +746,7 @@ export default function SuperAdminTenantsPage() {
                 confirmText={statusTarget?.status === "INACTIVE" ? tSa("orgActivate") : tSa("orgDeactivate")}
                 isDestructive={statusTarget?.status !== "INACTIVE"}
                 isLoading={statusSaving}
+                confirmDisabled={statusStale}
                 cancelText={tSa("cancel")}
                 confirmTestId="org-status-confirm"
             >

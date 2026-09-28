@@ -36,7 +36,7 @@ beforeEach(() => {
             posted.push({ url, body: JSON.parse(String(init.body)) });
             if (url.endsWith("/v1/units")) {
                 const refusal = { error: true, status: 400, message: "Unit 101 already exists in Tower A",
-                    code: "unit.numberTaken", args: { unitNumber: "101", place: "Tower A" } };
+                    code: "unit.numberTaken", args: { unitNumber: "101", place: "Tower A", placeAr: "البرج أ" } };
                 return new Response(JSON.stringify(refusal), { status: 400 });
             }
             return new Response("{}", { status: 200 });
@@ -74,6 +74,6 @@ describe("property detail — Add Unit number taken (F1)", () => {
         fireEvent.change(await screen.findByPlaceholderText(ar.MasterData.unitNumberPlaceholder), { target: { value: "101" } });
         fireEvent.click(screen.getByText("Save Unit"));
         await waitFor(() => expect(posted).toHaveLength(1));
-        expect(await screen.findByText("الوحدة 101 موجودة بالفعل في Tower A. استخدم رقم وحدة مختلفاً.")).toBeInTheDocument();
+        expect(await screen.findByText("الوحدة 101 موجودة بالفعل في البرج أ. استخدم رقم وحدة مختلفاً.")).toBeInTheDocument();
     });
 });

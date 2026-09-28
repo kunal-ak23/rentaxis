@@ -702,6 +702,7 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
 
 function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
     const t = useTranslations("MasterData");
+    const locale = useLocale();
     const [showForm, setShowForm] = useState(false);
     const [showBulkUpload, setShowBulkUpload] = useState(false);
     const [submitting, setSubmitting] = useState(false);
@@ -750,7 +751,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
             // Break-it R3 ops3 F1: "Unit 101 already exists in Tower A", in the user's language.
             const refusal = err instanceof ApiError ? refusalOf(err.body) : null;
             setAddUnitError(refusal?.code === "unit.numberTaken"
-                ? t("unitNumberTaken", { unitNumber: String(refusal.args.unitNumber ?? unitForm.unitNumber), place: String(refusal.args.place ?? "") })
+                ? t("unitNumberTaken", { unitNumber: String(refusal.args.unitNumber ?? unitForm.unitNumber), place: String((locale === "ar" && refusal.args.placeAr) || refusal.args.place || "") })
                 : err instanceof ApiError ? err.message : "Failed to save unit. Please try again.");
         } finally {
             setSubmitting(false);
