@@ -63,6 +63,9 @@ async function authenticatedStorageState(role) {
     ? seed.adminLogin
     : role === 'renter'
       ? seed.renterLogins?.find((login) => login.name === 'Ahmed Hassan') || seed.renterLogins?.[0]
+    // `renter:<name>` signs in as that seeded tenant (tutorial 11: Rajesh Kumar).
+    : role.startsWith('renter:')
+      ? seed.renterLogins?.find((login) => login.name === role.slice('renter:'.length))
       : role === 'propertyManager'
         ? seed.operatorLogins?.find((login) => login.role === 'PROPERTY_MANAGER')
         : role === 'securityGuard'
