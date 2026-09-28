@@ -122,42 +122,44 @@ track is commissioned separately.
   looks wrong, do not borrow a broader account; ask an administrator to correct
   the role or the assignment.”
 
-## 04 — Provision organizations and manage feature access
+## 04 — Provision organisations and manage feature access
 
-- Audience: super admins; 2–3 minutes.
-- Capture: create a synthetic organization, enter address/TRN/phone, save,
-  switch into it, explain all five toggles, enable the required demo features.
-- Narration: “In this tutorial, a super administrator creates a synthetic
-  organization and enables the services required for the tutorial tenant. Sign
-  in as Super Admin and open Organizations. Before creating anything, search for
-  the planned Tutorial Demo name so you do not create a duplicate. Select Create
-  Organization and enter the approved synthetic legal name. Complete the
-  address, phone number, email, and tax registration fields with demo data only.
-  These values can appear on documents and communications, so production
-  customer details must be verified before a real tenant is saved. Review the
-  selected status and submit the form once. Wait for the success confirmation
-  and open the new organization from the list. Confirm that its identifier,
-  legal details, and active state match the form. Next, use the organization
-  switcher to enter the new tenant context. Verify the organization name in the
-  header before continuing. Return to the Super Admin organization settings and
-  open feature access. RentAxis keeps optional capabilities disabled until they
-  are deliberately assigned. Listings enables publication and marketplace
-  discovery. Meetings enables scheduling between property teams and renters.
-  Email Notifications enables supported outbound delivery. Lease Renewals
-  enables renewal opportunities, reminders, and renter intent. Gate Pass enables
-  resident visitor credentials and security operations. Turn on only the five
-  features required for this isolated Tutorial Demo tenant. Save, wait for the
-  confirmation, and refresh the feature view. Each selected toggle should remain
-  enabled after the reload. Switch into the organization again and verify that
-  the corresponding navigation appears for an authorized tenant administrator.
-  If a menu is still absent, check both the feature toggle and the signed-in
-  user’s role. Do not enable a capability on a real customer tenant simply to
-  make a tutorial screen visible. Feature access should match the contracted
-  plan and the customer’s operational readiness. To finish, return to the
-  organization record and show where legal details can be corrected and where
-  an organization can be deactivated. Do not deactivate the tutorial tenant
-  while dependent recording fixtures still exist. The organization is now ready
-  for users, portfolio data, and the remaining tutorial workflows.”
+- Audience: System Admins; 2–3 minutes.
+- Capture: Settings › Administration › Organisations, search for the planned
+  name (no match), Provision New Organisation "Palm Vista Real Estate" with
+  address, TRN and phone, Create Organisation, open Feature Toggles (all off),
+  turn on Meetings & Scheduling and Gate Passes & Security, close and reopen to
+  confirm, switch into the organisation (empty dashboard), open Edit and the
+  Deactivate confirmation and cancel both. A leftover Palm Vista from an
+  earlier take is deleted off camera before the first frame.
+- Narration: “In this tutorial, a System Admin provisions a new organisation
+  and chooses the optional features it can use. Open Settings, then
+  Organisations under Administration. The list shows every organisation on the
+  platform, with its address, tax registration number, and status. Before you
+  create anything, search for the planned name. Nothing comes back, so the name
+  is free and you will not create a duplicate. Select Provision New
+  Organisation. Enter the organisation name, Palm Vista Real Estate, then the
+  office address, the TRN, and the phone number. These details appear on
+  receipts and contracts, so enter them exactly as they appear on the trade
+  licence. Ticket Closure OTP is on by default: tenants share a one-time code
+  before a maintenance ticket can be closed. Select Create Organisation. Palm
+  Vista Real Estate joins the list with its own ID and the status Active. Now
+  open Feature Toggles for the new organisation. Every optional feature starts
+  off. Listings publishes vacant units to the marketplace. Meetings and
+  Scheduling lets tenants book meetings with the property team. Email
+  Notifications sends supported emails. Renewals and Reminders handles contract
+  renewal reminders. Gate Passes and Security runs visitor passes and the
+  Security app. Mobile finance screens stays off. Turn on only what the
+  organisation has signed up for; here, Meetings and Scheduling, and Gate
+  Passes and Security. Each switch saves as soon as you select it. Close the
+  panel and open it again: both features are still on. Next, open the
+  organisation switcher and choose Palm Vista Real Estate. The switcher now
+  names it, and the dashboard is empty, with no properties or contracts yet.
+  Back on Organisations, Edit opens the same form, so legal details can be
+  corrected later with Save Changes. Deactivate asks for confirmation first:
+  everyone in the organisation is signed out and cannot sign in until it is
+  activated again. Cancel both. The organisation is ready for its users,
+  properties, and tenancy contracts.”
 
 ## 05 — Create users and staff
 
