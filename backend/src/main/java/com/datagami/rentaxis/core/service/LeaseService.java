@@ -1706,16 +1706,17 @@ public class LeaseService {
             throw new BusinessRuleViolationException("Only a lease that was never posted can be withdrawn; this one is "
                     + lease.getStatus() + ".");
         }
+        // Break-it round 2 M9: move any meeting/ticket pointed at this renewal onto the
+        // lease it renews, or the FK (no ON DELETE) blocks the withdrawal and with it
+        // the predecessor's termination. Only here: a plain draft delete and an import
+        // discard keep a lease something still refers to (ImportBatchDiscardIT).
+        detachLeaseReferences(lease.getId(), lease.getRenewedFromLeaseId());
         removeUnposted(lease);
     }
 
     /** The lease row and everything that hangs off it; the caller has checked it was never posted. */
     private void removeUnposted(Lease lease) {
         UUID leaseId = lease.getId();
-        // Break-it round 2 M9: detach any meeting/ticket pointed at this lease before
-        // it goes, or the FK (no ON DELETE) blocks this delete, and later the
-        // predecessor's termination too. See detachLeaseReferences.
-        detachLeaseReferences(leaseId, lease.getRenewedFromLeaseId());
         // A DRAFT lease shouldn't have any contract documents (defensive); a
         // PENDING_SIGNATURE one being withdrawn has the contract it was sent. Drop the rows.
         leaseDocumentRepository.deleteAll(leaseDocumentRepository.findByLeaseId(leaseId));

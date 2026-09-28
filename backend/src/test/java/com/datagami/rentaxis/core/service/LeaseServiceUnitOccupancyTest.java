@@ -35,6 +35,7 @@ import static org.mockito.Mockito.when;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.ArgumentMatchers.eq;
 
 class LeaseServiceUnitOccupancyTest {
@@ -454,15 +455,15 @@ class LeaseServiceUnitOccupancyTest {
         verify(leaseRepository).delete(lease);
     }
 
-    // ---- withdrawing/deleting a lease detaches its meetings/tickets (M9) ----
+    // ---- withdrawing a renewal moves its meetings/tickets (M9) ----
 
     /**
-     * A DRAFT with no predecessor: its meetings/tickets have nothing sensible to
-     * repoint to, so they are detached (lease set to null) rather than left
-     * pointing at a row about to be deleted.
+     * A plain draft delete does not touch meetings/tickets: a lease something still
+     * refers to is kept, not silently unlinked (import discard relies on this —
+     * ImportBatchDiscardIT). Only a withdrawn renewal moves them.
      */
     @Test
-    void deleteDraftLease_detachesMeetingsAndTicketsWithNoPredecessor() {
+    void deleteDraftLease_leavesMeetingsAndTicketsAlone() {
         var meetingRepository = mock(com.datagami.rentaxis.domain.repository.MeetingRepository.class);
         var ticketRepository = mock(com.datagami.rentaxis.domain.repository.MaintenanceTicketRepository.class);
         service.setMeetingRepository(meetingRepository);
@@ -482,11 +483,10 @@ class LeaseServiceUnitOccupancyTest {
 
         service.deleteDraftLease(lease.getId());
 
-        assertThat(meeting.getLease()).isNull();
-        assertThat(ticket.getLease()).isNull();
-        verify(meetingRepository).save(meeting);
-        verify(ticketRepository).save(ticket);
-        verify(leaseRepository).delete(lease);
+        assertThat(meeting.getLease()).isSameAs(lease);
+        assertThat(ticket.getLease()).isSameAs(lease);
+        verify(meetingRepository, never()).save(any());
+        verify(ticketRepository, never()).save(any());
     }
 
     /**
