@@ -7,8 +7,9 @@ its licence number are invented. The stamp is marked "DEMO · NOT VALID".
 
 | File | Use |
 |---|---|
+| `logo-mark.svg`, `logo-mark.png` | crest only, square; the one uploaded as the org logo. The app has one logo slot: the header shows it in a 32 px round avatar, and the receipt, tax invoice and contract PDFs print it (40 px tall) next to the organisation name, which they already print as text |
 | `logo.svg`, `logo-512.png` | square mark + wordmark |
-| `logo-wide.svg`, `logo-wide.png` | wide lock-up; the one uploaded as the org logo (PDF headers render logos 40 px tall) |
+| `logo-wide.svg`, `logo-wide.png` | wide lock-up (the org logo until 2026-09-29: illegible in the round header avatar) |
 | `stamp.svg`, `stamp.png` | round company stamp for `stampImageUrl` |
 | `render.mjs` | re-renders the PNGs from the SVGs with headless Chromium |
 

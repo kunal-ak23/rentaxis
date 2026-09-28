@@ -155,7 +155,7 @@ seed() {
   DEMO_BRAND_AR="قمة الواحة" \
   DEMO_ORG_ADDRESS="Office 1407, Crest Tower, Marasi Drive, Business Bay, Dubai, United Arab Emirates, P.O. Box 00000" \
   DEMO_ORG_PHONE="+971 4 000 0000" DEMO_ORG_TRN=100123456700003 \
-  DEMO_ORG_LOGO="$brand/logo-wide.png" DEMO_ORG_STAMP="$brand/stamp.png" \
+  DEMO_ORG_LOGO="$brand/logo-mark.png" DEMO_ORG_STAMP="$brand/stamp.png" \
   DEMO_BUILDING_NAME="Crest Residences — Block A" DEMO_BUILDING_NAME_AR="مساكن القمة — المبنى أ" \
   DEMO_MAINTENANCE_DESK="Oasis Crest Maintenance Desk" DEMO_MAINTENANCE_EMAIL=maintenance@oasiscrest.example \
   DEMO_OUTPUT_FILE="$seed_manifest" \

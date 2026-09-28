@@ -9,6 +9,7 @@ const here = import.meta.dirname;
 const { chromium } = createRequire(path.join(here, '..', '..', '..', 'web', 'package.json'))('@playwright/test');
 const jobs = [
   ['logo.svg', 'logo-512.png', 512, 512],
+  ['logo-mark.svg', 'logo-mark.png', 512, 512],
   ['logo-wide.svg', 'logo-wide.png', 960, 240],
   ['stamp.svg', 'stamp.png', 520, 520],
 ];
