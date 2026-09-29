@@ -2125,6 +2125,8 @@
     "TENANT_USER": "Company User"
   },
   "Ledger": {
+    "contractFilterOn": "Showing one tenancy contract's entries only.",
+    "showAllContracts": "Show all entries",
     "lockFirst": "This is the first period lock: nothing dated up to {to} can be posted afterwards. Tick to confirm the date is right.",
     "lockAheadOfToday": "The books are locked through {date}, which is after today, so nothing can be posted. If nothing has been posted yet, change the books start date; otherwise re-open the latest closed fiscal year or ask support to correct the lock.",
     "booksStartRule": "The books can start at most three months ahead (the latest is {latest}); the period before the start is locked, but never past today.",
@@ -2269,6 +2271,7 @@
     "urlAccountsCapped": "This link named {count} accounts; the first {max} are shown. Pick fewer, or open the Trial Balance for the whole company."
   },
   "Leasing": {
+    "ledgerLinkTitle": "{code} · {name} — open in the General Ledger",
     "wizardFilterProperty": "Property",
     "wizardFilterBuilding": "Building",
     "wizardAllProperties": "All properties",

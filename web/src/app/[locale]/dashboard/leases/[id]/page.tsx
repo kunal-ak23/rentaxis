@@ -532,6 +532,7 @@ export default function LeaseDetailPage() {
         .filter((d): d is string => !!d).sort()[0] ?? null;
     const drafting = DRAFTING.includes(lease.status);
     const chequeTally = pendingChequeSummary(cheques);
+    const canOpenLedger = hasPermission(userRole, "canAccessFinance");
     const posted = !!lease.postedAt;
     const readOnly = lease.status === "RENEWED";
     const lineRows = toRows(lease.lines);
@@ -853,7 +854,17 @@ export default function LeaseDetailPage() {
                             </div>
 
                             <div className="lg:col-span-2 space-y-6 min-w-0">
-                                <LeaseLinesGrid lines={lineRows} chargeTypes={chargeTypes} editable={false} />
+                                <LeaseLinesGrid
+                                    lines={lineRows}
+                                    chargeTypes={chargeTypes}
+                                    editable={false}
+                                    ledgerLink={canOpenLedger ? {
+                                        // Posted rows only carry this contract's id; a draft has none yet.
+                                        leaseId: posted ? lease.id : null,
+                                        from: [lease.contractDate, lease.startDate].filter(Boolean).sort()[0] ?? null,
+                                        to: lease.endDate,
+                                    } : undefined}
+                                />
 
                                 {/* Spec §4b: rent-free windows — editable on a DRAFT. */}
                                 <RentFreePeriodsCard

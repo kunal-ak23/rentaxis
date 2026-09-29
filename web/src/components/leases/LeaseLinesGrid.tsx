@@ -22,7 +22,11 @@ import {
  * The particulars grid of a tenancy contract, in the layout the client's
  * accountant reads in PACT RevenU:
  *
- *   SNO | Particulars | Credit A/c | Amount | Discount | After Discount | Narration | VAT
+ *   SNO | Particulars | Ledger | Amount | Discount | After Discount | Narration | VAT
+ *
+ * The Ledger column (was "Credit A/c", demo feedback 2026-09-29) names the account
+ * the line credits by its plain name — the code is in the tooltip for accountants —
+ * and links to the General Ledger filtered to that account (and this contract).
  *
  * "After Discount" is computed and read-only — it is the figure the ledger
  * posts and the one the cheques collect, so it is never a second place to type
@@ -60,7 +64,22 @@ type Props = {
      * no lease (none today) leaves it out and gets the catalogue default.
      */
     rentVat?: boolean;
+    /**
+     * Read-only grids: link each Ledger cell to the General Ledger for that account,
+     * narrowed to this contract (`leaseId`) and period when given. Leave `ledgerLink`
+     * unset for a role that cannot open the ledger.
+     */
+    ledgerLink?: { leaseId?: string | null; from?: string | null; to?: string | null };
 };
+
+/** The General Ledger for one account, and this contract's rows when a lease is named. */
+export function ledgerHref(accountId: string, link: { leaseId?: string | null; from?: string | null; to?: string | null }): string {
+    const q = new URLSearchParams({ accountIds: accountId });
+    if (link.leaseId) q.set("leaseId", link.leaseId);
+    if (link.from) q.set("from", link.from.slice(0, 10));
+    if (link.to) q.set("to", link.to.slice(0, 10));
+    return `/dashboard/finance/general-ledger?${q.toString()}`;
+}
 
 /**
  * #99 / F15-02 / F15-06: how the books treat a fee or deposit line — what posting
@@ -82,6 +101,7 @@ export default function LeaseLinesGrid({
     onChange,
     errors,
     rentVat,
+    ledgerLink,
 }: Props) {
     const t = useTranslations("Leasing");
     const locale = useLocale();
@@ -127,7 +147,7 @@ export default function LeaseLinesGrid({
                         <tr className="bg-input/50">
                             <th className={th}>{t("sno")}</th>
                             <th className={th}>{t("particulars")}</th>
-                            <th className={th}>{t("creditAccount")}</th>
+                            <th className={th}>{t("ledger")}</th>
                             <th className={thNum}>{t("grossAmount")}</th>
                             <th className={thNum}>{t("discount")}</th>
                             <th className={thNum}>{t("afterDiscount")}</th>
@@ -192,21 +212,34 @@ export default function LeaseLinesGrid({
                                                 accountType={accountTypeFor(behaviour)}
                                                 leafOnly
                                                 propertyId={propertyId}
-                                                placeholder={t("creditAccount")}
+                                                placeholder={t("ledger")}
+                                                nameOnly
                                             />
                                         ) : (
-                                            <span className="text-foreground">
-                                                {row.creditAccountCode ? (
-                                                    <>
-                                                        <span className="font-mono text-muted me-2">{row.creditAccountCode}</span>
-                                                        {locale === "ar"
-                                                            ? row.creditAccountNameAr || row.creditAccountName
-                                                            : row.creditAccountName}
-                                                    </>
+                                            (() => {
+                                                const name = (locale === "ar"
+                                                    ? row.creditAccountNameAr || row.creditAccountName
+                                                    : row.creditAccountName) || row.creditAccountCode;
+                                                if (!name) return <span className="text-foreground">—</span>;
+                                                const title = t("ledgerLinkTitle", { code: row.creditAccountCode ?? "", name });
+                                                return ledgerLink && row.creditAccountId ? (
+                                                    // A plain anchor, locale-prefixed as the router's
+                                                    // Link would be: the grid renders inside dialogs and
+                                                    // tests that do not mount the i18n router.
+                                                    <a
+                                                        href={`/${locale}${ledgerHref(row.creditAccountId, ledgerLink)}`}
+                                                        title={title}
+                                                        data-testid={`lease-line-ledger-${i}`}
+                                                        className="text-primary hover:underline"
+                                                    >
+                                                        {name}
+                                                    </a>
                                                 ) : (
-                                                    "—"
-                                                )}
-                                            </span>
+                                                    <span className="text-foreground" title={row.creditAccountCode ?? undefined} data-testid={`lease-line-ledger-${i}`}>
+                                                        {name}
+                                                    </span>
+                                                );
+                                            })()
                                         )}
                                     </td>
                                     <td className={tdNum}>

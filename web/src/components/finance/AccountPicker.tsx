@@ -55,6 +55,11 @@ type Props = {
     placeholder?: string;
     autoFocus?: boolean;
     disabled?: boolean;
+    /**
+     * Show the picked account by name only (the code stays in the tooltip and in
+     * the options). Demo feedback 2026-09-29: the contract grid's Ledger column.
+     */
+    nameOnly?: boolean;
 };
 
 export default function AccountPicker({
@@ -69,6 +74,7 @@ export default function AccountPicker({
     placeholder,
     autoFocus,
     disabled,
+    nameOnly = false,
 }: Props) {
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [q, setQ] = useState("");
@@ -101,7 +107,8 @@ export default function AccountPicker({
                 aria-label={placeholder}
                 className="w-full bg-input border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
                 placeholder={placeholder}
-                value={q || (selected ? `${selected.code} — ${selected.name}` : "")}
+                value={q || (selected ? (nameOnly ? selected.name : `${selected.code} — ${selected.name}`) : "")}
+                title={selected ? `${selected.code} — ${selected.name}` : undefined}
                 onChange={ev => setQ(ev.target.value)}
                 onFocus={() => setQ("")}
             />
