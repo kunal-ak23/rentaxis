@@ -116,11 +116,12 @@ describe("wizard: end date and number of cheques follow the start date", () => {
         expect(value("wizard-payment-terms")).toBe("12");
     });
 
-    it("never overwrites an end date the user typed; the count follows it (whole months, rounded up)", async () => {
+    it("never overwrites an end date the user typed; the count follows it (whole months, the generator's count)", async () => {
         await toTerms();
         fireEvent.change(screen.getByTestId("wizard-start-date"), { target: { value: "2026-09-09" } });
         fireEvent.change(screen.getByTestId("wizard-end-date"), { target: { value: "2027-03-20" } });
-        expect(value("wizard-payment-terms")).toBe("7"); // 6 months and 12 days
+        // Review of R4-B I1: 6 months and 12 days is 6 cheques — a 7th would share a date.
+        expect(value("wizard-payment-terms")).toBe("6");
         fireEvent.change(screen.getByTestId("wizard-start-date"), { target: { value: "2026-10-01" } });
         expect(value("wizard-end-date")).toBe("2027-03-20");
     });
@@ -141,6 +142,30 @@ describe("wizard: end date and number of cheques follow the start date", () => {
         fireEvent.change(screen.getByTestId("wizard-payment-terms"), { target: { value: "13" } });
         fireEvent.click(screen.getByTestId("wizard-next"));
         expect(screen.getByTestId("wizard-error").textContent).toContain("at most 12");
+    });
+});
+
+describe("wizard: at most one cheque a month (review of R4-B I1)", () => {
+    it("refuses a 7th cheque on a term of 6 months and 12 days", async () => {
+        await toTerms();
+        fireEvent.change(screen.getByTestId("wizard-start-date"), { target: { value: "2026-09-09" } });
+        fireEvent.change(screen.getByTestId("wizard-end-date"), { target: { value: "2027-03-20" } });
+        fireEvent.change(screen.getByTestId("wizard-rent"), { target: { value: "60000" } });
+        fireEvent.change(screen.getByTestId("wizard-payment-terms"), { target: { value: "7" } });
+        fireEvent.click(screen.getByTestId("wizard-next"));
+        expect(screen.getByTestId("wizard-error").textContent).toContain("at most 6");
+    });
+
+    it("counts from a first due date after the start: the default follows it and 12 is refused", async () => {
+        await toTerms();
+        fireEvent.change(screen.getByTestId("wizard-start-date"), { target: { value: "2026-09-09" } });
+        expect(value("wizard-payment-terms")).toBe("12");
+        fireEvent.change(screen.getByTestId("wizard-first-due-date"), { target: { value: "2026-09-15" } });
+        expect(value("wizard-payment-terms")).toBe("11");
+        fireEvent.change(screen.getByTestId("wizard-rent"), { target: { value: "60000" } });
+        fireEvent.change(screen.getByTestId("wizard-payment-terms"), { target: { value: "12" } });
+        fireEvent.click(screen.getByTestId("wizard-next"));
+        expect(screen.getByTestId("wizard-error").textContent).toContain("at most 11");
     });
 });
 

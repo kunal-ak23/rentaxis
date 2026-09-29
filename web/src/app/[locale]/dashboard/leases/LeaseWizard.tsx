@@ -19,7 +19,7 @@ import { GraceDaysField, usePropertyDefaultGrace } from "@/components/leases/Gra
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
 import ChequeGrid, { draftRowsAreValid, toChequeRows } from "@/components/leases/ChequeGrid";
 import WizardReviewSchedules from "@/components/leases/WizardReviewSchedules";
-import { blankLine, defaultTermEnd, followRentVat, linesAreValid, rentAmountOf, splitLineErrors, termMonthsCeil, toInputs, toRows, todayIso, totalsOf, withRentAmount, withRentVat, type LineRow } from "@/components/leases/leaseMath";
+import { blankLine, defaultTermEnd, followRentVat, linesAreValid, rentAmountOf, splitLineErrors, chequeMonths, toInputs, toRows, todayIso, totalsOf, withRentAmount, withRentVat, type LineRow } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi,
     type ChargeType, type Cheque, type ChequeWrite, type DraftLeaseInput, type DraftPaymentMethod,
@@ -257,8 +257,9 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                 }
                 // Owner request (2026-09-29): the rent for the full term is asked here.
                 if (!(rentAmountOf(rows, chargeTypes) > 0)) return t("errRentRequired");
-                // At most one cheque a month of the term.
-                const maxCheques = termMonthsCeil(terms.startDate, terms.endDate);
+                // At most one cheque a month: the generator's month count, from the
+                // first due date (review of R4-B I1).
+                const maxCheques = chequeMonths(terms.firstDueDate || terms.startDate, terms.endDate);
                 if (terms.paymentTerms > maxCheques) return t("errTooManyCheques", { max: maxCheques });
                 return null;
             }
@@ -370,7 +371,8 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                 await reloadChanged(lease.id).catch(() => undefined);
                 return;
             }
-            setChequeError(e instanceof ApiError ? e.message : t("saveFailed"));
+            // Coded refusals (e.g. cheque.tooManyInstalments) in the user's language.
+            setChequeError(e instanceof ApiError ? serverText(tCommon, e) || e.message : t("saveFailed"));
         } finally {
             setBusy(false);
         }
@@ -464,10 +466,10 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     };
     const termKey = `${terms.startDate}|${terms.endDate}`;
 
-    /** The count that follows the term while it is automatic. */
-    const followCount = (start: string, end: string): Partial<Terms> => {
+    /** The count that follows the term (and the first due date) while it is automatic. */
+    const followCount = (start: string, end: string, firstDue: string = terms.firstDueDate): Partial<Terms> => {
         if (autoCount === null || terms.paymentTerms !== autoCount || !start || !end || end < start) return {};
-        const n = termMonthsCeil(start, end);
+        const n = chequeMonths(firstDue || start, end);
         setAutoCount(n);
         return { paymentTerms: n };
     };
@@ -650,12 +652,13 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                             </Field>
                             <Field label={t("paymentTerms")}>
                                 <NumberInput showZero min={1}
-                                    max={terms.startDate && terms.endDate ? termMonthsCeil(terms.startDate, terms.endDate) : 36}
+                                    max={terms.startDate && terms.endDate ? chequeMonths(terms.firstDueDate || terms.startDate, terms.endDate) : 36}
                                     data-testid="wizard-payment-terms" className={field} value={terms.paymentTerms}
                                     onChange={v => { setAutoCount(null); patch({ paymentTerms: Math.max(1, v) }); }} />
                             </Field>
                             <Field label={t("firstDueDate")}>
-                                <input type="date" className={field} value={terms.firstDueDate} onChange={e => patch({ firstDueDate: e.target.value })} />
+                                <input type="date" data-testid="wizard-first-due-date" className={field} value={terms.firstDueDate}
+                                    onChange={e => patch({ firstDueDate: e.target.value, ...followCount(terms.startDate, terms.endDate, e.target.value) })} />
                             </Field>
                             <Field label={t("distribution")}>
                                 <select className={field} value={terms.installmentDistribution} onChange={e => patch({ installmentDistribution: e.target.value as InstallmentDistribution })}>

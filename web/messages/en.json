@@ -2856,6 +2856,7 @@
         "voidSettledInvoice": "{voucher} is settled by a payment; release that allocation or amend the payment before voiding it"
       },
       "cheque": {
+        "tooManyInstalments": "The term has {months} whole month(s) from the first due date, so it takes at most {months} cheque(s), one a month; {count} would put two cheques on the same date.",
         "noBankForProperty": "No bank account is set up for this property. Attach one of its ledger accounts to a bank account, or receive into cash.",
         "clearBeforeDeposit": "{row} was deposited on {deposited}; it cannot clear on {date}",
         "clearBeforeChequeDate": "{row} is dated {chequeDate}; it cannot clear on {date}",

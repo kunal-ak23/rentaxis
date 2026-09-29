@@ -521,15 +521,17 @@ export function defaultTermEnd(start: string): string {
 }
 
 /**
- * The months a term spans, whole months rounded up, at least 1 — the default
- * number of cheques (one a month) and the most the wizard offers. 09/09/2026 →
- * 08/09/2027 is 12; → 20/03/2027 is 7 (6 months and 12 days).
+ * The most cheques a term takes, and the wizard's default count: one a month, over
+ * the whole months (rounded down) from {@code from} — the first due date, or the
+ * start when there is none — to the end, at least 1. This is the generator's own
+ * count (`DateMath.monthsInclusive` in `ChequeGenerationService`), which spaces
+ * cheque i at from + floor(i × months ÷ n) months: one cheque more than this puts
+ * two on the same date (review of R4-B I1). 09/09/2026 → 08/09/2027 is 12;
+ * → 20/03/2027 is 6 (6 months and 12 days); from 15/09/2026 → 08/09/2027 is 11.
  */
-export function termMonthsCeil(start: string, end: string): number {
-    if (!/^\d{4}-\d{2}-\d{2}/.test(start) || !/^\d{4}-\d{2}-\d{2}/.test(end) || end < start) return 1;
-    const afterEnd = plusDays(end, 1);
-    const whole = monthsBetween(start, afterEnd);
-    return Math.max(plusMonths(start, whole) < afterEnd ? whole + 1 : whole, 1);
+export function chequeMonths(from: string, end: string): number {
+    if (!/^\d{4}-\d{2}-\d{2}/.test(from) || !/^\d{4}-\d{2}-\d{2}/.test(end) || end < from) return 1;
+    return Math.max(monthsBetween(from, plusDays(end, 1)), 1);
 }
 
 /** The charge type a wizard's rent is charged as: the RENT code, else the first RENT-behaviour type. */

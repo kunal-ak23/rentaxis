@@ -578,6 +578,20 @@ public class ChequeGenerationService {
         List<LeaseRentFreePeriod> free = rentFreePeriods == null ? List.of()
                 : rentFreePeriods.findByLease_IdOrderByFromDateAsc(leaseId);
         if (free.isEmpty()) {
+            // Review of R4-B, I1: at most one instalment per month. The spacing is
+            // floor(i × months ÷ n) over the whole months from the first due date, so a
+            // count above that puts two cheques on one date. An explicit count is
+            // refused (as on the rent-free path below); the lease's own payment terms
+            // are capped. The New Contract wizard offers the same month count.
+            int months = (int) DateMath.monthsInclusive(firstDueDate, lease.getEndDate());
+            if (n > months) {
+                if (r.installments() != null) {
+                    throw new BusinessRuleViolationException("The term has " + months + " whole month(s) from the"
+                            + " first due date; use at most " + months + " cheque(s), one a month.",
+                            "cheque.tooManyInstalments", Map.of("months", months, "count", n));
+                }
+                n = months;
+            }
             return buildRows(rent, rentVat, rentTaxable, extras, n, lease.getContractDate(), firstDueDate,
                     lease.getEndDate(), distribution, fold);
         }
