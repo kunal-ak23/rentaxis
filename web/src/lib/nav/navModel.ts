@@ -123,6 +123,10 @@ export function buildNav(ctx: NavModelContext): RailSection[] {
         // defaults off and tenants use the page without it, so gating it here
         // would take it away from them (ruling 2026-09-25, UI PR 1).
         ...(ops && can("canViewGatePassReport") ? [pi("gatepass", "/dashboard/gatepass", { ns: "GatePass", key: "navLabel" }, "sidebar-gatepass")] : []),
+        // The working gate-pass screens are new, so unlike the report they follow
+        // the GATEPASS flag, as Meetings follows MEETINGS.
+        ...(ops && isEnabled("GATEPASS") && can("canApproveGatePasses")
+            ? [pi("gatepass-approvals", "/dashboard/gatepass/approvals", GP("navApprovals"), "sidebar-gatepass-approvals")] : []),
         ...(ops && can("canManagePromotions") ? [pi("promotions", "/dashboard/promotions", { ns: "Promotions", key: "navLabel" }, "sidebar-promotions")] : []),
     ])));
 

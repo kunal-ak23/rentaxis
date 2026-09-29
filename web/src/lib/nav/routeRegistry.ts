@@ -43,6 +43,7 @@ export const DASHBOARD_ROUTES: RouteEntry[] = [
     r(`${D}/gatepass`, "canViewGatePassReport"),
     // The working gate-pass screens are new and flag-gated in the nav like
     // Meetings; the report above keeps its role-only rule (ruling 2026-09-25).
+    r(`${D}/gatepass/approvals`, "canApproveGatePasses", "GATEPASS"),
     r(`${D}/renter-portal/gate-passes`, "canRequestGatePasses", "GATEPASS"),
     r(`${D}/bookings`, "canManageFacilities"), r(`${D}/promotions`, "canManagePromotions"),
     r(`${D}/staff`, "canAccessFinanceOps"),

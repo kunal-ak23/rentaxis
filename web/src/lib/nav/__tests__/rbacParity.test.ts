@@ -44,6 +44,9 @@ const REMOVED: Partial<Record<UserRole, string[]>> = {
  * Everything but the guard's Home follows the GATEPASS flag.
  */
 const GATEPASS_SCREENS: Partial<Record<UserRole, string[]>> = {
+    SUPER_ADMIN: ["/dashboard/gatepass/approvals"],
+    TENANT_ADMIN: ["/dashboard/gatepass/approvals"],
+    PROPERTY_MANAGER: ["/dashboard/gatepass/approvals"],
     RENTER: ["/dashboard/renter-portal/gate-passes"],
 };
 const GATEPASS_UNFLAGGED: Partial<Record<UserRole, string[]>> = {
