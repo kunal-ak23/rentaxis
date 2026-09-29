@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { Pagination } from "@/components/ui/Pagination";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
+import ActionsMenu from "@/components/ui/ActionsMenu";
+import { EditRenterDialog } from "@/components/renters/EditRenterDialog";
 import { useUrlState } from "@/hooks/useUrlState";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { isAbortError } from "@/lib/api/abort";
@@ -53,6 +55,9 @@ function RentersPageInner() {
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [showForm, setShowForm] = useState(false);
+    // Edit tenant: the row/detail "Edit" action opens this dialog prefilled with
+    // the row's current values; null means it is closed.
+    const [editingRenter, setEditingRenter] = useState<Renter | null>(null);
     const { data: session } = useSession();
 
     const userRole = session?.user?.role as UserRole | undefined;
@@ -518,9 +523,19 @@ function RentersPageInner() {
                                                         {canManageRenters && r.invitePending && r.userId && (
                                                             <ResendInviteButton userId={r.userId} onSent={fetchRenters} />
                                                         )}
-                                                        <Link href={`/dashboard/renters/${r.id}`} className="text-xs font-semibold text-primary hover:underline">
-                                                            {t("view")}
-                                                        </Link>
+                                                        <ActionsMenu
+                                                            label={t("actions")}
+                                                            variant="icon"
+                                                            testId={`renter-actions-menu-${r.id}`}
+                                                            triggerTestId={`renter-actions-trigger-${r.id}`}
+                                                            items={[
+                                                                { id: "view", label: t("view"), testId: `renter-view-${r.id}`, href: `/dashboard/renters/${r.id}` },
+                                                                ...(canManageRenters ? [{
+                                                                    id: "edit", label: t("edit"), testId: `renter-edit-${r.id}`,
+                                                                    onSelect: () => setEditingRenter(r),
+                                                                }] : []),
+                                                            ]}
+                                                        />
                                                     </div>
                                                 </td>
                                             </tr>
@@ -627,6 +642,13 @@ function RentersPageInner() {
                         </button>
                     </div>
                 </div>
+            )}
+            {editingRenter && (
+                <EditRenterDialog
+                    renter={editingRenter}
+                    onClose={() => setEditingRenter(null)}
+                    onSaved={() => fetchRenters()}
+                />
             )}
         </div>
     );

@@ -4,10 +4,11 @@ import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../../../messages/en.json";
 
 /**
- * Spec §7 collapses list-row actions into one ⋯ menu. A Tenants row already
- * carries a single action (View, plus Resend invite only while an invite is
- * pending), so there is nothing to collapse — this pins that, so a new row
- * button has to come with its menu.
+ * Spec §7 collapses list-row actions into one ⋯ menu. A Tenants row used to
+ * carry a single action (View, plus Resend invite only while an invite is
+ * pending) with nothing to collapse; the edit-tenant PR adds a second action
+ * (Edit), so View and Edit now live in one ActionsMenu instead of one button
+ * each — the menu trigger is the row's only new button.
  */
 vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "TENANT_ADMIN" } } }) }));
 vi.mock("@/i18n/routing", () => ({
@@ -25,12 +26,21 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("Tenants list rows", () => {
-    it("carry the name link and one View link, and no other action", async () => {
+    it("collapse View and Edit into one actions menu, not one button each", async () => {
         render(<NextIntlClientProvider locale="en" messages={en}><RentersPage /></NextIntlClientProvider>);
         const name = await screen.findByText("Rajesh Kumar");
         const row = name.closest("tr") as HTMLElement;
+
+        // Exactly one trigger button for the row's actions, whatever the menu holds.
+        expect(row.querySelectorAll('[aria-haspopup="menu"]')).toHaveLength(1);
+
+        const menu = row.querySelector('[role="menu"]') as HTMLElement;
+        expect(menu).toBeTruthy();
+        const items = Array.from(menu.querySelectorAll('[role="menuitem"]')).map(el => el.textContent);
+        expect(items).toEqual([en.MasterData.view, en.MasterData.edit]);
+
+        // The name cell and the menu's View item both point at the detail page.
         const links = Array.from(row.querySelectorAll("a")).map(a => a.getAttribute("href"));
         expect(links).toEqual(["/dashboard/renters/r1", "/dashboard/renters/r1"]);
-        expect(row.querySelectorAll("button")).toHaveLength(0);
     });
 });

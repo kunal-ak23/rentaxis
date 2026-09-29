@@ -54,6 +54,8 @@
     "create": "Create",
     "createPortalAccount": "Create Portal Account",
     "createRenterProfile": "Create a new tenant profile.",
+    "editRenter": "Edit Tenant",
+    "editRenterProfile": "Update this tenant's profile.",
     "duplicateRenterTitle": "A tenant with these details already exists",
     "duplicateRenterBody": "Check this is not the same person before creating another record.",
     "duplicateMatchEmail": "same email",
@@ -2913,6 +2915,11 @@
         "assignmentFuture": "An assignment cannot take effect after today; post it on or after {date}.",
         "transferFeeChargedTwice": "{charge} was charged on the old lease for its whole term and is carried in the balance; remove it from the new lease.",
         "changed": "This contract changed since you opened it — review it again."
+      },
+      "renter": {
+        "emailTaken": "A user with this email already exists.",
+        "portalUserMismatch": "This tenant's portal login could not be found in this organisation; the email was not changed.",
+        "portalEmailRequired": "This tenant has a portal login, which needs an email; the email was not changed."
       }
     },
     "paginationShowing": "Showing {start}-{end} of {total}",
@@ -3664,6 +3671,7 @@
     "notFound": "Tenant not found.",
     "accessDenied": "You do not have access to this tenant.",
     "backToRenters": "Back to tenants",
+    "edit": "Edit",
     "noEmail": "No email",
     "noPhone": "No phone",
     "ledger": "Ledger",
