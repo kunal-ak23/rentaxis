@@ -195,7 +195,7 @@ function Approvals() {
                                     <p className="text-sm font-semibold text-foreground">{r.guestName}</p>
                                     <p className="text-[11px] text-muted" dir="ltr">{r.guestPhone}</p>
                                     <p className="text-xs text-muted">{[r.propertyName, r.unitNumber].filter(Boolean).join(" · ")} · {t(r.passType)}</p>
-                                    <p className="text-[11px] text-muted tabular-nums">{dateTime(r.validFrom)} → {dateTime(r.validTo)}</p>
+                                    <p className="text-[11px] text-muted tabular-nums">{dateTime(r.validFrom)} – {dateTime(r.validTo)}</p>
                                     {r.purpose && <p className="text-[11px] text-muted">{r.purpose}</p>}
                                     <div className="pt-2">{actions(r)}</div>
                                 </div>

@@ -263,7 +263,7 @@ function TenantGatePasses() {
                                         <StatusBadge status={p.status} />
                                     </div>
                                     <p className="text-xs text-muted">{t("colUnit")}: {unitLabel(p.unitId)} · {t(p.passType)}</p>
-                                    <p className="text-[11px] text-muted mt-1 tabular-nums">{dateTime(p.validFrom)} → {dateTime(p.validTo)}</p>
+                                    <p className="text-[11px] text-muted mt-1 tabular-nums">{dateTime(p.validFrom)} – {dateTime(p.validTo)}</p>
                                     <div className="flex gap-2 mt-3">
                                         <button type="button" onClick={() => setDetail(p)} className={secondaryButton}>{t("view")}</button>
                                         {CANCELLABLE.has(p.status) && (
