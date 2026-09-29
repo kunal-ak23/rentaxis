@@ -45,6 +45,7 @@ export const DASHBOARD_ROUTES: RouteEntry[] = [
     // Meetings; the report above keeps its role-only rule (ruling 2026-09-25).
     r(`${D}/gatepass/approvals`, "canApproveGatePasses", "GATEPASS"),
     r(`${D}/gatepass/gate`, "canWorkGate", "GATEPASS"),
+    r(`${D}/gatepass/settings`, "canManageGatePolicy", "GATEPASS"),
     r(`${D}/renter-portal/gate-passes`, "canRequestGatePasses", "GATEPASS"),
     r(`${D}/bookings`, "canManageFacilities"), r(`${D}/promotions`, "canManagePromotions"),
     r(`${D}/staff`, "canAccessFinanceOps"),

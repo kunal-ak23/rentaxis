@@ -140,6 +140,8 @@ export function buildNav(ctx: NavModelContext): RailSection[] {
         // the GATEPASS flag, as Meetings follows MEETINGS.
         ...(ops && isEnabled("GATEPASS") && can("canApproveGatePasses")
             ? [pi("gatepass-approvals", "/dashboard/gatepass/approvals", GP("navApprovals"), "sidebar-gatepass-approvals")] : []),
+        ...(ops && isEnabled("GATEPASS") && can("canManageGatePolicy")
+            ? [pi("gatepass-settings", "/dashboard/gatepass/settings", GP("navSettings"), "sidebar-gatepass-settings")] : []),
         ...(ops && can("canManagePromotions") ? [pi("promotions", "/dashboard/promotions", { ns: "Promotions", key: "navLabel" }, "sidebar-promotions")] : []),
     ])));
 

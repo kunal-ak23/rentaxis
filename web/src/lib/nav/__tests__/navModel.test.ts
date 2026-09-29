@@ -26,7 +26,7 @@ describe("buildNav — rail sections and panel items per role (all flags on)", (
                 "property-statement", "vat-return", "fiscal", "account-template", "charge-types", "import-batches", "reconciliation"]],
             ["operations", ["tickets", "bookings", "staff"]],
             ["settings", ["organisation", "users", "rent", "payments"]],
-            ["more", ["meetings", "gatepass", "gatepass-approvals", "promotions"]],
+            ["more", ["meetings", "gatepass", "gatepass-approvals", "gatepass-settings", "promotions"]],
         ]);
     });
 
@@ -45,7 +45,7 @@ describe("buildNav — rail sections and panel items per role (all flags on)", (
             ["collection", ["deposit", "due", "overdue", "returned", "post-dated", "penalties", "all"]],
             ["accounting", ["aging", "penalties", "balance-sheet", "property-pl", "property-statement"]],
             ["operations", ["tickets", "bookings"]],
-            ["more", ["meetings", "gatepass", "gatepass-approvals"]],
+            ["more", ["meetings", "gatepass", "gatepass-approvals", "gatepass-settings"]],
         ]);
     });
 
@@ -92,7 +92,7 @@ describe("flags", () => {
         expect(ids([])).toEqual(["gatepass", "promotions"]);
         expect(ids(["MEETINGS"])).toEqual(["meetings", "gatepass", "promotions"]);
         // The working screens (approvals, policy) are new and follow the flag, like Meetings.
-        expect(ids(["GATEPASS"])).toEqual(["gatepass", "gatepass-approvals", "promotions"]);
+        expect(ids(["GATEPASS"])).toEqual(["gatepass", "gatepass-approvals", "gatepass-settings", "promotions"]);
         // A property manager with every flag off still reaches Gate pass (today's sidebar shows it by role).
         expect(buildNav(ctx("PROPERTY_MANAGER", [])).find(s => s.id === "more")!.groups[0].items.map(i => i.id)).toEqual(["gatepass"]);
     });

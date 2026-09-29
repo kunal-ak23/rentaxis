@@ -147,3 +147,16 @@ describe("homeRedirect", () => {
         }
     });
 });
+
+describe("gate-pass screens (bug 25)", () => {
+    const ALL = ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER", "SECURITY_GUARD", "TENANT_USER", "RENTER", "ACCOUNTANT"] as const;
+    const allowed = (path: string) => ALL.filter(r => routeDecision(path, r, true) === "allow");
+    it("admits each screen to exactly the roles its endpoints admit", () => {
+        expect(allowed("/en/dashboard/renter-portal/gate-passes")).toEqual(["RENTER"]);
+        expect(allowed("/en/dashboard/gatepass/gate")).toEqual(["SECURITY_GUARD"]);
+        expect(allowed("/en/dashboard/gatepass/approvals")).toEqual(["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER", "SECURITY_GUARD"]);
+        expect(allowed("/en/dashboard/gatepass/settings")).toEqual(["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"]);
+        // The report keeps its own rule — a tenant and a guard still cannot open it.
+        expect(allowed("/en/dashboard/gatepass")).toEqual(["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"]);
+    });
+});
