@@ -1158,8 +1158,17 @@ public class ContractGenerationService {
                 // As before this fix: an Azure blob URL is read from the configured
                 // account by its container and path, whatever its host — documents
                 // written before a storage-account move keep downloading.
+                // Review of R4-B M6: but only from the document's own tenant container,
+                // exactly as the configured-account path requires.
                 try {
-                    location = Optional.of(new String[]{extractContainerName(url), extractBlobPath(url)});
+                    String container = extractContainerName(url);
+                    String blobPath = extractBlobPath(url);
+                    UUID tenantId = doc.getTenantId();
+                    location = tenantId != null && container != null
+                            && container.equalsIgnoreCase(containerPrefix + tenantId)
+                            && blobPath != null && !blobPath.isBlank() && !blobPath.contains("..")
+                            ? Optional.of(new String[]{container.toLowerCase(java.util.Locale.ROOT), blobPath})
+                            : Optional.empty();
                 } catch (RuntimeException e) {
                     location = Optional.empty();
                 }
