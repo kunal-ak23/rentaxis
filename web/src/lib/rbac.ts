@@ -66,6 +66,28 @@ export const PERMISSIONS = {
     // like a tenant admin (the controller still needs the organisation selected).
     // Change this only alongside the annotation.
     canViewGatePassReport: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
+    // A tenant's own gate passes: request, list, cancel, and decide walk-ins at
+    // their door. Mirrors GatePassController's POST /gatepass, GET /mine,
+    // POST /{id}/cancel and GateWalkInController's /resident-approvals —
+    // all @PreAuthorize("hasRole('RENTER')").
+    canRequestGatePasses: ['RENTER'] as UserRole[],
+    // The approvals queue and its decision. Mirrors GatePassController#approvals
+    // and #decideApproval: hasAnyRole('SECURITY_GUARD','SUPER_ADMIN','TENANT_ADMIN',
+    // 'PROPERTY_MANAGER'). The server scopes it: a guard sees their posted
+    // properties, a property manager their buildings, an admin the organisation.
+    canApproveGatePasses: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'SECURITY_GUARD'] as UserRole[],
+    // The gate desk: scan, expected today, walk-ins. Every endpoint behind it is
+    // @PreAuthorize("hasRole('SECURITY_GUARD')") (scan, expected-today,
+    // my-properties, walk-in/*).
+    canWorkGate: ['SECURITY_GUARD'] as UserRole[],
+    // Gate policy and regular visitors. Mirrors GateWalkInController's
+    // /policies and /visitors/registration and GatePassController's
+    // /guards/{id}/properties: hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER').
+    canManageGatePolicy: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
+    // Posting guards needs the guard list, which only /api/admin/users gives —
+    // UserController is SUPER_ADMIN/TENANT_ADMIN — so a property manager, who may
+    // PUT a posting, still cannot pick a guard on the web.
+    canAssignGuards: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
     // Mirrors the amenities/parking/bookings controllers' @PreAuthorize
     // hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER').
     canManageFacilities: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],

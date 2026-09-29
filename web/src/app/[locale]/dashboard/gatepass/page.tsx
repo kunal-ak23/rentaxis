@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 import { downloadCsv, toCsv } from "@/lib/csv";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { GatePassTabs } from "@/components/gatepass/shared";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -323,6 +324,7 @@ export default function GatePassReportPage() {
 
     return (
         <div>
+            <GatePassTabs />
             {/* Header */}
             <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
                 <div>

@@ -41,6 +41,11 @@ export const DASHBOARD_ROUTES: RouteEntry[] = [
     r(`${D}/meetings`, "canCreateMeetings", "MEETINGS"), r(`${D}/meetings/[id]`, "canCreateMeetings", "MEETINGS"),
     // Role-gated only, like its nav link: the GATEPASS flag is not enforced (ruling 2026-09-25).
     r(`${D}/gatepass`, "canViewGatePassReport"),
+    // The working gate-pass screens: role-gated only, like the report (ruling 2026-09-25).
+    r(`${D}/gatepass/approvals`, "canApproveGatePasses"),
+    r(`${D}/gatepass/gate`, "canWorkGate"),
+    r(`${D}/gatepass/settings`, "canManageGatePolicy"),
+    r(`${D}/renter-portal/gate-passes`, "canRequestGatePasses"),
     r(`${D}/bookings`, "canManageFacilities"), r(`${D}/promotions`, "canManagePromotions"),
     r(`${D}/staff`, "canAccessFinanceOps"),
     r(`${D}/settings`, role => buildSettingsSections(role).length > 0),

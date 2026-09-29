@@ -36,7 +36,24 @@ function canonical(href: string, role: UserRole): string {
  */
 const REMOVED: Partial<Record<UserRole, string[]>> = {
     RENTER: ["/dashboard"],
+    // Bug 25: a guard's Home is the gate desk; the staff dashboard refuses a guard.
+    SECURITY_GUARD: ["/dashboard"],
 };
+
+/**
+ * Bug 25 (tutorial 25): the gate-pass web screens are new destinations, each
+ * opened to exactly the roles its endpoints admit (see rbac.ts's gate-pass keys).
+ * None of them follows the GATEPASS flag (ruling 2026-09-25, as the report).
+ */
+const GATEPASS_SCREENS: Partial<Record<UserRole, string[]>> = {
+    SUPER_ADMIN: ["/dashboard/gatepass/approvals", "/dashboard/gatepass/settings"],
+    TENANT_ADMIN: ["/dashboard/gatepass/approvals", "/dashboard/gatepass/settings"],
+    PROPERTY_MANAGER: ["/dashboard/gatepass/approvals", "/dashboard/gatepass/settings"],
+    RENTER: ["/dashboard/renter-portal/gate-passes"],
+    SECURITY_GUARD: ["/dashboard/gatepass/gate", "/dashboard/gatepass/approvals"],
+};
+// Role-gated only, like the report (ruling 2026-09-25): the same set with every flag off.
+const GATEPASS_UNFLAGGED = GATEPASS_SCREENS;
 const kept = (role: UserRole) => (h: string) => !(REMOVED[role] ?? []).includes(h);
 
 const pathOnly = (h: string) => h.split("?")[0];
@@ -61,6 +78,7 @@ describe("RBAC parity — every role reaches exactly what it reached before", ()
         const beforePaths = new Set([...before].map(pathOnly));
         const gained = [...reachable(role)].filter(h => {
             if (before.has(h)) return false;
+            if ((GATEPASS_SCREENS[role] ?? []).includes(h)) return false;
             const why = NEW_DESTINATIONS[h];
             if (why && before.has(canonical(why, role))) return false;
             // A saved view is a filter on a page the role already had (not a hub, where the query IS the page).
@@ -86,6 +104,7 @@ describe("RBAC parity with every feature flag off", () => {
         const beforePaths = new Set([...before].map(pathOnly));
         const gained = [...after].filter(h => {
             if (before.has(h)) return false;
+            if ((GATEPASS_UNFLAGGED[role] ?? []).includes(h)) return false;
             const why = NEW_DESTINATIONS[h];
             if (why && before.has(canonical(why, role))) return false;
             // Same rule as above: a saved view filters a page the role already had (PR 3's Leasing views).
