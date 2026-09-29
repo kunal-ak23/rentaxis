@@ -1631,6 +1631,11 @@ public class LeaseService {
         // defaults to it when omitted, and keeps following it while it still holds
         // the value it defaulted to; one set explicitly (an import, an older draft)
         // is left alone.
+        // Note: "still holds the defaulted value" is read as "equals the previous
+        // contract date" — the column carries no flag saying it was defaulted. So an
+        // agreement date someone set explicitly to the same day as the contract date
+        // is treated as defaulted too and moves with a later contract-date edit.
+        // Harmless: the two were the same day, and the wizard no longer asks for it.
         if (dto.getAgreementDate() == null
                 && (previousAgreementDate == null || previousAgreementDate.equals(previousContractDate))) {
             lease.setAgreementDate(contractDate);

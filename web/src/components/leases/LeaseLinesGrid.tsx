@@ -221,7 +221,10 @@ export default function LeaseLinesGrid({
                                                     ? row.creditAccountNameAr || row.creditAccountName
                                                     : row.creditAccountName) || row.creditAccountCode;
                                                 if (!name) return <span className="text-foreground">—</span>;
-                                                const title = t("ledgerLinkTitle", { code: row.creditAccountCode ?? "", name });
+                                                // No code (review of #393): the tooltip is the name alone, not " · name".
+                                                const title = row.creditAccountCode
+                                                    ? t("ledgerLinkTitle", { code: row.creditAccountCode, name })
+                                                    : t("ledgerLinkTitleNoCode", { name });
                                                 return ledgerLink && row.creditAccountId ? (
                                                     // A plain anchor, locale-prefixed as the router's
                                                     // Link would be: the grid renders inside dialogs and

@@ -57,11 +57,11 @@ import LeaseDetailPage from "../page";
 
 function lease(status: LeaseStatus): LeaseDetail {
     return {
-        id: "lease-1", unitId: "u1", renterId: "r1", unitIdentifier: "A-101", renterName: "Prabhjot Singh",
+        id: "lease-1", unitId: "u1", renterId: "r1", unitIdentifier: "A-101", renterName: "Omar Siddiqui",
         startDate: "2026-01-01", endDate: "2026-12-31", status,
         rentAmount: 60000, depositAmount: null, ejariNumber: null, paymentTerms: 4,
         installmentDistribution: "LAST_LARGER", paymentMethod: "CHEQUE", depositPaymentMethod: "CHEQUE",
-        paymentReferenceNumber: null, propertyId: "p1", propertyName: "L'Olivier", propertyCode: "OLV",
+        paymentReferenceNumber: null, propertyId: "p1", propertyName: "Desert Rose Gardens", propertyCode: "DRG",
         hasContract: false, contractNumber: null, displayContractNumber: "TCO-26/15",
         agreementDate: null, rentVatApplicable: true, contractDate: "2026-01-01", totalDays: 365,
         gracePeriodDays: 5, firstDueDate: "2026-01-01", renterAcceptedAt: null,
@@ -75,7 +75,7 @@ function lease(status: LeaseStatus): LeaseDetail {
 function cheque(seqNo: number, status: Cheque["status"], amount: number, extra: Partial<Cheque> = {}): Cheque {
     return {
         id: `c${seqNo}`, leaseId: "lease-1", propertyId: "p1", unitId: "u1", renterId: "r1",
-        propertyName: "L'Olivier", unitIdentifier: "A-101", renterName: "Prabhjot Singh", seqNo,
+        propertyName: "Desert Rose Gardens", unitIdentifier: "A-101", renterName: "Omar Siddiqui", seqNo,
         postingDate: "2026-01-01", chequeNumber: String(100000 + seqNo), chequeDate: "2026-01-01",
         payeeBank: null, payerName: null, debitAccountId: null, debitAccountName: null, amount,
         narration: null, mode: "PDC", status, failureReason: null, replacesId: null, replacedById: null,

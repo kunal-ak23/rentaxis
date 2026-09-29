@@ -858,11 +858,14 @@ export default function LeaseDetailPage() {
                                     lines={lineRows}
                                     chargeTypes={chargeTypes}
                                     editable={false}
-                                    ledgerLink={canOpenLedger ? {
-                                        // Posted rows only carry this contract's id; a draft has none yet.
-                                        leaseId: posted ? lease.id : null,
+                                    // Review of #393: only a posted contract links — a draft has no
+                                    // ledger rows, and without leaseId the link would list other
+                                    // contracts' entries on the account. No `to`: leaseId already
+                                    // narrows to this contract, and its settlement, refund or late
+                                    // clearance can post after the term ends.
+                                    ledgerLink={canOpenLedger && posted ? {
+                                        leaseId: lease.id,
                                         from: [lease.contractDate, lease.startDate].filter(Boolean).sort()[0] ?? null,
-                                        to: lease.endDate,
                                     } : undefined}
                                 />
 

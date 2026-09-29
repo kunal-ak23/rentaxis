@@ -5,9 +5,10 @@ import en from "../../../../../../../messages/en.json";
 import type { Cheque, LeaseDetail, LeaseStatus } from "@/lib/api/leasing";
 
 /**
- * Owner ruling 2026-09-29: one date, the contract date. The General tab shows an
- * Agreement date only when it differs from the contract date (an imported or an
- * older contract); the server now defaults it to the contract date otherwise.
+ * Review of #393: the Ledger link on the charge lines. A posted contract links to
+ * the account's General Ledger narrowed to this contract, from its start and with
+ * no end date (a settlement, refund or late clearance can post after the term).
+ * A draft has no ledger rows of its own, so its account name is not a link.
  */
 
 const push = vi.fn();
@@ -99,24 +100,29 @@ afterEach(() => {
     vi.clearAllMocks();
 });
 
-describe("contract General tab — agreement date", () => {
-    it("is hidden when it is the contract date", async () => {
-        onLease("ACTIVE", { contractDate: "2026-01-01", agreementDate: "2026-01-01" });
+const LINE = {
+    id: "ln1", seqNo: 1, chargeTypeId: "ct-rent", chargeTypeName: "Rent", behaviour: "RENT",
+    grossAmount: 60000, discountAmount: 0, netAmount: 60000, vatApplicable: false, narration: null,
+    creditAccountId: "acc-9", creditAccountCode: "210104", creditAccountName: "Advance Rent – Desert Rose Gardens",
+};
+
+describe("contract charge lines — Ledger link", () => {
+    it("links a posted contract's account to the GL for this contract, with no end date", async () => {
+        role = "TENANT_ADMIN";
+        onLease("ACTIVE", { lines: [LINE] as unknown as LeaseDetail["lines"], contractDate: "2025-12-20", startDate: "2026-01-01" });
         renderPage();
-        expect(await screen.findByText("Contract Date")).toBeInTheDocument();
-        expect(screen.queryByText("Agreement Date")).not.toBeInTheDocument();
+        const link = await screen.findByTestId("lease-line-ledger-0");
+        expect(link.tagName).toBe("A");
+        expect(link).toHaveAttribute("href", "/en/dashboard/finance/general-ledger?accountIds=acc-9&leaseId=lease-1&from=2025-12-20");
+        expect(link.getAttribute("href")).not.toContain("to=");
     });
 
-    it("is hidden when there is none", async () => {
-        onLease("ACTIVE", { agreementDate: null });
+    it("shows a draft's account as plain text, not a link to the whole account", async () => {
+        role = "TENANT_ADMIN";
+        onLease("DRAFT", { lines: [LINE] as unknown as LeaseDetail["lines"], postedAt: null, postingJournalId: null });
         renderPage();
-        expect(await screen.findByText("Contract Date")).toBeInTheDocument();
-        expect(screen.queryByText("Agreement Date")).not.toBeInTheDocument();
-    });
-
-    it("is shown when it differs (an imported contract)", async () => {
-        onLease("ACTIVE", { contractDate: "2026-01-01", agreementDate: "2025-12-20" });
-        renderPage();
-        expect(await screen.findByText("Agreement Date")).toBeInTheDocument();
+        const cell = await screen.findByTestId("lease-line-ledger-0");
+        expect(cell.tagName).toBe("SPAN");
+        expect(cell).toHaveTextContent("Advance Rent – Desert Rose Gardens");
     });
 });
