@@ -97,6 +97,33 @@ public class BlobStorageService {
         }
     }
 
+    /**
+     * Uploads server-made cheque image bytes (a crop of a multi-cheque photo, a
+     * rendered PDF page) to {@code tenant-{tenantId}/cheques/{uuid}{ext}} — the same
+     * folder and shape as {@link #uploadCheque}, so the retention purge's path rule
+     * covers it. {@code ext} is one of {@code .jpg}, {@code .jpeg}, {@code .png},
+     * {@code .heic}, {@code .heif}; anything else is stored as {@code .jpg}.
+     */
+    public UploadResult uploadChequeBytes(UUID tenantId, byte[] bytes, String ext) {
+        if (tenantId == null || bytes == null || bytes.length == 0) {
+            throw new BlobStorageException("tenantId and non-empty bytes are required");
+        }
+        String safeExt = ext == null ? ".jpg" : ext.toLowerCase(Locale.ROOT);
+        if (!java.util.Set.of(".jpg", ".jpeg", ".png", ".heic", ".heif").contains(safeExt)) {
+            safeExt = ".jpg";
+        }
+        String blobPath = String.format("cheques/%s%s", UUID.randomUUID(), safeExt);
+        try (InputStream in = new java.io.ByteArrayInputStream(bytes)) {
+            BlobClient blobClient = getContainerClient(tenantId).getBlobClient(blobPath);
+            blobClient.upload(in, bytes.length, true);
+            return new UploadResult(blobClient.getBlobUrl(), blobPath);
+        } catch (IOException e) {
+            throw new BlobStorageException("Failed to read cheque image bytes for " + blobPath, e);
+        } catch (com.azure.storage.blob.models.BlobStorageException e) {
+            throw new BlobStorageException("Failed to upload blob " + blobPath, e);
+        }
+    }
+
     /** Uploads a fresh gate photo under a visitor profile's stable folder. */
     public UploadResult uploadGateVisitor(UUID tenantId, UUID visitorProfileId, MultipartFile file) {
         if (tenantId == null || visitorProfileId == null || file == null || file.isEmpty()) {

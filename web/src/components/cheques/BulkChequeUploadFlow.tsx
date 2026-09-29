@@ -2,14 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { Camera, Loader2, X, Check, AlertTriangle, Trash2, Pin, RotateCw } from "lucide-react";
+import { Camera, Loader2, X, Check, AlertTriangle, Trash2, Pin, RotateCw, FileText } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { autoMapChequesToRows } from "./autoMapChequesToRows";
-import { useBulkChequeExtract, buildItemsFromFiles } from "./useBulkChequeExtract";
+import { useBulkChequeExtract, buildItemsFromFiles, type BulkExtractItem } from "./useBulkChequeExtract";
 import DueDateDelta from "./DueDateDelta";
 import type { Cheque } from "@/lib/api/leasing";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
+import { CROP_UNRELIABLE, type ChequeMultiExtractionResponse, type DetectedChequeItem } from "@/types/cheque";
 
 /**
  * Bulk-attach scanned cheque images onto a lease's own register rows.
@@ -20,6 +21,12 @@ import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
  * on the wire — see `BulkAttachChequeItem`). Only a REGISTERED, PDC-mode row
  * has a cheque number to fill in; a DRAFT row belongs to the editable grid,
  * and CASH/TRANSFER/ONLINE rows have no physical instrument to scan.
+ *
+ * One uploaded file can hold several cheques (a photo of a few laid side by
+ * side, or a PDF of scans): `POST /cheques/extract-many` answers with one item
+ * per cheque, each with its own server-issued crop, and the file expands into
+ * one review row per item. Auto-map and bulk-attach then work per row, so each
+ * cheque gets its own image.
  */
 
 type Props = {
@@ -30,7 +37,12 @@ type Props = {
 };
 
 type RowState = {
+  /** Row key: `${fileId}#${index}` — one row per cheque found in a file. */
   itemId: string;
+  /** The uploaded file (extract item) this cheque was found in. */
+  fileId: string;
+  /** Index into that file's `response.items`. */
+  detIndex: number;
   chequeNumber: string;
   bankName: string;
   payerName: string;
@@ -38,6 +50,11 @@ type RowState = {
   amount: number | null;
   rowId: string | null;
   pinned: boolean;
+  /**
+   * A crop the server flagged (`crop_unreliable`) is the whole page, not one
+   * cheque; the operator must confirm they checked it before it is attached.
+   */
+  cropConfirmed: boolean;
 };
 
 type Step = 1 | 2 | 3;
@@ -50,6 +67,44 @@ type Step = 1 | 2 | 3;
  */
 const rowChequeDate = (c: Cheque): string => c.chequeDate ?? c.postingDate;
 
+/** Refusal codes the server sends for an upload; each has a translated message. */
+const KNOWN_UPLOAD_ERRORS = new Set([
+  "cheque_upload_file_required",
+  "cheque_upload_image_too_large",
+  "cheque_upload_file_too_large",
+  "cheque_upload_unsupported_type",
+  "cheque_upload_too_many_pages",
+  "cheque_upload_too_many_cheques",
+  "cheque_upload_pdf_unreadable",
+  "cheque_upload_pdf_not_supported",
+  "cheque_upload_busy",
+]);
+
+/** One review row per cheque the file holds; a failed file still gets one row to fill in or remove. */
+function rowsForFile(fileId: string, response: ChequeMultiExtractionResponse | null): RowState[] {
+  const found = response?.items.length ? response.items : [null];
+  return found.map<RowState>((det, i) => {
+    const ex = det?.extracted;
+    return {
+      itemId: `${fileId}#${i}`,
+      fileId,
+      detIndex: i,
+      chequeNumber: ex?.chequeNumber ?? "",
+      bankName: ex?.bankName ?? "",
+      payerName: ex?.payerName ?? "",
+      chequeDate: ex?.chequeDate ?? null,
+      amount: ex?.amount ?? null,
+      rowId: null,
+      pinned: false,
+      cropConfirmed: false,
+    };
+  });
+}
+
+function detectionOf(file: BulkExtractItem | undefined, row: RowState): DetectedChequeItem | null {
+  return file?.response?.items[row.detIndex] ?? null;
+}
+
 export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose }: Props) {
   const t = useTranslations("bulkChequeUpload");
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -60,6 +115,8 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [rejectedCount, setRejectedCount] = useState(0);
+  // The row whose crop is open full-size, next to its original page.
+  const [previewKey, setPreviewKey] = useState<string | null>(null);
 
   // Only a REGISTERED, PDC row has a cheque number to attach a scan to.
   const eligibleRows = useMemo(
@@ -75,6 +132,8 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
   // submitting/onClose without re-running and breaking focus restoration.
   const submittingRef = useRef(submitting);
   const onCloseRef = useRef(onClose);
+  const previewOpenRef = useRef(false);
+  useEffect(() => { previewOpenRef.current = previewKey !== null; }, [previewKey]);
   useEffect(() => { submittingRef.current = submitting; }, [submitting]);
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
@@ -96,6 +155,12 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
     queueMicrotask(() => focusables()[0]?.focus());
 
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && previewOpenRef.current) {
+        // An open crop preview closes first; the flow stays.
+        e.preventDefault();
+        setPreviewKey(null);
+        return;
+      }
       if (e.key === "Escape" && !submittingRef.current) {
         e.preventDefault();
         onCloseRef.current();
@@ -155,20 +220,8 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
   const goExtract = async () => {
     setStep(2);
     const extractedItems = await extract.start(extract.items);
-    // Build initial rows from extracted items.
-    const initialRows = extractedItems.map<RowState>(it => {
-      const ex = it.response?.extracted;
-      return {
-        itemId: it.id,
-        chequeNumber: ex?.chequeNumber ?? "",
-        bankName: ex?.bankName ?? "",
-        payerName: ex?.payerName ?? "",
-        chequeDate: ex?.chequeDate ?? null,
-        amount: ex?.amount ?? null,
-        rowId: null,
-        pinned: false,
-      };
-    });
+    // One row per cheque found: a file holding three cheques becomes three rows.
+    const initialRows = extractedItems.flatMap(it => rowsForFile(it.id, it.response));
     const map = remap(initialRows);
     setTableRows(initialRows.map(r => ({ ...r, rowId: map.get(r.itemId) ?? null })));
     setStep(3);
@@ -186,29 +239,34 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
     });
   };
 
-  // Re-extract a failed scan and merge the result into its table row. Each
-  // field is filled only while it is still blank, so anything the operator
-  // typed while the row was failed survives; a newly-read date re-runs the
-  // auto-map exactly as a typed date would (unless the row is pinned).
+  // Re-extract a failed file. Its one placeholder row becomes one row per
+  // cheque found. The first new row keeps anything the operator typed while
+  // the file was failed (each field is filled only while still blank, and a
+  // pinned assignment stays); newly-read dates re-run the auto-map for every
+  // unpinned row, exactly as a typed date would.
   const retryRow = async (itemId: string) => {
-    const ex = (await extract.retry(itemId))?.extracted;
-    if (!ex) return;
+    const fileId = tableRows.find(r => r.itemId === itemId)?.fileId;
+    if (!fileId) return;
+    const response = await extract.retry(fileId);
+    if (!response) return;
     setTableRows(prev => {
-      let dateFilled = false;
-      const next = prev.map(r => {
-        if (r.itemId !== itemId) return r;
-        const chequeDate = r.chequeDate ?? ex.chequeDate ?? null;
-        dateFilled = r.chequeDate == null && chequeDate != null;
+      const old = prev.filter(r => r.fileId === fileId);
+      const typed = old[0];
+      const fresh = rowsForFile(fileId, response).map((r, i) => {
+        if (i !== 0 || !typed) return r;
         return {
           ...r,
-          chequeNumber: r.chequeNumber.trim() ? r.chequeNumber : ex.chequeNumber ?? "",
-          bankName: r.bankName.trim() ? r.bankName : ex.bankName ?? "",
-          payerName: r.payerName.trim() ? r.payerName : ex.payerName ?? "",
-          chequeDate,
-          amount: r.amount ?? ex.amount ?? null,
+          chequeNumber: typed.chequeNumber.trim() ? typed.chequeNumber : r.chequeNumber,
+          bankName: typed.bankName.trim() ? typed.bankName : r.bankName,
+          payerName: typed.payerName.trim() ? typed.payerName : r.payerName,
+          chequeDate: typed.chequeDate ?? r.chequeDate,
+          amount: typed.amount ?? r.amount,
+          rowId: typed.rowId,
+          pinned: typed.pinned,
         };
       });
-      if (!dateFilled || next.find(r => r.itemId === itemId)?.pinned) return next;
+      const at = prev.findIndex(r => r.fileId === fileId);
+      const next = [...prev.slice(0, at), ...fresh, ...prev.slice(at).filter(r => r.fileId !== fileId)];
       const map = remap(next);
       return next.map(r => (r.pinned ? r : { ...r, rowId: map.get(r.itemId) ?? null }));
     });
@@ -222,8 +280,12 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
     setTableRows(prev => prev.map(r => (r.itemId === itemId ? { ...r, pinned: !r.pinned } : r)));
   };
 
+  // Removes one cheque's row; the file goes only when its last row does.
   const removeRow = (itemId: string) => {
-    extract.removeItem(itemId);
+    const fileId = tableRows.find(r => r.itemId === itemId)?.fileId;
+    if (fileId && tableRows.filter(r => r.fileId === fileId).length === 1) {
+      extract.removeItem(fileId);
+    }
     setTableRows(prev => prev.filter(r => r.itemId !== itemId));
   };
 
@@ -262,25 +324,27 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
     counts.duplicateNumber === 0 &&
     tableRows.every(r => {
       if (!r.chequeNumber.trim()) return false;
-      const item = extract.items.find(it => it.id === r.itemId);
-      return item?.response?.image != null;
+      const det = detectionOf(extract.items.find(it => it.id === r.fileId), r);
+      if (det?.flags.includes(CROP_UNRELIABLE) && !r.cropConfirmed) return false;
+      return det?.image != null;
     });
 
   const approve = async () => {
     setSubmitting(true);
     setSubmitError(null);
     try {
+      // Each row carries its own cheque's image: a crop when its file held several.
       const items = tableRows.map(r => {
-        const ex = extract.items.find(it => it.id === r.itemId);
+        const det = detectionOf(extract.items.find(it => it.id === r.fileId), r);
         return {
           chequeId: r.rowId,
           chequeNumber: r.chequeNumber.trim(),
           chequeDate: r.chequeDate,
           bankName: r.bankName.trim(),
           payerName: r.payerName.trim() || null,
-          imageUrl: ex?.response?.image.url,
-          imageBlobPath: ex?.response?.image.blobPath,
-          imageUploadedAt: ex?.response?.image.uploadedAt,
+          imageUrl: det?.image.url,
+          imageBlobPath: det?.image.blobPath,
+          imageUploadedAt: det?.image.uploadedAt,
         };
       });
       const res = await fetch(`/api/proxy/v1/leases/${leaseId}/cheques/bulk-attach`, {
@@ -333,6 +397,7 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
           // @ts-expect-error webkitdirectory is non-standard but widely supported
           webkitdirectory="true"
           multiple
+          // Images only while server-side PDF input is off (rentaxis.cheques.pdf-upload.enabled).
           accept="image/*"
           className="hidden"
           onChange={(e) => onPick(e.target.files)}
@@ -359,7 +424,14 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
                   <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
                     {extract.items.map(it => (
                       <div key={it.id} className="relative">
-                        <Image src={it.previewUrl} alt="" width={120} height={80} unoptimized className="h-20 w-full rounded object-cover" />
+                        {it.file.type === "application/pdf" ? (
+                          <div className="flex h-20 w-full flex-col items-center justify-center gap-1 rounded bg-input/40 px-1 text-[10px] text-muted">
+                            <FileText size={16} />
+                            <span className="w-full truncate text-center" dir="auto">{it.file.name}</span>
+                          </div>
+                        ) : (
+                          <Image src={it.previewUrl} alt="" width={120} height={80} unoptimized className="h-20 w-full rounded object-cover" />
+                        )}
                         <button
                           type="button"
                           aria-label={t("removeImage")}
@@ -413,19 +485,56 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
                 </thead>
                 <tbody>
                   {tableRows.map(row => {
-                    const item = extract.items.find(it => it.id === row.itemId);
+                    const item = extract.items.find(it => it.id === row.fileId);
                     if (!item) return null;
+                    const det = detectionOf(item, row);
+                    const thumb = det?.thumbnailUrl ?? (item.file.type === "application/pdf" ? null : item.previewUrl);
+                    const flagged = det?.flags.includes(CROP_UNRELIABLE) ?? false;
+                    const pageCount = item.response?.pages.length ?? 0;
                     const target = eligibleRows.find(s => s.id === row.rowId) ?? null;
                     const usedRowIds = new Set(tableRows.filter(r => r.itemId !== row.itemId && r.rowId).map(r => r.rowId));
                     return (
                       <tr key={row.itemId} className="border-t border-border align-top">
                         <td className="py-1 pr-2">
-                          <a href={item.response?.image.url ?? "#"} target="_blank" rel="noreferrer">
-                            <Image src={item.previewUrl} alt="" width={64} height={48} unoptimized className="h-12 w-16 rounded object-cover" />
-                          </a>
+                          <button
+                            type="button"
+                            onClick={() => setPreviewKey(row.itemId)}
+                            aria-label={t("viewCrop")}
+                            className="block rounded focus:outline-none focus:ring-2 focus:ring-primary"
+                          >
+                            {thumb ? (
+                              <Image src={thumb} alt="" width={64} height={48} unoptimized className="h-12 w-16 rounded object-cover" data-testid="cheque-crop-thumb" />
+                            ) : (
+                              <span className="flex h-12 w-16 items-center justify-center rounded bg-input/40 text-muted">
+                                <FileText size={14} />
+                              </span>
+                            )}
+                          </button>
+                          {pageCount > 1 && det && (
+                            <p className="mt-1 text-[10px] text-muted">{t("pageLabel", { n: det.page })}</p>
+                          )}
+                          {flagged && (
+                            <>
+                              <p className="mt-1 max-w-[9rem] text-[10px] text-amber-800" role="note">
+                                <AlertTriangle size={10} className="inline" /> {t("cropUnreliable")}
+                              </p>
+                              <label className="mt-1 flex max-w-[9rem] items-start gap-1 text-[10px]">
+                                <input
+                                  type="checkbox"
+                                  checked={row.cropConfirmed}
+                                  onChange={e => updateRow(row.itemId, { cropConfirmed: e.target.checked })}
+                                  className="mt-0.5"
+                                />
+                                <span>{t("confirmCrop")}</span>
+                              </label>
+                            </>
+                          )}
                           {item.status === "failed" && (
                             <p className="mt-1 text-[10px] text-red-700">
-                              <AlertTriangle size={10} className="inline" /> {t("extractionFailed")}
+                              <AlertTriangle size={10} className="inline" />{" "}
+                              {item.errorCode && KNOWN_UPLOAD_ERRORS.has(item.errorCode)
+                                ? t(`uploadErrors.${item.errorCode}`)
+                                : t("extractionFailed")}
                             </p>
                           )}
                           {(item.status === "failed" || item.status === "extracting") && (
@@ -557,6 +666,73 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
             </div>
           )}
         </div>
+      {previewKey && (() => {
+        const row = tableRows.find(r => r.itemId === previewKey);
+        const file = row ? extract.items.find(it => it.id === row.fileId) : undefined;
+        const det = row ? detectionOf(file, row) : null;
+        if (!row || !file) return null;
+        const pagePreview = file.response?.pages.find(p => p.page === (det?.page ?? 1))?.previewUrl
+          ?? (file.file.type === "application/pdf" ? null : file.previewUrl);
+        const crop = det?.thumbnailUrl ?? null;
+        return (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("viewCrop")}
+            onClick={() => setPreviewKey(null)}
+          >
+            <div className="max-h-full w-full max-w-5xl overflow-auto rounded-lg bg-background p-4" onClick={e => e.stopPropagation()}>
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-semibold">{t("viewCrop")}</p>
+                <button type="button" onClick={() => setPreviewKey(null)} aria-label={t("closePreview")} className="rounded p-1 text-muted hover:bg-input/40">
+                  <X size={16} />
+                </button>
+              </div>
+              {det?.flags.includes(CROP_UNRELIABLE) && (
+                <p className="mb-3 text-xs text-amber-800" role="note">
+                  <AlertTriangle size={12} className="inline" /> {t("cropUnreliable")}
+                </p>
+              )}
+              <div className="grid gap-4 md:grid-cols-2">
+                <figure>
+                  <figcaption className="mb-1 text-xs text-muted">{t("cropLabel")}</figcaption>
+                  {crop ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={crop} alt="" className="w-full rounded border border-border" />
+                  ) : (
+                    <p className="text-xs text-muted">{t("noPreview")}</p>
+                  )}
+                </figure>
+                <figure>
+                  <figcaption className="mb-1 text-xs text-muted">{t("originalLabel")}</figcaption>
+                  {pagePreview ? (
+                    // The box is in image coordinates, so it is placed with physical
+                    // left/top whatever the page direction: the photo is never mirrored.
+                    <div className="relative" dir="ltr">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={pagePreview} alt="" className="block w-full rounded border border-border" />
+                      {det?.box && (
+                        <div
+                          className="pointer-events-none absolute border-2 border-primary"
+                          style={{
+                            left: `${det.box.x * 100}%`,
+                            top: `${det.box.y * 100}%`,
+                            width: `${det.box.width * 100}%`,
+                            height: `${det.box.height * 100}%`,
+                          }}
+                        />
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted">{t("noPreview")}</p>
+                  )}
+                </figure>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       </div>
     </div>
   );

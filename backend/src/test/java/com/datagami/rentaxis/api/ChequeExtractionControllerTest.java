@@ -44,6 +44,9 @@ class ChequeExtractionControllerTest {
     private ChequeExtractionService service;
 
     @MockitoBean
+    private com.datagami.rentaxis.core.service.cheque.ChequeMultiExtractionService multiService;
+
+    @MockitoBean
     private ApiSecurityFilter apiSecurityFilter;
 
     @MockitoBean

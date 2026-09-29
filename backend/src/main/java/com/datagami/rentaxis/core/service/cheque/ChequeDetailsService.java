@@ -289,7 +289,10 @@ public class ChequeDetailsService {
                 continue;
             }
             var issued = lockedScans.get(path);
-            if (issued == null || (issued.getChequeId() != null && !issued.getChequeId().equals(c.getId()))) {
+            // Not attachable: a PDF, or a photo holding several cheques — each
+            // cheque takes its own crop instead (changeset 163).
+            if (issued == null || !issued.isAttachable()
+                    || (issued.getChequeId() != null && !issued.getChequeId().equals(c.getId()))) {
                 bad.add(new BulkAttachErrorRow(it.targetId(), "image_not_issued"));
             } else {
                 issuedImages.put(c.getId(), issued);

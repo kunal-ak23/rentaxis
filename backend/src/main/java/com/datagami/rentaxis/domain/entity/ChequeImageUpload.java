@@ -44,4 +44,22 @@ public class ChequeImageUpload extends BaseTenantEntity {
 
     @Column(name = "cheque_id")
     private UUID chequeId;
+
+    /**
+     * The upload this image was cut from (a crop of a multi-cheque photo, or a
+     * rendered PDF page); null for an original. Changeset 163.
+     */
+    @Column(name = "source_upload_id")
+    private UUID sourceUploadId;
+
+    /**
+     * Whether bulk-attach may put this image on a cheque. False for a PDF and for
+     * a photo that holds several cheques — each cheque gets its own crop instead.
+     */
+    @Column(name = "attachable", nullable = false)
+    private boolean attachable = true;
+
+    /** 1-based PDF page a crop came from; null for a photo. */
+    @Column(name = "page_number")
+    private Integer pageNumber;
 }
