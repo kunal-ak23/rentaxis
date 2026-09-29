@@ -11,6 +11,8 @@ import com.datagami.rentaxis.domain.repository.VatTaxPointRepository;
 import com.datagami.rentaxis.domain.entity.enums.VatTaxPointStatus;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
 import com.datagami.rentaxis.domain.repository.OpeningBalancePostingRepository;
+import com.datagami.rentaxis.domain.repository.RecognitionEntryRepository;
+import com.datagami.rentaxis.domain.entity.enums.RecognitionStatus;
 import com.datagami.rentaxis.domain.repository.TenantFiscalSettingsRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,8 +57,10 @@ public class TenantFiscalSettingsService {
                                        JournalEntryRepository journals,
                                        ImportBatchRepository importBatches,
                                        VatTaxPointRepository vatTaxPoints,
+                                       RecognitionEntryRepository recognitionEntries,
                                        jakarta.persistence.EntityManager entityManager) {
         this.entityManager = entityManager;
+        this.recognitionEntries = recognitionEntries;
         this.repo = repo;
         this.openingBalances = openingBalances;
         this.journals = journals;
@@ -66,6 +70,9 @@ public class TenantFiscalSettingsService {
 
     /** Read directly, for the dependency reason above: the lock must not strand a PLANNED tax point. */
     private final VatTaxPointRepository vatTaxPoints;
+
+    /** The same, for a PLANNED recognition entry a books-start lock would cover (review of R4-B I3). */
+    private final RecognitionEntryRepository recognitionEntries;
 
     private final jakarta.persistence.EntityManager entityManager;
 
@@ -180,16 +187,23 @@ public class TenantFiscalSettingsService {
                     + "): journals are posted inside it. Re-open the latest closed fiscal year instead.",
                     "fiscal.lockBackwards", java.util.Map.of("current", was));
         }
+        requireNoPlannedVatThrough(s, date);
+        s.setBooksLockedThrough(date);
+        s.setBooksLockFromStart(false);   // R4 money4 F3: a user's lock only moves forward
+        return repo.save(s);
+    }
+
+    /** {@link #lockThrough}'s refusal: a PLANNED VAT tax point on or before {@code date} would never be declared. */
+    private void requireNoPlannedVatThrough(TenantFiscalSettings s, LocalDate date) {
         vatTaxPoints.findFirstByTenantIdAndStatusAndTaxPointDateLessThanEqualOrderByTaxPointDateAsc(
                         s.getTenantId(), VatTaxPointStatus.PLANNED, date)
                 .ifPresent(p -> {
                     throw new BusinessRuleViolationException("Post the VAT tax points through " + date
                             + " first: one dated " + p.getTaxPointDate() + " has not been declared yet, and locking"
-                            + " the books would leave it undeclared.");
+                            + " the books would leave it undeclared.",
+                            "fiscal.vatPendingInLock", java.util.Map.of("through", date.format(DMY),
+                                    "date", p.getTaxPointDate().format(DMY)));
                 });
-        s.setBooksLockedThrough(date);
-        s.setBooksLockFromStart(false);   // R4 money4 F3: a user's lock only moves forward
-        return repo.save(s);
     }
 
     /**
@@ -320,6 +334,21 @@ public class TenantFiscalSettingsService {
         // it), so it may be at most three months ahead — 2062 typed for 2026 locked the
         // organisation out of every posting.
         if (changing) manualDates.requireBooksStart(date);
+        LocalDate implied = date == null ? null : impliedLock(date);
+        boolean journalsExist = hasJournals();
+        if (changing && implied != null && journalsExist && s.isBooksLockFromStart()
+                && s.getBooksLockedThrough() != null && implied.isAfter(s.getBooksLockedThrough())) {
+            // Review of R4-B I3: moving a books-start lock forward over posted activity is
+            // a lock like any other — the same row lock and refusals as lockThrough (and
+            // the year-end close's recognition check), not a direct write. Re-read under
+            // the lock: a user lock committed meanwhile makes the lock theirs (below).
+            entityManager.refresh(s, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+            if (s.isBooksLockFromStart() && s.getBooksLockedThrough() != null
+                    && implied.isAfter(s.getBooksLockedThrough())) {
+                requireNoPlannedVatThrough(s, implied);
+                requireNoPlannedRecognitionThrough(s, implied);
+            }
+        }
         s.setBooksStartDate(date);
         if (date != null) {
             // Break-it R4 money4 F3: the implied lock is the day before the books start,
@@ -329,13 +358,10 @@ public class TenantFiscalSettingsService {
             // Review of R4-B I2: the lock is inclusive (assertOpen refuses a date not after
             // it), so a lock through today would still refuse today's receipts; the cap is
             // yesterday on the business (Dubai) clock.
-            LocalDate implied = date.minusDays(1);
-            LocalDate latestLock = manualDates.today().minusDays(1);
-            if (implied.isAfter(latestLock)) implied = latestLock;
             if (s.getBooksLockedThrough() == null) {
                 s.setBooksLockedThrough(implied);
                 s.setBooksLockFromStart(true);
-            } else if (changing && (!hasJournals() || s.isBooksLockFromStart())) {
+            } else if (changing && (!journalsExist || s.isBooksLockFromStart())) {
                 // N1 ruling: with nothing posted yet the implied lock follows the books
                 // start both ways — the way back from a mistyped year. R4 money4 F3: so
                 // does a lock the books start itself set, journals or not. A lock a user
@@ -348,6 +374,34 @@ public class TenantFiscalSettingsService {
     }
 
     private static final java.time.format.DateTimeFormatter DMY = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
+    /**
+     * The lock a books start implies: the day before it, but never after yesterday.
+     * A lock after today refuses every deposit, clearing and receipt (all dated today
+     * or earlier) until then, and once anything is posted it could not be taken back —
+     * a +3-month books start bricked posting (break-it R4 money4 F3). The lock is
+     * inclusive ({@link #assertOpen} refuses a date not after it), so a lock through
+     * today would still refuse today's receipts: the cap is yesterday on the business
+     * (Dubai) clock (review of R4-B I2).
+     */
+    private LocalDate impliedLock(LocalDate booksStart) {
+        LocalDate implied = booksStart.minusDays(1);
+        LocalDate latest = manualDates.today().minusDays(1);
+        return implied.isAfter(latest) ? latest : implied;
+    }
+
+    /** A PLANNED recognition period ending on or before {@code date} could never post once it is locked. */
+    private void requireNoPlannedRecognitionThrough(TenantFiscalSettings s, LocalDate date) {
+        recognitionEntries.findFirstByTenantIdAndStatusAndPeriodEndLessThanEqualOrderByPeriodEndAsc(
+                        s.getTenantId(), RecognitionStatus.PLANNED, date)
+                .ifPresent(e -> {
+                    throw new BusinessRuleViolationException("Run month-end recognition through " + date.format(DMY)
+                            + " first: a period ending " + e.getPeriodEnd().format(DMY) + " is not recognised yet,"
+                            + " and moving the books start would lock it for ever.",
+                            "fiscal.recognitionPendingInLock", java.util.Map.of("through", date.format(DMY),
+                                    "date", e.getPeriodEnd().format(DMY)));
+                });
+    }
 
     /** True once this tenant has any journal entry (posted or reversed); the tenant is bound explicitly. */
     @Transactional(readOnly = true)
