@@ -35,6 +35,9 @@ case "$backend_port $web_port" in
     echo "Refusing ports $backend_port/$web_port: reserved for other local stacks." >&2; exit 2 ;;
 esac
 
+# A second backend (e.g. a scratch database for a first seed run) gets its own
+# pid and log files, so it never stops or overwrites the recording stack's.
+if [[ "$backend_port" != 8084 ]]; then pids="$stack/pids-$backend_port"; logs="$stack/logs-$backend_port"; fi
 mkdir -p "$logs" "$pids"
 
 listening_pid() { lsof -nP -tiTCP:"$1" -sTCP:LISTEN 2>/dev/null | head -1 || true; }
@@ -103,6 +106,15 @@ start_backend() {
     export RENTAXIS_GATEWAY_STUB_ENABLED=true
     export AZURE_COMMUNICATION_CONNECTION_STRING= AZURE_OPENAI_API_KEY= AZURE_OPENAI_ENDPOINT=
     export SPRING_JPA_SHOW_SQL=false RENTAXIS_RECOGNITION_JOB_CATCH_UP_ENABLED=false
+    # Nightly jobs off by default (TUTORIAL_NIGHTLY_JOBS=on to keep them): a
+    # recording replays a seeded, dated story, and a job that posts September
+    # recognition or VAT tax points overnight, expires a contract or sweeps
+    # executed copies would change it between the proof and the capture.
+    if [[ "${TUTORIAL_NIGHTLY_JOBS:-off}" == off ]]; then
+      export RENTAXIS_RECOGNITION_JOB_ENABLED=false RENTAXIS_VAT_TAX_POINT_JOB_ENABLED=false \
+        RENTAXIS_LEASE_EXPIRY_JOB_ENABLED=false RENTAXIS_EXECUTED_COPY_SWEEP_JOB_ENABLED=false \
+        RENTAXIS_NOTIFICATIONS_DAILY_JOB_ENABLED=false RENTAXIS_LISTING_UPCOMING_JOB_ENABLED=false
+    fi
     export APP_RENEWAL_PORTAL_BASE_URL="$web_url"
     cd "$src/backend"
     nohup java -Xmx2g -jar "$jar" > "$logs/backend.log" 2>&1 &

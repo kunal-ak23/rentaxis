@@ -61,6 +61,9 @@ async function authenticatedStorageState(role) {
   }
   const credentials = role === 'tenantAdmin'
     ? seed.adminLogin
+    // The accounting track (Palm Ridge Properties) records most scenes as its Accountant.
+    : role === 'accountant'
+      ? seed.accountantLogin
     : role === 'renter'
       ? seed.renterLogins?.find((login) => login.name === 'Ahmed Hassan') || seed.renterLogins?.[0]
     // `renter:<name>` signs in as that seeded tenant (tutorial 11: Rajesh Kumar).

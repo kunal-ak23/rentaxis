@@ -25,7 +25,13 @@ case "$PROD_BASE_URL $backend_url" in
   http://localhost:*" "http://localhost:*|http://127.0.0.1:*" "http://127.0.0.1:*) ;;
   *) echo "Refusing: record-local.sh records against a localhost stack only ($PROD_BASE_URL, $backend_url)." >&2; exit 2 ;;
 esac
-export TUTORIAL_SEED_MANIFEST=${TUTORIAL_SEED_MANIFEST:-"$tut/work/seed/oasis-crest.out.json"}
+# The accounting track records on Palm Ridge Properties (tutorials/seed/seed_palm_ridge.py);
+# everything else on Oasis Crest.
+case "$id" in
+  14|17|18|19|20|35|36|37|38|39|40|41|42|43|44|45|46) default_manifest="$tut/work/seed/palm-ridge.out.json" ;;
+  *) default_manifest="$tut/work/seed/oasis-crest.out.json" ;;
+esac
+export TUTORIAL_SEED_MANIFEST=${TUTORIAL_SEED_MANIFEST:-$default_manifest}
 export TUTORIAL_AUTH_STATE=${TUTORIAL_AUTH_STATE:-"$tut/.auth/superadmin-local.json"}
 export TUTORIAL_OUTPUT_DIR="$tut/output"
 export TUTORIAL_AUDIO_OUTPUT_DIR="$tut/audio-generated"

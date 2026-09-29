@@ -63,6 +63,14 @@ def num(x):
     return float(Decimal(str(x)))
 
 
+def rel(path):
+    """A path relative to the repo when it is inside it (the manifest is committed nowhere, but stays readable)."""
+    try:
+        return str(pathlib.Path(path).resolve().relative_to(REPO))
+    except ValueError:
+        return str(path)
+
+
 def log(msg):
     print(f"  • {msg}", flush=True)
 
@@ -147,6 +155,9 @@ class Seed:
         tenant = found[0] if found else self.sa.post("/api/admin/tenants", {"name": P.ORG_NAME})
         self.tenant_id = tenant["id"]
         self.out["tenantId"] = self.tenant_id
+        # The shape the tutorial recorder reads (tutorials/capture/lib/context.mjs, record-tutorial.mjs).
+        # The file holds local test passwords: it lives in tutorials/work/ (gitignored) and is never printed.
+        self.out["tenant"] = {"id": self.tenant_id, "name": P.ORG_NAME, "slug": tenant.get("slug")}
         self.sa.put(f"/api/admin/tenants/{self.tenant_id}", {"address": P.ORG_ADDRESS, "phone": P.ORG_PHONE, "trn": P.ORG_TRN})
         for feature, on in (("LEASE_RENEWALS", True), ("EMAIL_NOTIFICATIONS", False), ("MOBILE_FINANCE", False)):
             self.sa.put(f"/api/admin/tenants/{self.tenant_id}/features/{feature}", {"enabled": on})
@@ -158,6 +169,9 @@ class Seed:
                                                   "name": person["name"], "role": person["role"],
                                                   "tenantId": self.tenant_id, "phoneNumber": person["phone"]})
                 log(f"{person['role']} created: {person['name']}")
+        self.out["adminLogin"] = {"email": P.ADMIN["email"], "password": self.user_password, "name": P.ADMIN["name"]}
+        self.out["accountantLogin"] = {"email": P.ACCOUNTANT["email"], "password": self.user_password,
+                                       "name": P.ACCOUNTANT["name"]}
         self.api.login(P.ADMIN["email"], self.user_password)
         log(f"organisation ready: {P.ORG_NAME} ({self.tenant_id})")
 
@@ -580,7 +594,7 @@ class Seed:
 
     def write_off(self, key):
         lid = self.leases[key]["id"]
-        if any(w.get("status") in ("PROPOSED", "APPROVED") for w in self.api.get("/api/v1/finance/bad-debts", {"leaseId": lid}) or []):
+        if any(w.get("status") in ("PROPOSED", "WRITTEN_OFF") for w in self.api.get("/api/v1/finance/bad-debts", {"leaseId": lid}) or []):
             return self._approve_write_off(key)
         w = P.CONTRACTS[key]["write_off"]
         cands = self.api.get("/api/v1/finance/bad-debts/candidates", {"leaseId": lid, "on": iso(w["date"])}) or []
@@ -604,7 +618,7 @@ class Seed:
         r = P.CONTRACTS[key]["recover"]
         lid = self.leases[key]["id"]
         for w in self.api.get("/api/v1/finance/bad-debts", {"leaseId": lid}) or []:
-            if w.get("status") == "APPROVED" and not (w.get("recoveries") or []):
+            if w.get("status") == "WRITTEN_OFF" and not (w.get("recoveries") or []):
                 amount = min(Decimal(str(r["amount"])), Decimal(str(w["amount"])))
                 self.api.post(f"/api/v1/finance/bad-debts/{w['id']}/recoveries", {
                     "amount": num(amount), "date": iso(r["date"]), "note": r["note"],
@@ -748,9 +762,9 @@ class Seed:
         lines += P.STATEMENT_EXTRAS
         path = self.out_file.parent / f"palm-ridge-statement-{m:%Y-%m}.csv"
         path.write_text(P.statement_csv(opening, lines))
-        self.out["bankStatement"] = {"file": str(path.relative_to(REPO)), "bankAccountId": acct["id"],
+        self.out["bankStatement"] = {"file": rel(path), "bankAccountId": acct["id"],
                                      "opening": str(opening), "profile": P.STATEMENT_PROFILE}
-        log(f"bank statement written: {path.relative_to(REPO)} ({len(lines)} lines)")
+        log(f"bank statement written: {rel(path)} ({len(lines)} lines)")
 
     def manifest(self):
         self.out.update({
@@ -763,7 +777,7 @@ class Seed:
             "users": {"admin": P.ADMIN["email"], "accountant": P.ACCOUNTANT["email"]},
         })
         self.out_file.write_text(json.dumps(self.out, indent=2, default=str))
-        log(f"manifest: {self.out_file.relative_to(REPO)}")
+        log(f"manifest: {rel(self.out_file)}")
 
 
 def main():
