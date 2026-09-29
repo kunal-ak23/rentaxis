@@ -173,7 +173,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["admin--tenant-settings"],
     },
     {
-        id: "38", slug: "how-accounting-works-in-miftah", topic: "accounting", roles: FINANCE, durationSec: 150, youtubeId: null,
+        id: "38", slug: "how-accounting-works-in-miftah", topic: "accounting", roles: FINANCE, durationSec: 148, youtubeId: null,
         title: { en: "How accounting works in Miftah", ar: "كيف تعمل المحاسبة في مفتاح" },
         description: {
             en: "Follow one tenancy contract's money from posting to the reports, and see where each step shows in the tenant ledger, general ledger, trial balance and profit and loss.",

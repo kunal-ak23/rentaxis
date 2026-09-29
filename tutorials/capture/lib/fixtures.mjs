@@ -42,3 +42,8 @@ export const lastMonthEnd = () => {
 /** These contracts are dated 1 January; the ledger filters open on this month. */
 export const contractYearStart = () => `${new Date().getFullYear()}-01-01`;
 export const todayIso = () => isoDate(new Date());
+// ── Palm Ridge Properties (the accounting track, tutorials/seed/seed_palm_ridge.py) ──
+/** A Palm Ridge contract id by its seed key (omar, layla, …), or undefined on another manifest. */
+export const palmLease = (key) => seed.leases?.[key];
+export const palmTenant = (key) => seed.tenants?.[key];
+export const palmProperty = (key) => seed.properties?.[key];

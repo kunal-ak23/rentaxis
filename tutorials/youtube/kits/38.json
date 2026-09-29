@@ -1,0 +1,74 @@
+{
+  "id": "38",
+  "slug": "how-accounting-works-in-miftah",
+  "title": "Miftah tutorial 38 · How accounting works in Miftah",
+  "description": "Follow one tenancy contract's money from posting to the reports, and see where each step shows in the tenant ledger, general ledger, trial balance and profit and loss.\n\nWho this is for: Accountant, Company Admin, System Admin.\n\nChapters:\n0:00 One Contract, Start to Finish\n0:13 The Tenancy Contract Journal\n0:45 Cheques in Hand\n1:04 Clearing: the Money Arrives\n1:37 Earned by the Day\n1:55 A Returned Cheque\n2:12 Trial Balance\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nتتبّع أموال عقد إيجار واحد من الترحيل إلى التقارير، وتعرّف على موضع كل خطوة في دفتر أستاذ المستأجر ودفتر الأستاذ العام وميزان المراجعة وقائمة الأرباح والخسائر.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "chart of accounts",
+    "journal voucher",
+    "financial reports",
+    "accounting software",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Accounting",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "One Contract, Start to Finish"
+    },
+    {
+      "startSec": 13.615,
+      "start": "0:13",
+      "label": "The Tenancy Contract Journal"
+    },
+    {
+      "startSec": 45.952,
+      "start": "0:45",
+      "label": "Cheques in Hand"
+    },
+    {
+      "startSec": 64.247,
+      "start": "1:04",
+      "label": "Clearing: the Money Arrives"
+    },
+    {
+      "startSec": 97.009,
+      "start": "1:37",
+      "label": "Earned by the Day"
+    },
+    {
+      "startSec": 115.305,
+      "start": "1:55",
+      "label": "A Returned Cheque"
+    },
+    {
+      "startSec": 132.324,
+      "start": "2:12",
+      "label": "Trial Balance"
+    }
+  ],
+  "durationSec": 148,
+  "roles": [
+    "SUPER_ADMIN",
+    "TENANT_ADMIN",
+    "ACCOUNTANT"
+  ],
+  "topic": "accounting",
+  "captionsFile": "tutorials/output/38-how-accounting-works-in-miftah.srt",
+  "videoFile": "tutorials/output/38-how-accounting-works-in-miftah.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/38.png"
+}
