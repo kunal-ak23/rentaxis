@@ -697,9 +697,9 @@
     "title": "رفع الشيكات بالجملة",
     "entryButton": "رفع الشيكات بالجملة",
     "pickFolder": "اختر مجلد صور الشيكات",
-    "pickHint": "اختر المجلد الذي يحتوي على جميع الشيكات المؤجلة لهذا العقد.",
+    "pickHint": "اختر مجلدًا يحتوي على صور أو ملفات PDF للشيكات المؤجلة لهذا العقد. قد تحتوي الصورة أو ملف PDF على عدة شيكات.",
     "selectedCount": "{n} صورة مختارة",
-    "rejectedCount": "{n} ملفات لم تكن صورًا وتم تجاهلها",
+    "rejectedCount": "{n} ملفات لم تكن صورًا أو ملفات PDF وتم تجاهلها",
     "removeImage": "إزالة الصورة",
     "continueToExtract": "استخراج الشيكات",
     "extractingCount": "جارٍ الاستخراج {done} من {total}…",
@@ -721,7 +721,22 @@
     "rowConflictError": "تعذر حفظ بعض الصفوف (تعارض). أعد التحميل وحاول مجددًا.",
     "networkError": "خطأ في الشبكة. يرجى المحاولة مرة أخرى.",
     "genericError": "تعذر الحفظ. حاول مرة أخرى.",
-    "chequeMismatch": "المبلغ {cheque} ≠ شيك {installment}"
+    "chequeMismatch": "المبلغ {cheque} ≠ شيك {installment}",
+    "cropUnreliable": "تعذّر فصل هذا الشيك بوضوح — تحقّق من الصورة المقتطعة",
+    "viewCrop": "عرض صورة الشيك",
+    "closePreview": "إغلاق المعاينة",
+    "cropLabel": "هذا الشيك",
+    "originalLabel": "الأصل",
+    "noPreview": "لا تتوفر معاينة",
+    "pageLabel": "الصفحة {n}",
+    "uploadErrors": {
+      "cheque_upload_file_required": "الملف فارغ.",
+      "cheque_upload_file_too_large": "حجم الملف أكبر من 10 ميغابايت.",
+      "cheque_upload_unsupported_type": "يمكن رفع الصور (JPEG وPNG وHEIC) وملفات PDF فقط.",
+      "cheque_upload_too_many_pages": "يحتوي ملف PDF على عدد كبير جدًا من الصفحات (10 صفحات كحد أقصى).",
+      "cheque_upload_too_many_cheques": "عدد الشيكات في الملف الواحد كبير جدًا (24 شيكًا كحد أقصى). قسّم الملف وأعد الرفع.",
+      "cheque_upload_pdf_unreadable": "تعذّرت قراءة ملف PDF. قد يكون تالفًا أو محميًا بكلمة مرور."
+    }
   },
   "Staff": {
     "title": "إدارة الموظفين",

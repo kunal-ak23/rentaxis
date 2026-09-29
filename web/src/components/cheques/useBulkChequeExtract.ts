@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import type { ChequeExtractionResponse } from "@/types/cheque";
+import type { ChequeExtractionResponse, ChequeMultiExtractionResponse } from "@/types/cheque";
 
 export type BulkExtractItemStatus = "pending" | "extracting" | "extracted" | "failed";
 
@@ -10,8 +10,11 @@ export type BulkExtractItem = {
   file: File;
   previewUrl: string;
   status: BulkExtractItemStatus;
-  response: ChequeExtractionResponse | null;
+  /** Every cheque found in this file (a photo of several, or a PDF, yields several). */
+  response: ChequeMultiExtractionResponse | null;
   error: string | null;
+  /** The server's refusal code (e.g. `cheque_upload_too_many_pages`), when it gave one. */
+  errorCode?: string | null;
 };
 
 // Gentle parallelism (2): the backend now uses the OkHttp Azure client (no more
@@ -25,17 +28,54 @@ const ALLOWED_TYPES = new Set([
   "image/png",
   "image/heic",
   "image/heif",
+  "application/pdf",
 ]);
 
-async function extractOne(file: File): Promise<ChequeExtractionResponse> {
+/** A refused or failed upload; `code` is the server's refusal code when it sent one. */
+export class ChequeExtractError extends Error {
+  constructor(message: string, readonly code: string | null) {
+    super(message);
+  }
+}
+
+/**
+ * The multi-cheque shape, whatever the server answered: `/extract-many` already
+ * is; a single-cheque `/extract` body (older server, test fixture) becomes a
+ * list of one, exactly as that cheque would have been shown before.
+ */
+export function normalizeExtraction(
+  body: ChequeMultiExtractionResponse | ChequeExtractionResponse,
+): ChequeMultiExtractionResponse {
+  if (body && Array.isArray((body as ChequeMultiExtractionResponse).items)) {
+    return body as ChequeMultiExtractionResponse;
+  }
+  const single = body as ChequeExtractionResponse;
+  return {
+    original: single.image,
+    pages: [],
+    items: [{
+      imageId: null,
+      image: single.image,
+      page: 1,
+      box: null,
+      thumbnailUrl: null,
+      extracted: single.extracted,
+      warnings: single.warnings ?? [],
+      flags: [],
+    }],
+    warnings: [],
+  };
+}
+
+async function extractOne(file: File): Promise<ChequeMultiExtractionResponse> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch("/api/proxy/v1/cheques/extract", { method: "POST", body: form });
+  const res = await fetch("/api/proxy/v1/cheques/extract-many", { method: "POST", body: form });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error ?? `Upload failed (${res.status})`);
+    throw new ChequeExtractError(err.error ?? `Upload failed (${res.status})`, err.code ?? null);
   }
-  return (await res.json()) as ChequeExtractionResponse;
+  return normalizeExtraction(await res.json());
 }
 
 export function buildItemsFromFiles(files: File[]): { items: BulkExtractItem[]; rejectedCount: number } {
@@ -53,6 +93,7 @@ export function buildItemsFromFiles(files: File[]): { items: BulkExtractItem[]; 
       status: "pending",
       response: null,
       error: null,
+      errorCode: null,
     });
   }
   return { items, rejectedCount };
@@ -86,9 +127,11 @@ export function useBulkChequeExtract() {
         setItem(job.id, { status: "extracted", response });
       } catch (e) {
         const message = e instanceof Error ? e.message : "Failed";
+        const errorCode = e instanceof ChequeExtractError ? e.code : null;
         job.status = "failed";
         job.error = message;
-        setItem(job.id, { status: "failed", error: message });
+        job.errorCode = errorCode;
+        setItem(job.id, { status: "failed", error: message, errorCode });
       }
       return next();
     };
@@ -104,7 +147,7 @@ export function useBulkChequeExtract() {
    * failure) so a caller holding its own derived rows can merge the result,
    * the same way `start` hands back its results.
    */
-  const retry = useCallback(async (id: string): Promise<ChequeExtractionResponse | null> => {
+  const retry = useCallback(async (id: string): Promise<ChequeMultiExtractionResponse | null> => {
     const target = items.find(it => it.id === id);
     if (!target) return null;
     // The Retry button disables only once `setItem` re-renders, so a fast
@@ -112,13 +155,17 @@ export function useBulkChequeExtract() {
     // blob. A ref is read synchronously, before any re-render.
     if (inFlight.current.has(id)) return null;
     inFlight.current.add(id);
-    setItem(id, { status: "extracting", error: null });
+    setItem(id, { status: "extracting", error: null, errorCode: null });
     try {
       const response = await extractOne(target.file);
       setItem(id, { status: "extracted", response });
       return response;
     } catch (e) {
-      setItem(id, { status: "failed", error: e instanceof Error ? e.message : "Failed" });
+      setItem(id, {
+        status: "failed",
+        error: e instanceof Error ? e.message : "Failed",
+        errorCode: e instanceof ChequeExtractError ? e.code : null,
+      });
       return null;
     } finally {
       inFlight.current.delete(id);
