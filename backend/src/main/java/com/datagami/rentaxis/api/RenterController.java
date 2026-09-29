@@ -2,6 +2,7 @@ package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.CreateRenterDTO;
 import com.datagami.rentaxis.api.dto.RenterDTO;
+import com.datagami.rentaxis.api.dto.UpdateRenterDTO;
 import com.datagami.rentaxis.api.dto.LeaseDTO;
 import com.datagami.rentaxis.api.dto.cheque.ChequeDTO;
 import com.datagami.rentaxis.core.service.LeaseService;
@@ -95,7 +96,7 @@ public class RenterController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
-    public ResponseEntity<RenterDTO> updateRenter(@PathVariable UUID id, @Valid @RequestBody CreateRenterDTO dto) {
+    public ResponseEntity<RenterDTO> updateRenter(@PathVariable UUID id, @Valid @RequestBody UpdateRenterDTO dto) {
         return ResponseEntity.ok(renterService.updateRenter(id, dto));
     }
 }

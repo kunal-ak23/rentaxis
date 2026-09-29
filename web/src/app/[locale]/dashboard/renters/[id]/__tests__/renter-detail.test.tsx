@@ -152,12 +152,13 @@ describe("RenterDetailPage", () => {
         expect(global.fetch).not.toHaveBeenCalled();
     });
 
-    it("hides Resend invite and the ledger from a property manager", async () => {
+    it("hides Resend invite, Edit and the ledger from a property manager", async () => {
         role = "PROPERTY_MANAGER";
         render(<RenterDetailPage />);
 
         expect(await screen.findByText("Ahmed Al Mansoori")).toBeTruthy();
         expect(screen.queryByText("resend")).toBeNull();
+        expect(screen.queryByTestId("renter-edit")).toBeNull();
         expect(screen.queryByTestId("renter-ledger")).toBeNull();
     });
 
@@ -220,6 +221,54 @@ describe("RenterDetailPage", () => {
 
         expect(await screen.findByText("ticketsLoadFailed")).toBeTruthy();
         expect(screen.queryByText("noTickets")).toBeNull();
+    });
+});
+
+// Edit tenant (web PR): the detail page's own Edit action, gated the same way
+// as the list row's, opens the shared dialog prefilled and PUTs the change.
+describe("RenterDetailPage — edit tenant", () => {
+    it("opens prefilled, saves, and merges the response into the page", async () => {
+        render(<RenterDetailPage />);
+        fireEvent.click(await screen.findByTestId("renter-edit"));
+
+        const nameInput = await screen.findByPlaceholderText("John Doe") as HTMLInputElement;
+        expect(nameInput.value).toBe("Ahmed Al Mansoori");
+        const emailInput = screen.getByPlaceholderText("john@example.com") as HTMLInputElement;
+        expect(emailInput.value).toBe("ahmed@x.com");
+
+        fireEvent.change(nameInput, { target: { value: "Ahmed Renamed" } });
+        global.fetch = vi.fn(async (url: unknown, init?: RequestInit) => {
+            const u = String(url);
+            if (u.endsWith("/v1/renters/r1") && init?.method === "PUT") {
+                expect(JSON.parse(String(init.body)).nameEn).toBe("Ahmed Renamed");
+                return jsonRes({ ...renter, nameEn: "Ahmed Renamed" });
+            }
+            return jsonRes({}, false, 404);
+        }) as unknown as typeof fetch;
+        fireEvent.click(screen.getByText("saveChanges"));
+
+        await waitFor(() => expect(screen.queryByTestId("renter-edit")).toBeTruthy());
+        expect(await screen.findByText("Ahmed Renamed")).toBeTruthy();
+    });
+
+    it("shows the server's refusal instead of saving", async () => {
+        render(<RenterDetailPage />);
+        fireEvent.click(await screen.findByTestId("renter-edit"));
+        await screen.findByPlaceholderText("John Doe");
+
+        global.fetch = vi.fn(async () =>
+            jsonRes({ error: true, message: "A user with this email already exists.", status: 400, code: "renter.emailTaken" }, false, 400)
+        ) as unknown as typeof fetch;
+        fireEvent.click(screen.getByText("saveChanges"));
+
+        // This file's next-intl mock returns the message key itself (t.has always
+        // true): serverText resolves the coded refusal to "errors.<code>" here,
+        // which is the render-a-translated-string path, not the raw English
+        // fallback — a real IntlProvider is what MasterData/edit-error.test.tsx
+        // (list page) checks against the actual EN/AR catalogue text.
+        expect(await screen.findByText("errors.renter.emailTaken")).toBeTruthy();
+        // Refused, not applied: the page still shows the original name.
+        expect(screen.getByText("Ahmed Al Mansoori")).toBeTruthy();
     });
 });
 

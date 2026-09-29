@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.CreateRenterDTO;
 import com.datagami.rentaxis.api.dto.RenterDTO;
+import com.datagami.rentaxis.core.security.TokenRevocationService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.User;
@@ -45,7 +46,8 @@ class RenterPortalInviteOnlyTest {
     void setUp() {
         renterRepository = mock(RenterRepository.class);
         userService = mock(UserService.class);
-        service = new RenterService(renterRepository, userService, mock(UserRepository.class));
+        service = new RenterService(renterRepository, userService, mock(UserRepository.class),
+                mock(TokenRevocationService.class));
 
         when(renterRepository.save(any(Renter.class))).thenAnswer(inv -> {
             Renter r = inv.getArgument(0);

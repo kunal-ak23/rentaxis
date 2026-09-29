@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
-import { ArrowLeft, BookOpen, Loader2, Mail, Phone, Languages } from "lucide-react";
+import { ArrowLeft, BookOpen, Loader2, Mail, Phone, Languages, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { formatCurrency } from "@/lib/format";
@@ -13,6 +13,7 @@ import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { ResendInviteButton } from "@/components/users/ResendInviteButton";
 import { ApiError, type Cheque, type LeaseStatus } from "@/lib/api/leasing";
 import { chequeSummary } from "@/components/renters/chequeSummary";
+import { EditRenterDialog } from "@/components/renters/EditRenterDialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 
 /**
@@ -104,6 +105,8 @@ export default function RenterDetailPage() {
     const [ticketsFailed, setTicketsFailed] = useState(false);
     const [reloadKey, setReloadKey] = useState(0);
     const retry = () => setReloadKey(k => k + 1);
+    // Edit tenant: opens prefilled from the currently loaded renter.
+    const [editing, setEditing] = useState(false);
 
     // After a resend: re-read the renter alone, so the invite badge reflects the
     // new link without reloading (and re-spinning) the whole page.
@@ -279,6 +282,16 @@ export default function RenterDetailPage() {
                     </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap" data-testid="renter-actions">
+                    {canManageRenters && (
+                        <button
+                            type="button"
+                            data-testid="renter-edit"
+                            onClick={() => setEditing(true)}
+                            className="cursor-pointer flex items-center gap-2 bg-input text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-border transition-all"
+                        >
+                            <Pencil size={14} /> {t("edit")}
+                        </button>
+                    )}
                     {canManageRenters && renter.invitePending && renter.userId && (
                         <ResendInviteButton userId={renter.userId} onSent={refreshRenter} />
                     )}
@@ -431,6 +444,13 @@ export default function RenterDetailPage() {
                     </div>
                 )}
             </section>
+            {editing && (
+                <EditRenterDialog
+                    renter={renter}
+                    onClose={() => setEditing(false)}
+                    onSaved={(updated) => setRenter(r => (r ? { ...r, ...updated } : r))}
+                />
+            )}
         </div>
     );
 }
