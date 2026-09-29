@@ -2270,7 +2270,7 @@
     "installments": "Installments",
     "firstDueDate": "First Due Date",
     "distribution": "Distribution",
-    "foldIntoFirst": "Fold deposits and fees into the first cheque",
+    "separateOneTimeCheque": "Separate cheque for one-time charges (and the deposit); otherwise they are added to the first cheque",
     "payeeBank": "Payee Bank",
     "debitAccount": "Debit A/c",
     "mode": {

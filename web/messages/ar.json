@@ -2270,7 +2270,7 @@
     "installments": "الأقساط",
     "firstDueDate": "تاريخ أول استحقاق",
     "distribution": "توزيع الأقساط",
-    "foldIntoFirst": "دمج التأمين والرسوم في الشيك الأول",
+    "separateOneTimeCheque": "شيك منفصل للرسوم لمرة واحدة (والتأمين)؛ وإلا تُضاف إلى الشيك الأول",
     "payeeBank": "بنك المستفيد",
     "debitAccount": "الحساب المدين",
     "mode": {

@@ -369,12 +369,16 @@ export default function ChequeGrid({
                         </select>
                     </Labelled>
                     <label className="md:col-span-2 flex items-center gap-2 text-[11px] text-foreground">
+                        {/* Owner request (2026-09-29): one-time charges ride on cheque 1 by
+                            default; this opts out (the generator's one fold flag, which the
+                            deposit follows too, as it always has). */}
                         <input
                             type="checkbox"
-                            checked={gen.foldDepositsAndFeesIntoFirst}
-                            onChange={e => setGen(g => ({ ...g, foldDepositsAndFeesIntoFirst: e.target.checked }))}
+                            data-testid="cheque-generate-separate-one-time"
+                            checked={!gen.foldDepositsAndFeesIntoFirst}
+                            onChange={e => setGen(g => ({ ...g, foldDepositsAndFeesIntoFirst: !e.target.checked }))}
                         />
-                        {t("foldIntoFirst")}
+                        {t("separateOneTimeCheque")}
                     </label>
                     <div className="flex items-end">
                         <button
