@@ -102,8 +102,7 @@ function RentersPageInner() {
         nameAr: "",
         email: "",
         phone: "",
-        primaryLanguage: "EN",
-        createPortalAccount: true
+        primaryLanguage: "EN"
     });
 
     // R1 P1-2: a request counter so a slow, older response (a stale search or
@@ -167,7 +166,11 @@ function RentersPageInner() {
     // password to show: the backend neither generates nor returns one.
     // Why the renter has (or has no) portal invite, so the notice never gives a
     // reason that is not the real one (web review M3).
-    type InviteOutcome = "invited" | "optedOut" | "noEmail" | "notInvited";
+    // Owner ruling 2026-09-29: every tenant with an email gets portal access —
+    // a new invited account, or their existing portal account in this
+    // organisation — so the form has no opt-out. `portalAccount` on the create
+    // response says which, or why none (the email belongs to another user).
+    type InviteOutcome = "invited" | "linked" | "emailInUse" | "noEmail" | "notInvited";
     const [inviteNotice, setInviteNotice] = useState<{ email: string; outcome: InviteOutcome } | null>(null);
     const [formError, setFormError] = useState<string | null>(null);
     // Break round 1 (P1): a fast double-click (or Enter twice) on "Create"
@@ -255,8 +258,9 @@ function RentersPageInner() {
             closeForm();
             fetchRenters();
 
-            const outcome: InviteOutcome = data.invitePending ? "invited"
-                : !formData.createPortalAccount ? "optedOut"
+            const outcome: InviteOutcome = data.portalAccount === "LINKED_EXISTING" ? "linked"
+                : data.portalAccount === "SKIPPED_EMAIL_IN_USE" ? "emailInUse"
+                : data.invitePending ? "invited"
                 : !formData.email.trim() ? "noEmail"
                 : "notInvited";
             setInviteNotice({ email: formData.email, outcome });
@@ -266,8 +270,7 @@ function RentersPageInner() {
                 nameAr: "",
                 email: "",
                 phone: "",
-                primaryLanguage: "EN",
-                createPortalAccount: true
+                primaryLanguage: "EN"
             });
         } catch (err) {
             console.error(err);
@@ -425,17 +428,6 @@ function RentersPageInner() {
                                     <option value="EN">{t("languageEN")}</option>
                                     <option value="AR">{t("languageAR")}</option>
                                 </select>
-                            </div>
-                            <div className="col-span-1 flex items-end">
-                                <label className="flex items-center gap-3 cursor-pointer p-3">
-                                    <input
-                                        type="checkbox"
-                                        checked={formData.createPortalAccount}
-                                        onChange={ev => setFormData({ ...formData, createPortalAccount: ev.target.checked })}
-                                        className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
-                                    />
-                                    <span className="text-xs font-bold text-foreground">{t("createPortalAccount")}</span>
-                                </label>
                             </div>
                             {duplicates && duplicates.length > 0 && (
                                 <div className="col-span-2 bg-warning/10 border border-warning/30 text-foreground text-xs rounded-lg px-3 py-3" role="alert" data-testid="renter-duplicate-warning">
@@ -630,7 +622,8 @@ function RentersPageInner() {
                         </h2>
                         <p className="text-sm text-muted mb-6">
                             {inviteNotice.outcome === "invited" ? tInv("sentBody", { email: inviteNotice.email })
-                                : inviteNotice.outcome === "optedOut" ? tInv("noPortalOptedOutBody")
+                                : inviteNotice.outcome === "linked" ? tInv("linkedExistingBody")
+                                : inviteNotice.outcome === "emailInUse" ? tInv("emailInUseBody")
                                 : inviteNotice.outcome === "noEmail" ? tInv("noPortalBody")
                                 : tInv("noInviteBody")}
                         </p>

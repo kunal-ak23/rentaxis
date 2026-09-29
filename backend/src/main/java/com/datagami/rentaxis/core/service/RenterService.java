@@ -192,40 +192,71 @@ public class RenterService {
         Renter saved = renterRepository.save(renter);
 
         User portalUser = null;
+        RenterDTO.PortalAccount outcome;
 
-        // Auto-create portal User account by default. Skip only when:
-        //   (a) the caller explicitly opts out (createPortalAccount=false), or
-        //   (b) no email was provided — login requires an email identifier.
+        // Owner ruling 2026-09-29: a Tenant with an email always gets portal
+        // access, and an email already in use in this organisation no longer
+        // aborts the create (it used to, via createUser's duplicate-email throw,
+        // so the Tenant was never saved).
         //
-        // Failure to create the portal account aborts the whole txn — both
-        // renter and portal user are atomically created (or neither). This
-        // replaces the prior swallow-and-log behavior, which left orphan
-        // renter rows with no portal access and made debugging painful.
+        //   * no user of this organisation has the email -> create one and
+        //     invite it (createUser fires USER_INVITED for RENTER; #7: no
+        //     password is generated or returned, the set-password link is the
+        //     only way in);
+        //   * the email is an unlinked RENTER user of this organisation -> link
+        //     it; they already have (or were already sent) their way in, so no
+        //     new invite;
+        //   * any other user of this organisation (staff, or a RENTER already
+        //     linked to another Tenant) -> save without portal access and say so.
         //
-        // #7: no password is generated or returned. It used to be generated here
-        // and sent back as portalPassword for the form to display and copy, which
-        // is how credentials ended up pasted into WhatsApp. createUser gives an
-        // invited RENTER an unusable secret and emails USER_INVITED; the
-        // set-password link is the only way in.
-        boolean shouldCreatePortal = dto.isCreatePortalAccount()
-                && dto.getEmail() != null && !dto.getEmail().isBlank();
-        if (shouldCreatePortal) {
-            UUID tenantId = TenantContextHolder.getTenantId();
-            portalUser = userService.createUser(
-                    dto.getEmail(),
-                    null,
-                    dto.getNameEn(),
-                    UserRole.RENTER,
-                    tenantId != null ? tenantId.toString() : null,
-                    dto.getPhone(),
-                    "system"
-            );
-            saved.setUserId(portalUser.getId());
-            renterRepository.save(saved);
-            // USER_INVITED is fired by UserService.createUser for RENTER role.
+        // The lookup is explicitly scoped to the caller's tenant: a user of
+        // another organisation with the same email is never seen, never linked
+        // and never revealed (emails are unique per tenant since migration 59,
+        // so a new user here is allowed). createPortalAccount=false is honoured
+        // for internal callers only (see CreateRenterDTO); the web form no
+        // longer sends it.
+        boolean hasEmail = dto.getEmail() != null && !dto.getEmail().isBlank();
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (!dto.isCreatePortalAccount()) {
+            outcome = RenterDTO.PortalAccount.NOT_REQUESTED;
+        } else if (!hasEmail) {
+            outcome = RenterDTO.PortalAccount.NO_EMAIL;
+        } else {
+            List<User> sameEmail = tenantId == null ? List.of()
+                    : userRepository.findInTenantByEmailNormalised(tenantId, dto.getEmail());
+            if (sameEmail.isEmpty()) {
+                portalUser = userService.createUser(
+                        dto.getEmail(),
+                        null,
+                        dto.getNameEn(),
+                        UserRole.RENTER,
+                        tenantId != null ? tenantId.toString() : null,
+                        dto.getPhone(),
+                        "system"
+                );
+                outcome = RenterDTO.PortalAccount.INVITED;
+            } else {
+                User existing = sameEmail.size() == 1 ? sameEmail.get(0) : null;
+                boolean linkable = existing != null
+                        && existing.getRole() == UserRole.RENTER
+                        && tenantId.equals(existing.getTenantId())
+                        && !renterRepository.anyLinkedToUser(existing.getId());
+                if (linkable) {
+                    portalUser = existing;
+                    outcome = RenterDTO.PortalAccount.LINKED_EXISTING;
+                } else {
+                    outcome = RenterDTO.PortalAccount.SKIPPED_EMAIL_IN_USE;
+                }
+            }
+            if (portalUser != null) {
+                saved.setUserId(portalUser.getId());
+                renterRepository.save(saved);
+            }
         }
 
-        return mapToDTO(saved, portalUser);
+        RenterDTO result = mapToDTO(saved, portalUser);
+        result.setPortalAccount(outcome);
+        return result;
     }
 
     /** Web edit-tenant PR: the client-visible, translatable keys for {@link #updateRenter}'s refusals. */

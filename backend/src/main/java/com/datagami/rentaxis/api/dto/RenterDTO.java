@@ -20,4 +20,26 @@ public class RenterDTO {
      */
     private boolean invitePending;
     private java.time.Instant inviteExpiresAt;
+
+    /**
+     * What happened to portal access when this Tenant was created. Set on the
+     * create response only; null on every read.
+     */
+    private PortalAccount portalAccount;
+
+    public enum PortalAccount {
+        /** A new portal user was created and emailed a set-password invite. */
+        INVITED,
+        /** The email was an unlinked portal (RENTER) user of this organisation: linked, no new invite. */
+        LINKED_EXISTING,
+        /**
+         * The email belongs to another user of this organisation (staff, or a
+         * portal user already linked to another Tenant): saved without portal access.
+         */
+        SKIPPED_EMAIL_IN_USE,
+        /** No email was given, and login needs one. */
+        NO_EMAIL,
+        /** An internal caller asked for no portal account (createPortalAccount=false). */
+        NOT_REQUESTED
+    }
 }
