@@ -6,6 +6,7 @@ import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.api.dto.lease.PostLeaseDryRunResponse;
 import com.datagami.rentaxis.api.dto.lease.PostLeaseResponse;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.core.service.ledger.PostingDatePath;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.api.exception.RowLockedException;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
@@ -145,6 +146,11 @@ public class LeasePostingService {
     /** The instalment VAT schedule, for the amendment rules (spec 2026-09-24 §1). */
     private final VatTaxPointService vatTaxPoints;
     private final com.datagami.rentaxis.core.service.cheque.ChequeNumberClash numberClash;
+
+    /** Break-it R4 money4 F2: the contract-date rule. A default so a hand-built service still works. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates =
+            com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system();
 
     /** The amendment date ("today") from the bean, so a test can fix it. */
     @org.springframework.beans.factory.annotation.Autowired
@@ -923,6 +929,15 @@ public class LeasePostingService {
         }
         if (lease.getContractDate() == null) {
             otherErrors.add("The lease has no contract date.");
+        } else if (checks != Preconditions.FOR_IMPORT_POST
+                && !manualDates.allows(PostingDatePath.LEASE_POST, lease.getContractDate())) {
+            // Break-it R4 money4 F2: a draft saved with 2099 (before the rule, or around
+            // it) must not post its TCO, PDRs and deposit carry in 2099.
+            try {
+                manualDates.require(PostingDatePath.LEASE_POST, lease.getContractDate());
+            } catch (BusinessRuleViolationException e) {
+                otherErrors.add(e.getMessage());
+            }
         }
         // PR #359 R1 P2-3: a renewal or transfer drafted before the lease was assigned
         // is in the outgoing renter's name.

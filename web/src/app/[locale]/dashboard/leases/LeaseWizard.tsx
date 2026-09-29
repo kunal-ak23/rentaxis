@@ -29,6 +29,8 @@ import type { RenterOption, UnitOption } from "@/lib/api/lookup";
 import { isLeaseChanged, withVersion } from "@/lib/leases/leaseVersion";
 import { serverText } from "@/components/finance/bankrec/serverText";
 import { CONFIRM_TERM_YEARS, MAX_TERM_YEARS, termExceedsYears, termYears } from "@/lib/leaseTerm";
+import { isBeyondManualPostingWindow, maxManualPostingDateIso } from "@/lib/businessDate";
+import { formatDate } from "@/lib/format";
 
 /**
  * Drafting a tenancy contract, in the order the client's accountant fills one
@@ -233,6 +235,11 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
             case "terms":
                 if (!terms.startDate || !terms.endDate) return t("errDatesRequired");
                 if (terms.endDate <= terms.startDate) return t("errEndAfterStart");
+                // Break-it R4 money4 F2: the contract date is the contract's posting
+                // date; the server refuses one more than a year ahead (LEASE_POST).
+                if (isBeyondManualPostingWindow(terms.contractDate)) {
+                    return t("errContractDateTooFar", { max: formatDate(maxManualPostingDateIso()) });
+                }
                 // Same bound (and wording) as the backend's LeaseService.requireSaneTerm.
                 if (termExceedsYears(terms.startDate, terms.endDate, MAX_TERM_YEARS)) {
                     return t("errTermTooLong", { max: MAX_TERM_YEARS });
@@ -550,6 +557,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                                     data-testid="wizard-contract-date"
                                     className={field}
                                     value={terms.contractDate}
+                                    max={maxManualPostingDateIso()}
                                     onChange={e => {
                                         setContractDateTouched(true);
                                         patch({ contractDate: e.target.value });

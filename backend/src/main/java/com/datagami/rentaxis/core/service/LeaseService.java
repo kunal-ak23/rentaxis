@@ -51,6 +51,11 @@ import java.util.stream.Collectors;
 @Service
 public class LeaseService {
 
+    /** Break-it R4 money4 F2: the contract-date rule. A default so a hand-built service still works. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates =
+            com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system();
+
     /**
      * A tenancy that is <em>living on</em> a unit, for every occupancy rule in this
      * class (review I3).
@@ -1611,6 +1616,13 @@ public class LeaseService {
         // journal without a date cannot be filed in a period.
         LocalDate contractDate = dto.getContractDate() != null ? dto.getContractDate()
                 : (lease.getAgreementDate() != null ? lease.getAgreementDate() : LocalDate.now());
+        // Break-it R4 money4 F2: the contract date is the TCO's journal date, so the
+        // posting-date policy's PLANNED rule applies (not more than a year ahead).
+        // Asked only when it changes, so an old draft can still be edited otherwise;
+        // LeasePostingService asks again before anything is posted.
+        if (!contractDate.equals(lease.getContractDate())) {
+            manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.LEASE_POST, contractDate);
+        }
         lease.setContractDate(contractDate);
         lease.setFirstDueDate(dto.getFirstDueDate() != null ? dto.getFirstDueDate() : dto.getStartDate());
         applyGracePeriod(lease, dto.getGracePeriodDays(), unit);

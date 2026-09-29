@@ -120,3 +120,17 @@ describe("lease wizard term length", () => {
         await waitFor(() => expect(onTermsStep()).toBe(false));
     });
 });
+
+// Break-it R4 money4 F2: the contract date is the posting date of the contract;
+// the server refuses one more than a year ahead, so the Terms step does too.
+describe("lease wizard contract date (R4 money4 F2)", () => {
+    it("caps the contract date input and blocks 2099 with a clear message", async () => {
+        await toTerms("2026-06-01", "2027-05-31");
+        const input = screen.getByTestId("wizard-contract-date") as HTMLInputElement;
+        expect(input.max).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        fireEvent.change(input, { target: { value: "2099-12-31" } });
+        fireEvent.click(screen.getByTestId("wizard-next"));
+        expect(screen.getByTestId("wizard-error").textContent).toContain("at most one year from today");
+        expect(onTermsStep()).toBe(true);
+    });
+});

@@ -2440,6 +2440,7 @@
     "errSelectRenter": "Select a tenant.",
     "errDatesRequired": "A start date and an end date are both required.",
     "errEndAfterStart": "The end date must be after the start date.",
+    "errContractDateTooFar": "The contract date can be at most one year from today ({max}). Check the year.",
     "errTermTooLong": "A contract can run for at most {max} years. Check the end date.",
     "longTermConfirm": "This contract runs {years} years — continue?",
     "longTermContinue": "Continue",

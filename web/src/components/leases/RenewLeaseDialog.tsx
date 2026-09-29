@@ -14,6 +14,8 @@ import { fmtAmount } from "@/lib/api/ledger";
 import { moneyInputError, parseMoneyInput } from "@/lib/money";
 import { MoneyFieldError } from "@/components/ui/NumberInput";
 import { CONFIRM_TERM_YEARS, MAX_TERM_YEARS, termExceedsYears, termYears } from "@/lib/leaseTerm";
+import { isBeyondManualPostingWindow, maxManualPostingDateIso } from "@/lib/businessDate";
+import { formatDate } from "@/lib/format";
 
 /**
  * Spec §4c: the one-off lines a renewal will not copy (an admin fee, last
@@ -180,6 +182,9 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
     // Same bounds and wording as the create wizard (`LeaseWizard.tsx`) and the
     // backend's `LeaseService.requireSaneTerm`, which the successor's own
     // start/end run through (`LeaseRenewalService.requireSaneTerm`, line 153).
+    // Break-it R4 money4 F2: the contract date is the contract's posting date; the
+    // server refuses one more than a year ahead (PostingDatePath.LEASE_POST).
+    const contractDateTooFar = isBeyondManualPostingWindow(contractDate);
     const termTooLong = !!startDate && !!endDate && endDate > startDate
         && termExceedsYears(startDate, endDate, MAX_TERM_YEARS);
     const termKey = `${startDate}|${endDate}`;
@@ -226,7 +231,8 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
             confirmText={t("renew")}
             cancelText={t("cancel")}
             confirmDisabled={!startDate || !endDate || endDate <= startDate || (!copyLines && !linesAreValid(rows))
-                || (copyLines && !rentChangeReady) || !extrasReady || termTooLong || termNeedsConfirm}
+                || (copyLines && !rentChangeReady) || !extrasReady || termTooLong || termNeedsConfirm
+                || contractDateTooFar}
             busy={busy}
             confirmTestId="renew-lease-confirm"
             width={copyLines ? "lg" : "xl"}
@@ -237,7 +243,13 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                     <div>
                         <label className={label} htmlFor="renew-contract-date">{t("contractDate")}</label>
                         <input id="renew-contract-date" type="date" className={field} value={contractDate}
+                            max={maxManualPostingDateIso()} aria-invalid={contractDateTooFar}
                             onChange={e => setContractDate(e.target.value)} />
+                        {contractDateTooFar && (
+                            <p role="alert" data-testid="renew-contract-date-too-far" className="text-[11px] font-semibold text-error mt-1">
+                                {t("errContractDateTooFar", { max: formatDate(maxManualPostingDateIso()) })}
+                            </p>
+                        )}
                     </div>
                     <div>
                         <label className={label} htmlFor="renew-start-date">{t("startDate")}</label>

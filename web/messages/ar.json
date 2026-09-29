@@ -2440,6 +2440,7 @@
     "errSelectRenter": "اختر مستأجرًا.",
     "errDatesRequired": "تاريخا البداية والانتهاء مطلوبان.",
     "errEndAfterStart": "يجب أن يكون تاريخ الانتهاء بعد تاريخ البداية.",
+    "errContractDateTooFar": "يمكن أن يكون تاريخ العقد بعد سنة واحدة من اليوم كحد أقصى ({max}). تحقق من السنة.",
     "errTermTooLong": "لا يمكن أن تتجاوز مدة العقد {max} عامًا. تحقق من تاريخ الانتهاء.",
     "longTermConfirm": "مدة هذا العقد {years} {years, plural, one {عام} two {عامان} few {أعوام} other {عامًا}} — هل تريد المتابعة؟",
     "longTermContinue": "متابعة",
