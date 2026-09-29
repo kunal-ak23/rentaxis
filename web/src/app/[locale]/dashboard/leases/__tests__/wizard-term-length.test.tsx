@@ -33,6 +33,13 @@ vi.mock("@/components/pickers/RenterPicker", () => ({
     ),
 }));
 
+vi.mock("@/lib/api/leasing", async orig => {
+    const m = await orig<typeof import("@/lib/api/leasing")>();
+    return { ...m, chargeTypeApi: { ...m.chargeTypeApi, list: async () => [
+        { id: "ct-rent", code: "RENT", behaviour: "RENT", vatApplicableDefault: false, active: true },
+    ] } };
+});
+
 import LeaseWizard from "../LeaseWizard";
 
 const UNITS = [
@@ -52,6 +59,7 @@ async function toTerms(start: string, end: string) {
     await waitFor(() => expect(screen.getByTestId("wizard-start-date")).toBeInTheDocument());
     fireEvent.change(screen.getByTestId("wizard-start-date"), { target: { value: start } });
     fireEvent.change(screen.getByTestId("wizard-end-date"), { target: { value: end } });
+    fireEvent.change(screen.getByTestId("wizard-rent"), { target: { value: "60000" } });
 }
 
 const onTermsStep = () => screen.queryByTestId("wizard-start-date") !== null;
@@ -101,6 +109,7 @@ describe("lease wizard term length", () => {
         fireEvent.click(screen.getByTestId("wizard-next"));
         expect(screen.getByTestId("wizard-long-term-confirm")).toBeInTheDocument();
         fireEvent.change(screen.getByTestId("wizard-end-date"), { target: { value: "2027-05-31" } });
+        fireEvent.change(screen.getByTestId("wizard-rent"), { target: { value: "60000" } });
         expect(screen.queryByTestId("wizard-long-term-confirm")).toBeNull();
         fireEvent.click(screen.getByTestId("wizard-next"));
         await waitFor(() => expect(onTermsStep()).toBe(false));

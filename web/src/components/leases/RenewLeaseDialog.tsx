@@ -96,6 +96,8 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
     const [contractDate, setContractDate] = useState(todayIso());
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
+    // Owner request (2026-09-29): the proposed end follows the start until the user types one.
+    const [autoEnd, setAutoEnd] = useState<string | null>(null);
     const [copyLines, setCopyLines] = useState(true);
     const [carryDeposit, setCarryDeposit] = useState(true);
     const [rows, setRows] = useState<LineRow[]>([]);
@@ -124,13 +126,18 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
     );
     const renewalFee = extraTypes.find(c => c.code === "RENEWAL_FEE") ?? extraTypes[0];
 
+    // F15-05: as long as the current term (a year for a year), so "By percent" works as proposed.
+    const proposeEnd = (start: string) =>
+        lease.startDate && lease.endDate ? sameTermEnd(lease.startDate, lease.endDate, start) : yearFrom(start);
+
     useEffect(() => {
         if (!open) return;
         const start = dayAfter(lease.endDate);
         setContractDate(todayIso());
         setStartDate(start);
-        // F15-05: as long as the current term, so "By percent" works as proposed.
-        setEndDate(lease.startDate && lease.endDate ? sameTermEnd(lease.startDate, lease.endDate, start) : yearFrom(start));
+        const proposedEnd = proposeEnd(start);
+        setEndDate(proposedEnd);
+        setAutoEnd(proposedEnd);
         setCopyLines(true);
         setCarryDeposit(true);
         setRows(renewalRows(lease.lines, lease.startDate, { carryDepositForward: true }));
@@ -143,6 +150,7 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
         setPreviewError(null);
         setErrors([]);
         setTermAck(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- proposeEnd reads only lease.startDate/endDate, listed
     }, [open, lease.startDate, lease.endDate, lease.lines]);
 
     // The live preview of the rent change (spec §4a). Only with copied lines: a
@@ -254,12 +262,20 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                     <div>
                         <label className={label} htmlFor="renew-start-date">{t("startDate")}</label>
                         <input id="renew-start-date" data-testid="renew-start-date" type="date" className={field}
-                            value={startDate} onChange={e => setStartDate(e.target.value)} />
+                            value={startDate} onChange={e => {
+                                const next = e.target.value;
+                                setStartDate(next);
+                                if (!endDate || endDate === autoEnd) {
+                                    const proposed = next ? proposeEnd(next) : "";
+                                    setEndDate(proposed);
+                                    setAutoEnd(proposed);
+                                }
+                            }} />
                     </div>
                     <div>
                         <label className={label} htmlFor="renew-end-date">{t("endDate")}</label>
                         <input id="renew-end-date" data-testid="renew-end-date" type="date" className={field}
-                            value={endDate} onChange={e => setEndDate(e.target.value)} />
+                            value={endDate} onChange={e => { setEndDate(e.target.value); setAutoEnd(null); }} />
                     </div>
                 </div>
 

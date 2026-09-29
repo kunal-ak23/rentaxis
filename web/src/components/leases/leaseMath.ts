@@ -509,3 +509,56 @@ export function sameTermEnd(oldStart: string, oldEnd: string, newStart: string):
     const days = Math.round((Date.parse(afterOld) - Date.parse(anchor)) / 86_400_000);
     return plusDays(plusDays(plusMonths(newStart, months), days), -1);
 }
+
+/**
+ * Owner request (2026-09-29): a new contract's default term — start + 12 months −
+ * 1 day, the UAE tenancy convention (09/09/2026 → 08/09/2027). Same month
+ * arithmetic as java.time's plusMonths (31 Jan + 1 month = 28/29 Feb).
+ */
+export function defaultTermEnd(start: string): string {
+    if (!/^\d{4}-\d{2}-\d{2}/.test(start)) return "";
+    return plusDays(plusMonths(start, 12), -1);
+}
+
+/**
+ * The months a term spans, whole months rounded up, at least 1 — the default
+ * number of cheques (one a month) and the most the wizard offers. 09/09/2026 →
+ * 08/09/2027 is 12; → 20/03/2027 is 7 (6 months and 12 days).
+ */
+export function termMonthsCeil(start: string, end: string): number {
+    if (!/^\d{4}-\d{2}-\d{2}/.test(start) || !/^\d{4}-\d{2}-\d{2}/.test(end) || end < start) return 1;
+    const afterEnd = plusDays(end, 1);
+    const whole = monthsBetween(start, afterEnd);
+    return Math.max(plusMonths(start, whole) < afterEnd ? whole + 1 : whole, 1);
+}
+
+/** The charge type a wizard's rent is charged as: the RENT code, else the first RENT-behaviour type. */
+export function rentChargeType(chargeTypes: ChargeType[]): ChargeType | undefined {
+    const rent = chargeTypes.filter(c => c.behaviour === "RENT" && c.active !== false);
+    return rent.find(c => c.code === "RENT") ?? rent[0];
+}
+
+/** The first RENT line's gross — the Terms step's "rent for the full term". 0 when there is none. */
+export function rentAmountOf(rows: LineRow[], chargeTypes: ChargeType[]): number {
+    const isRent = (id: string | null) => !!id && chargeTypes.find(c => c.id === id)?.behaviour === "RENT";
+    return rows.find(r => isRent(r.chargeTypeId))?.grossAmount ?? 0;
+}
+
+/**
+ * The rows with the rent for the full term set to {@code amount} — the one place
+ * the Terms step writes it, so the Charges step shows the same line. The first
+ * RENT line takes it; with none, the untouched blank starting line becomes the
+ * RENT line; otherwise a RENT line is put first. Never a second RENT line.
+ */
+export function withRentAmount(rows: LineRow[], chargeTypes: ChargeType[], amount: number, rentVat: boolean): LineRow[] {
+    const isRent = (id: string | null) => !!id && chargeTypes.find(c => c.id === id)?.behaviour === "RENT";
+    const at = rows.findIndex(r => isRent(r.chargeTypeId));
+    if (at >= 0) return rows.map((r, i) => (i === at ? { ...r, grossAmount: amount } : r));
+    const type = rentChargeType(chargeTypes);
+    if (!type) return rows;
+    const key = rows.reduce((k, r) => Math.max(k, r.key), -1) + 1;
+    const line: LineRow = { ...blankLine(key), chargeTypeId: type.id, grossAmount: amount, vatApplicable: rentVat };
+    const blank = rows.findIndex(r => !r.chargeTypeId && !r.grossAmount && !r.discountAmount && !r.narration && !r.id);
+    if (blank >= 0) return rows.map((r, i) => (i === blank ? { ...line, key: r.key } : r));
+    return [line, ...rows];
+}

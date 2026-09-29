@@ -498,6 +498,27 @@ public class ChequeGenerationService {
         }
     }
 
+    /** A proposed grid row as the Review step shows it (owner request 2026-09-29). */
+    public record PreviewRow(int seqNo, LocalDate chequeDate, BigDecimal amount, BigDecimal vat, String narration,
+                             ChequeRowKind kind) { }
+
+    /**
+     * What {@link #generate} would write for this request — the same {@code rowsFor},
+     * nothing written, no version moved. The New Contract wizard's Review step shows it
+     * as the suggested payment schedule when no cheques were added, so the suggestion
+     * is exactly what "Generate cheques" / "Use this schedule" then creates.
+     */
+    @Transactional(readOnly = true)
+    public List<PreviewRow> preview(UUID leaseId, GenerateChequesRequest request) {
+        Lease lease = readableLease(leaseId);
+        GenerateChequesRequest r = request != null ? request
+                : new GenerateChequesRequest(null, null, null, null, null, null, null);
+        return rowsFor(lease, r, true).stream()
+                .map(row -> new PreviewRow(row.seqNo(), row.chequeDate(), row.amount(), nz(row.vat()), row.narration(),
+                        row.kind()))
+                .toList();
+    }
+
     /** What {@link #proposeForSystemImport} proposes: the rows, or why there are none. */
     public record Proposal(List<Row> rows, String problem) {}
 

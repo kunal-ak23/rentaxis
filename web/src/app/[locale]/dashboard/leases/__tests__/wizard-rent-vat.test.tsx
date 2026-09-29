@@ -94,8 +94,12 @@ async function toLinesStep(rentVat: boolean) {
     fireEvent.change(screen.getByTestId("wizard-end-date"), { target: { value: "2027-09-30" } });
     const box = screen.getByTestId("wizard-rent-vat") as HTMLInputElement;
     if (box.checked !== rentVat) fireEvent.click(box);
+    fireEvent.change(screen.getByTestId("wizard-rent"), { target: { value: "60000" } });
     fireEvent.click(screen.getByTestId("wizard-next"));
     await waitFor(() => expect(screen.getByTestId("rows")).toBeInTheDocument());
+    // The Terms step's rent made the line a RENT line already (owner request
+    // 2026-09-29); point it elsewhere first so each test picks its charge afresh.
+    fireEvent.click(screen.getByText("pick-fee"));
 }
 
 afterEach(() => {

@@ -142,6 +142,7 @@ describe("lease wizard: server-backed Unit and Renter pickers", () => {
 
         fireEvent.change(screen.getByTestId("wizard-start-date"), { target: { value: "2026-10-01" } });
         fireEvent.change(screen.getByTestId("wizard-end-date"), { target: { value: "2027-09-30" } });
+        fireEvent.change(screen.getByTestId("wizard-rent"), { target: { value: "60000" } });
         fireEvent.click(screen.getByTestId("wizard-next"));
         expect(await screen.findByTestId("grid-property")).toHaveTextContent("p-souk");
 

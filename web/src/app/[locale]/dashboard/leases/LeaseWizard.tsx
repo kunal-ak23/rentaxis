@@ -18,7 +18,8 @@ import { NumberInput } from "@/components/ui/NumberInput";
 import { GraceDaysField, usePropertyDefaultGrace } from "@/components/leases/GraceDaysField";
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
 import ChequeGrid, { draftRowsAreValid, toChequeRows } from "@/components/leases/ChequeGrid";
-import { blankLine, followRentVat, linesAreValid, splitLineErrors, toInputs, toRows, todayIso, totalsOf, withRentVat, type LineRow } from "@/components/leases/leaseMath";
+import WizardReviewSchedules from "@/components/leases/WizardReviewSchedules";
+import { blankLine, defaultTermEnd, followRentVat, linesAreValid, rentAmountOf, splitLineErrors, termMonthsCeil, toInputs, toRows, todayIso, totalsOf, withRentAmount, withRentVat, type LineRow } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi,
     type ChargeType, type Cheque, type ChequeWrite, type DraftLeaseInput, type DraftPaymentMethod,
@@ -71,7 +72,10 @@ const initialTerms: Terms = {
     startDate: "",
     endDate: "",
     gracePeriodDays: null,
-    paymentTerms: 4,
+    // Owner request (2026-09-29): one cheque a month of the term — 12 for the
+    // default 12-month term — until the user types a count. (Was a hard-coded 4
+    // here, not a per-property setting.)
+    paymentTerms: 12,
     firstDueDate: "",
     installmentDistribution: "LAST_LARGER",
     paymentMethod: "CHEQUE",
@@ -145,6 +149,11 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     // Once the operator edits the contract date directly, stop following the
     // agreement date — see #45. Before that, they're the same field.
     const [contractDateTouched, setContractDateTouched] = useState(false);
+    // Owner request (2026-09-29): the end date and the number of cheques follow the
+    // start date while they still hold the value the wizard put there; a value the
+    // user typed is theirs. Null = the user's own (or a saved draft's).
+    const [autoEnd, setAutoEnd] = useState<string | null>(null);
+    const [autoCount, setAutoCount] = useState<number | null>(initialTerms.paymentTerms);
     const [rows, setRows] = useState<LineRow[]>([blankLine(0)]);
     const [chargeTypes, setChargeTypes] = useState<ChargeType[]>([]);
 
@@ -170,6 +179,8 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         setSelectedRenter(null);
         setTerms({ ...initialTerms, contractDate: todayIso() });
         setContractDateTouched(false);
+        setAutoEnd(null);
+        setAutoCount(initialTerms.paymentTerms);
         setRows([blankLine(0)]);
         setLease(null);
         setCheques([]);
@@ -232,7 +243,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                 if (!unitId) return t("errSelectUnit");
                 if (!renterId) return t("errSelectRenter");
                 return null;
-            case "terms":
+            case "terms": {
                 if (!terms.startDate || !terms.endDate) return t("errDatesRequired");
                 if (terms.endDate <= terms.startDate) return t("errEndAfterStart");
                 // Break-it R4 money4 F2: the contract date is the contract's posting
@@ -244,7 +255,13 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                 if (termExceedsYears(terms.startDate, terms.endDate, MAX_TERM_YEARS)) {
                     return t("errTermTooLong", { max: MAX_TERM_YEARS });
                 }
+                // Owner request (2026-09-29): the rent for the full term is asked here.
+                if (!(rentAmountOf(rows, chargeTypes) > 0)) return t("errRentRequired");
+                // At most one cheque a month of the term.
+                const maxCheques = termMonthsCeil(terms.startDate, terms.endDate);
+                if (terms.paymentTerms > maxCheques) return t("errTooManyCheques", { max: maxCheques });
                 return null;
+            }
             case "lines":
                 if (rows.length === 0) return t("errLinesRequired");
                 if (rows.some(r => !r.chargeTypeId)) return t("errLineNeedsType");
@@ -276,6 +293,8 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         // Review A M4: the header too — parties and terms — not only the lines.
         setTerms(termsFromLease(fresh));
         setContractDateTouched(true);
+        setAutoEnd(null);
+        setAutoCount(null);
         setLongTermAck(`${(fresh.startDate || "").slice(0, 10)}|${(fresh.endDate || "").slice(0, 10)}`);
         if (fresh.unitId !== unitId) {
             setUnitId(fresh.unitId);
@@ -365,6 +384,35 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         if (!lease) return;
         runCheques(() => leaseApi.generateChequeNumbers(lease.id, startingNumber));
     };
+    /**
+     * Owner requests (2026-09-29): what "Generate cheques" is asked for — the Terms
+     * step's count, first due date (the start date when empty) and distribution, with
+     * one-time charges folded into cheque 1 (the Cheques step's default). The Review
+     * step's suggestion and "Use this schedule" use exactly this.
+     */
+    const chequeRequest = (): GenerateChequesRequest => ({
+        installments: terms.paymentTerms,
+        firstDueDate: terms.firstDueDate || terms.startDate || null,
+        distribution: terms.installmentDistribution,
+        foldDepositsAndFeesIntoFirst: true,
+    });
+    const applySchedule = async (req: GenerateChequesRequest) => {
+        if (!lease) return;
+        await runCheques(() => leaseApi.generateCheques(lease.id, req, lease.version));
+        try {
+            setDry(await leaseApi.dryRunPost(lease.id));
+        } catch {
+            // The review keeps its previous answer; Post re-checks anyway.
+        }
+    };
+    // Owner request (2026-09-29): a count changed after cheques were generated is not
+    // applied silently — the Cheques step asks before regenerating.
+    const [keptCountFor, setKeptCountFor] = useState<number | null>(null);
+    const rentRowCount = cheques.filter(c => c.rowKind === "RENT" || c.rowKind === "MIXED").length
+        || cheques.filter(c => c.rowKind == null).length;
+    const countChanged = !!lease && lease.status === "DRAFT" && cheques.length > 0
+        && rentRowCount !== terms.paymentTerms && keptCountFor !== terms.paymentTerms;
+
     const saveCheques = () => {
         if (!lease || focusFirstInvalidMoney(document)) return;
         runCheques(() => leaseApi.saveCheques(lease.id, toChequeRows(cheques), lease.version));
@@ -415,6 +463,29 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         if ("startDate" in next || "endDate" in next) setLongTermPrompt(null);
     };
     const termKey = `${terms.startDate}|${terms.endDate}`;
+
+    /** The count that follows the term while it is automatic. */
+    const followCount = (start: string, end: string): Partial<Terms> => {
+        if (autoCount === null || terms.paymentTerms !== autoCount || !start || !end || end < start) return {};
+        const n = termMonthsCeil(start, end);
+        setAutoCount(n);
+        return { paymentTerms: n };
+    };
+    const onStartChange = (startDate: string) => {
+        const endIsAuto = !terms.endDate || terms.endDate === autoEnd;
+        const endDate = endIsAuto ? defaultTermEnd(startDate) : terms.endDate;
+        setAutoEnd(endIsAuto ? endDate : autoEnd);
+        patch({ startDate, endDate, ...followCount(startDate, endDate) });
+    };
+    const onEndChange = (endDate: string) => {
+        setAutoEnd(null);
+        patch({ endDate, ...followCount(terms.startDate, endDate) });
+    };
+    const rentAmount = rentAmountOf(rows, chargeTypes);
+    const setRentAmount = (amount: number) => {
+        setRows(prev => withRentAmount(prev, chargeTypes, amount, terms.rentVatApplicable));
+        setError(null);
+    };
     // #54: the header's "Rent carries VAT" flag drives every RENT line's VAT
     // box — when the flag changes (here, or via the unit's property type), and
     // when a line is pointed at a RENT charge. A line whose own box the
@@ -565,16 +636,23 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                                 />
                             </Field>
                             <Field label={`${t("startDate")} *`}>
-                                <input type="date" data-testid="wizard-start-date" className={field} value={terms.startDate} onChange={e => patch({ startDate: e.target.value })} />
+                                <input type="date" data-testid="wizard-start-date" className={field} value={terms.startDate} onChange={e => onStartChange(e.target.value)} />
                             </Field>
                             <Field label={`${t("endDate")} *`}>
-                                <input type="date" data-testid="wizard-end-date" className={field} value={terms.endDate} onChange={e => patch({ endDate: e.target.value })} />
+                                <input type="date" data-testid="wizard-end-date" className={field} value={terms.endDate} onChange={e => onEndChange(e.target.value)} />
+                            </Field>
+                            <Field label={`${t("rentFullTerm")} *`}>
+                                <NumberInput money data-testid="wizard-rent" className={field} value={rentAmount}
+                                    aria-label={t("rentFullTerm")} onChange={v => setRentAmount(v)} />
                             </Field>
                             <Field label={t("gracePeriodDays")}>
                                 <GraceDaysField className={field} value={terms.gracePeriodDays} propertyDefault={propertyDefaultGrace} onChange={v => patch({ gracePeriodDays: v })} />
                             </Field>
                             <Field label={t("paymentTerms")}>
-                                <NumberInput showZero min={1} max={36} className={field} value={terms.paymentTerms} onChange={v => patch({ paymentTerms: Math.max(1, v) })} />
+                                <NumberInput showZero min={1}
+                                    max={terms.startDate && terms.endDate ? termMonthsCeil(terms.startDate, terms.endDate) : 36}
+                                    data-testid="wizard-payment-terms" className={field} value={terms.paymentTerms}
+                                    onChange={v => { setAutoCount(null); patch({ paymentTerms: Math.max(1, v) }); }} />
                             </Field>
                             <Field label={t("firstDueDate")}>
                                 <input type="date" className={field} value={terms.firstDueDate} onChange={e => patch({ firstDueDate: e.target.value })} />
@@ -636,6 +714,22 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                     {step.key === "cheques" && lease && (
                         <div className="space-y-3">
                             <p className="text-[11px] text-muted">{t("draftSavedGenerateCheques")}</p>
+                            {countChanged && (
+                                <div role="alert" data-testid="wizard-regenerate-prompt"
+                                    className="flex flex-wrap items-center gap-2 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-[11px] text-warning">
+                                    <AlertTriangle size={12} />
+                                    <span>{t("regenerateChequesPrompt", { count: terms.paymentTerms, had: rentRowCount })}</span>
+                                    <button type="button" data-testid="wizard-regenerate-confirm" disabled={busy}
+                                        onClick={() => generate(chequeRequest())}
+                                        className="px-2.5 py-1 rounded-md bg-primary text-primary-foreground font-semibold cursor-pointer disabled:opacity-50">
+                                        {t("regenerateCheques")}
+                                    </button>
+                                    <button type="button" data-testid="wizard-regenerate-keep" onClick={() => setKeptCountFor(terms.paymentTerms)}
+                                        className="px-2.5 py-1 rounded-md border border-border text-foreground font-semibold cursor-pointer">
+                                        {t("keepCheques")}
+                                    </button>
+                                </div>
+                            )}
                             <ChequeGrid
                                 cheques={cheques}
                                 editable
@@ -702,6 +796,16 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                             )}
 
                             {dry?.ok && <p className="text-xs text-success font-semibold" data-testid="wizard-dry-run-ok">{t("dryRunOk")}</p>}
+
+                            <WizardReviewSchedules
+                                leaseId={lease.id}
+                                cheques={cheques}
+                                request={chequeRequest()}
+                                firstDueDefaulted={!terms.firstDueDate}
+                                onUseSchedule={req => { void applySchedule(req); }}
+                                busy={busy}
+                            />
+                            {chequeError && <p role="alert" className="text-xs text-error">{chequeError}</p>}
 
                             {!canPost && (
                                 <p className="text-xs text-muted" data-testid="wizard-needs-accountant">

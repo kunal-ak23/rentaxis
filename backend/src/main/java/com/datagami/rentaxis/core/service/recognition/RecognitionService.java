@@ -173,6 +173,41 @@ public class RecognitionService {
         return toDtos(entries.findByLease_IdOrderByPeriodStartAsc(leaseId));
     }
 
+    /** One calendar month of the rent schedule a draft would post (owner request 2026-09-29). */
+    public record RentMonth(LocalDate periodStart, LocalDate periodEnd, int days, BigDecimal amount) { }
+
+    /**
+     * The month-by-month rent a contract's RENT lines will be recognised as, before
+     * anything is posted — for the New Contract wizard's Review step. The same rule
+     * {@link #build} plans at posting ({@link ProrationEngine#slice}: day rate = net ÷
+     * term days, each month = day rate × its days, the last month absorbs rounding),
+     * per RENT line over its own window, summed per calendar month. Reads only; the
+     * lease is read tenant-scoped.
+     */
+    @Transactional(readOnly = true)
+    public List<RentMonth> previewRentSchedule(UUID leaseId) {
+        Lease lease = lease(leaseId);
+        java.util.TreeMap<java.time.YearMonth, RentMonth> months = new java.util.TreeMap<>();
+        for (LeaseLine line : leaseLines.findByLease_IdOrderBySeqNoAsc(leaseId)) {
+            boolean rent = line.getChargeType() != null && line.getChargeType().getBehaviour() == ChargeBehaviour.RENT;
+            BigDecimal net = line.getNetAmount() == null ? BigDecimal.ZERO : line.getNetAmount();
+            if (!rent || net.signum() <= 0) continue;
+            LocalDate from = line.getPeriodStart() != null ? line.getPeriodStart() : lease.getStartDate();
+            LocalDate to = line.getPeriodEnd() != null ? line.getPeriodEnd() : lease.getEndDate();
+            if (from == null || to == null || to.isBefore(from)) continue;
+            for (ProrationEngine.Slice slice : ProrationEngine.slice(net, from, to)) {
+                java.time.YearMonth key = java.time.YearMonth.from(slice.periodStart());
+                RentMonth had = months.get(key);
+                months.put(key, had == null
+                        ? new RentMonth(slice.periodStart(), slice.periodEnd(), slice.days(), slice.amount())
+                        : new RentMonth(had.periodStart().isBefore(slice.periodStart()) ? had.periodStart() : slice.periodStart(),
+                                had.periodEnd().isAfter(slice.periodEnd()) ? had.periodEnd() : slice.periodEnd(),
+                                Math.max(had.days(), slice.days()), had.amount().add(slice.amount())));
+            }
+        }
+        return List.copyOf(months.values());
+    }
+
     /**
      * F14-27: how far recognition is behind. {@code behind} counts PLANNED rows whose
      * period ended before {@code today} and is not inside the period lock — rows the
