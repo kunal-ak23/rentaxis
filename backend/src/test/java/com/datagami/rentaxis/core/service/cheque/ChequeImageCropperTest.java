@@ -188,9 +188,32 @@ class ChequeImageCropperTest {
         BufferedImage big = new BufferedImage(4800, 4000, BufferedImage.TYPE_INT_RGB);
         BufferedImage out = ChequeImageCropper.decode(ChequeTestImages.png(big));
 
-        assertThat((long) out.getWidth() * out.getHeight()).isLessThanOrEqualTo(ChequeImageCropper.MAX_DECODED_PIXELS);
+        assertThat(decodedBytes(out)).isLessThanOrEqualTo(ChequeImageCropper.MAX_DECODED_BYTES);
         assertThat(out.getWidth()).isEqualTo(2400);
-        assertThat(ChequeImageCropper.subsampling(4000, 3000)).isEqualTo(1);
-        assertThat(ChequeImageCropper.subsampling(7746, 7746)).isEqualTo(2);
+        // A 12 MP phone photo is decoded whole; a 60 MP one is not.
+        assertThat(ChequeImageCropper.subsampling(4000, 3000, 4)).isEqualTo(1);
+        assertThat(ChequeImageCropper.subsampling(7746, 7746, 4)).isEqualTo(3);
+    }
+
+    /**
+     * Review N2: a real (fully valid) 16-bit RGBA PNG, 4000×4000 — 16 MP but 128 MB
+     * decoded, from a ~124 KB file. Budgeted by bytes, it is decoded subsampled.
+     */
+    @Test
+    void aSixteenBitRgbaPngIsBudgetedByDecodedBytesNotPixels() {
+        byte[] png = ChequeTestImages.png16BitRgba(4000, 4000);
+        assertThat(png.length).isLessThan(300_000);
+
+        BufferedImage out = ChequeImageCropper.decode(png);
+
+        assertThat(out).isNotNull();
+        assertThat(decodedBytes(out)).isLessThanOrEqualTo(ChequeImageCropper.MAX_DECODED_BYTES);
+        assertThat(out.getWidth()).isLessThan(4000);
+    }
+
+    /** What the decoded raster actually holds, whatever its sample type. */
+    private static long decodedBytes(BufferedImage img) {
+        var db = img.getRaster().getDataBuffer();
+        return (long) db.getSize() * db.getNumBanks() * java.awt.image.DataBuffer.getDataTypeSize(db.getDataType()) / 8;
     }
 }

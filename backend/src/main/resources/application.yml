@@ -56,6 +56,10 @@ server:
   port: 8080
 
 rentaxis:
+  cheques:
+    pdf-upload:
+      # Off until the PDF renderer is hardened against PDF bombs (PR #388 follow-up).
+      enabled: ${CHEQUE_PDF_UPLOAD_ENABLED:false}
   contracts:
     storage-path: ./data/contracts
   gateway:

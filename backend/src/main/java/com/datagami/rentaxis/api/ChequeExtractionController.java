@@ -61,8 +61,11 @@ public class ChequeExtractionController {
 
     @ExceptionHandler(ChequeUploadRefusedException.class)
     public ResponseEntity<Map<String, String>> handleRefused(ChequeUploadRefusedException ex) {
-        HttpStatus status = ChequeUploadRefusedException.FILE_TOO_LARGE.equals(ex.getCode())
-                ? HttpStatus.PAYLOAD_TOO_LARGE : HttpStatus.BAD_REQUEST;
+        HttpStatus status = switch (ex.getCode()) {
+            case ChequeUploadRefusedException.FILE_TOO_LARGE -> HttpStatus.PAYLOAD_TOO_LARGE;
+            case ChequeUploadRefusedException.BUSY -> HttpStatus.SERVICE_UNAVAILABLE;
+            default -> HttpStatus.BAD_REQUEST;
+        };
         return ResponseEntity.status(status).body(Map.of("error", ex.getMessage(), "code", ex.getCode()));
     }
 

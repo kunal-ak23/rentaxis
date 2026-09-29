@@ -83,8 +83,14 @@ public final class ChequeImageCropper {
      * phone camera's default output.
      */
     static final long MAX_DECLARED_PIXELS = 60_000_000L;
-    /** Anything larger is decoded subsampled, so at most this many pixels are ever held. */
-    static final long MAX_DECODED_PIXELS = 16_000_000L;
+    /**
+     * Bytes the decoded image may take. Budgeted in bytes, not pixels: a 16-bit
+     * RGBA PNG holds 8 bytes a pixel, so 16 MP of it is 128 MB. Anything larger is
+     * decoded subsampled to fit.
+     */
+    static final long MAX_DECODED_BYTES = 48L * 1024 * 1024;
+    /** Assumed when the reader cannot say what it will decode to: the worst common case (16-bit RGBA). */
+    static final int WORST_BYTES_PER_PIXEL = 8;
 
     /**
      * The image, upright, or null when ImageIO cannot read it (HEIC/HEIF, a corrupt
@@ -94,7 +100,7 @@ public final class ChequeImageCropper {
      * <p>Bounded: the size is read from the header first; above
      * {@link #MAX_DECLARED_PIXELS} the upload is refused
      * ({@link ChequeUploadRefusedException#IMAGE_TOO_LARGE}), and above
-     * {@link #MAX_DECODED_PIXELS} it is decoded subsampled.</p>
+     * {@link #MAX_DECODED_BYTES} decoded it is decoded subsampled.</p>
      */
     public static BufferedImage decode(byte[] bytes) {
         if (bytes == null || bytes.length == 0) {
@@ -122,7 +128,7 @@ public final class ChequeImageCropper {
                             "Image is " + w + "x" + h + " pixels; at most " + MAX_DECLARED_PIXELS + " are read");
                 }
                 ImageReadParam param = reader.getDefaultReadParam();
-                int step = subsampling(w, h);
+                int step = subsampling(w, h, bytesPerPixel(reader));
                 if (step > 1) {
                     param.setSourceSubsampling(step, step, 0, 0);
                 }
@@ -141,13 +147,35 @@ public final class ChequeImageCropper {
         return orient(img, exifOrientation(bytes));
     }
 
-    /** The smallest whole subsampling step that brings w×h within {@link #MAX_DECODED_PIXELS}. */
-    static int subsampling(long w, long h) {
+    /**
+     * The smallest whole subsampling step that brings w×h at {@code bytesPerPixel}
+     * within {@link #MAX_DECODED_BYTES}. Rounds each side up, as the reader does.
+     */
+    static int subsampling(long w, long h, int bytesPerPixel) {
         int step = 1;
-        while ((w / step) * (h / step) > MAX_DECODED_PIXELS) {
+        while (((w + step - 1) / step) * ((h + step - 1) / step) * bytesPerPixel > MAX_DECODED_BYTES) {
             step++;
         }
         return step;
+    }
+
+    /** Bytes a pixel takes once decoded, from the reader's raw type (bands × bits / 8). */
+    static int bytesPerPixel(ImageReader reader) {
+        try {
+            javax.imageio.ImageTypeSpecifier raw = reader.getRawImageType(0);
+            if (raw == null) {
+                return WORST_BYTES_PER_PIXEL;
+            }
+            int bits = 0;
+            for (int b = 0; b < raw.getNumBands(); b++) {
+                int bpb = raw.getBitsPerBand(b);
+                bits += bpb <= 8 ? 8 : bpb <= 16 ? 16 : 32;
+            }
+            // A packed or indexed raw type is expanded to at least 4 bytes (ARGB/RGB int) on copy.
+            return Math.max(4, (bits + 7) / 8);
+        } catch (IOException | RuntimeException e) {
+            return WORST_BYTES_PER_PIXEL;
+        }
     }
 
     /**

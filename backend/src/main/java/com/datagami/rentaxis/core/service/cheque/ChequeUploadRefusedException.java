@@ -15,6 +15,10 @@ public class ChequeUploadRefusedException extends RuntimeException {
     public static final String PDF_UNREADABLE = "cheque_upload_pdf_unreadable";
     /** The image (or an image inside a PDF) declares more pixels than the server will decode. */
     public static final String IMAGE_TOO_LARGE = "cheque_upload_image_too_large";
+    /** PDF input is switched off ({@code rentaxis.cheques.pdf-upload.enabled}). */
+    public static final String PDF_NOT_SUPPORTED = "cheque_upload_pdf_not_supported";
+    /** Too many uploads are being decoded at once; retry shortly. */
+    public static final String BUSY = "cheque_upload_busy";
 
     private final String code;
 

@@ -70,6 +70,14 @@ public class ChequeMultiExtractionService {
     private final ChequeExtractor extractor;
     private final ChequeImageUploadRepository uploads;
 
+    /**
+     * PDF input is off until the renderer is hardened against PDF bombs (inline
+     * images, soft masks, pattern/annotation resources, huge content streams —
+     * see PR #388). Off, a PDF is refused with {@code cheque_upload_pdf_not_supported}.
+     */
+    @Value("${rentaxis.cheques.pdf-upload.enabled:false}")
+    boolean pdfUploadEnabled = false;
+
     @Value("${cheque-extraction.max-pdf-pages:6}")
     int maxPdfPages = 6;
 
@@ -101,6 +109,33 @@ public class ChequeMultiExtractionService {
         this.uploads = uploads;
     }
 
+    /**
+     * Decoding and cropping hold whole images on the heap (up to the cropper's
+     * ~48 MB decode budget, plus copies). At most this many uploads do it at once,
+     * so concurrent uploads cannot stack their images; others wait their turn.
+     */
+    static final int IMAGE_WORK_PERMITS = 2;
+    private final java.util.concurrent.Semaphore imageWork = new java.util.concurrent.Semaphore(IMAGE_WORK_PERMITS, true);
+
+    private <T> T withImageWork(java.util.function.Supplier<T> work) {
+        boolean acquired;
+        try {
+            acquired = imageWork.tryAcquire(120, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            acquired = false;
+        }
+        if (!acquired) {
+            throw new ChequeUploadRefusedException(ChequeUploadRefusedException.BUSY,
+                    "Too many cheque uploads are being processed; try again shortly");
+        }
+        try {
+            return work.get();
+        } finally {
+            imageWork.release();
+        }
+    }
+
     /** One page to read: the bytes the model is shown, and their type. */
     private record Page(int number, byte[] bytes, String contentType) {}
 
@@ -116,7 +151,6 @@ public class ChequeMultiExtractionService {
 
         // --- Pages, and what the model is shown for each -----------------------
         List<Page> pages = new ArrayList<>();
-        BufferedImage photo = null;
         if (pdf) {
             List<byte[]> rendered;
             try {
@@ -128,12 +162,19 @@ public class ChequeMultiExtractionService {
                 pages.add(new Page(i + 1, rendered.get(i), "image/jpeg"));
             }
         } else {
-            photo = ChequeImageCropper.decode(original);
-            boolean turned = photo != null && ChequeImageCropper.exifOrientation(original) > 1;
+            // Decoded here only to refuse a bomb and to turn an EXIF-rotated photo
+            // upright for the model; the pixels are dropped before the (slow) model
+            // call and decoded again for cropping, so no decoded image is held while
+            // waiting on the network.
+            byte[] upright = withImageWork(() -> {
+                BufferedImage photo = ChequeImageCropper.decode(original);
+                boolean turned = photo != null && ChequeImageCropper.exifOrientation(original) > 1;
+                return turned ? ChequeImageCropper.toJpeg(photo, 0.92f) : null;
+            });
             // The model must see the pixels the boxes are applied to: an EXIF-turned
             // photo is shown upright. Any other photo is sent exactly as uploaded.
-            pages.add(turned
-                    ? new Page(1, ChequeImageCropper.toJpeg(photo, 0.92f), "image/jpeg")
+            pages.add(upright != null
+                    ? new Page(1, upright, "image/jpeg")
                     : new Page(1, original, contentType));
         }
 
@@ -155,8 +196,9 @@ public class ChequeMultiExtractionService {
         // --- Store: all of it, or none of it ----------------------------------
         List<ChequeImageUpload> stored = new ArrayList<>();
         try {
-            return store(tenantId, file, contentType, pdf, original, photo, pages, results, stored);
-        } catch (RuntimeException e) {
+            return withImageWork(() ->
+                    store(tenantId, file, contentType, pdf, original, pages, results, stored));
+        } catch (RuntimeException | Error e) {
             // Nothing half-issued survives a failed store: the rows go (crops
             // first, they point at the original) and so do their blobs.
             for (int i = stored.size() - 1; i >= 0; i--) {
@@ -177,7 +219,7 @@ public class ChequeMultiExtractionService {
     }
 
     private ChequeMultiExtractionResponseDTO store(UUID tenantId, MultipartFile file, String contentType,
-                                                   boolean pdf, byte[] original, BufferedImage photo,
+                                                   boolean pdf, byte[] original,
                                                    List<Page> pages, List<MultiExtractionResult> results,
                                                    List<ChequeImageUpload> stored) {
         // --- Store the original ------------------------------------------------
@@ -201,7 +243,7 @@ public class ChequeMultiExtractionService {
         for (int pi = 0; pi < pages.size(); pi++) {
             Page page = pages.get(pi);
             MultiExtractionResult r = results.get(pi);
-            BufferedImage img = pdf ? ChequeImageCropper.decode(page.bytes()) : photo;
+            BufferedImage img = ChequeImageCropper.decode(pdf ? page.bytes() : original);
             pageDtos.add(new ChequeExtractionPageDTO(page.number(),
                     img == null ? null : ChequeImageCropper.dataUrl(img, ChequeImageCropper.PREVIEW_MAX)));
             for (String w : r.warnings()) {
@@ -353,6 +395,10 @@ public class ChequeMultiExtractionService {
                 || !(PDF.equals(contentType) || ChequeExtractionService.ALLOWED_TYPES.contains(contentType))) {
             throw new ChequeUploadRefusedException(ChequeUploadRefusedException.UNSUPPORTED_TYPE,
                     "Unsupported file type: " + file.getContentType());
+        }
+        if (PDF.equals(contentType) && !pdfUploadEnabled) {
+            throw new ChequeUploadRefusedException(ChequeUploadRefusedException.PDF_NOT_SUPPORTED,
+                    "PDF uploads are not enabled; upload photos of the cheques instead");
         }
         return contentType;
     }

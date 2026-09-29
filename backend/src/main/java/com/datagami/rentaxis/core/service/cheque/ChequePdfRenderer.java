@@ -18,6 +18,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
+ * <p><b>NOT PRODUCTION-READY.</b> Reachable only when
+ * {@code rentaxis.cheques.pdf-upload.enabled} is true (default false). Known to
+ * run out of memory on crafted PDFs this class does not yet bound: inline images
+ * (BI), soft masks, images inside tiling patterns and annotation appearances,
+ * and huge Flate content streams. Hardening is a follow-up (PR #388).</p>
+ *
  * Renders each page of a scanned-cheques PDF to an image, with Apache PDFBox —
  * already on the classpath through openhtmltopdf-pdfbox, now declared directly.
  *

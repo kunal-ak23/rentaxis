@@ -54,6 +54,8 @@ class ChequeMultiExtractionServiceTest {
             return u;
         });
         service = new ChequeMultiExtractionService(blob, extractor, uploads);
+        // PDF input is off by default (not production-ready); its tests switch it on.
+        service.pdfUploadEnabled = true;
     }
 
     private static BlobStorageService.UploadResult result() {
@@ -334,5 +336,38 @@ class ChequeMultiExtractionServiceTest {
         var file = new MockMultipartFile("file", "evil.php", "image/heic", new byte[]{9, 9, 9});
         service.extractAndStore(tenant, file);
         verify(blob, org.mockito.Mockito.times(2)).uploadChequeBytes(tenant, new byte[]{9, 9, 9}, ".heic");
+    }
+
+    @Test
+    void pdfUploadIsRefusedWhileTheFlagIsOff() {
+        service.pdfUploadEnabled = false;
+        byte[] pdf = ChequeTestImages.pdfOf(ChequeTestImages.oneCheque(Color.RED));
+        var file = new MockMultipartFile("file", "x.pdf", "application/pdf", pdf);
+
+        assertThatThrownBy(() -> service.extractAndStore(tenant, file))
+                .satisfies(e -> assertThat(((ChequeUploadRefusedException) e).getCode())
+                        .isEqualTo(ChequeUploadRefusedException.PDF_NOT_SUPPORTED));
+        verifyNoInteractions(extractor, blob, uploads);
+    }
+
+    @Test
+    void theFlagDefaultsToOff() {
+        assertThat(new ChequeMultiExtractionService(blob, extractor, uploads).pdfUploadEnabled).isFalse();
+    }
+
+    @Test
+    void anErrorWhileStoringAlsoCleansUp() {
+        when(extractor.extractAll(any(), any())).thenReturn(new MultiExtractionResult(List.of(
+                det("1", ChequeTestImages.threeBoxes().get(0)), det("2", ChequeTestImages.threeBoxes().get(1))),
+                List.of()));
+        when(blob.uploadChequeBytes(any(), any(), anyString())).thenThrow(new OutOfMemoryError("simulated"));
+        var file = new MockMultipartFile("file", "three.png", "image/png",
+                ChequeTestImages.png(ChequeTestImages.threeCheques()));
+
+        assertThatThrownBy(() -> service.extractAndStore(tenant, file)).isInstanceOf(OutOfMemoryError.class);
+
+        assertThat(saved).hasSize(1);
+        verify(uploads).delete(saved.getFirst());
+        verify(blob).delete(tenant, saved.getFirst().getBlobPath());
     }
 }

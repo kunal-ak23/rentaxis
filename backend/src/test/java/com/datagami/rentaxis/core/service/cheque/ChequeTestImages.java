@@ -211,4 +211,25 @@ final class ChequeTestImages {
             throw new IllegalStateException(e);
         }
     }
+
+    /** A valid 16-bit-per-channel RGBA PNG of w×h (all zero), streamed so the test never holds its pixels. */
+    static byte[] png16BitRgba(int w, int h) {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        bos.writeBytes(new byte[]{(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'});
+        java.nio.ByteBuffer ihdr = java.nio.ByteBuffer.allocate(13);
+        ihdr.putInt(w).putInt(h).put((byte) 16).put((byte) 6).put((byte) 0).put((byte) 0).put((byte) 0);
+        chunk(bos, "IHDR", ihdr.array());
+        ByteArrayOutputStream idat = new ByteArrayOutputStream();
+        try (var z = new java.util.zip.DeflaterOutputStream(idat, new java.util.zip.Deflater(9))) {
+            byte[] row = new byte[1 + w * 8]; // filter byte 0 + 8 bytes a pixel
+            for (int y = 0; y < h; y++) {
+                z.write(row);
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+        chunk(bos, "IDAT", idat.toByteArray());
+        chunk(bos, "IEND", new byte[0]);
+        return bos.toByteArray();
+    }
 }
