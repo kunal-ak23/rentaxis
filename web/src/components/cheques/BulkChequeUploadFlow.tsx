@@ -367,8 +367,12 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
         body: JSON.stringify({ items }),
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as { rows?: unknown[] };
-        if (Array.isArray(body.rows)) {
+        const body = await res.json().catch(() => ({})) as { rows?: { reason?: string }[] };
+        if (Array.isArray(body.rows) && body.rows.some(r => r?.reason === "payee_mismatch_unconfirmed")) {
+          // Review m4: the server refused a payee mismatch nobody confirmed (a
+          // stale screen, or another tab changed the valid names).
+          setSubmitError(t("payeeMismatchUnconfirmedError"));
+        } else if (Array.isArray(body.rows)) {
           setSubmitError(t("rowConflictError"));
         } else {
           setSubmitError(t("genericError"));

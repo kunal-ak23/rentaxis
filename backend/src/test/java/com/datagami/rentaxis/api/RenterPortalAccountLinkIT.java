@@ -20,10 +20,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.client.RestClient;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Owner ruling (2026-09-29): creating a Tenant always gives them portal access
@@ -217,5 +219,71 @@ class RenterPortalAccountLinkIT extends AbstractPostgresIT {
 
         assertThat(created.get("portalAccount").asText()).isEqualTo("NO_EMAIL");
         assertThat(renterUserId(created)).isNull();
+    }
+
+    /** Review m5: a deactivated portal account is not linked; the note says why. */
+    @Test
+    void aDeactivatedRenterUserIsNotLinked() throws Exception {
+        LandlordOrg org = org("inactive");
+        User admin = user(org, UserRole.TENANT_ADMIN, email());
+        String email = email();
+        User existing = user(org, UserRole.RENTER, email);
+        existing.setStatus(UserStatus.INACTIVE);
+        userRepo.save(existing);
+
+        JsonNode created = create(admin, email);
+
+        assertThat(created.get("portalAccount").asText()).isEqualTo("SKIPPED_ACCOUNT_INACTIVE");
+        assertThat(renterUserId(created)).isNull();
+        assertThat(invitesQueuedFor(existing.getId())).isZero();
+    }
+
+    /**
+     * Review I1: two creates racing for the same unlinked portal user. Exactly one
+     * links it; the other saves its Tenant without portal access. Several rounds,
+     * each released at the same instant, to give the race every chance.
+     */
+    @Test
+    void twoConcurrentCreatesNeverLinkOnePortalUserTwice() throws Exception {
+        LandlordOrg org = org("race");
+        User admin = user(org, UserRole.TENANT_ADMIN, email());
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            for (int round = 0; round < 5; round++) {
+                String email = email();
+                User existing = user(org, UserRole.RENTER, email);
+                java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
+                java.util.concurrent.Callable<JsonNode> call = () -> { go.await(); return create(admin, email); };
+                var a = pool.submit(call);
+                var b = pool.submit(call);
+                go.countDown();
+                List<String> outcomes = new java.util.ArrayList<>(List.of(
+                        a.get(60, java.util.concurrent.TimeUnit.SECONDS).get("portalAccount").asText(),
+                        b.get(60, java.util.concurrent.TimeUnit.SECONDS).get("portalAccount").asText()));
+                java.util.Collections.sort(outcomes);
+                assertThat(outcomes).as("round " + round).containsExactly("LINKED_EXISTING", "SKIPPED_EMAIL_IN_USE");
+                assertThat(jdbc.queryForObject("select count(*) from renters where user_id = ?", Integer.class,
+                        existing.getId())).as("round " + round).isEqualTo(1);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    /** The backstop behind the lock: the database itself refuses a second link. */
+    @Test
+    void theDatabaseRefusesASecondLinkToOnePortalUser() throws Exception {
+        LandlordOrg org = org("index");
+        User admin = user(org, UserRole.TENANT_ADMIN, email());
+        String email = email();
+        User existing = user(org, UserRole.RENTER, email);
+        JsonNode first = create(admin, email);
+        assertThat(renterUserId(first)).isEqualTo(existing.getId());
+        JsonNode second = create(admin, email());
+
+        assertThatThrownBy(() -> jdbc.update(
+                        "update renters set user_id = ? where id = ?::uuid", existing.getId(), second.get("id").asText()))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class)
+                .hasMessageContaining("ux_renters_user_id");
     }
 }

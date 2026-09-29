@@ -37,6 +37,11 @@ public class RenterDTO {
          * portal user already linked to another Tenant): saved without portal access.
          */
         SKIPPED_EMAIL_IN_USE,
+        /**
+         * The email is this organisation's portal (RENTER) user, unlinked, but
+         * deactivated: not linked, since it could not sign in. Reactivate it first.
+         */
+        SKIPPED_ACCOUNT_INACTIVE,
         /** No email was given, and login needs one. */
         NO_EMAIL,
         /** An internal caller asked for no portal account (createPortalAccount=false). */

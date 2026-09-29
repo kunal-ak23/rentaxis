@@ -50,7 +50,9 @@ class RenterPortalInviteOnlyTest {
         userService = mock(UserService.class);
         userRepository = mock(UserRepository.class);
         service = new RenterService(renterRepository, userService, userRepository,
-                mock(TokenRevocationService.class));
+                mock(TokenRevocationService.class),
+                new org.springframework.transaction.support.TransactionTemplate(
+                        mock(org.springframework.transaction.PlatformTransactionManager.class)));
 
         when(renterRepository.save(any(Renter.class))).thenAnswer(inv -> {
             Renter r = inv.getArgument(0);

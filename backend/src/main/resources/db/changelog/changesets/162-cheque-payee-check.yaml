@@ -56,3 +56,24 @@ databaseChangeLog:
             sql: >
               ALTER TABLE cheques ADD CONSTRAINT ck_cheques_payee_check
                 CHECK (payee_check IS NULL OR payee_check IN ('MATCH', 'MISMATCH', 'UNREADABLE'))
+  # PR #389 review I1: one portal user, at most one Tenant. Two concurrent
+  # creates could otherwise both link the same RENTER user, and every
+  # findByUserId would then fail with "more than one result". RenterService
+  # serialises on a row lock; this index is the backstop. It halts the upgrade
+  # rather than guess which link to keep if duplicates already exist.
+  - changeSet:
+      id: 162-renters-user-unique
+      author: claude
+      preConditions:
+        - onFail: HALT
+        - onFailMessage: >
+            renters.user_id has duplicates: one portal user is linked to more than one
+            Tenant. Resolve them before ux_renters_user_id can be created.
+        - sqlCheck:
+            expectedResult: 0
+            sql: >
+              SELECT count(*) FROM (SELECT user_id FROM renters WHERE user_id IS NOT NULL
+               GROUP BY user_id HAVING count(*) > 1) d
+      changes:
+        - sql:
+            sql: CREATE UNIQUE INDEX ux_renters_user_id ON renters (user_id) WHERE user_id IS NOT NULL

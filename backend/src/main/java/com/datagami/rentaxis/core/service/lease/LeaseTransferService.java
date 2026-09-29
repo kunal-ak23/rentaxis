@@ -445,6 +445,13 @@ public class LeaseTransferService {
                 copy.setImageUrl(old.getImageUrl());
                 copy.setImageBlobPath(old.getImageBlobPath());
                 copy.setImageUploadedAt(old.getImageUploadedAt());
+                // The same paper: its payee and the payee check (and who confirmed a
+                // mismatch) travel with it (PR #389 review m6).
+                copy.setPayeeName(old.getPayeeName());
+                copy.setPayeeCheck(old.getPayeeCheck());
+                copy.setPayeeMismatchConfirmedBy(old.getPayeeMismatchConfirmedBy());
+                copy.setPayeeMismatchConfirmedByName(old.getPayeeMismatchConfirmedByName());
+                copy.setPayeeMismatchConfirmedAt(old.getPayeeMismatchConfirmedAt());
                 chequeRepository.save(copy);
                 Cheque fresh = chequeRepository.findById(old.getId()).orElseThrow();
                 fresh.setTransferredToId(copy.getId());

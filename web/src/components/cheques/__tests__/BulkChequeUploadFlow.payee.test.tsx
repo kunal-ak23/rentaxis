@@ -134,4 +134,19 @@ describe("BulkChequeUploadFlow payee check", () => {
     expect(screen.queryByTestId("payee-mismatch")).toBeNull();
     expect(approveButton().disabled).toBe(false);
   });
+
+  // Review m4: the server's refusal of an unconfirmed mismatch has its own message.
+  it("explains a server refusal of an unconfirmed payee mismatch", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(extractResponse(null, "Other Landlord LLC"))
+      .mockResolvedValueOnce({
+        ok: false, status: 400,
+        json: async () => ({ rows: [{ chequeId: "s1", reason: "payee_mismatch_unconfirmed" }] }),
+      });
+    await scanOne(fetchMock);
+    fireEvent.click(approveButton());
+
+    expect(await screen.findByText("payeeMismatchUnconfirmedError")).toBeTruthy();
+    expect(screen.queryByText("rowConflictError")).toBeNull();
+  });
 });

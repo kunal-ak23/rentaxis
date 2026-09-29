@@ -33,6 +33,7 @@ public class RenterService {
     private final UserService userService;
     private final UserRepository userRepository;
     private final TokenRevocationService tokenRevocation;
+    private final org.springframework.transaction.support.TransactionTemplate transactions;
 
     /** Narrows a property manager's lists; absent in unit tests that build the service by hand. */
     private PropertyScope propertyScope;
@@ -178,8 +179,34 @@ public class RenterService {
                 .orElseThrow(() -> new NotFoundException("Renter not found"));
     }
 
-    @Transactional
+    /**
+     * Creates a Tenant (renter) and gives them portal access; see {@link #create}.
+     *
+     * <p>PR #389 review I1: two creates racing for the same unlinked portal user
+     * are serialised by a row lock on that user, and {@code ux_renters_user_id}
+     * (changeset 162) is the backstop: if its violation ever surfaces, the
+     * create is re-run in a fresh transaction without linking, which saves the
+     * Tenant with {@code SKIPPED_EMAIL_IN_USE} rather than failing it. (Joined to
+     * a caller's transaction the violation has already doomed that transaction,
+     * so there the error propagates.)</p>
+     */
     public RenterDTO createRenter(CreateRenterDTO dto) {
+        try {
+            return transactions.execute(s -> create(dto, true));
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            if (!isRenterUserUniqueViolation(e)) throw e;
+            return transactions.execute(s -> create(dto, false));
+        }
+    }
+
+    private static boolean isRenterUserUniqueViolation(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t.getMessage() != null && t.getMessage().contains("ux_renters_user_id")) return true;
+        }
+        return false;
+    }
+
+    private RenterDTO create(CreateRenterDTO dto, boolean mayLink) {
         Renter renter = new Renter();
         renter.setNameEn(dto.getNameEn());
         renter.setNameAr(dto.getNameAr());
@@ -237,11 +264,23 @@ public class RenterService {
                 outcome = RenterDTO.PortalAccount.INVITED;
             } else {
                 User existing = sameEmail.size() == 1 ? sameEmail.get(0) : null;
-                boolean linkable = existing != null
+                boolean candidate = mayLink
+                        && existing != null
                         && existing.getRole() == UserRole.RENTER
-                        && tenantId.equals(existing.getTenantId())
-                        && !renterRepository.anyLinkedToUser(existing.getId());
-                if (linkable) {
+                        && tenantId.equals(existing.getTenantId());
+                // Review I1: lock the user row before asking whether it is linked, so a
+                // concurrent create for the same person waits here and then sees this
+                // one's link (READ COMMITTED re-reads per statement).
+                if (candidate && userRepository.lockById(existing.getId()).isEmpty()) {
+                    candidate = false;
+                }
+                if (candidate && renterRepository.anyLinkedToUser(existing.getId())) {
+                    candidate = false;
+                }
+                if (candidate && existing.getStatus() == com.datagami.rentaxis.domain.entity.enums.UserStatus.INACTIVE) {
+                    // Review m5: linking a deactivated account gives no access; say so.
+                    outcome = RenterDTO.PortalAccount.SKIPPED_ACCOUNT_INACTIVE;
+                } else if (candidate) {
                     portalUser = existing;
                     outcome = RenterDTO.PortalAccount.LINKED_EXISTING;
                 } else {
@@ -250,7 +289,8 @@ public class RenterService {
             }
             if (portalUser != null) {
                 saved.setUserId(portalUser.getId());
-                renterRepository.save(saved);
+                // Flushed here so ux_renters_user_id fails inside createRenter's catch.
+                renterRepository.saveAndFlush(saved);
             }
         }
 

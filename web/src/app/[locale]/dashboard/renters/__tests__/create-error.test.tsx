@@ -131,6 +131,20 @@ describe("RentersPage create form", () => {
         expect(screen.queryByText("sentBody")).toBeNull();
     });
 
+    // Review m5: a deactivated portal account is not linked, and the note says so.
+    it("says the existing portal account is deactivated rather than linking it", async () => {
+        postResponse = { ok: true, status: 201, body: { id: "r1", invitePending: false, portalAccount: "SKIPPED_ACCOUNT_INACTIVE" } };
+        render(<RentersPage />);
+
+        fireEvent.click((await screen.findAllByText("addRenter"))[0]);
+        fireEvent.change(screen.getByPlaceholderText("John Doe"), { target: { value: "New Renter" } });
+        fireEvent.change(screen.getByPlaceholderText("john@example.com"), { target: { value: "r@x.com" } });
+        fireEvent.click(screen.getByText("create"));
+
+        expect(await screen.findByText("accountInactiveBody")).toBeTruthy();
+        expect(screen.queryByText("linkedExistingBody")).toBeNull();
+    });
+
     // A linked existing portal user may still have their first invite pending:
     // the page must not claim a new one was just sent.
     it("says the tenant was linked to their existing portal account, not re-invited", async () => {

@@ -170,7 +170,7 @@ function RentersPageInner() {
     // a new invited account, or their existing portal account in this
     // organisation — so the form has no opt-out. `portalAccount` on the create
     // response says which, or why none (the email belongs to another user).
-    type InviteOutcome = "invited" | "linked" | "emailInUse" | "noEmail" | "notInvited";
+    type InviteOutcome = "invited" | "linked" | "emailInUse" | "accountInactive" | "noEmail" | "notInvited";
     const [inviteNotice, setInviteNotice] = useState<{ email: string; outcome: InviteOutcome } | null>(null);
     const [formError, setFormError] = useState<string | null>(null);
     // Break round 1 (P1): a fast double-click (or Enter twice) on "Create"
@@ -260,6 +260,7 @@ function RentersPageInner() {
 
             const outcome: InviteOutcome = data.portalAccount === "LINKED_EXISTING" ? "linked"
                 : data.portalAccount === "SKIPPED_EMAIL_IN_USE" ? "emailInUse"
+                : data.portalAccount === "SKIPPED_ACCOUNT_INACTIVE" ? "accountInactive"
                 : data.invitePending ? "invited"
                 : !formData.email.trim() ? "noEmail"
                 : "notInvited";
@@ -624,6 +625,7 @@ function RentersPageInner() {
                             {inviteNotice.outcome === "invited" ? tInv("sentBody", { email: inviteNotice.email })
                                 : inviteNotice.outcome === "linked" ? tInv("linkedExistingBody")
                                 : inviteNotice.outcome === "emailInUse" ? tInv("emailInUseBody")
+                                : inviteNotice.outcome === "accountInactive" ? tInv("accountInactiveBody")
                                 : inviteNotice.outcome === "noEmail" ? tInv("noPortalBody")
                                 : tInv("noInviteBody")}
                         </p>
