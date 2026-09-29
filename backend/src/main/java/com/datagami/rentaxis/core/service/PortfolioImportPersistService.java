@@ -85,8 +85,9 @@ public class PortfolioImportPersistService {
     public PersistResult persistWorkbook(Workbook workbook, ImportJob job, List<ImportErrorDTO> warnings) {
         Sheet propertiesSheet = workbook.getSheet("Properties");
         Sheet unitsSheet = workbook.getSheet("Units");
-        Sheet rentersSheet = workbook.getSheet("Renters");
-        Sheet leasesSheet = workbook.getSheet("Leases");
+        // Break-it R4 ops4 F1: either name of each sheet.
+        Sheet rentersSheet = PortfolioSheets.tenants(workbook);
+        Sheet leasesSheet = PortfolioSheets.contracts(workbook);
 
         // 1. Create Properties
         Map<String, Property> propertyMap = new LinkedHashMap<>();
@@ -500,6 +501,8 @@ public class PortfolioImportPersistService {
         // the controller reads either the legacy array form (validation-failed jobs)
         // or this wrapper. Wrapper is written when there's anything to surface
         // beyond the legacy fields.
+        PortfolioSheets.relabel(allWarnings, rentersSheet, leasesSheet);
+        PortfolioSheets.relabel(allErrors, rentersSheet, leasesSheet);
         boolean hasWarnings = !allWarnings.isEmpty();
         boolean hasErrors = !allErrors.isEmpty();
         PortfolioImportJobDetailsDTO details = new PortfolioImportJobDetailsDTO();

@@ -216,7 +216,7 @@ public class PortfolioTemplateService {
     }
 
     private void createRentersSheet(XSSFWorkbook workbook, CellStyle headerStyle) {
-        XSSFSheet sheet = workbook.createSheet("Renters");
+        XSSFSheet sheet = workbook.createSheet(PortfolioSheets.TENANTS);
         String[] headers = {"Name", "NameAr", "Email", "Phone"};
         createHeaderRow(sheet, headers, headerStyle);
 
@@ -229,7 +229,7 @@ public class PortfolioTemplateService {
     }
 
     private void createLeasesSheet(XSSFWorkbook workbook, CellStyle headerStyle) {
-        XSSFSheet sheet = workbook.createSheet("Leases");
+        XSSFSheet sheet = workbook.createSheet(PortfolioSheets.CONTRACTS);
         String[] headers = {
                 "PropertyName", "BuildingName", "UnitNumber", "RenterEmail",
                 "StartDate", "EndDate",
