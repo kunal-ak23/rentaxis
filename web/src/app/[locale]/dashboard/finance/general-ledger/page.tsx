@@ -40,7 +40,7 @@ function GeneralLedger() {
     // the URL, like the other lists.
     const paramsKey = params.toString();
     useEffect(() => {
-        stripInvalidIdParams(["propertyId"]);
+        stripInvalidIdParams(["propertyId", "unitId"]);
     }, [paramsKey]);
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
@@ -69,6 +69,7 @@ function GeneralLedger() {
         from: params.get("from") || range.from,
         to: params.get("to") || range.to,
         propertyId: idParam(params.get("propertyId")) || undefined,
+        unitId: idParam(params.get("unitId")) || undefined,
         effectiveProperty: effectiveProperty || undefined,
         accountIds: urlIds.length ? (capped ? urlIds.slice(0, MAX_LEDGER_ACCOUNTS) : urlIds)
             : accountId ? [accountId] : undefined,
@@ -132,6 +133,7 @@ function GeneralLedger() {
         set("from", draft.from);
         set("to", draft.to);
         set("propertyId", draft.propertyId);
+        set("unitId", draft.unitId);
         const qs = q.toString();
         window.history.replaceState(window.history.state, "", window.location.pathname + (qs ? `?${qs}` : ""));
     };
@@ -222,6 +224,7 @@ function GeneralLedger() {
                 busy={loading}
                 showAccounts={!vendorId}
                 showProperty={!vendorId}
+                showUnit={!vendorId}
                 maxAccounts={MAX_LEDGER_ACCOUNTS}
             />
 
