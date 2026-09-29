@@ -126,8 +126,11 @@ cheque-extraction:
   # POST /api/v1/cheques/extract-many: pages read from one PDF, and cheques
   # (across all pages) issued from one upload. The file size cap is the
   # multipart limit above (10MB).
-  max-pdf-pages: 10
+  # Pages are read 3 at a time within a 150 s budget (the web proxy gives up at 300 s).
+  max-pdf-pages: 6
   max-cheques-per-upload: 24
+  page-parallelism: 3
+  read-budget-seconds: 150
 
 resilience4j:
   circuitbreaker:

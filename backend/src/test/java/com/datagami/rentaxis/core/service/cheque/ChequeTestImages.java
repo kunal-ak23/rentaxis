@@ -134,4 +134,81 @@ final class ChequeTestImages {
         g.dispose();
         return img;
     }
+
+    // ------------------------------------------------------------------
+    // Decompression bombs: small files declaring huge images.
+    // ------------------------------------------------------------------
+
+    /** A PNG whose header declares w×h RGB, with a token IDAT: tiny on disk. */
+    static byte[] pngDeclaring(int w, int h) {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        bos.writeBytes(new byte[]{(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'});
+        java.nio.ByteBuffer ihdr = java.nio.ByteBuffer.allocate(13);
+        ihdr.putInt(w).putInt(h).put((byte) 8).put((byte) 2).put((byte) 0).put((byte) 0).put((byte) 0);
+        chunk(bos, "IHDR", ihdr.array());
+        java.util.zip.Deflater d = new java.util.zip.Deflater();
+        d.setInput(new byte[1024]);
+        d.finish();
+        byte[] buf = new byte[2048];
+        int n = d.deflate(buf);
+        chunk(bos, "IDAT", java.util.Arrays.copyOf(buf, n));
+        chunk(bos, "IEND", new byte[0]);
+        return bos.toByteArray();
+    }
+
+    private static void chunk(ByteArrayOutputStream bos, String type, byte[] data) {
+        java.nio.ByteBuffer len = java.nio.ByteBuffer.allocate(4).putInt(data.length);
+        bos.writeBytes(len.array());
+        byte[] t = type.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        bos.writeBytes(t);
+        bos.writeBytes(data);
+        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+        crc.update(t);
+        crc.update(data);
+        bos.writeBytes(java.nio.ByteBuffer.allocate(4).putInt((int) crc.getValue()).array());
+    }
+
+    /** A real small JPEG (with EXIF orientation 6) whose SOF0 header is rewritten to declare w×h. */
+    static byte[] jpegDeclaring(int w, int h) {
+        byte[] jpeg = jpegWithOrientation(new BufferedImage(64, 32, BufferedImage.TYPE_INT_RGB), 6);
+        for (int i = 2; i + 8 < jpeg.length; i++) {
+            if ((jpeg[i] & 0xFF) == 0xFF && ((jpeg[i + 1] & 0xFF) == 0xC0 || (jpeg[i + 1] & 0xFF) == 0xC2)) {
+                jpeg[i + 5] = (byte) (h >> 8);
+                jpeg[i + 6] = (byte) h;
+                jpeg[i + 7] = (byte) (w >> 8);
+                jpeg[i + 8] = (byte) w;
+                return jpeg;
+            }
+        }
+        throw new IllegalStateException("no SOF marker");
+    }
+
+    /** A one-page PDF drawing a Flate image XObject that declares w×h but holds almost no data. */
+    static byte[] pdfWithImageDeclaring(int w, int h) {
+        try (PDDocument doc = new PDDocument()) {
+            PDPage page = new PDPage(PDRectangle.A4);
+            doc.addPage(page);
+            java.util.zip.Deflater d = new java.util.zip.Deflater();
+            d.setInput(new byte[4096]);
+            d.finish();
+            byte[] buf = new byte[8192];
+            int n = d.deflate(buf);
+            var stream = new org.apache.pdfbox.pdmodel.common.PDStream(doc,
+                    new java.io.ByteArrayInputStream(java.util.Arrays.copyOf(buf, n)),
+                    org.apache.pdfbox.cos.COSName.FLATE_DECODE);
+            PDImageXObject img = new PDImageXObject(stream, null);
+            img.setWidth(w);
+            img.setHeight(h);
+            img.setBitsPerComponent(8);
+            img.setColorSpace(org.apache.pdfbox.pdmodel.graphics.color.PDDeviceRGB.INSTANCE);
+            try (PDPageContentStream cs = new PDPageContentStream(doc, page)) {
+                cs.drawImage(img, 0, 0, 500, 166);
+            }
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            doc.save(bos);
+            return bos.toByteArray();
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
 }

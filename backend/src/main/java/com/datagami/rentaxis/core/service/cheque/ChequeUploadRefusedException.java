@@ -13,6 +13,8 @@ public class ChequeUploadRefusedException extends RuntimeException {
     public static final String TOO_MANY_PAGES = "cheque_upload_too_many_pages";
     public static final String TOO_MANY_CHEQUES = "cheque_upload_too_many_cheques";
     public static final String PDF_UNREADABLE = "cheque_upload_pdf_unreadable";
+    /** The image (or an image inside a PDF) declares more pixels than the server will decode. */
+    public static final String IMAGE_TOO_LARGE = "cheque_upload_image_too_large";
 
     private final String code;
 

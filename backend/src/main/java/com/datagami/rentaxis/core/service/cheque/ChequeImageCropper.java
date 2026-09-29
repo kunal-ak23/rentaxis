@@ -4,8 +4,11 @@ import com.datagami.rentaxis.core.service.cheque.ChequeExtractor.BoundingBox;
 
 import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReadParam;
+import javax.imageio.ImageReader;
 import javax.imageio.ImageWriteParam;
 import javax.imageio.ImageWriter;
+import javax.imageio.stream.ImageInputStream;
 import javax.imageio.stream.ImageOutputStream;
 import java.awt.Color;
 import java.awt.Graphics2D;
@@ -74,17 +77,61 @@ public final class ChequeImageCropper {
     // ------------------------------------------------------------------
 
     /**
+     * Declared pixels above which an upload is refused outright, before any pixel
+     * is decoded: a small, highly compressed file can declare a 14000×14000 image
+     * that would take the heap with it (a decompression bomb). 60 MP is above every
+     * phone camera's default output.
+     */
+    static final long MAX_DECLARED_PIXELS = 60_000_000L;
+    /** Anything larger is decoded subsampled, so at most this many pixels are ever held. */
+    static final long MAX_DECODED_PIXELS = 16_000_000L;
+
+    /**
      * The image, upright, or null when ImageIO cannot read it (HEIC/HEIF, a corrupt
      * file). Null is not an error: the caller then keeps the original bytes and
      * flags any cheque it cannot separate.
+     *
+     * <p>Bounded: the size is read from the header first; above
+     * {@link #MAX_DECLARED_PIXELS} the upload is refused
+     * ({@link ChequeUploadRefusedException#IMAGE_TOO_LARGE}), and above
+     * {@link #MAX_DECODED_PIXELS} it is decoded subsampled.</p>
      */
     public static BufferedImage decode(byte[] bytes) {
         if (bytes == null || bytes.length == 0) {
             return null;
         }
         BufferedImage img;
-        try {
-            img = ImageIO.read(new ByteArrayInputStream(bytes));
+        try (ImageInputStream in = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
+            if (in == null) {
+                return null;
+            }
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(in);
+            if (!readers.hasNext()) {
+                return null;
+            }
+            ImageReader reader = readers.next();
+            try {
+                reader.setInput(in, true, true);
+                long w = reader.getWidth(0);
+                long h = reader.getHeight(0);
+                if (w <= 0 || h <= 0) {
+                    return null;
+                }
+                if (w * h > MAX_DECLARED_PIXELS) {
+                    throw new ChequeUploadRefusedException(ChequeUploadRefusedException.IMAGE_TOO_LARGE,
+                            "Image is " + w + "x" + h + " pixels; at most " + MAX_DECLARED_PIXELS + " are read");
+                }
+                ImageReadParam param = reader.getDefaultReadParam();
+                int step = subsampling(w, h);
+                if (step > 1) {
+                    param.setSourceSubsampling(step, step, 0, 0);
+                }
+                img = reader.read(0, param);
+            } finally {
+                reader.dispose();
+            }
+        } catch (ChequeUploadRefusedException e) {
+            throw e;
         } catch (IOException | RuntimeException e) {
             return null;
         }
@@ -92,6 +139,15 @@ public final class ChequeImageCropper {
             return null;
         }
         return orient(img, exifOrientation(bytes));
+    }
+
+    /** The smallest whole subsampling step that brings w×h within {@link #MAX_DECODED_PIXELS}. */
+    static int subsampling(long w, long h) {
+        int step = 1;
+        while ((w / step) * (h / step) > MAX_DECODED_PIXELS) {
+            step++;
+        }
+        return step;
     }
 
     /**

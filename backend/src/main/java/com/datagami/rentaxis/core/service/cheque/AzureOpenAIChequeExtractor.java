@@ -244,6 +244,9 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
     // without an edit here.
     // ==================================================================
 
+    /** The most cheques one image may hold; the service refuses a page with more. */
+    public static final int MAX_CHEQUES_PER_PAGE = 12;
+
     private static final String MULTI_PROMPT = """
             The image may hold SEVERAL cheques: photographed side by side, overlapping, or scanned together on one page.
             Return one entry in "cheques" for every distinct physical cheque front you can see, in reading order (top to bottom, then left to right; right to left is never used for ordering).
@@ -251,10 +254,14 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
             For each cheque, "box" is the whole cheque's outline in the image, normalised to the image: x and y are the top-left corner and width and height its size, each between 0 and 1 of the full image's width or height.
             Do not return entries for cheque backs, counterfoils, deposit slips, or anything that is not a cheque front.
             If no cheque is visible, return an empty "cheques" list and say why in the top-level "warnings".
-            """;
+            An image never holds more than %d cheques; if you see more, return the first %d in reading order and add a top-level warning.
+            """.formatted(MAX_CHEQUES_PER_PAGE, MAX_CHEQUES_PER_PAGE);
 
-    /** Output budget per call: a dozen cheques' fields and boxes fit comfortably. */
-    private static final int MULTI_MAX_TOKENS = 4096;
+    /**
+     * Output budget per call, sized to the page limit: one cheque's fields, warnings
+     * and box are well under 300 tokens, plus room for the wrapper and page warnings.
+     */
+    static final int MULTI_MAX_TOKENS = MAX_CHEQUES_PER_PAGE * 300 + 512;
 
     private static final String BOX_SCHEMA = """
             {

@@ -156,4 +156,41 @@ class ChequeImageCropperTest {
         assertThat(ChequeImageCropper.exifOrientation(new byte[]{1, 2, 3})).isEqualTo(1);
         assertThat(ChequeImageCropper.decode(new byte[]{1, 2, 3})).isNull();
     }
+
+    // ------------------------------------------------------------------
+    // Decompression bombs (review I1): refused from the header, never decoded.
+    // ------------------------------------------------------------------
+
+    private static void assertRefusedAsTooLarge(byte[] bytes) {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> ChequeImageCropper.decode(bytes))
+                .isInstanceOf(ChequeUploadRefusedException.class)
+                .satisfies(e -> assertThat(((ChequeUploadRefusedException) e).getCode())
+                        .isEqualTo(ChequeUploadRefusedException.IMAGE_TOO_LARGE));
+    }
+
+    @Test
+    void aPngDeclaring14000By14000IsRefusedFromItsHeader() {
+        byte[] bomb = ChequeTestImages.pngDeclaring(14000, 14000);
+        assertThat(bomb.length).isLessThan(1000);
+        assertRefusedAsTooLarge(bomb);
+    }
+
+    @Test
+    void anExifTurnedJpegDeclaring14000By14000IsRefusedFromItsHeader() {
+        byte[] bomb = ChequeTestImages.jpegDeclaring(14000, 14000);
+        assertThat(ChequeImageCropper.exifOrientation(bomb)).isEqualTo(6);
+        assertRefusedAsTooLarge(bomb);
+    }
+
+    @Test
+    void anImageJustInsideTheLimitIsDecodedSubsampledToTheDecodeBudget() {
+        // 4800×4000 = 19.2 MP: allowed, but above the 16 MP decode budget.
+        BufferedImage big = new BufferedImage(4800, 4000, BufferedImage.TYPE_INT_RGB);
+        BufferedImage out = ChequeImageCropper.decode(ChequeTestImages.png(big));
+
+        assertThat((long) out.getWidth() * out.getHeight()).isLessThanOrEqualTo(ChequeImageCropper.MAX_DECODED_PIXELS);
+        assertThat(out.getWidth()).isEqualTo(2400);
+        assertThat(ChequeImageCropper.subsampling(4000, 3000)).isEqualTo(1);
+        assertThat(ChequeImageCropper.subsampling(7746, 7746)).isEqualTo(2);
+    }
 }

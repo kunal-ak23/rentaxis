@@ -24,6 +24,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * {@code POST /api/v1/cheques/extract-many}: one photo or PDF in, one issued image
@@ -64,8 +70,26 @@ public class ChequeMultiExtractionService {
     private final ChequeExtractor extractor;
     private final ChequeImageUploadRepository uploads;
 
-    @Value("${cheque-extraction.max-pdf-pages:10}")
-    int maxPdfPages = 10;
+    @Value("${cheque-extraction.max-pdf-pages:6}")
+    int maxPdfPages = 6;
+
+    /**
+     * Cheques one page may hold. The model's output budget is sized for this many
+     * ({@link AzureOpenAIChequeExtractor#MAX_CHEQUES_PER_PAGE}); more would be cut off.
+     */
+    int maxChequesPerPage = AzureOpenAIChequeExtractor.MAX_CHEQUES_PER_PAGE;
+
+    /** Pages read at once: gentle on the Azure rate limit (the bulk flow already runs 2 files at once). */
+    @Value("${cheque-extraction.page-parallelism:3}")
+    int pageParallelism = 3;
+
+    /**
+     * Wall-clock budget for reading every page. Well inside the web proxy's 300 s:
+     * a page still unread when it runs out yields one blank row to type in, and the
+     * request still answers — no half-stored upload behind a timed-out request.
+     */
+    @Value("${cheque-extraction.read-budget-seconds:150}")
+    long readBudgetSeconds = 150;
 
     @Value("${cheque-extraction.max-cheques-per-upload:24}")
     int maxChequesPerUpload = 24;
@@ -114,11 +138,13 @@ public class ChequeMultiExtractionService {
         }
 
         // --- Read every page before storing anything ---------------------------
-        List<MultiExtractionResult> results = new ArrayList<>();
+        List<MultiExtractionResult> results = readAll(pages);
         int total = 0;
-        for (Page p : pages) {
-            MultiExtractionResult r = safeExtractAll(p);
-            results.add(r);
+        for (MultiExtractionResult r : results) {
+            if (r.cheques().size() > maxChequesPerPage) {
+                throw new ChequeUploadRefusedException(ChequeUploadRefusedException.TOO_MANY_CHEQUES,
+                        r.cheques().size() + " cheques on one page; at most " + maxChequesPerPage);
+            }
             total += Math.max(1, r.cheques().size());
         }
         if (total > maxChequesPerUpload) {
@@ -126,18 +152,47 @@ public class ChequeMultiExtractionService {
                     total + " cheques found; at most " + maxChequesPerUpload + " per upload");
         }
 
+        // --- Store: all of it, or none of it ----------------------------------
+        List<ChequeImageUpload> stored = new ArrayList<>();
+        try {
+            return store(tenantId, file, contentType, pdf, original, photo, pages, results, stored);
+        } catch (RuntimeException e) {
+            // Nothing half-issued survives a failed store: the rows go (crops
+            // first, they point at the original) and so do their blobs.
+            for (int i = stored.size() - 1; i >= 0; i--) {
+                ChequeImageUpload u = stored.get(i);
+                try {
+                    uploads.delete(u);
+                } catch (RuntimeException ignored) {
+                    // best effort; the blob delete below still runs
+                }
+                try {
+                    blobStorage.delete(tenantId, u.getBlobPath());
+                } catch (RuntimeException ignored) {
+                    // best effort
+                }
+            }
+            throw e;
+        }
+    }
+
+    private ChequeMultiExtractionResponseDTO store(UUID tenantId, MultipartFile file, String contentType,
+                                                   boolean pdf, byte[] original, BufferedImage photo,
+                                                   List<Page> pages, List<MultiExtractionResult> results,
+                                                   List<ChequeImageUpload> stored) {
         // --- Store the original ------------------------------------------------
         boolean originalIsTheScan = !pdf && results.getFirst().cheques().size() <= 1;
-        var stored = blobStorage.uploadCheque(tenantId, file);
+        var up = blobStorage.uploadCheque(tenantId, file);
         OffsetDateTime uploadedAt = OffsetDateTime.now();
         ChequeImageUpload originalRow = new ChequeImageUpload();
         originalRow.setTenantId(tenantId);
-        originalRow.setBlobPath(stored.blobPath());
-        originalRow.setImageUrl(stored.url());
+        originalRow.setBlobPath(up.blobPath());
+        originalRow.setImageUrl(up.url());
         originalRow.setUploadedBy(callerIdOrNull());
         originalRow.setAttachable(originalIsTheScan);
+        stored.add(originalRow); // before save: a failed save still has its blob removed
         originalRow = uploads.save(originalRow);
-        ChequeImageMetaDTO originalMeta = new ChequeImageMetaDTO(stored.url(), stored.blobPath(), uploadedAt);
+        ChequeImageMetaDTO originalMeta = new ChequeImageMetaDTO(up.url(), up.blobPath(), uploadedAt);
 
         // --- One issued image per cheque ---------------------------------------
         List<ChequeExtractionPageDTO> pageDtos = new ArrayList<>();
@@ -163,7 +218,7 @@ public class ChequeMultiExtractionService {
                     imageId = originalRow.getId();
                 } else {
                     ChequeImageUpload row = storeDerived(tenantId, originalRow, page.bytes(), ".jpg",
-                            pdf ? page.number() : null);
+                            pdf ? page.number() : null, stored);
                     meta = new ChequeImageMetaDTO(row.getImageUrl(), row.getBlobPath(), uploadedAt);
                     imageId = row.getId();
                 }
@@ -199,9 +254,10 @@ public class ChequeMultiExtractionService {
                     // still has an image of its own to attach.
                     shown = null;
                     bytes = original;
-                    ext = extensionOf(file.getOriginalFilename());
+                    ext = extensionFor(contentType);
                 }
-                ChequeImageUpload row = storeDerived(tenantId, originalRow, bytes, ext, pdf ? page.number() : null);
+                ChequeImageUpload row = storeDerived(tenantId, originalRow, bytes, ext, pdf ? page.number() : null,
+                        stored);
                 List<String> itemWarnings = new ArrayList<>(safeList(det.warnings()));
                 if (!clean) {
                     itemWarnings.add(CROP_UNRELIABLE_WARNING);
@@ -217,6 +273,45 @@ public class ChequeMultiExtractionService {
         return new ChequeMultiExtractionResponseDTO(originalMeta, pageDtos, items, warnings);
     }
 
+    /**
+     * Every page, read {@link #pageParallelism} at a time within
+     * {@link #readBudgetSeconds}. A page not read in time is cancelled and answers
+     * no cheques with a warning, so the operator gets a blank row for it.
+     */
+    private List<MultiExtractionResult> readAll(List<Page> pages) {
+        if (pages.size() == 1) {
+            return List.of(safeExtractAll(pages.getFirst()));
+        }
+        ExecutorService pool = Executors.newFixedThreadPool(Math.max(1, Math.min(pageParallelism, pages.size())));
+        try {
+            List<Future<MultiExtractionResult>> futures = new ArrayList<>();
+            for (Page p : pages) {
+                futures.add(pool.submit(() -> safeExtractAll(p)));
+            }
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(readBudgetSeconds);
+            List<MultiExtractionResult> out = new ArrayList<>();
+            for (Future<MultiExtractionResult> f : futures) {
+                long left = Math.max(0, deadline - System.nanoTime());
+                try {
+                    out.add(f.get(left, TimeUnit.NANOSECONDS));
+                } catch (TimeoutException e) {
+                    f.cancel(true);
+                    out.add(new MultiExtractionResult(List.of(), List.of(READ_TIMED_OUT_WARNING)));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    out.add(new MultiExtractionResult(List.of(), List.of(READ_TIMED_OUT_WARNING)));
+                } catch (ExecutionException e) {
+                    out.add(new MultiExtractionResult(List.of(), List.of("Extraction failed unexpectedly")));
+                }
+            }
+            return out;
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    static final String READ_TIMED_OUT_WARNING = "This page took too long to read — fill it in by hand";
+
     private MultiExtractionResult safeExtractAll(Page page) {
         try {
             MultiExtractionResult r = extractor.extractAll(page.bytes(), page.contentType());
@@ -231,16 +326,17 @@ public class ChequeMultiExtractionService {
     }
 
     private ChequeImageUpload storeDerived(UUID tenantId, ChequeImageUpload source, byte[] bytes, String ext,
-                                           Integer pageNumber) {
-        var stored = blobStorage.uploadChequeBytes(tenantId, bytes, ext);
+                                           Integer pageNumber, List<ChequeImageUpload> stored) {
+        var up = blobStorage.uploadChequeBytes(tenantId, bytes, ext);
         ChequeImageUpload row = new ChequeImageUpload();
         row.setTenantId(tenantId);
-        row.setBlobPath(stored.blobPath());
-        row.setImageUrl(stored.url());
+        row.setBlobPath(up.blobPath());
+        row.setImageUrl(up.url());
         row.setUploadedBy(source.getUploadedBy());
         row.setSourceUploadId(source.getId());
         row.setPageNumber(pageNumber);
         row.setAttachable(true);
+        stored.add(row);
         return uploads.save(row);
     }
 
@@ -269,12 +365,14 @@ public class ChequeMultiExtractionService {
         return l == null ? List.of() : l;
     }
 
-    private static String extensionOf(String filename) {
-        if (filename == null) {
-            return ".jpg";
-        }
-        int dot = filename.lastIndexOf('.');
-        return dot < 0 ? ".jpg" : filename.substring(dot).toLowerCase(Locale.ROOT);
+    /** The stored extension, from the validated content type — never the client's file name. */
+    static String extensionFor(String contentType) {
+        return switch (contentType) {
+            case "image/png" -> ".png";
+            case "image/heic" -> ".heic";
+            case "image/heif" -> ".heif";
+            default -> ".jpg";
+        };
     }
 
     private static UUID callerIdOrNull() {

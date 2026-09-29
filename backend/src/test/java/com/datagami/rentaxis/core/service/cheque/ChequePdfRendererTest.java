@@ -56,4 +56,15 @@ class ChequePdfRendererTest {
 
         assertThat(Math.max(page.getWidth(), page.getHeight())).isLessThanOrEqualTo(ChequePdfRenderer.MAX_SIDE_PX);
     }
+
+    @Test
+    void aPdfImageDeclaring20000By6666IsRefusedBeforeAnyPageIsRendered() {
+        byte[] bomb = ChequeTestImages.pdfWithImageDeclaring(20000, 6666);
+        assertThat(bomb.length).isLessThan(5000);
+
+        assertThatThrownBy(() -> ChequePdfRenderer.renderToJpeg(bomb, 10))
+                .isInstanceOf(ChequePdfRenderer.PdfRefusedException.class)
+                .satisfies(e -> assertThat(((ChequePdfRenderer.PdfRefusedException) e).code())
+                        .isEqualTo(ChequeUploadRefusedException.IMAGE_TOO_LARGE));
+    }
 }

@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.awt.Color;
+import java.awt.image.BufferedImage;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -162,12 +163,17 @@ class ChequeMultiExtractionServiceTest {
     @Test
     void aTwoPagePdfIsReadPageByPage() {
         // Page 1: one cheque. Page 2: the three-cheque sheet.
-        when(extractor.extractAll(any(), any()))
-                .thenReturn(new MultiExtractionResult(List.of(det("P1", new BoundingBox(0.1, 0.2, 0.8, 0.6))), List.of()))
-                .thenReturn(new MultiExtractionResult(List.of(
-                        det("A", ChequeTestImages.threeBoxes().get(0)),
-                        det("B", ChequeTestImages.threeBoxes().get(1)),
-                        det("C", ChequeTestImages.threeBoxes().get(2))), List.of("page two warning")));
+        // Pages are read in parallel, so the fake answers by what it is shown, not by call order.
+        when(extractor.extractAll(any(), any())).thenAnswer(i -> {
+            BufferedImage shown = ChequeImageCropper.decode(i.getArgument(0));
+            if (ChequeTestImages.count(shown, Color.BLUE) == 0) {
+                return new MultiExtractionResult(List.of(det("P1", new BoundingBox(0.1, 0.2, 0.8, 0.6))), List.of());
+            }
+            return new MultiExtractionResult(List.of(
+                    det("A", ChequeTestImages.threeBoxes().get(0)),
+                    det("B", ChequeTestImages.threeBoxes().get(1)),
+                    det("C", ChequeTestImages.threeBoxes().get(2))), List.of("page two warning"));
+        });
         byte[] pdf = ChequeTestImages.pdfOf(ChequeTestImages.oneCheque(Color.RED), ChequeTestImages.threeCheques());
         var file = new MockMultipartFile("file", "scan.pdf", "application/pdf", pdf);
 
@@ -233,5 +239,100 @@ class ChequeMultiExtractionServiceTest {
                 .satisfies(e -> assertThat(((ChequeUploadRefusedException) e).getCode())
                         .isEqualTo(ChequeUploadRefusedException.PDF_UNREADABLE));
         verifyNoInteractions(extractor, blob, uploads);
+    }
+
+    @Test
+    void aBombPhotoIsRefusedBeforeTheModelOrStorage() {
+        var file = new MockMultipartFile("file", "x.png", "image/png", ChequeTestImages.pngDeclaring(14000, 14000));
+
+        assertThatThrownBy(() -> service.extractAndStore(tenant, file))
+                .satisfies(e -> assertThat(((ChequeUploadRefusedException) e).getCode())
+                        .isEqualTo(ChequeUploadRefusedException.IMAGE_TOO_LARGE));
+        verifyNoInteractions(extractor, blob, uploads);
+    }
+
+    @Test
+    void pagesAreReadInParallelAndASlowPageRunsOutOfBudgetWithoutFailingTheUpload() {
+        service.readBudgetSeconds = 2;
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.Set<String> threads = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        when(extractor.extractAll(any(), any())).thenAnswer(i -> {
+            threads.add(Thread.currentThread().getName());
+            if (calls.incrementAndGet() == 1) {
+                Thread.sleep(10_000); // page 1 hangs
+            } else {
+                Thread.sleep(300);
+            }
+            return new MultiExtractionResult(List.of(det("P", new BoundingBox(0.1, 0.2, 0.8, 0.6))), List.of());
+        });
+        BufferedImage page = ChequeTestImages.oneCheque(Color.RED);
+        var file = new MockMultipartFile("file", "x.pdf", "application/pdf", ChequeTestImages.pdfOf(page, page, page));
+
+        long start = System.nanoTime();
+        var res = service.extractAndStore(tenant, file);
+        long seconds = java.util.concurrent.TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start);
+
+        assertThat(seconds).isLessThan(6);
+        assertThat(threads.size()).isGreaterThan(1);
+        assertThat(res.items()).hasSize(3);
+        // The hung page is a blank row with the reason; the others were read.
+        assertThat(res.items().stream().filter(i -> i.extracted() == null).toList()).hasSize(1)
+                .allSatisfy(i -> assertThat(i.warnings()).containsExactly(ChequeMultiExtractionService.READ_TIMED_OUT_WARNING));
+    }
+
+    @Test
+    void aFailureWhileStoringRemovesEveryRowAndBlobAlreadyStored() {
+        var boxes = ChequeTestImages.threeBoxes();
+        when(extractor.extractAll(any(), any())).thenReturn(new MultiExtractionResult(List.of(
+                det("1", boxes.get(0)), det("2", boxes.get(1)), det("3", boxes.get(2))), List.of()));
+        java.util.concurrent.atomic.AtomicInteger n = new java.util.concurrent.atomic.AtomicInteger();
+        when(blob.uploadChequeBytes(any(), any(), anyString())).thenAnswer(i -> {
+            if (n.incrementAndGet() == 3) {
+                throw new BlobStorageService.BlobStorageException("storage down");
+            }
+            return result();
+        });
+        var file = new MockMultipartFile("file", "three.png", "image/png",
+                ChequeTestImages.png(ChequeTestImages.threeCheques()));
+
+        assertThatThrownBy(() -> service.extractAndStore(tenant, file))
+                .isInstanceOf(BlobStorageService.BlobStorageException.class);
+
+        // The original and the two crops stored before the failure are all gone.
+        assertThat(saved).hasSize(3);
+        for (ChequeImageUpload u : saved) {
+            verify(uploads).delete(u);
+            verify(blob).delete(tenant, u.getBlobPath());
+        }
+    }
+
+    @Test
+    void morePerPageThanTheModelBudgetIsRefused() {
+        List<DetectedCheque> many = new ArrayList<>();
+        for (int i = 0; i <= AzureOpenAIChequeExtractor.MAX_CHEQUES_PER_PAGE; i++) {
+            many.add(det(String.valueOf(i), null));
+        }
+        when(extractor.extractAll(any(), any())).thenReturn(new MultiExtractionResult(many, List.of()));
+        var file = new MockMultipartFile("file", "x.png", "image/png",
+                ChequeTestImages.png(ChequeTestImages.threeCheques()));
+
+        assertThatThrownBy(() -> service.extractAndStore(tenant, file))
+                .satisfies(e -> assertThat(((ChequeUploadRefusedException) e).getCode())
+                        .isEqualTo(ChequeUploadRefusedException.TOO_MANY_CHEQUES));
+        verifyNoInteractions(blob, uploads);
+    }
+
+    @Test
+    void theStoredExtensionComesFromTheContentTypeNotTheFileName() {
+        assertThat(ChequeMultiExtractionService.extensionFor("image/heic")).isEqualTo(".heic");
+        assertThat(ChequeMultiExtractionService.extensionFor("image/png")).isEqualTo(".png");
+        assertThat(ChequeMultiExtractionService.extensionFor("image/jpeg")).isEqualTo(".jpg");
+
+        when(extractor.extractAll(any(), any())).thenReturn(new MultiExtractionResult(
+                List.of(det("1", new BoundingBox(0, 0, 0.5, 0.5)), det("2", new BoundingBox(0.5, 0.5, 0.5, 0.5))),
+                List.of()));
+        var file = new MockMultipartFile("file", "evil.php", "image/heic", new byte[]{9, 9, 9});
+        service.extractAndStore(tenant, file);
+        verify(blob, org.mockito.Mockito.times(2)).uploadChequeBytes(tenant, new byte[]{9, 9, 9}, ".heic");
     }
 }
