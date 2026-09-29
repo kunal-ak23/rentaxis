@@ -2269,6 +2269,9 @@
     "urlAccountsCapped": "This link named {count} accounts; the first {max} are shown. Pick fewer, or open the Trial Balance for the whole company."
   },
   "Leasing": {
+    "pendingCheques": "Pending cheques: {count} · <n>{amount}</n>",
+    "returnedCheques": "Returned: {count} · <n>{amount}</n>",
+    "pendingChequesHint": "Registered or deposited, not yet cleared. Returned cheques not yet replaced are shown apart. Opens the Cheques tab.",
     "chargeRaisedBanner": "{type} proposed. It appears in the Penalties tab for finance to approve.",
     "raiseChargeHint": "The {type} is proposed, not charged. Finance approves it before anything is posted to the ledger.",
     "raiseCharge": "Raise {type}",
