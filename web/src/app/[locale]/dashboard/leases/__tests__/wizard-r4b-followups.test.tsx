@@ -174,3 +174,24 @@ describe("M8: the wizard's regenerate and Use this schedule honour a separate on
         expect(api.generateCheques.mock.calls[0][1]).toMatchObject({ foldDepositsAndFeesIntoFirst: true });
     });
 });
+
+describe("M9: a rent-free period does not make the regenerate prompt reappear", () => {
+    // One free month at the start: 12 monthly anchors, the first moved to 09/10 onto
+    // the second — 11 charged months, so the generator makes 11 rent cheques of 12.
+    const FREE = { ...LEASE, rentFreePeriods: [{ fromDate: "2026-09-09", toDate: "2026-10-08" }] } as unknown as LeaseDetail;
+
+    it("does not ask when the saved rent rows are the generator's count", async () => {
+        await toChequesStep(Array.from({ length: 11 }, (_, i) => cheque(i + 1)), FREE);
+        expect(screen.queryByTestId("wizard-regenerate-prompt")).toBeNull();
+    });
+
+    it("asks with the generator's count, and regenerates with it", async () => {
+        await toChequesStep([cheque(1), cheque(2), cheque(3), cheque(4)], FREE);
+        expect(screen.getByTestId("wizard-regenerate-prompt")).toHaveTextContent("now 11, but 4 are saved");
+        api.generateCheques.mockResolvedValue({ cheques: Array.from({ length: 11 }, (_, i) => cheque(i + 1)), version: 2 });
+        fireEvent.click(screen.getByTestId("wizard-regenerate-confirm"));
+        await waitFor(() => expect(api.generateCheques).toHaveBeenCalledTimes(1));
+        expect(api.generateCheques.mock.calls[0][1]).toMatchObject({ installments: 11 });
+        await waitFor(() => expect(screen.queryByTestId("wizard-regenerate-prompt")).toBeNull());
+    });
+});

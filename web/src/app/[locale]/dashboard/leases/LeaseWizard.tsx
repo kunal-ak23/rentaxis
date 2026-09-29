@@ -19,7 +19,7 @@ import { GraceDaysField, usePropertyDefaultGrace } from "@/components/leases/Gra
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
 import ChequeGrid, { draftRowsAreValid, toChequeRows } from "@/components/leases/ChequeGrid";
 import WizardReviewSchedules from "@/components/leases/WizardReviewSchedules";
-import { blankLine, defaultTermEnd, followRentVat, linesAreValid, rentAmountOf, splitLineErrors, chequeMonths, toInputs, toRows, todayIso, totalsOf, withRentAmount, withRentVat, type LineRow } from "@/components/leases/leaseMath";
+import { blankLine, defaultInstallmentsFor, defaultTermEnd, followRentVat, linesAreValid, rentAmountOf, splitLineErrors, chequeMonths, toInputs, toRows, todayIso, totalsOf, withRentAmount, withRentVat, type LineRow } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi,
     type ChargeType, type Cheque, type ChequeWrite, type DraftLeaseInput, type DraftPaymentMethod,
@@ -392,6 +392,15 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         runCheques(() => leaseApi.generateChequeNumbers(lease.id, startingNumber));
     };
     /**
+     * The instalment count the generator makes of the Terms step's: capped at the
+     * charged months when the saved contract has rent-free windows
+     * (`ChequeGenerationService.chargedAnchors`, `leaseMath.defaultInstallmentsFor`).
+     * Review of R4-B M9: the regenerate prompt compares the saved rows with this, not
+     * with the raw count — otherwise it reappears on every contract with a free period.
+     */
+    const generatorCount = defaultInstallmentsFor(terms.paymentTerms, terms.firstDueDate || terms.startDate,
+        terms.endDate, lease?.rentFreePeriods ?? null);
+    /**
      * Review of R4-B M8: whether one-time charges ride on cheque 1 — the user's
      * "Separate cheque for one-time charges" choice on the last Generate; before one,
      * what the saved rows show (a FEE or DEPOSIT row of its own means separate); else
@@ -401,12 +410,13 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         ?? !cheques.some(c => c.rowKind === "FEE" || c.rowKind === "DEPOSIT");
     /**
      * Owner requests (2026-09-29): what "Generate cheques" is asked for — the Terms
-     * step's count, first due date (the start date when empty) and distribution, with
-     * one-time charges folded into cheque 1 unless the user chose a separate cheque.
-     * The Review step's suggestion and "Use this schedule" use exactly this.
+     * step's count (as the generator counts it), first due date (the start date when
+     * empty) and distribution, with one-time charges folded into cheque 1 unless the
+     * user chose a separate cheque. The Review step's suggestion and "Use this
+     * schedule" use exactly this.
      */
     const chequeRequest = (): GenerateChequesRequest => ({
-        installments: terms.paymentTerms,
+        installments: generatorCount,
         firstDueDate: terms.firstDueDate || terms.startDate || null,
         distribution: terms.installmentDistribution,
         foldDepositsAndFeesIntoFirst: foldOneTime,
@@ -426,7 +436,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     const rentRowCount = cheques.filter(c => c.rowKind === "RENT" || c.rowKind === "MIXED").length
         || cheques.filter(c => c.rowKind == null).length;
     const countChanged = !!lease && lease.status === "DRAFT" && cheques.length > 0
-        && rentRowCount !== terms.paymentTerms && keptCountFor !== terms.paymentTerms;
+        && rentRowCount !== generatorCount && keptCountFor !== generatorCount;
 
     const saveCheques = () => {
         if (!lease || focusFirstInvalidMoney(document)) return;
@@ -734,13 +744,13 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                                 <div role="alert" data-testid="wizard-regenerate-prompt"
                                     className="flex flex-wrap items-center gap-2 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-[11px] text-warning">
                                     <AlertTriangle size={12} />
-                                    <span>{t("regenerateChequesPrompt", { count: terms.paymentTerms, had: rentRowCount })}</span>
+                                    <span>{t("regenerateChequesPrompt", { count: generatorCount, had: rentRowCount })}</span>
                                     <button type="button" data-testid="wizard-regenerate-confirm" disabled={busy}
                                         onClick={() => generate(chequeRequest())}
                                         className="px-2.5 py-1 rounded-md bg-primary text-primary-foreground font-semibold cursor-pointer disabled:opacity-50">
                                         {t("regenerateCheques")}
                                     </button>
-                                    <button type="button" data-testid="wizard-regenerate-keep" onClick={() => setKeptCountFor(terms.paymentTerms)}
+                                    <button type="button" data-testid="wizard-regenerate-keep" onClick={() => setKeptCountFor(generatorCount)}
                                         className="px-2.5 py-1 rounded-md border border-border text-foreground font-semibold cursor-pointer">
                                         {t("keepCheques")}
                                     </button>
