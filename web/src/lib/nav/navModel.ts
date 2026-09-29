@@ -44,6 +44,8 @@ function section(id: RailId, key: string, tourId: string, match: string[], group
  */
 /** Where a renter's Home goes (and where one landing on /dashboard is sent). */
 export const RENTER_HOME = "/dashboard/renter-portal";
+/** Where a security guard's Home goes (and where one landing on /dashboard is sent). */
+export const GUARD_HOME = "/dashboard/gatepass/gate";
 
 export function buildNav(ctx: NavModelContext): RailSection[] {
     const { role, isEnabled, tenantSlug, booksLive } = ctx;
@@ -65,6 +67,17 @@ export function buildNav(ctx: NavModelContext): RailSection[] {
                 ? [pi("gate-passes", "/dashboard/renter-portal/gate-passes", GP("navMyGatePasses"), "sidebar-gate-passes")] : []),
         ];
         return [section("home", "home", "sidebar-home", ["/dashboard"], one("main", items))!];
+    }
+
+    // A security guard's web is the gate desk: Home is the desk (the staff
+    // dashboard's summary calls refuse a guard), plus the approvals queue for
+    // the properties they are posted to.
+    if (can("canWorkGate")) {
+        return [section("home", "home", "sidebar-home", ["/dashboard"], one("main", [
+            pi("today", GUARD_HOME, N("home"), "sidebar-home", true),
+            ...(isEnabled("GATEPASS") && can("canApproveGatePasses")
+                ? [pi("gatepass-approvals", "/dashboard/gatepass/approvals", GP("navApprovals"), "sidebar-gatepass-approvals")] : []),
+        ]))!];
     }
 
     const rail: (RailSection | null)[] = [];

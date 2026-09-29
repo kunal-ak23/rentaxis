@@ -36,6 +36,8 @@ function canonical(href: string, role: UserRole): string {
  */
 const REMOVED: Partial<Record<UserRole, string[]>> = {
     RENTER: ["/dashboard"],
+    // Bug 25: a guard's Home is the gate desk; the staff dashboard refuses a guard.
+    SECURITY_GUARD: ["/dashboard"],
 };
 
 /**
@@ -48,8 +50,10 @@ const GATEPASS_SCREENS: Partial<Record<UserRole, string[]>> = {
     TENANT_ADMIN: ["/dashboard/gatepass/approvals"],
     PROPERTY_MANAGER: ["/dashboard/gatepass/approvals"],
     RENTER: ["/dashboard/renter-portal/gate-passes"],
+    SECURITY_GUARD: ["/dashboard/gatepass/gate", "/dashboard/gatepass/approvals"],
 };
 const GATEPASS_UNFLAGGED: Partial<Record<UserRole, string[]>> = {
+    SECURITY_GUARD: ["/dashboard/gatepass/gate"],
 };
 const kept = (role: UserRole) => (h: string) => !(REMOVED[role] ?? []).includes(h);
 

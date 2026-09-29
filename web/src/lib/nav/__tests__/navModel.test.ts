@@ -72,6 +72,11 @@ describe("buildNav — rail sections and panel items per role (all flags on)", (
         ]);
     });
 
+    it("SECURITY_GUARD's Home is the gate desk, with the approvals queue when GATEPASS is on", () => {
+        expect(flattenNav(buildNav(ctx("SECURITY_GUARD")))).toEqual(["/dashboard/gatepass/gate", "/dashboard/gatepass/approvals"]);
+        expect(flattenNav(buildNav(ctx("SECURITY_GUARD", [])))).toEqual(["/dashboard/gatepass/gate"]);
+    });
+
     it("never links a tenant admin to /superadmin/users", () => {
         expect(flattenNav(buildNav(ctx("TENANT_ADMIN")))).not.toContain("/superadmin/users");
     });
