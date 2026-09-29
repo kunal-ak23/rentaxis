@@ -103,4 +103,25 @@ describe("contract documents", () => {
         fireEvent.click(await screen.findByRole("button", { name: new RegExp(en.ContractDocuments.download) }));
         expect(await screen.findByRole("alert")).toHaveTextContent(en.ContractDocuments.downloadFailed);
     });
+
+    /**
+     * tutorials/bugs/11: Preview -> Confirm & Save generated the contract, but the
+     * list was fetched once per lease id and stayed empty until a reload. The page
+     * passes a key that moves with the lease (status, version, contract number); a
+     * new key fetches again.
+     */
+    it("fetches again when the lease moves, so a generated contract appears without a reload", async () => {
+        docs = [];
+        const view = (key: string) => (
+            <NextIntlClientProvider locale="en" messages={en}>
+                <ContractDocuments leaseId="lease-1" canIssue={false} leaseStatus="DRAFT" refreshKey={key} />
+            </NextIntlClientProvider>);
+        const { rerender } = render(view("DRAFT-1"));
+        await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+        expect(screen.queryByTestId("contract-documents")).toBeNull();
+
+        docs = [{ id: "d1", type: "CONTRACT", createdAt: "2026-09-29T08:00:00Z" }];
+        rerender(view("PENDING_SIGNATURE-2"));
+        expect(await screen.findByTestId("contract-doc-CONTRACT")).toBeInTheDocument();
+    });
 });

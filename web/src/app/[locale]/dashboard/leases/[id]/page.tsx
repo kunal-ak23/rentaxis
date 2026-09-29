@@ -969,7 +969,8 @@ export default function LeaseDetailPage() {
                                         </Link>
                                     </div>
                                     {contractError && <p className="text-xs text-error">{contractError}</p>}
-                                    <ContractDocuments leaseId={leaseId} canIssue={canGenerateContract && !!lease.postedAt} leaseStatus={lease.status} />
+                                    <ContractDocuments leaseId={leaseId} canIssue={canGenerateContract && !!lease.postedAt} leaseStatus={lease.status}
+                                        refreshKey={`${lease.status}:${lease.version ?? ""}:${lease.contractNumber ?? ""}:${lease.renterAcceptedAt ?? ""}:${lease.postedAt ?? ""}`} />
                                     {lease.ejariNumber && (
                                         <p className="text-xs text-muted">
                                             <span className="font-medium text-foreground">{t("ejariNumber")}:</span> {lease.ejariNumber}
