@@ -31,16 +31,17 @@ import java.util.List;
 @Slf4j
 public class AzureOpenAIChequeExtractor implements ChequeExtractor {
 
-    private static final String SYSTEM_PROMPT = """
+    static final String SYSTEM_PROMPT = """
             You extract UAE rent cheque details from cheque images.
             Return only JSON matching the provided schema. Use null when a field is unreadable.
             chequeDate must be ISO-8601 yyyy-MM-dd. confidence must be HIGH, MEDIUM, or LOW.
             Add short warnings for obscured, missing, or uncertain fields.
             amount is the numeric cheque value from the figures (AED) box; cross-check it against the amount in words. Return a plain number with no thousands separators or currency symbol. Use null if unreadable.
             payerName is the drawer: the account holder who issues and signs the cheque, often printed under the signature line or as the account name. It is never the name on the "Pay" line, which is the payee (the landlord). Use null if unreadable.
+            payeeName is the payee: the name written on the "Pay" / "Pay to the order of" / "ادفعوا لأمر" line, exactly as written (English or Arabic, do not translate or transliterate). It is never the drawer. Use null if unreadable.
             """;
 
-    private static final String SCHEMA = """
+    static final String SCHEMA = """
             {
               "type": "object",
               "additionalProperties": false,
@@ -48,6 +49,7 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
                 "chequeNumber": { "type": ["string", "null"] },
                 "bankName": { "type": ["string", "null"] },
                 "payerName": { "type": ["string", "null"] },
+                "payeeName": { "type": ["string", "null"] },
                 "chequeDate": { "type": ["string", "null"] },
                 "amount": { "type": ["number", "null"] },
                 "confidence": { "type": "string", "enum": ["HIGH", "MEDIUM", "LOW"] },
@@ -56,7 +58,7 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
                   "items": { "type": "string" }
                 }
               },
-              "required": ["chequeNumber", "bankName", "payerName", "chequeDate", "amount", "confidence", "warnings"]
+              "required": ["chequeNumber", "bankName", "payerName", "payeeName", "chequeDate", "amount", "confidence", "warnings"]
             }
             """;
 
@@ -218,6 +220,7 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
                     textOrNull(root, "chequeNumber"),
                     textOrNull(root, "bankName"),
                     textOrNull(root, "payerName"),
+                    textOrNull(root, "payeeName"),
                     chequeDate,
                     amount,
                     confidence

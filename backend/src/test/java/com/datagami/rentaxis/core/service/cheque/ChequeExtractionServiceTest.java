@@ -36,7 +36,8 @@ class ChequeExtractionServiceTest {
     @BeforeEach
     void setUp() {
         service = new ChequeExtractionService(blobStorageService, chequeExtractor,
-                org.mockito.Mockito.mock(com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository.class));
+                org.mockito.Mockito.mock(com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository.class),
+                org.mockito.Mockito.mock(com.datagami.rentaxis.core.service.OrgSettingsService.class));
     }
 
     @Test

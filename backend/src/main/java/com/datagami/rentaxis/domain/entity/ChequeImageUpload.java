@@ -62,4 +62,12 @@ public class ChequeImageUpload extends BaseTenantEntity {
     /** 1-based PDF page a crop came from; null for a photo. */
     @Column(name = "page_number")
     private Integer pageNumber;
+
+    /**
+     * The payee the OCR read off this scan at extract time (changeset 162).
+     * Bulk-attach checks this, not a value from the request, against the
+     * organisation's valid payee names.
+     */
+    @Column(name = "extracted_payee_name", length = 300)
+    private String extractedPayeeName;
 }

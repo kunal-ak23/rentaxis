@@ -63,6 +63,7 @@ export function normalizeExtraction(
       extracted: single.extracted,
       warnings: single.warnings ?? [],
       flags: [],
+      payeeCheck: single.payeeCheck ?? null,
     }],
     warnings: [],
   };

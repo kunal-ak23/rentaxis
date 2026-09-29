@@ -16,6 +16,14 @@ public interface RenterRepository extends JpaRepository<Renter, UUID> {
     Optional<Renter> findByUserId(UUID userId);
 
     /**
+     * Whether any renter row is linked to this user. Native, so it does not
+     * depend on the tenant filter; it answers yes/no only and exposes no row.
+     */
+    @org.springframework.data.jpa.repository.Query(value = "select exists(select 1 from renters where user_id = :userId)",
+            nativeQuery = true)
+    boolean anyLinkedToUser(@org.springframework.data.repository.query.Param("userId") UUID userId);
+
+    /**
      * @deprecated Same tenant-filter-dependency caveat as
      *     {@link PropertyRepository#findByNameEnIn(Collection)}. Prefer
      *     {@link #findByTenantIdAndEmailIn(UUID, Collection)}.

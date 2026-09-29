@@ -24,12 +24,15 @@ public class ChequeExtractionService {
     private final BlobStorageService blobStorage;
     private final ChequeExtractor extractor;
     private final com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository uploads;
+    private final com.datagami.rentaxis.core.service.OrgSettingsService orgSettings;
 
     public ChequeExtractionService(BlobStorageService blobStorage, ChequeExtractor extractor,
-                                   com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository uploads) {
+                                   com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository uploads,
+                                   com.datagami.rentaxis.core.service.OrgSettingsService orgSettings) {
         this.blobStorage = blobStorage;
         this.extractor = extractor;
         this.uploads = uploads;
+        this.orgSettings = orgSettings;
     }
 
     public ChequeExtractionResponseDTO extractAndStore(UUID tenantId, MultipartFile file) {
@@ -53,10 +56,21 @@ public class ChequeExtractionService {
             extractionResult = new ChequeExtractor.ExtractionResult(null, List.of("Extraction failed unexpectedly"));
         }
 
+        // The payee stays with the scan the server issued: bulk-attach checks this
+        // value, not one the client sends back (owner ruling 2026-09-29).
+        String payee = extractionResult.extracted() == null ? null : extractionResult.extracted().payeeName();
+        if (payee != null && !payee.isBlank()) {
+            issued.setExtractedPayeeName(payee.trim().length() > 300 ? payee.trim().substring(0, 300) : payee.trim());
+            uploads.save(issued);
+        }
+        // A failed extraction read nothing, so there is no payee to judge.
+        var payeeCheck = extractionResult.extracted() == null ? null : orgSettings.checkPayee(tenantId, payee);
+
         return new ChequeExtractionResponseDTO(
                 new ChequeImageMetaDTO(uploadResult.url(), uploadResult.blobPath(), uploadedAt),
                 extractionResult.extracted(),
-                extractionResult.warnings()
+                extractionResult.warnings(),
+                payeeCheck
         );
     }
 

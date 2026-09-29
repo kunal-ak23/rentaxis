@@ -80,5 +80,13 @@ public record ChequeDTO(UUID id,
                         /* S16-14: banked by the previous owner before an acquisition cut-over
                            (ChequeService.markSettledBeforeAcquisition) — requireOurs refuses
                            bounce, replace, receipt and return outright for it. */
-                        boolean settledBeforeAcquisition) {
+                        boolean settledBeforeAcquisition,
+                        /* Owner ruling 2026-09-29: the payee read off the attached scan, the
+                           organisation's payee check on it (null when it did not run) and, for a
+                           MISMATCH, who confirmed attaching it anyway and when. */
+                        String payeeName,
+                        com.datagami.rentaxis.domain.entity.enums.PayeeCheck payeeCheck,
+                        UUID payeeMismatchConfirmedBy,
+                        String payeeMismatchConfirmedByName,
+                        java.time.Instant payeeMismatchConfirmedAt) {
 }

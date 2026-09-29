@@ -8,6 +8,7 @@ import { NumberInput } from "@/components/ui/NumberInput";
 import { chequeGridHandlers, pasteIntoRows, type GridField, type PasteRequest } from "@/components/cheques/chequeGridKeys";
 import PasteReport, { usePasteReport } from "@/components/cheques/PasteReport";
 import { cn } from "@/lib/utils";
+import { formatDate } from "@/lib/format";
 import { fmtAmount } from "@/lib/api/ledger";
 import type {
     Cheque,
@@ -610,6 +611,20 @@ export default function ChequeGrid({
                                         {c.settledBeforeAcquisition && (
                                             <span className="ms-1 text-[9px] text-muted" data-testid={`cheque-settled-before-acquisition-${i}`}>
                                                 {tc("settledBeforeAcquisition")}
+                                            </span>
+                                        )}
+                                        {c.payeeCheck === "MISMATCH" && (
+                                            <span className="block mt-1 text-[9px] text-red-700" data-testid={`cheque-payee-mismatch-${i}`}>
+                                                <span className="font-semibold">{tc("payeeMismatch")}</span>
+                                                {c.payeeName && <>: <bdi>{c.payeeName}</bdi></>}
+                                                {c.payeeMismatchConfirmedAt && (
+                                                    <span className="block text-muted">
+                                                        {tc("payeeMismatchConfirmedBy", {
+                                                            name: c.payeeMismatchConfirmedByName ?? "—",
+                                                            date: formatDate(c.payeeMismatchConfirmedAt),
+                                                        })}
+                                                    </span>
+                                                )}
                                             </span>
                                         )}
                                     </td>

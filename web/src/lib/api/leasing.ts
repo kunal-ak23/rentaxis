@@ -667,6 +667,16 @@ export type Cheque = {
   /** F14-24/F14-62: RR-yy/n, given when the money landed; null before that or on rows cleared before the series. */
   receiptNumber?: string | null;
   /**
+   * Owner ruling 2026-09-29: the payee read off the attached scan and the
+   * organisation's payee check on it (null when it did not run). For a
+   * MISMATCH, who confirmed attaching it anyway, and when.
+   */
+  payeeName?: string | null;
+  payeeCheck?: "MATCH" | "MISMATCH" | "UNREADABLE" | null;
+  payeeMismatchConfirmedBy?: string | null;
+  payeeMismatchConfirmedByName?: string | null;
+  payeeMismatchConfirmedAt?: string | null;
+  /**
    * The VAT this instalment collects (part of `amount`) and the net it is charged
    * on — spec 2026-09-24 §1. Optional so a row the client added and has not saved
    * yet, whose VAT the server has still to work out, is typed honestly.

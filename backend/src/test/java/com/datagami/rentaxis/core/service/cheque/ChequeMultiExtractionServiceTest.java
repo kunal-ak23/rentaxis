@@ -53,7 +53,8 @@ class ChequeMultiExtractionServiceTest {
             saved.add(u);
             return u;
         });
-        service = new ChequeMultiExtractionService(blob, extractor, uploads);
+        service = new ChequeMultiExtractionService(blob, extractor, uploads,
+                org.mockito.Mockito.mock(com.datagami.rentaxis.core.service.OrgSettingsService.class));
         // PDF input is off by default (not production-ready); its tests switch it on.
         service.pdfUploadEnabled = true;
     }
@@ -352,7 +353,8 @@ class ChequeMultiExtractionServiceTest {
 
     @Test
     void theFlagDefaultsToOff() {
-        assertThat(new ChequeMultiExtractionService(blob, extractor, uploads).pdfUploadEnabled).isFalse();
+        assertThat(new ChequeMultiExtractionService(blob, extractor, uploads,
+                org.mockito.Mockito.mock(com.datagami.rentaxis.core.service.OrgSettingsService.class)).pdfUploadEnabled).isFalse();
     }
 
     @Test

@@ -35,6 +35,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest
 class RenterUpdateIT extends AbstractPostgresIT {
 
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired RenterRepository renterRepo;
     @Autowired UserRepository userRepo;
@@ -228,6 +229,50 @@ class RenterUpdateIT extends AbstractPostgresIT {
         assertThat(user.getTokenVersion()).isEqualTo(versionBefore);
     }
 
+    /**
+     * #391 follow-up M4: a legacy login stored with mixed case ("Legacy@Example.com")
+     * is the same address as its lower-case spelling; the duplicate check compares
+     * trimmed, case-insensitive, within this organisation.
+     */
+    @Test
+    void aLegacyMixedCaseLoginOfTheSameOrganisationStillCountsAsTaken() {
+        UUID org = newOrg();
+        String original = uniqueEmail("mine");
+        RenterDTO mine = create("Mine", original, true);
+        String legacy = "Legacy-" + UUID.randomUUID().toString().substring(0, 8) + "@Example.COM";
+        User other = new User();
+        other.setEmail(legacy);
+        other.setName("Legacy");
+        other.setRole(com.datagami.rentaxis.domain.entity.enums.UserRole.PROPERTY_MANAGER);
+        other.setStatus(com.datagami.rentaxis.domain.entity.enums.UserStatus.ACTIVE);
+        other.setPasswordHash("x");
+        other.setTenantId(org);
+        userRepo.save(other);
+
+        assertThatThrownBy(() -> renterService.updateRenter(mine.getId(),
+                edit("Mine", null, legacy.toLowerCase(), null, Language.EN)))
+                .isInstanceOfSatisfying(BusinessRuleViolationException.class,
+                        e -> assertThat(e.getCode()).isEqualTo("renter.emailTaken"));
+        assertThat(userRepo.findById(mine.getUserId()).orElseThrow().getEmail()).isEqualTo(original);
+    }
+
+    /** The login's own legacy spelling is not a clash with itself. */
+    @Test
+    void aLoginsOwnMixedCaseSpellingIsNotAClashWithItself() {
+        newOrg();
+        String original = uniqueEmail("self");
+        RenterDTO mine = create("Mine", original, true);
+        // The login drifted to a legacy mixed-case spelling of a new address.
+        String moved = uniqueEmail("moved");
+        User login = userRepo.findById(mine.getUserId()).orElseThrow();
+        login.setEmail(moved.toUpperCase());
+        userRepo.save(login);
+
+        renterService.updateRenter(mine.getId(), edit("Mine", null, moved, null, Language.EN));
+
+        assertThat(userRepo.findById(mine.getUserId()).orElseThrow().getEmail()).isEqualTo(moved);
+    }
+
     @Test
     void aLinkedLoginThatIsNotARenterIsLeftAloneAndTheEmailChangeRefused() {
         UUID org = newOrg();
@@ -257,6 +302,10 @@ class RenterUpdateIT extends AbstractPostgresIT {
 
         newOrg();
         RenterDTO created = create("Cross Linked", null, false);
+        // One portal user links to one Tenant (ux_renters_user_id, PR #389), so the
+        // corrupt cross-organisation link is fabricated by moving the foreign
+        // Tenant's link here rather than duplicating it.
+        jdbc.update("update renters set user_id = null where id = ?", foreign.getId());
         Renter row = renterRepo.findById(created.getId()).orElseThrow();
         row.setUserId(foreign.getUserId());
         renterRepo.save(row);

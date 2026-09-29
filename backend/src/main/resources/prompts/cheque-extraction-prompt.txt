@@ -6,6 +6,7 @@ Extract these fields:
 - chequeNumber: digits printed on the cheque (often top-right or in the MICR line at bottom). Return digits only.
 - bankName: the issuing bank's name as printed on the cheque (e.g., "Emirates NBD", "First Abu Dhabi Bank", "ADCB", "Mashreq", "Dubai Islamic Bank"). Use the English name if both languages are present.
 - payerName: the account holder name (printed or stamped). This is NOT the handwritten payee on the "Pay To" line.
+- payeeName: the name on the "Pay" / "Pay to the order of" / "ادفعوا لأمر" line, exactly as written (do not translate or transliterate).
 - chequeDate: the date written on the cheque in ISO YYYY-MM-DD format. Treat ambiguous DD/MM/YYYY vs MM/DD/YYYY as DD/MM/YYYY (UAE convention).
 
 Rules:
