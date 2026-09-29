@@ -307,7 +307,9 @@ CONTRACTS = {
         # The June instalment is banked late and clears after the 5-day grace, so a late-payment
         # penalty is proposed (by the late-clear rule, or by hand if the rule stays quiet) and left
         # PROPOSED for tutorial 14 to approve or waive.
-        "fates": {"on:2026-06-01": ("CLEAR_LATE", D(2026, 6, 9))},
+        # The September instalment stays in the drawer, matured and unbanked, so tutorial 35 has a
+        # cheque to take to the bank on camera.
+        "fates": {"on:2026-06-01": ("CLEAR_LATE", D(2026, 6, 9)), "on:2026-09-01": ("HOLD", D(2026, 9, 1))},
         "penalties": [{"reason": "LATE_PAYMENT", "amount": 250, "cheque_on": D(2026, 6, 1), "date": D(2026, 6, 9),
                        "description": "June instalment cleared after the grace period", "leave_proposed": True}],
     },

@@ -189,7 +189,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "17", slug: "chart-of-accounts-template-and-charge-types", topic: "accounting", roles: FINANCE, durationSec: 150, youtubeId: null,
+        id: "17", slug: "chart-of-accounts-template-and-charge-types", topic: "accounting", roles: FINANCE, durationSec: 121, youtubeId: null,
         title: { en: "Chart of accounts, property account sets and charge types", ar: "دليل الحسابات ومجموعات حسابات العقارات وأنواع الرسوم" },
         description: {
             en: "See how the chart of accounts is organised, how every property gets its own set of accounts, and which account each charge on a contract posts to.",

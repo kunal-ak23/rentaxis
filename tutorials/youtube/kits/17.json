@@ -1,0 +1,64 @@
+{
+  "id": "17",
+  "slug": "chart-of-accounts-template-and-charge-types",
+  "title": "Miftah tutorial 17 · Chart of accounts, property account sets and charge types",
+  "description": "See how the chart of accounts is organised, how every property gets its own set of accounts, and which account each charge on a contract posts to.\n\nWho this is for: Accountant, Company Admin, System Admin.\n\nChapters:\n0:00 Chart of Accounts\n0:32 One Set of Accounts per Building\n0:46 Ledger Accounts\n1:03 Property Account Template\n1:33 Charge Types\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nتعرّف على تنظيم دليل الحسابات، وكيف يحصل كل عقار على مجموعة حساباته الخاصة، وإلى أي حساب يُرحَّل كل بند من بنود العقد.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "chart of accounts",
+    "journal voucher",
+    "financial reports",
+    "accounting software",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Accounting",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "Chart of Accounts"
+    },
+    {
+      "startSec": 32.136,
+      "start": "0:32",
+      "label": "One Set of Accounts per Building"
+    },
+    {
+      "startSec": 46.579,
+      "start": "0:46",
+      "label": "Ledger Accounts"
+    },
+    {
+      "startSec": 63.55,
+      "start": "1:03",
+      "label": "Property Account Template"
+    },
+    {
+      "startSec": 93.158,
+      "start": "1:33",
+      "label": "Charge Types"
+    }
+  ],
+  "durationSec": 121,
+  "roles": [
+    "SUPER_ADMIN",
+    "TENANT_ADMIN",
+    "ACCOUNTANT"
+  ],
+  "topic": "accounting",
+  "captionsFile": "tutorials/output/17-chart-of-accounts-the-account-template-and-charge-types.srt",
+  "videoFile": "tutorials/output/17-chart-of-accounts-the-account-template-and-charge-types.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/17.png"
+}
