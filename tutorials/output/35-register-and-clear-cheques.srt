@@ -1,161 +1,142 @@
 1
-00:00:00,000 --> 00:00:03,711
-This tutorial follows a cheque from the
-drawer's
+00:00:00,000 --> 00:00:03,738
+This tutorial takes cheques from the
+office drawer to the
 
 2
-00:00:03,711 --> 00:00:06,958
-hand to the bank and back again.
+00:00:03,738 --> 00:00:07,103
+bank, and shows the one journal that
+banking writes.
 
 3
-00:00:06,958 --> 00:00:09,277
-Open Finance and choose Cheques.
+00:00:07,103 --> 00:00:10,094
+As the Accountant, open Cheque and Cash
+Collection.
 
 4
-00:00:09,277 --> 00:00:13,916
-Every cheque from every posted contract is
-here, with its
+00:00:10,094 --> 00:00:13,832
+The Cheque register holds every cheque
+from every posted contract.
 
 5
-00:00:13,916 --> 00:00:18,091
-status, its maturity date, the property
-and the renter.
+00:00:13,832 --> 00:00:15,701
+Filter the status to Registered.
 
 6
-00:00:18,091 --> 00:00:21,338
-Use the filters to narrow the list
+00:00:15,701 --> 00:00:19,813
+Registered means the cheque is recorded
+and its post-dated cheque journal
 
 7
-00:00:21,338 --> 00:00:24,121
-to registered cheques maturing this month.
-
-8
-00:00:24,121 --> 00:00:28,760
-Registered means the cheque is recorded
-and its journal is
-
-9
-00:00:28,760 --> 00:00:32,934
-written, but the paper has not left the
+00:00:19,813 --> 00:00:23,552
+is written, but the paper is still in the
 office.
 
+8
+00:00:23,552 --> 00:00:25,047
+Now open To deposit.
+
+9
+00:00:25,047 --> 00:00:28,411
+It lists the registered cheques whose date
+has arrived.
+
 10
-00:00:32,934 --> 00:00:36,645
-Select the rows you are taking to the
+00:00:28,411 --> 00:00:32,524
+Mohammed Al Rashid's cheque 880102 for
+19,500 matured on 1 September.
 
 11
-00:00:36,645 --> 00:00:39,892
-bank and choose Cheque and cash
-collection.
+00:00:32,524 --> 00:00:34,767
+Select it and choose Deposit Batch.
 
 12
-00:00:39,892 --> 00:00:43,139
-Enter the deposit date and the account
+00:00:34,767 --> 00:00:37,010
+Enter the deposit date and confirm.
 
 13
-00:00:43,139 --> 00:00:45,922
-you are banking into, then confirm.
+00:00:37,010 --> 00:00:38,879
+The cheque moves to Deposited.
 
 14
-00:00:45,922 --> 00:00:48,706
-The selected rows move to deposited.
+00:00:38,879 --> 00:00:41,870
+Banking writes no journal at all, because
+nothing
 
 15
-00:00:48,706 --> 00:00:53,344
-Depositing is an operational step and
-writes no accounting entry,
+00:00:41,870 --> 00:00:44,486
+has changed about what the tenant owes.
 
 16
-00:00:53,344 --> 00:00:57,519
-because nothing has changed about what you
-are owed.
+00:00:44,486 --> 00:00:48,599
+Back in the register, find Hana Yoshida's
+cheque 770109 for 5,500.
 
 17
-00:00:57,519 --> 00:01:03,085
-When the bank confirms a cheque, open its
-row and choose Clear.
+00:00:48,599 --> 00:00:51,215
+It is already Deposited, and today the
 
 18
-00:01:03,085 --> 00:01:06,796
-Enter the value date the bank gave you.
+00:00:51,215 --> 00:00:53,832
+bank has confirmed it, so choose Clear.
 
 19
-00:01:06,796 --> 00:01:11,435
-RentAxis debits your bank account and
-credits post-dated cheques receivable.
+00:00:53,832 --> 00:00:56,823
+The dialog shows the account it clears
+into,
 
 20
-00:01:11,435 --> 00:01:15,146
-That is the moment the money becomes
-yours.
+00:00:56,823 --> 00:00:59,814
+the Emirates Islamic account for Palm
+Ridge Residences.
 
 21
-00:01:15,146 --> 00:01:18,857
-Now take a cheque the bank has returned.
+00:00:59,814 --> 00:01:02,057
+Confirm, and the cheque is Cleared.
 
 22
-00:01:18,857 --> 00:01:23,959
-Open its row and choose Bounce, give the
-reason, and confirm.
+00:01:02,057 --> 00:01:03,926
+Clearing writes the receipt journal.
 
 23
-00:01:23,959 --> 00:01:28,598
-Because this cheque had already cleared,
-RentAxis reverses the bank
+00:01:03,926 --> 00:01:08,412
+Open Journal Voucher and filter to CRT:
+the newest one debits the
 
 24
-00:01:28,598 --> 00:01:32,773
-side: it debits rent receivable and
-credits the bank.
+00:01:08,412 --> 00:01:12,524
+Emirates Islamic account with 5,500, and
+credits PDC Receivable with 5,500.
 
 25
-00:01:32,773 --> 00:01:38,339
-The amount is owed again, and the register
-shows it as due.
+00:01:12,524 --> 00:01:15,889
+The money becomes the company's when the
+bank pays
 
 26
-00:01:38,339 --> 00:01:40,195
-Open Return and replace.
+00:01:15,889 --> 00:01:18,879
+it, not when the cheque is handed over.
 
 27
-00:01:40,195 --> 00:01:43,442
-A returned cheque is usually settled with
+00:01:18,879 --> 00:01:21,870
+Finally, look at the summary above the
+register.
 
 28
-00:01:43,442 --> 00:01:46,689
-new paper, and often more than one.
+00:01:21,870 --> 00:01:25,234
+The tiles total what is registered,
+deposited and cleared
 
 29
-00:01:46,689 --> 00:01:50,400
-Add two replacement rows, each with its
-own
+00:01:25,234 --> 00:01:28,599
+this month, and the aging strip sorts what
+is
 
 30
-00:01:50,400 --> 00:01:53,647
-number, maturity date and amount, then
-save.
+00:01:28,599 --> 00:01:31,590
+due by how many days it is overdue.
 
 31
-00:01:53,647 --> 00:01:56,430
-Each replacement registers its own
-journal.
-
-32
-00:01:56,430 --> 00:02:01,068
-If the replacements do not add up to the
-returned
-
-33
-00:02:01,068 --> 00:02:05,707
-amount, the difference stays in rent
-receivable rather than disappearing.
-
-34
-00:02:05,707 --> 00:02:10,810
-Penalties are separate and never
-automatic: a returned cheque proposes a
-
-35
-00:02:10,810 --> 00:02:15,912
-penalty that finance approves, waives or
-reverses from the Penalties queue.
+00:01:31,590 --> 00:01:35,328
+What is overdue comes from the register,
+cheque by cheque.
