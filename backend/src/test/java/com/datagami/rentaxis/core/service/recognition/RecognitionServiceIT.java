@@ -954,6 +954,55 @@ class RecognitionServiceIT extends AbstractPostgresIT {
         assertTrialBalanceBalances();
     }
 
+    /**
+     * Review of R4-B M10: a row a contract change struck out (CANCELLED) while the run
+     * was working was never recognised by anyone, so it is not "already recognised by
+     * another run": it is reported on its own, and nothing is posted for it.
+     */
+    @Test
+    void aRowCancelledMeanwhileIsReportedAsWithdrawnNotAlreadyRecognised() throws Exception {
+        UUID leaseId = galah();
+        UUID september = rowStarting(leaseId, START).id();
+        UUID tenantId = fixtures.tenantId();
+
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        CountDownLatch rowLocked = new CountDownLatch(1);
+        Future<RecognitionService.RecognitionRunResult> running;
+        try {
+            running = pool.submit(() -> {
+                assertThat(rowLocked.await(30, TimeUnit.SECONDS)).isTrue();
+                TenantContextHolder.setTenantId(tenantId);
+                LeaseTestFixtures.authenticateAsTenantAdmin();
+                try {
+                    return recognition.runTo(LocalDate.of(2026, 11, 30), false);
+                } finally {
+                    TenantContextHolder.clear();
+                    LeaseTestFixtures.clearAuth();
+                }
+            });
+
+            // An amendment striking September out, as rebuildAfterAmend does to a PLANNED row.
+            tx.executeWithoutResult(s -> {
+                RecognitionEntry row = entriesRepo.lockById(september).orElseThrow();
+                rowLocked.countDown();
+                awaitABlockedBackend();
+                row.setStatus(RecognitionStatus.CANCELLED);
+                entriesRepo.saveAndFlush(row);
+            });
+
+            RecognitionService.RecognitionRunResult result = running.get(60, TimeUnit.SECONDS);
+            assertThat(result.errors()).isEmpty();
+            assertThat(result.alreadyRecognised()).as("nobody recognised September").isZero();
+            assertThat(result.withdrawnMeanwhile()).isEqualTo(1);
+            assertThat(result.posted()).as("October and November").isEqualTo(2);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(cilCount()).as("nothing for September").isEqualTo(2L);
+        assertTrialBalanceBalances();
+    }
+
     // ------------------------------------------------------------------
     // tenancy
     // ------------------------------------------------------------------

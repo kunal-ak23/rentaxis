@@ -834,6 +834,8 @@ export type RecognitionRunResult = {
   errors: string[];
   /** Break-it R4 money4 F1: rows another run posted meanwhile — done once, not failed. Absent on older backends. */
   alreadyRecognised?: number;
+  /** Review of R4-B M10: rows a contract change cancelled or reversed meanwhile — nothing to recognise. */
+  withdrawnMeanwhile?: number;
 };
 
 /** F14-27: `GET /finance/recognition/status` — a warning banner's whole answer. */

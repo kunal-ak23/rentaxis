@@ -3067,6 +3067,7 @@
     "skippedLockedNote": "{count, plural, one {# entry falls} other {# entries fall}} in a period that is closed. Books are locked through {date}.",
     "failed": "Failed",
     "alreadyRecognisedNote": "{count, plural, one {# entry was} other {# entries were}} already recognised by another run at the same time. Nothing more to do for {count, plural, one {it} other {them}}.",
+    "withdrawnMeanwhileNote": "{count, plural, one {# entry was} other {# entries were}} taken off the schedule by a contract change (an amendment, reduction or termination) while this run was working. Nothing was recognised for {count, plural, one {it} other {them}}; any replacement entry is picked up by the next run.",
     "nothingToPost": "Nothing to post up to this date.",
     "loadFailed": "Couldn't load pending entries. Please try again.",
     "runFailed": "The run was refused.",
