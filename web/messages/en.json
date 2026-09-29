@@ -696,10 +696,10 @@
     "breadcrumb": "Cheques · Bulk upload",
     "title": "Upload cheques in bulk",
     "entryButton": "Bulk upload cheques",
-    "pickFolder": "Choose a folder of cheque photos or PDFs",
-    "pickHint": "Pick a folder of cheque photos or PDFs for this contract. A photo or PDF may hold several cheques.",
+    "pickFolder": "Choose a folder of cheque photos",
+    "pickHint": "Pick a folder of cheque photos for this contract. One photo may hold several cheques.",
     "selectedCount": "{n} files selected",
-    "rejectedCount": "{n} files were not images or PDFs and were skipped",
+    "rejectedCount": "{n} files were not images and were skipped",
     "removeImage": "Remove file",
     "continueToExtract": "Extract cheques",
     "extractingCount": "Extracting {done} of {total}…",
@@ -737,7 +737,9 @@
       "cheque_upload_too_many_pages": "The PDF has too many pages (at most 6).",
       "cheque_upload_too_many_cheques": "Too many cheques in one file (at most 24). Split it and upload again.",
       "cheque_upload_pdf_unreadable": "The PDF could not be read. It may be damaged or password-protected.",
-      "cheque_upload_image_too_large": "The image is too large to read (at most 60 megapixels)."
+      "cheque_upload_image_too_large": "The image is too large to read (at most 60 megapixels).",
+      "cheque_upload_pdf_not_supported": "PDF upload is not available yet. Upload photos of the cheques instead.",
+      "cheque_upload_busy": "The server is busy reading other cheques. Try again in a moment."
     }
   },
   "Staff": {

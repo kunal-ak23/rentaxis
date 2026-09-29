@@ -86,11 +86,10 @@ async function uploadOnePhoto(fetchMock: ReturnType<typeof vi.fn>, file = new Fi
 }
 
 describe("BulkChequeUploadFlow — several cheques in one file", () => {
-  it("accepts PDFs as well as images", () => {
+  it("accepts images only while server-side PDF input is off", () => {
     render(<BulkChequeUploadFlow leaseId="L1" rows={rows} onSuccess={() => {}} onClose={() => {}} />);
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-    expect(input.accept).toContain("application/pdf");
-    expect(input.accept).toContain("image/*");
+    expect(input.accept).toBe("image/*");
   });
 
   it("expands one file into one row per cheque, each with its own crop thumbnail", async () => {
@@ -173,10 +172,10 @@ describe("BulkChequeUploadFlow — several cheques in one file", () => {
   it("translates a coded refusal from the server", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({
       ok: false, status: 400,
-      json: async () => ({ error: "The PDF has 12 pages", code: "cheque_upload_too_many_pages" }),
+      json: async () => ({ error: "The image is too large", code: "cheque_upload_image_too_large" }),
     });
-    await uploadOnePhoto(fetchMock, new File([new Uint8Array([1])], "scan.pdf", { type: "application/pdf" }));
+    await uploadOnePhoto(fetchMock);
 
-    expect(screen.getByText(/uploadErrors\.cheque_upload_too_many_pages/)).toBeTruthy();
+    expect(screen.getByText(/uploadErrors\.cheque_upload_image_too_large/)).toBeTruthy();
   });
 });

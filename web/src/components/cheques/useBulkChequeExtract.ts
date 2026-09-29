@@ -28,7 +28,8 @@ const ALLOWED_TYPES = new Set([
   "image/png",
   "image/heic",
   "image/heif",
-  "application/pdf",
+  // "application/pdf" — PDF input is off on the server (rentaxis.cheques.pdf-upload.enabled)
+  // until its renderer is hardened; add it back here when that flag is turned on.
 ]);
 
 /** A refused or failed upload; `code` is the server's refusal code when it sent one. */

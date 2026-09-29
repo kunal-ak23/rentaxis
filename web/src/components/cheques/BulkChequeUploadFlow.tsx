@@ -76,6 +76,8 @@ const KNOWN_UPLOAD_ERRORS = new Set([
   "cheque_upload_too_many_pages",
   "cheque_upload_too_many_cheques",
   "cheque_upload_pdf_unreadable",
+  "cheque_upload_pdf_not_supported",
+  "cheque_upload_busy",
 ]);
 
 /** One review row per cheque the file holds; a failed file still gets one row to fill in or remove. */
@@ -395,7 +397,8 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
           // @ts-expect-error webkitdirectory is non-standard but widely supported
           webkitdirectory="true"
           multiple
-          accept="image/*,application/pdf"
+          // Images only while server-side PDF input is off (rentaxis.cheques.pdf-upload.enabled).
+          accept="image/*"
           className="hidden"
           onChange={(e) => onPick(e.target.files)}
         />
