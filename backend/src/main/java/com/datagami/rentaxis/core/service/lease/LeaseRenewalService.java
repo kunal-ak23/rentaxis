@@ -390,11 +390,39 @@ public class LeaseRenewalService {
                 skipped, warn, exceeds, dropped);
     }
 
-    /** Same length in whole calendar months and days: 24/09→23/09 and 01/10→30/09 are both 12 months. */
+    /**
+     * Same length in whole calendar months and days: 24/09→23/09 and 01/10→30/09 are both 12 months.
+     * A whole-month term by {@link #termEnd}'s convention is its number of months, so
+     * 29/02/2028→28/02/2029 and 01/03/2029→28/02/2030 are both 12 (review of R4-B M5; the
+     * web's {@code leaseMath.sameTermEnd} proposes exactly that).
+     */
     static boolean sameTermLength(LocalDate oldStart, LocalDate oldEnd, LocalDate newStart, LocalDate newEnd) {
+        Integer oldMonths = wholeMonthTerm(oldStart, oldEnd);
+        if (oldMonths != null && oldMonths.equals(wholeMonthTerm(newStart, newEnd))) return true;
         java.time.Period a = java.time.Period.between(oldStart, oldEnd.plusDays(1)).normalized();
         java.time.Period b = java.time.Period.between(newStart, newEnd.plusDays(1)).normalized();
         return a.toTotalMonths() == b.toTotalMonths() && a.getDays() == b.getDays();
+    }
+
+    /**
+     * The end of a term of {@code months} whole months from {@code start}: the day before
+     * the anniversary. The anniversary of a day the target month lacks (29 February) is the
+     * day after that month's last day, so the term ends on the last day: 29/02/2028 + 12
+     * months ends 28/02/2029, not 27/02 (review of R4-B M5). The web's {@code leaseMath.termEnd}.
+     */
+    static LocalDate termEnd(LocalDate start, int months) {
+        LocalDate anniversary = start.plusMonths(months);
+        return anniversary.getDayOfMonth() < start.getDayOfMonth() ? anniversary : anniversary.minusDays(1);
+    }
+
+    /** The whole months {@code start..end} runs by {@link #termEnd}'s convention, or null. */
+    static Integer wholeMonthTerm(LocalDate start, LocalDate end) {
+        if (start == null || end == null || end.isBefore(start)) return null;
+        long m = java.time.temporal.ChronoUnit.MONTHS.between(start, end.plusDays(1));
+        for (long c = m; c <= m + 1; c++) {
+            if (c > 0 && termEnd(start, (int) c).equals(end)) return (int) c;
+        }
+        return null;
     }
 
     private com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository rentSettings;
