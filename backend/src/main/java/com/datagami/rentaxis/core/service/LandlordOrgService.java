@@ -80,6 +80,20 @@ public class LandlordOrgService {
         return saved;
     }
 
+    /**
+     * Review of PR #392 M3: a rename is refused, as provisioning is, when another
+     * organisation already has the name (case- and whitespace-insensitive). The slug is
+     * NOT re-derived on a rename: it is the organisation's public marketplace path
+     * ({@code /marketplace/{tenantSlug}}, {@code /l/{tenantSlug}}), and moving it would
+     * break every link already shared; it stays unique because it does not change.
+     */
+    public void requireNameFreeForRename(UUID id, String name) {
+        if (repository.existsByNormalisedNameOtherThan(LandlordOrg.normalisedName(name), id)) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    ORG_NAME_TAKEN, "org.nameTaken", java.util.Map.of("name", name));
+        }
+    }
+
     /** {@code base} if nobody has it, else the first free {@code base-N} from 2 (review of R4-B I4). */
     private String freeSlug(String base) {
         java.util.Set<String> taken = new java.util.HashSet<>(repository.findSlugsStartingWith(base));

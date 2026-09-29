@@ -79,10 +79,11 @@ public class LandlordOrg {
     /**
      * The name as the "is it taken" question compares it (review of R4-B I4): trimmed,
      * inner whitespace runs as one space, lower case. The same shape as
-     * {@code LandlordOrgRepository.existsByNormalisedName}.
+     * {@code LandlordOrgRepository.existsByNormalisedName}; {@code (?U)} makes Java's
+     * {@code \s} Unicode-aware like Postgres's (review of PR #392 M4).
      */
     public static String normalisedName(String name) {
-        return name == null ? "" : name.strip().replaceAll("\\s+", " ").toLowerCase(java.util.Locale.ROOT);
+        return name == null ? "" : name.strip().replaceAll("(?U)\\s+", " ").toLowerCase(java.util.Locale.ROOT);
     }
 
     public String getSlug() {

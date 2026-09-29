@@ -23,6 +23,12 @@ public interface LandlordOrgRepository extends JpaRepository<LandlordOrg, UUID> 
             + " WHERE lower(btrim(regexp_replace(name, '\\s+', ' ', 'g'))) = :normalised)", nativeQuery = true)
     boolean existsByNormalisedName(@Param("normalised") String normalised);
 
+    /** The same, ignoring organisation {@code id} — a rename keeping its own name (review of PR #392 M3). */
+    @Query(value = "SELECT EXISTS (SELECT 1 FROM landlord_org"
+            + " WHERE id <> :id AND lower(btrim(regexp_replace(name, '\\s+', ' ', 'g'))) = :normalised)",
+            nativeQuery = true)
+    boolean existsByNormalisedNameOtherThan(@Param("normalised") String normalised, @Param("id") UUID id);
+
     /** The slugs {@code base} and {@code base-N} already in use (review of R4-B I4). */
     @Query(value = "SELECT slug FROM landlord_org WHERE slug = :base OR slug LIKE (:base || '-%')", nativeQuery = true)
     java.util.List<String> findSlugsStartingWith(@Param("base") String base);
