@@ -63,8 +63,8 @@ public class LandlordOrg {
     @PrePersist
     public void onPrePersist() {
         if (this.slug == null || this.slug.isBlank()) {
-            // LandlordOrgService.provisionTenant refuses a name whose slug is taken
-            // (break-it R4 brand4 F2); the unique index is the backstop.
+            // LandlordOrgService.provisionTenant refuses a name that is taken and picks
+            // a free slug itself (review of R4-B I4); the unique index is the backstop.
             this.slug = slugOf(this.name);
         }
     }
@@ -74,6 +74,15 @@ public class LandlordOrg {
         String base = name == null ? "" : name.toLowerCase();
         String slugified = base.replaceAll("[^a-z0-9]+", "-").replaceAll("(^-+|-+$)", "");
         return slugified.isBlank() ? "tenant" : slugified;
+    }
+
+    /**
+     * The name as the "is it taken" question compares it (review of R4-B I4): trimmed,
+     * inner whitespace runs as one space, lower case. The same shape as
+     * {@code LandlordOrgRepository.existsByNormalisedName}.
+     */
+    public static String normalisedName(String name) {
+        return name == null ? "" : name.strip().replaceAll("\\s+", " ").toLowerCase(java.util.Locale.ROOT);
     }
 
     public String getSlug() {

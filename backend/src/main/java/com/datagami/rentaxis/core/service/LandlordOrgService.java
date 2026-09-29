@@ -50,14 +50,18 @@ public class LandlordOrgService {
 
     @Transactional
     public LandlordOrg provisionTenant(String name) {
-        // Break-it R4 brand4 F2: a name whose slug is taken ("Acme", "acme!") used to
-        // reach the unique index and come back as its raw name.
-        if (repository.findBySlug(LandlordOrg.slugOf(name)).isPresent()) {
+        // Break-it R4 brand4 F2: a taken name used to reach the unique slug index and
+        // come back as the index's raw name. Review of R4-B I4: the refusal is about the
+        // NAME (case- and whitespace-insensitive). The slug keeps only a–z/0–9, so every
+        // Arabic-only name slugs to "tenant"; a different name whose slug is taken gets
+        // the next free one ("-2", "-3", …). The unique index stays as the race backstop.
+        if (repository.existsByNormalisedName(LandlordOrg.normalisedName(name))) {
             throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
                     ORG_NAME_TAKEN, "org.nameTaken", java.util.Map.of("name", name));
         }
         LandlordOrg org = new LandlordOrg();
         org.setName(name);
+        org.setSlug(freeSlug(LandlordOrg.slugOf(name)));
         LandlordOrg saved = repository.save(org);
 
         // Notify all SUPER_ADMINs
@@ -74,6 +78,16 @@ public class LandlordOrgService {
         }
 
         return saved;
+    }
+
+    /** {@code base} if nobody has it, else the first free {@code base-N} from 2 (review of R4-B I4). */
+    private String freeSlug(String base) {
+        java.util.Set<String> taken = new java.util.HashSet<>(repository.findSlugsStartingWith(base));
+        if (!taken.contains(base)) return base;
+        for (int n = 2; ; n++) {
+            String candidate = base + "-" + n;
+            if (!taken.contains(candidate)) return candidate;
+        }
     }
 
     @Transactional(readOnly = true)
