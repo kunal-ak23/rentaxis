@@ -324,4 +324,4 @@ databaseChangeLog:
   - include:
       file: db/changelog/changesets/159-executed-copy-sweep-scope.yaml
   - include:
-      file: db/changelog/changesets/160-books-lock-from-start.yaml
+      file: db/changelog/changesets/161-books-lock-from-start.yaml

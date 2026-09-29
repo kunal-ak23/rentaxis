@@ -7,7 +7,7 @@
 # Backfill: a lock that equals books start − 1 is the one the books start set.
 databaseChangeLog:
   - changeSet:
-      id: 160-books-lock-from-start
+      id: 161-books-lock-from-start
       author: claude
       changes:
         - addColumn:
