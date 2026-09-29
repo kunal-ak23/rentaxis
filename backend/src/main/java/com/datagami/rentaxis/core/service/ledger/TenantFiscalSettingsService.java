@@ -323,11 +323,15 @@ public class TenantFiscalSettingsService {
         s.setBooksStartDate(date);
         if (date != null) {
             // Break-it R4 money4 F3: the implied lock is the day before the books start,
-            // but never after today. A lock after today refuses every deposit, clearing
+            // but never after yesterday. A lock after today refuses every deposit, clearing
             // and receipt (all dated today or earlier) until then, and once anything is
             // posted it could not be taken back — a +3-month books start bricked posting.
+            // Review of R4-B I2: the lock is inclusive (assertOpen refuses a date not after
+            // it), so a lock through today would still refuse today's receipts; the cap is
+            // yesterday on the business (Dubai) clock.
             LocalDate implied = date.minusDays(1);
-            if (implied.isAfter(manualDates.today())) implied = manualDates.today();
+            LocalDate latestLock = manualDates.today().minusDays(1);
+            if (implied.isAfter(latestLock)) implied = latestLock;
             if (s.getBooksLockedThrough() == null) {
                 s.setBooksLockedThrough(implied);
                 s.setBooksLockFromStart(true);

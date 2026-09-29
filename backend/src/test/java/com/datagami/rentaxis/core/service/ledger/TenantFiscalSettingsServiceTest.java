@@ -137,8 +137,8 @@ class TenantFiscalSettingsServiceTest {
         }
         verify(repo, never()).save(any());
         TenantFiscalSettings ok = service.setBooksStartDate(LocalDate.of(2026, 12, 28));
-        // Break-it R4 money4 F3: the implied lock is never after today.
-        assertThat(ok.getBooksLockedThrough()).isEqualTo(LocalDate.of(2026, 9, 28));
+        // Break-it R4 money4 F3 / review I2: the implied lock is never after yesterday.
+        assertThat(ok.getBooksLockedThrough()).isEqualTo(LocalDate.of(2026, 9, 27));
     }
 
     /**
@@ -160,11 +160,11 @@ class TenantFiscalSettingsServiceTest {
         assertThat(service.lockThroughAsUser(LocalDate.of(2026, 9, 27)).getBooksLockedThrough())
                 .isEqualTo(LocalDate.of(2026, 9, 27));
         // Forward again (still nothing posted): the lock follows the start, but never
-        // past today (R4 money4 F3).
+        // past yesterday (R4 money4 F3, review I2).
         assertThat(service.setBooksStartDate(LocalDate.of(2026, 9, 1)).getBooksLockedThrough())
                 .isEqualTo(LocalDate.of(2026, 8, 31));
         assertThat(service.setBooksStartDate(LocalDate.of(2026, 10, 1)).getBooksLockedThrough())
-                .isEqualTo(LocalDate.of(2026, 9, 28));
+                .isEqualTo(LocalDate.of(2026, 9, 27));
         // And a user lock may move back while nothing is posted.
         assertThat(service.lockThroughAsUser(LocalDate.of(2026, 3, 31)).getBooksLockedThrough())
                 .isEqualTo(LocalDate.of(2026, 3, 31));
@@ -198,7 +198,7 @@ class TenantFiscalSettingsServiceTest {
         when(repo.findById(tenant)).thenReturn(Optional.of(settings(1, null)));
 
         TenantFiscalSettings s = service.setBooksStartDate(LocalDate.of(2026, 12, 28));
-        assertThat(s.getBooksLockedThrough()).isEqualTo(LocalDate.of(2026, 9, 28));
+        assertThat(s.getBooksLockedThrough()).isEqualTo(LocalDate.of(2026, 9, 27));
     }
 
     /**
@@ -222,6 +222,24 @@ class TenantFiscalSettingsServiceTest {
         service.lockThroughAsUser(LocalDate.of(2026, 6, 30));
         assertThat(service.setBooksStartDate(LocalDate.of(2025, 6, 1)).getBooksLockedThrough())
                 .isEqualTo(LocalDate.of(2026, 6, 30));
+    }
+
+    /**
+     * Review of R4-B, I2: the lock is inclusive ({@code assertOpen} refuses a date not
+     * after it), so a lock through today refused today's receipts and deposits — which
+     * the fiscal page's copy says can still be recorded. The implied lock stops at
+     * yesterday (Dubai business date).
+     */
+    @Test
+    void aFutureBooksStartLeavesTodayOpenForPosting() {
+        today("2026-09-28T21:30:00Z");   // 29/09 01:30 in Dubai, still 28/09 in UTC
+        when(journals.existsByTenantId(tenant)).thenReturn(true);
+        when(repo.findById(tenant)).thenReturn(Optional.of(settings(1, null)));
+
+        TenantFiscalSettings s = service.setBooksStartDate(LocalDate.of(2026, 12, 28));
+        assertThat(s.getBooksLockedThrough()).isEqualTo(LocalDate.of(2026, 9, 28));
+        assertThat(service.isOpen(LocalDate.of(2026, 9, 29))).as("today (Dubai) stays open").isTrue();
+        service.assertOpen(LocalDate.of(2026, 9, 29));
     }
 
     @Test

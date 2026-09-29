@@ -2093,7 +2093,7 @@
     "lockAheadOfToday": "The books are locked through {date}, which is after today, so nothing can be posted. If nothing has been posted yet, change the books start date; otherwise re-open the latest closed fiscal year or ask support to correct the lock.",
     "booksStartRule": "The books can start at most three months ahead (the latest is {latest}); the period before the start is locked, but never past today.",
     "booksStartTooFar": "The books start date is more than three months ahead (the latest is {latest}). Check the year.",
-    "booksStartFuture": "The books start on {date}, after today. The period lock is set through today at the latest, so today's receipts and deposits can still be recorded; moving the books start back moves this lock back. Tick to confirm the date is right.",
+    "booksStartFuture": "The books start on {date}, after today. The period lock is set through yesterday at the latest, so today's receipts and deposits can still be recorded; moving the books start back moves this lock back. Tick to confirm the date is right.",
     "lockRule": "Only a period that has already ended can be locked: the latest date is today ({today}).",
     "lockAfterToday": "This date is after today. Check the year.",
     "lockBigJump": "This moves the lock {months} months forward, from {from} to {to}. Nothing dated up to {to} can be posted afterwards. Tick to confirm the date is right.",
