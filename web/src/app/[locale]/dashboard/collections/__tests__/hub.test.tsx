@@ -9,7 +9,7 @@ const api = vi.hoisted(() => ({ toDeposit: vi.fn(), summary: vi.fn(), penalties:
 vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: role.current } } }) }));
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(query.current) }));
 vi.mock("@/i18n/routing", () => ({ Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => <a href={href} {...rest}>{children}</a>, useRouter: () => router }));
-vi.mock("@/components/finance/useNameLookup", () => ({ useNameLookup: () => ({ options: [{ id: "11111111-1111-4111-8111-111111111111", label: "Belle Vue" }], name: () => "", loading: false }) }));
+vi.mock("@/components/finance/useNameLookup", () => ({ useNameLookup: () => ({ options: [{ id: "11111111-1111-4111-8111-111111111111", label: "Desert Rose Gardens" }], name: () => "", loading: false }) }));
 vi.mock("@/components/collections/ToDepositPanel", () => ({ default: (p: { propertyId?: string }) => <div data-testid="panel-deposit" data-property={p.propertyId ?? ""} /> }));
 vi.mock("@/components/collections/ReturnReplacePanel", () => ({ default: (p: { propertyId?: string }) => <div data-testid="panel-returned" data-property={p.propertyId ?? ""} /> }));
 vi.mock("@/components/collections/PostDatedPanel", () => ({ default: (p: { propertyId?: string }) => <div data-testid="panel-post-dated" data-property={p.propertyId ?? ""} /> }));
