@@ -150,4 +150,32 @@ class ContractDocumentStorageIT extends AbstractPostgresIT {
                             .doesNotContain("sig=").doesNotContain("http").doesNotContain("/nonexistent"));
         }
     }
+
+    /**
+     * Review of R4-B, M6: the pre-move fallback (an {@code *.blob.core.windows.net}
+     * URL read from the configured account by its container and path) must also stay
+     * inside the document's own tenant container, like the configured-account path.
+     */
+    @Test
+    void anOldAccountUrlIsReadOnlyFromTheDocumentsOwnTenantContainer() {
+        UUID other = UUID.randomUUID();
+        byte[] secret = "%PDF-1.4 another tenant".getBytes(StandardCharsets.US_ASCII);
+        BlobContainerClient theirs = new BlobServiceClientBuilder().connectionString(connectionString())
+                .buildClient().getBlobContainerClient("tenant-" + other);
+        if (!theirs.exists()) theirs.create();
+        theirs.getBlobClient("contracts/theirs.pdf").upload(new java.io.ByteArrayInputStream(secret), secret.length, true);
+        UUID foreign = document("CONTRACT",
+                "https://oldaccount.blob.core.windows.net/tenant-" + other + "/contracts/theirs.pdf?sv=1&sig=secret");
+
+        assertThatThrownBy(() -> contracts.getDocumentContent(foreign))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.NotFoundException.class)
+                .satisfies(e -> assertThat(e.getMessage()).doesNotContain("sig=").doesNotContain("http"));
+
+        // The same shape of URL on the tenant's own container still downloads (documents from before the move).
+        byte[] mine = "%PDF-1.4 mine".getBytes(StandardCharsets.US_ASCII);
+        storeBlob("mine.pdf", mine);
+        UUID own = document("CONTRACT",
+                "https://oldaccount.blob.core.windows.net/tenant-" + tenant + "/contracts/mine.pdf?sv=1&sig=secret");
+        assertThat(contracts.getDocumentContent(own)).isEqualTo(mine);
+    }
 }

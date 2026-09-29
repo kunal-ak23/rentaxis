@@ -154,13 +154,19 @@ public class RecognitionService {
      * @param skippedLockedEntries  rows left PLANNED because their period is closed
      * @param booksLockedThrough    the lock that skipped them, or null when nothing is locked
      * @param errors                rows the ledger refused, one message each
+     * @param alreadyRecognised     rows another run posted while this one worked (POSTED)
+     * @param withdrawnMeanwhile    rows a contract change (amendment, reduction, termination)
+     *                              struck out or reversed while this one worked — CANCELLED or
+     *                              REVERSED, nothing to recognise; a replacement row is PLANNED
+     *                              and the next run takes it (review of R4-B M10)
      */
     public record RecognitionRunResult(boolean preview, int posted, int wouldPost, BigDecimal amount,
                                        List<RecognitionEntryDTO> entries,
                                        int skippedLocked, List<RecognitionEntryDTO> skippedLockedEntries,
                                        LocalDate booksLockedThrough,
                                        List<String> errors,
-                                       int alreadyRecognised) {
+                                       int alreadyRecognised,
+                                       int withdrawnMeanwhile) {
     }
 
     // ------------------------------------------------------------------
@@ -1161,6 +1167,7 @@ public class RecognitionService {
         List<RecognitionEntryDTO> locked = new ArrayList<>();
         List<String> errors = new ArrayList<>();
         int alreadyDone = 0;
+        int withdrawn = 0;
         BigDecimal total = BigDecimal.ZERO;
 
         for (RecognitionEntryDTO row : plan.rows()) {
@@ -1181,7 +1188,12 @@ public class RecognitionService {
                 // once) posted this row after the candidates were read, or an amendment
                 // replaced it with a PLANNED row the next run picks up. Either way the
                 // work is done exactly once; it is not a failure to report or re-run.
-                alreadyDone++;
+                // Review of R4-B M10: only a POSTED row was recognised by someone else. A
+                // CANCELLED (or REVERSED) one was taken off the schedule by a contract
+                // change meanwhile — nothing was recognised for it, and saying "another
+                // run did it" would be untrue; it is reported on its own.
+                if (e.getStatus() == RecognitionStatus.POSTED) alreadyDone++;
+                else withdrawn++;
             } catch (RuntimeException e) {
                 // The entry's own transaction rolled back; there is no other one to
                 // take down with it, which is the whole point of the separate bean.
@@ -1197,7 +1209,7 @@ public class RecognitionService {
         }
         return new RecognitionRunResult(preview, preview ? 0 : done.size(), done.size(),
                 total.setScale(2, RoundingMode.HALF_UP), done,
-                locked.size(), locked, plan.lockedThrough(), errors, alreadyDone);
+                locked.size(), locked, plan.lockedThrough(), errors, alreadyDone, withdrawn);
     }
 
     /** What a run has to decide about, read once and detached. */

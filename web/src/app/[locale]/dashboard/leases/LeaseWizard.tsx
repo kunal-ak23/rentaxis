@@ -19,7 +19,7 @@ import { GraceDaysField, usePropertyDefaultGrace } from "@/components/leases/Gra
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
 import ChequeGrid, { draftRowsAreValid, toChequeRows } from "@/components/leases/ChequeGrid";
 import WizardReviewSchedules from "@/components/leases/WizardReviewSchedules";
-import { blankLine, defaultTermEnd, followRentVat, linesAreValid, rentAmountOf, splitLineErrors, chequeMonths, toInputs, toRows, todayIso, totalsOf, withRentAmount, withRentVat, type LineRow } from "@/components/leases/leaseMath";
+import { blankLine, defaultInstallmentsFor, defaultTermEnd, rentChargeType, followRentVat, linesAreValid, rentAmountOf, splitLineErrors, chequeMonths, toInputs, toRows, todayIso, totalsOf, withRentAmount, withRentVat, type LineRow } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi,
     type ChargeType, type Cheque, type ChequeWrite, type DraftLeaseInput, type DraftPaymentMethod,
@@ -156,6 +156,12 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     const [autoCount, setAutoCount] = useState<number | null>(initialTerms.paymentTerms);
     const [rows, setRows] = useState<LineRow[]>([blankLine(0)]);
     const [chargeTypes, setChargeTypes] = useState<ChargeType[]>([]);
+    // Review of R4-B M11: whether the charge types have loaded — the rent field
+    // writes a RENT line, so without them (or without an active RENT type) it cannot.
+    const [chargeTypesState, setChargeTypesState] = useState<"loading" | "loaded" | "failed">("loading");
+    // Review of R4-B M8: the "Separate cheque for one-time charges" choice of the last
+    // Generate; null until the user generates (then the saved rows answer).
+    const [foldChoice, setFoldChoice] = useState<boolean | null>(null);
 
     const [lease, setLease] = useState<LeaseDetail | null>(null);
     const [cheques, setCheques] = useState<Cheque[]>([]);
@@ -184,6 +190,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         setRows([blankLine(0)]);
         setLease(null);
         setCheques([]);
+        setFoldChoice(null);
         setChequeNotice(null);
         setChequeError(null);
         setDry(null);
@@ -201,18 +208,33 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     useEffect(() => {
         if (!open) return;
         let cancelled = false;
+        setChargeTypesState("loading");
         chargeTypeApi
             .list(true)
             .then(list => {
-                if (!cancelled) setChargeTypes(list);
+                if (cancelled) return;
+                setChargeTypes(list);
+                setChargeTypesState("loaded");
             })
             .catch(() => {
-                if (!cancelled) setChargeTypes([]);
+                if (cancelled) return;
+                setChargeTypes([]);
+                setChargeTypesState("failed");
             });
         return () => {
             cancelled = true;
         };
     }, [open]);
+
+    /**
+     * Review of R4-B M11: why the rent cannot be entered, when it cannot — the charge
+     * types are still loading, failed to load, or none is an active RENT type. Null
+     * when the rent field works.
+     */
+    const rentUnavailable: string | null = chargeTypesState === "loading" ? t("rentChargeTypesLoading")
+        : chargeTypesState === "failed" ? t("rentChargeTypesFailed")
+        : !rentChargeType(chargeTypes) && !(rentAmountOf(rows, chargeTypes) > 0) ? t("rentNoChargeType")
+        : null;
 
     const propertyDefaultGrace = usePropertyDefaultGrace(selectedUnit?.propertyId ?? undefined);
     const totals = totalsOf(rows, chargeTypes);
@@ -256,7 +278,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                     return t("errTermTooLong", { max: MAX_TERM_YEARS });
                 }
                 // Owner request (2026-09-29): the rent for the full term is asked here.
-                if (!(rentAmountOf(rows, chargeTypes) > 0)) return t("errRentRequired");
+                if (!(rentAmountOf(rows, chargeTypes) > 0)) return rentUnavailable ?? t("errRentRequired");
                 // At most one cheque a month: the generator's month count, from the
                 // first due date (review of R4-B I1).
                 const maxCheques = chequeMonths(terms.firstDueDate || terms.startDate, terms.endDate);
@@ -380,6 +402,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
 
     const generate = (req: GenerateChequesRequest) => {
         if (!lease) return;
+        if (req.foldDepositsAndFeesIntoFirst != null) setFoldChoice(req.foldDepositsAndFeesIntoFirst);
         runCheques(() => leaseApi.generateCheques(lease.id, req, lease.version));
     };
     const generateNumbers = (startingNumber: string) => {
@@ -387,16 +410,34 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         runCheques(() => leaseApi.generateChequeNumbers(lease.id, startingNumber));
     };
     /**
+     * The instalment count the generator makes of the Terms step's: capped at the
+     * charged months when the saved contract has rent-free windows
+     * (`ChequeGenerationService.chargedAnchors`, `leaseMath.defaultInstallmentsFor`).
+     * Review of R4-B M9: the regenerate prompt compares the saved rows with this, not
+     * with the raw count — otherwise it reappears on every contract with a free period.
+     */
+    const generatorCount = defaultInstallmentsFor(terms.paymentTerms, terms.firstDueDate || terms.startDate,
+        terms.endDate, lease?.rentFreePeriods ?? null);
+    /**
+     * Review of R4-B M8: whether one-time charges ride on cheque 1 — the user's
+     * "Separate cheque for one-time charges" choice on the last Generate; before one,
+     * what the saved rows show (a FEE or DEPOSIT row of its own means separate); else
+     * folded, the Cheques step's default.
+     */
+    const foldOneTime = foldChoice
+        ?? !cheques.some(c => c.rowKind === "FEE" || c.rowKind === "DEPOSIT");
+    /**
      * Owner requests (2026-09-29): what "Generate cheques" is asked for — the Terms
-     * step's count, first due date (the start date when empty) and distribution, with
-     * one-time charges folded into cheque 1 (the Cheques step's default). The Review
-     * step's suggestion and "Use this schedule" use exactly this.
+     * step's count (as the generator counts it), first due date (the start date when
+     * empty) and distribution, with one-time charges folded into cheque 1 unless the
+     * user chose a separate cheque. The Review step's suggestion and "Use this
+     * schedule" use exactly this.
      */
     const chequeRequest = (): GenerateChequesRequest => ({
-        installments: terms.paymentTerms,
+        installments: generatorCount,
         firstDueDate: terms.firstDueDate || terms.startDate || null,
         distribution: terms.installmentDistribution,
-        foldDepositsAndFeesIntoFirst: true,
+        foldDepositsAndFeesIntoFirst: foldOneTime,
     });
     const applySchedule = async (req: GenerateChequesRequest) => {
         if (!lease) return;
@@ -413,7 +454,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     const rentRowCount = cheques.filter(c => c.rowKind === "RENT" || c.rowKind === "MIXED").length
         || cheques.filter(c => c.rowKind == null).length;
     const countChanged = !!lease && lease.status === "DRAFT" && cheques.length > 0
-        && rentRowCount !== terms.paymentTerms && keptCountFor !== terms.paymentTerms;
+        && rentRowCount !== generatorCount && keptCountFor !== generatorCount;
 
     const saveCheques = () => {
         if (!lease || focusFirstInvalidMoney(document)) return;
@@ -646,6 +687,11 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                             <Field label={`${t("rentFullTerm")} *`}>
                                 <NumberInput money data-testid="wizard-rent" className={field} value={rentAmount}
                                     aria-label={t("rentFullTerm")} onChange={v => setRentAmount(v)} />
+                                {rentUnavailable && chargeTypesState !== "loading" && (
+                                    <p role="status" data-testid="wizard-rent-unavailable" className="mt-1 text-[11px] text-warning">
+                                        {rentUnavailable}
+                                    </p>
+                                )}
                             </Field>
                             <Field label={t("gracePeriodDays")}>
                                 <GraceDaysField className={field} value={terms.gracePeriodDays} propertyDefault={propertyDefaultGrace} onChange={v => patch({ gracePeriodDays: v })} />
@@ -721,13 +767,13 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                                 <div role="alert" data-testid="wizard-regenerate-prompt"
                                     className="flex flex-wrap items-center gap-2 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-[11px] text-warning">
                                     <AlertTriangle size={12} />
-                                    <span>{t("regenerateChequesPrompt", { count: terms.paymentTerms, had: rentRowCount })}</span>
+                                    <span>{t("regenerateChequesPrompt", { count: generatorCount, had: rentRowCount })}</span>
                                     <button type="button" data-testid="wizard-regenerate-confirm" disabled={busy}
                                         onClick={() => generate(chequeRequest())}
                                         className="px-2.5 py-1 rounded-md bg-primary text-primary-foreground font-semibold cursor-pointer disabled:opacity-50">
                                         {t("regenerateCheques")}
                                     </button>
-                                    <button type="button" data-testid="wizard-regenerate-keep" onClick={() => setKeptCountFor(terms.paymentTerms)}
+                                    <button type="button" data-testid="wizard-regenerate-keep" onClick={() => setKeptCountFor(generatorCount)}
                                         className="px-2.5 py-1 rounded-md border border-border text-foreground font-semibold cursor-pointer">
                                         {t("keepCheques")}
                                     </button>

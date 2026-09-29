@@ -498,11 +498,33 @@ export function defaultInstallmentsFor(
 }
 
 /**
+ * The end of a term of {@code months} whole months from {@code start}: the day before
+ * the anniversary. The anniversary of a day the target month lacks (29 February,
+ * 31 January + 1 month) is the day after the month's last day, so the term ends ON
+ * that last day: 29/02/2028 + 12 months ends 28/02/2029 (365 days), not 27/02 (review
+ * of R4-B M5). The server's `LeaseRenewalService.termEnd`.
+ */
+export function termEnd(start: string, months: number): string {
+    const anniversary = plusMonths(start, months);
+    return ymd(anniversary).d < ymd(start).d ? anniversary : plusDays(anniversary, -1);
+}
+
+/** The whole months a term runs by {@link termEnd}'s convention, or null when it is not a whole-month term. */
+function wholeMonthTerm(start: string, end: string): number | null {
+    const m = monthsBetween(start, plusDays(end, 1));
+    for (const c of [m, m + 1]) if (c > 0 && termEnd(start, c) === end) return c;
+    return null;
+}
+
+/**
  * F15-05: the end of a term as long as the current one, starting on {@code newStart} —
- * the server's `LeaseRenewalService.sameTermLength` (java.time Period: whole months,
- * then days), so a renewal by percent is accepted as proposed.
+ * the server's `LeaseRenewalService.sameTermLength`: a whole-month term (by
+ * {@link termEnd}) renews as the same number of months; any other as java.time's
+ * Period (whole months, then days), so a renewal by percent is accepted as proposed.
  */
 export function sameTermEnd(oldStart: string, oldEnd: string, newStart: string): string {
+    const whole = wholeMonthTerm(oldStart, oldEnd);
+    if (whole != null) return termEnd(newStart, whole);
     const afterOld = plusDays(oldEnd, 1);
     const months = monthsBetween(oldStart, afterOld);
     const anchor = plusMonths(oldStart, months);
@@ -511,13 +533,13 @@ export function sameTermEnd(oldStart: string, oldEnd: string, newStart: string):
 }
 
 /**
- * Owner request (2026-09-29): a new contract's default term — start + 12 months −
- * 1 day, the UAE tenancy convention (09/09/2026 → 08/09/2027). Same month
- * arithmetic as java.time's plusMonths (31 Jan + 1 month = 28/29 Feb).
+ * Owner request (2026-09-29): a new contract's default term — 12 months, the UAE
+ * tenancy convention (09/09/2026 → 08/09/2027; 31/01/2027 → 30/01/2028;
+ * 29/02/2028 → 28/02/2029, see {@link termEnd}).
  */
 export function defaultTermEnd(start: string): string {
     if (!/^\d{4}-\d{2}-\d{2}/.test(start)) return "";
-    return plusDays(plusMonths(start, 12), -1);
+    return termEnd(start, 12);
 }
 
 /**

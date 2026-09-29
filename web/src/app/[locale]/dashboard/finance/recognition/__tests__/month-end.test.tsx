@@ -238,6 +238,22 @@ describe("Month-end recognition page", () => {
         expect(screen.queryByTestId("recognition-errors")).toBeNull();
     });
 
+    it("reports rows a contract change cancelled meanwhile on their own, not as recognised (review of R4-B M10)", async () => {
+        api.run.mockResolvedValue({
+            ...RUN, posted: 0, wouldPost: 0, amount: 0, failed: 0, errors: [], alreadyRecognised: 0, withdrawnMeanwhile: 1,
+        });
+        renderPage();
+
+        fireEvent.click(await screen.findByTestId("recognition-run"));
+        fireEvent.click(screen.getByTestId("recognition-run-confirm"));
+
+        expect(await screen.findByTestId("recognition-withdrawn"))
+            .toHaveTextContent("1 entry was cancelled or reversed meanwhile by a contract change");
+        expect(screen.queryByTestId("recognition-already")).toBeNull();
+        expect(screen.queryByTestId("recognition-nothing")).toBeNull();
+        expect(screen.queryByTestId("recognition-failed")).toBeNull();
+    });
+
     it("counts a single skipped row in the singular", async () => {
         // A close that catches exactly one row inside a shut period is the
         // ordinary case — one contract, one month — and "1 entries fall in a

@@ -340,8 +340,13 @@ export default function RecognitionPage() {
                             {t("alreadyRecognisedNote", { count: result.alreadyRecognised ?? 0 })}
                         </p>
                     )}
+                    {(result.withdrawnMeanwhile ?? 0) > 0 && (
+                        <p className="text-xs text-muted" data-testid="recognition-withdrawn">
+                            {t("withdrawnMeanwhileNote", { count: result.withdrawnMeanwhile ?? 0 })}
+                        </p>
+                    )}
                     {result.wouldPost === 0 && result.posted === 0 && result.failed === 0
-                        && (result.alreadyRecognised ?? 0) === 0 && (
+                        && (result.alreadyRecognised ?? 0) === 0 && (result.withdrawnMeanwhile ?? 0) === 0 && (
                         <p className="text-xs text-muted" data-testid="recognition-nothing">{t("nothingToPost")}</p>
                     )}
                     {result.skippedLocked > 0 && (

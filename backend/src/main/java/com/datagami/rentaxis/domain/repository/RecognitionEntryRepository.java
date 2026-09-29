@@ -60,4 +60,12 @@ public interface RecognitionEntryRepository extends JpaRepository<RecognitionEnt
      */
     List<RecognitionEntry> findByTenantIdAndStatusAndPeriodEndLessThanEqualOrderByPeriodEndAsc(
             UUID tenantId, RecognitionStatus status, LocalDate to);
+
+    /**
+     * The earliest entry of {@code tenantId} in {@code status} whose period ends on or
+     * before {@code to} — the question a lock asks before it covers that date
+     * ({@code TenantFiscalSettingsService.setBooksStartDate}, review of R4-B I3).
+     */
+    Optional<RecognitionEntry> findFirstByTenantIdAndStatusAndPeriodEndLessThanEqualOrderByPeriodEndAsc(
+            UUID tenantId, RecognitionStatus status, LocalDate to);
 }

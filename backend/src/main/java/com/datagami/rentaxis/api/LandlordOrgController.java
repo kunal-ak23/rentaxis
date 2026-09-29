@@ -79,6 +79,7 @@ public class LandlordOrgController {
             requireUnchanged(org, payload.get("expected"));
             String name = stringValue(payload.get("name"));
             if (name != null && !name.isBlank()) {
+                service.requireNameFreeForRename(id, name);
                 org.setName(name);
             }
             // Never the status: an edit dialog opened before another tab deactivated the

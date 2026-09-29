@@ -5,7 +5,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { AlertTriangle, Plus, Trash2 } from "lucide-react";
 import LeaseDialog from "./LeaseDialog";
 import LeaseLinesGrid from "./LeaseLinesGrid";
-import { isOneOff, linesAreValid, renewalRows, sameTermEnd, splitLineErrors, toInputs, todayIso, withCarriedDeposit, type LineRow } from "./leaseMath";
+import { defaultTermEnd, isOneOff, linesAreValid, renewalRows, sameTermEnd, splitLineErrors, toInputs, todayIso, withCarriedDeposit, type LineRow } from "./leaseMath";
 import {
     ApiError, leaseApi, type ChargeType, type LeaseDetail, type LeaseLine, type LeaseLineInput,
     type RenewalPreview, type RentChangeMode,
@@ -59,15 +59,6 @@ function dayAfter(iso: string): string {
     const next = new Date(y, m - 1, d + 1);
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())}`;
-}
-
-/** A year on from a start date, ending the day before the anniversary. */
-function yearFrom(iso: string): string {
-    const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
-    if (!y || !m || !d) return "";
-    const end = new Date(y + 1, m - 1, d - 1);
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`;
 }
 
 /** Amounts inside translated sentences stay LTR (the VoucherForm convention). */
@@ -128,7 +119,7 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
 
     // F15-05: as long as the current term (a year for a year), so "By percent" works as proposed.
     const proposeEnd = (start: string) =>
-        lease.startDate && lease.endDate ? sameTermEnd(lease.startDate, lease.endDate, start) : yearFrom(start);
+        lease.startDate && lease.endDate ? sameTermEnd(lease.startDate, lease.endDate, start) : defaultTermEnd(start);
 
     useEffect(() => {
         if (!open) return;
