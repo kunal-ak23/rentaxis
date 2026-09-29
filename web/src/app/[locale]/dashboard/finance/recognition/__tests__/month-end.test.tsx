@@ -248,7 +248,7 @@ describe("Month-end recognition page", () => {
         fireEvent.click(screen.getByTestId("recognition-run-confirm"));
 
         expect(await screen.findByTestId("recognition-withdrawn"))
-            .toHaveTextContent("1 entry was taken off the schedule by a contract change");
+            .toHaveTextContent("1 entry was cancelled or reversed meanwhile by a contract change");
         expect(screen.queryByTestId("recognition-already")).toBeNull();
         expect(screen.queryByTestId("recognition-nothing")).toBeNull();
         expect(screen.queryByTestId("recognition-failed")).toBeNull();
