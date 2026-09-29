@@ -1,0 +1,58 @@
+{
+  "id": "43",
+  "slug": "renewals-rent-free-periods-and-unit-transfers-in-the-books",
+  "title": "Miftah tutorial 43 · Renewals, rent-free periods and unit transfers in the books",
+  "description": "Renew a contract with an increase and a renewal fee, give a rent-free fit-out month, and move a Tenant to another unit without losing a dirham.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 A Renewal\n0:39 The Finished Renewal\n1:09 A Rent-free Period\n1:31 A Unit Transfer\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nجدّد العقد بزيادة في الإيجار ورسوم تجديد، وامنح شهرًا معفى من الإيجار لفترة التجهيز، وانقل المستأجر إلى وحدة أخرى دون أن يضيع درهم واحد.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "chart of accounts",
+    "journal voucher",
+    "financial reports",
+    "accounting software",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Accounting",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "A Renewal"
+    },
+    {
+      "startSec": 39.09,
+      "start": "0:39",
+      "label": "The Finished Renewal"
+    },
+    {
+      "startSec": 69.257,
+      "start": "1:09",
+      "label": "A Rent-free Period"
+    },
+    {
+      "startSec": 91.351,
+      "start": "1:31",
+      "label": "A Unit Transfer"
+    }
+  ],
+  "durationSec": 127,
+  "roles": [
+    "TENANT_ADMIN",
+    "ACCOUNTANT"
+  ],
+  "topic": "accounting",
+  "captionsFile": "tutorials/output/43-renewals-rent-free-periods-and-unit-transfers-in-the-books.srt",
+  "videoFile": "tutorials/output/43-renewals-rent-free-periods-and-unit-transfers-in-the-books.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/43.png"
+}

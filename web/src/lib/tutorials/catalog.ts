@@ -246,7 +246,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "43", slug: "renewals-rent-free-periods-and-unit-transfers-in-the-books", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 150, youtubeId: null,
+        id: "43", slug: "renewals-rent-free-periods-and-unit-transfers-in-the-books", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 126, youtubeId: null,
         title: { en: "Renewals, rent-free periods and unit transfers in the books", ar: "التجديد وفترات الإعفاء من الإيجار ونقل الوحدات في الدفاتر" },
         description: {
             en: "Renew a contract with an increase and a renewal fee, give a rent-free fit-out month, and move a Tenant to another unit without losing a dirham.",
