@@ -1602,6 +1602,8 @@ public class LeaseService {
             lease.setDepositPaymentMethod(PaymentMethod.valueOf(dto.getDepositPaymentMethod()));
         }
         lease.setPaymentReferenceNumber(dto.getPaymentReferenceNumber());
+        LocalDate previousContractDate = lease.getContractDate();
+        LocalDate previousAgreementDate = lease.getAgreementDate();
         if (dto.getAgreementDate() != null) {
             lease.setAgreementDate(dto.getAgreementDate());
         }
@@ -1624,6 +1626,15 @@ public class LeaseService {
             manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.LEASE_POST, contractDate);
         }
         lease.setContractDate(contractDate);
+        // Owner ruling 2026-09-29: the wizard asks for the contract date only. The
+        // agreement date (printed on the contract, carried on the DTO and imports)
+        // defaults to it when omitted, and keeps following it while it still holds
+        // the value it defaulted to; one set explicitly (an import, an older draft)
+        // is left alone.
+        if (dto.getAgreementDate() == null
+                && (previousAgreementDate == null || previousAgreementDate.equals(previousContractDate))) {
+            lease.setAgreementDate(contractDate);
+        }
         lease.setFirstDueDate(dto.getFirstDueDate() != null ? dto.getFirstDueDate() : dto.getStartDate());
         applyGracePeriod(lease, dto.getGracePeriodDays(), unit);
     }

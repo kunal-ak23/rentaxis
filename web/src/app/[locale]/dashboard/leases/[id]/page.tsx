@@ -804,7 +804,11 @@ export default function LeaseDetailPage() {
                             <div className="space-y-6 min-w-0">
                                 <Card title={t("contractNumber")} icon={<FileText size={13} />}>
                                     <Detail label={t("contractDate")} value={fmtIsoDate(lease.contractDate, locale)} />
-                                    <Detail label={t("agreementDate")} value={fmtIsoDate(lease.agreementDate, locale)} />
+                                    {/* Owner ruling 2026-09-29: one date, the contract date. An agreement
+                                        date is shown only when it differs (imported or older contracts). */}
+                                    {lease.agreementDate && lease.agreementDate.slice(0, 10) !== (lease.contractDate ?? "").slice(0, 10) && (
+                                        <Detail label={t("agreementDate")} value={fmtIsoDate(lease.agreementDate, locale)} />
+                                    )}
                                     <Detail
                                         label={t("gracePeriodDays")}
                                         value={lease.gracePeriodOverridden === false

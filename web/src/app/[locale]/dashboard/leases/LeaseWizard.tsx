@@ -3,7 +3,7 @@
 import { focusFirstInvalidMoney } from "@/components/ui/NumberInput";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "@/i18n/routing";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useSession } from "next-auth/react";
 import {
     AlertTriangle, ArrowLeft, ArrowRight, Building2, Calendar, Check, CreditCard,
@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { fmtAmount } from "@/lib/api/ledger";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { UnitPicker } from "@/components/pickers/UnitPicker";
+import { useNameLookup } from "@/components/finance/useNameLookup";
 import { RenterPicker } from "@/components/pickers/RenterPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { GraceDaysField, usePropertyDefaultGrace } from "@/components/leases/GraceDaysField";
@@ -50,7 +51,6 @@ import { formatDate } from "@/lib/format";
  */
 
 type Terms = {
-    agreementDate: string;
     contractDate: string;
     startDate: string;
     endDate: string;
@@ -67,7 +67,6 @@ type Terms = {
 };
 
 const initialTerms: Terms = {
-    agreementDate: "",
     contractDate: todayIso(),
     startDate: "",
     endDate: "",
@@ -97,7 +96,6 @@ function asDraftMethod(v: string | null | undefined): DraftPaymentMethod {
  */
 function termsFromLease(lease: LeaseDetail): Terms {
     return {
-        agreementDate: (lease.agreementDate || "").slice(0, 10),
         contractDate: (lease.contractDate || "").slice(0, 10),
         startDate: (lease.startDate || "").slice(0, 10),
         endDate: (lease.endDate || "").slice(0, 10),
@@ -133,6 +131,7 @@ type Props = {
 export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     const t = useTranslations("Leasing");
     const tCommon = useTranslations("Common");
+    const locale = useLocale();
     const router = useRouter();
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
@@ -146,9 +145,12 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     const [selectedUnit, setSelectedUnit] = useState<UnitOption | null>(null);
     const [selectedRenter, setSelectedRenter] = useState<RenterOption | null>(null);
     const [terms, setTerms] = useState<Terms>(initialTerms);
-    // Once the operator edits the contract date directly, stop following the
-    // agreement date — see #45. Before that, they're the same field.
-    const [contractDateTouched, setContractDateTouched] = useState(false);
+    // Demo feedback 2026-09-29: the unit list narrows to a property and a building.
+    // Both optional; clearing them lists every vacant unit again.
+    const [filterPropertyId, setFilterPropertyId] = useState("");
+    const [filterBuildingId, setFilterBuildingId] = useState("");
+    const [filterBuildings, setFilterBuildings] = useState<{ id: string; label: string }[]>([]);
+    const properties = useNameLookup("properties", open);
     // Owner request (2026-09-29): the end date and the number of cheques follow the
     // start date while they still hold the value the wizard put there; a value the
     // user typed is theirs. Null = the user's own (or a saved draft's).
@@ -184,7 +186,8 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         setSelectedUnit(null);
         setSelectedRenter(null);
         setTerms({ ...initialTerms, contractDate: todayIso() });
-        setContractDateTouched(false);
+        setFilterPropertyId("");
+        setFilterBuildingId("");
         setAutoEnd(null);
         setAutoCount(initialTerms.paymentTerms);
         setRows([blankLine(0)]);
@@ -204,6 +207,41 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     useEffect(() => {
         if (open) reset();
     }, [open, reset]);
+
+    // The buildings of the filtered property, for the Building filter.
+    useEffect(() => {
+        if (!filterPropertyId) return;
+        const ctrl = new AbortController();
+        fetch(`/api/proxy/v1/buildings/property/${encodeURIComponent(filterPropertyId)}`, { signal: ctrl.signal })
+            .then(res => (res.ok ? res.json() : []))
+            .then((rows: { id: string; nameEn?: string; nameAr?: string | null }[]) => {
+                const isAr = locale === "ar";
+                setFilterBuildings((Array.isArray(rows) ? rows : []).map(b => ({
+                    id: b.id,
+                    label: (isAr ? b.nameAr || b.nameEn : b.nameEn) || b.id,
+                })));
+            })
+            .catch(() => { /* aborted, or no buildings: the filter just offers none */ });
+        return () => ctrl.abort();
+    }, [filterPropertyId, locale]);
+
+    /** A filter change drops a picked unit the new filter would not list. */
+    const onFilterProperty = (id: string) => {
+        setFilterPropertyId(id);
+        setFilterBuildingId("");
+        setFilterBuildings([]);
+        if (id && selectedUnit && selectedUnit.propertyId !== id) {
+            setUnitId("");
+            setSelectedUnit(null);
+        }
+    };
+    const onFilterBuilding = (id: string) => {
+        setFilterBuildingId(id);
+        if (id && selectedUnit && selectedUnit.buildingId !== id) {
+            setUnitId("");
+            setSelectedUnit(null);
+        }
+    };
 
     useEffect(() => {
         if (!open) return;
@@ -254,7 +292,9 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         paymentMethod: terms.paymentMethod,
         depositPaymentMethod: terms.depositPaymentMethod,
         paymentReferenceNumber: terms.paymentReferenceNumber || null,
-        agreementDate: terms.agreementDate || null,
+        // Owner ruling 2026-09-29: no agreement date in the wizard; the server
+        // defaults it to the contract date (and keeps one set earlier).
+        agreementDate: null,
         rentVatApplicable: terms.rentVatApplicable,
         lines: toInputs(rows, { keepPeriods: false }),
     });
@@ -315,7 +355,6 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         setLease(fresh);
         // Review A M4: the header too — parties and terms — not only the lines.
         setTerms(termsFromLease(fresh));
-        setContractDateTouched(true);
         setAutoEnd(null);
         setAutoCount(null);
         setLongTermAck(`${(fresh.startDate || "").slice(0, 10)}|${(fresh.endDate || "").slice(0, 10)}`);
@@ -615,9 +654,36 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                 <div className="flex-1 overflow-y-auto px-6 py-5">
                     {step.key === "parties" && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <Field label={t("wizardFilterProperty")}>
+                                <select
+                                    data-testid="wizard-filter-property"
+                                    aria-label={t("wizardFilterProperty")}
+                                    className={field}
+                                    value={filterPropertyId}
+                                    onChange={e => onFilterProperty(e.target.value)}
+                                >
+                                    <option value="">{t("wizardAllProperties")}</option>
+                                    {properties.options.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                                </select>
+                            </Field>
+                            <Field label={t("wizardFilterBuilding")}>
+                                <select
+                                    data-testid="wizard-filter-building"
+                                    aria-label={t("wizardFilterBuilding")}
+                                    className={field}
+                                    value={filterBuildingId}
+                                    disabled={!filterPropertyId || filterBuildings.length === 0}
+                                    onChange={e => onFilterBuilding(e.target.value)}
+                                >
+                                    <option value="">{t("wizardAllBuildings")}</option>
+                                    {filterBuildings.map(b => <option key={b.id} value={b.id}>{b.label}</option>)}
+                                </select>
+                            </Field>
                             <Field label={`${t("unit")} *`}>
                                 <UnitPicker
                                     status="VACANT"
+                                    propertyId={filterPropertyId || undefined}
+                                    buildingId={filterBuildingId || undefined}
                                     value={unitId}
                                     onChange={(id, u) => {
                                         setUnitId(id);
@@ -644,22 +710,6 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                                     testId="wizard-renter"
                                 />
                             </Field>
-                            <Field label={t("agreementDate")}>
-                                <input
-                                    type="date"
-                                    data-testid="wizard-agreement-date"
-                                    className={field}
-                                    value={terms.agreementDate}
-                                    onChange={e => {
-                                        const value = e.target.value;
-                                        patch(
-                                            contractDateTouched
-                                                ? { agreementDate: value }
-                                                : { agreementDate: value, contractDate: value || todayIso() },
-                                        );
-                                    }}
-                                />
-                            </Field>
                         </div>
                     )}
 
@@ -672,10 +722,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                                     className={field}
                                     value={terms.contractDate}
                                     max={maxManualPostingDateIso()}
-                                    onChange={e => {
-                                        setContractDateTouched(true);
-                                        patch({ contractDate: e.target.value });
-                                    }}
+                                    onChange={e => patch({ contractDate: e.target.value })}
                                 />
                             </Field>
                             <Field label={`${t("startDate")} *`}>

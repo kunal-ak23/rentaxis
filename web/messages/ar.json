@@ -2269,6 +2269,10 @@
     "urlAccountsCapped": "ذكر هذا الرابط {count} حساباً؛ يُعرض أول {max} منها. اختر عدداً أقل، أو افتح ميزان المراجعة لعرض الشركة بالكامل."
   },
   "Leasing": {
+    "wizardFilterProperty": "العقار",
+    "wizardFilterBuilding": "المبنى",
+    "wizardAllProperties": "كل العقارات",
+    "wizardAllBuildings": "كل المباني",
     "pendingCheques": "الشيكات المعلقة: {count} · <n>{amount}</n>",
     "returnedCheques": "المرتجعة: {count} · <n>{amount}</n>",
     "pendingChequesHint": "مسجلة أو مودعة ولم تُصرف بعد. تظهر الشيكات المرتجعة غير المستبدلة بشكل منفصل. يفتح تبويب الشيكات.",

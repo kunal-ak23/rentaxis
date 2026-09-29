@@ -14,6 +14,8 @@ type Props = {
     value: string;
     onChange: (id: string, unit: UnitOption | null) => void;
     propertyId?: string;
+    /** Narrows the search to one building (the contract wizard's Building filter). */
+    buildingId?: string;
     status?: "VACANT" | "OCCUPIED" | "RESERVED" | "MAINTENANCE";
     placeholder?: string;
     className?: string;
@@ -25,7 +27,7 @@ type Props = {
 };
 
 /** Server-searched unit select: label is the unit number, sublabel its property (· building) and a commercial tag. */
-export function UnitPicker({ value, onChange, propertyId, status, placeholder, className, testId, disabled, excludeIds, id }: Props) {
+export function UnitPicker({ value, onChange, propertyId, buildingId, status, placeholder, className, testId, disabled, excludeIds, id }: Props) {
     const t = useTranslations("Pickers");
     const commercial = t("commercial");
     const excludeKey = (excludeIds ?? []).join("\u0000");
@@ -44,11 +46,11 @@ export function UnitPicker({ value, onChange, propertyId, status, placeholder, c
         async (q: string) => {
             const excluded = new Set(excludeKey ? excludeKey.split("\u0000") : []);
             const rows = units.remember(
-                await lookupApi.searchUnits({ q, propertyId, status, limit: Math.min(PAGE + excluded.size, MAX) }),
+                await lookupApi.searchUnits({ q, propertyId, buildingId, status, limit: Math.min(PAGE + excluded.size, MAX) }),
             );
             return rows.filter((u) => !excluded.has(u.id)).map(toOption);
         },
-        [propertyId, status, excludeKey, toOption],
+        [propertyId, buildingId, status, excludeKey, toOption],
     );
 
     const resolved = units.useResolved(value);

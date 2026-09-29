@@ -43,7 +43,6 @@ type Header = {
     startDate: string;
     endDate: string;
     contractDate: string;
-    agreementDate: string;
     /** Null means the property's default (gap #65). */
     gracePeriodDays: number | null;
     paymentTerms: number;
@@ -66,7 +65,6 @@ function toHeader(lease: LeaseDetail): Header {
         startDate: (lease.startDate || "").slice(0, 10),
         endDate: (lease.endDate || "").slice(0, 10),
         contractDate: (lease.contractDate || "").slice(0, 10),
-        agreementDate: (lease.agreementDate || "").slice(0, 10),
         // An inherited grace is shown as the property default, and saved as null
         // so it keeps inheriting; only one set on this lease fills the box.
         gracePeriodDays: lease.gracePeriodOverridden === false ? null : lease.gracePeriodDays ?? null,
@@ -165,7 +163,9 @@ export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, onSta
                 startDate: header.startDate,
                 endDate: header.endDate,
                 contractDate: header.contractDate || null,
-                agreementDate: header.agreementDate || null,
+                // Owner ruling 2026-09-29: only the contract date is asked for; the
+                // server keeps (or defaults) the agreement date.
+                agreementDate: null,
                 gracePeriodDays: header.gracePeriodDays,
                 paymentTerms: header.paymentTerms,
                 firstDueDate: header.firstDueDate || null,
@@ -220,9 +220,6 @@ export default function LeaseMetadataEditor({ lease, chargeTypes, onSaved, onSta
                         </Field>
                         <Field label={`${t("endDate")} *`}>
                             <input type="date" data-testid="edit-end-date" className={field} value={header.endDate} onChange={e => patch({ endDate: e.target.value })} />
-                        </Field>
-                        <Field label={t("agreementDate")}>
-                            <input type="date" className={field} value={header.agreementDate} onChange={e => patch({ agreementDate: e.target.value })} />
                         </Field>
                         <Field label={t("gracePeriodDays")}>
                             <GraceDaysField className={field} value={header.gracePeriodDays} propertyDefault={propertyDefaultGrace} onChange={v => patch({ gracePeriodDays: v })} />

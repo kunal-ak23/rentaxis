@@ -52,6 +52,15 @@ describe("UnitPicker", () => {
         expect(screen.getByText("Souk Plaza [Commercial]")).toBeInTheDocument();
     });
 
+    it("narrows the search to a building when given one (demo feedback 2026-09-29)", async () => {
+        api.searchUnits.mockResolvedValue([unit({ id: "u1", unitNumber: "101", buildingId: "b1", buildingName: "Block A" })]);
+        withIntl("en", <UnitPicker value="" onChange={vi.fn()} propertyId="p1" buildingId="b1" status="VACANT" testId="unit" />);
+
+        fireEvent.click(screen.getByTestId("unit"));
+        expect(await screen.findByText("101")).toBeInTheDocument();
+        expect(api.searchUnits).toHaveBeenCalledWith(expect.objectContaining({ propertyId: "p1", buildingId: "b1", status: "VACANT" }));
+    });
+
     it("hides excludeIds rows and calls onChange with the unit", async () => {
         const u1 = unit({ id: "u1", unitNumber: "101" });
         api.searchUnits.mockResolvedValue([u1, unit({ id: "u2", unitNumber: "102" })]);

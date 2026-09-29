@@ -64,8 +64,8 @@ async function names<T>(path: string, ids: string[]): Promise<NamesResult<T>> {
 }
 
 export const lookupApi = {
-    searchUnits: (p: { q?: string; propertyId?: string; status?: string; limit?: number }) =>
-        apiGet<UnitOption[]>(`/units/search${qs({ q: p.q?.trim(), propertyId: p.propertyId, status: p.status, limit: p.limit })}`),
+    searchUnits: (p: { q?: string; propertyId?: string; buildingId?: string; status?: string; limit?: number }) =>
+        apiGet<UnitOption[]>(`/units/search${qs({ q: p.q?.trim(), propertyId: p.propertyId, buildingId: p.buildingId, status: p.status, limit: p.limit })}`),
     searchRenters: (p: { q?: string; limit?: number }) =>
         apiGet<RenterOption[]>(`/renters/search${qs({ q: p.q?.trim(), limit: p.limit })}`),
     unitNames: (ids: string[]) => names<UnitOption>("/units/names", ids),
