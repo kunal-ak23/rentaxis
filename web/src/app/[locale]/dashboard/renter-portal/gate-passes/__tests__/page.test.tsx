@@ -38,7 +38,16 @@ const VISITOR = {
 
 let api: ReturnType<typeof fetchRouter>;
 
+/**
+ * The form refuses a visit window that has already passed, and the fixtures use
+ * fixed dates — so the clock is frozen on the mocked business day. Only Date is
+ * faked: the page's promises and testing-library's waits keep real timers.
+ */
+const NOW = new Date("2026-09-29T08:00:00+04:00");
+
 beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
     sessionRole.current = "RENTER";
     flags.gatepass = true;
     api = fetchRouter();
@@ -46,7 +55,7 @@ beforeEach(() => {
     api.on("GET", "/v1/leases/my-leases", { body: [CONTRACT] });
     api.on("GET", "/v1/gatepass/resident-approvals", { body: [VISITOR] });
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe("Tenant gate passes", () => {
     it("lists the tenant's own passes with the unit and status", async () => {
