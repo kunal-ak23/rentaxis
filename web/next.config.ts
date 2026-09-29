@@ -6,10 +6,11 @@ const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 
 const backendUrl = process.env.BACKEND_URL || 'http://localhost:8080';
 
-let gitHash = process.env.APP_GIT_SHA || 'dev';
+// CI passes the full 40-char SHA; the sidebar shows the first 8 (v0.6.0.31c3d081).
+let gitHash = (process.env.APP_GIT_SHA || 'dev').slice(0, 8);
 if (!process.env.APP_GIT_SHA) {
   try {
-    gitHash = execSync('git rev-parse --short=7 HEAD').toString().trim();
+    gitHash = execSync('git rev-parse --short=8 HEAD').toString().trim();
   } catch {}
 }
 
