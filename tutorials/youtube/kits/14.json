@@ -1,0 +1,60 @@
+{
+  "id": "14",
+  "slug": "penalties-and-cheque-failure-fines",
+  "title": "Miftah tutorial 14 · Penalties, fines and recharges",
+  "description": "Configure fines, approve or waive proposed penalties and maintenance recharges, and see the journal each decision writes.\n\nWho this is for: Accountant, Company Admin, Property Manager, Tenant.\n\nChapters:\n0:00 Cheque-failure Fines\n1:02 Approve\n1:12 The Penalty Journals\n1:37 Approved, and Reverse\n\nPart of the Miftah web course — playlist: Miftah · Collections\n\nاضبط إعدادات الغرامات، واعتمد الغرامات المقترحة وتكاليف الصيانة المعاد تحميلها أو أعفِ منها، وتعرّف على القيد الذي يُنشئه كل قرار.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "rent collection",
+    "cheques",
+    "online payments",
+    "penalties",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Collections",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "Cheque-failure Fines"
+    },
+    {
+      "startSec": 62.326,
+      "start": "1:02",
+      "label": "Approve"
+    },
+    {
+      "startSec": 72.391,
+      "start": "1:12",
+      "label": "The Penalty Journals"
+    },
+    {
+      "startSec": 97.554,
+      "start": "1:37",
+      "label": "Approved, and Reverse"
+    }
+  ],
+  "durationSec": 108,
+  "roles": [
+    "TENANT_ADMIN",
+    "PROPERTY_MANAGER",
+    "ACCOUNTANT",
+    "RENTER"
+  ],
+  "topic": "collections",
+  "captionsFile": "tutorials/output/14-penalties-and-cheque-failure-fines.srt",
+  "videoFile": "tutorials/output/14-penalties-and-cheque-failure-fines.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/14.png"
+}

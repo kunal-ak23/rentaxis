@@ -147,7 +147,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["leases--lease-lifecycle"],
     },
     {
-        id: "14", slug: "penalties-and-cheque-failure-fines", topic: "collections", roles: [...PORTFOLIO, "ACCOUNTANT", "RENTER"], durationSec: 150, youtubeId: null,
+        id: "14", slug: "penalties-and-cheque-failure-fines", topic: "collections", roles: [...PORTFOLIO, "ACCOUNTANT", "RENTER"], durationSec: 108, youtubeId: null,
         title: { en: "Penalties, fines and recharges", ar: "الغرامات وإعادة تحميل تكاليف الصيانة" },
         description: {
             en: "Configure fines, approve or waive proposed penalties and maintenance recharges, and see the journal each decision writes.",

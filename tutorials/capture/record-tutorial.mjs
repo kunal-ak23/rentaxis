@@ -198,6 +198,26 @@ try {
   const defaultRole = scenario.role || 'superadmin';
   const host = new URL(baseURL).hostname;
 
+  // Warm-up (capture only): record-local.sh restores a database snapshot right
+  // before the capture, so the backend starts cold and the first page loads
+  // run seconds slow, on camera. A scenario can list read-only pages
+  // (`warmup: [{ role, path }]`) to open once, unrecorded, before the take.
+  if (!validateOnly && Array.isArray(scenario.warmup)) {
+    for (const { role, path: warmPath } of scenario.warmup) {
+      const context = await browser.newContext({ baseURL, storageState: await authenticatedStorageState(role) });
+      await suppressAutomaticOnboarding(context);
+      await context.addCookies([{ name: 'active_tenant_id', value: tenantId, domain: host, path: '/' }]);
+      const page = await context.newPage();
+      for (let round = 0; round < 2; round += 1) {
+        await page.goto(`${baseURL}${warmPath}`, { waitUntil: 'commit', timeout: 60_000 }).catch(() => {});
+        await page.locator('main').waitFor({ state: 'visible', timeout: 60_000 }).catch(() => {});
+        await page.waitForTimeout(2500);
+      }
+      await context.close();
+    }
+    console.log('warmup=done');
+  }
+
   for (const [sceneIndex, scene] of scenes.entries()) {
     const role = scene.role || defaultRole;
     if (!scene.continues || !live || live.role !== role) {
