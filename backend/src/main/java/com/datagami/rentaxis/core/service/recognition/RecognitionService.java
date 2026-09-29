@@ -159,7 +159,8 @@ public class RecognitionService {
                                        List<RecognitionEntryDTO> entries,
                                        int skippedLocked, List<RecognitionEntryDTO> skippedLockedEntries,
                                        LocalDate booksLockedThrough,
-                                       List<String> errors) {
+                                       List<String> errors,
+                                       int alreadyRecognised) {
     }
 
     // ------------------------------------------------------------------
@@ -1124,6 +1125,7 @@ public class RecognitionService {
         List<RecognitionEntryDTO> done = new ArrayList<>();
         List<RecognitionEntryDTO> locked = new ArrayList<>();
         List<String> errors = new ArrayList<>();
+        int alreadyDone = 0;
         BigDecimal total = BigDecimal.ZERO;
 
         for (RecognitionEntryDTO row : plan.rows()) {
@@ -1139,6 +1141,12 @@ public class RecognitionService {
             try {
                 done.add(poster.post(row.id()));
                 total = total.add(row.amount());
+            } catch (RecognitionEntryNotPlannedException e) {
+                // Break-it R4 money4 F1: another run (two people closing the month at
+                // once) posted this row after the candidates were read, or an amendment
+                // replaced it with a PLANNED row the next run picks up. Either way the
+                // work is done exactly once; it is not a failure to report or re-run.
+                alreadyDone++;
             } catch (RuntimeException e) {
                 // The entry's own transaction rolled back; there is no other one to
                 // take down with it, which is the whole point of the separate bean.
@@ -1154,7 +1162,7 @@ public class RecognitionService {
         }
         return new RecognitionRunResult(preview, preview ? 0 : done.size(), done.size(),
                 total.setScale(2, RoundingMode.HALF_UP), done,
-                locked.size(), locked, plan.lockedThrough(), errors);
+                locked.size(), locked, plan.lockedThrough(), errors, alreadyDone);
     }
 
     /** What a run has to decide about, read once and detached. */

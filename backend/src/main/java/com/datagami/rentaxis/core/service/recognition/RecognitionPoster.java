@@ -1,7 +1,6 @@
 package com.datagami.rentaxis.core.service.recognition;
 
 import com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO;
-import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.ledger.AccountResolver;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest;
@@ -146,8 +145,7 @@ public class RecognitionPoster {
         // Checked under the lock, which is the whole point: the loser of a race
         // blocks on the SELECT above and re-reads the winner's committed status here.
         if (entry.getStatus() != RecognitionStatus.PLANNED) {
-            throw new BusinessRuleViolationException(
-                    "Recognition entry " + entryId + " is already " + entry.getStatus());
+            throw new RecognitionEntryNotPlannedException(entry.getStatus());
         }
         RentSegment segment = entry.getSegment();
         Lease lease = entry.getLease();

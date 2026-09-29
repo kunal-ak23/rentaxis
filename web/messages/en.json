@@ -3003,6 +3003,7 @@
     "skippedLocked": "Skipped — period locked",
     "skippedLockedNote": "{count, plural, one {# entry falls} other {# entries fall}} in a period that is closed. Books are locked through {date}.",
     "failed": "Failed",
+    "alreadyRecognisedNote": "{count, plural, one {# entry was} other {# entries were}} already recognised by another run at the same time. Nothing more to do for {count, plural, one {it} other {them}}.",
     "nothingToPost": "Nothing to post up to this date.",
     "loadFailed": "Couldn't load pending entries. Please try again.",
     "runFailed": "The run was refused.",

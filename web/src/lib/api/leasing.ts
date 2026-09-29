@@ -809,6 +809,8 @@ export type RecognitionRunResult = {
   booksLockedThrough: string | null;
   failed: number;
   errors: string[];
+  /** Break-it R4 money4 F1: rows another run posted meanwhile — done once, not failed. Absent on older backends. */
+  alreadyRecognised?: number;
 };
 
 /** F14-27: `GET /finance/recognition/status` — a warning banner's whole answer. */
