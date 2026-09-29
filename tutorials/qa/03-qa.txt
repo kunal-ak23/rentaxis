@@ -1,10 +1,10 @@
 QA 03-roles-permissions-and-organisation-switching.mp4
-  PASS  gate 1 readable, 124.160000s
+  PASS  gate 1 readable, 124.680000s
   PASS  gate 2 decodes clean
   PASS  gate 3 streams: h264,video aac,audio mov_text,subtitle 
-  PASS  gate 4 a/v aligned (v=124.160000 a=124.152000)
+  PASS  gate 4 a/v aligned (v=124.560000 a=124.680000)
   PASS  gate 5 contact sheet /Users/kunalsharma/datagami/rentaxis/tutorials/qa/03-contact-sheet.jpg  <- LOOK AT THIS
-  PASS  gate 6 srt ok (40 cues, last ends 124.176s)
-  PASS  gate 7 luma 222.259
+  PASS  gate 6 srt ok (40 cues, last ends 124.68s)
+  PASS  gate 7 luma 222.231
 
 ALL GATES PASSED

@@ -130,8 +130,23 @@ export const CAPTURE_STYLE_RULES = [
   // cells are hidden: the users table's second-column cells are the only
   // text-muted ones there (the staff table's second column is Employee ID),
   // and its third-column cells the only monospace ones.
-  ...(tutorialId === '05'
+  ...(['05', '09'].includes(tutorialId)
     ? ['table td.text-muted:nth-child(2), table td.font-mono:nth-child(3) { visibility: hidden !important; }']
+    : []),
+  // Tutorials 08 and 09 show tenants: the Tenants table's EMAIL and PHONE
+  // cells (the rows whose first cell links to a tenant), the tenant page
+  // header's email and phone, the Add Tenant form's email and phone once
+  // typed (blurred, so the viewer still sees something was entered), and the
+  // invite notice, whose sentence names the email address.
+  ...(['08', '09'].includes(tutorialId)
+    ? ['tr:has(> td > a[href*="/dashboard/renters/"]) > td:nth-child(2),'
+       + ' tr:has(> td > a[href*="/dashboard/renters/"]) > td:nth-child(3),'
+       + ' span:has(> svg.lucide-mail) > span[dir="ltr"], span:has(> svg.lucide-phone) > span[dir="ltr"]'
+       + ' { visibility: hidden !important; }',
+      'input[placeholder="john@example.com"]:not(:placeholder-shown),'
+       + ' input[placeholder="+971 50 123 4567"]:not(:placeholder-shown)'
+       + ' { color: transparent !important; text-shadow: 0 0 9px rgba(15, 23, 42, .6) !important; }',
+      '[role="dialog"]:has(svg.lucide-mail-check) p { filter: blur(6px) !important; }']
     : []),
 ].join('\n');
 

@@ -2,7 +2,7 @@
   "id": "02",
   "slug": "dashboard-search-notifications-and-help",
   "title": "Miftah tutorial 02 · Dashboard, search, notifications and help",
-  "description": "Read the dashboard, find records with global search, work through notifications and use the Help center and guided tours.\n\nWho this is for: Accountant, Company Admin, Company User, Property Manager, Security Guard, System Admin, Tenant.\n\nChapters:\n0:00 Introduction\n0:40 Select the search box in the header\n1:17 The full history can be filtered to\n\nPart of the Miftah web course — playlist: Miftah · Getting started\n\nاقرأ لوحة التحكم، وابحث عن السجلات بالبحث الشامل، وتابع الإشعارات، واستخدم مركز المساعدة والجولات الإرشادية.",
+  "description": "Read the dashboard, find records with global search, work through notifications and use the Help center and guided tours.\n\nWho this is for: Accountant, Company Admin, Company User, Property Manager, Security Guard, System Admin, Tenant.\n\nChapters:\n0:00 Home · Today\n0:39 Global Search\n1:01 Open the Tenancy Contract\n1:19 Notification History\n1:33 Help Center\n\nPart of the Miftah web course — playlist: Miftah · Getting started\n\nاقرأ لوحة التحكم، وابحث عن السجلات بالبحث الشامل، وتابع الإشعارات، واستخدم مركز المساعدة والجولات الإرشادية.",
   "tags": [
     "miftah",
     "property management",
@@ -27,20 +27,30 @@
     {
       "startSec": 0,
       "start": "0:00",
-      "label": "Introduction"
+      "label": "Home · Today"
     },
     {
-      "startSec": 40.351,
-      "start": "0:40",
-      "label": "Select the search box in the header"
+      "startSec": 39.737,
+      "start": "0:39",
+      "label": "Global Search"
     },
     {
-      "startSec": 77.43,
-      "start": "1:17",
-      "label": "The full history can be filtered to"
+      "startSec": 61.648,
+      "start": "1:01",
+      "label": "Open the Tenancy Contract"
+    },
+    {
+      "startSec": 79.103,
+      "start": "1:19",
+      "label": "Notification History"
+    },
+    {
+      "startSec": 93.958,
+      "start": "1:33",
+      "label": "Help Center"
     }
   ],
-  "durationSec": 119,
+  "durationSec": 122,
   "roles": [
     "SUPER_ADMIN",
     "TENANT_ADMIN",

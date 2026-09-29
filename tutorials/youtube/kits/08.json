@@ -1,0 +1,57 @@
+{
+  "id": "08",
+  "slug": "import-a-property-portfolio-in-bulk",
+  "title": "Miftah tutorial 08 · Import a property portfolio in bulk",
+  "description": "Download the template, upload your portfolio, fix rows that fail validation and check what was created.\n\nWho this is for: Company Admin.\n\nChapters:\n0:00 Import Portfolio\n0:30 Validation Comes First\n0:53 Upload the Corrected Workbook\n1:23 The Imported Tenants\n\nPart of the Miftah web course — playlist: Miftah · Portfolio\n\nنزّل النموذج، وارفع محفظتك العقارية، وصحّح الصفوف التي لم تجتز التحقق، وراجع ما تم إنشاؤه.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "property portfolio",
+    "buildings",
+    "units",
+    "bulk import",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Portfolio",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "Import Portfolio"
+    },
+    {
+      "startSec": 30.691,
+      "start": "0:30",
+      "label": "Validation Comes First"
+    },
+    {
+      "startSec": 53.268,
+      "start": "0:53",
+      "label": "Upload the Corrected Workbook"
+    },
+    {
+      "startSec": 83.606,
+      "start": "1:23",
+      "label": "The Imported Tenants"
+    }
+  ],
+  "durationSec": 100,
+  "roles": [
+    "TENANT_ADMIN"
+  ],
+  "topic": "portfolio",
+  "captionsFile": "tutorials/output/08-import-a-property-portfolio-in-bulk.srt",
+  "videoFile": "tutorials/output/08-import-a-property-portfolio-in-bulk.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/08.png"
+}

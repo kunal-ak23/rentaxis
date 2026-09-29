@@ -1,0 +1,171 @@
+1
+00:00:00,000 --> 00:00:02,903
+This tutorial adds a tenant, invites them
+to
+
+2
+00:00:02,903 --> 00:00:05,806
+the tenant portal, and later withdraws
+that access.
+
+3
+00:00:05,806 --> 00:00:08,709
+As a Company Admin, open Leasing, then
+Tenants.
+
+4
+00:00:08,709 --> 00:00:10,886
+A tenant profile holds the person's
+
+5
+00:00:10,886 --> 00:00:13,063
+names, contact details, and preferred
+language.
+
+6
+00:00:13,063 --> 00:00:15,241
+Before adding someone, search for them.
+
+7
+00:00:15,241 --> 00:00:18,507
+No tenants match Mariam, so there is no
+duplicate.
+
+8
+00:00:18,507 --> 00:00:19,595
+Select Add Tenant.
+
+9
+00:00:19,595 --> 00:00:23,587
+Enter the English name, Mariam Al Nuaimi,
+and the Arabic name.
+
+10
+00:00:23,587 --> 00:00:27,215
+Enter her email address and mobile number,
+and check them
+
+11
+00:00:27,215 --> 00:00:30,481
+carefully, because the portal invitation
+goes to that email.
+
+12
+00:00:30,481 --> 00:00:32,659
+They are hidden in this video.
+
+13
+00:00:32,659 --> 00:00:34,836
+Choose Arabic as the preferred language.
+
+14
+00:00:34,836 --> 00:00:37,376
+Create Portal Account is ticked, so Miftah
+
+15
+00:00:37,376 --> 00:00:39,916
+will invite her to the tenant portal.
+
+16
+00:00:39,916 --> 00:00:40,642
+Select Create.
+
+17
+00:00:40,642 --> 00:00:43,182
+The confirmation says an invite was
+emailed.
+
+18
+00:00:43,182 --> 00:00:46,811
+The link lets her set her own password, so
+no
+
+19
+00:00:46,811 --> 00:00:50,077
+password is shown to you or shared by
+anyone.
+
+20
+00:00:50,077 --> 00:00:50,802
+Select Done.
+
+21
+00:00:50,802 --> 00:00:55,157
+Mariam joins the list with Arabic as her
+language, and Resend invite
+
+22
+00:00:55,157 --> 00:00:59,511
+is there in case the email goes astray or
+the link expires.
+
+23
+00:00:59,511 --> 00:01:01,688
+Select View to open her page.
+
+24
+00:01:01,688 --> 00:01:04,591
+Invite pending stays until she sets her
+password.
+
+25
+00:01:04,591 --> 00:01:07,132
+Her contracts, cheques, and tickets will
+collect
+
+26
+00:01:07,132 --> 00:01:09,672
+here, and Ledger opens her account
+statement.
+
+27
+00:01:09,672 --> 00:01:11,486
+For now there are none.
+
+28
+00:01:11,486 --> 00:01:15,115
+Portal access is a user account with the
+Tenant role.
+
+29
+00:01:15,115 --> 00:01:18,743
+If a tenant should no longer sign in, for
+example
+
+30
+00:01:18,743 --> 00:01:22,372
+after they move out, remove the account,
+not the tenant.
+
+31
+00:01:22,372 --> 00:01:26,001
+Open Settings, then Users and staff, and
+search for Mariam.
+
+32
+00:01:26,001 --> 00:01:28,178
+Her account shows the role Tenant.
+
+33
+00:01:28,178 --> 00:01:30,355
+Select Delete, then confirm Delete User.
+
+34
+00:01:30,355 --> 00:01:33,984
+Back on her tenant page, Invite pending
+and Resend invite
+
+35
+00:01:33,984 --> 00:01:37,250
+are gone, because she no longer has a
+sign-in.
+
+36
+00:01:37,250 --> 00:01:40,153
+Her profile stays, and so does her
+history.
+
+37
+00:01:40,153 --> 00:01:43,056
+Never reuse one tenant's account for
+another person.

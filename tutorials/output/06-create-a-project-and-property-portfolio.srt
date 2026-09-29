@@ -1,0 +1,162 @@
+1
+00:00:00,000 --> 00:00:04,503
+This tutorial creates a new project and
+adds its first property.
+
+2
+00:00:04,503 --> 00:00:08,596
+As a Company Admin, open Leasing, then
+Properties and Units.
+
+3
+00:00:08,596 --> 00:00:11,462
+Each row is a project: one site,
+
+4
+00:00:11,462 --> 00:00:14,327
+with its units, vacancies, occupancy, and
+revenue.
+
+5
+00:00:14,327 --> 00:00:18,830
+Before creating anything, search for the
+name you plan to use.
+
+6
+00:00:18,830 --> 00:00:22,514
+Nothing matches Creek Gardens, so there is
+no duplicate.
+
+7
+00:00:22,514 --> 00:00:24,561
+Open More, then Add Project.
+
+8
+00:00:24,561 --> 00:00:27,836
+A project groups the properties on one
+site.
+
+9
+00:00:27,836 --> 00:00:32,748
+Enter the English name, Oasis Crest Creek
+Gardens, and the Arabic name.
+
+10
+00:00:32,748 --> 00:00:36,023
+Choose the emirate, Dubai, and the type,
+Residential.
+
+11
+00:00:36,023 --> 00:00:39,298
+Add the street address and the Makani
+number,
+
+12
+00:00:39,298 --> 00:00:42,573
+the ten-digit number that identifies the
+building's entrance.
+
+13
+00:00:42,573 --> 00:00:47,485
+Fixed expenses holds the site's yearly
+running costs, such as service charges.
+
+14
+00:00:47,485 --> 00:00:48,304
+Select Create.
+
+15
+00:00:48,304 --> 00:00:51,988
+The project joins the list, with no units
+yet.
+
+16
+00:00:51,988 --> 00:00:54,034
+Now add its first property.
+
+17
+00:00:54,034 --> 00:00:55,263
+Select Add Property.
+
+18
+00:00:55,263 --> 00:00:59,356
+Here, a property is one rentable unit
+inside a project.
+
+19
+00:00:59,356 --> 00:01:02,222
+Select the project, enter the unit number,
+
+20
+00:01:02,222 --> 00:01:05,087
+CG-101, and choose the type, 2 BHK.
+
+21
+00:01:05,087 --> 00:01:07,543
+Enter the size in square feet.
+
+22
+00:01:07,543 --> 00:01:09,181
+New properties start Vacant.
+
+23
+00:01:09,181 --> 00:01:13,274
+Enter the expected yearly rent, 98,000
+dirhams, and select Create.
+
+24
+00:01:13,274 --> 00:01:16,958
+The project's Units and Vacant columns now
+count one.
+
+25
+00:01:16,958 --> 00:01:19,414
+Select Manage to open the project.
+
+26
+00:01:19,414 --> 00:01:24,327
+The header shows its name, type, address,
+and Makani number, and the
+
+27
+00:01:24,327 --> 00:01:28,829
+tabs hold its buildings, units, contracts,
+amenities, parking, and ledger accounts.
+
+28
+00:01:28,829 --> 00:01:31,695
+On Units, CG-101 is listed as a
+
+29
+00:01:31,695 --> 00:01:34,151
+vacant 2 BHK at 98,000 dirhams.
+
+30
+00:01:34,151 --> 00:01:39,063
+Back on the list, Cards shows each project
+as a card with
+
+31
+00:01:39,063 --> 00:01:43,566
+its units, vacancies, occupancy, and
+revenue, which is quick to scan.
+
+32
+00:01:43,566 --> 00:01:46,841
+Table lines the projects up in columns,
+which
+
+33
+00:01:46,841 --> 00:01:49,706
+is better for comparing a larger
+portfolio.
+
+34
+00:01:49,706 --> 00:01:52,981
+The new project is ready for buildings,
+contacts,
+
+35
+00:01:52,981 --> 00:01:56,256
+amenities, and parking, which the next
+tutorial adds.

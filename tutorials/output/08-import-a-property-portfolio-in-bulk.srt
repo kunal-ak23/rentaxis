@@ -1,0 +1,168 @@
+1
+00:00:00,000 --> 00:00:03,880
+Bulk import brings a whole portfolio into
+Miftah in one step,
+
+2
+00:00:03,880 --> 00:00:07,761
+which suits onboarding a new organisation
+or moving from another system.
+
+3
+00:00:07,761 --> 00:00:10,230
+As a Company Admin, open Properties and
+
+4
+00:00:10,230 --> 00:00:12,347
+Units, then More, then Import Portfolio.
+
+5
+00:00:12,347 --> 00:00:16,227
+Always start from a fresh template: select
+Download Template, so the
+
+6
+00:00:16,227 --> 00:00:19,755
+columns and accepted values match the
+version you are running.
+
+7
+00:00:19,755 --> 00:00:22,224
+The workbook has a sheet each for
+
+8
+00:00:22,224 --> 00:00:24,341
+properties, units, tenants, and tenancy
+contracts.
+
+9
+00:00:24,341 --> 00:00:27,516
+Keep the column headings as they are, and
+make
+
+10
+00:00:27,516 --> 00:00:30,691
+every unit name a property from the
+Properties sheet.
+
+11
+00:00:30,691 --> 00:00:34,218
+Upload a copy with mistakes first, to see
+what happens.
+
+12
+00:00:34,218 --> 00:00:37,040
+Choose the file and select Upload and
+Import.
+
+13
+00:00:37,040 --> 00:00:40,215
+Miftah checks the whole workbook before it
+creates anything.
+
+14
+00:00:40,215 --> 00:00:44,449
+Validation Failed lists each problem with
+its sheet, row, column, and cause.
+
+15
+00:00:44,449 --> 00:00:47,623
+Row three has a unit type that is not
+
+16
+00:00:47,623 --> 00:00:50,446
+on the list, and row five names a
+
+17
+00:00:50,446 --> 00:00:53,268
+property that is not in the Properties
+sheet.
+
+18
+00:00:53,268 --> 00:00:54,326
+Nothing was created.
+
+19
+00:00:54,326 --> 00:00:57,148
+Fix the mistakes in the workbook itself,
+then
+
+20
+00:00:57,148 --> 00:00:59,970
+select Try Again and upload the corrected
+copy.
+
+21
+00:00:59,970 --> 00:01:02,440
+Keep the window open while it runs,
+
+22
+00:01:02,440 --> 00:01:04,556
+and upload a workbook only once.
+
+23
+00:01:04,556 --> 00:01:07,026
+Import Successful shows the counts: one
+property,
+
+24
+00:01:07,026 --> 00:01:09,495
+two buildings, four units, and two
+tenants.
+
+25
+00:01:09,495 --> 00:01:11,611
+This workbook has no tenancy contracts.
+
+26
+00:01:11,611 --> 00:01:12,670
+Close the dialog.
+
+27
+00:01:12,670 --> 00:01:15,845
+Oasis Crest Garden Villas is now in the
+list.
+
+28
+00:01:15,845 --> 00:01:17,609
+Select Manage and open Units.
+
+29
+00:01:17,609 --> 00:01:20,783
+All four units are there, each in the
+building
+
+30
+00:01:20,783 --> 00:01:23,606
+the workbook named, vacant, with its
+expected rent.
+
+31
+00:01:23,606 --> 00:01:24,311
+Open Tenants.
+
+32
+00:01:24,311 --> 00:01:27,486
+Omar Al Mansoori and Leila Farouk have
+joined the
+
+33
+00:01:27,486 --> 00:01:30,661
+list, ready to be chosen for a tenancy
+contract.
+
+34
+00:01:30,661 --> 00:01:32,777
+Imported tenants get no portal invitation;
+
+35
+00:01:32,777 --> 00:01:34,894
+the next tutorial covers portal access.
+
+36
+00:01:34,894 --> 00:01:37,363
+For later changes, edit records one at
+
+37
+00:01:37,363 --> 00:01:39,480
+a time rather than importing again.

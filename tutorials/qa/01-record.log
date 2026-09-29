@@ -7,25 +7,25 @@ voice=en-US-Ava:DragonHDLatestNeural
 style=none
 audio=/Users/kunalsharma/datagami/rentaxis/tutorials/audio-generated/01-sign-in-and-navigate-miftah-azure.mp3
 subtitle_cues=39
-subtitle_duration=111.192
+subtitle_duration=113.544
 subtitle_file=/Users/kunalsharma/datagami/rentaxis/tutorials/output/01-sign-in-and-navigate-miftah.srt
 scene=1 starts_at=0.0s title=Sign in
-scene=2 starts_at=22.8s title=Your home page
-scene=3 starts_at=52.2s title=Leasing
-scene=4 starts_at=59.9s title=Arabic, right to left
-scene=5 starts_at=73.8s title=Your account menu
-scene=6 starts_at=79.7s title=My Profile
-scene=7 starts_at=100.1s title=Log out
+scene=2 starts_at=23.2s title=Your home page
+scene=3 starts_at=53.3s title=Leasing
+scene=4 starts_at=61.2s title=Arabic, right to left
+scene=5 starts_at=75.0s title=Your account menu
+scene=6 starts_at=81.0s title=My Profile
+scene=7 starts_at=101.9s title=Log out
 tutorial=01
 tenant=Oasis Crest Properties
-target_duration=113.19
+target_duration=115.54
 silent_video=/Users/kunalsharma/datagami/rentaxis/tutorials/output/01-sign-in-and-navigate-miftah-silent.webm
-raw_video_dir=/Users/kunalsharma/datagami/rentaxis/tutorials/raw/tutorial-01-VLQ8Zb
+raw_video_dir=/Users/kunalsharma/datagami/rentaxis/tutorials/raw/tutorial-01-qYFuqE
 tts_provider=external
 video_codec=h264
 audio_codec=aac
 dimensions=1920x1080
-duration=111.160000
+duration=113.520000
 subtitle_codec=mov_text
 subtitle_file=/Users/kunalsharma/datagami/rentaxis/tutorials/output/01-sign-in-and-navigate-miftah.srt
 tutorial=01

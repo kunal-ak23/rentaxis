@@ -2,7 +2,7 @@
   "id": "05",
   "slug": "create-users-and-staff",
   "title": "Miftah tutorial 05 · Create users and staff",
-  "description": "Add users with the right role, assign them to properties and keep staff records active or inactive.\n\nWho this is for: Company Admin, System Admin.\n\nChapters:\n0:00 Introduction\n0:38 No password is set here: the new\n1:20 Back in Users and staff, select Add\n\nPart of the Miftah web course — playlist: Miftah · Getting started\n\nأضف المستخدمين بالدور المناسب، وخصّصهم للعقارات، وحافظ على سجلات الموظفين نشطة أو غير نشطة.",
+  "description": "Add users with the right role, assign them to properties and keep staff records active or inactive.\n\nWho this is for: Company Admin, System Admin.\n\nChapters:\n0:00 Users & Staff\n0:44 Provision New User\n1:13 The Property Shows Its Manager\n1:34 When Someone Leaves\n\nPart of the Miftah web course — playlist: Miftah · Getting started\n\nأضف المستخدمين بالدور المناسب، وخصّصهم للعقارات، وحافظ على سجلات الموظفين نشطة أو غير نشطة.",
   "tags": [
     "miftah",
     "property management",
@@ -27,20 +27,25 @@
     {
       "startSec": 0,
       "start": "0:00",
-      "label": "Introduction"
+      "label": "Users & Staff"
     },
     {
-      "startSec": 38.101,
-      "start": "0:38",
-      "label": "No password is set here: the new"
+      "startSec": 44.989,
+      "start": "0:44",
+      "label": "Provision New User"
     },
     {
-      "startSec": 80.012,
-      "start": "1:20",
-      "label": "Back in Users and staff, select Add"
+      "startSec": 73.688,
+      "start": "1:13",
+      "label": "The Property Shows Its Manager"
+    },
+    {
+      "startSec": 94.631,
+      "start": "1:34",
+      "label": "When Someone Leaves"
     }
   ],
-  "durationSec": 120,
+  "durationSec": 122,
   "roles": [
     "SUPER_ADMIN",
     "TENANT_ADMIN"

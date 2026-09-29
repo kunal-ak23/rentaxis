@@ -1,10 +1,10 @@
 QA 02-dashboard-search-notifications-and-help.mp4
-  PASS  gate 1 readable, 118.840000s
+  PASS  gate 1 readable, 121.440000s
   PASS  gate 2 decodes clean
   PASS  gate 3 streams: h264,video aac,audio mov_text,subtitle 
-  PASS  gate 4 a/v aligned (v=118.840000 a=118.833000)
+  PASS  gate 4 a/v aligned (v=121.440000 a=121.440000)
   PASS  gate 5 contact sheet /Users/kunalsharma/datagami/rentaxis/tutorials/qa/02-contact-sheet.jpg  <- LOOK AT THIS
-  PASS  gate 6 srt ok (39 cues, last ends 118.872s)
-  PASS  gate 7 luma 222.202
+  PASS  gate 6 srt ok (39 cues, last ends 121.44s)
+  PASS  gate 7 luma 225.454
 
 ALL GATES PASSED
