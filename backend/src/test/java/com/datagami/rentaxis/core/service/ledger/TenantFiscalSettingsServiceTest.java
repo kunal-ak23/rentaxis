@@ -137,7 +137,8 @@ class TenantFiscalSettingsServiceTest {
         }
         verify(repo, never()).save(any());
         TenantFiscalSettings ok = service.setBooksStartDate(LocalDate.of(2026, 12, 28));
-        assertThat(ok.getBooksLockedThrough()).isEqualTo(LocalDate.of(2026, 12, 27));
+        // Break-it R4 money4 F3: the implied lock is never after today.
+        assertThat(ok.getBooksLockedThrough()).isEqualTo(LocalDate.of(2026, 9, 28));
     }
 
     /**
@@ -158,9 +159,12 @@ class TenantFiscalSettingsServiceTest {
         assertThat(back.getBooksLockedThrough()).isEqualTo(LocalDate.of(2025, 12, 31));
         assertThat(service.lockThroughAsUser(LocalDate.of(2026, 9, 27)).getBooksLockedThrough())
                 .isEqualTo(LocalDate.of(2026, 9, 27));
-        // Forward again (still nothing posted): the lock follows the start.
+        // Forward again (still nothing posted): the lock follows the start, but never
+        // past today (R4 money4 F3).
+        assertThat(service.setBooksStartDate(LocalDate.of(2026, 9, 1)).getBooksLockedThrough())
+                .isEqualTo(LocalDate.of(2026, 8, 31));
         assertThat(service.setBooksStartDate(LocalDate.of(2026, 10, 1)).getBooksLockedThrough())
-                .isEqualTo(LocalDate.of(2026, 9, 30));
+                .isEqualTo(LocalDate.of(2026, 9, 28));
         // And a user lock may move back while nothing is posted.
         assertThat(service.lockThroughAsUser(LocalDate.of(2026, 3, 31)).getBooksLockedThrough())
                 .isEqualTo(LocalDate.of(2026, 3, 31));
@@ -178,6 +182,46 @@ class TenantFiscalSettingsServiceTest {
                 .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("fiscal.lockBackwards"));
         TenantFiscalSettings s = service.setBooksStartDate(LocalDate.of(2026, 1, 1));
         assertThat(s.getBooksLockedThrough()).isEqualTo(LocalDate.of(2026, 6, 30));
+    }
+
+    /**
+     * Break-it R4 money4 F3: an organisation with a posted JV and no lock set its
+     * books start to 28/12/2026 (inside the +3 months rule) and got a lock through
+     * 27/12/2026 — every deposit, clearing and receipt (dated today or earlier) was
+     * refused for three months, and the lock could not be taken back. The implied
+     * lock is never after today.
+     */
+    @Test
+    void withJournalsAFutureBooksStartNeverLocksPastToday() {
+        today("2026-09-28T08:00:00Z");
+        when(journals.existsByTenantId(tenant)).thenReturn(true);
+        when(repo.findById(tenant)).thenReturn(Optional.of(settings(1, null)));
+
+        TenantFiscalSettings s = service.setBooksStartDate(LocalDate.of(2026, 12, 28));
+        assertThat(s.getBooksLockedThrough()).isEqualTo(LocalDate.of(2026, 9, 28));
+    }
+
+    /**
+     * Break-it R4 money4 F3 (the undo): a lock the books start set is the books
+     * start's; moving the books start back moves it back, even with journals. A
+     * lock somebody set (lock-through, a year-end close) still only moves forward.
+     */
+    @Test
+    void movingTheBooksStartBackMovesTheLockItSetBack() {
+        today("2026-09-28T08:00:00Z");
+        when(journals.existsByTenantId(tenant)).thenReturn(true);
+        TenantFiscalSettings row = settings(1, null);
+        when(repo.findById(tenant)).thenReturn(Optional.of(row));
+
+        assertThat(service.setBooksStartDate(LocalDate.of(2026, 9, 1)).getBooksLockedThrough())
+                .isEqualTo(LocalDate.of(2026, 8, 31));
+        assertThat(service.setBooksStartDate(LocalDate.of(2026, 1, 1)).getBooksLockedThrough())
+                .as("the lock the books start set follows it back").isEqualTo(LocalDate.of(2025, 12, 31));
+
+        // Once a user locks, the lock is theirs: the books start no longer moves it.
+        service.lockThroughAsUser(LocalDate.of(2026, 6, 30));
+        assertThat(service.setBooksStartDate(LocalDate.of(2025, 6, 1)).getBooksLockedThrough())
+                .isEqualTo(LocalDate.of(2026, 6, 30));
     }
 
     @Test

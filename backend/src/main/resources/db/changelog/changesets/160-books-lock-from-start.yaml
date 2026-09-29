@@ -1,0 +1,27 @@
+# Break-it R4 money4 F3: the books start date sets the first period lock (the day
+# before it). A lock the books start set belongs to the books start: moving the
+# books start back must move it back, even once journals exist — otherwise a
+# mistyped future books start locks the organisation out with no undo. A lock a
+# user set (lock-through, a year-end close) keeps its forward-only rule.
+#
+# Backfill: a lock that equals books start − 1 is the one the books start set.
+databaseChangeLog:
+  - changeSet:
+      id: 160-books-lock-from-start
+      author: claude
+      changes:
+        - addColumn:
+            tableName: tenant_fiscal_settings
+            columns:
+              - column:
+                  name: books_lock_from_start
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+        - sql:
+            sql: >
+              UPDATE tenant_fiscal_settings
+                 SET books_lock_from_start = TRUE
+               WHERE books_start_date IS NOT NULL
+                 AND books_locked_through = books_start_date - 1
