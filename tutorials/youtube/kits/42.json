@@ -1,0 +1,58 @@
+{
+  "id": "42",
+  "slug": "termination-settlement-and-deposit-refunds-in-the-books",
+  "title": "Miftah tutorial 42 · Termination, settlement and deposit refunds in the books",
+  "description": "Terminate a contract early, read the unearned-rent reversal, finalise the settlement and pay the deposit refund.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 A Contract That Ended Early\n1:09 The Settlement\n1:24 The Settlement Journal\n1:42 The Refund Is Paid\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nأنهِ العقد مبكرًا، واقرأ قيد عكس الإيجار غير المكتسب، واعتمد التسوية النهائية، وادفع مبلغ التأمين المسترد.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "chart of accounts",
+    "journal voucher",
+    "financial reports",
+    "accounting software",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Accounting",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "A Contract That Ended Early"
+    },
+    {
+      "startSec": 69.785,
+      "start": "1:09",
+      "label": "The Settlement"
+    },
+    {
+      "startSec": 84.633,
+      "start": "1:24",
+      "label": "The Settlement Journal"
+    },
+    {
+      "startSec": 102.946,
+      "start": "1:42",
+      "label": "The Refund Is Paid"
+    }
+  ],
+  "durationSec": 130,
+  "roles": [
+    "TENANT_ADMIN",
+    "ACCOUNTANT"
+  ],
+  "topic": "accounting",
+  "captionsFile": "tutorials/output/42-termination-settlement-and-deposit-refunds-in-the-books.srt",
+  "videoFile": "tutorials/output/42-termination-settlement-and-deposit-refunds-in-the-books.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/42.png"
+}

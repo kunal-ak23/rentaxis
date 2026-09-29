@@ -238,7 +238,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "42", slug: "termination-settlement-and-deposit-refunds-in-the-books", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 150, youtubeId: null,
+        id: "42", slug: "termination-settlement-and-deposit-refunds-in-the-books", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 130, youtubeId: null,
         title: { en: "Termination, settlement and deposit refunds in the books", ar: "إنهاء العقد والتسوية واسترداد التأمين في الدفاتر" },
         description: {
             en: "Terminate a contract early, read the unearned-rent reversal, finalise the settlement and pay the deposit refund.",
