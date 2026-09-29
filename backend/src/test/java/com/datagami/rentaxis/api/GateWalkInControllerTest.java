@@ -102,6 +102,7 @@ class GateWalkInControllerTest extends AbstractPostgresIT {
     @Autowired GatePassScanRepository scanRepo;
     @Autowired GateAccessPolicyRepository policyRepo;
     @Autowired ObjectMapper objectMapper;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     @MockitoBean BlobStorageService blobStorageService;
 
@@ -700,6 +701,25 @@ class GateWalkInControllerTest extends AbstractPostgresIT {
 
         assertThat(rows).hasSize(1);
         assertThat(rows.get(0).get("guestName").asText()).isEqualTo("Visitor Here");
+    }
+
+    @Test
+    void todayLeavesOutWalkInsRaisedBeforeTheUaeDayBegan() {
+        Fixture f = makeFixture();
+        openGate(f);
+        User guard = makeGuard(f.org(), f.property());
+        UUID old = UUID.fromString(raiseWalkIn(guard, f, "Yesterday", "+971501111111", false).get("id").asText());
+        UUID fresh = UUID.fromString(raiseWalkIn(guard, f, "Today", "+971502222222", false).get("id").asText());
+        Instant dayStart = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Dubai")).toLocalDate()
+                .atStartOfDay(java.time.ZoneId.of("Asia/Dubai")).toInstant();
+        // created_at is not updatable through JPA; move it back one minute before the UAE day began.
+        jdbc.update("update gate_passes set created_at = ? where id = ?",
+                java.sql.Timestamp.from(dayStart.minus(1, ChronoUnit.MINUTES)), old);
+
+        JsonNode rows = json(call(HttpMethod.GET, "/api/v1/gatepass/walk-in/today", guard, null));
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).get("id").asText()).isEqualTo(fresh.toString());
     }
 
     @Test
