@@ -58,3 +58,21 @@ export function isAfterBusinessToday(iso: string | null | undefined): boolean {
     if (iso.split("-")[0].length > 4) return true;
     return iso > businessTodayIso();
 }
+
+/** `iso` (`yyyy-MM-dd`) plus `days` calendar days, as `yyyy-MM-dd`. Pure date arithmetic in UTC, so no zone can shift it. */
+export function addDaysIso(iso: string, days: number): string {
+    const [y, m, d] = iso.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/**
+ * `iso` plus `months` calendar months, the day clamped to the target month's
+ * last day (31 January + 1 month = 28/29 February), as Java's `plusMonths` does.
+ */
+export function addMonthsIso(iso: string, months: number): string {
+    const [y, m, d] = iso.split("-").map(Number);
+    const target = new Date(Date.UTC(y, m - 1 + months, 1));
+    const last = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+    target.setUTCDate(Math.min(d, last));
+    return target.toISOString().slice(0, 10);
+}

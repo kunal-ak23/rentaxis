@@ -508,6 +508,19 @@ class ChequeControllerIT extends AbstractPostgresIT {
                 .isEqualTo(HttpStatus.OK);
     }
 
+    /** Demo feedback 2026-09-29: a maturity window over the wire; a bad one is a 400. */
+    @Test
+    void postDatedTakesAFromToWindow() {
+        assertThat(status(accountant, HttpMethod.GET, "/api/v1/cheques/post-dated?from=2026-02-01&to=2026-02-14", null))
+                .isEqualTo(HttpStatus.OK);
+        assertThat(status(accountant, HttpMethod.GET, "/api/v1/cheques/post-dated?from=2026-02-14&to=2026-02-01", null))
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(status(accountant, HttpMethod.GET, "/api/v1/cheques/post-dated?from=2026-02-01", null))
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(status(accountant, HttpMethod.GET, "/api/v1/cheques/post-dated?from=2026-02-01&to=2027-06-01", null))
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
     /** The receipt endpoint folded in from the temporary controller keeps its path. */
     @Test
     void receiptPathStillAnswersForAClearedRow() {
