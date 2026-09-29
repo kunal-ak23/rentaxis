@@ -144,7 +144,8 @@ public class ContractGenerationService {
         // than at transaction commit (after the PDF was already generated).
         assignContractNumberIfNull(lease);
         if (lease.getAgreementDate() == null) {
-            lease.setAgreementDate(LocalDate.now());
+            // Owner ruling 2026-09-29: the agreement date is the contract date unless set.
+            lease.setAgreementDate(lease.getContractDate() != null ? lease.getContractDate() : LocalDate.now());
         }
         try {
             leaseRepository.saveAndFlush(lease);
@@ -388,7 +389,8 @@ public class ContractGenerationService {
         String amountInWords = AmountInWordsUtil.toEnglishWords(grandTotal, "AED");
 
         // Agreement date display (defaults to today only at generation time; preview uses what is stored)
-        LocalDate agreementDate = lease.getAgreementDate() != null ? lease.getAgreementDate() : LocalDate.now();
+        LocalDate agreementDate = lease.getAgreementDate() != null ? lease.getAgreementDate()
+                : lease.getContractDate() != null ? lease.getContractDate() : LocalDate.now();
 
         // Build the row-aligned terms table from the two partials.
         String termsTable = buildTermsTable(termsEn, termsAr);

@@ -66,9 +66,10 @@ public class UnitController {
     public ResponseEntity<List<com.datagami.rentaxis.api.dto.lookup.UnitOptionDTO>> searchUnits(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) java.util.UUID propertyId,
+            @RequestParam(required = false) java.util.UUID buildingId,
             @RequestParam(required = false) UnitStatus status,
             @RequestParam(defaultValue = "20") int limit) {
-        return ResponseEntity.ok(service.search(q, propertyId, status, limit));
+        return ResponseEntity.ok(service.search(q, propertyId, buildingId, status, limit));
     }
 
     /** Scale P1-6: labels for a handful of unit ids (at most 200). */

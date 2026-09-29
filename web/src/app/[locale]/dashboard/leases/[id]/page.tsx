@@ -26,6 +26,7 @@ import LeaseInteractionsPanel from "@/components/leases/LeaseInteractionsPanel";
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
 import RentFreePeriodsCard from "@/components/leases/RentFreePeriodsCard";
 import ChequeGrid, { draftRowsAreValid, toChequeRows } from "@/components/leases/ChequeGrid";
+import { pendingChequeSummary } from "@/components/leases/pendingCheques";
 import ChequeActionDialog, { type ChequeAction } from "@/components/cheques/ChequeActionDialog";
 import { chequeApi } from "@/lib/api/leasing";
 import type { RegisterAction } from "@/components/cheques/registerActions";
@@ -530,6 +531,8 @@ export default function LeaseDetailPage() {
     const earliestEventDate = [lease.contractDate, lease.startDate]
         .filter((d): d is string => !!d).sort()[0] ?? null;
     const drafting = DRAFTING.includes(lease.status);
+    const chequeTally = pendingChequeSummary(cheques);
+    const canOpenLedger = hasPermission(userRole, "canAccessFinance");
     const posted = !!lease.postedAt;
     const readOnly = lease.status === "RENEWED";
     const lineRows = toRows(lease.lines);
@@ -645,6 +648,33 @@ export default function LeaseDetailPage() {
                                 </Link>
                             )}
                         </div>
+                        {/* Demo feedback 2026-09-29: what is still expected on this contract, one click from the Cheques tab. */}
+                        {!drafting && (
+                            <button
+                                type="button"
+                                data-testid="lease-pending-cheques"
+                                title={t("pendingChequesHint")}
+                                onClick={() => selectTab("payments", "cheques")}
+                                className="mt-2 inline-flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-input/40 px-3 py-1.5 text-[11.5px] font-semibold text-foreground hover:bg-input cursor-pointer text-start"
+                            >
+                                <span data-testid="lease-pending-cheques-pending">
+                                    {t.rich("pendingCheques", {
+                                        count: chequeTally.pending.count,
+                                        amount: formatCurrency(chequeTally.pending.amount),
+                                        n: (chunks: React.ReactNode) => <bdi dir="ltr" className="tabular-nums">{chunks}</bdi>,
+                                    })}
+                                </span>
+                                {chequeTally.returned.count > 0 && (
+                                    <span data-testid="lease-pending-cheques-returned" className="text-error">
+                                        {t.rich("returnedCheques", {
+                                            count: chequeTally.returned.count,
+                                            amount: formatCurrency(chequeTally.returned.amount),
+                                            n: (chunks: React.ReactNode) => <bdi dir="ltr" className="tabular-nums">{chunks}</bdi>,
+                                        })}
+                                    </span>
+                                )}
+                            </button>
+                        )}
                     </div>
 
                     {/* ── Action bar ─────────────────────────────────── */}
@@ -775,7 +805,11 @@ export default function LeaseDetailPage() {
                             <div className="space-y-6 min-w-0">
                                 <Card title={t("contractNumber")} icon={<FileText size={13} />}>
                                     <Detail label={t("contractDate")} value={fmtIsoDate(lease.contractDate, locale)} />
-                                    <Detail label={t("agreementDate")} value={fmtIsoDate(lease.agreementDate, locale)} />
+                                    {/* Owner ruling 2026-09-29: one date, the contract date. An agreement
+                                        date is shown only when it differs (imported or older contracts). */}
+                                    {lease.agreementDate && lease.agreementDate.slice(0, 10) !== (lease.contractDate ?? "").slice(0, 10) && (
+                                        <Detail label={t("agreementDate")} value={fmtIsoDate(lease.agreementDate, locale)} />
+                                    )}
                                     <Detail
                                         label={t("gracePeriodDays")}
                                         value={lease.gracePeriodOverridden === false
@@ -820,7 +854,17 @@ export default function LeaseDetailPage() {
                             </div>
 
                             <div className="lg:col-span-2 space-y-6 min-w-0">
-                                <LeaseLinesGrid lines={lineRows} chargeTypes={chargeTypes} editable={false} />
+                                <LeaseLinesGrid
+                                    lines={lineRows}
+                                    chargeTypes={chargeTypes}
+                                    editable={false}
+                                    ledgerLink={canOpenLedger ? {
+                                        // Posted rows only carry this contract's id; a draft has none yet.
+                                        leaseId: posted ? lease.id : null,
+                                        from: [lease.contractDate, lease.startDate].filter(Boolean).sort()[0] ?? null,
+                                        to: lease.endDate,
+                                    } : undefined}
+                                />
 
                                 {/* Spec §4b: rent-free windows — editable on a DRAFT. */}
                                 <RentFreePeriodsCard

@@ -130,7 +130,14 @@ public class ChequeController {
     @GetMapping("/post-dated")
     @PreAuthorize(STAFF)
     public List<ChequeDTO> postDated(@RequestParam(required = false) UUID propertyId,
-                                     @RequestParam(required = false) String month) {
+                                     @RequestParam(required = false) String month,
+                                     @RequestParam(required = false) LocalDate from,
+                                     @RequestParam(required = false) LocalDate to) {
+        // Demo feedback 2026-09-29: the screen asks for a maturity window (next
+        // 1/2 weeks, next month, or a custom From–To); a bare month still works.
+        if (from != null || to != null) {
+            return queryService.postDated(propertyId, from, to);
+        }
         return queryService.postDated(propertyId, parseMonth(month));
     }
 

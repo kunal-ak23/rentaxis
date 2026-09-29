@@ -12,6 +12,12 @@ import { fmtIsoDate, round2 } from "@/components/leases/leaseMath";
 import { fmtAmount } from "@/lib/api/ledger";
 import { ApiError, chequeApi, type Cheque } from "@/lib/api/leasing";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { businessTodayIso } from "@/lib/businessDate";
+import { cn } from "@/lib/utils";
+import {
+    PDC_PRESETS, presetWindow, windowFromParams, windowProblem, writeWindowParams,
+    type PdcPreset, type PdcWindow,
+} from "./pdcWindow";
 
 const field =
     "bg-input border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200";
@@ -19,13 +25,26 @@ const label = "block text-[10px] font-semibold text-muted uppercase tracking-wid
 const th = "text-start px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider whitespace-nowrap";
 const td = "px-4 py-3 text-xs text-foreground";
 
-function currentMonth(): string {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+const PRESET_LABEL: Record<PdcPreset, string> = {
+    "1w": "windowNext1w", "2w": "windowNext2w", "1m": "windowNext1m", custom: "windowCustom",
+};
+
+/** The window the address bar names (default Next 2 weeks), on the Dubai business date. */
+function initialWindow(): PdcWindow {
+    const search = typeof window === "undefined" ? "" : window.location.search;
+    return windowFromParams(new URLSearchParams(search), businessTodayIso());
+}
+
+/** Keeps the choice in the URL (replace, not push), alongside whatever the hub put there. */
+function reflectInUrl(w: PdcWindow) {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    writeWindowParams(url.searchParams, w);
+    window.history.replaceState(window.history.state, "", url.toString());
 }
 
 /** Maturity date grouping, in chequeDate order, each day carrying its own
- * subtotal and a running total across the whole month. */
+ * subtotal and a running total across the whole window. */
 function groupByMaturity(rows: Cheque[]): { date: string; rows: Cheque[]; subtotal: number }[] {
     const byDate = new Map<string, Cheque[]>();
     for (const c of rows) {
@@ -57,7 +76,8 @@ export default function PostDatedPanel(props: { embedded?: boolean; propertyId?:
 
     const properties = useNameLookup("properties", allowed);
 
-    const [month, setMonth] = useState(currentMonth());
+    const [win, setWin] = useState<PdcWindow>(initialWindow);
+    const problem = windowProblem(win);
     const [ownPropertyId, setPropertyId] = useState("");
     // Inside the Collection hub the hub's property filter drives the query and
     // this panel's own picker is hidden.
@@ -70,22 +90,29 @@ export default function PostDatedPanel(props: { embedded?: boolean; propertyId?:
         setLoading(true);
         setLoadError(null);
         try {
-            setRows(await chequeApi.postDated({ month, propertyId: propertyId || undefined }));
+            setRows(await chequeApi.postDated({ from: win.from, to: win.to, propertyId: propertyId || undefined }));
         } catch (err) {
             setRows([]);
             setLoadError(err instanceof ApiError ? err.message : tCommon("loadFailed"));
         } finally {
             setLoading(false);
         }
-    }, [month, propertyId, tCommon]);
+    }, [win.from, win.to, propertyId, tCommon]);
 
     useEffect(() => {
-        if (!allowed) {
+        if (!allowed || problem) {
             setLoading(false);
             return;
         }
         load();
-    }, [allowed, load]);
+    }, [allowed, load, problem]);
+
+    const choose = (next: PdcWindow) => {
+        setWin(next);
+        reflectInUrl(next);
+    };
+    const pickPreset = (preset: PdcPreset) =>
+        choose(preset === "custom" ? { ...win, preset } : { preset, ...presetWindow(preset, businessTodayIso()) });
 
     const groups = useMemo(() => groupByMaturity(rows), [rows]);
     const total = useMemo(() => rows.reduce((s, c) => round2(s + c.amount), 0), [rows]);
@@ -127,16 +154,43 @@ export default function PostDatedPanel(props: { embedded?: boolean; propertyId?:
 
             <div className="bg-surface border border-border rounded-xl shadow-sm p-4 mb-6 flex flex-wrap items-end gap-4">
                 <div>
-                    <label className={label} htmlFor="pd-month">{t("month")}</label>
-                    <input
-                        id="pd-month"
-                        data-testid="post-dated-month"
-                        type="month"
-                        className={field}
-                        value={month}
-                        onChange={ev => setMonth(ev.target.value)}
-                    />
+                    <span className={label} id="pd-window-label">{t("maturityWindow")}</span>
+                    <div role="group" aria-labelledby="pd-window-label" className="inline-flex rounded-lg border border-border overflow-hidden" data-testid="post-dated-presets">
+                        {PDC_PRESETS.map(p => (
+                            <button
+                                key={p}
+                                type="button"
+                                data-testid={`post-dated-preset-${p}`}
+                                aria-pressed={win.preset === p}
+                                onClick={() => pickPreset(p)}
+                                className={cn(
+                                    "px-3 py-2 text-xs font-semibold border-e border-border last:border-e-0 cursor-pointer transition-colors",
+                                    win.preset === p ? "bg-primary text-primary-foreground" : "bg-input text-foreground hover:bg-border",
+                                )}
+                            >
+                                {t(PRESET_LABEL[p])}
+                            </button>
+                        ))}
+                    </div>
                 </div>
+                {win.preset === "custom" ? (
+                    <>
+                        <div>
+                            <label className={label} htmlFor="pd-from">{t("windowFrom")}</label>
+                            <input id="pd-from" data-testid="post-dated-from" type="date" className={field}
+                                value={win.from} onChange={ev => choose({ ...win, from: ev.target.value })} />
+                        </div>
+                        <div>
+                            <label className={label} htmlFor="pd-to">{t("windowTo")}</label>
+                            <input id="pd-to" data-testid="post-dated-to" type="date" className={field}
+                                value={win.to} min={win.from || undefined} onChange={ev => choose({ ...win, to: ev.target.value })} />
+                        </div>
+                    </>
+                ) : (
+                    <p className="text-xs text-muted pb-2 tabular-nums" data-testid="post-dated-window">
+                        {t("windowSummary", { from: fmtIsoDate(win.from, locale), to: fmtIsoDate(win.to, locale) })}
+                    </p>
+                )}
                 {props.propertyId === undefined && (
                     <div>
                         <label className={label} htmlFor="pd-property">{tLedger("propertyFilter")}</label>
@@ -159,7 +213,13 @@ export default function PostDatedPanel(props: { embedded?: boolean; propertyId?:
                 </div>
             </div>
 
-            {loading ? (
+            {problem && (
+                <p role="alert" data-testid="post-dated-window-error" className="rounded-xl bg-error/10 border border-error/30 px-4 py-2.5 text-xs text-error mb-4">
+                    {t(problem === "tooLong" ? "windowTooLong" : "windowInvalid")}
+                </p>
+            )}
+
+            {problem ? null : loading ? (
                 <div className="space-y-3 animate-pulse">
                     {[1, 2, 3].map(i => <div key={i} className="bg-input rounded-xl h-14" />)}
                 </div>

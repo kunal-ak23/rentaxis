@@ -10,6 +10,17 @@
     "off": "Off"
   },
   "MasterData": {
+    "overviewUnits": "Units",
+    "unitsTotal": "Total units",
+    "unitsOccupied": "Occupied",
+    "unitsVacant": "Vacant",
+    "unitsReserved": "Reserved",
+    "unitsMaintenance": "Under maintenance",
+    "overviewParking": "Parking",
+    "parkingTotal": "Total spots",
+    "parkingAssigned": "Assigned",
+    "parkingFree": "Free",
+    "parkingInactive": "{count, plural, one {# inactive spot} other {# inactive spots}} not counted",
     "contractUnavailable": "The contract could not be downloaded. Please try again, or ask your property manager for a copy.",
     "acceptFailed": "The contract could not be accepted. It may have been updated since you opened it — review the current contract and try again.",
     "acceptUnavailable": "This contract is no longer available — your landlord has withdrawn it. Contact them if you have questions.",
@@ -2114,6 +2125,8 @@
     "TENANT_USER": "Company User"
   },
   "Ledger": {
+    "contractFilterOn": "Showing one tenancy contract's entries only.",
+    "showAllContracts": "Show all entries",
     "lockFirst": "This is the first period lock: nothing dated up to {to} can be posted afterwards. Tick to confirm the date is right.",
     "lockAheadOfToday": "The books are locked through {date}, which is after today, so nothing can be posted. If nothing has been posted yet, change the books start date; otherwise re-open the latest closed fiscal year or ask support to correct the lock.",
     "booksStartRule": "The books can start at most three months ahead (the latest is {latest}); the period before the start is locked, but never past today.",
@@ -2258,6 +2271,14 @@
     "urlAccountsCapped": "This link named {count} accounts; the first {max} are shown. Pick fewer, or open the Trial Balance for the whole company."
   },
   "Leasing": {
+    "ledgerLinkTitle": "{code} · {name} — open in the General Ledger",
+    "wizardFilterProperty": "Property",
+    "wizardFilterBuilding": "Building",
+    "wizardAllProperties": "All properties",
+    "wizardAllBuildings": "All buildings",
+    "pendingCheques": "Pending cheques: {count} · <n>{amount}</n>",
+    "returnedCheques": "Returned: {count} · <n>{amount}</n>",
+    "pendingChequesHint": "Registered or deposited, not yet cleared. Returned cheques not yet replaced are shown apart. Opens the Cheques tab.",
     "chargeRaisedBanner": "{type} proposed. It appears in the Penalties tab for finance to approve.",
     "raiseChargeHint": "The {type} is proposed, not charged. Finance approves it before anything is posted to the ledger.",
     "raiseCharge": "Raise {type}",
@@ -2646,6 +2667,16 @@
     "runFailed": "The VAT tax points could not be posted."
   },
   "Cheques": {
+    "maturityWindow": "Matures",
+    "windowNext1w": "Next 1 week",
+    "windowNext2w": "Next 2 weeks",
+    "windowNext1m": "Next 1 month",
+    "windowCustom": "Custom",
+    "windowFrom": "From",
+    "windowTo": "To",
+    "windowInvalid": "From must be on or before To.",
+    "windowTooLong": "A range can span at most a year.",
+    "windowSummary": "{from} – {to}",
     "dateAfterToday": "The date cannot be after today: the bank has not done this yet.",
     "eventAfterToday": "The date cannot be after today ({today}): this has not happened yet.",
     "penaltyChanged": "This charge changed in another window. It has been reloaded with its current amount; review it and approve again.",
@@ -2798,7 +2829,7 @@
     "selectedTotal": "Selected total",
     "noResults": "No cheques match these filters.",
     "noneToDeposit": "Nothing is ready to deposit.",
-    "noPostDated": "No post-dated cheques mature this month.",
+    "noPostDated": "No post-dated cheques mature in this period.",
     "unappliedLoadFailed": "Could not load the unapplied online payments.",
     "gatewayPaymentId": "Gateway Payment ID",
     "capturedAt": "Captured At",

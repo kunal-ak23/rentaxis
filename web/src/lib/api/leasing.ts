@@ -1426,6 +1426,9 @@ export type ChequeDueQuery = {
 export type PostDatedQuery = {
   propertyId?: string;
   month?: string;
+  /** Demo feedback 2026-09-29: a maturity window, both ends inclusive (yyyy-MM-dd); overrides `month`. */
+  from?: string;
+  to?: string;
 };
 
 export type PenaltyListQuery = {

@@ -132,6 +132,34 @@ public class ChequeQueryService {
         return toDtos(rows);
     }
 
+    /** The widest maturity window {@link #postDated(UUID, LocalDate, LocalDate)} answers, in days. */
+    static final int MAX_POST_DATED_RANGE_DAYS = 366;
+
+    /**
+     * The post-dated book for a maturity window, both ends inclusive (demo feedback
+     * 2026-09-29). Both ends are required, {@code from} may not be after {@code to},
+     * and the window is at most {@link #MAX_POST_DATED_RANGE_DAYS} days — the list is
+     * unpaged, so an open-ended window would be the whole book.
+     */
+    public List<ChequeDTO> postDated(UUID propertyId, LocalDate from, LocalDate to) {
+        if (from == null || to == null) {
+            throw new BusinessRuleViolationException("Both from and to are required for a maturity window.");
+        }
+        if (from.isAfter(to)) {
+            throw new BusinessRuleViolationException("from (" + from + ") is after to (" + to + ").");
+        }
+        if (java.time.temporal.ChronoUnit.DAYS.between(from, to) >= MAX_POST_DATED_RANGE_DAYS) {
+            throw new BusinessRuleViolationException("A maturity window may span at most "
+                    + MAX_POST_DATED_RANGE_DAYS + " days.");
+        }
+        Scope scope = scope(propertyId);
+        if (scope.blocked()) {
+            return List.of();
+        }
+        return toDtos(chequeRepository.findPostDated(propertyId, from, to,
+                scope.unrestricted(), scope.propertyIds()));
+    }
+
     /**
      * The post-dated book a page at a time (scale P1-3): {@code from}/{@code to} when
      * given, else the month (default the current one), in maturity order.

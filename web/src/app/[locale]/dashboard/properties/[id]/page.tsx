@@ -7,6 +7,7 @@ import { Link } from "@/i18n/routing";
 import { Building2, Home, FileText, ArrowLeft, Plus, MapPin, Upload, Calendar, DollarSign, Settings, Wrench, Zap, Hammer, Shield, Hospital, Pill, Siren, HelpCircle, Phone, Mail, Pencil, Trash2, Dumbbell, Car, BookOpen } from "lucide-react";
 import { AmenitiesTab } from "./_components/AmenitiesTab";
 import { ParkingTab } from "./_components/ParkingTab";
+import { OverviewCounts } from "./_components/OverviewCounts";
 import PropertyAccountsTab from "@/components/finance/PropertyAccountsTab";
 import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
@@ -354,6 +355,7 @@ export default function PropertyDetailPage() {
 
             {/* Content areas */}
             {activeTab === "overview" && (<>
+                <OverviewCounts units={units} propertyId={propertyId} showParking={canManageFacilities} />
                 {canViewManagers && (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="bg-background rounded-xl p-6 border border-border col-span-1 md:col-span-2">

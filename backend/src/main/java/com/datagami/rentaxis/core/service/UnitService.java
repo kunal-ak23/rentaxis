@@ -186,12 +186,24 @@ public class UnitService {
     @Transactional(readOnly = true)
     public List<com.datagami.rentaxis.api.dto.lookup.UnitOptionDTO> search(String q, UUID propertyId,
             com.datagami.rentaxis.domain.entity.enums.UnitStatus status, int limit) {
+        return search(q, propertyId, null, status, limit);
+    }
+
+    /**
+     * {@link #search(String, UUID, com.datagami.rentaxis.domain.entity.enums.UnitStatus, int)}
+     * narrowed to one building (demo feedback 2026-09-29: the contract wizard's
+     * Building filter). The query is tenant-bound, so another Organisation's
+     * building id matches nothing.
+     */
+    @Transactional(readOnly = true)
+    public List<com.datagami.rentaxis.api.dto.lookup.UnitOptionDTO> search(String q, UUID propertyId, UUID buildingId,
+            com.datagami.rentaxis.domain.entity.enums.UnitStatus status, int limit) {
         if (propertyId != null && !propertyScope.canAccessProperty(propertyId)) {
             return List.of();
         }
         List<UUID> scoped = propertyScope.scopedPropertyIds();
         return repository.searchPaged(com.datagami.rentaxis.core.util.Search.requireTenant(), propertyId,
-                        null, status, null, com.datagami.rentaxis.core.util.Search.like(q), scoped == null,
+                        buildingId, status, null, com.datagami.rentaxis.core.util.Search.like(q), scoped == null,
                         com.datagami.rentaxis.core.util.Search.scopeIds(scoped),
                         org.springframework.data.domain.PageRequest.of(0, com.datagami.rentaxis.core.util.Search.limit(limit), UNIT_ORDER))
                 .getContent().stream().map(UnitService::option).toList();
