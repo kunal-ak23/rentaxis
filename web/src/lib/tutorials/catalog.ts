@@ -181,7 +181,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "39", slug: "start-your-books-opening-balances-and-cut-over", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 140, youtubeId: null,
+        id: "39", slug: "start-your-books-opening-balances-and-cut-over", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 141, youtubeId: null,
         title: { en: "Start your books: opening balances and cut-over", ar: "بدء الدفاتر: الأرصدة الافتتاحية والانتقال إلى النظام" },
         description: {
             en: "Set the date Miftah takes over your books, enter opening balances, bring running contracts across and reconcile against your old system.",

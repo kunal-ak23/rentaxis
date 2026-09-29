@@ -130,8 +130,8 @@ export async function pointAt(locator) {
     // The proof draws no pointer, but what the narration points at must exist:
     // in a capture a missing target costs the whole navigation timeout and
     // throws every later scene off its cue.
-    const found = await locator.first().waitFor({ state: 'attached', timeout: 5_000 }).then(() => true, () => false);
-    if (!found) throw new Error(`pointAt: nothing matches ${locator}`);
+    const found = await locator.first().waitFor({ state: 'visible', timeout: 5_000 }).then(() => true, () => false);
+    if (!found) throw new Error(`pointAt: nothing visible matches ${locator}`);
     return;
   }
   await glideTo(locator);

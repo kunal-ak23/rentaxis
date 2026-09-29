@@ -1,0 +1,63 @@
+{
+  "id": "39",
+  "slug": "start-your-books-opening-balances-and-cut-over",
+  "title": "Miftah tutorial 39 · Start your books: opening balances and cut-over",
+  "description": "Set the date Miftah takes over your books, enter opening balances, bring running contracts across and reconcile against your old system.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 When the Books Start\n0:28 Import Batches\n0:51 Opening Balances\n1:43 AP Opening Items\n1:57 Cut-over Reconciliation\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nحدّد تاريخ بدء الدفاتر في مفتاح، وأدخل الأرصدة الافتتاحية، وانقل العقود السارية، وطابق النتائج مع نظامك السابق.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "chart of accounts",
+    "journal voucher",
+    "financial reports",
+    "accounting software",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Accounting",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "When the Books Start"
+    },
+    {
+      "startSec": 28.756,
+      "start": "0:28",
+      "label": "Import Batches"
+    },
+    {
+      "startSec": 51.998,
+      "start": "0:51",
+      "label": "Opening Balances"
+    },
+    {
+      "startSec": 103.601,
+      "start": "1:43",
+      "label": "AP Opening Items"
+    },
+    {
+      "startSec": 117.389,
+      "start": "1:57",
+      "label": "Cut-over Reconciliation"
+    }
+  ],
+  "durationSec": 142,
+  "roles": [
+    "TENANT_ADMIN",
+    "ACCOUNTANT"
+  ],
+  "topic": "accounting",
+  "captionsFile": "tutorials/output/39-start-your-books-opening-balances-and-cut-over.srt",
+  "videoFile": "tutorials/output/39-start-your-books-opening-balances-and-cut-over.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/39.png"
+}
