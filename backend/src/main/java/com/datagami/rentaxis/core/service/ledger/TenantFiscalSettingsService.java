@@ -311,6 +311,10 @@ public class TenantFiscalSettingsService {
     @Transactional
     public TenantFiscalSettings setBooksStartDate(LocalDate date) {
         TenantFiscalSettings s = get();
+        // Review of PR #392 I1: the settings row FOR UPDATE, re-read, before anything is
+        // decided — every lock the books start may write is checked against the lock as
+        // committed now, and a user's lockThrough committed meanwhile is seen (and kept).
+        entityManager.refresh(s, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
         boolean changing = date == null ? s.getBooksStartDate() != null : !date.equals(s.getBooksStartDate());
         if (changing && hasLiveOpeningBalance()) {
             throw new BusinessRuleViolationException(
@@ -336,18 +340,18 @@ public class TenantFiscalSettingsService {
         if (changing) manualDates.requireBooksStart(date);
         LocalDate implied = date == null ? null : impliedLock(date);
         boolean journalsExist = hasJournals();
-        if (changing && implied != null && journalsExist && s.isBooksLockFromStart()
-                && s.getBooksLockedThrough() != null && implied.isAfter(s.getBooksLockedThrough())) {
-            // Review of R4-B I3: moving a books-start lock forward over posted activity is
-            // a lock like any other — the same row lock and refusals as lockThrough (and
-            // the year-end close's recognition check), not a direct write. Re-read under
-            // the lock: a user lock committed meanwhile makes the lock theirs (below).
-            entityManager.refresh(s, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
-            if (s.isBooksLockFromStart() && s.getBooksLockedThrough() != null
-                    && implied.isAfter(s.getBooksLockedThrough())) {
-                requireNoPlannedVatThrough(s, implied);
-                requireNoPlannedRecognitionThrough(s, implied);
-            }
+        LocalDate current = s.getBooksLockedThrough();
+        // What the lock becomes (below): the implied lock when there is none yet, or when
+        // it follows the books start (nothing posted, or the books start's own lock).
+        boolean writesLock = implied != null
+                && (current == null || (changing && (!journalsExist || s.isBooksLockFromStart())));
+        if (writesLock && (current == null || implied.isAfter(current))) {
+            // Review of R4-B I3 and PR #392 I1: a lock the books start writes — the first
+            // one, or its own moved forward — is a lock like any other: the same refusals
+            // as lockThrough (and the year-end close's recognition check), so no PLANNED
+            // VAT tax point or recognition period is stranded behind it.
+            requireNoPlannedVatThrough(s, implied);
+            requireNoPlannedRecognitionThrough(s, implied);
         }
         s.setBooksStartDate(date);
         if (date != null) {
@@ -358,7 +362,7 @@ public class TenantFiscalSettingsService {
             // Review of R4-B I2: the lock is inclusive (assertOpen refuses a date not after
             // it), so a lock through today would still refuse today's receipts; the cap is
             // yesterday on the business (Dubai) clock.
-            if (s.getBooksLockedThrough() == null) {
+            if (current == null) {
                 s.setBooksLockedThrough(implied);
                 s.setBooksLockFromStart(true);
             } else if (changing && (!journalsExist || s.isBooksLockFromStart())) {

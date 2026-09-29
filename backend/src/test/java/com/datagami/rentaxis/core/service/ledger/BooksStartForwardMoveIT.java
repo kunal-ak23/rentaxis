@@ -129,4 +129,110 @@ class BooksStartForwardMoveIT extends AbstractPostgresIT {
         assertThat(lock()).as("nothing moved").isEqualTo(LocalDate.of(2026, 4, 30));
         assertThat(booksStart()).isEqualTo(LocalDate.of(2026, 5, 1));
     }
+
+    // ------------------------------------------------------------------
+    // Review of PR #392, I1: the FIRST books start on an organisation with journals
+    // writes a lock too, and a backward move must not overwrite a user's lock.
+    // ------------------------------------------------------------------
+
+    @Test
+    void aFirstBooksStartOverAPlannedVatTaxPointIsRefused() {
+        assertThat(lock()).as("no books start, no lock").isNull();
+        LocalDate start = LocalDate.of(2026, 6, 1);
+        fixtures.postedLease(start, start, start.plusYears(1).minusDays(1), List.of(vatLine("RENT", "60000")), 4,
+                LeaseTestFixtures.nextChequeBook());
+
+        assertThatThrownBy(() -> setBooksStart(LocalDate.of(2026, 8, 1)))
+                .isInstanceOfSatisfying(BusinessRuleViolationException.class, e -> {
+                    assertThat(e.getCode()).isEqualTo("fiscal.vatPendingInLock");
+                    assertThat(e.getArgs()).containsEntry("date", "01/06/2026");
+                });
+        assertThat(lock()).as("nothing written").isNull();
+        assertThat(booksStart()).isNull();
+    }
+
+    @Test
+    void aFirstBooksStartOverPlannedRecognitionIsRefused() {
+        LocalDate start = LocalDate.of(2026, 6, 1);
+        fixtures.postedLease(start, start, start.plusYears(1).minusDays(1), List.of(line("RENT", "60000")), 2,
+                LeaseTestFixtures.nextChequeBook());
+
+        assertThatThrownBy(() -> setBooksStart(LocalDate.of(2026, 8, 1)))
+                .isInstanceOfSatisfying(BusinessRuleViolationException.class,
+                        e -> assertThat(e.getCode()).isEqualTo("fiscal.recognitionPendingInLock"));
+        assertThat(lock()).isNull();
+    }
+
+    @Test
+    void aFirstBooksStartOverNothingPlannedIsAccepted() {
+        LocalDate start = LocalDate.of(2026, 6, 1);
+        fixtures.postedLease(start, start, start.plusYears(1).minusDays(1), List.of(vatLine("RENT", "60000")), 4,
+                LeaseTestFixtures.nextChequeBook());
+
+        // The first tax point is 01/06 and the first rent period ends 30/06: both after 19/05.
+        setBooksStart(LocalDate.of(2026, 5, 20));
+        assertThat(lock()).isEqualTo(LocalDate.of(2026, 5, 19));
+        assertThat(booksStart()).isEqualTo(LocalDate.of(2026, 5, 20));
+    }
+
+    /**
+     * A backward books-start move racing a user's lockThrough: the user's lock commits
+     * while the move waits for the settings row, and the move then sees it is no longer
+     * the books start's lock and keeps it. Deterministic: this thread holds the row
+     * (lockThrough's FOR UPDATE) until the move is parked on it.
+     */
+    @Test
+    void aBackwardMoveAfterAUsersLockCommittedKeepsTheUsersLock() throws Exception {
+        setBooksStart(LocalDate.of(2026, 5, 1));
+        LocalDate start = LocalDate.of(2026, 6, 1);
+        fixtures.postedLease(start, start, start.plusYears(1).minusDays(1), List.of(line("RENT", "60000")), 2,
+                LeaseTestFixtures.nextChequeBook());
+        java.util.UUID tenantId = fixtures.tenantId();
+
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        java.util.concurrent.CountDownLatch rowLocked = new java.util.concurrent.CountDownLatch(1);
+        try {
+            java.util.concurrent.Future<?> moving = pool.submit(() -> {
+                assertThat(rowLocked.await(30, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                TenantContextHolder.setTenantId(tenantId);
+                LeaseTestFixtures.authenticateAsTenantAdmin();
+                try {
+                    setBooksStart(LocalDate.of(2026, 3, 1));
+                } finally {
+                    TenantContextHolder.clear();
+                    LeaseTestFixtures.clearAuth();
+                }
+                return null;
+            });
+            tx.executeWithoutResult(st -> {
+                fiscal.lockThrough(LocalDate.of(2026, 5, 31));
+                rowLocked.countDown();
+                awaitABlockedBackend();
+            });
+            moving.get(60, java.util.concurrent.TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(lock()).as("the user's lock stands").isEqualTo(LocalDate.of(2026, 5, 31));
+        assertThat(booksStart()).isEqualTo(LocalDate.of(2026, 3, 1));
+        assertThat(jdbc.queryForObject("select books_lock_from_start from tenant_fiscal_settings where tenant_id = ?",
+                Boolean.class, tenantId)).isFalse();
+    }
+
+    /** Wait until some backend is parked on a row lock, rather than sleeping and hoping. */
+    private void awaitABlockedBackend() {
+        for (int i = 0; i < 300; i++) {
+            Long waiting = jdbc.queryForObject("select count(*) from pg_stat_activity"
+                    + " where datname = current_database() and wait_event_type = 'Lock'", Long.class);
+            if (waiting != null && waiting > 0) return;
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+        throw new AssertionError("No backend ever blocked on the row lock");
+    }
 }
