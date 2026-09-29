@@ -2874,6 +2874,7 @@
         "assignmentSameRenter": "The lease already belongs to {renter}.",
         "assignmentReason": "Say why the lease changes hands.",
         "assignmentDraftExists": "This lease already has a draft assignment; post or delete it first.",
+        "extendIntoLock": "Cannot extend from {from}: books are locked through {locked}, and the extension's months up to then could never be recognised. Re-open the period first, or renew the contract instead.",
         "transferOnLastDay": "The move date is the lease's last day: renew onto the new unit instead of transferring.",
         "transferSameUnit": "The renter is already in this unit; choose another.",
         "transferExists": "This lease already has a transfer.",

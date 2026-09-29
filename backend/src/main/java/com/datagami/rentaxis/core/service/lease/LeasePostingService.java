@@ -1231,6 +1231,13 @@ public class LeasePostingService {
         return periodLockErrors(lease.getContractDate(), cheques);
     }
 
+    /** The tenant's period lock, or null. */
+    LocalDate booksLockedThrough() {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        return tenantId == null ? null : fiscalSettingsRepository.findById(tenantId)
+                .map(TenantFiscalSettings::getBooksLockedThrough).orElse(null);
+    }
+
     /**
      * The same check against an explicit entry date. An extension's TCO carries the
      * <em>extension's</em> contract date, not the lease's original one, and its
@@ -1238,9 +1245,7 @@ public class LeasePostingService {
      * nothing is being written into.
      */
     List<String> periodLockErrors(LocalDate entryDate, List<Cheque> cheques) {
-        UUID tenantId = TenantContextHolder.getTenantId();
-        LocalDate locked = tenantId == null ? null : fiscalSettingsRepository.findById(tenantId)
-                .map(TenantFiscalSettings::getBooksLockedThrough).orElse(null);
+        LocalDate locked = booksLockedThrough();
         if (locked == null) return List.of();
 
         List<String> errors = new ArrayList<>();

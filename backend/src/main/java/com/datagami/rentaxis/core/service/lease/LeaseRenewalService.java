@@ -60,6 +60,9 @@ import java.util.UUID;
 @Service
 public class LeaseRenewalService {
 
+    private static final java.time.format.DateTimeFormatter DMY_EXT = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
+
     /** The largest rent change {@code leases.renewal_change_percent} (numeric(7,3)) holds. */
     static final BigDecimal MAX_CHANGE_PERCENT = new BigDecimal("9999.999");
 
@@ -588,6 +591,20 @@ public class LeaseRenewalService {
         manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.LEASE_ADDENDUM, entryDate);
         if (r.cheques() != null) for (ChequeRowInput row : r.cheques()) if (row != null) manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.LEASE_ADDENDUM, row.postingDate());
         LocalDate windowStart = previousEnd.plusDays(1);
+        // Break-it R4 money4 F5: the new months are recognised month by month, and the
+        // close skips every row inside the period lock — an extension starting inside
+        // it would leave those months PLANNED for ever (income never recognised, the
+        // advance rent never released). Refused like a transfer or a termination into
+        // the lock: re-open the period first, or let the contract end and renew.
+        LocalDate locked = postingService.booksLockedThrough();
+        if (locked != null && !windowStart.isAfter(locked)) {
+            String from = windowStart.format(DMY_EXT);
+            String through = locked.format(DMY_EXT);
+            throw new BusinessRuleViolationException("Cannot extend from " + from + ": books are locked through "
+                    + through + ", and the extension's months up to then could never be recognised. Re-open the"
+                    + " period first, or renew the contract instead.",
+                    "lease.extendIntoLock", java.util.Map.of("from", from, "locked", through));
+        }
 
         // ---- stage 1: the request, with nothing written -------------------
         List<LeaseLineInput> inputs = charges.dated(r.lines(), windowStart, r.newEndDate(),
