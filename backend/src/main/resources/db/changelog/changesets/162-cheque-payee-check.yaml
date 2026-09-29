@@ -59,16 +59,22 @@ databaseChangeLog:
   # PR #389 review I1: one portal user, at most one Tenant. Two concurrent
   # creates could otherwise both link the same RENTER user, and every
   # findByUserId would then fail with "more than one result". RenterService
-  # serialises on a row lock; this index is the backstop. It halts the upgrade
-  # rather than guess which link to keep if duplicates already exist.
+  # serialises on a row lock (the primary guard); this index is the backstop.
+  #
+  # Its own changeset so that skipping it never skips the payee columns above.
+  # If duplicates already exist the precondition fails with CONTINUE: this
+  # changeset is skipped (not marked ran), the application starts, and it is
+  # tried again on the next update once the data is clean.
+  # RenterUserLinkIndexCheck logs a WARN at startup while the index is missing.
   - changeSet:
       id: 162-renters-user-unique
       author: claude
       preConditions:
-        - onFail: HALT
+        - onFail: CONTINUE
         - onFailMessage: >
-            renters.user_id has duplicates: one portal user is linked to more than one
-            Tenant. Resolve them before ux_renters_user_id can be created.
+            ux_renters_user_id was NOT created: renters.user_id has duplicates (one
+            portal user linked to more than one Tenant). Skipped for now; it is
+            retried on the next update once the duplicates are resolved.
         - sqlCheck:
             expectedResult: 0
             sql: >

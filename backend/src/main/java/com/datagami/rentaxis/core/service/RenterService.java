@@ -379,7 +379,11 @@ public class RenterService {
                 // Same pre-check UserService.updateUser makes, kept local rather than
                 // routed through UserService: this is a narrow, renter-scoped sync,
                 // not a general staff-user edit (role/tenant/password are untouched).
-                if (userRepository.existsByTenantIdAndEmail(renter.getTenantId(), normalizedNewEmail)) {
+                // #391 M4: trimmed and case-insensitive, so a legacy mixed-case login
+                // ("Legacy@Example.com") counts as taken; the login itself does not.
+                final UUID self = portalUser.getId();
+                if (userRepository.findInTenantByEmailNormalised(renter.getTenantId(), normalizedNewEmail).stream()
+                        .anyMatch(u -> !u.getId().equals(self))) {
                     throw new BusinessRuleViolationException(EMAIL_TAKEN_MESSAGE, EMAIL_TAKEN_CODE, null);
                 }
                 portalUser.setEmail(normalizedNewEmail);
