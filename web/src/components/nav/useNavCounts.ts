@@ -19,6 +19,13 @@ export type NavCounts = { collectionBadge: number | null; chequesToDeposit: numb
 /** Counts older than this are fetched again on the next navigation or window focus. */
 export const NAV_COUNTS_MAX_AGE_MS = 30_000;
 
+/**
+ * Break-it R4 money4 F4: a page that just moved something the sidebar shows (the
+ * period lock) dispatches this on `window`, and the counts are read again at once
+ * rather than when they next go stale.
+ */
+export const NAV_COUNTS_STALE_EVENT = "rentaxis:nav-counts-stale";
+
 export function useNavCounts(role: UserRole | undefined, pathname = ""): NavCounts {
     const [counts, setCounts] = useState<NavCounts>({ collectionBadge: null, chequesToDeposit: null, booksLockedThrough: null, booksLive: true });
     const fetched = useRef<{ role: UserRole | undefined; at: number } | null>(null);
@@ -28,8 +35,16 @@ export function useNavCounts(role: UserRole | undefined, pathname = ""): NavCoun
     const [focusTick, setFocusTick] = useState(0);
     useEffect(() => {
         const onFocus = () => setFocusTick(n => n + 1);
+        const onStale = () => {
+            fetched.current = null;
+            setFocusTick(n => n + 1);
+        };
         window.addEventListener("focus", onFocus);
-        return () => window.removeEventListener("focus", onFocus);
+        window.addEventListener(NAV_COUNTS_STALE_EVENT, onStale);
+        return () => {
+            window.removeEventListener("focus", onFocus);
+            window.removeEventListener(NAV_COUNTS_STALE_EVENT, onStale);
+        };
     }, []);
     // In-flight reads must survive a navigation (the next effect run may skip
     // fetching), so they are dropped only once the shell unmounts or the role

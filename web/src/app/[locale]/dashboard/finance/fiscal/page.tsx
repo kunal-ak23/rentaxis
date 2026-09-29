@@ -14,6 +14,7 @@ import { serverText } from "@/components/finance/bankrec/serverText";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { BankLocksCard } from "@/components/finance/bankrec/BankLocksCard";
 import FiscalYearsCard from "@/components/finance/FiscalYearsCard";
+import { NAV_COUNTS_STALE_EVENT } from "@/components/nav/useNavCounts";
 
 const field =
     "w-full bg-input border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200";
@@ -77,6 +78,23 @@ export default function FiscalSettingsPage() {
         if (allowed) load();
         else setLoading(false);
     }, [allowed, load]);
+
+    /**
+     * Break-it R4 money4 F4: a close or re-open moved the lock. Refresh in place:
+     * `load` swaps the page for a skeleton, which unmounted the fiscal-years card —
+     * and with it the open dialog and the refusal it was showing (a stale re-open's
+     * 409 vanished without a word). A failed refresh keeps what is on screen.
+     */
+    const refresh = useCallback(async () => {
+        try {
+            const s = await ledgerApi.fiscal.get();
+            setSettings(s);
+        } catch {
+            // The card's own message stands; the next visit reloads.
+        }
+        // The sidebar's "Books locked through" badge: read it again now.
+        window.dispatchEvent(new Event(NAV_COUNTS_STALE_EVENT));
+    }, []);
 
     const save = async () => {
         setSaving(true);
@@ -307,7 +325,7 @@ export default function FiscalSettingsPage() {
                     canReopen={userRole === "TENANT_ADMIN" || userRole === "SUPER_ADMIN"}
                     lockedThrough={settings?.booksLockedThrough ?? null}
                     booksStartDate={settings?.booksStartDate ?? null}
-                    onChanged={load}
+                    onChanged={refresh}
                 />
             )}
 
