@@ -40,6 +40,7 @@ class RenterUpdateIT extends AbstractPostgresIT {
     @Autowired UserRepository userRepo;
     @Autowired UserService userService;
     @Autowired RenterService renterService;
+    @Autowired com.datagami.rentaxis.core.security.TokenRevocationService tokenRevocation;
 
     @AfterEach
     void clear() {
@@ -132,6 +133,62 @@ class RenterUpdateIT extends AbstractPostgresIT {
         assertThat(after.getEmail()).isEqualTo(next.toLowerCase());
         assertThat(after.getRole()).isEqualTo(UserRole.RENTER);
         assertThat(after.getTokenVersion()).isEqualTo(versionBefore + 1);
+    }
+
+    // C1 (review PR #391): the usual reason to edit a tenant's email while a
+    // set-password invite is still pending is that it was mistyped and belongs to
+    // someone else — that person's link must stop working the moment the address
+    // is corrected, not stay live against the now-corrected account.
+    @Test
+    void aPendingInviteIsRotatedWhenTheEmailChangesSoTheOldLinkStopsWorking() {
+        newOrg();
+        RenterDTO created = create("Invited Tenant", uniqueEmail("typo"), true);
+        User before = userRepo.findById(created.getUserId()).orElseThrow();
+        assertThat(before.hasPendingInvite()).as("freshly created, never signed in").isTrue();
+        String oldToken = before.getInviteToken();
+
+        String corrected = uniqueEmail("corrected");
+        renterService.updateRenter(created.getId(),
+                edit("Invited Tenant", null, corrected, "+971500000001", Language.EN));
+
+        // The old link is dead outright: neither the validate step (findByInviteToken)
+        // nor redeeming it (acceptInvite) find it anymore.
+        assertThat(userService.findByInviteToken(oldToken)).isEmpty();
+        assertThat(userService.acceptInvite(oldToken, "New-Password-123"))
+                .isEqualTo(UserService.InviteResult.NOT_FOUND);
+
+        // A fresh invite exists, for the corrected address.
+        User after = userRepo.findById(created.getUserId()).orElseThrow();
+        assertThat(after.getEmail()).isEqualTo(corrected.toLowerCase());
+        assertThat(after.hasPendingInvite()).isTrue();
+        assertThat(after.getInviteToken()).isNotEqualTo(oldToken);
+    }
+
+    // I2: revocation must go through TokenRevocationService (which also evicts the
+    // Caffeine cache ApiSecurityFilter reads on every request), not a bare column
+    // bump — otherwise a request already holding a cached, now-stale row keeps
+    // accepting the old token's `tv` claim for up to the cache's TTL.
+    @Test
+    void anEmailChangeRefusesAnAlreadyCachedTokenImmediately() {
+        newOrg();
+        RenterDTO created = create("Cached Tenant", uniqueEmail("cached"), true);
+        UUID userId = created.getUserId();
+        int versionBefore = userRepo.findById(userId).orElseThrow().getTokenVersion();
+
+        // Warm the cache exactly as ApiSecurityFilter does on a bearer request
+        // carrying a token minted with the current version: not refused.
+        var identity = new com.datagami.rentaxis.core.security.AuthTokenService.VerifiedIdentity(
+                userId, UserRole.RENTER, null, java.util.List.of(), versionBefore);
+        assertThat(tokenRevocation.rejectionReason(identity, null)).isNull();
+
+        renterService.updateRenter(created.getId(),
+                edit("Cached Tenant", null, uniqueEmail("cached-next"), "+971500000001", Language.EN));
+
+        // The same (now stale) token is refused right away — not merely once the
+        // cache's TTL elapses — because revokeAllTokens evicts the cached row, not
+        // only the users.token_version column.
+        assertThat(tokenRevocation.rejectionReason(identity, null))
+                .isEqualTo(com.datagami.rentaxis.core.security.TokenRevocationService.TOKEN_REVOKED);
     }
 
     @Test

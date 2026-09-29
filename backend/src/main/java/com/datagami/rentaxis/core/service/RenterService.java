@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.dto.RenterDTO;
 import com.datagami.rentaxis.api.dto.UpdateRenterDTO;
 import com.datagami.rentaxis.api.dto.lookup.RenterOptionDTO;
 import com.datagami.rentaxis.core.security.PropertyScope;
+import com.datagami.rentaxis.core.security.TokenRevocationService;
 import com.datagami.rentaxis.core.util.Search;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Renter;
@@ -31,6 +32,7 @@ public class RenterService {
     private final RenterRepository renterRepository;
     private final UserService userService;
     private final UserRepository userRepository;
+    private final TokenRevocationService tokenRevocation;
 
     /** Narrows a property manager's lists; absent in unit tests that build the service by hand. */
     private PropertyScope propertyScope;
@@ -253,34 +255,63 @@ public class RenterService {
      * (a foreign row the filter hides, or a data mistake linking a staff account) is
      * refused with the same {@link #PORTAL_USER_MISMATCH_CODE} rather than silently
      * skipped or, worse, written to as if it were the renter's own login.
+     *
+     * <p>Review fixes (PR #391):
+     * <ul>
+     *   <li><b>C1</b> — a pending set-password invite was minted for the OLD
+     *       address; if a real email change leaves it outstanding, that link still
+     *       works and now sets a password on an account carrying the corrected
+     *       (someone else's) email. Rotating it here, in the same transaction,
+     *       kills the old token outright and mails a fresh one to the address
+     *       actually being kept.</li>
+     *   <li><b>I2</b> — revocation goes through {@link TokenRevocationService},
+     *       not a bare {@code bumpTokenVersion}: that also evicts the Caffeine
+     *       cache {@code ApiSecurityFilter} reads, so the old token stops working
+     *       immediately rather than for up to its TTL.</li>
+     *   <li><b>M3</b> — {@code emailChanged} compares normalised (trimmed,
+     *       lower-cased) values, and the value stored on the renter row is
+     *       normalised the same way as the portal login's when one is linked
+     *       (so the two never drift in case/whitespace only), or trimmed-to-null
+     *       otherwise.</li>
+     *   <li><b>M5</b> — the linked login's display name and phone are kept with
+     *       the renter's, the same way its email is.</li>
+     * </ul>
      */
     @Transactional
     public RenterDTO updateRenter(UUID id, UpdateRenterDTO dto) {
         Renter renter = requireInTenant(id);
 
-        String newEmail = dto.getEmail();
-        boolean emailChanged = !java.util.Objects.equals(renter.getEmail(), newEmail);
+        String trimmedEmail = dto.getEmail() == null ? null : dto.getEmail().trim();
+        String normalizedNewEmail = (trimmedEmail == null || trimmedEmail.isEmpty()) ? null : trimmedEmail.toLowerCase();
+        String normalizedOldEmail = renter.getEmail() == null ? null : renter.getEmail().trim().toLowerCase();
+        boolean emailChanged = !java.util.Objects.equals(normalizedOldEmail, normalizedNewEmail);
 
-        if (emailChanged && renter.getUserId() != null) {
-            String trimmedEmail = newEmail == null ? null : newEmail.trim();
-            if (trimmedEmail == null || trimmedEmail.isBlank()) {
-                throw new BusinessRuleViolationException(PORTAL_EMAIL_REQUIRED_MESSAGE, PORTAL_EMAIL_REQUIRED_CODE, null);
-            }
-            User portalUser = userRepository
+        // Fetched whenever a portal account is linked, whether or not the email is
+        // changing this call — M5 needs it too, for a name/phone-only edit.
+        User portalUser = null;
+        boolean portalUserValid = false;
+        if (renter.getUserId() != null) {
+            portalUser = userRepository
                     .findByTenantIdAndIdIn(renter.getTenantId(), List.of(renter.getUserId()))
                     .stream().findFirst().orElse(null);
-            if (portalUser == null || portalUser.getRole() != UserRole.RENTER) {
+            portalUserValid = portalUser != null && portalUser.getRole() == UserRole.RENTER;
+        }
+
+        if (emailChanged && renter.getUserId() != null) {
+            if (normalizedNewEmail == null) {
+                throw new BusinessRuleViolationException(PORTAL_EMAIL_REQUIRED_MESSAGE, PORTAL_EMAIL_REQUIRED_CODE, null);
+            }
+            if (!portalUserValid) {
                 throw new BusinessRuleViolationException(PORTAL_USER_MISMATCH_MESSAGE, PORTAL_USER_MISMATCH_CODE, null);
             }
-            String normalizedEmail = trimmedEmail.toLowerCase();
-            if (!portalUser.getEmail().equals(normalizedEmail)) {
+            if (!portalUser.getEmail().equals(normalizedNewEmail)) {
                 // Same pre-check UserService.updateUser makes, kept local rather than
                 // routed through UserService: this is a narrow, renter-scoped sync,
                 // not a general staff-user edit (role/tenant/password are untouched).
-                if (userRepository.existsByTenantIdAndEmail(renter.getTenantId(), normalizedEmail)) {
+                if (userRepository.existsByTenantIdAndEmail(renter.getTenantId(), normalizedNewEmail)) {
                     throw new BusinessRuleViolationException(EMAIL_TAKEN_MESSAGE, EMAIL_TAKEN_CODE, null);
                 }
-                portalUser.setEmail(normalizedEmail);
+                portalUser.setEmail(normalizedNewEmail);
                 try {
                     userRepository.saveAndFlush(portalUser);
                 } catch (org.springframework.dao.DataIntegrityViolationException e) {
@@ -290,15 +321,43 @@ public class RenterService {
                 }
                 // A changed login email ends every session opened with the old one —
                 // the same rule UserService.updateUser applies on a password/role/
-                // tenant change (audit P1-2). Atomic increment; never a read-modify-
-                // write of the entity (see User.tokenVersion).
-                userRepository.bumpTokenVersion(portalUser.getId());
+                // tenant change (audit P1-2). Through TokenRevocationService (I2), so
+                // the request-scoped cache is evicted along with the DB column —
+                // a raw bumpTokenVersion would leave ApiSecurityFilter still
+                // accepting the old `tv` claim from cache for up to its TTL.
+                tokenRevocation.revokeAllTokens(portalUser.getId());
+                // C1: the invite (if still outstanding) was minted for the address
+                // just replaced; its link must die with that address, not keep
+                // working against the corrected account.
+                if (portalUser.hasPendingInvite()) {
+                    userService.resendInvite(portalUser.getId());
+                }
+            }
+        }
+
+        // M5: an edit here is what the tenant's own portal profile shows too.
+        if (portalUserValid) {
+            boolean portalDirty = false;
+            if (dto.getNameEn() != null && !dto.getNameEn().equals(portalUser.getName())) {
+                portalUser.setName(dto.getNameEn());
+                portalDirty = true;
+            }
+            if (!java.util.Objects.equals(portalUser.getPhoneNumber(), dto.getPhone())) {
+                portalUser.setPhoneNumber(dto.getPhone());
+                portalDirty = true;
+            }
+            if (portalDirty) {
+                userRepository.save(portalUser);
             }
         }
 
         renter.setNameEn(dto.getNameEn());
         renter.setNameAr(dto.getNameAr());
-        renter.setEmail(newEmail);
+        // M3: mirrors the portal login's own normalisation when one is linked, so
+        // the two never read differently for a case/whitespace-only difference;
+        // trimmed-to-null otherwise (never stores whitespace-only as "an email").
+        renter.setEmail(portalUserValid ? normalizedNewEmail
+                : (trimmedEmail == null || trimmedEmail.isEmpty() ? null : trimmedEmail));
         renter.setPhone(dto.getPhone());
         if (dto.getPrimaryLanguage() != null) {
             renter.setPrimaryLanguage(dto.getPrimaryLanguage());
