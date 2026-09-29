@@ -6,6 +6,7 @@ import { Filter, X } from "lucide-react";
 import AccountPicker, { loadAccounts } from "./AccountPicker";
 import { useNameLookup } from "./useNameLookup";
 import { RenterPicker } from "@/components/pickers/RenterPicker";
+import { UnitPicker } from "@/components/pickers/UnitPicker";
 import type { Account, LedgerQuery } from "@/lib/api/ledger";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -33,6 +34,7 @@ type Props = {
     onApply?: () => void;
     showAccounts?: boolean;
     showProperty?: boolean;
+    showUnit?: boolean;
     showRenter?: boolean;
     /** Disables Apply while a report is in flight. */
     busy?: boolean;
@@ -50,6 +52,7 @@ export default function LedgerFilters({
     onApply,
     showAccounts = false,
     showProperty = false,
+    showUnit = false,
     showRenter = false,
     busy = false,
     maxAccounts,
@@ -86,15 +89,18 @@ export default function LedgerFilters({
     /**
      * A new property scopes the account picker to it, so picks that belong to
      * another property's accounts are dropped with it (#104); organisation-wide
-     * accounts (no property) and picks not yet known stay.
+     * accounts (no property) and picks not yet known stay. The Unit picker is
+     * also scoped to the property, so any unit already picked — which can only
+     * belong to the previous property — is incompatible with the new one (or
+     * with "no property") and is cleared too.
      */
     const withProperty = (propertyId: string | undefined): LedgerQuery => {
-        if (!propertyId || selected.length === 0) return { ...value, propertyId };
+        if (!propertyId || selected.length === 0) return { ...value, propertyId, unitId: undefined };
         const keep = selected.filter(id => {
             const a = accounts.find(x => x.id === id);
             return !a || a.propertyId == null || a.propertyId === propertyId;
         });
-        return { ...value, propertyId, accountIds: keep.length ? keep : undefined };
+        return { ...value, propertyId, accountIds: keep.length ? keep : undefined, unitId: undefined };
     };
 
     const chipLabel = (id: string) => {
@@ -140,6 +146,22 @@ export default function LedgerFilters({
                                 <option key={p.id} value={p.id}>{p.label}</option>
                             ))}
                         </select>
+                    </div>
+                )}
+
+                {showUnit && (
+                    <div>
+                        <label className={label} htmlFor="ledger-unit">{t("unitFilter")}</label>
+                        <UnitPicker
+                            id="ledger-unit"
+                            testId="ledger-unit-filter"
+                            className={`${field} min-w-[12rem]`}
+                            value={value.unitId ?? ""}
+                            onChange={id => onChange({ ...value, unitId: id || undefined })}
+                            propertyId={value.propertyId}
+                            disabled={!value.propertyId}
+                            placeholder={value.propertyId ? undefined : t("unitFilterNeedsProperty")}
+                        />
                     </div>
                 )}
 

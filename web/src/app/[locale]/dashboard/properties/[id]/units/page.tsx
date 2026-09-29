@@ -2,8 +2,9 @@
 
 import { Suspense, useState, useEffect, use, useSyncExternalStore } from "react";
 import { useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
-import { Plus, X, Building, Info, LayoutList, Ruler, Hash, Users, CreditCard, ArrowLeft, Activity, Loader2 } from "lucide-react";
+import { Plus, X, Building, Info, LayoutList, Ruler, Hash, Users, CreditCard, ArrowLeft, Activity, Loader2, BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import CardFlip from "@/components/ui/card-flip";
 import { Link } from "@/i18n/routing";
@@ -17,6 +18,7 @@ import type { Page } from "@/lib/api/ledger";
 import { idParam, stripInvalidIdParams } from "@/lib/urlIds";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { isAbortError } from "@/lib/api/abort";
+import { hasPermission, type UserRole } from "@/lib/rbac";
 
 /** The units page's own page size, for the pages-loop below (S16-02). */
 const UNITS_PAGE_SIZE = 200;
@@ -82,6 +84,8 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
     const { id: propertyId } = use(params);
     const t = useTranslations("MasterData");
     const tCommon = useTranslations("Common");
+    const { data: session } = useSession();
+    const canViewLedger = hasPermission(session?.user?.role as UserRole | undefined, "canAccessFinance");
     // S16-02: the tower (Building) filter, in the URL so a link/bookmark keeps
     // it — same pattern as the Contracts list's URL-persisted filters:
     // `useSearchParams` re-renders this page on a same-route navigation (a
@@ -390,7 +394,17 @@ function UnitsPageInner({ params }: { params: Promise<{ id: string }> }) {
                                         </div>
                                     </div>
                                 </div>
-                                <button className="mt-4 w-full py-2.5 rounded-xl bg-primary text-white text-[10px] font-bold uppercase tracking-widest hover:opacity-90 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none">
+                                {canViewLedger && (
+                                    <Link
+                                        href={`/dashboard/finance/general-ledger?propertyId=${propertyId}&unitId=${u.id}`}
+                                        data-testid={`unit-ledger-link-${u.id}`}
+                                        className="mt-2 w-full py-2.5 rounded-xl bg-surface border border-border text-foreground text-[10px] font-bold uppercase tracking-widest hover:bg-input transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none flex items-center justify-center gap-1.5"
+                                    >
+                                        <BookOpen size={12} />
+                                        {t("viewLedger")}
+                                    </Link>
+                                )}
+                                <button className="mt-2 w-full py-2.5 rounded-xl bg-primary text-white text-[10px] font-bold uppercase tracking-widest hover:opacity-90 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none">
                                     Edit Details
                                 </button>
                             </div>
