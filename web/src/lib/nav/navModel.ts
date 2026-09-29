@@ -63,7 +63,7 @@ export function buildNav(ctx: NavModelContext): RailSection[] {
             pi("my-tickets", "/dashboard/tickets", N("myTickets"), "sidebar-my-tickets"),
             ...(isEnabled("LISTINGS") && tenantSlug ? [pi("listings", `/marketplace/${tenantSlug}`, N("listings"), "sidebar-listings")] : []),
             ...(isEnabled("MEETINGS") ? [pi("meetings", "/dashboard/meetings", N("meetings"), "sidebar-meetings")] : []),
-            ...(isEnabled("GATEPASS") && can("canRequestGatePasses")
+            ...(can("canRequestGatePasses")
                 ? [pi("gate-passes", "/dashboard/renter-portal/gate-passes", GP("navMyGatePasses"), "sidebar-gate-passes")] : []),
         ];
         return [section("home", "home", "sidebar-home", ["/dashboard"], one("main", items))!];
@@ -71,11 +71,11 @@ export function buildNav(ctx: NavModelContext): RailSection[] {
 
     // A security guard's web is the gate desk: Home is the desk (the staff
     // dashboard's summary calls refuse a guard), plus the approvals queue for
-    // the properties they are posted to.
+    // the properties they are posted to. Role only, like the report.
     if (can("canWorkGate")) {
         return [section("home", "home", "sidebar-home", ["/dashboard"], one("main", [
             pi("today", GUARD_HOME, N("home"), "sidebar-home", true),
-            ...(isEnabled("GATEPASS") && can("canApproveGatePasses")
+            ...(can("canApproveGatePasses")
                 ? [pi("gatepass-approvals", "/dashboard/gatepass/approvals", GP("navApprovals"), "sidebar-gatepass-approvals")] : []),
         ]))!];
     }
@@ -136,11 +136,10 @@ export function buildNav(ctx: NavModelContext): RailSection[] {
         // defaults off and tenants use the page without it, so gating it here
         // would take it away from them (ruling 2026-09-25, UI PR 1).
         ...(ops && can("canViewGatePassReport") ? [pi("gatepass", "/dashboard/gatepass", { ns: "GatePass", key: "navLabel" }, "sidebar-gatepass")] : []),
-        // The working gate-pass screens are new, so unlike the report they follow
-        // the GATEPASS flag, as Meetings follows MEETINGS.
-        ...(ops && isEnabled("GATEPASS") && can("canApproveGatePasses")
+        // The working gate-pass screens follow the report's ruling: role only.
+        ...(ops && can("canApproveGatePasses")
             ? [pi("gatepass-approvals", "/dashboard/gatepass/approvals", GP("navApprovals"), "sidebar-gatepass-approvals")] : []),
-        ...(ops && isEnabled("GATEPASS") && can("canManageGatePolicy")
+        ...(ops && can("canManageGatePolicy")
             ? [pi("gatepass-settings", "/dashboard/gatepass/settings", GP("navSettings"), "sidebar-gatepass-settings")] : []),
         ...(ops && can("canManagePromotions") ? [pi("promotions", "/dashboard/promotions", { ns: "Promotions", key: "navLabel" }, "sidebar-promotions")] : []),
     ])));

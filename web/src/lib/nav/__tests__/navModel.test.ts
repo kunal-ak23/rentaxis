@@ -72,9 +72,9 @@ describe("buildNav — rail sections and panel items per role (all flags on)", (
         ]);
     });
 
-    it("SECURITY_GUARD's Home is the gate desk, with the approvals queue when GATEPASS is on", () => {
+    it("SECURITY_GUARD's Home is the gate desk, with the approvals queue, flag or no flag", () => {
         expect(flattenNav(buildNav(ctx("SECURITY_GUARD")))).toEqual(["/dashboard/gatepass/gate", "/dashboard/gatepass/approvals"]);
-        expect(flattenNav(buildNav(ctx("SECURITY_GUARD", [])))).toEqual(["/dashboard/gatepass/gate"]);
+        expect(flattenNav(buildNav(ctx("SECURITY_GUARD", [])))).toEqual(["/dashboard/gatepass/gate", "/dashboard/gatepass/approvals"]);
     });
 
     it("never links a tenant admin to /superadmin/users", () => {
@@ -89,15 +89,15 @@ describe("flags", () => {
     });
     it("keeps the Gate pass report role-gated, NOT flag-gated (ruling 2026-09-25: tenants use it without the flag)", () => {
         const ids = (on: string[]) => buildNav(ctx("TENANT_ADMIN", on)).find(s => s.id === "more")!.groups[0].items.map(i => i.id);
-        expect(ids([])).toEqual(["gatepass", "promotions"]);
-        expect(ids(["MEETINGS"])).toEqual(["meetings", "gatepass", "promotions"]);
-        // The working screens (approvals, policy) are new and follow the flag, like Meetings.
+        // The working screens (approvals, policy) follow the same ruling: role only.
+        expect(ids([])).toEqual(["gatepass", "gatepass-approvals", "gatepass-settings", "promotions"]);
+        expect(ids(["MEETINGS"])).toEqual(["meetings", "gatepass", "gatepass-approvals", "gatepass-settings", "promotions"]);
         expect(ids(["GATEPASS"])).toEqual(["gatepass", "gatepass-approvals", "gatepass-settings", "promotions"]);
         // A property manager with every flag off still reaches Gate pass (today's sidebar shows it by role).
-        expect(buildNav(ctx("PROPERTY_MANAGER", [])).find(s => s.id === "more")!.groups[0].items.map(i => i.id)).toEqual(["gatepass"]);
+        expect(buildNav(ctx("PROPERTY_MANAGER", [])).find(s => s.id === "more")!.groups[0].items.map(i => i.id)).toEqual(["gatepass", "gatepass-approvals", "gatepass-settings"]);
     });
-    it("gates the tenant's gate passes on GATEPASS", () => {
-        expect(flattenNav(buildNav(ctx("RENTER", ["LISTINGS", "MEETINGS"])))).not.toContain("/dashboard/renter-portal/gate-passes");
+    it("shows the tenant's gate passes by role, whatever the GATEPASS flag", () => {
+        expect(flattenNav(buildNav(ctx("RENTER", [])))).toContain("/dashboard/renter-portal/gate-passes");
         expect(flattenNav(buildNav(ctx("RENTER", ["GATEPASS"])))).toContain("/dashboard/renter-portal/gate-passes");
     });
     it("gates Meetings on MEETINGS", () => {

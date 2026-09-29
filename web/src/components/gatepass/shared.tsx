@@ -5,9 +5,8 @@ import NextLink from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { LayoutGrid, List, Loader2, ShieldOff } from "lucide-react";
+import { LayoutGrid, List, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useTenantFeatures } from "@/hooks/useTenantFeatures";
 import { hasPermission, type Permission, type UserRole } from "@/lib/rbac";
 import { AccessDeniedState } from "@/components/ui/PageStates";
 import type { GatePassStatus } from "@/lib/api/gatepass";
@@ -64,18 +63,18 @@ export function ErrorLine({ message, testId = "gatepass-error" }: { message: str
 
 /**
  * The page-level gate every working gate-pass screen sits behind: the role
- * first (the layout guard already refuses a wrong role; this keeps the page
- * itself honest when rendered alone), then the organisation's GATEPASS flag,
- * like the Meetings and Listings pages it sits next to in the nav. The report
- * page does not use this — it stays role-only (ruling 2026-09-25).
+ * alone (the layout guard already refuses a wrong role; this keeps the page
+ * itself honest when rendered alone). Deliberately NOT the organisation's
+ * GATEPASS flag — the same call as the report (ruling 2026-09-25): the flag
+ * defaults off, the backend and the mobile apps do not enforce it, and
+ * organisations use gate passes without it. Gating here would hand their
+ * guards a dead end while the mobile app works.
  */
 export function GatePassPage({ permission, children }: { permission: Permission; children: ReactNode }) {
-    const t = useTranslations("GatePass");
     const { data: session, status } = useSession();
     const role = session?.user?.role as UserRole | undefined;
-    const { isEnabled, loaded } = useTenantFeatures();
 
-    if (status === "loading" || (status === "authenticated" && hasPermission(role, permission) && !loaded)) {
+    if (status === "loading") {
         return (
             <div className="flex items-center justify-center py-24" data-testid="gatepass-loading">
                 <Loader2 className="w-6 h-6 animate-spin text-primary opacity-60" />
@@ -83,34 +82,22 @@ export function GatePassPage({ permission, children }: { permission: Permission;
         );
     }
     if (!hasPermission(role, permission)) return <AccessDeniedState />;
-    if (!isEnabled("GATEPASS")) {
-        return (
-            <div className="max-w-4xl mx-auto py-16" data-testid="gatepass-feature-off">
-                <div className="bg-surface rounded-xl p-12 shadow-sm border border-border text-center">
-                    <ShieldOff size={48} className="mx-auto text-muted mb-4" />
-                    <h2 className="text-lg font-bold text-foreground mb-2">{t("featureOffTitle")}</h2>
-                    <p className="text-sm text-muted max-w-md mx-auto">{t("featureOffBody")}</p>
-                </div>
-            </div>
-        );
-    }
     return <>{children}</>;
 }
 
-type Tab = { href: string; key: string; permission: Permission; flagged: boolean };
+type Tab = { href: string; key: string; permission: Permission };
 
 const STAFF_TABS: Tab[] = [
-    { href: "/dashboard/gatepass", key: "tabReport", permission: "canViewGatePassReport", flagged: false },
-    { href: "/dashboard/gatepass/approvals", key: "tabApprovals", permission: "canApproveGatePasses", flagged: true },
-    { href: "/dashboard/gatepass/gate", key: "tabGate", permission: "canWorkGate", flagged: true },
-    { href: "/dashboard/gatepass/settings", key: "tabSettings", permission: "canManageGatePolicy", flagged: true },
+    { href: "/dashboard/gatepass", key: "tabReport", permission: "canViewGatePassReport" },
+    { href: "/dashboard/gatepass/approvals", key: "tabApprovals", permission: "canApproveGatePasses" },
+    { href: "/dashboard/gatepass/gate", key: "tabGate", permission: "canWorkGate" },
+    { href: "/dashboard/gatepass/settings", key: "tabSettings", permission: "canManageGatePolicy" },
 ];
 
 /**
  * The strip across the staff gate-pass pages: Report · Approvals · Gate desk ·
- * Policy & visitors, each shown only to a role its page admits (and, for the
- * working screens, only with the GATEPASS flag on). Hidden when a role has one
- * page or none, so it never offers a single tab.
+ * Policy & visitors, each shown only to a role its page admits. Hidden when a
+ * role has one page or none, so it never offers a single tab.
  */
 export function GatePassTabs() {
     const t = useTranslations("GatePass");
@@ -118,8 +105,7 @@ export function GatePassTabs() {
     const pathname = usePathname() ?? "";
     const { data: session } = useSession();
     const role = session?.user?.role as UserRole | undefined;
-    const { isEnabled } = useTenantFeatures();
-    const tabs = STAFF_TABS.filter(tab => hasPermission(role, tab.permission) && (!tab.flagged || isEnabled("GATEPASS")));
+    const tabs = STAFF_TABS.filter(tab => hasPermission(role, tab.permission));
     if (tabs.length < 2) return null;
     const path = pathname.replace(/^\/(en|ar)(?=\/|$)/, "");
     return (

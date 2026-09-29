@@ -101,10 +101,10 @@ describe("Gate pass approvals", () => {
         expect(await screen.findByTestId("page-load-failed")).toBeTruthy();
     });
 
-    it("shows the feature-off state when GATEPASS is off", async () => {
+    it("is role-gated only: works with the GATEPASS flag off (ruling 2026-09-25, as the backend and mobile apps)", async () => {
         flags.gatepass = false;
         render(<GatePassApprovalsPage />);
-        expect(await screen.findByTestId("gatepass-feature-off")).toBeTruthy();
-        expect(api.calls).toHaveLength(0);
+        expect(await screen.findByTestId("approvals-table")).toBeTruthy();
+        expect(screen.queryByTestId("gatepass-feature-off")).toBeNull();
     });
 });

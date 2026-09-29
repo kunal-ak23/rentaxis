@@ -43,7 +43,7 @@ const REMOVED: Partial<Record<UserRole, string[]>> = {
 /**
  * Bug 25 (tutorial 25): the gate-pass web screens are new destinations, each
  * opened to exactly the roles its endpoints admit (see rbac.ts's gate-pass keys).
- * Everything but the guard's Home follows the GATEPASS flag.
+ * None of them follows the GATEPASS flag (ruling 2026-09-25, as the report).
  */
 const GATEPASS_SCREENS: Partial<Record<UserRole, string[]>> = {
     SUPER_ADMIN: ["/dashboard/gatepass/approvals", "/dashboard/gatepass/settings"],
@@ -52,9 +52,8 @@ const GATEPASS_SCREENS: Partial<Record<UserRole, string[]>> = {
     RENTER: ["/dashboard/renter-portal/gate-passes"],
     SECURITY_GUARD: ["/dashboard/gatepass/gate", "/dashboard/gatepass/approvals"],
 };
-const GATEPASS_UNFLAGGED: Partial<Record<UserRole, string[]>> = {
-    SECURITY_GUARD: ["/dashboard/gatepass/gate"],
-};
+// Role-gated only, like the report (ruling 2026-09-25): the same set with every flag off.
+const GATEPASS_UNFLAGGED = GATEPASS_SCREENS;
 const kept = (role: UserRole) => (h: string) => !(REMOVED[role] ?? []).includes(h);
 
 const pathOnly = (h: string) => h.split("?")[0];

@@ -66,11 +66,11 @@ describe("Tenant gate passes", () => {
         expect(api.calls).toHaveLength(0);
     });
 
-    it("shows the feature-off state when the organisation has GATEPASS off", async () => {
+    it("is role-gated only: works with the GATEPASS flag off (ruling 2026-09-25, as the backend and mobile apps)", async () => {
         flags.gatepass = false;
         render(<TenantGatePassesPage />);
-        expect(await screen.findByTestId("gatepass-feature-off")).toBeTruthy();
-        expect(api.calls).toHaveLength(0);
+        expect(await screen.findByTestId("gatepass-table")).toBeTruthy();
+        expect(screen.queryByTestId("gatepass-feature-off")).toBeNull();
     });
 
     it("shows a retryable error when the passes cannot be loaded", async () => {

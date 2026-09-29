@@ -1437,8 +1437,6 @@
     "tabApprovals": "Approvals",
     "tabGate": "Gate desk",
     "tabSettings": "Policy & visitors",
-    "featureOffTitle": "Gate passes are not switched on",
-    "featureOffBody": "Gate passes are not enabled for your organisation. Ask your System Admin to turn on Gate Passes & Security.",
     "status": {
       "PENDING_APPROVAL": "Awaiting approval",
       "ACTIVE": "Active",

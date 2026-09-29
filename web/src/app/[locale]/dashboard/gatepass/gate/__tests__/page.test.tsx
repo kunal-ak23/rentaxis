@@ -154,10 +154,10 @@ describe("Gate desk", () => {
         expect(api.callsTo("POST", "/admit")).toHaveLength(1);
     });
 
-    it("shows the feature-off state when GATEPASS is off", async () => {
+    it("is role-gated only: works with the GATEPASS flag off (ruling 2026-09-25, as the backend and mobile apps)", async () => {
         flags.gatepass = false;
         render(<GateDeskPage />);
-        expect(await screen.findByTestId("gatepass-feature-off")).toBeTruthy();
-        expect(api.calls).toHaveLength(0);
+        expect(await screen.findByTestId("gate-code")).toBeTruthy();
+        expect(screen.queryByTestId("gatepass-feature-off")).toBeNull();
     });
 });
