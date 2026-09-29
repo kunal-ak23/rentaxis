@@ -402,121 +402,131 @@ export default function SuperAdminTenantsPage() {
             {/* Create / Edit Modal */}
             {showForm && (
                 <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-                    <div className="bg-surface rounded-xl p-8 max-w-md w-full shadow-2xl border border-border relative">
-                        <button
-                            onClick={resetForm}
-                            aria-label={tSa("orgClose")}
-                            className="absolute end-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 cursor-pointer rounded-lg"
-                        >
-                            <X size={18} />
-                        </button>
+                    {/* Break-it R4 ops4 F2: with the logo and stamp uploads the dialog is ~940px
+                        tall; at 1366x768 / 1280x720 its Create button sat below the screen and
+                        nothing scrolled. The card is capped at the viewport, the fields scroll
+                        inside it and the buttons stay in a footer that is always visible. */}
+                    <div role="dialog" aria-modal="true" aria-labelledby="org-dialog-title" data-testid="org-dialog"
+                        className="bg-surface rounded-xl max-w-md w-full max-h-[calc(100dvh-2rem)] flex flex-col shadow-2xl border border-border relative overflow-hidden">
+                        <div className="shrink-0 px-6 sm:px-8 pt-6 sm:pt-8">
+                            <button
+                                onClick={resetForm}
+                                aria-label={tSa("orgClose")}
+                                className="absolute end-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 cursor-pointer rounded-lg"
+                            >
+                                <X size={18} />
+                            </button>
 
-                        <h2 className="text-lg font-bold mb-1 text-foreground">
-                            {editingTenant ? tSa("orgEdit") : tSa("orgProvision")}
-                        </h2>
-                        <p className="text-xs text-muted mb-6 font-medium">
-                            {editingTenant ? tSa("orgEditHint") : tSa("orgProvisionHint")}
-                        </p>
+                            <h2 id="org-dialog-title" className="text-lg font-bold mb-1 text-foreground pe-10">
+                                {editingTenant ? tSa("orgEdit") : tSa("orgProvision")}
+                            </h2>
+                            <p className="text-xs text-muted mb-6 font-medium">
+                                {editingTenant ? tSa("orgEditHint") : tSa("orgProvisionHint")}
+                            </p>
 
-                        {formError && (
-                            <div className="mb-4 flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-xs font-semibold">
-                                <XCircle size={14} className="flex-shrink-0" />
-                                {formError}
-                            </div>
-                        )}
-
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            {/* Logo, then the stamp right below it (stacked: the upload previews need the full width) */}
-                            <div className="grid grid-cols-1 gap-4">
-                                <div className="min-w-0">
-                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgLogo")}</label>
-                                    <FileUpload
-                                        value={formData.logoUrl}
-                                        onChange={(url) => setFormData(f => ({ ...f, logoUrl: url }))}
-                                        onRemove={() => setFormData(f => ({ ...f, logoUrl: "" }))}
-                                        folder="assets"
-                                        accept="image/png,image/jpeg,image/gif"
-                                        uploadPath={brandingUploadPath}
-                                        previewSrc={brandingPreview("logo", formData.logoUrl)}
-                                        label={tSa("orgUploadLogo")}
-                                        hint={tSa("orgLogoHint")}
-                                    />
+                            {formError && (
+                                <div className="mb-4 flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-xs font-semibold">
+                                    <XCircle size={14} className="flex-shrink-0" />
+                                    {formError}
                                 </div>
-                                {/* The stamp printed beside the landlord signature on the tenancy
-                                    contract. PNG/JPG only (the server also refuses SVG). */}
-                                <div className="min-w-0" data-testid="org-stamp-upload">
-                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgStamp")}</label>
-                                    <FileUpload
-                                        value={formData.stampImageUrl}
-                                        onChange={(url) => setFormData(f => ({ ...f, stampImageUrl: url }))}
-                                        onRemove={() => setFormData(f => ({ ...f, stampImageUrl: "" }))}
-                                        folder="assets"
-                                        accept="image/png,image/jpeg"
-                                        uploadPath={brandingUploadPath}
-                                        previewSrc={brandingPreview("stamp", formData.stampImageUrl)}
-                                        label={tSa("orgUploadStamp")}
-                                        hint={tSa("orgStampHint")}
-                                    />
-                                </div>
-                            </div>
+                            )}
+                        </div>
 
-                            <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgName")}</label>
-                                <input
-                                    required
-                                    name="name"
-                                    data-testid="org-name"
-                                    placeholder={tSa("orgNamePlaceholder")}
-                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                                    value={formData.name}
-                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgAddress")}</label>
-                                <textarea
-                                    rows={2}
-                                    placeholder={tSa("orgAddressPlaceholder")}
-                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none"
-                                    value={formData.address}
-                                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgTrn")}</label>
-                                <input
-                                    placeholder={tSa("orgTrnPlaceholder")}
-                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                                    value={formData.trn}
-                                    onChange={(e) => setFormData({ ...formData, trn: e.target.value })}
-                                />
-                            </div>
-                            {/* Phone */}
-                            <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1 flex items-center gap-1"><Phone size={10} /> {tSa("orgPhone")}</label>
-                                <input
-                                    type="tel"
-                                    placeholder="+971 50 123 4567"
-                                    maxLength={40}
-                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                                    value={formData.phone}
-                                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                                />
-                            </div>
-                            <div className="flex items-center justify-between">
+                        <form onSubmit={handleSubmit} className="flex flex-col min-h-0 flex-1">
+                            <div data-testid="org-dialog-body" className="min-h-0 flex-1 overflow-y-auto overscroll-contain space-y-4 px-6 sm:px-8 pb-4">
+                                {/* Logo, then the stamp right below it (stacked: the upload previews need the full width) */}
+                                <div className="grid grid-cols-1 gap-4">
+                                    <div className="min-w-0">
+                                        <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgLogo")}</label>
+                                        <FileUpload
+                                            value={formData.logoUrl}
+                                            onChange={(url) => setFormData(f => ({ ...f, logoUrl: url }))}
+                                            onRemove={() => setFormData(f => ({ ...f, logoUrl: "" }))}
+                                            folder="assets"
+                                            accept="image/png,image/jpeg,image/gif"
+                                            uploadPath={brandingUploadPath}
+                                            previewSrc={brandingPreview("logo", formData.logoUrl)}
+                                            label={tSa("orgUploadLogo")}
+                                            hint={tSa("orgLogoHint")}
+                                        />
+                                    </div>
+                                    {/* The stamp printed beside the landlord signature on the tenancy
+                                        contract. PNG/JPG only (the server also refuses SVG). */}
+                                    <div className="min-w-0" data-testid="org-stamp-upload">
+                                        <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgStamp")}</label>
+                                        <FileUpload
+                                            value={formData.stampImageUrl}
+                                            onChange={(url) => setFormData(f => ({ ...f, stampImageUrl: url }))}
+                                            onRemove={() => setFormData(f => ({ ...f, stampImageUrl: "" }))}
+                                            folder="assets"
+                                            accept="image/png,image/jpeg"
+                                            uploadPath={brandingUploadPath}
+                                            previewSrc={brandingPreview("stamp", formData.stampImageUrl)}
+                                            label={tSa("orgUploadStamp")}
+                                            hint={tSa("orgStampHint")}
+                                        />
+                                    </div>
+                                </div>
+
                                 <div>
-                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider">{tSa("orgTicketOtp")}</label>
-                                    <p className="text-[9px] text-muted mt-0.5">{tSa("orgTicketOtpHint")}</p>
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgName")}</label>
+                                    <input
+                                        required
+                                        name="name"
+                                        data-testid="org-name"
+                                        placeholder={tSa("orgNamePlaceholder")}
+                                        className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                        value={formData.name}
+                                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                    />
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={() => setFormData({ ...formData, ticketOtpRequired: !formData.ticketOtpRequired })}
-                                    className={cn("w-10 h-5 rounded-full transition-colors cursor-pointer", formData.ticketOtpRequired ? "bg-primary" : "bg-muted/40")}
-                                >
-                                    <div className={cn("w-4 h-4 bg-white rounded-full transition-transform shadow-sm", formData.ticketOtpRequired ? "translate-x-5" : "translate-x-0.5")} />
-                                </button>
+                                <div>
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgAddress")}</label>
+                                    <textarea
+                                        rows={2}
+                                        placeholder={tSa("orgAddressPlaceholder")}
+                                        className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none"
+                                        value={formData.address}
+                                        onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">{tSa("orgTrn")}</label>
+                                    <input
+                                        placeholder={tSa("orgTrnPlaceholder")}
+                                        className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                        value={formData.trn}
+                                        onChange={(e) => setFormData({ ...formData, trn: e.target.value })}
+                                    />
+                                </div>
+                                {/* Phone */}
+                                <div>
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1 flex items-center gap-1"><Phone size={10} /> {tSa("orgPhone")}</label>
+                                    <input
+                                        type="tel"
+                                        placeholder="+971 50 123 4567"
+                                        maxLength={40}
+                                        className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                        value={formData.phone}
+                                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                                    />
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider">{tSa("orgTicketOtp")}</label>
+                                        <p className="text-[9px] text-muted mt-0.5">{tSa("orgTicketOtpHint")}</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setFormData({ ...formData, ticketOtpRequired: !formData.ticketOtpRequired })}
+                                        className={cn("w-10 h-5 rounded-full transition-colors cursor-pointer", formData.ticketOtpRequired ? "bg-primary" : "bg-muted/40")}
+                                    >
+                                        <div className={cn("w-4 h-4 bg-white rounded-full transition-transform shadow-sm", formData.ticketOtpRequired ? "translate-x-5" : "translate-x-0.5")} />
+                                    </button>
+                                </div>
                             </div>
-                            <div className="flex justify-end gap-3 pt-2">
+                            <div data-testid="org-dialog-footer"
+                                className="shrink-0 flex justify-end gap-3 px-6 sm:px-8 py-4 border-t border-border bg-surface">
                                 <button
                                     type="button"
                                     onClick={resetForm}
