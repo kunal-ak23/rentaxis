@@ -2,7 +2,7 @@
   "id": "12",
   "slug": "administer-an-active-tenancy-contract",
   "title": "Miftah tutorial 12 · Administer an active tenancy contract",
-  "description": "Add a charge with its Ejari number and cheque, attach supporting documents and log follow-ups on an active contract.\n\nWho this is for: Company Admin, Property Manager.\n\nChapters:\n0:00 An Active Contract\n0:24 Add Charge\n0:53 Six Cheques\n1:15 Log Interaction\n\nPart of the Miftah web course — playlist: Miftah · Leasing\n\nأضف رسومًا إلى عقد نشط برقم إيجاري وشيكها، وأرفق المستندات الداعمة، وسجّل المتابعات.",
+  "description": "Add a charge with its Ejari number and cheque, attach supporting documents and log follow-ups on an active contract.\n\nWho this is for: Company Admin, Property Manager.\n\nChapters:\n0:00 An Active Contract\n0:22 Add Charge\n0:57 Addenda and Supporting Documents\n1:15 Log Interaction\n\nPart of the Miftah web course — playlist: Miftah · Leasing\n\nأضف رسومًا إلى عقد نشط برقم إيجاري وشيكها، وأرفق المستندات الداعمة، وسجّل المتابعات.",
   "tags": [
     "miftah",
     "property management",
@@ -25,19 +25,19 @@
   ],
   "chapters": [
     {
-      "startSec": 0,
+      "startSec": 0.0,
       "start": "0:00",
       "label": "An Active Contract"
     },
     {
-      "startSec": 24.751,
-      "start": "0:24",
+      "startSec": 22.165,
+      "start": "0:22",
       "label": "Add Charge"
     },
     {
-      "startSec": 53.196,
-      "start": "0:53",
-      "label": "Six Cheques"
+      "startSec": 57.629,
+      "start": "0:57",
+      "label": "Addenda and Supporting Documents"
     },
     {
       "startSec": 75.361,

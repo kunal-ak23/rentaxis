@@ -2,7 +2,7 @@
   "id": "42",
   "slug": "termination-settlement-and-deposit-refunds-in-the-books",
   "title": "Miftah tutorial 42 · Termination, settlement and deposit refunds in the books",
-  "description": "Terminate a contract early, read the unearned-rent reversal, finalise the settlement and pay the deposit refund.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 A Contract That Ended Early\n1:09 The Settlement\n1:24 The Settlement Journal\n1:42 The Refund Is Paid\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nأنهِ العقد مبكرًا، واقرأ قيد عكس الإيجار غير المكتسب، واعتمد التسوية النهائية، وادفع مبلغ التأمين المسترد.",
+  "description": "Terminate a contract early, read the unearned-rent reversal, finalise the settlement and pay the deposit refund.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 A Contract That Ended Early\n0:30 Termination in the Ledger\n1:09 The Settlement\n1:35 The Settlement Journal\n1:52 The Refund Is Paid\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nأنهِ العقد مبكرًا، واقرأ قيد عكس الإيجار غير المكتسب، واعتمد التسوية النهائية، وادفع مبلغ التأمين المسترد.",
   "tags": [
     "miftah",
     "property management",
@@ -26,9 +26,14 @@
   ],
   "chapters": [
     {
-      "startSec": 0,
+      "startSec": 0.0,
       "start": "0:00",
       "label": "A Contract That Ended Early"
+    },
+    {
+      "startSec": 30.686,
+      "start": "0:30",
+      "label": "Termination in the Ledger"
     },
     {
       "startSec": 69.785,
@@ -36,13 +41,13 @@
       "label": "The Settlement"
     },
     {
-      "startSec": 84.633,
-      "start": "1:24",
+      "startSec": 95.027,
+      "start": "1:35",
       "label": "The Settlement Journal"
     },
     {
-      "startSec": 102.946,
-      "start": "1:42",
+      "startSec": 112.844,
+      "start": "1:52",
       "label": "The Refund Is Paid"
     }
   ],

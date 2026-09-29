@@ -2,7 +2,7 @@
   "id": "39",
   "slug": "start-your-books-opening-balances-and-cut-over",
   "title": "Miftah tutorial 39 · Start your books: opening balances and cut-over",
-  "description": "Set the date Miftah takes over your books, enter opening balances, bring running contracts across and reconcile against your old system.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 When the Books Start\n0:28 Import Batches\n0:51 Opening Balances\n1:43 AP Opening Items\n1:57 Cut-over Reconciliation\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nحدّد تاريخ بدء الدفاتر في مفتاح، وأدخل الأرصدة الافتتاحية، وانقل العقود السارية، وطابق النتائج مع نظامك السابق.",
+  "description": "Set the date Miftah takes over your books, enter opening balances, bring running contracts across and reconcile against your old system.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 When the Books Start\n0:31 Import Batches\n0:57 Opening Balances\n1:31 The Opening Balance Journal\n1:48 AP Opening Items\n2:06 Cut-over Reconciliation\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nحدّد تاريخ بدء الدفاتر في مفتاح، وأدخل الأرصدة الافتتاحية، وانقل العقود السارية، وطابق النتائج مع نظامك السابق.",
   "tags": [
     "miftah",
     "property management",
@@ -26,28 +26,33 @@
   ],
   "chapters": [
     {
-      "startSec": 0,
+      "startSec": 0.0,
       "start": "0:00",
       "label": "When the Books Start"
     },
     {
-      "startSec": 28.756,
-      "start": "0:28",
+      "startSec": 31.12,
+      "start": "0:31",
       "label": "Import Batches"
     },
     {
-      "startSec": 51.998,
-      "start": "0:51",
+      "startSec": 57.513,
+      "start": "0:57",
       "label": "Opening Balances"
     },
     {
-      "startSec": 103.601,
-      "start": "1:43",
+      "startSec": 91.784,
+      "start": "1:31",
+      "label": "The Opening Balance Journal"
+    },
+    {
+      "startSec": 108.328,
+      "start": "1:48",
       "label": "AP Opening Items"
     },
     {
-      "startSec": 117.389,
-      "start": "1:57",
+      "startSec": 126.843,
+      "start": "2:06",
       "label": "Cut-over Reconciliation"
     }
   ],

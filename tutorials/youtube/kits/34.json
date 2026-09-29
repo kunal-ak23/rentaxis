@@ -2,7 +2,7 @@
   "id": "34",
   "slug": "post-a-tenancy-contract",
   "title": "Miftah tutorial 34 · Post a tenancy contract",
-  "description": "Post a draft contract with its lines and cheque grid, and see the contract become active with its recognition schedule planned.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 Contracts to Post\n0:14 A Draft with Two Charge Lines\n0:35 The Cheque Grid\n0:52 Review Before Posting\n1:08 Active\n1:20 Revenue Recognition\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nرحّل مسودة العقد مع بنودها وجدول شيكاتها، وشاهد العقد يصبح نشطًا مع جدولة الاعتراف بالإيراد.",
+  "description": "Post a draft contract with its lines and cheque grid, and see the contract become active with its recognition schedule planned.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 Contracts to Post\n0:12 A Draft with Two Charge Lines\n0:35 The Cheque Grid\n0:51 Review Before Posting\n1:20 Revenue Recognition\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nرحّل مسودة العقد مع بنودها وجدول شيكاتها، وشاهد العقد يصبح نشطًا مع جدولة الاعتراف بالإيراد.",
   "tags": [
     "miftah",
     "property management",
@@ -26,13 +26,13 @@
   ],
   "chapters": [
     {
-      "startSec": 0,
+      "startSec": 0.0,
       "start": "0:00",
       "label": "Contracts to Post"
     },
     {
-      "startSec": 14.413,
-      "start": "0:14",
+      "startSec": 12.304,
+      "start": "0:12",
       "label": "A Draft with Two Charge Lines"
     },
     {
@@ -41,14 +41,9 @@
       "label": "The Cheque Grid"
     },
     {
-      "startSec": 52.378,
-      "start": "0:52",
+      "startSec": 51.323,
+      "start": "0:51",
       "label": "Review Before Posting"
-    },
-    {
-      "startSec": 68.548,
-      "start": "1:08",
-      "label": "Active"
     },
     {
       "startSec": 80.149,

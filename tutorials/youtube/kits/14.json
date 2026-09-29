@@ -2,7 +2,7 @@
   "id": "14",
   "slug": "penalties-and-cheque-failure-fines",
   "title": "Miftah tutorial 14 · Penalties, fines and recharges",
-  "description": "Configure fines, approve or waive proposed penalties and maintenance recharges, and see the journal each decision writes.\n\nWho this is for: Accountant, Company Admin, Property Manager, Tenant.\n\nChapters:\n0:00 Cheque-failure Fines\n1:02 Approve\n1:12 The Penalty Journals\n1:37 Approved, and Reverse\n\nPart of the Miftah web course — playlist: Miftah · Collections\n\nاضبط إعدادات الغرامات، واعتمد الغرامات المقترحة وتكاليف الصيانة المعاد تحميلها أو أعفِ منها، وتعرّف على القيد الذي يُنشئه كل قرار.",
+  "description": "Configure fines, approve or waive proposed penalties and maintenance recharges, and see the journal each decision writes.\n\nWho this is for: Accountant, Company Admin, Property Manager, Tenant.\n\nChapters:\n0:00 Cheque-failure Fines\n0:34 The Penalties Queue\n1:02 Approve\n1:17 The Penalty Journals\n1:34 Approved, and Reverse\n\nPart of the Miftah web course — playlist: Miftah · Collections\n\nاضبط إعدادات الغرامات، واعتمد الغرامات المقترحة وتكاليف الصيانة المعاد تحميلها أو أعفِ منها، وتعرّف على القيد الذي يُنشئه كل قرار.",
   "tags": [
     "miftah",
     "property management",
@@ -26,9 +26,14 @@
   ],
   "chapters": [
     {
-      "startSec": 0,
+      "startSec": 0.0,
       "start": "0:00",
       "label": "Cheque-failure Fines"
+    },
+    {
+      "startSec": 34.066,
+      "start": "0:34",
+      "label": "The Penalties Queue"
     },
     {
       "startSec": 62.326,
@@ -36,13 +41,13 @@
       "label": "Approve"
     },
     {
-      "startSec": 72.391,
-      "start": "1:12",
+      "startSec": 77.037,
+      "start": "1:17",
       "label": "The Penalty Journals"
     },
     {
-      "startSec": 97.554,
-      "start": "1:37",
+      "startSec": 94.07,
+      "start": "1:34",
       "label": "Approved, and Reverse"
     }
   ],

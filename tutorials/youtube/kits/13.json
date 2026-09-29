@@ -2,7 +2,7 @@
   "id": "13",
   "slug": "renew-extend-terminate-and-settle",
   "title": "Miftah tutorial 13 · Renew, extend, terminate and settle a contract",
-  "description": "Renew a contract for a new term, extend one by a month, take a Tenant's notice, terminate the contract and finalise the settlement.\n\nWho this is for: Company Admin, Property Manager, System Admin, Tenant.\n\nChapters:\n0:00 Tenancy Contracts\n0:16 Renew\n0:33 The Renewal Draft\n0:53 Extend Contract\n1:12 Give Notice\n1:28 Terminate\n1:44 Settlement\n\nPart of the Miftah web course — playlist: Miftah · Leasing\n\nجدّد العقد لمدة جديدة، ومدّد عقدًا لشهر إضافي، وسجّل إشعار المستأجر، وأنهِ العقد، وأكمل التسوية النهائية.",
+  "description": "Renew a contract for a new term, extend one by a month, take a Tenant's notice, terminate the contract and finalise the settlement.\n\nWho this is for: Company Admin, Property Manager, System Admin, Tenant.\n\nChapters:\n0:00 Tenancy Contracts\n0:16 Renew\n0:41 Extend Contract\n1:05 Give Notice\n1:24 Terminate\n1:47 Settlement\n\nPart of the Miftah web course — playlist: Miftah · Leasing\n\nجدّد العقد لمدة جديدة، ومدّد عقدًا لشهر إضافي، وسجّل إشعار المستأجر، وأنهِ العقد، وأكمل التسوية النهائية.",
   "tags": [
     "miftah",
     "property management",
@@ -25,7 +25,7 @@
   ],
   "chapters": [
     {
-      "startSec": 0,
+      "startSec": 0.0,
       "start": "0:00",
       "label": "Tenancy Contracts"
     },
@@ -35,28 +35,23 @@
       "label": "Renew"
     },
     {
-      "startSec": 33.062,
-      "start": "0:33",
-      "label": "The Renewal Draft"
-    },
-    {
-      "startSec": 53.634,
-      "start": "0:53",
+      "startSec": 41.144,
+      "start": "0:41",
       "label": "Extend Contract"
     },
     {
-      "startSec": 72.37,
-      "start": "1:12",
+      "startSec": 65.023,
+      "start": "1:05",
       "label": "Give Notice"
     },
     {
-      "startSec": 88.901,
-      "start": "1:28",
+      "startSec": 84.125,
+      "start": "1:24",
       "label": "Terminate"
     },
     {
-      "startSec": 104.33,
-      "start": "1:44",
+      "startSec": 107.269,
+      "start": "1:47",
       "label": "Settlement"
     }
   ],

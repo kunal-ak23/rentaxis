@@ -2,7 +2,7 @@
   "id": "17",
   "slug": "chart-of-accounts-template-and-charge-types",
   "title": "Miftah tutorial 17 · Chart of accounts, property account sets and charge types",
-  "description": "See how the chart of accounts is organised, how every property gets its own set of accounts, and which account each charge on a contract posts to.\n\nWho this is for: Accountant, Company Admin, System Admin.\n\nChapters:\n0:00 Chart of Accounts\n0:32 One Set of Accounts per Building\n0:46 Ledger Accounts\n1:03 Property Account Template\n1:33 Charge Types\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nتعرّف على تنظيم دليل الحسابات، وكيف يحصل كل عقار على مجموعة حساباته الخاصة، وإلى أي حساب يُرحَّل كل بند من بنود العقد.",
+  "description": "See how the chart of accounts is organised, how every property gets its own set of accounts, and which account each charge on a contract posts to.\n\nWho this is for: Accountant, Company Admin, System Admin.\n\nChapters:\n0:00 Chart of Accounts\n0:32 One Set of Accounts per Building\n0:46 Ledger Accounts\n1:03 Property Account Template\n1:34 Charge Types\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nتعرّف على تنظيم دليل الحسابات، وكيف يحصل كل عقار على مجموعة حساباته الخاصة، وإلى أي حساب يُرحَّل كل بند من بنود العقد.",
   "tags": [
     "miftah",
     "property management",
@@ -26,7 +26,7 @@
   ],
   "chapters": [
     {
-      "startSec": 0,
+      "startSec": 0.0,
       "start": "0:00",
       "label": "Chart of Accounts"
     },
@@ -46,8 +46,8 @@
       "label": "Property Account Template"
     },
     {
-      "startSec": 93.158,
-      "start": "1:33",
+      "startSec": 94.602,
+      "start": "1:34",
       "label": "Charge Types"
     }
   ],
