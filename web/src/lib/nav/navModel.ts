@@ -18,6 +18,7 @@ export interface RailSection {
 export interface NavModelContext extends NavContext { booksLive: boolean }
 
 const N = (key: string): Label => ({ ns: "Navigation", key });
+const GP = (key: string): Label => ({ ns: "GatePass", key });
 const pi = (id: string, href: string, label: Label, testId: string, exact = false): PanelItem =>
     ({ id, href, label, testId, ...(exact ? { exact } : {}) });
 const one = (id: string, items: PanelItem[], label: Label | null = null, defaultOpen = true): PanelGroup[] =>
@@ -60,6 +61,8 @@ export function buildNav(ctx: NavModelContext): RailSection[] {
             pi("my-tickets", "/dashboard/tickets", N("myTickets"), "sidebar-my-tickets"),
             ...(isEnabled("LISTINGS") && tenantSlug ? [pi("listings", `/marketplace/${tenantSlug}`, N("listings"), "sidebar-listings")] : []),
             ...(isEnabled("MEETINGS") ? [pi("meetings", "/dashboard/meetings", N("meetings"), "sidebar-meetings")] : []),
+            ...(isEnabled("GATEPASS") && can("canRequestGatePasses")
+                ? [pi("gate-passes", "/dashboard/renter-portal/gate-passes", GP("navMyGatePasses"), "sidebar-gate-passes")] : []),
         ];
         return [section("home", "home", "sidebar-home", ["/dashboard"], one("main", items))!];
     }

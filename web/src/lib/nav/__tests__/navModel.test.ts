@@ -68,6 +68,7 @@ describe("buildNav — rail sections and panel items per role (all flags on)", (
         expect(flattenNav(buildNav(ctx("RENTER")))).toEqual([
             "/dashboard/renter-portal", "/dashboard/renter-portal/payments",
             "/dashboard/renter-portal/penalties", "/dashboard/tickets", "/marketplace/acme", "/dashboard/meetings",
+            "/dashboard/renter-portal/gate-passes",
         ]);
     });
 
@@ -81,13 +82,18 @@ describe("flags", () => {
         expect(buildNav(ctx("ACCOUNTANT", [])).map(s => s.id)).not.toContain("more");
         expect(buildNav(ctx("TENANT_USER", [...FLAGS])).map(s => s.id)).not.toContain("more");
     });
-    it("keeps Gate pass role-gated, NOT flag-gated (ruling 2026-09-25: tenants use it without the flag)", () => {
+    it("keeps the Gate pass report role-gated, NOT flag-gated (ruling 2026-09-25: tenants use it without the flag)", () => {
         const ids = (on: string[]) => buildNav(ctx("TENANT_ADMIN", on)).find(s => s.id === "more")!.groups[0].items.map(i => i.id);
         expect(ids([])).toEqual(["gatepass", "promotions"]);
         expect(ids(["MEETINGS"])).toEqual(["meetings", "gatepass", "promotions"]);
+        // The working screens (approvals, policy) are new and follow the flag, like Meetings.
         expect(ids(["GATEPASS"])).toEqual(["gatepass", "promotions"]);
         // A property manager with every flag off still reaches Gate pass (today's sidebar shows it by role).
         expect(buildNav(ctx("PROPERTY_MANAGER", [])).find(s => s.id === "more")!.groups[0].items.map(i => i.id)).toEqual(["gatepass"]);
+    });
+    it("gates the tenant's gate passes on GATEPASS", () => {
+        expect(flattenNav(buildNav(ctx("RENTER", ["LISTINGS", "MEETINGS"])))).not.toContain("/dashboard/renter-portal/gate-passes");
+        expect(flattenNav(buildNav(ctx("RENTER", ["GATEPASS"])))).toContain("/dashboard/renter-portal/gate-passes");
     });
     it("gates Meetings on MEETINGS", () => {
         const more = buildNav(ctx("PROPERTY_MANAGER", ["LISTINGS"])).find(s => s.id === "more")!;

@@ -21,6 +21,10 @@ export function useTenantFeatures() {
     const [features, setFeatures] = useState<FeatureMap>(
         () => (cacheUserId === userId && featuresCache) || {}
     );
+    // Whether the flags have been answered at all (from the cache or a finished
+    // read, successful or not), so a page gated on a flag can tell "off" from
+    // "not known yet" instead of flashing its disabled state on every mount.
+    const [loaded, setLoaded] = useState<boolean>(() => cacheUserId === userId && featuresCache !== null);
     const [tenantSlug, setTenantSlug] = useState<string>(
         () => (cacheUserId === userId && slugCache !== null ? slugCache : "")
     );
@@ -35,7 +39,10 @@ export function useTenantFeatures() {
             cacheUserId = userId;
         }
 
-        if (featuresCache) setFeatures(featuresCache);
+        if (featuresCache) {
+            setFeatures(featuresCache);
+            setLoaded(true);
+        }
         if (slugCache !== null) setTenantSlug(slugCache);
 
         const revalidate = () => {
@@ -54,11 +61,15 @@ export function useTenantFeatures() {
                     }
                     return r.json();
                 })
-                .then((data: FeatureMap) => {
+                .then((body: FeatureMap | null) => {
+                    // A body that is not a map (an empty or null reply) is "nothing on".
+                    const data: FeatureMap = body && typeof body === "object" ? body : {};
                     featuresCache = data;
                     setFeatures(data);
+                    setLoaded(true);
                 })
-                .catch(() => {});
+                // Fail closed, but answered: a page gated on a flag shows its "off" state.
+                .catch(() => setLoaded(true));
             fetch("/api/proxy/v1/tenant/info")
                 .then(r => {
                     if (!r.ok) {
@@ -91,6 +102,7 @@ export function useTenantFeatures() {
 
     return {
         isEnabled: (feature: string) => features[feature] ?? false,
+        loaded,
         tenantSlug,
     };
 }
