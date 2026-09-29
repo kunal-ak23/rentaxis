@@ -50,6 +50,11 @@ type RowState = {
   amount: number | null;
   rowId: string | null;
   pinned: boolean;
+  /**
+   * A crop the server flagged (`crop_unreliable`) is the whole page, not one
+   * cheque; the operator must confirm they checked it before it is attached.
+   */
+  cropConfirmed: boolean;
 };
 
 type Step = 1 | 2 | 3;
@@ -65,6 +70,7 @@ const rowChequeDate = (c: Cheque): string => c.chequeDate ?? c.postingDate;
 /** Refusal codes the server sends for an upload; each has a translated message. */
 const KNOWN_UPLOAD_ERRORS = new Set([
   "cheque_upload_file_required",
+  "cheque_upload_image_too_large",
   "cheque_upload_file_too_large",
   "cheque_upload_unsupported_type",
   "cheque_upload_too_many_pages",
@@ -88,6 +94,7 @@ function rowsForFile(fileId: string, response: ChequeMultiExtractionResponse | n
       amount: ex?.amount ?? null,
       rowId: null,
       pinned: false,
+      cropConfirmed: false,
     };
   });
 }
@@ -315,8 +322,9 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
     counts.duplicateNumber === 0 &&
     tableRows.every(r => {
       if (!r.chequeNumber.trim()) return false;
-      const file = extract.items.find(it => it.id === r.fileId);
-      return detectionOf(file, r)?.image != null;
+      const det = detectionOf(extract.items.find(it => it.id === r.fileId), r);
+      if (det?.flags.includes(CROP_UNRELIABLE) && !r.cropConfirmed) return false;
+      return det?.image != null;
     });
 
   const approve = async () => {
@@ -503,9 +511,20 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
                             <p className="mt-1 text-[10px] text-muted">{t("pageLabel", { n: det.page })}</p>
                           )}
                           {flagged && (
-                            <p className="mt-1 max-w-[9rem] text-[10px] text-amber-800" role="note">
-                              <AlertTriangle size={10} className="inline" /> {t("cropUnreliable")}
-                            </p>
+                            <>
+                              <p className="mt-1 max-w-[9rem] text-[10px] text-amber-800" role="note">
+                                <AlertTriangle size={10} className="inline" /> {t("cropUnreliable")}
+                              </p>
+                              <label className="mt-1 flex max-w-[9rem] items-start gap-1 text-[10px]">
+                                <input
+                                  type="checkbox"
+                                  checked={row.cropConfirmed}
+                                  onChange={e => updateRow(row.itemId, { cropConfirmed: e.target.checked })}
+                                  className="mt-0.5"
+                                />
+                                <span>{t("confirmCrop")}</span>
+                              </label>
+                            </>
                           )}
                           {item.status === "failed" && (
                             <p className="mt-1 text-[10px] text-red-700">

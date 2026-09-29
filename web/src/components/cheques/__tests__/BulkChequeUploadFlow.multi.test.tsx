@@ -111,7 +111,7 @@ describe("BulkChequeUploadFlow — several cheques in one file", () => {
     expect(flags).toHaveLength(1);
     // It sits in the second row (cheque 000301).
     const row = flags[0].closest("tr")!;
-    expect((row.querySelector("input") as HTMLInputElement).value).toBe("000301");
+    expect((row.querySelector("input:not([type=checkbox])") as HTMLInputElement).value).toBe("000301");
   });
 
   it("auto-maps every row by date and attaches three distinct images, one per cheque", async () => {
@@ -123,7 +123,13 @@ describe("BulkChequeUploadFlow — several cheques in one file", () => {
     const selects = Array.from(document.querySelectorAll("select")).map(s => (s as HTMLSelectElement).value);
     expect(selects).toEqual(["r3", "r1", "r2"]);
 
-    fireEvent.click(screen.getByText(/^approveAll/));
+    // The flagged crop must be confirmed before anything can be attached.
+    const approve = screen.getByText(/^approveAll/).closest("button") as HTMLButtonElement;
+    expect(approve.disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText("confirmCrop"));
+    expect(approve.disabled).toBe(false);
+
+    fireEvent.click(approve);
     await waitFor(() => expect(onSuccess).toHaveBeenCalled());
 
     const [url, init] = fetchMock.mock.calls[1];
