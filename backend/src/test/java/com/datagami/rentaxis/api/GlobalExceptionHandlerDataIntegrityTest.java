@@ -95,4 +95,18 @@ class GlobalExceptionHandlerDataIntegrityTest {
         assertThat(response.getStatusCode().value()).isEqualTo(409);
         assertThat(response.getBody()).containsEntry("code", "penalty.changed").containsEntry("message", "It moved.");
     }
+
+    /**
+     * Break-it R4 brand4 F2: a second organisation whose name maps to an existing
+     * slug showed "conflicts with existing related records (idx_landlord_org_slug_unique)".
+     * The backstop (a race past LandlordOrgService's own check) says it in words, coded.
+     */
+    @Test
+    void aTakenOrganisationSlugIsA409SayingTheNameIsTaken() {
+        var response = handler.handleDataIntegrityViolation(violation("23505", "idx_landlord_org_slug_unique"));
+        assertThat(response.getStatusCode().value()).isEqualTo(409);
+        assertThat(response.getBody()).containsEntry("code", "org.nameTaken").doesNotContainKey("constraint");
+        assertThat((String) response.getBody().get("message"))
+                .contains("already exists").doesNotContain("idx_");
+    }
 }

@@ -2957,6 +2957,7 @@
     "orgNetworkError": "Network error. Please check your connection and try again.",
     "orgSaveDenied": "You don't have permission to do this, or your session expired. Please sign in again.",
     "orgGone": "This organisation no longer exists. Close the dialog and refresh the list.",
+    "orgNameTaken": "An organisation with this name already exists. Choose a different name.",
     "orgChanged": "Someone else changed this organisation while you had it open. It now shows the current details; make your change again.",
     "orgStatusChanged": "This organisation's status changed in another tab. Close this and reopen it from the refreshed list to see it.",
     "orgActivate": "Activate",

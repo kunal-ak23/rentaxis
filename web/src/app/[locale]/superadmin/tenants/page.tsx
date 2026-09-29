@@ -234,6 +234,11 @@ export default function SuperAdminTenantsPage() {
                 }
             } else {
                 const data = await res.json().catch(() => ({}));
+                // Break-it R4 brand4 F2: a taken name, in the user's language (never the index name).
+                if (data?.code === "org.nameTaken") {
+                    setFormError(tSa("orgNameTaken"));
+                    return;
+                }
                 const fallback =
                     res.status === 401 || res.status === 403
                         ? tSa("orgSaveDenied")

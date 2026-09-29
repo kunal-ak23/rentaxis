@@ -63,11 +63,17 @@ public class LandlordOrg {
     @PrePersist
     public void onPrePersist() {
         if (this.slug == null || this.slug.isBlank()) {
-            String base = this.name == null ? "" : this.name.toLowerCase();
-            String slugified = base.replaceAll("[^a-z0-9]+", "-").replaceAll("(^-+|-+$)", "");
-            // TODO: handle slug collisions at the service layer; DB unique constraint enforces uniqueness for now.
-            this.slug = slugified.isBlank() ? "tenant" : slugified;
+            // LandlordOrgService.provisionTenant refuses a name whose slug is taken
+            // (break-it R4 brand4 F2); the unique index is the backstop.
+            this.slug = slugOf(this.name);
         }
+    }
+
+    /** The slug a name gets: lower case, runs of anything but a–z/0–9 as one hyphen. */
+    public static String slugOf(String name) {
+        String base = name == null ? "" : name.toLowerCase();
+        String slugified = base.replaceAll("[^a-z0-9]+", "-").replaceAll("(^-+|-+$)", "");
+        return slugified.isBlank() ? "tenant" : slugified;
     }
 
     public String getSlug() {
