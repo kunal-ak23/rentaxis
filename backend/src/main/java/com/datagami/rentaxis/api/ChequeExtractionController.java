@@ -1,7 +1,10 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.ChequeExtractionResponseDTO;
+import com.datagami.rentaxis.api.dto.ChequeMultiExtractionResponseDTO;
 import com.datagami.rentaxis.core.service.cheque.ChequeExtractionService;
+import com.datagami.rentaxis.core.service.cheque.ChequeMultiExtractionService;
+import com.datagami.rentaxis.core.service.cheque.ChequeUploadRefusedException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,9 +24,11 @@ import java.util.Map;
 public class ChequeExtractionController {
 
     private final ChequeExtractionService service;
+    private final ChequeMultiExtractionService multiService;
 
-    public ChequeExtractionController(ChequeExtractionService service) {
+    public ChequeExtractionController(ChequeExtractionService service, ChequeMultiExtractionService multiService) {
         this.service = service;
+        this.multiService = multiService;
     }
 
     @PostMapping(value = "/extract", consumes = "multipart/form-data")
@@ -38,6 +43,29 @@ public class ChequeExtractionController {
         return ResponseEntity.ok(service.extractAndStore(tenantId, file));
     }
 
+    /**
+     * Every cheque in one photo or PDF, each with its own server-issued image
+     * (a crop when the photo holds several). {@code /extract} above is kept
+     * unchanged for the mobile app and the single-cheque scanner, which read one
+     * cheque per call and are already in users' hands.
+     */
+    @PostMapping(value = "/extract-many", consumes = "multipart/form-data")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
+    public ResponseEntity<ChequeMultiExtractionResponseDTO> extractMany(@RequestPart("file") MultipartFile file) {
+        var tenantId = TenantContextHolder.getTenantId();
+        if (tenantId == null) {
+            throw new IllegalArgumentException("Tenant context is required");
+        }
+        return ResponseEntity.ok(multiService.extractAndStore(tenantId, file));
+    }
+
+    @ExceptionHandler(ChequeUploadRefusedException.class)
+    public ResponseEntity<Map<String, String>> handleRefused(ChequeUploadRefusedException ex) {
+        HttpStatus status = ChequeUploadRefusedException.FILE_TOO_LARGE.equals(ex.getCode())
+                ? HttpStatus.PAYLOAD_TOO_LARGE : HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status).body(Map.of("error", ex.getMessage(), "code", ex.getCode()));
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> handleValidation(IllegalArgumentException ex) {
         return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
@@ -46,6 +74,7 @@ public class ChequeExtractionController {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, String>> handleTooLarge(MaxUploadSizeExceededException ex) {
         return ResponseEntity.status(HttpStatus.valueOf(413))
-                .body(Map.of("error", "File too large; max 10MB"));
+                .body(Map.of("error", "File too large; max 10MB",
+                        "code", ChequeUploadRefusedException.FILE_TOO_LARGE));
     }
 }

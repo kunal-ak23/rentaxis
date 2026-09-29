@@ -59,4 +59,13 @@ public interface ChequeImageUploadRepository extends JpaRepository<ChequeImageUp
     @Modifying(flushAutomatically = true)
     @Query("update ChequeImageUpload u set u.chequeId = null where u.chequeId = :chequeId")
     int releaseClaimsOf(@Param("chequeId") UUID chequeId);
+
+    /**
+     * Everything cut from one upload, explicitly tenant-scoped: the retention job
+     * runs with no tenant context, when the Hibernate tenant filter is off.
+     */
+    List<ChequeImageUpload> findByTenantIdAndSourceUploadId(UUID tenantId, UUID sourceUploadId);
+
+    /** One upload by id, explicitly tenant-scoped (see above). */
+    Optional<ChequeImageUpload> findByTenantIdAndId(UUID tenantId, UUID id);
 }

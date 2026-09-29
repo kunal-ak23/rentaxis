@@ -17,8 +17,8 @@ import java.util.UUID;
 @Slf4j
 public class ChequeExtractionService {
 
-    private static final long MAX_BYTES = 10 * 1024 * 1024L;
-    private static final Set<String> ALLOWED_TYPES =
+    static final long MAX_BYTES = 10 * 1024 * 1024L;
+    static final Set<String> ALLOWED_TYPES =
             Set.of("image/jpeg", "image/jpg", "image/png", "image/heic", "image/heif");
 
     private final BlobStorageService blobStorage;

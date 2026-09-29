@@ -325,3 +325,5 @@ databaseChangeLog:
       file: db/changelog/changesets/159-executed-copy-sweep-scope.yaml
   - include:
       file: db/changelog/changesets/161-books-lock-from-start.yaml
+  - include:
+      file: db/changelog/changesets/163-cheque-image-crops.yaml

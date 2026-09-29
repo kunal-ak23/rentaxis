@@ -123,6 +123,11 @@ firebase:
 cheque-extraction:
   retention-days: 90
   purge-cron: "0 0 3 * * *"
+  # POST /api/v1/cheques/extract-many: pages read from one PDF, and cheques
+  # (across all pages) issued from one upload. The file size cap is the
+  # multipart limit above (10MB).
+  max-pdf-pages: 10
+  max-cheques-per-upload: 24
 
 resilience4j:
   circuitbreaker:
