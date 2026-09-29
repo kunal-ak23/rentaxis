@@ -43,4 +43,23 @@ public class OrgSettingsController {
                 body.getOrDefault("penaltyPaymentInstructions", ""));
         return ResponseEntity.ok(Map.of("penaltyPaymentInstructions", saved));
     }
+
+    /**
+     * Settings › Organisation › "Check the payee name on scanned cheques": the
+     * switch and the valid payee names, for the caller's organisation only.
+     * Company Admin (or a system admin with the organisation selected).
+     */
+    @GetMapping("/payee-check")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<OrgSettingsService.PayeeCheckSettings> getPayeeCheck() {
+        return ResponseEntity.ok(orgSettings.getPayeeCheck());
+    }
+
+    /** Body: {@code {"enabled": boolean, "validNames": [string]}}. */
+    @PutMapping("/payee-check")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<OrgSettingsService.PayeeCheckSettings> updatePayeeCheck(
+            @RequestBody OrgSettingsService.PayeeCheckSettings body) {
+        return ResponseEntity.ok(orgSettings.updatePayeeCheck(body.enabled(), body.validNames()));
+    }
 }

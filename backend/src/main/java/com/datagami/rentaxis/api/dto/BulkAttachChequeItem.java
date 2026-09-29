@@ -44,6 +44,14 @@ public class BulkAttachChequeItem {
     @NotNull
     private OffsetDateTime imageUploadedAt;
 
+    /**
+     * The operator ticked "attach anyway" for a scan whose payee matches none of
+     * the organisation's valid payee names. Required for such a scan; ignored
+     * otherwise. There is deliberately no payee field: the check reads the payee
+     * the server recorded at extract time, not one from the request.
+     */
+    private Boolean payeeMismatchConfirmed;
+
     /** The register row this scan belongs to. */
     public UUID targetId() {
         return chequeId;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { Camera, Loader2, X, Check, AlertTriangle, Trash2, Pin, RotateCw, FileText } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -55,6 +55,8 @@ type RowState = {
    * cheque; the operator must confirm they checked it before it is attached.
    */
   cropConfirmed: boolean;
+  /** The operator ticked "attach anyway" for a payee that matches none of the valid names. */
+  payeeConfirmed: boolean;
 };
 
 type Step = 1 | 2 | 3;
@@ -97,6 +99,7 @@ function rowsForFile(fileId: string, response: ChequeMultiExtractionResponse | n
       rowId: null,
       pinned: false,
       cropConfirmed: false,
+      payeeConfirmed: false,
     };
   });
 }
@@ -256,6 +259,8 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
         if (i !== 0 || !typed) return r;
         return {
           ...r,
+          // A new read is a new payee check: any earlier confirmation was about the old one.
+          payeeConfirmed: false,
           chequeNumber: typed.chequeNumber.trim() ? typed.chequeNumber : r.chequeNumber,
           bankName: typed.bankName.trim() ? typed.bankName : r.bankName,
           payerName: typed.payerName.trim() ? typed.payerName : r.payerName,
@@ -316,8 +321,16 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
     return { needsDate, noSchedule, needsBank, duplicateNumber, ready };
   }, [tableRows]);
 
+  // Owner ruling 2026-09-29: the server checked the read payee against the
+  // organisation's valid names at extract time. A mismatch is approved only
+  // once the operator confirms it; the server refuses it otherwise.
+  // Per detected cheque: a photo holding three cheques has three payees.
+  const payeeCheckOf = (r: RowState) => detectionOf(extract.items.find(it => it.id === r.fileId), r)?.payeeCheck ?? null;
+  const unconfirmedPayee = tableRows.some(r => payeeCheckOf(r) === "MISMATCH" && !r.payeeConfirmed);
+
   const canApprove =
     tableRows.length > 0 &&
+    !unconfirmedPayee &&
     counts.needsDate === 0 &&
     counts.noSchedule === 0 &&
     counts.needsBank === 0 &&
@@ -345,6 +358,7 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
           imageUrl: det?.image.url,
           imageBlobPath: det?.image.blobPath,
           imageUploadedAt: det?.image.uploadedAt,
+          payeeMismatchConfirmed: det?.payeeCheck === "MISMATCH" ? r.payeeConfirmed : undefined,
         };
       });
       const res = await fetch(`/api/proxy/v1/leases/${leaseId}/cheques/bulk-attach`, {
@@ -493,8 +507,11 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
                     const pageCount = item.response?.pages.length ?? 0;
                     const target = eligibleRows.find(s => s.id === row.rowId) ?? null;
                     const usedRowIds = new Set(tableRows.filter(r => r.itemId !== row.itemId && r.rowId).map(r => r.rowId));
+                    const payeeCheck = det?.payeeCheck ?? null;
+                    const payeeRead = det?.extracted?.payeeName ?? "";
                     return (
-                      <tr key={row.itemId} className="border-t border-border align-top">
+                      <Fragment key={row.itemId}>
+                      <tr className="border-t border-border align-top">
                         <td className="py-1 pr-2">
                           <button
                             type="button"
@@ -637,6 +654,40 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
                           </button>
                         </td>
                       </tr>
+                      {payeeCheck === "MISMATCH" && (
+                        <tr>
+                          <td colSpan={9} className="pb-2">
+                            <div
+                              data-testid="payee-mismatch"
+                              role="alert"
+                              className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded border border-red-300 bg-red-50 px-2 py-1 text-[11px] text-red-700"
+                            >
+                              <span className="font-semibold">
+                                <AlertTriangle size={11} className="inline" /> {t("payeeMismatch")}:{" "}
+                                <bdi>{payeeRead}</bdi>
+                              </span>
+                              <label className="inline-flex items-center gap-1.5 text-foreground">
+                                <input
+                                  type="checkbox"
+                                  checked={row.payeeConfirmed}
+                                  onChange={e => updateRow(row.itemId, { payeeConfirmed: e.target.checked })}
+                                />
+                                {t("payeeMismatchConfirm")}
+                              </label>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      {payeeCheck === "UNREADABLE" && (
+                        <tr>
+                          <td colSpan={9} className="pb-2">
+                            <p data-testid="payee-unreadable" className="text-[11px] text-muted">
+                              {t("payeeUnreadable")}
+                            </p>
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     );
                   })}
                 </tbody>

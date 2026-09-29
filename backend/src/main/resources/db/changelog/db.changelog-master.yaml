@@ -326,4 +326,6 @@ databaseChangeLog:
   - include:
       file: db/changelog/changesets/161-books-lock-from-start.yaml
   - include:
+      file: db/changelog/changesets/162-cheque-payee-check.yaml
+  - include:
       file: db/changelog/changesets/163-cheque-image-crops.yaml
