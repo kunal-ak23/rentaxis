@@ -61,13 +61,17 @@ public class PortfolioImportService {
 
         Sheet propertiesSheet = workbook.getSheet("Properties");
         Sheet unitsSheet = workbook.getSheet("Units");
-        Sheet rentersSheet = workbook.getSheet("Renters");
-        Sheet leasesSheet = workbook.getSheet("Leases");
+        // Break-it R4 ops4 F1: Tenants / Tenancy Contracts (the dialog's and the
+        // template's names) or the older Renters / Leases.
+        Sheet rentersSheet = PortfolioSheets.tenants(workbook);
+        Sheet leasesSheet = PortfolioSheets.contracts(workbook);
 
         if (propertiesSheet == null) errors.add(ImportErrorDTO.file("Properties", "Sheet", "Sheet 'Properties' is missing"));
         if (unitsSheet == null) errors.add(ImportErrorDTO.file("Units", "Sheet", "Sheet 'Units' is missing"));
-        if (rentersSheet == null) errors.add(ImportErrorDTO.file("Renters", "Sheet", "Sheet 'Renters' is missing"));
-        if (leasesSheet == null) errors.add(ImportErrorDTO.file("Leases", "Sheet", "Sheet 'Leases' is missing"));
+        if (rentersSheet == null) errors.add(ImportErrorDTO.file(PortfolioSheets.TENANTS, "Sheet",
+                PortfolioSheets.missing(PortfolioSheets.TENANTS, PortfolioSheets.TENANTS_OLD)));
+        if (leasesSheet == null) errors.add(ImportErrorDTO.file(PortfolioSheets.CONTRACTS, "Sheet",
+                PortfolioSheets.missing(PortfolioSheets.CONTRACTS, PortfolioSheets.CONTRACTS_OLD)));
 
         if (!errors.isEmpty()) return new ValidationOutcome(errors, warnings);
 
@@ -99,6 +103,8 @@ public class PortfolioImportService {
         // Check DB conflicts
         validateDbConflicts(propertyNames, renterEmails, errors);
 
+        PortfolioSheets.relabel(errors, rentersSheet, leasesSheet);
+        PortfolioSheets.relabel(warnings, rentersSheet, leasesSheet);
         return new ValidationOutcome(errors, warnings);
     }
 

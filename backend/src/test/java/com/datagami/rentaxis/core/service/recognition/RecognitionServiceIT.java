@@ -904,6 +904,56 @@ class RecognitionServiceIT extends AbstractPostgresIT {
         assertTrialBalanceBalances();
     }
 
+    /**
+     * Break-it R4 money4 F1: two people close the month at once. A row the other
+     * run posted after this run read its candidates is already done, not a
+     * failure, and no internal id reaches the screen.
+     *
+     * <p>Deterministic: this thread holds September's row lock, the run reads its
+     * candidates (September still PLANNED) and blocks on that row, this thread
+     * posts September and commits, and the run then finds it POSTED.</p>
+     */
+    @Test
+    void aRowAnotherRunPostedIsAlreadyRecognisedNotFailed() throws Exception {
+        UUID leaseId = galah();
+        UUID september = rowStarting(leaseId, START).id();
+        UUID tenantId = fixtures.tenantId();
+
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        CountDownLatch rowLocked = new CountDownLatch(1);
+        Future<RecognitionService.RecognitionRunResult> running;
+        try {
+            running = pool.submit(() -> {
+                assertThat(rowLocked.await(30, TimeUnit.SECONDS)).isTrue();
+                TenantContextHolder.setTenantId(tenantId);
+                LeaseTestFixtures.authenticateAsTenantAdmin();
+                try {
+                    return recognition.runTo(LocalDate.of(2026, 11, 30), false);
+                } finally {
+                    TenantContextHolder.clear();
+                    LeaseTestFixtures.clearAuth();
+                }
+            });
+
+            tx.executeWithoutResult(s -> {
+                entriesRepo.lockById(september).orElseThrow();
+                rowLocked.countDown();
+                awaitABlockedBackend();
+                poster.postJoining(september);
+            });
+
+            RecognitionService.RecognitionRunResult result = running.get(60, TimeUnit.SECONDS);
+            assertThat(result.errors()).as("nothing failed: the other run did September").isEmpty();
+            assertThat(result.alreadyRecognised()).isEqualTo(1);
+            assertThat(result.posted()).as("October and November").isEqualTo(2);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(cilCount()).as("one CIL per month").isEqualTo(3L);
+        assertTrialBalanceBalances();
+    }
+
     // ------------------------------------------------------------------
     // tenancy
     // ------------------------------------------------------------------

@@ -18,7 +18,7 @@ import { fmtAmount } from "@/lib/api/ledger";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import ActionsMenu from "@/components/ui/ActionsMenu";
 import SideDrawer from "@/components/ui/SideDrawer";
-import { availableLeaseActions, leasePermsFor, splitLeaseActions, type LeaseActionId } from "@/lib/leases/leaseActions";
+import { availableLeaseActions, canGenerateContract as canGenerateContractFor, hasSettlement, leasePermsFor, splitLeaseActions, type LeaseActionId } from "@/lib/leases/leaseActions";
 import { resolveLeaseTab, type LeaseSectionId, type LeaseTab } from "@/lib/nav/routeMap";
 import LeaseSection from "@/components/leases/LeaseSection";
 import LeaseMetadataEditor from "../LeaseMetadataEditor";
@@ -71,20 +71,8 @@ import {
 type Renter = { id: string; nameEn: string; nameAr: string; email: string; phone: string; primaryLanguage: string };
 type Attachment = { id: string; name: string; fileUrl: string; fileType: string; fileSize: number; uploadedAt: string };
 type Ticket = { id: string; title: string; status: string; priority: string; category: string; createdAt: string };
-/**
- * A contract that HAS a settlement to open — `SettlementService.SETTLEABLE`
- * (backend/src/main/java/com/datagami/rentaxis/core/service/SettlementService.java:144-145,
- * now {TERMINATED, EXPIRED, RENEWED}) **plus CLOSED**, which the server no
- * longer lets anyone settle but whose finalised statement is exactly the
- * document a closed contract is read for. The settlement page itself mirrors
- * `SETTLEABLE` exactly and finalises only for the three.
- *
- * EXPIRED is here as well as TERMINATED: a tenancy that simply ran its course is
- * settled by the same statement. RENEWED joined them when a predecessor that
- * settles instead of carrying its deposit forward became a supported move
- * (spec §6.6).
- */
-const HAS_SETTLEMENT: LeaseStatus[] = ["TERMINATED", "EXPIRED", "RENEWED", "CLOSED"];
+// Which contracts have a settlement to open (and may generate one) lives in
+// `src/lib/leases/leaseActions.ts` (hasSettlement, canGenerateContract).
 
 /**
  * `[id]` catches anything, including the guessable `/leases/new` — which
@@ -294,7 +282,7 @@ export default function LeaseDetailPage() {
             // A 404 here is "no settlement yet", which is the normal state for
             // a contract that ended last night — so the failure is swallowed
             // and the summary simply does not render.
-            if (detail && HAS_SETTLEMENT.includes(detail.status)) {
+            if (detail && hasSettlement(detail.status)) {
                 const saved = await settlementApi.get(leaseId).catch(() => null);
                 if (saved && !cancelled) setSettlement(saved);
             }
@@ -951,7 +939,7 @@ export default function LeaseDetailPage() {
                                 </div>
                                 <div className="px-5 py-4 space-y-4">
                                     <div className="flex flex-wrap gap-3">
-                                        {canGenerateContract && (
+                                        {canGenerateContract && canGenerateContractFor(lease.status) && (
                                             <button
                                                 onClick={handlePreviewContract}
                                                 disabled={previewLoading}
@@ -961,15 +949,20 @@ export default function LeaseDetailPage() {
                                                 {tMaster("generatePreview")}
                                             </button>
                                         )}
-                                        <Link
-                                            href={`/dashboard/leases/${leaseId}/settlement`}
-                                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border border-border text-foreground hover:bg-input transition-colors"
-                                        >
-                                            {tMaster("viewSettlement")}
-                                        </Link>
+                                        {/* Break-it R4: only where the Settlement action is offered (same rule). */}
+                                        {primary.concat(menu).includes("settlement") && (
+                                            <Link
+                                                href={`/dashboard/leases/${leaseId}/settlement`}
+                                                data-testid="lease-view-settlement"
+                                                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border border-border text-foreground hover:bg-input transition-colors"
+                                            >
+                                                {tMaster("viewSettlement")}
+                                            </Link>
+                                        )}
                                     </div>
                                     {contractError && <p className="text-xs text-error">{contractError}</p>}
-                                    <ContractDocuments leaseId={leaseId} canIssue={canGenerateContract && !!lease.postedAt} leaseStatus={lease.status} />
+                                    <ContractDocuments leaseId={leaseId} canIssue={canGenerateContract && !!lease.postedAt} leaseStatus={lease.status}
+                                        refreshKey={`${lease.status}:${lease.version ?? ""}:${lease.contractNumber ?? ""}:${lease.renterAcceptedAt ?? ""}:${lease.postedAt ?? ""}`} />
                                     {lease.ejariNumber && (
                                         <p className="text-xs text-muted">
                                             <span className="font-medium text-foreground">{t("ejariNumber")}:</span> {lease.ejariNumber}

@@ -188,6 +188,7 @@ public class TenantFiscalSettingsService {
                             + " the books would leave it undeclared.");
                 });
         s.setBooksLockedThrough(date);
+        s.setBooksLockFromStart(false);   // R4 money4 F3: a user's lock only moves forward
         return repo.save(s);
     }
 
@@ -252,6 +253,7 @@ public class TenantFiscalSettingsService {
         LocalDate before = s.getBooksLockedThrough();
         if (before != null && date != null && date.isBefore(before)) {
             s.setBooksLockedThrough(date);
+            s.setBooksLockFromStart(false);
             repo.save(s);
         }
         return before;
@@ -320,13 +322,26 @@ public class TenantFiscalSettingsService {
         if (changing) manualDates.requireBooksStart(date);
         s.setBooksStartDate(date);
         if (date != null) {
+            // Break-it R4 money4 F3: the implied lock is the day before the books start,
+            // but never after yesterday. A lock after today refuses every deposit, clearing
+            // and receipt (all dated today or earlier) until then, and once anything is
+            // posted it could not be taken back — a +3-month books start bricked posting.
+            // Review of R4-B I2: the lock is inclusive (assertOpen refuses a date not after
+            // it), so a lock through today would still refuse today's receipts; the cap is
+            // yesterday on the business (Dubai) clock.
+            LocalDate implied = date.minusDays(1);
+            LocalDate latestLock = manualDates.today().minusDays(1);
+            if (implied.isAfter(latestLock)) implied = latestLock;
             if (s.getBooksLockedThrough() == null) {
-                s.setBooksLockedThrough(date.minusDays(1));
-            } else if (changing && !hasJournals()) {
+                s.setBooksLockedThrough(implied);
+                s.setBooksLockFromStart(true);
+            } else if (changing && (!hasJournals() || s.isBooksLockFromStart())) {
                 // N1 ruling: with nothing posted yet the implied lock follows the books
-                // start both ways — the way back from a mistyped year. Once journals
-                // exist the lock only moves forward (lockThrough) or by a year re-open.
-                s.setBooksLockedThrough(date.minusDays(1));
+                // start both ways — the way back from a mistyped year. R4 money4 F3: so
+                // does a lock the books start itself set, journals or not. A lock a user
+                // or a year-end close set only moves forward (lockThrough) or by a re-open.
+                s.setBooksLockedThrough(implied);
+                s.setBooksLockFromStart(true);
             }
         }
         return repo.save(s);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LeaseStatus } from "@/lib/api/leasing";
 import type { UserRole } from "@/lib/rbac";
-import { availableLeaseActions, leasePermsFor, MENU_ORDER, splitLeaseActions, type LeaseActionFacts, type LeaseActionId, type LeasePerms } from "../leaseActions";
+import { availableLeaseActions, canGenerateContract, hasSettlement, leasePermsFor, MENU_ORDER, splitLeaseActions, type LeaseActionFacts, type LeaseActionId, type LeasePerms } from "../leaseActions";
 
 const STATUSES: LeaseStatus[] = ["DRAFT", "PENDING_SIGNATURE", "ACTIVE", "NOTICE_GIVEN", "TERMINATED", "RENEWED", "EXPIRED", "CLOSED"];
 const ROLES: UserRole[] = ["SUPER_ADMIN", "TENANT_ADMIN", "ACCOUNTANT", "PROPERTY_MANAGER", "TENANT_USER", "RENTER", "SECURITY_GUARD"];
@@ -39,6 +39,17 @@ function legacyCards(f: LeaseActionFacts, p: LeasePerms): Set<LeaseActionId> {
     return out;
 }
 
+/**
+ * Break-it R4 (tutorials/bugs/11, "seen alongside"): legacy entries the server
+ * refuses, dropped on purpose — Delete on a pending-signature contract
+ * ("Only DRAFT leases can be deleted", LeaseService.deleteDraftLease) and Write
+ * off before the contract is posted (BadDebtService refuses DRAFT and PENDING_SIGNATURE).
+ */
+function backendRefuses(a: LeaseActionId, status: LeaseStatus): boolean {
+    return (a === "delete" && status !== "DRAFT")
+        || (a === "writeOff" && (status === "DRAFT" || status === "PENDING_SIGNATURE"));
+}
+
 function* matrix() {
     for (const role of ROLES) for (const status of STATUSES) for (const posted of [true, false])
         for (const hasContract of [true, false]) for (const transferredOut of [true, false])
@@ -52,7 +63,10 @@ describe("lease actions", () => {
             const p = leasePermsFor(role);
             const { primary, menu } = splitLeaseActions(availableLeaseActions(f, p), f.status);
             const reachable = new Set([...primary, ...menu]);
-            for (const a of [...legacyHeader(f, p), ...legacyCards(f, p)]) if (!reachable.has(a)) lost.push(`${role} ${JSON.stringify(f)} lost ${a}`);
+            for (const a of [...legacyHeader(f, p), ...legacyCards(f, p)]) {
+                if (backendRefuses(a, f.status)) continue;
+                if (!reachable.has(a)) lost.push(`${role} ${JSON.stringify(f)} lost ${a}`);
+            }
         }
         expect(lost).toEqual([]);
     });
@@ -122,6 +136,38 @@ describe("lease actions", () => {
         for (const role of ["RENTER", "SECURITY_GUARD", "TENANT_USER"] as UserRole[]) {
             const a = availableLeaseActions(f, leasePermsFor(role));
             expect(a.filter(x => x !== "assignment" && x !== "ledger")).toEqual([]);
+        }
+    });
+
+    /**
+     * Break-it R4 / tutorials/bugs/11: the contract page offered actions the server
+     * refuses. Each is shown only where the backend allows it.
+     */
+    it("offers Delete only on a DRAFT (the server refuses a pending-signature one)", () => {
+        const p = leasePermsFor("TENANT_ADMIN");
+        for (const status of STATUSES) {
+            const a = availableLeaseActions({ status, posted: false, hasContract: true, transferredOut: false }, p);
+            expect(a.includes("delete")).toBe(status === "DRAFT");
+        }
+    });
+
+    it("offers Write off only once the contract is out of drafting (BadDebtService refuses DRAFT and PENDING_SIGNATURE)", () => {
+        const p = leasePermsFor("TENANT_ADMIN");
+        for (const status of STATUSES) {
+            const a = availableLeaseActions({ status, posted: status !== "DRAFT" && status !== "PENDING_SIGNATURE", hasContract: true, transferredOut: false }, p);
+            expect(a.includes("writeOff")).toBe(status !== "DRAFT" && status !== "PENDING_SIGNATURE");
+        }
+    });
+
+    it("previews and generates a contract only for DRAFT or PENDING_SIGNATURE (ContractGenerationService)", () => {
+        for (const status of STATUSES) {
+            expect(canGenerateContract(status)).toBe(status === "DRAFT" || status === "PENDING_SIGNATURE");
+        }
+    });
+
+    it("has a settlement to view only once the tenancy has ended (same set as the Settlement action)", () => {
+        for (const status of STATUSES) {
+            expect(hasSettlement(status)).toBe(["TERMINATED", "EXPIRED", "RENEWED", "CLOSED"].includes(status));
         }
     });
 });

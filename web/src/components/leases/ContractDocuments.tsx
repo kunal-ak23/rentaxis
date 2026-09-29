@@ -17,7 +17,17 @@ type ContractDocument = { id: string; type: string; label?: string; createdAt?: 
  * exists: the automatic issue at posting never blocks posting, so a failure there
  * (or a stamp added later) is put right here.
  */
-export function ContractDocuments({ leaseId, canIssue, leaseStatus }: { leaseId: string; canIssue: boolean; leaseStatus?: string }) {
+export function ContractDocuments({ leaseId, canIssue, leaseStatus, refreshKey }: {
+    leaseId: string;
+    canIssue: boolean;
+    leaseStatus?: string;
+    /**
+     * tutorials/bugs/11: moves whenever the lease does (generate, accept, post,
+     * any edit). A new value fetches the list again — it used to be fetched once
+     * per lease id, so a contract generated on this page stayed unlisted until a reload.
+     */
+    refreshKey?: string | number;
+}) {
     const t = useTranslations("ContractDocuments");
     const locale = useLocale();
     const [docs, setDocs] = useState<ContractDocument[] | null>(null);
@@ -32,11 +42,31 @@ export function ContractDocuments({ leaseId, canIssue, leaseStatus }: { leaseId:
             .sort((a, b) => (a.type === "EXECUTED_COPY" ? -1 : 0) - (b.type === "EXECUTED_COPY" ? -1 : 0)));
     }, [leaseId]);
 
-    useEffect(() => { void load(); }, [load]);
+    useEffect(() => {
+        void load();
+        // The executed copy is issued just after the post commits, off the request
+        // (ExecutedContractCopyService); look once more a moment later so it shows
+        // up on the page that posted, not only after a reload.
+        if (!canIssue) return;
+        const again = setTimeout(() => { void load(); }, 4000);
+        return () => clearTimeout(again);
+    }, [load, refreshKey, canIssue]);
 
     const download = async (doc: ContractDocument) => {
-        const res = await fetch(`/api/proxy/v1/leases/documents/${doc.id}/download`);
-        if (!res.ok) return;
+        setMessage(null);
+        // Break-it R4 layout4 F1 / brand4 F3: a failed download (an unreadable file,
+        // a 5xx, the network) used to do nothing at all. Say so.
+        let res: Response;
+        try {
+            res = await fetch(`/api/proxy/v1/leases/documents/${doc.id}/download`);
+        } catch {
+            setMessage(t("downloadFailed"));
+            return;
+        }
+        if (!res.ok) {
+            setMessage(t("downloadFailed"));
+            return;
+        }
         const href = URL.createObjectURL(await res.blob());
         const a = document.createElement("a");
         a.href = href;

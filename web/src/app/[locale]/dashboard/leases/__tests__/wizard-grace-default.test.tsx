@@ -100,6 +100,7 @@ async function toTermsStep() {
     await waitFor(() => expect(screen.getByTestId("wizard-start-date")).toBeInTheDocument());
     fireEvent.change(screen.getByTestId("wizard-start-date"), { target: { value: "2026-10-01" } });
     fireEvent.change(screen.getByTestId("wizard-end-date"), { target: { value: "2027-09-30" } });
+    fireEvent.change(screen.getByTestId("wizard-rent"), { target: { value: "60000" } });
 }
 
 async function saveCharges() {

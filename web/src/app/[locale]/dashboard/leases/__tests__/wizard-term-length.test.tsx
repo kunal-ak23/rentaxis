@@ -33,6 +33,13 @@ vi.mock("@/components/pickers/RenterPicker", () => ({
     ),
 }));
 
+vi.mock("@/lib/api/leasing", async orig => {
+    const m = await orig<typeof import("@/lib/api/leasing")>();
+    return { ...m, chargeTypeApi: { ...m.chargeTypeApi, list: async () => [
+        { id: "ct-rent", code: "RENT", behaviour: "RENT", vatApplicableDefault: false, active: true },
+    ] } };
+});
+
 import LeaseWizard from "../LeaseWizard";
 
 const UNITS = [
@@ -52,6 +59,7 @@ async function toTerms(start: string, end: string) {
     await waitFor(() => expect(screen.getByTestId("wizard-start-date")).toBeInTheDocument());
     fireEvent.change(screen.getByTestId("wizard-start-date"), { target: { value: start } });
     fireEvent.change(screen.getByTestId("wizard-end-date"), { target: { value: end } });
+    fireEvent.change(screen.getByTestId("wizard-rent"), { target: { value: "60000" } });
 }
 
 const onTermsStep = () => screen.queryByTestId("wizard-start-date") !== null;
@@ -101,6 +109,7 @@ describe("lease wizard term length", () => {
         fireEvent.click(screen.getByTestId("wizard-next"));
         expect(screen.getByTestId("wizard-long-term-confirm")).toBeInTheDocument();
         fireEvent.change(screen.getByTestId("wizard-end-date"), { target: { value: "2027-05-31" } });
+        fireEvent.change(screen.getByTestId("wizard-rent"), { target: { value: "60000" } });
         expect(screen.queryByTestId("wizard-long-term-confirm")).toBeNull();
         fireEvent.click(screen.getByTestId("wizard-next"));
         await waitFor(() => expect(onTermsStep()).toBe(false));
@@ -118,5 +127,19 @@ describe("lease wizard term length", () => {
         fireEvent.click(screen.getByTestId("wizard-next"));
         expect(screen.queryByTestId("wizard-long-term-confirm")).toBeNull();
         await waitFor(() => expect(onTermsStep()).toBe(false));
+    });
+});
+
+// Break-it R4 money4 F2: the contract date is the posting date of the contract;
+// the server refuses one more than a year ahead, so the Terms step does too.
+describe("lease wizard contract date (R4 money4 F2)", () => {
+    it("caps the contract date input and blocks 2099 with a clear message", async () => {
+        await toTerms("2026-06-01", "2027-05-31");
+        const input = screen.getByTestId("wizard-contract-date") as HTMLInputElement;
+        expect(input.max).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        fireEvent.change(input, { target: { value: "2099-12-31" } });
+        fireEvent.click(screen.getByTestId("wizard-next"));
+        expect(screen.getByTestId("wizard-error").textContent).toContain("at most one year from today");
+        expect(onTermsStep()).toBe(true);
     });
 });

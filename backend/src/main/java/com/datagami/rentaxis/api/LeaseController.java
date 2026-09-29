@@ -273,6 +273,15 @@ public class LeaseController {
         return withLeaseVersion(guardedLeaseWrite(expected, () -> chequeGenerationService.generate(id, request, expected)));
     }
 
+    /** What generate would write for this request, written nowhere (the wizard's suggested schedule). */
+    @PostMapping("/{id}/cheques/preview")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<List<ChequeGenerationService.PreviewRow>> previewCheques(
+            @PathVariable UUID id,
+            @RequestBody(required = false) GenerateChequesRequest request) {
+        return ResponseEntity.ok(chequeGenerationService.preview(id, request));
+    }
+
     /** Number the draft PDC rows sequentially from the renter's first cheque. */
     @PostMapping("/{id}/cheques/numbers")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")

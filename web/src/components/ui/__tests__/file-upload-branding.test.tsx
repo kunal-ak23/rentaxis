@@ -40,4 +40,25 @@ describe("FileUpload for branding", () => {
         render(<Harness initial="/api/v1/assets/serve/assets/a.png" />);
         expect(screen.getByRole("img")).toHaveAttribute("src", "/api/v1/assets/serve/assets/a.png");
     });
+
+    /**
+     * Break-it R4 brand4 F1: replacing an existing logo/stamp with a bad file failed
+     * with nothing on screen (the error rendered only in the empty-slot branch), so
+     * the user believed the replace worked and Save kept the old image.
+     */
+    it("says why a replacement was refused, too big or rejected by the server", async () => {
+        const { container } = render(<Harness initial="/api/v1/assets/serve/assets/a.png" />);
+        const input = container.querySelector("input[type=file]") as HTMLInputElement;
+
+        const huge = new File([new Uint8Array(3 * 1024 * 1024)], "huge.png", { type: "image/png" });
+        fireEvent.change(input, { target: { files: [huge] } });
+        expect(await screen.findByRole("alert")).toHaveTextContent("File must be under 2MB");
+
+        global.fetch = vi.fn(async () => new Response(JSON.stringify({ error: "Only PNG, JPEG or GIF images are allowed" }),
+            { status: 400 })) as unknown as typeof fetch;
+        fireEvent.change(input, { target: { files: [new File([new Uint8Array([1])], "fake.png", { type: "image/png" })] } });
+        await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Only PNG, JPEG or GIF images are allowed"));
+        // The old image is still the value.
+        expect(screen.getByRole("img")).toHaveAttribute("src", "/api/v1/assets/serve/assets/a.png");
+    });
 });

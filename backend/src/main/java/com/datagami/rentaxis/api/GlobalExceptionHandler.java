@@ -403,6 +403,16 @@ public class GlobalExceptionHandler {
                     "constraint", constraint));
         }
 
+        // Break-it R4 brand4 F2: an organisation name whose slug is taken, past the
+        // service's own check (a race). In words and coded, no index name.
+        if (constraint != null && constraint.toLowerCase(java.util.Locale.ROOT).contains("idx_landlord_org_slug_unique")) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "error", true,
+                    "status", 409,
+                    "message", com.datagami.rentaxis.core.service.LandlordOrgService.ORG_NAME_TAKEN,
+                    "code", "org.nameTaken"));
+        }
+
         Map<String, Object> body = new java.util.HashMap<>();
         body.put("error", true);
         body.put("status", 409);

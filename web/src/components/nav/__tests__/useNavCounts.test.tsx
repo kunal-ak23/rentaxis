@@ -6,7 +6,8 @@ const summary = vi.fn();
 vi.mock("@/lib/api/leasing", () => ({ chequeApi: { toDeposit: (...a: unknown[]) => toDeposit(...a), summary: (...a: unknown[]) => summary(...a) } }));
 vi.mock("@/lib/api/ledger", () => ({ ledgerApi: { fiscal: { get: async () => ({ booksStartDate: null, booksLockedThrough: null }) } } }));
 
-import { NAV_COUNTS_MAX_AGE_MS, useNavCounts } from "../useNavCounts";
+import { act } from "@testing-library/react";
+import { NAV_COUNTS_MAX_AGE_MS, NAV_COUNTS_STALE_EVENT, useNavCounts } from "../useNavCounts";
 
 let now = 1_000_000;
 beforeEach(() => {
@@ -40,5 +41,14 @@ describe("useNavCounts (PR #363 R1 P3): badges refresh within a session", () => 
         rerender({ path: "/b" });
         resolve({ totalElements: 4 });
         await waitFor(() => expect(result.current.chequesToDeposit).toBe(4));
+    });
+
+    it("re-reads at once when a page says the counts are stale (R4 money4 F4)", async () => {
+        const { result } = renderHook(() => useNavCounts("TENANT_ADMIN", "/en/dashboard/finance/fiscal"));
+        await waitFor(() => expect(result.current.collectionBadge).toBe(5));
+        toDeposit.mockResolvedValue({ totalElements: 0 });
+        // Well inside NAV_COUNTS_MAX_AGE_MS: only the event can make it read again.
+        act(() => { window.dispatchEvent(new Event(NAV_COUNTS_STALE_EVENT)); });
+        await waitFor(() => expect(result.current.collectionBadge).toBe(2));
     });
 });

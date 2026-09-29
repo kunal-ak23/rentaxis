@@ -45,8 +45,17 @@ public class LandlordOrgService {
         this.tokenRevocation = tokenRevocation;
     }
 
+    public static final String ORG_NAME_TAKEN =
+            "An organisation with this name already exists. Choose a different name.";
+
     @Transactional
     public LandlordOrg provisionTenant(String name) {
+        // Break-it R4 brand4 F2: a name whose slug is taken ("Acme", "acme!") used to
+        // reach the unique index and come back as its raw name.
+        if (repository.findBySlug(LandlordOrg.slugOf(name)).isPresent()) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    ORG_NAME_TAKEN, "org.nameTaken", java.util.Map.of("name", name));
+        }
         LandlordOrg org = new LandlordOrg();
         org.setName(name);
         LandlordOrg saved = repository.save(org);

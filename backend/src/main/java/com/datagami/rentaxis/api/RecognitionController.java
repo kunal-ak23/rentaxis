@@ -129,6 +129,18 @@ public class RecognitionController {
      * another building's lease by id, so {@code LeaseService.requireReadableLease}
      * applies {@code LeaseAccessPolicy} before a single row is read.</p>
      */
+    /**
+     * Owner request (2026-09-29): the monthly rent a draft will recognise, for the New
+     * Contract wizard's Review step — the posting's own ProrationEngine rule, nothing written.
+     */
+    @GetMapping("/leases/{id}/recognition/preview")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<List<com.datagami.rentaxis.core.service.recognition.RecognitionService.RentMonth>> preview(
+            @PathVariable UUID id) {
+        leaseService.requireReadableLease(id);
+        return ResponseEntity.ok(recognition.previewRentSchedule(id));
+    }
+
     @GetMapping("/leases/{id}/recognition")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<List<RecognitionEntryDTO>> schedule(@PathVariable UUID id) {

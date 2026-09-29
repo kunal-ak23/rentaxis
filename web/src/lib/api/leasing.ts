@@ -598,6 +598,19 @@ export type GenerateChequesRequest = {
   mode?: ChequeMode | null;
 };
 
+/** ChequeGenerationService.PreviewRow — a row the generator would write. */
+export type ChequePreviewRow = {
+  seqNo: number;
+  chequeDate: string;
+  amount: number;
+  vat: number;
+  narration: string;
+  kind: "RENT" | "FEE" | "DEPOSIT" | "MIXED" | null;
+};
+
+/** RecognitionService.RentMonth — one calendar month of the rent schedule. */
+export type RentMonth = { periodStart: string; periodEnd: string; days: number; amount: number };
+
 /** ChequeDTO — one row of the cheque register. */
 export type Cheque = {
   id: string;
@@ -809,6 +822,8 @@ export type RecognitionRunResult = {
   booksLockedThrough: string | null;
   failed: number;
   errors: string[];
+  /** Break-it R4 money4 F1: rows another run posted meanwhile — done once, not failed. Absent on older backends. */
+  alreadyRecognised?: number;
 };
 
 /** F14-27: `GET /finance/recognition/status` — a warning banner's whole answer. */
@@ -1464,6 +1479,11 @@ export const leaseApi = {
   recordAddendumEjari: (id: string, addendumId: string, ejariNumber: string) =>
     send<LeaseAddendum>("PATCH", `/leases/${id}/addenda/${addendumId}/ejari`, { ejariNumber }),
   cheques: (id: string) => get<Cheque[]>(`/leases/${id}/cheques`),
+  /** Owner request (2026-09-29): what generateCheques would write for this request, written nowhere. */
+  previewCheques: (id: string, req?: GenerateChequesRequest) =>
+    send<ChequePreviewRow[]>("POST", `/leases/${id}/cheques/preview`, req ?? {}),
+  /** Owner request (2026-09-29): the monthly rent the contract will recognise (ProrationEngine), written nowhere. */
+  rentSchedulePreview: (id: string) => get<RentMonth[]>(`/leases/${id}/recognition/preview`),
   /** Review A M3: answers with the rows and the lease version the write left behind (adopt it). */
   generateCheques: (id: string, req?: GenerateChequesRequest, version?: number | null) =>
     sendChequeWrite("POST", `/leases/${id}/cheques/generate`, req, ifMatch(version)),

@@ -498,6 +498,27 @@ public class ChequeGenerationService {
         }
     }
 
+    /** A proposed grid row as the Review step shows it (owner request 2026-09-29). */
+    public record PreviewRow(int seqNo, LocalDate chequeDate, BigDecimal amount, BigDecimal vat, String narration,
+                             ChequeRowKind kind) { }
+
+    /**
+     * What {@link #generate} would write for this request — the same {@code rowsFor},
+     * nothing written, no version moved. The New Contract wizard's Review step shows it
+     * as the suggested payment schedule when no cheques were added, so the suggestion
+     * is exactly what "Generate cheques" / "Use this schedule" then creates.
+     */
+    @Transactional(readOnly = true)
+    public List<PreviewRow> preview(UUID leaseId, GenerateChequesRequest request) {
+        Lease lease = readableLease(leaseId);
+        GenerateChequesRequest r = request != null ? request
+                : new GenerateChequesRequest(null, null, null, null, null, null, null);
+        return rowsFor(lease, r, true).stream()
+                .map(row -> new PreviewRow(row.seqNo(), row.chequeDate(), row.amount(), nz(row.vat()), row.narration(),
+                        row.kind()))
+                .toList();
+    }
+
     /** What {@link #proposeForSystemImport} proposes: the rows, or why there are none. */
     public record Proposal(List<Row> rows, String problem) {}
 
@@ -557,6 +578,20 @@ public class ChequeGenerationService {
         List<LeaseRentFreePeriod> free = rentFreePeriods == null ? List.of()
                 : rentFreePeriods.findByLease_IdOrderByFromDateAsc(leaseId);
         if (free.isEmpty()) {
+            // Review of R4-B, I1: at most one instalment per month. The spacing is
+            // floor(i × months ÷ n) over the whole months from the first due date, so a
+            // count above that puts two cheques on one date. An explicit count is
+            // refused (as on the rent-free path below); the lease's own payment terms
+            // are capped. The New Contract wizard offers the same month count.
+            int months = (int) DateMath.monthsInclusive(firstDueDate, lease.getEndDate());
+            if (n > months) {
+                if (r.installments() != null) {
+                    throw new BusinessRuleViolationException("The term has " + months + " whole month(s) from the"
+                            + " first due date; use at most " + months + " cheque(s), one a month.",
+                            "cheque.tooManyInstalments", Map.of("months", months, "count", n));
+                }
+                n = months;
+            }
             return buildRows(rent, rentVat, rentTaxable, extras, n, lease.getContractDate(), firstDueDate,
                     lease.getEndDate(), distribution, fold);
         }

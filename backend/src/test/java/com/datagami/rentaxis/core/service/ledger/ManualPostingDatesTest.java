@@ -89,7 +89,9 @@ class ManualPostingDatesTest {
         assertThat(dates.allows(PostingDatePath.BANK_STATEMENT_LINE, today)).isTrue();
         assertThat(dates.allows(PostingDatePath.BANK_STATEMENT_LINE, today.plusDays(1))).isFalse();
         assertThat(dates.allows(PostingDatePath.BANK_MATCH_UNDO, today.plusYears(1).plusDays(1))).isFalse();
-        assertThat(dates.allows(PostingDatePath.LEASE_POST, LocalDate.of(2099, 12, 31))).isTrue();
+        // Break-it R4 money4 F2: the contract date is PLANNED now (at most a year ahead).
+        assertThat(dates.allows(PostingDatePath.LEASE_POST, LocalDate.of(2099, 12, 31))).isFalse();
+        assertThat(dates.allows(PostingDatePath.LEASE_POST, today.plusYears(1))).isTrue();
     }
 
     /** Break-it R3 money3 N1: the books may start at most three months ahead (month-end clamped, like Java). */

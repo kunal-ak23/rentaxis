@@ -85,9 +85,14 @@ public enum PostingDatePath {
             "ChequeService#reversePdr"),
     BANK_MATCH_UNDO(DateClass.PLANNED, "A reversal", null, "BankMatchService#undo"),
 
-    // ---- (c) system-derived dates: the 2000–2099 range only --------------------------
-    LEASE_POST(DateClass.SCHEDULE, "contract date", null,
+    // Break-it R4 money4 F2: the contract date is typed by the user (wizard, Renew) and
+    // is the TCO's journal date. It was SCHEDULE (range only), and 2099 typed for 2026
+    // posted the contract in 2099. Checked on every draft door (LeaseService) and again
+    // at post (LeasePostingService#validate); a cut-over import keeps its own rules.
+    LEASE_POST(DateClass.PLANNED, "A contract", null,
             "LeasePostingService#postTco", "LeaseChequeRegistrar#post", "DepositCarryForward#carry"),
+
+    // ---- (c) system-derived dates: the 2000–2099 range only --------------------------
     LEASE_AMENDMENT(DateClass.SCHEDULE, "today", null, "LeasePostingService#amendLines"),
     ONLINE_PAYMENT(DateClass.SCHEDULE, "gateway capture date", null, "ChequeService#applyClearing"),
     IMPORT(DateClass.SCHEDULE, "import file (checked row by row by the import validator)", null,

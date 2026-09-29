@@ -99,41 +99,52 @@ export function FileUpload({
         setIsDragging(false);
     }, []);
 
+    // Break-it R4 brand4 F1: shown in both branches — a refused Replace used to fail silently.
+    const errorLine = error ? (
+        <p role="alert" className="text-[10px] text-error font-semibold mt-1.5" data-testid="file-upload-error">{error}</p>
+    ) : null;
+
     if (value) {
         return (
-            <div className="flex items-center gap-4">
-                <div className="relative group">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- uploaded file / streamed preview */}
-                    <img
-                        src={local && local.url === value ? local.objectUrl : previewSrc ?? value}
-                        alt="Uploaded"
-                        className="h-16 max-w-[200px] object-contain rounded-lg border border-border bg-surface p-1"
-                    />
+            <div>
+                <div className="flex items-center gap-4">
+                    <div className="relative group">
+                        {/* eslint-disable-next-line @next/next/no-img-element -- uploaded file / streamed preview */}
+                        <img
+                            src={local && local.url === value ? local.objectUrl : previewSrc ?? value}
+                            alt="Uploaded"
+                            className="h-16 max-w-[200px] object-contain rounded-lg border border-border bg-surface p-1"
+                        />
+                        <button
+                            type="button"
+                            onClick={onRemove}
+                            className="absolute -top-2 -right-2 w-5 h-5 bg-error text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                        >
+                            <X size={10} />
+                        </button>
+                    </div>
                     <button
                         type="button"
-                        onClick={onRemove}
-                        className="absolute -top-2 -right-2 w-5 h-5 bg-error text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                        onClick={() => inputRef.current?.click()}
+                        className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors cursor-pointer"
                     >
-                        <X size={10} />
+                        Replace
                     </button>
+                    <input
+                        ref={inputRef}
+                        type="file"
+                        accept={accept}
+                        className="hidden"
+                        onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            // The same file picked again after a refusal must fire again.
+                            e.target.value = "";
+                            if (file) handleUpload(file);
+                        }}
+                    />
+                    {uploading && <Loader2 size={14} className="animate-spin text-primary" aria-hidden />}
                 </div>
-                <button
-                    type="button"
-                    onClick={() => inputRef.current?.click()}
-                    className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors cursor-pointer"
-                >
-                    Replace
-                </button>
-                <input
-                    ref={inputRef}
-                    type="file"
-                    accept={accept}
-                    className="hidden"
-                    onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handleUpload(file);
-                    }}
-                />
+                {errorLine}
             </div>
         );
     }
@@ -169,9 +180,7 @@ export function FileUpload({
                 )}
             </div>
 
-            {error && (
-                <p className="text-[10px] text-error font-semibold mt-1.5">{error}</p>
-            )}
+            {errorLine}
 
             <input
                 ref={inputRef}

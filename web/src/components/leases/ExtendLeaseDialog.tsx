@@ -10,6 +10,7 @@ import { blankLine, linesAreValid, round2, splitLineErrors, toInputs, todayIso, 
 import { chequeRowsAreValid } from "@/components/cheques/chequeRowRules";
 import { ApiError, leaseApi, type ChargeType, type LeaseDetail, type PostLeaseResponse } from "@/lib/api/leasing";
 import { formatDate } from "@/lib/format";
+import { serverText } from "@/components/finance/bankrec/serverText";
 import { CONFIRM_TERM_YEARS, MAX_TERM_YEARS, termExceedsYears, termYears } from "@/lib/leaseTerm";
 
 /**
@@ -36,6 +37,7 @@ type Props = {
 
 export default function ExtendLeaseDialog({ open, lease, chargeTypes, onClose, onExtended }: Props) {
     const t = useTranslations("Leasing");
+    const tCommon = useTranslations("Common");
     const [newEndDate, setNewEndDate] = useState("");
     const [contractDate, setContractDate] = useState(todayIso());
     const [rows, setRows] = useState<LineRow[]>([]);
@@ -84,7 +86,8 @@ export default function ExtendLeaseDialog({ open, lease, chargeTypes, onClose, o
             });
             onExtended(res);
         } catch (e) {
-            setErrors(e instanceof ApiError ? [e.message] : [t("extendFailed")]);
+            // Coded refusals (e.g. lease.extendIntoLock, break-it R4 money4 F5) in the user's language.
+            setErrors(e instanceof ApiError ? [serverText(tCommon, e) || e.message] : [t("extendFailed")]);
         } finally {
             setBusy(false);
         }

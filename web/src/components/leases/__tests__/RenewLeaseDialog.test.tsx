@@ -203,6 +203,25 @@ describe("RenewLeaseDialog renewal terms (§4a, §4d)", () => {
     });
 });
 
+/**
+ * Owner request (2026-09-29): a new start date re-derives the end date while it
+ * still holds the proposed value (same length as the current term — a year for a
+ * year); an end date the user typed is kept.
+ */
+describe("RenewLeaseDialog end date follows the start date until typed", () => {
+    it("moves the proposed end with the start, and keeps a typed one", () => {
+        renderDialog();
+        const start = document.getElementById("renew-start-date") as HTMLInputElement;
+        const end = () => (document.getElementById("renew-end-date") as HTMLInputElement).value;
+        expect(end()).toBe("2026-09-30");
+        fireEvent.change(start, { target: { value: "2025-11-01" } });
+        expect(end()).toBe("2026-10-31");
+        fireEvent.change(screen.getByTestId("renew-end-date"), { target: { value: "2026-06-30" } });
+        fireEvent.change(start, { target: { value: "2025-12-01" } });
+        expect(end()).toBe("2026-06-30");
+    });
+});
+
 /** F15-05: the new term defaults to the current one's length, not a year. */
 describe("RenewLeaseDialog default term (F15-05)", () => {
     it("proposes a six-month renewal of a six-month lease", () => {
@@ -303,5 +322,22 @@ describe("RenewLeaseDialog term-length guard (forms2 Finding 2)", () => {
         fireEvent.change(screen.getByTestId("renew-end-date"), { target: { value: "2032-09-30" } });
         expect(screen.getByTestId("renew-lease-confirm")).toBeDisabled();
         expect(screen.getByTestId("renew-long-term-confirm")).toBeInTheDocument();
+    });
+});
+
+/**
+ * Break-it R4 money4 F2: a renewal's contract date typed 2099 (for 2026) posted
+ * the contract in 2099. The server refuses a contract date more than a year
+ * ahead (posting-date policy, `PostingDatePath.LEASE_POST`); the dialog says so
+ * first and caps the input.
+ */
+describe("RenewLeaseDialog contract date (R4 money4 F2)", () => {
+    it("caps the contract date at a year ahead and blocks 2099 with a message", () => {
+        renderDialog();
+        const input = screen.getByLabelText(en.Leasing.contractDate) as HTMLInputElement;
+        expect(input.max).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        fireEvent.change(input, { target: { value: "2099-12-31" } });
+        expect(screen.getByTestId("renew-lease-confirm")).toBeDisabled();
+        expect(screen.getByTestId("renew-contract-date-too-far")).toHaveTextContent("at most one year from today");
     });
 });

@@ -101,6 +101,26 @@ describe("ChequeGrid editability", () => {
         );
     });
 
+    /**
+     * Owner request (2026-09-29): one-time charges ride on cheque 1 by default (4
+     * cheques + an admin fee = 4 cheques); "Separate cheque for one-time charges",
+     * off by default, gives them their own.
+     */
+    it("folds one-time charges into cheque 1 unless 'separate cheque' is ticked", () => {
+        const onGenerate = vi.fn();
+        renderGrid({ cheques: [], editable: true, onGenerate, contractValueInclVat: 30000 });
+        fireEvent.click(screen.getByTestId("cheque-grid-generate"));
+        const separate = screen.getByTestId("cheque-generate-separate-one-time") as HTMLInputElement;
+        expect(separate.checked).toBe(false);
+        fireEvent.click(screen.getByTestId("cheque-generate-confirm"));
+        expect(onGenerate).toHaveBeenLastCalledWith(expect.objectContaining({ foldDepositsAndFeesIntoFirst: true }));
+
+        fireEvent.click(screen.getByTestId("cheque-grid-generate"));
+        fireEvent.click(screen.getByTestId("cheque-generate-separate-one-time"));
+        fireEvent.click(screen.getByTestId("cheque-generate-confirm"));
+        expect(onGenerate).toHaveBeenLastCalledWith(expect.objectContaining({ foldDepositsAndFeesIntoFirst: false }));
+    });
+
     it("initializes the generate form's distribution from defaultDistribution, not a hardcoded LAST_LARGER (#46)", () => {
         const onGenerate = vi.fn();
         renderGrid({

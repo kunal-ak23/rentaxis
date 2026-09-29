@@ -111,6 +111,7 @@ async function toChequesStep() {
     await waitFor(() => expect(screen.getByTestId("wizard-start-date")).toBeInTheDocument());
     fireEvent.change(screen.getByTestId("wizard-start-date"), { target: { value: "2026-10-01" } });
     fireEvent.change(screen.getByTestId("wizard-end-date"), { target: { value: "2027-09-30" } });
+    fireEvent.change(screen.getByTestId("wizard-rent"), { target: { value: "60000" } });
     fireEvent.click(screen.getByTestId("wizard-next"));
     await waitFor(() => expect(screen.getByText("fill-lines")).toBeInTheDocument());
     fireEvent.click(screen.getByText("fill-lines"));
@@ -153,7 +154,10 @@ describe("lease wizard: a 409 lease.changed reload resets the header too (review
         const fresh = {
             ...LEASE, version: 5, endDate: "2027-06-30", paymentTerms: 2, installmentDistribution: "UNIFORM",
             firstDueDate: "2026-11-01",
-        } as LeaseDetail;
+            // Its saved RENT line is the Terms step's rent (owner request 2026-09-29).
+            lines: [{ id: "ln1", seqNo: 1, chargeTypeId: "ct-rent", behaviour: "RENT", grossAmount: 60000,
+                discountAmount: 0, netAmount: 60000, vatApplicable: false, narration: null }],
+        } as unknown as LeaseDetail;
         api.get.mockResolvedValue(fresh);
         fireEvent.click(screen.getByText("gen-cheques"));
         expect(await screen.findByTestId("cheque-error")).toHaveTextContent("This contract changed since you opened it");
