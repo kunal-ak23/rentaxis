@@ -19,7 +19,7 @@ import { GraceDaysField, usePropertyDefaultGrace } from "@/components/leases/Gra
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
 import ChequeGrid, { draftRowsAreValid, toChequeRows } from "@/components/leases/ChequeGrid";
 import WizardReviewSchedules from "@/components/leases/WizardReviewSchedules";
-import { blankLine, defaultInstallmentsFor, defaultTermEnd, followRentVat, linesAreValid, rentAmountOf, splitLineErrors, chequeMonths, toInputs, toRows, todayIso, totalsOf, withRentAmount, withRentVat, type LineRow } from "@/components/leases/leaseMath";
+import { blankLine, defaultInstallmentsFor, defaultTermEnd, rentChargeType, followRentVat, linesAreValid, rentAmountOf, splitLineErrors, chequeMonths, toInputs, toRows, todayIso, totalsOf, withRentAmount, withRentVat, type LineRow } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi,
     type ChargeType, type Cheque, type ChequeWrite, type DraftLeaseInput, type DraftPaymentMethod,
@@ -156,6 +156,9 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     const [autoCount, setAutoCount] = useState<number | null>(initialTerms.paymentTerms);
     const [rows, setRows] = useState<LineRow[]>([blankLine(0)]);
     const [chargeTypes, setChargeTypes] = useState<ChargeType[]>([]);
+    // Review of R4-B M11: whether the charge types have loaded — the rent field
+    // writes a RENT line, so without them (or without an active RENT type) it cannot.
+    const [chargeTypesState, setChargeTypesState] = useState<"loading" | "loaded" | "failed">("loading");
     // Review of R4-B M8: the "Separate cheque for one-time charges" choice of the last
     // Generate; null until the user generates (then the saved rows answer).
     const [foldChoice, setFoldChoice] = useState<boolean | null>(null);
@@ -205,18 +208,33 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     useEffect(() => {
         if (!open) return;
         let cancelled = false;
+        setChargeTypesState("loading");
         chargeTypeApi
             .list(true)
             .then(list => {
-                if (!cancelled) setChargeTypes(list);
+                if (cancelled) return;
+                setChargeTypes(list);
+                setChargeTypesState("loaded");
             })
             .catch(() => {
-                if (!cancelled) setChargeTypes([]);
+                if (cancelled) return;
+                setChargeTypes([]);
+                setChargeTypesState("failed");
             });
         return () => {
             cancelled = true;
         };
     }, [open]);
+
+    /**
+     * Review of R4-B M11: why the rent cannot be entered, when it cannot — the charge
+     * types are still loading, failed to load, or none is an active RENT type. Null
+     * when the rent field works.
+     */
+    const rentUnavailable: string | null = chargeTypesState === "loading" ? t("rentChargeTypesLoading")
+        : chargeTypesState === "failed" ? t("rentChargeTypesFailed")
+        : !rentChargeType(chargeTypes) && !(rentAmountOf(rows, chargeTypes) > 0) ? t("rentNoChargeType")
+        : null;
 
     const propertyDefaultGrace = usePropertyDefaultGrace(selectedUnit?.propertyId ?? undefined);
     const totals = totalsOf(rows, chargeTypes);
@@ -260,7 +278,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                     return t("errTermTooLong", { max: MAX_TERM_YEARS });
                 }
                 // Owner request (2026-09-29): the rent for the full term is asked here.
-                if (!(rentAmountOf(rows, chargeTypes) > 0)) return t("errRentRequired");
+                if (!(rentAmountOf(rows, chargeTypes) > 0)) return rentUnavailable ?? t("errRentRequired");
                 // At most one cheque a month: the generator's month count, from the
                 // first due date (review of R4-B I1).
                 const maxCheques = chequeMonths(terms.firstDueDate || terms.startDate, terms.endDate);
@@ -669,6 +687,11 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                             <Field label={`${t("rentFullTerm")} *`}>
                                 <NumberInput money data-testid="wizard-rent" className={field} value={rentAmount}
                                     aria-label={t("rentFullTerm")} onChange={v => setRentAmount(v)} />
+                                {rentUnavailable && chargeTypesState !== "loading" && (
+                                    <p role="status" data-testid="wizard-rent-unavailable" className="mt-1 text-[11px] text-warning">
+                                        {rentUnavailable}
+                                    </p>
+                                )}
                             </Field>
                             <Field label={t("gracePeriodDays")}>
                                 <GraceDaysField className={field} value={terms.gracePeriodDays} propertyDefault={propertyDefaultGrace} onChange={v => patch({ gracePeriodDays: v })} />

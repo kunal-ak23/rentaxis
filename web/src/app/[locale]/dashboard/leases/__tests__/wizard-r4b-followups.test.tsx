@@ -195,3 +195,42 @@ describe("M9: a rent-free period does not make the regenerate prompt reappear", 
         await waitFor(() => expect(screen.queryByTestId("wizard-regenerate-prompt")).toBeNull());
     });
 });
+
+describe("M11: the rent field says why it cannot take the rent", () => {
+    async function toTermsStep() {
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <LeaseWizard open onClose={() => {}} onCreated={() => {}} />
+            </NextIntlClientProvider>,
+        );
+        fireEvent.change(screen.getByLabelText(en.Leasing.unit), { target: { value: "u1" } });
+        fireEvent.change(screen.getByLabelText(en.Leasing.renter), { target: { value: "r1" } });
+        fireEvent.click(screen.getByTestId("wizard-next"));
+        await waitFor(() => expect(screen.getByTestId("wizard-start-date")).toBeInTheDocument());
+        fireEvent.change(screen.getByTestId("wizard-start-date"), { target: { value: "2026-09-09" } });
+        fireEvent.change(screen.getByTestId("wizard-rent"), { target: { value: "60000" } });
+        fireEvent.click(screen.getByTestId("wizard-next"));
+    }
+
+    it("with no active RENT charge type", async () => {
+        chargeTypes.list.mockResolvedValue([{ ...RENT_TYPE, active: false }, { id: "ct-fee", code: "ADMIN", behaviour: "FEE", active: true }]);
+        await toTermsStep();
+        expect(await screen.findByTestId("wizard-rent-unavailable")).toHaveTextContent(en.Leasing.rentNoChargeType);
+        expect(screen.getByTestId("wizard-error")).toHaveTextContent(en.Leasing.rentNoChargeType);
+        expect(api.createDraft).not.toHaveBeenCalled();
+    });
+
+    it("when the charge types failed to load", async () => {
+        chargeTypes.list.mockRejectedValue(new Error("down"));
+        await toTermsStep();
+        expect(await screen.findByTestId("wizard-rent-unavailable")).toHaveTextContent(en.Leasing.rentChargeTypesFailed);
+        expect(screen.getByTestId("wizard-error")).toHaveTextContent(en.Leasing.rentChargeTypesFailed);
+    });
+
+    it("says nothing when a RENT type is there", async () => {
+        chargeTypes.list.mockResolvedValue([RENT_TYPE]);
+        await toTermsStep();
+        await waitFor(() => expect(screen.getByTestId("rows")).toBeInTheDocument());
+        expect(screen.queryByTestId("wizard-rent-unavailable")).toBeNull();
+    });
+});
