@@ -156,6 +156,9 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     const [autoCount, setAutoCount] = useState<number | null>(initialTerms.paymentTerms);
     const [rows, setRows] = useState<LineRow[]>([blankLine(0)]);
     const [chargeTypes, setChargeTypes] = useState<ChargeType[]>([]);
+    // Review of R4-B M8: the "Separate cheque for one-time charges" choice of the last
+    // Generate; null until the user generates (then the saved rows answer).
+    const [foldChoice, setFoldChoice] = useState<boolean | null>(null);
 
     const [lease, setLease] = useState<LeaseDetail | null>(null);
     const [cheques, setCheques] = useState<Cheque[]>([]);
@@ -184,6 +187,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         setRows([blankLine(0)]);
         setLease(null);
         setCheques([]);
+        setFoldChoice(null);
         setChequeNotice(null);
         setChequeError(null);
         setDry(null);
@@ -380,6 +384,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
 
     const generate = (req: GenerateChequesRequest) => {
         if (!lease) return;
+        if (req.foldDepositsAndFeesIntoFirst != null) setFoldChoice(req.foldDepositsAndFeesIntoFirst);
         runCheques(() => leaseApi.generateCheques(lease.id, req, lease.version));
     };
     const generateNumbers = (startingNumber: string) => {
@@ -387,16 +392,24 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         runCheques(() => leaseApi.generateChequeNumbers(lease.id, startingNumber));
     };
     /**
+     * Review of R4-B M8: whether one-time charges ride on cheque 1 — the user's
+     * "Separate cheque for one-time charges" choice on the last Generate; before one,
+     * what the saved rows show (a FEE or DEPOSIT row of its own means separate); else
+     * folded, the Cheques step's default.
+     */
+    const foldOneTime = foldChoice
+        ?? !cheques.some(c => c.rowKind === "FEE" || c.rowKind === "DEPOSIT");
+    /**
      * Owner requests (2026-09-29): what "Generate cheques" is asked for — the Terms
      * step's count, first due date (the start date when empty) and distribution, with
-     * one-time charges folded into cheque 1 (the Cheques step's default). The Review
-     * step's suggestion and "Use this schedule" use exactly this.
+     * one-time charges folded into cheque 1 unless the user chose a separate cheque.
+     * The Review step's suggestion and "Use this schedule" use exactly this.
      */
     const chequeRequest = (): GenerateChequesRequest => ({
         installments: terms.paymentTerms,
         firstDueDate: terms.firstDueDate || terms.startDate || null,
         distribution: terms.installmentDistribution,
-        foldDepositsAndFeesIntoFirst: true,
+        foldDepositsAndFeesIntoFirst: foldOneTime,
     });
     const applySchedule = async (req: GenerateChequesRequest) => {
         if (!lease) return;
