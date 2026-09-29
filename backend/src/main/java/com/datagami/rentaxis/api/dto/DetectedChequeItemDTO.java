@@ -14,6 +14,9 @@ import java.util.UUID;
  * @param extracted    the fields read, or null when extraction failed
  * @param warnings     per-cheque warnings (English; for API clients and logs)
  * @param flags        machine-readable flags, e.g. {@link #FLAG_CROP_UNRELIABLE}
+ * @param payeeCheck   the organisation's payee check on {@code extracted.payeeName}
+ *                     (MATCH / MISMATCH / UNREADABLE); null when the check is off,
+ *                     lists no names, or nothing was read
  */
 public record DetectedChequeItemDTO(
         UUID imageId,
@@ -23,8 +26,16 @@ public record DetectedChequeItemDTO(
         String thumbnailUrl,
         ExtractedChequeDTO extracted,
         List<String> warnings,
-        List<String> flags
+        List<String> flags,
+        com.datagami.rentaxis.domain.entity.enums.PayeeCheck payeeCheck
 ) {
+    /** Without a payee check: the shape before PR #389. */
+    public DetectedChequeItemDTO(UUID imageId, ChequeImageMetaDTO image, int page, ChequeBoundingBoxDTO box,
+                                 String thumbnailUrl, ExtractedChequeDTO extracted, List<String> warnings,
+                                 List<String> flags) {
+        this(imageId, image, page, box, thumbnailUrl, extracted, warnings, flags, null);
+    }
+
     /**
      * The cheque could not be cut out cleanly (no box, a box that is tiny, outside
      * the image or overlapping another cheque, or an image the server cannot

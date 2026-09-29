@@ -65,4 +65,20 @@ class AzureOpenAIChequeExtractorParseTest {
         assertThat(schema.get("required").toString()).contains("\"payeeName\"");
         assertThat(AzureOpenAIChequeExtractor.SYSTEM_PROMPT).contains("payeeName");
     }
+
+    /** The multi-cheque path (PR #388) reads each cheque's payee too. */
+    @Test
+    void theMultiSchemaAndParserCarryThePayee() throws Exception {
+        var multi = new com.fasterxml.jackson.databind.ObjectMapper().readTree(AzureOpenAIChequeExtractor.MULTI_SCHEMA);
+        var cheque = multi.at("/properties/cheques/items");
+        assertThat(cheque.get("properties").has("payeeName")).isTrue();
+        assertThat(cheque.get("required").toString()).contains("\"payeeName\"");
+
+        String json = "{\"cheques\":[{\"chequeNumber\":\"1\",\"bankName\":null,\"payerName\":\"A\","
+                + "\"payeeName\":\"Palm Ridge\",\"chequeDate\":null,\"amount\":null,\"confidence\":\"HIGH\","
+                + "\"warnings\":[],\"box\":{\"x\":0,\"y\":0,\"width\":0.5,\"height\":0.3}}],\"warnings\":[]}";
+        var result = extractor.parseMultiResponse(json);
+        assertThat(result.cheques()).singleElement()
+                .satisfies(c -> assertThat(c.extracted().payeeName()).isEqualTo("Palm Ridge"));
+    }
 }

@@ -149,4 +149,43 @@ describe("BulkChequeUploadFlow payee check", () => {
     expect(await screen.findByText("payeeMismatchUnconfirmedError")).toBeTruthy();
     expect(screen.queryByText("rowConflictError")).toBeNull();
   });
+
+  // PR #388 path: one photo holding two cheques; the check is per detected cheque.
+  it("flags only the cheque in a multi-cheque photo whose payee does not match", async () => {
+    const det = (n: string, date: string, payeeName: string, payeeCheck: string) => ({
+      imageId: `img-${n}`, image: { url: `u-${n}`, blobPath: `b-${n}`, uploadedAt: "2026-05-07T00:00:00Z" },
+      page: 1, box: null, thumbnailUrl: null, warnings: [], flags: [], payeeCheck,
+      extracted: { chequeNumber: n, bankName: "ENBD", payerName: "R", payeeName, chequeDate: date, amount: 5000, confidence: "HIGH" },
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          original: { url: "o", blobPath: "o", uploadedAt: "2026-05-07T00:00:00Z" }, pages: [], warnings: [],
+          items: [det("C-1", "2026-06-04", "Palm Ridge", "MATCH"), det("C-2", "2026-07-04", "Other Landlord LLC", "MISMATCH")],
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const onSuccess = vi.fn();
+    render(<BulkChequeUploadFlow leaseId="L1" rows={rows} onSuccess={onSuccess} onClose={() => {}} />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, "files", { value: [makeFile("two.png")], configurable: true });
+    fireEvent.change(input);
+    fireEvent.click(screen.getByText("continueToExtract"));
+    await waitFor(() => screen.getByText("colChequeNumber"));
+
+    const flags = screen.getAllByTestId("payee-mismatch");
+    expect(flags).toHaveLength(1);
+    expect(flags[0].textContent).toContain("Other Landlord LLC");
+    expect(approveButton().disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /payeeMismatchConfirm/ }));
+    fireEvent.click(approveButton());
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    const body = JSON.parse(fetchMock.mock.calls[1][1].body);
+    const byPath = Object.fromEntries(body.items.map((i: { imageBlobPath: string }) => [i.imageBlobPath, i]));
+    expect(byPath["b-C-2"].payeeMismatchConfirmed).toBe(true);
+    expect(byPath["b-C-1"].payeeMismatchConfirmed).toBeUndefined();
+  });
 });

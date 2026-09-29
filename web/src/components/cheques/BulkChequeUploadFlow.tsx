@@ -660,7 +660,7 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
                       </tr>
                       {payeeCheck === "MISMATCH" && (
                         <tr>
-                          <td colSpan={9} className="pb-2">
+                          <td colSpan={10} className="pb-2">
                             <div
                               data-testid="payee-mismatch"
                               role="alert"
@@ -684,7 +684,7 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
                       )}
                       {payeeCheck === "UNREADABLE" && (
                         <tr>
-                          <td colSpan={9} className="pb-2">
+                          <td colSpan={10} className="pb-2">
                             <p data-testid="payee-unreadable" className="text-[11px] text-muted">
                               {t("payeeUnreadable")}
                             </p>

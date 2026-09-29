@@ -102,11 +102,33 @@ public class ChequeMultiExtractionService {
     @Value("${cheque-extraction.max-cheques-per-upload:24}")
     int maxChequesPerUpload = 24;
 
+    private final com.datagami.rentaxis.core.service.OrgSettingsService orgSettings;
+
     public ChequeMultiExtractionService(BlobStorageService blobStorage, ChequeExtractor extractor,
-                                        ChequeImageUploadRepository uploads) {
+                                        ChequeImageUploadRepository uploads,
+                                        com.datagami.rentaxis.core.service.OrgSettingsService orgSettings) {
         this.blobStorage = blobStorage;
         this.extractor = extractor;
         this.uploads = uploads;
+        this.orgSettings = orgSettings;
+    }
+
+    /**
+     * Owner ruling 2026-09-29 (PR #389): each detected cheque's payee is kept on
+     * the image issued for it, which is what bulk-attach checks; the review
+     * screen gets the organisation's check on it. Null when nothing was read.
+     */
+    private static String payeeOf(DetectedCheque det) {
+        if (det == null || det.extracted() == null) return null;
+        String p = det.extracted().payeeName();
+        if (p == null || p.isBlank()) return null;
+        p = p.trim();
+        return p.length() > 300 ? p.substring(0, 300) : p;
+    }
+
+    private com.datagami.rentaxis.domain.entity.enums.PayeeCheck payeeCheckOf(UUID tenantId, DetectedCheque det) {
+        // A failed read has no payee to judge.
+        return det == null || det.extracted() == null ? null : orgSettings.checkPayee(tenantId, payeeOf(det));
     }
 
     /**
@@ -258,9 +280,13 @@ public class ChequeMultiExtractionService {
                 if (originalIsTheScan) {
                     meta = originalMeta;
                     imageId = originalRow.getId();
+                    if (payeeOf(one) != null) {
+                        originalRow.setExtractedPayeeName(payeeOf(one));
+                        originalRow = uploads.save(originalRow);
+                    }
                 } else {
                     ChequeImageUpload row = storeDerived(tenantId, originalRow, page.bytes(), ".jpg",
-                            pdf ? page.number() : null, stored);
+                            pdf ? page.number() : null, payeeOf(one), stored);
                     meta = new ChequeImageMetaDTO(row.getImageUrl(), row.getBlobPath(), uploadedAt);
                     imageId = row.getId();
                 }
@@ -269,7 +295,7 @@ public class ChequeMultiExtractionService {
                         one == null ? null : toDto(one.box()),
                         img == null ? null : ChequeImageCropper.dataUrl(img, ChequeImageCropper.THUMB_MAX),
                         one == null ? null : one.extracted(),
-                        List.copyOf(itemWarnings), List.of()));
+                        List.copyOf(itemWarnings), List.of(), payeeCheckOf(tenantId, one)));
                 continue;
             }
 
@@ -299,7 +325,7 @@ public class ChequeMultiExtractionService {
                     ext = extensionFor(contentType);
                 }
                 ChequeImageUpload row = storeDerived(tenantId, originalRow, bytes, ext, pdf ? page.number() : null,
-                        stored);
+                        payeeOf(det), stored);
                 List<String> itemWarnings = new ArrayList<>(safeList(det.warnings()));
                 if (!clean) {
                     itemWarnings.add(CROP_UNRELIABLE_WARNING);
@@ -309,7 +335,8 @@ public class ChequeMultiExtractionService {
                         page.number(), toDto(det.box()),
                         shown == null ? null : ChequeImageCropper.dataUrl(shown, ChequeImageCropper.THUMB_MAX),
                         det.extracted(), List.copyOf(itemWarnings),
-                        clean ? List.of() : List.of(DetectedChequeItemDTO.FLAG_CROP_UNRELIABLE)));
+                        clean ? List.of() : List.of(DetectedChequeItemDTO.FLAG_CROP_UNRELIABLE),
+                        payeeCheckOf(tenantId, det)));
             }
         }
         return new ChequeMultiExtractionResponseDTO(originalMeta, pageDtos, items, warnings);
@@ -368,7 +395,7 @@ public class ChequeMultiExtractionService {
     }
 
     private ChequeImageUpload storeDerived(UUID tenantId, ChequeImageUpload source, byte[] bytes, String ext,
-                                           Integer pageNumber, List<ChequeImageUpload> stored) {
+                                           Integer pageNumber, String payeeName, List<ChequeImageUpload> stored) {
         var up = blobStorage.uploadChequeBytes(tenantId, bytes, ext);
         ChequeImageUpload row = new ChequeImageUpload();
         row.setTenantId(tenantId);
@@ -378,6 +405,7 @@ public class ChequeMultiExtractionService {
         row.setSourceUploadId(source.getId());
         row.setPageNumber(pageNumber);
         row.setAttachable(true);
+        row.setExtractedPayeeName(payeeName);
         stored.add(row);
         return uploads.save(row);
     }

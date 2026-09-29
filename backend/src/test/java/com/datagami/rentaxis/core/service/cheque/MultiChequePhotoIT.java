@@ -316,4 +316,66 @@ class MultiChequePhotoIT extends AbstractPostgresIT {
                 imageUploads.findByTenantIdAndBlobPath(tenantId, gone).orElseThrow().isAttachable());
         assertThat(attachable).isFalse();
     }
+
+    @Autowired com.datagami.rentaxis.core.service.OrgSettingsService orgSettings;
+
+    /**
+     * PR #389: with the payee check on, each crop of a multi-cheque photo carries
+     * its own payee and check. The crop whose payee matches none of the valid names
+     * is flagged in the response and refused by bulk-attach until confirmed; the
+     * others attach as MATCH.
+     */
+    @Test
+    void aCropWithAMismatchingPayeeIsFlaggedAndRefusedUntilConfirmed() throws Exception {
+        TenantContextHolder.setTenantId(tenantId);
+        orgSettings.updatePayeeCheck(true, List.of("Palm Ridge Properties LLC"));
+        var boxes = ChequeTestImages.threeBoxes();
+        List<DetectedCheque> found = List.of(
+                withPayee(register.get(2), "000403", boxes.get(0), "Someone Else Real Estate"),
+                withPayee(register.get(0), "000401", boxes.get(1), "PALM RIDGE PROPERTIES L.L.C."),
+                withPayee(register.get(1), "000402", boxes.get(2), "Palm Ridge Properties LLC"));
+        when(extractor.extractAll(any(), any())).thenReturn(new MultiExtractionResult(found, List.of()));
+
+        JsonNode res = upload();
+        JsonNode items = res.get("items");
+        assertThat(items).hasSize(3);
+        assertThat(items.get(0).get("payeeCheck").asText()).isEqualTo("MISMATCH");
+        assertThat(items.get(0).at("/extracted/payeeName").asText()).isEqualTo("Someone Else Real Estate");
+        assertThat(items.get(1).get("payeeCheck").asText()).isEqualTo("MATCH");
+        assertThat(items.get(2).get("payeeCheck").asText()).isEqualTo("MATCH");
+        // The payee sits on each crop's own issued row: that is what bulk-attach checks.
+        assertThat(imageUploads.findByTenantIdAndBlobPath(tenantId, items.get(0).at("/image/blobPath").asText()))
+                .get().extracting(com.datagami.rentaxis.domain.entity.ChequeImageUpload::getExtractedPayeeName)
+                .isEqualTo("Someone Else Real Estate");
+
+        List<BulkAttachChequeItem> attach = new java.util.ArrayList<>();
+        for (JsonNode item : items) attach.add(attachItem(item));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> details.bulkAttach(leaseId, attach))
+                .isInstanceOf(com.datagami.rentaxis.core.service.BulkAttachValidationException.class)
+                .satisfies(e -> assertThat(((com.datagami.rentaxis.core.service.BulkAttachValidationException) e).getRows())
+                        .extracting(com.datagami.rentaxis.api.dto.BulkAttachErrorRow::reason)
+                        .containsExactly("payee_mismatch_unconfirmed"));
+        assertThat(imagesOnRegister()).isEmpty();
+
+        attach.get(0).setPayeeMismatchConfirmed(true);
+        details.bulkAttach(leaseId, attach);
+
+        tx.executeWithoutResult(s -> {
+            var byId = new java.util.HashMap<UUID, Cheque>();
+            chequeRepo.findByLease_IdOrderBySeqNoAsc(leaseId).forEach(c -> byId.put(c.getId(), c));
+            assertThat(byId.get(register.get(2).getId()).getPayeeCheck())
+                    .isEqualTo(com.datagami.rentaxis.domain.entity.enums.PayeeCheck.MISMATCH);
+            assertThat(byId.get(register.get(2).getId()).getPayeeMismatchConfirmedAt()).isNotNull();
+            assertThat(byId.get(register.get(0).getId()).getPayeeCheck())
+                    .isEqualTo(com.datagami.rentaxis.domain.entity.enums.PayeeCheck.MATCH);
+            assertThat(byId.get(register.get(1).getId()).getPayeeCheck())
+                    .isEqualTo(com.datagami.rentaxis.domain.entity.enums.PayeeCheck.MATCH);
+        });
+    }
+
+    private static DetectedCheque withPayee(Cheque row, String number, ChequeExtractor.BoundingBox box, String payee) {
+        return new DetectedCheque(new ExtractedChequeDTO(number, "Emirates NBD", "Test Renter", payee,
+                row.getChequeDate(), row.getAmount(), ExtractedChequeDTO.Confidence.HIGH), box, List.of());
+    }
 }
