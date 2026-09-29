@@ -2271,6 +2271,7 @@
     "urlAccountsCapped": "This link named {count} accounts; the first {max} are shown. Pick fewer, or open the Trial Balance for the whole company."
   },
   "Leasing": {
+    "ledgerLinkTitleNoCode": "{name} — open in the General Ledger",
     "ledgerLinkTitle": "{code} · {name} — open in the General Ledger",
     "wizardFilterProperty": "Property",
     "wizardFilterBuilding": "Building",

@@ -2271,6 +2271,7 @@
     "urlAccountsCapped": "ذكر هذا الرابط {count} حساباً؛ يُعرض أول {max} منها. اختر عدداً أقل، أو افتح ميزان المراجعة لعرض الشركة بالكامل."
   },
   "Leasing": {
+    "ledgerLinkTitleNoCode": "{name} — فتح في دفتر الأستاذ العام",
     "ledgerLinkTitle": "{code} · {name} — فتح في دفتر الأستاذ العام",
     "wizardFilterProperty": "العقار",
     "wizardFilterBuilding": "المبنى",

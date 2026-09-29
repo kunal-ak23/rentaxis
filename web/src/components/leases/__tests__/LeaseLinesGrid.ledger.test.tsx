@@ -76,6 +76,15 @@ describe("LeaseLinesGrid — Ledger column", () => {
         expect(screen.getByTestId("lease-line-ledger-0")).toHaveAttribute("href", "/ar/dashboard/finance/general-ledger?accountIds=acc-9&leaseId=lease-1");
     });
 
+    it("titles a link by the name alone when the account has no code (review of #393)", () => {
+        render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <LeaseLinesGrid lines={[{ ...LINE, creditAccountCode: null }]} chargeTypes={CHARGE_TYPES} editable={false} ledgerLink={{ leaseId: "lease-1" }} />
+            </NextIntlClientProvider>,
+        );
+        expect(screen.getByTestId("lease-line-ledger-0")).toHaveAttribute("title", "Advance Rent – Desert Rose Gardens — open in the General Ledger");
+    });
+
     it("builds the ledger URL without a contract when none is named", () => {
         expect(ledgerHref("a1", {})).toBe("/dashboard/finance/general-ledger?accountIds=a1");
     });

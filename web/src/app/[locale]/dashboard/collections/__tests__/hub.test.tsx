@@ -23,6 +23,8 @@ vi.mock("@/lib/api/leasing", async orig => {
         penaltyApi: { ...m.penaltyApi, list: api.penalties } };
 });
 import Page from "../page";
+import { EMPTY_REGISTER_FILTERS, filtersFromQuery } from "@/components/cheques/registerFilters";
+import { writeWindowParams } from "@/components/collections/pdcWindow";
 
 beforeEach(() => {
     role.current = "TENANT_ADMIN"; query.current = "";
@@ -100,6 +102,20 @@ describe("Cheque / Cash Collection hub", () => {
         fireEvent.change(box, { target: { value: " 100026 " } });
         fireEvent.submit(box.closest("form")!);
         expect(router.push).toHaveBeenCalledWith("/dashboard/collections?tab=all&propertyId=11111111-1111-4111-8111-111111111111&search=100026");
+    });
+
+    it("opens an unfiltered register when searching after a custom post-dated window (review of #393)", () => {
+        // What PostDatedPanel leaves in the URL after a custom From–To.
+        query.current = writeWindowParams(new URLSearchParams("tab=post-dated"),
+            { preset: "custom", from: "2026-11-01", to: "2026-11-20" }).toString();
+        render(<Page />);
+        const box = screen.getByTestId("collections-search");
+        fireEvent.change(box, { target: { value: "100026" } });
+        fireEvent.submit(box.closest("form")!);
+        const href = router.push.mock.calls[0][0] as string;
+        const q = new URLSearchParams(href.split("?")[1]);
+        expect(q.get("tab")).toBe("all");
+        expect(filtersFromQuery(q)).toEqual({ ...EMPTY_REGISTER_FILTERS, search: "100026" });
     });
 
     it("gives a property manager every pill (same gates as the old pages)", () => {

@@ -59,11 +59,22 @@ describe("pdcWindow", () => {
 
     it("reads and writes the URL, defaulting to Next 2 weeks", () => {
         expect(windowFromParams(new URLSearchParams(""), TODAY)).toEqual({ preset: "2w", from: TODAY, to: "2026-10-14" });
-        expect(windowFromParams(new URLSearchParams("range=bogus"), TODAY).preset).toBe("2w");
-        expect(windowFromParams(new URLSearchParams("range=custom&from=2026-11-01&to=2026-11-15"), TODAY))
+        expect(windowFromParams(new URLSearchParams("pdcRange=bogus"), TODAY).preset).toBe("2w");
+        expect(windowFromParams(new URLSearchParams("pdcRange=custom&pdcFrom=2026-11-01&pdcTo=2026-11-15"), TODAY))
             .toEqual({ preset: "custom", from: "2026-11-01", to: "2026-11-15" });
-        const p = writeWindowParams(new URLSearchParams("tab=post-dated&from=x&to=y"), { preset: "1w", from: TODAY, to: "2026-10-07" });
-        expect(p.toString()).toBe("tab=post-dated&range=1w");
+        // A register's own from/to is not a PDC window.
+        expect(windowFromParams(new URLSearchParams("from=2026-11-01&to=2026-11-15"), TODAY).preset).toBe("2w");
+        const p = writeWindowParams(new URLSearchParams("tab=post-dated&pdcFrom=x&pdcTo=y"), { preset: "1w", from: TODAY, to: "2026-10-07" });
+        expect(p.toString()).toBe("tab=post-dated&pdcRange=1w");
+        const c = writeWindowParams(new URLSearchParams("tab=post-dated"), { preset: "custom", from: "2026-11-01", to: "2026-11-15" });
+        expect(c.toString()).toBe("tab=post-dated&pdcRange=custom&pdcFrom=2026-11-01&pdcTo=2026-11-15");
+    });
+
+    it("still opens an old range=/from=/to= bookmark, and rewrites it under the pdc keys", () => {
+        const old = new URLSearchParams("tab=post-dated&range=custom&from=2026-11-01&to=2026-11-15");
+        const w = windowFromParams(old, TODAY);
+        expect(w).toEqual({ preset: "custom", from: "2026-11-01", to: "2026-11-15" });
+        expect(writeWindowParams(old, w).toString()).toBe("tab=post-dated&pdcRange=custom&pdcFrom=2026-11-01&pdcTo=2026-11-15");
     });
 
     it("flags an inverted or over-long window", () => {
@@ -90,12 +101,12 @@ describe("Post-dated panel — maturity window", () => {
         await waitFor(() => expect(postDated).toHaveBeenCalled());
         fireEvent.click(screen.getByTestId("post-dated-preset-1w"));
         await waitFor(() => expect(lastQuery()).toEqual({ from: TODAY, to: "2026-10-07", propertyId: undefined }));
-        expect(params().get("range")).toBe("1w");
+        expect(params().get("pdcRange")).toBe("1w");
         expect(params().get("tab")).toBe("post-dated");
 
         fireEvent.click(screen.getByTestId("post-dated-preset-1m"));
         await waitFor(() => expect(lastQuery()).toEqual({ from: TODAY, to: "2026-10-30", propertyId: undefined }));
-        expect(params().get("range")).toBe("1m");
+        expect(params().get("pdcRange")).toBe("1m");
     });
 
     it("takes a custom From–To range and writes it to the URL", async () => {
@@ -105,13 +116,16 @@ describe("Post-dated panel — maturity window", () => {
         fireEvent.change(screen.getByTestId("post-dated-from"), { target: { value: "2026-11-01" } });
         fireEvent.change(screen.getByTestId("post-dated-to"), { target: { value: "2026-11-20" } });
         await waitFor(() => expect(lastQuery()).toEqual({ from: "2026-11-01", to: "2026-11-20", propertyId: undefined }));
-        expect(params().get("range")).toBe("custom");
-        expect(params().get("from")).toBe("2026-11-01");
-        expect(params().get("to")).toBe("2026-11-20");
+        expect(params().get("pdcRange")).toBe("custom");
+        expect(params().get("pdcFrom")).toBe("2026-11-01");
+        expect(params().get("pdcTo")).toBe("2026-11-20");
+        // Nothing the cheque register would read as its own date filter.
+        expect(params().has("from")).toBe(false);
+        expect(params().has("to")).toBe(false);
     });
 
     it("opens on the window a bookmarked URL names", async () => {
-        window.history.replaceState(null, "", "/en/dashboard/collections?tab=post-dated&range=custom&from=2026-12-01&to=2026-12-31");
+        window.history.replaceState(null, "", "/en/dashboard/collections?tab=post-dated&pdcRange=custom&pdcFrom=2026-12-01&pdcTo=2026-12-31");
         renderPanel();
         await waitFor(() => expect(lastQuery()).toEqual({ from: "2026-12-01", to: "2026-12-31", propertyId: undefined }));
         expect(screen.getByTestId("post-dated-from")).toHaveValue("2026-12-01");
