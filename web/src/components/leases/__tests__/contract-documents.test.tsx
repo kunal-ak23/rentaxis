@@ -78,4 +78,29 @@ describe("contract documents", () => {
         await waitFor(() => expect(global.fetch).toHaveBeenCalled());
         expect(container).toBeEmptyDOMElement();
     });
+
+    /**
+     * Break-it R4 layout4 F1 / brand4 F3: a download that failed (404 on an
+     * unreadable file, a 5xx, the network) did nothing at all — no file, no word.
+     */
+    it.each([["en", en], ["ar", ar]] as const)("says so when a download fails (%s)", async (locale, messages) => {
+        global.fetch = vi.fn(async (url: unknown) => {
+            const u = String(url);
+            if (u.includes("/download")) return new Response(JSON.stringify({ message: "x" }), { status: 404 });
+            return new Response(JSON.stringify(docs), { status: 200 });
+        }) as unknown as typeof fetch;
+        renderIt(false, locale);
+        fireEvent.click(await screen.findByRole("button", { name: new RegExp(messages.ContractDocuments.download) }));
+        expect(await screen.findByRole("alert")).toHaveTextContent(messages.ContractDocuments.downloadFailed);
+    });
+
+    it("says so when the network drops mid-download", async () => {
+        global.fetch = vi.fn(async (url: unknown) => {
+            if (String(url).includes("/download")) throw new TypeError("Failed to fetch");
+            return new Response(JSON.stringify(docs), { status: 200 });
+        }) as unknown as typeof fetch;
+        renderIt(false);
+        fireEvent.click(await screen.findByRole("button", { name: new RegExp(en.ContractDocuments.download) }));
+        expect(await screen.findByRole("alert")).toHaveTextContent(en.ContractDocuments.downloadFailed);
+    });
 });

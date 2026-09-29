@@ -5117,6 +5117,7 @@
       "download": "Download",
       "issue": "Issue executed copy",
       "notDue": "No executed copy is due: the organisation has no stamp, or the contract is not signed yet.",
-      "issueFailed": "The executed copy could not be issued. Try again."
+      "issueFailed": "The executed copy could not be issued. Try again.",
+      "downloadFailed": "The document could not be downloaded. Try again, or download the contract from More actions."
   }
 }

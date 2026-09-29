@@ -35,8 +35,20 @@ export function ContractDocuments({ leaseId, canIssue, leaseStatus }: { leaseId:
     useEffect(() => { void load(); }, [load]);
 
     const download = async (doc: ContractDocument) => {
-        const res = await fetch(`/api/proxy/v1/leases/documents/${doc.id}/download`);
-        if (!res.ok) return;
+        setMessage(null);
+        // Break-it R4 layout4 F1 / brand4 F3: a failed download (an unreadable file,
+        // a 5xx, the network) used to do nothing at all. Say so.
+        let res: Response;
+        try {
+            res = await fetch(`/api/proxy/v1/leases/documents/${doc.id}/download`);
+        } catch {
+            setMessage(t("downloadFailed"));
+            return;
+        }
+        if (!res.ok) {
+            setMessage(t("downloadFailed"));
+            return;
+        }
         const href = URL.createObjectURL(await res.blob());
         const a = document.createElement("a");
         a.href = href;
