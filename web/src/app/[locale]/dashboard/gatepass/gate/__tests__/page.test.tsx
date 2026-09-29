@@ -138,7 +138,31 @@ describe("Gate desk", () => {
         fireEvent.change(within(form).getByLabelText("visitorName"), { target: { value: "Sunil" } });
         fireEvent.change(within(form).getByLabelText("visitorPhone"), { target: { value: "+971507778888" } });
         fireEvent.click(within(form).getByTestId("walkin-submit"));
-        expect((await screen.findByTestId("walkin-error")).textContent).toBe("A fresh visitor photo is required at this gate");
+        expect((await screen.findByTestId("walkin-error")).textContent).toBe("errPhotoRequired");
+    });
+
+    it("keeps an Admit refusal visible after the status refresh that follows it", async () => {
+        api.on("GET", "/v1/gatepass/walk-in/today", { body: [{ ...WALK_IN, status: "ACTIVE" }] });
+        api.on("GET", "/v1/gatepass/walk-in/w-1/status", { body: { ...WALK_IN, status: "ACTIVE" } });
+        api.on("POST", "/v1/gatepass/walk-in/w-1/admit", { status: 400, body: { message: "outside validity window" } });
+        render(<GateDeskPage />);
+        fireEvent.click(await screen.findByTestId("gate-tab-walkins"));
+        fireEvent.click(await screen.findByTestId("admit-w-1"));
+        await waitFor(() => expect(api.callsTo("GET", "/walk-in/w-1/status")).toHaveLength(1));
+        // The guard must not be left thinking the entry was recorded.
+        await waitFor(() => expect(screen.getByTestId("walkins-error").textContent).toBe("reasonOutsideWindow"));
+        expect(screen.getByTestId("status-ACTIVE")).toBeTruthy();
+    });
+
+    it("shows the Admit failure, not the refresh failure, when both fail", async () => {
+        api.on("GET", "/v1/gatepass/walk-in/today", { body: [{ ...WALK_IN, status: "ACTIVE" }] });
+        api.on("GET", "/v1/gatepass/walk-in/w-1/status", { status: 500 });
+        api.on("POST", "/v1/gatepass/walk-in/w-1/admit", { status: 500 });
+        render(<GateDeskPage />);
+        fireEvent.click(await screen.findByTestId("gate-tab-walkins"));
+        fireEvent.click(await screen.findByTestId("admit-w-1"));
+        await waitFor(() => expect(api.callsTo("GET", "/walk-in/w-1/status")).toHaveLength(1));
+        await waitFor(() => expect(screen.getByTestId("walkins-error").textContent).toBe("admitError"));
     });
 
     it("admits an approved walk-in only once it is active", async () => {

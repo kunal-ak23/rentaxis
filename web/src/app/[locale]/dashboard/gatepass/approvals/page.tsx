@@ -79,7 +79,9 @@ function Approvals() {
             && (!passType || r.passType === passType)
             && (!q || r.guestName.toLowerCase().includes(q) || (r.unitNumber ?? "").toLowerCase().includes(q) || r.guestPhone.includes(q)));
     }, [rows, propertyId, passType, search]);
-    const visible = pageOf(filtered, page, perPage);
+    // Clamped: deciding the last row of the last page must not leave an empty page.
+    const shownPage = Math.min(page, Math.max(1, Math.ceil(filtered.length / perPage)));
+    const visible = pageOf(filtered, shownPage, perPage);
 
     const confirm = async () => {
         if (!pending) return;
@@ -91,7 +93,7 @@ function Approvals() {
             setRows(rs => rs.filter(r => r.id !== decided.id));
             setNotice(pending.approved ? t("approvedNotice", { guest: decided.guestName }) : t("rejectedNotice", { guest: decided.guestName }));
         } catch (err) {
-            setActionError(errorText(err, t("decideError")));
+            setActionError(errorText(err, t("decideError"), t));
             // Someone else may have decided it first; show the queue as it now stands.
             await load();
         } finally {
@@ -204,7 +206,7 @@ function Approvals() {
                     )}
                     {filtered.length > 0 && (
                         <div className="mt-2">
-                            <Pagination currentPage={page} totalItems={filtered.length} itemsPerPage={perPage} onPageChange={setPage}
+                            <Pagination currentPage={shownPage} totalItems={filtered.length} itemsPerPage={perPage} onPageChange={setPage}
                                 onItemsPerPageChange={n => { setPerPage(n); setPage(1); }} />
                         </div>
                     )}

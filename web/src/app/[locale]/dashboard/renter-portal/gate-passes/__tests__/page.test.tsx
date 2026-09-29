@@ -88,6 +88,14 @@ describe("Tenant gate passes", () => {
         expect(await screen.findByTestId("page-load-failed")).toBeTruthy();
     });
 
+    it("treats a failed contracts read as a load error, not as 'no current contract'", async () => {
+        // A JSON body on purpose: a failure must not be read as "zero contracts".
+        api.on("GET", "/v1/leases/my-leases", { status: 500, body: [] });
+        render(<TenantGatePassesPage />);
+        expect(await screen.findByTestId("page-load-failed")).toBeTruthy();
+        expect(screen.queryByTestId("gatepass-no-contract")).toBeNull();
+    });
+
     it("shows the gate code in the detail, marked as not yet usable while pending", async () => {
         render(<TenantGatePassesPage />);
         fireEvent.click(await screen.findByText("view"));
@@ -160,7 +168,30 @@ describe("Tenant gate passes", () => {
         render(<TenantGatePassesPage />);
         fireEvent.click(await screen.findByTestId("cancel-p-1"));
         fireEvent.click(await screen.findByTestId("gatepass-cancel-confirm"));
-        expect((await screen.findByTestId("gatepass-error")).textContent).toBe("Gate pass has already been used");
+        expect((await screen.findByTestId("gatepass-error")).textContent).toBe("errAlreadyUsed");
+    });
+
+    it("keeps the refusal visible when Approve lands on a walk-in that has just timed out", async () => {
+        // The server expires it lazily and answers 400; the reload that follows drops the row.
+        api.on("POST", "/v1/gatepass/resident-approvals/w-1", { status: 400, body: { message: "Gate pass is not pending approval" } });
+        render(<TenantGatePassesPage />);
+        fireEvent.click(await screen.findByTestId("gatepass-tab-visitors"));
+        api.on("GET", "/v1/gatepass/resident-approvals", { body: [] });
+        fireEvent.click(await screen.findByTestId("visitor-approve-w-1"));
+        await waitFor(() => expect(api.callsTo("GET", "/resident-approvals").length).toBe(2));
+        expect(await screen.findByTestId("visitors-empty")).toBeTruthy();
+        // Not a silent "it vanished like a success": the tenant is told it was not let in.
+        expect(screen.getByTestId("gatepass-error").textContent).toBe("errNoLongerPending");
+    });
+
+    it("keeps a failed decision's error visible after the reload, with the row still there", async () => {
+        api.on("POST", "/v1/gatepass/resident-approvals/w-1", { status: 500 });
+        render(<TenantGatePassesPage />);
+        fireEvent.click(await screen.findByTestId("gatepass-tab-visitors"));
+        fireEvent.click(await screen.findByTestId("visitor-reject-w-1"));
+        await waitFor(() => expect(api.callsTo("GET", "/resident-approvals").length).toBe(2));
+        expect((await screen.findByTestId("gatepass-error")).textContent).toBe("decideError");
+        expect(screen.getByTestId("visitor-approve-w-1")).toBeTruthy();
     });
 
     it("lets the tenant approve a walk-in waiting at the gate", async () => {

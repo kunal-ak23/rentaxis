@@ -63,8 +63,10 @@ function TenantGatePasses() {
     const [actionError, setActionError] = useState<string | null>(null);
     const [deciding, setDeciding] = useState<string | null>(null);
 
-    const loadVisitors = useCallback(async () => {
-        setVisitorsError(null);
+    // `keepError`: a reload that follows a failed decision must not wipe the
+    // refusal — a timed-out walk-in vanishes from the list exactly as on success.
+    const loadVisitors = useCallback(async (keepError = false) => {
+        if (!keepError) setVisitorsError(null);
         try {
             const fetched = await fetchResidentApprovals();
             setVisitors(fetched);
@@ -80,8 +82,12 @@ function TenantGatePasses() {
         setLoadFailed(false);
         try {
             const [mine, leasesRes] = await Promise.all([fetchMyPasses(), fetch("/api/proxy/v1/leases/my-leases")]);
+            // A failed contracts read is a load failure, not "no current contract" —
+            // the form would otherwise tell a tenant with a valid contract they have none.
+            if (!leasesRes.ok) throw new Error(String(leasesRes.status));
+            const leases: MyContract[] = await leasesRes.json();
             setPasses(mine);
-            setContracts(leasesRes.ok ? await leasesRes.json() : []);
+            setContracts(leases);
         } catch {
             setLoadFailed(true);
         } finally {
@@ -104,7 +110,9 @@ function TenantGatePasses() {
         return passes.filter(p => (!statusFilter || p.status === statusFilter)
             && (!q || p.guestName.toLowerCase().includes(q) || p.guestPhone.includes(q)));
     }, [passes, statusFilter, search]);
-    const visible = pageOf(filtered, page, perPage);
+    // Clamped: deciding the last row of the last page must not leave an empty page.
+    const shownPage = Math.min(page, Math.max(1, Math.ceil(filtered.length / perPage)));
+    const visible = pageOf(filtered, shownPage, perPage);
 
     const doCancel = async () => {
         if (!toCancel) return;
@@ -116,7 +124,7 @@ function TenantGatePasses() {
             if (detail?.id === updated.id) setDetail(updated);
             setToCancel(null);
         } catch (err) {
-            setActionError(errorText(err, t("cancelError")));
+            setActionError(errorText(err, t("cancelError"), t));
             setToCancel(null);
         } finally {
             setCancelling(false);
@@ -130,8 +138,8 @@ function TenantGatePasses() {
             await decideResidentApproval(visitor.id, approved);
             setVisitors(vs => vs.filter(v => v.id !== visitor.id));
         } catch (err) {
-            setVisitorsError(errorText(err, t("decideError")));
-            await loadVisitors();
+            setVisitorsError(errorText(err, t("decideError"), t));
+            await loadVisitors(true);
         } finally {
             setDeciding(null);
         }
@@ -277,7 +285,7 @@ function TenantGatePasses() {
                     {filtered.length > 0 && (
                         <div className="mt-2">
                             <Pagination
-                                currentPage={page}
+                                currentPage={shownPage}
                                 totalItems={filtered.length}
                                 itemsPerPage={perPage}
                                 onPageChange={setPage}
@@ -287,7 +295,7 @@ function TenantGatePasses() {
                     )}
                 </>
             ) : (
-                <VisitorsTab visitors={visitors} error={visitorsError} deciding={deciding} onDecide={decide} onRefresh={loadVisitors} />
+                <VisitorsTab visitors={visitors} error={visitorsError} deciding={deciding} onDecide={decide} onRefresh={() => loadVisitors()} />
             )}
 
             <SideDrawer open={formOpen} onClose={() => setFormOpen(false)} title={t("newPassTitle")} testId="gatepass-form-drawer" closeLabel={t("close")}>
@@ -434,7 +442,7 @@ function PassForm({ contracts, onCreated }: { contracts: MyContract[]; onCreated
             onCreated(created);
         } catch (err) {
             // 404 is the server's "that unit is not on a current contract of yours".
-            setError(err instanceof ApiError && err.status === 404 ? t("errNotCurrentContract") : errorText(err, t("createError")));
+            setError(err instanceof ApiError && err.status === 404 ? t("errNotCurrentContract") : errorText(err, t("createError"), t));
         } finally {
             setSubmitting(false);
         }

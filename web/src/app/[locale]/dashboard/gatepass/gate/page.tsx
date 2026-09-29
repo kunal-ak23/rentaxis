@@ -114,7 +114,7 @@ function VerifyPanel() {
             setCode("");
         } catch (err) {
             // The scan endpoint is rate limited per gate (PublicRateLimitFilter).
-            setError(err instanceof ApiError && err.status === 429 ? t("errTooManyScans") : errorText(err, t("scanError")));
+            setError(err instanceof ApiError && err.status === 429 ? t("errTooManyScans") : errorText(err, t("scanError"), t));
         } finally {
             setBusy(null);
         }
@@ -283,13 +283,17 @@ function WalkInsPanel({ posting }: { posting: GuardProperty[] }) {
 
     const replace = (w: WalkInPass) => setRows(rs => (rs ?? []).map(r => (r.id === w.id ? w : r)));
 
-    const refreshOne = async (id: string) => {
+    // `keepError`: the refresh that follows a failed Admit must leave the Admit
+    // refusal on screen, or the guard sees an ACTIVE row and a live button and
+    // believes the entry was recorded.
+    const refreshOne = async (id: string, keepError = false) => {
         setBusyId(id);
-        setRowError(null);
+        if (!keepError) setRowError(null);
         try {
-            replace(await fetchWalkInStatus(id));
+            const fetched = await fetchWalkInStatus(id);
+            replace(fetched);
         } catch (err) {
-            setRowError(errorText(err, t("walkInStatusError")));
+            if (!keepError) setRowError(errorText(err, t("walkInStatusError"), t));
         } finally {
             setBusyId(null);
         }
@@ -299,10 +303,11 @@ function WalkInsPanel({ posting }: { posting: GuardProperty[] }) {
         setBusyId(id);
         setRowError(null);
         try {
-            replace(await admitWalkIn(id));
+            const fetched = await admitWalkIn(id);
+            replace(fetched);
         } catch (err) {
-            setRowError(errorText(err, t("admitError")));
-            await refreshOne(id);
+            setRowError(errorText(err, t("admitError"), t));
+            await refreshOne(id, true);
         } finally {
             setBusyId(null);
         }
@@ -425,7 +430,7 @@ function WalkInForm({ posting, onCreated }: { posting: GuardProperty[]; onCreate
             setName(""); setPhone(""); setPurpose(""); setVehicle(""); setPhoto(null); setUnitId("");
             setFormKey(k => k + 1);
         } catch (err) {
-            setError(errorText(err, t("walkInError")));
+            setError(errorText(err, t("walkInError"), t));
         } finally {
             setSubmitting(false);
         }

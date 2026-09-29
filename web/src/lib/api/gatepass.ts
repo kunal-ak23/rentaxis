@@ -310,16 +310,41 @@ export function scanReasonKey(reason: string | null | undefined): string | null 
     return REASON_KEYS[reason.trim().toLowerCase()] ?? null;
 }
 
-/** The instant for a local date + time (`yyyy-MM-dd`, `HH:mm`), as the ISO string the API takes. */
+/**
+ * The instant for a gate date + time (`yyyy-MM-dd`, `HH:mm`) in UAE time, as
+ * the ISO string the API takes. The gate is in Dubai whatever the browser's
+ * zone: a tenant abroad who picks "09:00" means 09:00 at the gate, and the
+ * server's expected-today board is Asia/Dubai. The UAE keeps +04:00 all year.
+ */
 export function localInstant(date: string, time: string): string {
-    const [y, m, d] = date.split("-").map(Number);
-    const [hh, mm] = time.split(":").map(Number);
-    return new Date(y, m - 1, d, hh, mm, 0, 0).toISOString();
+    return new Date(`${date}T${time}:00+04:00`).toISOString();
 }
 
-/** A message for a failed call: the server's own sentence when it sent one, else the fallback. */
-export function errorText(err: unknown, fallback: string): string {
-    if (err instanceof ApiError && err.message && !/^Request failed \(status \d+\)$/.test(err.message)) return err.message;
+/** Translation keys (GatePass namespace) for refusals the gate-pass controllers send in English. */
+const SERVER_KEYS: Record<string, string> = {
+    "gate pass is not pending approval": "errNoLongerPending",
+    "walk-in requests must be decided by the resident": "errResidentDecides",
+    "a fresh visitor photo is required at this gate": "errPhotoRequired",
+    "gate pass has already been used": "errAlreadyUsed",
+    "gate pass not found": "errPassNotFound",
+    "visitor request not found": "errPassNotFound",
+    "unit is not on an active lease of yours": "errNotCurrentContract",
+    "approval timeout must be between 1 and 1440 minutes": "errTimeout",
+    "mobile number must include a valid country code, for example +971501234567": "errPhone",
+};
+
+/**
+ * A message for a failed call. A refusal this client knows (above, or a scan
+ * reason — Admit re-throws those) reads in the user's language; any other
+ * server sentence is shown as sent; otherwise the fallback.
+ */
+export function errorText(err: unknown, fallback: string, t?: (key: string) => string): string {
+    if (err instanceof ApiError && err.message && !/^Request failed \(status \d+\)$/.test(err.message)) {
+        const norm = err.message.trim().toLowerCase();
+        const key = SERVER_KEYS[norm] ?? scanReasonKey(norm);
+        if (key && t) return t(key);
+        return err.message;
+    }
     return fallback;
 }
 

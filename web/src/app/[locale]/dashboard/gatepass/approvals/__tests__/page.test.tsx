@@ -77,6 +77,29 @@ describe("Gate pass approvals", () => {
         expect(screen.getByRole("status").textContent).toContain("approvedNotice");
     });
 
+    it("sends one decision for a double click on Confirm", async () => {
+        api.on("POST", "/v1/gatepass/g1/approval", { body: row("g1", { status: "ACTIVE" }) });
+        render(<GatePassApprovalsPage />);
+        fireEvent.click(await screen.findByTestId("approve-g1"));
+        const confirm = await screen.findByTestId("approval-confirm");
+        fireEvent.click(confirm);
+        fireEvent.click(confirm);
+        await waitFor(() => expect(screen.queryByText("Guest g1")).toBeNull());
+        expect(api.callsTo("POST", "/g1/approval")).toHaveLength(1);
+    });
+
+    it("steps back a page when the last row of the last page is decided", async () => {
+        api.on("GET", "/v1/gatepass/approvals", { body: Array.from({ length: 11 }, (_, i) => row(`r${i}`)) });
+        api.on("POST", "/v1/gatepass/r10/approval", { body: row("r10", { status: "ACTIVE" }) });
+        render(<GatePassApprovalsPage />);
+        await screen.findByTestId("approvals-table");
+        fireEvent.click(screen.getByRole("button", { name: "2" }));
+        fireEvent.click(await screen.findByTestId("approve-r10"));
+        fireEvent.click(await screen.findByTestId("approval-confirm"));
+        await waitFor(() => expect(screen.queryByTestId("approve-r10")).toBeNull());
+        expect(within(screen.getByTestId("approvals-table")).getAllByRole("row")).toHaveLength(11);
+    });
+
     it("rejects with approved:false", async () => {
         api.on("POST", "/v1/gatepass/g2/approval", { body: row("g2", { status: "CANCELLED" }) });
         render(<GatePassApprovalsPage />);
@@ -91,7 +114,7 @@ describe("Gate pass approvals", () => {
         render(<GatePassApprovalsPage />);
         fireEvent.click(await screen.findByTestId("approve-g1"));
         fireEvent.click(await screen.findByTestId("approval-confirm"));
-        expect((await screen.findByTestId("gatepass-error")).textContent).toBe("Gate pass is not pending approval");
+        expect((await screen.findByTestId("gatepass-error")).textContent).toBe("errNoLongerPending");
         await waitFor(() => expect(api.callsTo("GET", "/gatepass/approvals").length).toBe(2));
     });
 

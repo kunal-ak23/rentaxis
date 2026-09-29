@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import ar from "../../../../messages/ar.json";
 import en from "../../../../messages/en.json";
-import { currentContracts, scanReasonKey, toE164, type MyContract } from "../gatepass";
+import { ApiError, currentContracts, errorText, localInstant, scanReasonKey, toE164, type MyContract } from "../gatepass";
 
 const c = (over: Partial<MyContract>): MyContract => ({
     id: "l", unitId: "u", unitIdentifier: "A-1", propertyId: "p", propertyName: "P",
@@ -37,6 +37,32 @@ describe("toE164 — the walk-in desk's phone rule", () => {
         expect(toE164("0501234567")).toBeNull();
         expect(toE164("+12345")).toBeNull();
         expect(toE164("+1234567890123456")).toBeNull();
+    });
+});
+
+describe("localInstant — gate times are UAE time", () => {
+    it("reads the picked time as Asia/Dubai (+04:00), whatever the browser zone", () => {
+        expect(localInstant("2026-10-02", "09:00")).toBe("2026-10-02T05:00:00.000Z");
+        expect(localInstant("2026-10-02", "00:00")).toBe("2026-10-01T20:00:00.000Z");
+    });
+});
+
+describe("errorText — known refusals in the user's language", () => {
+    const t = (k: string) => `T:${k}`;
+    it("maps known server sentences and scan reasons to keys present in both catalogues", () => {
+        for (const [msg, key] of [["Gate pass is not pending approval", "errNoLongerPending"],
+            ["A fresh visitor photo is required at this gate", "errPhotoRequired"],
+            ["Walk-in requests must be decided by the resident", "errResidentDecides"],
+            ["outside validity window", "reasonOutsideWindow"]]) {
+            expect(errorText(new ApiError(400, msg), "fb", t), msg).toBe(`T:${key}`);
+            expect((en.GatePass as Record<string, unknown>)[key], `en ${key}`).toBeTypeOf("string");
+            expect((ar.GatePass as Record<string, unknown>)[key], `ar ${key}`).toBeTypeOf("string");
+        }
+    });
+    it("shows an unknown server sentence as sent, and the fallback for a bare status", () => {
+        expect(errorText(new ApiError(403, "Access denied"), "fb", t)).toBe("Access denied");
+        expect(errorText(new ApiError(500, "Request failed (status 500)"), "fb", t)).toBe("fb");
+        expect(errorText(new Error("x"), "fb", t)).toBe("fb");
     });
 });
 

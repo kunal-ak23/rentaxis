@@ -38,7 +38,7 @@ beforeEach(() => {
     api.on("GET", "/v1/gatepass/policies/effective", { body: POLICY });
     api.on("GET", "/v1/units/property/", { body: [{ id: "unit-1", unitNumber: "A-204" }] });
     api.on("GET", "/admin/users", { body: [
-        { id: "g-1", name: "Ravi", email: null, phone: "+971500000001", role: "SECURITY_GUARD" },
+        { id: "g-1", name: "Ravi", email: "ravi@x.test", phoneNumber: "+971500000001", role: "SECURITY_GUARD" },
         { id: "m-1", name: "Maya", email: "maya@x.test", role: "PROPERTY_MANAGER" },
     ] });
     api.on("GET", "/v1/gatepass/guards/g-1/properties", { body: ["prop-1"] });
@@ -76,6 +76,17 @@ describe("Gate policy & visitors", () => {
             requireUnregisteredApproval: true, requireRegisteredApproval: false, notifyRegisteredEntry: true,
             requireFreshPhoto: false, approvalTimeoutMinutes: 30,
         });
+    });
+
+    it("drops the previous scope's values when the tower changes, so a failed read cannot be saved over the tower", async () => {
+        api.on("GET", "/v1/buildings/property/", { body: [{ id: "b-1", nameEn: "Tower A", nameAr: null }] });
+        render(<GatePassSettingsPage />);
+        await screen.findByTestId("policy-inherited");
+        api.on("GET", /policies\/effective.*buildingId=b-1/, { status: 500 });
+        fireEvent.change(await screen.findByLabelText("tower"), { target: { value: "b-1" } });
+        expect(await screen.findByTestId("policy-load-error")).toBeTruthy();
+        expect(screen.queryByTestId("policy-save")).toBeNull();
+        expect(screen.queryByTestId("policy-timeout")).toBeNull();
     });
 
     it("refuses an out-of-range timeout before calling the server", async () => {
@@ -117,6 +128,8 @@ describe("Gate policy & visitors", () => {
         const table = await screen.findByTestId("guards-table");
         expect(within(table).getByText("Ravi")).toBeTruthy();
         expect(within(table).queryByText("Maya")).toBeNull();
+        // UserResponseDTO's field is phoneNumber; the phone wins over the email.
+        expect(within(table).getByText("+971500000001")).toBeTruthy();
         fireEvent.click(within(table).getByTestId("guard-edit-g-1"));
         const posting = await screen.findByTestId("guard-posting");
         fireEvent.click(within(posting).getByLabelText("Marina Heights"));

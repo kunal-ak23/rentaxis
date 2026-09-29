@@ -20,7 +20,8 @@ import {
 /** GET /api/v1/properties wraps each property in a portfolio row (see the report page). */
 type PropertyRow = { property: { id: string; nameEn: string; nameAr: string | null } };
 type UnitRow = { id: string; unitNumber: string };
-type StaffUser = { id: string; name: string | null; email: string | null; phone?: string | null; role: string };
+/** The slice of UserResponseDTO read here — note `phoneNumber`, not `phone`. */
+type StaffUser = { id: string; name: string | null; email: string | null; phoneNumber?: string | null; role: string };
 
 /**
  * Where an administrator sets how the gate behaves: the access policy for a
@@ -115,7 +116,7 @@ function PolicySection({ propertyId }: { propertyId: string }) {
         setSaved(false);
         fetchEffectivePolicy(propertyId, buildingId || null)
             .then(p => { if (alive) { setPolicy(p); setDraft(p); } })
-            .catch(err => { if (alive) setLoadError(errorText(err, t("policyLoadError"))); });
+            .catch(err => { if (alive) setLoadError(errorText(err, t("policyLoadError"), t)); });
         return () => { alive = false; };
     }, [propertyId, buildingId, t]);
 
@@ -132,7 +133,7 @@ function PolicySection({ propertyId }: { propertyId: string }) {
             setDraft(p);
             setSaved(true);
         } catch (err) {
-            setSaveError(errorText(err, t("policySaveError")));
+            setSaveError(errorText(err, t("policySaveError"), t));
         } finally {
             setSaving(false);
         }
@@ -148,7 +149,14 @@ function PolicySection({ propertyId }: { propertyId: string }) {
                 {buildings.length > 0 && (
                     <div>
                         <label htmlFor="gs-tower" className={labelClass}>{t("tower")}</label>
-                        <select id="gs-tower" value={buildingId} onChange={e => setBuildingId(e.target.value)} className={cn(inputClass, "w-auto text-xs")}>
+                        <select id="gs-tower" value={buildingId} onChange={e => {
+                            // A new scope drops the old one's values: saving them before the new
+                            // read lands would write the property's policy onto this tower.
+                            setPolicy(null);
+                            setDraft(null);
+                            setLoadError(null);
+                            setBuildingId(e.target.value);
+                        }} className={cn(inputClass, "w-auto text-xs")}>
                             <option value="">{t("wholeProperty")}</option>
                             {buildings.map(b => <option key={b.id} value={b.id}>{(locale === "ar" ? b.nameAr || b.nameEn : b.nameEn || b.nameAr) ?? b.id.slice(0, 8)}</option>)}
                         </select>
@@ -230,7 +238,7 @@ function RegularVisitorSection({ propertyId }: { propertyId: string }) {
             setNotice(t("visitorRegistered", { name: name.trim() }));
             setName(""); setPhone(""); setValidFrom(""); setValidTo("");
         } catch (err) {
-            setError(errorText(err, t("visitorRegisterError")));
+            setError(errorText(err, t("visitorRegisterError"), t));
         } finally {
             setSaving(false);
         }
@@ -322,7 +330,7 @@ function GuardsSection({ properties, nameOf }: { properties: PropertyRow[]; name
                                 {pageOf(guards, page, perPage).map(g => (
                                     <tr key={g.id} className="border-b border-border align-top">
                                         <td className="px-4 py-2.5 text-xs text-foreground font-medium">{g.name ?? "—"}</td>
-                                        <td className="px-4 py-2.5 text-xs text-muted" dir="ltr">{g.phone || g.email || "—"}</td>
+                                        <td className="px-4 py-2.5 text-xs text-muted" dir="ltr">{g.phoneNumber || g.email || "—"}</td>
                                         <td className="px-4 py-2.5 text-end">
                                             {editing === g.id ? (
                                                 <GuardPosting guardId={g.id} properties={properties} nameOf={nameOf} onDone={() => setEditing(null)} />
@@ -354,7 +362,7 @@ function GuardPosting({ guardId, properties, nameOf, onDone }: {
         let alive = true;
         fetchGuardProperties(guardId)
             .then(ids => { if (alive) setSelected(new Set(ids)); })
-            .catch(err => { if (alive) setError(errorText(err, t("postingLoadError"))); });
+            .catch(err => { if (alive) setError(errorText(err, t("postingLoadError"), t)); });
         return () => { alive = false; };
     }, [guardId, t]);
 
@@ -368,7 +376,7 @@ function GuardPosting({ guardId, properties, nameOf, onDone }: {
             await saveGuardProperties(guardId, [...selected]);
             onDone();
         } catch (err) {
-            setError(errorText(err, t("postingSaveError")));
+            setError(errorText(err, t("postingSaveError"), t));
         } finally {
             setSaving(false);
         }
