@@ -14,6 +14,7 @@ import {
 } from './lib/context.mjs';
 import { installCursorOverlay, patchLocatorForCapture, pointerAt } from './lib/cursor.mjs';
 import { narrationDurationSeconds } from './lib/narration.mjs';
+import { setScenePlannedStart } from './lib/proof.mjs';
 import {
   addCallout, auditVisibleDialogContrast, clearCallout, pageReadyAt, suppressAutomaticOnboarding,
 } from './lib/page.mjs';
@@ -99,6 +100,13 @@ async function authenticatedStorageState(role) {
 // context and page when both run as the same role.
 let live = null;
 let recordingStartedAt = null;
+// Anchored scenarios (`anchored: true`): a scene that continues the previous
+// clip is planned to start where the previous one was planned to end, so one
+// slow step (a cold backend posting a contract) is caught up by the scenes
+// after it instead of pushing every later cue late. A new clip re-anchors on
+// its own start: the time spent opening a context is not in the video.
+let plannedStart = null;
+let plannedDuration = 0;
 
 async function closeLive() {
   if (!live) return;
@@ -203,6 +211,9 @@ try {
 
     const startedAt = Date.now();
     recordingStartedAt ??= startedAt;
+    const anchored = scenario.anchored === true && scene.continues && plannedStart !== null;
+    plannedStart = anchored ? plannedStart + plannedDuration * 1000 : startedAt;
+    setScenePlannedStart(scenario.anchored === true ? plannedStart : null);
     if (!validateOnly) {
       // Approximate offset into the recording, for checking scenes against subtitle cues.
       console.log(`scene=${sceneIndex + 1} starts_at=${((startedAt - recordingStartedAt) / 1000).toFixed(1)}s title=${scene.title}`);
@@ -232,7 +243,8 @@ try {
       // pays the pause after its callout clears (below), which would otherwise
       // push every later scene behind the narration.
       : Math.max(1, targetDuration * (sceneWeights[sceneIndex] / totalSceneWeight) - (scene.continues ? 0.4 : clipOverheadSeconds));
-    const elapsedSeconds = (Date.now() - startedAt) / 1000;
+    plannedDuration = sceneDuration + (validateOnly ? 0.1 : 0.4);
+    const elapsedSeconds = (Date.now() - (scenario.anchored === true ? plannedStart : startedAt)) / 1000;
     await page.waitForTimeout(Math.max(500, (sceneDuration - elapsedSeconds) * 1000));
     await clearCallout(page);
     await page.waitForTimeout(validateOnly ? 100 : 400);
