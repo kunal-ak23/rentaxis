@@ -2,8 +2,6 @@ import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../../../messages/en.json";
-import ar from "../../../../../../messages/ar.json";
-import type { LineRow } from "@/components/leases/leaseMath";
 import type { LeaseDetail } from "@/lib/api/leasing";
 
 /**
