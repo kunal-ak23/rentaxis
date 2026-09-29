@@ -10,6 +10,17 @@
     "off": "Off"
   },
   "MasterData": {
+    "overviewUnits": "Units",
+    "unitsTotal": "Total units",
+    "unitsOccupied": "Occupied",
+    "unitsVacant": "Vacant",
+    "unitsReserved": "Reserved",
+    "unitsMaintenance": "Under maintenance",
+    "overviewParking": "Parking",
+    "parkingTotal": "Total spots",
+    "parkingAssigned": "Assigned",
+    "parkingFree": "Free",
+    "parkingInactive": "{count, plural, one {# inactive spot} other {# inactive spots}} not counted",
     "contractUnavailable": "The contract could not be downloaded. Please try again, or ask your property manager for a copy.",
     "acceptFailed": "The contract could not be accepted. It may have been updated since you opened it — review the current contract and try again.",
     "acceptUnavailable": "This contract is no longer available — your landlord has withdrawn it. Contact them if you have questions.",

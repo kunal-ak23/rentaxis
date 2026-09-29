@@ -10,6 +10,17 @@
     "off": "معطّل"
   },
   "MasterData": {
+    "overviewUnits": "الوحدات",
+    "unitsTotal": "إجمالي الوحدات",
+    "unitsOccupied": "مشغولة",
+    "unitsVacant": "شاغرة",
+    "unitsReserved": "محجوزة",
+    "unitsMaintenance": "قيد الصيانة",
+    "overviewParking": "المواقف",
+    "parkingTotal": "إجمالي المواقف",
+    "parkingAssigned": "مخصصة",
+    "parkingFree": "متاحة",
+    "parkingInactive": "{count, plural, one {موقف واحد غير نشط} two {موقفان غير نشطين} few {# مواقف غير نشطة} many {# موقفًا غير نشط} other {# موقف غير نشط}} غير محتسب",
     "contractUnavailable": "تعذّر تنزيل العقد. يرجى المحاولة مرة أخرى أو طلب نسخة من مدير العقار.",
     "acceptFailed": "تعذّر قبول العقد. ربما تم تحديثه منذ أن فتحته — يرجى مراجعة العقد الحالي والمحاولة مرة أخرى.",
     "acceptUnavailable": "لم يعد هذا العقد متاحاً — لقد سحبه المالك. تواصل معه إذا كانت لديك أي أسئلة.",
