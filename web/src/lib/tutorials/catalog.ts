@@ -222,7 +222,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "36", slug: "month-end-recognition", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 109, youtubeId: null,
+        id: "36", slug: "month-end-recognition", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 109, youtubeId: "qhprxarzR4w",
         title: { en: "Month-end recognition", ar: "الاعتراف بالإيراد في نهاية الشهر" },
         description: {
             en: "Run recognition to a cut-off date and watch advance rent move into rental income, period by period.",
