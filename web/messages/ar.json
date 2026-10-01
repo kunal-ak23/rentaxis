@@ -2279,7 +2279,6 @@
     "scanCheques": "مسح الشيكات ضوئيًا",
     "scanAttached": "تم إرفاق صور الشيكات. أصبحت الأرقام والبنوك والتواريخ المقروءة من الصور على الصفوف.",
     "attachScan": "إرفاق صورة الشيك",
-    "viewScan": "عرض صورة الشيك",
     "ledgerLinkTitleNoCode": "{name} — فتح في دفتر الأستاذ العام",
     "ledgerLinkTitle": "{code} · {name} — فتح في دفتر الأستاذ العام",
     "wizardFilterProperty": "العقار",
@@ -2679,7 +2678,6 @@
   "Cheques": {
     "scanCheques": "مسح الشيكات ضوئيًا",
     "attachScan": "إرفاق صورة الشيك",
-    "viewScan": "عرض صورة الشيك",
     "scanContinue": "متابعة",
     "scanPickerHint": "اختر العقد الذي تتبع له الشيكات. تتم قراءة صورها وإرفاقها بشيكاته المؤجلة.",
     "scanNoContracts": "لم يُعثر على عقد يقبل صور الشيكات.",

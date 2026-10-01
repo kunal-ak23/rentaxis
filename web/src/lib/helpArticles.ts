@@ -363,7 +363,7 @@ A cheque past its date and not yet cleared is shown as **Overdue**.
 ### Scanning cheques
 
 - On a contract's **Cheques** tab, **Scan cheques** (draft) or **Bulk upload cheques** (posted) reads a set of cheque photos onto the rows
-- Each registered cheque has its own **Attach scan**; **View scan** opens the image once one is attached
+- Each registered cheque has its own **Attach scan**, for one cheque at a time
 - **Cheque / Cash Collection › Scan cheques** does the same for any contract — pick the contract, then the photos
 
 ### Managing Payments

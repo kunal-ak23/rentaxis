@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { Camera, CheckCircle2, FileImage, Hash, Loader2, TriangleAlert, Wand2 } from "lucide-react";
+import { Camera, CheckCircle2, Hash, Loader2, TriangleAlert, Wand2 } from "lucide-react";
 import SettlementAccountPicker from "@/components/finance/SettlementAccountPicker";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { chequeGridHandlers, pasteIntoRows, type GridField, type PasteRequest } from "@/components/cheques/chequeGridKeys";
@@ -480,32 +480,16 @@ export default function ChequeGrid({
                                     )}
                                 </td>
                                 <td className={`${td}${flag(i, "chequeNumber")}`} data-grid-field="chequeNumber" data-paste-invalid={paste.isBad(i, "chequeNumber") || undefined}>
-                                    <span className="flex items-center gap-1">
-                                        {editable ? (
-                                            <input
-                                                aria-label={`${t("chequeNo")} ${i + 1}`}
-                                                className={field}
-                                                value={c.chequeNumber ?? ""}
-                                                onChange={e => patch(c.id, { chequeNumber: e.target.value })}
-                                            />
-                                        ) : (
-                                            c.chequeNumber || "—"
-                                        )}
-                                        {c.imageUrl && (
-                                            // The scan attached to this cheque — captured since the bulk upload, never shown until now.
-                                            <a
-                                                href={c.imageUrl}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                data-testid={`cheque-scan-link-${i}`}
-                                                aria-label={`${t("viewScan")} ${i + 1}`}
-                                                title={t("viewScan")}
-                                                className="shrink-0 text-primary hover:text-primary/80"
-                                            >
-                                                <FileImage size={13} />
-                                            </a>
-                                        )}
-                                    </span>
+                                    {editable ? (
+                                        <input
+                                            aria-label={`${t("chequeNo")} ${i + 1}`}
+                                            className={field}
+                                            value={c.chequeNumber ?? ""}
+                                            onChange={e => patch(c.id, { chequeNumber: e.target.value })}
+                                        />
+                                    ) : (
+                                        c.chequeNumber || "—"
+                                    )}
                                 </td>
                                 <td className={`${td}${flag(i, "chequeDate")}`} data-grid-field="chequeDate" data-paste-invalid={paste.isBad(i, "chequeDate") || undefined}>
                                     {editable ? (

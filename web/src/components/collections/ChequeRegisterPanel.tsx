@@ -573,17 +573,6 @@ export default function ChequeRegisterPanel({ embedded = false }: { embedded?: b
                                                             {t("attachScan")}
                                                         </button>
                                                     )}
-                                                    {c.imageUrl && (
-                                                        <a
-                                                            href={c.imageUrl}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            data-testid={`cheque-row-scan-link-${c.id}`}
-                                                            className="px-2 py-1 rounded-md text-[10px] font-bold text-primary hover:underline"
-                                                        >
-                                                            {t("viewScan")}
-                                                        </a>
-                                                    )}
                                                 </div>
                                             </td>
                                         </tr>
