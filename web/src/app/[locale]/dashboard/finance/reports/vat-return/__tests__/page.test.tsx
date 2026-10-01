@@ -13,6 +13,7 @@ vi.mock("@/lib/api/vatReturns", async (orig) => {
 });
 
 import VatReturnPage from "../page";
+import { lastQuarterStart } from "@/lib/api/vatReturns";
 
 /** PR #361 R1: filing and re-opening confirm in the app dialog; the reason is typed there. No window.confirm/prompt. */
 const base = { id: null, periodStart: "2026-04-01", periodEnd: "2026-06-30", status: "OPEN", filedAt: null, filedByName: null,
@@ -77,7 +78,7 @@ describe("VAT return page", () => {
         expect(file.disabled).toBe(false);
         fireEvent.click(file);
         fireEvent.click(await screen.findByTestId("vat-confirm"));
-        await waitFor(() => expect(api.file).toHaveBeenCalledWith("2026-04-01", "", "Cut-over contracts invoiced by PACT", -3000));
+        await waitFor(() => expect(api.file).toHaveBeenCalledWith(lastQuarterStart(), "", "Cut-over contracts invoiced by PACT", -3000));
     });
 
     it("shows what the filing recorded about the output check, and never a pre-check filing as tied", async () => {
@@ -109,5 +110,22 @@ describe("VAT return page", () => {
         fireEvent.click(await screen.findByTestId("vat-confirm"));
         expect(await screen.findByTestId("vat-override")).toBeTruthy();
         expect(api.get).toHaveBeenCalledTimes(2);
+    });
+    it("shows the selected quarter's return even when the previous quarter's answer arrives last (tutorial 41)", async () => {
+        let releaseFirst: (v: unknown) => void = () => {};
+        const first = new Promise((resolve) => { releaseFirst = resolve; });
+        const initial = { ...base, id: "old", status: "FILED", filedAt: "2026-07-10T00:00:00Z", filingReference: "OLD-QUARTER", canFile: false };
+        const chosen = { ...base, periodStart: "2026-04-01", periodEnd: "2026-06-30", status: "OPEN" };
+        api.get.mockImplementation((start: string) => (start === "2026-04-01" ? Promise.resolve(chosen) : first));
+        api.filings.mockResolvedValue([]);
+        render(<NextIntlClientProvider locale="en" messages={en}><VatReturnPage /></NextIntlClientProvider>);
+        fireEvent.change(screen.getByTestId("vat-quarter"), { target: { value: "2026-04-01" } });
+        await waitFor(() => expect(api.get).toHaveBeenCalledWith("2026-04-01"));
+        await screen.findByTestId("vat-file");
+        releaseFirst(initial);
+        await new Promise((r) => setTimeout(r, 20));
+        expect(screen.getByTestId("vat-status").textContent).not.toContain("OLD-QUARTER");
+        expect(screen.queryByTestId("vat-reopen")).toBeNull();
+        expect(screen.getByTestId("vat-file")).toBeTruthy();
     });
 });
