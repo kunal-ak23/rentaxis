@@ -254,7 +254,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "44", slug: "supplier-bills-payment-runs-and-issued-cheques", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 130, youtubeId: null,
+        id: "44", slug: "supplier-bills-payment-runs-and-issued-cheques", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 130, youtubeId: "EFaGtSVA-KM",
         title: { en: "Supplier bills, payment runs and issued cheques", ar: "فواتير الموردين ودفعات السداد والشيكات الصادرة" },
         description: {
             en: "Post supplier bills with input VAT, pay what is due in a payment run, and follow a post-dated supplier cheque until the bank pays it.",
