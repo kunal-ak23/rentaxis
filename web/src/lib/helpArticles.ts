@@ -263,19 +263,15 @@ Tenancy Contracts are the core of Miftah — they link a tenant to a unit with p
    - **Property & Unit** — Select from your existing properties and vacant units
    - **Tenant** — Choose an existing tenant or create a new one
    - **Tenancy Contract Dates** — Start date and end date
-   - **Rent Amount** — Monthly rent in AED
+   - **Rent Amount** — the rent for the whole term in AED; if it works out below the unit's asking rent a year, the form says by how much (it never blocks)
    - **Security Deposit** — If applicable
    - **Payment Method** — Cheque, Online, Cash, or Bank Transfer
 
-### Payment Schedule
+### Cheques
 
-When you create a contract, Miftah automatically generates a payment schedule based on:
-- The contract duration
-- Monthly rent amount
-- Selected payment method
-- Pro-rata calculation for the first partial month (if applicable)
+The **Cheques** step generates one row per instalment from the contract duration, the rent and the number of cheques. Edit any row, then **Save cheques**.
 
-You can review and edit the payment schedule before posting the contract.
+To fill the cheque numbers, banks and dates from the paper cheques, click **Scan cheques** and choose photos of them (one photo may hold several cheques). Each cheque is read, matched to its row by date and amount, and shown for you to check before it is attached with its image.
 
 ### Posting the Tenancy Contract
 
@@ -354,13 +350,21 @@ When a contract is created, Miftah automatically generates monthly payment entri
 
 | Status | Meaning |
 |--------|---------|
-| **Pending** | Payment is expected but not yet due or collected |
-| **Collected** | Payment has been received |
-| **Deposited** | Payment (cheque) has been deposited at the bank |
-| **Cleared** | Payment has fully cleared |
-| **Overdue** | Payment is past due and not collected |
-| **Bounced** | Cheque was returned/bounced |
-| **Rejected** | Payment was rejected |
+| **Registered** | The cheque is in hand (or the cash/transfer is expected) and on the books |
+| **Deposited** | The cheque has been deposited at the bank |
+| **Cleared** | The money has arrived |
+| **Bounced** | The cheque was returned unpaid |
+| **Replaced** | A bounced cheque was replaced by a new one |
+| **Returned** | The cheque was handed back to the tenant |
+| **Cancelled** | The row was cancelled and its entry reversed |
+
+A cheque past its date and not yet cleared is shown as **Overdue**.
+
+### Scanning cheques
+
+- On a contract's **Cheques** tab, **Scan cheques** (draft) or **Bulk upload cheques** (posted) reads a set of cheque photos onto the rows
+- Each registered cheque has its own **Attach scan**; **View scan** opens the image once one is attached
+- **Cheque / Cash Collection › Scan cheques** does the same for any contract — pick the contract, then the photos
 
 ### Managing Payments
 

@@ -34,6 +34,7 @@ import { serverText } from "@/components/finance/bankrec/serverText";
 import { CONFIRM_TERM_YEARS, MAX_TERM_YEARS, termExceedsYears, termYears } from "@/lib/leaseTerm";
 import { isBeyondManualPostingWindow, maxManualPostingDateIso } from "@/lib/businessDate";
 import { formatDate } from "@/lib/format";
+import { belowExpectedRent } from "@/lib/leases/belowExpectedRent";
 
 /**
  * Drafting a tenancy contract, in the order the client's accountant fills one
@@ -278,6 +279,31 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         : null;
 
     const propertyDefaultGrace = usePropertyDefaultGrace(selectedUnit?.propertyId ?? undefined);
+
+    /*
+     * #254 (client request, lost in the v2 rebuild): warn — never block — when the
+     * rent is below the unit's asking rent. `Unit.expectedRent` is a YEAR's rent
+     * (see #254); this form takes the rent for the whole term, so the two are
+     * compared as annual rates (rent ÷ term days × 365), whatever the term's length.
+     * The picker's lookup row carries no asking rent, so it is read from the
+     * unit's own page of `/units/paged`.
+     */
+    const [unitExpectedRent, setUnitExpectedRent] = useState<number | null>(null);
+    useEffect(() => {
+        setUnitExpectedRent(null);
+        if (!open || !unitId || !selectedUnit?.unitNumber) return;
+        let alive = true;
+        const q = new URLSearchParams({ q: selectedUnit.unitNumber, size: "50" });
+        if (selectedUnit.propertyId) q.set("propertyId", selectedUnit.propertyId);
+        fetch(`/api/proxy/v1/units/paged?${q.toString()}`)
+            .then(r => (r.ok ? r.json() : null))
+            .then((page: { content?: { id: string; expectedRent?: number | null }[] } | null) => {
+                const unit = page?.content?.find(u => u.id === unitId);
+                if (alive) setUnitExpectedRent(typeof unit?.expectedRent === "number" && unit.expectedRent > 0 ? unit.expectedRent : null);
+            })
+            .catch(() => undefined);
+        return () => { alive = false; };
+    }, [open, unitId, selectedUnit?.unitNumber, selectedUnit?.propertyId]);
     const totals = totalsOf(rows, chargeTypes);
     const { rest: bannerErrors } = splitLineErrors(serverErrors);
 
@@ -581,6 +607,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         patch({ endDate, ...followCount(terms.startDate, endDate) });
     };
     const rentAmount = rentAmountOf(rows, chargeTypes);
+    const rentShortfall = belowExpectedRent(unitExpectedRent, rentAmount, terms.startDate, terms.endDate);
     const setRentAmount = (amount: number) => {
         setRows(prev => withRentAmount(prev, chargeTypes, amount, terms.rentVatApplicable));
         setError(null);
@@ -751,6 +778,18 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                             <Field label={`${t("rentFullTerm")} *`}>
                                 <NumberInput money data-testid="wizard-rent" className={field} value={rentAmount}
                                     aria-label={t("rentFullTerm")} onChange={v => setRentAmount(v)} />
+                                {rentShortfall && (
+                                    <p role="status" data-testid="below-expected-rent" className="mt-1 flex items-start gap-1 text-[11px] text-warning">
+                                        <AlertTriangle size={12} className="mt-px shrink-0" />
+                                        <span>
+                                            {t("belowExpectedRent", {
+                                                expected: fmtAmount(rentShortfall.expected),
+                                                annual: fmtAmount(rentShortfall.annual),
+                                                gap: fmtAmount(rentShortfall.gap),
+                                            })}
+                                        </span>
+                                    </p>
+                                )}
                                 {rentUnavailable && chargeTypesState !== "loading" && (
                                     <p role="status" data-testid="wizard-rent-unavailable" className="mt-1 text-[11px] text-warning">
                                         {rentUnavailable}

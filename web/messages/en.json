@@ -2275,6 +2275,7 @@
     "urlAccountsCapped": "This link named {count} accounts; the first {max} are shown. Pick fewer, or open the Trial Balance for the whole company."
   },
   "Leasing": {
+    "belowExpectedRent": "This unit asks {expected} a year. This contract works out at {annual} a year — {gap} below.",
     "scanCheques": "Scan cheques",
     "scanAttached": "Cheque scans attached. The numbers, banks and dates from the scans are now on the rows.",
     "attachScan": "Attach scan",
