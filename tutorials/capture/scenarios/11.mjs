@@ -7,11 +7,13 @@
 // tenant accepts it in the portal, and the admin sees Accepted by tenant.
 // The run prints draft_contract_id so record-local.sh can account for it.
 //
-// BLOCKED (tutorials/bugs/11-contract-documents-stale-after-generate.md):
-// after Confirm & Save the Contract documents list does not show the new
-// contract until the page is reloaded. The proof asserts the list, so it fails
-// there until the product is fixed; nothing is recorded around it.
-import { navTimeoutMs, seed } from '../lib/context.mjs';
+// Unblocked by main's fix (ContractDocuments refreshKey): the list shows the new
+// contract right after Confirm & Save.
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { navTimeoutMs, seed, validateOnly } from '../lib/context.mjs';
 import { pointAt, restPointer } from '../lib/cursor.mjs';
 import { goto } from '../lib/page.mjs';
 import { expectText, pace } from '../lib/proof.mjs';
@@ -75,22 +77,57 @@ async function prepareDraft(page) {
   console.log(`draft_contract_id=${contractId}`);
 }
 
-/** The PDF viewer is a plugin frame: cover the tenant's email and phone rows with a blur. */
-async function hidePdfContactRows(page) {
+/**
+ * The browser's PDF viewer is an out-of-process plugin, and the headless
+ * screencast that becomes the video never repaints it (take 1 showed a stale
+ * frame there). For the capture, the preview's own PDF is fetched from the
+ * page, page 1 is rendered with pdftoppm and laid over the viewer, so the
+ * video shows the very document the user sees. The tenant's email and phone
+ * rows are blurred as before.
+ */
+async function paintPdfForCapture(page) {
+  if (validateOnly) return;
+  const t0 = Date.now();
+  // A plain viewer-grey cover first, so the stale plugin frame is never seen.
   await page.evaluate(() => {
-    const frame = document.querySelector('object[type="application/pdf"]');
-    if (!frame || document.querySelector('[data-tutorial-pdf-mask]')) return;
-    const box = frame.getBoundingClientRect();
-    const mask = document.createElement('div');
-    mask.dataset.tutorialPdfMask = 'true';
-    // Measured on the 1920x1080 preview at 100 %: the value cells of the
-    // Email and Contact No. rows on page 1.
-    Object.assign(mask.style, {
-      position: 'fixed', left: `${box.left + 705}px`, top: `${box.top + 356}px`, width: '455px', height: '46px',
-      backdropFilter: 'blur(7px)', background: 'rgba(255,255,255,.35)', zIndex: '60', pointerEvents: 'none',
-    });
-    document.body.append(mask);
+    const o = document.querySelector('object[type="application/pdf"]');
+    const box = o.getBoundingClientRect();
+    const cover = document.createElement('div');
+    cover.dataset.tutorialPdfCover = 'true';
+    Object.assign(cover.style, { position: 'fixed', left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`,
+      height: `${box.height}px`, background: '#525659', overflow: 'hidden', zIndex: '55', display: 'flex', justifyContent: 'center',
+      // pointer-events on: the mouse over the cover stays in this document, so the arrow follows it.
+      paddingTop: '24px', pointerEvents: 'auto' });
+    document.body.append(cover);
   });
+  const b64 = await page.evaluate(async () => {
+    const o = document.querySelector('object[type="application/pdf"]');
+    const buf = new Uint8Array(await (await fetch(o.data)).arrayBuffer());
+    let s = '';
+    for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+    return btoa(s);
+  });
+  const dir = fs.mkdtempSync(path.join(process.env.TUTORIAL_WORK_DIR || os.tmpdir(), 'pdf-'));
+  fs.writeFileSync(path.join(dir, 'c.pdf'), Buffer.from(b64, 'base64'));
+  execFileSync('pdftoppm', ['-png', '-r', '150', '-f', '1', '-l', '1', '-singlefile', path.join(dir, 'c.pdf'), path.join(dir, 'p1')]);
+  const png = fs.readFileSync(path.join(dir, 'p1.png')).toString('base64');
+  console.log(`pdf_paint_rendered_ms=${Date.now() - t0}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+  await page.evaluate((data) => {
+    const cover = document.querySelector('[data-tutorial-pdf-cover]');
+    const page1 = document.createElement('div');
+    Object.assign(page1.style, { position: 'relative', width: '900px', alignSelf: 'flex-start', boxShadow: '0 2px 8px rgba(0,0,0,.4)' });
+    const img = document.createElement('img');
+    img.src = `data:image/png;base64,${data}`;
+    Object.assign(img.style, { width: '900px', height: 'auto', display: 'block' });
+    // The tenant's Email and Contact No. values, measured on page 1 at 900 px wide.
+    const blur = document.createElement('div');
+    Object.assign(blur.style, { position: 'absolute', left: '332px', top: '336px', width: '516px', height: '52px',
+      backdropFilter: 'blur(7px)', background: 'rgba(255,255,255,.35)' });
+    page1.append(img, blur);
+    cover.append(page1);
+  }, png);
+  console.log(`pdf_paint_total_ms=${Date.now() - t0}`);
 }
 
 const scenes = [
@@ -113,9 +150,9 @@ const scenes = [
     async (page) => {
       await page.getByTestId('lease-tab-documents').click();
       await page.getByRole('button', { name: 'Preview Contract', exact: true }).click();
+      await page.locator('object[type="application/pdf"]').waitFor({ state: 'attached', timeout: navTimeoutMs });
+      await paintPdfForCapture(page);
       await page.locator('object[type="application/pdf"]').waitFor({ state: 'visible', timeout: navTimeoutMs });
-      await page.waitForTimeout(1500);
-      await hidePdfContactRows(page);
       await restPointer(page, 1100, 560);
       await pace(page, 12000);
       await pointAt(page.getByRole('button', { name: 'Confirm & Save', exact: true }));
@@ -125,6 +162,7 @@ const scenes = [
     async (page) => {
       await page.getByRole('button', { name: 'Confirm & Save', exact: true }).click();
       await page.locator('object[type="application/pdf"]').waitFor({ state: 'detached', timeout: navTimeoutMs });
+      await page.evaluate(() => document.querySelector('[data-tutorial-pdf-cover]')?.remove());
       await page.getByTestId('lease-status').filter({ hasText: 'Pending Signature' }).waitFor({ state: 'visible', timeout: navTimeoutMs });
       await page.getByTestId('lease-contract-number').waitFor({ state: 'visible' });
       // The narration says the contract is listed under Contract documents.

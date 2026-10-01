@@ -1,0 +1,58 @@
+{
+  "id": "11",
+  "slug": "generate-review-and-sign-a-tenancy-contract",
+  "title": "Miftah tutorial 11 · Generate, review and sign a tenancy contract",
+  "description": "Generate the contract PDF, let the Tenant review it, regenerate after a rejection and record the acceptance.\n\nWho this is for: Company Admin, Property Manager, Tenant.\n\nChapters:\n0:00 A Draft Contract\n0:10 Preview Contract\n0:28 Pending Signature\n0:41 Tenant Portal\n\nPart of the Miftah web course — playlist: Miftah · Leasing\n\nأنشئ ملف العقد بصيغة PDF، ودع المستأجر يراجعه، وأعد إنشاءه بعد الرفض، وسجّل القبول.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "tenancy contract",
+    "lease agreement",
+    "tenant management",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Leasing",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0,
+      "start": "0:00",
+      "label": "A Draft Contract"
+    },
+    {
+      "startSec": 10.38,
+      "start": "0:10",
+      "label": "Preview Contract"
+    },
+    {
+      "startSec": 28.915,
+      "start": "0:28",
+      "label": "Pending Signature"
+    },
+    {
+      "startSec": 41.149,
+      "start": "0:41",
+      "label": "Tenant Portal"
+    }
+  ],
+  "durationSec": 73,
+  "roles": [
+    "TENANT_ADMIN",
+    "PROPERTY_MANAGER",
+    "RENTER"
+  ],
+  "topic": "leasing",
+  "captionsFile": "tutorials/output/11-generate-review-and-sign-a-tenancy-contract.srt",
+  "videoFile": "tutorials/output/11-generate-review-and-sign-a-tenancy-contract.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/11.png"
+}

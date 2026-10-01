@@ -10,6 +10,8 @@ import { navTimeoutMs, validateOnly } from './context.mjs';
 /** Runs in the page (init script): draws the cursor, ripple and focus ring. */
 export function installCursorOverlay() {
   if (window.__rentaxisCursor) return;
+  // Top document only: a frame (the PDF viewer's, say) would draw a second, stale arrow.
+  if (window !== window.top) return;
   window.__rentaxisCursor = true;
   const Z = '2147483647';
   const KEY = 'rentaxisCursorAt';

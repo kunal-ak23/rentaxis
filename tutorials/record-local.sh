@@ -76,7 +76,9 @@ delete_takes_drafts() {
   ids=$(grep -oE 'draft_contract_id=[0-9a-f-]{36}' "$log" | cut -d= -f2 | sort -u || true)
   if [[ -n "$ids" ]]; then
     # shellcheck disable=SC2086
-    node "$tut/capture/local-delete-drafts.mjs" "$TUTORIAL_SEED_MANIFEST" "$backend_url" $ids | tee -a "$log"
+    # A take that moved its contract past DRAFT (tutorial 11 signs it) leaves it for the
+    # scenario's own off-camera cleanup on its next run; that is not a failed take.
+    node "$tut/capture/local-delete-drafts.mjs" "$TUTORIAL_SEED_MANIFEST" "$backend_url" $ids 2>&1 | tee -a "$log" || true
   fi
 }
 trap delete_takes_drafts EXIT
