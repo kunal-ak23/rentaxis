@@ -721,12 +721,16 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
     /** Due and overdue totals over {@link #OPEN_DUE_CTE}: rows with nothing open are not counted. */
     interface DueTotals {
         long getDueCount(); BigDecimal getDueAmount(); long getOverdueCount(); BigDecimal getOverdueAmount();
+        /** Tutorial 40: the BOUNCED rows whose debt the ledger still carries, at what it still carries. */
+        long getBouncedCount(); BigDecimal getBouncedAmount();
     }
 
     @Query(value = OPEN_DUE_CTE + """
         select count(*) as dueCount, coalesce(sum(o.open_amount), 0) as dueAmount,
                count(*) filter (where o.overdue) as overdueCount,
-               coalesce(sum(o.open_amount) filter (where o.overdue), 0) as overdueAmount
+               coalesce(sum(o.open_amount) filter (where o.overdue), 0) as overdueAmount,
+               count(*) filter (where o.status = 'BOUNCED') as bouncedCount,
+               coalesce(sum(o.open_amount) filter (where o.status = 'BOUNCED'), 0) as bouncedAmount
         from open_due o where o.open_amount > 0
         """, nativeQuery = true)
     DueTotals dueTotals(@Param("tenantId") UUID tenantId,
@@ -760,4 +764,29 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
                                  @Param("propertyId") UUID propertyId,
                                  @Param("unrestricted") boolean unrestricted,
                                  @Param("propertyIds") Collection<UUID> propertyIds);
+
+    /**
+     * Tutorial 40: the ids of {@link #OPEN_DUE_CTE}'s rows with something still open, a page
+     * at a time, oldest instalment first — the Due list ({@code onlyBounced = false}) and the
+     * Returned / replace queue ({@code onlyBounced = true}). A bounced row whose debt the
+     * ledger has closed (settlement, replacement, write-off) is on neither. The caller
+     * passes an unsorted page: the order is fixed here.
+     */
+    @Query(value = OPEN_DUE_CTE + """
+        select o.id from open_due o
+        where o.open_amount > 0 and (:onlyBounced = false or o.status = 'BOUNCED')
+        order by o.cheque_date, o.seq_no, o.id
+        """,
+        countQuery = OPEN_DUE_CTE + """
+        select count(*) from open_due o
+        where o.open_amount > 0 and (:onlyBounced = false or o.status = 'BOUNCED')
+        """, nativeQuery = true)
+    Page<UUID> openDueIds(@Param("tenantId") UUID tenantId,
+                          @Param("allTenants") boolean allTenants,
+                          @Param("today") LocalDate today,
+                          @Param("propertyId") UUID propertyId,
+                          @Param("unrestricted") boolean unrestricted,
+                          @Param("propertyIds") Collection<UUID> propertyIds,
+                          @Param("onlyBounced") boolean onlyBounced,
+                          Pageable pageable);
 }

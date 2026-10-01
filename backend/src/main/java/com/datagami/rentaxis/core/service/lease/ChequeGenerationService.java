@@ -103,6 +103,8 @@ public class ChequeGenerationService {
 
     private final com.datagami.rentaxis.core.service.bank.OwnedBankLeaf ownedBankLeaf;
     private final com.datagami.rentaxis.core.service.LeaseService leaseService;
+    /** Lazy: the register's read side, for which bounced rows the ledger has closed (tutorial 40). */
+    private final org.springframework.beans.factory.ObjectProvider<com.datagami.rentaxis.core.service.cheque.ChequeQueryService> chequeQueries;
 
     public ChequeGenerationService(LeaseRepository leaseRepository,
                                    LeaseLineRepository leaseLineRepository,
@@ -111,7 +113,9 @@ public class ChequeGenerationService {
                                    AccountResolver accountResolver,
                                    LeaseAccessPolicy leaseAccessPolicy,
                                    com.datagami.rentaxis.core.service.bank.OwnedBankLeaf ownedBankLeaf,
-                                   com.datagami.rentaxis.core.service.LeaseService leaseService) {
+                                   com.datagami.rentaxis.core.service.LeaseService leaseService,
+                                   org.springframework.beans.factory.ObjectProvider<com.datagami.rentaxis.core.service.cheque.ChequeQueryService> chequeQueries) {
+        this.chequeQueries = chequeQueries;
         this.ownedBankLeaf = ownedBankLeaf;
         this.leaseService = leaseService;
         this.leaseRepository = leaseRepository;
@@ -341,7 +345,13 @@ public class ChequeGenerationService {
     @Transactional(readOnly = true)
     public List<ChequeDTO> list(UUID leaseId) {
         Lease lease = readableLease(leaseId);
-        return toDtos(chequeRepository.findByLease_IdOrderBySeqNoAscIdAsc(leaseId), lease);
+        List<Cheque> rows = chequeRepository.findByLease_IdOrderBySeqNoAscIdAsc(leaseId);
+        return toDtos(rows, lease, settledOf(rows));
+    }
+
+    /** Tutorial 40: the BOUNCED rows among {@code rows} whose debt the ledger has closed. */
+    private java.util.Set<UUID> settledOf(java.util.Collection<Cheque> rows) {
+        return chequeQueries.getObject().ledgerSettled(rows);
     }
 
     /**
@@ -367,9 +377,10 @@ public class ChequeGenerationService {
                 leases.stream().map(Lease::getId).toList())) {
             byLease.computeIfAbsent(c.getLease().getId(), id -> new ArrayList<>()).add(c);
         }
+        java.util.Set<UUID> settled = settledOf(byLease.values().stream().flatMap(List::stream).toList());
         List<ChequeDTO> out = new ArrayList<>();
         for (Lease lease : leases) {
-            out.addAll(toDtos(byLease.getOrDefault(lease.getId(), List.of()), lease));
+            out.addAll(toDtos(byLease.getOrDefault(lease.getId(), List.of()), lease, settled));
         }
         return out;
     }
@@ -1110,9 +1121,13 @@ public class ChequeGenerationService {
     }
 
     private static List<ChequeDTO> toDtos(List<Cheque> cheques, Lease lease) {
+        return toDtos(cheques, lease, java.util.Set.of());
+    }
+
+    private static List<ChequeDTO> toDtos(List<Cheque> cheques, Lease lease, java.util.Set<UUID> settled) {
         LocalDate today = LocalDate.now();
         int graceDays = lease.getGracePeriodDays();
-        return cheques.stream().map(c -> ChequeMapper.toDto(c, today, graceDays)).toList();
+        return cheques.stream().map(c -> ChequeMapper.toDto(c, today, graceDays, settled.contains(c.getId()))).toList();
     }
 
     private static BigDecimal nz(BigDecimal v) {

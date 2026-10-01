@@ -98,15 +98,39 @@ public class ChequeQueryService {
                 scope.unrestricted(), scope.propertyIds(), page));
     }
 
-    /** Matured and unpaid — the same predicate {@link ChequeDueRules#due} applies per row. */
+    /**
+     * Matured and unpaid — the same predicate {@link ChequeDueRules#due} applies per row,
+     * less the bounced rows whose debt the ledger has closed (tutorial 40): the rows the
+     * Due tile counts, oldest instalment first.
+     */
     public Page<ChequeDTO> due(UUID propertyId, LocalDate today, Pageable pageable) {
+        return openDue(propertyId, on(today), pageable, false);
+    }
+
+    /**
+     * The Returned / replace queue (tutorial 40): BOUNCED rows whose debt the ledger still
+     * carries. One a settlement, replacement or write-off has closed is not offered for a
+     * replacement again.
+     */
+    public Page<ChequeDTO> openBounced(UUID propertyId, LocalDate today, Pageable pageable) {
+        return openDue(propertyId, on(today), pageable, true);
+    }
+
+    private Page<ChequeDTO> openDue(UUID propertyId, LocalDate on, Pageable pageable, boolean onlyBounced) {
         Scope scope = scope(propertyId);
-        Pageable page = sorted(pageable);
+        // The order is fixed in SQL, so a caller's sort is dropped; an unpaged request stays unpaged.
+        Pageable page = pageable.isPaged()
+                ? org.springframework.data.domain.PageRequest.of(pageable.getPageNumber(), pageable.getPageSize())
+                : Pageable.unpaged();
         if (scope.blocked()) {
             return Page.empty(page);
         }
-        return toPage(chequeRepository.findDue(propertyId, on(today),
-                scope.unrestricted(), scope.propertyIds(), page));
+        Page<UUID> ids = chequeRepository.openDueIds(tenantScope().tenantId(), tenantScope().allTenants(), on,
+                propertyId, scope.unrestricted(), nonEmpty(scope.propertyIds()), onlyBounced, page);
+        Map<UUID, Cheque> byId = new java.util.HashMap<>();
+        chequeRepository.findAllById(ids.getContent()).forEach(c -> byId.put(c.getId(), c));
+        List<Cheque> rows = ids.getContent().stream().map(byId::get).filter(java.util.Objects::nonNull).toList();
+        return new PageImpl<>(toDtos(rows), page, ids.getTotalElements());
     }
 
     /** The day's deposit run: matured, unbanked paper. */
@@ -242,7 +266,9 @@ public class ChequeQueryService {
 
         Totals registered = byStatus.getOrDefault(ChequeStatus.REGISTERED, Totals.NONE);
         Totals deposited = byStatus.getOrDefault(ChequeStatus.DEPOSITED, Totals.NONE);
-        Totals bounced = byStatus.getOrDefault(ChequeStatus.BOUNCED, Totals.NONE);
+        // Tutorial 40: the Bounced tile is the returned cheques still owed, at what the
+        // ledger still carries — not every row that ever bounced.
+        Totals bounced = new Totals(t.getBouncedCount(), amount(t.getBouncedAmount()));
         return new ChequeSummaryDTO(
                 registered.count(), registered.amount(),
                 deposited.count(), deposited.amount(),
