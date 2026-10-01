@@ -121,7 +121,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["leases--creating-a-lease", "leases--payment-schedules"],
     },
     {
-        id: "11", slug: "generate-review-and-sign-a-tenancy-contract", topic: "leasing", roles: [...PORTFOLIO, "RENTER"], durationSec: 72, youtubeId: null,
+        id: "11", slug: "generate-review-and-sign-a-tenancy-contract", topic: "leasing", roles: [...PORTFOLIO, "RENTER"], durationSec: 72, youtubeId: "85sO-iLpEHA",
         title: { en: "Generate, review and sign a tenancy contract", ar: "إنشاء عقد الإيجار ومراجعته وتوقيعه" },
         description: {
             en: "Generate the contract PDF, let the Tenant review it, regenerate after a rejection and record the acceptance.",

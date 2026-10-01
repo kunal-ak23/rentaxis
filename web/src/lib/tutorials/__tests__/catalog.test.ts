@@ -104,7 +104,7 @@ describe("catalogue helpers", () => {
     it("the real catalogue publishes the uploaded tutorials, each with an 11-character YouTube id", () => {
         const published = publishedTutorials(TUTORIALS);
         expect(published.map((t) => t.id)).toEqual([
-            "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "12", "13", "14",
+            "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14",
             // The accounting topic lists its entries in track order (38, the overview, first).
             "38", "39", "17", "34", "42", "43", "44",
         ]);
