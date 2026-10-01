@@ -6,7 +6,7 @@ import { useRouter } from "@/i18n/routing";
 import { useLocale, useTranslations } from "next-intl";
 import { useSession } from "next-auth/react";
 import {
-    AlertTriangle, ArrowLeft, ArrowRight, Building2, Calendar, Check, CreditCard,
+    AlertTriangle, ArrowLeft, ArrowRight, Building2, Calendar, Camera, Check, CreditCard,
     FileText, ListChecks, Loader2, Save, Sparkles, User, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -20,6 +20,7 @@ import { GraceDaysField, usePropertyDefaultGrace } from "@/components/leases/Gra
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
 import ChequeGrid, { draftRowsAreValid, toChequeRows } from "@/components/leases/ChequeGrid";
 import WizardReviewSchedules from "@/components/leases/WizardReviewSchedules";
+import BulkChequeUploadFlow, { isScannableRow } from "@/components/cheques/BulkChequeUploadFlow";
 import { blankLine, defaultInstallmentsFor, defaultTermEnd, rentChargeType, followRentVat, linesAreValid, rentAmountOf, splitLineErrors, chequeMonths, toInputs, toRows, todayIso, totalsOf, withRentAmount, withRentVat, type LineRow } from "@/components/leases/leaseMath";
 import {
     ApiError, chargeTypeApi, leaseApi,
@@ -169,6 +170,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     const [cheques, setCheques] = useState<Cheque[]>([]);
     const [chequeNotice, setChequeNotice] = useState<string | null>(null);
     const [chequeError, setChequeError] = useState<string | null>(null);
+    const [scanOpen, setScanOpen] = useState(false);
     const [dry, setDry] = useState<PostLeaseDryRunResponse | null>(null);
 
     const [busy, setBusy] = useState(false);
@@ -196,6 +198,7 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         setFoldChoice(null);
         setChequeNotice(null);
         setChequeError(null);
+        setScanOpen(false);
         setDry(null);
         setBusy(false);
         setError(null);
@@ -412,7 +415,8 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
         }
     };
 
-    const runCheques = async (fn: () => Promise<Cheque[] | ChequeWrite>) => {
+    /** Runs one grid write; true when it landed (the scan entry point saves first and opens only then). */
+    const runCheques = async (fn: () => Promise<Cheque[] | ChequeWrite>): Promise<boolean> => {
         setBusy(true);
         setChequeError(null);
         try {
@@ -426,14 +430,16 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                 if (version != null) setLease(prev => (prev ? withVersion(prev, version) : prev));
             }
             setChequeNotice(null);
+            return true;
         } catch (e) {
             if (lease && isLeaseChanged(e)) {
                 setChequeError(serverText(tCommon, e) || (e as ApiError).message);
                 await reloadChanged(lease.id).catch(() => undefined);
-                return;
+                return false;
             }
             // Coded refusals (e.g. cheque.tooManyInstalments) in the user's language.
             setChequeError(e instanceof ApiError ? serverText(tCommon, e) || e.message : t("saveFailed"));
+            return false;
         } finally {
             setBusy(false);
         }
@@ -498,6 +504,17 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
     const saveCheques = () => {
         if (!lease || focusFirstInvalidMoney(document)) return;
         runCheques(() => leaseApi.saveCheques(lease.id, toChequeRows(cheques), lease.version));
+    };
+
+    /**
+     * Scan the paper cheques onto the grid (restored: the pre-v2 wizard had a
+     * scanner on every row). The grid is saved first — a scan attaches to a
+     * saved row by id, and the attach moves the draft's version — and the
+     * whole draft is read back afterwards, so nothing typed here is lost.
+     */
+    const scanCheques = async () => {
+        if (!lease || focusFirstInvalidMoney(document)) return;
+        if (await runCheques(() => leaseApi.saveCheques(lease.id, toChequeRows(cheques), lease.version))) setScanOpen(true);
     };
 
     const toReview = async () => {
@@ -851,6 +868,29 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                             >
                                 <Save size={12} /> {t("saveCheques")}
                             </button>
+                            {cheques.some(isScannableRow) && (
+                                <button
+                                    type="button"
+                                    data-testid="wizard-scan-cheques"
+                                    onClick={() => void scanCheques()}
+                                    disabled={busy || !draftRowsAreValid(cheques)}
+                                    className="ms-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border border-border text-foreground hover:bg-input/40 cursor-pointer disabled:opacity-50"
+                                >
+                                    <Camera size={12} /> {t("scanCheques")}
+                                </button>
+                            )}
+                            {scanOpen && (
+                                <BulkChequeUploadFlow
+                                    leaseId={lease.id}
+                                    rows={cheques}
+                                    onClose={() => setScanOpen(false)}
+                                    onSuccess={async () => {
+                                        setScanOpen(false);
+                                        setChequeNotice(t("scanAttached"));
+                                        await reloadChanged(lease.id).catch(() => undefined);
+                                    }}
+                                />
+                            )}
                         </div>
                     )}
 
