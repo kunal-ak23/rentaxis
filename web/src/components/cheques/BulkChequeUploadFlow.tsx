@@ -625,6 +625,8 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onlyChequeId, onSu
                         </td>
                         <td className="pe-2">
                           <input
+                            dir="auto"
+                            aria-label={t("colChequeNumber")}
                             value={row.chequeNumber}
                             onChange={e => updateRow(row.itemId, { chequeNumber: e.target.value })}
                             className="w-28 rounded border border-border px-1 py-0.5"
@@ -632,20 +634,24 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onlyChequeId, onSu
                         </td>
                         <td className="pe-2">
                           <input
+                            dir="auto"
+                            aria-label={t("colBank")}
                             value={row.bankName}
                             onChange={e => updateRow(row.itemId, { bankName: e.target.value })}
                             aria-invalid={!row.bankName.trim()}
                             className={
-                              "w-32 rounded border px-1 py-0.5 " +
+                              "w-40 rounded border px-1 py-0.5 " +
                               (row.bankName.trim() ? "border-border" : "border-red-500")
                             }
                           />
                         </td>
                         <td className="pe-2">
                           <input
+                            dir="auto"
+                            aria-label={t("colPayer")}
                             value={row.payerName}
                             onChange={e => updateRow(row.itemId, { payerName: e.target.value })}
-                            className="w-32 rounded border border-border px-1 py-0.5"
+                            className="w-40 rounded border border-border px-1 py-0.5"
                           />
                         </td>
                         <td className="pe-2">
