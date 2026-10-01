@@ -111,9 +111,6 @@ const LEASE = {
     firstDueDate: "2026-10-01", gracePeriodDays: null, gracePeriodOverridden: false, ejariNumber: null,
     paymentReferenceNumber: null, rentVatApplicable: false, lines: [],
 } as unknown as LeaseDetail;
-const CHEQUES = [{ id: "c1", seqNo: 1, amount: 60000, mode: "CHEQUE", debitAccountId: null }] as unknown as Cheque[];
-const CHANGED = () => new ApiError(409, "This contract changed since you opened it — review it again",
-    JSON.stringify({ error: true, status: 409, code: "lease.changed", message: "This contract changed since you opened it — review it again" }));
 
 async function toChequesStep() {
     api.createDraft.mockResolvedValue(LEASE);
