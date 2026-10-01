@@ -8,7 +8,7 @@ import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/routing";
 import {
-    ArrowLeft, Ban, Banknote, BellRing, BookOpen, CalendarClock, CheckCircle, Download,
+    ArrowLeft, Ban, Banknote, BellRing, BookOpen, CalendarClock, Camera, CheckCircle, Download,
     ArrowRightLeft, CircleSlash, FileText, Gavel, Loader2, Mail, MinusCircle, Pencil, Phone, PlusCircle, RefreshCw, Save, Sparkles, Trash2, Upload, User, UserCog, Wrench, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -30,7 +30,7 @@ import { pendingChequeSummary } from "@/components/leases/pendingCheques";
 import ChequeActionDialog, { type ChequeAction } from "@/components/cheques/ChequeActionDialog";
 import { chequeApi } from "@/lib/api/leasing";
 import type { RegisterAction } from "@/components/cheques/registerActions";
-import BulkChequeUploadFlow from "@/components/cheques/BulkChequeUploadFlow";
+import BulkChequeUploadFlow, { isScannableRow } from "@/components/cheques/BulkChequeUploadFlow";
 import PostLeaseDialog from "@/components/leases/PostLeaseDialog";
 import { isLeaseChanged, withVersion } from "@/lib/leases/leaseVersion";
 import { serverText } from "@/components/finance/bankrec/serverText";
@@ -216,6 +216,8 @@ export default function LeaseDetailPage() {
     const [chequeBusy, setChequeBusy] = useState(false);
     const [chequeError, setChequeError] = useState<string | null>(null);
     const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
+    // A row's own "Attach scan": the flow offers only that cheque as the target.
+    const [scanRowId, setScanRowId] = useState<string | null>(null);
     const [drawer, setDrawer] = useState<"assignment" | "writeOff" | null>(null);
     const closeDrawer = useCallback(() => setDrawer(null), []);
 
@@ -324,7 +326,8 @@ export default function LeaseDetailPage() {
         window.history.replaceState(window.history.state, "", url.toString());
     };
 
-    const runCheques = async (fn: () => Promise<Cheque[] | ChequeWrite>) => {
+    /** One grid write; true when it landed (the draft's "Scan cheques" saves first, then opens). */
+    const runCheques = async (fn: () => Promise<Cheque[] | ChequeWrite>): Promise<boolean> => {
         setChequeBusy(true);
         setChequeError(null);
         try {
@@ -338,14 +341,16 @@ export default function LeaseDetailPage() {
                 const version = r.version;
                 if (version != null) setLease(prev => (prev ? withVersion(prev, version) : prev));
             }
+            return true;
         } catch (e) {
             if (isLeaseChanged(e)) {
                 // Break-it R2 F3: the contract changed in another tab — say so and show it as it now is.
                 setChequeError(serverText(tCommon, e) || (e as ApiError).message);
                 await loadLease();
-                return;
+                return false;
             }
             setChequeError(e instanceof ApiError ? e.message : t("saveFailed"));
+            return false;
         } finally {
             setChequeBusy(false);
         }
@@ -904,6 +909,7 @@ export default function LeaseDetailPage() {
                                     busy={chequeBusy}
                                     error={chequeError}
                                     onRowAction={canCheques ? openChequeAction : undefined}
+                                    onScanRow={canCheques ? c => { setScanRowId(c.id); setBulkUploadOpen(true); } : undefined}
                                     canCancelCheques={canCancelCheques}
                                     // Every row action is a transition, and
                                     // `requireCollectable` gates all of them
@@ -927,11 +933,30 @@ export default function LeaseDetailPage() {
                                         <Save size={12} /> {t("saveCheques")}
                                     </button>
                                 )}
+                                {drafting && canCheques && !readOnly && cheques.some(isScannableRow) && (
+                                    // Restored (lost in the v2 rebuild): scan the paper cheques onto a draft's grid.
+                                    // Saved first — a scan attaches to a saved row — and the contract is read back after.
+                                    <button
+                                        type="button"
+                                        data-testid="lease-scan-cheques"
+                                        onClick={async () => {
+                                            if (focusFirstInvalidMoney(document)) return;
+                                            if (await runCheques(() => leaseApi.saveCheques(leaseId, toChequeRows(cheques), lease.version))) {
+                                                setScanRowId(null);
+                                                setBulkUploadOpen(true);
+                                            }
+                                        }}
+                                        disabled={chequeBusy || !draftRowsAreValid(cheques)}
+                                        className="ms-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border border-border text-foreground hover:bg-input/40 cursor-pointer disabled:opacity-50"
+                                    >
+                                        <Camera size={12} /> {t("scanCheques")}
+                                    </button>
+                                )}
                                 {!drafting && canCheques && cheques.some(c => c.status === "REGISTERED" && c.mode === "PDC") && (
                                     <button
                                         type="button"
                                         data-testid="lease-bulk-upload-cheques"
-                                        onClick={() => setBulkUploadOpen(true)}
+                                        onClick={() => { setScanRowId(null); setBulkUploadOpen(true); }}
                                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border border-border text-foreground hover:bg-input/40 cursor-pointer"
                                     >
                                         <Upload size={12} /> {tBulkUpload("entryButton")}
@@ -1287,9 +1312,11 @@ export default function LeaseDetailPage() {
                 <BulkChequeUploadFlow
                     leaseId={leaseId}
                     rows={cheques}
+                    onlyChequeId={scanRowId}
                     onClose={() => setBulkUploadOpen(false)}
                     onSuccess={async () => {
                         setBulkUploadOpen(false);
+                        setBanner(t("scanAttached"));
                         await loadLease();
                     }}
                 />
