@@ -652,7 +652,8 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
         assertThat(agingRows(later)).as("owed before the settlement")
                 .anyMatch(r -> r.chequeId().equals(kept) && r.amount().compareTo(new java.math.BigDecimal("7510.27")) == 0);
 
-        finalizeSettlement(leaseId, null);
+        UUID collection = finalizeSettlement(leaseId, null).getCollectionChequeId();
+        assertThat(collection).as("the settlement's balance-due row").isNotNull();
 
         assertThat(agingRows(later)).as("absorbed by STL: the ledger no longer carries it")
                 .noneMatch(r -> r.chequeId().equals(kept));
@@ -662,6 +663,43 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
         assertThat(row.overdue()).isFalse();
         assertThat(row.daysOverdue()).isZero();
         assertThat(row.ledgerSettled()).isTrue();
+        // Tutorial 40: and every other read of it agrees — not due, not on the
+        // Returned / replace queue, not in the Bounced tile, settled on the contract's grid.
+        assertThat(row.due()).as("a debt the ledger closed is not due").isFalse();
+        assertThat(dueIds(later)).as("Due list: the balance due, not the absorbed bounce")
+                .contains(collection).doesNotContain(kept);
+        assertThat(openBouncedIds(later)).as("Returned / replace queue: returned cheques only, none open").isEmpty();
+        assertThat(chequeQueries.summary(null, later).bouncedCount()).as("Bounced tile").isZero();
+        var onGrid = chequeGeneration.list(leaseId).stream().filter(c -> c.id().equals(kept)).findFirst().orElseThrow();
+        assertThat(onGrid.ledgerSettled()).as("the contract's cheque grid").isTrue();
+        assertThat(onGrid.due()).isFalse();
+    }
+
+    /** Tutorial 40: an open returned cheque is due, on the queue and in the Bounced tile. */
+    @Test
+    void aBounceTheLedgerStillCarriesIsDueQueuedAndCounted() {
+        UUID leaseId = terminatedWithAKeptCheque();
+        UUID kept = chequeOn(leaseId, RENT_2).getId();
+        cheques.deposit(kept, ChequeActionRequest.on(BANKED_ON));
+        cheques.bounce(kept, ChequeActionRequest.on(BANKED_ON));
+        LocalDate later = BANKED_ON.plusDays(120);
+
+        assertThat(dueIds(later)).contains(kept);
+        assertThat(openBouncedIds(later)).as("the queue holds the returned cheque only").containsExactly(kept);
+        var summary = chequeQueries.summary(null, later);
+        assertThat(summary.bouncedCount()).isEqualTo(1);
+        assertThat(summary.bouncedAmount()).as("what the ledger still carries on it").isEqualByComparingTo("7510.27");
+        assertThat(chequeQueries.get(kept).due()).isTrue();
+    }
+
+    private List<UUID> dueIds(LocalDate on) {
+        return tx.execute(s -> chequeQueries.due(null, on, org.springframework.data.domain.PageRequest.of(0, 100))
+                .getContent().stream().map(com.datagami.rentaxis.api.dto.cheque.ChequeDTO::id).toList());
+    }
+
+    private List<UUID> openBouncedIds(LocalDate on) {
+        return tx.execute(s -> chequeQueries.openBounced(null, on, org.springframework.data.domain.PageRequest.of(0, 100))
+                .getContent().stream().map(com.datagami.rentaxis.api.dto.cheque.ChequeDTO::id).toList());
     }
 
     /**

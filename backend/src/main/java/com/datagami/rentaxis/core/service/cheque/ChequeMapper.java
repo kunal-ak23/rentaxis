@@ -80,7 +80,8 @@ public final class ChequeMapper {
                 c.getCrtJournalId(),
                 c.getCbrJournalId(),
                 c.getPenaltyAssessmentId(),
-                ChequeDueRules.due(c, today),
+                // Tutorial 40: a bounced row whose debt the ledger has closed is not due either.
+                !ledgerSettled && ChequeDueRules.due(c, today),
                 overdue,
                 overdue ? ChequeDueRules.daysOverdue(c, graceDays, today) : 0,
                 c.getVatAmount(),

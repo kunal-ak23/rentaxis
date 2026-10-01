@@ -1574,6 +1574,8 @@ export const settlementApi = {
 export const chequeApi = {
   list: (q: ChequeListQuery) => get<Page<Cheque>>(`/cheques${qs(q)}`),
   due: (q: ChequeDueQuery) => get<Page<Cheque>>(`/cheques/due${qs(q)}`),
+  /** The Returned / replace queue: returned cheques whose debt the ledger still carries (tutorial 40). */
+  returned: (q: { propertyId?: string; page?: number; size?: number }) => get<Page<Cheque>>(`/cheques/returned${qs(q)}`),
   toDeposit: (q: ChequeDueQuery) => get<Page<Cheque>>(`/cheques/to-deposit${qs(q)}`),
   postDated: (q: PostDatedQuery) => get<Cheque[]>(`/cheques/post-dated${qs(q)}`),
   /** The controller also takes `asOf`; the brief only names `propertyId`, so it is optional and second. */

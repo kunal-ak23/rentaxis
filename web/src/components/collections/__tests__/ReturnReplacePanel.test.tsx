@@ -5,10 +5,10 @@ vi.mock("next-intl", async () => (await import("@/test/intlMock")).englishIntl()
 vi.mock("@/i18n/routing", () => ({ Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => <a href={href} {...rest}>{children}</a> }));
 vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "ACCOUNTANT" } } }) }));
 
-const list = vi.hoisted(() => vi.fn());
+const returned = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api/leasing", async orig => {
     const m = await orig<typeof import("@/lib/api/leasing")>();
-    return { ...m, chequeApi: { ...m.chequeApi, list } };
+    return { ...m, chequeApi: { ...m.chequeApi, returned } };
 });
 
 import ReturnReplacePanel from "../ReturnReplacePanel";
@@ -38,17 +38,24 @@ function cheque(over: Partial<Cheque> & { id: string; seqNo: number }): Cheque {
 
 const page = (content: Cheque[]) => ({ content, totalElements: content.length, totalPages: 1, number: 0, size: 25 });
 
-afterEach(() => { cleanup(); list.mockReset(); });
+afterEach(() => { cleanup(); returned.mockReset(); });
 
 describe("ReturnReplacePanel", () => {
     it("offers Replace on an ordinary bounced row", async () => {
-        list.mockResolvedValue(page([cheque({ id: "c1", seqNo: 1 })]));
+        returned.mockResolvedValue(page([cheque({ id: "c1", seqNo: 1 })]));
         render(<ReturnReplacePanel />);
         expect(await screen.findByTestId("cheque-row-action-replace-c1")).toBeInTheDocument();
     });
 
+    it("reads the open returned-cheque queue, not every row that ever bounced (tutorial 40)", async () => {
+        returned.mockResolvedValue(page([cheque({ id: "c1", seqNo: 1 })]));
+        render(<ReturnReplacePanel propertyId="p9" />);
+        await screen.findByTestId("cheque-row-c1");
+        expect(returned).toHaveBeenCalledWith({ propertyId: "p9", page: 0, size: 25 });
+    });
+
     it("withholds Replace for a cheque settled before the acquisition", async () => {
-        list.mockResolvedValue(page([cheque({ id: "c2", seqNo: 2, settledBeforeAcquisition: true })]));
+        returned.mockResolvedValue(page([cheque({ id: "c2", seqNo: 2, settledBeforeAcquisition: true })]));
         render(<ReturnReplacePanel />);
         await screen.findByTestId("cheque-row-c2");
         expect(screen.queryByTestId("cheque-row-action-replace-c2")).not.toBeInTheDocument();

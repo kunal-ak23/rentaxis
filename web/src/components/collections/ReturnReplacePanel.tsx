@@ -49,7 +49,9 @@ export default function ReturnReplacePanel(props: { embedded?: boolean; property
         setLoading(true);
         setLoadError(null);
         try {
-            setPage(await chequeApi.list({ status: "BOUNCED", propertyId: propertyId || undefined, page: pageIndex, size }));
+            // Tutorial 40: only the returned cheques still owed — one a settlement, replacement
+            // or write-off closed in the ledger is not offered for a replacement again.
+            setPage(await chequeApi.returned({ propertyId: propertyId || undefined, page: pageIndex, size }));
         } catch (err) {
             setPage(null);
             setLoadError(err instanceof ApiError ? err.message : tCommon("loadFailed"));
