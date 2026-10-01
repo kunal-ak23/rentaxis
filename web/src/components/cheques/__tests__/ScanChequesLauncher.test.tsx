@@ -28,7 +28,7 @@ afterEach(cleanup);
 
 describe("ScanChequesLauncher", () => {
     it("finds a contract, then opens the scan on its cheques; a closed contract is not offered", async () => {
-        paged.mockResolvedValue({ content: [lease("a", "ACTIVE"), lease("d", "DRAFT"), lease("c", "CLOSED")] });
+        paged.mockResolvedValue({ content: [lease("a", "ACTIVE"), lease("d", "DRAFT"), lease("c", "CLOSED")], totalElements: 3 });
         cheques.mockResolvedValue([{ id: "x" }, { id: "y" }]);
         render(wrap(<ScanChequesLauncher open onClose={() => {}} onDone={() => {}} />));
         fireEvent.change(screen.getByTestId("scan-cheques-lease-search"), { target: { value: "U-" } });
@@ -41,6 +41,23 @@ describe("ScanChequesLauncher", () => {
         expect(cheques).toHaveBeenCalledWith("a");
         expect(flow.dataset.lease).toBe("a");
         expect(flow.dataset.rows).toBe("2");
+    });
+
+    // PR #396 review P3-2: closed contracts are dropped server-side, the hub's property narrows the search, and more pages load on demand.
+    it("asks the server to drop unscannable contracts, keeps the hub's property and pages on demand", async () => {
+        paged.mockImplementation(async (q: { page: number }) => q.page === 0
+            ? { content: Array.from({ length: 10 }, (_, i) => lease(`p0-${i}`, "ACTIVE")), totalElements: 12 }
+            : { content: [lease("p1-0", "ACTIVE"), lease("p1-1", "RENEWED")], totalElements: 12 });
+        render(wrap(<ScanChequesLauncher open propertyId="prop-1" onClose={() => {}} onDone={() => {}} />));
+        fireEvent.change(screen.getByTestId("scan-cheques-lease-search"), { target: { value: "U-" } });
+        await waitFor(() => screen.getByTestId("scan-cheques-lease-option-p0-9"));
+        expect(paged).toHaveBeenCalledWith(expect.objectContaining({
+            search: "U-", propertyId: "prop-1", excludeStatus: ["CLOSED", "PENDING_SIGNATURE"], page: 0,
+        }));
+        fireEvent.click(screen.getByTestId("scan-cheques-more"));
+        await waitFor(() => screen.getByTestId("scan-cheques-lease-option-p1-1"));
+        expect(screen.getByTestId("scan-cheques-lease-option-p0-0")).toBeTruthy();
+        expect(screen.queryByTestId("scan-cheques-more")).toBeNull();
     });
 
     it("a register row goes straight to the scan, narrowed to its cheque", async () => {

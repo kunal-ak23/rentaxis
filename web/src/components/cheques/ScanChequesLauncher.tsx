@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 import LeaseDialog from "@/components/leases/LeaseDialog";
 import BulkChequeUploadFlow from "@/components/cheques/BulkChequeUploadFlow";
 import { leaseIsCollectable } from "@/components/cheques/registerActions";
-import { leaseApi, type Cheque, type LeaseDetail } from "@/lib/api/leasing";
+import { leaseApi, type Cheque, type LeaseDetail, type LeaseStatus } from "@/lib/api/leasing";
 
 /**
  * "Scan cheques" from outside a contract (the Cheque / Cash Collection hub and
@@ -25,6 +25,8 @@ type Props = {
     leaseId?: string | null;
     /** Attach to this one cheque only. */
     chequeId?: string | null;
+    /** The hub's property filter: the search stays inside it. */
+    propertyId?: string | null;
     onClose: () => void;
     onDone: () => void;
 };
@@ -34,12 +36,17 @@ const label = "block text-[10px] font-semibold text-muted uppercase tracking-wid
 
 /** A contract a scan can land on: drafted, or on the books and still collectable. */
 const scannableLease = (l: Pick<LeaseDetail, "status">) => l.status === "DRAFT" || leaseIsCollectable(l.status);
+/** What the server drops before it pages (PR #396 review P3-2): the rest are filtered again client-side. */
+const NOT_SCANNABLE: LeaseStatus[] = ["CLOSED", "PENDING_SIGNATURE"];
+const PAGE = 10;
 
-export default function ScanChequesLauncher({ open, leaseId, chequeId, onClose, onDone }: Props) {
+export default function ScanChequesLauncher({ open, leaseId, chequeId, propertyId, onClose, onDone }: Props) {
     const t = useTranslations("Cheques");
     const tl = useTranslations("Leasing");
     const [query, setQuery] = useState("");
     const [results, setResults] = useState<LeaseDetail[]>([]);
+    const [page, setPage] = useState(0);
+    const [hasMore, setHasMore] = useState(false);
     const [searching, setSearching] = useState(false);
     const [picked, setPicked] = useState<LeaseDetail | null>(null);
     const [target, setTarget] = useState<{ leaseId: string; rows: Cheque[] } | null>(null);
@@ -74,21 +81,33 @@ export default function ScanChequesLauncher({ open, leaseId, chequeId, onClose, 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, leaseId]);
 
+    const search = (pageNo: number, append: boolean) => {
+        setSearching(true);
+        return leaseApi
+            .paged({ search: query.trim(), propertyId: propertyId || undefined, excludeStatus: NOT_SCANNABLE, page: pageNo, size: PAGE })
+            .then(res => {
+                const rows = res.content.filter(scannableLease);
+                setResults(prev => (append ? [...prev, ...rows] : rows));
+                setPage(pageNo);
+                setHasMore((pageNo + 1) * PAGE < res.totalElements);
+            })
+            .catch(() => {
+                if (!append) setResults([]);
+                setHasMore(false);
+            })
+            .finally(() => setSearching(false));
+    };
+
     useEffect(() => {
         if (!open || leaseId || picked || query.trim().length < 2) {
             setResults([]);
+            setHasMore(false);
             return;
         }
-        setSearching(true);
-        const timer = window.setTimeout(() => {
-            leaseApi
-                .paged({ search: query.trim(), size: 8 })
-                .then(page => setResults(page.content.filter(scannableLease)))
-                .catch(() => setResults([]))
-                .finally(() => setSearching(false));
-        }, 250);
+        const timer = window.setTimeout(() => void search(0, false), 250);
         return () => window.clearTimeout(timer);
-    }, [open, leaseId, picked, query]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, leaseId, picked, query, propertyId]);
 
     if (!open) return null;
 
@@ -160,6 +179,12 @@ export default function ScanChequesLauncher({ open, leaseId, chequeId, onClose, 
                                     </li>
                                 ))}
                             </ul>
+                        )}
+                        {hasMore && !searching && (
+                            <button type="button" data-testid="scan-cheques-more" onClick={() => void search(page + 1, true)}
+                                className="mt-1.5 text-[11px] font-semibold text-primary hover:underline cursor-pointer">
+                                {t("scanMoreContracts")}
+                            </button>
                         )}
                     </div>
                 ) : (

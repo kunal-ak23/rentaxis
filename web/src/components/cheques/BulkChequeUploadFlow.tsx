@@ -5,7 +5,7 @@ import Image from "next/image";
 import { Camera, Loader2, X, Check, AlertTriangle, Trash2, Pin, RotateCw, FileText } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { autoMapChequesToRows } from "./autoMapChequesToRows";
+import { amountsDiffer, autoMapChequesToRows } from "./autoMapChequesToRows";
 import { useBulkChequeExtract, buildItemsFromFiles, type BulkExtractItem } from "./useBulkChequeExtract";
 import DueDateDelta from "./DueDateDelta";
 import type { Cheque } from "@/lib/api/leasing";
@@ -64,6 +64,11 @@ type RowState = {
   cropConfirmed: boolean;
   /** The operator ticked "attach anyway" for a payee that matches none of the valid names. */
   payeeConfirmed: boolean;
+  /**
+   * PR #396 review P3-4: the operator confirmed attaching a scan whose amount is not
+   * the target cheque's. Cleared whenever the target changes.
+   */
+  amountConfirmed: boolean;
 };
 
 type Step = 1 | 2 | 3;
@@ -115,8 +120,14 @@ function rowsForFile(fileId: string, response: ChequeMultiExtractionResponse | n
       pinned: false,
       cropConfirmed: false,
       payeeConfirmed: false,
+      amountConfirmed: false,
     };
   });
+}
+
+/** A new target is a new comparison: any amount confirmation was about the old one. */
+function withTarget(r: RowState, rowId: string | null): RowState {
+  return r.rowId === rowId ? r : { ...r, rowId, amountConfirmed: false };
 }
 
 function detectionOf(file: BulkExtractItem | undefined, row: RowState): DetectedChequeItem | null {
@@ -254,7 +265,7 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onlyChequeId, onSu
       // If this was a non-pin date change, re-run auto-map for non-pinned rows.
       if ("chequeDate" in patch && !next.find(r => r.itemId === itemId)?.pinned) {
         const map = remap(next);
-        return next.map(r => (r.pinned ? r : { ...r, rowId: map.get(r.itemId) ?? null }));
+        return next.map(r => (r.pinned ? r : withTarget(r, map.get(r.itemId) ?? null)));
       }
       return next;
     });
@@ -291,12 +302,12 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onlyChequeId, onSu
       const at = prev.findIndex(r => r.fileId === fileId);
       const next = [...prev.slice(0, at), ...fresh, ...prev.slice(at).filter(r => r.fileId !== fileId)];
       const map = remap(next);
-      return next.map(r => (r.pinned ? r : { ...r, rowId: map.get(r.itemId) ?? null }));
+      return next.map(r => (r.pinned ? r : withTarget(r, map.get(r.itemId) ?? null)));
     });
   };
 
   const pickRow = (itemId: string, rowId: string | null) => {
-    setTableRows(prev => prev.map(r => (r.itemId === itemId ? { ...r, rowId, pinned: rowId !== null } : r)));
+    setTableRows(prev => prev.map(r => (r.itemId === itemId ? { ...r, rowId, pinned: rowId !== null, amountConfirmed: false } : r)));
   };
 
   const togglePin = (itemId: string) => {
@@ -345,10 +356,17 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onlyChequeId, onSu
   // Per detected cheque: a photo holding three cheques has three payees.
   const payeeCheckOf = (r: RowState) => detectionOf(extract.items.find(it => it.id === r.fileId), r)?.payeeCheck ?? null;
   const unconfirmedPayee = tableRows.some(r => payeeCheckOf(r) === "MISMATCH" && !r.payeeConfirmed);
+  const targetOf = (r: RowState) => eligibleRows.find(s => s.id === r.rowId) ?? null;
+  const amountMismatch = (r: RowState) => {
+    const target = targetOf(r);
+    return target != null && amountsDiffer(r.amount, target.amount);
+  };
+  const unconfirmedAmount = tableRows.some(r => amountMismatch(r) && !r.amountConfirmed);
 
   const canApprove =
     tableRows.length > 0 &&
     !unconfirmedPayee &&
+    !unconfirmedAmount &&
     counts.needsDate === 0 &&
     counts.noSchedule === 0 &&
     counts.needsBank === 0 &&
@@ -443,7 +461,7 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onlyChequeId, onSu
         <input
           ref={photosRef}
           type="file"
-          multiple
+          multiple={!onlyChequeId}
           accept="image/*"
           data-testid="bulk-cheque-upload-photos-input"
           className="hidden"
@@ -664,7 +682,7 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onlyChequeId, onSu
                         </td>
                         <td className="pe-2">
                           <span className="tabular-nums">{row.amount != null ? formatCurrency(row.amount) : "—"}</span>
-                          {target && row.amount != null && Math.round(row.amount * 100) !== Math.round(Number(target.amount) * 100) && (
+                          {amountMismatch(row) && target && row.amount != null && (
                             <span className="ms-2 inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
                               {t("chequeMismatch", { cheque: formatCurrency(row.amount), installment: formatCurrency(Number(target.amount)) })}
                             </span>
@@ -710,6 +728,24 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onlyChequeId, onSu
                           </button>
                         </td>
                       </tr>
+                      {amountMismatch(row) && (
+                        <tr>
+                          <td colSpan={10} className="pb-2">
+                            <label
+                              data-testid="amount-mismatch"
+                              className="flex flex-wrap items-center gap-1.5 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-900"
+                            >
+                              <input
+                                type="checkbox"
+                                data-testid="amount-mismatch-confirm"
+                                checked={row.amountConfirmed}
+                                onChange={e => setTableRows(prev => prev.map(r => (r.itemId === row.itemId ? { ...r, amountConfirmed: e.target.checked } : r)))}
+                              />
+                              <AlertTriangle size={11} /> {t("amountMismatchConfirm")}
+                            </label>
+                          </td>
+                        </tr>
+                      )}
                       {payeeCheck === "MISMATCH" && (
                         <tr>
                           <td colSpan={10} className="pb-2">

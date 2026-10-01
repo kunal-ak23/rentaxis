@@ -107,6 +107,8 @@ describe("BulkChequeUploadFlow — restored entry points", () => {
     // One cheque: no folder picker, the one-photo hint.
     expect(screen.queryByTestId("bulk-cheque-upload-pick-folder")).toBeNull();
     expect(screen.getByText("pickHintOne")).toBeTruthy();
+    // One cheque, one photo (PR #396 review P3-5).
+    expect(screen.getByTestId("bulk-cheque-upload-photos-input").hasAttribute("multiple")).toBe(false);
 
     pickPhotos([makeFile("one.png")]);
     fireEvent.click(screen.getByText("continueToExtract"));

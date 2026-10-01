@@ -380,7 +380,16 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
      * figures — so the user reviews what is saved now rather than overwriting it.
      */
     const reloadChanged = async (id: string) => {
-        const fresh = await leaseApi.get(id);
+        // PR #396 review P3-1: read everything first and apply it together. Applying the
+        // new version before the grid arrived left, on a failed second read, the old
+        // rows under the new version — and a later Save cheques would then write them
+        // back over what a scan had just attached. On any failure nothing changes, so
+        // the stale version makes that save refuse itself (409) instead.
+        const [fresh, grid, freshDry] = await Promise.all([
+            leaseApi.get(id),
+            leaseApi.cheques(id),
+            STEPS[stepIdx].key === "review" ? leaseApi.dryRunPost(id) : Promise.resolve(null),
+        ]);
         setLease(fresh);
         // Review A M4: the header too — parties and terms — not only the lines.
         setTerms(termsFromLease(fresh));
@@ -399,8 +408,8 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
             setSelectedRenter({ id: fresh.renterId, nameEn: fresh.renterName ?? "", nameAr: null, phone: null, email: null });
         }
         setRows(toRows(fresh.lines));
-        setCheques(await leaseApi.cheques(id));
-        if (STEPS[stepIdx].key === "review") setDry(await leaseApi.dryRunPost(id));
+        setCheques(grid);
+        if (freshDry) setDry(freshDry);
     };
 
     const saveLines = async () => {
@@ -925,8 +934,13 @@ export default function LeaseWizard({ open, onClose, onCreated }: Props) {
                                     onClose={() => setScanOpen(false)}
                                     onSuccess={async () => {
                                         setScanOpen(false);
-                                        setChequeNotice(t("scanAttached"));
-                                        await reloadChanged(lease.id).catch(() => undefined);
+                                        try {
+                                            await reloadChanged(lease.id);
+                                            setChequeNotice(t("scanAttached"));
+                                        } catch {
+                                            // The scans are saved; this screen just could not read them back.
+                                            setChequeError(t("scanReloadFailed"));
+                                        }
                                     }}
                                 />
                             )}

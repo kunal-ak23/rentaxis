@@ -705,6 +705,7 @@
     "legacyLinkHint": "The current link is not an active bank ledger account. Saving keeps it as it is; pick a bank account to change it."
   },
   "bulkChequeUpload": {
+    "amountMismatchConfirm": "The amount on the cheque differs from this row — attach anyway",
     "close": "Close",
     "pickPhotos": "Choose cheque photos",
     "pickHintOne": "Take or choose a photo of this cheque. Its number, bank and date are read for you to check.",
@@ -2275,6 +2276,7 @@
     "urlAccountsCapped": "This link named {count} accounts; the first {max} are shown. Pick fewer, or open the Trial Balance for the whole company."
   },
   "Leasing": {
+    "scanReloadFailed": "The cheque scans were attached, but the contract could not be read back. Reopen the contract before changing the cheques.",
     "belowExpectedRent": "This unit asks {expected} a year. This contract works out at {annual} a year — {gap} below.",
     "scanCheques": "Scan cheques",
     "scanAttached": "Cheque scans attached. The numbers, banks and dates from the scans are now on the rows.",
@@ -2676,6 +2678,7 @@
     "runFailed": "The VAT tax points could not be posted."
   },
   "Cheques": {
+    "scanMoreContracts": "Show more contracts",
     "scanCheques": "Scan cheques",
     "attachScan": "Attach scan",
     "scanContinue": "Continue",

@@ -170,6 +170,30 @@ describe("lease wizard: Scan cheques on the Cheques step (restored)", () => {
         expect(screen.queryByTestId("scan-flow")).toBeNull();
     });
 
+    // PR #396 review P3-1: a half-failed read-back must not leave the old rows under the new version.
+    it("keeps the pre-scan version when the read-back fails, so a later save cannot overwrite the scan", async () => {
+        await toChequesStep();
+        api.generateCheques.mockResolvedValue({ cheques: PDC, version: 2 });
+        fireEvent.click(screen.getByText("gen-cheques"));
+        const scan = await screen.findByTestId("wizard-scan-cheques");
+        api.saveCheques.mockResolvedValueOnce({ cheques: PDC, version: 3 });
+        await waitFor(() => expect(scan).not.toBeDisabled());
+        fireEvent.click(scan);
+        await screen.findByTestId("scan-flow");
+
+        api.get.mockResolvedValue({ ...LEASE, version: 4 });
+        api.cheques.mockRejectedValue(new Error("network"));
+        fireEvent.click(screen.getByText("scan-done"));
+        expect(await screen.findByTestId("cheque-error")).toHaveTextContent("could not be read back");
+
+        api.saveCheques.mockResolvedValueOnce({ cheques: PDC, version: 5 });
+        await waitFor(() => expect(screen.getByTestId("wizard-save-cheques")).not.toBeDisabled());
+        fireEvent.click(screen.getByTestId("wizard-save-cheques"));
+        await waitFor(() => expect(api.saveCheques).toHaveBeenCalledTimes(2));
+        // The version the wizard held before the scan: the server refuses it (409) rather than taking stale rows.
+        expect(api.saveCheques.mock.calls[1][2]).toBe(3);
+    });
+
     it("does not open the scan when the save is refused", async () => {
         await toChequesStep();
         api.generateCheques.mockResolvedValue({ cheques: PDC, version: 2 });
