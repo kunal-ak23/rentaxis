@@ -7,6 +7,7 @@ import { AlertTriangle, CheckCircle2, Download, FileText, Lock, Receipt, ShieldC
 import VatReturnView from "@/components/finance/vat/VatReturnView";
 import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount } from "@/lib/api/ledger";
@@ -44,20 +45,26 @@ export default function VatReturnPage() {
     // PR #369 R1 P2-1: filing with an output difference needs a reason; the difference shown is the one acknowledged.
     const [overrideReason, setOverrideReason] = useState("");
 
+    // Tutorial 41: a quarter picked before the previous quarter's return arrived showed that
+    // older answer under the new label. Only the latest load may set the page's state.
+    const beginLoad = useLatestRequest();
     const load = useCallback(async (start: string) => {
+        const { isCurrent } = beginLoad();
         setLoading(true);
         setLoadError(null);
         try {
             const [r, f] = await Promise.all([vatReturnsApi.get(start), vatReturnsApi.filings()]);
+            if (!isCurrent()) return;
             setData(r);
             setFilings(f);
         } catch (err) {
+            if (!isCurrent()) return;
             setData(null);
             setLoadError(err instanceof ApiError ? serverText(tCommon, err) || err.message : tCommon("loadFailed"));
         } finally {
-            setLoading(false);
+            if (isCurrent()) setLoading(false);
         }
-    }, [tCommon]);
+    }, [tCommon, beginLoad]);
 
     useEffect(() => {
         if (!allowed) { setLoading(false); return; }
