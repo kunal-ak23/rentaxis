@@ -51,6 +51,11 @@ import java.util.stream.Collectors;
 @Service
 public class LeaseService {
 
+    /** Break-it R4 money4 F2: the contract-date rule. A default so a hand-built service still works. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates =
+            com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system();
+
     /**
      * A tenancy that is <em>living on</em> a unit, for every occupancy rule in this
      * class (review I3).
@@ -1597,6 +1602,8 @@ public class LeaseService {
             lease.setDepositPaymentMethod(PaymentMethod.valueOf(dto.getDepositPaymentMethod()));
         }
         lease.setPaymentReferenceNumber(dto.getPaymentReferenceNumber());
+        LocalDate previousContractDate = lease.getContractDate();
+        LocalDate previousAgreementDate = lease.getAgreementDate();
         if (dto.getAgreementDate() != null) {
             lease.setAgreementDate(dto.getAgreementDate());
         }
@@ -1611,7 +1618,28 @@ public class LeaseService {
         // journal without a date cannot be filed in a period.
         LocalDate contractDate = dto.getContractDate() != null ? dto.getContractDate()
                 : (lease.getAgreementDate() != null ? lease.getAgreementDate() : LocalDate.now());
+        // Break-it R4 money4 F2: the contract date is the TCO's journal date, so the
+        // posting-date policy's PLANNED rule applies (not more than a year ahead).
+        // Asked only when it changes, so an old draft can still be edited otherwise;
+        // LeasePostingService asks again before anything is posted.
+        if (!contractDate.equals(lease.getContractDate())) {
+            manualDates.require(com.datagami.rentaxis.core.service.ledger.PostingDatePath.LEASE_POST, contractDate);
+        }
         lease.setContractDate(contractDate);
+        // Owner ruling 2026-09-29: the wizard asks for the contract date only. The
+        // agreement date (printed on the contract, carried on the DTO and imports)
+        // defaults to it when omitted, and keeps following it while it still holds
+        // the value it defaulted to; one set explicitly (an import, an older draft)
+        // is left alone.
+        // Note: "still holds the defaulted value" is read as "equals the previous
+        // contract date" — the column carries no flag saying it was defaulted. So an
+        // agreement date someone set explicitly to the same day as the contract date
+        // is treated as defaulted too and moves with a later contract-date edit.
+        // Harmless: the two were the same day, and the wizard no longer asks for it.
+        if (dto.getAgreementDate() == null
+                && (previousAgreementDate == null || previousAgreementDate.equals(previousContractDate))) {
+            lease.setAgreementDate(contractDate);
+        }
         lease.setFirstDueDate(dto.getFirstDueDate() != null ? dto.getFirstDueDate() : dto.getStartDate());
         applyGracePeriod(lease, dto.getGracePeriodDays(), unit);
     }

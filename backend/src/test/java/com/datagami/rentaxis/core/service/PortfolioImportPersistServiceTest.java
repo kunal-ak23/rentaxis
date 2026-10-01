@@ -135,6 +135,18 @@ class PortfolioImportPersistServiceTest {
         assertThat(lineOf(lines, "RENT").periodEnd()).isEqualTo(saved.getEndDate());
     }
 
+    /** Break-it R4 ops4 F1: the sheets may carry the product's names, Tenants and Tenancy Contracts. */
+    @Test
+    void persist_readsTheTenantsAndTenancyContractsSheets() {
+        Workbook wb = buildWorkbookWithOneLease(b -> b.status("DRAFT"));
+        wb.setSheetName(wb.getSheetIndex("Renters"), "Tenants");
+        wb.setSheetName(wb.getSheetIndex("Leases"), "Tenancy Contracts");
+
+        service.persistWorkbook(wb, newJob());
+
+        assertThat(captureSavedLease().getStatus()).isEqualTo(LeaseStatus.DRAFT);
+    }
+
     @Test
     void persist_draftStatus_keepsUnitVacant() {
         Workbook wb = buildWorkbookWithOneLease(b -> b.status("DRAFT"));

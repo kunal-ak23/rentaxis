@@ -15,6 +15,7 @@ vi.mock("@/i18n/routing", () => ({
         <a href={href} {...rest}>{children}</a>
     ),
 }));
+vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "TENANT_ADMIN", name: "U", tenantId: "t1" } } }) }));
 
 import UnitsPage from "../page";
 

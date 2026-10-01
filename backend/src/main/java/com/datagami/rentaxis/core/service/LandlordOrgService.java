@@ -45,10 +45,23 @@ public class LandlordOrgService {
         this.tokenRevocation = tokenRevocation;
     }
 
+    public static final String ORG_NAME_TAKEN =
+            "An organisation with this name already exists. Choose a different name.";
+
     @Transactional
     public LandlordOrg provisionTenant(String name) {
+        // Break-it R4 brand4 F2: a taken name used to reach the unique slug index and
+        // come back as the index's raw name. Review of R4-B I4: the refusal is about the
+        // NAME (case- and whitespace-insensitive). The slug keeps only a–z/0–9, so every
+        // Arabic-only name slugs to "tenant"; a different name whose slug is taken gets
+        // the next free one ("-2", "-3", …). The unique index stays as the race backstop.
+        if (repository.existsByNormalisedName(LandlordOrg.normalisedName(name))) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    ORG_NAME_TAKEN, "org.nameTaken", java.util.Map.of("name", name));
+        }
         LandlordOrg org = new LandlordOrg();
         org.setName(name);
+        org.setSlug(freeSlug(LandlordOrg.slugOf(name)));
         LandlordOrg saved = repository.save(org);
 
         // Notify all SUPER_ADMINs
@@ -65,6 +78,30 @@ public class LandlordOrgService {
         }
 
         return saved;
+    }
+
+    /**
+     * Review of PR #392 M3: a rename is refused, as provisioning is, when another
+     * organisation already has the name (case- and whitespace-insensitive). The slug is
+     * NOT re-derived on a rename: it is the organisation's public marketplace path
+     * ({@code /marketplace/{tenantSlug}}, {@code /l/{tenantSlug}}), and moving it would
+     * break every link already shared; it stays unique because it does not change.
+     */
+    public void requireNameFreeForRename(UUID id, String name) {
+        if (repository.existsByNormalisedNameOtherThan(LandlordOrg.normalisedName(name), id)) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    ORG_NAME_TAKEN, "org.nameTaken", java.util.Map.of("name", name));
+        }
+    }
+
+    /** {@code base} if nobody has it, else the first free {@code base-N} from 2 (review of R4-B I4). */
+    private String freeSlug(String base) {
+        java.util.Set<String> taken = new java.util.HashSet<>(repository.findSlugsStartingWith(base));
+        if (!taken.contains(base)) return base;
+        for (int n = 2; ; n++) {
+            String candidate = base + "-" + n;
+            if (!taken.contains(candidate)) return candidate;
+        }
     }
 
     @Transactional(readOnly = true)

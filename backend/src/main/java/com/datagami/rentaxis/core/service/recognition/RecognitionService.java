@@ -154,12 +154,19 @@ public class RecognitionService {
      * @param skippedLockedEntries  rows left PLANNED because their period is closed
      * @param booksLockedThrough    the lock that skipped them, or null when nothing is locked
      * @param errors                rows the ledger refused, one message each
+     * @param alreadyRecognised     rows another run posted while this one worked (POSTED)
+     * @param withdrawnMeanwhile    rows a contract change (amendment, reduction, termination)
+     *                              struck out or reversed while this one worked — CANCELLED or
+     *                              REVERSED, nothing to recognise; a replacement row is PLANNED
+     *                              and the next run takes it (review of R4-B M10)
      */
     public record RecognitionRunResult(boolean preview, int posted, int wouldPost, BigDecimal amount,
                                        List<RecognitionEntryDTO> entries,
                                        int skippedLocked, List<RecognitionEntryDTO> skippedLockedEntries,
                                        LocalDate booksLockedThrough,
-                                       List<String> errors) {
+                                       List<String> errors,
+                                       int alreadyRecognised,
+                                       int withdrawnMeanwhile) {
     }
 
     // ------------------------------------------------------------------
@@ -170,6 +177,41 @@ public class RecognitionService {
     @Transactional(readOnly = true)
     public List<RecognitionEntryDTO> scheduleFor(UUID leaseId) {
         return toDtos(entries.findByLease_IdOrderByPeriodStartAsc(leaseId));
+    }
+
+    /** One calendar month of the rent schedule a draft would post (owner request 2026-09-29). */
+    public record RentMonth(LocalDate periodStart, LocalDate periodEnd, int days, BigDecimal amount) { }
+
+    /**
+     * The month-by-month rent a contract's RENT lines will be recognised as, before
+     * anything is posted — for the New Contract wizard's Review step. The same rule
+     * {@link #build} plans at posting ({@link ProrationEngine#slice}: day rate = net ÷
+     * term days, each month = day rate × its days, the last month absorbs rounding),
+     * per RENT line over its own window, summed per calendar month. Reads only; the
+     * lease is read tenant-scoped.
+     */
+    @Transactional(readOnly = true)
+    public List<RentMonth> previewRentSchedule(UUID leaseId) {
+        Lease lease = lease(leaseId);
+        java.util.TreeMap<java.time.YearMonth, RentMonth> months = new java.util.TreeMap<>();
+        for (LeaseLine line : leaseLines.findByLease_IdOrderBySeqNoAsc(leaseId)) {
+            boolean rent = line.getChargeType() != null && line.getChargeType().getBehaviour() == ChargeBehaviour.RENT;
+            BigDecimal net = line.getNetAmount() == null ? BigDecimal.ZERO : line.getNetAmount();
+            if (!rent || net.signum() <= 0) continue;
+            LocalDate from = line.getPeriodStart() != null ? line.getPeriodStart() : lease.getStartDate();
+            LocalDate to = line.getPeriodEnd() != null ? line.getPeriodEnd() : lease.getEndDate();
+            if (from == null || to == null || to.isBefore(from)) continue;
+            for (ProrationEngine.Slice slice : ProrationEngine.slice(net, from, to)) {
+                java.time.YearMonth key = java.time.YearMonth.from(slice.periodStart());
+                RentMonth had = months.get(key);
+                months.put(key, had == null
+                        ? new RentMonth(slice.periodStart(), slice.periodEnd(), slice.days(), slice.amount())
+                        : new RentMonth(had.periodStart().isBefore(slice.periodStart()) ? had.periodStart() : slice.periodStart(),
+                                had.periodEnd().isAfter(slice.periodEnd()) ? had.periodEnd() : slice.periodEnd(),
+                                Math.max(had.days(), slice.days()), had.amount().add(slice.amount())));
+            }
+        }
+        return List.copyOf(months.values());
     }
 
     /**
@@ -1124,6 +1166,8 @@ public class RecognitionService {
         List<RecognitionEntryDTO> done = new ArrayList<>();
         List<RecognitionEntryDTO> locked = new ArrayList<>();
         List<String> errors = new ArrayList<>();
+        int alreadyDone = 0;
+        int withdrawn = 0;
         BigDecimal total = BigDecimal.ZERO;
 
         for (RecognitionEntryDTO row : plan.rows()) {
@@ -1139,6 +1183,17 @@ public class RecognitionService {
             try {
                 done.add(poster.post(row.id()));
                 total = total.add(row.amount());
+            } catch (RecognitionEntryNotPlannedException e) {
+                // Break-it R4 money4 F1: another run (two people closing the month at
+                // once) posted this row after the candidates were read, or an amendment
+                // replaced it with a PLANNED row the next run picks up. Either way the
+                // work is done exactly once; it is not a failure to report or re-run.
+                // Review of R4-B M10: only a POSTED row was recognised by someone else. A
+                // CANCELLED (or REVERSED) one was taken off the schedule by a contract
+                // change meanwhile — nothing was recognised for it, and saying "another
+                // run did it" would be untrue; it is reported on its own.
+                if (e.getStatus() == RecognitionStatus.POSTED) alreadyDone++;
+                else withdrawn++;
             } catch (RuntimeException e) {
                 // The entry's own transaction rolled back; there is no other one to
                 // take down with it, which is the whole point of the separate bean.
@@ -1154,7 +1209,7 @@ public class RecognitionService {
         }
         return new RecognitionRunResult(preview, preview ? 0 : done.size(), done.size(),
                 total.setScale(2, RoundingMode.HALF_UP), done,
-                locked.size(), locked, plan.lockedThrough(), errors);
+                locked.size(), locked, plan.lockedThrough(), errors, alreadyDone, withdrawn);
     }
 
     /** What a run has to decide about, read once and detached. */

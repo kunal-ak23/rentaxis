@@ -26,7 +26,7 @@ describe("buildNav — rail sections and panel items per role (all flags on)", (
                 "property-statement", "vat-return", "fiscal", "account-template", "charge-types", "import-batches", "reconciliation"]],
             ["operations", ["tickets", "bookings", "staff"]],
             ["settings", ["organisation", "users", "rent", "payments"]],
-            ["more", ["meetings", "gatepass", "promotions"]],
+            ["more", ["meetings", "gatepass", "gatepass-approvals", "gatepass-settings", "promotions"]],
         ]);
     });
 
@@ -45,7 +45,7 @@ describe("buildNav — rail sections and panel items per role (all flags on)", (
             ["collection", ["deposit", "due", "overdue", "returned", "post-dated", "penalties", "all"]],
             ["accounting", ["aging", "penalties", "balance-sheet", "property-pl", "property-statement"]],
             ["operations", ["tickets", "bookings"]],
-            ["more", ["meetings", "gatepass"]],
+            ["more", ["meetings", "gatepass", "gatepass-approvals", "gatepass-settings"]],
         ]);
     });
 
@@ -68,7 +68,13 @@ describe("buildNav — rail sections and panel items per role (all flags on)", (
         expect(flattenNav(buildNav(ctx("RENTER")))).toEqual([
             "/dashboard/renter-portal", "/dashboard/renter-portal/payments",
             "/dashboard/renter-portal/penalties", "/dashboard/tickets", "/marketplace/acme", "/dashboard/meetings",
+            "/dashboard/renter-portal/gate-passes",
         ]);
+    });
+
+    it("SECURITY_GUARD's Home is the gate desk, with the approvals queue, flag or no flag", () => {
+        expect(flattenNav(buildNav(ctx("SECURITY_GUARD")))).toEqual(["/dashboard/gatepass/gate", "/dashboard/gatepass/approvals"]);
+        expect(flattenNav(buildNav(ctx("SECURITY_GUARD", [])))).toEqual(["/dashboard/gatepass/gate", "/dashboard/gatepass/approvals"]);
     });
 
     it("never links a tenant admin to /superadmin/users", () => {
@@ -81,13 +87,18 @@ describe("flags", () => {
         expect(buildNav(ctx("ACCOUNTANT", [])).map(s => s.id)).not.toContain("more");
         expect(buildNav(ctx("TENANT_USER", [...FLAGS])).map(s => s.id)).not.toContain("more");
     });
-    it("keeps Gate pass role-gated, NOT flag-gated (ruling 2026-09-25: tenants use it without the flag)", () => {
+    it("keeps the Gate pass report role-gated, NOT flag-gated (ruling 2026-09-25: tenants use it without the flag)", () => {
         const ids = (on: string[]) => buildNav(ctx("TENANT_ADMIN", on)).find(s => s.id === "more")!.groups[0].items.map(i => i.id);
-        expect(ids([])).toEqual(["gatepass", "promotions"]);
-        expect(ids(["MEETINGS"])).toEqual(["meetings", "gatepass", "promotions"]);
-        expect(ids(["GATEPASS"])).toEqual(["gatepass", "promotions"]);
+        // The working screens (approvals, policy) follow the same ruling: role only.
+        expect(ids([])).toEqual(["gatepass", "gatepass-approvals", "gatepass-settings", "promotions"]);
+        expect(ids(["MEETINGS"])).toEqual(["meetings", "gatepass", "gatepass-approvals", "gatepass-settings", "promotions"]);
+        expect(ids(["GATEPASS"])).toEqual(["gatepass", "gatepass-approvals", "gatepass-settings", "promotions"]);
         // A property manager with every flag off still reaches Gate pass (today's sidebar shows it by role).
-        expect(buildNav(ctx("PROPERTY_MANAGER", [])).find(s => s.id === "more")!.groups[0].items.map(i => i.id)).toEqual(["gatepass"]);
+        expect(buildNav(ctx("PROPERTY_MANAGER", [])).find(s => s.id === "more")!.groups[0].items.map(i => i.id)).toEqual(["gatepass", "gatepass-approvals", "gatepass-settings"]);
+    });
+    it("shows the tenant's gate passes by role, whatever the GATEPASS flag", () => {
+        expect(flattenNav(buildNav(ctx("RENTER", [])))).toContain("/dashboard/renter-portal/gate-passes");
+        expect(flattenNav(buildNav(ctx("RENTER", ["GATEPASS"])))).toContain("/dashboard/renter-portal/gate-passes");
     });
     it("gates Meetings on MEETINGS", () => {
         const more = buildNav(ctx("PROPERTY_MANAGER", ["LISTINGS"])).find(s => s.id === "more")!;

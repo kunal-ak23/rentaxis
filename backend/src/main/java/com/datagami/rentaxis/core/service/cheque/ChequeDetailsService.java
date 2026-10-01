@@ -81,6 +81,8 @@ public class ChequeDetailsService {
     private final com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository imageUploads;
     private final com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints;
     private final ChequeNumberClash numberClash;
+    private final com.datagami.rentaxis.core.service.OrgSettingsService orgSettings;
+    private final com.datagami.rentaxis.domain.repository.UserRepository users;
 
     @jakarta.persistence.PersistenceContext
     private jakarta.persistence.EntityManager em;
@@ -90,8 +92,12 @@ public class ChequeDetailsService {
                                 LeaseAccessPolicy leaseAccessPolicy,
                                 com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository imageUploads,
                                 com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints,
-                                ChequeNumberClash numberClash) {
+                                ChequeNumberClash numberClash,
+                                com.datagami.rentaxis.core.service.OrgSettingsService orgSettings,
+                                com.datagami.rentaxis.domain.repository.UserRepository users) {
         this.numberClash = numberClash;
+        this.orgSettings = orgSettings;
+        this.users = users;
         this.chequeRepository = chequeRepository;
         this.leaseRepository = leaseRepository;
         this.leaseAccessPolicy = leaseAccessPolicy;
@@ -289,7 +295,10 @@ public class ChequeDetailsService {
                 continue;
             }
             var issued = lockedScans.get(path);
-            if (issued == null || (issued.getChequeId() != null && !issued.getChequeId().equals(c.getId()))) {
+            // Not attachable: a PDF, or a photo holding several cheques — each
+            // cheque takes its own crop instead (changeset 163).
+            if (issued == null || !issued.isAttachable()
+                    || (issued.getChequeId() != null && !issued.getChequeId().equals(c.getId()))) {
                 bad.add(new BulkAttachErrorRow(it.targetId(), "image_not_issued"));
             } else {
                 issuedImages.put(c.getId(), issued);
@@ -298,6 +307,30 @@ public class ChequeDetailsService {
         if (!bad.isEmpty()) {
             throw new BulkAttachValidationException(bad, false);
         }
+
+        // Owner ruling 2026-09-29: a newly claimed scan whose payee matches none of
+        // this organisation's valid payee names is attached only once the operator
+        // has confirmed it. The payee is the one the server read at extract time
+        // (on the issued upload row), checked against this tenant's own list.
+        Map<UUID, com.datagami.rentaxis.domain.entity.enums.PayeeCheck> payeeChecks = new HashMap<>();
+        List<BulkAttachErrorRow> unconfirmed = new ArrayList<>();
+        for (BulkAttachChequeItem it : items) {
+            Cheque c = byId.get(it.targetId());
+            var issued = c == null ? null : issuedImages.get(c.getId());
+            if (issued == null) continue;
+            var check = orgSettings.checkPayee(tenantId, issued.getExtractedPayeeName());
+            payeeChecks.put(c.getId(), check);
+            if (check == com.datagami.rentaxis.domain.entity.enums.PayeeCheck.MISMATCH
+                    && !Boolean.TRUE.equals(it.getPayeeMismatchConfirmed())) {
+                unconfirmed.add(new BulkAttachErrorRow(it.targetId(), "payee_mismatch_unconfirmed"));
+            }
+        }
+        if (!unconfirmed.isEmpty()) {
+            throw new BulkAttachValidationException(unconfirmed, false);
+        }
+        UUID confirmer = callerIdOrNull();
+        String confirmerName = confirmer == null ? null : users.findDisplayNameById(confirmer).orElse(null);
+
         if (!notAttachable.isEmpty()) {
             throw new BulkAttachValidationException(notAttachable, true);
         }
@@ -360,10 +393,20 @@ public class ChequeDetailsService {
                 imageUploads.releaseOtherClaimsOf(c.getId(), issued.getId());
                 issued.setChequeId(c.getId());
                 imageUploads.saveAndFlush(issued);
+                // The new scan's payee and check replace whatever the old scan had.
+                var check = payeeChecks.get(c.getId());
+                c.setPayeeName(issued.getExtractedPayeeName());
+                c.setPayeeCheck(check);
+                boolean confirmedMismatch = check == com.datagami.rentaxis.domain.entity.enums.PayeeCheck.MISMATCH;
+                c.setPayeeMismatchConfirmedBy(confirmedMismatch ? confirmer : null);
+                c.setPayeeMismatchConfirmedByName(confirmedMismatch ? confirmerName : null);
+                c.setPayeeMismatchConfirmedAt(confirmedMismatch ? now : null);
             } else if (path == null) {
                 c.setImageUrl(null);
                 c.setImageBlobPath(null);
                 imageUploads.releaseClaimsOf(c.getId());
+                // No scan, nothing read off one.
+                clearPayee(c);
             }
             // else: the row's own, unchanged image stays as it is.
             c.setImageUploadedAt(it.getImageUploadedAt() != null ? it.getImageUploadedAt().toInstant() : now);
@@ -423,5 +466,23 @@ public class ChequeDetailsService {
 
     private static String blankToNull(String s) {
         return ChequeRowRules.blankToNull(s);
+    }
+
+    private static void clearPayee(Cheque c) {
+        c.setPayeeName(null);
+        c.setPayeeCheck(null);
+        c.setPayeeMismatchConfirmedBy(null);
+        c.setPayeeMismatchConfirmedByName(null);
+        c.setPayeeMismatchConfirmedAt(null);
+    }
+
+    /** The signed-in user's id (ApiSecurityFilter's principal name), or null. */
+    private static UUID callerIdOrNull() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        try {
+            return auth == null ? null : UUID.fromString(auth.getName());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 }

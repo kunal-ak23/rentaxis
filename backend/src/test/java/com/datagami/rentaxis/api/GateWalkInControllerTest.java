@@ -102,6 +102,7 @@ class GateWalkInControllerTest extends AbstractPostgresIT {
     @Autowired GatePassScanRepository scanRepo;
     @Autowired GateAccessPolicyRepository policyRepo;
     @Autowired ObjectMapper objectMapper;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     @MockitoBean BlobStorageService blobStorageService;
 
@@ -371,6 +372,8 @@ class GateWalkInControllerTest extends AbstractPostgresIT {
         assertThat(call(HttpMethod.GET, "/api/v1/gatepass/walk-in/" + passId + "/status", caller, null)
                 .getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(call(HttpMethod.POST, "/api/v1/gatepass/walk-in/" + passId + "/admit", caller, null)
+                .getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(call(HttpMethod.GET, "/api/v1/gatepass/walk-in/today", caller, null)
                 .getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 
@@ -650,6 +653,102 @@ class GateWalkInControllerTest extends AbstractPostgresIT {
         // behind it, and put a resident's guest into the wrong review flow.
         assertThat(call(HttpMethod.GET, "/api/v1/gatepass/walk-in/" + renterPassId + "/status", guard, null)
                 .getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    // ----------------------------------------------------------- today's desk
+
+    @Test
+    void todayListsTheGuardsOwnWalkInsNewestFirst() {
+        Fixture f = makeFixture();
+        approvalGate(f);
+        User guard = makeGuard(f.org(), f.property());
+        UUID first = UUID.fromString(raiseWalkIn(guard, f, "Ramesh", "+971501234567", false).get("id").asText());
+        UUID second = UUID.fromString(raiseWalkIn(guard, f, "Suresh", "+971507654321", false).get("id").asText());
+
+        ResponseEntity<String> res = call(HttpMethod.GET, "/api/v1/gatepass/walk-in/today", guard, null);
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode rows = json(res);
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(0).get("id").asText()).isEqualTo(second.toString());
+        assertThat(rows.get(1).get("id").asText()).isEqualTo(first.toString());
+        assertThat(rows.get(0).get("unitNumber").asText()).isEqualTo("A1");
+        assertThat(rows.get(0).get("status").asText()).isEqualTo("PENDING_APPROVAL");
+        // Same credential rule as the walk-in response itself: the desk never holds a code.
+        assertThat(rows.get(0).has("qrToken")).isFalse();
+        assertThat(rows.get(0).has("numericCode")).isFalse();
+    }
+
+    @Test
+    void todayNeverShowsAnotherPropertysOrAnotherOrganisationsWalkIns() {
+        LandlordOrg org = makeOrg();
+        Property mine = makeProperty(org);
+        Property theirs = makeProperty(org);
+        Fixture here = makeResidentWithActiveLease(org, mine, "H1");
+        Fixture there = makeResidentWithActiveLease(org, theirs, "T1");
+        openGate(here);
+        openGate(there);
+        User guard = makeGuard(org, mine);
+        User otherGuard = makeGuard(org, theirs);
+        raiseWalkIn(guard, here, "Visitor Here", "+971501111111", false);
+        raiseWalkIn(otherGuard, there, "Visitor There", "+971502222222", false);
+
+        Fixture foreign = makeFixture();
+        openGate(foreign);
+        raiseWalkIn(makeGuard(foreign.org(), foreign.property()), foreign, "Foreign", "+971503333333", false);
+
+        JsonNode rows = json(call(HttpMethod.GET, "/api/v1/gatepass/walk-in/today", guard, null));
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).get("guestName").asText()).isEqualTo("Visitor Here");
+    }
+
+    @Test
+    void todayLeavesOutWalkInsRaisedBeforeTheUaeDayBegan() {
+        Fixture f = makeFixture();
+        openGate(f);
+        User guard = makeGuard(f.org(), f.property());
+        UUID old = UUID.fromString(raiseWalkIn(guard, f, "Yesterday", "+971501111111", false).get("id").asText());
+        UUID fresh = UUID.fromString(raiseWalkIn(guard, f, "Today", "+971502222222", false).get("id").asText());
+        Instant dayStart = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Dubai")).toLocalDate()
+                .atStartOfDay(java.time.ZoneId.of("Asia/Dubai")).toInstant();
+        // created_at is not updatable through JPA; move it back one minute before the UAE day began.
+        jdbc.update("update gate_passes set created_at = ? where id = ?",
+                java.sql.Timestamp.from(dayStart.minus(1, ChronoUnit.MINUTES)), old);
+
+        JsonNode rows = json(call(HttpMethod.GET, "/api/v1/gatepass/walk-in/today", guard, null));
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).get("id").asText()).isEqualTo(fresh.toString());
+    }
+
+    @Test
+    void todayIsEmptyForAGuardWithNoPosting() {
+        Fixture f = makeFixture();
+        openGate(f);
+        raiseWalkIn(makeGuard(f.org(), f.property()), f, "Ramesh", "+971501234567", false);
+        User unposted = makeGuard(f.org());
+
+        JsonNode rows = json(call(HttpMethod.GET, "/api/v1/gatepass/walk-in/today", unposted, null));
+
+        // Never "the whole tenant" as a fallback for an unposted guard.
+        assertThat(rows).isEmpty();
+    }
+
+    @Test
+    void todayExpiresAPendingWalkInWhoseWindowHasClosed() {
+        Fixture f = makeFixture();
+        approvalGate(f);
+        User guard = makeGuard(f.org(), f.property());
+        UUID passId = UUID.fromString(raiseWalkIn(guard, f, "Ramesh", "+971501234567", false).get("id").asText());
+        GatePass pass = passRepo.findById(passId).orElseThrow();
+        pass.setValidTo(Instant.now().minus(1, ChronoUnit.MINUTES));
+        passRepo.save(pass);
+
+        JsonNode rows = json(call(HttpMethod.GET, "/api/v1/gatepass/walk-in/today", guard, null));
+
+        assertThat(rows.get(0).get("status").asText()).isEqualTo("EXPIRED");
+        assertThat(passRepo.findById(passId).orElseThrow().getStatus()).isEqualTo(GatePassStatus.EXPIRED);
     }
 
     // ----------------------------------------------------------------- photo

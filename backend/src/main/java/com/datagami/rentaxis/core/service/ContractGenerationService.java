@@ -144,7 +144,8 @@ public class ContractGenerationService {
         // than at transaction commit (after the PDF was already generated).
         assignContractNumberIfNull(lease);
         if (lease.getAgreementDate() == null) {
-            lease.setAgreementDate(LocalDate.now());
+            // Owner ruling 2026-09-29: the agreement date is the contract date unless set.
+            lease.setAgreementDate(lease.getContractDate() != null ? lease.getContractDate() : LocalDate.now());
         }
         try {
             leaseRepository.saveAndFlush(lease);
@@ -388,7 +389,8 @@ public class ContractGenerationService {
         String amountInWords = AmountInWordsUtil.toEnglishWords(grandTotal, "AED");
 
         // Agreement date display (defaults to today only at generation time; preview uses what is stored)
-        LocalDate agreementDate = lease.getAgreementDate() != null ? lease.getAgreementDate() : LocalDate.now();
+        LocalDate agreementDate = lease.getAgreementDate() != null ? lease.getAgreementDate()
+                : lease.getContractDate() != null ? lease.getContractDate() : LocalDate.now();
 
         // Build the row-aligned terms table from the two partials.
         String termsTable = buildTermsTable(termsEn, termsAr);
@@ -1093,7 +1095,23 @@ public class ContractGenerationService {
                 effectiveDate(doc, leaseDocumentRepository.findByLeaseId(doc.getLease().getId())));
 
         log.info("Downloading document {}", docId);
-        return readStoredBytes(doc);
+        try {
+            return readStoredBytes(doc);
+        } catch (RuntimeException e) {
+            // Break-it R4 brand4 F3: an executed copy that cannot be read serves the
+            // signed contract it copies, as GET /leases/{id}/contract already does.
+            if (doc.getType() != DocumentType.EXECUTED_COPY) throw e;
+            List<LeaseDocument> all = leaseDocumentRepository.findByLeaseId(doc.getLease().getId());
+            var window = leaseAccessPolicy.renterWindow(doc.getLease());
+            Optional<LeaseDocument> signed = all.stream()
+                    .filter(d -> d.getType() == DocumentType.CONTRACT)
+                    .filter(d -> visibleInWindow(window, effectiveDate(d, all)))
+                    .max(Comparator.comparing(LeaseDocument::getCreatedAt,
+                            Comparator.nullsFirst(Comparator.naturalOrder())));
+            if (signed.isEmpty()) throw e;
+            log.warn("Executed copy {} unreadable; serving the signed contract {}", docId, signed.get().getId());
+            return readStoredBytes(signed.get());
+        }
     }
 
     /**
@@ -1114,34 +1132,137 @@ public class ContractGenerationService {
                 || (madeAt != null && window.contains(madeAt.atZone(java.time.ZoneOffset.UTC).toLocalDate()));
     }
 
-    /** The stored bytes of a lease document (Azure or local disk), without access checks. */
+    /** Break-it R4 layout4 F1: what a document that cannot be read says — never its storage or SAS URL. */
+    static final String DOCUMENT_UNREADABLE = "This document could not be read from storage.";
+
+    /**
+     * The stored bytes of a lease document (blob storage or local disk), without
+     * access checks.
+     *
+     * <p>Break-it R4 layout4 F1: any URL of the <em>configured</em> blob account is
+     * read through the storage client — not only {@code https://*.blob.core.windows.net}.
+     * Azurite ({@code http://127.0.0.1:10000/devstoreaccount1/…}), a private
+     * endpoint or another Azure cloud used to fall through to the local-file branch
+     * and 404 with the full SAS URL in the message. A URL outside the configured
+     * account, or outside the document's own tenant container, is not fetched.</p>
+     */
     private byte[] readStoredBytes(LeaseDocument doc) {
         UUID docId = doc.getId();
         String url = doc.getDocumentUrl();
         // documentUrl can contain a bearer-style SAS signature. Never write it
-        // to application logs; the document id is enough to correlate failures.
-
-        // Azure Blob URL
-        if (url.startsWith("https://") && url.contains(".blob.core.windows.net")) {
+        // to application logs or a response; the document id correlates failures.
+        if (url == null || url.isBlank()) {
+            throw new NotFoundException(DOCUMENT_UNREADABLE);
+        }
+        if (url.regionMatches(true, 0, "http://", 0, 7) || url.regionMatches(true, 0, "https://", 0, 8)) {
+            Optional<String[]> location = storedBlobLocation(url, doc.getTenantId());
+            if (location.isEmpty() && useAzureStorage() && isAzureCloudBlobUrl(url)) {
+                // As before this fix: an Azure blob URL is read from the configured
+                // account by its container and path, whatever its host — documents
+                // written before a storage-account move keep downloading.
+                // Review of R4-B M6: but only from the document's own tenant container,
+                // exactly as the configured-account path requires.
+                try {
+                    String container = extractContainerName(url);
+                    String blobPath = extractBlobPath(url);
+                    UUID tenantId = doc.getTenantId();
+                    location = tenantId != null && container != null
+                            && container.equalsIgnoreCase(containerPrefix + tenantId)
+                            && blobPath != null && !blobPath.isBlank() && !blobPath.contains("..")
+                            ? Optional.of(new String[]{container.toLowerCase(java.util.Locale.ROOT), blobPath})
+                            : Optional.empty();
+                } catch (RuntimeException e) {
+                    location = Optional.empty();
+                }
+            }
+            if (location.isEmpty()) {
+                log.error("Document {} is not in the configured blob storage (or not in its tenant's container)", docId);
+                throw new NotFoundException(DOCUMENT_UNREADABLE);
+            }
             try {
-                return downloadFromAzure(url);
-            } catch (Exception e) {
-                log.error("Azure download failed for document {}: {}", docId, e.getMessage(), e);
-                throw new RuntimeException("Failed to download document from storage: " + e.getMessage(), e);
+                return downloadBlob(location.get()[0], location.get()[1]);
+            } catch (RuntimeException e) {
+                log.error("Blob download failed for document {}: {}", docId, e.getClass().getSimpleName());
+                throw new NotFoundException(DOCUMENT_UNREADABLE);
             }
         }
 
         // Local file
         File file = new File(url);
         if (!file.exists()) {
-            log.error("Local document file not found: {}", url);
-            throw new NotFoundException("Document file not found on disk: " + url);
+            log.error("Local file for document {} not found", docId);
+            throw new NotFoundException(DOCUMENT_UNREADABLE);
         }
         try {
             return Files.readAllBytes(file.toPath());
         } catch (IOException e) {
             throw new RuntimeException("Failed to read document file", e);
         }
+    }
+
+    /**
+     * {container, blobPath} when {@code url} names a blob in the configured account
+     * (same scheme and host:port, under the account URL's own path — Azurite puts the
+     * account name there) and in {@code tenantId}'s container; else empty.
+     */
+    Optional<String[]> storedBlobLocation(String url, UUID tenantId) {
+        if (!useAzureStorage()) return Optional.empty();
+        try {
+            java.net.URI actual = java.net.URI.create(url);
+            java.net.URI expected = java.net.URI.create(new BlobServiceClientBuilder()
+                    .connectionString(azureConnectionString).buildClient().getAccountUrl());
+            if (actual.getScheme() == null || !actual.getScheme().equalsIgnoreCase(expected.getScheme())
+                    || actual.getRawAuthority() == null
+                    || !actual.getRawAuthority().equalsIgnoreCase(expected.getRawAuthority())
+                    || actual.getUserInfo() != null) {
+                return Optional.empty();
+            }
+            String base = trimSlashes(expected.getPath());
+            String path = trimSlashes(actual.getPath());   // decoded: contracts%2Fx.pdf -> contracts/x.pdf
+            if (!base.isEmpty()) {
+                if (!path.startsWith(base + "/")) return Optional.empty();
+                path = path.substring(base.length() + 1);
+            }
+            int slash = path.indexOf('/');
+            if (slash <= 0 || slash == path.length() - 1) return Optional.empty();
+            String container = path.substring(0, slash);
+            String blobPath = path.substring(slash + 1);
+            if (tenantId == null || !container.equalsIgnoreCase(containerPrefix + tenantId)
+                    || blobPath.contains("..")) {
+                return Optional.empty();
+            }
+            return Optional.of(new String[]{container.toLowerCase(java.util.Locale.ROOT), blobPath});
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
+        }
+    }
+
+    private static boolean isAzureCloudBlobUrl(String url) {
+        try {
+            java.net.URI uri = java.net.URI.create(url);
+            return "https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null
+                    && uri.getHost().toLowerCase(java.util.Locale.ROOT).endsWith(".blob.core.windows.net");
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private static String trimSlashes(String p) {
+        if (p == null) return "";
+        int from = 0, to = p.length();
+        while (from < to && p.charAt(from) == '/') from++;
+        while (to > from && p.charAt(to - 1) == '/') to--;
+        return p.substring(from, to);
+    }
+
+    private byte[] downloadBlob(String container, String blobPath) {
+        return new BlobServiceClientBuilder()
+                .connectionString(azureConnectionString)
+                .buildClient()
+                .getBlobContainerClient(container)
+                .getBlobClient(blobPath)
+                .downloadContent()
+                .toBytes();
     }
 
     /**

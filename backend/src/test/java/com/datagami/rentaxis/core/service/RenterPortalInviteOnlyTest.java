@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.CreateRenterDTO;
 import com.datagami.rentaxis.api.dto.RenterDTO;
+import com.datagami.rentaxis.core.security.TokenRevocationService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.User;
@@ -40,12 +41,18 @@ class RenterPortalInviteOnlyTest {
     private RenterRepository renterRepository;
     private UserService userService;
     private RenterService service;
+    private UserRepository userRepository;
+    private UUID tenantId;
 
     @BeforeEach
     void setUp() {
         renterRepository = mock(RenterRepository.class);
         userService = mock(UserService.class);
-        service = new RenterService(renterRepository, userService, mock(UserRepository.class));
+        userRepository = mock(UserRepository.class);
+        service = new RenterService(renterRepository, userService, userRepository,
+                mock(TokenRevocationService.class),
+                new org.springframework.transaction.support.TransactionTemplate(
+                        mock(org.springframework.transaction.PlatformTransactionManager.class)));
 
         when(renterRepository.save(any(Renter.class))).thenAnswer(inv -> {
             Renter r = inv.getArgument(0);
@@ -59,7 +66,8 @@ class RenterPortalInviteOnlyTest {
         when(userService.createUser(anyString(), any(), anyString(), any(UserRole.class),
                 any(), any(), anyString())).thenReturn(user);
 
-        TenantContextHolder.setTenantId(UUID.randomUUID());
+        tenantId = UUID.randomUUID();
+        TenantContextHolder.setTenantId(tenantId);
     }
 
     @AfterEach
@@ -103,5 +111,27 @@ class RenterPortalInviteOnlyTest {
 
         verify(userService, never()).createUser(any(), any(), any(), any(), any(), any(), any());
         assertThat(created.isInvitePending()).isFalse();
+    }
+
+    /**
+     * Belt and braces behind the tenant-scoped lookup: even if a user of another
+     * organisation came back (a broken query, the filter off), it is never linked.
+     * In the IT the Hibernate tenant filter hides such a row first, so this guard
+     * is only observable here.
+     */
+    @Test
+    void aUserOfAnotherOrganisationIsNeverLinkedEvenIfTheLookupReturnedOne() {
+        User foreign = new User();
+        foreign.setId(UUID.randomUUID());
+        foreign.setRole(UserRole.RENTER);
+        foreign.setTenantId(UUID.randomUUID());
+        when(userRepository.findInTenantByEmailNormalised(any(), anyString())).thenReturn(java.util.List.of(foreign));
+
+        RenterDTO created = service.createRenter(renterDto());
+
+        verify(userRepository).findInTenantByEmailNormalised(eq(tenantId), eq("ahmed@example.invalid"));
+        assertThat(created.getUserId()).isNotEqualTo(foreign.getId()).isNull();
+        assertThat(created.getPortalAccount()).isEqualTo(RenterDTO.PortalAccount.SKIPPED_EMAIL_IN_USE);
+        verify(userService, never()).createUser(any(), any(), any(), any(), any(), any(), any());
     }
 }

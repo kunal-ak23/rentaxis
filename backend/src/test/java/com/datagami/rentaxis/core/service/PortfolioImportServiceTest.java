@@ -488,6 +488,52 @@ class PortfolioImportServiceTest {
         assertThat(errors).anySatisfy(e -> assertThat(e.getField()).isEqualTo("ChequeOrPaymentDate"));
     }
 
+    /**
+     * Break-it R4 ops4 F1: the Import Portfolio dialog says "Sheets: Properties,
+     * Units, Tenants, Tenancy Contracts" (the product's words), but the importer
+     * wanted "Renters" and "Leases" and its refusal named only those. Both names
+     * are accepted; the refusal names both, and row errors name the sheet the
+     * workbook actually has.
+     */
+    @Test
+    void theProductsSheetNamesTenantsAndTenancyContractsAreAccepted() {
+        Workbook wb = buildLegacyWorkbook();
+        wb.setSheetName(wb.getSheetIndex("Renters"), "Tenants");
+        wb.setSheetName(wb.getSheetIndex("Leases"), "Tenancy Contracts");
+
+        assertThat(service.validateAll(wb).errors()).isEmpty();
+
+        setCell(wb, "Tenants", 1, "Email", "not-an-email");
+        assertThat(service.validateAll(wb).errors())
+                .anySatisfy(e -> assertThat(e.getSheet()).isEqualTo("Tenants"))
+                .noneSatisfy(e -> assertThat(e.getSheet()).isEqualTo("Renters"));
+    }
+
+    /** Break-it R4 ops4 F1: the template uses the dialog's names, and imports as it stands. */
+    @Test
+    void theTemplateNamesItsSheetsLikeTheDialogAndValidates() throws Exception {
+        byte[] template = new PortfolioTemplateService().generateTemplate();
+        try (Workbook wb = new XSSFWorkbook(new java.io.ByteArrayInputStream(template))) {
+            assertThat(wb.getSheet("Tenants")).isNotNull();
+            assertThat(wb.getSheet("Tenancy Contracts")).isNotNull();
+            assertThat(wb.getSheet("Renters")).isNull();
+            assertThat(wb.getSheet("Leases")).isNull();
+            assertThat(service.validateAll(wb).errors()).isEmpty();
+        }
+    }
+
+    @Test
+    void aMissingTenantsOrContractsSheetIsNamedByBothItsNames() {
+        Workbook wb = buildLegacyWorkbook();
+        wb.removeSheetAt(wb.getSheetIndex("Renters"));
+        wb.removeSheetAt(wb.getSheetIndex("Leases"));
+
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
+        assertThat(errors).extracting(ImportErrorDTO::getMessage).containsExactlyInAnyOrder(
+                "Sheet 'Tenants' is missing (the older name 'Renters' is accepted too)",
+                "Sheet 'Tenancy Contracts' is missing (the older name 'Leases' is accepted too)");
+    }
+
     // ----- Test helpers -----
 
     /** Builds the original 4-sheet, 10-column Leases workbook (no new columns, no Cheques sheet). */

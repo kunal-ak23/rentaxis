@@ -203,6 +203,36 @@ class LeaseTransferIT extends AbstractPostgresIT {
     }
 
     /** F15-07: every remaining cheque carried, nothing of B's own — the review is clean and the post goes through. */
+    /** PR #389 review m6: the carried copy is the same paper, so its payee check travels with it. */
+    @Test
+    void theCarriedChequeKeepsItsPayeeAndTheConfirmedMismatch() {
+        UUID a = leaseA(true);
+        UUID confirmer = UUID.randomUUID();
+        java.time.Instant at = java.time.Instant.parse("2026-03-01T09:00:00Z");
+        UUID julId = chequeOn(a, JUL).getId();
+        tx.executeWithoutResult(s -> {
+            Cheque c = chequeRepo.findById(julId).orElseThrow();
+            c.setPayeeName("Other Landlord LLC");
+            c.setPayeeCheck(com.datagami.rentaxis.domain.entity.enums.PayeeCheck.MISMATCH);
+            c.setPayeeMismatchConfirmedBy(confirmer);
+            c.setPayeeMismatchConfirmedByName("Mona Clerk");
+            c.setPayeeMismatchConfirmedAt(at);
+            chequeRepo.save(c);
+        });
+        Unit target = tx.execute(s -> fixtures.createUnit(fixtures.property(), "A-202"));
+        UUID b = draftB(a, target, "41589.04");
+
+        posting.post(b);
+
+        UUID copyId = chequeOn(a, JUL).getTransferredToId();
+        Cheque copy = register(b).stream().filter(c -> c.getId().equals(copyId)).findFirst().orElseThrow();
+        assertThat(copy.getPayeeName()).isEqualTo("Other Landlord LLC");
+        assertThat(copy.getPayeeCheck()).isEqualTo(com.datagami.rentaxis.domain.entity.enums.PayeeCheck.MISMATCH);
+        assertThat(copy.getPayeeMismatchConfirmedBy()).isEqualTo(confirmer);
+        assertThat(copy.getPayeeMismatchConfirmedByName()).isEqualTo("Mona Clerk");
+        assertThat(copy.getPayeeMismatchConfirmedAt()).isEqualTo(at);
+    }
+
     @Test
     void aFullyCarriedTransferIsReadyToPostWithNoRowsOfItsOwn() {
         UUID a = leaseA(true);

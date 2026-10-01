@@ -221,6 +221,30 @@ public class Cheque extends BaseTenantEntity {
     @Column(name = "image_uploaded_at")
     private Instant imageUploadedAt;
 
+    /**
+     * The payee (the "Pay" line) the OCR read off the attached scan, as written.
+     * Not the drawer ({@link #payerName}) and not {@link #payeeBank}, which is the
+     * drawer's bank despite its name.
+     */
+    @Column(name = "payee_name", length = 300)
+    private String payeeName;
+
+    /** The payee check at attach time (changeset 162); null when it did not run. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payee_check", length = 20)
+    private com.datagami.rentaxis.domain.entity.enums.PayeeCheck payeeCheck;
+
+    /** For a {@code MISMATCH}: the user who confirmed attaching it anyway, and when. */
+    @Column(name = "payee_mismatch_confirmed_by")
+    private UUID payeeMismatchConfirmedBy;
+
+    /** Their name when they confirmed, so the cheque says who even if the user is later removed. */
+    @Column(name = "payee_mismatch_confirmed_by_name", length = 255)
+    private String payeeMismatchConfirmedByName;
+
+    @Column(name = "payee_mismatch_confirmed_at")
+    private Instant payeeMismatchConfirmedAt;
+
     @Column(columnDefinition = "text")
     private String notes;
 

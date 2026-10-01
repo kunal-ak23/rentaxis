@@ -8,6 +8,7 @@ import { NumberInput } from "@/components/ui/NumberInput";
 import { chequeGridHandlers, pasteIntoRows, type GridField, type PasteRequest } from "@/components/cheques/chequeGridKeys";
 import PasteReport, { usePasteReport } from "@/components/cheques/PasteReport";
 import { cn } from "@/lib/utils";
+import { formatDate } from "@/lib/format";
 import { fmtAmount } from "@/lib/api/ledger";
 import type {
     Cheque,
@@ -369,12 +370,16 @@ export default function ChequeGrid({
                         </select>
                     </Labelled>
                     <label className="md:col-span-2 flex items-center gap-2 text-[11px] text-foreground">
+                        {/* Owner request (2026-09-29): one-time charges ride on cheque 1 by
+                            default; this opts out (the generator's one fold flag, which the
+                            deposit follows too, as it always has). */}
                         <input
                             type="checkbox"
-                            checked={gen.foldDepositsAndFeesIntoFirst}
-                            onChange={e => setGen(g => ({ ...g, foldDepositsAndFeesIntoFirst: e.target.checked }))}
+                            data-testid="cheque-generate-separate-one-time"
+                            checked={!gen.foldDepositsAndFeesIntoFirst}
+                            onChange={e => setGen(g => ({ ...g, foldDepositsAndFeesIntoFirst: !e.target.checked }))}
                         />
-                        {t("foldIntoFirst")}
+                        {t("separateOneTimeCheque")}
                     </label>
                     <div className="flex items-end">
                         <button
@@ -606,6 +611,20 @@ export default function ChequeGrid({
                                         {c.settledBeforeAcquisition && (
                                             <span className="ms-1 text-[9px] text-muted" data-testid={`cheque-settled-before-acquisition-${i}`}>
                                                 {tc("settledBeforeAcquisition")}
+                                            </span>
+                                        )}
+                                        {c.payeeCheck === "MISMATCH" && (
+                                            <span className="block mt-1 text-[9px] text-red-700" data-testid={`cheque-payee-mismatch-${i}`}>
+                                                <span className="font-semibold">{tc("payeeMismatch")}</span>
+                                                {c.payeeName && <>: <bdi>{c.payeeName}</bdi></>}
+                                                {c.payeeMismatchConfirmedAt && (
+                                                    <span className="block text-muted">
+                                                        {tc("payeeMismatchConfirmedBy", {
+                                                            name: c.payeeMismatchConfirmedByName ?? "—",
+                                                            date: formatDate(c.payeeMismatchConfirmedAt),
+                                                        })}
+                                                    </span>
+                                                )}
                                             </span>
                                         )}
                                     </td>

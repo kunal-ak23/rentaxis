@@ -93,21 +93,71 @@ describe("RentersPage create form", () => {
         expect(screen.queryByText(/password/i)).toBeNull();
     });
 
-    // Web review M3: unticking "Create Portal Account" with an email filled in
-    // is a choice, not a missing email.
-    it("says the portal account was skipped by choice when the box is unticked", async () => {
-        postResponse = { ok: true, status: 201, body: { id: "r1", invitePending: false } };
+    // Owner ruling 2026-09-29: every tenant with an email gets portal access;
+    // the form offers no opt-out and never asks the API for none.
+    it("offers no opt-out of portal access and never sends one", async () => {
+        const bodies: unknown[] = [];
+        const base = global.fetch;
+        global.fetch = vi.fn(async (url: unknown, init?: RequestInit) => {
+            if (String(url).includes("/v1/renters") && init?.method === "POST") bodies.push(JSON.parse(String(init.body)));
+            return base(url as RequestInfo, init);
+        }) as unknown as typeof fetch;
+        postResponse = { ok: true, status: 201, body: { id: "r1", invitePending: true, portalAccount: "INVITED" } };
+        render(<RentersPage />);
+
+        fireEvent.click((await screen.findAllByText("addRenter"))[0]);
+        expect(screen.queryByRole("checkbox")).toBeNull();
+        expect(screen.queryByText("createPortalAccount")).toBeNull();
+        fireEvent.change(screen.getByPlaceholderText("John Doe"), { target: { value: "New Renter" } });
+        fireEvent.change(screen.getByPlaceholderText("john@example.com"), { target: { value: "r@x.com" } });
+        fireEvent.click(screen.getByText("create"));
+
+        expect(await screen.findByText("sentBody")).toBeTruthy();
+        expect(bodies).toHaveLength(1);
+        expect(bodies[0]).not.toHaveProperty("createPortalAccount");
+    });
+
+    it("says no portal account was created when the email is already in use", async () => {
+        postResponse = { ok: true, status: 201, body: { id: "r1", invitePending: false, portalAccount: "SKIPPED_EMAIL_IN_USE" } };
         render(<RentersPage />);
 
         fireEvent.click((await screen.findAllByText("addRenter"))[0]);
         fireEvent.change(screen.getByPlaceholderText("John Doe"), { target: { value: "New Renter" } });
         fireEvent.change(screen.getByPlaceholderText("john@example.com"), { target: { value: "r@x.com" } });
-        fireEvent.click(screen.getByRole("checkbox"));
         fireEvent.click(screen.getByText("create"));
 
-        expect(await screen.findByText("noPortalOptedOutBody")).toBeTruthy();
+        expect(await screen.findByText("emailInUseBody")).toBeTruthy();
         expect(screen.getByText("savedTitle")).toBeTruthy();
-        expect(screen.queryByText("noPortalBody")).toBeNull();
+        expect(screen.queryByText("sentBody")).toBeNull();
+    });
+
+    // Review m5: a deactivated portal account is not linked, and the note says so.
+    it("says the existing portal account is deactivated rather than linking it", async () => {
+        postResponse = { ok: true, status: 201, body: { id: "r1", invitePending: false, portalAccount: "SKIPPED_ACCOUNT_INACTIVE" } };
+        render(<RentersPage />);
+
+        fireEvent.click((await screen.findAllByText("addRenter"))[0]);
+        fireEvent.change(screen.getByPlaceholderText("John Doe"), { target: { value: "New Renter" } });
+        fireEvent.change(screen.getByPlaceholderText("john@example.com"), { target: { value: "r@x.com" } });
+        fireEvent.click(screen.getByText("create"));
+
+        expect(await screen.findByText("accountInactiveBody")).toBeTruthy();
+        expect(screen.queryByText("linkedExistingBody")).toBeNull();
+    });
+
+    // A linked existing portal user may still have their first invite pending:
+    // the page must not claim a new one was just sent.
+    it("says the tenant was linked to their existing portal account, not re-invited", async () => {
+        postResponse = { ok: true, status: 201, body: { id: "r1", invitePending: true, portalAccount: "LINKED_EXISTING" } };
+        render(<RentersPage />);
+
+        fireEvent.click((await screen.findAllByText("addRenter"))[0]);
+        fireEvent.change(screen.getByPlaceholderText("John Doe"), { target: { value: "New Renter" } });
+        fireEvent.change(screen.getByPlaceholderText("john@example.com"), { target: { value: "r@x.com" } });
+        fireEvent.click(screen.getByText("create"));
+
+        expect(await screen.findByText("linkedExistingBody")).toBeTruthy();
+        expect(screen.queryByText("sentBody")).toBeNull();
     });
 
     it("says no email was given when that is why there is no portal account", async () => {

@@ -1,0 +1,85 @@
+# Owner ruling 2026-09-29: an organisation may list the payee names its cheques
+# must be made out to, and scanned cheques whose payee ("Pay" line) matches none
+# of them are flagged in the OCR review.
+#
+#   org_settings           the on/off switch and the list of valid payee names
+#   cheque_image_uploads   the payee the OCR read off the scan, kept server-side
+#                          so bulk-attach checks what the scan says, not what the
+#                          request body says
+#   cheques                the payee on the attached scan, the check's result and,
+#                          for a mismatch, who confirmed it and when
+databaseChangeLog:
+  - changeSet:
+      id: 162-cheque-payee-check
+      author: claude
+      changes:
+        - addColumn:
+            tableName: org_settings
+            columns:
+              - column:
+                  name: payee_check_enabled
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: valid_payee_names
+                  type: jsonb
+                  defaultValueComputed: "'[]'::jsonb"
+                  constraints:
+                    nullable: false
+        - addColumn:
+            tableName: cheque_image_uploads
+            columns:
+              - column:
+                  name: extracted_payee_name
+                  type: varchar(300)
+        - addColumn:
+            tableName: cheques
+            columns:
+              - column:
+                  name: payee_name
+                  type: varchar(300)
+              - column:
+                  name: payee_check
+                  type: varchar(20)
+              - column:
+                  name: payee_mismatch_confirmed_by
+                  type: uuid
+              - column:
+                  name: payee_mismatch_confirmed_by_name
+                  type: varchar(255)
+              - column:
+                  name: payee_mismatch_confirmed_at
+                  type: timestamptz
+        - sql:
+            sql: >
+              ALTER TABLE cheques ADD CONSTRAINT ck_cheques_payee_check
+                CHECK (payee_check IS NULL OR payee_check IN ('MATCH', 'MISMATCH', 'UNREADABLE'))
+  # PR #389 review I1: one portal user, at most one Tenant. Two concurrent
+  # creates could otherwise both link the same RENTER user, and every
+  # findByUserId would then fail with "more than one result". RenterService
+  # serialises on a row lock (the primary guard); this index is the backstop.
+  #
+  # Its own changeset so that skipping it never skips the payee columns above.
+  # If duplicates already exist the precondition fails with CONTINUE: this
+  # changeset is skipped (not marked ran), the application starts, and it is
+  # tried again on the next update once the data is clean.
+  # RenterUserLinkIndexCheck logs a WARN at startup while the index is missing.
+  - changeSet:
+      id: 162-renters-user-unique
+      author: claude
+      preConditions:
+        - onFail: CONTINUE
+        - onFailMessage: >
+            ux_renters_user_id was NOT created: renters.user_id has duplicates (one
+            portal user linked to more than one Tenant). Skipped for now; it is
+            retried on the next update once the duplicates are resolved.
+        - sqlCheck:
+            expectedResult: 0
+            sql: >
+              SELECT count(*) FROM (SELECT user_id FROM renters WHERE user_id IS NOT NULL
+               GROUP BY user_id HAVING count(*) > 1) d
+      changes:
+        - sql:
+            sql: CREATE UNIQUE INDEX ux_renters_user_id ON renters (user_id) WHERE user_id IS NOT NULL

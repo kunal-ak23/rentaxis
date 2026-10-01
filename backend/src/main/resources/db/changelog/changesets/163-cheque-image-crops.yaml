@@ -1,0 +1,55 @@
+# Multi-cheque photos. One photo (or one PDF page) can hold several cheques; the
+# server now crops each one out and issues the crop as its own scan, so each
+# instalment gets its own image instead of the whole photo landing on one row.
+#
+# source_upload_id: the upload a crop (or rendered PDF page) was cut from. The
+#   retention purge follows it, so the original goes when its crops do.
+# attachable: false for an upload bulk-attach must not put on a cheque — a PDF,
+#   or a photo that holds several cheques (attaching it is the bug this fixes).
+#   Every existing row stays attachable, exactly as before.
+# page_number: the 1-based PDF page a crop came from (null for a photo).
+databaseChangeLog:
+  - changeSet:
+      id: 163-cheque-image-crops
+      author: claude
+      changes:
+        - addColumn:
+            tableName: cheque_image_uploads
+            columns:
+              - column:
+                  name: source_upload_id
+                  type: uuid
+                  constraints:
+                    nullable: true
+                    foreignKeyName: fk_cheque_image_uploads_source
+                    references: cheque_image_uploads(id)
+              - column:
+                  name: attachable
+                  type: boolean
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+              - column:
+                  name: page_number
+                  type: int
+                  constraints:
+                    nullable: true
+        - createIndex:
+            tableName: cheque_image_uploads
+            indexName: ix_cheque_image_uploads_source
+            columns:
+              - column:
+                  name: source_upload_id
+      rollback:
+        - dropIndex:
+            tableName: cheque_image_uploads
+            indexName: ix_cheque_image_uploads_source
+        - dropColumn:
+            tableName: cheque_image_uploads
+            columnName: page_number
+        - dropColumn:
+            tableName: cheque_image_uploads
+            columnName: attachable
+        - dropColumn:
+            tableName: cheque_image_uploads
+            columnName: source_upload_id

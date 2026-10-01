@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.dto.ParkingSpotBulkCreateRequest;
 import com.datagami.rentaxis.api.dto.ParkingSpotCreateRequest;
 import com.datagami.rentaxis.api.dto.ParkingSpotDTO;
 import com.datagami.rentaxis.api.dto.ParkingSpotUpdateRequest;
+import com.datagami.rentaxis.api.dto.ParkingSummaryDTO;
 import com.datagami.rentaxis.core.service.BookingService;
 import com.datagami.rentaxis.core.service.FacilityService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
@@ -77,6 +78,17 @@ public class ParkingSpotController {
                 buildingIdsBySpot.getOrDefault(s.getId(), List.of()),
                 approvedCounts.getOrDefault(s.getId(), 0L) > 0,
                 pendingCounts.getOrDefault(s.getId(), 0L))));
+    }
+
+    /**
+     * Demo feedback 2026-09-29: the property Overview's counts — active spots,
+     * assigned (held by an approved booking) and free — in one call. The list is
+     * paged, so counting from it would take a request per page.
+     */
+    @GetMapping("/summary")
+    public ResponseEntity<ParkingSummaryDTO> summary(@RequestParam UUID propertyId) {
+        checkPropertyManagerAccess(propertyId);
+        return ResponseEntity.ok(facilityService.parkingSummary(TenantContextHolder.getTenantId(), propertyId));
     }
 
     @PostMapping

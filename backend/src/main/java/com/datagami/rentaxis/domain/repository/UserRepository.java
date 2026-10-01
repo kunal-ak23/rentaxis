@@ -51,6 +51,16 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     boolean existsByTenantIdAndEmail(UUID tenantId, String email);
 
+    /**
+     * Every user of this one organisation with this email, trimmed and
+     * case-insensitive. Explicitly tenant-scoped: it never sees another
+     * organisation's users, whatever the Hibernate tenant filter is doing.
+     */
+    @Query("""
+            select u from User u where u.tenantId = :tenantId and lower(trim(u.email)) = lower(trim(:email))
+            order by u.id""")
+    List<User> findInTenantByEmailNormalised(@Param("tenantId") UUID tenantId, @Param("email") String email);
+
     boolean existsByEmailAndTenantIdIsNull(String email);
 
     Optional<User> findByInviteToken(String token);

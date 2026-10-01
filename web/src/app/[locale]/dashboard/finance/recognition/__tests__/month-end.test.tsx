@@ -223,6 +223,37 @@ describe("Month-end recognition page", () => {
         expect(list).toHaveTextContent("01/08/2026 – 31/08/2026");
     });
 
+    it("reports rows another run posted as already recognised, not as failures (R4 money4 F1)", async () => {
+        api.run.mockResolvedValue({
+            ...RUN, posted: 1, wouldPost: 1, amount: 5000, failed: 0, errors: [], alreadyRecognised: 2,
+        });
+        renderPage();
+
+        fireEvent.click(await screen.findByTestId("recognition-run"));
+        fireEvent.click(screen.getByTestId("recognition-run-confirm"));
+
+        expect(await screen.findByTestId("recognition-already"))
+            .toHaveTextContent("2 entries were already recognised by another run");
+        expect(screen.queryByTestId("recognition-failed")).toBeNull();
+        expect(screen.queryByTestId("recognition-errors")).toBeNull();
+    });
+
+    it("reports rows a contract change cancelled meanwhile on their own, not as recognised (review of R4-B M10)", async () => {
+        api.run.mockResolvedValue({
+            ...RUN, posted: 0, wouldPost: 0, amount: 0, failed: 0, errors: [], alreadyRecognised: 0, withdrawnMeanwhile: 1,
+        });
+        renderPage();
+
+        fireEvent.click(await screen.findByTestId("recognition-run"));
+        fireEvent.click(screen.getByTestId("recognition-run-confirm"));
+
+        expect(await screen.findByTestId("recognition-withdrawn"))
+            .toHaveTextContent("1 entry was cancelled or reversed meanwhile by a contract change");
+        expect(screen.queryByTestId("recognition-already")).toBeNull();
+        expect(screen.queryByTestId("recognition-nothing")).toBeNull();
+        expect(screen.queryByTestId("recognition-failed")).toBeNull();
+    });
+
     it("counts a single skipped row in the singular", async () => {
         // A close that catches exactly one row inside a shut period is the
         // ordinary case — one contract, one month — and "1 entries fall in a

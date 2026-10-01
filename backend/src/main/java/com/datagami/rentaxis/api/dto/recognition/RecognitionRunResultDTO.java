@@ -20,6 +20,11 @@ import java.util.List;
  *       is the date to name in the message.</li>
  *   <li>{@code errors} — the ledger refused these, one message each. Somebody has
  *       to look.</li>
+ *   <li>{@code alreadyRecognised} — rows another run posted while this one was
+ *       working (break-it R4 money4 F1). Done, once; not a failure.</li>
+ *   <li>{@code withdrawnMeanwhile} — rows a contract change cancelled or reversed
+ *       while this run was working (review of R4-B M10). Nothing to recognise; any
+ *       replacement row is picked up by the next run. Not a failure either.</li>
  * </ul>
  *
  * <p>{@code posted} is <b>0 on a preview</b> and {@code wouldPost} is the count to
@@ -36,7 +41,9 @@ public record RecognitionRunResultDTO(
         List<RecognitionEntryDTO> skippedLockedEntries,
         LocalDate booksLockedThrough,
         int failed,
-        List<String> errors) {
+        List<String> errors,
+        int alreadyRecognised,
+        int withdrawnMeanwhile) {
 
     /**
      * {@code failed} is derived rather than carried by the service: the service's
@@ -47,6 +54,6 @@ public record RecognitionRunResultDTO(
     public static RecognitionRunResultDTO from(RecognitionRunResult r) {
         return new RecognitionRunResultDTO(r.preview(), r.posted(), r.wouldPost(), r.amount(), r.entries(),
                 r.skippedLocked(), r.skippedLockedEntries(), r.booksLockedThrough(),
-                r.errors().size(), r.errors());
+                r.errors().size(), r.errors(), r.alreadyRecognised(), r.withdrawnMeanwhile());
     }
 }

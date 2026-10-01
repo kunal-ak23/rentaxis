@@ -19,7 +19,10 @@ vi.mock("@/i18n/routing", () => ({
 }));
 vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "TENANT_ADMIN" } } }) }));
 vi.mock("@/components/ui/Pagination", () => ({ Pagination: () => <div data-testid="pagination" /> }));
-vi.mock("@/lib/businessDate", () => ({ businessTodayIso: () => "2026-09-25" }));
+vi.mock("@/lib/businessDate", async orig => ({
+    ...(await orig<typeof import("@/lib/businessDate")>()),
+    businessTodayIso: () => "2026-09-25",
+}));
 
 const api = vi.hoisted(() => ({ paged: vi.fn(), statsByLeases: vi.fn(), createDraft: vi.fn() }));
 vi.mock("@/lib/api/leasing", async orig => {
@@ -139,6 +142,7 @@ describe("lease wizard: server-backed Unit and Renter pickers", () => {
 
         fireEvent.change(screen.getByTestId("wizard-start-date"), { target: { value: "2026-10-01" } });
         fireEvent.change(screen.getByTestId("wizard-end-date"), { target: { value: "2027-09-30" } });
+        fireEvent.change(screen.getByTestId("wizard-rent"), { target: { value: "60000" } });
         fireEvent.click(screen.getByTestId("wizard-next"));
         expect(await screen.findByTestId("grid-property")).toHaveTextContent("p-souk");
 

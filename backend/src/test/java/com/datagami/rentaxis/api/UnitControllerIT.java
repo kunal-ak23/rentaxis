@@ -64,18 +64,21 @@ class UnitControllerIT extends AbstractPostgresIT {
     private UUID siblingBuildingId;
     private UUID otherPropertyId;
     private UUID otherBuildingId;
+    private UUID tenantOther;
+    private Property propertyA;
 
     @BeforeEach
     void setUp() {
         http = new CrossTenantHttp(port, orgRepo, userRepo, accountService, propertyAccountService, propertyService);
 
-        http.tenant("Unit-other-");
+        tenantOther = http.tenant("Unit-other-");
         Property op = http.property("Other Tower");
         otherPropertyId = op.getId();
         otherBuildingId = building(op, "Other B1");
 
         tenantA = http.tenant("Unit-");
         Property p = http.property("Marina Heights");
+        propertyA = p;
         propertyId = p.getId();
         buildingId = building(p, "Tower A");
         siblingBuildingId = building(http.property("Sibling"), "Sibling B1");
@@ -203,5 +206,40 @@ class UnitControllerIT extends AbstractPostgresIT {
         var res = bulk(propertyId, siblingBuildingId);
         assertThat(res.getStatusCode().value()).isEqualTo(400);
         assertThat(unitsOfA()).isZero();
+    }
+
+    // ---- GET /units/search?buildingId= (demo feedback 2026-09-29: the wizard's Building filter) ----
+
+    @SuppressWarnings("unchecked")
+    private java.util.List<String> searchIds(User caller, String query) {
+        java.util.List<Map<String, Object>> rows = http.request(caller, HttpMethod.GET, "/api/v1/units/search" + query)
+                .retrieve().body(java.util.List.class);
+        return rows.stream().map(r -> (String) r.get("id")).toList();
+    }
+
+    private String createUnit(User caller, UUID property, UUID building) {
+        var res = http.call(caller, HttpMethod.POST, "/api/v1/units", body(property, building));
+        assertThat(res.getStatusCode().value()).isEqualTo(200);
+        return (String) res.getBody().get("id");
+    }
+
+    @Test
+    void searchNarrowsToTheNamedBuildingAndNeverCrossesTenants() {
+        UUID towerB;
+        TenantContextHolder.setTenantId(tenantA);
+        towerB = building(propertyA, "Tower B");
+        TenantContextHolder.clear();
+        String inA = createUnit(admin, propertyId, buildingId);
+        String inB = createUnit(admin, propertyId, towerB);
+        User otherAdmin = http.admin(tenantOther);
+        String theirs = createUnit(otherAdmin, otherPropertyId, otherBuildingId);
+
+        assertThat(searchIds(admin, "?buildingId=" + buildingId)).containsExactly(inA);
+        assertThat(searchIds(admin, "?propertyId=" + propertyId + "&buildingId=" + towerB)).containsExactly(inB);
+        assertThat(searchIds(admin, "?propertyId=" + propertyId)).containsExactlyInAnyOrder(inA, inB);
+        // Another Organisation's building id matches nothing here, and its unit is never listed.
+        assertThat(searchIds(admin, "?buildingId=" + otherBuildingId)).isEmpty();
+        assertThat(searchIds(admin, "")).doesNotContain(theirs);
+        assertThat(searchIds(otherAdmin, "?buildingId=" + otherBuildingId)).containsExactly(theirs);
     }
 }

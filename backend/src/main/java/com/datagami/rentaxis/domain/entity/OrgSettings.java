@@ -45,6 +45,31 @@ public class OrgSettings extends BaseTenantEntity {
     @Column(name = "penalty_payment_instructions", columnDefinition = "TEXT")
     private String penaltyPaymentInstructions;
 
+    /** Settings › Organisation: "Check the payee name on scanned cheques" (changeset 162). */
+    @Column(name = "payee_check_enabled", nullable = false)
+    private boolean payeeCheckEnabled = false;
+
+    /** The payee names a cheque may be made out to; the check passes on ANY of them. */
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(name = "valid_payee_names", nullable = false, columnDefinition = "jsonb")
+    private java.util.List<String> validPayeeNames = new java.util.ArrayList<>();
+
+    public boolean isPayeeCheckEnabled() {
+        return payeeCheckEnabled;
+    }
+
+    public void setPayeeCheckEnabled(boolean payeeCheckEnabled) {
+        this.payeeCheckEnabled = payeeCheckEnabled;
+    }
+
+    public java.util.List<String> getValidPayeeNames() {
+        return validPayeeNames == null ? java.util.List.of() : validPayeeNames;
+    }
+
+    public void setValidPayeeNames(java.util.List<String> validPayeeNames) {
+        this.validPayeeNames = validPayeeNames == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(validPayeeNames);
+    }
+
     // Getters and Setters
     public UUID getId() {
         return id;

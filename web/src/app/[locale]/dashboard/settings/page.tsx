@@ -13,6 +13,7 @@ import RentSettings from "@/components/settings/RentSettings";
 import GatewaySettings from "@/components/settings/GatewaySettings";
 import OnlinePaymentSwitch from "@/components/settings/OnlinePaymentSwitch";
 import OrganisationSection from "@/components/settings/OrganisationSection";
+import PayeeCheckSettings from "@/components/settings/PayeeCheckSettings";
 import StaffManager from "@/components/staff/StaffManager";
 import UsersManager from "@/components/users/UsersManager";
 
@@ -47,7 +48,12 @@ export default function SettingsPage() {
                 ))}
             </nav>
             <section id={active.id} data-testid={`settings-section-${active.id}`} className="space-y-8">
-                {active.id === "organisation" && <OrganisationSection />}
+                {active.id === "organisation" && (
+                    <>
+                        <OrganisationSection />
+                        <PayeeCheckSettings />
+                    </>
+                )}
                 {active.id === "users" && (
                     <>
                         {hasPermission(role, "canManageUsers") && <UsersManager embedded />}

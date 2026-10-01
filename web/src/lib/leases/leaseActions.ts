@@ -16,6 +16,24 @@ const RENEWABLE: LeaseStatus[] = ["ACTIVE", "EXPIRED", "NOTICE_GIVEN"];
 const PENALTY_CHARGEABLE: LeaseStatus[] = ["ACTIVE", "NOTICE_GIVEN", "EXPIRED", "RENEWED"];
 const HAS_SETTLEMENT: LeaseStatus[] = ["TERMINATED", "EXPIRED", "RENEWED", "CLOSED"];
 
+/**
+ * Break-it R4 / tutorials/bugs/11: the contract page's buttons outside the action
+ * menu ask the same model. Preview/Confirm & Save only where
+ * ContractGenerationService generates ("DRAFT or PENDING_SIGNATURE leases").
+ */
+export function canGenerateContract(status: LeaseStatus): boolean {
+    return DRAFTING.includes(status);
+}
+
+/**
+ * A contract with a settlement to open: SettlementService.SETTLEABLE plus CLOSED,
+ * whose finalised statement is what a closed contract is read for. The Settlement
+ * action and the "View settlement" link both ask this.
+ */
+export function hasSettlement(status: LeaseStatus): boolean {
+    return HAS_SETTLEMENT.includes(status);
+}
+
 /** The contract page's own permission reads, in one place. */
 export function leasePermsFor(role: UserRole | undefined): LeasePerms {
     return {
@@ -57,7 +75,7 @@ export function availableLeaseActions(f: LeaseActionFacts, p: LeasePerms): Lease
         post: drafting && p.canPost,
         recordPayment: live && f.posted && p.canCheques,
         renew: RENEWABLE.includes(f.status) && p.canRenew,
-        settlement: HAS_SETTLEMENT.includes(f.status) && p.canViewSettlement,
+        settlement: hasSettlement(f.status) && p.canViewSettlement,
         extend: f.status === "ACTIVE" && p.canExtend,
         amend: f.status === "ACTIVE" && p.canPost,
         addCharge: f.status === "ACTIVE" && p.canExtend,
@@ -70,10 +88,12 @@ export function availableLeaseActions(f: LeaseActionFacts, p: LeasePerms): Lease
         raisePenalty: PENALTY_CHARGEABLE.includes(f.status) && p.canRaisePenalty,
         giveNotice: f.status === "ACTIVE" && p.canGiveNotice,
         terminate: live && p.canPreviewTermination,
-        writeOff: p.canSeeBadDebts && f.status !== "DRAFT",
+        // BadDebtService refuses a contract still in drafting (break-it R4).
+        writeOff: p.canSeeBadDebts && !drafting,
         downloadContract: f.hasContract,
         ledger: f.posted,
-        delete: drafting && p.canDraft,
+        // LeaseService: "Only DRAFT leases can be deleted" (break-it R4).
+        delete: f.status === "DRAFT" && p.canDraft,
     };
     return MENU_ORDER.filter(id => on[id]);
 }

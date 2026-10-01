@@ -34,7 +34,8 @@ class ChequeImageRetentionJobTest {
 
     @BeforeEach
     void setUp() {
-        job = new ChequeImageRetentionJob(repo, blob);
+        job = new ChequeImageRetentionJob(repo, blob,
+                org.mockito.Mockito.mock(com.datagami.rentaxis.domain.repository.ChequeImageUploadRepository.class));
         ReflectionTestUtils.setField(job, "retentionDays", 90);
     }
 

@@ -191,6 +191,15 @@ public class FacilityService {
         return spotRepository.findByTenantId(tenantId, pageable);
     }
 
+    /** The property Overview's parking tiles (demo feedback 2026-09-29), scoped to the caller's tenant. */
+    @Transactional(readOnly = true)
+    public com.datagami.rentaxis.api.dto.ParkingSummaryDTO parkingSummary(UUID tenantId, UUID propertyId) {
+        long total = spotRepository.countByTenantIdAndPropertyIdAndActiveTrue(tenantId, propertyId);
+        long assigned = spotRepository.countHeldActive(tenantId, propertyId);
+        long inactive = spotRepository.countByTenantIdAndPropertyIdAndActiveFalse(tenantId, propertyId);
+        return new com.datagami.rentaxis.api.dto.ParkingSummaryDTO(total, assigned, Math.max(0, total - assigned), inactive);
+    }
+
     @Transactional(readOnly = true)
     public ParkingSpot getParkingSpot(UUID tenantId, UUID id) {
         return findParkingSpot(tenantId, id).orElseThrow(() -> new NotFoundException("Parking spot not found"));

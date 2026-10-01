@@ -31,16 +31,17 @@ import java.util.List;
 @Slf4j
 public class AzureOpenAIChequeExtractor implements ChequeExtractor {
 
-    private static final String SYSTEM_PROMPT = """
+    static final String SYSTEM_PROMPT = """
             You extract UAE rent cheque details from cheque images.
             Return only JSON matching the provided schema. Use null when a field is unreadable.
             chequeDate must be ISO-8601 yyyy-MM-dd. confidence must be HIGH, MEDIUM, or LOW.
             Add short warnings for obscured, missing, or uncertain fields.
             amount is the numeric cheque value from the figures (AED) box; cross-check it against the amount in words. Return a plain number with no thousands separators or currency symbol. Use null if unreadable.
             payerName is the drawer: the account holder who issues and signs the cheque, often printed under the signature line or as the account name. It is never the name on the "Pay" line, which is the payee (the landlord). Use null if unreadable.
+            payeeName is the payee: the name written on the "Pay" / "Pay to the order of" / "ادفعوا لأمر" line, exactly as written (English or Arabic, do not translate or transliterate). It is never the drawer. Use null if unreadable.
             """;
 
-    private static final String SCHEMA = """
+    static final String SCHEMA = """
             {
               "type": "object",
               "additionalProperties": false,
@@ -48,6 +49,7 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
                 "chequeNumber": { "type": ["string", "null"] },
                 "bankName": { "type": ["string", "null"] },
                 "payerName": { "type": ["string", "null"] },
+                "payeeName": { "type": ["string", "null"] },
                 "chequeDate": { "type": ["string", "null"] },
                 "amount": { "type": ["number", "null"] },
                 "confidence": { "type": "string", "enum": ["HIGH", "MEDIUM", "LOW"] },
@@ -56,7 +58,7 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
                   "items": { "type": "string" }
                 }
               },
-              "required": ["chequeNumber", "bankName", "payerName", "chequeDate", "amount", "confidence", "warnings"]
+              "required": ["chequeNumber", "bankName", "payerName", "payeeName", "chequeDate", "amount", "confidence", "warnings"]
             }
             """;
 
@@ -218,6 +220,7 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
                     textOrNull(root, "chequeNumber"),
                     textOrNull(root, "bankName"),
                     textOrNull(root, "payerName"),
+                    textOrNull(root, "payeeName"),
                     chequeDate,
                     amount,
                     confidence
@@ -233,5 +236,171 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
             return null;
         }
         return root.get(field).asText();
+    }
+
+    // ==================================================================
+    // Multi-cheque extraction: one image may hold several cheques.
+    //
+    // Kept apart from the single-cheque code above on purpose: the per-cheque
+    // field set (SCHEMA, SYSTEM_PROMPT, parseResponse) is reused as-is, so a
+    // field added there (e.g. a new cheque attribute) flows into this list
+    // without an edit here.
+    // ==================================================================
+
+    /** The most cheques one image may hold; the service refuses a page with more. */
+    public static final int MAX_CHEQUES_PER_PAGE = 12;
+
+    private static final String MULTI_PROMPT = """
+            The image may hold SEVERAL cheques: photographed side by side, overlapping, or scanned together on one page.
+            Return one entry in "cheques" for every distinct physical cheque front you can see, in reading order (top to bottom, then left to right; right to left is never used for ordering).
+            Apply every rule above to each cheque separately; never merge fields from two cheques into one entry.
+            For each cheque, "box" is the whole cheque's outline in the image, normalised to the image: x and y are the top-left corner and width and height its size, each between 0 and 1 of the full image's width or height.
+            Do not return entries for cheque backs, counterfoils, deposit slips, or anything that is not a cheque front.
+            If no cheque is visible, return an empty "cheques" list and say why in the top-level "warnings".
+            An image never holds more than %d cheques; if you see more, return the first %d in reading order and add a top-level warning.
+            """.formatted(MAX_CHEQUES_PER_PAGE, MAX_CHEQUES_PER_PAGE);
+
+    /**
+     * Output budget per call, sized to the page limit: one cheque's fields, warnings
+     * and box are well under 300 tokens, plus room for the wrapper and page warnings.
+     */
+    static final int MULTI_MAX_TOKENS = MAX_CHEQUES_PER_PAGE * 300 + 512;
+
+    private static final String BOX_SCHEMA = """
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "x": { "type": "number" },
+                "y": { "type": "number" },
+                "width": { "type": "number" },
+                "height": { "type": "number" }
+              },
+              "required": ["x", "y", "width", "height"]
+            }
+            """;
+
+    /**
+     * The single-cheque {@link #SCHEMA} plus a {@code box}, wrapped in a list.
+     * Built from SCHEMA at load time, so the two schemas cannot drift apart.
+     */
+    static final String MULTI_SCHEMA = buildMultiSchema();
+
+    private static String buildMultiSchema() {
+        try {
+            ObjectMapper m = new ObjectMapper();
+            var cheque = (com.fasterxml.jackson.databind.node.ObjectNode) m.readTree(SCHEMA);
+            ((com.fasterxml.jackson.databind.node.ObjectNode) cheque.get("properties"))
+                    .set("box", m.readTree(BOX_SCHEMA));
+            ((com.fasterxml.jackson.databind.node.ArrayNode) cheque.get("required")).add("box");
+
+            var root = m.createObjectNode();
+            root.put("type", "object");
+            root.put("additionalProperties", false);
+            var props = root.putObject("properties");
+            var cheques = props.putObject("cheques");
+            cheques.put("type", "array");
+            cheques.set("items", cheque);
+            var warnings = props.putObject("warnings");
+            warnings.put("type", "array");
+            warnings.putObject("items").put("type", "string");
+            root.putArray("required").add("cheques").add("warnings");
+            return m.writeValueAsString(root);
+        } catch (Exception e) {
+            throw new IllegalStateException("Cheque multi-extraction schema is malformed", e);
+        }
+    }
+
+    @Override
+    @CircuitBreaker(name = "chequeExtraction", fallbackMethod = "extractAllFallback")
+    public MultiExtractionResult extractAll(byte[] imageBytes, String contentType) {
+        // As extract(): SDK / network exceptions propagate for the circuit breaker.
+        String content = fetchMultiContent(imageBytes, contentType);
+        if (content == null || content.isBlank()) {
+            return new MultiExtractionResult(List.of(), List.of("Extraction failed: empty model response"));
+        }
+        return parseMultiResponse(content);
+    }
+
+    @SuppressWarnings("unused")
+    MultiExtractionResult extractAllFallback(byte[] imageBytes, String contentType, Throwable t) {
+        ExtractionResult single = extractFallback(imageBytes, contentType, t);
+        return new MultiExtractionResult(List.of(), single.warnings());
+    }
+
+    protected String fetchMultiContent(byte[] imageBytes, String contentType) {
+        String dataUrl = "data:%s;base64,%s".formatted(
+                contentType == null || contentType.isBlank() ? "image/jpeg" : contentType,
+                Base64.getEncoder().encodeToString(imageBytes)
+        );
+        List<ChatRequestMessage> messages = List.of(
+                new ChatRequestSystemMessage(SYSTEM_PROMPT + "\n" + MULTI_PROMPT),
+                new ChatRequestUserMessage(List.of(
+                        new ChatMessageTextContentItem("Extract every cheque in this image."),
+                        new ChatMessageImageContentItem(
+                                new ChatMessageImageUrl(dataUrl).setDetail(ChatMessageImageDetailLevel.HIGH)
+                        )
+                ))
+        );
+        ChatCompletionsOptions options = new ChatCompletionsOptions(messages)
+                .setTemperature(0.0)
+                .setMaxTokens(MULTI_MAX_TOKENS)
+                .setResponseFormat(new ChatCompletionsJsonSchemaResponseFormat(
+                        new ChatCompletionsJsonSchemaResponseFormatJsonSchema("cheque_multi_extraction")
+                                .setStrict(true)
+                                .setSchema(BinaryData.fromString(MULTI_SCHEMA))
+                ));
+        ChatCompletions completions = callWithTransientRetry(options);
+        if (completions == null || completions.getChoices() == null || completions.getChoices().isEmpty()
+                || completions.getChoices().get(0).getMessage() == null) {
+            return null;
+        }
+        return completions.getChoices().get(0).getMessage().getContent();
+    }
+
+    /**
+     * Each list entry is parsed by the single-cheque {@link #parseResponse}, so the
+     * per-cheque rules (dates, amounts, confidence) are the same in both paths. A
+     * box that is missing or not four numbers becomes null; the cropper then
+     * treats that cheque as "could not separate", never guesses.
+     */
+    MultiExtractionResult parseMultiResponse(String content) {
+        JsonNode root;
+        try {
+            root = objectMapper.readTree(content);
+        } catch (Exception e) {
+            root = null;
+        }
+        if (root == null || !root.isObject() || !root.path("cheques").isArray()) {
+            return new MultiExtractionResult(List.of(), List.of("Extraction failed: malformed model response"));
+        }
+        List<String> warnings = new ArrayList<>();
+        if (root.path("warnings").isArray()) {
+            for (JsonNode w : root.get("warnings")) {
+                warnings.add(w.asText());
+            }
+        }
+        List<DetectedCheque> cheques = new ArrayList<>();
+        for (JsonNode node : root.get("cheques")) {
+            if (!node.isObject()) {
+                continue;
+            }
+            ExtractionResult one = parseResponse(node.toString());
+            cheques.add(new DetectedCheque(one.extracted(), parseBox(node.get("box")), one.warnings()));
+        }
+        return new MultiExtractionResult(cheques, warnings);
+    }
+
+    private static BoundingBox parseBox(JsonNode box) {
+        if (box == null || !box.isObject()) {
+            return null;
+        }
+        for (String f : List.of("x", "y", "width", "height")) {
+            if (!box.path(f).isNumber()) {
+                return null;
+            }
+        }
+        return new BoundingBox(box.get("x").asDouble(), box.get("y").asDouble(),
+                box.get("width").asDouble(), box.get("height").asDouble());
     }
 }

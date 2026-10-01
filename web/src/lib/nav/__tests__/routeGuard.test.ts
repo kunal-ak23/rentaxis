@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findRoute, renterHomeRedirect, routeDecision } from "../routeGuard";
+import { findRoute, homeRedirect, renterHomeRedirect, routeDecision } from "../routeGuard";
 import { buildNav, flattenNav } from "../navModel";
 import type { UserRole } from "../../rbac";
 
@@ -129,5 +129,34 @@ describe("renterHomeRedirect", () => {
             expect(renterHomeRedirect("/en/dashboard", role), role).toBeNull();
         }
         expect(renterHomeRedirect("/en/dashboard", undefined)).toBeNull();
+    });
+});
+
+describe("homeRedirect", () => {
+    it("sends a renter to the renter home and a guard to the gate desk from the dashboard home", () => {
+        for (const p of ["/dashboard", "/en/dashboard", "/ar/dashboard/"]) {
+            expect(homeRedirect(p, "RENTER"), p).toBe("/dashboard/renter-portal");
+            expect(homeRedirect(p, "SECURITY_GUARD"), p).toBe("/dashboard/gatepass/gate");
+        }
+    });
+    it("leaves every other page and every staff role alone", () => {
+        expect(homeRedirect("/en/dashboard/gatepass/gate", "SECURITY_GUARD")).toBeNull();
+        expect(homeRedirect("/en/dashboard/help", "SECURITY_GUARD")).toBeNull();
+        for (const role of ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT", "TENANT_USER"] as const) {
+            expect(homeRedirect("/en/dashboard", role), role).toBeNull();
+        }
+    });
+});
+
+describe("gate-pass screens (bug 25)", () => {
+    const ALL = ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER", "SECURITY_GUARD", "TENANT_USER", "RENTER", "ACCOUNTANT"] as const;
+    const allowed = (path: string) => ALL.filter(r => routeDecision(path, r, true) === "allow");
+    it("admits each screen to exactly the roles its endpoints admit", () => {
+        expect(allowed("/en/dashboard/renter-portal/gate-passes")).toEqual(["RENTER"]);
+        expect(allowed("/en/dashboard/gatepass/gate")).toEqual(["SECURITY_GUARD"]);
+        expect(allowed("/en/dashboard/gatepass/approvals")).toEqual(["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER", "SECURITY_GUARD"]);
+        expect(allowed("/en/dashboard/gatepass/settings")).toEqual(["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"]);
+        // The report keeps its own rule — a tenant and a guard still cannot open it.
+        expect(allowed("/en/dashboard/gatepass")).toEqual(["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"]);
     });
 });

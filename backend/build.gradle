@@ -53,6 +53,11 @@ dependencies {
 	implementation 'io.github.openhtmltopdf:openhtmltopdf-slf4j:1.1.37'
 	// Arabic in PDFs: bidi reordering and letter shaping (ICU); break-it R3 portal3 F11.
 	implementation 'io.github.openhtmltopdf:openhtmltopdf-rtl-support:1.1.37'
+	// Renders uploaded cheque PDFs page by page (ChequePdfRenderer). Already on the
+	// classpath (3.0.3) through openhtmltopdf-pdfbox; declared directly because the
+	// cheque code calls it, and at the latest 3.0.x patch because it now parses
+	// untrusted uploads. Same minor line, so openhtmltopdf is unaffected.
+	implementation 'org.apache.pdfbox:pdfbox:3.0.7'
 	implementation 'com.razorpay:razorpay-java:1.4.6'
 	implementation 'com.azure:azure-storage-blob:12.29.0'
 	implementation 'com.azure:azure-ai-openai:1.0.0-beta.13'

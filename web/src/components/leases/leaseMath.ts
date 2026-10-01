@@ -498,14 +498,91 @@ export function defaultInstallmentsFor(
 }
 
 /**
+ * The end of a term of {@code months} whole months from {@code start}: the day before
+ * the anniversary. The anniversary of a day the target month lacks (29 February,
+ * 31 January + 1 month) is the day after the month's last day, so the term ends ON
+ * that last day: 29/02/2028 + 12 months ends 28/02/2029 (365 days), not 27/02 (review
+ * of R4-B M5). The server's `LeaseRenewalService.termEnd`.
+ */
+export function termEnd(start: string, months: number): string {
+    const anniversary = plusMonths(start, months);
+    return ymd(anniversary).d < ymd(start).d ? anniversary : plusDays(anniversary, -1);
+}
+
+/** The whole months a term runs by {@link termEnd}'s convention, or null when it is not a whole-month term. */
+function wholeMonthTerm(start: string, end: string): number | null {
+    const m = monthsBetween(start, plusDays(end, 1));
+    for (const c of [m, m + 1]) if (c > 0 && termEnd(start, c) === end) return c;
+    return null;
+}
+
+/**
  * F15-05: the end of a term as long as the current one, starting on {@code newStart} —
- * the server's `LeaseRenewalService.sameTermLength` (java.time Period: whole months,
- * then days), so a renewal by percent is accepted as proposed.
+ * the server's `LeaseRenewalService.sameTermLength`: a whole-month term (by
+ * {@link termEnd}) renews as the same number of months; any other as java.time's
+ * Period (whole months, then days), so a renewal by percent is accepted as proposed.
  */
 export function sameTermEnd(oldStart: string, oldEnd: string, newStart: string): string {
+    const whole = wholeMonthTerm(oldStart, oldEnd);
+    if (whole != null) return termEnd(newStart, whole);
     const afterOld = plusDays(oldEnd, 1);
     const months = monthsBetween(oldStart, afterOld);
     const anchor = plusMonths(oldStart, months);
     const days = Math.round((Date.parse(afterOld) - Date.parse(anchor)) / 86_400_000);
     return plusDays(plusDays(plusMonths(newStart, months), days), -1);
+}
+
+/**
+ * Owner request (2026-09-29): a new contract's default term — 12 months, the UAE
+ * tenancy convention (09/09/2026 → 08/09/2027; 31/01/2027 → 30/01/2028;
+ * 29/02/2028 → 28/02/2029, see {@link termEnd}).
+ */
+export function defaultTermEnd(start: string): string {
+    if (!/^\d{4}-\d{2}-\d{2}/.test(start)) return "";
+    return termEnd(start, 12);
+}
+
+/**
+ * The most cheques a term takes, and the wizard's default count: one a month, over
+ * the whole months (rounded down) from {@code from} — the first due date, or the
+ * start when there is none — to the end, at least 1. This is the generator's own
+ * count (`DateMath.monthsInclusive` in `ChequeGenerationService`), which spaces
+ * cheque i at from + floor(i × months ÷ n) months: one cheque more than this puts
+ * two on the same date (review of R4-B I1). 09/09/2026 → 08/09/2027 is 12;
+ * → 20/03/2027 is 6 (6 months and 12 days); from 15/09/2026 → 08/09/2027 is 11.
+ */
+export function chequeMonths(from: string, end: string): number {
+    if (!/^\d{4}-\d{2}-\d{2}/.test(from) || !/^\d{4}-\d{2}-\d{2}/.test(end) || end < from) return 1;
+    return Math.max(monthsBetween(from, plusDays(end, 1)), 1);
+}
+
+/** The charge type a wizard's rent is charged as: the RENT code, else the first RENT-behaviour type. */
+export function rentChargeType(chargeTypes: ChargeType[]): ChargeType | undefined {
+    const rent = chargeTypes.filter(c => c.behaviour === "RENT" && c.active !== false);
+    return rent.find(c => c.code === "RENT") ?? rent[0];
+}
+
+/** The first RENT line's gross — the Terms step's "rent for the full term". 0 when there is none. */
+export function rentAmountOf(rows: LineRow[], chargeTypes: ChargeType[]): number {
+    const isRent = (id: string | null) => !!id && chargeTypes.find(c => c.id === id)?.behaviour === "RENT";
+    return rows.find(r => isRent(r.chargeTypeId))?.grossAmount ?? 0;
+}
+
+/**
+ * The rows with the rent for the full term set to {@code amount} — the one place
+ * the Terms step writes it, so the Charges step shows the same line. The first
+ * RENT line takes it; with none, the untouched blank starting line becomes the
+ * RENT line; otherwise a RENT line is put first. Never a second RENT line.
+ */
+export function withRentAmount(rows: LineRow[], chargeTypes: ChargeType[], amount: number, rentVat: boolean): LineRow[] {
+    const isRent = (id: string | null) => !!id && chargeTypes.find(c => c.id === id)?.behaviour === "RENT";
+    const at = rows.findIndex(r => isRent(r.chargeTypeId));
+    if (at >= 0) return rows.map((r, i) => (i === at ? { ...r, grossAmount: amount } : r));
+    const type = rentChargeType(chargeTypes);
+    if (!type) return rows;
+    const key = rows.reduce((k, r) => Math.max(k, r.key), -1) + 1;
+    const line: LineRow = { ...blankLine(key), chargeTypeId: type.id, grossAmount: amount, vatApplicable: rentVat };
+    const blank = rows.findIndex(r => !r.chargeTypeId && !r.grossAmount && !r.discountAmount && !r.narration && !r.id);
+    if (blank >= 0) return rows.map((r, i) => (i === blank ? { ...line, key: r.key } : r));
+    return [line, ...rows];
 }

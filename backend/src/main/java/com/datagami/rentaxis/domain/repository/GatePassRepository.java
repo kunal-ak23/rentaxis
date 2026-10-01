@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.domain.repository;
 
 import com.datagami.rentaxis.domain.entity.GatePass;
+import com.datagami.rentaxis.domain.entity.enums.GatePassOrigin;
 import com.datagami.rentaxis.domain.entity.enums.GatePassStatus;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.QueryHint;
@@ -108,6 +109,14 @@ public interface GatePassRepository extends JpaRepository<GatePass, UUID> {
      * {@link #findByTenantIdAndStatusAndPropertyIdInOrderByCreatedAtDesc} instead.
      */
     List<GatePass> findByTenantIdAndStatusOrderByCreatedAtDesc(UUID tenantId, GatePassStatus status);
+
+    /**
+     * The guard's walk-in desk for the day: visitors raised at the gate of the given
+     * properties since {@code since}, newest first. Tenant- and property-scoped in the
+     * query so a guard's list can never widen past their own posting.
+     */
+    List<GatePass> findByTenantIdAndOriginAndPropertyIdInAndCreatedAtGreaterThanEqualOrderByCreatedAtDesc(
+            UUID tenantId, GatePassOrigin origin, Collection<UUID> propertyIds, Instant since);
 
     boolean existsByTenantIdAndNumericCodeAndStatusIn(UUID tenantId, String numericCode, Collection<GatePassStatus> statuses);
 

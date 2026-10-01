@@ -88,7 +88,12 @@ public final class ChequeMapper {
                 c.getRowKind(),
                 ledgerSettled,
                 c.getReceiptNumber(),
-                c.isSettledBeforeAcquisition());
+                c.isSettledBeforeAcquisition(),
+                c.getPayeeName(),
+                c.getPayeeCheck(),
+                c.getPayeeMismatchConfirmedBy(),
+                c.getPayeeMismatchConfirmedByName(),
+                c.getPayeeMismatchConfirmedAt());
     }
 
     private static <T, R> R nullSafe(T source, Function<T, R> get) {

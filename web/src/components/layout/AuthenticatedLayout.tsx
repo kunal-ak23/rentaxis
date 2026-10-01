@@ -13,7 +13,7 @@ import { NavShellProvider } from "@/components/nav/NavShellContext";
 import type { UserRole } from "@/lib/rbac";
 import { SessionGuards } from "@/components/layout/SessionGuards";
 import { AccessDeniedState, SelectOrgState } from "@/components/ui/PageStates";
-import { isDashboardHome, renterHomeRedirect, routeDecision } from "@/lib/nav/routeGuard";
+import { homeRedirect, isDashboardHome, routeDecision } from "@/lib/nav/routeGuard";
 import { readActiveOrgCookie } from "@/lib/session/orgSync";
 
 export default function AuthenticatedLayout({
@@ -42,8 +42,9 @@ export default function AuthenticatedLayout({
     useEffect(() => {
         if (landOnOrgList) router.replace("/superadmin/tenants");
     }, [landOnOrgList, router]);
-    // Break-it R3 portal3 F10: a renter never mounts the staff dashboard.
-    const renterHome = session ? renterHomeRedirect(pathname, role) : null;
+    // Break-it R3 portal3 F10: a renter never mounts the staff dashboard; nor
+    // does a security guard, whose home is the gate desk.
+    const renterHome = session ? homeRedirect(pathname, role) : null;
     useEffect(() => {
         if (renterHome) router.replace(renterHome);
     }, [renterHome, router]);

@@ -37,6 +37,8 @@ import java.util.*;
 @Slf4j
 public class GateWalkInController {
 
+    private static final java.time.ZoneId UAE_ZONE = java.time.ZoneId.of("Asia/Dubai");
+
     private final GateWalkInService walkInService;
     private final GatePassService gatePassService;
     private final GatePassScanService gatePassScanService;
@@ -103,6 +105,42 @@ public class GateWalkInController {
         String unitNumber = unitRepository.findById(pass.getUnitId())
                 .map(Unit::getUnitNumber).orElse(null);
         return WalkInPass.of(pass, unitNumber);
+    }
+
+    /**
+     * Today's walk-ins at the calling guard's gates, newest first — what the web gate
+     * desk reads so a reload (or a shift change at the same desk) does not lose track
+     * of a visitor still waiting on the resident. Scoped to the guard's own posting in
+     * the query: an unposted guard gets {@code []}, never the tenant's visitors.
+     * Applies the same lazy expiry as {@link #status} so a timed-out request never
+     * reads as still pending.
+     */
+    @GetMapping("/walk-in/today")
+    @PreAuthorize("hasRole('SECURITY_GUARD')")
+    public List<WalkInPass> today() {
+        List<UUID> propertyIds = assignmentRepository.findByUserId(currentUserId()).stream()
+                .filter(row -> tenantId().equals(row.getTenantId()))
+                .map(GuardPropertyAssignment::getPropertyId)
+                .distinct()
+                .toList();
+        if (propertyIds.isEmpty()) return List.of();
+        Instant dayStart = java.time.ZonedDateTime.now(UAE_ZONE).toLocalDate()
+                .atStartOfDay(UAE_ZONE).toInstant();
+        List<GatePass> passes = passRepository
+                .findByTenantIdAndOriginAndPropertyIdInAndCreatedAtGreaterThanEqualOrderByCreatedAtDesc(
+                        tenantId(), GatePassOrigin.GUARD_WALK_IN, propertyIds, dayStart);
+        Map<UUID, String> unitNumbers = new HashMap<>();
+        for (Unit unit : unitRepository.findAllById(passes.stream().map(GatePass::getUnitId).distinct().toList())) {
+            if (tenantId().equals(unit.getTenantId())) unitNumbers.put(unit.getId(), unit.getUnitNumber());
+        }
+        Instant now = Instant.now();
+        return passes.stream().map(pass -> {
+            if (pass.getStatus() == GatePassStatus.PENDING_APPROVAL && !pass.getValidTo().isAfter(now)) {
+                pass.setStatus(GatePassStatus.EXPIRED);
+                pass = passRepository.save(pass);
+            }
+            return WalkInPass.of(pass, unitNumbers.get(pass.getUnitId()));
+        }).toList();
     }
 
     @GetMapping("/walk-in/{id}/photo")

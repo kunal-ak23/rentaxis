@@ -40,7 +40,7 @@ function GeneralLedger() {
     // the URL, like the other lists.
     const paramsKey = params.toString();
     useEffect(() => {
-        stripInvalidIdParams(["propertyId"]);
+        stripInvalidIdParams(["propertyId", "unitId", "leaseId"]);
     }, [paramsKey]);
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
@@ -69,6 +69,9 @@ function GeneralLedger() {
         from: params.get("from") || range.from,
         to: params.get("to") || range.to,
         propertyId: idParam(params.get("propertyId")) || undefined,
+        unitId: idParam(params.get("unitId")) || undefined,
+        // Demo feedback 2026-09-29: the contract grid's Ledger link narrows to that contract.
+        leaseId: idParam(params.get("leaseId")) || undefined,
         effectiveProperty: effectiveProperty || undefined,
         accountIds: urlIds.length ? (capped ? urlIds.slice(0, MAX_LEDGER_ACCOUNTS) : urlIds)
             : accountId ? [accountId] : undefined,
@@ -132,6 +135,8 @@ function GeneralLedger() {
         set("from", draft.from);
         set("to", draft.to);
         set("propertyId", draft.propertyId);
+        set("unitId", draft.unitId);
+        set("leaseId", draft.leaseId);
         const qs = q.toString();
         window.history.replaceState(window.history.state, "", window.location.pathname + (qs ? `?${qs}` : ""));
     };
@@ -195,6 +200,27 @@ function GeneralLedger() {
                             <span className="ms-2 tabular-nums" data-testid="ledger-period">{t("periodLabel", { from: applied.from, to: applied.to })}</span>
                         )}
                     </p>
+                    {applied.leaseId && (
+                        <p className="text-xs text-info mt-1 flex items-center gap-2" data-testid="ledger-contract-filter">
+                            {t("contractFilterOn")}
+                            <button
+                                type="button"
+                                data-testid="ledger-contract-filter-clear"
+                                className="text-primary font-semibold hover:underline cursor-pointer"
+                                onClick={() => {
+                                    const next = { ...draft, leaseId: undefined };
+                                    setDraft(next);
+                                    setApplied(next);
+                                    const q = new URLSearchParams(window.location.search);
+                                    q.delete("leaseId");
+                                    const qs = q.toString();
+                                    window.history.replaceState(window.history.state, "", window.location.pathname + (qs ? `?${qs}` : ""));
+                                }}
+                            >
+                                {t("showAllContracts")}
+                            </button>
+                        </p>
+                    )}
                 </div>
                 <button
                     type="button"
@@ -222,6 +248,7 @@ function GeneralLedger() {
                 busy={loading}
                 showAccounts={!vendorId}
                 showProperty={!vendorId}
+                showUnit={!vendorId}
                 maxAccounts={MAX_LEDGER_ACCOUNTS}
             />
 

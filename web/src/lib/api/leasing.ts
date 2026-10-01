@@ -598,6 +598,19 @@ export type GenerateChequesRequest = {
   mode?: ChequeMode | null;
 };
 
+/** ChequeGenerationService.PreviewRow — a row the generator would write. */
+export type ChequePreviewRow = {
+  seqNo: number;
+  chequeDate: string;
+  amount: number;
+  vat: number;
+  narration: string;
+  kind: "RENT" | "FEE" | "DEPOSIT" | "MIXED" | null;
+};
+
+/** RecognitionService.RentMonth — one calendar month of the rent schedule. */
+export type RentMonth = { periodStart: string; periodEnd: string; days: number; amount: number };
+
 /** ChequeDTO — one row of the cheque register. */
 export type Cheque = {
   id: string;
@@ -653,6 +666,16 @@ export type Cheque = {
   settledBeforeAcquisition?: boolean;
   /** F14-24/F14-62: RR-yy/n, given when the money landed; null before that or on rows cleared before the series. */
   receiptNumber?: string | null;
+  /**
+   * Owner ruling 2026-09-29: the payee read off the attached scan and the
+   * organisation's payee check on it (null when it did not run). For a
+   * MISMATCH, who confirmed attaching it anyway, and when.
+   */
+  payeeName?: string | null;
+  payeeCheck?: "MATCH" | "MISMATCH" | "UNREADABLE" | null;
+  payeeMismatchConfirmedBy?: string | null;
+  payeeMismatchConfirmedByName?: string | null;
+  payeeMismatchConfirmedAt?: string | null;
   /**
    * The VAT this instalment collects (part of `amount`) and the net it is charged
    * on — spec 2026-09-24 §1. Optional so a row the client added and has not saved
@@ -809,6 +832,10 @@ export type RecognitionRunResult = {
   booksLockedThrough: string | null;
   failed: number;
   errors: string[];
+  /** Break-it R4 money4 F1: rows another run posted meanwhile — done once, not failed. Absent on older backends. */
+  alreadyRecognised?: number;
+  /** Review of R4-B M10: rows a contract change cancelled or reversed meanwhile — nothing to recognise. */
+  withdrawnMeanwhile?: number;
 };
 
 /** F14-27: `GET /finance/recognition/status` — a warning banner's whole answer. */
@@ -1399,6 +1426,9 @@ export type ChequeDueQuery = {
 export type PostDatedQuery = {
   propertyId?: string;
   month?: string;
+  /** Demo feedback 2026-09-29: a maturity window, both ends inclusive (yyyy-MM-dd); overrides `month`. */
+  from?: string;
+  to?: string;
 };
 
 export type PenaltyListQuery = {
@@ -1464,6 +1494,11 @@ export const leaseApi = {
   recordAddendumEjari: (id: string, addendumId: string, ejariNumber: string) =>
     send<LeaseAddendum>("PATCH", `/leases/${id}/addenda/${addendumId}/ejari`, { ejariNumber }),
   cheques: (id: string) => get<Cheque[]>(`/leases/${id}/cheques`),
+  /** Owner request (2026-09-29): what generateCheques would write for this request, written nowhere. */
+  previewCheques: (id: string, req?: GenerateChequesRequest) =>
+    send<ChequePreviewRow[]>("POST", `/leases/${id}/cheques/preview`, req ?? {}),
+  /** Owner request (2026-09-29): the monthly rent the contract will recognise (ProrationEngine), written nowhere. */
+  rentSchedulePreview: (id: string) => get<RentMonth[]>(`/leases/${id}/recognition/preview`),
   /** Review A M3: answers with the rows and the lease version the write left behind (adopt it). */
   generateCheques: (id: string, req?: GenerateChequesRequest, version?: number | null) =>
     sendChequeWrite("POST", `/leases/${id}/cheques/generate`, req, ifMatch(version)),

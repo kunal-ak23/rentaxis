@@ -18,7 +18,7 @@ import { fmtAmount } from "@/lib/api/ledger";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import ActionsMenu from "@/components/ui/ActionsMenu";
 import SideDrawer from "@/components/ui/SideDrawer";
-import { availableLeaseActions, leasePermsFor, splitLeaseActions, type LeaseActionId } from "@/lib/leases/leaseActions";
+import { availableLeaseActions, canGenerateContract as canGenerateContractFor, hasSettlement, leasePermsFor, splitLeaseActions, type LeaseActionId } from "@/lib/leases/leaseActions";
 import { resolveLeaseTab, type LeaseSectionId, type LeaseTab } from "@/lib/nav/routeMap";
 import LeaseSection from "@/components/leases/LeaseSection";
 import LeaseMetadataEditor from "../LeaseMetadataEditor";
@@ -26,6 +26,7 @@ import LeaseInteractionsPanel from "@/components/leases/LeaseInteractionsPanel";
 import LeaseLinesGrid from "@/components/leases/LeaseLinesGrid";
 import RentFreePeriodsCard from "@/components/leases/RentFreePeriodsCard";
 import ChequeGrid, { draftRowsAreValid, toChequeRows } from "@/components/leases/ChequeGrid";
+import { pendingChequeSummary } from "@/components/leases/pendingCheques";
 import ChequeActionDialog, { type ChequeAction } from "@/components/cheques/ChequeActionDialog";
 import { chequeApi } from "@/lib/api/leasing";
 import type { RegisterAction } from "@/components/cheques/registerActions";
@@ -71,20 +72,8 @@ import {
 type Renter = { id: string; nameEn: string; nameAr: string; email: string; phone: string; primaryLanguage: string };
 type Attachment = { id: string; name: string; fileUrl: string; fileType: string; fileSize: number; uploadedAt: string };
 type Ticket = { id: string; title: string; status: string; priority: string; category: string; createdAt: string };
-/**
- * A contract that HAS a settlement to open — `SettlementService.SETTLEABLE`
- * (backend/src/main/java/com/datagami/rentaxis/core/service/SettlementService.java:144-145,
- * now {TERMINATED, EXPIRED, RENEWED}) **plus CLOSED**, which the server no
- * longer lets anyone settle but whose finalised statement is exactly the
- * document a closed contract is read for. The settlement page itself mirrors
- * `SETTLEABLE` exactly and finalises only for the three.
- *
- * EXPIRED is here as well as TERMINATED: a tenancy that simply ran its course is
- * settled by the same statement. RENEWED joined them when a predecessor that
- * settles instead of carrying its deposit forward became a supported move
- * (spec §6.6).
- */
-const HAS_SETTLEMENT: LeaseStatus[] = ["TERMINATED", "EXPIRED", "RENEWED", "CLOSED"];
+// Which contracts have a settlement to open (and may generate one) lives in
+// `src/lib/leases/leaseActions.ts` (hasSettlement, canGenerateContract).
 
 /**
  * `[id]` catches anything, including the guessable `/leases/new` — which
@@ -294,7 +283,7 @@ export default function LeaseDetailPage() {
             // A 404 here is "no settlement yet", which is the normal state for
             // a contract that ended last night — so the failure is swallowed
             // and the summary simply does not render.
-            if (detail && HAS_SETTLEMENT.includes(detail.status)) {
+            if (detail && hasSettlement(detail.status)) {
                 const saved = await settlementApi.get(leaseId).catch(() => null);
                 if (saved && !cancelled) setSettlement(saved);
             }
@@ -542,6 +531,8 @@ export default function LeaseDetailPage() {
     const earliestEventDate = [lease.contractDate, lease.startDate]
         .filter((d): d is string => !!d).sort()[0] ?? null;
     const drafting = DRAFTING.includes(lease.status);
+    const chequeTally = pendingChequeSummary(cheques);
+    const canOpenLedger = hasPermission(userRole, "canAccessFinance");
     const posted = !!lease.postedAt;
     const readOnly = lease.status === "RENEWED";
     const lineRows = toRows(lease.lines);
@@ -657,6 +648,33 @@ export default function LeaseDetailPage() {
                                 </Link>
                             )}
                         </div>
+                        {/* Demo feedback 2026-09-29: what is still expected on this contract, one click from the Cheques tab. */}
+                        {!drafting && (
+                            <button
+                                type="button"
+                                data-testid="lease-pending-cheques"
+                                title={t("pendingChequesHint")}
+                                onClick={() => selectTab("payments", "cheques")}
+                                className="mt-2 inline-flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-input/40 px-3 py-1.5 text-[11.5px] font-semibold text-foreground hover:bg-input cursor-pointer text-start"
+                            >
+                                <span data-testid="lease-pending-cheques-pending">
+                                    {t.rich("pendingCheques", {
+                                        count: chequeTally.pending.count,
+                                        amount: formatCurrency(chequeTally.pending.amount),
+                                        n: (chunks: React.ReactNode) => <bdi dir="ltr" className="tabular-nums">{chunks}</bdi>,
+                                    })}
+                                </span>
+                                {chequeTally.returned.count > 0 && (
+                                    <span data-testid="lease-pending-cheques-returned" className="text-error">
+                                        {t.rich("returnedCheques", {
+                                            count: chequeTally.returned.count,
+                                            amount: formatCurrency(chequeTally.returned.amount),
+                                            n: (chunks: React.ReactNode) => <bdi dir="ltr" className="tabular-nums">{chunks}</bdi>,
+                                        })}
+                                    </span>
+                                )}
+                            </button>
+                        )}
                     </div>
 
                     {/* ── Action bar ─────────────────────────────────── */}
@@ -787,7 +805,11 @@ export default function LeaseDetailPage() {
                             <div className="space-y-6 min-w-0">
                                 <Card title={t("contractNumber")} icon={<FileText size={13} />}>
                                     <Detail label={t("contractDate")} value={fmtIsoDate(lease.contractDate, locale)} />
-                                    <Detail label={t("agreementDate")} value={fmtIsoDate(lease.agreementDate, locale)} />
+                                    {/* Owner ruling 2026-09-29: one date, the contract date. An agreement
+                                        date is shown only when it differs (imported or older contracts). */}
+                                    {lease.agreementDate && lease.agreementDate.slice(0, 10) !== (lease.contractDate ?? "").slice(0, 10) && (
+                                        <Detail label={t("agreementDate")} value={fmtIsoDate(lease.agreementDate, locale)} />
+                                    )}
                                     <Detail
                                         label={t("gracePeriodDays")}
                                         value={lease.gracePeriodOverridden === false
@@ -832,7 +854,20 @@ export default function LeaseDetailPage() {
                             </div>
 
                             <div className="lg:col-span-2 space-y-6 min-w-0">
-                                <LeaseLinesGrid lines={lineRows} chargeTypes={chargeTypes} editable={false} />
+                                <LeaseLinesGrid
+                                    lines={lineRows}
+                                    chargeTypes={chargeTypes}
+                                    editable={false}
+                                    // Review of #393: only a posted contract links — a draft has no
+                                    // ledger rows, and without leaseId the link would list other
+                                    // contracts' entries on the account. No `to`: leaseId already
+                                    // narrows to this contract, and its settlement, refund or late
+                                    // clearance can post after the term ends.
+                                    ledgerLink={canOpenLedger && posted ? {
+                                        leaseId: lease.id,
+                                        from: [lease.contractDate, lease.startDate].filter(Boolean).sort()[0] ?? null,
+                                    } : undefined}
+                                />
 
                                 {/* Spec §4b: rent-free windows — editable on a DRAFT. */}
                                 <RentFreePeriodsCard
@@ -951,7 +986,7 @@ export default function LeaseDetailPage() {
                                 </div>
                                 <div className="px-5 py-4 space-y-4">
                                     <div className="flex flex-wrap gap-3">
-                                        {canGenerateContract && (
+                                        {canGenerateContract && canGenerateContractFor(lease.status) && (
                                             <button
                                                 onClick={handlePreviewContract}
                                                 disabled={previewLoading}
@@ -961,15 +996,20 @@ export default function LeaseDetailPage() {
                                                 {tMaster("generatePreview")}
                                             </button>
                                         )}
-                                        <Link
-                                            href={`/dashboard/leases/${leaseId}/settlement`}
-                                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border border-border text-foreground hover:bg-input transition-colors"
-                                        >
-                                            {tMaster("viewSettlement")}
-                                        </Link>
+                                        {/* Break-it R4: only where the Settlement action is offered (same rule). */}
+                                        {primary.concat(menu).includes("settlement") && (
+                                            <Link
+                                                href={`/dashboard/leases/${leaseId}/settlement`}
+                                                data-testid="lease-view-settlement"
+                                                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border border-border text-foreground hover:bg-input transition-colors"
+                                            >
+                                                {tMaster("viewSettlement")}
+                                            </Link>
+                                        )}
                                     </div>
                                     {contractError && <p className="text-xs text-error">{contractError}</p>}
-                                    <ContractDocuments leaseId={leaseId} canIssue={canGenerateContract && !!lease.postedAt} leaseStatus={lease.status} />
+                                    <ContractDocuments leaseId={leaseId} canIssue={canGenerateContract && !!lease.postedAt} leaseStatus={lease.status}
+                                        refreshKey={`${lease.status}:${lease.version ?? ""}:${lease.contractNumber ?? ""}:${lease.renterAcceptedAt ?? ""}:${lease.postedAt ?? ""}`} />
                                     {lease.ejariNumber && (
                                         <p className="text-xs text-muted">
                                             <span className="font-medium text-foreground">{t("ejariNumber")}:</span> {lease.ejariNumber}

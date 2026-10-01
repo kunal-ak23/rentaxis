@@ -328,6 +328,51 @@ class ChequeQueryServiceIT extends AbstractPostgresIT {
                 java.util.Comparator.comparing(ChequeDTO::chequeDate));
     }
 
+    /**
+     * Demo feedback 2026-09-29: the Post-dated screen asks for a maturity window
+     * (next 1/2 weeks, next month, custom From–To). Both ends are inclusive, and
+     * another Organisation's instruments maturing in the same window are never in it.
+     */
+    @Test
+    void postDatedByWindowIsInclusiveAndTenantScoped() {
+        UUID leaseId = posted().lease().getId();
+        List<Cheque> rows = register(leaseId);
+        LocalDate second = rows.get(1).getChequeDate();
+        UUID mine = fixtures.tenantId();
+
+        // Another Organisation with an identical contract: same dates, same amounts.
+        LeaseTestFixtures other = new LeaseTestFixtures(orgRepo, userRepo, renterRepo, unitRepo,
+                propertyService, accountService, propertyAccountService, chargeTypeService)
+                .bootstrap()
+                .withLeaseServices(leaseService, generation, posting);
+        UUID theirLease = other.postedLease(CONTRACT_DATE, START, END,
+                List.of(line("RENT", "51000")), 4, "300040").lease().getId();
+        TenantContextHolder.setTenantId(mine);
+        fixtures.asTenantAdmin();
+
+        List<ChequeDTO> exact = query.postDated(null, second, second);
+        assertThat(exact).extracting(ChequeDTO::id).containsExactly(rows.get(1).getId());
+
+        List<ChequeDTO> wide = query.postDated(null, rows.get(1).getChequeDate(), rows.get(2).getChequeDate());
+        assertThat(wide).extracting(ChequeDTO::id).containsExactly(rows.get(1).getId(), rows.get(2).getId());
+        assertThat(wide).extracting(ChequeDTO::leaseId).containsOnly(leaseId).doesNotContain(theirLease);
+
+        assertThat(query.postDated(null, second.plusDays(1), rows.get(2).getChequeDate().minusDays(1))).isEmpty();
+    }
+
+    /** A window is both ends, the right way round, and at most a year. */
+    @Test
+    void postDatedByWindowRefusesABadWindow() {
+        LocalDate d = LocalDate.of(2026, 5, 1);
+        assertThatThrownBy(() -> query.postDated(null, d, d.minusDays(1)))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        assertThatThrownBy(() -> query.postDated(null, d, null))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        assertThatThrownBy(() -> query.postDated(null, d, d.plusDays(366)))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        assertThat(query.postDated(null, d, d.plusDays(365))).isNotNull();
+    }
+
     /** Per-lease totals, in the order the caller asked for them. */
     @Test
     void statsByLeasesFoldTheRegisterPerLease() {

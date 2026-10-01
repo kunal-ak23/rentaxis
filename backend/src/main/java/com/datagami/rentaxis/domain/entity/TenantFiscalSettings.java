@@ -32,6 +32,14 @@ public class TenantFiscalSettings {
     @Column(name = "books_locked_through")
     private LocalDate booksLockedThrough;
 
+    /**
+     * Break-it R4 money4 F3: the lock was set by the books start date (the day before
+     * it), not by a user or a year-end close — so moving the books start moves it,
+     * both ways, even once journals exist.
+     */
+    @Column(name = "books_lock_from_start", nullable = false)
+    private boolean booksLockFromStart;
+
     /** Next numeric account code to hand out; initialised lazily from max(numeric code)+1. */
     @Column(name = "next_account_code")
     private Long nextAccountCode;

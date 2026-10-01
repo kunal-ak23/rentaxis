@@ -175,7 +175,9 @@ class RenewalTermsIT extends AbstractPostgresIT {
         assertThat(tco.stream().filter(l -> adminFeeLeaf.equals(l.getAccountId()))
                 .map(JournalLine::getCredit).reduce(BigDecimal.ZERO, BigDecimal::add)).isEqualByComparingTo("1050");
 
-        LeaseDTO third = renewal.renew(successor.getId(), new RenewLeaseRequest(LocalDate.of(2028, 9, 16),
+        // Contract date: at most a year ahead (break-it R4 money4 F2), so today's
+        // renewal contract date rather than one a year before the third term.
+        LeaseDTO third = renewal.renew(successor.getId(), new RenewLeaseRequest(R_CONTRACT,
                 LocalDate.of(2028, 10, 2), LocalDate.of(2029, 10, 1), null, true));
         assertThat(third.getSkippedOneOffLines()).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENEWAL_FEE");
     }
