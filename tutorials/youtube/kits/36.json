@@ -2,7 +2,7 @@
   "id": "36",
   "slug": "month-end-recognition",
   "title": "Miftah tutorial 36 · Month-end recognition",
-  "description": "Run recognition to a cut-off date and watch advance rent move into rental income, period by period.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 Read the Recognition Schedule\n0:20 A Short First Period and a Rounding Row\n0:54 Preview the Close\n1:09 Run It\n1:35 Watch Advance Rent Fall\n1:51 It Also Runs Nightly\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nشغّل الاعتراف بالإيراد حتى تاريخ الإقفال، وشاهد انتقال الإيجار المقدم إلى إيراد الإيجار فترة بعد فترة.",
+  "description": "Run recognition to a cut-off date and watch advance rent move into rental income, period by period.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 Earned by the Day\n0:42 Preview the Close\n1:07 Run It\n1:19 In the General Ledger\n1:36 September Is Posted\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nشغّل الاعتراف بالإيراد حتى تاريخ الإقفال، وشاهد انتقال الإيجار المقدم إلى إيراد الإيجار فترة بعد فترة.",
   "tags": [
     "miftah",
     "property management",
@@ -28,35 +28,30 @@
     {
       "startSec": 0,
       "start": "0:00",
-      "label": "Read the Recognition Schedule"
+      "label": "Earned by the Day"
     },
     {
-      "startSec": 20.847,
-      "start": "0:20",
-      "label": "A Short First Period and a Rounding Row"
-    },
-    {
-      "startSec": 54.031,
-      "start": "0:54",
+      "startSec": 42.684,
+      "start": "0:42",
       "label": "Preview the Close"
     },
     {
-      "startSec": 69.347,
-      "start": "1:09",
+      "startSec": 67.441,
+      "start": "1:07",
       "label": "Run It"
     },
     {
-      "startSec": 95.299,
-      "start": "1:35",
-      "label": "Watch Advance Rent Fall"
+      "startSec": 79.82,
+      "start": "1:19",
+      "label": "In the General Ledger"
     },
     {
-      "startSec": 111.891,
-      "start": "1:51",
-      "label": "It Also Runs Nightly"
+      "startSec": 96.04,
+      "start": "1:36",
+      "label": "September Is Posted"
     }
   ],
-  "durationSec": 128,
+  "durationSec": 110,
   "roles": [
     "TENANT_ADMIN",
     "ACCOUNTANT"
