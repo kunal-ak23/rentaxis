@@ -129,7 +129,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "12", slug: "administer-an-active-tenancy-contract", topic: "leasing", roles: PORTFOLIO, durationSec: 97, youtubeId: null,
+        id: "12", slug: "administer-an-active-tenancy-contract", topic: "leasing", roles: PORTFOLIO, durationSec: 97, youtubeId: "rLwltCxGZBQ",
         title: { en: "Administer an active tenancy contract", ar: "إدارة عقد إيجار نشط" },
         description: {
             en: "Add a charge with its Ejari number and cheque, attach supporting documents and log follow-ups on an active contract.",
@@ -138,7 +138,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["leases--lease-lifecycle"],
     },
     {
-        id: "13", slug: "renew-extend-terminate-and-settle", topic: "leasing", roles: ["SUPER_ADMIN", ...PORTFOLIO, "RENTER"], durationSec: 133, youtubeId: null,
+        id: "13", slug: "renew-extend-terminate-and-settle", topic: "leasing", roles: ["SUPER_ADMIN", ...PORTFOLIO, "RENTER"], durationSec: 133, youtubeId: "nzKOEO8MjOs",
         title: { en: "Renew, extend, terminate and settle a contract", ar: "تجديد العقد وتمديده وإنهاؤه وتسويته" },
         description: {
             en: "Renew a contract for a new term, extend one by a month, take a Tenant's notice, terminate the contract and finalise the settlement.",
@@ -147,7 +147,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["leases--lease-lifecycle"],
     },
     {
-        id: "14", slug: "penalties-and-cheque-failure-fines", topic: "collections", roles: [...PORTFOLIO, "ACCOUNTANT", "RENTER"], durationSec: 108, youtubeId: null,
+        id: "14", slug: "penalties-and-cheque-failure-fines", topic: "collections", roles: [...PORTFOLIO, "ACCOUNTANT", "RENTER"], durationSec: 108, youtubeId: "SJRZi5tivc0",
         title: { en: "Penalties, fines and recharges", ar: "الغرامات وإعادة تحميل تكاليف الصيانة" },
         description: {
             en: "Configure fines, approve or waive proposed penalties and maintenance recharges, and see the journal each decision writes.",
@@ -173,7 +173,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["admin--tenant-settings"],
     },
     {
-        id: "38", slug: "how-accounting-works-in-miftah", topic: "accounting", roles: FINANCE, durationSec: 148, youtubeId: null,
+        id: "38", slug: "how-accounting-works-in-miftah", topic: "accounting", roles: FINANCE, durationSec: 148, youtubeId: "WKMbpGSgrdU",
         title: { en: "How accounting works in Miftah", ar: "كيف تعمل المحاسبة في مفتاح" },
         description: {
             en: "Follow one tenancy contract's money from posting to the reports, and see where each step shows in the tenant ledger, general ledger, trial balance and profit and loss.",
@@ -181,7 +181,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "39", slug: "start-your-books-opening-balances-and-cut-over", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 141, youtubeId: null,
+        id: "39", slug: "start-your-books-opening-balances-and-cut-over", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 141, youtubeId: "jGsnA2bUlOQ",
         title: { en: "Start your books: opening balances and cut-over", ar: "بدء الدفاتر: الأرصدة الافتتاحية والانتقال إلى النظام" },
         description: {
             en: "Set the date Miftah takes over your books, enter opening balances, bring running contracts across and reconcile against your old system.",
@@ -189,7 +189,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "17", slug: "chart-of-accounts-template-and-charge-types", topic: "accounting", roles: FINANCE, durationSec: 121, youtubeId: null,
+        id: "17", slug: "chart-of-accounts-template-and-charge-types", topic: "accounting", roles: FINANCE, durationSec: 121, youtubeId: "seIQjEg9AQE",
         title: { en: "Chart of accounts, property account sets and charge types", ar: "دليل الحسابات ومجموعات حسابات العقارات وأنواع الرسوم" },
         description: {
             en: "See how the chart of accounts is organised, how every property gets its own set of accounts, and which account each charge on a contract posts to.",
@@ -198,7 +198,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["finance--chart-of-accounts"],
     },
     {
-        id: "34", slug: "post-a-tenancy-contract", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 102, youtubeId: null,
+        id: "34", slug: "post-a-tenancy-contract", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 102, youtubeId: "IOlWHhomeBU",
         title: { en: "Post a tenancy contract", ar: "ترحيل عقد الإيجار" },
         description: {
             en: "Post a draft contract with its lines and cheque grid, and see the contract become active with its recognition schedule planned.",
@@ -238,7 +238,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "42", slug: "termination-settlement-and-deposit-refunds-in-the-books", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 130, youtubeId: null,
+        id: "42", slug: "termination-settlement-and-deposit-refunds-in-the-books", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 130, youtubeId: "g5T8WEPwJvU",
         title: { en: "Termination, settlement and deposit refunds in the books", ar: "إنهاء العقد والتسوية واسترداد التأمين في الدفاتر" },
         description: {
             en: "Terminate a contract early, read the unearned-rent reversal, finalise the settlement and pay the deposit refund.",
@@ -246,7 +246,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "43", slug: "renewals-rent-free-periods-and-unit-transfers-in-the-books", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 126, youtubeId: null,
+        id: "43", slug: "renewals-rent-free-periods-and-unit-transfers-in-the-books", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 126, youtubeId: "ewNV-NBy8zI",
         title: { en: "Renewals, rent-free periods and unit transfers in the books", ar: "التجديد وفترات الإعفاء من الإيجار ونقل الوحدات في الدفاتر" },
         description: {
             en: "Renew a contract with an increase and a renewal fee, give a rent-free fit-out month, and move a Tenant to another unit without losing a dirham.",
