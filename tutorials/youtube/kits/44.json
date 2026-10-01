@@ -1,0 +1,73 @@
+{
+  "id": "44",
+  "slug": "supplier-bills-payment-runs-and-issued-cheques",
+  "title": "Miftah tutorial 44 · Supplier bills, payment runs and issued cheques",
+  "description": "Post supplier bills with input VAT, pay what is due in a payment run, and follow a post-dated supplier cheque until the bank pays it.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 Receipt / Payment Vouchers\n0:13 A Supplier Bill\n0:35 The Purchase Invoice Journal\n0:48 Payables Aging\n1:03 A Payment Run\n1:17 Preview, Then Post\n1:36 Issued Cheques\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nرحّل فواتير الموردين مع ضريبة المدخلات، وسدّد المستحق من خلال دفعة سداد، وتابع الشيك المؤجل الصادر للمورد حتى يصرفه البنك.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "chart of accounts",
+    "journal voucher",
+    "financial reports",
+    "accounting software",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Accounting",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0.0,
+      "start": "0:00",
+      "label": "Receipt / Payment Vouchers"
+    },
+    {
+      "startSec": 13.444,
+      "start": "0:13",
+      "label": "A Supplier Bill"
+    },
+    {
+      "startSec": 35.192,
+      "start": "0:35",
+      "label": "The Purchase Invoice Journal"
+    },
+    {
+      "startSec": 48.636,
+      "start": "0:48",
+      "label": "Payables Aging"
+    },
+    {
+      "startSec": 63.662,
+      "start": "1:03",
+      "label": "A Payment Run"
+    },
+    {
+      "startSec": 77.501,
+      "start": "1:17",
+      "label": "Preview, Then Post"
+    },
+    {
+      "startSec": 96.877,
+      "start": "1:36",
+      "label": "Issued Cheques"
+    }
+  ],
+  "durationSec": 130,
+  "roles": [
+    "TENANT_ADMIN",
+    "ACCOUNTANT"
+  ],
+  "topic": "accounting",
+  "captionsFile": "tutorials/output/44-supplier-bills-payment-runs-and-issued-cheques.srt",
+  "videoFile": "tutorials/output/44-supplier-bills-payment-runs-and-issued-cheques.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/44.png"
+}
