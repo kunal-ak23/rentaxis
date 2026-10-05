@@ -1,0 +1,52 @@
+{
+  "id": "28",
+  "slug": "promotions-offers-and-coupons",
+  "title": "Miftah tutorial 28 · Promotions, offers and coupons",
+  "description": "Add a partner business, create a coupon ad shown to one building, and read its views and taps.\n\nWho this is for: Company Admin.\n\nChapters:\n0:00 Add a partner business\n0:22 Create the coupon ad\n1:11 Live, views and taps\n\nPart of the Miftah web course — playlist: Miftah · Operations\n\nأضف نشاطًا تجاريًا شريكًا، وأنشئ إعلان قسيمة يظهر لمبنى واحد، وتابع مرات الظهور والنقرات.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "maintenance tickets",
+    "facilities booking",
+    "gate pass",
+    "meetings",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Operations",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0.0,
+      "start": "0:00",
+      "label": "Add a partner business"
+    },
+    {
+      "startSec": 22.5,
+      "start": "0:22",
+      "label": "Create the coupon ad"
+    },
+    {
+      "startSec": 71.4,
+      "start": "1:11",
+      "label": "Live, views and taps"
+    }
+  ],
+  "durationSec": 94,
+  "roles": [
+    "TENANT_ADMIN"
+  ],
+  "topic": "operations",
+  "captionsFile": "tutorials/output/28-promotions-offers-and-coupons.srt",
+  "videoFile": "tutorials/output/28-promotions-offers-and-coupons.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/28.png"
+}

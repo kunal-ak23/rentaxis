@@ -359,11 +359,11 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "28", slug: "promotions-offers-and-coupons", topic: "operations", roles: ["TENANT_ADMIN", "RENTER"], durationSec: 150, youtubeId: null,
+        id: "28", slug: "promotions-offers-and-coupons", topic: "operations", roles: ["TENANT_ADMIN"], durationSec: 94, youtubeId: null,
         title: { en: "Promotions, offers and coupons", ar: "العروض الترويجية والخصومات والقسائم" },
         description: {
-            en: "Create a promotion, target it, add images and copy, and see how Tenants find offers and use coupons.",
-            ar: "أنشئ عرضًا ترويجيًا، وحدّد جمهوره، وأضف الصور والنصوص، وتعرّف على كيفية وصول المستأجرين إلى العروض واستخدام القسائم.",
+            en: "Add a partner business, create a coupon ad shown to one building, and read its views and taps.",
+            ar: "أضف نشاطًا تجاريًا شريكًا، وأنشئ إعلان قسيمة يظهر لمبنى واحد، وتابع مرات الظهور والنقرات.",
         },
     },
 ];
