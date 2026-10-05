@@ -1,140 +1,150 @@
 1
-00:00:00,000 --> 00:00:04,897
-This tutorial reads a renter's account the
-way an accountant does.
+00:00:00,000 --> 00:00:03,696
+This tutorial reads a tenant's account the
+way an
 
 2
-00:00:04,897 --> 00:00:09,795
-Open Finance and choose Tenant Ledger,
-then select the prepared renter.
+00:00:03,696 --> 00:00:06,981
+accountant does, then ties it to the
+books.
 
 3
-00:00:09,795 --> 00:00:14,247
-RentAxis shows one block per ledger
-account the renter has
+00:00:06,981 --> 00:00:10,267
+As the Accountant, open Tenant Ledger,
+choose Omar
 
 4
-00:00:14,247 --> 00:00:18,254
-touched, and inside each block one row per
-entry.
+00:00:10,267 --> 00:00:13,552
+Haddad and the year to 31 August 2026.
 
 5
-00:00:18,254 --> 00:00:23,152
-Every row carries the document date, the
-document number, the account
+00:00:13,552 --> 00:00:18,069
+Miftah shows one block for each account
+the tenant has touched,
 
 6
-00:00:23,152 --> 00:00:27,604
-on the other side of the entry, the
-narration, the
+00:00:18,069 --> 00:00:22,176
+and one row for each entry, with a running
+balance.
 
 7
-00:00:27,604 --> 00:00:32,056
-debit or the credit, and the running
-balance after it.
+00:00:22,176 --> 00:00:23,819
+Start with Rent Receivable.
 
 8
-00:00:32,056 --> 00:00:33,837
-Start with rent receivable.
+00:00:23,819 --> 00:00:27,925
+Posting the contract debited 77,000, the
+rent and the deposit.
 
 9
-00:00:33,837 --> 00:00:38,289
-The tenancy contract debited it with the
-whole contract value,
+00:00:27,925 --> 00:00:30,800
+Each of the five cheques then credited
 
 10
-00:00:38,289 --> 00:00:42,296
-then one post-dated cheque entry per
-cheque credited it
+00:00:30,800 --> 00:00:33,675
+it back, so the balance is zero.
 
 11
-00:00:42,296 --> 00:00:46,303
-back, so immediately after posting the
-balance is zero.
+00:00:33,675 --> 00:00:36,960
+That is normal: while the cheques are in
 
 12
-00:00:46,303 --> 00:00:51,201
-That is correct and it is the point: what
-the renter
+00:00:36,960 --> 00:00:39,835
+hand, the tenant owes nothing on paper.
 
 13
-00:00:51,201 --> 00:00:55,653
-owes lives in the cheque register, not in
-this account.
+00:00:39,835 --> 00:00:41,477
+Now choose Layla Nasser.
 
 14
-00:00:55,653 --> 00:00:59,660
-A balance appears here only when something
-goes wrong,
+00:00:41,477 --> 00:00:45,584
+Her second cheque came back from the bank
+in February.
 
 15
-00:00:59,660 --> 00:01:03,667
-such as a returned cheque, which debits it
+00:00:45,584 --> 00:00:48,459
+The return debits Rent Receivable 15,000
 again.
 
 16
-00:01:03,667 --> 00:01:06,338
-Read the post-dated cheques receivable
-block.
+00:00:48,459 --> 00:00:52,976
+A 500 penalty is added, and its own cheque
+covers it.
 
 17
-00:01:06,338 --> 00:01:11,236
-It rises with every cheque registered and
-falls with every cheque
+00:00:52,976 --> 00:00:57,493
+Two replacement cheques of 7,500 bring the
+balance back to zero.
 
 18
-00:01:11,236 --> 00:01:16,133
-cleared, so its balance is the paper you
-are still holding.
+00:00:57,493 --> 00:01:02,421
+Further down, Advance Rent still holds
+12,328.76: billed, but not yet earned.
 
 19
-00:01:16,133 --> 00:01:17,469
-Read advance rent.
+00:01:02,421 --> 00:01:06,117
+PDC Receivable is the paper you hold, and
+all
 
 20
-00:01:17,469 --> 00:01:22,811
-The contract credited the whole year, and
-each month-end recognition debits back
+00:01:06,117 --> 00:01:09,813
+of Layla's cheques have cleared, so it is
+zero.
 
 21
-00:01:22,811 --> 00:01:28,154
-the portion earned, so it winds down to
-zero across the term.
+00:01:09,813 --> 00:01:13,099
+Select a document number to open its
+journal.
 
 22
-00:01:28,154 --> 00:01:32,606
-Select any document number to open the
-journal behind it.
+00:01:13,099 --> 00:01:15,563
+The return, CBR-26/1, debits Rent
+Receivable
 
 23
-00:01:32,606 --> 00:01:36,613
-A journal shows every line, always
-balancing, and it
+00:01:15,563 --> 00:01:18,027
+15,000 and credits PDC Receivable 15,000.
 
 24
-00:01:36,613 --> 00:01:40,175
-cannot be edited or deleted, only
-reversed, which
+00:01:18,027 --> 00:01:22,133
+Every journal balances, and none is ever
+edited, only reversed.
 
 25
-00:01:40,175 --> 00:01:43,737
-writes a mirror entry and links the two.
+00:01:22,133 --> 00:01:25,008
+Now open the General Ledger on Rent
 
 26
-00:01:43,737 --> 00:01:45,518
-Finally open Trial Balance.
+00:01:25,008 --> 00:01:27,472
+Receivable for the Residences, for
+February.
 
 27
-00:01:45,518 --> 00:01:50,415
-Choose a date and confirm that total
-debits equal total credits.
+00:01:27,472 --> 00:01:31,168
+This is the control account: every
+tenant's entries together.
 
 28
-00:01:50,415 --> 00:01:54,422
-That single check is what tells you the
-ledger
+00:01:31,168 --> 00:01:36,096
+It closes February at 15,000 debit,
+exactly Layla's balance on that day.
 
 29
-00:01:54,422 --> 00:01:57,984
-behind every screen in this tutorial is
-sound.
+00:01:36,096 --> 00:01:39,792
+The tenant ledgers add up to the control
+account.
+
+30
+00:01:39,792 --> 00:01:43,899
+Finally, open the Trial Balance as of 31
+August 2026.
+
+31
+00:01:43,899 --> 00:01:47,595
+Total debits equal total credits,
+4,150,891.24 on each side.
+
+32
+00:01:47,595 --> 00:01:50,880
+Filter to one building, and it still
+balances.
