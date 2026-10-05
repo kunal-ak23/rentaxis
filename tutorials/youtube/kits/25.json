@@ -1,0 +1,54 @@
+{
+  "id": "25",
+  "slug": "gate-passes-and-walk-in-visitors",
+  "title": "Miftah tutorial 25 · Gate passes and visitor policy",
+  "description": "Invite visitors with single-visit and recurring gate passes, approve recurring passes, and set the gate policy, regular visitors and guard postings.\n\nWho this is for: Company Admin, Property Manager, Tenant.\n\nChapters:\n0:00 Invite a Visitor\n0:46 Approve and Set the Policy\n1:15 Ready for the Gate\n\nPart of the Miftah web course — playlist: Miftah · Operations\n\nادعُ زوارك بتصاريح دخول لزيارة واحدة أو متكررة، ووافق على التصاريح المتكررة، واضبط سياسة البوابة والزوار الدائمين ومواقع الحراس.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "maintenance tickets",
+    "facilities booking",
+    "gate pass",
+    "meetings",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Operations",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0.0,
+      "start": "0:00",
+      "label": "Invite a Visitor"
+    },
+    {
+      "startSec": 46.2,
+      "start": "0:46",
+      "label": "Approve and Set the Policy"
+    },
+    {
+      "startSec": 75.0,
+      "start": "1:15",
+      "label": "Ready for the Gate"
+    }
+  ],
+  "durationSec": 88,
+  "roles": [
+    "TENANT_ADMIN",
+    "PROPERTY_MANAGER",
+    "RENTER"
+  ],
+  "topic": "operations",
+  "captionsFile": "tutorials/output/25-gate-passes-and-walk-in-visitors.srt",
+  "videoFile": "tutorials/output/25-gate-passes-and-walk-in-visitors.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/25.png"
+}
