@@ -72,6 +72,10 @@ public class VoucherAllocationService {
     private final NamedParameterJdbcTemplate jdbc;
     private final EntityManager entityManager;
 
+    /** The app clock ({@code ClockConfig}); the system clock in Dubai when none is configured. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private java.time.Clock clock = java.time.Clock.system(java.time.ZoneId.of("Asia/Dubai"));
+
     public VoucherAllocationService(VoucherAllocationRepository allocations,
                                     TenantFiscalSettingsRepository fiscalSettings,
                                     NamedParameterJdbcTemplate jdbc, EntityManager entityManager) {
@@ -286,7 +290,7 @@ public class VoucherAllocationService {
             throw new BusinessRuleViolationException("This allocation is dated " + a.getAllocatedOn()
                     + ", inside the locked period (books locked through " + lock + "); it cannot be released");
         }
-        LocalDate today = today();
+        LocalDate today = businessToday();
         a.setReleasedOn(today.isBefore(a.getAllocatedOn()) ? a.getAllocatedOn() : today);
         a.setReleaseReason(reason.trim());
         a.setReleasedBy(currentUserId());
@@ -436,10 +440,10 @@ public class VoucherAllocationService {
         // N5: one rule for an explicit date and a default one. Nothing is dated
         // after today unless a document itself is (a future-dated payment), and
         // then no later than the earliest date the documents allow.
-        LocalDate ceiling = latest(today(), earliest);
+        LocalDate ceiling = latest(businessToday(), earliest);
         if (requestedOn != null && requestedOn.isAfter(ceiling)) {
             throw new BusinessRuleViolationException("An allocation cannot be dated in the future (" + requestedOn
-                    + ")" + (ceiling.isAfter(today()) ? "; the documents allow " + ceiling : ""));
+                    + ")" + (ceiling.isAfter(businessToday()) ? "; the documents allow " + ceiling : ""));
         }
         // Rule 2.
         BigDecimal paid = payableAmount(payment.id());
@@ -546,8 +550,20 @@ public class VoucherAllocationService {
     }
 
     /** Today in the business's time zone, not the server's. */
+    /** The wall-clock Dubai date, for suites running on the real clock; the service itself reads {@link #businessToday}. */
     static LocalDate today() {
         return LocalDate.now(java.time.ZoneId.of("Asia/Dubai"));
+    }
+
+    /**
+     * Today on the app clock, in Dubai: the date a release is stamped with and the
+     * ceiling of an allocation date. The app clock, not the wall clock, so it agrees
+     * with the issued-cheque register's "not in the future" (also on the app clock)
+     * — a release stamped on one day and a reversal refused as future-dated on the
+     * same day was possible whenever the two clocks disagreed (a test's fixed clock).
+     */
+    private LocalDate businessToday() {
+        return LocalDate.now(clock.withZone(java.time.ZoneId.of("Asia/Dubai")));
     }
 
     private static LocalDate latest(LocalDate... dates) {

@@ -174,6 +174,9 @@ public class OnlinePaymentService {
         // for every lease on this list in one batch — the same derivation the register
         // uses to stop calling a settled bounce overdue.
         Map<UUID, BigDecimal> bouncedOpen = chequeQueryService.bouncedOpenAmounts(rows);
+        // PR #398 R1-P2-1: a returned cheque a PROPOSED write-off names is not paid online
+        // meanwhile (the order would be refused); the Tenant is told to contact the office.
+        java.util.Set<UUID> writeOffPending = chequeQueryService.pendingWriteOffItems(rows);
         Map<UUID, BigDecimal> penaltyByLease = penaltyOutstandingByLease(rows);
         Map<UUID, Boolean> onlineByProperty = new HashMap<>();
 
@@ -225,13 +228,15 @@ public class OnlinePaymentService {
                     grace,
                     penaltyByLease.getOrDefault(lease.getId(), BigDecimal.ZERO),
                     ChequeDueRules.tenantPayable(c, today, open),
-                    payableOnline(c, due, onlineEnabled) && bounceRefusal(c, open) == null,
+                    payableOnline(c, due, onlineEnabled) && bounceRefusal(c, open, writeOffPending.contains(c.getId())) == null,
                     onlineEnabled,
                     c.getPenaltyAssessmentId(),
                     c.getFailureReason(),
                     c.getClearedAt(),
                     c.getStatusChangedAt() != null ? c.getStatusChangedAt().toString() : null,
-                    due && onlineEnabled ? bounceRefusal(c, open) : null));
+                    due && onlineEnabled ? bounceRefusal(c, open, writeOffPending.contains(c.getId())) : null,
+                    c.getDepositedAt() != null ? c.getDepositedAt() : c.getImportedDepositedOn(),
+                    c.getImageBlobPath() != null && !c.getImageBlobPath().isBlank()));
         }
 
         // findByRenter_Id... orders by cheque date; id breaks the tie so two
@@ -260,6 +265,11 @@ public class OnlinePaymentService {
     static final String BOUNCE_SETTLED = "payment.bounceSettled";
     static final String BOUNCE_PARTLY_SETTLED = "payment.bouncePartlySettled";
     static final String BOUNCE_BALANCE_UNKNOWN = "payment.bounceBalanceUnknown";
+    /**
+     * PR #398 R1-P2-1: the landlord is deciding about this returned cheque (a write-off is
+     * proposed). Worded for the Tenant: it says nothing about the proposal itself.
+     */
+    static final String BOUNCE_CONTACT_OFFICE = "payment.bounceContactOffice";
 
     /**
      * Why a BOUNCED row cannot go through the gateway, as a client-translatable code, or
@@ -267,10 +277,11 @@ public class OnlinePaymentService {
      * could not be read (unmapped account): the Tenant still sees it owed at face value,
      * but nobody collects online what the ledger cannot confirm.
      */
-    private static String bounceRefusal(Cheque c, BigDecimal bouncedOpen) {
+    private static String bounceRefusal(Cheque c, BigDecimal bouncedOpen, boolean writeOffPending) {
         if (c.getStatus() != ChequeStatus.BOUNCED) return null;
         if (bouncedOpen == null) return BOUNCE_BALANCE_UNKNOWN;
         if (bouncedOpen.signum() <= 0) return BOUNCE_SETTLED;
+        if (writeOffPending) return BOUNCE_CONTACT_OFFICE;
         return partlySettled(c, bouncedOpen) ? BOUNCE_PARTLY_SETTLED : null;
     }
 
@@ -435,7 +446,8 @@ public class OnlinePaymentService {
         }
         if (status == ChequeStatus.BOUNCED) {
             BigDecimal open = chequeQueryService.bouncedOpenAmounts(List.of(cheque)).get(cheque.getId());
-            String refusal = bounceRefusal(cheque, open);
+            String refusal = bounceRefusal(cheque, open,
+                    chequeQueryService.pendingWriteOffItems(List.of(cheque)).contains(cheque.getId()));
             if (BOUNCE_SETTLED.equals(refusal)) {
                 throw new BusinessRuleViolationException(
                         "This returned cheque is already settled; there is nothing left to pay on it.",
@@ -445,6 +457,10 @@ public class OnlinePaymentService {
                 throw new BusinessRuleViolationException("Part of this returned cheque is already settled. "
                         + "Pay the remaining " + aed(open) + " at the office.",
                         BOUNCE_PARTLY_SETTLED, Map.of("amount", aed(open)));
+            }
+            if (BOUNCE_CONTACT_OFFICE.equals(refusal)) {
+                throw new BusinessRuleViolationException("This returned cheque cannot be paid online. "
+                        + "Please contact the property office about this cheque.", BOUNCE_CONTACT_OFFICE, Map.of());
             }
             if (BOUNCE_BALANCE_UNKNOWN.equals(refusal)) {
                 throw new BusinessRuleViolationException("This returned cheque cannot be paid online right now. "

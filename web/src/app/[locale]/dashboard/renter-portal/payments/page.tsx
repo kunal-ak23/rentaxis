@@ -19,6 +19,7 @@ import { fmtAmount } from "@/lib/api/ledger";
 import { ApiError, chequeApi, onlinePayApi, type RenterCheque } from "@/lib/api/leasing";
 import PayOnlineButton from "@/components/renter/PayOnlineButton";
 import RenterTaxInvoices from "@/components/renter/RenterTaxInvoices";
+import ChequeScanLink from "@/components/cheques/ChequeScanLink";
 
 /**
  * The renter's own payments screen, on accounting-v2's own cheque register
@@ -101,6 +102,27 @@ export default function RenterPaymentsPage() {
         setLoadError(null);
         setLoading(true);
         fetchPayments();
+    };
+
+    /**
+     * "Deposited on … · Cleared on …" for a banked cheque, "Collected on …" for money
+     * taken another way (cash, transfer, online) — the dates the pre-v2 portal showed.
+     */
+    const bankDatesLine = (r: RenterCheque): React.ReactNode => {
+        // Each date sits in its own <bdi> (a Latin dd/mm/yyyy inside an Arabic sentence).
+        const withDate = (key: "depositedOn" | "clearedOn" | "collectedOn", iso: string) => {
+            const [before, after = ""] = t(key, { date: "\u0000" }).split("\u0000");
+            return <span key={key}>{before}<bdi dir="ltr">{fmtIsoDate(iso, locale)}</bdi>{after}</span>;
+        };
+        const parts: React.ReactNode[] = [];
+        if ((r.status === "DEPOSITED" || r.status === "CLEARED" || r.status === "BOUNCED") && r.depositedAt) {
+            parts.push(withDate("depositedOn", r.depositedAt));
+        }
+        if (r.status === "CLEARED" && r.clearedAt) {
+            parts.push(withDate(r.mode === "PDC" ? "clearedOn" : "collectedOn", r.clearedAt));
+        }
+        if (parts.length === 0) return null;
+        return parts.flatMap((p, i) => (i === 0 ? [p] : [<span key={`sep-${i}`}> · </span>, p]));
     };
 
     const dueRows = rows.filter(owedNow);
@@ -273,7 +295,7 @@ export default function RenterPaymentsPage() {
                                         data-testid={`history-row-${row.id}`}
                                         className="bg-surface rounded-xl p-4 border border-border hover:shadow-md transition-all duration-200"
                                     >
-                                        <div className="flex items-center justify-between">
+                                        <div className="flex flex-wrap items-center justify-between gap-3">
                                             <div className="flex items-center gap-4">
                                                 <div
                                                     className={cn(
@@ -292,11 +314,14 @@ export default function RenterPaymentsPage() {
                                                     </p>
                                                 </div>
                                             </div>
-                                            <div className="flex items-center gap-4">
+                                            <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-4">
                                                 <div className="text-end">
                                                     <p className="text-sm font-bold text-foreground tabular-nums">{formatCurrencyCompact(row.amount)}</p>
                                                     <p className="text-[10px] font-bold text-muted">{fmtIsoDate(row.dueDate, locale)}</p>
                                                 </div>
+                                                {row.hasImage && (
+                                                    <ChequeScanLink chequeId={row.id} testId={`scan-link-${row.id}`} />
+                                                )}
                                                 {row.status === "CLEARED" && (
                                                     <a
                                                         href={chequeApi.receiptUrl(row.id)}
@@ -311,6 +336,12 @@ export default function RenterPaymentsPage() {
                                                 )}
                                             </div>
                                         </div>
+                                        {bankDatesLine(row) && (
+                                            // Restored from the pre-v2 portal: when the cheque was banked and when it cleared.
+                                            <p className="text-[11px] text-muted mt-2" data-testid={`bank-dates-${row.id}`}>
+                                                {bankDatesLine(row)}
+                                            </p>
+                                        )}
                                         {row.status === "DEPOSITED" && (
                                             <p className="text-[11px] italic text-muted mt-2" data-testid={`at-bank-${row.id}`}>
                                                 {t("atTheBank")}

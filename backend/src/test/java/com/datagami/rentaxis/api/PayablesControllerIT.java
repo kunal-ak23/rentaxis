@@ -40,7 +40,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * as {@code VoucherControllerIT}: the legacy {@code X-User-*} headers over a real port.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.TimelineClockConfig.class)
 class PayablesControllerIT extends AbstractPostgresIT {
+
+    // The clock is pinned on 2026-09-30 (TimelineClockConfig): the aging reads as at that
+    // date, and on the real clock a release stamped after it is still live in that report.
 
     @LocalServerPort int port;
 

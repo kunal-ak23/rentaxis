@@ -47,8 +47,6 @@ const KNOWN_CONSOLE: { url: RegExp; text: RegExp; why: string; roles?: UserRole[
       why: 'GET /listings is 404 while the organisation has the LISTINGS feature off (a fresh organisation does); the page is swept by URL anyway' },
     { url: /\/leases\/[^/]+\?tab=journals$/, text: /status of 403/, roles: ['PROPERTY_MANAGER'],
       why: 'the Journal Vouchers section (the old Journals tab, open to every role before PR 3 too) reads GET /leases/{id}/journals and the renter ledger, which the backend refuses a property manager; the section shows its error' },
-    { url: /\/leases\/[^/]+\?tab=payments$/, text: /status of 403/, roles: ['PROPERTY_MANAGER'],
-      why: "a DRAFT contract's editable cheque grid loads its debit-account picker from GET /finance/accounts, which the backend refuses a property manager; the rows keep the account the generator gave them (seen first by the cheque-scan sweep, the first to open a draft as a manager)" },
     { url: /\/finance\/(opening-balances|reconciliation)$/, text: /status of 400/,
       why: 'GET /finance/opening-balances is 400 until the cut-over (books-start) date is set, which a fresh organisation has not done' },
 ];
@@ -259,7 +257,11 @@ for (const locale of LOCALES) {
 
         const sa = await browser.newContext({ baseURL: BASE_URL, viewport: { width: 1024, height: 800 }, storageState: path.join(STATE_DIR, 'SUPER_ADMIN.json') });
         const saPage = await sa.newPage();
-        await saPage.goto(`/${locale}/dashboard`);
+        // A super admin with no organisation selected is sent from the dashboard home to the
+        // organisation list (AuthenticatedLayout, since #380); that re-render closed a dropdown
+        // opened before it landed. Start on the list, so nothing moves under the click.
+        await saPage.goto(`/${locale}/superadmin/tenants`);
+        await saPage.waitForURL(/\/superadmin\/tenants/);
         const switcher = saPage.getByTestId('header-org-switcher').getByTestId('org-switcher-button');
         await expect(switcher).toBeVisible();
         await expect(saPage.getByTestId('org-switcher-button')).toHaveCount(1);
