@@ -14,6 +14,7 @@ import { serverText } from "@/components/finance/bankrec/serverText";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { isAbortError } from "@/lib/api/abort";
+import { oldestFirst } from "@/lib/oldestFirst";
 
 type Account = {
     id: string;
@@ -105,9 +106,8 @@ export default function VendorsPage() {
             if (res.ok) {
                 const data = await res.json();
                 if (!isCurrent()) return;
-                // Oldest first, the house rule for entity lists (tutorial 19); id breaks ties.
-                (data as Vendor[]).sort((a, b) =>
-                    (a.createdAt || '').localeCompare(b.createdAt || '') || (a.id || '').localeCompare(b.id || ''));
+                // Oldest first, the house rule for entity lists (tutorial 19); name, then id, break ties.
+                (data as Vendor[]).sort(oldestFirst<Vendor>(v => v.nameEn));
                 setVendors(data);
                 setLoadError(null);
             } else if (isCurrent()) {

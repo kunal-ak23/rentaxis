@@ -90,6 +90,21 @@ describe("BankAccountsPage", () => {
         expect(screen.queryByRole("button", { name: "addAccount" })).toBeNull();
         expect(screen.queryByLabelText("editAccount")).toBeNull();
         expect(screen.queryByLabelText("deleteAccount")).toBeNull();
+        // PR #399 R1 P3-6: no empty Actions column for a reader.
+        expect(screen.queryByText("actions")).toBeNull();
+    });
+
+    it("lists accounts oldest first, then by bank name (PR #399 R1 P3-6)", async () => {
+        const base = sampleAccounts[0];
+        bankAccounts = [
+            { ...base, id: "a-newest", bankName: "Zeta Bank", createdAt: "2026-10-05T09:00:00" },
+            { ...base, id: "z-oldest", bankName: "Mashreq", createdAt: "2026-01-01T08:00:00" },
+            { ...base, id: "m-tie", bankName: "ADCB", createdAt: "2026-01-01T08:00:00" },
+        ];
+        render(<BankAccountsPage />);
+        await screen.findByText("Zeta Bank");
+        const rows = screen.getAllByRole("row").slice(1).map(r => r.textContent ?? "");
+        expect(rows.map(r => ["ADCB", "Mashreq", "Zeta Bank"].find(n => r.includes(n)))).toEqual(["ADCB", "Mashreq", "Zeta Bank"]);
     });
 
     it("gives the Company Admin add, edit and delete", async () => {

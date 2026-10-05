@@ -11,6 +11,7 @@ import { loadList } from "@/lib/api/listLoad";
 import { isAbortError } from "@/lib/api/abort";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { accountName } from "@/lib/api/ledger";
+import { oldestFirst } from "@/lib/oldestFirst";
 
 type Account = {
     id: string;
@@ -42,6 +43,8 @@ type PropertyStats = {
 
 type BankAccount = {
     id: string;
+    /** Set by the database on insert; the list sorts oldest first. */
+    createdAt?: string | null;
     bankName: string;
     accountNumber: string;
     iban: string;
@@ -109,7 +112,8 @@ export default function BankAccountsPage() {
         if (!isCurrent()) return;
         setListLoad(load.kind === "ok" ? "ok" : load.kind);
         if (load.kind === "ok") {
-            setBankAccounts([...load.items].sort((a, b) => (a.id || '').localeCompare(b.id || '')));
+            // Oldest first like every entity list (PR #399 R1 P3-6); bank name, then id, break ties.
+            setBankAccounts([...load.items].sort(oldestFirst<BankAccount>(b => b.bankName)));
         }
         setLoading(false);
     };
@@ -343,9 +347,11 @@ export default function BankAccountsPage() {
                                     <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("status")}
                                     </th>
+                                    {canManage && (
                                     <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("actions")}
                                     </th>
+                                    )}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border">
@@ -392,8 +398,8 @@ export default function BankAccountsPage() {
                                                 </span>
                                             )}
                                         </td>
+                                        {canManage && (
                                         <td className="px-5 py-3">
-                                            {canManage && (
                                             <div className="flex items-center gap-2">
                                                 <button
                                                     onClick={() => openEditModal(ba)}
@@ -410,8 +416,8 @@ export default function BankAccountsPage() {
                                                     <Trash2 size={14} />
                                                 </button>
                                             </div>
-                                            )}
                                         </td>
+                                        )}
                                     </tr>
                                 ))}
                             </tbody>
