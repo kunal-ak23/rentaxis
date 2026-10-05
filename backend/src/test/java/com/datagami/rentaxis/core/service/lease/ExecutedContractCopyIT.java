@@ -80,6 +80,10 @@ class ExecutedContractCopyIT extends AbstractPostgresIT {
         postInTransaction(tenant, lease, false);
 
         verify(contracts, timeout(5000)).createExecutedCopy(lease);
+        // Mockito records the call before the answer runs, so the verify above can return
+        // while the answer is still setting these on the worker thread: wait for them.
+        long until = System.currentTimeMillis() + 5000;
+        while (thread.get() == null && System.currentTimeMillis() < until) Thread.onSpinWait();
         assertThat(seenTenant.get()).isEqualTo(tenant);
         // Off the posting request's thread (R3 minor 1).
         assertThat(thread.get()).startsWith("document-").isNotEqualTo(Thread.currentThread().getName());

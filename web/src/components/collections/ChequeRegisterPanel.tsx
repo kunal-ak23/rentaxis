@@ -10,8 +10,10 @@ import { Pagination } from "@/components/ui/Pagination";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import ChequeStatusBadge from "@/components/cheques/ChequeStatusBadge";
+import { daysSince, isAwaitingClearing, isStaleDeposit } from "@/components/cheques/depositedAge";
 import ChequeActionDialog from "@/components/cheques/ChequeActionDialog";
 import ScanChequesLauncher from "@/components/cheques/ScanChequesLauncher";
+import ChequeScanLink from "@/components/cheques/ChequeScanLink";
 import BounceFlow from "@/components/cheques/BounceFlow";
 import ReplaceChequeDialog from "@/components/cheques/ReplaceChequeDialog";
 import ReceiveCashDialog from "@/components/cheques/ReceiveCashDialog";
@@ -510,7 +512,17 @@ export default function ChequeRegisterPanel({ embedded = false }: { embedded?: b
                                             <td className={td}>{c.renterName || "—"}</td>
                                             <td className={td}>{c.unitIdentifier || "—"}</td>
                                             <td className={`${td} text-muted`}>{c.propertyName || "—"}</td>
-                                            <td className={`${td} text-end tabular-nums font-semibold`}>{fmtAmount(c.amount)}</td>
+                                            {/* PR #397 R1-P3-c: a partly settled returned cheque reads "X of Y", as on the Returned queue. */}
+                                            <td className={`${td} text-end tabular-nums font-semibold`} data-testid={`cheque-row-amount-${c.id}`}>
+                                                {c.status === "BOUNCED" && c.openAmount != null && c.amount != null && c.openAmount !== c.amount ? (
+                                                    <>
+                                                        <bdi dir="ltr">{fmtAmount(c.openAmount)}</bdi>
+                                                        <div className="text-[10px] font-normal text-muted" data-testid={`cheque-row-face-${c.id}`}>
+                                                            {t("owedOfFace", { face: fmtAmount(c.amount) })}
+                                                        </div>
+                                                    </>
+                                                ) : fmtAmount(c.amount)}
+                                            </td>
                                             <td className={td}>{tl(`mode.${c.mode}`)}</td>
                                             <td className={td}>
                                                 <ChequeStatusBadge status={c.status} testId={`cheque-status-${c.id}`} />
@@ -542,7 +554,19 @@ export default function ChequeRegisterPanel({ embedded = false }: { embedded?: b
                                                 })()}
                                             </td>
                                             <td className={td}>
-                                                {c.overdue ? (
+                                                {c.due && isAwaitingClearing(c) ? (
+                                                    // Tutorial 35: banked, waiting on the bank — not overdue.
+                                                    <span className="text-muted" data-testid={`cheque-awaiting-${c.id}`}>
+                                                        {daysSince(c.depositedAt) === null
+                                                            ? t("awaitingClearing")
+                                                            : t("depositedDaysAgo", { n: daysSince(c.depositedAt) ?? 0 })}
+                                                        {isStaleDeposit(daysSince(c.depositedAt)) && (
+                                                            <span className="block text-warning font-semibold" data-testid={`cheque-stale-deposit-${c.id}`}>
+                                                                {t("depositNotCleared")}
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                ) : c.overdue ? (
                                                     <span className="text-error font-semibold">{t("daysOverdue", { n: c.daysOverdue })}</span>
                                                 ) : c.due ? (
                                                     <span className="text-warning font-semibold">{t("due")}</span>
@@ -580,6 +604,9 @@ export default function ChequeRegisterPanel({ embedded = false }: { embedded?: b
                                                         >
                                                             {t("attachScan")}
                                                         </button>
+                                                    )}
+                                                    {c.imageUrl && (
+                                                        <ChequeScanLink chequeId={c.id} testId={`cheque-row-scan-link-${c.id}`} />
                                                     )}
                                                 </div>
                                             </td>

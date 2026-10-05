@@ -572,23 +572,45 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
     List<Cheque> findByProperty_IdAndChequeDateBetweenOrderByChequeDateAsc(UUID propertyId, LocalDate from, LocalDate to);
 
     /**
-     * Section 4's candidates for "owed on {@code at}": dated by then and either
-     * still uncleared, bounced, or cleared only after it. The status filter keeps
-     * years of cleared history out; the fetch joins keep the renter / unit / lease
-     * reads to this one query.
+     * Section 4's candidates for "owed on {@code at}": dated by then, on the register by
+     * then (posted on or before {@code at} — a write-off reversal's restored row is dated
+     * back to the original due date but did not exist before the reversal), and either
+     * still uncleared, cleared only after {@code at}, or bounced on or before {@code at}
+     * <em>whatever its status today</em> (PR #399 R1 P2-1: a later write-off, replacement
+     * or return moves the row to CANCELLED / REPLACED / RETURNED, and a closed period must
+     * not change because of it — the ledger as at {@code at} prices those rows; the section
+     * then keeps only those still bounced on {@code at}, see
+     * {@code StandardStatementSections.Outstanding}).
+     *
+     * <p>{@code postingDate <= at} reads the register as it stood (PR #399 R1-P3a). Two
+     * consequences, both intended: a backdated contract's PDCs (posted on the signing date,
+     * after some of their cheque dates) are not in the periods before it was signed; and
+     * {@code LeaseChequeRegistrar} posts a row's PDR on max(postingDate, the lease's
+     * not-before date), so a row can be on the register here a little before its PDR is
+     * in the ledger.</p>
+     *
+     * <p>The status
+     * filter keeps years of cleared history out; the fetch joins keep the renter / unit /
+     * lease reads to this one query.
      */
     @Query("""
         select c from Cheque c
           left join fetch c.lease left join fetch c.renter left join fetch c.unit
         where c.property.id = :propertyId and c.chequeDate <= :at
+          and (c.postingDate is null or c.postingDate <= :at)
           and (c.status in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED,
                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED,
                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING,
                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.BOUNCED)
-               or (c.status = com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CLEARED and c.clearedAt > :at))
+               or (c.status = com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CLEARED and c.clearedAt > :at)
+               or (c.bouncedAt is not null and c.bouncedAt <= :at
+                   and c.status <> com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DRAFT))
         order by c.chequeDate asc
         """)
     List<Cheque> findOwedCandidatesAt(@Param("propertyId") UUID propertyId, @Param("at") LocalDate at);
+
+    /** PR #399 R1-P1: the successor lease's copies of transferred rows (when the transfer happened). */
+    List<Cheque> findByTransferredFromIdIn(Collection<UUID> sourceIds);
 
     /**
      * F14-19: numbered cheques of this renter on <em>other</em> leases that are still

@@ -6,6 +6,11 @@ vi.mock("next-intl", () => ({
     useLocale: () => "en",
 }));
 
+let role = "TENANT_ADMIN";
+vi.mock("next-auth/react", () => ({
+    useSession: () => ({ data: { user: { role } }, status: "authenticated" }),
+}));
+
 import BankAccountsPage from "../page";
 
 /** Shaped like the serialized BankAccount entity (see BankAccountJsonTest). */
@@ -65,6 +70,7 @@ function stubFetch() {
 }
 
 beforeEach(() => {
+    role = "TENANT_ADMIN";
     calls = [];
     failNextWrite = null;
     bankAccounts = sampleAccounts;
@@ -77,6 +83,38 @@ afterEach(() => {
 });
 
 describe("BankAccountsPage", () => {
+    it("shows the Accountant the accounts read-only: no add, edit or delete (tutorial 19)", async () => {
+        role = "ACCOUNTANT";
+        render(<BankAccountsPage />);
+        await screen.findByText("Emirates NBD");
+        expect(screen.queryByRole("button", { name: "addAccount" })).toBeNull();
+        expect(screen.queryByLabelText("editAccount")).toBeNull();
+        expect(screen.queryByLabelText("deleteAccount")).toBeNull();
+        // PR #399 R1 P3-6: no empty Actions column for a reader.
+        expect(screen.queryByText("actions")).toBeNull();
+    });
+
+    it("lists accounts oldest first, then by bank name (PR #399 R1 P3-6)", async () => {
+        const base = sampleAccounts[0];
+        bankAccounts = [
+            { ...base, id: "a-newest", bankName: "Zeta Bank", createdAt: "2026-10-05T09:00:00" },
+            { ...base, id: "z-oldest", bankName: "Mashreq", createdAt: "2026-01-01T08:00:00" },
+            { ...base, id: "m-tie", bankName: "ADCB", createdAt: "2026-01-01T08:00:00" },
+        ];
+        render(<BankAccountsPage />);
+        await screen.findByText("Zeta Bank");
+        const rows = screen.getAllByRole("row").slice(1).map(r => r.textContent ?? "");
+        expect(rows.map(r => ["ADCB", "Mashreq", "Zeta Bank"].find(n => r.includes(n)))).toEqual(["ADCB", "Mashreq", "Zeta Bank"]);
+    });
+
+    it("gives the Company Admin add, edit and delete", async () => {
+        render(<BankAccountsPage />);
+        await screen.findByText("Emirates NBD");
+        expect(screen.getByRole("button", { name: "addAccount" })).toBeTruthy();
+        expect(screen.getByLabelText("editAccount")).toBeTruthy();
+        expect(screen.getByLabelText("deleteAccount")).toBeTruthy();
+    });
+
     it("renders the Default badge from the backend's isDefault property", async () => {
         render(<BankAccountsPage />);
 

@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
+import { useSession } from "next-auth/react";
+import { hasPermission, type UserRole } from "@/lib/rbac";
 import { Landmark, Plus, Pencil, Trash2, X, Loader2 } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AccessDeniedState, LoadFailedState } from "@/components/ui/PageStates";
@@ -9,6 +11,7 @@ import { loadList } from "@/lib/api/listLoad";
 import { isAbortError } from "@/lib/api/abort";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { accountName } from "@/lib/api/ledger";
+import { oldestFirst } from "@/lib/oldestFirst";
 
 type Account = {
     id: string;
@@ -40,6 +43,8 @@ type PropertyStats = {
 
 type BankAccount = {
     id: string;
+    /** Set by the database on insert; the list sorts oldest first. */
+    createdAt?: string | null;
     bankName: string;
     accountNumber: string;
     iban: string;
@@ -65,6 +70,10 @@ const emptyForm = {
 export default function BankAccountsPage() {
     const t = useTranslations("BankAccounts");
     const locale = useLocale();
+    // Tutorial 19: the Accountant reads this page; adding, editing and deleting stay with
+    // the Company Admin (BankAccountController's POST/PUT/DELETE).
+    const { data: session } = useSession();
+    const canManage = hasPermission(session?.user?.role as UserRole | undefined, "canAccessFinanceOps");
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [properties, setProperties] = useState<PropertyStats[]>([]);
@@ -103,7 +112,8 @@ export default function BankAccountsPage() {
         if (!isCurrent()) return;
         setListLoad(load.kind === "ok" ? "ok" : load.kind);
         if (load.kind === "ok") {
-            setBankAccounts([...load.items].sort((a, b) => (a.id || '').localeCompare(b.id || '')));
+            // Oldest first like every entity list (PR #399 R1 P3-6); bank name, then id, break ties.
+            setBankAccounts([...load.items].sort(oldestFirst<BankAccount>(b => b.bankName)));
         }
         setLoading(false);
     };
@@ -261,6 +271,7 @@ export default function BankAccountsPage() {
                         {t("description")}
                     </p>
                 </div>
+                {canManage && (
                 <button
                     onClick={openAddModal}
                     className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-bold flex items-center gap-2 hover:opacity-90 transition-all shadow-md shadow-primary/20"
@@ -268,6 +279,7 @@ export default function BankAccountsPage() {
                     <Plus size={14} />
                     {t("addAccount")}
                 </button>
+                )}
             </div>
 
             {/* Page-level errors (e.g. failed delete) */}
@@ -335,9 +347,11 @@ export default function BankAccountsPage() {
                                     <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("status")}
                                     </th>
+                                    {canManage && (
                                     <th className="text-start px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("actions")}
                                     </th>
+                                    )}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border">
@@ -384,6 +398,7 @@ export default function BankAccountsPage() {
                                                 </span>
                                             )}
                                         </td>
+                                        {canManage && (
                                         <td className="px-5 py-3">
                                             <div className="flex items-center gap-2">
                                                 <button
@@ -402,6 +417,7 @@ export default function BankAccountsPage() {
                                                 </button>
                                             </div>
                                         </td>
+                                        )}
                                     </tr>
                                 ))}
                             </tbody>

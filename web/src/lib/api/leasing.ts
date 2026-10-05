@@ -692,6 +692,8 @@ export type Cheque = {
   openAmount?: number | null;
   /** PR #397 R1-P3-1: a write-off awaiting approval names this row — Replace waits for the decision. */
   writeOffPending?: boolean;
+  /** PR #399 R1 P3-3: a CANCELLED row an approved bad-debt write-off took. */
+  writtenOff?: boolean;
 };
 
 // ---- VAT per instalment (spec 2026-09-24 §1 — api/dto/vat) ----
@@ -1239,9 +1241,11 @@ export type LeaseChequeStats = {
   dueAmount: number;
   /** REGISTERED + DEPOSITED + ONLINE_PENDING. */
   unclearedAmount?: number;
-  /** Every row that is not REPLACED or CANCELLED. */
+  /** The live contract instalments: not REPLACED / CANCELLED / TRANSFERRED, not a penalty row (as the cheque grid). */
   liveCount?: number;
   liveAmount?: number;
+  /** The cleared part of liveAmount. */
+  liveClearedAmount?: number;
 };
 
 /** PenaltyAssessmentDTO. */
@@ -1350,6 +1354,10 @@ export type RenterCheque = {
    * an older server does not send it.
    */
   onlineRefusal?: string | null;
+  /** The day the cheque was banked; null when it never was. Optional: an older server does not send it. */
+  depositedAt?: string | null;
+  /** A scan is attached; open it with `chequeApi.scanUrl` (the renter's own rows only). Optional, as above. */
+  hasImage?: boolean;
 };
 
 /** CreateOrderResponseDTO. */
@@ -1621,6 +1629,8 @@ export const chequeApi = {
   cashReceipt: (leaseId: string, body: ChequeRowInput) => send<Cheque>("POST", `/cheques/lease/${leaseId}/cash-receipt`, body),
   /** Not a fetch — the endpoint streams a PDF; callers open/download this path directly. */
   receiptUrl: (id: string) => `${BASE}/cheques/${id}/receipt`,
+  /** The attached scan, streamed by the app (cheque images sit in a private container; the stored blob URL answers 403). */
+  scanUrl: (id: string) => `${BASE}/cheques/${id}/image`,
 };
 
 export const penaltyApi = {

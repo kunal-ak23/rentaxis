@@ -40,7 +40,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * as {@code VoucherControllerIT}: the legacy {@code X-User-*} headers over a real port.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.TimelineClockConfig.class)
 class PayablesControllerIT extends AbstractPostgresIT {
+
+    // The clock is pinned on 2026-09-30 (TimelineClockConfig): the aging reads as at that
+    // date, and on the real clock a release stamped after it is still live in that report.
 
     @LocalServerPort int port;
 
@@ -225,6 +229,13 @@ class PayablesControllerIT extends AbstractPostgresIT {
                 + "/statement.pdf?from=2026-08-01&to=2026-09-30&lang=ar", superAdmin);
         assertThat(pdf.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(new String(pdf.getBody(), 0, 5)).isEqualTo("%PDF-");
+        // Tutorial 19: the same statement as CSV, beside the PDF.
+        ResponseEntity<byte[]> stmtCsv = bytes("/api/v1/finance/vendors/" + vendor.getId()
+                + "/statement.csv?from=2026-08-01&to=2026-09-30&lang=en", superAdmin);
+        assertThat(stmtCsv.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(stmtCsv.getHeaders().getContentDisposition().getFilename()).isEqualTo("supplier-statement-2026-08-01-2026-09-30-en.csv");
+        assertThat(new String(stmtCsv.getBody(), java.nio.charset.StandardCharsets.UTF_8))
+                .contains("Opening balance", "Closing balance", invoice.getVoucherNumber(), " Cr");
         ResponseEntity<byte[]> csv = bytes("/api/v1/finance/reports/payables-aging.csv?asOf=2026-09-30", superAdmin);
         assertThat(csv.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(new String(csv.getBody(), java.nio.charset.StandardCharsets.UTF_8)).contains("INV-7781", "850.00");

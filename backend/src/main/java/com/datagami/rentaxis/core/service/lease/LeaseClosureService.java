@@ -359,6 +359,29 @@ public class LeaseClosureService {
         return java.util.Optional.of(balanceOn(accountId, lease.getId()));
     }
 
+    /**
+     * {@link #receivableBalanceIfKnown} as the books stood at the end of {@code at}: what the
+     * renter still owed on this contract that day. An as-of report (the owner statement's
+     * Outstanding section) asks this rather than today's balance, so a closed period
+     * re-renders the same, and a debt settled or written off by then is not shown as owed.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<BigDecimal> receivableBalanceIfKnownAt(Lease lease, java.time.LocalDate at) {
+        UUID accountId = lease.getReceivableAccountId();
+        if (accountId == null) {
+            com.datagami.rentaxis.domain.entity.Account mapped =
+                    accountResolver.resolveOrNull(AccountRole.RENT_RECEIVABLE, propertyIdOf(lease));
+            if (mapped == null) {
+                return java.util.Optional.empty();
+            }
+            accountId = mapped.getId();
+        }
+        if (!ledgerQueryService.accountExists(accountId)) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(ledgerQueryService.leaseBalanceThrough(accountId, lease.getId(), at));
+    }
+
     private UUID receivableAccountOf(Lease lease) {
         return lease.getReceivableAccountId() != null
                 ? lease.getReceivableAccountId()

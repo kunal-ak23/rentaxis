@@ -230,6 +230,50 @@ public class ChequeQueryService {
         return dto(cheque);
     }
 
+    /** Where a cheque's attached scan lives: its organisation's private container and the path in it. */
+    public record ChequeImageRef(UUID tenantId, String blobPath) {
+    }
+
+    /**
+     * The attached scan of one cheque, for the app to stream (cheque images sit in
+     * the organisation's private container; no public or SAS URL is ever handed out).
+     *
+     * <p>Every refusal is "not found", as {@link #get} answers: a row of another
+     * organisation, a contract outside a property manager's buildings, a renter's
+     * lease that is not theirs, a row of theirs that is another renter's after an
+     * assignment, a renter asking for a row still in draft, and a row with no scan
+     * all look the same, so the register cannot be enumerated through the error.
+     * Staff see a draft row's scan: a scan attaches to a draft contract's grid.</p>
+     */
+    public ChequeImageRef imageOf(UUID chequeId) {
+        Cheque cheque = chequeRepository.findById(chequeId)
+                .orElseThrow(() -> new NotFoundException("Cheque scan not found"));
+        UUID current = TenantContextHolder.getTenantId();
+        if (current != null && !current.equals(cheque.getTenantId())) {
+            throw new NotFoundException("Cheque scan not found");
+        }
+        Lease lease = cheque.getLease();
+        if (lease == null) {
+            throw new NotFoundException("Cheque scan not found");
+        }
+        try {
+            leaseAccessPolicy.requireReadable(lease);
+            leaseAccessPolicy.requireRentersOwnCheque(cheque);
+        } catch (NotFoundException e) {
+            throw new NotFoundException("Cheque scan not found");
+        }
+        if (leaseAccessPolicy.callerIsRenter() && cheque.getStatus() == ChequeStatus.DRAFT) {
+            throw new NotFoundException("Cheque scan not found");
+        }
+        String path = cheque.getImageBlobPath();
+        // Only the cheques/ folder the scan upload writes to: a stored path is never
+        // a licence to read anything else in the container.
+        if (path == null || path.isBlank() || !path.startsWith("cheques/") || path.contains("..")) {
+            throw new NotFoundException("Cheque scan not found");
+        }
+        return new ChequeImageRef(cheque.getTenantId(), path);
+    }
+
     // ------------------------------------------------------------------
     // tiles, aging, per-lease stats
     // ------------------------------------------------------------------
@@ -437,6 +481,15 @@ public class ChequeQueryService {
         }
     }
 
+    /** Superseded rows: the replacement, the write-off, or the successor lease's copy stands for them. */
+    private static final java.util.Set<ChequeStatus> SUPERSEDED =
+            java.util.EnumSet.of(ChequeStatus.REPLACED, ChequeStatus.CANCELLED, ChequeStatus.TRANSFERRED);
+
+    /** A row that collects the contract itself (PR #399 R1 P3-3) — the web grid's rule, word for word. */
+    static boolean isContractInstalment(Cheque c) {
+        return !SUPERSEDED.contains(c.getStatus()) && c.getPenaltyAssessmentId() == null;
+    }
+
     /** One lease's running totals, folded row by row. */
     private static final class Accumulator {
         private long total;
@@ -449,10 +502,11 @@ public class ChequeQueryService {
         private BigDecimal unclearedAmount = BigDecimal.ZERO;
         private long liveCount;
         private BigDecimal liveAmount = BigDecimal.ZERO;
+        private BigDecimal liveClearedAmount = BigDecimal.ZERO;
 
-        /** {@code open}: on a BOUNCED row, what the ledger still carries (zero = settled); null when not known. */
-        void add(Cheque c, int graceDays, LocalDate today, BigDecimal open) {
-            boolean settled = open != null && open.signum() <= 0;
+        /** {@code ledgerOpen}: on a BOUNCED row, what the ledger still carries (zero = settled); null when not known. */
+        void add(Cheque c, int graceDays, LocalDate today, BigDecimal ledgerOpen) {
+            boolean settled = ledgerOpen != null && ledgerOpen.signum() <= 0;
             BigDecimal amount = c.getAmount() == null ? BigDecimal.ZERO : c.getAmount();
             total++;
             totalAmount = totalAmount.add(amount);
@@ -464,11 +518,14 @@ public class ChequeQueryService {
                 uncleared++;
                 unclearedAmount = unclearedAmount.add(amount);
             }
-            // Scale #14: "Cheques total" is every live instrument — a replaced or cancelled
-            // row was superseded, and counting it would count the same money twice.
-            if (c.getStatus() != ChequeStatus.REPLACED && c.getStatus() != ChequeStatus.CANCELLED) {
+            // Scale #14 / PR #399 R1 P3-3: "Cheques total" is the live contract instalments — the
+            // same rows the contract's cheque grid sums (ChequeGrid.isContractInstalment): not a
+            // replaced, cancelled or transferred row (superseded, written off, or the successor
+            // lease's now), and not a penalty's collection row (a fine, not the contract).
+            if (isContractInstalment(c)) {
                 liveCount++;
                 liveAmount = liveAmount.add(amount);
+                if (c.getStatus() == ChequeStatus.CLEARED) liveClearedAmount = liveClearedAmount.add(amount);
             }
             // "Overdue payments" on the leases list: returned cheques still owed. A replaced,
             // written-off or ledger-settled bounce is no longer one.
@@ -476,13 +533,13 @@ public class ChequeQueryService {
                 bounced++;
             }
             if (!settled && ChequeDueRules.due(c, today)) {
-                dueAmount = dueAmount.add(c.getStatus() == ChequeStatus.BOUNCED && open != null ? open : amount);
+                dueAmount = dueAmount.add(c.getStatus() == ChequeStatus.BOUNCED && ledgerOpen != null ? ledgerOpen : amount);
             }
         }
 
         LeaseChequeStatsDTO toDto(UUID leaseId) {
             return new LeaseChequeStatsDTO(leaseId, total, cleared, uncleared, bounced,
-                    totalAmount, clearedAmount, dueAmount, unclearedAmount, liveCount, liveAmount);
+                    totalAmount, clearedAmount, dueAmount, unclearedAmount, liveCount, liveAmount, liveClearedAmount);
         }
     }
 
@@ -560,9 +617,10 @@ public class ChequeQueryService {
         if (rows.isEmpty()) return List.of();
         java.util.Map<UUID, BigDecimal> open = bouncedOpenAmounts(rows);
         java.util.Set<UUID> pending = pendingWriteOffItems(rows);
+        java.util.Set<UUID> writtenOff = writtenOffItems(rows);
         return rows.stream()
                 .map(c -> ChequeMapper.toDto(c, today, graceOf(c.getLease()), open.get(c.getId()),
-                        pending.contains(c.getId())))
+                        pending.contains(c.getId()), writtenOff.contains(c.getId())))
                 .toList();
     }
 
@@ -576,7 +634,7 @@ public class ChequeQueryService {
      * with a BOUNCED row are asked about — the flag matters where Replace is offered — so a
      * list without one costs no query.
      */
-    private java.util.Set<UUID> pendingWriteOffItems(Collection<Cheque> rows) {
+    public java.util.Set<UUID> pendingWriteOffItems(Collection<Cheque> rows) {
         java.util.Set<UUID> leaseIds = rows.stream()
                 .filter(c -> c.getStatus() == ChequeStatus.BOUNCED && c.getLease() != null)
                 .map(c -> c.getLease().getId()).collect(java.util.stream.Collectors.toSet());
@@ -584,6 +642,30 @@ public class ChequeQueryService {
         java.util.Set<UUID> out = new java.util.HashSet<>();
         for (var w : writeOffs.findByLeaseIdInAndStatus(leaseIds,
                 com.datagami.rentaxis.domain.entity.BadDebtWriteOff.Status.PROPOSED)) {
+            if (w.getItemIds() == null || w.getItemIds().isBlank()) continue;
+            for (String id : w.getItemIds().split(",")) {
+                if (!id.isBlank()) out.add(UUID.fromString(id.trim()));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * PR #399 R1 P3-3: the CANCELLED rows among {@code rows} an approved (not reversed)
+     * write-off took. Only leases with a CANCELLED row are asked, so most lists cost no query.
+     */
+    private java.util.Set<UUID> writtenOffItems(Collection<Cheque> rows) {
+        java.util.Set<UUID> leaseIds = rows.stream()
+                .filter(c -> c.getStatus() == ChequeStatus.CANCELLED && c.getLease() != null)
+                .map(c -> c.getLease().getId()).collect(java.util.stream.Collectors.toSet());
+        if (leaseIds.isEmpty()) return java.util.Set.of();
+        return itemIdsOf(writeOffs.findByLeaseIdInAndStatus(leaseIds,
+                com.datagami.rentaxis.domain.entity.BadDebtWriteOff.Status.WRITTEN_OFF));
+    }
+
+    private static java.util.Set<UUID> itemIdsOf(Collection<com.datagami.rentaxis.domain.entity.BadDebtWriteOff> ws) {
+        java.util.Set<UUID> out = new java.util.HashSet<>();
+        for (var w : ws) {
             if (w.getItemIds() == null || w.getItemIds().isBlank()) continue;
             for (String id : w.getItemIds().split(",")) {
                 if (!id.isBlank()) out.add(UUID.fromString(id.trim()));

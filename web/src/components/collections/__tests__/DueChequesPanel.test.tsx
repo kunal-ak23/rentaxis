@@ -48,6 +48,27 @@ describe("DueChequesPanel", () => {
         expect(screen.queryByTestId("overdue-load-more")).toBeNull();
     });
 
+    it("Overdue says a deposited cheque was banked N days ago rather than calling it overdue (tutorial 35)", async () => {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(new Date(2026, 9, 5, 12));
+        try {
+            due.mockResolvedValueOnce(page([
+                { ...row("d", true), status: "DEPOSITED", depositedAt: "2026-09-06" },
+                { ...row("n", true), status: "DEPOSITED", depositedAt: null },
+                { ...row("r", true), status: "REGISTERED" },
+            ], 3, 0, OVERDUE_SCAN_SIZE));
+            render(<DueChequesPanel overdueOnly />);
+            expect(await screen.findByText("U-d")).toBeInTheDocument();
+            expect(screen.getByTestId("due-awaiting-d")).toHaveTextContent("Deposited 29 days ago");
+            expect(screen.getByTestId("due-stale-deposit-d")).toHaveTextContent("Deposit not cleared — check with the bank");
+            expect(screen.getByTestId("due-awaiting-n")).toHaveTextContent("Deposited, awaiting clearing");
+            expect(screen.queryByTestId("due-awaiting-r")).toBeNull();
+            expect(screen.getByText("U-r").closest("tr")).toHaveTextContent("12");
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it("links each row to its contract and its cheque in the register", async () => {
         due.mockResolvedValue(page([row("1", true)], 1));
         render(<DueChequesPanel overdueOnly />);

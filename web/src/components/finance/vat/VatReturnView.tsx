@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { X } from "lucide-react";
 import { fmtAmount } from "@/lib/api/ledger";
@@ -30,6 +30,15 @@ export default function VatReturnView({ data, locale }: { data: VatReturn; local
         }
     };
     const money = (v: number | null) => (v == null ? "" : fmtAmount(v));
+    const isOpen = open !== null;
+
+    // Tutorial 41: Escape closes the drill panel, like the app's other drawers.
+    useEffect(() => {
+        if (!isOpen) return;
+        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(null); };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [isOpen]);
 
     return (
         <>
@@ -67,9 +76,9 @@ export default function VatReturnView({ data, locale }: { data: VatReturn; local
             {open && (
                 <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={() => setOpen(null)}>
                     <div className="w-full max-w-2xl h-full bg-surface overflow-y-auto p-5" onClick={e => e.stopPropagation()}
-                         data-testid="vat-drill">
+                         data-testid="vat-drill" role="dialog" aria-modal="true" aria-labelledby="vat-drill-title">
                         <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-sm font-bold">{t("documentsOf", { box: open.code })}</h2>
+                            <h2 id="vat-drill-title" className="text-sm font-bold">{t("documentsOf", { box: open.code })}</h2>
                             <button type="button" onClick={() => setOpen(null)} aria-label={t("close")}><X size={16} /></button>
                         </div>
                         {open.docs === null ? (

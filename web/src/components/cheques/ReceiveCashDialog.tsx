@@ -105,7 +105,8 @@ export default function ReceiveCashDialog({ open, initialLeaseId, onClose, onDon
                 const row = rows.find(r => r.leaseId === lease.id);
                 if (!live || !row) return;
                 const liveAmount = row.liveAmount ?? row.totalAmount;
-                setOutstanding(Math.max(0, differenceOf(liveAmount, row.clearedAmount)));
+                // Like with like: the live instalments less what of them has cleared.
+                setOutstanding(Math.max(0, differenceOf(liveAmount, row.liveClearedAmount ?? row.clearedAmount)));
             })
             // Unknown is not "nothing outstanding": no warning rather than a wrong one.
             .catch(() => {});
