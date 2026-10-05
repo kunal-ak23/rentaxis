@@ -63,6 +63,41 @@ public class PromotionAdminController {
         this.businessRepository = businessRepository;
     }
 
+    // ---------------------------------------------------------------- images
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.datagami.rentaxis.core.service.PromotionImageService images;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.datagami.rentaxis.core.service.BlobStorageService blobs;
+
+    /**
+     * Uploads an ad's artwork or a business logo into the organisation's private
+     * container; answers the route to save in {@code backgroundImageUrl} or
+     * {@code logoUrl} (ux6 item 2 — these used to be bare URL boxes).
+     */
+    @PostMapping(value = "/images", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<java.util.Map<String, String>> uploadImage(
+            @org.springframework.web.bind.annotation.RequestParam("file") org.springframework.web.multipart.MultipartFile file) {
+        String url = images.upload(requireTenant(), file);
+        return ResponseEntity.status(HttpStatus.CREATED).body(java.util.Map.of("url", url));
+    }
+
+    /** One of the organisation's uploaded promotion images, live or not — for the editor's preview. */
+    @GetMapping("/images/{file:.+}")
+    public ResponseEntity<byte[]> image(@PathVariable String file,
+                                        @org.springframework.web.bind.annotation.RequestHeader(
+                                                value = org.springframework.http.HttpHeaders.IF_NONE_MATCH,
+                                                required = false) String ifNoneMatch) {
+        if (!com.datagami.rentaxis.core.service.PromotionImageService.isFileName(file)) {
+            throw new com.datagami.rentaxis.api.exception.NotFoundException("Image not found");
+        }
+        UUID tenantId = requireTenant();
+        return ServedMedia.serve(blobs, tenantId,
+                com.datagami.rentaxis.core.service.PromotionImageService.blobPath(file), false,
+                ServedMedia.Caching.PRIVATE, ifNoneMatch, "promo-image|" + tenantId + "|" + file);
+    }
+
     // ------------------------------------------------------------- businesses
 
     /**

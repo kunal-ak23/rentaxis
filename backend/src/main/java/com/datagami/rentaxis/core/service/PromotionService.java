@@ -215,6 +215,14 @@ public class PromotionService {
         if (url == null) {
             return null;
         }
+        // An image uploaded here is named by its own (relative) serve route,
+        // which the renter app resolves against the API host (ux6 item 2).
+        if (url.startsWith(PromotionImageService.ROUTE_PREFIX)) {
+            if (PromotionImageService.fileOf(url).isEmpty()) {
+                throw new BusinessRuleViolationException(field + " is not a valid uploaded image");
+            }
+            return url;
+        }
         java.net.URI uri;
         try {
             uri = new java.net.URI(url);

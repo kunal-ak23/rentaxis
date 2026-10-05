@@ -2,6 +2,7 @@
 
 import type { CSSProperties } from "react";
 import type { PromoCtaType } from "@/types/promotion";
+import { promoImageSrc } from "@/lib/assetUrl";
 
 /** Miftah mobile tokens — see mobile/packages/rentaxis_core/lib/ui/miftah_tokens.dart. */
 const INK = "#12101A";
@@ -105,7 +106,7 @@ export function AdCardPreview({
             {hasImage && (
                 <>
                     <img
-                        src={backgroundImageUrl!}
+                        src={promoImageSrc(backgroundImageUrl)}
                         alt=""
                         className="absolute inset-0 h-full w-full object-cover"
                     />

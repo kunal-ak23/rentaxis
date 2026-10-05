@@ -36,6 +36,12 @@ const nextConfig: NextConfig = {
       // renter-authenticated and must go through /api/proxy/marketplace/** so
       // the middleware attaches X-User-* headers; a direct rewrite would skip
       // the middleware matcher and guarantee 401/403s.
+      // Bug 26/27: a live listing's photos, for anyone (Caddy sends /api/v1/* to
+      // the backend in production; this covers a stack without Caddy).
+      {
+        source: '/api/v1/public/listing-media/:path*',
+        destination: `${backendUrl}/api/v1/public/listing-media/:path*`,
+      },
       {
         source: '/public/l/:path*',
         destination: `${backendUrl}/public/l/:path*`,
