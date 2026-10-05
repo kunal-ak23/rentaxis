@@ -206,7 +206,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "35", slug: "register-and-clear-cheques", topic: "collections", roles: ["TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT"], durationSec: 96, youtubeId: null,
+        id: "35", slug: "register-and-clear-cheques", topic: "collections", roles: ["TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT"], durationSec: 95, youtubeId: "g_X1xVVTRKk",
         title: { en: "Register, bank and clear cheques", ar: "تسجيل الشيكات وإيداعها وتحصيلها" },
         description: {
             en: "Bank a batch of cheques, clear them when the bank confirms, and see the journal each step writes.",
