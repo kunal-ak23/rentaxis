@@ -155,11 +155,11 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "15", slug: "manage-rent-cheques-end-to-end", topic: "collections", roles: PORTFOLIO, durationSec: 120, youtubeId: "XqvjRldLnOk",
+        id: "15", slug: "manage-rent-cheques-end-to-end", topic: "collections", roles: PORTFOLIO, durationSec: 145, youtubeId: "eqmaPuAxEyU",
         title: { en: "Manage rent cheques end to end", ar: "إدارة شيكات الإيجار من البداية إلى النهاية" },
         description: {
-            en: "Follow rent cheques through collection: see what is due and overdue, bank a batch, clear a cheque, and record a returned cheque and its replacement.",
-            ar: "تابع شيكات الإيجار خلال التحصيل: اطّلع على المستحق والمتأخر، وأودع دفعة في البنك، وصرّف الشيك، وسجّل الشيك المرتجع وبديله.",
+            en: "Follow rent cheques through collection: see what is due and overdue, scan a cheque photo onto its contract, bank a batch, clear a cheque, and record a returned cheque and its replacement.",
+            ar: "تابع شيكات الإيجار خلال التحصيل: اطّلع على المستحق والمتأخر، وامسح صورة الشيك ضوئيًا وأرفقها بعقده، وأودع دفعة في البنك، وصرّف الشيك، وسجّل الشيك المرتجع وبديله.",
         },
         relatedArticles: ["leases--payment-schedules"],
     },

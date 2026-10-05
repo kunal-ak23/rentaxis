@@ -70,9 +70,14 @@
     "visibility": "public"
   },
   "15": {
-    "youtubeVideoId": "XqvjRldLnOk",
-    "uploadedAt": "2026-10-05T11:45:56.000Z",
-    "visibility": "public"
+    "youtubeVideoId": "eqmaPuAxEyU",
+    "uploadedAt": "2026-10-05T12:37:05.000Z",
+    "visibility": "public",
+    "replaces": {
+      "youtubeVideoId": "XqvjRldLnOk",
+      "visibility": "unlisted",
+      "reason": "re-recorded with the cheque scan"
+    }
   },
   "17": {
     "youtubeVideoId": "seIQjEg9AQE",
