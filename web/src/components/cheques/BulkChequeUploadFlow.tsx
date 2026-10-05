@@ -5,7 +5,7 @@ import Image from "next/image";
 import { Camera, Loader2, X, Check, AlertTriangle, Trash2, Pin, RotateCw, FileText } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { autoMapChequesToRows } from "./autoMapChequesToRows";
+import { amountsDiffer, autoMapChequesToRows } from "./autoMapChequesToRows";
 import { useBulkChequeExtract, buildItemsFromFiles, type BulkExtractItem } from "./useBulkChequeExtract";
 import DueDateDelta from "./DueDateDelta";
 import type { Cheque } from "@/lib/api/leasing";
@@ -18,9 +18,11 @@ import { CROP_UNRELIABLE, type ChequeMultiExtractionResponse, type DetectedChequ
  * Accounting-v2 replaced payment schedules with the lease's cheque grid
  * (`GET /leases/{id}/cheques`), and `POST /leases/{id}/cheques/bulk-attach`
  * targets a cheque row by id (`chequeId`, aliased from the old `scheduleId`
- * on the wire — see `BulkAttachChequeItem`). Only a REGISTERED, PDC-mode row
- * has a cheque number to fill in; a DRAFT row belongs to the editable grid,
- * and CASH/TRANSFER/ONLINE rows have no physical instrument to scan.
+ * on the wire — see `BulkAttachChequeItem`). A PDC-mode row that is still
+ * DRAFT (a contract being drafted, saved grid) or REGISTERED takes a scan —
+ * the server's `BULK_EDITABLE`; CASH/TRANSFER/ONLINE rows have no physical
+ * instrument to scan. A draft row's scan moves the lease's version, so the
+ * caller reloads the contract on success.
  *
  * One uploaded file can hold several cheques (a photo of a few laid side by
  * side, or a PDF of scans): `POST /cheques/extract-many` answers with one item
@@ -32,6 +34,11 @@ import { CROP_UNRELIABLE, type ChequeMultiExtractionResponse, type DetectedChequ
 type Props = {
   leaseId: string;
   rows: Cheque[]; // ALL cheques for the lease, server-fetched
+  /**
+   * Attach to this one cheque only (a row's own "Attach scan"): the other rows
+   * are not offered as targets, so a single photo lands where it was asked to.
+   */
+  onlyChequeId?: string | null;
   onSuccess: () => void; // called after successful bulk-attach
   onClose: () => void;
 };
@@ -57,6 +64,11 @@ type RowState = {
   cropConfirmed: boolean;
   /** The operator ticked "attach anyway" for a payee that matches none of the valid names. */
   payeeConfirmed: boolean;
+  /**
+   * PR #396 review P3-4: the operator confirmed attaching a scan whose amount is not
+   * the target cheque's. Cleared whenever the target changes.
+   */
+  amountConfirmed: boolean;
 };
 
 type Step = 1 | 2 | 3;
@@ -68,6 +80,14 @@ type Step = 1 | 2 | 3;
  * cheque date yet.
  */
 const rowChequeDate = (c: Cheque): string => c.chequeDate ?? c.postingDate;
+
+/**
+ * A row a scan can be attached to: a PDC cheque that is still a draft-grid row
+ * or a registered instrument (`ChequeDetailsService.BULK_EDITABLE`). Shared by
+ * every entry point so a button is offered only where the flow has a target.
+ */
+export const isScannableRow = (c: Pick<Cheque, "status" | "mode">): boolean =>
+  c.mode === "PDC" && (c.status === "DRAFT" || c.status === "REGISTERED");
 
 /** Refusal codes the server sends for an upload; each has a translated message. */
 const KNOWN_UPLOAD_ERRORS = new Set([
@@ -100,17 +120,24 @@ function rowsForFile(fileId: string, response: ChequeMultiExtractionResponse | n
       pinned: false,
       cropConfirmed: false,
       payeeConfirmed: false,
+      amountConfirmed: false,
     };
   });
+}
+
+/** A new target is a new comparison: any amount confirmation was about the old one. */
+function withTarget(r: RowState, rowId: string | null): RowState {
+  return r.rowId === rowId ? r : { ...r, rowId, amountConfirmed: false };
 }
 
 function detectionOf(file: BulkExtractItem | undefined, row: RowState): DetectedChequeItem | null {
   return file?.response?.items[row.detIndex] ?? null;
 }
 
-export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose }: Props) {
+export default function BulkChequeUploadFlow({ leaseId, rows, onlyChequeId, onSuccess, onClose }: Props) {
   const t = useTranslations("bulkChequeUpload");
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const photosRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const extract = useBulkChequeExtract();
   const [step, setStep] = useState<Step>(1);
@@ -121,10 +148,12 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
   // The row whose crop is open full-size, next to its original page.
   const [previewKey, setPreviewKey] = useState<string | null>(null);
 
-  // Only a REGISTERED, PDC row has a cheque number to attach a scan to.
+  // A PDC row the server will still write (DRAFT or REGISTERED) has a cheque number to attach a scan to.
   const eligibleRows = useMemo(
-    () => rows.filter(c => c.status === "REGISTERED" && c.mode === "PDC").sort((a, b) => a.seqNo - b.seqNo),
-    [rows],
+    () => rows
+      .filter(c => isScannableRow(c) && (!onlyChequeId || c.id === onlyChequeId))
+      .sort((a, b) => a.seqNo - b.seqNo),
+    [rows, onlyChequeId],
   );
 
   // Suppress exhaustive-deps: cleanup runs only on unmount
@@ -236,7 +265,7 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
       // If this was a non-pin date change, re-run auto-map for non-pinned rows.
       if ("chequeDate" in patch && !next.find(r => r.itemId === itemId)?.pinned) {
         const map = remap(next);
-        return next.map(r => (r.pinned ? r : { ...r, rowId: map.get(r.itemId) ?? null }));
+        return next.map(r => (r.pinned ? r : withTarget(r, map.get(r.itemId) ?? null)));
       }
       return next;
     });
@@ -273,12 +302,12 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
       const at = prev.findIndex(r => r.fileId === fileId);
       const next = [...prev.slice(0, at), ...fresh, ...prev.slice(at).filter(r => r.fileId !== fileId)];
       const map = remap(next);
-      return next.map(r => (r.pinned ? r : { ...r, rowId: map.get(r.itemId) ?? null }));
+      return next.map(r => (r.pinned ? r : withTarget(r, map.get(r.itemId) ?? null)));
     });
   };
 
   const pickRow = (itemId: string, rowId: string | null) => {
-    setTableRows(prev => prev.map(r => (r.itemId === itemId ? { ...r, rowId, pinned: rowId !== null } : r)));
+    setTableRows(prev => prev.map(r => (r.itemId === itemId ? { ...r, rowId, pinned: rowId !== null, amountConfirmed: false } : r)));
   };
 
   const togglePin = (itemId: string) => {
@@ -327,10 +356,17 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
   // Per detected cheque: a photo holding three cheques has three payees.
   const payeeCheckOf = (r: RowState) => detectionOf(extract.items.find(it => it.id === r.fileId), r)?.payeeCheck ?? null;
   const unconfirmedPayee = tableRows.some(r => payeeCheckOf(r) === "MISMATCH" && !r.payeeConfirmed);
+  const targetOf = (r: RowState) => eligibleRows.find(s => s.id === r.rowId) ?? null;
+  const amountMismatch = (r: RowState) => {
+    const target = targetOf(r);
+    return target != null && amountsDiffer(r.amount, target.amount);
+  };
+  const unconfirmedAmount = tableRows.some(r => amountMismatch(r) && !r.amountConfirmed);
 
   const canApprove =
     tableRows.length > 0 &&
     !unconfirmedPayee &&
+    !unconfirmedAmount &&
     counts.needsDate === 0 &&
     counts.noSchedule === 0 &&
     counts.needsBank === 0 &&
@@ -388,20 +424,21 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4">
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="bulk-cheque-upload-title"
-        className="w-full max-w-6xl rounded-xl border border-border bg-background shadow-lg"
+        data-testid="bulk-cheque-upload"
+        className="flex max-h-[92vh] w-full max-w-6xl flex-col rounded-xl border border-border bg-background shadow-lg"
       >
         <div className="flex items-start justify-between border-b border-border px-5 py-4">
           <div>
             <p className="text-[11px] uppercase tracking-wider text-muted">{t("breadcrumb")}</p>
             <h3 id="bulk-cheque-upload-title" className="text-base font-semibold">{t("title")}</h3>
           </div>
-          <button type="button" onClick={onClose} className="rounded p-1 text-muted hover:bg-input/40">
+          <button type="button" onClick={onClose} aria-label={t("close")} data-testid="bulk-cheque-upload-close" className="rounded p-1 text-muted hover:bg-input/40">
             <X size={16} />
           </button>
         </div>
@@ -420,19 +457,45 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
           className="hidden"
           onChange={(e) => onPick(e.target.files)}
         />
+        {/* A folder picker cannot pick one photo, and phones have no folder picker at all: photos are the default. */}
+        <input
+          ref={photosRef}
+          type="file"
+          multiple={!onlyChequeId}
+          accept="image/*"
+          data-testid="bulk-cheque-upload-photos-input"
+          className="hidden"
+          onChange={(e) => onPick(e.target.files)}
+        />
 
-        <div className="px-5 py-4">
-          {step === 1 && (
+        <div className="min-h-0 overflow-auto px-5 py-4">
+          {step === 1 && eligibleRows.length === 0 && (
+            <p role="status" data-testid="bulk-cheque-upload-no-rows" className="rounded-lg border border-warning/40 bg-warning/5 px-3 py-3 text-xs text-warning">
+              {t("noEligibleRows")}
+            </p>
+          )}
+          {step === 1 && eligibleRows.length > 0 && (
             <div className="grid gap-4">
               <button
                 type="button"
-                onClick={() => inputRef.current?.click()}
-                className="flex min-h-[200px] flex-col items-center justify-center rounded-lg border border-dashed border-border bg-input/20 px-6 py-8 text-center hover:border-primary/60"
+                data-testid="bulk-cheque-upload-pick-photos"
+                onClick={() => photosRef.current?.click()}
+                className="flex min-h-[160px] flex-col items-center justify-center rounded-lg border border-dashed border-border bg-input/20 px-6 py-8 text-center hover:border-primary/60"
               >
                 <Camera size={20} className="mb-2 text-muted" />
-                <p className="text-sm font-medium">{t("pickFolder")}</p>
-                <p className="mt-1 text-xs text-muted">{t("pickHint")}</p>
+                <p className="text-sm font-medium">{t("pickPhotos")}</p>
+                <p className="mt-1 text-xs text-muted">{onlyChequeId ? t("pickHintOne") : t("pickHint")}</p>
               </button>
+              {!onlyChequeId && (
+                <button
+                  type="button"
+                  data-testid="bulk-cheque-upload-pick-folder"
+                  onClick={() => inputRef.current?.click()}
+                  className="justify-self-center text-xs font-semibold text-primary hover:underline"
+                >
+                  {t("pickFolder")}
+                </button>
+              )}
               {extract.items.length > 0 && (
                 <>
                   <p className="text-xs text-muted">
@@ -454,7 +517,7 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
                           type="button"
                           aria-label={t("removeImage")}
                           onClick={() => extract.removeItem(it.id)}
-                          className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white"
+                          className="absolute end-1 top-1 rounded-full bg-black/60 p-1 text-white"
                         >
                           <Trash2 size={10} />
                         </button>
@@ -487,8 +550,9 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
 
           {step === 3 && (
             <div className="space-y-3">
-              <table className="w-full text-xs">
-                <thead className="text-left text-muted">
+              <div className="overflow-x-auto">
+              <table className="w-full min-w-[56rem] text-xs">
+                <thead className="text-start text-muted">
                   <tr>
                     <th className="py-1">{t("colImage")}</th>
                     <th>{t("colChequeNumber")}</th>
@@ -516,7 +580,7 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
                     return (
                       <Fragment key={row.itemId}>
                       <tr className="border-t border-border align-top">
-                        <td className="py-1 pr-2">
+                        <td className="py-1 pe-2">
                           <button
                             type="button"
                             onClick={() => setPreviewKey(row.itemId)}
@@ -577,32 +641,38 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
                             </button>
                           )}
                         </td>
-                        <td className="pr-2">
+                        <td className="pe-2">
                           <input
+                            dir="auto"
+                            aria-label={t("colChequeNumber")}
                             value={row.chequeNumber}
                             onChange={e => updateRow(row.itemId, { chequeNumber: e.target.value })}
                             className="w-28 rounded border border-border px-1 py-0.5"
                           />
                         </td>
-                        <td className="pr-2">
+                        <td className="pe-2">
                           <input
+                            dir="auto"
+                            aria-label={t("colBank")}
                             value={row.bankName}
                             onChange={e => updateRow(row.itemId, { bankName: e.target.value })}
                             aria-invalid={!row.bankName.trim()}
                             className={
-                              "w-32 rounded border px-1 py-0.5 " +
+                              "w-40 rounded border px-1 py-0.5 " +
                               (row.bankName.trim() ? "border-border" : "border-red-500")
                             }
                           />
                         </td>
-                        <td className="pr-2">
+                        <td className="pe-2">
                           <input
+                            dir="auto"
+                            aria-label={t("colPayer")}
                             value={row.payerName}
                             onChange={e => updateRow(row.itemId, { payerName: e.target.value })}
-                            className="w-32 rounded border border-border px-1 py-0.5"
+                            className="w-40 rounded border border-border px-1 py-0.5"
                           />
                         </td>
-                        <td className="pr-2">
+                        <td className="pe-2">
                           <input
                             type="date"
                             value={row.chequeDate ?? ""}
@@ -610,15 +680,15 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
                             className="rounded border border-border px-1 py-0.5"
                           />
                         </td>
-                        <td className="pr-2">
+                        <td className="pe-2">
                           <span className="tabular-nums">{row.amount != null ? formatCurrency(row.amount) : "—"}</span>
-                          {target && row.amount != null && Math.round(row.amount * 100) !== Math.round(Number(target.amount) * 100) && (
-                            <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
+                          {amountMismatch(row) && target && row.amount != null && (
+                            <span className="ms-2 inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
                               {t("chequeMismatch", { cheque: formatCurrency(row.amount), installment: formatCurrency(Number(target.amount)) })}
                             </span>
                           )}
                         </td>
-                        <td className="pr-2">
+                        <td className="pe-2">
                           <select
                             value={row.rowId ?? ""}
                             onChange={e => pickRow(row.itemId, e.target.value || null)}
@@ -634,17 +704,17 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
                               ))}
                           </select>
                         </td>
-                        <td className="pr-2">
+                        <td className="pe-2">
                           {target && row.chequeDate && (
                             <DueDateDelta dueDate={rowChequeDate(target)} chequeDate={row.chequeDate} />
                           )}
                         </td>
-                        <td className="pr-2 text-right">
+                        <td className="pe-2 text-end">
                           <button
                             type="button"
                             onClick={() => togglePin(row.itemId)}
                             aria-label={t("pinRow")}
-                            className={"mr-1 rounded p-1 " + (row.pinned ? "text-primary" : "text-muted")}
+                            className={"me-1 rounded p-1 " + (row.pinned ? "text-primary" : "text-muted")}
                           >
                             <Pin size={12} />
                           </button>
@@ -658,6 +728,24 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
                           </button>
                         </td>
                       </tr>
+                      {amountMismatch(row) && (
+                        <tr>
+                          <td colSpan={10} className="pb-2">
+                            <label
+                              data-testid="amount-mismatch"
+                              className="flex flex-wrap items-center gap-1.5 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-900"
+                            >
+                              <input
+                                type="checkbox"
+                                data-testid="amount-mismatch-confirm"
+                                checked={row.amountConfirmed}
+                                onChange={e => setTableRows(prev => prev.map(r => (r.itemId === row.itemId ? { ...r, amountConfirmed: e.target.checked } : r)))}
+                              />
+                              <AlertTriangle size={11} /> {t("amountMismatchConfirm")}
+                            </label>
+                          </td>
+                        </tr>
+                      )}
                       {payeeCheck === "MISMATCH" && (
                         <tr>
                           <td colSpan={10} className="pb-2">
@@ -696,6 +784,7 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
                   })}
                 </tbody>
               </table>
+              </div>
 
               <div className="flex items-center justify-between text-xs">
                 <p className="text-muted">
@@ -731,7 +820,7 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onSuccess, onClose
         const crop = det?.thumbnailUrl ?? null;
         return (
           <div
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
+            className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4"
             role="dialog"
             aria-modal="true"
             aria-label={t("viewCrop")}

@@ -705,11 +705,16 @@
     "legacyLinkHint": "The current link is not an active bank ledger account. Saving keeps it as it is; pick a bank account to change it."
   },
   "bulkChequeUpload": {
+    "amountMismatchConfirm": "The amount on the cheque differs from this row — attach anyway",
+    "close": "Close",
+    "pickPhotos": "Choose cheque photos",
+    "pickHintOne": "Take or choose a photo of this cheque. Its number, bank and date are read for you to check.",
+    "noEligibleRows": "This contract has no post-dated cheque waiting for a scan. Generate or save the cheque rows first.",
     "breadcrumb": "Cheques · Bulk upload",
     "title": "Upload cheques in bulk",
     "entryButton": "Bulk upload cheques",
-    "pickFolder": "Choose a folder of cheque photos",
-    "pickHint": "Pick a folder of cheque photos for this contract. One photo may hold several cheques.",
+    "pickFolder": "Or choose a whole folder",
+    "pickHint": "Pick one or more photos of this contract's cheques. One photo may hold several cheques.",
     "selectedCount": "{n} files selected",
     "rejectedCount": "{n} files were not images and were skipped",
     "removeImage": "Remove file",
@@ -2271,6 +2276,11 @@
     "urlAccountsCapped": "This link named {count} accounts; the first {max} are shown. Pick fewer, or open the Trial Balance for the whole company."
   },
   "Leasing": {
+    "scanReloadFailed": "The cheque scans were attached, but the contract could not be read back. Reopen the contract before changing the cheques.",
+    "belowExpectedRent": "This unit asks {expected} a year. This contract works out at {annual} a year — {gap} below.",
+    "scanCheques": "Scan cheques",
+    "scanAttached": "Cheque scans attached. The numbers, banks and dates from the scans are now on the rows.",
+    "attachScan": "Attach scan",
     "ledgerLinkTitleNoCode": "{name} — open in the General Ledger",
     "ledgerLinkTitle": "{code} · {name} — open in the General Ledger",
     "wizardFilterProperty": "Property",
@@ -2668,6 +2678,16 @@
     "runFailed": "The VAT tax points could not be posted."
   },
   "Cheques": {
+    "scanMoreContracts": "Show more contracts",
+    "scanCheques": "Scan cheques",
+    "attachScan": "Attach scan",
+    "scanContinue": "Continue",
+    "scanPickerHint": "Pick the contract the cheques belong to. Their photos are read and attached to its post-dated cheques.",
+    "scanNoContracts": "No contract found that can take cheque scans.",
+    "scanChangeContract": "Change",
+    "scanLoadFailed": "The contract's cheques could not be loaded. Try again.",
+    "scanAttached": "Cheque scans attached.",
+    "retry": "Try again",
     "maturityWindow": "Matures",
     "windowNext1w": "Next 1 week",
     "windowNext2w": "Next 2 weeks",
