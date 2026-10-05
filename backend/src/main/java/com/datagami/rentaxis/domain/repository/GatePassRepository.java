@@ -130,6 +130,7 @@ public interface GatePassRepository extends JpaRepository<GatePass, UUID> {
      * way to every row: it reads nothing back and moves no row between tenants.
      */
     @Modifying
+    @org.springframework.transaction.annotation.Transactional
     @Query("UPDATE GatePass g SET g.status = com.datagami.rentaxis.domain.entity.enums.GatePassStatus.EXPIRED, "
             + "g.updatedAt = :now WHERE g.status IN :live AND g.validTo < :now")
     int expireEndedPasses(@Param("now") Instant now, @Param("live") Collection<GatePassStatus> live);

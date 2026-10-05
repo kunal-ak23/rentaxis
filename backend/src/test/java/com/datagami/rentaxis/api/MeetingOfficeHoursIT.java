@@ -72,6 +72,9 @@ class MeetingOfficeHoursIT extends AbstractCallerIdentityIT {
         List<LocalTime> starts = slotStarts("PROPERTY_VISIT");
         assertThat(starts.getLast()).isEqualTo(LocalTime.of(20, 30));
         assertThat(book("PROPERTY_VISIT", LocalTime.of(19, 0))).isEqualTo(201);
+        // Late evening is outside 09:00–21:00 — including 23:30, whose end wraps to 00:00.
+        assertThat(book("PROPERTY_VISIT", LocalTime.of(21, 0))).isEqualTo(400);
+        assertThat(book("PROPERTY_VISIT", LocalTime.of(23, 30))).isEqualTo(400);
     }
 
     @Test

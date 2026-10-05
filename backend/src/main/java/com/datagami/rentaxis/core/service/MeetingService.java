@@ -85,7 +85,9 @@ public class MeetingService {
         OrgSettingsService.OfficeHours window = bookableWindow(dto.getType());
         if ((minute != 0 && minute != 30) || slotZoned.getSecond() != 0
                 || slotTime.isBefore(window.start())
-                || slotTime.plusMinutes(SLOT_DURATION_MINUTES).isAfter(window.end())) {
+                // The last slot starts half an hour before closing. Compared on the start,
+                // not start + 30 min, which wraps past midnight (23:30 + 30 = 00:00).
+                || slotTime.isAfter(window.end().minusMinutes(SLOT_DURATION_MINUTES))) {
             throw new BusinessRuleViolationException("Slot must be on a 30-minute boundary between "
                     + window.start() + " and " + window.end() + " UAE time");
         }

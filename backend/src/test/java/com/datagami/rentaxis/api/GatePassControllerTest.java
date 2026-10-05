@@ -1420,6 +1420,7 @@ class GatePassControllerTest extends AbstractPostgresIT {
         endWindow(endedPending);
         endWindow(cancelled);
 
+        // Through runAt's self-call path, as the scheduler reaches it: no caller transaction.
         expiryJob.runAt(Instant.now());
 
         assertThat(passRepo.findById(ended).orElseThrow().getStatus()).isEqualTo(GatePassStatus.EXPIRED);

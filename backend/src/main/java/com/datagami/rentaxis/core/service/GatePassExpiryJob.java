@@ -7,7 +7,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -49,8 +48,11 @@ public class GatePassExpiryJob {
         runAt(Instant.now(clock));
     }
 
-    /** The sweep for an explicit instant, so a test need not wait for a window to close. */
-    @Transactional
+    /**
+     * The sweep for an explicit instant, so a test need not wait for a window to close.
+     * The repository method carries its own transaction: this is reached by a
+     * self-call from the scheduled method, which no proxy sees.
+     */
     public int runAt(Instant now) {
         int expired = gatePassRepository.expireEndedPasses(now, LIVE);
         if (expired > 0) log.info("Gate pass expiry: {} passes past their window marked EXPIRED", expired);
