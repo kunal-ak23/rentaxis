@@ -10,6 +10,7 @@ import com.datagami.rentaxis.api.dto.cheque.LeaseChequeStatsDTO;
 import com.datagami.rentaxis.api.dto.cheque.ReplaceChequeRequest;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.core.service.BlobStorageService;
 import com.datagami.rentaxis.core.service.OnlinePaymentService;
 import com.datagami.rentaxis.core.service.RentReceiptService;
 import com.datagami.rentaxis.core.service.cheque.ChequeDetailsService;
@@ -37,6 +38,7 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 /**
@@ -81,6 +83,8 @@ public class ChequeController {
     private final OnlinePaymentService onlinePaymentService;
     /** The register's Bank column (finance-ops spec §3). */
     private final com.datagami.rentaxis.core.service.bank.BankMatchService bankMatches;
+    /** Only for {@link #image}: the scan sits in the organisation's private container. */
+    private final BlobStorageService blobStorage;
 
     // ------------------------------------------------------------------
     // reads
@@ -311,6 +315,50 @@ public class ChequeController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + receipt.fileName())
                 .contentType(MediaType.APPLICATION_PDF)
                 .body(receipt.pdf());
+    }
+
+    /**
+     * The scan attached to a cheque, streamed from the organisation's private
+     * container: staff within their scope (a property manager, their buildings), a
+     * renter their own rows. The blob is stored without a content type, so the
+     * type is taken from the path's extension; anything unrecognised is served as
+     * an opaque download, never sniffed.
+     */
+    @GetMapping("/{id}/image")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER', 'RENTER')")
+    public ResponseEntity<byte[]> image(@PathVariable UUID id) {
+        ChequeQueryService.ChequeImageRef ref = queryService.imageOf(id);
+        BlobStorageService.DownloadResult download;
+        try {
+            download = blobStorage.download(ref.tenantId(), ref.blobPath());
+        } catch (BlobStorageService.BlobStorageException e) {
+            // The row names a scan the container no longer holds (a retention purge
+            // racing the row, a local stack without the blob): not found, like the rest.
+            if (e.getCause() instanceof com.azure.storage.blob.models.BlobStorageException azure
+                    && azure.getStatusCode() == 404) {
+                throw new com.datagami.rentaxis.api.exception.NotFoundException("Cheque scan not found");
+            }
+            throw e;
+        }
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, imageContentType(ref.blobPath(), download.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
+                .header(HttpHeaders.CACHE_CONTROL, "private, max-age=300")
+                .header("X-Content-Type-Options", "nosniff")
+                .body(download.bytes());
+    }
+
+    static String imageContentType(String blobPath, String stored) {
+        if (stored != null && stored.toLowerCase(Locale.ROOT).startsWith("image/")) {
+            return stored;
+        }
+        String p = blobPath.toLowerCase(Locale.ROOT);
+        if (p.endsWith(".png")) return "image/png";
+        if (p.endsWith(".jpg") || p.endsWith(".jpeg")) return "image/jpeg";
+        if (p.endsWith(".heic")) return "image/heic";
+        if (p.endsWith(".heif")) return "image/heif";
+        if (p.endsWith(".webp")) return "image/webp";
+        return "application/octet-stream";
     }
 
     /** {@code YYYY-MM}, or the current month when the caller says nothing. */

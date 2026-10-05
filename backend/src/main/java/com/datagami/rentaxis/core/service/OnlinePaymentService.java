@@ -231,7 +231,9 @@ public class OnlinePaymentService {
                     c.getFailureReason(),
                     c.getClearedAt(),
                     c.getStatusChangedAt() != null ? c.getStatusChangedAt().toString() : null,
-                    due && onlineEnabled ? bounceRefusal(c, open) : null));
+                    due && onlineEnabled ? bounceRefusal(c, open) : null,
+                    c.getDepositedAt() != null ? c.getDepositedAt() : c.getImportedDepositedOn(),
+                    c.getImageBlobPath() != null && !c.getImageBlobPath().isBlank()));
         }
 
         // findByRenter_Id... orders by cheque date; id breaks the tie so two

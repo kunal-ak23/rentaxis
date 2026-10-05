@@ -190,8 +190,9 @@ public class LeaseService {
     /**
      * {@code excludeStatuses} drops contracts in those states before the page is
      * cut, so a picker that wants only live contracts (the Collection hub's "Scan
-     * cheques") is never handed a page of closed ones (PR #396 review P3-2). Only
-     * the filtered paths take it; the plain database path runs when it is empty.
+     * cheques") is never handed a page of closed ones (PR #396 review P3-2). The
+     * exclusion is part of the query on every path, so an unrestricted caller with
+     * no text term is still paged and counted by the database.
      */
     @Transactional(readOnly = true)
     public Page<LeaseDTO> getAllLeasesPaged(String search, LeaseStatus status, UUID propertyId, UUID buildingId,
@@ -201,15 +202,15 @@ public class LeaseService {
         java.util.Set<LeaseStatus> excluded = excludeStatuses == null || excludeStatuses.isEmpty()
                 ? java.util.Set.of() : java.util.EnumSet.copyOf(excludeStatuses);
 
-        if ((normalizedSearch == null || normalizedSearch.isEmpty()) && !leaseAccessPolicy.isRestricted()
-                && excluded.isEmpty()) {
-            return mapPage(leaseRepository.search(tenantId, status, propertyId, buildingId, pageable));
+        if ((normalizedSearch == null || normalizedSearch.isEmpty()) && !leaseAccessPolicy.isRestricted()) {
+            return mapPage(excluded.isEmpty()
+                    ? leaseRepository.search(tenantId, status, propertyId, buildingId, pageable)
+                    : leaseRepository.searchExcluding(tenantId, status, propertyId, buildingId, excluded, pageable));
         }
 
-        List<LeaseDTO> readable = mapAll(leaseAccessPolicy
-                .filterReadable(leaseRepository.searchList(tenantId, status, propertyId, buildingId)).stream()
-                .filter(l -> !excluded.contains(l.getStatus()))
-                .toList());
+        List<LeaseDTO> readable = mapAll(leaseAccessPolicy.filterReadable(excluded.isEmpty()
+                ? leaseRepository.searchList(tenantId, status, propertyId, buildingId)
+                : leaseRepository.searchListExcluding(tenantId, status, propertyId, buildingId, excluded)));
 
         if (normalizedSearch == null || normalizedSearch.isEmpty()) {
             return pageOf(readable, pageable);
