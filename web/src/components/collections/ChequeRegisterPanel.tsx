@@ -589,7 +589,8 @@ export default function ChequeRegisterPanel({ embedded = false }: { embedded?: b
                                                             onClick={() => setScanTarget(c)}
                                                             className="px-2 py-1 rounded-md text-[10px] font-bold bg-input text-foreground hover:bg-border transition-colors cursor-pointer"
                                                         >
-                                                            {t("attachScan")}
+                                                            {/* Tutorial 15: a row with a scan offered "Attach scan" again and users re-scanned. */}
+                                                            {c.imageUrl ? t("replaceScan") : t("attachScan")}
                                                         </button>
                                                     )}
                                                     {c.imageUrl && (

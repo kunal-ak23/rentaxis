@@ -71,5 +71,8 @@ describe("ChequeRegisterPanel — owed amount and scans", () => {
 
         expect(await screen.findByTestId("cheque-row-scan-link-scanned")).toHaveAttribute("href", "/api/proxy/v1/cheques/scanned/image");
         expect(screen.queryByTestId("cheque-row-scan-link-bare")).toBeNull();
+        // Tutorial 15: a row that has a scan offers to replace it, not to attach one again.
+        expect(screen.getByTestId("cheque-row-action-scan-scanned")).toHaveTextContent(en.Cheques.replaceScan);
+        expect(screen.getByTestId("cheque-row-action-scan-bare")).toHaveTextContent(en.Cheques.attachScan);
     });
 });

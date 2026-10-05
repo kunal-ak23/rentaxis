@@ -66,4 +66,15 @@ describe("ChequeGrid scan entry points", () => {
         expect(screen.getByTestId("cheque-scan-link-0")).toHaveAttribute("href", "/api/proxy/v1/cheques/c1/image");
         expect(screen.queryByTestId("cheque-scan-link-1")).toBeNull();
     });
+
+    it("offers Replace scan, not Attach scan, on a row that already has one (tutorial 15)", () => {
+        render(wrap(
+            <ChequeGrid editable={false} contractValueInclVat={27400} leaseStatus="ACTIVE" onRowAction={() => {}} onScanRow={() => {}} cheques={[
+                cheque({ id: "c1", seqNo: 1, imageUrl: "https://blob.example/c1.jpg" }),
+                cheque({ id: "c2", seqNo: 2, chequeNumber: "000102" }),
+            ]} />,
+        ));
+        expect(screen.getByTestId("cheque-action-scan-0")).toHaveTextContent(en.Cheques.replaceScan);
+        expect(screen.getByTestId("cheque-action-scan-1")).toHaveTextContent("Attach scan");
+    });
 });
