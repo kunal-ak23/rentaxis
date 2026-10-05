@@ -262,6 +262,10 @@ public class ChequeService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.datagami.rentaxis.core.service.ledger.EntryNumberService entryNumbers;
 
+    /** PR #397 R1-P3-b: a returned cheque a PROPOSED write-off names is not replaced meanwhile. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.domain.repository.BadDebtWriteOffRepository writeOffs;
+
     /** PR #397 R1-P2-2: cheque responses carry the ledger's facts (due, ledgerSettled, openAmount). */
     @org.springframework.beans.factory.annotation.Autowired
     private org.springframework.beans.factory.ObjectProvider<com.datagami.rentaxis.core.service.cheque.ChequeQueryService> chequeQueries;
@@ -804,6 +808,7 @@ public class ChequeService {
         requireOurs(bounced, lease);
         requireStatus(bounced, "replace", ChequeStatus.BOUNCED);
         requireNotAlreadySettled(lease, bounced);
+        requireNoPendingWriteOff(lease, bounced);
 
         List<ChequeRowInput> rows = request.replacements();
         List<Cheque> register = chequeRepository.findByLease_IdOrderBySeqNoAsc(lease.getId());
@@ -879,6 +884,28 @@ public class ChequeService {
      * ({@code saveRows}, {@link #replace}, {@link #addRowToPostedLease}) and
      * created only here, so an online row always has a gateway behind it.</p>
      */
+    /**
+     * PR #397 R1-P3-b: while a write-off naming this returned cheque awaits approval, the
+     * cheque is not replaced — the UI disables Replace, and this holds the ruling for a
+     * stale page, the API, the mobile app and the renter's online payment. Approval would
+     * otherwise fail on a row no longer open; rejecting the proposal lifts the refusal.
+     */
+    private void requireNoPendingWriteOff(Lease lease, Cheque bounced) {
+        if (writeOffs == null) return;
+        String id = bounced.getId().toString();
+        boolean pending = writeOffs.findByLeaseIdInAndStatus(List.of(lease.getId()),
+                        com.datagami.rentaxis.domain.entity.BadDebtWriteOff.Status.PROPOSED).stream()
+                .map(com.datagami.rentaxis.domain.entity.BadDebtWriteOff::getItemIds)
+                .filter(ids -> ids != null && !ids.isBlank())
+                .flatMap(ids -> java.util.Arrays.stream(ids.split(",")))
+                .anyMatch(x -> x.trim().equals(id));
+        if (pending) {
+            throw new BusinessRuleViolationException("A write-off of " + label(bounced)
+                    + " is pending approval; approve or reject it before replacing the cheque.",
+                    "cheque.writeOffPending", java.util.Map.of("cheque", label(bounced)));
+        }
+    }
+
     @Transactional
     public ChequeDTO replaceForOnlinePayment(UUID bouncedChequeId, LocalDate date) {
         Cheque bounced = lock(bouncedChequeId);
@@ -889,6 +916,7 @@ public class ChequeService {
         // The renter's own portal offers this door, so it needs the same rule the
         // clerk's does: a bounce the settlement absorbed must not be paid again.
         requireNotAlreadySettled(lease, bounced);
+        requireNoPendingWriteOff(lease, bounced);
 
         LocalDate on = date != null ? date : LocalDate.now();
         ChequeRowInput gatewayRow = new ChequeRowInput(

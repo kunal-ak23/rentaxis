@@ -49,6 +49,7 @@ class LeaseListExcludeStatusIT extends AbstractPostgresIT {
     @Autowired UserRepository userRepo;
     @Autowired RenterRepository renterRepo;
     @Autowired UnitRepository unitRepo;
+    @Autowired com.datagami.rentaxis.domain.repository.LeaseRepository leaseRepo;
 
     private UUID active;
 
@@ -94,5 +95,24 @@ class LeaseListExcludeStatusIT extends AbstractPostgresIT {
                 List.of(LeaseStatus.DRAFT), PageRequest.of(0, 25));
         assertThat(live.getContent()).extracting(LeaseDTO::getStatus).doesNotContain(LeaseStatus.DRAFT);
         assertThat(live.getContent()).extracting(LeaseDTO::getId).contains(active);
+    }
+
+    @Test
+    void theDatabasePagesAndCountsWhatIsLeftWhenNoTermIsGiven() {
+        // An unrestricted caller with no text term: the exclusion is in the query, so the
+        // database cuts the page and its count is the count of what is left.
+        UUID tenantId = TenantContextHolder.getTenantId();
+        Page<com.datagami.rentaxis.domain.entity.Lease> rows = leaseRepo.searchExcluding(tenantId, null, null, null,
+                List.of(LeaseStatus.DRAFT, LeaseStatus.CLOSED), PageRequest.of(0, 1));
+        assertThat(rows.getContent()).extracting(com.datagami.rentaxis.domain.entity.Lease::getStatus)
+                .doesNotContain(LeaseStatus.DRAFT, LeaseStatus.CLOSED);
+        long live = leaseRepo.searchList(tenantId, null, null, null).stream()
+                .filter(l -> l.getStatus() != LeaseStatus.DRAFT && l.getStatus() != LeaseStatus.CLOSED).count();
+        assertThat(rows.getTotalElements()).isEqualTo(live);
+
+        Page<LeaseDTO> viaService = leaseService.getAllLeasesPaged(null, null, null, null,
+                List.of(LeaseStatus.DRAFT, LeaseStatus.CLOSED), PageRequest.of(0, 1));
+        assertThat(viaService.getTotalElements()).isEqualTo(live);
+        assertThat(viaService.getContent()).hasSize(1);
     }
 }

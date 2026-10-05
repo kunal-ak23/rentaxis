@@ -125,6 +125,7 @@ class OnlinePaymentServiceIT extends AbstractPostgresIT {
     @Autowired LeaseAccessPolicy leaseAccessPolicy;
 
     @Autowired ChequeRepository chequeRepo;
+    @Autowired com.datagami.rentaxis.domain.repository.BadDebtWriteOffRepository writeOffRepo;
 
     /**
      * A spy, not a mock: every test here uses the real repository. One test
@@ -1144,6 +1145,49 @@ class OnlinePaymentServiceIT extends AbstractPostgresIT {
                     assertThat(b.getCode()).isEqualTo("payment.bouncePartlySettled");
                     assertThat(b.getArgs()).containsEntry("amount", "AED 7,000.00");
                 });
+    }
+
+    /**
+     * PR #398 R1-P2-1: while a write-off proposal names a returned cheque the Tenant is not
+     * offered Pay now, and an order asked for anyway is refused in the Tenant's words — the
+     * proposal itself is never mentioned. Rejecting the proposal makes it payable again.
+     */
+    @Test
+    void aBounceAPendingWriteOffNamesIsNotPaidOnlineAndTheTenantIsToldToContactTheOffice() {
+        UUID bouncedId = bounceFirstCheque();
+        assertThat(row(myPayments(), bouncedId).payableOnline()).as("precondition").isTrue();
+
+        UUID proposal = tx.execute(s -> {
+            var c = chequeRepo.findById(bouncedId).orElseThrow();
+            var w = new com.datagami.rentaxis.domain.entity.BadDebtWriteOff();
+            w.setTenantId(c.getTenantId());
+            w.setLeaseId(c.getLease().getId());
+            w.setAmount(INSTALMENT);
+            w.setWriteOffDate(c.getChequeDate());
+            w.setReason("absconded");
+            w.setItemIds(bouncedId.toString());
+            return writeOffRepo.save(w).getId();
+        });
+
+        RenterChequeDTO pending = row(myPayments(), bouncedId);
+        assertThat(pending.due()).as("still owed: nothing has posted").isTrue();
+        assertThat(pending.payableOnline()).isFalse();
+        assertThat(pending.onlineRefusal()).isEqualTo("payment.bounceContactOffice");
+        assertThatThrownBy(() -> onlinePayments.createOrder(bouncedId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("contact the property office about this cheque")
+                .hasMessageNotContaining("write-off")
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode())
+                        .isEqualTo("payment.bounceContactOffice"));
+
+        tx.executeWithoutResult(s -> {
+            var w = writeOffRepo.findById(proposal).orElseThrow();
+            w.setStatus(com.datagami.rentaxis.domain.entity.BadDebtWriteOff.Status.REJECTED);
+            writeOffRepo.save(w);
+        });
+        RenterChequeDTO rejected = row(myPayments(), bouncedId);
+        assertThat(rejected.payableOnline()).as("rejected: payable again").isTrue();
+        assertThat(rejected.onlineRefusal()).isNull();
     }
 
     /**

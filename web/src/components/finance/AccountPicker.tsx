@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ledgerApi, type Account, type AccountSubType, type AccountType } from "@/lib/api/ledger";
+import { readActiveOrgCookie } from "@/lib/session/orgSync";
 
 /**
  * The chart of accounts is small (hundreds of rows), tenant-wide and changes
@@ -11,10 +12,31 @@ import { ledgerApi, type Account, type AccountSubType, type AccountType } from "
  * import) so the next picker mount re-fetches.
  */
 let cache: Promise<Account[]> | null = null;
+/**
+ * Whose list `cache` holds (PR #398 R1-P3-3). Since `pickable` depends on the role and
+ * the buildings a manager is assigned to, a list cached for one sign-in or organisation
+ * must not be handed to the next: the layout reports the session's user and org through
+ * {@link setAccountsScope}, and the active-org cookie is read on every load too.
+ */
+let scope = "";
+let cachedFor = "";
+
+export function setAccountsScope(key: string) {
+    scope = key;
+}
+
+function currentScope(): string {
+    return `${scope}|${readActiveOrgCookie()}`;
+}
 
 export function loadAccounts(): Promise<Account[]> {
+    const key = currentScope();
+    if (cache && cachedFor !== key) cache = null;
     if (!cache) {
-        cache = ledgerApi.accounts.list().catch(err => {
+        cachedFor = key;
+        // `pickable`, not the chart's own list: a property manager opening a draft
+        // contract was refused the chart (403) and the grid's pickers came up empty.
+        cache = ledgerApi.accounts.pickable().catch(err => {
             // A failed load must not poison the cache forever.
             cache = null;
             throw err;

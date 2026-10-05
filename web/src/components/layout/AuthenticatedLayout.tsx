@@ -15,6 +15,7 @@ import { SessionGuards } from "@/components/layout/SessionGuards";
 import { AccessDeniedState, SelectOrgState } from "@/components/ui/PageStates";
 import { homeRedirect, isDashboardHome, routeDecision } from "@/lib/nav/routeGuard";
 import { readActiveOrgCookie } from "@/lib/session/orgSync";
+import { setAccountsScope } from "@/components/finance/AccountPicker";
 
 export default function AuthenticatedLayout({
     children,
@@ -35,6 +36,9 @@ export default function AuthenticatedLayout({
     // dashboard home (e.g. straight after sign-in) lands on the organisation
     // list rather than a bare "Select an organisation" card.
     const role = session?.user?.role as UserRole | undefined;
+    // PR #398 R1-P3-3: the account pickers' shared list belongs to this user and organisation.
+    // Set during render (not in an effect) so a picker mounting in the same pass already sees it.
+    setAccountsScope(`${session?.user?.id ?? ""}|${role ?? ""}|${session?.user?.tenantId ?? ""}`);
     const decision = session && role
         ? routeDecision(pathname, role, readActiveOrgCookie() !== "")
         : "allow";

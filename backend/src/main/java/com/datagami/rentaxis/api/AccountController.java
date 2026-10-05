@@ -28,13 +28,16 @@ public class AccountController {
     private final AccountImportService importService;
     private final PropertyAccountService propertyAccountService;
     private final ChargeTypeService chargeTypeService;
+    private final com.datagami.rentaxis.core.security.LeaseAccessPolicy leaseAccessPolicy;
 
     public AccountController(AccountService service, AccountImportService importService,
-                             PropertyAccountService propertyAccountService, ChargeTypeService chargeTypeService) {
+                             PropertyAccountService propertyAccountService, ChargeTypeService chargeTypeService,
+                             com.datagami.rentaxis.core.security.LeaseAccessPolicy leaseAccessPolicy) {
         this.service = service;
         this.importService = importService;
         this.propertyAccountService = propertyAccountService;
         this.chargeTypeService = chargeTypeService;
+        this.leaseAccessPolicy = leaseAccessPolicy;
     }
 
     /**
@@ -90,6 +93,29 @@ public class AccountController {
     @GetMapping
     public ResponseEntity<List<Account>> getAllAccounts() {
         return ResponseEntity.ok(service.getAllAccounts());
+    }
+
+    /**
+     * The accounts an account picker may offer, read-only. Finance roles get the
+     * whole chart, as {@link #getAllAccounts} does. A property manager gets the
+     * tenant-wide accounts plus the ones tagged to a building they are assigned to,
+     * never another building's: they edit a draft contract's lines and cheque grid
+     * and run deposits and receipts, all of which pick accounts, but the chart
+     * itself (and every write here) stays finance's. Without it a manager opening a
+     * draft contract was answered 403 by the grid's account picker.
+     */
+    @GetMapping("/pickable")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<List<Account>> getPickableAccounts() {
+        List<Account> all = service.getAllAccounts();
+        List<UUID> visible = leaseAccessPolicy.visiblePropertyIds();
+        if (visible == null) {
+            return ResponseEntity.ok(all);
+        }
+        java.util.Set<UUID> mine = new java.util.HashSet<>(visible);
+        return ResponseEntity.ok(all.stream()
+                .filter(a -> a.getPropertyId() == null || mine.contains(a.getPropertyId()))
+                .toList());
     }
 
     @GetMapping("/tree")

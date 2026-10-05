@@ -60,6 +60,11 @@ import java.util.UUID;
  *        transition, so a portal that reads only {@code status} offers Pay-now on
  *        rows the register will turn down. {@code payableOnline} already answers
  *        the narrow question; this is what lets the screen say <em>why</em>.
+ * @param depositedAt the day the cheque was banked (an imported register's own
+ *        deposit date when that is all there is), so the portal can say "Deposited on"
+ *        as the pre-v2 screen did; null for a row never deposited.
+ * @param hasImage a scan is attached; the portal streams it from
+ *        {@code GET /cheques/{id}/image}, which serves the renter only their own rows.
  */
 public record RenterChequeDTO(UUID id,
                               UUID leaseId,
@@ -87,5 +92,7 @@ public record RenterChequeDTO(UUID id,
                               ChequeFailureReason failureReason,
                               LocalDate clearedAt,
                               String statusChangedAt,
-                              String onlineRefusal) {
+                              String onlineRefusal,
+                              LocalDate depositedAt,
+                              boolean hasImage) {
 }

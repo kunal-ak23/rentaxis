@@ -739,8 +739,22 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
         assertThat(queued.openAmount()).as("the queue row shows what is owed").isEqualByComparingTo("7510.27");
         assertThat(chequeQueries.summary(null, later).bouncedCount()).as("still counted").isEqualTo(1);
 
+        // R1-P3-b: the server holds the ruling too — a stale page, the API, the mobile app
+        // and the renter's online payment are refused while the proposal is pending.
+        assertThatThrownBy(() -> cheques.replace(kept, new ReplaceChequeRequest(
+                List.of(row("100057", later, later, "7000")), later, "Renter paid by new cheque")))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("pending approval")
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("cheque.writeOffPending");
+        assertThatThrownBy(() -> cheques.replaceForOnlinePayment(kept, later))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("cheque.writeOffPending");
+
         badDebts.reject(proposal.id(), "not yet");
         assertThat(chequeQueries.get(kept).writeOffPending()).as("rejected: Replace is offered again").isFalse();
+        assertThat(cheques.replace(kept, new ReplaceChequeRequest(
+                List.of(row("100057", later, later, "7000")), later, "Renter paid by new cheque")))
+                .as("rejected: the cheque is replaced").isNotEmpty();
     }
 
     /** Tutorial 40: an open returned cheque is due, on the queue and in the Bounced tile. */

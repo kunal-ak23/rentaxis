@@ -9,7 +9,8 @@ vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "
 vi.mock("@/lib/api/ledger", async (orig) => {
   const m = await orig<typeof import("@/lib/api/ledger")>();
   return { ...m, ledgerApi: { ...m.ledgerApi,
-    accounts: { list: vi.fn(async () => [
+    // The pickers read `pickable` (the chart a role may pick from); for finance roles it is the whole chart.
+    accounts: { pickable: vi.fn(async () => [
       { id: "b", code: "100001", name: "ENBD Main", accountType: "ASSET", group: false, active: true },
       { id: "c", code: "F-01", name: "Capital Account", accountType: "EQUITY", group: false, active: true } ]) },
     journals: { postManual: vi.fn(async () => ({ id: "j1", entryNumber: "JV-26/1", lines: [] })) } } };

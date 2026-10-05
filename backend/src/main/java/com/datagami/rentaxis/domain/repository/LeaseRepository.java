@@ -186,6 +186,42 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
                            @Param("propertyId") UUID propertyId,
                            @Param("buildingId") UUID buildingId);
 
+    /**
+     * {@link #search} without the contracts in {@code excluded} (never empty), so a
+     * picker that wants live contracts only (the Collection hub's "Scan cheques")
+     * is paged and counted by the database rather than by loading the organisation's
+     * every contract and dropping the closed ones in memory.
+     */
+    @Query("""
+        select l from Lease l
+        where l.tenantId = :tenantId
+          and l.status not in :excluded
+          and (cast(:status as string) is null or l.status = :status)
+          and (cast(:propertyId as java.util.UUID) is null or l.unit.property.id = :propertyId)
+          and (cast(:buildingId as java.util.UUID) is null or l.unit.building.id = :buildingId)
+        """)
+    Page<Lease> searchExcluding(@Param("tenantId") UUID tenantId,
+                                @Param("status") LeaseStatus status,
+                                @Param("propertyId") UUID propertyId,
+                                @Param("buildingId") UUID buildingId,
+                                @Param("excluded") Collection<LeaseStatus> excluded,
+                                Pageable pageable);
+
+    /** {@link #searchExcluding} unpaged, for the paths {@link #searchList} serves. */
+    @Query("""
+        select l from Lease l
+        where l.tenantId = :tenantId
+          and l.status not in :excluded
+          and (cast(:status as string) is null or l.status = :status)
+          and (cast(:propertyId as java.util.UUID) is null or l.unit.property.id = :propertyId)
+          and (cast(:buildingId as java.util.UUID) is null or l.unit.building.id = :buildingId)
+        """)
+    List<Lease> searchListExcluding(@Param("tenantId") UUID tenantId,
+                                    @Param("status") LeaseStatus status,
+                                    @Param("propertyId") UUID propertyId,
+                                    @Param("buildingId") UUID buildingId,
+                                    @Param("excluded") Collection<LeaseStatus> excluded);
+
     List<Lease> findByUnitId(UUID unitId);
 
     List<Lease> findByUnitIdAndStatus(UUID unitId, LeaseStatus status);
