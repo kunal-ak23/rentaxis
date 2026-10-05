@@ -100,6 +100,7 @@ class PropertyScopeCoverageTest {
             Map.entry("ChequeController#aging", "SQL-scoped: ChequeQueryService.scope() -> visiblePropertyIds"),
             Map.entry("ChequeController#due", "SQL-scoped: ChequeQueryService.scope() -> visiblePropertyIds"),
             Map.entry("ChequeController#postDated", "SQL-scoped: ChequeQueryService.scope() -> visiblePropertyIds"),
+            Map.entry("ChequeController#returned", "SQL-scoped: ChequeQueryService.scope() -> visiblePropertyIds"),
             Map.entry("ChequeController#postDatedPaged", "SQL-scoped: ChequeQueryService.scope() -> visiblePropertyIds"),
             // Scale PR A names lookups: the caller's property set is a query parameter
             // (scopedPropertyIds) and an id outside it is simply not returned

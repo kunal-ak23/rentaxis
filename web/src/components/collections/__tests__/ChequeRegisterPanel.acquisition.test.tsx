@@ -72,4 +72,19 @@ describe("ChequeRegisterPanel — acquisition cheques", () => {
         expect(screen.getByTestId("cheque-row-action-receipt-c2")).toBeInTheDocument();
         expect(screen.queryByTestId("cheque-settled-before-acquisition-c2")).not.toBeInTheDocument();
     });
+
+    it("holds Replace back on a bounced row a pending write-off names (PR #397 R1-P3-1)", async () => {
+        api.list.mockResolvedValue(page([
+            cheque({ id: "c3", seqNo: 3, status: "BOUNCED", writeOffPending: true }),
+            cheque({ id: "c4", seqNo: 4, status: "BOUNCED" }),
+        ]));
+        api.summary.mockResolvedValue({});
+        api.aging.mockResolvedValue({ buckets: [], totalCount: 0 });
+        renderPanel();
+
+        expect(await screen.findByTestId("cheque-row-action-replace-c3")).toBeDisabled();
+        expect(screen.getByTestId("cheque-write-off-pending-c3")).toHaveTextContent("A write-off is pending approval");
+        expect(screen.getByTestId("cheque-row-action-replace-c4")).toBeEnabled();
+        expect(screen.queryByTestId("cheque-write-off-pending-c4")).not.toBeInTheDocument();
+    });
 });

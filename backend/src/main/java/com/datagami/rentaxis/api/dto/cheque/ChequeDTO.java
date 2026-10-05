@@ -88,5 +88,11 @@ public record ChequeDTO(UUID id,
                         com.datagami.rentaxis.domain.entity.enums.PayeeCheck payeeCheck,
                         UUID payeeMismatchConfirmedBy,
                         String payeeMismatchConfirmedByName,
-                        java.time.Instant payeeMismatchConfirmedAt) {
+                        java.time.Instant payeeMismatchConfirmedAt,
+                        /* PR #397 R1-P3-2: on a BOUNCED row, what the ledger still carries on it (the
+                           Bounced tile and aging count this); null when not bounced, or not known. */
+                        BigDecimal openAmount,
+                        /* PR #397 R1-P3-1: a write-off awaiting approval names this row — it is still
+                           due and queued, but not offered for a replacement until it is decided. */
+                        boolean writeOffPending) {
 }

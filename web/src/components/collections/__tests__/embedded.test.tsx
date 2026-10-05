@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 import en from "../../../../messages/en.json";
 
-const api = vi.hoisted(() => ({ toDeposit: vi.fn(), list: vi.fn(), bounced: vi.fn(), postDated: vi.fn(), penalties: vi.fn() }));
+const api = vi.hoisted(() => ({ toDeposit: vi.fn(), list: vi.fn(), returned: vi.fn(), bounced: vi.fn(), postDated: vi.fn(), penalties: vi.fn() }));
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams("receive=1&leaseId=l1") }));
 vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "TENANT_ADMIN" } } }) }));
 vi.mock("@/i18n/routing", () => ({ Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => <a href={href} {...rest}>{children}</a> }));
@@ -17,6 +17,7 @@ vi.mock("@/lib/api/leasing", async orig => {
     const page = { content: [], totalElements: 0, totalPages: 0, number: 0, size: 25 };
     return { ...m,
         chequeApi: { ...m.chequeApi, toDeposit: api.toDeposit.mockResolvedValue(page), list: api.list.mockResolvedValue(page),
+            returned: api.returned.mockResolvedValue(page),
             postDated: api.postDated.mockResolvedValue([]),
             summary: vi.fn().mockResolvedValue({}), aging: vi.fn().mockResolvedValue({ buckets: [], totalCount: 0 }) },
         penaltyApi: { ...m.penaltyApi, list: api.penalties.mockResolvedValue(page) } };
@@ -51,8 +52,8 @@ describe("embedded collection panels", () => {
         ["post-dated", () => <PostDatedPanel embedded propertyId="p9" />, "post-dated-property-filter"],
     ])("%s: the hub's property drives the query and the panel's own picker is hidden", async (_id, ui, picker) => {
         wrap(ui());
-        await waitFor(() => expect(api.list.mock.calls.length + api.postDated.mock.calls.length).toBeGreaterThan(0));
-        const call = (api.list.mock.calls[0] ?? api.postDated.mock.calls[0])[0];
+        await waitFor(() => expect(api.returned.mock.calls.length + api.postDated.mock.calls.length).toBeGreaterThan(0));
+        const call = (api.returned.mock.calls[0] ?? api.postDated.mock.calls[0])[0];
         expect(call).toEqual(expect.objectContaining({ propertyId: "p9" }));
         expect(screen.queryByTestId(picker)).toBeNull();
         expect(screen.queryByRole("heading", { level: 1 })).toBeNull();

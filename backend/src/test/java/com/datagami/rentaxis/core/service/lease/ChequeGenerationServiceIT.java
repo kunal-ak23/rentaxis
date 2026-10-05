@@ -154,9 +154,10 @@ class ChequeGenerationServiceIT extends AbstractPostgresIT {
 
         // A DRAFT lease's cheques are invisible to the register: they are a
         // proposal, not money owed.
-        tx.executeWithoutResult(s -> assertThat(chequeRepository.findDue(
-                null, LocalDate.of(2030, 1, 1), true, java.util.List.of(),
-                org.springframework.data.domain.Pageable.unpaged())
+        tx.executeWithoutResult(s -> assertThat(chequeRepository.openDueIds(
+                fixtures.tenantId(), false, LocalDate.of(2030, 1, 1),
+                null, true, com.datagami.rentaxis.core.service.cheque.ChequeQueryService.nonEmpty(java.util.List.of()),
+                false, org.springframework.data.domain.Pageable.unpaged())
                 .getContent()).isEmpty());
     }
 

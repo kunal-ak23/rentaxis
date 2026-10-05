@@ -419,7 +419,7 @@ class DashboardServiceScopingIT extends AbstractPostgresIT {
 
     /**
      * Scale P1-9/P1-10: the overdue total, the register's due tiles and the aging report are
-     * one SQL statement now. They must equal the per-row rule they replaced — findDue, then
+     * one SQL statement now. They must equal the per-row rule they replaced — ChequeDueRules.due, then
      * {@code BouncedDebt} (a bounced row counts only for the debt the receivable still
      * carries, newest bounce first), then {@code ChequeDueRules.overdue} — on a lease with two
      * bounces, a matured registered row and a receipt that pays part of the bounced debt.
@@ -437,8 +437,13 @@ class DashboardServiceScopingIT extends AbstractPostgresIT {
 
         LocalDate today = LocalDate.now();
         BigDecimal[] expected = tx.execute(s -> {
-            List<Cheque> due = chequeRepo.findDue(null, today, true, List.of(),
-                    org.springframework.data.domain.Pageable.unpaged()).getContent();
+            // The per-row rule, from the register itself (PR #397 R1-P2-1: findDue is gone).
+            List<Cheque> due = chequeRepo.findAll().stream()
+                    .filter(c -> c.getLease() != null
+                            && c.getLease().getStatus() != com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT
+                            && c.getLease().getStatus() != com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE
+                            && com.datagami.rentaxis.core.service.cheque.ChequeDueRules.due(c, today))
+                    .toList();
             java.util.Map<UUID, BigDecimal> open = bouncedDebt.openAmounts(due);
             BigDecimal overdue = BigDecimal.ZERO, dueAmount = BigDecimal.ZERO;
             for (Cheque c : due) {

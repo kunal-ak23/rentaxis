@@ -17,6 +17,9 @@ public interface BadDebtWriteOffRepository extends JpaRepository<BadDebtWriteOff
 
     List<BadDebtWriteOff> findByStatusOrderByProposedAtAsc(BadDebtWriteOff.Status status);
 
+    /** PR #397 R1-P3-1: the write-offs in {@code status} on any of these leases (the caller's own rows). */
+    List<BadDebtWriteOff> findByLeaseIdInAndStatus(java.util.Collection<UUID> leaseIds, BadDebtWriteOff.Status status);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select w from BadDebtWriteOff w where w.id = :id")
     Optional<BadDebtWriteOff> findByIdForUpdate(@Param("id") UUID id);
