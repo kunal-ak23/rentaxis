@@ -117,6 +117,37 @@ public class SupplierStatementPdfRenderer {
         return renderPdf(html(s, lang));
     }
 
+    /**
+     * The statement's account activity as CSV (tutorial 19: a spreadsheet alongside the PDF) —
+     * the same rows, labels and Dr/Cr balances, plain numbers for the amounts.
+     */
+    public byte[] csv(Statement s, String lang) {
+        boolean ar = "ar".equals(lang);
+        AccountLedgerDTO g = s.ledger();
+        java.util.List<java.util.List<String>> out = new java.util.ArrayList<>();
+        String name = ar && s.vendorNameAr() != null && !s.vendorNameAr().isBlank() ? s.vendorNameAr() : s.vendorName();
+        out.add(java.util.List.of(label("vendor", ar), name == null ? "" : name));
+        out.add(java.util.List.of(label("period", ar), s.from() + " – " + s.to()));
+        out.add(java.util.List.of(label("date", ar), label("entry", ar), label("doc", ar), label("narration", ar),
+                label("debit", ar), label("credit", ar), label("balance", ar)));
+        out.add(java.util.List.of("", "", "", label("opening", ar), "", "", balance(g.openingBalance(), ar)));
+        for (LedgerRowDTO r : g.rows()) {
+            String text = r.narration() != null && !r.narration().isBlank() ? r.narration() : r.particular();
+            out.add(java.util.List.of(r.entryDate().toString(), nz(r.entryNumber()), nz(r.docType()), nz(text),
+                    plain(r.debit()), plain(r.credit()), balance(r.balance(), ar)));
+        }
+        out.add(java.util.List.of("", "", "", label("closing", ar), plain(g.totalDebit()), plain(g.totalCredit()),
+                balance(s.closingBalance(), ar)));
+        if (g.truncated()) out.add(java.util.List.of(label("truncated", ar)));
+        return com.datagami.rentaxis.core.service.report.statement.ReportCsv.encode(out);
+    }
+
+    private static String nz(String v) { return v == null ? "" : v; }
+
+    private static String plain(BigDecimal v) {
+        return v == null || v.signum() == 0 ? "" : v.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
+    }
+
     /** The markup — package-visible so a test can read what went into the PDF. */
     String html(Statement s, String lang) {
         boolean ar = "ar".equals(lang);

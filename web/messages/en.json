@@ -647,7 +647,7 @@
     "property": "Linked Property",
     "coaAccount": "COA Account",
     "isDefault": "Default Account",
-    "defaultHint": "The first bank account is the default, and only one can be. Each property’s own bank ledger account is attached to the default bank account (else the oldest active one); a new bank account also takes any property ledger account no bank account holds yet.",
+    "defaultHint": "Receipts for a property with no bank account of its own go to the default account. Only one account can be the default.",
     "noBankAccounts": "No Bank Accounts",
     "addBankAccountDesc": "Add bank accounts to track deposits and reconcile payments.",
     "active": "Active",
@@ -2333,6 +2333,8 @@
     "discountExceedsAmount": "Line {n}: the discount cannot be more than the amount.",
     "contractValueInclVat": "Contract Value (incl. VAT)",
     "chequeTotal": "Cheques Total",
+    "chequeTotalExcludes": "Excludes {count, plural, one {# replaced, cancelled, transferred or penalty row} other {# replaced, cancelled, transferred or penalty rows}}",
+    "contractNetOf": "Contract value net of {amount} transferred or written off",
     "postingDate": "Posting Date",
     "chequeNo": "Cheque No",
     "chequeDate": "Date",
@@ -2639,6 +2641,9 @@
     "runFailed": "The VAT tax points could not be posted."
   },
   "Cheques": {
+    "depositNotCleared": "Deposit not cleared — check with the bank",
+    "depositedDaysAgo": "{n, plural, =0 {Deposited today} one {Deposited # day ago} other {Deposited # days ago}}",
+    "awaitingClearing": "Deposited, awaiting clearing",
     "scanMoreContracts": "Show more contracts",
     "scanCheques": "Scan cheques",
     "attachScan": "Attach scan",
@@ -4150,6 +4155,8 @@
     "to": "To",
     "pdfEn": "PDF (English)",
     "pdfAr": "PDF (Arabic)",
+    "csvEn": "CSV (English)",
+    "csvAr": "CSV (Arabic)",
     "paymentRuns": "Payment runs",
     "issuedCheques": "Issued cheques"
   },
@@ -4849,6 +4856,9 @@
       "WRITTEN_OFF": "Written off","PROPOSED": "Proposed", "APPROVED": "Charged", "WAIVED": "Waived", "REVERSED": "Reversed"}
   },
   "Collections": {
+    "depositNotCleared": "Deposit not cleared — check with the bank",
+    "depositedDaysAgo": "{n, plural, =0 {Deposited today} one {Deposited # day ago} other {Deposited # days ago}}",
+    "awaitingClearing": "Deposited, awaiting clearing",
     "tabDeposit": "To deposit",
     "tabDue": "Due",
     "tabOverdue": "Overdue",

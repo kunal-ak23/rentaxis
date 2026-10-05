@@ -229,6 +229,13 @@ class PayablesControllerIT extends AbstractPostgresIT {
                 + "/statement.pdf?from=2026-08-01&to=2026-09-30&lang=ar", superAdmin);
         assertThat(pdf.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(new String(pdf.getBody(), 0, 5)).isEqualTo("%PDF-");
+        // Tutorial 19: the same statement as CSV, beside the PDF.
+        ResponseEntity<byte[]> stmtCsv = bytes("/api/v1/finance/vendors/" + vendor.getId()
+                + "/statement.csv?from=2026-08-01&to=2026-09-30&lang=en", superAdmin);
+        assertThat(stmtCsv.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(stmtCsv.getHeaders().getContentDisposition().getFilename()).isEqualTo("supplier-statement-2026-08-01-2026-09-30-en.csv");
+        assertThat(new String(stmtCsv.getBody(), java.nio.charset.StandardCharsets.UTF_8))
+                .contains("Opening balance", "Closing balance", invoice.getVoucherNumber(), " Cr");
         ResponseEntity<byte[]> csv = bytes("/api/v1/finance/reports/payables-aging.csv?asOf=2026-09-30", superAdmin);
         assertThat(csv.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(new String(csv.getBody(), java.nio.charset.StandardCharsets.UTF_8)).contains("INV-7781", "850.00");

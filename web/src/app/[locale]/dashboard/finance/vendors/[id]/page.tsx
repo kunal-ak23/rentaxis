@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
-import { ArrowLeft, BookOpen, FileText, Loader2, ShieldCheck } from "lucide-react";
+import { ArrowLeft, BookOpen, FileSpreadsheet, FileText, Loader2, ShieldCheck } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError } from "@/lib/api/facilities";
@@ -291,6 +291,12 @@ export default function VendorAccountPage() {
                         </a>
                         <a className={button} href={payablesApi.statementPdfUrl(vendorId, from, to, "ar")} target="_blank" rel="noopener noreferrer" data-testid="soa-pdf-ar">
                             <FileText size={13} />{t("pdfAr")}
+                        </a>
+                        <a className={button} href={payablesApi.statementCsvUrl(vendorId, from, to, "en")} data-testid="soa-csv-en">
+                            <FileSpreadsheet size={13} />{t("csvEn")}
+                        </a>
+                        <a className={button} href={payablesApi.statementCsvUrl(vendorId, from, to, "ar")} data-testid="soa-csv-ar">
+                            <FileSpreadsheet size={13} />{t("csvAr")}
                         </a>
                     </div>
                 </div>

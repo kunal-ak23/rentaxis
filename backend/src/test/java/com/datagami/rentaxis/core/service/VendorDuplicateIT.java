@@ -44,6 +44,15 @@ class VendorDuplicateIT extends AbstractPostgresIT {
         return v;
     }
 
+    /** PR #399 R1 P3-7: the create and update responses carry createdAt (the list sorts by it). */
+    @Test
+    void createAndUpdateReturnCreatedAt() {
+        Vendor created = vendors.createVendor(vendor("R1 Created At LLC", null));
+        assertThat(created.getCreatedAt()).isNotNull();
+        Vendor updated = vendors.updateVendor(created.getId(), vendor("R1 Created At LLC", null));
+        assertThat(updated.getCreatedAt()).isEqualTo(created.getCreatedAt());
+    }
+
     @Test
     void aSecondVendorWithTheSameTrnOrNameIsRefused() {
         Vendor first = vendors.createVendor(vendor("R14 Sparkle Cleaning LLC", "100111222300003"));
