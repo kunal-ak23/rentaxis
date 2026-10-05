@@ -113,7 +113,9 @@ describe("BounceChequeDialog", () => {
         expect(options).toContainEqual({ value: "STOPPED_PAYMENT", text: "Payment stopped" });
         expect(options).toContainEqual({
             value: "TECHNICAL_RETURN",
-            text: "Technical return (stale, post-dated, amount mismatch)",
+            text: "Technical return (stale, post-dated, amount in words and figures differ)",
         });
+        // Tutorial 15: the first reason is the most common UAE return, not the tautological "Bounced".
+        expect(options[0]).toEqual({ value: "BOUNCE", text: "Insufficient funds" });
     });
 });

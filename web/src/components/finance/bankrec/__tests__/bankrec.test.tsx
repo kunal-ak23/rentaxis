@@ -271,13 +271,13 @@ describe("create-from-line dialogs", () => {
                                           onClose={() => {}} onDone={onDone} />);
         const preview = await screen.findByTestId("posting-preview");
         await screen.findByTestId("bank-leaf");
-        await waitFor(() => expect(preview).toHaveTextContent("Dr Charge50.00"));
-        expect(preview).toHaveTextContent("Dr Input VAT2.50");
+        await waitFor(() => expect(preview).toHaveTextContent("Debit Bank charges (expense)50.00"));
+        expect(preview).toHaveTextContent("Debit Input VAT2.50");
         expect(preview).toHaveTextContent("52.50");
         // Two leaves: pick one first.
         expect(screen.getByTestId("action-submit")).toBeDisabled();
         fireEvent.change(screen.getByTestId("bank-leaf"), { target: { value: "leaf-m" } });
-        expect(preview).toHaveTextContent("Cr Emirates Islamic - Marina Tower52.50");
+        expect(preview).toHaveTextContent("Credit Emirates Islamic - Marina Tower52.50");
         fireEvent.click(screen.getByTestId("action-submit"));
         await waitFor(() => expect(onDone).toHaveBeenCalled());
         expect(calls.find(c => c.url.includes("/lines/actions/post"))!.body).toMatchObject({
@@ -326,13 +326,25 @@ describe("create-from-line dialogs", () => {
         renderIn("en", <LineActionDialog lines={[line("e", "CHQ 000031 PRESENTED", -20000, { chequeNo: "000031" })]}
                                           initial="present" onClose={() => {}} onDone={() => {}} />);
         await waitFor(() => expect(screen.getByTestId("cand-000031")).toBeChecked());
-        expect(screen.getByTestId("posting-preview")).toHaveTextContent("Dr PDC payable20,000.00");
+        expect(screen.getByTestId("posting-preview")).toHaveTextContent("Debit PDC payable20,000.00");
         fireEvent.click(screen.getByTestId("action-submit"));
         await waitFor(() => expect(calls.some(c => c.url.includes("/lines/actions/present"))).toBe(true));
         expect(calls.find(c => c.url.includes("/present"))!.body).toEqual({ statementLineId: "e", issuedChequeId: "ic-1" });
         fireEvent.click(screen.getByTestId("tab-charge"));
         expect(screen.getByTestId("no-trn")).toHaveTextContent(en.BankRec.noTrnNoVat);
+        // Tutorial 45: with no TRN the VAT tick would mean nothing — it is not offered.
+        expect(screen.queryByTestId("vat-included")).toBeNull();
     });
+
+    /** Tutorial 45: with a TRN the tick follows the line's own words ("+ VAT"), else starts unticked. */
+    it.each([["SERVICE CHARGE + VAT", true], ["SERVICE CHARGE", false]] as const)(
+        "starts the VAT tick from the line text (%s)", async (text, ticked) => {
+            stubFetch([{ match: "/candidates", body: { statementLineId: "v", clear: [], receive: [], bounce: [], present: [],
+                suspenseBalance: 0, bankTrnSet: true, leaves: [LEAVES[0]] } }]);
+            renderIn("en", <LineActionDialog lines={[line("v", text, -105)]} initial="charge" onClose={() => {}} onDone={() => {}} />);
+            await waitFor(() => expect(screen.getByTestId("vat-included")).toBeInTheDocument());
+            await waitFor(() => expect((screen.getByTestId("vat-included") as HTMLInputElement).checked).toBe(ticked));
+        });
 });
 
 describe("the list page", () => {

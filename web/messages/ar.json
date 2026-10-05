@@ -545,6 +545,7 @@
   "OnlinePayments": {
     "title": "مدفوعاتي",
     "description": "عرض جدول الدفعات ودفع الإيجار عبر الإنترنت.",
+    "descriptionOffline": "اطّلع على جدول دفعاتك وسجلّ مدفوعاتك.",
     "payNow": "ادفع الآن",
     "paymentHistory": "سجل الدفعات",
     "dueDate": "تاريخ الاستحقاق",
@@ -721,6 +722,7 @@
     "continueToExtract": "استخراج الشيكات",
     "extractingCount": "جارٍ الاستخراج {done} من {total}…",
     "extractionFailed": "فشل الاستخراج — املأ الحقول أو احذف",
+    "nothingRead": "تعذّرت قراءة هذا الشيك — أدخل البيانات يدويًا أو أعد تصوير الشيك.",
     "retryExtraction": "إعادة المحاولة",
     "retryingExtraction": "جارٍ إعادة المحاولة…",
     "colImage": "الصورة",
@@ -760,7 +762,9 @@
       "cheque_upload_pdf_unreadable": "تعذّرت قراءة ملف PDF. قد يكون تالفًا أو محميًا بكلمة مرور.",
       "cheque_upload_image_too_large": "الصورة كبيرة جدًا ولا يمكن قراءتها (60 ميغابكسل كحد أقصى).",
       "cheque_upload_pdf_not_supported": "رفع ملفات PDF غير متاح بعد. ارفع صور الشيكات بدلًا منها.",
-      "cheque_upload_busy": "الخادم مشغول بقراءة شيكات أخرى. حاول مرة أخرى بعد قليل."
+      "cheque_upload_busy": "الخادم مشغول بقراءة شيكات أخرى. حاول مرة أخرى بعد قليل.",
+      "cheque_storage_unavailable": "تعذّر الوصول إلى مخزن الشيكات الآن، لذلك لم يُحفظ شيء. حاول مرة أخرى بعد بضع دقائق أو أدخل البيانات يدويًا.",
+      "cheque_upload_timeout": "استغرقت قراءة هذا الملف وقتًا طويلًا فتم إيقافها. حاول مرة أخرى أو أدخل البيانات يدويًا."
     }
   },
   "Staff": {
@@ -2220,6 +2224,7 @@
     "lockPeriod": "إغلاق الفترة",
     "lockThrough": "الإغلاق حتى",
     "lockWarning": "لا يمكن ترحيل أي قيد في هذا التاريخ أو قبله.",
+    "runRecognitionLink": "فتح إثبات الإيراد لنهاية الشهر",
     "export": "تصدير",
     "print": "طباعة",
     "propertyFilter": "العقار",
@@ -2766,11 +2771,11 @@
     "bounce": "ارتداد",
     "failureReason": "سبب الارتداد",
     "failureReasons": {
-      "BOUNCE": "ارتداد",
+      "BOUNCE": "رصيد غير كافٍ",
       "SIGNATURE_MISMATCH": "عدم تطابق التوقيع",
       "ACCOUNT_CLOSED": "الحساب مغلق",
       "STOPPED_PAYMENT": "أُوقف الدفع",
-      "TECHNICAL_RETURN": "إرجاع فني (شيك قديم، مؤجل، أو عدم تطابق المبلغ)"
+      "TECHNICAL_RETURN": "إرجاع فني (شيك قديم، مؤجل، أو اختلاف المبلغ كتابةً ورقمًا)"
     },
     "replace": "استبدال",
     "replacements": "الشيكات البديلة",
@@ -2918,6 +2923,9 @@
         "changed": "تغيّرت هذه التسوية منذ فتحتها. راجعها مجدداً؛ لم يُرحَّل شيء."
       },
       "fiscal": {
+        "recognitionPendingForLock": "شغّل إثبات الإيراد لنهاية الشهر حتى {through} أولاً: لم تُرحَّل بعد {count} فترة (فترات) إثبات تنتهي في هذا التاريخ أو قبله ({months}). إقفال الدفاتر الآن سيترك ذلك الإيجار دون إثبات.",
+        "recognitionPendingInLock": "شغّل إثبات الإيراد لنهاية الشهر حتى {through} أولاً: لم تُثبت بعد فترة تنتهي في {date}، ونقل تاريخ بدء الدفاتر سيقفلها نهائياً.",
+        "vatPendingInLock": "رحّل نقاط استحقاق ضريبة القيمة المضافة حتى {through} أولاً: نقطة بتاريخ {date} لم يُصرَّح بها بعد، وإقفال الدفاتر سيتركها دون تصريح.",
         "booksStartTooFar": "لا يمكن أن تبدأ الدفاتر في {date}: هذا بعد أكثر من ثلاثة أشهر (آخر تاريخ مسموح {latest}). تحقّق من السنة.",
         "lockBackwards": "لا يمكن إرجاع إقفال الفترة عن {current}: توجد قيود مرحّلة داخلها. أعد فتح آخر سنة مالية مقفلة بدلاً من ذلك.",
         "changed": "تغيّر إقفال الفترة منذ فتحت هذه النافذة، وأُعيد تحميله. راجع النقل مجدداً؛ لم يُعَد فتح شيء."
@@ -3811,7 +3819,7 @@
     "parkingSpot": "موقف السيارة {spot}",
     "amountAed": "{amount} درهم",
     "penaltyReason": {"CHEQUE_RETURN": "ارتداد شيك", "LATE_PAYMENT": "تأخر في السداد", "OTHER": "أخرى", "SERVICE_RECHARGE": "إعادة تحميل خدمة", "ADMIN_FEE": "رسوم إدارية", "DAMAGE": "أضرار / تنظيف", "MAINTENANCE_RECHARGE": "إعادة تحميل صيانة", "BOOKING_FEE": "رسوم حجز"},
-    "failureReason": {"BOUNCE": "ارتداد", "SIGNATURE_MISMATCH": "عدم تطابق التوقيع", "ACCOUNT_CLOSED": "الحساب مغلق", "STOPPED_PAYMENT": "أُوقف الدفع", "TECHNICAL_RETURN": "إرجاع فني"},
+    "failureReason": {"BOUNCE": "رصيد غير كافٍ", "SIGNATURE_MISMATCH": "عدم تطابق التوقيع", "ACCOUNT_CLOSED": "الحساب مغلق", "STOPPED_PAYMENT": "أُوقف الدفع", "TECHNICAL_RETURN": "إرجاع فني"},
     "renewalIntent": {"RENEW": "التجديد", "MOVE_OUT": "الإخلاء", "DISCUSS": "المناقشة"},
     "messages": {
       "TICKET_ASSIGNED": {"title": "أُسندت إليك تذكرة", "body": "التذكرة: {ticketTitle}"},
@@ -4487,13 +4495,14 @@
     "reason_SIGNATURE_MISMATCH": "عدم تطابق التوقيع",
     "reason_ACCOUNT_CLOSED": "حساب مغلق",
     "reason_STOPPED_PAYMENT": "أُوقف الدفع",
-    "reason_TECHNICAL_RETURN": "إرجاع فني (شيك قديم، مؤجل، أو عدم تطابق المبلغ)",
+    "reason_TECHNICAL_RETURN": "إرجاع فني (شيك قديم، مؤجل، أو اختلاف المبلغ كتابةً ورقمًا)",
     "suspenseBalance": "مقبوضات غير محددة قائمة: {amount}",
     "book": "قيد",
     "posted": "تم قيد {numbers}",
     "dr": "مدين",
     "cr": "دائن",
     "net": "رسوم",
+    "bankChargesAccount": "الرسوم البنكية (مصروف)",
     "vat": "ضريبة المدخلات",
     "gross": "البنك",
     "interestIncome": "فوائد بنكية",
