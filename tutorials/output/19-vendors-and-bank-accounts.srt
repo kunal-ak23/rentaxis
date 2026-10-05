@@ -1,0 +1,152 @@
+1
+00:00:00,000 --> 00:00:03,372
+Every supplier bill and every bank
+movement in Miftah needs
+
+2
+00:00:03,372 --> 00:00:06,407
+two kinds of master data: vendors and bank
+accounts.
+
+3
+00:00:06,407 --> 00:00:08,092
+As the Accountant, open Vendors.
+
+4
+00:00:08,092 --> 00:00:11,127
+Each supplier has its tax registration
+number, a contact,
+
+5
+00:00:11,127 --> 00:00:14,162
+and its own payable account in the ledger,
+with
+
+6
+00:00:14,162 --> 00:00:16,859
+what is open, overdue or paid in advance.
+
+7
+00:00:16,859 --> 00:00:18,545
+Now add a new supplier.
+
+8
+00:00:18,545 --> 00:00:22,592
+Select Add Vendor and enter the legal
+name, Gulf Shield Pest Control.
+
+9
+00:00:22,592 --> 00:00:25,289
+Enter the fifteen-digit TRN: without it,
+the input
+
+10
+00:00:25,289 --> 00:00:27,987
+VAT on this supplier's bills cannot be
+claimed.
+
+11
+00:00:27,987 --> 00:00:31,358
+Set the payment terms to 45 days, so every
+bill
+
+12
+00:00:31,358 --> 00:00:34,393
+gets its due date automatically, then the
+contact details.
+
+13
+00:00:34,393 --> 00:00:37,091
+You do not choose a payable account:
+Miftah
+
+14
+00:00:37,091 --> 00:00:39,788
+creates one for the vendor and keeps it.
+
+15
+00:00:39,788 --> 00:00:43,160
+Save, and Gulf Shield appears with its own
+payable account.
+
+16
+00:00:43,160 --> 00:00:46,195
+Open BlueWave Cleaning to see a vendor at
+work.
+
+17
+00:00:46,195 --> 00:00:48,555
+The header shows its TRN and terms.
+
+18
+00:00:48,555 --> 00:00:50,915
+Open items lists every bill with its
+
+19
+00:00:50,915 --> 00:00:53,276
+voucher, due date, amount, paid and open.
+
+20
+00:00:53,276 --> 00:00:56,985
+The August bill, dated 25 August, falls
+due on 24 September.
+
+21
+00:00:56,985 --> 00:00:59,345
+The statement of account is a PDF
+
+22
+00:00:59,345 --> 00:01:01,705
+for any dates, in English or Arabic.
+
+23
+00:01:01,705 --> 00:01:04,740
+Bank accounts are set up by the Company
+Admin.
+
+24
+00:01:04,740 --> 00:01:08,449
+Palm Ridge has two Emirates Islamic
+accounts, one for each building.
+
+25
+00:01:08,449 --> 00:01:11,147
+The account details stay hidden in this
+video.
+
+26
+00:01:11,147 --> 00:01:15,193
+Each bank account is linked to its
+property and to that building's
+
+27
+00:01:15,193 --> 00:01:18,902
+own bank account in the chart of accounts,
+so a cleared
+
+28
+00:01:18,902 --> 00:01:22,611
+cheque or a supplier payment lands in the
+right building's books.
+
+29
+00:01:22,611 --> 00:01:24,297
+One account is the default.
+
+30
+00:01:24,297 --> 00:01:27,669
+Open one to edit it: the linked property,
+the chart
+
+31
+00:01:27,669 --> 00:01:31,041
+of accounts link, and the default flag are
+all here.
+
+32
+00:01:31,041 --> 00:01:33,401
+With vendors and bank accounts in place,
+
+33
+00:01:33,401 --> 00:01:35,424
+every voucher has somewhere to post.

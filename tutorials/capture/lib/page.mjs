@@ -131,6 +131,14 @@ export const CAPTURE_STYLE_RULES = [
   ...(PRIVACY_SENSITIVE_TUTORIALS.has(tutorialId)
     ? ['#ledger-renter span.text-muted, [role="listbox"] > [role="option"] > span.text-muted { visibility: hidden !important; }']
     : []),
+  // Bank Accounts (tutorial 19): the ACCOUNT NUMBER and IBAN columns, and the
+  // same two inputs in the bank account form (the only form with selects).
+  ...(tutorialId === '19'
+    ? ['main:has(button[aria-label="Edit Bank Account"]) tbody td:nth-child(2),'
+       + ' main:has(button[aria-label="Edit Bank Account"]) tbody td:nth-child(3),'
+       + ' form:has(select) > div:nth-child(2) > input, form:has(select) > div:nth-child(3) > input'
+       + ' { filter: blur(6px) !important; }']
+    : []),
   // Settings › Users & staff lists every user with EMAIL and PHONE columns,
   // tenants included; tutorial 05 holds on that table. Only those columns'
   // cells are hidden: the users table's second-column cells are the only

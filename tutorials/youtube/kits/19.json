@@ -1,0 +1,64 @@
+{
+  "id": "19",
+  "slug": "vendors-and-bank-accounts",
+  "title": "Miftah tutorial 19 · Vendors and bank accounts",
+  "description": "Create and maintain vendors and bank accounts and link them to the right properties.\n\nWho this is for: Accountant, Company Admin, System Admin.\n\nChapters:\n0:00 Suppliers and Their Ledgers\n0:16 Add a Vendor\n0:46 A Vendor at Work\n1:01 Bank Accounts\n1:27 Edit a Bank Account\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nأنشئ الموردين والحسابات البنكية وحافظ عليها، واربطها بالعقارات المناسبة.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "chart of accounts",
+    "journal voucher",
+    "financial reports",
+    "accounting software",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Accounting",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0.0,
+      "start": "0:00",
+      "label": "Suppliers and Their Ledgers"
+    },
+    {
+      "startSec": 16.859,
+      "start": "0:16",
+      "label": "Add a Vendor"
+    },
+    {
+      "startSec": 46.195,
+      "start": "0:46",
+      "label": "A Vendor at Work"
+    },
+    {
+      "startSec": 61.705,
+      "start": "1:01",
+      "label": "Bank Accounts"
+    },
+    {
+      "startSec": 87.669,
+      "start": "1:27",
+      "label": "Edit a Bank Account"
+    }
+  ],
+  "durationSec": 96,
+  "roles": [
+    "SUPER_ADMIN",
+    "TENANT_ADMIN",
+    "ACCOUNTANT"
+  ],
+  "topic": "accounting",
+  "captionsFile": "tutorials/output/19-vendors-and-bank-accounts.srt",
+  "videoFile": "tutorials/output/19-vendors-and-bank-accounts.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/19.png"
+}
