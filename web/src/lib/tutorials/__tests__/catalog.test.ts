@@ -27,10 +27,10 @@ const tut = (over: Partial<Tutorial>): Tutorial => ({
 });
 
 describe("tutorial catalogue shape", () => {
-    it("seeds exactly the web tutorials 01–28 and 34–46, the accounting track in track order", () => {
+    it("seeds the web tutorials 01–15, 17–28 and 34–46 (16 dropped), the accounting track in track order", () => {
         const ids = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => String(from + i).padStart(2, "0"));
         const track = ["38", "39", "17", "34", "35", "40", "36", "41", "42", "43", "44", "19", "45", "18", "37", "20", "46"];
-        expect(TUTORIALS.map((t) => t.id)).toEqual([...ids(1, 16), ...track, ...ids(21, 28)]);
+        expect(TUTORIALS.map((t) => t.id)).toEqual([...ids(1, 15), ...track, ...ids(21, 28)]);
     });
 
     it("opens the accounting topic with the overview and follows an accountant's year", () => {
@@ -104,7 +104,7 @@ describe("catalogue helpers", () => {
     it("the real catalogue publishes the uploaded tutorials, each with an 11-character YouTube id", () => {
         const published = publishedTutorials(TUTORIALS);
         expect(published.map((t) => t.id)).toEqual([
-            "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14",
+            "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15",
             // The accounting topic lists its entries in track order (38, the overview, first).
             "38", "39", "17", "34", "35", "40", "36", "41", "42", "43", "44", "19", "18", "37",
         ]);

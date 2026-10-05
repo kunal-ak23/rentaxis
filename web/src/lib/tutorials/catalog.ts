@@ -155,22 +155,13 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "15", slug: "manage-rent-cheques-end-to-end", topic: "collections", roles: PORTFOLIO, durationSec: 150, youtubeId: null,
+        id: "15", slug: "manage-rent-cheques-end-to-end", topic: "collections", roles: PORTFOLIO, durationSec: 120, youtubeId: "XqvjRldLnOk",
         title: { en: "Manage rent cheques end to end", ar: "إدارة شيكات الإيجار من البداية إلى النهاية" },
         description: {
-            en: "Collect, deposit, clear or return cheques, add notes, and upload cheque images in bulk.",
-            ar: "استلم الشيكات وأودعها وصرّفها أو سجّل ارتجاعها، وأضف الملاحظات، وارفع صور الشيكات دفعة واحدة.",
+            en: "Follow rent cheques through collection: see what is due and overdue, bank a batch, clear a cheque, and record a returned cheque and its replacement.",
+            ar: "تابع شيكات الإيجار خلال التحصيل: اطّلع على المستحق والمتأخر، وأودع دفعة في البنك، وصرّف الشيك، وسجّل الشيك المرتجع وبديله.",
         },
         relatedArticles: ["leases--payment-schedules"],
-    },
-    {
-        id: "16", slug: "configure-online-rent-collection", topic: "collections", roles: ADMINS, durationSec: 150, youtubeId: null,
-        title: { en: "Configure online rent collection", ar: "إعداد تحصيل الإيجار عبر الإنترنت" },
-        description: {
-            en: "Choose a payment provider, set rent collection settings and check that online payments are ready.",
-            ar: "اختر مزوّد الدفع، واضبط إعدادات تحصيل الإيجار، وتحقّق من جاهزية الدفع عبر الإنترنت.",
-        },
-        relatedArticles: ["admin--tenant-settings"],
     },
     {
         id: "38", slug: "how-accounting-works-in-miftah", topic: "accounting", roles: FINANCE, durationSec: 148, youtubeId: "WKMbpGSgrdU",
@@ -313,8 +304,8 @@ export const TUTORIALS: Tutorial[] = [
         id: "21", slug: "tenant-payments", topic: "tenant-portal", roles: ["RENTER"], durationSec: 150, youtubeId: null,
         title: { en: "Tenant payments", ar: "مدفوعات المستأجر" },
         description: {
-            en: "As a Tenant, see your payment schedule, pay online and download receipts from your payment history.",
-            ar: "بصفتك مستأجرًا، اطّلع على جدول دفعاتك، وادفع عبر الإنترنت، ونزّل الإيصالات من سجل المدفوعات.",
+            en: "As a Tenant, see what is due, where each of your cheques stands, and open receipts from your payment history.",
+            ar: "بصفتك مستأجرًا، اطّلع على المبالغ المستحقة عليك وحالة كل شيك من شيكاتك، وافتح الإيصالات من سجل المدفوعات.",
         },
         relatedArticles: ["renter--making-payments", "renter--renter-portal-overview"],
     },
