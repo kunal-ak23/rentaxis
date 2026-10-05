@@ -262,7 +262,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "19", slug: "vendors-and-bank-accounts", topic: "accounting", roles: FINANCE, durationSec: 150, youtubeId: null,
+        id: "19", slug: "vendors-and-bank-accounts", topic: "accounting", roles: FINANCE, durationSec: 95, youtubeId: "-Lqw49fknJ8",
         title: { en: "Vendors and bank accounts", ar: "الموردون والحسابات البنكية" },
         description: {
             en: "Create and maintain vendors and bank accounts and link them to the right properties.",
