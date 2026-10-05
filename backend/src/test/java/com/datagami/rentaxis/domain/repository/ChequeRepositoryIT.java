@@ -115,8 +115,23 @@ class ChequeRepositoryIT extends AbstractPostgresIT {
         return transactionTemplate.execute(status -> body.get());
     }
 
+    /**
+     * The Due list as production reads it (PR #397 R1-P2-1): {@link ChequeRepository#openDueIds},
+     * the rows {@code ChequeQueryService.due} serves, rehydrated in its order. A BOUNCED row is
+     * on it only for the debt the ledger still carries; these fixtures post no journals, so
+     * none of their bounces carry any.
+     */
     private List<Cheque> due(UUID property) {
-        return inTx(() -> cheques.findDue(property, TODAY, true, List.of(), PAGE).getContent());
+        return inTx(() -> openDue(property, PAGE));
+    }
+
+    private List<Cheque> openDue(UUID property, Pageable page) {
+        // The caller's organisation, as ChequeQueryService binds it from Search.tenantOrSuperAdmin().
+        List<UUID> ids = cheques.openDueIds(TenantContextHolder.getTenantId(), false, TODAY, property, true,
+                com.datagami.rentaxis.core.service.cheque.ChequeQueryService.nonEmpty(List.of()), false, page).getContent();
+        java.util.Map<UUID, Cheque> byId = new java.util.HashMap<>();
+        cheques.findAllById(ids).forEach(c -> byId.put(c.getId(), c));
+        return ids.stream().map(byId::get).filter(java.util.Objects::nonNull).toList();
     }
 
     private List<Cheque> dueForLease(UUID lease) {
@@ -186,7 +201,7 @@ class ChequeRepositoryIT extends AbstractPostgresIT {
     /**
      * A cheque already sitting at the bank is not one to bank again, and a cash or
      * transfer receipt is never deposited as paper — both drop out of the deposit run
-     * while staying in {@link ChequeRepository#findDue}.
+     * while staying on the Due list ({@link ChequeRepository#openDueIds}).
      */
     @Test
     void findToDeposit_excludesAlreadyDepositedAndNonPdcModes() {
@@ -222,8 +237,8 @@ class ChequeRepositoryIT extends AbstractPostgresIT {
     }
 
     /**
-     * {@link ChequeRepository#findDueForLease} is a hand copy of
-     * {@link ChequeRepository#findDue} with the property scope swapped for a lease
+     * {@link ChequeRepository#findDueForLease} is a hand copy of the Due list's predicate
+     * ({@link ChequeRepository#openDueIds}) with the property scope swapped for a lease
      * scope, and nothing in the type system stops the two drifting. They must not:
      * the settlement preview deducts the lease's due rows from the renter's
      * deposit, and the register screen shows them the same rows under the word
@@ -254,18 +269,22 @@ class ChequeRepositoryIT extends AbstractPostgresIT {
                 .toList();
 
         assertThat(expected).as("the register's own answer, so a drifting fixture cannot make this vacuous")
-                .containsExactlyInAnyOrder(maturedRegistered.getId(), maturedDeposited.getId(),
-                        bouncedInTheFuture.getId(), inCheckout.getId());
+                .containsExactlyInAnyOrder(maturedRegistered.getId(), maturedDeposited.getId(), inCheckout.getId());
+        // The one difference is the ledger's: the Due list takes a bounce only for the debt the
+        // receivable still carries (none here, nothing is posted); findDueForLease takes every
+        // BOUNCED row and its caller prices it.
         assertThat(dueForLease(leaseId)).extracting(Cheque::getId)
-                .containsExactlyInAnyOrderElementsOf(expected);
+                .containsExactlyInAnyOrderElementsOf(
+                        java.util.stream.Stream.concat(expected.stream(), java.util.stream.Stream.of(bouncedInTheFuture.getId()))
+                                .toList());
     }
 
     /**
      * {@link ChequeDueRules#due} and the three SQL copies of it are one rule, and
      * this is where that is enforced rather than hoped for.
      *
-     * <p>{@code findDue} backs the register screen, the aging report and the summary
-     * tiles; {@code findDueForLease} backs the settlement preview's arrears;
+     * <p>{@code openDueIds} backs the Due list and the Returned queue ({@code OPEN_DUE_CTE}
+     * also feeds the aging report and the summary tiles); {@code findDueForLease} backs the settlement preview's arrears;
      * {@code findAllDue} is what the overdue reminder job walks. Each is the rule
      * written out in JPQL a second, third and fourth time, and the type system says
      * nothing about them agreeing — which is exactly how {@code ONLINE_PENDING} came
@@ -293,9 +312,16 @@ class ChequeRepositoryIT extends AbstractPostgresIT {
                 .collect(Collectors.toSet());
         assertThat(byTheRule).as("a vacuous set would make every equality below true").isNotEmpty();
 
-        assertThat(mine(inTx(() -> cheques.findDue(null, TODAY, true, List.of(), BIG_PAGE).getContent())))
-                .as("findDue — the register, the aging report and the tiles")
-                .isEqualTo(byTheRule);
+        // PR #397 R1-P2-1: the production Due list. Its BOUNCED rows are the ledger's call
+        // (nothing is posted here, so none carry debt); ChequeOnEndedLeaseIT asserts a bounce the
+        // receivable still carries is on it. Every other status must match the rule exactly.
+        Set<UUID> bounced = seeded.stream().filter(c -> c.getStatus() == ChequeStatus.BOUNCED)
+                .map(Cheque::getId).collect(Collectors.toSet());
+        Set<UUID> byTheRuleLessBounces = byTheRule.stream().filter(id -> !bounced.contains(id)).collect(Collectors.toSet());
+        assertThat(byTheRuleLessBounces).as("non-vacuous without the bounces too").isNotEmpty();
+        assertThat(mine(inTx(() -> openDue(null, BIG_PAGE))))
+                .as("openDueIds — the Due list, the Returned queue, the aging report and the tiles")
+                .isEqualTo(byTheRuleLessBounces);
         assertThat(mine(dueForLease(leaseId)))
                 .as("findDueForLease — the settlement preview's arrears")
                 .isEqualTo(byTheRule);

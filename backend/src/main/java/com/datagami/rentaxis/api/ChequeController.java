@@ -123,6 +123,18 @@ public class ChequeController {
         return queryService.due(propertyId, asOf, pageable);
     }
 
+    /**
+     * The Returned / replace queue (tutorial 40): returned cheques whose debt the ledger
+     * still carries, oldest instalment first.
+     */
+    @GetMapping("/returned")
+    @PreAuthorize(STAFF)
+    public Page<ChequeDTO> returned(@RequestParam(required = false) UUID propertyId,
+                                    @RequestParam(required = false) LocalDate asOf,
+                                    Pageable pageable) {
+        return queryService.openBounced(propertyId, asOf, pageable);
+    }
+
     @GetMapping("/to-deposit")
     @PreAuthorize(STAFF)
     public Page<ChequeDTO> toDeposit(@RequestParam(required = false) UUID propertyId,

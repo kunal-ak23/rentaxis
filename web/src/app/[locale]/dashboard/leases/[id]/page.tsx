@@ -671,11 +671,19 @@ export default function LeaseDetailPage() {
                                 </span>
                                 {chequeTally.returned.count > 0 && (
                                     <span data-testid="lease-pending-cheques-returned" className="text-error">
-                                        {t.rich("returnedCheques", {
-                                            count: chequeTally.returned.count,
-                                            amount: formatCurrency(chequeTally.returned.amount),
-                                            n: (chunks: React.ReactNode) => <bdi dir="ltr" className="tabular-nums">{chunks}</bdi>,
-                                        })}
+                                        {/* PR #397 R1-P3-2: what is still owed, as the Bounced tile counts it; face value beside it when less is owed. */}
+                                        {chequeTally.returned.amount !== chequeTally.returned.face
+                                            ? t.rich("returnedChequesPartly", {
+                                                count: chequeTally.returned.count,
+                                                amount: formatCurrency(chequeTally.returned.amount),
+                                                face: formatCurrency(chequeTally.returned.face),
+                                                n: (chunks: React.ReactNode) => <bdi dir="ltr" className="tabular-nums">{chunks}</bdi>,
+                                            })
+                                            : t.rich("returnedCheques", {
+                                                count: chequeTally.returned.count,
+                                                amount: formatCurrency(chequeTally.returned.amount),
+                                                n: (chunks: React.ReactNode) => <bdi dir="ltr" className="tabular-nums">{chunks}</bdi>,
+                                            })}
                                     </span>
                                 )}
                             </button>

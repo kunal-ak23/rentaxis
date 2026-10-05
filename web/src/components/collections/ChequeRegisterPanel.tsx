@@ -558,12 +558,20 @@ export default function ChequeRegisterPanel({ embedded = false }: { embedded?: b
                                                             key={a}
                                                             type="button"
                                                             data-testid={`cheque-row-action-${a}-${c.id}`}
+                                                            // PR #397 R1-P3-1: Replace waits while a write-off of the row awaits approval.
+                                                            disabled={a === "replace" && !!c.writeOffPending}
+                                                            title={a === "replace" && c.writeOffPending ? t("writeOffPending") : undefined}
                                                             onClick={() => openAction(c, a)}
-                                                            className="px-2 py-1 rounded-md text-[10px] font-bold bg-input text-foreground hover:bg-border transition-colors cursor-pointer"
+                                                            className="px-2 py-1 rounded-md text-[10px] font-bold bg-input text-foreground hover:bg-border transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                                         >
                                                             {t(a)}
                                                         </button>
                                                     ))}
+                                                    {c.writeOffPending && actions.includes("replace") && (
+                                                        <span className="text-[10px] text-warning" data-testid={`cheque-write-off-pending-${c.id}`}>
+                                                            {t("writeOffPending")}
+                                                        </span>
+                                                    )}
                                                     {c.mode === "PDC" && actions.includes("details") && (
                                                         <button
                                                             type="button"

@@ -8,7 +8,6 @@ import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.api.exception.RowLockedException;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.service.ChequeRoundingCalculator;
-import com.datagami.rentaxis.core.service.cheque.ChequeMapper;
 import com.datagami.rentaxis.core.service.cheque.ChequeRowRules;
 import com.datagami.rentaxis.core.service.ledger.AccountResolver;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
@@ -103,6 +102,8 @@ public class ChequeGenerationService {
 
     private final com.datagami.rentaxis.core.service.bank.OwnedBankLeaf ownedBankLeaf;
     private final com.datagami.rentaxis.core.service.LeaseService leaseService;
+    /** Lazy: the register's read side, for which bounced rows the ledger has closed (tutorial 40). */
+    private final org.springframework.beans.factory.ObjectProvider<com.datagami.rentaxis.core.service.cheque.ChequeQueryService> chequeQueries;
 
     public ChequeGenerationService(LeaseRepository leaseRepository,
                                    LeaseLineRepository leaseLineRepository,
@@ -111,7 +112,9 @@ public class ChequeGenerationService {
                                    AccountResolver accountResolver,
                                    LeaseAccessPolicy leaseAccessPolicy,
                                    com.datagami.rentaxis.core.service.bank.OwnedBankLeaf ownedBankLeaf,
-                                   com.datagami.rentaxis.core.service.LeaseService leaseService) {
+                                   com.datagami.rentaxis.core.service.LeaseService leaseService,
+                                   org.springframework.beans.factory.ObjectProvider<com.datagami.rentaxis.core.service.cheque.ChequeQueryService> chequeQueries) {
+        this.chequeQueries = chequeQueries;
         this.ownedBankLeaf = ownedBankLeaf;
         this.leaseService = leaseService;
         this.leaseRepository = leaseRepository;
@@ -341,7 +344,8 @@ public class ChequeGenerationService {
     @Transactional(readOnly = true)
     public List<ChequeDTO> list(UUID leaseId) {
         Lease lease = readableLease(leaseId);
-        return toDtos(chequeRepository.findByLease_IdOrderBySeqNoAscIdAsc(leaseId), lease);
+        List<Cheque> rows = chequeRepository.findByLease_IdOrderBySeqNoAscIdAsc(leaseId);
+        return toDtos(rows, lease);
     }
 
     /**
@@ -367,11 +371,11 @@ public class ChequeGenerationService {
                 leases.stream().map(Lease::getId).toList())) {
             byLease.computeIfAbsent(c.getLease().getId(), id -> new ArrayList<>()).add(c);
         }
-        List<ChequeDTO> out = new ArrayList<>();
+        List<Cheque> ordered = new ArrayList<>();
         for (Lease lease : leases) {
-            out.addAll(toDtos(byLease.getOrDefault(lease.getId(), List.of()), lease));
+            ordered.addAll(byLease.getOrDefault(lease.getId(), List.of()));
         }
-        return out;
+        return chequeQueries.getObject().dtos(ordered);
     }
 
     /**
@@ -1109,10 +1113,9 @@ public class ChequeGenerationService {
         return lease;
     }
 
-    private static List<ChequeDTO> toDtos(List<Cheque> cheques, Lease lease) {
-        LocalDate today = LocalDate.now();
-        int graceDays = lease.getGracePeriodDays();
-        return cheques.stream().map(c -> ChequeMapper.toDto(c, today, graceDays)).toList();
+    /** Tutorial 40 / PR #397 R1-P2-2: the register's one mapping, with the ledger's facts on each row. */
+    private List<ChequeDTO> toDtos(List<Cheque> cheques, Lease lease) {
+        return chequeQueries.getObject().dtos(cheques);
     }
 
     private static BigDecimal nz(BigDecimal v) {
