@@ -27,8 +27,10 @@ describe("buildAccountingNav", () => {
 
     it("offers an accountant NO link whose controller refuses the role", () => {
         const links = hrefs("ACCOUNTANT");
-        expect(links).not.toContain("/dashboard/finance/bank-accounts");
+        expect(links).not.toContain("/dashboard/staff");
         expect(links).toEqual(expect.arrayContaining([
+            // Tutorial 19: BankAccountController's GETs admit ACCOUNTANT (edit stays SA/TA).
+            "/dashboard/finance/bank-accounts",
             "/dashboard/finance/payables/payment-runs",
             "/dashboard/finance/payables/issued-cheques",
             "/dashboard/finance/account-template",

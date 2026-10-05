@@ -6,6 +6,11 @@ vi.mock("next-intl", () => ({
     useLocale: () => "en",
 }));
 
+let role = "TENANT_ADMIN";
+vi.mock("next-auth/react", () => ({
+    useSession: () => ({ data: { user: { role } }, status: "authenticated" }),
+}));
+
 import BankAccountsPage from "../page";
 
 /** Shaped like the serialized BankAccount entity (see BankAccountJsonTest). */
@@ -65,6 +70,7 @@ function stubFetch() {
 }
 
 beforeEach(() => {
+    role = "TENANT_ADMIN";
     calls = [];
     failNextWrite = null;
     bankAccounts = sampleAccounts;
@@ -77,6 +83,23 @@ afterEach(() => {
 });
 
 describe("BankAccountsPage", () => {
+    it("shows the Accountant the accounts read-only: no add, edit or delete (tutorial 19)", async () => {
+        role = "ACCOUNTANT";
+        render(<BankAccountsPage />);
+        await screen.findByText("Emirates NBD");
+        expect(screen.queryByRole("button", { name: "addAccount" })).toBeNull();
+        expect(screen.queryByLabelText("editAccount")).toBeNull();
+        expect(screen.queryByLabelText("deleteAccount")).toBeNull();
+    });
+
+    it("gives the Company Admin add, edit and delete", async () => {
+        render(<BankAccountsPage />);
+        await screen.findByText("Emirates NBD");
+        expect(screen.getByRole("button", { name: "addAccount" })).toBeTruthy();
+        expect(screen.getByLabelText("editAccount")).toBeTruthy();
+        expect(screen.getByLabelText("deleteAccount")).toBeTruthy();
+    });
+
     it("renders the Default badge from the backend's isDefault property", async () => {
         render(<BankAccountsPage />);
 

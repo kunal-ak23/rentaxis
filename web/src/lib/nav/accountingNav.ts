@@ -55,7 +55,7 @@ const GROUPS: { id: AccountingGroupId; key: string; items: ItemDef[] }[] = [
         item("penalties", collectionsHref("penalties"), "AccountingNav", "penalties", "sidebar-penalties", "canProposePenalties", true),
     ] },
     { id: "bank", key: "groupBank", items: [
-        item("bank-accounts", `${F}/bank-accounts`, "BankAccounts", "title", "sidebar-bank-accounts", "canAccessFinanceOps"),
+        item("bank-accounts", `${F}/bank-accounts`, "BankAccounts", "title", "sidebar-bank-accounts", "canViewBankAccounts"),
         item("bank-reconciliation", `${F}/bank-reconciliation`, "BankRec", "sidebar", "sidebar-bank-reconciliation", "canReconcileBank"),
     ] },
     { id: "finalReports", key: "groupFinalReports", items: [
