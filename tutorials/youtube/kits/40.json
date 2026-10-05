@@ -1,0 +1,68 @@
+{
+  "id": "40",
+  "slug": "returned-cheques-replace-settle-write-off-and-recover",
+  "title": "Miftah tutorial 40 · Returned cheques: replace, settle in cash, write off and recover",
+  "description": "Handle a cheque the bank returns: replace it, take cash instead, or write the debt off and record what you later recover.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 Replaced\n0:28 In the Tenant Ledger\n0:57 Settled in Cash\n1:17 Written Off\n1:44 Recovered\n1:56 Off the Due Lists\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nتعامل مع الشيك الذي يرتجعه البنك: استبدله، أو اقبل مبلغه نقدًا، أو اشطب الدين كدين معدوم وسجّل ما تحصّله لاحقًا.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "chart of accounts",
+    "journal voucher",
+    "financial reports",
+    "accounting software",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Accounting",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0.0,
+      "start": "0:00",
+      "label": "Replaced"
+    },
+    {
+      "startSec": 28.979,
+      "start": "0:28",
+      "label": "In the Tenant Ledger"
+    },
+    {
+      "startSec": 57.959,
+      "start": "0:57",
+      "label": "Settled in Cash"
+    },
+    {
+      "startSec": 77.024,
+      "start": "1:17",
+      "label": "Written Off"
+    },
+    {
+      "startSec": 104.479,
+      "start": "1:44",
+      "label": "Recovered"
+    },
+    {
+      "startSec": 116.299,
+      "start": "1:56",
+      "label": "Off the Due Lists"
+    }
+  ],
+  "durationSec": 123,
+  "roles": [
+    "TENANT_ADMIN",
+    "ACCOUNTANT"
+  ],
+  "topic": "accounting",
+  "captionsFile": "tutorials/output/40-returned-cheques-replace-settle-write-off-and-recover.srt",
+  "videoFile": "tutorials/output/40-returned-cheques-replace-settle-write-off-and-recover.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/40.png"
+}

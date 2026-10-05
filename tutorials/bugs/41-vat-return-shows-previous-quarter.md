@@ -27,3 +27,6 @@ is no longer selected.
 ## Reproduce
 `tutorials/work/acct/e41d.mjs` (local explore script): open the page, choose 01/07/2026 immediately,
 wait 4 s, read `vat-status` and `vat-box-9`. Snapshot `palmridge_base` has the data.
+
+## Resolved
+Fixed by #395 (merged to main); verified 2026-10-05 on the recording stack built from e795c76 — tutorial 41 recorded and published.

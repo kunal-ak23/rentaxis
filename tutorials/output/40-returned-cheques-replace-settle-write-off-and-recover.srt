@@ -1,0 +1,173 @@
+1
+00:00:00,000 --> 00:00:02,669
+A cheque the bank returns, a bounced
+
+2
+00:00:02,669 --> 00:00:04,957
+cheque, can end in three ways.
+
+3
+00:00:04,957 --> 00:00:08,007
+This tutorial follows each one through the
+books,
+
+4
+00:00:08,007 --> 00:00:10,677
+on cases from Palm Ridge's past year.
+
+5
+00:00:10,677 --> 00:00:13,727
+As the Accountant, open Cheque and Cash
+Collection
+
+6
+00:00:13,727 --> 00:00:16,396
+and search the register for Layla Nasser.
+
+7
+00:00:16,396 --> 00:00:20,972
+Her cheque 220102 for 15,000 came back
+unpaid in February and now
+
+8
+00:00:20,972 --> 00:00:25,548
+shows Replaced: she gave two cheques of
+7,500, and both have cleared.
+
+9
+00:00:25,548 --> 00:00:28,979
+The 500 cash row is the cheque return
+penalty.
+
+10
+00:00:28,979 --> 00:00:32,793
+Open her Tenant Ledger to see it in the
+books.
+
+11
+00:00:32,793 --> 00:00:37,368
+The return journal debited Rent Receivable
+15,000 and credited PDC Receivable: the
+
+12
+00:00:37,368 --> 00:00:41,563
+cheque no longer covered the debt, so
+Layla owed it again.
+
+13
+00:00:41,563 --> 00:00:44,232
+A 500 penalty was added and paid.
+
+14
+00:00:44,232 --> 00:00:48,045
+Each replacement wrote its own post-dated
+cheque journal, crediting Rent
+
+15
+00:00:48,045 --> 00:00:51,858
+Receivable with 7,500, so the balance came
+back to zero.
+
+16
+00:00:51,858 --> 00:00:54,908
+Had the replacements come to less, the
+shortfall
+
+17
+00:00:54,908 --> 00:00:57,959
+would have stayed here as money still
+owed.
+
+18
+00:00:57,959 --> 00:01:02,535
+Arjun Mehta settled his returned cheque
+330103 in cash at the office.
+
+19
+00:01:02,535 --> 00:01:06,348
+In the register that is a replacement row
+with the
+
+20
+00:01:06,348 --> 00:01:10,161
+mode Cash, received on the spot: it
+debited the Cash
+
+21
+00:01:10,161 --> 00:01:13,593
+Account and credited PDC Receivable with
+14,000, and a
+
+22
+00:01:13,593 --> 00:01:17,024
+journal voucher later moved the cash to
+the bank.
+
+23
+00:01:17,024 --> 00:01:18,931
+Some debts are never paid.
+
+24
+00:01:18,931 --> 00:01:21,981
+Daniel Brooks left after his December
+cheque bounced.
+
+25
+00:01:21,981 --> 00:01:24,650
+His contract was terminated and settled
+against
+
+26
+00:01:24,650 --> 00:01:27,320
+his deposit, and 11,326.03 was still
+unpaid.
+
+27
+00:01:27,320 --> 00:01:31,514
+On his contract, More actions, Write off
+shows the bad debt,
+
+28
+00:01:31,514 --> 00:01:35,708
+written off with a reason and approved by
+the Company Admin.
+
+29
+00:01:35,708 --> 00:01:40,284
+Approval posted one journal, debiting Bad
+debts written off and crediting Rent
+
+30
+00:01:40,284 --> 00:01:44,479
+Receivable, and took the debt off every
+list of money due.
+
+31
+00:01:44,479 --> 00:01:47,148
+In July a collection agency recovered
+5,000.
+
+32
+00:01:47,148 --> 00:01:50,198
+The recovery journal debited the bank and
+credited
+
+33
+00:01:50,198 --> 00:01:53,249
+Bad debts recovered, which counts as other
+income.
+
+34
+00:01:53,249 --> 00:01:56,299
+The write-off stays, so the history is
+honest.
+
+35
+00:01:56,299 --> 00:01:59,350
+Back on Cheque and Cash Collection,
+Daniel's cheque
+
+36
+00:01:59,350 --> 00:02:02,400
+is neither due nor waiting for a
+replacement.

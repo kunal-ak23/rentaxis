@@ -39,3 +39,6 @@ endpoint — the same derivation the register row and Overdue already use.
 1. Restore snapshot `palmridge_base` (`tutorials/recording-stack.sh restore palmridge_base`).
 2. Sign in as accounts@palmridge.example (password in tutorials/work/seed/palm-ridge.env, local only).
 3. Open Cheque / Cash Collection → Due, then Returned / replace, then Cheque register.
+
+## Resolved
+Fixed by #397 (merged to main); verified 2026-10-05 on the recording stack built from e795c76: Due, Returned / replace (0) and the Bounced tile (0.00) no longer count 440102. Tutorials 35 and 40 recorded on that build.
