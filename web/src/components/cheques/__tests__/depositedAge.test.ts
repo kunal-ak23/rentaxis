@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { daysSince, isAwaitingClearing } from "../depositedAge";
+import { daysSince, isAwaitingClearing, isStaleDeposit, STALE_DEPOSIT_DAYS } from "../depositedAge";
 
 describe("depositedAge", () => {
     it("counts whole calendar days to today, floored at zero", () => {
@@ -19,5 +19,12 @@ describe("depositedAge", () => {
         expect(isAwaitingClearing({ status: "DEPOSITED" })).toBe(true);
         expect(isAwaitingClearing({ status: "REGISTERED" })).toBe(false);
         expect(isAwaitingClearing({ status: "BOUNCED" })).toBe(false);
+    });
+
+    it("a deposit is stale only past the threshold", () => {
+        expect(STALE_DEPOSIT_DAYS).toBe(14);
+        expect(isStaleDeposit(14)).toBe(false);
+        expect(isStaleDeposit(15)).toBe(true);
+        expect(isStaleDeposit(null)).toBe(false);
     });
 });

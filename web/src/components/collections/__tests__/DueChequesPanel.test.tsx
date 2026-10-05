@@ -60,6 +60,7 @@ describe("DueChequesPanel", () => {
             render(<DueChequesPanel overdueOnly />);
             expect(await screen.findByText("U-d")).toBeInTheDocument();
             expect(screen.getByTestId("due-awaiting-d")).toHaveTextContent("Deposited 29 days ago");
+            expect(screen.getByTestId("due-stale-deposit-d")).toHaveTextContent("Deposit not cleared — check with the bank");
             expect(screen.getByTestId("due-awaiting-n")).toHaveTextContent("Deposited, awaiting clearing");
             expect(screen.queryByTestId("due-awaiting-r")).toBeNull();
             expect(screen.getByText("U-r").closest("tr")).toHaveTextContent("12");

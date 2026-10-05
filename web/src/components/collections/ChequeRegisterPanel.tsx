@@ -10,7 +10,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import ChequeStatusBadge from "@/components/cheques/ChequeStatusBadge";
-import { daysSince, isAwaitingClearing } from "@/components/cheques/depositedAge";
+import { daysSince, isAwaitingClearing, isStaleDeposit } from "@/components/cheques/depositedAge";
 import ChequeActionDialog from "@/components/cheques/ChequeActionDialog";
 import ScanChequesLauncher from "@/components/cheques/ScanChequesLauncher";
 import BounceFlow from "@/components/cheques/BounceFlow";
@@ -549,6 +549,11 @@ export default function ChequeRegisterPanel({ embedded = false }: { embedded?: b
                                                         {daysSince(c.depositedAt) === null
                                                             ? t("awaitingClearing")
                                                             : t("depositedDaysAgo", { n: daysSince(c.depositedAt) ?? 0 })}
+                                                        {isStaleDeposit(daysSince(c.depositedAt)) && (
+                                                            <span className="block text-warning font-semibold" data-testid={`cheque-stale-deposit-${c.id}`}>
+                                                                {t("depositNotCleared")}
+                                                            </span>
+                                                        )}
                                                     </span>
                                                 ) : c.overdue ? (
                                                     <span className="text-error font-semibold">{t("daysOverdue", { n: c.daysOverdue })}</span>

@@ -63,9 +63,22 @@ describe("ChequeRegisterPanel — deposited cheques", () => {
         renderPanel();
 
         expect(await screen.findByTestId("cheque-awaiting-d1")).toHaveTextContent("Deposited 29 days ago");
+        // PR #399 R1 P3-4: past 14 days, an amber flag as well.
+        expect(screen.getByTestId("cheque-stale-deposit-d1")).toHaveTextContent("Deposit not cleared — check with the bank");
         expect(screen.getByTestId("cheque-awaiting-d1").closest("td")).not.toHaveTextContent("overdue");
         expect(screen.queryByTestId("cheque-awaiting-r1")).toBeNull();
         expect(screen.getByText("12 days overdue")).toBeInTheDocument();
+    });
+
+    it("does not flag a deposit that is only days old", async () => {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(new Date(2026, 9, 5, 12));
+        api.list.mockResolvedValue(page([cheque({ id: "d2", seqNo: 1, depositedAt: "2026-09-25" })]));
+        api.summary.mockResolvedValue({});
+        api.aging.mockResolvedValue({ buckets: [], totalCount: 0 });
+        renderPanel();
+        expect(await screen.findByTestId("cheque-awaiting-d2")).toHaveTextContent("Deposited 10 days ago");
+        expect(screen.queryByTestId("cheque-stale-deposit-d2")).toBeNull();
     });
 
     it("words it in Arabic", async () => {

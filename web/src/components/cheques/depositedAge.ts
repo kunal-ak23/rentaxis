@@ -18,3 +18,13 @@ export function daysSince(iso: string | null | undefined, now: Date = new Date()
     const to = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
     return Math.max(0, Math.round((to - from) / 86_400_000));
 }
+
+/**
+ * PR #399 R1 P3-4: past this many days a deposit that has not cleared is likely a bounce
+ * nobody recorded — the row keeps "Deposited N days ago" and adds an amber flag.
+ */
+export const STALE_DEPOSIT_DAYS = 14;
+
+export function isStaleDeposit(days: number | null): boolean {
+    return days !== null && days > STALE_DEPOSIT_DAYS;
+}
