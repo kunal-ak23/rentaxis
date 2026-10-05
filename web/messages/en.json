@@ -1624,6 +1624,7 @@
     "errResidentDecides": "Walk-in visitors are decided by the tenant of the unit, not here.",
     "errPhotoRequired": "This property requires a photo of the visitor. Take one and submit again.",
     "errAlreadyUsed": "This pass has already been used.",
+    "errExpired": "This pass has expired — its visit window has ended.",
     "errPassNotFound": "This pass no longer exists or is not yours to act on.",
     "errTimeout": "The approval timeout must be between 1 and 1440 minutes.",
     "regularVisitorsTitle": "Regular visitors",
@@ -1774,6 +1775,8 @@
     "loading": "Loading...",
     "loadError": "Failed to load booking requests.",
     "noBookings": "No booking requests found.",
+    "noBookingsWithStatus": "No booking requests with status {status}.",
+    "showAllStatuses": "Show all statuses",
     "retry": "Retry"
   },
   "Promotions": {
