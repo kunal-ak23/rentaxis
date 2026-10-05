@@ -25,7 +25,7 @@ import type { UserRole } from "@/lib/rbac";
 import { NumberInput } from "@/components/ui/NumberInput";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { isAbortError } from "@/lib/api/abort";
-import { DEFAULT_RENT_SETTINGS, mergeRentSettings, readRentSettings, toRentSettingsBody, type RentSettingsData } from "@/lib/rentSettings";
+import { mergeRentSettings, readRentSettings, toRentSettingsBody, type RentSettingsData } from "@/lib/rentSettings";
 
 type Property = {
     id: string;
