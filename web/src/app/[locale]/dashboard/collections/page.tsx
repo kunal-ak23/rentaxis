@@ -1,12 +1,12 @@
 "use client";
 
-import { Suspense, useEffect, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useLocale, useTranslations } from "next-intl";
-import { Loader2, Search } from "lucide-react";
+import { Camera, Loader2, Search } from "lucide-react";
 import { useRouter } from "@/i18n/routing";
-import { type UserRole } from "@/lib/rbac";
+import { hasPermission, type UserRole } from "@/lib/rbac";
 import { buildCollectionsTabs, type CollectionsTabId } from "@/lib/nav/collectionsModel";
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import CollectionPills from "@/components/collections/CollectionPills";
@@ -17,6 +17,7 @@ import ReturnReplacePanel from "@/components/collections/ReturnReplacePanel";
 import PostDatedPanel from "@/components/collections/PostDatedPanel";
 import PenaltiesPanel from "@/components/collections/PenaltiesPanel";
 import ChequeRegisterPanel from "@/components/collections/ChequeRegisterPanel";
+import ScanChequesLauncher from "@/components/cheques/ScanChequesLauncher";
 import { idParam, stripInvalidIdParams } from "@/lib/urlIds";
 
 const field = "bg-surface border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none";
@@ -42,6 +43,13 @@ export default function CollectionsPage() {
  */
 function CollectionsHub() {
     const t = useTranslations("Collections");
+    const tCheques = useTranslations("Cheques");
+    // Restored: the pre-v2 Payments screen scanned a cheque as it was collected.
+    const [scanOpen, setScanOpen] = useState(false);
+    const [scanDone, setScanDone] = useState(0);
+    // The "attached" line belongs to the scan just made, on the view it was made from;
+    // a new scan or another pill, filter or search clears it (PR #396 review P3-5).
+    const [scanBannerAt, setScanBannerAt] = useState<string | null>(null);
     const locale = useLocale();
     const router = useRouter();
     const { data: session } = useSession();
@@ -88,7 +96,22 @@ function CollectionsHub() {
 
     return (
         <div className="space-y-5">
-            <h1 className="text-xl font-bold text-foreground tracking-tight">{t("title")}</h1>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <h1 className="text-xl font-bold text-foreground tracking-tight">{t("title")}</h1>
+                {hasPermission(role, "canManageCheques") && (
+                    <button type="button" data-testid="collections-scan-cheques" onClick={() => { setScanBannerAt(null); setScanOpen(true); }}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-border text-foreground hover:bg-input/40 cursor-pointer">
+                        <Camera size={13} /> {tCheques("scanCheques")}
+                    </button>
+                )}
+            </div>
+            {scanBannerAt === paramsKey && (
+                <p role="status" data-testid="collections-scan-done" className="rounded-xl bg-success/10 border border-success/30 px-4 py-2.5 text-xs text-success">
+                    {tCheques("scanAttached")}
+                </p>
+            )}
+            <ScanChequesLauncher open={scanOpen} propertyId={propertyId} onClose={() => setScanOpen(false)}
+                onDone={() => { setScanOpen(false); setScanDone(n => n + 1); setScanBannerAt(paramsKey); }} />
             <CollectionPills tabs={tabs} active={active} counts={counts} propertyId={propertyId} label={t("tabsLabel")} />
             <form action={`/${locale}/dashboard/collections`} method="get" onSubmit={onSearch} role="search"
                 className="flex flex-col sm:flex-row gap-2" data-testid="collections-filters">
@@ -113,7 +136,7 @@ function CollectionsHub() {
                 // #104: search always opens the cheque register, whatever pill is showing — say so.
                 <p id="collections-search-hint" data-testid="collections-search-hint" className="-mt-3 text-[11.5px] text-muted">{t("searchHint")}</p>
             )}
-            <div key={`${active}-${propertyId}-${search}`}>
+            <div key={`${active}-${propertyId}-${search}-${scanDone}`}>
                 {active === "deposit" && <ToDepositPanel embedded propertyId={propertyId} />}
                 {active === "due" && <DueChequesPanel overdueOnly={false} propertyId={propertyId} />}
                 {active === "overdue" && <DueChequesPanel overdueOnly propertyId={propertyId} />}

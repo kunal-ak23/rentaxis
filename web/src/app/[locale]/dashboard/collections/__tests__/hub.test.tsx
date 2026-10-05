@@ -16,6 +16,11 @@ vi.mock("@/components/collections/PostDatedPanel", () => ({ default: (p: { prope
 vi.mock("@/components/collections/PenaltiesPanel", () => ({ default: (p: { propertyId?: string }) => <div data-testid="panel-penalties" data-property={p.propertyId ?? ""} /> }));
 vi.mock("@/components/collections/ChequeRegisterPanel", () => ({ default: () => <div data-testid="panel-all" /> }));
 vi.mock("@/components/collections/DueChequesPanel", () => ({ default: ({ overdueOnly, propertyId }: { overdueOnly: boolean; propertyId?: string }) => <div data-testid={overdueOnly ? "panel-overdue" : "panel-due"} data-property={propertyId ?? ""} /> }));
+// The scan itself has its own tests; here it reports done, with the hub's property.
+vi.mock("@/components/cheques/ScanChequesLauncher", () => ({
+    default: (p: { open: boolean; propertyId?: string | null; onDone: () => void }) => p.open
+        ? <button data-testid="launcher-done" data-property={p.propertyId ?? ""} onClick={p.onDone}>done</button> : null,
+}));
 vi.mock("@/lib/api/leasing", async orig => {
     const m = await orig<typeof import("@/lib/api/leasing")>();
     return { ...m,
@@ -129,5 +134,23 @@ describe("Cheque / Cash Collection hub", () => {
         render(<Page />);
         expect(screen.getByTestId("collections-no-access")).toBeInTheDocument();
         expect(api.summary).not.toHaveBeenCalled();
+    });
+
+    // UX gap audit: Scan cheques from the hub (PR #396 review P3-2, P3-5).
+    it("opens Scan cheques inside the hub's property filter and clears the done line on the next action", () => {
+        query.current = "tab=all&propertyId=11111111-1111-4111-8111-111111111111";
+        render(<Page />);
+        fireEvent.click(screen.getByTestId("collections-scan-cheques"));
+        expect(screen.getByTestId("launcher-done")).toHaveAttribute("data-property", "11111111-1111-4111-8111-111111111111");
+        fireEvent.click(screen.getByTestId("launcher-done"));
+        expect(screen.getByTestId("collections-scan-done")).toBeInTheDocument();
+        fireEvent.click(screen.getByTestId("collections-scan-cheques"));
+        expect(screen.queryByTestId("collections-scan-done")).toBeNull();
+    });
+
+    it("offers Scan cheques only to roles that work the register", () => {
+        role.current = "RENTER";
+        render(<Page />);
+        expect(screen.queryByTestId("collections-scan-cheques")).toBeNull();
     });
 });

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 
@@ -21,7 +21,14 @@ const base = { id: null, periodStart: "2026-04-01", periodEnd: "2026-06-30", sta
     inputVatOnExempt: 50, canFile: true, cannotFileReason: null };
 
 describe("VAT return page", () => {
-    afterEach(() => { cleanup(); vi.clearAllMocks(); });
+    // The page defaults to the last completed quarter; the fixtures are Q2 2026. Pin the
+    // clock (Date only — the testing-library waits keep their real timers) so the
+    // suite does not change its answer when the calendar turns a quarter.
+    beforeEach(() => {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(new Date("2026-08-15T09:00:00Z"));
+    });
+    afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers(); });
 
     it("files through the confirm dialog and shows the input-VAT check lines", async () => {
         api.get.mockResolvedValue(base);
