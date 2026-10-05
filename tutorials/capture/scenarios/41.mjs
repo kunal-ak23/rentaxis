@@ -4,8 +4,8 @@
 // pair Dr Rent Receivable 7,500 / Cr Output VAT – not yet due); the cheque grid's
 // VAT column (1,875 per rent cheque); Meridian Logistics' VAT schedule (four tax
 // points, VTP 1,500 each, a tax invoice each); the tax-point panel on Month-end
-// recognition (nothing left to declare); the VAT return for the quarter from
-// July 2026 (not fileable before 30 September) and the filed April quarter.
+// recognition (Noor's first instalment, 01/10/2026, 1,875 due); the VAT return for the quarter from
+// July 2026 (ended 30 September: the Company Admin can file it) and the filed April quarter.
 //
 // Posting cannot be undone: the proof and the capture each start from snapshot
 // pre41 (the Palm Ridge base).
@@ -26,7 +26,7 @@ const line = (page, account, amount) => lines(page).filter({ hasText: account })
 const scenes = [
   roleRouteScene('accountant', `/en/dashboard/leases/${noor}`, 'A commercial contract with VAT',
     'Noor Pharmacy, BC-G01: rent 150,000 plus 5% VAT, and a deposit that carries none.', {
-    weight: 17.4,
+    weight: 17.55,
     afterNavigation: async (page) => {
       const at = sceneClock(page);
       await expectText(page.getByTestId('lease-status'), 'Draft', 'Contract status');
@@ -50,7 +50,7 @@ const scenes = [
       await page.getByTestId('post-lease-confirm').click();
       await page.getByTestId('lease-posting-journal').waitFor({ state: 'visible', timeout: navTimeoutMs });
       await expectText(page.getByTestId('lease-status'), 'Active', 'Posted contract');
-    }, { weight: 3.5 }),
+    }, { weight: 3.51 }),
   stepScene('The contract journal',
     'VAT waits in Output VAT – not yet due: a contract is not a tax invoice.',
     async (page) => {
@@ -72,7 +72,7 @@ const scenes = [
       await pointAt(line(page, 'Rent Receivable', '7,500.00'));
       await at(12.6);
       await pointAt(line(page, 'Output VAT', '7,500.00'));
-    }, { weight: 23.25 }),
+    }, { weight: 23.40 }),
   stepScene('VAT on every instalment',
     'Each rent cheque carries its own VAT; the deposit carries none.',
     async (page) => {
@@ -92,10 +92,10 @@ const scenes = [
       await pointAt(page.getByTestId('cheque-vat-0'));
       await at(9.8);
       await pointAt(page.getByTestId('cheque-grid-vat-total'));
-    }, { weight: 12.0 }),
+    }, { weight: 12.09 }),
   roleRouteScene('accountant', `/en/dashboard/leases/${meridian}?tab=payments`, 'Tax points',
     'Each instalment\'s VAT falls due on its tax point, with its own tax invoice.', {
-    weight: 28.3,
+    weight: 28.46,
     afterNavigation: async (page) => {
       const at = sceneClock(page);
       await page.getByTestId('lease-section-toggle-vat').click();
@@ -126,7 +126,7 @@ const scenes = [
     },
   }),
   stepScene('Declare tax points',
-    'The nightly run declares them; you can also run it before closing a period.',
+    'Due now: Noor’s first instalment, 1,875 of VAT. The nightly run declares it; you can run it yourself.',
     async (page) => {
       const at = sceneClock(page);
       await page.getByTestId('sidebar-recognition').click();
@@ -138,10 +138,12 @@ const scenes = [
       await pointAt(panel);
       await at(7.0);
       await page.getByTestId('vat-run-preview').click();
-      await expectText(page.getByTestId('vat-run-result'), ': 0, VAT 0.00', 'Nothing left to declare');
+      await expectText(page.getByTestId('vat-run-result'), ': 1, VAT 1,875.00', "Noor's first instalment due");
       await at(8.4);
       await pointAt(page.getByTestId('vat-run-result'));
-    }, { weight: 18.3 }),
+      // Hold the result on screen through its cue before the callout comes up.
+      await at(12.8);
+    }, { weight: 14.04 }),
   stepScene('The VAT return',
     'The quarter in the FTA layout. Box 1b: standard-rated rent in Dubai. Box 9: input VAT.',
     async (page) => {
@@ -166,14 +168,16 @@ const scenes = [
       await at(18.4);
       await pointAt(page.getByText('Meridian Logistics FZ-LLC', { exact: false }).first());
       await at(20.6);
-      await page.keyboard.press('Escape');
+      // The drill panel ignores Escape: close it with its own button.
+      await page.getByTestId('vat-drill').getByRole('button', { name: 'Close' }).click();
+      await page.getByTestId('vat-drill').waitFor({ state: 'hidden', timeout: navTimeoutMs });
       await pointAt(page.getByTestId('vat-status'));
       await at(25.6);
       await quarter.selectOption({ label: '01/04/2026' });
       await page.getByTestId('vat-status').filter({ hasText: 'FTA-DEMO-2026Q2' }).waitFor({ state: 'visible', timeout: navTimeoutMs });
       await at(26.8);
       await pointAt(page.getByTestId('vat-status'));
-    }, { weight: 33.3 }),
+    }, { weight: 35.88 }),
 ];
 
 export default { role: 'accountant', anchored: true, scenes };

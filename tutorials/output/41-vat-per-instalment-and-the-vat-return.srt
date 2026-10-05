@@ -1,0 +1,190 @@
+1
+00:00:00,000 --> 00:00:03,447
+This tutorial follows 5 percent VAT on a
+commercial
+
+2
+00:00:03,447 --> 00:00:06,510
+tenancy contract, from posting to the VAT
+return.
+
+3
+00:00:06,510 --> 00:00:10,340
+As the Accountant, open Noor Pharmacy's
+draft contract for shop
+
+4
+00:00:10,340 --> 00:00:13,787
+BC-G01 at Palm Ridge Business Centre:
+150,000 in rent
+
+5
+00:00:13,787 --> 00:00:17,233
+plus 7,500 of VAT, and a 15,000 security
+deposit.
+
+6
+00:00:17,233 --> 00:00:20,680
+Select Post Contract, check the review,
+and post it.
+
+7
+00:00:20,680 --> 00:00:22,595
+Now select View posting journal.
+
+8
+00:00:22,595 --> 00:00:26,041
+The deposit and the rent are debited to
+Rent
+
+9
+00:00:26,041 --> 00:00:29,488
+Receivable and credited to Security
+Deposit and Advance Rent.
+
+10
+00:00:29,488 --> 00:00:33,317
+The VAT is its own pair: Rent Receivable
+is debited
+
+11
+00:00:33,317 --> 00:00:37,147
+with 7,500, and Output VAT not yet due is
+credited.
+
+12
+00:00:37,147 --> 00:00:40,594
+A tenancy contract is not a tax invoice,
+so
+
+13
+00:00:40,594 --> 00:00:43,657
+posting it does not make the VAT payable.
+
+14
+00:00:43,657 --> 00:00:46,721
+Back on the contract, open the Cheques
+tab.
+
+15
+00:00:46,721 --> 00:00:50,168
+Each of the four rent cheques of 39,375
+carries
+
+16
+00:00:50,168 --> 00:00:53,231
+1,875 of VAT, and the deposit carries
+none.
+
+17
+00:00:53,231 --> 00:00:55,529
+Each instalment brings its own VAT.
+
+18
+00:00:55,529 --> 00:00:58,593
+Now open Meridian Logistics' contract,
+which has run
+
+19
+00:00:58,593 --> 00:01:01,274
+for a year, and its VAT section.
+
+20
+00:01:01,274 --> 00:01:05,486
+There are four tax points: 1 October, 1
+January, 1 April
+
+21
+00:01:05,486 --> 00:01:09,316
+and 1 July, each with its own numbered tax
+invoice.
+
+22
+00:01:09,316 --> 00:01:12,762
+A tax point is the instalment's due date,
+or
+
+23
+00:01:12,762 --> 00:01:16,209
+the day it was paid if that came first.
+
+24
+00:01:16,209 --> 00:01:20,039
+Open the July journal: it debits Output
+VAT not yet
+
+25
+00:01:20,039 --> 00:01:23,485
+due and credits Output VAT on Sales with
+1,500.
+
+26
+00:01:23,485 --> 00:01:27,315
+Tax points are declared every night, and
+on Month-end recognition
+
+27
+00:01:27,315 --> 00:01:30,761
+you can declare them yourself before
+closing a period.
+
+28
+00:01:30,761 --> 00:01:34,208
+Preview shows what has fallen due: Noor's
+first rent
+
+29
+00:01:34,208 --> 00:01:37,272
+cheque, dated 1 October, with 1,875 of
+VAT.
+
+30
+00:01:37,272 --> 00:01:39,952
+Now open Final Reports, VAT return, and
+
+31
+00:01:39,952 --> 00:01:42,250
+pick the quarter from July 2026.
+
+32
+00:01:42,250 --> 00:01:46,080
+Box 1b holds the standard-rated rent in
+Dubai and its
+
+33
+00:01:46,080 --> 00:01:49,909
+VAT, and box 9 the input VAT on supplier
+bills.
+
+34
+00:01:49,909 --> 00:01:54,122
+The check confirms that the output VAT
+ties to the ledger.
+
+35
+00:01:54,122 --> 00:01:57,569
+Select box 1b to see the documents behind
+it.
+
+36
+00:01:57,569 --> 00:02:00,249
+The quarter ended on 30 September, so
+
+37
+00:02:00,249 --> 00:02:02,930
+the Company Admin can now file it.
+
+38
+00:02:02,930 --> 00:02:06,377
+The April quarter shows a filed return:
+the Company
+
+39
+00:02:06,377 --> 00:02:09,440
+Admin filed it with the tax authority's
+reference,
+
+40
+00:02:09,440 --> 00:02:12,504
+and filing locks VAT dated in that
+quarter.
