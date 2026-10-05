@@ -1,0 +1,65 @@
+{
+  "id": "22",
+  "slug": "submit-and-manage-maintenance-tickets",
+  "title": "Miftah tutorial 22 · Submit and manage maintenance tickets",
+  "description": "Raise a ticket, assign and track it, confirm closure with a one-time code and review ticket reports.\n\nWho this is for: Company Admin, Company User, Property Manager, Tenant.\n\nChapters:\n0:00 Report a Problem\n0:27 Give the Supervisor a Login\n0:58 Assign the Work\n1:21 Close with the Code\n1:42 Reports and Rating\n\nPart of the Miftah web course — playlist: Miftah · Operations\n\nقدّم طلب صيانة، وعيّنه وتابع حالته، وأكّد إغلاقه برمز لمرة واحدة، وراجع تقارير الطلبات.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "maintenance tickets",
+    "facilities booking",
+    "gate pass",
+    "meetings",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Operations",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0.0,
+      "start": "0:00",
+      "label": "Report a Problem"
+    },
+    {
+      "startSec": 27.5,
+      "start": "0:27",
+      "label": "Give the Supervisor a Login"
+    },
+    {
+      "startSec": 58.7,
+      "start": "0:58",
+      "label": "Assign the Work"
+    },
+    {
+      "startSec": 81.8,
+      "start": "1:21",
+      "label": "Close with the Code"
+    },
+    {
+      "startSec": 102.4,
+      "start": "1:42",
+      "label": "Reports and Rating"
+    }
+  ],
+  "durationSec": 118,
+  "roles": [
+    "TENANT_ADMIN",
+    "PROPERTY_MANAGER",
+    "TENANT_USER",
+    "RENTER"
+  ],
+  "topic": "operations",
+  "captionsFile": "tutorials/output/22-submit-and-manage-maintenance-tickets.srt",
+  "videoFile": "tutorials/output/22-submit-and-manage-maintenance-tickets.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/22.png"
+}
