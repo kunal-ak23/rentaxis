@@ -230,7 +230,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "41", slug: "vat-per-instalment-and-the-vat-return", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 150, youtubeId: null,
+        id: "41", slug: "vat-per-instalment-and-the-vat-return", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 132, youtubeId: "7NLo7eNepM8",
         title: { en: "VAT per instalment and the VAT return", ar: "ضريبة القيمة المضافة لكل دفعة والإقرار الضريبي" },
         description: {
             en: "See how 5% VAT on a commercial contract waits as not yet due until each instalment's date, then file the quarter's VAT return.",
