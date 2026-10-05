@@ -183,7 +183,8 @@ class UnitListingServiceTest {
         MockMultipartFile file = new MockMultipartFile("file", "hero.jpg", "image/jpeg", new byte[]{1});
         UnitListingMediaDTO dto = service.addMedia(tenantId, listingId, file, "Hero", true);
 
-        assertThat(dto.url()).isEqualTo(fakeUrl);
+        // Bug 26/27: the private blob URL is never handed out — the staff media route is.
+        assertThat(dto.url()).isEqualTo("/api/listings/" + listingId + "/media/" + dto.id() + "/file");
         assertThat(dto.isCover()).isTrue();
         verify(blobStorageService).upload(tenantId, listingId, file);
         verify(mediaRepository).save(any(UnitListingMedia.class));

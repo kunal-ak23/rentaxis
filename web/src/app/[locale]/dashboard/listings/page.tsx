@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
+import { listingMediaSrc } from "@/lib/assetUrl";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Pagination } from "@/components/ui/Pagination";
 import { formatCurrencyCompact } from "@/lib/format";
@@ -402,7 +403,7 @@ function ListingsContent() {
                     {listing.coverPhotoUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={listing.coverPhotoUrl}
+                        src={listingMediaSrc(listing.coverPhotoUrl)}
                         alt={listing.title}
                         className="w-10 h-10 rounded-lg object-cover border border-border"
                       />
@@ -489,7 +490,7 @@ function ListingsContent() {
                   {listing.coverPhotoUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={listing.coverPhotoUrl}
+                      src={listingMediaSrc(listing.coverPhotoUrl)}
                       alt={listing.title}
                       className="w-full h-full object-cover"
                     />

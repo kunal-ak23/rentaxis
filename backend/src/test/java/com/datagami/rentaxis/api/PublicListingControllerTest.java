@@ -52,6 +52,10 @@ class PublicListingControllerTest {
     UnitRepository unitRepository;
     @Mock
     UnitListingAmenityRepository amenityRepository;
+    @org.mockito.Spy
+    com.datagami.rentaxis.core.service.ListingMediaUrls mediaUrls =
+            new com.datagami.rentaxis.core.service.ListingMediaUrls(
+                    org.mockito.Mockito.mock(com.datagami.rentaxis.core.service.BlobStorageService.class));
 
     @InjectMocks
     PublicListingController controller;

@@ -24,3 +24,42 @@ describe('assetSrc', () => {
     expect(assetSrc(null)).toBe('')
   })
 })
+
+import { listingMediaSrc, promoImageSrc } from '../assetUrl'
+
+describe('listingMediaSrc (bug 26/27)', () => {
+  it('sends the staff media route through the authenticated proxy', () => {
+    expect(listingMediaSrc('/api/listings/l1/media/m1/file')).toBe('/api/proxy/listings/l1/media/m1/file')
+  })
+  it('leaves the public media route, external links and nothing alone', () => {
+    expect(listingMediaSrc('/api/v1/public/listing-media/m1')).toBe('/api/v1/public/listing-media/m1')
+    expect(listingMediaSrc('https://cdn.example.com/a.jpg')).toBe('https://cdn.example.com/a.jpg')
+    expect(listingMediaSrc(null)).toBe('')
+    expect(listingMediaSrc(undefined)).toBe('')
+  })
+})
+
+describe('promoImageSrc (ux6 item 2)', () => {
+  it('previews an uploaded image through the admin route, live or not', () => {
+    expect(promoImageSrc('/api/v1/public/promo-images/0b0f2c1e-1111-4222-8333-944455556666.png'))
+      .toBe('/api/proxy/v1/promotions/images/0b0f2c1e-1111-4222-8333-944455556666.png')
+  })
+  it('leaves an https link to artwork hosted elsewhere alone', () => {
+    expect(promoImageSrc('https://cdn.example.com/art.webp')).toBe('https://cdn.example.com/art.webp')
+    expect(promoImageSrc('')).toBe('')
+  })
+})
+
+import { storedFileSrc } from '../assetUrl'
+
+describe('storedFileSrc (private attachments)', () => {
+  const download = '/api/proxy/v1/tickets/attachments/a1/download'
+  it('shows a blob in private storage through the authenticated download route', () => {
+    expect(storedFileSrc('https://acct.blob.core.windows.net/tenant-x/ticket-attachments/a.png', download)).toBe(download)
+  })
+  it('keeps a file on local disk on its proxied serve URL', () => {
+    expect(storedFileSrc('/api/v1/assets/serve/ticket-attachments/a.png', download))
+      .toBe('/api/proxy/v1/assets/serve/ticket-attachments/a.png')
+    expect(storedFileSrc(null, download)).toBe('')
+  })
+})

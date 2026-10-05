@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
+import { PromoImageField } from "./PromoImageField";
 import {
     PROMO_CATEGORIES,
     type PromoBusinessDTO,
@@ -53,6 +54,7 @@ export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorPro
     const [domainError, setDomainError] = useState<string | null>(null);
     const [active, setActive] = useState(business?.active ?? true);
     const [error, setError] = useState<string | null>(null);
+    const [uploading, setUploading] = useState(false);
 
     function addDomain() {
         const host = toHost(domainDraft);
@@ -75,6 +77,7 @@ export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorPro
     }
 
     function submit() {
+        if (uploading) return;
         if (trimOrNull(nameEn) === null) {
             setError(t("saveError"));
             return;
@@ -113,11 +116,8 @@ export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorPro
                         {PROMO_CATEGORIES.map(c => <option key={c} value={c}>{t(`category${c}`)}</option>)}
                     </select>
                 </label>
-                <label className="block">
-                    <span className="mb-1 block text-sm font-medium">{t("logo")}</span>
-                    <input aria-label={t("logo")} className="w-full rounded-lg border px-3 py-2"
-                        value={logoUrl} onChange={e => setLogoUrl(e.target.value)} />
-                </label>
+                <PromoImageField label={t("logo")} value={logoUrl} onChange={setLogoUrl}
+                    onBusyChange={setUploading} />
                 <label className="block">
                     <span className="mb-1 block text-sm font-medium">{t("phone")}</span>
                     <input aria-label={t("phone")} placeholder="+971501234567"
@@ -164,8 +164,8 @@ export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorPro
             {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
 
             <div className="flex gap-2">
-                <button type="button" onClick={submit}
-                    className="rounded-lg bg-gray-900 px-4 py-2 text-white">{t("save")}</button>
+                <button type="button" onClick={submit} disabled={uploading}
+                    className="rounded-lg bg-gray-900 px-4 py-2 text-white disabled:opacity-40">{t("save")}</button>
                 <button type="button" onClick={onCancel}
                     className="rounded-lg border px-4 py-2">{t("cancel")}</button>
             </div>

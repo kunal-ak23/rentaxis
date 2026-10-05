@@ -124,6 +124,32 @@ public class BlobStorageService {
         }
     }
 
+    /** The folder promotion artwork and business logos are stored in, in the organisation's container. */
+    public static final String PROMOTIONS_FOLDER = "promotions";
+
+    /**
+     * Stores a promotion image (an ad's artwork, a business logo) at
+     * {@code tenant-{tenantId}/promotions/{fileName}} with its sniffed content
+     * type. {@code fileName} is chosen by the caller ({@code <uuid>.<ext>}).
+     */
+    public void uploadPromotionImage(UUID tenantId, String fileName, byte[] bytes, String contentType) {
+        if (tenantId == null || fileName == null || bytes == null || bytes.length == 0
+                || !isSafeObjectPath(PROMOTIONS_FOLDER + "/" + fileName) || fileName.contains("/")) {
+            throw new BlobStorageException("tenantId, a plain file name and non-empty bytes are required");
+        }
+        String blobPath = PROMOTIONS_FOLDER + "/" + fileName;
+        try {
+            BlobClient blobClient = getContainerClient(tenantId).getBlobClient(blobPath);
+            blobClient.uploadWithResponse(
+                    new com.azure.storage.blob.options.BlobParallelUploadOptions(
+                            com.azure.core.util.BinaryData.fromBytes(bytes))
+                            .setHeaders(new com.azure.storage.blob.models.BlobHttpHeaders().setContentType(contentType)),
+                    null, com.azure.core.util.Context.NONE);
+        } catch (com.azure.storage.blob.models.BlobStorageException e) {
+            throw new BlobStorageException("Failed to upload promotion image " + blobPath, e);
+        }
+    }
+
     /** Uploads a fresh gate photo under a visitor profile's stable folder. */
     public UploadResult uploadGateVisitor(UUID tenantId, UUID visitorProfileId, MultipartFile file) {
         if (tenantId == null || visitorProfileId == null || file == null || file.isEmpty()) {
@@ -500,6 +526,11 @@ public class BlobStorageService {
         String prefix = AssetController.PUBLIC_PREFIX + "/";
         return blobPath != null && blobPath.length() > prefix.length()
                 && blobPath.regionMatches(true, 0, prefix, 0, prefix.length());
+    }
+
+    /** The name of {@code tenantId}'s own (private) container, lower-cased as Azure stores it. */
+    public String tenantContainerName(UUID tenantId) {
+        return (containerPrefix + tenantId).toLowerCase(Locale.ROOT);
     }
 
     /** Reads a tenant-scoped blob for an authenticated controller response. */

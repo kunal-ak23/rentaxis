@@ -23,6 +23,9 @@ class ApiClient {
     defaultValue: 15,
   );
 
+  /// The API base this build talks to (also where backend-served media lives).
+  static String get defaultBaseUrl => _defaultBaseUrl;
+
   ApiClient({String? baseUrl}) {
     dio = Dio(
       BaseOptions(

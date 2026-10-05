@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, use } from "react";
+import { useState, useEffect, useCallback, use, type KeyboardEvent } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/routing";
 import { useSession } from "next-auth/react";
@@ -12,6 +12,7 @@ import {
 import { Link } from "@/i18n/routing";
 import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
+import { listingMediaSrc } from "@/lib/assetUrl";
 
 const LocationPicker = dynamic(() => import("@/components/LocationPicker"), { ssr: false });
 import {
@@ -114,6 +115,22 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
   const [media, setMedia] = useState<UnitListingMediaDTO[]>([]);
 
   const [activeTab, setActiveTab] = useState<Tab>('details');
+
+  /** WAI-ARIA tabs: Left/Right (mirrored in RTL), Home and End move focus and selection. */
+  function handleTabKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    const rtl = typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
+    const i = TABS.indexOf(activeTab);
+    let next = -1;
+    if (e.key === 'ArrowRight') next = rtl ? i - 1 : i + 1;
+    else if (e.key === 'ArrowLeft') next = rtl ? i + 1 : i - 1;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = TABS.length - 1;
+    else return;
+    e.preventDefault();
+    const tab = TABS[(next + TABS.length) % TABS.length];
+    setActiveTab(tab);
+    document.getElementById(`listing-tab-${tab}`)?.focus();
+  }
   const [loading, setLoading] = useState(!isNew);
   // A failed load leaves nothing to edit: a 404 is "no such listing", anything
   // else "could not load it". Either way the form, and Save, are not shown —
@@ -514,14 +531,25 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
         </div>
       </div>
 
-      {/* Tab bar */}
-      <div className="flex items-center gap-0.5 mb-6 border-b border-border overflow-x-auto">
+      {/* Tab bar — a real tablist (bug 26): arrow keys move between sections, Home/End jump. */}
+      <div
+        role="tablist"
+        aria-label={t('editorSections')}
+        onKeyDown={handleTabKeyDown}
+        className="flex items-center gap-0.5 mb-6 border-b border-border overflow-x-auto"
+      >
         {TABS.map(tab => (
           <button
             key={tab}
+            type="button"
+            role="tab"
+            id={`listing-tab-${tab}`}
+            aria-selected={activeTab === tab}
+            aria-controls={`listing-panel-${tab}`}
+            tabIndex={activeTab === tab ? 0 : -1}
             onClick={() => setActiveTab(tab)}
             className={cn(
-              "px-4 py-2.5 text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer border-b-2 focus:outline-none",
+              "px-4 py-2.5 text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
               activeTab === tab
                 ? "border-primary text-primary"
                 : "border-transparent text-muted hover:text-foreground"
@@ -534,7 +562,7 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
 
       {/* ──────────────────── DETAILS TAB ──────────────────── */}
       {activeTab === 'details' && (
-        <div className="bg-surface rounded-xl border border-border p-6">
+        <div role="tabpanel" id="listing-panel-details" aria-labelledby="listing-tab-details" tabIndex={0} className="bg-surface rounded-xl border border-border p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {/* Unit */}
             <div className="col-span-1 md:col-span-2">
@@ -718,7 +746,7 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
 
       {/* ──────────────────── MEDIA TAB ──────────────────── */}
       {activeTab === 'media' && (
-        <div className="bg-surface rounded-xl border border-border p-6 space-y-6">
+        <div role="tabpanel" id="listing-panel-media" aria-labelledby="listing-tab-media" tabIndex={0} className="bg-surface rounded-xl border border-border p-6 space-y-6">
           {isNew || !listing ? (
             <div className="flex flex-col items-center gap-3 py-12 text-center">
               <div className="w-14 h-14 rounded-2xl bg-input flex items-center justify-center">
@@ -737,7 +765,7 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
                       <div className="w-12 h-12 rounded-lg bg-input overflow-hidden shrink-0 border border-border">
                         {m.mediaType === 'PHOTO' || m.mediaType === 'FLOOR_PLAN' ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={m.url} alt={m.caption ?? ''} className="w-full h-full object-cover" />
+                          <img src={listingMediaSrc(m.url)} alt={m.caption ?? ''} className="w-full h-full object-cover" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
                             <ImageIcon size={14} className="text-muted" />
@@ -756,7 +784,7 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-foreground truncate">{m.caption ?? m.url}</p>
+                        <p className="text-xs text-foreground truncate">{m.caption ?? (m.url.startsWith('/') ? '' : m.url)}</p>
                       </div>
                       {/* Reorder + Delete */}
                       <div className="flex items-center gap-1 shrink-0">
@@ -845,7 +873,7 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
 
       {/* ──────────────────── AMENITIES TAB ──────────────────── */}
       {activeTab === 'amenities' && (
-        <div className="bg-surface rounded-xl border border-border p-6 space-y-6">
+        <div role="tabpanel" id="listing-panel-amenities" aria-labelledby="listing-tab-amenities" tabIndex={0} className="bg-surface rounded-xl border border-border p-6 space-y-6">
           {AMENITY_GROUPS.map(group => (
             <div key={group.key}>
               <h3 className="text-[10px] font-bold text-muted uppercase tracking-[0.15em] mb-3">
@@ -887,7 +915,7 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
 
       {/* ──────────────────── SEO TAB ──────────────────── */}
       {activeTab === 'seo' && (
-        <div className="bg-surface rounded-xl border border-border p-6 space-y-5">
+        <div role="tabpanel" id="listing-panel-seo" aria-labelledby="listing-tab-seo" tabIndex={0} className="bg-surface rounded-xl border border-border p-6 space-y-5">
           {/* Slug */}
           {listing?.slug && (
             <div>
@@ -986,7 +1014,7 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
 
       {/* ──────────────────── PRICING TAB ──────────────────── */}
       {activeTab === 'pricing' && (
-        <div className="bg-surface rounded-xl border border-border p-6">
+        <div role="tabpanel" id="listing-panel-pricing" aria-labelledby="listing-tab-pricing" tabIndex={0} className="bg-surface rounded-xl border border-border p-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             {/* Annual rent */}
             <div>
@@ -1083,16 +1111,17 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
 
       {/* ──────────────────── LOCATION TAB ──────────────────── */}
       {activeTab === 'location' && (
-        <div className="bg-surface rounded-xl border border-border">
+        <div role="tabpanel" id="listing-panel-location" aria-labelledby="listing-tab-location" tabIndex={0} className="bg-surface rounded-xl border border-border">
           <div className="px-5 py-4 border-b border-border">
-            <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">Location</p>
-            <p className="text-[10px] text-muted mt-0.5">Click on the map to drop a pin, or drag the marker to adjust.</p>
+            <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">{t('tabLocation')}</p>
+            <p className="text-[10px] text-muted mt-0.5">{t('locationHint')}</p>
           </div>
           <div className="p-5 space-y-4">
             <div className="rounded-xl overflow-hidden border border-border">
               <LocationPicker
                 lat={form.lat && !isNaN(Number(form.lat)) ? Number(form.lat) : null}
                 lng={form.lng && !isNaN(Number(form.lng)) ? Number(form.lng) : null}
+                label={form.titleEn}
                 onLocationChange={(lat, lng) => {
                   setField('lat', lat.toFixed(6));
                   setField('lng', lng.toFixed(6));
@@ -1101,10 +1130,12 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-muted mb-1.5">Latitude</label>
+                <label htmlFor="listing-lat" className="block text-xs font-semibold text-muted mb-1.5">{t('latitude')}</label>
                 <input
+                  id="listing-lat"
                   type="number"
                   step="any"
+                  dir="ltr"
                   value={form.lat}
                   onChange={(e) => setField('lat', e.target.value)}
                   placeholder="e.g. 25.2048"
@@ -1112,10 +1143,12 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-muted mb-1.5">Longitude</label>
+                <label htmlFor="listing-lng" className="block text-xs font-semibold text-muted mb-1.5">{t('longitude')}</label>
                 <input
+                  id="listing-lng"
                   type="number"
                   step="any"
+                  dir="ltr"
                   value={form.lng}
                   onChange={(e) => setField('lng', e.target.value)}
                   placeholder="e.g. 55.2708"

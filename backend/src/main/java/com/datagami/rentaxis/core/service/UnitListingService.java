@@ -96,7 +96,11 @@ public class UnitListingService {
         this.slugService = slugService;
         this.eventPublisher = eventPublisher;
         this.blobStorageService = blobStorageService;
+        this.mediaUrls = new ListingMediaUrls(blobStorageService);
     }
+
+    /** Bug 26/27: stored files are named by a backend route, never by their private blob URL. */
+    private final ListingMediaUrls mediaUrls;
 
     @Transactional(readOnly = true)
     public Page<UnitListing> list(UUID tenantId, ListingStatus statusFilter,
@@ -412,7 +416,7 @@ public class UnitListingService {
         mediaRepository.findByListingIdInOrderByListingIdAscSortOrderAsc(listingIds)
                 .forEach(media -> coverUrlsByListingId.merge(
                         media.getListingId(),
-                        media.getUrl(),
+                        mediaUrls.adminUrl(media),
                         (current, candidate) -> Boolean.TRUE.equals(media.getIsCover()) ? candidate : current));
 
         Map<UUID, Long> interestCountsByListingId = new HashMap<>();
@@ -623,7 +627,28 @@ public class UnitListingService {
 
     private UnitListingMediaDTO toMediaDto(UnitListingMedia m) {
         return new UnitListingMediaDTO(
-                m.getId(), m.getMediaType(), m.getUrl(),
+                m.getId(), m.getMediaType(), mediaUrls.adminUrl(m),
                 m.getCaption(), m.getSortOrder(), m.getIsCover());
+    }
+
+    /** A stored listing file: whose container it is in, and where. */
+    public record MediaFile(UUID tenantId, String blobPath, String mediaType) {
+    }
+
+    /**
+     * The file behind one of {@code listingId}'s media rows, for its own staff
+     * (bug 26/27). Another organisation's listing, a row of another listing, or
+     * a row that is an external link rather than a stored file: not found.
+     */
+    @Transactional(readOnly = true)
+    public MediaFile mediaFile(UUID tenantId, UUID listingId, UUID mediaId) {
+        UnitListing listing = get(tenantId, listingId);
+        UnitListingMedia media = mediaRepository.findById(mediaId)
+                .filter(m -> Objects.equals(m.getListingId(), listing.getId()))
+                .orElseThrow(() -> new NotFoundException("Media not found"));
+        String blobPath = mediaUrls.storedBlobPath(media)
+                .orElseThrow(() -> new NotFoundException("Media not found"));
+        return new MediaFile(listing.getTenantId(), blobPath,
+                media.getMediaType() == null ? null : media.getMediaType().name());
     }
 }

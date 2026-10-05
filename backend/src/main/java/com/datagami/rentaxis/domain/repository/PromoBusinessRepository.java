@@ -15,6 +15,9 @@ public interface PromoBusinessRepository extends JpaRepository<PromoBusiness, UU
 
     Page<PromoBusiness> findByTenantId(UUID tenantId, Pageable pageable);
 
+    /** Businesses using an uploaded image as their logo (any tenant) — see the anonymous image route. */
+    List<PromoBusiness> findByLogoUrl(String logoUrl);
+
     List<PromoBusiness> findByTenantIdOrderByCreatedAtAsc(UUID tenantId);
 
     /**
