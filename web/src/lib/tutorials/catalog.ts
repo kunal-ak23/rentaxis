@@ -278,7 +278,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "18", slug: "journal-vouchers-create-read-and-reverse", topic: "accounting", roles: FINANCE, durationSec: 150, youtubeId: null,
+        id: "18", slug: "journal-vouchers-create-read-and-reverse", topic: "accounting", roles: FINANCE, durationSec: 105, youtubeId: "HbwwwY3AF1w",
         title: { en: "Journal vouchers: create, read and reverse", ar: "سندات القيد: الإنشاء والقراءة والعكس" },
         description: {
             en: "Post a balanced journal voucher, read its lines and correct a mistake by reversing it.",
