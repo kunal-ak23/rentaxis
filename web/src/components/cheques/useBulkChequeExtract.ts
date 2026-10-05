@@ -69,10 +69,27 @@ export function normalizeExtraction(
   };
 }
 
+/**
+ * How long one file may take before the row says so (tutorial 15: with blob storage
+ * down the extraction hung with no feedback). A slow model read of a busy photo takes
+ * well under a minute; two is generous.
+ */
+export const EXTRACT_TIMEOUT_MS = 120_000;
+
 async function extractOne(file: File): Promise<ChequeMultiExtractionResponse> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch("/api/proxy/v1/cheques/extract-many", { method: "POST", body: form });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), EXTRACT_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch("/api/proxy/v1/cheques/extract-many", { method: "POST", body: form, signal: controller.signal });
+  } catch (e) {
+    if (controller.signal.aborted) throw new ChequeExtractError("Reading this file took too long", "cheque_upload_timeout");
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new ChequeExtractError(err.error ?? `Upload failed (${res.status})`, err.code ?? null);

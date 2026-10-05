@@ -138,6 +138,18 @@ class ChequeExtractionControllerTest {
         org.mockito.Mockito.verifyNoInteractions(service);
     }
 
+    /** Tutorial 15: storage down is a named 503, not a bare 500 or a hang. */
+    @Test
+    @WithMockUser(roles = "TENANT_ADMIN")
+    void extractMany_storageDown_returns503WithCode() throws Exception {
+        when(multiService.extractAndStore(eq(tenantId), any())).thenThrow(
+                new com.datagami.rentaxis.core.service.BlobStorageService.BlobStorageException("Blob storage unreachable"));
+        MockMultipartFile file = new MockMultipartFile("file", "cheque.jpg", MediaType.IMAGE_JPEG_VALUE, new byte[]{1});
+        mockMvc.perform(multipart("/api/v1/cheques/extract-many").file(file).with(withTenant()))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("cheque_storage_unavailable"));
+    }
+
     private org.springframework.test.web.servlet.request.RequestPostProcessor withTenant() {
         return request -> {
             TenantContextHolder.setTenantId(tenantId);

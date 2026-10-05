@@ -178,4 +178,26 @@ describe("BulkChequeUploadFlow — several cheques in one file", () => {
 
     expect(screen.getByText(/uploadErrors\.cheque_upload_image_too_large/)).toBeTruthy();
   });
+
+  // Tutorial 15: the reader answered but read nothing — say so on the row.
+  it("warns on a row the reader could not read, instead of a silent blank row", async () => {
+    const empty = { ...threeInOne, items: [], warnings: ["Extraction failed: OCR unavailable"] };
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => empty });
+    await uploadOnePhoto(fetchMock);
+    expect(document.querySelectorAll("tbody tr")).toHaveLength(1);
+    expect(screen.getByTestId("cheque-nothing-read")).toHaveTextContent("nothingRead");
+  });
+
+  it("does not warn on a row the reader did read", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => threeInOne });
+    await uploadOnePhoto(fetchMock);
+    expect(screen.queryByTestId("cheque-nothing-read")).toBeNull();
+  });
+
+  it("names storage being down instead of a generic failure", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: false, status: 503,
+      json: async () => ({ error: "Cheque storage is not reachable", code: "cheque_storage_unavailable" }) });
+    await uploadOnePhoto(fetchMock);
+    expect(screen.getByText("uploadErrors.cheque_storage_unavailable")).toBeInTheDocument();
+  });
 });

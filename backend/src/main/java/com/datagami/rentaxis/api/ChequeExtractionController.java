@@ -69,6 +69,23 @@ public class ChequeExtractionController {
         return ResponseEntity.status(status).body(Map.of("error", ex.getMessage(), "code", ex.getCode()));
     }
 
+    /** Code the web maps to "storage not reachable, nothing was saved" (tutorial 15). */
+    public static final String STORAGE_UNAVAILABLE = "cheque_storage_unavailable";
+
+    /**
+     * Tutorial 15: blob storage down. A clear 503 the scan page can name, instead of a
+     * bare 500 (or a hang) — nothing was stored: the multi-cheque path removes what it
+     * had issued before rethrowing.
+     */
+    @ExceptionHandler(com.datagami.rentaxis.core.service.BlobStorageService.BlobStorageException.class)
+    public ResponseEntity<Map<String, String>> handleStorage(
+            com.datagami.rentaxis.core.service.BlobStorageService.BlobStorageException ex) {
+        org.slf4j.LoggerFactory.getLogger(ChequeExtractionController.class).warn("Cheque scan storage failed: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
+                "error", "Cheque storage is not reachable right now, so nothing was saved. Try again in a few minutes.",
+                "code", STORAGE_UNAVAILABLE));
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> handleValidation(IllegalArgumentException ex) {
         return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));

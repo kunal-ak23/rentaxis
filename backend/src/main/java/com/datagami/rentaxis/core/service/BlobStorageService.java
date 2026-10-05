@@ -94,6 +94,12 @@ public class BlobStorageService {
             throw new BlobStorageException("Failed to read upload stream for " + blobPath, e);
         } catch (com.azure.storage.blob.models.BlobStorageException e) {
             throw new BlobStorageException("Failed to upload blob " + blobPath, e);
+        } catch (BlobStorageException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            // The store unreachable (connection refused, timed out): the SDK throws an
+            // unchecked I/O error, not a BlobStorageException. Said the same way.
+            throw new BlobStorageException("Blob storage unreachable uploading " + blobPath, e);
         }
     }
 
@@ -121,6 +127,12 @@ public class BlobStorageService {
             throw new BlobStorageException("Failed to read cheque image bytes for " + blobPath, e);
         } catch (com.azure.storage.blob.models.BlobStorageException e) {
             throw new BlobStorageException("Failed to upload blob " + blobPath, e);
+        } catch (BlobStorageException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            // The store unreachable (connection refused, timed out): the SDK throws an
+            // unchecked I/O error, not a BlobStorageException. Said the same way.
+            throw new BlobStorageException("Blob storage unreachable uploading " + blobPath, e);
         }
     }
 
@@ -545,8 +557,15 @@ public class BlobStorageService {
                         throw new BlobStorageException(
                                 "AZURE_STORAGE_CONNECTION_STRING is not configured");
                     }
+                    // Tutorial 15: with storage unreachable a cheque scan hung for minutes
+                    // on the SDK's default retries (4 tries, back-off up to 120 s) with
+                    // nothing on screen. Three tries, a minute each, short back-off: a
+                    // dead store is reported in well under the scan page's patience.
                     local = new BlobServiceClientBuilder()
                             .connectionString(connectionString)
+                            .retryOptions(new com.azure.storage.common.policy.RequestRetryOptions(
+                                    com.azure.storage.common.policy.RetryPolicyType.EXPONENTIAL,
+                                    3, 60, 500L, 4_000L, null))
                             .buildClient();
                     this.serviceClient = local;
                 }
