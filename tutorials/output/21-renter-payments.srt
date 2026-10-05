@@ -1,0 +1,89 @@
+1
+00:00:00,000 --> 00:00:03,101
+This tutorial shows a Tenant's own view of
+rent
+
+2
+00:00:03,101 --> 00:00:06,202
+in Oasis Crest Properties, signed in as
+Ahmed Hassan.
+
+3
+00:00:06,202 --> 00:00:09,648
+The home page shows the next payment:
+21,250, due on
+
+4
+00:00:09,648 --> 00:00:13,094
+the first of October and still within the
+grace period.
+
+5
+00:00:13,094 --> 00:00:14,472
+Select View all payments.
+
+6
+00:00:14,472 --> 00:00:17,229
+My Payments opens with what is due now.
+
+7
+00:00:17,229 --> 00:00:19,641
+The amount due is 21,250: cheque 5,
+
+8
+00:00:19,641 --> 00:00:22,053
+number 200104, dated the first of October.
+
+9
+00:00:22,053 --> 00:00:25,498
+The landlord already holds this cheque and
+banks it on
+
+10
+00:00:25,498 --> 00:00:28,599
+its date, so keep the funds in your
+account.
+
+11
+00:00:28,599 --> 00:00:31,356
+Its row shows the due date, the amount
+
+12
+00:00:31,356 --> 00:00:34,113
+payable and the running total of
+everything due.
+
+13
+00:00:34,113 --> 00:00:36,180
+Payment History reads the other way.
+
+14
+00:00:36,180 --> 00:00:38,937
+Cheques 1, 2 and 3 have cleared, and
+
+15
+00:00:38,937 --> 00:00:41,349
+each has a receipt voucher to download.
+
+16
+00:00:41,349 --> 00:00:43,761
+Cheque 4 is at the bank, awaiting
+
+17
+00:00:43,761 --> 00:00:46,173
+clearance, so there is nothing to pay.
+
+18
+00:00:46,173 --> 00:00:49,963
+Select Receipt Voucher on any cleared
+cheque to download its receipt.
+
+19
+00:00:49,963 --> 00:00:54,098
+From these two pages a Tenant can see what
+is due, what
+
+20
+00:00:54,098 --> 00:00:57,888
+has already moved, and the proof of what
+has been paid.
