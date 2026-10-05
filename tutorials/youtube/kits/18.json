@@ -1,0 +1,64 @@
+{
+  "id": "18",
+  "slug": "journal-vouchers-create-read-and-reverse",
+  "title": "Miftah tutorial 18 · Journal vouchers: create, read and reverse",
+  "description": "Post a balanced journal voucher, read its lines and correct a mistake by reversing it.\n\nWho this is for: Accountant, Company Admin, System Admin.\n\nChapters:\n0:00 Every Entry in One List\n0:25 A Manual Journal\n0:42 Write the Correction\n1:15 Reverse, Never Edit\n1:33 Journals the System Writes\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nرحّل سند قيد متوازنًا، واقرأ بنوده، وصحّح الخطأ بعكس القيد.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "chart of accounts",
+    "journal voucher",
+    "financial reports",
+    "accounting software",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Accounting",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0.0,
+      "start": "0:00",
+      "label": "Every Entry in One List"
+    },
+    {
+      "startSec": 25.547,
+      "start": "0:25",
+      "label": "A Manual Journal"
+    },
+    {
+      "startSec": 42.578,
+      "start": "0:42",
+      "label": "Write the Correction"
+    },
+    {
+      "startSec": 75.83,
+      "start": "1:15",
+      "label": "Reverse, Never Edit"
+    },
+    {
+      "startSec": 93.672,
+      "start": "1:33",
+      "label": "Journals the System Writes"
+    }
+  ],
+  "durationSec": 106,
+  "roles": [
+    "SUPER_ADMIN",
+    "TENANT_ADMIN",
+    "ACCOUNTANT"
+  ],
+  "topic": "accounting",
+  "captionsFile": "tutorials/output/18-journal-vouchers-create-read-and-reverse.srt",
+  "videoFile": "tutorials/output/18-journal-vouchers-create-read-and-reverse.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/18.png"
+}
