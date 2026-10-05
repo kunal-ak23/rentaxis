@@ -139,6 +139,17 @@ type Props = {
 /** Ids of rows added on the grid before they are saved. */
 export const NEW_ROW_PREFIX = "new-";
 
+/** Statuses superseded by another row: the replacement, the successor lease's copy, or nothing. */
+const SUPERSEDED: ReadonlySet<string> = new Set(["REPLACED", "CANCELLED", "TRANSFERRED"]);
+
+/**
+ * A row that collects the contract itself: not superseded, and not a penalty's
+ * collection row (a fine is charged on top of the contract value).
+ */
+export function isContractInstalment(c: Pick<Cheque, "status" | "penaltyAssessmentId">): boolean {
+    return !SUPERSEDED.has(c.status) && !c.penaltyAssessmentId;
+}
+
 export default function ChequeGrid({
     cheques,
     editable,
@@ -185,14 +196,19 @@ export default function ChequeGrid({
     const [numbersOpen, setNumbersOpen] = useState(false);
     const [startingNumber, setStartingNumber] = useState("");
 
-    const total = cheques.reduce((s, c) => round2(s + (c.amount || 0)), 0);
+    // Tutorial 40: the footer compares the contract's own instalments with the contract
+    // value — a replaced or cancelled row was superseded (its replacement is the live
+    // one), and a penalty row collects a fine, not the contract.
+    const contractRows = cheques.filter(isContractInstalment);
+    const excluded = cheques.length - contractRows.length;
+    const total = contractRows.reduce((s, c) => round2(s + (c.amount || 0)), 0);
     const matches = Math.abs(round2(total - contractValueInclVat)) < 0.005;
     // VAT per instalment (spec 2026-09-24 §1). A row with no figure yet (typed on
     // the grid, or its amount edited) is filled in pro rata by the server on save,
     // so the footer only checks the sum once every row has one.
     const showVat = contractVat > 0 || cheques.some(c => (c.vatAmount ?? 0) > 0);
-    const vatPending = cheques.some(c => c.vatAmount === null || c.vatAmount === undefined);
-    const vatTotal = cheques.reduce((s, c) => round2(s + (c.vatAmount ?? 0)), 0);
+    const vatPending = contractRows.some(c => c.vatAmount === null || c.vatAmount === undefined);
+    const vatTotal = contractRows.reduce((s, c) => round2(s + (c.vatAmount ?? 0)), 0);
     const vatMatches = Math.abs(round2(vatTotal - contractVat)) < 0.005;
 
     const patch = (id: string, next: Partial<Cheque>) =>
@@ -688,6 +704,11 @@ export default function ChequeGrid({
                         <tr className="bg-input/40 font-semibold border-t-2 border-border">
                             <td className={td} colSpan={6}>
                                 {t("chequeTotal")}
+                                {excluded > 0 && (
+                                    <span className="block text-[10px] font-normal text-muted" data-testid="cheque-grid-excluded">
+                                        {t("chequeTotalExcludes", { count: excluded })}
+                                    </span>
+                                )}
                             </td>
                             <td className={tdNum} data-testid="cheque-grid-total">{fmtAmount(total)}</td>
                             {showVat && (

@@ -2373,6 +2373,7 @@
     "discountExceedsAmount": "Line {n}: the discount cannot be more than the amount.",
     "contractValueInclVat": "Contract Value (incl. VAT)",
     "chequeTotal": "Cheques Total",
+    "chequeTotalExcludes": "Excludes {count, plural, one {# replaced, cancelled or penalty row} other {# replaced, cancelled or penalty rows}}",
     "postingDate": "Posting Date",
     "chequeNo": "Cheque No",
     "chequeDate": "Date",
