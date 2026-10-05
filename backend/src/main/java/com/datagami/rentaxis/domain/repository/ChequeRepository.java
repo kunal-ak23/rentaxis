@@ -572,20 +572,28 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
     List<Cheque> findByProperty_IdAndChequeDateBetweenOrderByChequeDateAsc(UUID propertyId, LocalDate from, LocalDate to);
 
     /**
-     * Section 4's candidates for "owed on {@code at}": dated by then and either
-     * still uncleared, bounced, or cleared only after it. The status filter keeps
-     * years of cleared history out; the fetch joins keep the renter / unit / lease
-     * reads to this one query.
+     * Section 4's candidates for "owed on {@code at}": dated by then, on the register by
+     * then (posted on or before {@code at} — a write-off reversal's restored row is dated
+     * back to the original due date but did not exist before the reversal), and either
+     * still uncleared, cleared only after {@code at}, or bounced on or before {@code at}
+     * <em>whatever its status today</em> (PR #399 R1 P2-1: a later write-off, replacement
+     * or return moves the row to CANCELLED / REPLACED / RETURNED, and a closed period must
+     * not change because of it — the ledger as at {@code at} prices those rows). The status
+     * filter keeps years of cleared history out; the fetch joins keep the renter / unit /
+     * lease reads to this one query.
      */
     @Query("""
         select c from Cheque c
           left join fetch c.lease left join fetch c.renter left join fetch c.unit
         where c.property.id = :propertyId and c.chequeDate <= :at
+          and (c.postingDate is null or c.postingDate <= :at)
           and (c.status in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED,
                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED,
                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING,
                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.BOUNCED)
-               or (c.status = com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CLEARED and c.clearedAt > :at))
+               or (c.status = com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CLEARED and c.clearedAt > :at)
+               or (c.bouncedAt is not null and c.bouncedAt <= :at
+                   and c.status <> com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DRAFT))
         order by c.chequeDate asc
         """)
     List<Cheque> findOwedCandidatesAt(@Param("propertyId") UUID propertyId, @Param("at") LocalDate at);

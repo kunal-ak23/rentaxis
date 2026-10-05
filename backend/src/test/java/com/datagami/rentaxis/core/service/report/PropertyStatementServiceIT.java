@@ -366,6 +366,68 @@ class PropertyStatementServiceIT extends AbstractPostgresIT {
         });
     }
 
+    // ---- PR #399 R1 P2-1: a closed period does not change when the bounce is dealt with later
+
+    private BigDecimal septemberOverdue() {
+        return fig(statements.statement(fx.p1.getId(), SEP_1, SEP_30, null), "outstanding", "registerOverdue");
+    }
+
+    private void moveTo(Cheque c, ChequeStatus status) {
+        Cheque fresh = chequeRepo.findById(c.getId()).orElseThrow();
+        fresh.setStatus(status);
+        chequeRepo.save(fresh);
+    }
+
+    @Test
+    void aWriteOffAfterThePeriodLeavesTheClosedPeriodAlone() {
+        assertThat(septemberOverdue()).isEqualByComparingTo("33000.00");
+        // Written off on 10 October: the row is CANCELLED, the receivable credited then.
+        fx.role(JournalDocType.BDW, LocalDate.of(2026, 10, 10), leaseDims(), AccountRole.ADVANCE_RENT,
+                AccountRole.RENT_RECEIVABLE, "5000.00");
+        moveTo(bounced3, ChequeStatus.CANCELLED);
+        assertThat(septemberOverdue()).isEqualByComparingTo("33000.00");
+        // October's statement no longer carries it.
+        PropertyStatementDTO oct = statements.statement(fx.p1.getId(), LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), null);
+        assertThat(section(oct, "outstanding").tables().getFirst().rows()).noneSatisfy(r -> assertThat(r.get(2)).isEqualTo("100003"));
+    }
+
+    @Test
+    void aReplacementAfterThePeriodLeavesTheClosedPeriodAlone() {
+        // Replaced on 10 October by a new cheque: the bounce moves to REPLACED, the replacement registers.
+        moveTo(bounced3, ChequeStatus.REPLACED);
+        Cheque repl = cheque(7, "100007", LocalDate.of(2026, 10, 10), "5000.00", "0", ChequeRowKind.RENT, ChequeStatus.REGISTERED);
+        fx.role(JournalDocType.PDR, LocalDate.of(2026, 10, 10), leaseDims(), AccountRole.PDC_RECEIVABLE,
+                AccountRole.RENT_RECEIVABLE, "5000.00");
+        assertThat(septemberOverdue()).isEqualByComparingTo("33000.00");
+        assertThat(repl.getId()).isNotNull();
+    }
+
+    @Test
+    void aWriteOffReversalsRestoredRowIsNotInPeriodsBeforeItExisted() {
+        // Written off 5 October, reversed 20 October: the reversal restores the receivable and adds a
+        // collection row dated back to the original due date, registered (posted) on the 20th.
+        fx.role(JournalDocType.BDW, LocalDate.of(2026, 10, 5), leaseDims(), AccountRole.ADVANCE_RENT,
+                AccountRole.RENT_RECEIVABLE, "5000.00");
+        moveTo(bounced3, ChequeStatus.CANCELLED);
+        fx.role(JournalDocType.BDW, LocalDate.of(2026, 10, 20), leaseDims(), AccountRole.RENT_RECEIVABLE,
+                AccountRole.ADVANCE_RENT, "5000.00");
+        Cheque restored = cheque(8, null, LocalDate.of(2026, 9, 25), "5000.00", "0", ChequeRowKind.RENT, ChequeStatus.REGISTERED);
+        restored.setPostingDate(LocalDate.of(2026, 10, 20));
+        restored.setMode(ChequeMode.CASH);
+        chequeRepo.save(restored);
+        fx.role(JournalDocType.PDR, LocalDate.of(2026, 10, 20), leaseDims(), AccountRole.PDC_RECEIVABLE,
+                AccountRole.RENT_RECEIVABLE, "5000.00");
+
+        assertThat(septemberOverdue()).isEqualByComparingTo("33000.00");
+        // Between the write-off and the reversal the debt was written off: not overdue.
+        PropertyStatementDTO mid = statements.statement(fx.p1.getId(), LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 15), null);
+        assertThat(fig(mid, "outstanding", "registerOverdue")).isEqualByComparingTo("28000.00");
+        // After it, the debt is counted once — on the restored row, not on the cancelled one too.
+        PropertyStatementDTO oct = statements.statement(fx.p1.getId(), LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), null);
+        assertThat(fig(oct, "outstanding", "registerOverdue")).isEqualByComparingTo("33000.00");
+        assertThat(count(oct, "outstanding", "registerOverdue")).isEqualTo(3);
+    }
+
     @Test
     void theFooterSaysFinalOnceTheBooksAreLocked() {
         fiscal.lockThrough(SEP_30);

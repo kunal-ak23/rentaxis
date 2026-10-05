@@ -244,9 +244,11 @@ public final class StandardStatementSections {
             // returned cheque counts only for the debt the lease's receivable still carried on
             // `at`. One a settlement, replacement receipt or write-off had closed by then is not
             // "overdue (register)"; one that bounced only after `at` was still merely banked.
+            // PR #399 R1 P2-1: every row that had bounced by `at` shares the lease's receivable as
+            // at `at`, whatever became of it later (written off, replaced, returned), so a
+            // closed period re-renders the same.
             Map<UUID, BigDecimal> open = bouncedDebt.openAmountsAt(owed.stream()
-                    .filter(c -> c.getStatus() == ChequeStatus.BOUNCED)
-                    .filter(c -> c.getBouncedAt() == null || !c.getBouncedAt().isAfter(at))
+                    .filter(c -> bouncedBy(c, at))
                     .collect(java.util.stream.Collectors.toCollection(ArrayList::new)), at);
             List<List<Object>> rows = new ArrayList<>();
             BigDecimal overdue = BigDecimal.ZERO;
@@ -287,8 +289,17 @@ public final class StandardStatementSections {
                 // Bounced after `at`: on `at` it was still merely banked, so still owed.
                 case BOUNCED -> true;
                 case CLEARED -> c.getClearedAt() != null && c.getClearedAt().isAfter(at);
-                default -> false;
+                case DRAFT -> false;
+                // Written off, replaced, returned or carried over later: on `at` it was a
+                // bounce, priced by the receivable as it stood then.
+                default -> bouncedBy(c, at);
             };
+        }
+
+        /** The row had bounced on or before {@code at} (a status it may have left since). */
+        static boolean bouncedBy(Cheque c, LocalDate at) {
+            return c.getBouncedAt() != null && !c.getBouncedAt().isAfter(at)
+                    || c.getStatus() == ChequeStatus.BOUNCED && c.getBouncedAt() == null;
         }
     }
 
