@@ -1,0 +1,162 @@
+1
+00:00:00,000 --> 00:00:04,224
+This tutorial follows rent cheques through
+Cheque and Cash Collection,
+
+2
+00:00:04,224 --> 00:00:08,447
+as Maya Khoury, a property manager at
+Oasis Crest Properties.
+
+3
+00:00:08,447 --> 00:00:12,249
+Due lists every cheque whose date has
+arrived and
+
+4
+00:00:12,249 --> 00:00:15,628
+that has not cleared yet, across every
+property.
+
+5
+00:00:15,628 --> 00:00:20,274
+Overdue narrows it to cheques past their
+grace period, such as
+
+6
+00:00:20,274 --> 00:00:24,497
+Fatima Al Zaabi's May cheque, still
+waiting to be banked.
+
+7
+00:00:24,497 --> 00:00:27,031
+To deposit is where banking starts.
+
+8
+00:00:27,031 --> 00:00:31,255
+Tick the cheques going to the bank today:
+Ahmed Hassan's
+
+9
+00:00:31,255 --> 00:00:35,479
+200104 and Fatima's 300204, both dated the
+first of October.
+
+10
+00:00:35,479 --> 00:00:39,280
+The selected total, 36,750, should match
+the deposit slip.
+
+11
+00:00:39,280 --> 00:00:42,237
+Deposit Batch records both as deposited
+today,
+
+12
+00:00:42,237 --> 00:00:45,193
+each into its own property's bank account.
+
+13
+00:00:45,193 --> 00:00:48,150
+When the bank confirms a cheque has
+
+14
+00:00:48,150 --> 00:00:51,106
+cleared, find it in the Cheque register.
+
+15
+00:00:51,106 --> 00:00:54,063
+Ahmed's July cheque, 200103, is still
+deposited.
+
+16
+00:00:54,063 --> 00:00:58,287
+Choose Clear, check the account it cleared
+into, and confirm.
+
+17
+00:00:58,287 --> 00:01:02,510
+It is now Cleared, with its receipt number
+beside it.
+
+18
+00:01:02,510 --> 00:01:04,200
+Not every cheque clears.
+
+19
+00:01:04,200 --> 00:01:06,311
+Fatima's 300204 comes back unpaid.
+
+20
+00:01:06,311 --> 00:01:09,268
+Choose Bounce, pick the reason the bank
+
+21
+00:01:09,268 --> 00:01:11,802
+gave, here Payment stopped, and confirm.
+
+22
+00:01:11,802 --> 00:01:15,604
+Miftah records the return, proposes the
+contract's cheque-return charge
+
+23
+00:01:15,604 --> 00:01:19,405
+of 1,000 for approval, and asks what
+happens next.
+
+24
+00:01:19,405 --> 00:01:20,672
+Choose Replace now.
+
+25
+00:01:20,672 --> 00:01:24,896
+Fatima hands over a new cheque for the
+full 15,500.
+
+26
+00:01:24,896 --> 00:01:27,852
+Enter its number, 300295, its date, the
+
+27
+00:01:27,852 --> 00:01:30,386
+fifteenth of October, and its bank.
+
+28
+00:01:30,386 --> 00:01:35,032
+The replacements cover the whole amount,
+so nothing is left owing.
+
+29
+00:01:35,032 --> 00:01:35,455
+Replace.
+
+30
+00:01:35,455 --> 00:01:40,523
+The Post-dated view lists the cheques
+maturing in the next two weeks
+
+31
+00:01:40,523 --> 00:01:45,169
+with a running total, and Fatima's new
+cheque is already there.
+
+32
+00:01:45,169 --> 00:01:48,548
+The same story is on each tenancy
+contract.
+
+33
+00:01:48,548 --> 00:01:53,194
+On Ahmed's Cheques tab, 200103 is now
+Cleared and 200104 Deposited.
+
+34
+00:01:53,194 --> 00:01:56,573
+Nothing is ever deleted: every cheque
+stays traceable,
+
+35
+00:01:56,573 --> 00:01:59,952
+from registered to deposited, cleared,
+returned or replaced.

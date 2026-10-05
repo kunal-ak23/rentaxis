@@ -1,0 +1,68 @@
+{
+  "id": "15",
+  "slug": "manage-rent-cheques-end-to-end",
+  "title": "Miftah tutorial 15 · Manage rent cheques end to end",
+  "description": "Follow rent cheques through collection: see what is due and overdue, bank a batch, clear a cheque, and record a returned cheque and its replacement.\n\nWho this is for: Company Admin, Property Manager.\n\nChapters:\n0:00 Due and Overdue\n0:24 Bank a Batch\n0:45 Clear When the Bank Confirms\n1:02 A Cheque Comes Back\n1:20 Replace It\n1:48 On the Contract\n\nPart of the Miftah web course — playlist: Miftah · Collections\n\nتابع شيكات الإيجار خلال التحصيل: اطّلع على المستحق والمتأخر، وأودع دفعة في البنك، وصرّف الشيك، وسجّل الشيك المرتجع وبديله.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "rent collection",
+    "cheques",
+    "online payments",
+    "penalties",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Collections",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0.0,
+      "start": "0:00",
+      "label": "Due and Overdue"
+    },
+    {
+      "startSec": 24.497,
+      "start": "0:24",
+      "label": "Bank a Batch"
+    },
+    {
+      "startSec": 45.193,
+      "start": "0:45",
+      "label": "Clear When the Bank Confirms"
+    },
+    {
+      "startSec": 62.51,
+      "start": "1:02",
+      "label": "A Cheque Comes Back"
+    },
+    {
+      "startSec": 80.672,
+      "start": "1:20",
+      "label": "Replace It"
+    },
+    {
+      "startSec": 108.548,
+      "start": "1:48",
+      "label": "On the Contract"
+    }
+  ],
+  "durationSec": 120,
+  "roles": [
+    "TENANT_ADMIN",
+    "PROPERTY_MANAGER"
+  ],
+  "topic": "collections",
+  "captionsFile": "tutorials/output/15-manage-rent-cheques-end-to-end.srt",
+  "videoFile": "tutorials/output/15-manage-rent-cheques-end-to-end.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/15.png"
+}
