@@ -257,7 +257,11 @@ for (const locale of LOCALES) {
 
         const sa = await browser.newContext({ baseURL: BASE_URL, viewport: { width: 1024, height: 800 }, storageState: path.join(STATE_DIR, 'SUPER_ADMIN.json') });
         const saPage = await sa.newPage();
-        await saPage.goto(`/${locale}/dashboard`);
+        // A super admin with no organisation selected is sent from the dashboard home to the
+        // organisation list (AuthenticatedLayout, since #380); that re-render closed a dropdown
+        // opened before it landed. Start on the list, so nothing moves under the click.
+        await saPage.goto(`/${locale}/superadmin/tenants`);
+        await saPage.waitForURL(/\/superadmin\/tenants/);
         const switcher = saPage.getByTestId('header-org-switcher').getByTestId('org-switcher-button');
         await expect(switcher).toBeVisible();
         await expect(saPage.getByTestId('org-switcher-button')).toHaveCount(1);
