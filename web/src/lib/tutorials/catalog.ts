@@ -286,7 +286,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "37", slug: "tenant-ledger", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 118, youtubeId: null,
+        id: "37", slug: "tenant-ledger", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 111, youtubeId: "OP4fOCccZWc",
         title: { en: "Tenant ledger, control account and trial balance", ar: "دفتر أستاذ المستأجر والحساب الرقابي وميزان المراجعة" },
         description: {
             en: "Read a Tenant's ledger, tie it to the Rent Receivable control account in the general ledger, and check the trial balance.",
