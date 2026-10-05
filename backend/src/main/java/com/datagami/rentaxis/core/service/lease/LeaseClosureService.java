@@ -330,13 +330,8 @@ public class LeaseClosureService {
     }
 
     private BigDecimal balanceOn(UUID accountId, UUID leaseId) {
-        return balanceOn(accountId, leaseId, null);
-    }
-
-    /** The balance on the lease dimension through {@code at} (inclusive); null reads every date. */
-    private BigDecimal balanceOn(UUID accountId, UUID leaseId, java.time.LocalDate at) {
         BigDecimal balance = ledgerQueryService.accountLedger(accountId,
-                new LedgerQueryService.LedgerFilter(null, at, null, null, leaseId, null)).closingBalance();
+                new LedgerQueryService.LedgerFilter(null, null, null, null, leaseId, null)).closingBalance();
         return balance == null ? BigDecimal.ZERO : balance;
     }
 
@@ -384,7 +379,7 @@ public class LeaseClosureService {
         if (!ledgerQueryService.accountExists(accountId)) {
             return java.util.Optional.empty();
         }
-        return java.util.Optional.of(balanceOn(accountId, lease.getId(), at));
+        return java.util.Optional.of(ledgerQueryService.leaseBalanceThrough(accountId, lease.getId(), at));
     }
 
     private UUID receivableAccountOf(Lease lease) {
