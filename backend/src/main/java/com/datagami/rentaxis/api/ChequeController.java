@@ -352,17 +352,29 @@ public class ChequeController {
             }
             throw e;
         }
+        String type = imageContentType(ref.blobPath(), download.contentType());
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_TYPE, imageContentType(ref.blobPath(), download.contentType()))
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
+                .header(HttpHeaders.CONTENT_TYPE, type)
+                // Only an allowed image type is shown inline; anything else is a download.
+                .header(HttpHeaders.CONTENT_DISPOSITION, IMAGE_TYPES.contains(type) ? "inline" : "attachment")
                 .header(HttpHeaders.CACHE_CONTROL, "private, max-age=300")
                 .header("X-Content-Type-Options", "nosniff")
                 .body(download.bytes());
     }
 
+    /**
+     * The image types a scan is served inline as (PR #398 R1-P3-2). A stored type is
+     * trusted only when it is one of these — never, say, {@code image/svg+xml}, which
+     * would run script on the web origin through the proxy — else the path's
+     * extension decides, else it is an opaque download.
+     */
+    static final java.util.Set<String> IMAGE_TYPES =
+            java.util.Set.of("image/png", "image/jpeg", "image/heic", "image/heif", "image/webp");
+
     static String imageContentType(String blobPath, String stored) {
-        if (stored != null && stored.toLowerCase(Locale.ROOT).startsWith("image/")) {
-            return stored;
+        String normalised = stored == null ? null : stored.split(";")[0].trim().toLowerCase(Locale.ROOT);
+        if (normalised != null && IMAGE_TYPES.contains(normalised)) {
+            return normalised;
         }
         String p = blobPath.toLowerCase(Locale.ROOT);
         if (p.endsWith(".png")) return "image/png";

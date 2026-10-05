@@ -180,6 +180,46 @@ class ChequeImageEndpointIT extends AbstractPostgresIT {
     }
 
     @Test
+    void aStoredPathOutsideTheChequesFolderIsNotFoundAndNeverRead() {
+        TenantContextHolder.setTenantId(tenantA);
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        attach(unscanned, "listings/" + UUID.randomUUID() + ".png");
+        TenantContextHolder.clear();
+        assertThat(get(user(tenantA, UserRole.TENANT_ADMIN), unscanned).getStatusCode().value()).isEqualTo(404);
+
+        TenantContextHolder.setTenantId(tenantA);
+        attach(unscanned, "cheques/../branding/logo.png");
+        TenantContextHolder.clear();
+        assertThat(get(user(tenantA, UserRole.TENANT_ADMIN), unscanned).getStatusCode().value()).isEqualTo(404);
+        verify(blob, never()).download(any(), org.mockito.ArgumentMatchers.startsWith("listings/"));
+        verify(blob, never()).download(any(), org.mockito.ArgumentMatchers.contains(".."));
+    }
+
+    @Test
+    void aStoredTypeOutsideTheImageAllowListIsServedAsAnAttachment() {
+        when(blob.download(eq(tenantA), any())).thenReturn(new BlobStorageService.DownloadResult(PNG, "image/svg+xml"));
+        ResponseEntity<byte[]> res = get(user(tenantA, UserRole.TENANT_ADMIN), scanned);
+        assertThat(res.getStatusCode().value()).isEqualTo(200);
+        // The path says .png, but a stored type that is not an allowed image is never trusted inline.
+        assertThat(res.getHeaders().getContentType()).hasToString("image/png");
+
+        attachAs(unscanned, "cheques/" + UUID.randomUUID() + ".svg");
+        ResponseEntity<byte[]> svg = get(user(tenantA, UserRole.TENANT_ADMIN), unscanned);
+        assertThat(svg.getHeaders().getContentType()).hasToString("application/octet-stream");
+        assertThat(svg.getHeaders().getFirst("Content-Disposition")).startsWith("attachment");
+
+        when(blob.download(eq(tenantA), any())).thenReturn(new BlobStorageService.DownloadResult(PNG, "image/webp"));
+        assertThat(get(user(tenantA, UserRole.TENANT_ADMIN), scanned).getHeaders().getContentType()).hasToString("image/webp");
+    }
+
+    private void attachAs(UUID chequeId, String path) {
+        TenantContextHolder.setTenantId(tenantA);
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        attach(chequeId, path);
+        TenantContextHolder.clear();
+    }
+
+    @Test
     void otherRolesAreRefused() {
         assertThat(get(user(tenantA, UserRole.TENANT_USER), scanned).getStatusCode().value()).isIn(403, 404);
     }

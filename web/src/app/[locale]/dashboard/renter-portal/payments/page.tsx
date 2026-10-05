@@ -108,17 +108,21 @@ export default function RenterPaymentsPage() {
      * "Deposited on … · Cleared on …" for a banked cheque, "Collected on …" for money
      * taken another way (cash, transfer, online) — the dates the pre-v2 portal showed.
      */
-    const bankDatesLine = (r: RenterCheque): string | null => {
-        const parts: string[] = [];
+    const bankDatesLine = (r: RenterCheque): React.ReactNode => {
+        // Each date sits in its own <bdi> (a Latin dd/mm/yyyy inside an Arabic sentence).
+        const withDate = (key: "depositedOn" | "clearedOn" | "collectedOn", iso: string) => {
+            const [before, after = ""] = t(key, { date: "\u0000" }).split("\u0000");
+            return <span key={key}>{before}<bdi dir="ltr">{fmtIsoDate(iso, locale)}</bdi>{after}</span>;
+        };
+        const parts: React.ReactNode[] = [];
         if ((r.status === "DEPOSITED" || r.status === "CLEARED" || r.status === "BOUNCED") && r.depositedAt) {
-            parts.push(t("depositedOn", { date: fmtIsoDate(r.depositedAt, locale) }));
+            parts.push(withDate("depositedOn", r.depositedAt));
         }
         if (r.status === "CLEARED" && r.clearedAt) {
-            parts.push(r.mode === "PDC"
-                ? t("clearedOn", { date: fmtIsoDate(r.clearedAt, locale) })
-                : t("collectedOn", { date: fmtIsoDate(r.clearedAt, locale) }));
+            parts.push(withDate(r.mode === "PDC" ? "clearedOn" : "collectedOn", r.clearedAt));
         }
-        return parts.length ? parts.join(" · ") : null;
+        if (parts.length === 0) return null;
+        return parts.flatMap((p, i) => (i === 0 ? [p] : [<span key={`sep-${i}`}> · </span>, p]));
     };
 
     const dueRows = rows.filter(owedNow);

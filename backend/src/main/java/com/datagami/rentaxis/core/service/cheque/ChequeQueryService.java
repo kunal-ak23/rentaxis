@@ -620,7 +620,7 @@ public class ChequeQueryService {
      * with a BOUNCED row are asked about — the flag matters where Replace is offered — so a
      * list without one costs no query.
      */
-    private java.util.Set<UUID> pendingWriteOffItems(Collection<Cheque> rows) {
+    public java.util.Set<UUID> pendingWriteOffItems(Collection<Cheque> rows) {
         java.util.Set<UUID> leaseIds = rows.stream()
                 .filter(c -> c.getStatus() == ChequeStatus.BOUNCED && c.getLease() != null)
                 .map(c -> c.getLease().getId()).collect(java.util.stream.Collectors.toSet());

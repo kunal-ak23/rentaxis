@@ -82,5 +82,19 @@ describe("RenterPaymentsPage — bank dates and scans", () => {
         expect(screen.getByTestId("bank-dates-cleared").textContent).toContain("تم الإيداع في");
         expect(screen.getByTestId("bank-dates-cleared").textContent).toContain("تم صرف الشيك في");
         expect(screen.getByTestId("scan-link-cleared").textContent).toContain("عرض صورة الشيك");
+        // The Latin dates are isolated from the Arabic sentence around them.
+        const dates = [...screen.getByTestId("bank-dates-cleared").querySelectorAll("bdi")].map(b => b.textContent);
+        expect(dates).toHaveLength(2);
+        expect(dates.every(d => d?.includes("2026"))).toBe(true);
+    });
+
+    it("tells the Tenant to contact the office about a returned cheque it cannot pay online (PR #398 R1-P2-1)", async () => {
+        api.myPayments.mockResolvedValue([row({ id: "held", status: "BOUNCED", due: true, payable: 12500, payableOnline: false,
+            onlineRefusal: "payment.bounceContactOffice" })]);
+        renderPage();
+        const why = await screen.findByTestId("online-refusal-held");
+        expect(why.textContent).toBe("This returned cheque can't be paid online. Please contact the property office about this cheque.");
+        expect(why.textContent).not.toMatch(/write/i);
+        expect(screen.queryByTestId("pay-online-held")).toBeNull();
     });
 });

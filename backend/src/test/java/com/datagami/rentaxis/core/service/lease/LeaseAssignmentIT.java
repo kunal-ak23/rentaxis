@@ -63,6 +63,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class LeaseAssignmentIT extends AbstractPostgresIT {
 
     @Autowired LeaseAssignmentService assignments;
+    @Autowired com.datagami.rentaxis.core.service.cheque.ChequeQueryService chequeQueries;
     @Autowired com.datagami.rentaxis.core.service.ContractGenerationService contracts;
     @Autowired com.datagami.rentaxis.core.service.LeaseAttachmentService attachmentService;
     @Autowired com.datagami.rentaxis.core.service.RentReceiptService receipts;
@@ -295,8 +296,18 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
         Cheque april = chequeOn(leaseId, RENT_3);
         chequeService.deposit(april.getId(), ChequeActionRequest.on(RENT_3));
         chequeService.clear(april.getId(), ChequeActionRequest.on(RENT_3));   // cleared under B
+        // PR #398 R1-P2-2: each row's attached scan follows the row's renter, like its receipt.
+        for (Cheque c : List.of(january, april)) {
+            tx.executeWithoutResult(s -> {
+                Cheque row = chequeRepo.findById(c.getId()).orElseThrow();
+                row.setImageBlobPath("cheques/" + UUID.randomUUID() + ".jpg");
+                chequeRepo.save(row);
+            });
+        }
 
         asRenter(a);
+        assertThat(tx.execute(s -> chequeQueries.imageOf(january.getId())).blobPath()).startsWith("cheques/");
+        assertThatThrownBy(() -> tx.execute(s -> chequeQueries.imageOf(april.getId()))).isInstanceOf(NotFoundException.class);
         var aLeases = tx.execute(s -> leaseService.getLeasesForRenterUser(a.getUserId()));
         assertThat(aLeases).singleElement().satisfies(l -> {
             assertThat(l.getYourAccessEndedOn()).isEqualTo(ON);
@@ -321,6 +332,9 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
         assertThatThrownBy(() -> tx.execute(s -> contracts.getDocumentContent(before))).isInstanceOf(NotFoundException.class);
         assertThatThrownBy(() -> tx.execute(s -> attachmentService.downloadAttachment(attBefore))).isInstanceOf(NotFoundException.class);
         assertThatThrownBy(() -> tx.execute(s -> receipts.generateReceipt(january.getId()))).isInstanceOf(NotFoundException.class);
+        // The lease is B's now, so requireReadable passes: requireRentersOwnCheque is what refuses A's scan.
+        assertThatThrownBy(() -> tx.execute(s -> chequeQueries.imageOf(january.getId()))).isInstanceOf(NotFoundException.class);
+        assertThat(tx.execute(s -> chequeQueries.imageOf(april.getId())).blobPath()).startsWith("cheques/");
     }
 
     private void asRenter(Renter r) {
