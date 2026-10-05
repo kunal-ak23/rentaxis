@@ -1,0 +1,188 @@
+1
+00:00:00,000 --> 00:00:03,231
+Bank reconciliation proves that the bank
+account in
+
+2
+00:00:03,231 --> 00:00:06,058
+Miftah agrees with the bank's own
+statement.
+
+3
+00:00:06,058 --> 00:00:09,289
+Open Accounting and, under Bank, choose
+Bank reconciliation.
+
+4
+00:00:09,289 --> 00:00:13,732
+Each bank account is listed with its
+ledger account, and the
+
+5
+00:00:13,732 --> 00:00:17,771
+bank's TRN is already on file for Palm
+Ridge Residences.
+
+6
+00:00:17,771 --> 00:00:21,810
+Choose Import statement and pick the
+August 2026 statement file.
+
+7
+00:00:21,810 --> 00:00:24,637
+Miftah recognises the columns: date,
+description, reference,
+
+8
+00:00:24,637 --> 00:00:27,060
+cheque number, debit, credit and balance.
+
+9
+00:00:27,060 --> 00:00:31,503
+Save the mapping, and next month's file
+imports in one step.
+
+10
+00:00:31,503 --> 00:00:35,542
+The preview reads the opening balance,
+585,587.81, and the closing
+
+11
+00:00:35,542 --> 00:00:39,581
+balance, 622,895.31, from the file, and
+finds six new lines.
+
+12
+00:00:39,581 --> 00:00:40,389
+Import them.
+
+13
+00:00:40,389 --> 00:00:43,216
+Now open the workspace: the statement on
+
+14
+00:00:43,216 --> 00:00:46,043
+the left, the books on the right.
+
+15
+00:00:46,043 --> 00:00:46,851
+Select Auto-match.
+
+16
+00:00:46,851 --> 00:00:49,678
+The three cheque clearings find their
+cheques
+
+17
+00:00:49,678 --> 00:00:52,102
+by cheque number, with high confidence.
+
+18
+00:00:52,102 --> 00:00:53,313
+Confirm all high.
+
+19
+00:00:53,313 --> 00:00:57,756
+Three lines are left, because only the
+bank knew about them.
+
+20
+00:00:57,756 --> 00:01:01,391
+The first is the account maintenance
+charge of 105.
+
+21
+00:01:01,391 --> 00:01:04,622
+Record it from the line as a bank
+
+22
+00:01:04,622 --> 00:01:07,853
+charge, and tick that the amount includes
+VAT.
+
+23
+00:01:07,853 --> 00:01:11,488
+Because the bank's TRN is on file, the
+journal
+
+24
+00:01:11,488 --> 00:01:14,719
+debits the charge with 100 and Input VAT
+
+25
+00:01:14,719 --> 00:01:17,950
+with 5, and credits the bank with 105.
+
+26
+00:01:17,950 --> 00:01:18,758
+Book it.
+
+27
+00:01:18,758 --> 00:01:21,989
+The profit credit of 412.50 is booked as
+
+28
+00:01:21,989 --> 00:01:24,816
+interest: debit the bank, credit Bank
+interest.
+
+29
+00:01:24,816 --> 00:01:28,855
+The inward transfer of 2,500 has not been
+identified yet.
+
+30
+00:01:28,855 --> 00:01:31,279
+Book it as an unidentified receipt.
+
+31
+00:01:31,279 --> 00:01:36,125
+The bank is debited and Unidentified bank
+receipts is credited, until the
+
+32
+00:01:36,125 --> 00:01:40,568
+tenant is found and the money is received
+against their instalment.
+
+33
+00:01:40,568 --> 00:01:41,780
+Now reconcile August.
+
+34
+00:01:41,780 --> 00:01:45,011
+Enter the period, the first to the
+thirty-first
+
+35
+00:01:45,011 --> 00:01:47,838
+of August, and start the first
+reconciliation.
+
+36
+00:01:47,838 --> 00:01:51,473
+The statement and the books both read
+622,895.31, nothing
+
+37
+00:01:51,473 --> 00:01:54,704
+is in transit, and the difference is zero.
+
+38
+00:01:54,704 --> 00:01:57,127
+Every check passes, so select Finalize.
+
+39
+00:01:57,127 --> 00:02:01,166
+Finalising locks this bank account through
+31 August, so no
+
+40
+00:02:01,166 --> 00:02:04,801
+entry can change a month you have signed
+off.
+
+41
+00:02:04,801 --> 00:02:09,648
+The reconciliation report is ready as a
+PDF, in English or Arabic.
