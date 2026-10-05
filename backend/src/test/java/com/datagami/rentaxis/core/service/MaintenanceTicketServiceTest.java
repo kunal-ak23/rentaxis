@@ -326,4 +326,24 @@ class MaintenanceTicketServiceTest {
         assertThat(dto.getFileSize()).isEqualTo(16L);
         verify(attachmentRepository).save(any());
     }
+
+    // ---- report: average resolution time (tutorial 22) ----
+
+    @Test
+    void averageResolutionCountsMinutesNotWholeHours() {
+        java.time.Instant created = java.time.Instant.parse("2026-10-01T08:00:00Z");
+        MaintenanceTicket quick = ticket(UUID.randomUUID(), null);
+        quick.setCreatedAt(created);
+        quick.setResolvedAt(created.plus(30, java.time.temporal.ChronoUnit.MINUTES));
+        MaintenanceTicket slower = ticket(UUID.randomUUID(), null);
+        slower.setCreatedAt(created);
+        slower.setResolvedAt(created.plus(150, java.time.temporal.ChronoUnit.MINUTES));
+        when(ticketRepository.findAll()).thenReturn(java.util.List.of(quick, slower));
+
+        // (0.5 h + 2.5 h) / 2 = 1.5 h; whole hours made it (0 + 2) / 2 = 1.
+        assertThat(service.getReport(null, null, null).getAvgResolutionHours()).isEqualTo(1.5);
+
+        when(ticketRepository.findAll()).thenReturn(java.util.List.of(quick));
+        assertThat(service.getReport(null, null, null).getAvgResolutionHours()).isEqualTo(0.5);
+    }
 }

@@ -204,3 +204,28 @@ describe("RenterFacilitiesPage stale-state resync", () => {
         expect(screen.getByTestId("spot-fee-spot-1")).toHaveTextContent("feeFree");
     });
 });
+
+describe("RenterFacilitiesPage — tutorial 24", () => {
+    it("lets the Tenant cancel an approved amenity booking whose slot is still ahead", async () => {
+        api.fetchMyFacilities.mockResolvedValue({ amenities: [], parkingSpots: [] });
+        api.fetchMyBookings.mockResolvedValue([
+            makeBooking({ id: "future", resourceType: "AMENITY", amenityId: "a1", parkingSpotId: null, status: "APPROVED",
+                preferredDate: "2099-01-01" }),
+            makeBooking({ id: "past", resourceType: "AMENITY", amenityId: "a1", parkingSpotId: null, status: "APPROVED",
+                preferredDate: "2000-01-01" }),
+        ]);
+        render(<RenterFacilitiesPage />);
+        expect(await screen.findByTestId("cancel-booking-future")).toBeInTheDocument();
+        expect(screen.queryByTestId("cancel-booking-past")).not.toBeInTheDocument();
+        fireEvent.click(screen.getByTestId("cancel-booking-future"));
+        expect(await screen.findByText("cancelApprovedConfirm")).toBeInTheDocument();
+    });
+
+    it("does not offer Request on a spot the Tenant already has a pending request for", async () => {
+        api.fetchMyFacilities.mockResolvedValue(facilitiesWithSpot(false));
+        api.fetchMyBookings.mockResolvedValue([makeBooking({ status: "PENDING" })]);
+        render(<RenterFacilitiesPage />);
+        await waitFor(() => expect(screen.getByTestId("request-spot-spot-1")).toBeDisabled());
+    });
+});
+

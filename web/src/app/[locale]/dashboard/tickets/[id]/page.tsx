@@ -142,6 +142,14 @@ export default function TicketDetailPage() {
             return notes.includes("resolved again") ? t("history.otpReissuedResolvedAgain") : t("history.otpReissued");
         }
         if (h.action === "OTP_LOCKED") return t("history.otpLocked");
+        // Tutorial 22: the history began at the first change; creation and the ETA
+        // now have entries. ETA notes are "previous→new" in hours ("" for none).
+        if (h.action === "CREATED") return t("history.created");
+        if (h.action === "ETA_SET" || h.action === "ETA_CHANGED") {
+            const [from, to] = notes.split("→");
+            if (!to) return t("history.etaCleared");
+            return from ? t("history.etaChanged", { from: Number(from), to: Number(to) }) : t("history.etaSet", { hours: Number(to) });
+        }
         // The assignee's account was deleted and the ticket went back to the queue
         // (UserReferenceReleaser): the stored note is English, so say it here.
         if (h.action === "UNASSIGNED") return t("history.unassigned");
