@@ -68,7 +68,8 @@ class MaintenanceTicketServiceTest {
                 mock(com.datagami.rentaxis.domain.repository.RenterRepository.class),
                 new com.datagami.rentaxis.core.security.PropertyScope(
                         new com.datagami.rentaxis.core.security.LeaseAccessPolicy(propertyAssignmentRepository,
-                                mock(com.datagami.rentaxis.domain.repository.RenterRepository.class))));
+                                mock(com.datagami.rentaxis.domain.repository.RenterRepository.class))),
+                mock(com.datagami.rentaxis.domain.repository.StaffRepository.class));
 
         when(userRepository.findDisplayNameById(any())).thenReturn(Optional.empty());
         // The ticket service resolves the caller's reach (round 5): act as a tenant admin.

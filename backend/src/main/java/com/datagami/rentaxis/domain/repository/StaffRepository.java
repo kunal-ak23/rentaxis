@@ -11,4 +11,9 @@ public interface StaffRepository extends JpaRepository<Staff, UUID> {
     List<Staff> findByPropertyId(UUID propertyId);
     List<Staff> findByIsActiveTrue();
     List<Staff> findAllByOrderByNameEnAsc();
+
+    /** Staff records linked to these logins, in one tenant — the assignee picker's designations. */
+    List<Staff> findByTenantIdAndUserIdIn(UUID tenantId, java.util.Collection<UUID> userIds);
+
+    boolean existsByUserId(UUID userId);
 }

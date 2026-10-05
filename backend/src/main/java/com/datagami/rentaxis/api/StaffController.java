@@ -45,6 +45,12 @@ public class StaffController {
         return ResponseEntity.ok(service.updateStaff(id, request));
     }
 
+    /** Body: {@code {"email": "..."}}. See {@link StaffService#giveLogin}. */
+    @PostMapping("/{id}/login")
+    public ResponseEntity<Staff> giveLogin(@PathVariable UUID id, @RequestBody java.util.Map<String, String> body) {
+        return ResponseEntity.ok(service.giveLogin(id, body == null ? null : body.get("email")));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteStaff(@PathVariable UUID id) {
         service.deleteStaff(id);

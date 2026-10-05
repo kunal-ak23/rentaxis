@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import { UserCog, Plus, Pencil, Trash2, X, Loader2, Users, Banknote, Search } from "lucide-react";
+import { UserCog, Plus, Pencil, Trash2, X, Loader2, Users, Banknote, Search, KeyRound } from "lucide-react";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { Pagination } from "@/components/ui/Pagination";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -44,6 +44,8 @@ type Staff = {
     property: Property | null;
     salaryAccount: Account | null;
     active: boolean;
+    /** The login this staff member was given ("Give login"); null when none. */
+    userId?: string | null;
 };
 
 const emptyForm = {
@@ -153,6 +155,51 @@ export default function StaffManager({ embedded = false }: { embedded?: boolean 
         } catch (err) {
             if (isAbortError(err) || !isCurrent()) return;
             console.error(err);
+        }
+    };
+
+    // Tutorial 22: a staff record is not a login, and only logins can be assigned
+    // tickets. "Give login" invites one by email and links it to the record.
+    const [loginFor, setLoginFor] = useState<Staff | null>(null);
+    const [loginEmail, setLoginEmail] = useState("");
+    const [loginSaving, setLoginSaving] = useState(false);
+    const [loginError, setLoginError] = useState<string | null>(null);
+    const [loginNotice, setLoginNotice] = useState<string | null>(null);
+
+    const openGiveLogin = (member: Staff) => {
+        setLoginFor(member);
+        setLoginEmail("");
+        setLoginError(null);
+        setLoginNotice(null);
+    };
+
+    const submitGiveLogin = async () => {
+        if (!loginFor) return;
+        const email = loginEmail.trim();
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+            setLoginError(t("giveLoginInvalidEmail"));
+            return;
+        }
+        setLoginSaving(true);
+        setLoginError(null);
+        try {
+            const res = await fetch(`/api/proxy/v1/staff/${loginFor.id}/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email }),
+            });
+            if (!res.ok) {
+                const body = await res.json().catch(() => null);
+                setLoginError(body?.message || t("giveLoginFailed"));
+                return;
+            }
+            setLoginNotice(t("giveLoginDone", { name: staffName(loginFor), email }));
+            setLoginFor(null);
+            fetchStaff();
+        } catch {
+            setLoginError(t("giveLoginFailed"));
+        } finally {
+            setLoginSaving(false);
         }
     };
 
@@ -296,6 +343,11 @@ export default function StaffManager({ embedded = false }: { embedded?: boolean 
     return (
         <div>
             {loadError && <LoadErrorBanner message={loadError} onRetry={reload} />}
+            {loginNotice && (
+                <div role="status" data-testid="staff-login-notice" className="mb-4 bg-success/10 border border-success/20 text-success text-xs font-medium rounded-lg px-4 py-3">
+                    {loginNotice}
+                </div>
+            )}
             {deleteError && (
                 <div role="alert" className="mb-4 bg-error/10 border border-error/20 text-error text-xs font-medium rounded-lg px-4 py-3">
                     {t("deleteFailed")}
@@ -440,6 +492,15 @@ export default function StaffManager({ embedded = false }: { embedded?: boolean 
                                     >
                                         <td className="px-5 py-3 text-xs text-foreground font-medium">
                                             {staffName(member)}
+                                            {member.userId && (
+                                                <span
+                                                    className="ms-2 inline-flex items-center gap-1 bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                                                    data-testid={`staff-has-login-${member.id}`}
+                                                    title={t("hasLoginHint")}
+                                                >
+                                                    <KeyRound size={10} /> {t("hasLogin")}
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="px-5 py-3 text-xs text-foreground font-medium">
                                             {member.employeeId || "\u2014"}
@@ -477,6 +538,17 @@ export default function StaffManager({ embedded = false }: { embedded?: boolean 
                                                 >
                                                     <Pencil size={14} />
                                                 </button>
+                                                {!member.userId && (
+                                                    <button
+                                                        onClick={() => openGiveLogin(member)}
+                                                        className="p-1.5 text-muted hover:text-primary rounded-lg hover:bg-primary/5 transition-all cursor-pointer"
+                                                        aria-label={t("giveLogin")}
+                                                        title={t("giveLogin")}
+                                                        data-testid={`staff-give-login-${member.id}`}
+                                                    >
+                                                        <KeyRound size={14} />
+                                                    </button>
+                                                )}
                                                 <button
                                                     onClick={() => handleDelete(member)}
                                                     className="p-1.5 text-muted hover:text-error rounded-lg hover:bg-error/10 transition-all cursor-pointer"
@@ -729,6 +801,32 @@ export default function StaffManager({ embedded = false }: { embedded?: boolean 
                     </div>
                 </div>
             )}
+
+            <ConfirmDialog
+                isOpen={loginFor !== null}
+                onClose={() => { if (!loginSaving) setLoginFor(null); }}
+                onConfirm={() => void submitGiveLogin()}
+                title={t("giveLoginTitle", { name: loginFor ? staffName(loginFor) : "" })}
+                description={t("giveLoginBody")}
+                confirmText={t("giveLoginConfirm")}
+                isLoading={loginSaving}
+                confirmTestId="staff-give-login-confirm"
+            >
+                <label htmlFor="staff-login-email" className="block text-[11px] font-semibold text-muted uppercase tracking-wider mb-1">
+                    {t("giveLoginEmail")}
+                </label>
+                <input
+                    id="staff-login-email"
+                    type="email"
+                    dir="ltr"
+                    autoComplete="off"
+                    value={loginEmail}
+                    onChange={(e) => { setLoginEmail(e.target.value); setLoginError(null); }}
+                    data-testid="staff-login-email"
+                    className="w-full bg-input border border-border p-3 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                />
+                {loginError && <p role="alert" className="text-[11px] text-error">{loginError}</p>}
+            </ConfirmDialog>
 
             <ConfirmDialog
                 isOpen={confirmDialog !== null}
