@@ -47,6 +47,8 @@ const KNOWN_CONSOLE: { url: RegExp; text: RegExp; why: string; roles?: UserRole[
       why: 'GET /listings is 404 while the organisation has the LISTINGS feature off (a fresh organisation does); the page is swept by URL anyway' },
     { url: /\/leases\/[^/]+\?tab=journals$/, text: /status of 403/, roles: ['PROPERTY_MANAGER'],
       why: 'the Journal Vouchers section (the old Journals tab, open to every role before PR 3 too) reads GET /leases/{id}/journals and the renter ledger, which the backend refuses a property manager; the section shows its error' },
+    { url: /\/leases\/[^/]+\?tab=payments$/, text: /status of 403/, roles: ['PROPERTY_MANAGER'],
+      why: "a DRAFT contract's editable cheque grid loads its debit-account picker from GET /finance/accounts, which the backend refuses a property manager; the rows keep the account the generator gave them (seen first by the cheque-scan sweep, the first to open a draft as a manager)" },
     { url: /\/finance\/(opening-balances|reconciliation)$/, text: /status of 400/,
       why: 'GET /finance/opening-balances is 400 until the cut-over (books-start) date is set, which a fresh organisation has not done' },
 ];
@@ -627,4 +629,82 @@ for (const locale of LOCALES) {
         }
         expect(failures).toEqual([]);
     });
+}
+
+// UX gap audit 2026-10-01: the cheque scan the v2 rebuild left reachable only
+// from a posted contract's Cheques section. Every restored entry point opens the
+// scan inside the viewport — the posted contract's own button and a row's
+// Attach scan (that one cheque only), a draft contract's Scan cheques (saves the
+// grid first), the Collection hub's Scan cheques (pick the contract) and the
+// register row's Attach scan — three roles, EN and AR, laptop and phone.
+/** A draft contract with a saved cheque grid on the tower unit, made once per organisation. */
+async function scanDraft(): Promise<string> {
+    const file = path.join(STATE_DIR, 'scan-draft.json');
+    if (fs.existsSync(file)) return (JSON.parse(fs.readFileSync(file, 'utf8')) as { id: string }).id;
+    const { creds, tenantId, towerUnitId, renterId } = fixture();
+    const me = await api<{ id: string; role: string }>(null, 'POST', '/api/auth/login', creds.TENANT_ADMIN);
+    const draft = await createLease(me.id, me.role, tenantId, { unitId: towerUnitId, renterId, startDate: '2027-01-01', endDate: '2027-12-31', rentAmount: 40_000 });
+    await generateCheques(me.id, me.role, tenantId, draft.id, { installments: 2 });
+    fs.writeFileSync(file, JSON.stringify({ id: draft.id }));
+    return draft.id;
+}
+
+async function closeScan(page: Page) {
+    await page.getByTestId('bulk-cheque-upload-close').click();
+    await expect(page.getByTestId('bulk-cheque-upload')).toHaveCount(0);
+}
+
+for (const { role } of ROLES) {
+    for (const locale of LOCALES) {
+        test(`cheque scan entry points ${role} ${locale}`, async ({ browser }) => {
+            const { leaseId } = fixture();
+            const draftId = await scanDraft();
+            const failures: string[] = [];
+            for (const viewport of WIDTHS) {
+                const context = await browser.newContext({ baseURL: BASE_URL, viewport, storageState: path.join(STATE_DIR, `${role}.json`) });
+                await context.addInitScript(() => localStorage.setItem('rentaxis_tours_completed', JSON.stringify(['admin-onboarding'])));
+                const page = await context.newPage();
+                const at = `${role} ${locale} ${viewport.width}px`;
+
+                // The posted contract: the whole-set upload, and one cheque's own Attach scan.
+                await check(page, `/${locale}/dashboard/leases/${leaseId}?tab=payments`, role, failures);
+                await expect(page.getByTestId('lease-bulk-upload-cheques'), `${at} bulk upload`).toBeVisible();
+                await page.locator('[data-testid^="cheque-action-scan-"]').first().click();
+                await expect(page.getByTestId('bulk-cheque-upload'), `${at} row scan`).toBeVisible();
+                await inView(page, 'bulk-cheque-upload', viewport.width, failures, `${at} row scan`);
+                await expect(page.getByTestId('bulk-cheque-upload-pick-photos')).toBeVisible();
+                await expect(page.getByTestId('bulk-cheque-upload-pick-folder'), `${at} one cheque, no folder`).toHaveCount(0);
+                await closeScan(page);
+
+                // A draft contract: Scan cheques saves its grid, then opens on it.
+                await check(page, `/${locale}/dashboard/leases/${draftId}?tab=payments`, role, failures);
+                await page.getByTestId('lease-scan-cheques').click();
+                await expect(page.getByTestId('bulk-cheque-upload'), `${at} draft scan`).toBeVisible();
+                await expect(page.getByTestId('bulk-cheque-upload-pick-folder')).toBeVisible();
+                await expect(page.getByTestId('bulk-cheque-upload-no-rows')).toHaveCount(0);
+                await closeScan(page);
+
+                // The Collection hub: pick the contract, then the scan.
+                await check(page, `/${locale}/dashboard/collections?tab=all`, role, failures);
+                await page.getByTestId('collections-scan-cheques').click();
+                await expect(page.getByTestId('scan-cheques-picker')).toBeVisible();
+                await page.getByTestId('scan-cheques-lease-search').fill(`SW-${SUFFIX}`);
+                await page.getByTestId(`scan-cheques-lease-option-${leaseId}`).click();
+                await page.getByTestId('scan-cheques-continue').click();
+                await expect(page.getByTestId('bulk-cheque-upload'), `${at} hub scan`).toBeVisible();
+                await inView(page, 'bulk-cheque-upload', viewport.width, failures, `${at} hub scan`);
+                await closeScan(page);
+
+                // The register: a registered PDC row has its own Attach scan.
+                const rowScan = page.locator('[data-testid^="cheque-row-action-scan-"]').first();
+                await expect(rowScan, `${at} register row scan`).toBeVisible();
+                await rowScan.click();
+                await expect(page.getByTestId('bulk-cheque-upload')).toBeVisible();
+                await expect(page.getByTestId('bulk-cheque-upload-pick-folder')).toHaveCount(0);
+                await closeScan(page);
+                await context.close();
+            }
+            expect(failures).toEqual([]);
+        });
+    }
 }

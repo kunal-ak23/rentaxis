@@ -13,7 +13,20 @@
  * overrides a closer date — two rows a week apart are more likely confused by
  * a landlord's own rounding than by two cheques of the same amount landing on
  * different weeks.
+ *
+ * PR #396 review P3-4: a scan whose amount differs from a row's by more than
+ * {@link AMOUNT_TOLERANCE} is never auto-mapped to that row — a photo of the wrong
+ * contract's cheque must not land on the nearest-dated row by default. The
+ * operator can still pick the row by hand (and then confirms the difference).
  */
+
+/** AED: rounding on the paper, not a different cheque. */
+export const AMOUNT_TOLERANCE = 1;
+
+/** Both amounts are known and differ by more than the tolerance. */
+export function amountsDiffer(a: number | null | undefined, b: number | null | undefined): boolean {
+  return a != null && b != null && Math.abs(Number(a) - Number(b)) > AMOUNT_TOLERANCE;
+}
 
 export type AutoMapItem = {
   id: string;
@@ -70,6 +83,7 @@ export function autoMapChequesToRows(items: AutoMapItem[], rows: AutoMapChequeRo
     if (item.pinned || !item.chequeDate) continue;
     for (const row of rows) {
       if (!remaining.has(row.id)) continue;
+      if (amountsDiffer(item.amount, row.amount)) continue;
       pairs.push({ itemId: item.id, rowId: row.id, dist: distance(item, row) });
     }
   }

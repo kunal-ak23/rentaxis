@@ -336,7 +336,8 @@ describe("BulkChequeUploadFlow", () => {
     expect(approve.closest("button")).toBeDisabled();
   });
 
-  it("shows mismatch chip when cheque amount differs from the row's amount, approve stays enabled", async () => {
+  // PR #396 review P3-4: a different amount is not auto-mapped, and once picked by hand it must be confirmed.
+  it("does not auto-map a scan of a different amount; a hand-picked row needs the difference confirmed", async () => {
     const fetchMock = vi.fn()
       // extract call: cheque amount 4500, but row s1 is 5000
       .mockResolvedValueOnce({
@@ -362,13 +363,27 @@ describe("BulkChequeUploadFlow", () => {
     fireEvent.click(screen.getByText("continueToExtract"));
 
     await waitFor(() => screen.getByText("colChequeNumber"));
+    const select = document.querySelector("select") as HTMLSelectElement;
+    expect(select.value).toBe("");
 
-    // Mismatch chip should appear (4500 ≠ 5000).
+    fireEvent.change(select, { target: { value: "s1" } });
     // The mock renders the key + vars as JSON, so we match on the key name.
     expect(screen.getByText(/chequeMismatch/)).toBeInTheDocument();
+    const approve = screen.getByText(/^approveAll/).closest("button") as HTMLButtonElement;
+    expect(approve).toBeDisabled();
 
-    // Approve button should still be enabled (mismatch is non-blocking)
-    const approve = screen.getByText(/^approveAll/) as HTMLButtonElement;
-    expect(approve.closest("button")).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId("amount-mismatch-confirm"));
+    expect(approve).not.toBeDisabled();
+
+    // Picking another row asks again.
+    fireEvent.change(select, { target: { value: "s2" } });
+    expect(approve).toBeDisabled();
+    fireEvent.click(screen.getByTestId("amount-mismatch-confirm"));
+    fireEvent.click(approve);
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    // The amount is never sent: it stays the row's.
+    const body = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(body.items[0]).not.toHaveProperty("amount");
+    expect(body.items[0].chequeId).toBe("s2");
   });
 });

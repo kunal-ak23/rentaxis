@@ -11,6 +11,7 @@ import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import ChequeStatusBadge from "@/components/cheques/ChequeStatusBadge";
 import ChequeActionDialog from "@/components/cheques/ChequeActionDialog";
+import ScanChequesLauncher from "@/components/cheques/ScanChequesLauncher";
 import BounceFlow from "@/components/cheques/BounceFlow";
 import ReplaceChequeDialog from "@/components/cheques/ReplaceChequeDialog";
 import ReceiveCashDialog from "@/components/cheques/ReceiveCashDialog";
@@ -93,6 +94,8 @@ export default function ChequeRegisterPanel({ embedded = false }: { embedded?: b
     const [dialogAction, setDialogAction] = useState<{ action: SingleRowAction; cheque: Cheque } | null>(null);
     const [bounceTarget, setBounceTarget] = useState<Cheque | null>(null);
     const [replaceTarget, setReplaceTarget] = useState<Cheque | null>(null);
+    // A row's own "Attach scan" (restored from the pre-v2 collect dialog's scanner).
+    const [scanTarget, setScanTarget] = useState<Cheque | null>(null);
     const [cashReceiptOpen, setCashReceiptOpen] = useState(() => searchParams?.get("receive") === "1");
 
     // Batch clearing (#57): offered only while the register is filtered to
@@ -560,6 +563,16 @@ export default function ChequeRegisterPanel({ embedded = false }: { embedded?: b
                                                             {t(a)}
                                                         </button>
                                                     ))}
+                                                    {c.mode === "PDC" && actions.includes("details") && (
+                                                        <button
+                                                            type="button"
+                                                            data-testid={`cheque-row-action-scan-${c.id}`}
+                                                            onClick={() => setScanTarget(c)}
+                                                            className="px-2 py-1 rounded-md text-[10px] font-bold bg-input text-foreground hover:bg-border transition-colors cursor-pointer"
+                                                        >
+                                                            {t("attachScan")}
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>
@@ -585,6 +598,14 @@ export default function ChequeRegisterPanel({ embedded = false }: { embedded?: b
                     )}
                 </div>
             )}
+
+            <ScanChequesLauncher
+                open={scanTarget !== null}
+                leaseId={scanTarget?.leaseId ?? null}
+                chequeId={scanTarget?.id ?? null}
+                onClose={() => setScanTarget(null)}
+                onDone={() => { setScanTarget(null); refresh(); }}
+            />
 
             <ChequeActionDialog
                 action={dialogAction?.action ?? null}

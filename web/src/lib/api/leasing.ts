@@ -1457,9 +1457,11 @@ export const leaseApi = {
    * match outside that one page. `sort` is Spring's `field,dir` (the endpoint's
    * Pageable); omitted, the server's default applies.
    */
-  paged: (q: { search?: string; status?: LeaseStatus; propertyId?: string; buildingId?: string; page?: number; size?: number; sort?: string } = {}) =>
+  paged: (q: { search?: string; status?: LeaseStatus; propertyId?: string; buildingId?: string; page?: number; size?: number; sort?: string;
+                /** Dropped server-side before the page is cut (CSV of statuses). */
+                excludeStatus?: LeaseStatus[] } = {}) =>
     get<Page<LeaseDetail>>(
-      `/leases/paged${qs({ search: q.search, status: q.status, propertyId: q.propertyId, buildingId: q.buildingId, page: q.page ?? 0, size: q.size ?? 25, sort: q.sort })}`,
+      `/leases/paged${qs({ search: q.search, status: q.status, propertyId: q.propertyId, buildingId: q.buildingId, excludeStatus: q.excludeStatus, page: q.page ?? 0, size: q.size ?? 25, sort: q.sort })}`,
     ),
   createDraft: (body: DraftLeaseInput) => send<LeaseDetail>("POST", "/leases", body),
   updateDraft: (id: string, body: DraftLeaseInput) => send<LeaseDetail>("PUT", `/leases/${id}`, body),
