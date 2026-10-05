@@ -326,6 +326,8 @@ const SERVER_KEYS: Record<string, string> = {
     "walk-in requests must be decided by the resident": "errResidentDecides",
     "a fresh visitor photo is required at this gate": "errPhotoRequired",
     "gate pass has already been used": "errAlreadyUsed",
+    "gate pass has expired": "errExpired",
+    "gate pass has already expired": "errExpired",
     "gate pass not found": "errPassNotFound",
     "visitor request not found": "errPassNotFound",
     "unit is not on an active lease of yours": "errNotCurrentContract",

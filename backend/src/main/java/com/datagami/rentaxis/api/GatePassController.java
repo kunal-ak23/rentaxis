@@ -270,6 +270,8 @@ public class GatePassController {
             return toSummaries(propertyScope.filter(gatePassRepository.findByTenantIdAndStatusOrderByCreatedAtDesc(
                             tenantId, GatePassStatus.PENDING_APPROVAL).stream()
                     .filter(pass -> pass.getOrigin() != GatePassOrigin.GUARD_WALK_IN)
+                    // A request whose visit window has closed can no longer be approved.
+                    .filter(pass -> pass.effectiveStatus(Instant.now()) == GatePassStatus.PENDING_APPROVAL)
                     .toList(), GatePass::getPropertyId));
         }
 
@@ -283,6 +285,7 @@ public class GatePassController {
                 // but the resident is the approver. Never put a resident decision
                 // behind the guard screen's Approve button.
                 .filter(pass -> pass.getOrigin() != GatePassOrigin.GUARD_WALK_IN)
+                .filter(pass -> pass.effectiveStatus(Instant.now()) == GatePassStatus.PENDING_APPROVAL)
                 .toList());
     }
 
@@ -584,7 +587,7 @@ public class GatePassController {
     private GatePassResponse toResponse(GatePass pass) {
         return new GatePassResponse(pass.getId(), pass.getPropertyId(), pass.getUnitId(), pass.getGuestName(),
                 pass.getGuestPhone(), pass.getPurpose(), pass.getVehicleNumber(), pass.getPassType(),
-                pass.getValidFrom(), pass.getValidTo(), pass.getStatus(), pass.getQrToken(), pass.getNumericCode(),
+                pass.getValidFrom(), pass.getValidTo(), pass.effectiveStatus(Instant.now()), pass.getQrToken(), pass.getNumericCode(),
                 pass.getCreatedAt());
     }
 
@@ -609,7 +612,8 @@ public class GatePassController {
         String propertyName = propertyNames.get(pass.getPropertyId());
         return new GatePassSummary(pass.getId(), pass.getPropertyId(), propertyName, pass.getUnitId(), unitNumber,
                 pass.getGuestName(), pass.getGuestPhone(), pass.getPurpose(), pass.getVehicleNumber(),
-                pass.getPassType(), pass.getValidFrom(), pass.getValidTo(), pass.getStatus(), pass.getCreatedAt());
+                pass.getPassType(), pass.getValidFrom(), pass.getValidTo(), pass.effectiveStatus(Instant.now()),
+                pass.getCreatedAt());
     }
 
     /** Single-pass variant, for the paths that map exactly one pass. */

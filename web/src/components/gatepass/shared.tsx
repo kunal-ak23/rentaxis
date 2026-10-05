@@ -31,15 +31,23 @@ export function StatusBadge({ status }: { status: GatePassStatus }) {
     );
 }
 
-/** `ar-AE` / `en-GB`, as the report page formats its timestamps. */
+/**
+ * The gate's time zone. Every property is in the UAE, passes are created in UAE
+ * time (`localInstant`) and the expected-today board is Asia/Dubai, so a pass is
+ * shown in Asia/Dubai too — never the browser's zone, which turned a resident
+ * travelling abroad's 18:00–23:00 visit into 19:30–00:30 on their own list.
+ */
+export const GATE_TIME_ZONE = "Asia/Dubai";
+
+/** `ar-AE` / `en-GB`, as the report page formats its timestamps, in the gate's zone. */
 export function useDateTime() {
     const locale = useLocale();
     const tag = locale === "ar" ? "ar-AE" : "en-GB";
     return {
         dateTime: (iso: string | null | undefined) =>
-            iso ? new Date(iso).toLocaleString(tag, { dateStyle: "medium", timeStyle: "short" }) : "—",
+            iso ? new Date(iso).toLocaleString(tag, { dateStyle: "medium", timeStyle: "short", timeZone: GATE_TIME_ZONE }) : "—",
         date: (iso: string | null | undefined) =>
-            iso ? new Date(iso).toLocaleDateString(tag, { dateStyle: "medium" }) : "—",
+            iso ? new Date(iso).toLocaleDateString(tag, { dateStyle: "medium", timeZone: GATE_TIME_ZONE }) : "—",
     };
 }
 

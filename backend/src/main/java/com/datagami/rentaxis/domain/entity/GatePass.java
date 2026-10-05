@@ -94,6 +94,21 @@ public class GatePass extends BaseTenantEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt = Instant.now();
 
+    /**
+     * The status a reader should see at {@code now}. A pass whose window has closed is
+     * EXPIRED whether or not {@code GatePassExpiryJob} has written that yet: the job runs
+     * every few minutes, and until it did a pass that ended days ago read "Active" (and
+     * still offered Cancel) on the resident's list. Terminal statuses are returned as
+     * stored; only the two live ones are derived.
+     */
+    public GatePassStatus effectiveStatus(Instant now) {
+        if ((status == GatePassStatus.ACTIVE || status == GatePassStatus.PENDING_APPROVAL)
+                && validTo != null && now.isAfter(validTo)) {
+            return GatePassStatus.EXPIRED;
+        }
+        return status;
+    }
+
     @PreUpdate
     public void onPreUpdate() {
         this.updatedAt = Instant.now();

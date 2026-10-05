@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 import { downloadCsv, toCsv } from "@/lib/csv";
 import { hasPermission, type UserRole } from "@/lib/rbac";
-import { GatePassTabs } from "@/components/gatepass/shared";
+import { GATE_TIME_ZONE, GatePassTabs } from "@/components/gatepass/shared";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -438,7 +438,7 @@ export default function GatePassReportPage() {
                                             <td className="px-4 py-2.5 text-xs text-muted whitespace-nowrap tabular-nums">
                                                 {new Date(row.scannedAt).toLocaleString(
                                                     locale === "ar" ? "ar-AE" : "en-GB",
-                                                    { dateStyle: "short", timeStyle: "short" },
+                                                    { dateStyle: "short", timeStyle: "short", timeZone: GATE_TIME_ZONE },
                                                 )}
                                             </td>
                                             <td className="px-4 py-2.5 text-center">

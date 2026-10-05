@@ -1350,4 +1350,81 @@ class GatePassControllerTest extends AbstractPostgresIT {
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
+
+    // ---------------------------------------------------------------- expiry
+
+    @Autowired com.datagami.rentaxis.core.service.GatePassExpiryJob expiryJob;
+
+    /** Moves a pass's whole window into the past, as if the visit happened two days ago. */
+    private GatePass endWindow(UUID passId) {
+        GatePass pass = passRepo.findById(passId).orElseThrow();
+        Instant now = Instant.now();
+        pass.setValidFrom(now.minus(3, ChronoUnit.DAYS));
+        pass.setValidTo(now.minus(2, ChronoUnit.DAYS));
+        return passRepo.save(pass);
+    }
+
+    @Test
+    void aPassWhoseWindowHasEndedReadsExpiredBeforeAnyScan() {
+        Fixture f = makeFixture();
+        UUID id = UUID.fromString(createPass(f, "Guest Expired", "SINGLE_USE").get("id").asText());
+        endWindow(id);
+
+        JsonNode mine = json(call(HttpMethod.GET, "/api/v1/gatepass/mine", f.renterUser(), null));
+        assertThat(mine.get(0).get("status").asText()).isEqualTo("EXPIRED");
+        JsonNode one = json(call(HttpMethod.GET, "/api/v1/gatepass/" + id, f.renterUser(), null));
+        assertThat(one.get("status").asText()).isEqualTo("EXPIRED");
+
+        // And it can no longer be cancelled as if it were live.
+        assertThat(call(HttpMethod.POST, "/api/v1/gatepass/" + id + "/cancel", f.renterUser(), null)
+                .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void scanningAnExpiredPassIsRefused() {
+        Fixture f = makeFixture();
+        User guard = makeGuard(f.org(), f.property());
+        JsonNode pass = createPass(f, "Guest Late", "SINGLE_USE");
+        endWindow(UUID.fromString(pass.get("id").asText()));
+
+        JsonNode res = json(call(HttpMethod.POST, "/api/v1/gatepass/scan", guard,
+                scanBody(pass.get("qrToken").asText(), null, "ENTRY")));
+
+        assertThat(res.get("result").asText()).isEqualTo("REJECTED");
+        assertThat(passRepo.findById(UUID.fromString(pass.get("id").asText())).orElseThrow().getStatus())
+                .isEqualTo(GatePassStatus.EXPIRED);
+    }
+
+    @Test
+    void anExpiredRequestLeavesTheApprovalsQueueAndCannotBeApproved() {
+        Fixture f = makeFixture();
+        User admin = makeUser(f.org(), UserRole.TENANT_ADMIN);
+        UUID id = UUID.fromString(createPass(f, "Guest Stale", "RECURRING").get("id").asText());
+        endWindow(id);
+
+        JsonNode queue = json(call(HttpMethod.GET, "/api/v1/gatepass/approvals", admin, null));
+        assertThat(queue.findValuesAsText("id")).doesNotContain(id.toString());
+        assertThat(call(HttpMethod.POST, "/api/v1/gatepass/" + id + "/approval", admin, Map.of("approved", true))
+                .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void expiryJobStoresExpiredOnEndedLivePassesOnly() {
+        Fixture f = makeFixture();
+        UUID ended = UUID.fromString(createPass(f, "Guest Ended", "SINGLE_USE").get("id").asText());
+        UUID endedPending = UUID.fromString(createPass(f, "Guest Ended Pending", "RECURRING").get("id").asText());
+        UUID live = UUID.fromString(createPass(f, "Guest Live", "SINGLE_USE").get("id").asText());
+        UUID cancelled = UUID.fromString(createPass(f, "Guest Cancelled", "SINGLE_USE").get("id").asText());
+        call(HttpMethod.POST, "/api/v1/gatepass/" + cancelled + "/cancel", f.renterUser(), null);
+        endWindow(ended);
+        endWindow(endedPending);
+        endWindow(cancelled);
+
+        expiryJob.runAt(Instant.now());
+
+        assertThat(passRepo.findById(ended).orElseThrow().getStatus()).isEqualTo(GatePassStatus.EXPIRED);
+        assertThat(passRepo.findById(endedPending).orElseThrow().getStatus()).isEqualTo(GatePassStatus.EXPIRED);
+        assertThat(passRepo.findById(live).orElseThrow().getStatus()).isEqualTo(GatePassStatus.ACTIVE);
+        assertThat(passRepo.findById(cancelled).orElseThrow().getStatus()).isEqualTo(GatePassStatus.CANCELLED);
+    }
 }

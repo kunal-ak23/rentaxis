@@ -123,4 +123,14 @@ public interface GatePassRepository extends JpaRepository<GatePass, UUID> {
     @Modifying
     @Query("UPDATE GatePass g SET g.createdByUserId = NULL WHERE g.createdByUserId = :userId")
     void detachCreatedBy(@Param("userId") UUID userId);
+
+    /**
+     * Writes EXPIRED onto every live pass whose window closed before {@code now}, across
+     * all organisations, for {@code GatePassExpiryJob}. A calendar fact applied the same
+     * way to every row: it reads nothing back and moves no row between tenants.
+     */
+    @Modifying
+    @Query("UPDATE GatePass g SET g.status = com.datagami.rentaxis.domain.entity.enums.GatePassStatus.EXPIRED, "
+            + "g.updatedAt = :now WHERE g.status IN :live AND g.validTo < :now")
+    int expireEndedPasses(@Param("now") Instant now, @Param("live") Collection<GatePassStatus> live);
 }
