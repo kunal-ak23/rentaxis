@@ -25,6 +25,10 @@ public class MeetingDTO {
     private UUID unitId;
     private String unitNumber;
     private MeetingDetailDTO details;
+    private String cancellationReason;
+    private UUID cancelledByUserId;
+    private String cancelledByName;
+    private Instant cancelledAt;
     private Instant createdAt;
     private Instant updatedAt;
 }

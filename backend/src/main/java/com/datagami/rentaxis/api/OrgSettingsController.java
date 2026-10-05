@@ -55,6 +55,24 @@ public class OrgSettingsController {
         return ResponseEntity.ok(orgSettings.getPayeeCheck());
     }
 
+    /**
+     * Settings › Organisation › Office hours: when office-visit meetings can be
+     * booked. Read by staff booking a meeting too, so a manager sees the same hours.
+     */
+    @GetMapping("/office-hours")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    public ResponseEntity<OrgSettingsService.OfficeHours> getOfficeHours() {
+        return ResponseEntity.ok(orgSettings.getOfficeHours());
+    }
+
+    /** Body: {@code {"start": "09:00", "end": "18:00"}}. */
+    @PutMapping("/office-hours")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<OrgSettingsService.OfficeHours> updateOfficeHours(
+            @RequestBody OrgSettingsService.OfficeHours body) {
+        return ResponseEntity.ok(orgSettings.updateOfficeHours(body.start(), body.end()));
+    }
+
     /** Body: {@code {"enabled": boolean, "validNames": [string]}}. */
     @PutMapping("/payee-check")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")

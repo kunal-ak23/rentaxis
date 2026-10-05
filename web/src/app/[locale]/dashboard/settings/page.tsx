@@ -14,6 +14,7 @@ import GatewaySettings from "@/components/settings/GatewaySettings";
 import OnlinePaymentSwitch from "@/components/settings/OnlinePaymentSwitch";
 import OrganisationSection from "@/components/settings/OrganisationSection";
 import PayeeCheckSettings from "@/components/settings/PayeeCheckSettings";
+import OfficeHoursSettings from "@/components/settings/OfficeHoursSettings";
 import StaffManager from "@/components/staff/StaffManager";
 import UsersManager from "@/components/users/UsersManager";
 
@@ -52,6 +53,7 @@ export default function SettingsPage() {
                     <>
                         <OrganisationSection />
                         <PayeeCheckSettings />
+                        <OfficeHoursSettings />
                     </>
                 )}
                 {active.id === "users" && (

@@ -93,6 +93,65 @@ public class OrgSettingsService {
         return value;
     }
 
+    /**
+     * The office's opening hours, in the organisation's (UAE) local time. Office-visit
+     * meeting slots run from {@code start} to {@code end}; the last slot ends at
+     * {@code end}. Both on a half hour, start before end.
+     */
+    public record OfficeHours(java.time.LocalTime start, java.time.LocalTime end) {}
+
+    /** What an organisation that never set its hours gets (tutorial 23: was 09:00–21:00). */
+    public static final OfficeHours DEFAULT_OFFICE_HOURS =
+            new OfficeHours(java.time.LocalTime.of(9, 0), java.time.LocalTime.of(18, 0));
+
+    /** This organisation's office hours, or {@link #DEFAULT_OFFICE_HOURS} when unset. */
+    @Transactional(readOnly = true)
+    public OfficeHours getOfficeHours() {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId == null) {
+            return DEFAULT_OFFICE_HOURS;
+        }
+        return settingsOf(tenantId)
+                .filter(s -> s.getOfficeHoursStart() != null && s.getOfficeHoursEnd() != null)
+                .map(s -> new OfficeHours(s.getOfficeHoursStart(), s.getOfficeHoursEnd()))
+                .orElse(DEFAULT_OFFICE_HOURS);
+    }
+
+    /**
+     * Saves this organisation's office hours.
+     *
+     * @throws IllegalArgumentException (400) with no organisation selected, a time
+     *         missing or off the half hour, or a start not before the end
+     */
+    @Transactional
+    public OfficeHours updateOfficeHours(java.time.LocalTime start, java.time.LocalTime end) {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId == null) {
+            throw new IllegalArgumentException("Select an organisation first.");
+        }
+        if (start == null || end == null) {
+            throw new IllegalArgumentException("Opening and closing times are both required.");
+        }
+        for (java.time.LocalTime t : List.of(start, end)) {
+            if ((t.getMinute() != 0 && t.getMinute() != 30) || t.getSecond() != 0 || t.getNano() != 0) {
+                throw new IllegalArgumentException("Office hours must be on the hour or half hour.");
+            }
+        }
+        if (!start.isBefore(end)) {
+            throw new IllegalArgumentException("The office must open before it closes.");
+        }
+        OrgSettings settings = settingsOf(tenantId).orElseGet(() -> {
+            OrgSettings created = new OrgSettings();
+            created.setLandlordOrgId(tenantId);
+            created.setTenantId(tenantId);
+            return created;
+        });
+        settings.setOfficeHoursStart(start);
+        settings.setOfficeHoursEnd(end);
+        repo.save(settings);
+        return new OfficeHours(start, end);
+    }
+
     /** Settings › Organisation: the payee check switch and this organisation's valid payee names. */
     public record PayeeCheckSettings(boolean enabled, List<String> validNames) {}
 

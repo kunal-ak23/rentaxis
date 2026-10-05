@@ -284,12 +284,16 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
           orElse: () => null,
         );
         if (lease != null && lease['endDate'] != null) {
-          body['proposedStartDate'] = lease['endDate'];
+          // The renewal starts the day after the current contract ends and
+          // ends the day before the same date `months` later (as the web).
           final months = int.tryParse(_renewalMonthsCtrl.text.trim()) ?? 12;
-          final start = DateTime.parse(lease['endDate']);
-          final end = DateTime(start.year, start.month + months, start.day);
-          body['proposedEndDate'] =
-              '${end.year}-${end.month.toString().padLeft(2, '0')}-${end.day.toString().padLeft(2, '0')}';
+          final currentEnd = DateTime.parse(lease['endDate']);
+          final start = DateTime(currentEnd.year, currentEnd.month, currentEnd.day + 1);
+          final end = DateTime(start.year, start.month + months, start.day - 1);
+          String iso(DateTime d) =>
+              '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+          body['proposedStartDate'] = iso(start);
+          body['proposedEndDate'] = iso(end);
         }
         if (_detailNotesCtrl.text.trim().isNotEmpty) {
           body['detailNotes'] = _detailNotesCtrl.text.trim();

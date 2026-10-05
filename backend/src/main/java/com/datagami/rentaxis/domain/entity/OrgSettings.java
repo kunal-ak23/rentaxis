@@ -46,6 +46,17 @@ public class OrgSettings extends BaseTenantEntity {
     private String penaltyPaymentInstructions;
 
     /** Settings › Organisation: "Check the payee name on scanned cheques" (changeset 162). */
+    /**
+     * The office's opening hours, for office-visit meeting slots (changeset 164).
+     * Null until a Company Admin sets them; {@code OrgSettingsService#getOfficeHours}
+     * then answers 09:00–18:00.
+     */
+    @Column(name = "office_hours_start")
+    private java.time.LocalTime officeHoursStart;
+
+    @Column(name = "office_hours_end")
+    private java.time.LocalTime officeHoursEnd;
+
     @Column(name = "payee_check_enabled", nullable = false)
     private boolean payeeCheckEnabled = false;
 
@@ -53,6 +64,22 @@ public class OrgSettings extends BaseTenantEntity {
     @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
     @Column(name = "valid_payee_names", nullable = false, columnDefinition = "jsonb")
     private java.util.List<String> validPayeeNames = new java.util.ArrayList<>();
+
+    public java.time.LocalTime getOfficeHoursStart() {
+        return officeHoursStart;
+    }
+
+    public void setOfficeHoursStart(java.time.LocalTime officeHoursStart) {
+        this.officeHoursStart = officeHoursStart;
+    }
+
+    public java.time.LocalTime getOfficeHoursEnd() {
+        return officeHoursEnd;
+    }
+
+    public void setOfficeHoursEnd(java.time.LocalTime officeHoursEnd) {
+        this.officeHoursEnd = officeHoursEnd;
+    }
 
     public boolean isPayeeCheckEnabled() {
         return payeeCheckEnabled;

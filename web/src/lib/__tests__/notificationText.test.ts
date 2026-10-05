@@ -59,6 +59,13 @@ describe("notificationText", () => {
         expect(bare(text.body)).toBe(`ألغى Omar الاجتماع: ${ar.Meetings.purposeLabel.LEASE_RENEWAL}`);
     });
 
+    it("carries a meeting's free-text cancellation reason as typed", () => {
+        const text = notificationText(
+            row("MEETING_CANCELLED_REASON", { name: "Omar", title: "Key handover", note: "Office closed" }),
+            arT, "ar", arMeetings);
+        expect(bare(text.body)).toBe("ألغى Omar الاجتماع: Key handover. السبب: Office closed");
+    });
+
     it("words a parking booking and localizes enum reasons", () => {
         const booking = row("BOOKING_APPROVED", { resourceType: "PARKING", resourceName: "P1" });
         expect(bare(notificationText(booking, arT, "ar").body)).toBe("تمت الموافقة على طلب حجزك لـ موقف السيارة P1.");

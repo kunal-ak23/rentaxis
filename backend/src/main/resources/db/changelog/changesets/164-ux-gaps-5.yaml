@@ -1,0 +1,101 @@
+# Gaps found while recording tutorials 22–25.
+#
+# 164-meeting-cancellation: a meeting cancelled from the web used to say nothing
+#   about who cancelled it, when, or why. The reason is optional; all three are
+#   null on every meeting cancelled before this.
+#
+# 164-staff-user-link: a staff record (HR/payroll row) is not a login, and only
+#   logins can be assigned tickets — the assignee works the ticket in the app. A
+#   staff record now points at the login it was given ("Give login" on the Staff
+#   page), so the assignee picker can show the staff designation and the Staff page
+#   can show who can be assigned work. SET NULL: deleting the login leaves the HR
+#   row; one login backs at most one staff record.
+# 164-org-office-hours: office-visit meetings were offered 09:00–21:00 whatever the
+#   office keeps. Null until a Company Admin sets them; read as 09:00–18:00.
+databaseChangeLog:
+  - changeSet:
+      id: 164-meeting-cancellation
+      author: claude
+      changes:
+        - addColumn:
+            tableName: meetings
+            columns:
+              - column:
+                  name: cancellation_reason
+                  type: varchar(500)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: cancelled_by_user_id
+                  type: uuid
+                  constraints:
+                    nullable: true
+              - column:
+                  name: cancelled_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: true
+      rollback:
+        - dropColumn:
+            tableName: meetings
+            columnName: cancelled_at
+        - dropColumn:
+            tableName: meetings
+            columnName: cancelled_by_user_id
+        - dropColumn:
+            tableName: meetings
+            columnName: cancellation_reason
+  - changeSet:
+      id: 164-staff-user-link
+      author: claude
+      changes:
+        - addColumn:
+            tableName: staff
+            columns:
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: true
+        - addForeignKeyConstraint:
+            baseTableName: staff
+            baseColumnNames: user_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_staff_user
+            onDelete: SET NULL
+        - sql:
+            sql: CREATE UNIQUE INDEX ux_staff_user_id ON staff (user_id) WHERE user_id IS NOT NULL;
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS ux_staff_user_id;
+        - dropForeignKeyConstraint:
+            baseTableName: staff
+            constraintName: fk_staff_user
+        - dropColumn:
+            tableName: staff
+            columnName: user_id
+  - changeSet:
+      id: 164-org-office-hours
+      author: claude
+      changes:
+        - addColumn:
+            tableName: org_settings
+            columns:
+              - column:
+                  name: office_hours_start
+                  type: time
+                  constraints:
+                    nullable: true
+              - column:
+                  name: office_hours_end
+                  type: time
+                  constraints:
+                    nullable: true
+      rollback:
+        - dropColumn:
+            tableName: org_settings
+            columnName: office_hours_end
+        - dropColumn:
+            tableName: org_settings
+            columnName: office_hours_start

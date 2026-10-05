@@ -104,6 +104,11 @@ export default function MeetingsPage() {
                 page: String(currentPage - 1), // backend is 0-indexed
                 size: String(itemsPerPage),
             });
+            // Filtered by the server, so the page and "Showing x–y of N" agree
+            // (tutorial 23: filtering one page in the browser left N unfiltered).
+            if (statusFilter !== "ALL") params.set("status", statusFilter);
+            if (typeFilter !== "ALL") params.set("type", typeFilter);
+            if (purposeFilter !== "ALL") params.set("purpose", purposeFilter);
             const res = await fetch(`${endpoint}?${params.toString()}`);
             if (res.ok) {
                 const data = await res.json();
@@ -121,7 +126,7 @@ export default function MeetingsPage() {
                 setLoadError(tCommon("loadFailedMeetings"));
             }
         } catch { /* ignore */ }
-    }, [isRenter, currentPage, itemsPerPage]);
+    }, [isRenter, currentPage, itemsPerPage, statusFilter, typeFilter, purposeFilter]);
 
     useEffect(() => {
         if (session !== undefined) {

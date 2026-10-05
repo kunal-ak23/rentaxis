@@ -58,6 +58,7 @@ public class MeetingService {
     private final ChequeRepository chequeRepository;
     private final LeaseAccessPolicy leaseAccessPolicy;
     private final PropertyScope propertyScope;
+    private final OrgSettingsService orgSettingsService;
 
     /** Roles that host meetings. A renter, guard or accountant is never a host. */
     private static final java.util.Set<UserRole> HOST_ROLES =
@@ -76,12 +77,17 @@ public class MeetingService {
             throw new BusinessRuleViolationException("Cannot book a slot in the past");
         }
 
-        // Validate slot is on a 30-minute boundary within 9AM-9PM UAE time
+        // Validate slot is on a 30-minute boundary inside the bookable day (UAE time):
+        // the office's hours for an office visit, 9 AM–9 PM for a property visit.
         ZonedDateTime slotZoned = dto.getSlotStart().atZone(ZoneId.of("Asia/Dubai"));
-        int hour = slotZoned.getHour();
         int minute = slotZoned.getMinute();
-        if (hour < DAY_START_HOUR || hour >= DAY_END_HOUR || (minute != 0 && minute != 30)) {
-            throw new BusinessRuleViolationException("Slot must be on a 30-minute boundary between 9:00 AM and 9:00 PM UAE time");
+        java.time.LocalTime slotTime = slotZoned.toLocalTime().withSecond(0).withNano(0);
+        OrgSettingsService.OfficeHours window = bookableWindow(dto.getType());
+        if ((minute != 0 && minute != 30) || slotZoned.getSecond() != 0
+                || slotTime.isBefore(window.start())
+                || slotTime.plusMinutes(SLOT_DURATION_MINUTES).isAfter(window.end())) {
+            throw new BusinessRuleViolationException("Slot must be on a 30-minute boundary between "
+                    + window.start() + " and " + window.end() + " UAE time");
         }
 
         // The host must be a tenant staff member who hosts meetings. It used to be
@@ -93,7 +99,7 @@ public class MeetingService {
         List<Meeting> conflicts = meetingRepository.findConflicts(
                 dto.getHostUserId(), TenantContextHolder.getTenantId(), dto.getSlotStart(), INACTIVE_STATUSES);
         if (!conflicts.isEmpty()) {
-            Instant nextSlot = findNextAvailableSlot(dto.getHostUserId(), dto.getSlotStart());
+            Instant nextSlot = findNextAvailableSlot(dto.getHostUserId(), dto.getSlotStart(), dto.getType());
             // Break-it R3 portal3 F4: the next free slot travels as data (the
             // response's ISO nextAvailableSlot, formatted by the client in Dubai
             // time) — no longer baked into the English message as raw UTC.
@@ -212,6 +218,16 @@ public class MeetingService {
 
     @Transactional
     public MeetingDTO cancelMeeting(UUID meetingId, UUID cancelledByUserId, String role) {
+        return cancelMeeting(meetingId, cancelledByUserId, role, null);
+    }
+
+    /**
+     * Cancels with an optional reason. Who cancelled, when and why are kept on the
+     * meeting (shown on its page) and the reason goes into both parties'
+     * notification: a Tenant whose approved meeting disappears should learn why.
+     */
+    @Transactional
+    public MeetingDTO cancelMeeting(UUID meetingId, UUID cancelledByUserId, String role, String reason) {
         Meeting meeting = meetingRepository.findById(meetingId)
                 .orElseThrow(() -> new NotFoundException("Meeting not found"));
 
@@ -225,17 +241,28 @@ public class MeetingService {
                     "Cannot cancel meeting in status: " + meeting.getStatus());
         }
 
+        String trimmedReason = reason == null || reason.isBlank() ? null : reason.strip();
         meeting.setStatus(MeetingStatus.CANCELLED);
+        meeting.setCancellationReason(trimmedReason);
+        meeting.setCancelledByUserId(cancelledByUserId);
+        meeting.setCancelledAt(Instant.now());
         Meeting saved = meetingRepository.save(meeting);
 
         // Notify both parties
         try {
             String cancellerName = userRepository.findDisplayNameById(cancelledByUserId).orElse("Someone");
-            String msg = cancellerName + " cancelled the meeting: " + (saved.getTitle() != null ? saved.getTitle() : saved.getPurpose().name());
+            String msg = cancellerName + " cancelled the meeting: " + (saved.getTitle() != null ? saved.getTitle() : saved.getPurpose().name())
+                    + (trimmedReason != null ? ". Reason: " + trimmedReason : "");
             // The title when there is one, else the purpose code the reader translates.
-            NotificationMessage structured = NotificationMessage.of("MEETING_CANCELLED",
-                    "name", cancellerName, "title", saved.getTitle(), "purpose", saved.getPurpose(),
-                    "slot", saved.getSlotStart());
+            NotificationMessage structured = trimmedReason == null
+                    ? NotificationMessage.of("MEETING_CANCELLED",
+                            "name", cancellerName, "title", saved.getTitle(), "purpose", saved.getPurpose(),
+                            "slot", saved.getSlotStart())
+                    // Its own sentence, carrying the free-text reason as "note": "reason"
+                    // is the enum-code parameter the readers translate.
+                    : NotificationMessage.of("MEETING_CANCELLED_REASON",
+                            "name", cancellerName, "title", saved.getTitle(), "purpose", saved.getPurpose(),
+                            "slot", saved.getSlotStart(), "note", trimmedReason);
             notificationService.notify(saved.getTenantId(), saved.getHostUserId(),
                     "MEETING_CANCELLED", "Meeting Cancelled", msg, "MEETING", saved.getId(), structured);
             notificationService.notify(saved.getTenantId(), saved.getRequesterUserId(),
@@ -326,23 +353,37 @@ public class MeetingService {
 
     @Transactional(readOnly = true)
     public Page<MeetingDTO> listMeetings(Pageable pageable) {
+        return listMeetings(pageable, null, null, null);
+    }
+
+    /** The list, filtered in the query so the page and its total agree (null = any). */
+    @Transactional(readOnly = true)
+    public Page<MeetingDTO> listMeetings(Pageable pageable, MeetingStatus status,
+            com.datagami.rentaxis.domain.entity.enums.MeetingType type, MeetingPurpose purpose) {
         List<UUID> scope = propertyScope.scopedPropertyIds();
         if (scope != null) {
             // A property manager: meetings they host or requested, and meetings on
             // the buildings they manage (audit P1-6). Scoped in the query so the
             // page and its total agree.
-            return meetingRepository.findScoped(TenantContextHolder.getTenantId(), callerIdOrNull(),
-                    nonEmpty(scope), pageable).map(this::mapToDTO);
+            return meetingRepository.findScopedFiltered(TenantContextHolder.getTenantId(), callerIdOrNull(),
+                    nonEmpty(scope), status, type, purpose, pageable).map(this::mapToDTO);
         }
-        return meetingRepository.findByTenantId(TenantContextHolder.getTenantId(), pageable).map(this::mapToDTO);
+        return meetingRepository.findByTenantIdFiltered(TenantContextHolder.getTenantId(), status, type, purpose, pageable)
+                .map(this::mapToDTO);
     }
 
     @Transactional(readOnly = true)
     public Page<MeetingDTO> listMyMeetings(UUID userId, String perspective, Pageable pageable) {
+        return listMyMeetings(userId, perspective, pageable, null, null, null);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<MeetingDTO> listMyMeetings(UUID userId, String perspective, Pageable pageable, MeetingStatus status,
+            com.datagami.rentaxis.domain.entity.enums.MeetingType type, MeetingPurpose purpose) {
         if ("host".equalsIgnoreCase(perspective)) {
-            return meetingRepository.findByHostUserId(userId, pageable).map(this::mapToDTO);
+            return meetingRepository.findByHostUserIdFiltered(userId, status, type, purpose, pageable).map(this::mapToDTO);
         }
-        return meetingRepository.findByRequesterUserId(userId, pageable).map(this::mapToDTO);
+        return meetingRepository.findByRequesterUserIdFiltered(userId, status, type, purpose, pageable).map(this::mapToDTO);
     }
 
     @Transactional(readOnly = true)
@@ -382,11 +423,23 @@ public class MeetingService {
 
     @Transactional(readOnly = true)
     public List<SlotDTO> getAvailableSlots(UUID hostUserId, java.time.LocalDate date) {
+        return getAvailableSlots(hostUserId, date, null);
+    }
+
+    /**
+     * The host's half-hour slots on {@code date}: within the office's hours for an
+     * office visit (and when no type is given — the default meeting), 9 AM–9 PM for a
+     * property visit. Tutorial 23: office visits were offered until 9 PM.
+     */
+    @Transactional(readOnly = true)
+    public List<SlotDTO> getAvailableSlots(UUID hostUserId, java.time.LocalDate date,
+            com.datagami.rentaxis.domain.entity.enums.MeetingType type) {
         // Only a real host's calendar is bookable, so only a real host's busy slots
         // are shown; any other user's day is not a renter's business.
         requireEligibleHost(hostUserId);
-        ZonedDateTime dayStartZdt = date.atTime(DAY_START_HOUR, 0).atZone(UAE_ZONE);
-        ZonedDateTime dayEndZdt = date.atTime(DAY_END_HOUR, 0).atZone(UAE_ZONE);
+        OrgSettingsService.OfficeHours window = bookableWindow(type);
+        ZonedDateTime dayStartZdt = date.atTime(window.start()).atZone(UAE_ZONE);
+        ZonedDateTime dayEndZdt = date.atTime(window.end()).atZone(UAE_ZONE);
 
         Instant dayStart = dayStartZdt.toInstant();
         Instant dayEnd = dayEndZdt.toInstant();
@@ -407,16 +460,31 @@ public class MeetingService {
         return slots;
     }
 
+    /** The bookable day for a meeting type; see {@link #getAvailableSlots(UUID, java.time.LocalDate, com.datagami.rentaxis.domain.entity.enums.MeetingType)}. */
+    private OrgSettingsService.OfficeHours bookableWindow(com.datagami.rentaxis.domain.entity.enums.MeetingType type) {
+        if (type == com.datagami.rentaxis.domain.entity.enums.MeetingType.PROPERTY_VISIT) {
+            return new OrgSettingsService.OfficeHours(
+                    java.time.LocalTime.of(DAY_START_HOUR, 0), java.time.LocalTime.of(DAY_END_HOUR, 0));
+        }
+        return orgSettingsService.getOfficeHours();
+    }
+
     // ---- Find next available slot ----
 
     @Transactional(readOnly = true)
     public Instant findNextAvailableSlot(UUID hostUserId, Instant fromInstant) {
+        return findNextAvailableSlot(hostUserId, fromInstant, null);
+    }
+
+    @Transactional(readOnly = true)
+    public Instant findNextAvailableSlot(UUID hostUserId, Instant fromInstant,
+            com.datagami.rentaxis.domain.entity.enums.MeetingType type) {
         ZonedDateTime from = fromInstant.atZone(UAE_ZONE);
         java.time.LocalDate date = from.toLocalDate();
 
         for (int dayOffset = 0; dayOffset <= 14; dayOffset++) {
             java.time.LocalDate checkDate = date.plusDays(dayOffset);
-            List<SlotDTO> slots = getAvailableSlots(hostUserId, checkDate);
+            List<SlotDTO> slots = getAvailableSlots(hostUserId, checkDate, type);
             for (SlotDTO slot : slots) {
                 if (slot.isAvailable()) {
                     // For same day, only suggest future slots; for future days, any slot works
@@ -570,6 +638,17 @@ public class MeetingService {
         dto.setRequesterUserId(meeting.getRequesterUserId());
         dto.setCreatedAt(meeting.getCreatedAt());
         dto.setUpdatedAt(meeting.getUpdatedAt());
+        dto.setCancellationReason(meeting.getCancellationReason());
+        dto.setCancelledByUserId(meeting.getCancelledByUserId());
+        dto.setCancelledAt(meeting.getCancelledAt());
+        if (meeting.getCancelledByUserId() != null) {
+            try {
+                userRepository.findDisplayNameById(meeting.getCancelledByUserId())
+                        .ifPresent(dto::setCancelledByName);
+            } catch (Exception e) {
+                log.debug("Could not enrich canceller name for meeting {}", meeting.getId());
+            }
+        }
 
         // Enrich host / requester names. Filter-bypassing lookup: superadmin
         // actors have tenant_id = NULL and are invisible to the tenant-

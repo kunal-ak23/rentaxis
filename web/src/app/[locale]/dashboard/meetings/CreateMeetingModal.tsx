@@ -5,7 +5,9 @@ import { X, Loader2, ChevronLeft, ChevronRight, CalendarDays, Building2, MapPin 
 import { useLocale, useTranslations } from "next-intl";
 import { formatSlotInDubai } from "@/lib/meetings/slotText";
 import { cn } from "@/lib/utils";
-import { businessTodayIso } from "@/lib/businessDate";
+import { BUSINESS_TIME_ZONE, businessTodayIso } from "@/lib/businessDate";
+import { renewalTerm } from "@/lib/meetings/renewalDates";
+import { fmtIsoDate } from "@/components/leases/leaseMath";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -55,32 +57,11 @@ type PMUser = {
 
 const STEP_KEYS = ["stepType", "stepContext", "stepDateSlot", "stepDetails", "stepReview"] as const;
 
-function formatTime(iso: string): string {
-    return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function buildSlotGrid(slotsFromApi: Slot[]): Slot[] {
-    // Build a full 9AM–9PM grid of 30-min slots for the selected date
-    // Overlay availability from the API response
-    const apiMap: Record<string, boolean> = {};
-    for (const s of slotsFromApi) {
-        const key = new Date(s.start).toISOString();
-        apiMap[key] = s.available;
-    }
-
-    const grid: Slot[] = [];
-    for (let h = 9; h < 21; h++) {
-        for (const m of [0, 30]) {
-            const pad = (n: number) => String(n).padStart(2, "0");
-            // We'll store as time strings; actual date will be known from context
-            grid.push({
-                start: `${pad(h)}:${pad(m)}`,
-                end: h === 20 && m === 30 ? "21:00" : `${pad(m === 0 ? h : h + 1)}:${pad(m === 0 ? 30 : 0)}`,
-                available: true, // default available; overridden by API
-            });
-        }
-    }
-    return grid;
+/** A slot's time as the office keeps it (Dubai), never the browser's zone. */
+function formatTime(iso: string, locale: string): string {
+    return new Date(iso).toLocaleTimeString(locale === "ar" ? "ar-AE" : "en-GB", {
+        hour: "2-digit", minute: "2-digit", timeZone: BUSINESS_TIME_ZONE,
+    });
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────
@@ -243,13 +224,16 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
         }
     }, []);
 
-    const fetchSlots = useCallback(async (date: string, hostUserId: string) => {
+    const fetchSlots = useCallback(async (date: string, hostUserId: string, type: MeetingType | "") => {
         if (!date || !hostUserId) return;
         setSlotsLoading(true);
         setSlots([]);
         setSelectedSlot(null);
         try {
-            const res = await fetch(`/api/proxy/v1/meetings/slots?hostUserId=${hostUserId}&date=${date}`);
+            // The type picks the bookable day: the office's hours for an office
+            // visit, 9 AM–9 PM for a property visit (tutorial 23).
+            const typeParam = type ? `&type=${type}` : "";
+            const res = await fetch(`/api/proxy/v1/meetings/slots?hostUserId=${hostUserId}&date=${date}${typeParam}`);
             if (res.ok) {
                 const data = await res.json();
                 setSlots(Array.isArray(data) ? data : data.slots ?? []);
@@ -354,9 +338,9 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
     useEffect(() => {
         const hostId = deriveHostUserId();
         if (step === 3 && selectedDate && !dateInPast && hostId) {
-            fetchSlots(selectedDate, hostId);
+            fetchSlots(selectedDate, hostId, meetingType);
         }
-    }, [step, selectedDate, dateInPast, deriveHostUserId, fetchSlots]);
+    }, [step, selectedDate, dateInPast, deriveHostUserId, fetchSlots, meetingType]);
 
     // ── Navigation ──────────────────────────────────────────────────────
 
@@ -421,12 +405,10 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
         if (officePurpose === "LEASE_RENEWAL") {
             const lease = leases.find(l => l.id === selectedLeaseId);
             if (lease?.endDate) {
-                body.proposedStartDate = lease.endDate;
-                if (renewalMonths) {
-                    const start = new Date(lease.endDate);
-                    start.setMonth(start.getMonth() + parseInt(renewalMonths, 10));
-                    body.proposedEndDate = start.toISOString().split("T")[0];
-                }
+                // The renewal starts the day after the current contract ends.
+                const term = renewalTerm(lease.endDate, renewalMonths ? parseInt(renewalMonths, 10) : null);
+                body.proposedStartDate = term.start;
+                if (term.end) body.proposedEndDate = term.end;
             }
             if (renewalRent) body.proposedRentAmount = parseFloat(renewalRent);
         }
@@ -465,11 +447,8 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
 
     // ── Slot grid ───────────────────────────────────────────────────────
 
-    const slotGrid = (() => {
-        if (slots.length > 0) return slots;
-        // Generate default full grid when no API slots yet
-        return buildSlotGrid([]).map((s) => ({ ...s, available: false }));
-    })();
+    // Only the server's slots: a made-up 9 AM–9 PM grid ignored the office's hours.
+    const slotGrid = slots;
 
     // ── Render ──────────────────────────────────────────────────────────
 
@@ -711,7 +690,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                                         <div className="grid grid-cols-4 gap-1.5">
                                             {slotGrid.map((slot, idx) => {
                                                 const timeLabel = typeof slot.start === "string" && slot.start.includes("T")
-                                                    ? formatTime(slot.start)
+                                                    ? formatTime(slot.start, locale)
                                                     : slot.start;
                                                 const isSelected = selectedSlot === slot ||
                                                     (selectedSlot?.start === slot.start && selectedSlot?.end === slot.end);
@@ -765,7 +744,10 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                                         const lease = leases.find(l => l.id === selectedLeaseId);
                                         return lease?.endDate ? (
                                             <div className="bg-input/40 rounded-lg px-3 py-2 text-xs text-muted">
-                                                {t("create.currentLeaseEnds", { date: lease.endDate })}
+                                                {t("create.currentLeaseEnds", {
+                                                    date: fmtIsoDate(lease.endDate, locale),
+                                                    start: fmtIsoDate(renewalTerm(lease.endDate, null).start, locale),
+                                                })}
                                             </div>
                                         ) : null;
                                     })()}
@@ -845,11 +827,11 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                                         {selectedUnit && <ReviewRow label={t("create.reviewUnit")} value={selectedUnit.unitNumber} />}
                                     </>
                                 )}
-                                <ReviewRow label={t("create.reviewDate")} value={selectedDate} />
+                                <ReviewRow label={t("create.reviewDate")} value={fmtIsoDate(selectedDate, locale)} />
                                 <ReviewRow label={t("create.reviewTimeSlot")} value={
                                     selectedSlot
-                                        ? `${typeof selectedSlot.start === "string" && selectedSlot.start.includes("T") ? formatTime(selectedSlot.start) : selectedSlot.start}` +
-                                        ` – ${typeof selectedSlot.end === "string" && selectedSlot.end.includes("T") ? formatTime(selectedSlot.end) : selectedSlot.end}`
+                                        ? `${typeof selectedSlot.start === "string" && selectedSlot.start.includes("T") ? formatTime(selectedSlot.start, locale) : selectedSlot.start}` +
+                                        ` – ${typeof selectedSlot.end === "string" && selectedSlot.end.includes("T") ? formatTime(selectedSlot.end, locale) : selectedSlot.end}`
                                         : "—"
                                 } />
                                 {officePurpose === "CHEQUE_REPLACEMENT" && chequeNotes && (
@@ -859,7 +841,9 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                                     <>
                                         {(() => {
                                             const lease = leases.find(l => l.id === selectedLeaseId);
-                                            return lease?.endDate ? <ReviewRow label={t("create.reviewRenewalStart")} value={lease.endDate} /> : null;
+                                            return lease?.endDate
+                                                ? <ReviewRow label={t("create.reviewRenewalStart")} value={fmtIsoDate(renewalTerm(lease.endDate, null).start, locale)} />
+                                                : null;
                                         })()}
                                         {renewalMonths && <ReviewRow label={t("create.reviewDuration")} value={t("create.durationMonths", { n: parseInt(renewalMonths, 10) || 0 })} />}
                                         {renewalRent && <ReviewRow label={t("create.reviewProposedRent")} value={t("create.rentAmount", { amount: renewalRent })} />}

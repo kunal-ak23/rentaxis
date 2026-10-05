@@ -38,9 +38,12 @@ public class MeetingController {
     @PreAuthorize("hasAnyRole('PROPERTY_MANAGER', 'TENANT_ADMIN', 'SUPER_ADMIN')")
     public ResponseEntity<Page<MeetingDTO>> listMeetings(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) com.datagami.rentaxis.domain.entity.enums.MeetingStatus status,
+            @RequestParam(required = false) com.datagami.rentaxis.domain.entity.enums.MeetingType type,
+            @RequestParam(required = false) com.datagami.rentaxis.domain.entity.enums.MeetingPurpose purpose) {
         return ResponseEntity.ok(meetingService.listMeetings(
-                PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "slotStart"))));
+                PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "slotStart")), status, type, purpose));
     }
 
     @GetMapping("/my")
@@ -48,9 +51,12 @@ public class MeetingController {
     public ResponseEntity<Page<MeetingDTO>> listMyMeetings(
             @RequestParam(defaultValue = "requester") String perspective,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) com.datagami.rentaxis.domain.entity.enums.MeetingStatus status,
+            @RequestParam(required = false) com.datagami.rentaxis.domain.entity.enums.MeetingType type,
+            @RequestParam(required = false) com.datagami.rentaxis.domain.entity.enums.MeetingPurpose purpose) {
         return ResponseEntity.ok(meetingService.listMyMeetings(callerId(), perspective,
-                PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "slotStart"))));
+                PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "slotStart")), status, type, purpose));
     }
 
     @GetMapping("/{id}")
@@ -67,8 +73,15 @@ public class MeetingController {
 
     @PutMapping("/{id}/cancel")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<MeetingDTO> cancelMeeting(@PathVariable UUID id) {
-        return ResponseEntity.ok(meetingService.cancelMeeting(id, callerId(), callerRole()));
+    public ResponseEntity<MeetingDTO> cancelMeeting(@PathVariable UUID id,
+            @RequestBody(required = false) @Valid CancelMeetingRequest body) {
+        String reason = body == null ? null : body.reason();
+        return ResponseEntity.ok(meetingService.cancelMeeting(id, callerId(), callerRole(), reason));
+    }
+
+    /** The body is optional: the mobile apps cancel with none, and the reason is optional. */
+    public record CancelMeetingRequest(
+            @jakarta.validation.constraints.Size(max = 500) String reason) {
     }
 
     @PutMapping("/{id}/complete")
@@ -94,8 +107,9 @@ public class MeetingController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<SlotDTO>> getAvailableSlots(
             @RequestParam UUID hostUserId,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
-        return ResponseEntity.ok(meetingService.getAvailableSlots(hostUserId, date));
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(required = false) com.datagami.rentaxis.domain.entity.enums.MeetingType type) {
+        return ResponseEntity.ok(meetingService.getAvailableSlots(hostUserId, date, type));
     }
 
     @GetMapping("/calendar")
