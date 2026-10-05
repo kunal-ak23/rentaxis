@@ -42,6 +42,11 @@ const nextConfig: NextConfig = {
         source: '/api/v1/public/listing-media/:path*',
         destination: `${backendUrl}/api/v1/public/listing-media/:path*`,
       },
+      // ux6: an uploaded promotion image on a live ad or business (renter app, previews).
+      {
+        source: '/api/v1/public/promo-images/:path*',
+        destination: `${backendUrl}/api/v1/public/promo-images/:path*`,
+      },
       {
         source: '/public/l/:path*',
         destination: `${backendUrl}/public/l/:path*`,
