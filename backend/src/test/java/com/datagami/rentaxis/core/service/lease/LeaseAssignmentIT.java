@@ -100,9 +100,13 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
     private static final LocalDate RENT_2 = LocalDate.of(2027, 1, 2);
     private static final LocalDate RENT_3 = LocalDate.of(2027, 4, 2);
     private static final LocalDate RENT_4 = LocalDate.of(2027, 7, 2);
-    /** PR #359 R2: an assignment takes effect no later than today. */
-    private static final LocalDate ON = LocalDate.now().isAfter(LocalDate.of(2027, 9, 22))
-            ? LocalDate.of(2027, 9, 22) : LocalDate.now();
+    /**
+     * PR #359 R2: an assignment takes effect no later than today — this suite's today is
+     * LaterBusinessDayConfig's, so a fixed day inside the term serves. Before RENT_1's date,
+     * so the only overdue item on it is the deposit cheque of CONTRACT_DATE (it used to be
+     * the real today, and the suite changed its answer once the calendar passed RENT_1).
+     */
+    private static final LocalDate ON = LocalDate.of(2026, 9, 30);
 
     @BeforeEach
     void setUp() {

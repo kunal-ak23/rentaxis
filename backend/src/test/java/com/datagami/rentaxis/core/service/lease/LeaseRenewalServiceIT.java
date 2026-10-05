@@ -90,7 +90,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest
 // Break-it R3 money3: a fixed 2026–27 timeline; settlements, addenda and penalty reversals
 // that record past events are refused "in the future" against the real today.
-@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class)
+// Amendments are dated on the app clock and rebuild recognition from that day; the suite's
+// contracts start on 2026-10-02, so "today" is pinned before that (TimelineClockConfig).
+@org.springframework.context.annotation.Import({com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class,
+        com.datagami.rentaxis.testsupport.TimelineClockConfig.class})
 class LeaseRenewalServiceIT extends AbstractPostgresIT {
 
     @Autowired LeaseRenewalService renewal;

@@ -40,24 +40,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * as {@code VoucherControllerIT}: the legacy {@code X-User-*} headers over a real port.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@org.springframework.context.annotation.Import(PayablesControllerIT.FixedClockConfig.class)
+@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.TimelineClockConfig.class)
 class PayablesControllerIT extends AbstractPostgresIT {
 
-    /**
-     * The suite's timeline is Aug–Sep 2026 and its aging reads as at 2026-09-30, so
-     * "today" (the day a release is stamped) is pinned there: on the real clock a
-     * release made after the as-of date is still live in that report, and the suite
-     * started failing on 2026-10-01.
-     */
-    @org.springframework.boot.test.context.TestConfiguration
-    static class FixedClockConfig {
-        @org.springframework.context.annotation.Bean
-        @org.springframework.context.annotation.Primary
-        java.time.Clock fixedClock() {
-            java.time.ZoneId dubai = java.time.ZoneId.of("Asia/Dubai");
-            return java.time.Clock.fixed(java.time.LocalDate.of(2026, 9, 30).atTime(10, 0).atZone(dubai).toInstant(), dubai);
-        }
-    }
+    // The clock is pinned on 2026-09-30 (TimelineClockConfig): the aging reads as at that
+    // date, and on the real clock a release stamped after it is still live in that report.
 
     @LocalServerPort int port;
 

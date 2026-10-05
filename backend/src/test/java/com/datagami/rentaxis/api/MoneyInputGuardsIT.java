@@ -378,9 +378,18 @@ class MoneyInputGuardsIT extends AbstractPostgresIT {
             if (gross.compareTo(new BigDecimal("51000")) == 0) c.put("grossAmount", new BigDecimal("50500"));
             return c;
         }).toList();
+        long contractJournals = journalCount("TCR", "TCO");
         assertThat(call(HttpMethod.POST, path, Map.of("lines", changed, "reason", "fee up")).getStatusCode().value())
                 .isEqualTo(200);
-        assertThat(journalCount()).isEqualTo(journals + 2);
+        // Counted by type: once the contract has started (2026-10-02) the amendment also
+        // catches up the days already recognised, which a total would count too.
+        assertThat(journalCount("TCR", "TCO")).isEqualTo(contractJournals + 2);
+    }
+
+    private long journalCount(String... docTypes) {
+        Long n = jdbc.queryForObject("select count(*) from journal_entries where tenant_id = ? and doc_type = any(?)",
+                Long.class, fixtures.tenantId(), docTypes);
+        return n == null ? 0 : n;
     }
 
     // ---- Batch 4 review #3: the rest of the money request bodies ------------------
