@@ -2680,6 +2680,8 @@
     "runFailed": "تعذّر ترحيل نقاط الاستحقاق الضريبي."
   },
   "Cheques": {
+    "depositedDaysAgo": "{n, plural, =0 {أودع اليوم} one {أودع منذ يوم واحد} two {أودع منذ يومين} few {أودع منذ # أيام} many {أودع منذ # يومًا} other {أودع منذ # يوم}}",
+    "awaitingClearing": "مودع، بانتظار التحصيل",
     "scanMoreContracts": "عرض المزيد من العقود",
     "scanCheques": "مسح الشيكات ضوئيًا",
     "attachScan": "إرفاق صورة الشيك",
@@ -4888,6 +4890,8 @@
       "WRITTEN_OFF": "مشطوب","PROPOSED": "مقترح", "APPROVED": "محمّل", "WAIVED": "معفى", "REVERSED": "معكوس"}
   },
   "Collections": {
+    "depositedDaysAgo": "{n, plural, =0 {أودع اليوم} one {أودع منذ يوم واحد} two {أودع منذ يومين} few {أودع منذ # أيام} many {أودع منذ # يومًا} other {أودع منذ # يوم}}",
+    "awaitingClearing": "مودع، بانتظار التحصيل",
     "tabDeposit": "للإيداع",
     "tabDue": "مستحقة",
     "tabOverdue": "متأخرة",

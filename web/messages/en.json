@@ -2680,6 +2680,8 @@
     "runFailed": "The VAT tax points could not be posted."
   },
   "Cheques": {
+    "depositedDaysAgo": "{n, plural, =0 {Deposited today} one {Deposited # day ago} other {Deposited # days ago}}",
+    "awaitingClearing": "Deposited, awaiting clearing",
     "scanMoreContracts": "Show more contracts",
     "scanCheques": "Scan cheques",
     "attachScan": "Attach scan",
@@ -4888,6 +4890,8 @@
       "WRITTEN_OFF": "Written off","PROPOSED": "Proposed", "APPROVED": "Charged", "WAIVED": "Waived", "REVERSED": "Reversed"}
   },
   "Collections": {
+    "depositedDaysAgo": "{n, plural, =0 {Deposited today} one {Deposited # day ago} other {Deposited # days ago}}",
+    "awaitingClearing": "Deposited, awaiting clearing",
     "tabDeposit": "To deposit",
     "tabDue": "Due",
     "tabOverdue": "Overdue",
