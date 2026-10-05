@@ -504,9 +504,9 @@ public class ChequeQueryService {
         private BigDecimal liveAmount = BigDecimal.ZERO;
         private BigDecimal liveClearedAmount = BigDecimal.ZERO;
 
-        /** {@code open}: on a BOUNCED row, what the ledger still carries (zero = settled); null when not known. */
-        void add(Cheque c, int graceDays, LocalDate today, BigDecimal open) {
-            boolean settled = open != null && open.signum() <= 0;
+        /** {@code ledgerOpen}: on a BOUNCED row, what the ledger still carries (zero = settled); null when not known. */
+        void add(Cheque c, int graceDays, LocalDate today, BigDecimal ledgerOpen) {
+            boolean settled = ledgerOpen != null && ledgerOpen.signum() <= 0;
             BigDecimal amount = c.getAmount() == null ? BigDecimal.ZERO : c.getAmount();
             total++;
             totalAmount = totalAmount.add(amount);
@@ -533,7 +533,7 @@ public class ChequeQueryService {
                 bounced++;
             }
             if (!settled && ChequeDueRules.due(c, today)) {
-                dueAmount = dueAmount.add(c.getStatus() == ChequeStatus.BOUNCED && open != null ? open : amount);
+                dueAmount = dueAmount.add(c.getStatus() == ChequeStatus.BOUNCED && ledgerOpen != null ? ledgerOpen : amount);
             }
         }
 

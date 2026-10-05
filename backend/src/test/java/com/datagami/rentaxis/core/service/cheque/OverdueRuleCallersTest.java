@@ -44,8 +44,8 @@ class OverdueRuleCallersTest {
     /** Evidence the call site prices a bounce by what the ledger still carries. */
     static final Pattern LEDGER_AWARE = Pattern.compile(
             "BouncedDebt|bouncedDebt|ledgerSettled|bouncedOpen|openAmountsAt|OPEN_DUE_CTE"
-                    // a method handed the ledger's open amount by its caller (ChequeQueryService.Accumulator.add)
-                    + "|BigDecimal\\s+open\\b");
+                    // a method that says it is handed the ledger's open amount (ChequeQueryService.Accumulator.add)
+                    + "|ledgerOpen");
 
     static final int WINDOW = 60;
 

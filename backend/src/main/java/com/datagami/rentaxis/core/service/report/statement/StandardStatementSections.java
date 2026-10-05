@@ -224,11 +224,14 @@ public final class StandardStatementSections {
         private final ChequeRepository cheques;
         private final StatementLedger ledger;
         private final BouncedDebt bouncedDebt;
+        private final com.datagami.rentaxis.domain.repository.BadDebtWriteOffRepository writeOffs;
 
-        public Outstanding(ChequeRepository cheques, StatementLedger ledger, BouncedDebt bouncedDebt) {
+        public Outstanding(ChequeRepository cheques, StatementLedger ledger, BouncedDebt bouncedDebt,
+                           com.datagami.rentaxis.domain.repository.BadDebtWriteOffRepository writeOffs) {
             this.cheques = cheques;
             this.ledger = ledger;
             this.bouncedDebt = bouncedDebt;
+            this.writeOffs = writeOffs;
         }
 
         @Override public int order() { return 4; }
@@ -236,19 +239,20 @@ public final class StandardStatementSections {
         @Override
         public Section build(StatementContext ctx) {
             LocalDate at = ctx.to();
-            List<Cheque> owed = cheques.findOwedCandidatesAt(ctx.propertyId(), at).stream()
+            List<Cheque> candidates = cheques.findOwedCandidatesAt(ctx.propertyId(), at).stream()
                     .filter(c -> ctx.tenantId().equals(c.getTenantId()))
-                    .filter(c -> wasDueAt(c, at))
                     .toList();
+            LeftBounced left = leftBouncedOn(candidates);
+            List<Cheque> owed = candidates.stream().filter(c -> wasDueAt(c, at, left)).toList();
             // Tutorial 20: the shared due rule (ChequeRepository.OPEN_DUE_CTE / BouncedDebt) — a
             // returned cheque counts only for the debt the lease's receivable still carried on
             // `at`. One a settlement, replacement receipt or write-off had closed by then is not
             // "overdue (register)"; one that bounced only after `at` was still merely banked.
-            // PR #399 R1 P2-1: every row that had bounced by `at` shares the lease's receivable as
-            // at `at`, whatever became of it later (written off, replaced, returned), so a
-            // closed period re-renders the same.
+            // PR #399 R1 P2-1 / R1-P1: the rows still bounced on `at` — whatever became of them
+            // later — share the lease's receivable as at `at`, so a closed period re-renders the
+            // same; a row replaced, written off, returned or transferred by `at` gets no share.
             Map<UUID, BigDecimal> open = bouncedDebt.openAmountsAt(owed.stream()
-                    .filter(c -> bouncedBy(c, at))
+                    .filter(c -> stillBouncedAt(c, at, left))
                     .collect(java.util.stream.Collectors.toCollection(ArrayList::new)), at);
             List<List<Object>> rows = new ArrayList<>();
             BigDecimal overdue = BigDecimal.ZERO;
@@ -281,7 +285,7 @@ public final class StandardStatementSections {
          * rather than today's status: a cheque that cleared after {@code at} was
          * still outstanding then; one that bounced after it was merely banked.
          */
-        static boolean wasDueAt(Cheque c, LocalDate at) {
+        static boolean wasDueAt(Cheque c, LocalDate at, LeftBounced left) {
             // Only rows dated on or before `at` reach here (overdue needs the date to
             // have passed, so a later-dated bounced cheque is due but never overdue).
             return switch (c.getStatus()) {
@@ -290,16 +294,76 @@ public final class StandardStatementSections {
                 case BOUNCED -> true;
                 case CLEARED -> c.getClearedAt() != null && c.getClearedAt().isAfter(at);
                 case DRAFT -> false;
-                // Written off, replaced, returned or carried over later: on `at` it was a
-                // bounce, priced by the receivable as it stood then.
-                default -> bouncedBy(c, at);
+                // Replaced, written off, returned or carried over: owed on `at` only if it was
+                // still a bounce then — what moved it on is dated after `at`.
+                default -> stillBouncedAt(c, at, left);
             };
         }
 
-        /** The row had bounced on or before {@code at} (a status it may have left since). */
-        static boolean bouncedBy(Cheque c, LocalDate at) {
-            return c.getBouncedAt() != null && !c.getBouncedAt().isAfter(at)
-                    || c.getStatus() == ChequeStatus.BOUNCED && c.getBouncedAt() == null;
+        /**
+         * When each candidate that has left BOUNCED left it (PR #399 R1-P1): the write-off's
+         * date for a row a write-off took, the successor copy's posting date for a transferred
+         * row. Replacements and returns carry their own dates on the row.
+         */
+        record LeftBounced(Map<UUID, LocalDate> writtenOffOn, Map<UUID, LocalDate> transferredOn) {
+            static final LeftBounced NONE = new LeftBounced(Map.of(), Map.of());
+        }
+
+        private LeftBounced leftBouncedOn(List<Cheque> candidates) {
+            List<Cheque> cancelled = candidates.stream()
+                    .filter(c -> c.getBouncedAt() != null && c.getStatus() == ChequeStatus.CANCELLED && c.getLease() != null)
+                    .toList();
+            Map<UUID, LocalDate> writtenOff = new java.util.HashMap<>();
+            if (!cancelled.isEmpty()) {
+                java.util.Set<UUID> leaseIds = cancelled.stream().map(c -> c.getLease().getId())
+                        .collect(java.util.stream.Collectors.toSet());
+                for (var status : List.of(com.datagami.rentaxis.domain.entity.BadDebtWriteOff.Status.WRITTEN_OFF,
+                        com.datagami.rentaxis.domain.entity.BadDebtWriteOff.Status.REVERSED)) {
+                    for (var w : writeOffs.findByLeaseIdInAndStatus(leaseIds, status)) {
+                        if (w.getItemIds() == null) continue;
+                        for (String id : w.getItemIds().split(",")) {
+                            if (!id.isBlank()) writtenOff.merge(UUID.fromString(id.trim()), w.getWriteOffDate(),
+                                    (a, b) -> a.isBefore(b) ? a : b);
+                        }
+                    }
+                }
+            }
+            List<UUID> transferred = candidates.stream()
+                    .filter(c -> c.getBouncedAt() != null && c.getStatus() == ChequeStatus.TRANSFERRED)
+                    .map(Cheque::getId).toList();
+            Map<UUID, LocalDate> transferredOn = new java.util.HashMap<>();
+            if (!transferred.isEmpty()) {
+                for (Cheque copy : cheques.findByTransferredFromIdIn(transferred)) {
+                    if (copy.getPostingDate() != null) transferredOn.put(copy.getTransferredFromId(), copy.getPostingDate());
+                }
+            }
+            return new LeftBounced(writtenOff, transferredOn);
+        }
+
+        /**
+         * The row was a bounce on {@code at}: it had bounced by then, and whatever moved it on
+         * since (replacement, return, write-off, transfer) is dated after {@code at}. A row
+         * whose exit date cannot be found falls back to when its status last changed.
+         */
+        static boolean stillBouncedAt(Cheque c, LocalDate at, LeftBounced left) {
+            if (c.getBouncedAt() == null) return c.getStatus() == ChequeStatus.BOUNCED;
+            if (c.getBouncedAt().isAfter(at)) return false;
+            LocalDate leftOn = switch (c.getStatus()) {
+                case BOUNCED -> null;
+                case REPLACED -> c.getReplacedBy() != null && c.getReplacedBy().getPostingDate() != null
+                        ? c.getReplacedBy().getPostingDate() : changedOn(c);
+                case RETURNED -> c.getReturnedAt() != null ? c.getReturnedAt() : changedOn(c);
+                case CANCELLED -> left.writtenOffOn().getOrDefault(c.getId(), changedOn(c));
+                case TRANSFERRED -> left.transferredOn().getOrDefault(c.getId(), changedOn(c));
+                case CLEARED -> c.getClearedAt();
+                default -> at;   // DRAFT and anything new: not a bounce on `at`
+            };
+            return leftOn == null || leftOn.isAfter(at);
+        }
+
+        private static LocalDate changedOn(Cheque c) {
+            return c.getStatusChangedAt() == null ? null
+                    : java.time.LocalDate.ofInstant(c.getStatusChangedAt(), java.time.ZoneId.of("Asia/Dubai"));
         }
     }
 

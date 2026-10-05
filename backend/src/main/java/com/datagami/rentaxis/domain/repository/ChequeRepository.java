@@ -578,7 +578,18 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
      * still uncleared, cleared only after {@code at}, or bounced on or before {@code at}
      * <em>whatever its status today</em> (PR #399 R1 P2-1: a later write-off, replacement
      * or return moves the row to CANCELLED / REPLACED / RETURNED, and a closed period must
-     * not change because of it — the ledger as at {@code at} prices those rows). The status
+     * not change because of it — the ledger as at {@code at} prices those rows; the section
+     * then keeps only those still bounced on {@code at}, see
+     * {@code StandardStatementSections.Outstanding}).
+     *
+     * <p>{@code postingDate <= at} reads the register as it stood (PR #399 R1-P3a). Two
+     * consequences, both intended: a backdated contract's PDCs (posted on the signing date,
+     * after some of their cheque dates) are not in the periods before it was signed; and
+     * {@code LeaseChequeRegistrar} posts a row's PDR on max(postingDate, the lease's
+     * not-before date), so a row can be on the register here a little before its PDR is
+     * in the ledger.</p>
+     *
+     * <p>The status
      * filter keeps years of cleared history out; the fetch joins keep the renter / unit /
      * lease reads to this one query.
      */
@@ -597,6 +608,9 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
         order by c.chequeDate asc
         """)
     List<Cheque> findOwedCandidatesAt(@Param("propertyId") UUID propertyId, @Param("at") LocalDate at);
+
+    /** PR #399 R1-P1: the successor lease's copies of transferred rows (when the transfer happened). */
+    List<Cheque> findByTransferredFromIdIn(Collection<UUID> sourceIds);
 
     /**
      * F14-19: numbered cheques of this renter on <em>other</em> leases that are still

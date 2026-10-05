@@ -75,6 +75,7 @@ class PropertyStatementServiceIT extends AbstractPostgresIT {
     @Autowired LeaseRepository leaseRepo;
     @Autowired ChequeRepository chequeRepo;
     @Autowired TenantFiscalSettingsService fiscal;
+    @Autowired com.datagami.rentaxis.domain.repository.BadDebtWriteOffRepository writeOffRepo;
 
     PropertyPnlFixture fx;
     Lease lease;
@@ -426,6 +427,82 @@ class PropertyStatementServiceIT extends AbstractPostgresIT {
         PropertyStatementDTO oct = statements.statement(fx.p1.getId(), LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), null);
         assertThat(fig(oct, "outstanding", "registerOverdue")).isEqualByComparingTo("33000.00");
         assertThat(count(oct, "outstanding", "registerOverdue")).isEqualTo(3);
+    }
+
+    // ---- PR #399 R1-P1: a bounce dealt with inside the period does not take an open bounce's place
+
+    /** 100009 (4,000) bounced on 3 September and is still open at the end of the month. */
+    private Cheque openEarlierBounce() {
+        Cheque c = cheque(9, "100009", LocalDate.of(2026, 9, 2), "4000.00", "0", ChequeRowKind.RENT, ChequeStatus.BOUNCED);
+        c.setBouncedAt(LocalDate.of(2026, 9, 3));
+        c = chequeRepo.save(c);
+        fx.role(JournalDocType.CBR, LocalDate.of(2026, 9, 3), leaseDims(), AccountRole.RENT_RECEIVABLE,
+                AccountRole.PDC_RECEIVABLE, "4000.00");
+        return c;
+    }
+
+    private List<List<Object>> septemberRows() {
+        return section(statements.statement(fx.p1.getId(), SEP_1, SEP_30, null), "outstanding").tables().getFirst().rows();
+    }
+
+    @Test
+    void aBounceReplacedInsideThePeriodDoesNotTakeAnOpenBouncesPlace() {
+        openEarlierBounce();
+        // 100003 (bounced 26 Sep) replaced on 28 Sep by a cheque dated 15 October.
+        Cheque repl = cheque(10, "100010", LocalDate.of(2026, 10, 15), "5000.00", "0", ChequeRowKind.RENT, ChequeStatus.REGISTERED);
+        repl.setPostingDate(LocalDate.of(2026, 9, 28));
+        repl = chequeRepo.save(repl);
+        Cheque replaced = chequeRepo.findById(bounced3.getId()).orElseThrow();
+        replaced.setStatus(ChequeStatus.REPLACED);
+        replaced.setReplacedBy(repl);
+        chequeRepo.save(replaced);
+        fx.role(JournalDocType.PDR, LocalDate.of(2026, 9, 28), leaseDims(), AccountRole.PDC_RECEIVABLE,
+                AccountRole.RENT_RECEIVABLE, "5000.00");
+
+        List<List<Object>> rows = septemberRows();
+        assertThat(rows).extracting(r -> r.get(2)).containsExactlyInAnyOrder("100006", "100009", "100002");
+        assertThat(rows).anySatisfy(r -> {
+            assertThat(r.get(2)).isEqualTo("100009");
+            assertThat((BigDecimal) r.get(4)).isEqualByComparingTo("4000.00");
+        });
+        // Re-rendered as at the 27th (before the replacement), 100003 was the newer open bounce.
+        PropertyStatementDTO before = statements.statement(fx.p1.getId(), SEP_1, LocalDate.of(2026, 9, 27), null);
+        assertThat(section(before, "outstanding").tables().getFirst().rows()).extracting(r -> r.get(2))
+                .contains("100003", "100009");
+    }
+
+    @Test
+    void aBounceWrittenOffInsideThePeriodDoesNotTakeAnOpenBouncesPlace() {
+        openEarlierBounce();
+        com.datagami.rentaxis.domain.entity.BadDebtWriteOff w = new com.datagami.rentaxis.domain.entity.BadDebtWriteOff();
+        w.setLeaseId(lease.getId());
+        w.setAmount(new BigDecimal("5000.00"));
+        w.setWriteOffDate(LocalDate.of(2026, 9, 28));
+        w.setReason("Tenant left");
+        w.setItemIds(bounced3.getId().toString());
+        w.setStatus(com.datagami.rentaxis.domain.entity.BadDebtWriteOff.Status.WRITTEN_OFF);
+        writeOffRepo.save(w);
+        moveTo(bounced3, ChequeStatus.CANCELLED);
+        fx.role(JournalDocType.BDW, LocalDate.of(2026, 9, 28), leaseDims(), AccountRole.ADVANCE_RENT,
+                AccountRole.RENT_RECEIVABLE, "5000.00");
+
+        assertThat(septemberRows()).extracting(r -> r.get(2)).containsExactlyInAnyOrder("100006", "100009", "100002");
+        assertThat(septemberOverdue()).isEqualByComparingTo("32000.00");
+    }
+
+    @Test
+    void aBounceTransferredInsideThePeriodDoesNotTakeAnOpenBouncesPlace() {
+        openEarlierBounce();
+        moveTo(bounced3, ChequeStatus.TRANSFERRED);
+        // The successor's copy registers on 28 Sep; A's receivable for it moves with it.
+        Cheque copy = cheque(11, "200003", LocalDate.of(2026, 10, 25), "5000.00", "0", ChequeRowKind.RENT, ChequeStatus.REGISTERED);
+        copy.setPostingDate(LocalDate.of(2026, 9, 28));
+        copy.setTransferredFromId(bounced3.getId());
+        chequeRepo.save(copy);
+        fx.role(JournalDocType.JV, LocalDate.of(2026, 9, 28), leaseDims(), AccountRole.ADVANCE_RENT,
+                AccountRole.RENT_RECEIVABLE, "5000.00");
+
+        assertThat(septemberRows()).extracting(r -> r.get(2)).containsExactlyInAnyOrder("100006", "100009", "100002");
     }
 
     @Test
