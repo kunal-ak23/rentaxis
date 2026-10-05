@@ -18,7 +18,7 @@ const list = vi.fn();
 
 vi.mock("@/lib/api/ledger", async orig => {
     const m = await orig<typeof import("@/lib/api/ledger")>();
-    return { ...m, ledgerApi: { ...m.ledgerApi, accounts: { ...m.ledgerApi.accounts, list: () => list() } } };
+    return { ...m, ledgerApi: { ...m.ledgerApi, accounts: { ...m.ledgerApi.accounts, pickable: () => list() } } };
 });
 
 import SettlementAccountPicker from "../SettlementAccountPicker";

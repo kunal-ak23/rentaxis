@@ -15,7 +15,7 @@ vi.mock("@/components/finance/AccountPicker", async orig => {
 });
 vi.mock("@/lib/api/ledger", async orig => {
     const m = await orig<typeof import("@/lib/api/ledger")>();
-    return { ...m, ledgerApi: { ...m.ledgerApi, accounts: { ...m.ledgerApi.accounts, list: () => Promise.resolve(accounts) }, ledger: { ...m.ledgerApi.ledger, general } } };
+    return { ...m, ledgerApi: { ...m.ledgerApi, accounts: { ...m.ledgerApi.accounts, list: () => Promise.resolve(accounts), pickable: () => Promise.resolve(accounts) }, ledger: { ...m.ledgerApi.ledger, general } } };
 });
 // Units and renters on the rows are named per id through the bounded /names calls.
 const lookup = vi.hoisted(() => ({
