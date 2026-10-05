@@ -104,7 +104,13 @@ start_backend() {
     # Never send anything outward from a recording: stub payments, blank
     # email/SMS and AI. Blob storage stays on the local Azurite of .env.backend.
     export RENTAXIS_GATEWAY_STUB_ENABLED=true
-    export AZURE_COMMUNICATION_CONNECTION_STRING= AZURE_OPENAI_API_KEY= AZURE_OPENAI_ENDPOINT=
+    export AZURE_COMMUNICATION_CONNECTION_STRING=
+    # Cheque OCR stays off unless a take needs the scan (tutorial 15):
+    # TUTORIAL_CHEQUE_OCR=on keeps .env.backend's Azure OpenAI settings so a
+    # fictional cheque photo is read. Everything else outward stays blank.
+    if [[ "${TUTORIAL_CHEQUE_OCR:-off}" != on ]]; then
+      export AZURE_OPENAI_API_KEY= AZURE_OPENAI_ENDPOINT=
+    fi
     export SPRING_JPA_SHOW_SQL=false RENTAXIS_RECOGNITION_JOB_CATCH_UP_ENABLED=false
     # Nightly jobs off by default (TUTORIAL_NIGHTLY_JOBS=on to keep them): a
     # recording replays a seeded, dated story, and a job that posts September

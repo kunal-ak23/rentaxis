@@ -1,14 +1,16 @@
 // Tutorial 15 — Manage rent cheques end to end (Oasis Crest Properties, the
 // Property Manager Maya Khoury). The operational cheque tutorial: Due and
-// Overdue; To deposit → bank Ahmed Hassan's 200104 and Fatima Al Zaabi's
+// Overdue; Scan cheques reads a fictional photo of Ahmed's 200104 and attaches it;
+// To deposit → bank Ahmed Hassan's 200104 and Fatima Al Zaabi's
 // 300204 in one batch (36,750.00); clear Ahmed's deposited July cheque 200103;
 // bounce Fatima's 300204 (Payment stopped), the after-bounce panel (cheque-
 // return charge proposed) → Replace now with 300295 (15 Oct, 15,500.00);
 // Post-dated shows 300295; Ahmed's contract Cheques tab shows 200103 Cleared
 // and 200104 Deposited.
 //
-// The cheque scan is not in this take: the recording stack blanks Azure OpenAI,
-// so a scan reads nothing (see .superpowers/agents/ux-gaps-from-tutorials.md).
+// The scan reads a fictional cheque photo (fixtures/cheque-200104.png, made by
+// fixtures/make-cheque-image.py): record with TUTORIAL_CHEQUE_OCR=on so the
+// stack keeps .env.backend's Azure OpenAI settings (it blanks them otherwise).
 // Fatima's contract grid is not shown after the replace (cheque-total warning,
 // logged under 40).
 //
@@ -18,6 +20,8 @@
 import { navTimeoutMs } from '../lib/context.mjs';
 import { pointAt, restPointer } from '../lib/cursor.mjs';
 import { ahmedLeaseId } from '../lib/fixtures.mjs';
+
+const chequePhoto = new URL('../fixtures/cheque-200104.png', import.meta.url).pathname;
 import { expectCount, expectText, sceneClock } from '../lib/proof.mjs';
 import { roleRouteScene, stepScene } from '../lib/scenes.mjs';
 
@@ -29,14 +33,19 @@ async function searchRegister(page, no) {
   await page.getByTestId('cheque-search').fill('');
   await page.getByTestId('cheque-search').pressSequentially(no, { delay: 45 });
   await page.getByTestId('cheque-filter-apply').click();
-  await regRow(page, no).waitFor({ state: 'visible', timeout: navTimeoutMs });
+  // The register refetches after Apply: wait until only the searched cheque is listed.
+  const deadline = Date.now() + navTimeoutMs;
+  while (Date.now() < deadline) {
+    if ((await regRows(page).count()) === 1 && (await regRow(page, no).isVisible())) break;
+    await page.waitForTimeout(150);
+  }
   await expectCount(regRows(page), 1, `register rows for ${no}`);
 }
 
 const scenes = [
   roleRouteScene('propertyManager', '/en/dashboard/collections?tab=due', 'Due and overdue',
     'Due lists every cheque whose date has arrived and has not cleared; Overdue narrows it to those past their grace period.', {
-    weight: 24.67,
+    weight: 23.0,
     afterNavigation: async (page) => {
       const at = sceneClock(page);
       const due = mainRow(page, '200104');
@@ -46,16 +55,64 @@ const scenes = [
       await pointAt(page.getByTestId('collections-pill-due'));
       await at(10.4);
       await pointAt(due);
-      await at(15.8);
+      await at(14.8);
       await page.getByTestId('collections-pill-overdue').click();
       const may = mainRow(page, '300290');
       await may.waitFor({ state: 'visible', timeout: navTimeoutMs });
       await expectText(may, 'Fatima Al Zaabi', 'Overdue May cheque tenant');
       await expectText(may, '10,000.00', 'Overdue May cheque amount');
-      await at(20.6);
+      await at(19.2);
       await pointAt(may);
     },
   }),
+  stepScene('Scan the cheque',
+    'Scan cheques reads the photo and matches it to the contract\'s cheque; approve to attach it.',
+    async (page) => {
+      const at = sceneClock(page);
+      await at(3.9);
+      await page.getByRole('button', { name: 'Scan cheques' }).click();
+      const search = page.getByTestId('scan-cheques-lease-search');
+      await search.waitFor({ state: 'visible', timeout: navTimeoutMs });
+      await at(5.6);
+      await search.pressSequentially('Ahmed', { delay: 70 });
+      const option = page.getByTestId(`scan-cheques-lease-option-${ahmedLeaseId}`);
+      await option.waitFor({ state: 'visible', timeout: navTimeoutMs });
+      await at(7.0);
+      await option.click();
+      await at(7.9);
+      await page.getByRole('button', { name: /continue/i }).click();
+      const input = page.getByTestId('bulk-cheque-upload-photos-input');
+      await input.waitFor({ state: 'attached', timeout: navTimeoutMs });
+      await at(9.4);
+      await input.setInputFiles(chequePhoto);
+      const flow = page.getByTestId('bulk-cheque-upload');
+      const extract = flow.getByRole('button', { name: /extract/i });
+      await at(11.2);
+      await pointAt(extract);
+      await extract.click();
+      const approve = flow.getByRole('button', { name: /Approve all \(1\/1\)/ });
+      await approve.waitFor({ state: 'visible', timeout: 90000 });
+      const inputs = flow.locator('tbody input');
+      if ((await inputs.nth(0).inputValue()) !== '200104') throw new Error(`Scanned cheque number: ${await inputs.nth(0).inputValue()}`);
+      if (!/GULF CRESCENT/i.test(await inputs.nth(1).inputValue())) throw new Error('Scanned bank not read');
+      await expectText(flow, '21,250.00', 'Scanned amount');
+      const target = flow.locator('tbody select').first();
+      if (!/#5/.test(await target.locator('option:checked').innerText())) throw new Error('Scan not matched to cheque 5');
+      await at(14.6);
+      await pointAt(inputs.nth(0));
+      await at(16.4);
+      await pointAt(inputs.nth(1));
+      await at(17.6);
+      await pointAt(inputs.nth(2));
+      await at(19.0);
+      await pointAt(flow.getByText('21,250.00').first());
+      await at(21.8);
+      await pointAt(target);
+      await at(25.6);
+      await pointAt(approve);
+      await approve.click();
+      await page.getByText('Cheque scans attached.').waitFor({ state: 'visible', timeout: navTimeoutMs });
+    }, { weight: 29.0 }),
   stepScene('Bank a batch',
     'Tick the cheques going to the bank today; the selected total should match the deposit slip.',
     async (page) => {
@@ -82,7 +139,7 @@ const scenes = [
       await page.getByTestId('deposit-batch-confirm').click();
       await a.waitFor({ state: 'detached', timeout: navTimeoutMs });
       await f.waitFor({ state: 'detached', timeout: navTimeoutMs });
-    }, { weight: 20.75 }),
+    }, { weight: 20.28 }),
   stepScene('Clear when the bank confirms',
     'Find the cheque in the register, check the account it clears into, and confirm.',
     async (page) => {
@@ -109,7 +166,7 @@ const scenes = [
       await expectText(row, 'Receipt', 'Receipt number after clearing');
       await at(13.6);
       await pointAt(row.locator('[data-testid^="cheque-status-"]'));
-    }, { weight: 17.36 }),
+    }, { weight: 16.46 }),
   stepScene('A cheque comes back',
     'Bounce it with the reason the bank gave; Miftah proposes the cheque-return charge and asks what next.',
     async (page) => {
@@ -135,7 +192,7 @@ const scenes = [
       await pointAt(flow.getByText('300204', { exact: false }).first());
       await at(12.0);
       await pointAt(page.getByTestId('bounce-flow-auto-penalty'));
-    }, { weight: 16.93 }),
+    }, { weight: 16.07 }),
   stepScene('Replace it',
     'Record the new cheque the tenant hands over; when it covers the whole amount, nothing is left owing.',
     async (page) => {
@@ -159,7 +216,7 @@ const scenes = [
       await page.getByTestId('bounce-flow-replaced').waitFor({ state: 'visible', timeout: navTimeoutMs });
       await page.getByTestId('bounce-flow-done').click();
       await page.getByTestId('bounce-flow').waitFor({ state: 'detached', timeout: navTimeoutMs });
-    }, { weight: 16.09 }),
+    }, { weight: 15.25 }),
   stepScene('Post-dated cheques',
     'Cheques maturing in the next two weeks, with a running total.',
     async (page) => {
@@ -176,7 +233,7 @@ const scenes = [
       await pointAt(page.getByTestId('post-dated-running-total'));
       await at(6.8);
       await pointAt(row);
-    }, { weight: 9.74 }),
+    }, { weight: 9.24 }),
   stepScene('On the contract',
     'Each tenancy contract carries the same cheques; nothing is ever deleted.',
     async (page) => {
@@ -192,14 +249,17 @@ const scenes = [
       await cleared.waitFor({ state: 'visible', timeout: navTimeoutMs });
       await expectText(cleared, 'Cleared', '200103 on the contract');
       await expectText(deposited, 'Deposited', '200104 on the contract');
+      await expectText(deposited, 'GULF CRESCENT BANK', 'Bank read from the scan');
       await restPointer(page, 1300, 820);
       await at(4.6);
       await pointAt(cleared);
       await at(6.8);
       await pointAt(deposited);
-      await at(9.6);
+      await at(8.6);
+      await pointAt(deposited.getByText('GULF CRESCENT BANK'));
+      await at(11.4);
       await pointAt(grid.filter({ hasText: '200100' }).first());
-    }, { weight: 16.82 }),
+    }, { weight: 17.27 }),
 ];
 
-export default { role: 'propertyManager', scenes };
+export default { role: 'propertyManager', anchored: true, scenes };

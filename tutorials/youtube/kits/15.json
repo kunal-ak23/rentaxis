@@ -2,7 +2,7 @@
   "id": "15",
   "slug": "manage-rent-cheques-end-to-end",
   "title": "Miftah tutorial 15 · Manage rent cheques end to end",
-  "description": "Follow rent cheques through collection: see what is due and overdue, bank a batch, clear a cheque, and record a returned cheque and its replacement.\n\nWho this is for: Company Admin, Property Manager.\n\nChapters:\n0:00 Due and Overdue\n0:24 Bank a Batch\n0:45 Clear When the Bank Confirms\n1:02 A Cheque Comes Back\n1:20 Replace It\n1:48 On the Contract\n\nPart of the Miftah web course — playlist: Miftah · Collections\n\nتابع شيكات الإيجار خلال التحصيل: اطّلع على المستحق والمتأخر، وأودع دفعة في البنك، وصرّف الشيك، وسجّل الشيك المرتجع وبديله.",
+  "description": "Follow rent cheques through collection: see what is due and overdue, scan a cheque photo onto its contract, bank a batch, clear a cheque, and record a returned cheque and its replacement.\n\nWho this is for: Company Admin, Property Manager.\n\nChapters:\n0:00 Due and Overdue\n0:23 Scan the Cheque\n0:52 Bank a Batch\n1:11 Clear When the Bank Confirms\n1:28 A Cheque Comes Back\n1:45 Replace It\n2:08 On the Contract\n\nPart of the Miftah web course — playlist: Miftah · Collections\n\nتابع شيكات الإيجار خلال التحصيل: اطّلع على المستحق والمتأخر، وامسح صورة الشيك ضوئيًا وأرفقها بعقده، وأودع دفعة في البنك، وصرّف الشيك، وسجّل الشيك المرتجع وبديله.",
   "tags": [
     "miftah",
     "property management",
@@ -31,32 +31,37 @@
       "label": "Due and Overdue"
     },
     {
-      "startSec": 24.497,
-      "start": "0:24",
+      "startSec": 23.103,
+      "start": "0:23",
+      "label": "Scan the Cheque"
+    },
+    {
+      "startSec": 52.182,
+      "start": "0:52",
       "label": "Bank a Batch"
     },
     {
-      "startSec": 45.193,
-      "start": "0:45",
+      "startSec": 71.7,
+      "start": "1:11",
       "label": "Clear When the Bank Confirms"
     },
     {
-      "startSec": 62.51,
-      "start": "1:02",
+      "startSec": 88.032,
+      "start": "1:28",
       "label": "A Cheque Comes Back"
     },
     {
-      "startSec": 80.672,
-      "start": "1:20",
+      "startSec": 105.16,
+      "start": "1:45",
       "label": "Replace It"
     },
     {
-      "startSec": 108.548,
-      "start": "1:48",
+      "startSec": 128.264,
+      "start": "2:08",
       "label": "On the Contract"
     }
   ],
-  "durationSec": 120,
+  "durationSec": 146,
   "roles": [
     "TENANT_ADMIN",
     "PROPERTY_MANAGER"
