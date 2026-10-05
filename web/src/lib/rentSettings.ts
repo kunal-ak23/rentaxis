@@ -46,9 +46,18 @@ export function toRentSettingsBody(s: RentSettingsData): Omit<RentSettingsData, 
     };
 }
 
+/**
+ * A server row merged over the defaults. Online payment is an opt-in (tutorial 21):
+ * a row whose flag is null or missing is OFF, exactly as the backend reads it — a
+ * null used to render the switch with no state and a click flipped it to ON (`!null`).
+ */
+export function mergeRentSettings(row: Partial<RentSettingsData> & Record<string, unknown>): RentSettingsData {
+    return { ...DEFAULT_RENT_SETTINGS, ...row, onlinePaymentEnabled: row.onlinePaymentEnabled === true } as RentSettingsData;
+}
+
 /** GET /v1/rent-settings/{id}: 204 = no row yet (defaults; a 204 body must not be parsed), 2xx = merge, else null. */
 export async function readRentSettings(res: Response, propertyId: string): Promise<RentSettingsData | null> {
     if (res.status === 204) return { ...DEFAULT_RENT_SETTINGS, propertyId };
     if (!res.ok) return null;
-    return { ...DEFAULT_RENT_SETTINGS, ...(await res.json()) };
+    return mergeRentSettings(await res.json());
 }

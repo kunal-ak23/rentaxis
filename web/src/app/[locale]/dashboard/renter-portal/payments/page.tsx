@@ -58,7 +58,10 @@ export default function RenterPaymentsPage() {
     const fetchPayments = useCallback(async () => {
         try {
             const data = await onlinePayApi.myPayments();
-            setRows([...data].sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()));
+            // By date, then instalment: the history read "Cheque 2, 1, 3, 4" (tutorial 21).
+            setRows([...data].sort((a, b) =>
+                (new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+                || ((a.installmentNumber ?? 0) - (b.installmentNumber ?? 0))));
             setLoadError(null);
         } catch (err) {
             setLoadError(err instanceof ApiError ? err.message : tCommon("loadFailedPayments"));
@@ -124,7 +127,9 @@ export default function RenterPaymentsPage() {
             {loadError && <LoadErrorBanner message={loadError} onRetry={reload} />}
             <div className="mb-10">
                 <h1 className="text-xl font-bold text-foreground tracking-tight mb-1">{t("title")}</h1>
-                <p className="text-xs text-muted font-medium">{t("description")}</p>
+                <p className="text-xs text-muted font-medium">
+                    {rows.some(r => r.onlineEnabled) ? t("description") : t("descriptionOffline")}
+                </p>
             </div>
 
             {rows.length === 0 ? (

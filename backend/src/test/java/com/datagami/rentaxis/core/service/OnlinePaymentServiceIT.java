@@ -194,6 +194,7 @@ class OnlinePaymentServiceIT extends AbstractPostgresIT {
         settlementAccount = tx.execute(s -> accountService.createLeaf(
                 "Razorpay settlement", accountService.getAccountByCode("A-02-02"), null));
         seedGateway();
+        setOnlinePayments(true);
     }
 
     @AfterEach
@@ -1227,6 +1228,40 @@ class OnlinePaymentServiceIT extends AbstractPostgresIT {
                 .hasMessageContaining("switched off");
     }
 
+    @Test
+    void onlinePaymentIsOffForAPropertyThatNeverSwitchedItOn() {
+        UUID chequeId = firstCheque();
+        // No settings row at all.
+        tx.executeWithoutResult(s -> settingsRepo.findByPropertyId(fixtures.property().getId())
+                .ifPresent(settingsRepo::delete));
+        List<RenterChequeDTO> rows = tx.execute(s -> onlinePayments.getMyPayments(fixtures.renter().getUserId()));
+        assertThat(row(rows, chequeId).onlineEnabled()).as("no settings row: off").isFalse();
+        assertThatThrownBy(() -> onlinePayments.createOrder(chequeId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("switched off");
+
+        // A row whose flag was never set.
+        setOnlinePayments(null);
+        rows = tx.execute(s -> onlinePayments.getMyPayments(fixtures.renter().getUserId()));
+        assertThat(row(rows, chequeId).onlineEnabled()).as("null flag: off").isFalse();
+
+        // Explicitly on: offered.
+        setOnlinePayments(true);
+        rows = tx.execute(s -> onlinePayments.getMyPayments(fixtures.renter().getUserId()));
+        assertThat(row(rows, chequeId).onlineEnabled()).isTrue();
+    }
+
+    @Test
+    void onlinePaymentIsOffWhenTheOrganisationHasNoActiveGateway() {
+        UUID chequeId = firstCheque();
+        tx.executeWithoutResult(s -> configRepo.findByIsActiveTrueOrderByCreatedAtAscIdAsc().forEach(c -> {
+            c.setIsActive(false);
+            configRepo.save(c);
+        }));
+        List<RenterChequeDTO> rows = tx.execute(s -> onlinePayments.getMyPayments(fixtures.renter().getUserId()));
+        assertThat(row(rows, chequeId).onlineEnabled()).as("property on, no gateway: no Pay now").isFalse();
+    }
+
     // ------------------------------------------------------------------
     // what a renter may and may not do to their own register rows
     // ------------------------------------------------------------------
@@ -1773,10 +1808,19 @@ class OnlinePaymentServiceIT extends AbstractPostgresIT {
     }
 
     private void disableOnlinePayments() {
+        setOnlinePayments(false);
+    }
+
+    /** Online payment is an opt-in (tutorial 21): the fixture property switches it on, or to {@code value}. */
+    private void setOnlinePayments(Boolean value) {
         tx.executeWithoutResult(s -> {
-            RentCollectionSettings settings = new RentCollectionSettings();
-            settings.setProperty(fixtures.property());
-            settings.setOnlinePaymentEnabled(false);
+            RentCollectionSettings settings = settingsRepo.findByPropertyId(fixtures.property().getId())
+                    .orElseGet(() -> {
+                        RentCollectionSettings fresh = new RentCollectionSettings();
+                        fresh.setProperty(fixtures.property());
+                        return fresh;
+                    });
+            settings.setOnlinePaymentEnabled(value);
             settingsRepo.save(settings);
         });
     }
