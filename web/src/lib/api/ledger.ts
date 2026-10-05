@@ -348,6 +348,12 @@ export type AccountImportResult = { created: number; skipped: number; accounts: 
 export const ledgerApi = {
   accounts: {
     list: () => apiGet<Account[]>("/finance/accounts"),
+    /**
+     * What an account picker may offer: the whole chart for finance roles; the
+     * tenant-wide accounts plus their own buildings' for a property manager, who
+     * edits a draft contract's lines and cheque grid but may not read the chart.
+     */
+    pickable: () => apiGet<Account[]>("/finance/accounts/pickable"),
     tree: () => apiGet<Account[]>("/finance/accounts/tree"),
     children: (id: string) => apiGet<Account[]>(`/finance/accounts/${id}/children`),
     create: (body: CreateAccountBody) => apiSend<Account>("POST", "/finance/accounts", body),

@@ -14,7 +14,9 @@ let cache: Promise<Account[]> | null = null;
 
 export function loadAccounts(): Promise<Account[]> {
     if (!cache) {
-        cache = ledgerApi.accounts.list().catch(err => {
+        // `pickable`, not the chart's own list: a property manager opening a draft
+        // contract was refused the chart (403) and the grid's pickers came up empty.
+        cache = ledgerApi.accounts.pickable().catch(err => {
             // A failed load must not poison the cache forever.
             cache = null;
             throw err;

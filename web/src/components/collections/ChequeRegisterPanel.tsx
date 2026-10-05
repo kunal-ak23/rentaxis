@@ -12,6 +12,7 @@ import { useNameLookup } from "@/components/finance/useNameLookup";
 import ChequeStatusBadge from "@/components/cheques/ChequeStatusBadge";
 import ChequeActionDialog from "@/components/cheques/ChequeActionDialog";
 import ScanChequesLauncher from "@/components/cheques/ScanChequesLauncher";
+import ChequeScanLink from "@/components/cheques/ChequeScanLink";
 import BounceFlow from "@/components/cheques/BounceFlow";
 import ReplaceChequeDialog from "@/components/cheques/ReplaceChequeDialog";
 import ReceiveCashDialog from "@/components/cheques/ReceiveCashDialog";
@@ -572,6 +573,9 @@ export default function ChequeRegisterPanel({ embedded = false }: { embedded?: b
                                                         >
                                                             {t("attachScan")}
                                                         </button>
+                                                    )}
+                                                    {c.imageUrl && (
+                                                        <ChequeScanLink chequeId={c.id} testId={`cheque-row-scan-link-${c.id}`} />
                                                     )}
                                                 </div>
                                             </td>

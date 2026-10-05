@@ -29,7 +29,7 @@ afterEach(cleanup);
 const wrap = (ui: React.ReactNode) => <NextIntlClientProvider locale="en" messages={en}>{ui}</NextIntlClientProvider>;
 
 // Restored (lost in the v2 rebuild): each cheque of a posted contract can take
-// its own scan.
+// its own scan, and an attached scan can be opened.
 describe("ChequeGrid scan entry points", () => {
     it("offers Attach scan on a registered PDC row of a running contract, not on cash or banked rows", () => {
         const onScanRow = vi.fn();
@@ -53,5 +53,17 @@ describe("ChequeGrid scan entry points", () => {
                 cheques={[cheque({ id: "c1", seqNo: 1 })]} />,
         ));
         expect(screen.queryByTestId("cheque-action-scan-0")).toBeNull();
+    });
+
+    it("links the attached scan", () => {
+        render(wrap(
+            <ChequeGrid editable={false} contractValueInclVat={13700} cheques={[
+                cheque({ id: "c1", seqNo: 1, imageUrl: "https://blob.example/c1.jpg" }),
+                cheque({ id: "c2", seqNo: 2, chequeNumber: "000102" }),
+            ]} />,
+        ));
+        // Streamed by the app, never the private blob URL (which answers 403).
+        expect(screen.getByTestId("cheque-scan-link-0")).toHaveAttribute("href", "/api/proxy/v1/cheques/c1/image");
+        expect(screen.queryByTestId("cheque-scan-link-1")).toBeNull();
     });
 });
