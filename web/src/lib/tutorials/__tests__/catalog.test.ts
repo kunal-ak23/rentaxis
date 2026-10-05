@@ -107,6 +107,7 @@ describe("catalogue helpers", () => {
             "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15",
             // The accounting topic lists its entries in track order (38, the overview, first).
             "38", "39", "17", "34", "35", "40", "36", "41", "42", "43", "44", "19", "45", "18", "37",
+            "21",
         ]);
         for (const t of published) expect(t.youtubeId).toMatch(/^[A-Za-z0-9_-]{11}$/);
     });

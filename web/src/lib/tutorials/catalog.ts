@@ -301,7 +301,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "21", slug: "tenant-payments", topic: "tenant-portal", roles: ["RENTER"], durationSec: 150, youtubeId: null,
+        id: "21", slug: "tenant-payments", topic: "tenant-portal", roles: ["RENTER"], durationSec: 58, youtubeId: "-rlmAdcRiV0",
         title: { en: "Tenant payments", ar: "مدفوعات المستأجر" },
         description: {
             en: "As a Tenant, see what is due, where each of your cheques stands, and open receipts from your payment history.",
