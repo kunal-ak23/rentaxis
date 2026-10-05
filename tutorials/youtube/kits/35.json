@@ -2,7 +2,7 @@
   "id": "35",
   "slug": "register-and-clear-cheques",
   "title": "Miftah tutorial 35 · Register, bank and clear cheques",
-  "description": "Bank a batch of cheques, clear them when the bank confirms, and see the journal each step writes.\n\nWho this is for: Accountant, Company Admin, Property Manager.\n\nChapters:\n0:00 The Cheque Register\n0:25 Bank a Batch\n0:48 Clear When the Bank Confirms\n1:15 The Receipt Journal\n\nPart of the Miftah web course — playlist: Miftah · Collections\n\nأودع مجموعة من الشيكات في البنك، وسجّل تحصيلها عند تأكيد البنك، وتعرّف على القيد الذي تُنشئه كل خطوة.",
+  "description": "Bank a batch of cheques, clear them when the bank confirms, and see the journal each step writes.\n\nWho this is for: Accountant, Company Admin, Property Manager.\n\nChapters:\n0:00 The Cheque Register\n0:23 Bank a Batch\n0:44 Clear When the Bank Confirms\n1:03 The Receipt Journal\n1:18 Totals and Aging\n\nPart of the Miftah web course — playlist: Miftah · Collections\n\nأودع مجموعة من الشيكات في البنك، وسجّل تحصيلها عند تأكيد البنك، وتعرّف على القيد الذي تُنشئه كل خطوة.",
   "tags": [
     "miftah",
     "property management",
@@ -31,19 +31,24 @@
       "label": "The Cheque Register"
     },
     {
-      "startSec": 25.047,
-      "start": "0:25",
+      "startSec": 23.48,
+      "start": "0:23",
       "label": "Bank a Batch"
     },
     {
-      "startSec": 48.599,
-      "start": "0:48",
+      "startSec": 44.352,
+      "start": "0:44",
       "label": "Clear When the Bank Confirms"
     },
     {
-      "startSec": 75.889,
-      "start": "1:15",
+      "startSec": 63.733,
+      "start": "1:03",
       "label": "The Receipt Journal"
+    },
+    {
+      "startSec": 78.641,
+      "start": "1:18",
+      "label": "Totals and Aging"
     }
   ],
   "durationSec": 96,

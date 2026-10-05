@@ -131,6 +131,8 @@ const scenes = [
       await page.getByTestId('rail-collection').click();
       await page.getByTestId('nav-panel').getByText('Cheque register', { exact: true }).click();
       await page.getByTestId('cheque-summary-tiles').waitFor({ state: 'visible', timeout: navTimeoutMs });
+      // #397: a returned cheque the settlement and write-off closed (Daniel's 440102) is not counted as bounced.
+      await expectText(page.getByTestId('cheque-summary-bounced'), '0.00', 'Bounced tile');
       await restPointer(page, 1300, 640);
       await at(1.5);
       await pointAt(page.getByTestId('cheque-summary-tiles'));
