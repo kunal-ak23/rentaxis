@@ -106,7 +106,7 @@ export default function VendorsPage() {
                 const data = await res.json();
                 if (!isCurrent()) return;
                 // Oldest first, the house rule for entity lists (tutorial 19); id breaks ties.
-                data.sort((a: any, b: any) =>
+                (data as Vendor[]).sort((a, b) =>
                     (a.createdAt || '').localeCompare(b.createdAt || '') || (a.id || '').localeCompare(b.id || ''));
                 setVendors(data);
                 setLoadError(null);
