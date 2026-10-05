@@ -65,3 +65,17 @@ export function promoImageSrc(url: string | null | undefined): string {
   }
   return url
 }
+
+/**
+ * Where to show an uploaded attachment (a ticket photo, a settlement deduction
+ * scan) from. A file kept on the server's own disk has a local serve URL, which
+ * {@link assetSrc} already routes; a file in Azure storage has a bare blob URL in
+ * the organisation's private container, which answers 403 to the browser — the
+ * listing-photo problem of bug 26/27 — so it is shown through the attachment's
+ * own authenticated download route instead.
+ */
+export function storedFileSrc(fileUrl: string | null | undefined, downloadPath: string): string {
+  if (!fileUrl) return ''
+  if (fileUrl.startsWith(LOCAL_SERVE_PREFIX) || fileUrl.startsWith('data:')) return assetSrc(fileUrl)
+  return downloadPath
+}

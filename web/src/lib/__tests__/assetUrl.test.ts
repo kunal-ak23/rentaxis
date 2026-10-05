@@ -49,3 +49,17 @@ describe('promoImageSrc (ux6 item 2)', () => {
     expect(promoImageSrc('')).toBe('')
   })
 })
+
+import { storedFileSrc } from '../assetUrl'
+
+describe('storedFileSrc (private attachments)', () => {
+  const download = '/api/proxy/v1/tickets/attachments/a1/download'
+  it('shows a blob in private storage through the authenticated download route', () => {
+    expect(storedFileSrc('https://acct.blob.core.windows.net/tenant-x/ticket-attachments/a.png', download)).toBe(download)
+  })
+  it('keeps a file on local disk on its proxied serve URL', () => {
+    expect(storedFileSrc('/api/v1/assets/serve/ticket-attachments/a.png', download))
+      .toBe('/api/proxy/v1/assets/serve/ticket-attachments/a.png')
+    expect(storedFileSrc(null, download)).toBe('')
+  })
+})

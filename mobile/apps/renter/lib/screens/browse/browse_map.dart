@@ -114,7 +114,7 @@ class _PeekCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final m = context.miftah;
     final l = _L(context.isAr);
-    final coverUrl = listing['coverPhotoUrl'] as String?;
+    final coverUrl = resolveMediaUrl(listing['coverPhotoUrl'] as String?);
     final title = listing['title'] as String? ?? l.listingFallback;
     final rent = listing['annualRent'] as num?;
     final beds = listing['bedrooms'] as int?;
