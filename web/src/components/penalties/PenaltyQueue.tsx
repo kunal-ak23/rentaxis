@@ -232,9 +232,13 @@ export default function PenaltyQueue({ userRole, leaseId, propertyId, status }: 
                                                     className="block text-[11px] text-muted mt-0.5"
                                                     data-testid={`penalty-description-${i}`}
                                                 >
-                                                    {t(`penaltyDescription.${p.descriptionCode}`, {
+                                                    {/* PR #400 review P3-4: a return with no recorded reason reads "Returned cheque". */}
+                                                    {t(p.descriptionCode === "chequeReturned"
+                                                        && !(p.descriptionArgs?.failureReason && t.has(`failureReasons.${p.descriptionArgs.failureReason}`))
+                                                        ? "penaltyDescription.chequeReturnedNoReason"
+                                                        : `penaltyDescription.${p.descriptionCode}`, {
                                                         ...p.descriptionArgs,
-                                                        ...(p.descriptionArgs?.failureReason
+                                                        ...(p.descriptionArgs?.failureReason && t.has(`failureReasons.${p.descriptionArgs.failureReason}`)
                                                             ? { failureReason: t(`failureReasons.${p.descriptionArgs.failureReason}`) }
                                                             : {}),
                                                     })}

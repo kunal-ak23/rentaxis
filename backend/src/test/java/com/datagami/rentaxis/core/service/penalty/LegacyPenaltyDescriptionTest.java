@@ -18,10 +18,11 @@ class LegacyPenaltyDescriptionTest {
     }
 
     @Test
-    void aReturnedChequeWithoutAReasonIsABounce() {
+    void aReturnedChequeWithoutAReasonNamesNoReason() {
+        // PR #400 review P3-4: not "insufficient funds" — the text reads "Returned cheque".
         assertThat(LegacyPenaltyDescription.parse("Cheque #3 returned, bounce #1 on this lease"))
                 .hasValueSatisfying(c -> assertThat(c.args()).containsEntry("cheque", "#3")
-                        .containsEntry("failureReason", "BOUNCE"));
+                        .doesNotContainKey("failureReason"));
     }
 
     @Test

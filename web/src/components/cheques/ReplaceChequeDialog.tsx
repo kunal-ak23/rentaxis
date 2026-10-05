@@ -140,7 +140,7 @@ export default function ReplaceChequeDialog({ cheque, propertyId, onClose, onDon
             busy={busy}
             confirmDisabled={overBounced || total <= 0 || !chequeRowsAreValid(replacements)}
             confirmTestId="replace-confirm"
-            width="lg"
+            width="xl"
         >
             <div className="space-y-3">
                 <div>
@@ -161,7 +161,9 @@ export default function ReplaceChequeDialog({ cheque, propertyId, onClose, onDon
                         <div
                             key={r.key}
                             data-testid={`replace-row-${i}`}
-                            className="grid grid-cols-2 md:grid-cols-6 gap-2 items-end border border-border rounded-lg p-2"
+                            // Tutorial 15: seven fields in six columns clipped the mode ("Post-Date") and the
+                            // narration ("Narratior"). Four columns, the narration on its own line.
+                            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 items-end border border-border rounded-lg p-2"
                         >
                             <div>
                                 <label className={label}>{tl("chequeMode")}</label>
@@ -225,10 +227,11 @@ export default function ReplaceChequeDialog({ cheque, propertyId, onClose, onDon
                                     placeholder={tl("debitAccount")}
                                 />
                             </div>
-                            <div className="flex items-end gap-1">
+                            <div className="flex items-end gap-1 sm:col-span-2 lg:col-span-4">
                                 <input
                                     data-testid={`replace-row-${i}-narration`}
                                     className={field}
+                                    aria-label={tl("narration")}
                                     placeholder={tl("narration")}
                                     value={r.narration}
                                     onChange={e => patch(r.key, { narration: e.target.value })}

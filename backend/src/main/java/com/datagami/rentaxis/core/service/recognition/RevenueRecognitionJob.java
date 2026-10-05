@@ -111,6 +111,14 @@ public class RevenueRecognitionJob {
         this.runLog = runLog;
     }
 
+    /** PR #400 review P2-1: months the lock closed while still PLANNED. Optional for older test wiring. */
+    private LockedMonthsCatchUp lockedCatchUp;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setLockedCatchUp(LockedMonthsCatchUp lockedCatchUp) {
+        this.lockedCatchUp = lockedCatchUp;
+    }
+
     /**
      * F14-27: the catch-up. The nightly trigger fires once, at 00:30 app time
      * (Asia/Dubai, the JVM default zone), and a pass that falls inside a deploy's
@@ -217,10 +225,23 @@ public class RevenueRecognitionJob {
     private int runTenant(UUID tenantId, LocalDate today) {
         TenantContextHolder.setTenantId(tenantId);
         try {
+            // PR #400 review P2-1: first recognise the months the lock closed while still
+            // PLANNED, dated the first day after the lock; then the ordinary run.
+            List<String> catchUpErrors = List.of();
+            if (lockedCatchUp != null) {
+                LockedMonthsCatchUp.Result caught = lockedCatchUp.run(today, false);
+                if (caught.months() > 0) {
+                    log.info("recognition tenant_id={} locked_months_caught_up={} amount={} posted_on={}",
+                            tenantId, caught.months(), caught.amount(), caught.postedOn());
+                }
+                catchUpErrors = caught.errors();
+            }
             RecognitionRunResult result = recognition.runTo(today, false);
             // F14-27: a row that failed is not only a WARN line: the recognition
             // screen reads what the last pass could not post.
-            runLog.record(tenantId, today, result.posted(), result.errors());
+            List<String> allErrors = new java.util.ArrayList<>(catchUpErrors);
+            allErrors.addAll(result.errors());
+            runLog.record(tenantId, today, result.posted(), allErrors);
             log.info("recognition tenant_id={} posted={} amount={} skipped_locked={} failed={}",
                     tenantId, result.posted(), result.amount(), result.skippedLocked(), result.errors().size());
             result.errors().forEach(e -> log.warn("recognition tenant_id={} refused: {}", tenantId, e));

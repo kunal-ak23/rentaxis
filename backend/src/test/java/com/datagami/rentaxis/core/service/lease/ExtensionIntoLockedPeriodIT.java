@@ -42,7 +42,16 @@ import com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService;
 @SpringBootTest
 class ExtensionIntoLockedPeriodIT extends AbstractPostgresIT {
 
+    // PR #400 review P3-1: the realistic companions lock the normal way (recognise, then lock).
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.recognition.RecognitionService recognitionForLock;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.vat.VatTaxPointService vatForLock;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService fiscalForLock;
+
     @Autowired LeaseRenewalService renewal;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     @Autowired LeasePostingService posting;
     @Autowired ChequeGenerationService cheques;
     @Autowired LeaseService leaseService;
@@ -83,7 +92,24 @@ class ExtensionIntoLockedPeriodIT extends AbstractPostgresIT {
     void anExtensionWhoseNewMonthsStartInsideTheLockIsRefusedAndNothingChanges() {
         UUID id = fixtures.postedLease(START, START, END, List.of(line("RENT", "36000")), 2, "500010")
                 .lease().getId();
-        tx.executeWithoutResult(s -> fiscal.lockThrough(LocalDate.of(2026, 8, 31)));
+        tx.executeWithoutResult(s -> com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, LocalDate.of(2026, 8, 31)));
+
+        assertThatThrownBy(() -> renewal.extend(id,
+                new ExtendLeaseRequest(NEW_END, TODAY, List.of(line("RENT", "36800")),
+                        List.of(LeaseTestFixtures.chequeRow("36800", TODAY.plusDays(30))))))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("books are locked through 31/08/2026")
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode())
+                        .isEqualTo("lease.extendIntoLock"));
+        assertThat(reread(id).getEndDate()).isEqualTo(END);
+    }
+
+    /** PR #400 review P3-1: the same, with the lock reached the normal way (recognise, then lock). */
+    @Test
+    void anExtensionWhoseNewMonthsStartInsideTheLockIsRefusedAndNothingChanges_afterRecognisingThenLocking() {
+        UUID id = fixtures.postedLease(START, START, END, List.of(line("RENT", "36000")), 2, "500010")
+                .lease().getId();
+        tx.executeWithoutResult(s -> com.datagami.rentaxis.testsupport.LockedBooks.lockAfterRecognising(recognitionForLock, vatForLock, fiscalForLock, LocalDate.of(2026, 8, 31)));
 
         assertThatThrownBy(() -> renewal.extend(id,
                 new ExtendLeaseRequest(NEW_END, TODAY, List.of(line("RENT", "36800")),

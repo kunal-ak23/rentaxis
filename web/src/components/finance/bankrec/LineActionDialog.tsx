@@ -57,7 +57,7 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
     const [leafId, setLeafId] = useState<string>("");
     const [shared, setShared] = useState<boolean | null>(null);
     const [vatIncluded, setVatIncluded] = useState(false);
-    const [reason, setReason] = useState("BOUNCE");
+    const [reason, setReason] = useState("");
     const [accountId, setAccountId] = useState("");
     const [narration, setNarration] = useState("");
     // A charge over several lines states its split (PR #353 review P2-3): prefilled with
@@ -84,6 +84,9 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
         bankRecApi.candidates(first.id).then(c => {
             setCands(c);
             if (c.leaves.length === 1) setLeafId(c.leaves[0].id);
+            // Tutorial 45: the VAT tick means something only with a bank TRN; it starts
+            // ticked when the line itself says so ("… + VAT"), else unticked.
+            setVatIncluded(c.bankTrnSet && /\bvat\b/i.test(first.description ?? ""));
         }).catch(err => setError(serverText(t, err)));
         loadAccounts().then(a => setAccounts(a.filter(x => !x.group && x.active && !CONTROL.has(x.accountSubType ?? "")))).catch(() => {});
     }, [first.id]);
@@ -118,7 +121,8 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
         ? { net: moneyValueOrNull(netText, SPLIT) ?? 0, vat: moneyValueOrNull(vatText, SPLIT) ?? 0 }
         : null;
     const split = chargeSplit(lines.map(l => l.amount), vatIncluded, bankTrnSet, stated);
-    const leafName = cands?.leaves.find(l => l.id === leafId)?.name ?? t("gross");
+    // Tutorial 45: "Cr Bank" flashed before the leaf's name loaded; nothing is named until it has.
+    const leafName = cands ? (cands.leaves.find(l => l.id === leafId)?.name ?? t("gross")) : "…";
     const abs = Math.abs(total);
 
     const preview: [string, string, number][] = (() => {
@@ -128,7 +132,8 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
             case "bounce": return [[t("dr"), t("receivable"), abs], [t("cr"), leafName, abs]];
             case "present": return [[t("dr"), t("pdcPayable"), abs], [t("cr"), leafName, abs]];
             case "charge": {
-                const out: [string, string, number][] = [[t("dr"), t("net"), split.net]];
+                // Tutorial 45: the debit names the account it lands in, not the field ("Charge").
+                const out: [string, string, number][] = [[t("dr"), t("bankChargesAccount"), split.net]];
                 if (split.vat > 0) out.push([t("dr"), t("vat"), split.vat]);
                 out.push([t("cr"), leafName, split.gross]);
                 return out;
@@ -146,7 +151,9 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
         if (needsLeaf && !leafId) return false;
         switch (action) {
             case "clear": return picked.size > 0 && Math.round(pickedTotal * 100) === Math.round(total * 100);
-            case "receive": case "receiveSuspense": case "bounce": case "present": return picked.size === 1;
+            case "receive": case "receiveSuspense": case "present": return picked.size === 1;
+            // PR #400 review P3-4: the bank's reason is chosen, never defaulted.
+            case "bounce": return picked.size === 1 && !!reason;
             case "other": return !!accountId;
             // Batch 4 review #5: a refused net or VAT is named under its field and never booked as 0.
             case "charge": return !split.error && !(multiCharge && (moneyTextInvalid(netText, SPLIT) || moneyTextInvalid(vatText, SPLIT)));
@@ -246,14 +253,15 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
 
                 {action === "bounce" && (
                     <label className="block text-xs"><span className={`${label} block mb-1`}>{t("returnReason")}</span>
-                        <select className={field} value={reason} onChange={e => setReason(e.target.value)}>
+                        <select className={field} value={reason} onChange={e => setReason(e.target.value)} data-testid="bounce-reason">
+                            <option value="" disabled>{t("chooseReturnReason")}</option>
                             {["BOUNCE", "SIGNATURE_MISMATCH", "ACCOUNT_CLOSED", "STOPPED_PAYMENT", "TECHNICAL_RETURN"].map(r => <option key={r} value={r}>{t(`reason_${r}`)}</option>)}
                         </select>
                     </label>
                 )}
                 {action === "charge" && (
                     <div className="text-xs space-y-1">
-                        {lines.length === 1 && (
+                        {lines.length === 1 && bankTrnSet && (
                             <label className="flex items-center gap-2">
                                 <input type="checkbox" checked={vatIncluded} onChange={e => setVatIncluded(e.target.checked)} data-testid="vat-included" />
                                 {t("vatIncluded")}

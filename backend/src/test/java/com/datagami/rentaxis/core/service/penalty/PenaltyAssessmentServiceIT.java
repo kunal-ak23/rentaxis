@@ -103,6 +103,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest
 class PenaltyAssessmentServiceIT extends AbstractPostgresIT {
 
+    // PR #400 review P3-1: the realistic companions lock the normal way (recognise, then lock).
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.recognition.RecognitionService recognitionForLock;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.vat.VatTaxPointService vatForLock;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService fiscalForLock;
+
     @Autowired PenaltyAssessmentService service;
     @Autowired ChequeService chequeService;
     @Autowired LeasePostingService posting;
@@ -564,7 +572,31 @@ class PenaltyAssessmentServiceIT extends AbstractPostgresIT {
         PenaltyAssessmentDTO proposed = proposal(leaseId, null, PenaltyReason.OTHER, "400");
         long chequesBefore = registerSize(leaseId);
         long entriesBefore = journalEntryRows();
-        fiscal.lockThrough(LocalDate.of(2026, 10, 31));
+        com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, LocalDate.of(2026, 10, 31));
+
+        assertThatThrownBy(() -> service.approve(proposed.id(), APPROVE_DATE))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("books are locked through 2026-10-31");
+
+        PenaltyAssessment unchanged = reread(proposed.id());
+        assertThat(unchanged.getStatus()).isEqualTo(PenaltyAssessmentStatus.PROPOSED);
+        assertThat(unchanged.getJournalId()).isNull();
+        assertThat(unchanged.getCollectionCheque()).isNull();
+        assertThat(journalEntryRows()).isEqualTo(entriesBefore);
+        assertThat(registerSize(leaseId)).isEqualTo(chequesBefore);
+    }
+
+    /** PR #400 review P3-1: the same, with the lock reached the normal way (recognise, then lock). */
+    @Test
+    void approveIntoALockedPeriodChangesNothing_afterRecognisingThenLocking() {
+        PostLeaseResponse r = posted();
+        UUID leaseId = r.lease().getId();
+        PenaltyAssessmentDTO proposed = proposal(leaseId, null, PenaltyReason.OTHER, "400");
+        long chequesBefore = registerSize(leaseId);
+        long entriesBefore = journalEntryRows();
+        com.datagami.rentaxis.testsupport.LockedBooks.lockAfterRecognising(recognitionForLock, vatForLock, fiscalForLock, LocalDate.of(2026, 10, 31));
+        chequesBefore = registerSize(leaseId); // the run posted recognition; measure from here
+        entriesBefore = journalEntryRows(); // the run posted recognition; measure from here
 
         assertThatThrownBy(() -> service.approve(proposed.id(), APPROVE_DATE))
                 .isInstanceOf(BusinessRuleViolationException.class)

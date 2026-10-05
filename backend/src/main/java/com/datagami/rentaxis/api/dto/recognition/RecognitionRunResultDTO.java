@@ -43,7 +43,13 @@ public record RecognitionRunResultDTO(
         int failed,
         List<String> errors,
         int alreadyRecognised,
-        int withdrawnMeanwhile) {
+        int withdrawnMeanwhile,
+        /**
+         * PR #400 review P2-1: months the period lock closed while still PLANNED,
+         * recognised by this run as catch-ups dated the first day after the lock.
+         * Null on a preview and when there were none.
+         */
+        com.datagami.rentaxis.core.service.recognition.LockedMonthsCatchUp.Result lockedCatchUp) {
 
     /**
      * {@code failed} is derived rather than carried by the service: the service's
@@ -52,8 +58,14 @@ public record RecognitionRunResultDTO(
      * array to render a heading.
      */
     public static RecognitionRunResultDTO from(RecognitionRunResult r) {
+        return from(r, null);
+    }
+
+    public static RecognitionRunResultDTO from(RecognitionRunResult r,
+                                               com.datagami.rentaxis.core.service.recognition.LockedMonthsCatchUp.Result catchUp) {
         return new RecognitionRunResultDTO(r.preview(), r.posted(), r.wouldPost(), r.amount(), r.entries(),
                 r.skippedLocked(), r.skippedLockedEntries(), r.booksLockedThrough(),
-                r.errors().size(), r.errors(), r.alreadyRecognised(), r.withdrawnMeanwhile());
+                r.errors().size(), r.errors(), r.alreadyRecognised(), r.withdrawnMeanwhile(),
+                catchUp == null || (catchUp.months() == 0 && catchUp.errors().isEmpty()) ? null : catchUp);
     }
 }

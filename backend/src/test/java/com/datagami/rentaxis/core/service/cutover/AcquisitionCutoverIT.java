@@ -73,6 +73,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Import(AcquisitionCutoverIT.FixedClockConfig.class)
 class AcquisitionCutoverIT extends AbstractPostgresIT {
 
+    // PR #400 review P3-1: the realistic companions lock the normal way (recognise, then lock).
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.recognition.RecognitionService recognitionForLock;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.vat.VatTaxPointService vatForLock;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService fiscalForLock;
+
     static final ZoneId DUBAI = ZoneId.of("Asia/Dubai");
     static final LocalDate TODAY = LocalDate.of(2026, 11, 15);
     static final LocalDate A = LocalDate.of(2026, 10, 15);
@@ -221,7 +229,7 @@ class AcquisitionCutoverIT extends AbstractPostgresIT {
         batches.setAcquisitionDate(batchId, A);
         assertThat(postService.post(batchId).leasesPosted()).isEqualTo(2);
 
-        tx.executeWithoutResult(s -> fiscal.lockThrough(LocalDate.of(2026, 10, 31)));
+        tx.executeWithoutResult(s -> com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, LocalDate.of(2026, 10, 31)));
         assertThatThrownBy(() -> batches.reverse(batchId, "wrong"))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("locked through 2026-10-31");
@@ -234,6 +242,30 @@ class AcquisitionCutoverIT extends AbstractPostgresIT {
         // #376 P3-2: the acquisition's books start goes with it.
         assertThat(jdbc.queryForObject("select books_start_date from properties where id = ?", LocalDate.class,
                 acquiredProperty())).isNull();
+    }
+
+    /** PR #400 review P3-1: the same, with the lock reached the normal way (recognise, then lock). */
+    @Test
+    void anAcquisitionReversesLikeACutOverUntilItsDateIsLocked_afterRecognisingThenLocking() throws Exception {
+        UUID batchId = importAcquisition(null);
+        batches.setAcquisitionDate(batchId, A);
+        assertThat(postService.post(batchId).leasesPosted()).isEqualTo(2);
+
+        tx.executeWithoutResult(s -> com.datagami.rentaxis.testsupport.LockedBooks.lockAfterRecognising(recognitionForLock, vatForLock, fiscalForLock, LocalDate.of(2026, 10, 31)));
+        assertThatThrownBy(() -> batches.reverse(batchId, "wrong"))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("locked through 2026-10-31");
+
+        // The normal way to the lock ran the month-end close first, and a batch whose
+        // contracts have been through a close stays unreversible once the period re-opens.
+        tx.executeWithoutResult(s -> jdbc.update(
+                "update tenant_fiscal_settings set books_locked_through = ? where tenant_id = ?",
+                LocalDate.of(2026, 9, 30), tenantId));
+        assertThatThrownBy(() -> batches.reverse(batchId, "wrong"))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("cannot be reversed once its contracts have been through a close");
+        assertThat(jdbc.queryForObject("select status from import_batches where id = ?", String.class, batchId))
+                .isNotEqualTo("REVERSED");
     }
 
     // ------------------------------------------------------------------ after the acquisition (#376 review)

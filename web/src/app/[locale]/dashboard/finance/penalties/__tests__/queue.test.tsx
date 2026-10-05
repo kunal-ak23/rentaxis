@@ -280,6 +280,22 @@ describe("Penalties queue page — server-generated description (F14-31)", () =>
         );
     });
 
+    /** PR #400 review P3-4: a return with no recorded reason is not called "insufficient funds". */
+    it("renders a chequeReturned code without a reason as a returned cheque", async () => {
+        api.list.mockImplementation(async () => ({
+            content: [assessment({
+                description: null,
+                descriptionCode: "chequeReturned",
+                descriptionArgs: { cheque: "000453", bounces: "1" },
+            })],
+            totalElements: 1, totalPages: 1, number: 0, size: 200,
+        }));
+        renderPage();
+        expect(await screen.findByTestId("penalty-description-0")).toHaveTextContent(
+            "Returned cheque 000453 — bounce 1 on this contract",
+        );
+    });
+
     it("renders a clearedLate code with its dates", async () => {
         api.list.mockImplementation(async () => ({
             content: [assessment({

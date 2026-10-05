@@ -15,7 +15,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import { fmtIsoDate, todayIso } from "@/components/leases/leaseMath";
 import {
     ApiError, recognitionApi,
-    type RecognitionEntry, type RecognitionRunResult, type RecognitionStatusSummary,
+    type LockedCatchUpResult, type RecognitionEntry, type RecognitionRunResult, type RecognitionStatusSummary,
 } from "@/lib/api/leasing";
 
 /**
@@ -114,6 +114,10 @@ export default function RecognitionPage() {
     const [busy, setBusy] = useState<"preview" | "run" | null>(null);
     const [runError, setRunError] = useState<string | null>(null);
     const [confirmOpen, setConfirmOpen] = useState(false);
+    /** PR #400 review P2-1: the locked-months catch-up's own state. */
+    const [catchUpBusy, setCatchUpBusy] = useState(false);
+    const [catchUpDone, setCatchUpDone] = useState<LockedCatchUpResult | null>(null);
+    const [catchUpError, setCatchUpError] = useState<string | null>(null);
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     // F14-27: a warning banner when the close is behind, or the last automated
@@ -162,7 +166,7 @@ export default function RecognitionPage() {
         if (!allowed) return;
         recognitionApi.status().then(setStatus).catch(() => setStatus(null));
         // Re-read after a real run — it just changed what "behind" means.
-    }, [allowed, result]);
+    }, [allowed, result, catchUpDone]);
 
     useEffect(() => {
         setPage(1);
@@ -187,6 +191,18 @@ export default function RecognitionPage() {
             setRunError(e instanceof ApiError ? e.message : t("runFailed"));
         } finally {
             setBusy(null);
+        }
+    };
+
+    const catchUpLocked = async () => {
+        setCatchUpBusy(true);
+        setCatchUpError(null);
+        try {
+            setCatchUpDone(await recognitionApi.catchUpLocked(false));
+        } catch (e) {
+            setCatchUpError(e instanceof ApiError ? e.message : t("runFailed"));
+        } finally {
+            setCatchUpBusy(false);
         }
     };
 
@@ -240,6 +256,41 @@ export default function RecognitionPage() {
                         </ul>
                     )}
                 </div>
+            )}
+
+            {/* PR #400 review P2-1: months the lock closed before they were recognised. */}
+            {status && (status.lockedUnrecognised ?? 0) > 0 && (
+                <div role="alert" data-testid="recognition-locked-unrecognised"
+                    className="bg-warning/10 border border-warning/30 text-warning rounded-xl px-5 py-3 text-sm space-y-2">
+                    <p>{t("lockedUnrecognisedWarning", {
+                        count: status.lockedUnrecognised ?? 0,
+                        amount: fmtAmount(status.lockedUnrecognisedAmount ?? 0),
+                        date: status.booksLockedThrough ? fmtIsoDate(status.booksLockedThrough, locale) : "—",
+                    })}</p>
+                    <button type="button" data-testid="recognition-catch-up-locked" disabled={catchUpBusy}
+                        onClick={() => void catchUpLocked()}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 cursor-pointer">
+                        {catchUpBusy && <Loader2 size={12} className="animate-spin" />}
+                        {t("catchUpLocked")}
+                    </button>
+                    {catchUpError && <p className="text-xs text-error">{catchUpError}</p>}
+                </div>
+            )}
+            {catchUpDone && catchUpDone.months > 0 && (
+                <p role="status" data-testid="recognition-catch-up-done"
+                    className="rounded-xl bg-success/10 border border-success/30 px-4 py-2.5 text-xs text-success">
+                    {t("catchUpLockedDone", {
+                        count: catchUpDone.months,
+                        amount: fmtAmount(catchUpDone.amount),
+                        months: catchUpDone.monthsNamed.join(", "),
+                        date: catchUpDone.postedOn ? fmtIsoDate(catchUpDone.postedOn, locale) : "—",
+                    })}
+                </p>
+            )}
+            {catchUpDone && catchUpDone.errors.length > 0 && (
+                <ul role="alert" className="list-disc ps-5 text-xs text-error" data-testid="recognition-catch-up-errors">
+                    {catchUpDone.errors.map((e, i) => <li key={i}>{e}</li>)}
+                </ul>
             )}
 
             <div className="bg-surface border border-border rounded-xl px-5 py-4 flex flex-wrap items-end gap-4">
@@ -348,6 +399,16 @@ export default function RecognitionPage() {
                     {result.wouldPost === 0 && result.posted === 0 && result.failed === 0
                         && (result.alreadyRecognised ?? 0) === 0 && (result.withdrawnMeanwhile ?? 0) === 0 && (
                         <p className="text-xs text-muted" data-testid="recognition-nothing">{t("nothingToPost")}</p>
+                    )}
+                    {result.lockedCatchUp && result.lockedCatchUp.months > 0 && (
+                        <p className="text-xs text-success" data-testid="recognition-run-caught-up">
+                            {t("catchUpLockedDone", {
+                                count: result.lockedCatchUp.months,
+                                amount: fmtAmount(result.lockedCatchUp.amount),
+                                months: result.lockedCatchUp.monthsNamed.join(", "),
+                                date: result.lockedCatchUp.postedOn ? fmtIsoDate(result.lockedCatchUp.postedOn, locale) : "—",
+                            })}
+                        </p>
                     )}
                     {result.skippedLocked > 0 && (
                         <>

@@ -85,6 +85,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest
 class ChequeServiceIT extends AbstractPostgresIT {
 
+    // PR #400 review P3-1: the realistic companions lock the normal way (recognise, then lock).
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.recognition.RecognitionService recognitionForLock;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.vat.VatTaxPointService vatForLock;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService fiscalForLock;
+
     @Autowired ChequeService service;
     @Autowired LeasePostingService posting;
     @Autowired ChequeGenerationService generation;
@@ -1173,7 +1181,26 @@ class ChequeServiceIT extends AbstractPostgresIT {
         PostLeaseResponse r = posted();
         UUID chequeId = r.cheques().get(0).id();
         service.deposit(chequeId, ChequeActionRequest.on(DEPOSIT_DATE));
-        fiscal.lockThrough(LocalDate.of(2026, 10, 31));
+        com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, LocalDate.of(2026, 10, 31));
+
+        assertThatThrownBy(() -> service.clear(chequeId, ChequeActionRequest.on(CLEAR_DATE)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("books are locked through 2026-10-31");
+
+        Cheque unchanged = reread(chequeId);
+        assertThat(unchanged.getStatus()).isEqualTo(ChequeStatus.DEPOSITED);
+        assertThat(unchanged.getCrtJournalId()).isNull();
+        assertThat(unchanged.getClearedAt()).isNull();
+        assertThat(entryCount(JournalDocType.CRT, chequeId)).isZero();
+    }
+
+    /** PR #400 review P3-1: the same, with the lock reached the normal way (recognise, then lock). */
+    @Test
+    void lockedPeriodRefusesTheTransitionAndLeavesTheChequeUnchanged_afterRecognisingThenLocking() {
+        PostLeaseResponse r = posted();
+        UUID chequeId = r.cheques().get(0).id();
+        service.deposit(chequeId, ChequeActionRequest.on(DEPOSIT_DATE));
+        com.datagami.rentaxis.testsupport.LockedBooks.lockAfterRecognising(recognitionForLock, vatForLock, fiscalForLock, LocalDate.of(2026, 10, 31));
 
         assertThatThrownBy(() -> service.clear(chequeId, ChequeActionRequest.on(CLEAR_DATE)))
                 .isInstanceOf(BusinessRuleViolationException.class)

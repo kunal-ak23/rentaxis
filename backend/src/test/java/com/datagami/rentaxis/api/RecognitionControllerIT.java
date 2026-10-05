@@ -89,6 +89,7 @@ class RecognitionControllerIT extends AbstractPostgresIT {
     @Autowired ChequeGenerationService cheques;
     @Autowired LeasePostingService posting;
     @Autowired TenantFiscalSettingsService fiscal;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired UserRepository userRepo;
     @Autowired RenterRepository renterRepo;
@@ -379,15 +380,16 @@ class RecognitionControllerIT extends AbstractPostgresIT {
     /**
      * Rows in a closed period come back apart from failures.
      *
-     * <p>"Skipped because the month is shut" and "the ledger refused this" leave
-     * the same rows PLANNED. Only which list they arrive in tells the accountant
-     * whether there is anything to chase — so {@code errors} has to be empty here.</p>
+     * <p>PR #400 review P2-1: months the lock closed while still PLANNED (bug 46's
+     * state) are no longer left behind: a real run first recognises them as catch-ups
+     * dated the first day after the lock, reported under {@code lockedCatchUp} — never
+     * as errors, and never inside the lock.</p>
      */
     @Test
-    void lockedRowsAreReportedSeparatelyFromFailures() {
+    void lockedRowsAreCaughtUpOnTheFirstOpenDayAndReportedApartFromFailures() {
         TenantContextHolder.setTenantId(fixtures.tenantId());
         try {
-            fiscal.lockThrough(LocalDate.of(2026, 10, 31));
+            com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, LocalDate.of(2026, 10, 31));
         } finally {
             TenantContextHolder.clear();
         }
@@ -397,14 +399,19 @@ class RecognitionControllerIT extends AbstractPostgresIT {
         assertThat(body.get("posted")).as("only the two November rows").isEqualTo(2);
         assertThat(body.get("failed")).isEqualTo(0);
         assertThat((List<?>) body.get("errors")).isEmpty();
-        assertThat(body.get("skippedLocked")).isEqualTo(4);
-        assertThat(body.get("booksLockedThrough")).isEqualTo("2026-10-31");
-        assertThat(list(body, "skippedLockedEntries")).hasSize(4).allSatisfy(r -> {
-            assertThat(r.get("status")).isEqualTo("PLANNED");
-            assertThat(r.get("journalId")).isNull();
-            assertThat(r.get("periodEnd")).isIn("2026-09-30", "2026-10-31");
-        });
-        // 4,191.78 + 3,000.00
+        assertThat(body.get("skippedLocked")).as("caught up instead of left behind").isEqualTo(0);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> caught = (Map<String, Object>) body.get("lockedCatchUp");
+        assertThat(caught.get("months")).isEqualTo(4);
+        assertThat(caught.get("postedOn")).isEqualTo("2026-11-01");
+        assertThat((List<Object>) caught.get("monthsNamed")).containsExactly("09/2026", "10/2026");
+        assertThat((List<?>) caught.get("errors")).isEmpty();
+        Long insideLock = jdbc.queryForObject("""
+                select count(*) from journal_entries where tenant_id = ? and doc_type = 'CIL'
+                  and entry_date <= '2026-10-31' and narration like '%locked months never recognised%'""",
+                Long.class, fixtures.tenantId());
+        assertThat(insideLock).as("nothing is posted into the lock").isZero();
+        // 4,191.78 + 3,000.00 — the ordinary run's own amount
         assertThat(number(body.get("amount"))).isEqualByComparingTo("7191.78");
     }
 

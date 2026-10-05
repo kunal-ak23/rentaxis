@@ -8,7 +8,9 @@ import ar from "../../../messages/ar.json";
  * server's English in the Arabic UI (money3 note: "Period lock cannot move
  * backwards" was untranslated).
  */
-const CODES = ["fiscal.booksStartTooFar", "fiscal.lockBackwards", "fiscal.changed", "ticket.rechargeLive"];
+const CODES = ["fiscal.booksStartTooFar", "fiscal.lockBackwards", "fiscal.changed", "ticket.rechargeLive",
+    // Bug 46: the lock's planned-recognition and VAT refusals.
+    "fiscal.recognitionPendingForLock", "fiscal.recognitionPendingInLock", "fiscal.vatPendingInLock"];
 
 function at(messages: unknown, path: string): unknown {
     return path.split(".").reduce<unknown>((o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined), messages);

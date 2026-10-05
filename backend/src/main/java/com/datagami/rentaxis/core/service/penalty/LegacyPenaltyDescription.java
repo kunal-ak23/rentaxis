@@ -39,7 +39,8 @@ public final class LegacyPenaltyDescription {
         if (m.matches()) {
             Map<String, String> args = new LinkedHashMap<>();
             args.put("cheque", m.group(1));
-            args.put("failureReason", m.group(2) != null ? m.group(2) : "BOUNCE");
+            // PR #400 review P3-4: no reason in the text, none in the args ("Returned cheque").
+            if (m.group(2) != null) args.put("failureReason", m.group(2));
             args.put("bounces", m.group(3));
             return Optional.of(new Coded("chequeReturned", args));
         }

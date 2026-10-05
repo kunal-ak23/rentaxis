@@ -504,6 +504,7 @@
   "OnlinePayments": {
     "title": "My Payments",
     "description": "View your payment schedule and pay rent online.",
+    "descriptionOffline": "View your payment schedule and payment history.",
     "payNow": "Pay Now",
     "paymentHistory": "Payment History",
     "dueDate": "Due Date",
@@ -681,6 +682,7 @@
     "continueToExtract": "Extract cheques",
     "extractingCount": "Extracting {done} of {total}…",
     "extractionFailed": "Extraction failed — fill in or remove",
+    "nothingRead": "Couldn't read this cheque — enter the details or retake the photo.",
     "retryExtraction": "Retry",
     "retryingExtraction": "Retrying…",
     "colImage": "Image",
@@ -720,7 +722,9 @@
       "cheque_upload_pdf_unreadable": "The PDF could not be read. It may be damaged or password-protected.",
       "cheque_upload_image_too_large": "The image is too large to read (at most 60 megapixels).",
       "cheque_upload_pdf_not_supported": "PDF upload is not available yet. Upload photos of the cheques instead.",
-      "cheque_upload_busy": "The server is busy reading other cheques. Try again in a moment."
+      "cheque_upload_busy": "The server is busy reading other cheques. Try again in a moment.",
+      "cheque_storage_unavailable": "Cheque storage is not reachable right now, so nothing was saved. Try again in a few minutes, or enter the details by hand.",
+      "cheque_upload_timeout": "Reading this file took too long and was stopped. Retry is safe — the server keeps one copy of the file — or enter the details by hand."
     }
   },
   "Staff": {
@@ -2180,6 +2184,7 @@
     "lockPeriod": "Lock period",
     "lockThrough": "Lock through",
     "lockWarning": "Nothing can be posted on or before this date.",
+    "runRecognitionLink": "Open month-end recognition",
     "export": "Export",
     "print": "Print",
     "propertyFilter": "Property",
@@ -2648,6 +2653,8 @@
     "scanCheques": "Scan cheques",
     "attachScan": "Attach scan",
     "viewScan": "View scan",
+    "replaceScan": "Replace scan",
+    "chooseFailureReason": "Choose the bank's reason",
     "scanContinue": "Continue",
     "scanPickerHint": "Pick the contract the cheques belong to. Their photos are read and attached to its post-dated cheques.",
     "scanNoContracts": "No contract found that can take cheque scans.",
@@ -2732,11 +2739,11 @@
     "bounce": "Bounce",
     "failureReason": "Failure Reason",
     "failureReasons": {
-      "BOUNCE": "Bounced",
+      "BOUNCE": "Insufficient funds / other",
       "SIGNATURE_MISMATCH": "Signature Mismatch",
       "ACCOUNT_CLOSED": "Account Closed",
       "STOPPED_PAYMENT": "Payment stopped",
-      "TECHNICAL_RETURN": "Technical return (stale, post-dated, amount mismatch)"
+      "TECHNICAL_RETURN": "Technical return (stale, post-dated, amount in words and figures differ)"
     },
     "replace": "Replace",
     "replacements": "Replacements",
@@ -2780,6 +2787,7 @@
     },
     "penaltyDescription": {
       "chequeReturned": "Cheque {cheque} returned ({failureReason}) — bounce {bounces} on this contract",
+      "chequeReturnedNoReason": "Returned cheque {cheque} — bounce {bounces} on this contract",
       "clearedLate": "Cheque {cheque} cleared {days} day(s) late (due {due}, cleared {cleared})"
     },
     "penaltyStatus": {
@@ -2884,6 +2892,9 @@
         "changed": "This settlement changed since you opened it. Review it again; nothing was posted."
       },
       "fiscal": {
+        "recognitionPendingForLock": "Run month-end recognition through {through} first: {count} recognition period(s) ending on or before it are not posted yet ({months}). Locking the books now would leave that rent unrecognised.",
+        "recognitionPendingInLock": "Run month-end recognition through {through} first: a period ending {date} is not recognised yet, and moving the books start would lock it for ever.",
+        "vatPendingInLock": "Post the VAT tax points through {through} first: one dated {date} has not been declared yet, and locking the books would leave it undeclared.",
         "booksStartTooFar": "The books cannot start on {date}: that is more than three months ahead (the latest is {latest}). Check the year.",
         "lockBackwards": "The period lock cannot move back from {current}: journals are posted inside it. Re-open the latest closed fiscal year instead.",
         "changed": "The period lock changed since you opened this, and has been reloaded. Review the move again; nothing was re-opened."
@@ -3052,6 +3063,9 @@
     "orgSaveFailed": "Failed to save the organisation. Please try again."
   },
   "Recognition": {
+    "lockedUnrecognisedWarning": "{count} month(s) of rent ({amount}) were locked (through {date}) before they were recognised, so the month-end run cannot post them. Catch them up: each contract gets one catch-up entry, dated the day after the lock.",
+    "catchUpLocked": "Catch up locked months",
+    "catchUpLockedDone": "Recognised {count} locked month(s), {amount} ({months}), as catch-up entries dated {date}.",
     "title": "Month-end recognition",
     "desc": "Post the rent every contract has earned up to a date. Nothing before today is skipped, and nothing after it is invented.",
     "schedule": "Recognition schedule",
@@ -3778,7 +3792,7 @@
     "parkingSpot": "parking spot {spot}",
     "amountAed": "AED {amount}",
     "penaltyReason": {"CHEQUE_RETURN": "cheque return", "LATE_PAYMENT": "late payment", "OTHER": "other", "SERVICE_RECHARGE": "service recharge", "ADMIN_FEE": "admin fee", "DAMAGE": "damage / cleaning", "MAINTENANCE_RECHARGE": "maintenance recharge", "BOOKING_FEE": "booking fee"},
-    "failureReason": {"BOUNCE": "bounced", "SIGNATURE_MISMATCH": "signature mismatch", "ACCOUNT_CLOSED": "account closed", "STOPPED_PAYMENT": "payment stopped", "TECHNICAL_RETURN": "technical return"},
+    "failureReason": {"BOUNCE": "insufficient funds / other", "SIGNATURE_MISMATCH": "signature mismatch", "ACCOUNT_CLOSED": "account closed", "STOPPED_PAYMENT": "payment stopped", "TECHNICAL_RETURN": "technical return"},
     "renewalIntent": {"RENEW": "renew", "MOVE_OUT": "move out", "DISCUSS": "discuss"},
     "messages": {
       "TICKET_ASSIGNED": {"title": "Ticket assigned to you", "body": "Ticket: {ticketTitle}"},
@@ -4452,17 +4466,19 @@
     "bankLeaf": "Bank ledger account",
     "account": "Account",
     "returnReason": "Reason",
-    "reason_BOUNCE": "Insufficient funds",
+    "chooseReturnReason": "Choose the bank's reason",
+    "reason_BOUNCE": "Insufficient funds / other",
     "reason_SIGNATURE_MISMATCH": "Signature mismatch",
     "reason_ACCOUNT_CLOSED": "Account closed",
     "reason_STOPPED_PAYMENT": "Payment stopped",
-    "reason_TECHNICAL_RETURN": "Technical return (stale, post-dated, amount mismatch)",
+    "reason_TECHNICAL_RETURN": "Technical return (stale, post-dated, amount in words and figures differ)",
     "suspenseBalance": "Unidentified receipts outstanding: {amount}",
     "book": "Book it",
     "posted": "Posted {numbers}",
-    "dr": "Dr",
-    "cr": "Cr",
+    "dr": "Debit",
+    "cr": "Credit",
     "net": "Charge",
+    "bankChargesAccount": "Bank charges (expense)",
     "vat": "Input VAT",
     "gross": "Bank",
     "interestIncome": "Bank interest",
