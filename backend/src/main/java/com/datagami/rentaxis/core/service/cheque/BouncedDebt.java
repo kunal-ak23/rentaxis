@@ -49,6 +49,15 @@ public class BouncedDebt {
     }
 
     /**
+     * {@link #openAmounts} as the books stood at the end of {@code at} (an as-of report:
+     * the owner statement's Outstanding section). Pass only rows that had bounced by
+     * {@code at}; a row whose lease's receivable cannot be read stays at its face value.
+     */
+    public Map<UUID, BigDecimal> openAmountsAt(List<Cheque> due, LocalDate at) {
+        return allocate(due, lease -> closure.receivableBalanceIfKnownAt(lease, at), true);
+    }
+
+    /**
      * {@link #openAmounts} for the BOUNCED rows only, leaving out every row whose lease's
      * receivable cannot be read (an unmapped RENT_RECEIVABLE, a dangling account id) —
      * the caller treats a missing row as "not known" rather than failing. Never throws

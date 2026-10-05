@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.dto.report.PropertyPnlDTO;
 import com.datagami.rentaxis.api.dto.report.PropertyStatementDTO.Figure;
 import com.datagami.rentaxis.api.dto.report.PropertyStatementDTO.Section;
 import com.datagami.rentaxis.api.dto.report.PropertyStatementDTO.Table;
+import com.datagami.rentaxis.core.service.cheque.BouncedDebt;
 import com.datagami.rentaxis.core.service.cheque.ChequeDueRules;
 import com.datagami.rentaxis.core.service.report.PnlAllocation;
 import com.datagami.rentaxis.core.service.report.PnlPeriods;
@@ -222,10 +223,12 @@ public final class StandardStatementSections {
     public static class Outstanding implements StatementSection {
         private final ChequeRepository cheques;
         private final StatementLedger ledger;
+        private final BouncedDebt bouncedDebt;
 
-        public Outstanding(ChequeRepository cheques, StatementLedger ledger) {
+        public Outstanding(ChequeRepository cheques, StatementLedger ledger, BouncedDebt bouncedDebt) {
             this.cheques = cheques;
             this.ledger = ledger;
+            this.bouncedDebt = bouncedDebt;
         }
 
         @Override public int order() { return 4; }
@@ -233,13 +236,25 @@ public final class StandardStatementSections {
         @Override
         public Section build(StatementContext ctx) {
             LocalDate at = ctx.to();
+            List<Cheque> owed = cheques.findOwedCandidatesAt(ctx.propertyId(), at).stream()
+                    .filter(c -> ctx.tenantId().equals(c.getTenantId()))
+                    .filter(c -> wasDueAt(c, at))
+                    .toList();
+            // Tutorial 20: the shared due rule (ChequeRepository.OPEN_DUE_CTE / BouncedDebt) — a
+            // returned cheque counts only for the debt the lease's receivable still carried on
+            // `at`. One a settlement, replacement receipt or write-off had closed by then is not
+            // "overdue (register)"; one that bounced only after `at` was still merely banked.
+            Map<UUID, BigDecimal> open = bouncedDebt.openAmountsAt(owed.stream()
+                    .filter(c -> c.getStatus() == ChequeStatus.BOUNCED)
+                    .filter(c -> c.getBouncedAt() == null || !c.getBouncedAt().isAfter(at))
+                    .collect(java.util.stream.Collectors.toCollection(ArrayList::new)), at);
             List<List<Object>> rows = new ArrayList<>();
             BigDecimal overdue = BigDecimal.ZERO;
-            for (Cheque c : cheques.findOwedCandidatesAt(ctx.propertyId(), at)) {
-                if (!ctx.tenantId().equals(c.getTenantId())) continue;
+            for (Cheque c : owed) {
                 int grace = c.getLease() == null ? 0 : c.getLease().getGracePeriodDays();
-                if (!wasDueAt(c, at) || !c.getChequeDate().plusDays(grace).isBefore(at)) continue;
-                BigDecimal amt = money(c.getAmount());
+                if (!c.getChequeDate().plusDays(grace).isBefore(at)) continue;
+                BigDecimal amt = money(open.getOrDefault(c.getId(), c.getAmount()));
+                if (amt.signum() <= 0) continue;
                 overdue = overdue.add(amt);
                 rows.add(List.of(
                         c.getRenter() == null ? "" : Objects.toString(c.getRenter().getNameEn(), ""),

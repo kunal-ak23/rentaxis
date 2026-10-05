@@ -79,6 +79,7 @@ class PropertyStatementServiceIT extends AbstractPostgresIT {
     PropertyPnlFixture fx;
     Lease lease;
     Cheque c1;
+    Cheque bounced3;
     UUID crtId;
 
     @BeforeEach
@@ -109,7 +110,7 @@ class PropertyStatementServiceIT extends AbstractPostgresIT {
         cheque(2, "100002", LocalDate.of(2026, 9, 15), "20000.00", "952.38", ChequeRowKind.RENT, ChequeStatus.REGISTERED);
         Cheque bounced = cheque(3, "100003", LocalDate.of(2026, 9, 25), "5000.00", "0", ChequeRowKind.RENT, ChequeStatus.BOUNCED);
         bounced.setBouncedAt(LocalDate.of(2026, 9, 26));
-        chequeRepo.save(bounced);
+        bounced3 = chequeRepo.save(bounced);
         cheque(4, "100004", LocalDate.of(2026, 9, 5), "10000.00", "0", ChequeRowKind.DEPOSIT, ChequeStatus.CLEARED);
         cheque(5, "100005", LocalDate.of(2026, 9, 10), "7000.00", "0", ChequeRowKind.RENT, ChequeStatus.CANCELLED);
         cheque(6, "100006", LocalDate.of(2026, 8, 10), "8000.00", "0", ChequeRowKind.RENT, ChequeStatus.REGISTERED);
@@ -125,6 +126,9 @@ class PropertyStatementServiceIT extends AbstractPostgresIT {
                 new Dimensions(fx.p1.getId(), null, null, null, c1.getId()), JournalSourceType.CHEQUE, c1.getId(), null,
                 List.of(dr(AccountRole.BANK, new BigDecimal("30000.00")), cr(AccountRole.PDC_RECEIVABLE, new BigDecimal("30000.00"))))).getId();
         fx.role(JournalDocType.CBR, LocalDate.of(2026, 9, 28), d1, AccountRole.RENT_RECEIVABLE, AccountRole.BANK, "4000.00");
+        // Cheque 3's bounce puts its 5,000 back on the lease's rent receivable (the CBR).
+        fx.role(JournalDocType.CBR, LocalDate.of(2026, 9, 26), leaseDims(), AccountRole.RENT_RECEIVABLE,
+                AccountRole.PDC_RECEIVABLE, "5000.00");
         // Output VAT at a tax point.
         fx.role(JournalDocType.VTP, LocalDate.of(2026, 9, 1), d1, AccountRole.OUTPUT_VAT_DEFERRED, AccountRole.OUTPUT_VAT, "1428.57");
     }
@@ -148,6 +152,10 @@ class PropertyStatementServiceIT extends AbstractPostgresIT {
         c.setMode(ChequeMode.PDC);
         c.setStatus(status);
         return chequeRepo.save(c);
+    }
+
+    private Dimensions leaseDims() {
+        return new Dimensions(fx.p1.getId(), lease.getUnit().getId(), lease.getId(), lease.getRenter().getId(), null);
     }
 
     private static Section section(PropertyStatementDTO s, String key) {
@@ -197,7 +205,10 @@ class PropertyStatementServiceIT extends AbstractPostgresIT {
         AccountLedgerDTO bank = ledger.accountLedger(resolver.resolve(AccountRole.BANK, fx.p1.getId()).getId(), sep);
         BigDecimal cbrBankCredits = bank.rows().stream().filter(r -> "CBR".equals(r.docType()))
                 .map(r -> r.credit()).reduce(BigDecimal.ZERO, BigDecimal::add);
-        assertThat(fig(s, "collected", "cleared")).isEqualByComparingTo(pdc.totalCredit());
+        // Clearing credits only: cheque 3's CBR also credits PDC receivable (a pre-clearing bounce).
+        BigDecimal crtPdcCredits = pdc.rows().stream().filter(r -> "CRT".equals(r.docType()))
+                .map(r -> r.credit()).reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(fig(s, "collected", "cleared")).isEqualByComparingTo(crtPdcCredits);
         assertThat(fig(s, "collected", "bouncedAfterClearing")).isEqualByComparingTo(cbrBankCredits);
         assertThat(fig(s, "collected", "collected")).isEqualByComparingTo("26000.00");
         assertThat(section(s, "collected").tables().getFirst().rows())
@@ -317,6 +328,42 @@ class PropertyStatementServiceIT extends AbstractPostgresIT {
                 .anySatisfy(r -> assertThat(r.get(5)).isEqualTo("AN-311"));
         assertThat(fig(s, "vat", "outputVat")).isEqualByComparingTo("1428.57");
         assertThat(fig(s, "vat", "inputVat")).isEqualByComparingTo("150.00");
+    }
+
+    /**
+     * Tutorial 20: a returned cheque whose debt a settlement or write-off closed is not
+     * "overdue (register)" on the owner statement — the shared due rule (OPEN_DUE_CTE /
+     * BouncedDebt), read as the books stood at the period end.
+     */
+    @Test
+    void aReturnedChequeTheLedgerClosedIsNotOutstanding() {
+        // The settlement absorbs cheque 3's 5,000 on 29 September.
+        fx.role(JournalDocType.STL, LocalDate.of(2026, 9, 29), leaseDims(), AccountRole.SECURITY_DEPOSIT,
+                AccountRole.RENT_RECEIVABLE, "5000.00");
+        PropertyStatementDTO s = statements.statement(fx.p1.getId(), SEP_1, SEP_30, null);
+        assertThat(fig(s, "outstanding", "registerOverdue")).isEqualByComparingTo("28000.00");
+        assertThat(count(s, "outstanding", "registerOverdue")).isEqualTo(2);
+        assertThat(section(s, "outstanding").tables().getFirst().rows()).noneSatisfy(r -> assertThat(r.get(2)).isEqualTo("100003"));
+
+        // As at the 28th the debt was still open: a closed period re-renders the same.
+        PropertyStatementDTO before = statements.statement(fx.p1.getId(), SEP_1, LocalDate.of(2026, 9, 28), null);
+        assertThat(section(before, "outstanding").tables().getFirst().rows()).anySatisfy(r -> {
+            assertThat(r.get(2)).isEqualTo("100003");
+            assertThat((BigDecimal) r.get(4)).isEqualByComparingTo("5000.00");
+        });
+    }
+
+    /** Part of the bounce paid: the statement shows what is still owed, not the face value. */
+    @Test
+    void aPartlyPaidReturnedChequeShowsWhatIsStillOwed() {
+        fx.role(JournalDocType.RCP, LocalDate.of(2026, 9, 29), leaseDims(), AccountRole.BANK,
+                AccountRole.RENT_RECEIVABLE, "2000.00");
+        PropertyStatementDTO s = statements.statement(fx.p1.getId(), SEP_1, SEP_30, null);
+        assertThat(fig(s, "outstanding", "registerOverdue")).isEqualByComparingTo("31000.00");
+        assertThat(section(s, "outstanding").tables().getFirst().rows()).anySatisfy(r -> {
+            assertThat(r.get(2)).isEqualTo("100003");
+            assertThat((BigDecimal) r.get(4)).isEqualByComparingTo("3000.00");
+        });
     }
 
     @Test

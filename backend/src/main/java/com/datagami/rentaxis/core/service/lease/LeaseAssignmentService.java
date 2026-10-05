@@ -83,6 +83,10 @@ public class LeaseAssignmentService {
     @org.springframework.beans.factory.annotation.Autowired
     private com.datagami.rentaxis.core.service.ledger.AccountResolver accountResolver;
 
+    /** Tutorial 20: the shared due rule's bounced-debt half — a bounce the ledger has closed is not overdue. */
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.datagami.rentaxis.core.service.cheque.BouncedDebt bouncedDebt;
+
     /** Break-it R3 money3: the shared posting-date policy ({@link com.datagami.rentaxis.core.service.ledger.PostingDatePath}), on the app clock. */
     private com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates =
             com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system();
@@ -301,9 +305,9 @@ public class LeaseAssignmentService {
             throw new BusinessRuleViolationException("The lease already belongs to " + to.getNameEn() + ".",
                     "lease.assignmentSameRenter", Map.of("renter", to.getNameEn()));
         }
-        List<Cheque> overdue = overdue(lease, r.effectiveDate());
+        Map<Cheque, BigDecimal> overdue = overdue(lease, r.effectiveDate());
         if (!overdue.isEmpty() && !r.takesOverOverdue()) {
-            BigDecimal total = overdue.stream().map(Cheque::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal total = overdue.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
             throw new BusinessRuleViolationException(lease.getRenter().getNameEn() + " has " + overdue.size()
                     + " overdue instalment(s) on this lease (" + LeasePostingService.money(total) + "). Confirm that "
                     + to.getNameEn() + " takes them on, or collect them first.",
@@ -313,10 +317,25 @@ public class LeaseAssignmentService {
         return to;
     }
 
-    private List<Cheque> overdue(Lease lease, LocalDate on) {
-        return chequeRepository.findByLease_IdOrderBySeqNoAsc(lease.getId()).stream()
+    /**
+     * The overdue rows with what of each is still owed. A returned cheque counts only for the
+     * debt the lease's receivable still carries (the shared due rule, {@code OPEN_DUE_CTE} /
+     * {@code BouncedDebt}): one a receipt, settlement or write-off has closed is not overdue.
+     */
+    private Map<Cheque, BigDecimal> overdue(Lease lease, LocalDate on) {
+        List<Cheque> rows = chequeRepository.findByLease_IdOrderBySeqNoAsc(lease.getId()).stream()
                 .filter(c -> c.getChequeDate() != null && ChequeDueRules.overdue(c, lease.getGracePeriodDays(), on))
                 .toList();
+        Map<UUID, BigDecimal> bounced = bouncedDebt == null ? Map.of()
+                : bouncedDebt.knownBouncedOpenAmounts(rows.stream()
+                        .filter(c -> c.getStatus() == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.BOUNCED)
+                        .toList());
+        Map<Cheque, BigDecimal> out = new java.util.LinkedHashMap<>();
+        for (Cheque c : rows) {
+            BigDecimal owed = bounced.getOrDefault(c.getId(), c.getAmount() == null ? BigDecimal.ZERO : c.getAmount());
+            if (owed.signum() > 0) out.put(c, owed);
+        }
+        return out;
     }
 
     /**
@@ -387,8 +406,9 @@ public class LeaseAssignmentService {
                 return new LeaseAssignmentDTO.Balance(g.accountId(), acct == null ? null : acct.getCode(),
                         acct == null ? null : acct.getName(), acct == null ? null : acct.getNameAr(), g.net());
             }).toList();
-            overdue = overdue(lease, a.getEffectiveDate()).stream().map(c -> new LeaseAssignmentDTO.Overdue(c.getId(),
-                    c.getSeqNo(), c.getChequeNumber(), c.getChequeDate(), c.getStatus().name(), c.getAmount())).toList();
+            overdue = overdue(lease, a.getEffectiveDate()).entrySet().stream().map(e -> new LeaseAssignmentDTO.Overdue(
+                    e.getKey().getId(), e.getKey().getSeqNo(), e.getKey().getChequeNumber(), e.getKey().getChequeDate(),
+                    e.getKey().getStatus().name(), e.getValue())).toList();
             moving = (int) chequeRepository.findByLease_IdOrderBySeqNoAsc(lease.getId()).stream()
                     .filter(c -> OPEN.contains(c.getStatus())).count();
         }
