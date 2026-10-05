@@ -310,7 +310,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["renter--making-payments", "renter--renter-portal-overview"],
     },
     {
-        id: "22", slug: "submit-and-manage-maintenance-tickets", topic: "operations", roles: [...PORTFOLIO, "TENANT_USER", "RENTER"], durationSec: 150, youtubeId: null,
+        id: "22", slug: "submit-and-manage-maintenance-tickets", topic: "operations", roles: [...PORTFOLIO, "TENANT_USER", "RENTER"], durationSec: 117, youtubeId: null,
         title: { en: "Submit and manage maintenance tickets", ar: "تقديم طلبات الصيانة وإدارتها" },
         description: {
             en: "Raise a ticket, assign and track it, confirm closure with a one-time code and review ticket reports.",
@@ -319,7 +319,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["renter--submitting-tickets"],
     },
     {
-        id: "23", slug: "schedule-and-manage-meetings", topic: "operations", roles: [...PORTFOLIO, "RENTER"], durationSec: 150, youtubeId: null,
+        id: "23", slug: "schedule-and-manage-meetings", topic: "operations", roles: [...PORTFOLIO, "RENTER"], durationSec: 84, youtubeId: null,
         title: { en: "Schedule and manage meetings", ar: "جدولة الاجتماعات وإدارتها" },
         description: {
             en: "Request a meeting about a property or unit, approve it, follow it on the calendar and mark it complete.",
@@ -327,7 +327,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "24", slug: "facilities-and-booking-approvals", topic: "operations", roles: [...PORTFOLIO, "RENTER"], durationSec: 150, youtubeId: null,
+        id: "24", slug: "facilities-and-booking-approvals", topic: "operations", roles: [...PORTFOLIO, "RENTER"], durationSec: 86, youtubeId: null,
         title: { en: "Facilities and booking approvals", ar: "المرافق والموافقة على الحجوزات" },
         description: {
             en: "Browse facilities and availability, request a booking or parking spot, and approve requests as a manager.",
@@ -335,11 +335,11 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "25", slug: "gate-passes-and-walk-in-visitors", topic: "operations", roles: [...PORTFOLIO, "RENTER", "SECURITY_GUARD"], durationSec: 150, youtubeId: null,
-        title: { en: "Gate passes and walk-in visitors", ar: "تصاريح الدخول والزوار المباشرون" },
+        id: "25", slug: "gate-passes-and-walk-in-visitors", topic: "operations", roles: [...PORTFOLIO, "RENTER"], durationSec: 88, youtubeId: null,
+        title: { en: "Gate passes and visitor policy", ar: "تصاريح الدخول وسياسة الزوار" },
         description: {
-            en: "Issue and approve gate passes, admit walk-in visitors, set the access policy and review entry reports.",
-            ar: "أصدر تصاريح الدخول ووافق عليها، واسمح بدخول الزوار المباشرين، واضبط سياسة الدخول، وراجع تقارير الدخول.",
+            en: "Invite visitors with single-visit and recurring gate passes, approve recurring passes, and set the gate policy, regular visitors and guard postings.",
+            ar: "ادعُ زوارك بتصاريح دخول لزيارة واحدة أو متكررة، ووافق على التصاريح المتكررة، واضبط سياسة البوابة والزوار الدائمين ومواقع الحراس.",
         },
     },
     {
