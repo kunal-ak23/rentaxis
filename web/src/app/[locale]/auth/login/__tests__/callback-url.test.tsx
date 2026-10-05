@@ -19,6 +19,8 @@ vi.mock("@/i18n/routing", () => ({
     Link: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a href={String(href)} {...props}>{children}</a>,
     useRouter: () => ({ push }),
 }));
+// The guard sign-in link is the only translated line on this page.
+vi.mock("next-intl", () => ({ useTranslations: () => (k: string) => k }));
 vi.mock("next/image", () => ({ default: ({ alt }: { alt: string }) => <span role="img" aria-label={alt} /> }));
 vi.mock("framer-motion", () => ({
     motion: { div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div> },

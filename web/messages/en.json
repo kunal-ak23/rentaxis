@@ -1750,6 +1750,7 @@
     "noRequests": "No requests yet.",
     "cancelRequest": "Cancel Request",
     "cancelRequestConfirm": "Withdraw this pending request?",
+    "cancelApprovedConfirm": "Cancel this approved booking? Any booking fee is reversed.",
     "releaseSpot": "Release Spot",
     "releaseSpotConfirm": "Give up this parking spot? It becomes available to others.",
     "noFacilities": "No facilities are available for your unit yet.",
@@ -3679,13 +3680,14 @@
     "overdueCount": "{count} overdue",
     "avgResolution": "Avg Resolution",
     "avgResolutionValue": "{hours}h",
+    "avgResolutionMinutes": "{minutes} min",
     "avgSatisfaction": "Avg Satisfaction",
     "satisfactionValue": "{value} / 5",
     "byStatus": "By Status",
     "byCategory": "By Category",
     "byPriority": "By Priority",
     "count": "Count",
-    "history": {"unassigned": "Assignee's account was deleted; ticket returned to the unassigned queue", "statusChanged": "Status changed: {from} → {to}", "closedWithOtp": "Ticket closed with OTP verification", "closedNoRenter": "Ticket closed without OTP (no tenant to confirm)", "closedLocked": "Ticket closed without OTP (OTP closure locked after too many wrong codes)", "otpReissued": "A new closure OTP was sent to the tenant", "otpReissuedResolvedAgain": "A new closure OTP was sent to the tenant (ticket resolved again)", "otpLocked": "OTP closure locked after too many wrong codes", "assigned": "Ticket assigned to {name}", "reassigned": "Ticket reassigned to {name}"}
+    "history": {"unassigned": "Assignee's account was deleted; ticket returned to the unassigned queue", "statusChanged": "Status changed: {from} → {to}", "closedWithOtp": "Ticket closed with OTP verification", "closedNoRenter": "Ticket closed without OTP (no tenant to confirm)", "closedLocked": "Ticket closed without OTP (OTP closure locked after too many wrong codes)", "otpReissued": "A new closure OTP was sent to the tenant", "otpReissuedResolvedAgain": "A new closure OTP was sent to the tenant (ticket resolved again)", "otpLocked": "OTP closure locked after too many wrong codes", "assigned": "Ticket assigned to {name}", "reassigned": "Ticket reassigned to {name}", "created": "Ticket created", "etaSet": "Estimated resolution set to {hours, plural, one {# hour} other {# hours}}", "etaChanged": "Estimated resolution changed from {from} to {to, plural, one {# hour} other {# hours}}", "etaCleared": "Estimated resolution removed"}
   },
   "RenterHome": {
     "leasesLoadFailed": "Couldn't load your contracts. Please try again.",
@@ -5249,5 +5251,33 @@
       "notDue": "No executed copy is due: the organisation has no stamp, or the contract is not signed yet.",
       "issueFailed": "The executed copy could not be issued. Try again.",
       "downloadFailed": "The document could not be downloaded. Try again, or download the contract from More actions."
+  },
+  "GuardSignIn": {
+    "title": "Security guard sign-in",
+    "loginLink": "Security guard? Sign in with your phone",
+    "subtitle": "Enter the mobile number your company registered for you. We'll text you a code.",
+    "codeSubtitle": "Enter the 6-digit code sent to {phone}.",
+    "countryLabel": "Country code",
+    "phoneLabel": "Mobile number",
+    "sendCode": "Send code",
+    "codeLabel": "Verification code",
+    "verify": "Verify and sign in",
+    "resend": "Send a new code",
+    "resendIn": "New code in {seconds}s",
+    "newCodeSent": "A new code was sent.",
+    "changeNumber": "Change number",
+    "backToLogin": "Back to email sign-in",
+    "notConfigured": "Phone sign-in for guards isn't set up for this site yet. Use the Security app, or ask your administrator.",
+    "errInvalidPhone": "Enter the full mobile number, e.g. {example}.",
+    "errCodeFormat": "Enter the 6-digit code from the text message.",
+    "errTooManyRequests": "Too many attempts. Please wait before trying again.",
+    "errQuotaExceeded": "SMS sign-in is temporarily unavailable. Please contact support.",
+    "errNetwork": "No connection. Check your network and try again.",
+    "errInvalidCode": "That code is not correct.",
+    "errCodeExpired": "This code has expired. Request a new one.",
+    "errCaptcha": "The security check failed. Reload the page and try again.",
+    "errGeneric": "Could not verify this phone. Please try again.",
+    "errNotAGuard": "This number is not registered to an active security guard. Ask your administrator.",
+    "errUnavailable": "Guard sign-in is unavailable right now. Please try again later."
   }
 }

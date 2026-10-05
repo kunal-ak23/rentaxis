@@ -110,6 +110,13 @@ services:
       # proxy-asserted SUPER_ADMIN headers from client-forged ones. Empty
       # default = gate off (pre-rollout behaviour unchanged).
       - INTERNAL_PROXY_SECRET=${INTERNAL_PROXY_SECRET:-}
+      # Guard phone sign-in on the web (/auth/guard): the Firebase web app of the
+      # project the backend verifies guard tokens for. Public values, served to the
+      # browser by /api/guard-auth/config; unset = the page says it is not set up.
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-}
+      - FIREBASE_WEB_API_KEY=${FIREBASE_WEB_API_KEY:-}
+      - FIREBASE_WEB_AUTH_DOMAIN=${FIREBASE_WEB_AUTH_DOMAIN:-}
+      - FIREBASE_WEB_APP_ID=${FIREBASE_WEB_APP_ID:-}
     deploy:
       resources:
         limits:
