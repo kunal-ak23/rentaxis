@@ -379,7 +379,7 @@ export default function FiscalSettingsPage() {
                     <div role="alert" className="text-xs font-semibold text-error" data-testid="fiscal-lock-dialog-error">
                         <p>{lockError}</p>
                         {lockNeedsRecognition && (
-                            <Link href="/dashboard/finance/recognition" data-testid="fiscal-lock-run-recognition"
+                            <Link href="/dashboard/finance/recognition" data-testid="fiscal-lock-dialog-run-recognition"
                                 className="mt-1 inline-block text-primary underline underline-offset-2 hover:opacity-80">
                                 {t("runRecognitionLink")}
                             </Link>

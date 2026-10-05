@@ -26,4 +26,18 @@ public final class LockedBooks {
         jdbc.update("update tenant_fiscal_settings set books_locked_through = ?, books_lock_from_start = false,"
                 + " updated_at = now() where tenant_id = ?", through, tenantId);
     }
+
+    /**
+     * PR #400 review P3-1: the normal way to a locked month — declare the VAT tax points
+     * and recognise the rent through it, then lock — for the realistic companion of each
+     * legacy-state test.
+     */
+    public static void lockAfterRecognising(com.datagami.rentaxis.core.service.recognition.RecognitionService recognition,
+                                            com.datagami.rentaxis.core.service.vat.VatTaxPointService vat,
+                                            com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService fiscal,
+                                            LocalDate through) {
+        if (vat != null) vat.runTo(through, false);
+        recognition.runTo(through, false);
+        fiscal.lockThrough(through);
+    }
 }

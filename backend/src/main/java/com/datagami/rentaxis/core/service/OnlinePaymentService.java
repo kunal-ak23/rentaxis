@@ -473,7 +473,9 @@ public class OnlinePaymentService {
                         + "Please contact the property office.", BOUNCE_BALANCE_UNKNOWN, Map.of());
             }
         }
-        if (cheque.getProperty() != null && !onlinePaymentEnabled(cheque.getProperty().getId())) {
+        // PR #400 review P3-2: the renter list's rule — a row with no property takes no
+        // online payment either (opt-in is per property).
+        if (cheque.getProperty() == null || !onlinePaymentEnabled(cheque.getProperty().getId())) {
             throw new BusinessRuleViolationException("Online payment is switched off for this property");
         }
 

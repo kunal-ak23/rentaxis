@@ -724,7 +724,7 @@
       "cheque_upload_pdf_not_supported": "رفع ملفات PDF غير متاح بعد. ارفع صور الشيكات بدلًا منها.",
       "cheque_upload_busy": "الخادم مشغول بقراءة شيكات أخرى. حاول مرة أخرى بعد قليل.",
       "cheque_storage_unavailable": "تعذّر الوصول إلى مخزن الشيكات الآن، لذلك لم يُحفظ شيء. حاول مرة أخرى بعد بضع دقائق أو أدخل البيانات يدويًا.",
-      "cheque_upload_timeout": "استغرقت قراءة هذا الملف وقتًا طويلًا فتم إيقافها. حاول مرة أخرى أو أدخل البيانات يدويًا."
+      "cheque_upload_timeout": "استغرقت قراءة هذا الملف وقتًا طويلًا فتم إيقافها. يمكنك إعادة المحاولة بأمان — يحتفظ الخادم بنسخة واحدة من الملف — أو أدخل البيانات يدويًا."
     }
   },
   "Staff": {
@@ -2654,6 +2654,7 @@
     "attachScan": "إرفاق صورة الشيك",
     "viewScan": "عرض صورة الشيك",
     "replaceScan": "استبدال صورة الشيك",
+    "chooseFailureReason": "اختر سبب البنك",
     "scanContinue": "متابعة",
     "scanPickerHint": "اختر العقد الذي تتبع له الشيكات. تتم قراءة صورها وإرفاقها بشيكاته المؤجلة.",
     "scanNoContracts": "لم يُعثر على عقد يقبل صور الشيكات.",
@@ -2738,7 +2739,7 @@
     "bounce": "ارتداد",
     "failureReason": "سبب الارتداد",
     "failureReasons": {
-      "BOUNCE": "رصيد غير كافٍ",
+      "BOUNCE": "رصيد غير كافٍ / أخرى",
       "SIGNATURE_MISMATCH": "عدم تطابق التوقيع",
       "ACCOUNT_CLOSED": "الحساب مغلق",
       "STOPPED_PAYMENT": "أُوقف الدفع",
@@ -2786,6 +2787,7 @@
     },
     "penaltyDescription": {
       "chequeReturned": "ارتد الشيك {cheque} ({failureReason}) — الارتداد رقم {bounces} على هذا العقد",
+      "chequeReturnedNoReason": "شيك مرتجع {cheque} — الارتداد رقم {bounces} على هذا العقد",
       "clearedLate": "تحصّل الشيك {cheque} متأخرًا بـ {days} يوم/أيام (تاريخ الاستحقاق {due}، وتم التحصيل {cleared})"
     },
     "penaltyStatus": {
@@ -3061,6 +3063,9 @@
     "orgSaveFailed": "تعذّر حفظ المؤسسة. حاول مرة أخرى."
   },
   "Recognition": {
+    "lockedUnrecognisedWarning": "أُقفل {count} شهر/أشهر من الإيجار ({amount}) (حتى {date}) قبل إثباتها، لذلك لا يمكن لتشغيل نهاية الشهر ترحيلها. استدركها: يحصل كل عقد على قيد استدراك واحد بتاريخ اليوم التالي للإقفال.",
+    "catchUpLocked": "استدراك الأشهر المقفلة",
+    "catchUpLockedDone": "تم إثبات {count} شهر/أشهر مقفلة بقيمة {amount} ({months}) كقيود استدراك بتاريخ {date}.",
     "title": "إثبات الإيراد لنهاية الشهر",
     "desc": "قيّد الإيجار المستحق لكل عقد حتى تاريخ معيّن. لا يُتجاهَل ما قبل اليوم، ولا يُختلَق ما بعده.",
     "schedule": "جدول إثبات الإيراد",
@@ -3787,7 +3792,7 @@
     "parkingSpot": "موقف السيارة {spot}",
     "amountAed": "{amount} درهم",
     "penaltyReason": {"CHEQUE_RETURN": "ارتداد شيك", "LATE_PAYMENT": "تأخر في السداد", "OTHER": "أخرى", "SERVICE_RECHARGE": "إعادة تحميل خدمة", "ADMIN_FEE": "رسوم إدارية", "DAMAGE": "أضرار / تنظيف", "MAINTENANCE_RECHARGE": "إعادة تحميل صيانة", "BOOKING_FEE": "رسوم حجز"},
-    "failureReason": {"BOUNCE": "رصيد غير كافٍ", "SIGNATURE_MISMATCH": "عدم تطابق التوقيع", "ACCOUNT_CLOSED": "الحساب مغلق", "STOPPED_PAYMENT": "أُوقف الدفع", "TECHNICAL_RETURN": "إرجاع فني"},
+    "failureReason": {"BOUNCE": "رصيد غير كافٍ / أخرى", "SIGNATURE_MISMATCH": "عدم تطابق التوقيع", "ACCOUNT_CLOSED": "الحساب مغلق", "STOPPED_PAYMENT": "أُوقف الدفع", "TECHNICAL_RETURN": "إرجاع فني"},
     "renewalIntent": {"RENEW": "التجديد", "MOVE_OUT": "الإخلاء", "DISCUSS": "المناقشة"},
     "messages": {
       "TICKET_ASSIGNED": {"title": "أُسندت إليك تذكرة", "body": "التذكرة: {ticketTitle}"},
@@ -4461,7 +4466,8 @@
     "bankLeaf": "حساب الأستاذ البنكي",
     "account": "الحساب",
     "returnReason": "السبب",
-    "reason_BOUNCE": "رصيد غير كافٍ",
+    "chooseReturnReason": "اختر سبب البنك",
+    "reason_BOUNCE": "رصيد غير كافٍ / أخرى",
     "reason_SIGNATURE_MISMATCH": "عدم تطابق التوقيع",
     "reason_ACCOUNT_CLOSED": "حساب مغلق",
     "reason_STOPPED_PAYMENT": "أُوقف الدفع",

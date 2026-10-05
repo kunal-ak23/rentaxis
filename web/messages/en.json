@@ -724,7 +724,7 @@
       "cheque_upload_pdf_not_supported": "PDF upload is not available yet. Upload photos of the cheques instead.",
       "cheque_upload_busy": "The server is busy reading other cheques. Try again in a moment.",
       "cheque_storage_unavailable": "Cheque storage is not reachable right now, so nothing was saved. Try again in a few minutes, or enter the details by hand.",
-      "cheque_upload_timeout": "Reading this file took too long and was stopped. Try again, or enter the details by hand."
+      "cheque_upload_timeout": "Reading this file took too long and was stopped. Retry is safe — the server keeps one copy of the file — or enter the details by hand."
     }
   },
   "Staff": {
@@ -2654,6 +2654,7 @@
     "attachScan": "Attach scan",
     "viewScan": "View scan",
     "replaceScan": "Replace scan",
+    "chooseFailureReason": "Choose the bank's reason",
     "scanContinue": "Continue",
     "scanPickerHint": "Pick the contract the cheques belong to. Their photos are read and attached to its post-dated cheques.",
     "scanNoContracts": "No contract found that can take cheque scans.",
@@ -2738,7 +2739,7 @@
     "bounce": "Bounce",
     "failureReason": "Failure Reason",
     "failureReasons": {
-      "BOUNCE": "Insufficient funds",
+      "BOUNCE": "Insufficient funds / other",
       "SIGNATURE_MISMATCH": "Signature Mismatch",
       "ACCOUNT_CLOSED": "Account Closed",
       "STOPPED_PAYMENT": "Payment stopped",
@@ -2786,6 +2787,7 @@
     },
     "penaltyDescription": {
       "chequeReturned": "Cheque {cheque} returned ({failureReason}) — bounce {bounces} on this contract",
+      "chequeReturnedNoReason": "Returned cheque {cheque} — bounce {bounces} on this contract",
       "clearedLate": "Cheque {cheque} cleared {days} day(s) late (due {due}, cleared {cleared})"
     },
     "penaltyStatus": {
@@ -3061,6 +3063,9 @@
     "orgSaveFailed": "Failed to save the organisation. Please try again."
   },
   "Recognition": {
+    "lockedUnrecognisedWarning": "{count} month(s) of rent ({amount}) were locked (through {date}) before they were recognised, so the month-end run cannot post them. Catch them up: each contract gets one catch-up entry, dated the day after the lock.",
+    "catchUpLocked": "Catch up locked months",
+    "catchUpLockedDone": "Recognised {count} locked month(s), {amount} ({months}), as catch-up entries dated {date}.",
     "title": "Month-end recognition",
     "desc": "Post the rent every contract has earned up to a date. Nothing before today is skipped, and nothing after it is invented.",
     "schedule": "Recognition schedule",
@@ -3787,7 +3792,7 @@
     "parkingSpot": "parking spot {spot}",
     "amountAed": "AED {amount}",
     "penaltyReason": {"CHEQUE_RETURN": "cheque return", "LATE_PAYMENT": "late payment", "OTHER": "other", "SERVICE_RECHARGE": "service recharge", "ADMIN_FEE": "admin fee", "DAMAGE": "damage / cleaning", "MAINTENANCE_RECHARGE": "maintenance recharge", "BOOKING_FEE": "booking fee"},
-    "failureReason": {"BOUNCE": "insufficient funds", "SIGNATURE_MISMATCH": "signature mismatch", "ACCOUNT_CLOSED": "account closed", "STOPPED_PAYMENT": "payment stopped", "TECHNICAL_RETURN": "technical return"},
+    "failureReason": {"BOUNCE": "insufficient funds / other", "SIGNATURE_MISMATCH": "signature mismatch", "ACCOUNT_CLOSED": "account closed", "STOPPED_PAYMENT": "payment stopped", "TECHNICAL_RETURN": "technical return"},
     "renewalIntent": {"RENEW": "renew", "MOVE_OUT": "move out", "DISCUSS": "discuss"},
     "messages": {
       "TICKET_ASSIGNED": {"title": "Ticket assigned to you", "body": "Ticket: {ticketTitle}"},
@@ -4461,7 +4466,8 @@
     "bankLeaf": "Bank ledger account",
     "account": "Account",
     "returnReason": "Reason",
-    "reason_BOUNCE": "Insufficient funds",
+    "chooseReturnReason": "Choose the bank's reason",
+    "reason_BOUNCE": "Insufficient funds / other",
     "reason_SIGNATURE_MISMATCH": "Signature mismatch",
     "reason_ACCOUNT_CLOSED": "Account closed",
     "reason_STOPPED_PAYMENT": "Payment stopped",

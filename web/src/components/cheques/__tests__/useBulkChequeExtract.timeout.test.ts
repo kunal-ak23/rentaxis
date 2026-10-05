@@ -26,5 +26,8 @@ describe("useBulkChequeExtract timeout", () => {
         const [out] = await done;
         expect(out.status).toBe("failed");
         expect(out.errorCode).toBe("cheque_upload_timeout");
+        // PR #400 review P3-3: the file's key travels with it, so a Retry is deduplicated server-side.
+        const init = (global.fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[0][1];
+        expect((init.headers as Record<string, string>)["Idempotency-Key"]).toBe("a");
     });
 });

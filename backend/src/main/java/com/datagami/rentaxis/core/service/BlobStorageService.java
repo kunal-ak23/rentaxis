@@ -559,13 +559,15 @@ public class BlobStorageService {
                     }
                     // Tutorial 15: with storage unreachable a cheque scan hung for minutes
                     // on the SDK's default retries (4 tries, back-off up to 120 s) with
-                    // nothing on screen. Three tries, a minute each, short back-off: a
-                    // dead store is reported in well under the scan page's patience.
+                    // nothing on screen. Two tries of 20 s, 0.5–1 s back-off: one blob call
+                    // gives up within ~41 s, so a dead store answers the named 503 well
+                    // inside the scan page's two minutes (PR #400 review P3-3). A 10 MB
+                    // upload to Azure takes a few seconds.
                     local = new BlobServiceClientBuilder()
                             .connectionString(connectionString)
                             .retryOptions(new com.azure.storage.common.policy.RequestRetryOptions(
                                     com.azure.storage.common.policy.RetryPolicyType.EXPONENTIAL,
-                                    3, 60, 500L, 4_000L, null))
+                                    2, 20, 500L, 1_000L, null))
                             .buildClient();
                     this.serviceClient = local;
                 }

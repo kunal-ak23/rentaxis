@@ -89,6 +89,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest
 class LeaseVariationServiceIT extends AbstractPostgresIT {
 
+    // PR #400 review P3-1: the realistic companions lock the normal way (recognise, then lock).
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.recognition.RecognitionService recognitionForLock;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.vat.VatTaxPointService vatForLock;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService fiscalForLock;
+
     @Autowired LeaseVariationService variations;
     @Autowired LeasePostingService posting;
     @Autowired ChequeGenerationService cheques;
@@ -412,6 +420,21 @@ class LeaseVariationServiceIT extends AbstractPostgresIT {
         assertThat(registerOf(leaseId)).hasSize(5);
     }
 
+    /** PR #400 review P3-1: the same, with the lock reached the normal way (recognise, then lock). */
+    @Test
+    void aLockedPeriodRefusesTheAddendumWhole_afterRecognisingThenLocking() {
+        UUID leaseId = postedWithFee();
+        long journalsBefore = journalEntryRows();
+        com.datagami.rentaxis.testsupport.LockedBooks.lockAfterRecognising(recognitionForLock, vatForLock, fiscalForLock, LocalDate.of(2027, 2, 28));
+        journalsBefore = journalEntryRows(); // the run posted recognition; measure from here
+
+        assertThatThrownBy(() -> variations.addCharge(leaseId, parking("6000", "6000")))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Cannot post on 2027-02-10: books are locked through 2027-02-28");
+        assertThat(journalEntryRows()).isEqualTo(journalsBefore);
+        assertThat(registerOf(leaseId)).hasSize(5);
+    }
+
     /**
      * Stage 2's own lock check (review point at addCharge's stage-2 comment,
      * {@code LeaseVariationService.java:166}): the addendum's entry date can be
@@ -428,6 +451,37 @@ class LeaseVariationServiceIT extends AbstractPostgresIT {
         // January is locked; the addendum's own entry date (ADDENDUM_DATE,
         // 2027-02-10) is after it and so is open by itself.
         com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, LocalDate.of(2027, 1, 31));
+        LocalDate lockedChequeDate = LocalDate.of(2027, 1, 20);
+        ChequeRowInput rowInLockedMonth = new ChequeRowInput(null, null, lockedChequeDate, null,
+                LocalDate.of(2027, 3, 1), "Emirates NBD", null, null, new BigDecimal("6000"), null, null);
+
+        // The specific "Cheque row N cannot post on ..." phrasing is what
+        // periodLockErrors(entryDate, newRows) produces for a row's own date; a
+        // generic "Cannot post on ..." from a lower-level check catching the same
+        // date later would not name the cheque at all. Asserting the row-specific
+        // wording is what makes this test fail (rather than pass for the wrong
+        // reason) if that stage-2 line is ever deleted.
+        assertThatThrownBy(() -> variations.addCharge(leaseId, new AddChargeRequest(EFFECTIVE, ADDENDUM_DATE, null,
+                "Parking bay P-12", List.of(line("PARKING_FEE", "6000")), List.of(rowInLockedMonth))))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Cheque row")
+                .hasMessageContaining("cannot post on 2027-01-20: books are locked through 2027-01-31");
+
+        // Nothing written: not the TCO, not the addendum row, not the register.
+        assertThat(journalEntryRows()).isEqualTo(journalsBefore);
+        assertThat(addendaOf(leaseId)).isEmpty();
+        assertThat(registerOf(leaseId)).hasSize(5);
+    }
+
+    /** PR #400 review P3-1: the same, with the lock reached the normal way (recognise, then lock). */
+    @Test
+    void aChequeRowDatedInALockedMonthRefusesTheAddendumWhole_afterRecognisingThenLocking() {
+        UUID leaseId = postedWithFee();
+        long journalsBefore = journalEntryRows();
+        // January is locked; the addendum's own entry date (ADDENDUM_DATE,
+        // 2027-02-10) is after it and so is open by itself.
+        com.datagami.rentaxis.testsupport.LockedBooks.lockAfterRecognising(recognitionForLock, vatForLock, fiscalForLock, LocalDate.of(2027, 1, 31));
+        journalsBefore = journalEntryRows(); // the run posted recognition; measure from here
         LocalDate lockedChequeDate = LocalDate.of(2027, 1, 20);
         ChequeRowInput rowInLockedMonth = new ChequeRowInput(null, null, lockedChequeDate, null,
                 LocalDate.of(2027, 3, 1), "Emirates NBD", null, null, new BigDecimal("6000"), null, null);

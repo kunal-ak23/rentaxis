@@ -133,7 +133,9 @@ public class PenaltyRuleEngine {
 
         java.util.Map<String, String> args = new java.util.LinkedHashMap<>();
         args.put("cheque", label(cheque));
-        args.put("failureReason", failure != null ? failure.name() : "BOUNCE");
+        // PR #400 review P3-4: a return recorded without a reason is not "insufficient
+        // funds"; the arg is left out and the text reads "Returned cheque".
+        if (failure != null) args.put("failureReason", failure.name());
         args.put("bounces", String.valueOf(bounces));
         assessmentService.proposeBySystem(lease, cheque, PenaltyReason.CHEQUE_RETURN, amount,
                 "Cheque " + label(cheque) + " returned"

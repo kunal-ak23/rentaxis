@@ -846,6 +846,8 @@ export type RecognitionRunResult = {
   alreadyRecognised?: number;
   /** Review of R4-B M10: rows a contract change cancelled or reversed meanwhile — nothing to recognise. */
   withdrawnMeanwhile?: number;
+  /** PR #400 review P2-1: locked months this run recognised as catch-ups (absent when none). */
+  lockedCatchUp?: LockedCatchUpResult | null;
 };
 
 /** F14-27: `GET /finance/recognition/status` — a warning banner's whole answer. */
@@ -858,6 +860,21 @@ export type RecognitionStatusSummary = {
   lastRunPosted: number;
   lastRunFailed: number;
   lastRunErrors: string[];
+  /** PR #400 review P2-1: rows the period lock closed while still PLANNED (an older server omits them). */
+  lockedUnrecognised?: number;
+  lockedUnrecognisedAmount?: number;
+  booksLockedThrough?: string | null;
+};
+
+/** PR #400 review P2-1: what "Catch up locked months" did, or would do. */
+export type LockedCatchUpResult = {
+  preview: boolean;
+  leases: number;
+  months: number;
+  amount: number;
+  postedOn: string | null;
+  monthsNamed: string[];
+  errors: string[];
 };
 
 // ---- termination (spec §9.1 — api/dto/lease) ----
@@ -1549,6 +1566,9 @@ export const recognitionApi = {
   leaseSchedule: (leaseId: string) => get<RecognitionEntry[]>(`/leases/${leaseId}/recognition`),
   /** F14-27: whether the close is behind, and how the last run went. */
   status: () => get<RecognitionStatusSummary>("/finance/recognition/status"),
+  /** PR #400 review P2-1: recognise months the lock closed while still planned, dated the day after the lock. */
+  catchUpLocked: (preview: boolean) =>
+    send<LockedCatchUpResult>("POST", `/finance/recognition/catch-up-locked${qs({ preview })}`),
 };
 
 /** Who gave notice (#27): the renter leaving, or the landlord serving notice. */

@@ -34,7 +34,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(ChequeExtractionController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, com.datagami.rentaxis.core.service.cheque.ChequeExtractionIdempotency.class})
 class ChequeExtractionControllerTest {
 
     @Autowired
@@ -148,6 +148,28 @@ class ChequeExtractionControllerTest {
         mockMvc.perform(multipart("/api/v1/cheques/extract-many").file(file).with(withTenant()))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value("cheque_storage_unavailable"));
+    }
+
+    /** PR #400 review P3-3: a retry with the same key never stores the file twice. */
+    @Test
+    @WithMockUser(roles = "TENANT_ADMIN")
+    void extractMany_sameIdempotencyKey_runsOnce() throws Exception {
+        var body = new com.datagami.rentaxis.api.dto.ChequeMultiExtractionResponseDTO(
+                new ChequeImageMetaDTO("https://blob", "cheques/one.jpg", OffsetDateTime.parse("2026-10-06T10:00:00Z")),
+                List.of(), List.of(), List.of());
+        when(multiService.extractAndStore(eq(tenantId), any())).thenReturn(body);
+        MockMultipartFile file = new MockMultipartFile("file", "cheque.jpg", MediaType.IMAGE_JPEG_VALUE, new byte[]{1});
+        for (int i = 0; i < 2; i++) {
+            mockMvc.perform(multipart("/api/v1/cheques/extract-many").file(file).header("Idempotency-Key", "file-abc")
+                            .with(withTenant()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.original.blobPath").value("cheques/one.jpg"));
+        }
+        org.mockito.Mockito.verify(multiService, org.mockito.Mockito.times(1)).extractAndStore(eq(tenantId), any());
+        // A different file (key) runs again.
+        mockMvc.perform(multipart("/api/v1/cheques/extract-many").file(file).header("Idempotency-Key", "file-def")
+                .with(withTenant())).andExpect(status().isOk());
+        org.mockito.Mockito.verify(multiService, org.mockito.Mockito.times(2)).extractAndStore(eq(tenantId), any());
     }
 
     private org.springframework.test.web.servlet.request.RequestPostProcessor withTenant() {

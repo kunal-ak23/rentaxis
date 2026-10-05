@@ -112,6 +112,14 @@ import static org.assertj.core.api.Assertions.tuple;
 @SpringBootTest
 class LeaseTerminationServiceIT extends AbstractPostgresIT {
 
+    // PR #400 review P3-1: the realistic companions lock the normal way (recognise, then lock).
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.recognition.RecognitionService recognitionForLock;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.vat.VatTaxPointService vatForLock;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService fiscalForLock;
+
     @Autowired LeaseTerminationService termination;
     @Autowired com.datagami.rentaxis.core.service.vat.TaxInvoiceService taxInvoices;
     @Autowired com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPointService;
@@ -1063,6 +1071,42 @@ class LeaseTerminationServiceIT extends AbstractPostgresIT {
                 .hasMessageContaining("outside the lease term");
 
         com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, LocalDate.of(2027, 2, 28));
+        // The exact wording matters, and this is the assertion a weaker one would
+        // hide: without the guard here the refusal still mentions the lock — it
+        // just arrives from PostingService, after the first cheque has been handed
+        // back inside the transaction, and the preview below would have offered the
+        // date as perfectly fine. Both refusals have to be *this* one.
+        String refusal = "Cannot terminate on 2027-02-15: books are locked through 2027-02-28.";
+        assertThatThrownBy(() -> termination.terminate(leaseId,
+                new TerminateLeaseRequest(T, null, null, null), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage(refusal);
+        assertThatThrownBy(() -> termination.preview(leaseId, T))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage(refusal);
+        // The day after the lock is fine — the guard is the lock, not the date.
+        assertThat(termination.preview(leaseId, LocalDate.of(2027, 3, 1)).terminationDate())
+                .isEqualTo(LocalDate.of(2027, 3, 1));
+
+        assertThat(lease(leaseId).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+        assertThat(lease(leaseId).getTerminatedOn()).isNull();
+        assertThat(journalCount(JournalDocType.TCR)).isZero();
+    }
+
+    /** PR #400 review P3-1: the same, with the lock reached the normal way (recognise, then lock). */
+    @Test
+    void rejectsDateOutsideTermOrLocked_afterRecognisingThenLocking() {
+        UUID leaseId = galahWithThreeCleared();
+
+        assertThatThrownBy(() -> termination.preview(leaseId, START.minusDays(1)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("outside the lease term");
+        assertThatThrownBy(() -> termination.terminate(leaseId,
+                new TerminateLeaseRequest(END.plusDays(1), null, null, null), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("outside the lease term");
+
+        com.datagami.rentaxis.testsupport.LockedBooks.lockAfterRecognising(recognitionForLock, vatForLock, fiscalForLock, LocalDate.of(2027, 2, 28));
         // The exact wording matters, and this is the assertion a weaker one would
         // hide: without the guard here the refusal still mentions the lock — it
         // just arrives from PostingService, after the first cheque has been handed

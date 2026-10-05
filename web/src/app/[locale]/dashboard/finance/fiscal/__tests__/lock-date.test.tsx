@@ -120,7 +120,7 @@ describe("Period lock date", () => {
         const alert = await screen.findByTestId("fiscal-lock-dialog-error");
         expect(alert.textContent).toContain("09/2026");
         expect(alert.textContent).toContain("30/09/2026");
-        expect(screen.getByTestId("fiscal-lock-run-recognition")).toHaveAttribute("href",
+        expect(screen.getByTestId("fiscal-lock-dialog-run-recognition")).toHaveAttribute("href",
             expect.stringContaining("/dashboard/finance/recognition"));
     });
 

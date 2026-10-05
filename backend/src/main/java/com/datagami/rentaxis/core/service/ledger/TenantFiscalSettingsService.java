@@ -407,10 +407,14 @@ public class TenantFiscalSettingsService {
      * send the accountant to the recognition run.
      */
     private void requireRecognitionPostedThrough(TenantFiscalSettings s, LocalDate date) {
-        List<LocalDate> ends = recognitionEntries.findPlannedPeriodEndsThrough(s.getTenantId(), date);
+        // PR #400 review P2-1: only what the move would newly cover. Rows already inside
+        // the current lock (a lock set before this rule) cannot be posted by the run and
+        // must not trap the lock for ever; the locked-months catch-up recognises them.
+        LocalDate after = s.getBooksLockedThrough() != null ? s.getBooksLockedThrough() : LocalDate.of(1900, 1, 1);
+        List<LocalDate> ends = recognitionEntries.findPlannedPeriodEndsBetween(s.getTenantId(), after, date);
         if (ends.isEmpty()) return;
-        long count = recognitionEntries.countByTenantIdAndStatusAndPeriodEndLessThanEqual(
-                s.getTenantId(), RecognitionStatus.PLANNED, date);
+        long count = recognitionEntries.countByTenantIdAndStatusAndPeriodEndGreaterThanAndPeriodEndLessThanEqual(
+                s.getTenantId(), RecognitionStatus.PLANNED, after, date);
         List<String> months = ends.stream().map(d -> d.format(MONTH)).distinct().toList();
         String shown = String.join(", ", months.subList(0, Math.min(6, months.size())))
                 + (months.size() > 6 ? " …" : "");

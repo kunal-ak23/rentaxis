@@ -57,7 +57,7 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
     const [leafId, setLeafId] = useState<string>("");
     const [shared, setShared] = useState<boolean | null>(null);
     const [vatIncluded, setVatIncluded] = useState(false);
-    const [reason, setReason] = useState("BOUNCE");
+    const [reason, setReason] = useState("");
     const [accountId, setAccountId] = useState("");
     const [narration, setNarration] = useState("");
     // A charge over several lines states its split (PR #353 review P2-3): prefilled with
@@ -151,7 +151,9 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
         if (needsLeaf && !leafId) return false;
         switch (action) {
             case "clear": return picked.size > 0 && Math.round(pickedTotal * 100) === Math.round(total * 100);
-            case "receive": case "receiveSuspense": case "bounce": case "present": return picked.size === 1;
+            case "receive": case "receiveSuspense": case "present": return picked.size === 1;
+            // PR #400 review P3-4: the bank's reason is chosen, never defaulted.
+            case "bounce": return picked.size === 1 && !!reason;
             case "other": return !!accountId;
             // Batch 4 review #5: a refused net or VAT is named under its field and never booked as 0.
             case "charge": return !split.error && !(multiCharge && (moneyTextInvalid(netText, SPLIT) || moneyTextInvalid(vatText, SPLIT)));
@@ -251,7 +253,8 @@ export function LineActionDialog({ lines, initial, onClose, onDone }: {
 
                 {action === "bounce" && (
                     <label className="block text-xs"><span className={`${label} block mb-1`}>{t("returnReason")}</span>
-                        <select className={field} value={reason} onChange={e => setReason(e.target.value)}>
+                        <select className={field} value={reason} onChange={e => setReason(e.target.value)} data-testid="bounce-reason">
+                            <option value="" disabled>{t("chooseReturnReason")}</option>
                             {["BOUNCE", "SIGNATURE_MISMATCH", "ACCOUNT_CLOSED", "STOPPED_PAYMENT", "TECHNICAL_RETURN"].map(r => <option key={r} value={r}>{t(`reason_${r}`)}</option>)}
                         </select>
                     </label>
