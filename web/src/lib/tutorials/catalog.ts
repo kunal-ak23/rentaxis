@@ -214,7 +214,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "40", slug: "returned-cheques-replace-settle-write-off-and-recover", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 150, youtubeId: null,
+        id: "40", slug: "returned-cheques-replace-settle-write-off-and-recover", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 122, youtubeId: "f-7dfm5hgyA",
         title: { en: "Returned cheques: replace, settle in cash, write off and recover", ar: "الشيكات المرتجعة: الاستبدال والتسوية النقدية والشطب والتحصيل" },
         description: {
             en: "Handle a cheque the bank returns: replace it, take cash instead, or write the debt off and record what you later recover.",
