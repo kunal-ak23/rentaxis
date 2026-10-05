@@ -29,12 +29,27 @@ public final class ChequeMapper {
     private ChequeMapper() {
     }
 
+    /**
+     * Without the ledger's facts. Services map through {@code ChequeQueryService.dtos}, which
+     * supplies them (PR #397 R1-P2-2); {@code ChequeMapperCallersTest} keeps it that way.
+     */
     public static ChequeDTO toDto(Cheque c, LocalDate today, int graceDays) {
-        return toDto(c, today, graceDays, false);
+        return toDto(c, today, graceDays, null, false);
     }
 
     /** {@code ledgerSettled}: F14-52, a bounced row the ledger has closed — never overdue. */
     public static ChequeDTO toDto(Cheque c, LocalDate today, int graceDays, boolean ledgerSettled) {
+        return toDto(c, today, graceDays, ledgerSettled ? java.math.BigDecimal.ZERO : null, false);
+    }
+
+    /**
+     * @param openAmount on a BOUNCED row, what the ledger still carries on it (zero: settled,
+     *        F14-52 — not due, never overdue); null when not bounced or not known.
+     * @param writeOffPending a proposed write-off names the row (PR #397 R1-P3-1).
+     */
+    public static ChequeDTO toDto(Cheque c, LocalDate today, int graceDays, java.math.BigDecimal openAmount,
+                                  boolean writeOffPending) {
+        boolean ledgerSettled = openAmount != null && openAmount.signum() <= 0;
         // daysOverdue is a property of the date alone, so on its own it happily
         // reports 365 for a cheque that cleared a year ago. The wire shape is read
         // by a UI that renders the number next to an "overdue" badge, so it is
@@ -80,7 +95,8 @@ public final class ChequeMapper {
                 c.getCrtJournalId(),
                 c.getCbrJournalId(),
                 c.getPenaltyAssessmentId(),
-                ChequeDueRules.due(c, today),
+                // Tutorial 40: a bounced row whose debt the ledger has closed is not due either.
+                !ledgerSettled && ChequeDueRules.due(c, today),
                 overdue,
                 overdue ? ChequeDueRules.daysOverdue(c, graceDays, today) : 0,
                 c.getVatAmount(),
@@ -93,7 +109,9 @@ public final class ChequeMapper {
                 c.getPayeeCheck(),
                 c.getPayeeMismatchConfirmedBy(),
                 c.getPayeeMismatchConfirmedByName(),
-                c.getPayeeMismatchConfirmedAt());
+                c.getPayeeMismatchConfirmedAt(),
+                openAmount,
+                writeOffPending);
     }
 
     private static <T, R> R nullSafe(T source, Function<T, R> get) {

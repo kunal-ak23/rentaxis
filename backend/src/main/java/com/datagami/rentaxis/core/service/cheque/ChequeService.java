@@ -262,6 +262,10 @@ public class ChequeService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.datagami.rentaxis.core.service.ledger.EntryNumberService entryNumbers;
 
+    /** PR #397 R1-P2-2: cheque responses carry the ledger's facts (due, ledgerSettled, openAmount). */
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.beans.factory.ObjectProvider<com.datagami.rentaxis.core.service.cheque.ChequeQueryService> chequeQueries;
+
     /**
      * {@code @Lazy} on the rule engine breaks a genuine cycle rather than papering
      * over a layering mistake: the register tells the penalty module when a cheque
@@ -2207,8 +2211,8 @@ public class ChequeService {
                 ? c.getChequeNumber() : "row " + c.getSeqNo();
     }
 
-    private static ChequeDTO dto(Cheque cheque, Lease lease) {
-        return ChequeMapper.toDto(cheque, LocalDate.now(), lease.getGracePeriodDays());
+    private ChequeDTO dto(Cheque cheque, Lease lease) {
+        return chequeQueries.getObject().dto(cheque);
     }
 
     // ------------------------------------------------------------------
