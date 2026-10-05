@@ -89,6 +89,7 @@ class RecognitionControllerIT extends AbstractPostgresIT {
     @Autowired ChequeGenerationService cheques;
     @Autowired LeasePostingService posting;
     @Autowired TenantFiscalSettingsService fiscal;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired UserRepository userRepo;
     @Autowired RenterRepository renterRepo;
@@ -387,7 +388,7 @@ class RecognitionControllerIT extends AbstractPostgresIT {
     void lockedRowsAreReportedSeparatelyFromFailures() {
         TenantContextHolder.setTenantId(fixtures.tenantId());
         try {
-            fiscal.lockThrough(LocalDate.of(2026, 10, 31));
+            com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, LocalDate.of(2026, 10, 31));
         } finally {
             TenantContextHolder.clear();
         }

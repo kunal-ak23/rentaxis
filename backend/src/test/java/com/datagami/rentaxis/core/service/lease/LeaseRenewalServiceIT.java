@@ -1010,7 +1010,7 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
     void extendIntoALockedPeriodChangesNothing() {
         UUID leaseId = postedWithFee();
         long journalsBefore = journalEntryRows();
-        fiscal.lockThrough(LocalDate.of(2027, 9, 30));
+        com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, LocalDate.of(2027, 9, 30));
 
         assertThatThrownBy(() -> renewal.extend(leaseId, extension("12000", "12000")))
                 .isInstanceOf(BusinessRuleViolationException.class)

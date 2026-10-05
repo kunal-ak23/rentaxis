@@ -403,7 +403,7 @@ class LeaseVariationServiceIT extends AbstractPostgresIT {
     void aLockedPeriodRefusesTheAddendumWhole() {
         UUID leaseId = postedWithFee();
         long journalsBefore = journalEntryRows();
-        fiscal.lockThrough(LocalDate.of(2027, 2, 28));
+        com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, LocalDate.of(2027, 2, 28));
 
         assertThatThrownBy(() -> variations.addCharge(leaseId, parking("6000", "6000")))
                 .isInstanceOf(BusinessRuleViolationException.class)
@@ -427,7 +427,7 @@ class LeaseVariationServiceIT extends AbstractPostgresIT {
         long journalsBefore = journalEntryRows();
         // January is locked; the addendum's own entry date (ADDENDUM_DATE,
         // 2027-02-10) is after it and so is open by itself.
-        fiscal.lockThrough(LocalDate.of(2027, 1, 31));
+        com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, LocalDate.of(2027, 1, 31));
         LocalDate lockedChequeDate = LocalDate.of(2027, 1, 20);
         ChequeRowInput rowInLockedMonth = new ChequeRowInput(null, null, lockedChequeDate, null,
                 LocalDate.of(2027, 3, 1), "Emirates NBD", null, null, new BigDecimal("6000"), null, null);

@@ -277,7 +277,7 @@ class RevenueRecognitionJobIT extends AbstractPostgresIT {
      */
     @Test
     void aLockedTenantIsSkippedAndTheOtherStillCloses() {
-        as(alpha.tenantId(), () -> fiscal.lockThrough(LocalDate.of(2026, 12, 31)));
+        as(alpha.tenantId(), () -> { com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, LocalDate.of(2026, 12, 31)); return null; });
 
         job.runFor(TODAY);
 

@@ -221,7 +221,7 @@ class AcquisitionCutoverIT extends AbstractPostgresIT {
         batches.setAcquisitionDate(batchId, A);
         assertThat(postService.post(batchId).leasesPosted()).isEqualTo(2);
 
-        tx.executeWithoutResult(s -> fiscal.lockThrough(LocalDate.of(2026, 10, 31)));
+        tx.executeWithoutResult(s -> com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, LocalDate.of(2026, 10, 31)));
         assertThatThrownBy(() -> batches.reverse(batchId, "wrong"))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("locked through 2026-10-31");

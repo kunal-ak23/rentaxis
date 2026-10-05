@@ -231,7 +231,7 @@ class VatReviewFixesIT extends AbstractPostgresIT {
     private UUID lockedThroughJune() {
         UUID leaseId = workedExample();
         vatTaxPoints.runTo(LocalDate.of(2026, 6, 30), false);
-        fiscal.lockThrough(LocalDate.of(2026, 6, 30));
+        com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, LocalDate.of(2026, 6, 30));
         return leaseId;
     }
 

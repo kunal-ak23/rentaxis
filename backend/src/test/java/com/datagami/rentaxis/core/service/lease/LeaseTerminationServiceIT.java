@@ -1062,7 +1062,7 @@ class LeaseTerminationServiceIT extends AbstractPostgresIT {
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("outside the lease term");
 
-        fiscal.lockThrough(LocalDate.of(2027, 2, 28));
+        com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, LocalDate.of(2027, 2, 28));
         // The exact wording matters, and this is the assertion a weaker one would
         // hide: without the guard here the refusal still mentions the lock — it
         // just arrives from PostingService, after the first cheque has been handed

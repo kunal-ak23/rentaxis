@@ -43,6 +43,7 @@ import com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService;
 class ExtensionIntoLockedPeriodIT extends AbstractPostgresIT {
 
     @Autowired LeaseRenewalService renewal;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     @Autowired LeasePostingService posting;
     @Autowired ChequeGenerationService cheques;
     @Autowired LeaseService leaseService;
@@ -83,7 +84,7 @@ class ExtensionIntoLockedPeriodIT extends AbstractPostgresIT {
     void anExtensionWhoseNewMonthsStartInsideTheLockIsRefusedAndNothingChanges() {
         UUID id = fixtures.postedLease(START, START, END, List.of(line("RENT", "36000")), 2, "500010")
                 .lease().getId();
-        tx.executeWithoutResult(s -> fiscal.lockThrough(LocalDate.of(2026, 8, 31)));
+        tx.executeWithoutResult(s -> com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, LocalDate.of(2026, 8, 31)));
 
         assertThatThrownBy(() -> renewal.extend(id,
                 new ExtendLeaseRequest(NEW_END, TODAY, List.of(line("RENT", "36800")),

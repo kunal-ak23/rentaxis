@@ -1173,7 +1173,7 @@ class ChequeServiceIT extends AbstractPostgresIT {
         PostLeaseResponse r = posted();
         UUID chequeId = r.cheques().get(0).id();
         service.deposit(chequeId, ChequeActionRequest.on(DEPOSIT_DATE));
-        fiscal.lockThrough(LocalDate.of(2026, 10, 31));
+        com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, LocalDate.of(2026, 10, 31));
 
         assertThatThrownBy(() -> service.clear(chequeId, ChequeActionRequest.on(CLEAR_DATE)))
                 .isInstanceOf(BusinessRuleViolationException.class)
