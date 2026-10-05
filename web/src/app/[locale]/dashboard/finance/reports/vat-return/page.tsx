@@ -7,7 +7,9 @@ import { AlertTriangle, CheckCircle2, Download, FileText, Lock, Receipt, ShieldC
 import VatReturnView from "@/components/finance/vat/VatReturnView";
 import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { isAbortError } from "@/lib/api/abort";
 import { ApiError } from "@/lib/api/facilities";
 import { fmtAmount } from "@/lib/api/ledger";
 import { formatDate } from "@/lib/format";
@@ -44,25 +46,40 @@ export default function VatReturnPage() {
     // PR #369 R1 P2-1: filing with an output difference needs a reason; the difference shown is the one acknowledged.
     const [overrideReason, setOverrideReason] = useState("");
 
+    // Tutorial 41: a quarter picked before the previous quarter's return arrived showed that
+    // older answer under the new label. Only the latest load may set the page's state.
+    const beginLoad = useLatestRequest();
     const load = useCallback(async (start: string) => {
+        const { signal, isCurrent } = beginLoad();
         setLoading(true);
         setLoadError(null);
+        // PR #395 R1-P3: a different quarter never shows the previous one's status, check or reference while it loads.
+        setData(prev => (prev && prev.periodStart !== start ? null : prev));
         try {
-            const [r, f] = await Promise.all([vatReturnsApi.get(start), vatReturnsApi.filings()]);
+            const [r, f] = await Promise.all([vatReturnsApi.get(start, signal), vatReturnsApi.filings(signal)]);
+            if (!isCurrent()) return;
             setData(r);
             setFilings(f);
         } catch (err) {
+            if (isAbortError(err) || !isCurrent()) return;
             setData(null);
             setLoadError(err instanceof ApiError ? serverText(tCommon, err) || err.message : tCommon("loadFailed"));
         } finally {
-            setLoading(false);
+            if (isCurrent()) setLoading(false);
         }
-    }, [tCommon]);
+    }, [tCommon, beginLoad]);
 
     useEffect(() => {
         if (!allowed) { setLoading(false); return; }
         load(periodStart);
     }, [allowed, periodStart, load]);
+
+    // PR #395 R1-P3: what was typed for one quarter (reference, difference reason) and its error never carry to another.
+    useEffect(() => {
+        setReference("");
+        setOverrideReason("");
+        setActionError(null);
+    }, [periodStart]);
 
     const act = async (fn: () => Promise<unknown>) => {
         setBusy(true);
@@ -141,7 +158,7 @@ export default function VatReturnPage() {
                         {quarters.map(q => <option key={q} value={q}>{formatDate(q)}</option>)}
                     </select>
                 </label>
-                {data && (
+                {data && !loading && (
                     <span data-testid="vat-status"
                           className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold border ${
                               data.status === "FILED" ? "bg-success/10 text-success border-success/30" : "bg-input text-muted border-border"}`}>
@@ -153,7 +170,7 @@ export default function VatReturnPage() {
                         {outputAtFiling(data) && <> · <span data-testid="vat-output-at-filing">{outputAtFiling(data)}</span></>}
                     </span>
                 )}
-                {data?.outputCheck && (
+                {data?.outputCheck && !loading && (
                     <span data-testid="vat-check"
                           className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold border ${
                               data.outputCheck.ok ? "bg-success/10 text-success border-success/30" : "bg-error/10 text-error border-error/30"}`}>
