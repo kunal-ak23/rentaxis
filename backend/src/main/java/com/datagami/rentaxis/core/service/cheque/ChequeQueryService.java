@@ -230,6 +230,50 @@ public class ChequeQueryService {
         return dto(cheque);
     }
 
+    /** Where a cheque's attached scan lives: its organisation's private container and the path in it. */
+    public record ChequeImageRef(UUID tenantId, String blobPath) {
+    }
+
+    /**
+     * The attached scan of one cheque, for the app to stream (cheque images sit in
+     * the organisation's private container; no public or SAS URL is ever handed out).
+     *
+     * <p>Every refusal is "not found", as {@link #get} answers: a row of another
+     * organisation, a contract outside a property manager's buildings, a renter's
+     * lease that is not theirs, a row of theirs that is another renter's after an
+     * assignment, a renter asking for a row still in draft, and a row with no scan
+     * all look the same, so the register cannot be enumerated through the error.
+     * Staff see a draft row's scan: a scan attaches to a draft contract's grid.</p>
+     */
+    public ChequeImageRef imageOf(UUID chequeId) {
+        Cheque cheque = chequeRepository.findById(chequeId)
+                .orElseThrow(() -> new NotFoundException("Cheque scan not found"));
+        UUID current = TenantContextHolder.getTenantId();
+        if (current != null && !current.equals(cheque.getTenantId())) {
+            throw new NotFoundException("Cheque scan not found");
+        }
+        Lease lease = cheque.getLease();
+        if (lease == null) {
+            throw new NotFoundException("Cheque scan not found");
+        }
+        try {
+            leaseAccessPolicy.requireReadable(lease);
+            leaseAccessPolicy.requireRentersOwnCheque(cheque);
+        } catch (NotFoundException e) {
+            throw new NotFoundException("Cheque scan not found");
+        }
+        if (leaseAccessPolicy.callerIsRenter() && cheque.getStatus() == ChequeStatus.DRAFT) {
+            throw new NotFoundException("Cheque scan not found");
+        }
+        String path = cheque.getImageBlobPath();
+        // Only the cheques/ folder the scan upload writes to: a stored path is never
+        // a licence to read anything else in the container.
+        if (path == null || path.isBlank() || !path.startsWith("cheques/") || path.contains("..")) {
+            throw new NotFoundException("Cheque scan not found");
+        }
+        return new ChequeImageRef(cheque.getTenantId(), path);
+    }
+
     // ------------------------------------------------------------------
     // tiles, aging, per-lease stats
     // ------------------------------------------------------------------
@@ -576,7 +620,7 @@ public class ChequeQueryService {
      * with a BOUNCED row are asked about — the flag matters where Replace is offered — so a
      * list without one costs no query.
      */
-    private java.util.Set<UUID> pendingWriteOffItems(Collection<Cheque> rows) {
+    public java.util.Set<UUID> pendingWriteOffItems(Collection<Cheque> rows) {
         java.util.Set<UUID> leaseIds = rows.stream()
                 .filter(c -> c.getStatus() == ChequeStatus.BOUNCED && c.getLease() != null)
                 .map(c -> c.getLease().getId()).collect(java.util.stream.Collectors.toSet());

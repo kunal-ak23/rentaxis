@@ -1350,6 +1350,10 @@ export type RenterCheque = {
    * an older server does not send it.
    */
   onlineRefusal?: string | null;
+  /** The day the cheque was banked; null when it never was. Optional: an older server does not send it. */
+  depositedAt?: string | null;
+  /** A scan is attached; open it with `chequeApi.scanUrl` (the renter's own rows only). Optional, as above. */
+  hasImage?: boolean;
 };
 
 /** CreateOrderResponseDTO. */
@@ -1621,6 +1625,8 @@ export const chequeApi = {
   cashReceipt: (leaseId: string, body: ChequeRowInput) => send<Cheque>("POST", `/cheques/lease/${leaseId}/cash-receipt`, body),
   /** Not a fetch — the endpoint streams a PDF; callers open/download this path directly. */
   receiptUrl: (id: string) => `${BASE}/cheques/${id}/receipt`,
+  /** The attached scan, streamed by the app (cheque images sit in a private container; the stored blob URL answers 403). */
+  scanUrl: (id: string) => `${BASE}/cheques/${id}/image`,
 };
 
 export const penaltyApi = {

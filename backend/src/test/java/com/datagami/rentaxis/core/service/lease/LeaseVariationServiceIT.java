@@ -82,7 +82,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * its own tenant, its own lease or its own ids. There is no assertion about a
  * whole table.</p>
  */
-@org.springframework.context.annotation.Import(com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class)
+// Amendments are dated on the app clock and rebuild recognition from that day; the suite's
+// contracts start on 2026-10-02, so "today" is pinned before that (TimelineClockConfig).
+@org.springframework.context.annotation.Import({com.datagami.rentaxis.testsupport.LaterBusinessDayConfig.class,
+        com.datagami.rentaxis.testsupport.TimelineClockConfig.class})
 @SpringBootTest
 class LeaseVariationServiceIT extends AbstractPostgresIT {
 

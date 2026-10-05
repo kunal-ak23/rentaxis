@@ -976,7 +976,8 @@ class PaymentRunPdcIT extends AbstractPostgresIT {
         Voucher v = pdc(gulf, AUG_15, "300.00", "000800", SEP_28, to(inv, "300.00"));
         UUID allocation = allocationRepo.findByPaymentVoucherIdAndReleasedOnIsNull(v.getId()).get(0).getId();
         allocations.release(allocation, "wrong invoice");
-        LocalDate released = LocalDate.now(ZoneId.of("Asia/Dubai"));
+        // Stamped on the app clock (this suite's fixed TODAY), the clock the cheque register reads too.
+        LocalDate released = TODAY;
         UUID cheque = chequeOf(v).getId();
         assertThatThrownBy(() -> cheques.cancel(cheque, SEP_10, "stop"))
                 .hasMessageContaining("was released on " + released).hasMessageContaining("cannot be reversed before");
