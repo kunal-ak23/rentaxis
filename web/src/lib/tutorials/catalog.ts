@@ -261,7 +261,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "45", slug: "bank-reconciliation", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 150, youtubeId: null,
+        id: "45", slug: "bank-reconciliation", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 130, youtubeId: "twa9qUyLqIc",
         title: { en: "Bank reconciliation", ar: "التسوية البنكية" },
         description: {
             en: "Import a bank statement, match it to the books, book the bank-only lines and finalise the month.",
