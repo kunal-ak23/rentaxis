@@ -511,7 +511,17 @@ export default function ChequeRegisterPanel({ embedded = false }: { embedded?: b
                                             <td className={td}>{c.renterName || "—"}</td>
                                             <td className={td}>{c.unitIdentifier || "—"}</td>
                                             <td className={`${td} text-muted`}>{c.propertyName || "—"}</td>
-                                            <td className={`${td} text-end tabular-nums font-semibold`}>{fmtAmount(c.amount)}</td>
+                                            {/* PR #397 R1-P3-c: a partly settled returned cheque reads "X of Y", as on the Returned queue. */}
+                                            <td className={`${td} text-end tabular-nums font-semibold`} data-testid={`cheque-row-amount-${c.id}`}>
+                                                {c.status === "BOUNCED" && c.openAmount != null && c.amount != null && c.openAmount !== c.amount ? (
+                                                    <>
+                                                        <bdi dir="ltr">{fmtAmount(c.openAmount)}</bdi>
+                                                        <div className="text-[10px] font-normal text-muted" data-testid={`cheque-row-face-${c.id}`}>
+                                                            {t("owedOfFace", { face: fmtAmount(c.amount) })}
+                                                        </div>
+                                                    </>
+                                                ) : fmtAmount(c.amount)}
+                                            </td>
                                             <td className={td}>{tl(`mode.${c.mode}`)}</td>
                                             <td className={td}>
                                                 <ChequeStatusBadge status={c.status} testId={`cheque-status-${c.id}`} />
