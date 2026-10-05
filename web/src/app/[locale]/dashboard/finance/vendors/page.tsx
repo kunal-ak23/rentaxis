@@ -25,6 +25,8 @@ type Account = {
 
 type Vendor = {
     id: string;
+    /** Set by the database on insert; the list sorts oldest first. */
+    createdAt?: string | null;
     nameEn: string;
     nameAr: string;
     tradeLicenseNumber: string;
@@ -103,7 +105,9 @@ export default function VendorsPage() {
             if (res.ok) {
                 const data = await res.json();
                 if (!isCurrent()) return;
-                data.sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
+                // Oldest first, the house rule for entity lists (tutorial 19); id breaks ties.
+                data.sort((a: any, b: any) =>
+                    (a.createdAt || '').localeCompare(b.createdAt || '') || (a.id || '').localeCompare(b.id || ''));
                 setVendors(data);
                 setLoadError(null);
             } else if (isCurrent()) {
@@ -458,10 +462,10 @@ export default function VendorsPage() {
 
                         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-5">
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
+                                <label htmlFor="vendor-field-nameEn" className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("nameEn")}
                                 </label>
-                                <input
+                                <input id="vendor-field-nameEn"
                                     required
                                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                                     value={formData.nameEn}
@@ -471,10 +475,10 @@ export default function VendorsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
+                                <label htmlFor="vendor-field-nameAr" className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("nameAr")}
                                 </label>
-                                <input
+                                <input id="vendor-field-nameAr"
                                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                                     value={formData.nameAr}
                                     onChange={(ev) =>
@@ -484,10 +488,10 @@ export default function VendorsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
+                                <label htmlFor="vendor-field-tradeLicense" className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("tradeLicense")}
                                 </label>
-                                <input
+                                <input id="vendor-field-tradeLicense"
                                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                                     value={formData.tradeLicenseNumber}
                                     onChange={(ev) =>
@@ -499,10 +503,10 @@ export default function VendorsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
+                                <label htmlFor="vendor-field-trn" className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("trn")}
                                 </label>
-                                <input
+                                <input id="vendor-field-trn"
                                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                                     value={formData.trn}
                                     inputMode="numeric"
@@ -516,10 +520,10 @@ export default function VendorsPage() {
                                 <p id="vendor-trn-hint" className="text-[10px] text-muted mt-1 ms-1">{t("trnHint")}</p>
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
+                                <label htmlFor="vendor-field-paymentTerms" className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("paymentTerms")}
                                 </label>
-                                <input
+                                <input id="vendor-field-paymentTerms"
                                     type="number"
                                     min={0}
                                     max={365}
@@ -532,10 +536,10 @@ export default function VendorsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
+                                <label htmlFor="vendor-field-email" className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("email")}
                                 </label>
-                                <input
+                                <input id="vendor-field-email"
                                     type="email"
                                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                                     value={formData.email}
@@ -545,10 +549,10 @@ export default function VendorsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
+                                <label htmlFor="vendor-field-phone" className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("phone")}
                                 </label>
-                                <input
+                                <input id="vendor-field-phone"
                                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                                     value={formData.phone}
                                     onChange={(ev) =>
@@ -557,10 +561,10 @@ export default function VendorsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
+                                <label htmlFor="vendor-field-contactPerson" className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("contactPerson")}
                                 </label>
-                                <input
+                                <input id="vendor-field-contactPerson"
                                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                                     value={formData.contactPerson}
                                     onChange={(ev) =>
@@ -572,10 +576,10 @@ export default function VendorsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
+                                <label htmlFor="vendor-field-bankName" className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("bankName")}
                                 </label>
-                                <input
+                                <input id="vendor-field-bankName"
                                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                                     value={formData.bankName}
                                     onChange={(ev) =>
@@ -584,10 +588,10 @@ export default function VendorsPage() {
                                 />
                             </div>
                             <div className="col-span-2">
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
+                                <label htmlFor="vendor-field-address" className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("address")}
                                 </label>
-                                <textarea
+                                <textarea id="vendor-field-address"
                                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none h-20 resize-none"
                                     value={formData.address}
                                     onChange={(ev) =>
@@ -596,10 +600,10 @@ export default function VendorsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
+                                <label htmlFor="vendor-field-accountNumber" className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("accountNumber")}
                                 </label>
-                                <input
+                                <input id="vendor-field-accountNumber"
                                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                                     value={formData.bankAccountNumber}
                                     onChange={(ev) =>
@@ -611,10 +615,10 @@ export default function VendorsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
+                                <label htmlFor="vendor-field-iban" className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("iban")}
                                 </label>
-                                <input
+                                <input id="vendor-field-iban"
                                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                                     value={formData.iban}
                                     onChange={(ev) =>
@@ -627,9 +631,9 @@ export default function VendorsPage() {
                                 repointing a vendor's payable mid-life orphans its posted
                                 entries. */}
                             <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
+                                <span className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("payableAccount")}
-                                </label>
+                                </span>
                                 <p className="w-full border border-border rounded-lg bg-input p-3 text-xs text-muted">
                                     {editingVendor?.payableAccount
                                         ? `${editingVendor.payableAccount.code} - ${accountName(editingVendor.payableAccount, locale)}`
@@ -655,10 +659,10 @@ export default function VendorsPage() {
                                 </label>
                             </div>
                             <div className="col-span-2">
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
+                                <label htmlFor="vendor-field-notes" className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ms-1">
                                     {t("notes")}
                                 </label>
-                                <textarea
+                                <textarea id="vendor-field-notes"
                                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none h-20 resize-none"
                                     value={formData.notes}
                                     onChange={(ev) =>

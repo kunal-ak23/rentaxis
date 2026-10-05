@@ -46,6 +46,17 @@ describe("VatReturnView", () => {
         expect(documents).toHaveBeenCalledWith("2026-04-01", "1b");
     });
 
+    it("closes the documents panel on Escape (tutorial 41)", async () => {
+        documents.mockResolvedValue([]);
+        renderIn("en");
+        fireEvent.click(screen.getByTestId("vat-drill-5"));
+        expect(await screen.findByRole("dialog", { name: "Documents behind box 5" })).toBeTruthy();
+        fireEvent.keyDown(window, { key: "Enter" });
+        expect(screen.queryByTestId("vat-drill")).not.toBeNull();
+        fireEvent.keyDown(window, { key: "Escape" });
+        expect(screen.queryByTestId("vat-drill")).toBeNull();
+    });
+
     it("renders the Arabic labels", () => {
         renderIn("ar");
         expect(screen.getByText("التوريدات الخاضعة للنسبة الأساسية في دبي")).toBeTruthy();
