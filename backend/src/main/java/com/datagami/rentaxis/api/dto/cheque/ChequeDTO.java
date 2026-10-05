@@ -94,5 +94,8 @@ public record ChequeDTO(UUID id,
                         BigDecimal openAmount,
                         /* PR #397 R1-P3-1: a write-off awaiting approval names this row — it is still
                            due and queued, but not offered for a replacement until it is decided. */
-                        boolean writeOffPending) {
+                        boolean writeOffPending,
+                        /* PR #399 R1 P3-3: a CANCELLED row an approved bad-debt write-off took — it
+                           left the contract, so the cheque grid nets it off the contract value. */
+                        boolean writtenOff) {
 }

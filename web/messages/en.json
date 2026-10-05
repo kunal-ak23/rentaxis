@@ -2373,7 +2373,8 @@
     "discountExceedsAmount": "Line {n}: the discount cannot be more than the amount.",
     "contractValueInclVat": "Contract Value (incl. VAT)",
     "chequeTotal": "Cheques Total",
-    "chequeTotalExcludes": "Excludes {count, plural, one {# replaced, cancelled or penalty row} other {# replaced, cancelled or penalty rows}}",
+    "chequeTotalExcludes": "Excludes {count, plural, one {# replaced, cancelled, transferred or penalty row} other {# replaced, cancelled, transferred or penalty rows}}",
+    "contractNetOf": "Contract value net of {amount} transferred or written off",
     "postingDate": "Posting Date",
     "chequeNo": "Cheque No",
     "chequeDate": "Date",
@@ -2680,6 +2681,7 @@
     "runFailed": "The VAT tax points could not be posted."
   },
   "Cheques": {
+    "depositNotCleared": "Deposit not cleared — check with the bank",
     "depositedDaysAgo": "{n, plural, =0 {Deposited today} one {Deposited # day ago} other {Deposited # days ago}}",
     "awaitingClearing": "Deposited, awaiting clearing",
     "scanMoreContracts": "Show more contracts",
@@ -4892,6 +4894,7 @@
       "WRITTEN_OFF": "Written off","PROPOSED": "Proposed", "APPROVED": "Charged", "WAIVED": "Waived", "REVERSED": "Reversed"}
   },
   "Collections": {
+    "depositNotCleared": "Deposit not cleared — check with the bank",
     "depositedDaysAgo": "{n, plural, =0 {Deposited today} one {Deposited # day ago} other {Deposited # days ago}}",
     "awaitingClearing": "Deposited, awaiting clearing",
     "tabDeposit": "To deposit",

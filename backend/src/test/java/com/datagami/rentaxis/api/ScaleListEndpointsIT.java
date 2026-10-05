@@ -329,6 +329,7 @@ class ScaleListEndpointsIT extends AbstractPostgresIT {
         assertThat(plain.get(0).get("unclearedAmount").decimalValue()).isEqualByComparingTo("48000");
         assertThat(plain.get(0).get("liveAmount").decimalValue()).isEqualByComparingTo("48000");
         assertThat(plain.get(0).get("liveCount").asLong()).isEqualTo(4);
+        assertThat(plain.get(0).get("liveClearedAmount").decimalValue()).isEqualByComparingTo("0");
 
         JsonNode withDrafts = post(admin, "/api/v1/cheques/stats-by-leases?includeDrafts=true", body);
         assertThat(withDrafts).hasSize(1);   // the draft's grid rows are DRAFT: still not instruments

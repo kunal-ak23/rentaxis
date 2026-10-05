@@ -55,7 +55,7 @@ describe("ChequeGrid contract total", () => {
         renderGrid(rows);
         expect(screen.getByTestId("cheque-grid-total")).toHaveTextContent("63,000.00");
         expect(screen.getByTestId("cheque-grid-match")).toHaveAttribute("data-match", "true");
-        expect(screen.getByTestId("cheque-grid-excluded")).toHaveTextContent("Excludes 2 replaced, cancelled or penalty rows");
+        expect(screen.getByTestId("cheque-grid-excluded")).toHaveTextContent("Excludes 2 replaced, cancelled, transferred or penalty rows");
     });
 
     it("still flags a grid whose live instalments do not add up", () => {
@@ -72,6 +72,37 @@ describe("ChequeGrid contract total", () => {
     it("words the exclusion in Arabic", () => {
         renderGrid(rows, ar as typeof en, "ar");
         expect(screen.getByTestId("cheque-grid-excluded").textContent).toContain("باستثناء");
+    });
+
+    it("compares a transferred-from lease with the contract value net of what moved to the successor", () => {
+        // 63,000 in four; the last two (31,500) carried to the successor lease.
+        const transferred = [
+            cheque({ id: "t1", seqNo: 1 }),
+            cheque({ id: "t2", seqNo: 2 }),
+            cheque({ id: "t3", seqNo: 3, status: "TRANSFERRED" }),
+            cheque({ id: "t4", seqNo: 4, status: "TRANSFERRED" }),
+        ];
+        renderGrid(transferred);
+        expect(screen.getByTestId("cheque-grid-total")).toHaveTextContent("31,500.00");
+        expect(screen.getByTestId("cheque-grid-match")).toHaveAttribute("data-match", "true");
+        expect(screen.getByTestId("cheque-grid-match")).toHaveTextContent("31,500.00");
+        expect(screen.getByTestId("cheque-grid-contract-net")).toHaveTextContent("Contract value net of 31,500.00 transferred or written off");
+    });
+
+    it("nets a written-off instalment off the contract value, but not a plain cancelled one", () => {
+        const writtenOff = [
+            cheque({ id: "w1", seqNo: 1 }),
+            cheque({ id: "w2", seqNo: 2, status: "CANCELLED", writtenOff: true }),
+            cheque({ id: "w3", seqNo: 3, status: "REGISTERED" }),
+            cheque({ id: "w4", seqNo: 4, status: "REGISTERED" }),
+        ];
+        renderGrid(writtenOff);
+        expect(screen.getByTestId("cheque-grid-match")).toHaveAttribute("data-match", "true");
+        cleanup();
+        // Cancelled for another reason (not written off): the contract still expects it.
+        renderGrid(writtenOff.map(c => (c.id === "w2" ? { ...c, writtenOff: false } : c)));
+        expect(screen.getByTestId("cheque-grid-match")).toHaveAttribute("data-match", "false");
+        expect(screen.queryByTestId("cheque-grid-contract-net")).toBeNull();
     });
 
     it("keeps draft, bounced and returned rows; drops replaced, cancelled, transferred and penalty rows", () => {
