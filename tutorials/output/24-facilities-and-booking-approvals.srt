@@ -1,0 +1,143 @@
+1
+00:00:00,000 --> 00:00:03,119
+This tutorial covers facilities and
+parking in Oasis Crest
+
+2
+00:00:03,119 --> 00:00:05,892
+Properties: what can be booked, how a
+Tenant
+
+3
+00:00:05,892 --> 00:00:08,665
+asks for it, and how a manager approves.
+
+4
+00:00:08,665 --> 00:00:11,091
+Signed in as the Company Admin, open
+
+5
+00:00:11,091 --> 00:00:13,171
+the Oasis Crest Residence Tower property.
+
+6
+00:00:13,171 --> 00:00:15,944
+The Amenities tab lists the Residents
+Fitness Centre:
+
+7
+00:00:15,944 --> 00:00:18,370
+bookable, active, and open to every tower.
+
+8
+00:00:18,370 --> 00:00:21,836
+The Parking tab lists spot B2-18 on level
+B2, available.
+
+9
+00:00:21,836 --> 00:00:24,609
+Now sign in as the Tenant Ahmed Hassan.
+
+10
+00:00:24,609 --> 00:00:27,382
+From the home page, open Facilities and
+Parking.
+
+11
+00:00:27,382 --> 00:00:30,848
+Select Request on the fitness centre, pick
+a preferred date
+
+12
+00:00:30,848 --> 00:00:34,314
+and add a note with the time, then Submit
+Request.
+
+13
+00:00:34,314 --> 00:00:36,740
+The card now shows one pending request;
+
+14
+00:00:36,740 --> 00:00:39,166
+nothing is booked until a manager
+approves.
+
+15
+00:00:39,166 --> 00:00:41,592
+Request parking spot B2-18 the same way,
+
+16
+00:00:41,592 --> 00:00:44,019
+with a note about the second car.
+
+17
+00:00:44,019 --> 00:00:47,138
+Both are listed under My Requests as
+Pending, and
+
+18
+00:00:47,138 --> 00:00:49,911
+either can still be withdrawn with Cancel
+Request.
+
+19
+00:00:49,911 --> 00:00:52,337
+Back as the Company Admin, open
+Operations,
+
+20
+00:00:52,337 --> 00:00:54,417
+Bookings, where both requests are waiting.
+
+21
+00:00:54,417 --> 00:00:56,150
+Open the fitness centre request.
+
+22
+00:00:56,150 --> 00:00:59,616
+The drawer shows the Tenant, the unit, the
+preferred date
+
+23
+00:00:59,616 --> 00:01:02,735
+and the note, and the other requests for
+the
+
+24
+00:01:02,735 --> 00:01:05,854
+same facility, so a clash is visible
+before deciding.
+
+25
+00:01:05,854 --> 00:01:08,974
+Add a note to the Tenant and select
+Approve.
+
+26
+00:01:08,974 --> 00:01:12,093
+Then open the parking request and approve
+it too;
+
+27
+00:01:12,093 --> 00:01:15,213
+an approved spot can be released from here
+later.
+
+28
+00:01:15,213 --> 00:01:17,639
+Back as the Tenant, My Requests shows
+
+29
+00:01:17,639 --> 00:01:20,065
+both as Approved, with the manager's
+notes.
+
+30
+00:01:20,065 --> 00:01:23,185
+When the second car goes, Release Spot
+hands the
+
+31
+00:01:23,185 --> 00:01:26,304
+parking spot back, so another Tenant can
+request it.
