@@ -13,6 +13,7 @@ vi.mock("@/lib/api/vatReturns", async (orig) => {
 });
 
 import VatReturnPage from "../page";
+import { lastQuarterStart } from "@/lib/api/vatReturns";
 
 /** PR #361 R1: filing and re-opening confirm in the app dialog; the reason is typed there. No window.confirm/prompt. */
 const base = { id: null, periodStart: "2026-04-01", periodEnd: "2026-06-30", status: "OPEN", filedAt: null, filedByName: null,
@@ -84,7 +85,7 @@ describe("VAT return page", () => {
         expect(file.disabled).toBe(false);
         fireEvent.click(file);
         fireEvent.click(await screen.findByTestId("vat-confirm"));
-        await waitFor(() => expect(api.file).toHaveBeenCalledWith("2026-04-01", "", "Cut-over contracts invoiced by PACT", -3000));
+        await waitFor(() => expect(api.file).toHaveBeenCalledWith(lastQuarterStart(), "", "Cut-over contracts invoiced by PACT", -3000));
     });
 
     it("shows what the filing recorded about the output check, and never a pre-check filing as tied", async () => {
@@ -116,5 +117,60 @@ describe("VAT return page", () => {
         fireEvent.click(await screen.findByTestId("vat-confirm"));
         expect(await screen.findByTestId("vat-override")).toBeTruthy();
         expect(api.get).toHaveBeenCalledTimes(2);
+    });
+    it("shows the selected quarter's return even when the previous quarter's answer arrives last (tutorial 41)", async () => {
+        // PR #395 R1-P2: the chosen quarter must differ from the default (the pinned clock makes that 2026-04-01),
+        // or the change event is a no-op and the slow first answer is never requested.
+        const defaultQuarter = lastQuarterStart();
+        const chosenQuarter = "2026-01-01";
+        expect(chosenQuarter).not.toBe(defaultQuarter);
+        let releaseFirst: (v: unknown) => void = () => {};
+        const first = new Promise((resolve) => { releaseFirst = resolve; });
+        const initial = { ...base, id: "old", status: "FILED", filedAt: "2026-07-10T00:00:00Z", filingReference: "OLD-QUARTER", canFile: false };
+        const chosen = { ...base, periodStart: chosenQuarter, periodEnd: "2026-03-31", status: "OPEN" };
+        api.get.mockImplementation((start: string) => (start === chosenQuarter ? Promise.resolve(chosen) : first));
+        api.filings.mockResolvedValue([]);
+        render(<NextIntlClientProvider locale="en" messages={en}><VatReturnPage /></NextIntlClientProvider>);
+        const asked = () => api.get.mock.calls.map((c: unknown[]) => c[0]);
+        await waitFor(() => expect(asked()).toEqual([defaultQuarter]));
+        fireEvent.change(screen.getByTestId("vat-quarter"), { target: { value: chosenQuarter } });
+        await waitFor(() => expect(asked()).toEqual([defaultQuarter, chosenQuarter]));
+        await screen.findByTestId("vat-file");
+        releaseFirst(initial);
+        await new Promise((r) => setTimeout(r, 20));
+        expect(screen.getByTestId("vat-status").textContent).not.toContain("OLD-QUARTER");
+        expect(screen.queryByTestId("vat-reopen")).toBeNull();
+        expect(screen.getByTestId("vat-file")).toBeTruthy();
+    });
+
+    it("hides the previous quarter's chips while the new one loads, and resets what was typed (PR #395 R1-P3)", async () => {
+        const failing = { ...base, filingReference: "Q2-REF", outputCheck: { documents: 100, ledger: 3100, difference: -3000, ok: false },
+            reasonRequired: true };
+        let releaseNext: (v: unknown) => void = () => {};
+        const next = new Promise((resolve) => { releaseNext = resolve; });
+        api.get.mockImplementation((start: string) => (start === "2026-01-01" ? next : Promise.resolve(failing)));
+        api.filings.mockResolvedValue([]);
+        render(<NextIntlClientProvider locale="en" messages={en}><VatReturnPage /></NextIntlClientProvider>);
+        expect(await screen.findByTestId("vat-check")).toBeTruthy();
+        fireEvent.change(screen.getByTestId("vat-override-reason"), { target: { value: "Cut-over contracts invoiced by PACT" } });
+        fireEvent.change(screen.getByTestId("vat-reference"), { target: { value: "TYPED-FOR-Q2" } });
+        fireEvent.change(screen.getByTestId("vat-quarter"), { target: { value: "2026-01-01" } });
+        await waitFor(() => expect(api.get.mock.calls.map((c: unknown[]) => c[0])).toContain("2026-01-01"));
+        expect(screen.queryByTestId("vat-status")).toBeNull();
+        expect(screen.queryByTestId("vat-check")).toBeNull();
+        releaseNext({ ...failing, periodStart: "2026-01-01", periodEnd: "2026-03-31", filingReference: null });
+        const reason = await screen.findByTestId("vat-override-reason") as HTMLTextAreaElement;
+        expect(reason.value).toBe("");
+        expect((screen.getByTestId("vat-reference") as HTMLInputElement).value).toBe("");
+        expect(screen.getByTestId("vat-status").textContent).not.toContain("Q2-REF");
+    });
+
+    it("passes the abort signal to its requests (PR #395 R1-P3)", async () => {
+        api.get.mockResolvedValue(base);
+        api.filings.mockResolvedValue([]);
+        render(<NextIntlClientProvider locale="en" messages={en}><VatReturnPage /></NextIntlClientProvider>);
+        await screen.findByTestId("vat-file");
+        expect(api.get.mock.calls[0][1]).toBeInstanceOf(AbortSignal);
+        expect(api.filings.mock.calls[0][0]).toBeInstanceOf(AbortSignal);
     });
 });

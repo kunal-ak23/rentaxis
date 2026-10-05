@@ -20,9 +20,9 @@ export function qs(params: Record<string, string | number | boolean | string[] |
   return s ? `?${s}` : "";
 }
 
-/** GET `/api/proxy/v1{path}`, throwing an `ApiError` carrying the server's own message. */
-export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { method: "GET" });
+/** GET `/api/proxy/v1{path}`, throwing an `ApiError` carrying the server's own message. `signal` cancels it. */
+export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, { method: "GET", signal });
   await throwIfNotOk(res);
   return res.json();
 }

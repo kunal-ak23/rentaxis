@@ -40,8 +40,8 @@ export type VatFiling = {
 
 
 export const vatReturnsApi = {
-  get: (periodStart: string) => apiGet<VatReturn>(`/finance/vat-returns${qs({ periodStart })}`),
-  filings: () => apiGet<VatFiling[]>("/finance/vat-returns/filings"),
+  get: (periodStart: string, signal?: AbortSignal) => apiGet<VatReturn>(`/finance/vat-returns${qs({ periodStart })}`, signal),
+  filings: (signal?: AbortSignal) => apiGet<VatFiling[]>("/finance/vat-returns/filings", signal),
   documents: (periodStart: string, box: string) => apiGet<VatDocument[]>(`/finance/vat-returns/documents${qs({ periodStart, box })}`),
   file: (periodStart: string, filingReference: string, outputDifferenceReason?: string, acknowledgedDifference?: number) =>
     apiSend<VatReturn>("POST", "/finance/vat-returns/file", { periodStart, filingReference, outputDifferenceReason, acknowledgedDifference }),
