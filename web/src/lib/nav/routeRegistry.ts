@@ -59,7 +59,7 @@ export const DASHBOARD_ROUTES: RouteEntry[] = [
     r(`${F}/recognition`, "canRunRecognition"),
     r(`${D}/collections`, role => buildCollectionsTabs(role).length > 0),
     r(`${F}/vendors`, "canManageVendors"), r(`${F}/vendors/[id]`, "canManageVendors"),
-    r(`${F}/bank-accounts`, "canAccessFinanceOps"),
+    r(`${F}/bank-accounts`, "canViewBankAccounts"),
     r(`${F}/bank-reconciliation`, "canReconcileBank"), r(`${F}/bank-reconciliation/[id]`, "canReconcileBank"),
     r(`${F}/payables/aging`, "canViewPayablesAging"), r(`${F}/payables/opening-items`, "canManagePayables"),
     r(`${F}/payables/payment-runs`, "canManagePayables"), r(`${F}/payables/payment-runs/new`, "canManagePayables"),

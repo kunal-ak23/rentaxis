@@ -693,6 +693,8 @@ export type Cheque = {
   openAmount?: number | null;
   /** PR #397 R1-P3-1: a write-off awaiting approval names this row — Replace waits for the decision. */
   writeOffPending?: boolean;
+  /** PR #399 R1 P3-3: a CANCELLED row an approved bad-debt write-off took. */
+  writtenOff?: boolean;
 };
 
 // ---- VAT per instalment (spec 2026-09-24 §1 — api/dto/vat) ----
@@ -1240,9 +1242,11 @@ export type LeaseChequeStats = {
   dueAmount: number;
   /** REGISTERED + DEPOSITED + ONLINE_PENDING. */
   unclearedAmount?: number;
-  /** Every row that is not REPLACED or CANCELLED. */
+  /** The live contract instalments: not REPLACED / CANCELLED / TRANSFERRED, not a penalty row (as the cheque grid). */
   liveCount?: number;
   liveAmount?: number;
+  /** The cleared part of liveAmount. */
+  liveClearedAmount?: number;
 };
 
 /** PenaltyAssessmentDTO. */

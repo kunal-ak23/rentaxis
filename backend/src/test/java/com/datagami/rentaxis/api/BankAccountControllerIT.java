@@ -162,6 +162,57 @@ class BankAccountControllerIT extends AbstractPostgresIT {
         return bankAccountRepo.count();
     }
 
+    // ---- roles (tutorial 19) ----
+
+    private User accountant(UUID tenantId) {
+        User u = admin(tenantId);
+        u.setRole(UserRole.ACCOUNTANT);
+        return userRepo.save(u);
+    }
+
+    private int status(User caller, HttpMethod method, String path, Object body) {
+        RestClient.RequestBodySpec spec = RestClient.builder()
+                .baseUrl("http://localhost:" + port).build()
+                .method(method).uri(path)
+                .header("X-User-Id", caller.getId().toString())
+                .header("X-User-Role", caller.getRole().name())
+                .header("X-Tenant-Id", caller.getTenantId().toString())
+                .header("X-User-Tenant-Id", caller.getTenantId().toString());
+        if (body != null) {
+            spec = spec.contentType(MediaType.APPLICATION_JSON).body(body);
+        }
+        return spec.retrieve().onStatus(s -> true, (req, res) -> { }).toBodilessEntity().getStatusCode().value();
+    }
+
+    @Test
+    void theAccountantReadsBankAccountsButOnlyAnAdminChangesThem() {
+        ResponseEntity<Map> created = call(admin, HttpMethod.POST, "/api/v1/bank-accounts", body("0019", bankLeafId, propertyId));
+        assertThat(created.getStatusCode().value()).isEqualTo(200);
+        String id = (String) created.getBody().get("id");
+        User acc = accountant(admin.getTenantId());
+        long before = bankAccountCount();
+
+        assertThat(status(acc, HttpMethod.GET, "/api/v1/bank-accounts", null)).isEqualTo(200);
+        assertThat(status(acc, HttpMethod.GET, "/api/v1/bank-accounts/" + id, null)).isEqualTo(200);
+        assertThat(status(acc, HttpMethod.GET, "/api/v1/bank-accounts/by-property/" + propertyId, null)).isEqualTo(200);
+
+        assertThat(status(acc, HttpMethod.POST, "/api/v1/bank-accounts", body("0020", bankLeafId, propertyId))).isEqualTo(403);
+        assertThat(status(acc, HttpMethod.PUT, "/api/v1/bank-accounts/" + id, body("0021", bankLeafId, propertyId))).isEqualTo(403);
+        assertThat(status(acc, HttpMethod.DELETE, "/api/v1/bank-accounts/" + id, null)).isEqualTo(403);
+        assertThat(bankAccountCount()).isEqualTo(before);
+        assertThat(bankAccountRepo.findById(UUID.fromString(id)).orElseThrow().getAccountNumber()).isEqualTo("100000019");
+    }
+
+    @Test
+    void anAccountantCannotReadAnotherOrganisationsBankAccount() {
+        TenantContextHolder.setTenantId(otherAdmin.getTenantId());
+        ResponseEntity<Map> created = call(otherAdmin, HttpMethod.POST, "/api/v1/bank-accounts", body("0031", otherBankLeafId, otherPropertyId));
+        TenantContextHolder.clear();
+        String id = (String) created.getBody().get("id");
+        User acc = accountant(admin.getTenantId());
+        assertThat(status(acc, HttpMethod.GET, "/api/v1/bank-accounts/" + id, null)).isEqualTo(404);
+    }
+
     // ---- create ----
 
     @Test

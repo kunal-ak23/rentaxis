@@ -140,6 +140,28 @@ type Props = {
 /** Ids of rows added on the grid before they are saved. */
 export const NEW_ROW_PREFIX = "new-";
 
+/** Statuses superseded by another row: the replacement, the successor lease's copy, or nothing. */
+const SUPERSEDED: ReadonlySet<string> = new Set(["REPLACED", "CANCELLED", "TRANSFERRED"]);
+
+/**
+ * A row that collects the contract itself: not superseded, and not a penalty's
+ * collection row (a fine is charged on top of the contract value).
+ */
+export function isContractInstalment(c: Pick<Cheque, "status" | "penaltyAssessmentId">): boolean {
+    return !SUPERSEDED.has(c.status) && !c.penaltyAssessmentId;
+}
+
+/**
+ * PR #399 R1 P3-3: an instalment that left the contract without a row standing in for it —
+ * carried to the successor lease (TRANSFERRED) or taken by an approved bad-debt write-off.
+ * The contract value is compared net of these, so such a lease does not warn falsely.
+ * The backend's leases-list `liveAmount` (ChequeQueryService.isContractInstalment) uses
+ * the same exclusions.
+ */
+export function leftTheContract(c: Pick<Cheque, "status" | "penaltyAssessmentId" | "writtenOff">): boolean {
+    return !c.penaltyAssessmentId && (c.status === "TRANSFERRED" || (c.status === "CANCELLED" && !!c.writtenOff));
+}
+
 export default function ChequeGrid({
     cheques,
     editable,
@@ -186,15 +208,25 @@ export default function ChequeGrid({
     const [numbersOpen, setNumbersOpen] = useState(false);
     const [startingNumber, setStartingNumber] = useState("");
 
-    const total = cheques.reduce((s, c) => round2(s + (c.amount || 0)), 0);
-    const matches = Math.abs(round2(total - contractValueInclVat)) < 0.005;
+    // Tutorial 40: the footer compares the contract's own instalments with the contract
+    // value — a replaced or cancelled row was superseded (its replacement is the live
+    // one), and a penalty row collects a fine, not the contract.
+    const contractRows = cheques.filter(isContractInstalment);
+    const excluded = cheques.length - contractRows.length;
+    const total = contractRows.reduce((s, c) => round2(s + (c.amount || 0)), 0);
+    // Transferred and written-off instalments left the contract: compare like with like.
+    const leftRows = cheques.filter(leftTheContract);
+    const leftAmount = leftRows.reduce((s, c) => round2(s + (c.amount || 0)), 0);
+    const contractNet = round2(contractValueInclVat - leftAmount);
+    const matches = Math.abs(round2(total - contractNet)) < 0.005;
     // VAT per instalment (spec 2026-09-24 §1). A row with no figure yet (typed on
     // the grid, or its amount edited) is filled in pro rata by the server on save,
     // so the footer only checks the sum once every row has one.
     const showVat = contractVat > 0 || cheques.some(c => (c.vatAmount ?? 0) > 0);
-    const vatPending = cheques.some(c => c.vatAmount === null || c.vatAmount === undefined);
-    const vatTotal = cheques.reduce((s, c) => round2(s + (c.vatAmount ?? 0)), 0);
-    const vatMatches = Math.abs(round2(vatTotal - contractVat)) < 0.005;
+    const vatPending = contractRows.some(c => c.vatAmount === null || c.vatAmount === undefined);
+    const vatTotal = contractRows.reduce((s, c) => round2(s + (c.vatAmount ?? 0)), 0);
+    const contractVatNet = round2(contractVat - leftRows.reduce((s, c) => round2(s + (c.vatAmount ?? 0)), 0));
+    const vatMatches = Math.abs(round2(vatTotal - contractVatNet)) < 0.005;
 
     const patch = (id: string, next: Partial<Cheque>) =>
         onChange?.(cheques.map(c => (c.id === id ? { ...c, ...next } : c)));
@@ -696,6 +728,16 @@ export default function ChequeGrid({
                         <tr className="bg-input/40 font-semibold border-t-2 border-border">
                             <td className={td} colSpan={6}>
                                 {t("chequeTotal")}
+                                {excluded > 0 && (
+                                    <span className="block text-[10px] font-normal text-muted" data-testid="cheque-grid-excluded">
+                                        {t("chequeTotalExcludes", { count: excluded })}
+                                    </span>
+                                )}
+                                {leftAmount > 0 && (
+                                    <span className="block text-[10px] font-normal text-muted" data-testid="cheque-grid-contract-net">
+                                        {t("contractNetOf", { amount: fmtAmount(leftAmount) })}
+                                    </span>
+                                )}
                             </td>
                             <td className={tdNum} data-testid="cheque-grid-total">{fmtAmount(total)}</td>
                             {showVat && (
@@ -712,10 +754,10 @@ export default function ChequeGrid({
                                 >
                                     {matches ? <CheckCircle2 size={13} /> : <TriangleAlert size={13} />}
                                     {matches
-                                        ? t("chequesMatch", { contract: fmtAmount(contractValueInclVat) })
+                                        ? t("chequesMatch", { contract: fmtAmount(contractNet) })
                                         : t("chequesMustEqual", {
                                               cheques: fmtAmount(total),
-                                              contract: fmtAmount(contractValueInclVat),
+                                              contract: fmtAmount(contractNet),
                                           })}
                                 </span>
                             </td>
@@ -740,10 +782,10 @@ export default function ChequeGrid({
                                     >
                                         {vatPending ? null : vatMatches ? <CheckCircle2 size={13} /> : <TriangleAlert size={13} />}
                                         {vatPending
-                                            ? t("vatPendingAllocation", { contract: fmtAmount(contractVat) })
+                                            ? t("vatPendingAllocation", { contract: fmtAmount(contractVatNet) })
                                             : t(vatMatches ? "vatMatches" : "vatMustEqual", {
                                                   rows: fmtAmount(vatTotal),
-                                                  contract: fmtAmount(contractVat),
+                                                  contract: fmtAmount(contractVatNet),
                                               })}
                                     </span>
                                     {/* The lines changed under a grid whose rows kept their
