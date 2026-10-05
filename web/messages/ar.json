@@ -4191,6 +4191,8 @@
     "to": "إلى",
     "pdfEn": "PDF (إنجليزي)",
     "pdfAr": "PDF (عربي)",
+    "csvEn": "CSV (إنجليزي)",
+    "csvAr": "CSV (عربي)",
     "paymentRuns": "الدفعات المجمعة",
     "issuedCheques": "الشيكات الصادرة"
   },

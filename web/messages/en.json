@@ -4191,6 +4191,8 @@
     "to": "To",
     "pdfEn": "PDF (English)",
     "pdfAr": "PDF (Arabic)",
+    "csvEn": "CSV (English)",
+    "csvAr": "CSV (Arabic)",
     "paymentRuns": "Payment runs",
     "issuedCheques": "Issued cheques"
   },
