@@ -10,7 +10,8 @@ import { ApiError } from "@/lib/api/facilities";
 import { ledgerApi, type FiscalSettings } from "@/lib/api/ledger";
 import { formatDate } from "@/lib/format";
 import { businessTodayIso, isAfterBusinessToday } from "@/lib/businessDate";
-import { serverText } from "@/components/finance/bankrec/serverText";
+import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
+import { Link } from "@/i18n/routing";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { BankLocksCard } from "@/components/finance/bankrec/BankLocksCard";
 import FiscalYearsCard from "@/components/finance/FiscalYearsCard";
@@ -40,6 +41,8 @@ export default function FiscalSettingsPage() {
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [locking, setLocking] = useState(false);
     const [lockError, setLockError] = useState<string | null>(null);
+    /** Bug 46: the lock was refused because recognition is still planned — offer the run. */
+    const [lockNeedsRecognition, setLockNeedsRecognition] = useState(false);
     /** Break-it R2 money2 F3: the user has confirmed a lock more than 12 months past the current one. */
     const [bigJumpChecked, setBigJumpChecked] = useState(false);
     /** Break-it R3 money3 N1: the user has confirmed a books start after today (it locks posting until then). */
@@ -141,14 +144,18 @@ export default function FiscalSettingsPage() {
     const lock = async () => {
         setLocking(true);
         setLockError(null);
+        setLockNeedsRecognition(false);
         try {
             apply(await ledgerApi.fiscal.lock(lockThrough));
             setConfirmOpen(false);
             setLockThrough("");
+            // Bug 46: the sidebar's "Books locked through" stayed stale until a reload.
+            window.dispatchEvent(new Event(NAV_COUNTS_STALE_EVENT));
         } catch (err) {
             // The backend rejects a lock date earlier than the current one with a
             // 400; its message is the only thing that explains why.
             setLockError(err instanceof ApiError ? serverText(tCommon, err) || err.message : tCommon("loadFailed"));
+            setLockNeedsRecognition(codedOf(err).code === "fiscal.recognitionPendingForLock");
         } finally {
             setLocking(false);
         }
@@ -313,7 +320,15 @@ export default function FiscalSettingsPage() {
                             </p>
                         )}
                         {lockError && !confirmOpen && (
-                            <p role="alert" className="mt-3 text-xs font-semibold text-error">{lockError}</p>
+                            <div role="alert" className="mt-3 text-xs font-semibold text-error" data-testid="fiscal-lock-error">
+                                <p>{lockError}</p>
+                                {lockNeedsRecognition && (
+                                    <Link href="/dashboard/finance/recognition" data-testid="fiscal-lock-run-recognition"
+                                        className="mt-1 inline-block text-primary underline underline-offset-2 hover:opacity-80">
+                                        {t("runRecognitionLink")}
+                                    </Link>
+                                )}
+                            </div>
                         )}
                     </div>
                 </div>
@@ -360,7 +375,17 @@ export default function FiscalSettingsPage() {
                         </span>
                     </label>
                 )}
-                {lockError && <p role="alert" className="text-xs font-semibold text-error">{lockError}</p>}
+                {lockError && (
+                    <div role="alert" className="text-xs font-semibold text-error" data-testid="fiscal-lock-dialog-error">
+                        <p>{lockError}</p>
+                        {lockNeedsRecognition && (
+                            <Link href="/dashboard/finance/recognition" data-testid="fiscal-lock-run-recognition"
+                                className="mt-1 inline-block text-primary underline underline-offset-2 hover:opacity-80">
+                                {t("runRecognitionLink")}
+                            </Link>
+                        )}
+                    </div>
+                )}
             </ConfirmDialog>
         </div>
     );

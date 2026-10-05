@@ -16,6 +16,9 @@ vi.mock("@/lib/api/ledger", async orig => {
     const m = await orig<typeof import("@/lib/api/ledger")>();
     return { ...m, ledgerApi: { ...m.ledgerApi, fiscal: api } };
 });
+vi.mock("@/i18n/routing", () => ({
+    Link: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a href={String(href)} {...props}>{children}</a>,
+}));
 vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "TENANT_ADMIN" } } }) }));
 vi.mock("@/components/finance/FiscalYearsCard", () => ({ default: () => null }));
 vi.mock("@/components/finance/bankrec/BankLocksCard", () => ({ BankLocksCard: () => null }));
@@ -102,5 +105,34 @@ describe("Period lock date", () => {
         const alert = await screen.findByText(/لم يحدث هذا بعد/);
         expect(alert.textContent).toContain("01/01/2022");
         expect(alert.textContent).not.toContain("period lock");
+    });
+
+    /** Bug 46: a lock over PLANNED recognition is refused naming the months, with a way to the run. */
+    it.each(["en", "ar"] as const)("names the planned months and links to recognition (%s)", async locale => {
+        const { ApiError } = await import("@/lib/api/facilities");
+        api.lock.mockRejectedValueOnce(new ApiError(400, "Run month-end recognition through 30/09/2026 first",
+            JSON.stringify({ code: "fiscal.recognitionPendingForLock",
+                args: { through: "30/09/2026", months: "09/2026", count: "9" }, message: "Run month-end recognition" })));
+        renderPage(locale);
+        fireEvent.change(await screen.findByTestId("fiscal-lock-through"), { target: { value: "2021-06-30" } });
+        fireEvent.click(screen.getByTestId("fiscal-lock-open"));
+        fireEvent.click(await screen.findByTestId("fiscal-lock-confirm"));
+        const alert = await screen.findByTestId("fiscal-lock-dialog-error");
+        expect(alert.textContent).toContain("09/2026");
+        expect(alert.textContent).toContain("30/09/2026");
+        expect(screen.getByTestId("fiscal-lock-run-recognition")).toHaveAttribute("href",
+            expect.stringContaining("/dashboard/finance/recognition"));
+    });
+
+    it("tells the sidebar to re-read the lock after a successful lock", async () => {
+        const seen = vi.fn();
+        window.addEventListener("rentaxis:nav-counts-stale", seen);
+        renderPage();
+        fireEvent.change(await screen.findByTestId("fiscal-lock-through"), { target: { value: "2021-06-30" } });
+        fireEvent.click(screen.getByTestId("fiscal-lock-open"));
+        fireEvent.click(await screen.findByTestId("fiscal-lock-confirm"));
+        await waitFor(() => expect(api.lock).toHaveBeenCalled());
+        await waitFor(() => expect(seen).toHaveBeenCalled());
+        window.removeEventListener("rentaxis:nav-counts-stale", seen);
     });
 });

@@ -170,6 +170,12 @@ public class TenantFiscalSettingsService {
      * PLANNED</b> (spec 2026-09-24 §1): the nightly job skips a locked date, so the
      * point's VAT would sit in {@code OUTPUT_VAT_DEFERRED} for ever, undeclared. Post
      * the tax points through {@code date} first.</p>
+     *
+     * <p><b>Refused too while a recognition period ending on or before {@code date}
+     * is still PLANNED</b> (tutorial 46, bug 46): the nightly job skips a locked
+     * date and a manual run cannot post into it, so that month's rent would stay in
+     * Advance Rent for ever. The year-end close, which locks through here, already
+     * lists the same condition as a blocker; the user's lock now agrees with it.</p>
      */
     @Transactional
     public TenantFiscalSettings lockThrough(LocalDate date) {
@@ -188,6 +194,7 @@ public class TenantFiscalSettingsService {
                     "fiscal.lockBackwards", java.util.Map.of("current", was));
         }
         requireNoPlannedVatThrough(s, date);
+        requireRecognitionPostedThrough(s, date);
         s.setBooksLockedThrough(date);
         s.setBooksLockFromStart(false);   // R4 money4 F3: a user's lock only moves forward
         return repo.save(s);
@@ -393,6 +400,28 @@ public class TenantFiscalSettingsService {
         LocalDate latest = manualDates.today().minusDays(1);
         return implied.isAfter(latest) ? latest : implied;
     }
+
+    /**
+     * {@link #lockThrough}'s refusal for recognition: names the month(s) still PLANNED
+     * (as MM/yyyy, at most six, oldest first) and how many periods, so the page can
+     * send the accountant to the recognition run.
+     */
+    private void requireRecognitionPostedThrough(TenantFiscalSettings s, LocalDate date) {
+        List<LocalDate> ends = recognitionEntries.findPlannedPeriodEndsThrough(s.getTenantId(), date);
+        if (ends.isEmpty()) return;
+        long count = recognitionEntries.countByTenantIdAndStatusAndPeriodEndLessThanEqual(
+                s.getTenantId(), RecognitionStatus.PLANNED, date);
+        List<String> months = ends.stream().map(d -> d.format(MONTH)).distinct().toList();
+        String shown = String.join(", ", months.subList(0, Math.min(6, months.size())))
+                + (months.size() > 6 ? " …" : "");
+        throw new BusinessRuleViolationException("Run month-end recognition through " + date.format(DMY)
+                + " first: " + count + " recognition period(s) ending on or before it are not posted yet ("
+                + shown + "). Locking the books now would leave that rent unrecognised.",
+                "fiscal.recognitionPendingForLock", java.util.Map.of("through", date.format(DMY),
+                        "months", shown, "count", String.valueOf(count)));
+    }
+
+    private static final java.time.format.DateTimeFormatter MONTH = java.time.format.DateTimeFormatter.ofPattern("MM/yyyy");
 
     /** A PLANNED recognition period ending on or before {@code date} could never post once it is locked. */
     private void requireNoPlannedRecognitionThrough(TenantFiscalSettings s, LocalDate date) {

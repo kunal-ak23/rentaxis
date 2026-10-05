@@ -68,4 +68,14 @@ public interface RecognitionEntryRepository extends JpaRepository<RecognitionEnt
      */
     Optional<RecognitionEntry> findFirstByTenantIdAndStatusAndPeriodEndLessThanEqualOrderByPeriodEndAsc(
             UUID tenantId, RecognitionStatus status, LocalDate to);
+
+    /** The distinct period ends still PLANNED on or before {@code through}, oldest first — what a period lock would strand. */
+    @Query("""
+            select distinct e.periodEnd from RecognitionEntry e
+            where e.tenantId = :tenantId and e.status = com.datagami.rentaxis.domain.entity.enums.RecognitionStatus.PLANNED
+              and e.periodEnd <= :through
+            order by e.periodEnd""")
+    List<LocalDate> findPlannedPeriodEndsThrough(@Param("tenantId") UUID tenantId, @Param("through") LocalDate through);
+
+    long countByTenantIdAndStatusAndPeriodEndLessThanEqual(UUID tenantId, RecognitionStatus status, LocalDate through);
 }
