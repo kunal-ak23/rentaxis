@@ -285,7 +285,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "20", slug: "dashboards-and-financial-reports", topic: "accounting", roles: FINANCE, durationSec: 150, youtubeId: null,
+        id: "20", slug: "dashboards-and-financial-reports", topic: "accounting", roles: FINANCE, durationSec: 119, youtubeId: null,
         title: { en: "Financial reports: profit and loss, balance sheet, owner statement and aging", ar: "التقارير المالية: الأرباح والخسائر والميزانية العمومية وكشف حساب المالك وأعمار الذمم" },
         description: {
             en: "Read the Profit & Loss, the Property Profit Report by building, the Balance Sheet, the Owner Statement and receivable and payable aging.",
