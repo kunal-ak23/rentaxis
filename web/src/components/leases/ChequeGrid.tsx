@@ -639,17 +639,28 @@ export default function ChequeGrid({
                                 {showActions && (
                                     <td className={td}>
                                         <div className="flex items-center gap-1.5">
-                                            {actionsOf(c).map(a => (
-                                                <button
-                                                    key={a}
-                                                    type="button"
-                                                    data-testid={`cheque-action-${a}-${i}`}
-                                                    onClick={() => onRowAction?.(c, a)}
-                                                    className="px-2 py-1 rounded-md text-[10px] font-bold bg-input text-foreground hover:bg-border transition-colors cursor-pointer"
-                                                >
-                                                    {tc(a)}
-                                                </button>
-                                            ))}
+                                            {actionsOf(c).map(a => {
+                                                // PR #397 R1-P3-1: Replace waits while a write-off of the row awaits approval.
+                                                const held = a === "replace" && !!c.writeOffPending;
+                                                return (
+                                                    <button
+                                                        key={a}
+                                                        type="button"
+                                                        disabled={held}
+                                                        title={held ? tc("writeOffPending") : undefined}
+                                                        data-testid={`cheque-action-${a}-${i}`}
+                                                        onClick={() => onRowAction?.(c, a)}
+                                                        className="px-2 py-1 rounded-md text-[10px] font-bold bg-input text-foreground hover:bg-border transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        {tc(a)}
+                                                    </button>
+                                                );
+                                            })}
+                                            {c.writeOffPending && actionsOf(c).includes("replace") && (
+                                                <span className="text-[10px] text-warning whitespace-nowrap" data-testid={`cheque-write-off-pending-${i}`}>
+                                                    {tc("writeOffPending")}
+                                                </span>
+                                            )}
                                             {onScanRow && c.mode === "PDC" && actionsOf(c).includes("details") && (
                                                 <button
                                                     type="button"

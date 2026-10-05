@@ -23,7 +23,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -86,6 +85,10 @@ public class ChequeDetailsService {
 
     @jakarta.persistence.PersistenceContext
     private jakarta.persistence.EntityManager em;
+
+    /** PR #397 R1-P2-2: cheque responses carry the ledger's facts (due, ledgerSettled, openAmount). */
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.beans.factory.ObjectProvider<com.datagami.rentaxis.core.service.cheque.ChequeQueryService> chequeQueries;
 
     public ChequeDetailsService(ChequeRepository chequeRepository,
                                 LeaseRepository leaseRepository,
@@ -155,7 +158,7 @@ public class ChequeDetailsService {
         // F14-19: not a cheque (drawer bank, number, renter) registered on another lease.
         numberClash.requireUnique(lease, cheque);
         chequeRepository.save(cheque);
-        return ChequeMapper.toDto(cheque, LocalDate.now(), lease.getGracePeriodDays());
+        return chequeQueries.getObject().dto(cheque);
     }
 
     /**
@@ -410,10 +413,11 @@ public class ChequeDetailsService {
             }
             // else: the row's own, unchanged image stays as it is.
             c.setImageUploadedAt(it.getImageUploadedAt() != null ? it.getImageUploadedAt().toInstant() : now);
-            out.add(ChequeMapper.toDto(c, LocalDate.now(), lease.getGracePeriodDays()));
         }
         chequeRepository.saveAll(targets);
         chequeRepository.flush();
+        // In the request's order, mapped once with the ledger's facts (PR #397 R1-P2-2).
+        out.addAll(chequeQueries.getObject().dtos(items.stream().map(it -> byId.get(it.targetId())).toList()));
         return out;
     }
 

@@ -11,7 +11,6 @@ import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.api.exception.RowLockedException;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.service.LeaseService;
-import com.datagami.rentaxis.core.service.cheque.ChequeMapper;
 import com.datagami.rentaxis.core.service.ledger.AccountResolver;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest;
 import com.datagami.rentaxis.core.service.ledger.PostingRequest.Pair;
@@ -160,6 +159,10 @@ public class LeasePostingService {
     @org.springframework.beans.factory.annotation.Autowired
     @org.springframework.context.annotation.Lazy
     private com.datagami.rentaxis.core.service.recognition.RecognitionService recognitionService;
+
+    /** PR #397 R1-P2-2: cheque responses carry the ledger's facts (due, ledgerSettled, openAmount). */
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.beans.factory.ObjectProvider<com.datagami.rentaxis.core.service.cheque.ChequeQueryService> chequeQueries;
 
     public LeasePostingService(LeaseRepository leaseRepository,
                                LeaseLineRepository leaseLineRepository,
@@ -1675,10 +1678,7 @@ public class LeasePostingService {
     }
 
     PostLeaseResponse response(Lease lease, JournalEntry tco, List<Cheque> cheques) {
-        LocalDate today = LocalDate.now();
-        List<ChequeDTO> rows = cheques.stream()
-                .map(c -> ChequeMapper.toDto(c, today, lease.getGracePeriodDays()))
-                .toList();
+        List<ChequeDTO> rows = chequeQueries.getObject().dtos(cheques);
         return new PostLeaseResponse(leaseService.getLeaseById(lease.getId()), tco.getId(), tco.getEntryNumber(), rows);
     }
 

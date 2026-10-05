@@ -8,7 +8,6 @@ import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.service.LeaseService;
-import com.datagami.rentaxis.core.service.cheque.ChequeMapper;
 import com.datagami.rentaxis.core.service.cheque.ChequeService;
 import com.datagami.rentaxis.core.service.ledger.AccountResolver;
 import com.datagami.rentaxis.core.service.ledger.LedgerQueryService;
@@ -108,6 +107,10 @@ public class LeaseTerminationService {
     public void setManualPostingDates(com.datagami.rentaxis.core.service.ledger.ManualPostingDates manualDates) {
         this.manualDates = manualDates;
     }
+
+    /** PR #397 R1-P2-2: cheque responses carry the ledger's facts (due, ledgerSettled, openAmount). */
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.beans.factory.ObjectProvider<com.datagami.rentaxis.core.service.cheque.ChequeQueryService> chequeQueries;
 
     public LeaseTerminationService(LeaseRepository leaseRepository,
                                    ChequeRepository chequeRepository,
@@ -689,7 +692,7 @@ public class LeaseTerminationService {
 
     /** Mapped inside the caller's transaction: the mapper reads the lazy relations. */
     private List<ChequeDTO> dtos(List<Cheque> cheques, Lease lease) {
-        LocalDate today = LocalDate.now(clock);
-        return cheques.stream().map(c -> ChequeMapper.toDto(c, today, lease.getGracePeriodDays())).toList();
+        // PR #397 R1-P2-2: a bounce the settlement absorbed reads settled, not due, here too.
+        return chequeQueries.getObject().dtos(cheques, LocalDate.now(clock));
     }
 }

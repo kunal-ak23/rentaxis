@@ -651,6 +651,7 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
         // −5,239.73 balance leaves 7,510.27 owed on this row.
         assertThat(agingRows(later)).as("owed before the settlement")
                 .anyMatch(r -> r.chequeId().equals(kept) && r.amount().compareTo(new java.math.BigDecimal("7510.27")) == 0);
+        assertThat(overduePayments(leaseId, later)).as("leases list: one overdue payment before").isEqualTo(1);
 
         UUID collection = finalizeSettlement(leaseId, null).getCollectionChequeId();
         assertThat(collection).as("the settlement's balance-due row").isNotNull();
@@ -673,6 +674,73 @@ class ChequeOnEndedLeaseIT extends AbstractPostgresIT {
         var onGrid = chequeGeneration.list(leaseId).stream().filter(c -> c.id().equals(kept)).findFirst().orElseThrow();
         assertThat(onGrid.ledgerSettled()).as("the contract's cheque grid").isTrue();
         assertThat(onGrid.due()).isFalse();
+        assertThat(onGrid.openAmount()).as("nothing still owed on it").isEqualByComparingTo("0");
+        // PR #397 R1-P3-4: the leases list's "N overdue payments" uses the same rule.
+        assertThat(overduePayments(leaseId, later)).as("leases list: none after").isZero();
+    }
+
+    private long overduePayments(UUID leaseId, LocalDate on) {
+        return tx.execute(s -> chequeQueries.statsByLeases(List.of(leaseId), on).getFirst().bounced());
+    }
+
+    /**
+     * PR #397 R1-P2-2: the action responses and the termination preview report a returned
+     * cheque the way the register does — owed while the receivable carries it, settled
+     * (not due, nothing open) once a receipt has paid it.
+     */
+    @Test
+    void everyChequeResponseReadsABounceTheLedgerClosedTheSameWay() {
+        UUID leaseId = galahWithOneChequeStillInTheDrawer();
+        recognition.runTo(RECOGNISED_TO, false);
+        UUID kept = chequeOn(leaseId, RENT_2).getId();
+        LocalDate bouncedOn = RENT_2.plusDays(3);
+        cheques.deposit(kept, ChequeActionRequest.on(RENT_2));
+        var bounced = cheques.bounce(kept, ChequeActionRequest.on(bouncedOn));
+        assertThat(bounced.due()).as("the bounce's own response: owed").isTrue();
+        assertThat(bounced.ledgerSettled()).isFalse();
+        BigDecimal owed = bounced.openAmount();
+        assertThat(owed).as("what the receivable carries on it").isPositive();
+        assertThat(overduePayments(leaseId, bouncedOn)).isEqualTo(1);
+
+        cheques.cashReceipt(leaseId, new ChequeRowInput(null, null, bouncedOn.plusDays(1), null, bouncedOn.plusDays(1),
+                null, null, null, owed, "Paid in cash", ChequeMode.CASH));
+
+        var row = tx.execute(s -> termination.preview(leaseId, T).bouncedOutstanding().stream()
+                .filter(c -> c.id().equals(kept)).findFirst().orElseThrow());
+        assertThat(row.ledgerSettled()).as("termination preview: settled").isTrue();
+        assertThat(row.due()).isFalse();
+        assertThat(row.overdue()).isFalse();
+        assertThat(row.openAmount()).isEqualByComparingTo("0");
+        assertThat(chequeQueries.get(kept).ledgerSettled()).as("the register agrees").isTrue();
+        assertThat(overduePayments(leaseId, bouncedOn.plusDays(2))).as("leases list agrees").isZero();
+    }
+
+    /**
+     * PR #397 R1-P3-1 (ruling): a write-off awaiting approval has posted nothing, so the bounce
+     * stays due and queued — flagged, so the queue holds back Replace until it is decided.
+     */
+    @Test
+    void aBounceAPendingWriteOffNamesStaysDueAndQueuedButIsFlagged() {
+        UUID leaseId = terminatedWithAKeptCheque();
+        UUID kept = chequeOn(leaseId, RENT_2).getId();
+        cheques.deposit(kept, ChequeActionRequest.on(BANKED_ON));
+        cheques.bounce(kept, ChequeActionRequest.on(BANKED_ON));
+        LocalDate later = BANKED_ON.plusDays(120);
+        assertThat(chequeQueries.get(kept).writeOffPending()).isFalse();
+
+        var proposal = badDebts.propose(new com.datagami.rentaxis.core.service.baddebt.BadDebtService.ProposeRequest(
+                leaseId, List.of(kept), later, "absconded"));
+
+        assertThat(dueIds(later)).as("still due").contains(kept);
+        var queued = tx.execute(s -> chequeQueries.openBounced(null, later, org.springframework.data.domain.PageRequest.of(0, 100))
+                .getContent().stream().filter(c -> c.id().equals(kept)).findFirst().orElseThrow());
+        assertThat(queued.writeOffPending()).as("queued, flagged").isTrue();
+        assertThat(queued.due()).isTrue();
+        assertThat(queued.openAmount()).as("the queue row shows what is owed").isEqualByComparingTo("7510.27");
+        assertThat(chequeQueries.summary(null, later).bouncedCount()).as("still counted").isEqualTo(1);
+
+        badDebts.reject(proposal.id(), "not yet");
+        assertThat(chequeQueries.get(kept).writeOffPending()).as("rejected: Replace is offered again").isFalse();
     }
 
     /** Tutorial 40: an open returned cheque is due, on the queue and in the Bounced tile. */

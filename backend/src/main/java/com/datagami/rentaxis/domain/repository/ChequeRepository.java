@@ -192,52 +192,16 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
                         @Param("propertyIds") Collection<UUID> propertyIds,
                         Pageable pageable);
 
-    /**
-     * Matured and still unpaid: what the landlord should be chasing today.
-     *
-     * <p>This is {@link com.datagami.rentaxis.core.service.cheque.ChequeDueRules#due}
-     * expressed in SQL, and it has to stay that way — the register screen, the
-     * reminder job and the aging report all read this and then ask the rule for the
-     * per-row flag, so a row the query returns and the rule calls not-due (or the
-     * reverse) is a count that disagrees with the list under it.</p>
-     *
-     * <p>Hence {@code DEPOSITED} (at the bank, but the money has not landed),
-     * {@code ONLINE_PENDING} (a gateway session is open and an authorisation is not
-     * money; an abandoned one has no expiry sweep behind it) and {@code BOUNCED}
-     * <em>whatever its date</em>: a returned cheque already failed, so the debt is
-     * live from that moment and does not wait for a calendar date.</p>
-     *
-     * <p>{@code ChequeRepositoryIT.theDuePredicateAndTheDueQueriesAgreeOnEveryStatus}
-     * walks every status on both sides of its date and asserts set equality against
-     * the rule, so a status added to one and not the other fails rather than
-     * quietly dropping money off a screen.</p>
-     */
-    @Query("""
-        select c from Cheque c
-        where ((c.status in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED,
-                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED,
-                             com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING)
-                and c.chequeDate <= :today)
-               or c.status = com.datagami.rentaxis.domain.entity.enums.ChequeStatus.BOUNCED)
-          and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
-                                     com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
-          and (cast(:propertyId as java.util.UUID) is null or c.property.id = :propertyId)
-          and (:unrestricted = true or c.property.id in :propertyIds)
-        """)
-    Page<Cheque> findDue(@Param("propertyId") UUID propertyId,
-                         @Param("today") LocalDate today,
-                         @Param("unrestricted") boolean unrestricted,
-                         @Param("propertyIds") Collection<UUID> propertyIds,
-                         Pageable pageable);
 
     /**
-     * {@link #findDue} for one lease — what the renter still owes on this contract
-     * today, which is what a settlement deducts from their deposit.
+     * The Due list's predicate ({@link #OPEN_DUE_CTE}) for one lease — what the renter still
+     * owes on this contract today, which is what a settlement deducts from their deposit.
      *
-     * <p>Same predicate as {@link #findDue}, word for word, and it has to stay that
-     * way: the register screen and the settlement preview disagreeing about whether
-     * a bounced cheque is owed is a number the accountant cannot reconcile against
-     * any screen. Not expressed as {@code findDue} with a lease filter because that
+     * <p>Same status and date predicate as {@link #OPEN_DUE_CTE}, word for word, and it has
+     * to stay that way: the register screen and the settlement preview disagreeing about
+     * whether a cheque is owed is a number the accountant cannot reconcile against any
+     * screen. It takes every BOUNCED row; what the ledger still carries on each is the
+     * caller's to price. Not expressed as {@link #openDueIds} with a lease filter because that
      * query is paged and property-scoped for a caller; a settlement is scoped by the
      * lease itself and wants every row, not a page of them.</p>
      *
@@ -646,9 +610,9 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
                                                @org.springframework.data.repository.query.Param("leaseId") UUID leaseId);
 
     /**
-     * {@link #findDue}'s rows with what of each is still open, in SQL (scale P1-9 / P1-10).
+     * The due rows with what of each is still open, in SQL (scale P1-9 / P1-10).
      *
-     * <p>The due predicate is {@link #findDue}'s word for word: REGISTERED / DEPOSITED /
+     * <p>The due predicate is {@code ChequeDueRules.due} written in SQL: REGISTERED / DEPOSITED /
      * ONLINE_PENDING dated on or before today, or BOUNCED whatever its date, on a lease past
      * signature, in the caller's properties. {@code open_amount} is {@code BouncedDebt}'s rule:
      * a bounced row counts only for the debt the lease's rent receivable still carries
@@ -771,6 +735,11 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
      * Returned / replace queue ({@code onlyBounced = true}). A bounced row whose debt the
      * ledger has closed (settlement, replacement, write-off) is on neither. The caller
      * passes an unsorted page: the order is fixed here.
+     *
+     * <p>{@code ChequeRepositoryIT.theDuePredicateAndTheDueQueriesAgreeOnEveryStatus} walks
+     * every status on both sides of its date against {@code ChequeDueRules.due}, so a status
+     * added to the rule and not to {@link #OPEN_DUE_CTE} fails rather than quietly dropping
+     * money off the Due list.</p>
      */
     @Query(value = OPEN_DUE_CTE + """
         select o.id from open_due o

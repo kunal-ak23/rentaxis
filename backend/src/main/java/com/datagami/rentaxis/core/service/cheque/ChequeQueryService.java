@@ -45,7 +45,7 @@ import java.util.UUID;
  * any size, and a {@code findAll()} behind a summary tile is a full scan on every
  * page load.</p>
  *
- * <p><b>"Due" and "overdue" are computed once.</b> {@code ChequeRepository.findDue}
+ * <p><b>"Due" and "overdue" are computed once.</b> {@code ChequeRepository.OPEN_DUE_CTE}
  * is {@link ChequeDueRules#due} written in SQL, and every count in here is then
  * taken by asking the rule about the rows that query returned, with the grace
  * period from each row's own lease. Two implementations of "is this late" is how
@@ -74,12 +74,15 @@ public class ChequeQueryService {
     private final ChequeRepository chequeRepository;
     private final LeaseAccessPolicy leaseAccessPolicy;
     private final BouncedDebt bouncedDebt;
+    private final com.datagami.rentaxis.domain.repository.BadDebtWriteOffRepository writeOffs;
 
     public ChequeQueryService(ChequeRepository chequeRepository, LeaseAccessPolicy leaseAccessPolicy,
-                              BouncedDebt bouncedDebt) {
+                              BouncedDebt bouncedDebt,
+                              com.datagami.rentaxis.domain.repository.BadDebtWriteOffRepository writeOffs) {
         this.chequeRepository = chequeRepository;
         this.leaseAccessPolicy = leaseAccessPolicy;
         this.bouncedDebt = bouncedDebt;
+        this.writeOffs = writeOffs;
     }
 
     // ------------------------------------------------------------------
@@ -224,8 +227,7 @@ public class ChequeQueryService {
         // its money, and it answers "not found" rather than "forbidden" so a caller
         // cannot enumerate the register through the error code.
         leaseAccessPolicy.requireReadable(lease);
-        return ChequeMapper.toDto(cheque, LocalDate.now(), graceOf(lease),
-                ledgerSettled(List.of(cheque)).contains(cheque.getId()));
+        return dto(cheque);
     }
 
     // ------------------------------------------------------------------
@@ -367,13 +369,17 @@ public class ChequeQueryService {
         LocalDate on = on(today);
         List<UUID> distinct = leaseIds.stream().distinct().toList();
         Map<UUID, Accumulator> byLease = new LinkedHashMap<>();
-        for (Cheque c : includeDrafts ? chequeRepository.findRegisterRowsForLeasesIncludingDrafts(distinct)
-                : chequeRepository.findRegisterRowsForLeases(distinct)) {
+        List<Cheque> rows = includeDrafts ? chequeRepository.findRegisterRowsForLeasesIncludingDrafts(distinct)
+                : chequeRepository.findRegisterRowsForLeases(distinct);
+        // PR #397 R1-P3-4: the same per-row rule as every cheque response — a bounce the
+        // ledger has closed is neither an overdue payment nor due.
+        Map<UUID, BigDecimal> open = bouncedOpenAmounts(rows);
+        for (Cheque c : rows) {
             Lease lease = c.getLease();
             if (lease == null || !scope.allows(c.getProperty())) {
                 continue;
             }
-            byLease.computeIfAbsent(lease.getId(), id -> new Accumulator()).add(c, graceOf(lease), on);
+            byLease.computeIfAbsent(lease.getId(), id -> new Accumulator()).add(c, graceOf(lease), on, open.get(c.getId()));
         }
         List<LeaseChequeStatsDTO> out = new ArrayList<>(distinct.size());
         for (UUID leaseId : distinct) {
@@ -444,7 +450,9 @@ public class ChequeQueryService {
         private long liveCount;
         private BigDecimal liveAmount = BigDecimal.ZERO;
 
-        void add(Cheque c, int graceDays, LocalDate today) {
+        /** {@code open}: on a BOUNCED row, what the ledger still carries (zero = settled); null when not known. */
+        void add(Cheque c, int graceDays, LocalDate today, BigDecimal open) {
+            boolean settled = open != null && open.signum() <= 0;
             BigDecimal amount = c.getAmount() == null ? BigDecimal.ZERO : c.getAmount();
             total++;
             totalAmount = totalAmount.add(amount);
@@ -462,11 +470,13 @@ public class ChequeQueryService {
                 liveCount++;
                 liveAmount = liveAmount.add(amount);
             }
-            if (c.getBouncedAt() != null || c.getStatus() == ChequeStatus.BOUNCED) {
+            // "Overdue payments" on the leases list: returned cheques still owed. A replaced,
+            // written-off or ledger-settled bounce is no longer one.
+            if (c.getStatus() == ChequeStatus.BOUNCED && !settled) {
                 bounced++;
             }
-            if (ChequeDueRules.due(c, today)) {
-                dueAmount = dueAmount.add(amount);
+            if (!settled && ChequeDueRules.due(c, today)) {
+                dueAmount = dueAmount.add(c.getStatus() == ChequeStatus.BOUNCED && open != null ? open : amount);
             }
         }
 
@@ -527,19 +537,59 @@ public class ChequeQueryService {
     }
 
     private Page<ChequeDTO> toPage(Page<Cheque> page) {
-        LocalDate today = LocalDate.now();
-        java.util.Set<UUID> settled = ledgerSettled(page.getContent());
-        return new PageImpl<>(
-                page.getContent().stream()
-                        .map(c -> ChequeMapper.toDto(c, today, graceOf(c.getLease()), settled.contains(c.getId()))).toList(),
-                page.getPageable(), page.getTotalElements());
+        return new PageImpl<>(dtos(page.getContent()), page.getPageable(), page.getTotalElements());
     }
 
     private List<ChequeDTO> toDtos(Collection<Cheque> rows) {
-        LocalDate today = LocalDate.now();
-        java.util.Set<UUID> settled = ledgerSettled(rows);
+        return dtos(rows);
+    }
+
+    /**
+     * The wire shape of {@code rows} with the ledger's facts on each (PR #397 R1-P2-2): every
+     * cheque response — register, grids, termination list and the action responses — reports
+     * {@code due}, {@code ledgerSettled} and {@code openAmount} from the one derivation
+     * ({@link #bouncedOpenAmounts}), and flags rows a proposed write-off holds. Map inside the
+     * transaction that loaded the rows: the mapper reads the lazy relations.
+     */
+    public List<ChequeDTO> dtos(Collection<Cheque> rows) {
+        return dtos(rows, LocalDate.now());
+    }
+
+    /** {@link #dtos(Collection)} on the caller's clock. */
+    public List<ChequeDTO> dtos(Collection<Cheque> rows, LocalDate today) {
+        if (rows.isEmpty()) return List.of();
+        java.util.Map<UUID, BigDecimal> open = bouncedOpenAmounts(rows);
+        java.util.Set<UUID> pending = pendingWriteOffItems(rows);
         return rows.stream()
-                .map(c -> ChequeMapper.toDto(c, today, graceOf(c.getLease()), settled.contains(c.getId()))).toList();
+                .map(c -> ChequeMapper.toDto(c, today, graceOf(c.getLease()), open.get(c.getId()),
+                        pending.contains(c.getId())))
+                .toList();
+    }
+
+    /** One row, as {@link #dtos(Collection)} maps it. */
+    public ChequeDTO dto(Cheque row) {
+        return dtos(List.of(row)).get(0);
+    }
+
+    /**
+     * PR #397 R1-P3-1: the rows among {@code rows} a PROPOSED write-off names. Only the leases
+     * with a BOUNCED row are asked about — the flag matters where Replace is offered — so a
+     * list without one costs no query.
+     */
+    private java.util.Set<UUID> pendingWriteOffItems(Collection<Cheque> rows) {
+        java.util.Set<UUID> leaseIds = rows.stream()
+                .filter(c -> c.getStatus() == ChequeStatus.BOUNCED && c.getLease() != null)
+                .map(c -> c.getLease().getId()).collect(java.util.stream.Collectors.toSet());
+        if (leaseIds.isEmpty()) return java.util.Set.of();
+        java.util.Set<UUID> out = new java.util.HashSet<>();
+        for (var w : writeOffs.findByLeaseIdInAndStatus(leaseIds,
+                com.datagami.rentaxis.domain.entity.BadDebtWriteOff.Status.PROPOSED)) {
+            if (w.getItemIds() == null || w.getItemIds().isBlank()) continue;
+            for (String id : w.getItemIds().split(",")) {
+                if (!id.isBlank()) out.add(UUID.fromString(id.trim()));
+            }
+        }
+        return out;
     }
 
     /**

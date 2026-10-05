@@ -159,7 +159,15 @@ export default function ReturnReplacePanel(props: { embedded?: boolean; property
                                         <td className={td}>{c.renterName || "—"}</td>
                                         <td className={td}>{c.unitIdentifier || "—"}</td>
                                         <td className={`${td} text-muted`}>{c.propertyName || "—"}</td>
-                                        <td className={`${td} text-end tabular-nums font-semibold`}>{fmtAmount(c.amount)}</td>
+                                        {/* PR #397 R1-P3-2: what is still owed (the Bounced tile's figure); the face value under it when less is owed. */}
+                                        <td className={`${td} text-end tabular-nums font-semibold`} data-testid={`cheque-row-owed-${c.id}`}>
+                                            <bdi dir="ltr">{fmtAmount(c.openAmount ?? c.amount)}</bdi>
+                                            {c.openAmount != null && c.amount != null && c.openAmount !== c.amount && (
+                                                <div className="text-[10px] font-normal text-muted" data-testid={`cheque-row-face-${c.id}`}>
+                                                    {t("owedOfFace", { face: fmtAmount(c.amount) })}
+                                                </div>
+                                            )}
+                                        </td>
                                         <td className={td}>{c.failureReason ? t(`failureReasons.${c.failureReason}`) : "—"}</td>
                                         <td className={td}>
                                             {/*
@@ -173,6 +181,23 @@ export default function ReturnReplacePanel(props: { embedded?: boolean; property
                                             {c.settledBeforeAcquisition ? (
                                                 <span className="text-[10px] text-muted" data-testid={`cheque-settled-before-acquisition-${c.id}`}>
                                                     {t("settledBeforeAcquisition")}
+                                                </span>
+                                            ) : c.writeOffPending ? (
+                                                // PR #397 R1-P3-1 (ruling): a write-off awaiting approval has closed
+                                                // nothing yet, so the row stays queued — but Replace waits until the
+                                                // write-off is approved or rejected.
+                                                <span className="inline-flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        disabled
+                                                        data-testid={`cheque-row-action-replace-${c.id}`}
+                                                        className="px-2 py-1 rounded-md text-[10px] font-bold bg-input text-foreground opacity-50 cursor-not-allowed"
+                                                    >
+                                                        {t("replace")}
+                                                    </button>
+                                                    <span className="text-[10px] text-warning" data-testid={`cheque-write-off-pending-${c.id}`}>
+                                                        {t("writeOffPending")}
+                                                    </span>
                                                 </span>
                                             ) : (
                                                 <button

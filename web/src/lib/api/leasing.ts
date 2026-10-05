@@ -685,6 +685,13 @@ export type Cheque = {
   vatTaxableAmount?: number | null;
   /** What the row collects, or null when it never said (older rows, typed rows). */
   rowKind?: ChequeRowKind | null;
+  /**
+   * PR #397 R1-P3-2: on a BOUNCED row, what the ledger still carries on it — the figure the
+   * Bounced tile and aging count. Null when not bounced or not known; `amount` stays the face value.
+   */
+  openAmount?: number | null;
+  /** PR #397 R1-P3-1: a write-off awaiting approval names this row — Replace waits for the decision. */
+  writeOffPending?: boolean;
 };
 
 // ---- VAT per instalment (spec 2026-09-24 §1 — api/dto/vat) ----

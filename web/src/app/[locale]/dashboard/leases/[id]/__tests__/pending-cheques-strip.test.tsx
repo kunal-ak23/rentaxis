@@ -132,9 +132,14 @@ describe("pendingChequeSummary", () => {
     it("counts REGISTERED + DEPOSITED as pending and unreplaced BOUNCED as returned, apart", () => {
         expect(pendingChequeSummary(MIXED)).toEqual({
             pending: { count: 4, amount: 52000 },
-            returned: { count: 1, amount: 5000 },
+            returned: { count: 1, amount: 5000, face: 5000 },
         });
-        expect(pendingChequeSummary([])).toEqual({ pending: { count: 0, amount: 0 }, returned: { count: 0, amount: 0 } });
+        expect(pendingChequeSummary([])).toEqual({ pending: { count: 0, amount: 0 }, returned: { count: 0, amount: 0, face: 0 } });
+    });
+
+    it("counts a returned cheque at what is still owed on it, face value apart (PR #397 R1-P3-2)", () => {
+        expect(pendingChequeSummary([cheque(1, "BOUNCED", 12750, { openAmount: 7510.27 })]).returned)
+            .toEqual({ count: 1, amount: 7510.27, face: 12750 });
     });
 });
 
@@ -145,6 +150,13 @@ describe("contract header — pending cheques strip", () => {
         await vi.waitFor(() => expect(screen.getByTestId("lease-pending-cheques-pending")).toHaveTextContent("Pending cheques: 4 · AED 52,000.00"));
         expect(screen.getByTestId("lease-pending-cheques-returned")).toHaveTextContent("Returned: 1 · AED 5,000.00");
         expect(strip.tagName).toBe("BUTTON");
+    });
+
+    it("shows what a partly paid returned cheque still owes, with its face value (PR #397 R1-P3-2)", async () => {
+        CHEQUES = [cheque(1, "REGISTERED", 1000), cheque(2, "BOUNCED", 12750, { openAmount: 7510.27 })];
+        renderPage();
+        await vi.waitFor(() => expect(screen.getByTestId("lease-pending-cheques-returned"))
+            .toHaveTextContent("Returned: 1 · AED 7,510.27 owed of AED 12,750.00"));
     });
 
     it("leaves Returned out when nothing bounced unreplaced", async () => {
