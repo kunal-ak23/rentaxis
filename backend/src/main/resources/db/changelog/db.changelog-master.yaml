@@ -335,3 +335,5 @@ databaseChangeLog:
       file: db/changelog/changesets/165-user-password-self-set.yaml
   - include:
       file: db/changelog/changesets/166-user-self-registered-unverified.yaml
+  - include:
+      file: db/changelog/changesets/167-password-reset-tokens.yaml

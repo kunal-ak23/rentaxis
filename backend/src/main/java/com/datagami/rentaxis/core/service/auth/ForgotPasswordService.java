@@ -10,7 +10,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.regex.Pattern;
 
@@ -34,15 +33,40 @@ public class ForgotPasswordService {
 
     private final UserService userService;
     private final Executor executor;
-    private final ConcurrentHashMap<String, Bucket> perEmail = new ConcurrentHashMap<>();
+    /**
+     * Review P3-1: bounded. An address's bucket is dropped an hour after its last
+     * request (by then it would have refilled anyway), and the map never holds more
+     * than {@link #MAX_TRACKED} addresses — so rotating through emails cannot grow
+     * the heap. Evicting early under that cap only ever gives an address a fresh
+     * budget, which the per-IP limit still bounds.
+     */
+    static final long MAX_TRACKED = 100_000;
+    private final com.github.benmanes.caffeine.cache.Cache<String, Bucket> perEmail;
 
     @Value("${app.rate-limit.forgot-password-per-email-per-hour:3}")
     private int perEmailPerHour = 3;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public ForgotPasswordService(UserService userService,
                                  @Qualifier("passwordResetExecutor") Executor executor) {
+        this(userService, executor, com.github.benmanes.caffeine.cache.Ticker.systemTicker());
+    }
+
+    ForgotPasswordService(UserService userService, Executor executor,
+                          com.github.benmanes.caffeine.cache.Ticker ticker) {
         this.userService = userService;
         this.executor = executor;
+        this.perEmail = com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+                .expireAfterAccess(Duration.ofHours(1))
+                .maximumSize(MAX_TRACKED)
+                .ticker(ticker)
+                .build();
+    }
+
+    /** For the bound's test. */
+    long trackedAddresses() {
+        perEmail.cleanUp();
+        return perEmail.estimatedSize();
     }
 
     /** Returns at once and never says what happened. */
@@ -50,7 +74,7 @@ public class ForgotPasswordService {
         if (rawEmail == null) return;
         String email = rawEmail.trim().toLowerCase();
         if (email.length() > 254 || !EMAIL.matcher(email).matches()) return;
-        Bucket bucket = perEmail.computeIfAbsent(email, k -> Bucket.builder()
+        Bucket bucket = perEmail.get(email, k -> Bucket.builder()
                 .addLimit(Bandwidth.builder().capacity(perEmailPerHour)
                         .refillGreedy(perEmailPerHour, Duration.ofHours(1)).build())
                 .build());

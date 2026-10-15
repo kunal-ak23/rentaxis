@@ -38,7 +38,7 @@ class AppleAuthServiceTest {
         identity("com.rentaxis.renter", "resident@example.com", true);
         when(userRepository.findByAppleClientIdAndAppleSubject(
                 "com.rentaxis.renter", "apple-subject")).thenReturn(Optional.empty());
-        when(userRepository.findAllByEmail("resident@example.com")).thenReturn(List.of(renter));
+        when(userRepository.findAllByEmailNormalised("resident@example.com")).thenReturn(List.of(renter));
         when(userRepository.saveAndFlush(renter)).thenReturn(renter);
 
         assertThat(service.authenticate("token", "nonce", null)).isSameAs(renter);
@@ -63,7 +63,7 @@ class AppleAuthServiceTest {
         identity("com.rentaxis.renter", "manager@example.com", true);
         when(userRepository.findByAppleClientIdAndAppleSubject(
                 "com.rentaxis.renter", "apple-subject")).thenReturn(Optional.empty());
-        when(userRepository.findAllByEmail("manager@example.com")).thenReturn(List.of(manager));
+        when(userRepository.findAllByEmailNormalised("manager@example.com")).thenReturn(List.of(manager));
 
         assertThatThrownBy(() -> service.authenticate("token", "nonce", null))
                 .isInstanceOf(BadCredentialsException.class)
@@ -77,7 +77,7 @@ class AppleAuthServiceTest {
         identity("com.rentaxis.renter", "shared@example.com", true);
         when(userRepository.findByAppleClientIdAndAppleSubject(
                 "com.rentaxis.renter", "apple-subject")).thenReturn(Optional.empty());
-        when(userRepository.findAllByEmail("shared@example.com")).thenReturn(List.of(a, b));
+        when(userRepository.findAllByEmailNormalised("shared@example.com")).thenReturn(List.of(a, b));
 
         assertThatThrownBy(() -> service.authenticate("token", "nonce", null))
                 .isInstanceOf(AppleAuthService.AmbiguousAppleIdentityException.class);

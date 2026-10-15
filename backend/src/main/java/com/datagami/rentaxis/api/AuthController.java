@@ -401,7 +401,12 @@ public class AuthController {
                     return ResponseEntity.ok(new InviteTokenInfoResponse(
                             u.getEmail(), u.getName(), u.getInviteTokenExpiresAt()));
                 })
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
+                .orElseGet(() -> userService.findPersonLink(token)
+                        // A person-level forgot-password link (review P2-1).
+                        .map(l -> l.expired()
+                                ? ResponseEntity.status(HttpStatus.GONE).<InviteTokenInfoResponse>build()
+                                : ResponseEntity.ok(new InviteTokenInfoResponse(l.email(), l.name(), l.expiresAt())))
+                        .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build()));
     }
 
     @PostMapping("/set-password")

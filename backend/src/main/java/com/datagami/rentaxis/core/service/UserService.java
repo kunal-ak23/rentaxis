@@ -337,49 +337,111 @@ public class UserService {
     public static final java.time.Duration FORGOT_VALIDITY = java.time.Duration.ofMinutes(45);
 
     /**
-     * Self-service "forgot password" (public, unauthenticated): if this email has
-     * a password-sharing login — any ACTIVE row except SECURITY_GUARD (phone OTP)
-     * and SUPER_ADMIN — one of its rows gets a single-use link, valid
-     * {@link #FORGOT_VALIDITY}, mailed to the address. Redeeming it is the invite
-     * redemption: the new password is self-set and goes to every active row of
-     * the person, ending their sessions everywhere ({@link #acceptInvite}).
+     * Person-level forgot-password links (changeset 167). Field-injected so the
+     * constructor every test builds by hand stays as it was; null only there.
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.core.service.auth.PasswordResetTokenStore resetLinks;
+
+    /**
+     * Self-service "forgot password" (public, unauthenticated). If this email has
+     * an ACTIVE login other than a SECURITY_GUARD's (phone OTP) or a SUPER_ADMIN's,
+     * a single-use link valid {@link #FORGOT_VALIDITY} is mailed to the address.
      *
-     * <p>Says nothing to its caller. {@code ForgotPasswordService} runs it off the
-     * request thread after the endpoint has already answered, so neither the
-     * response nor its timing tells whether an account exists. A link sent less
-     * than a minute ago is not replaced (a double click, or a script).
+     * <p>Review P2-1: the link belongs to the person (normalised email), not to a
+     * users row — so a row someone else controls (an organisation registered with
+     * this address, an admin-typed legacy row) can neither receive it nor retire
+     * it by signing in, and the email carries Miftah's own branding, never one
+     * organisation's ({@code tenantId} null). It does not touch any row's invite or
+     * admin-reset link, so it is always sent (review P3-2); the per-address limit
+     * in {@code ForgotPasswordService} bounds it.
+     *
+     * <p>Says nothing to its caller: {@code ForgotPasswordService} runs it after the
+     * endpoint has answered.
      */
     @Transactional
     public void sendForgottenPasswordLink(String email) {
-        Optional<UUID> target = sharedLogins(email).stream()
+        List<UserRepository.SharedLogin> active = sharedLogins(email).stream()
                 .filter(UserService::isActive)
                 .filter(l -> l.getTenantId() != null)
-                .map(UserRepository.SharedLogin::getId)
-                .findFirst();
-        if (target.isEmpty()) {
+                .toList();
+        if (active.isEmpty() || resetLinks == null) {
             AUDIT.info("forgot-password no-login");
             return;
         }
-        User user = userRepository.findById(target.get()).orElse(null);
-        if (user == null) return;
-        Instant now = Instant.now();
-        if (user.getInviteTokenExpiresAt() != null && user.getInviteToken() != null
-                && user.getInviteTokenExpiresAt().isAfter(now.plus(FORGOT_VALIDITY).minus(RESET_COOLDOWN))) {
-            AUDIT.info("forgot-password cooldown user={}", user.getId());
-            return;
-        }
-        Instant expiresAt = now.plus(FORGOT_VALIDITY);
-        user.setInviteToken(generateInviteToken());
-        user.setInviteTokenExpiresAt(expiresAt);
-        User saved = userRepository.saveAndFlush(user);
+        // The address is the same on every row; this one only names the recipient
+        // (name, language) for the mail pipeline. One the person's login includes, if any.
+        UserRepository.SharedLogin recipient = active.stream().filter(UserService::joinsPersonLogin)
+                .findFirst().orElse(active.get(0));
+        String token = generateInviteToken();
+        Instant expiresAt = Instant.now().plus(FORGOT_VALIDITY);
+        resetLinks.issue(email.trim().toLowerCase(), token, expiresAt);
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.PASSWORD_RESET_REQUESTED,
-                saved.getTenantId(),
+                null,
                 new com.datagami.rentaxis.core.email.event.payload.PasswordResetRequestedPayload(
-                        saved.getId(), saved.getName(), "/auth/set-password?token=" + saved.getInviteToken(),
-                        expiresAt.toString()),
-                "PASSWORD_RESET_REQUESTED:" + saved.getId() + ":forgot:" + UUID.randomUUID()));
-        AUDIT.info("forgot-password link-sent user={}", saved.getId());
+                        recipient.getId(), null, "/auth/set-password?token=" + token, expiresAt.toString()),
+                "PASSWORD_RESET_REQUESTED:" + recipient.getId() + ":forgot:" + UUID.randomUUID()));
+        AUDIT.info("forgot-password link-sent recipient={}", recipient.getId());
+    }
+
+    /** What the set-password page shows for a person-level link: email, a name, expiry; or why not. */
+    public record PersonLinkInfo(String email, String name, Instant expiresAt, boolean expired) {
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<PersonLinkInfo> findPersonLink(String token) {
+        if (resetLinks == null) return Optional.empty();
+        return resetLinks.find(token)
+                .filter(l -> l.usedAt() == null)
+                .map(l -> new PersonLinkInfo(l.email(),
+                        sharedLogins(l.email()).stream().filter(UserService::isActive).findFirst()
+                                .flatMap(r -> userRepository.findById(r.getId())).map(User::getName)
+                                .orElse(l.email()),
+                        l.expiresAt(), l.expiresAt().isBefore(Instant.now())));
+    }
+
+    /**
+     * Redeems a person-level link: the new password is self-set on every ACTIVE row
+     * of the person's shared login, sessions end everywhere, deactivated rows lose
+     * their old password, and the person's other outstanding links die.
+     *
+     * <p>Rows from public self-registration that were never verified (review P3-5)
+     * are left out — unless they are the person's only active login, in which case
+     * this link is exactly the proof they were waiting for.
+     */
+    private InviteResult acceptPersonLink(String token, String newRawPassword) {
+        if (resetLinks == null) return InviteResult.NOT_FOUND;
+        var link = resetLinks.find(token);
+        if (link.isEmpty()) return InviteResult.NOT_FOUND;
+        if (link.get().usedAt() != null) return InviteResult.ALREADY_USED;
+        Instant now = Instant.now();
+        if (link.get().expiresAt().isBefore(now)) return InviteResult.EXPIRED;
+        String email = link.get().email();
+
+        List<UserRepository.SharedLogin> rows = sharedLogins(email);
+        List<UUID> joined = rows.stream().filter(UserService::isActive).filter(UserService::joinsPersonLogin)
+                .map(UserRepository.SharedLogin::getId).toList();
+        boolean onlyUnverified = joined.isEmpty();
+        List<UUID> targets = onlyUnverified
+                ? rows.stream().filter(UserService::isActive).map(UserRepository.SharedLogin::getId).toList()
+                : joined;
+        if (targets.isEmpty()) return InviteResult.NOT_FOUND;
+        if (resetLinks.consume(token, now) == 0) return InviteResult.ALREADY_USED;
+        resetLinks.retireAll(email, now);
+
+        String hash = passwordEncoder.encode(newRawPassword);
+        writePersonPassword(targets, hash, true, null, "forgot");
+        if (onlyUnverified) userRepository.markRegistrationVerified(targets);
+        clearInactivePasswords(rows.stream().filter(l -> !isActive(l)).filter(UserService::joinsPersonLogin)
+                .map(UserRepository.SharedLogin::getId).toList(), null, "forgot");
+
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.PASSWORD_CHANGED,
+                null,
+                new PasswordChangedPayload(targets.get(0), null, now.toString(), null),
+                "PASSWORD_CHANGED:" + targets.get(0) + ":forgot:" + UUID.randomUUID()));
+        return InviteResult.OK;
     }
 
     private static String generateInviteToken() {
@@ -675,7 +737,9 @@ public class UserService {
      * (typically by password match during login).
      */
     public List<User> findAllByEmail(String email) {
-        return userRepository.findAllByEmail(email.toLowerCase().trim());
+        // Review P3-3: case-insensitive, so a legacy mixed-case row
+        // ("Legacy@Example.com") can sign in — the same match a reset uses.
+        return userRepository.findAllByEmailNormalised(email);
     }
 
     public Optional<User> findByInviteToken(String token) {
@@ -740,7 +804,8 @@ public class UserService {
         // Pre-flight read: lets us return distinct error codes (NOT_FOUND / EXPIRED / ALREADY_USED)
         // for better UX without needing two atomic UPDATEs.
         var maybe = userRepository.findByInviteToken(token);
-        if (maybe.isEmpty()) return InviteResult.NOT_FOUND;
+        // Not a row's invite or admin-reset link: perhaps a person-level forgot-password one.
+        if (maybe.isEmpty()) return acceptPersonLink(token, newRawPassword);
         User probe = maybe.get();
         if (probe.getInviteTokenExpiresAt() == null) return InviteResult.ALREADY_USED;
         if (probe.getInviteTokenExpiresAt().isBefore(Instant.now())) return InviteResult.EXPIRED;

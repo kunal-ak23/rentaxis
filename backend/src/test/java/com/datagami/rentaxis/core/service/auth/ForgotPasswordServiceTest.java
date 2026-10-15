@@ -3,6 +3,7 @@ package com.datagami.rentaxis.core.service.auth;
 import com.datagami.rentaxis.core.service.UserService;
 import org.junit.jupiter.api.Test;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -42,5 +43,15 @@ class ForgotPasswordServiceTest {
         org.mockito.Mockito.doThrow(new IllegalStateException("db down"))
                 .when(users).sendForgottenPasswordLink(anyString());
         service.request("c@example.com"); // must not throw: the caller already has its answer
+    }
+
+    @Test
+    void anAddressIsForgottenAnHourAfterItsLastRequest() {
+        java.util.concurrent.atomic.AtomicLong nanos = new java.util.concurrent.atomic.AtomicLong();
+        ForgotPasswordService timed = new ForgotPasswordService(users, Runnable::run, nanos::get);
+        for (int i = 0; i < 10; i++) timed.request("user" + i + "@example.com");
+        assertThat(timed.trackedAddresses()).isEqualTo(10);
+        nanos.addAndGet(java.time.Duration.ofMinutes(61).toNanos());
+        assertThat(timed.trackedAddresses()).as("the map does not keep every address ever asked about").isZero();
     }
 }
