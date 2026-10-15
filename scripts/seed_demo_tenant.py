@@ -39,6 +39,11 @@ Usage:
   PROD_SUPERADMIN_EMAIL=... PROD_SUPERADMIN_PASSWORD=... \
   python3 scripts/seed_demo_tenant.py
 
+  # The older prod demo org (App Store reviewer logins) predates these defaults:
+  DEMO_TENANT_NAME="Al Ashram Demo Account" DEMO_BRAND="Al Ashram" \
+  DEMO_EMAIL_DOMAIN=alashramdemo.com DEMO_ADMIN_NAME="Al Ashram Demo Admin" \
+  DEMO_EMAIL_NOTIFICATIONS=true DEMO_PHONE_BLOCK=+97155556 python3 scripts/seed_demo_tenant.py
+
   # Split local stack (no Caddy in front): the API and the web app are two
   # different origins, and the marketplace-listing step needs the web one.
   PROD_BASE_URL=http://localhost:8081 DEMO_WEB_BASE_URL=http://localhost:3001 \
