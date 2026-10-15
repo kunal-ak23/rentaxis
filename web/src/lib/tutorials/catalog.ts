@@ -319,7 +319,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["renter--submitting-tickets"],
     },
     {
-        id: "23", slug: "schedule-and-manage-meetings", topic: "operations", roles: [...PORTFOLIO, "RENTER"], durationSec: 84, youtubeId: null,
+        id: "23", slug: "schedule-and-manage-meetings", topic: "operations", roles: [...PORTFOLIO, "RENTER"], durationSec: 84, youtubeId: "xikLrBq0EqQ",
         title: { en: "Schedule and manage meetings", ar: "جدولة الاجتماعات وإدارتها" },
         description: {
             en: "Request a meeting about a property or unit, approve it, follow it on the calendar and mark it complete.",
