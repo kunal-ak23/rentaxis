@@ -65,6 +65,7 @@ describe("proxy middleware — /api/proxy auth gate", () => {
     it.each([
       "/api/proxy/auth/register",
       "/api/proxy/auth/set-password",
+      "/api/proxy/auth/forgot-password",
       "/api/proxy/v1/public/renewal-intent",
     ])("forwards %s without a session (no 401)", async (path) => {
       getTokenMock.mockResolvedValue(null);
@@ -99,6 +100,7 @@ describe("proxy middleware — /api/proxy auth gate", () => {
       // Exact-match only: sub-paths and siblings of allowlisted entries stay gated.
       "/api/proxy/auth/set-password/extra",
       "/api/proxy/auth/register/extra",
+      "/api/proxy/auth/forgot-password/extra",
       "/api/proxy/v1/public/other-endpoint",
       "/api/proxy/v1/publicish",
       "/api/proxy/auth/login",

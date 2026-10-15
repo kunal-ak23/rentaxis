@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { signIn } from "next-auth/react";
 import { Link, useRouter } from "@/i18n/routing";
 import { motion } from "framer-motion";
@@ -8,19 +9,22 @@ import { Mail, Lock, ArrowRight, Loader2, Eye, EyeOff } from "lucide-react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { safeCallbackUrl } from "@/lib/session/proxyFetchGuard";
-import { useTranslations } from "next-intl";
 
-const LOCKED_OUT_MESSAGES: Record<string, string> = {
-    ACCOUNT_INACTIVE: "This account has been deactivated. Contact your administrator.",
-    ORG_INACTIVE: "This organisation is inactive. Contact support to reactivate it.",
-    RATE_LIMITED: "Too many sign-in attempts. Please wait a minute and try again.",
+/** The Auth catalogue key for each sign-in refusal that is not a wrong password. */
+const LOCKED_OUT_KEYS: Record<string, "accountInactive" | "orgInactive" | "rateLimited"> = {
+    ACCOUNT_INACTIVE: "accountInactive",
+    ORG_INACTIVE: "orgInactive",
+    RATE_LIMITED: "rateLimited",
 };
 
 export default function LoginPage() {
+    const t = useTranslations("Auth");
     const tGuard = useTranslations("GuardSignIn");
     const router = useRouter();
     const searchParams = useSearchParams();
     const registered = searchParams.get("registered") === "true";
+    // Set by /auth/set-password after an invite or reset link was used.
+    const passwordSet = searchParams.get("welcome") === "1";
     // Break round 1, F6: set when an expired session sent the user here.
     // Validated against this origin at the moment it is used (safeCallbackUrl).
     const rawCallbackUrl = searchParams.get("callbackUrl");
@@ -55,7 +59,7 @@ export default function LoginPage() {
             const res = await attemptSignIn();
             await handleSignInResult(res);
         } catch {
-            setError("Something went wrong. Please try again later.");
+            setError(t("genericError"));
             setLoading(false);
         }
     };
@@ -77,16 +81,16 @@ export default function LoginPage() {
 
         // Deactivated account / organisation, or too many attempts: say so
         // rather than blaming the password the user typed correctly.
-        const lockedOut = res?.error ? LOCKED_OUT_MESSAGES[res.error] : undefined;
+        const lockedOut = res?.error ? LOCKED_OUT_KEYS[res.error] : undefined;
         if (lockedOut) {
-            setError(lockedOut);
+            setError(t(lockedOut));
             setLoading(false);
             return;
         }
 
         if (res?.error) {
-            setError("Invalid email or password. Please try again.");
-            setFieldErrors({ email: "Check your email", password: "Check your password" });
+            setError(t("invalidCredentials"));
+            setFieldErrors({ email: t("checkEmail"), password: t("checkPassword") });
             setLoading(false);
             return;
         }
@@ -116,7 +120,7 @@ export default function LoginPage() {
             const res = await attemptSignIn(tenantId);
             await handleSignInResult(res);
         } catch {
-            setError("Something went wrong. Please try again later.");
+            setError(t("genericError"));
             setLoading(false);
         }
     };
@@ -143,7 +147,7 @@ export default function LoginPage() {
                         className="mx-auto mb-4 object-contain"
                         priority
                     />
-                    <p className="text-[13px] text-muted font-medium">Property Management Portal</p>
+                    <p className="text-[13px] text-muted font-medium">{t("portalTagline")}</p>
                 </div>
 
                 {registered && (
@@ -151,13 +155,23 @@ export default function LoginPage() {
                         role="status"
                         className="mb-5 rounded-xl border border-success/20 bg-success/10 p-3 text-center text-xs font-bold text-success"
                     >
-                        Organization created successfully. Sign in with your new administrator account.
+                        {t("registered")}
+                    </div>
+                )}
+
+                {passwordSet && !registered && (
+                    <div
+                        role="status"
+                        data-testid="login-password-set"
+                        className="mb-5 rounded-xl border border-success/20 bg-success/10 p-3 text-center text-xs font-bold text-success"
+                    >
+                        {t("passwordSet")}
                     </div>
                 )}
 
                 <form onSubmit={handleLogin} className="space-y-5">
                     <div>
-                        <label htmlFor="login-email" className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-2 ml-1">Email Address</label>
+                        <label htmlFor="login-email" className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-2 ms-1">{t("emailLabel")}</label>
                         <div className="relative group">
                             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted group-focus-within:text-primary transition-colors" />
                             <input
@@ -177,7 +191,10 @@ export default function LoginPage() {
 
                     <div>
                         <div className="flex items-center justify-between mb-2 ml-1">
-                            <label htmlFor="login-password" className="block text-[10px] font-bold text-muted uppercase tracking-widest">Password</label>
+                            <label htmlFor="login-password" className="block text-[10px] font-bold text-muted uppercase tracking-widest">{t("passwordLabel")}</label>
+                            <Link href="/auth/forgot-password" data-testid="login-forgot" className="text-[10px] font-bold text-accent hover:brightness-110 me-1">
+                                {t("forgotLink")}
+                            </Link>
                         </div>
                         <div className="relative group">
                             <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted group-focus-within:text-primary transition-colors" />
@@ -193,7 +210,7 @@ export default function LoginPage() {
                             <button
                                 type="button"
                                 onClick={() => setShowPassword((v) => !v)}
-                                aria-label={showPassword ? "Hide password" : "Show password"}
+                                aria-label={showPassword ? t("hidePassword") : t("showPassword")}
                                 aria-pressed={showPassword}
                                 className="absolute right-4 top-1/2 -translate-y-1/2 text-muted hover:text-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20 rounded p-0.5 cursor-pointer"
                             >
@@ -222,7 +239,7 @@ export default function LoginPage() {
                             className="bg-surface border border-border rounded-xl p-4 space-y-2"
                         >
                             <p className="text-xs font-bold text-foreground mb-2">
-                                This email is registered in multiple organizations. Pick one:
+                                {t("pickOrganisation")}
                             </p>
                             {tenantCandidates.map((t) => (
                                 <button
@@ -230,7 +247,7 @@ export default function LoginPage() {
                                     type="button"
                                     onClick={() => handlePickTenant(t.tenantId)}
                                     disabled={loading}
-                                    className="w-full text-left bg-input hover:bg-input/70 border border-border rounded-lg px-3 py-2 text-xs font-bold text-foreground transition-colors disabled:opacity-60"
+                                    className="w-full text-start bg-input hover:bg-input/70 border border-border rounded-lg px-3 py-2 text-xs font-bold text-foreground transition-colors disabled:opacity-60"
                                 >
                                     {t.tenantName}
                                 </button>
@@ -246,8 +263,8 @@ export default function LoginPage() {
                             <Loader2 className="w-4 h-4 animate-spin text-accent-foreground" />
                         ) : (
                             <>
-                                Sign In
-                                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+                                {t("signIn")}
+                                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1 rtl:-scale-x-100" />
                             </>
                         )}
                     </button>
@@ -262,8 +279,8 @@ export default function LoginPage() {
 
                 <div className="mt-6 pt-6 border-t border-border/50 text-center">
                     <p className="text-[11px] text-muted font-medium">
-                        New to Miftah?{" "}
-                        <Link href="/auth/register" className="text-accent font-bold uppercase tracking-widest ml-1 hover:brightness-110">Create Account</Link>
+                        {t("newToMiftah")}{" "}
+                        <Link href="/auth/register" className="text-accent font-bold uppercase tracking-widest ms-1 hover:brightness-110">{t("createAccount")}</Link>
                     </p>
                 </div>
             </motion.div>

@@ -51,7 +51,8 @@ class AuthControllerTokenTest {
         appleAuthService = mock(AppleAuthService.class);
         tokens = new AuthTokenService(SECRET);
         controller = new AuthController(userService, orgService, passwordEncoder,
-                firebaseGuardAuthService, appleAuthService, tokens);
+                firebaseGuardAuthService, appleAuthService, tokens,
+                mock(com.datagami.rentaxis.core.service.auth.ForgotPasswordService.class));
         // Login now refuses users of an INACTIVE (or missing) organisation (round 5, A-F5).
         LandlordOrg active = new LandlordOrg();
         active.setStatus("ACTIVE");
@@ -100,7 +101,8 @@ class AuthControllerTokenTest {
     @Test
     void loginWithNoSecretConfiguredStillWorksAndReturnsNullToken() {
         controller = new AuthController(userService, orgService, passwordEncoder,
-                firebaseGuardAuthService, appleAuthService, new AuthTokenService(""));
+                firebaseGuardAuthService, appleAuthService, new AuthTokenService(""),
+                mock(com.datagami.rentaxis.core.service.auth.ForgotPasswordService.class));
         UUID userId = UUID.randomUUID();
         UUID home = UUID.randomUUID();
         User u = user(userId, home, UserRole.RENTER);

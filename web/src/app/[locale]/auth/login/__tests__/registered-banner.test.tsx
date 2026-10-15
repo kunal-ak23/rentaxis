@@ -9,6 +9,7 @@ const { push, search } = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({
     useSearchParams: () => new URLSearchParams(search.value),
 }));
+vi.mock("next-intl", async () => (await import("@/test/intlMock")).englishIntl());
 vi.mock("next-auth/react", () => ({
     signIn: vi.fn(),
     getSession: vi.fn(),
@@ -20,7 +21,6 @@ vi.mock("@/i18n/routing", () => ({
     useRouter: () => ({ push }),
 }));
 // The guard sign-in link is the only translated line on this page.
-vi.mock("next-intl", () => ({ useTranslations: () => (k: string) => k }));
 vi.mock("next/image", () => ({
     default: ({ alt }: { alt: string }) => <span role="img" aria-label={alt} />,
 }));

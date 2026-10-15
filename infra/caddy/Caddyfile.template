@@ -36,6 +36,12 @@
         request_header -X-Internal-Auth
         reverse_proxy backend:8080
     }
+    # Public "forgot password" (PR #408). The mobile apps call it directly; without
+    # this block it fell through to NextAuth below and never reached the backend.
+    handle /api/auth/forgot-password {
+        request_header -X-Internal-Auth
+        reverse_proxy backend:8080
+    }
 
     # All other /api/auth/* → Next.js NextAuth handler
     # (csrf, signin, signout, callback/*, providers, session, error, verify-request, _log)

@@ -304,7 +304,33 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                             return null;
                           },
                         ),
-                        const SizedBox(height: 24),
+                        // Public "forgot password": a link by email if the
+                        // address has a login; the same answer either way.
+                        Align(
+                          alignment: AlignmentDirectional.centerEnd,
+                          child: TextButton(
+                            key: const ValueKey('login-forgot'),
+                            onPressed: () => showForgotPasswordSheet(
+                              context,
+                              send: ref
+                                  .read(authServiceProvider)
+                                  .requestPasswordReset,
+                              ar: l.ar,
+                              initialEmail: _emailController.text.trim(),
+                            ),
+                            child: Text(
+                              l.forgotPassword,
+                              style:
+                                  (l.ar
+                                  ? GoogleFonts.notoNaskhArabic
+                                  : GoogleFonts.plusJakartaSans)(
+                                    fontSize: 12.5,
+                                    color: Colors.white.withValues(alpha: 0.55),
+                                  ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
 
                         // Error message
                         AnimatedSwitcher(
@@ -648,6 +674,7 @@ class _L {
       ar ? 'سجّل الدخول لإدارة إيجارك' : 'Sign in to manage your rentals';
   String get email => ar ? 'البريد الإلكتروني' : 'Email';
   String get password => ar ? 'كلمة المرور' : 'Password';
+  String get forgotPassword => ar ? 'نسيت كلمة المرور؟' : 'Forgot password?';
   String get noOrganisationForApp => ar
       ? 'لا يفتح حساب الدخول هذا أي سكن في هذا التطبيق. استخدم تطبيق مفتاح للإدارة أو الموقع الإلكتروني.'
       : 'This login has no residence to open in this app. Use the Miftah manager app or the website.';

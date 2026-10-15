@@ -21,6 +21,18 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      */
     List<User> findAllByEmail(String email);
 
+    /**
+     * {@link #findAllByEmail} trimmed and case-insensitive (review P3-3): sign-in
+     * and a password reset must agree on who "this email" is.
+     */
+    @Query("select u from User u where lower(trim(u.email)) = lower(trim(:email)) order by u.id")
+    List<User> findAllByEmailNormalised(@Param("email") String email);
+
+    /** A link to the address was redeemed for these rows: no longer unverified registrations. */
+    @Modifying
+    @Query(value = "UPDATE users SET self_registered_unverified = false WHERE id IN (:ids)", nativeQuery = true)
+    int markRegistrationVerified(@Param("ids") java.util.Collection<UUID> ids);
+
     Optional<User> findByAppleClientIdAndAppleSubject(String appleClientId, String appleSubject);
 
     /**

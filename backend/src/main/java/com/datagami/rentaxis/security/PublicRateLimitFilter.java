@@ -48,6 +48,13 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
     private static final PathPattern LOGIN_PATH = PARSER.parse("/api/auth/login");
     private static final PathPattern SET_PASSWORD_PATH = PARSER.parse("/api/auth/set-password/**");
 
+    /**
+     * Public "forgot password": sends mail, so it is the cheapest way to make the
+     * service email someone. Its own small per-IP budget; ForgotPasswordService
+     * adds a per-address one.
+     */
+    private static final PathPattern FORGOT_PASSWORD_PATH = PARSER.parse("/api/auth/forgot-password");
+
     private static final PathPattern PUBLIC_PATH = PARSER.parse("/public/**");
 
     /**
@@ -105,6 +112,10 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
     private final ConcurrentHashMap<String, Bucket> promoEventBuckets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Bucket> loginBuckets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Bucket> setPasswordBuckets = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Bucket> forgotPasswordBuckets = new ConcurrentHashMap<>();
+
+    @org.springframework.beans.factory.annotation.Value("${app.rate-limit.forgot-password-per-minute:5}")
+    private int forgotPasswordPerMinute = 5;
 
     /**
      * Logins per minute per client IP. 20 leaves room for an office NAT and a few
@@ -145,9 +156,10 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
                 "POST".equals(request.getMethod()) && PROMO_EVENTS_PATH.matches(path);
         boolean isLogin = "POST".equals(request.getMethod()) && LOGIN_PATH.matches(path);
         boolean isSetPassword = SET_PASSWORD_PATH.matches(path);
+        boolean isForgotPassword = "POST".equals(request.getMethod()) && FORGOT_PASSWORD_PATH.matches(path);
 
         if (!isFirebaseAuth && !isAppleAuth && !isRegistration && !isPublic && !isScan && !isPromoEvents
-                && !isLogin && !isSetPassword && !isMedia) {
+                && !isLogin && !isSetPassword && !isForgotPassword && !isMedia) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -160,6 +172,8 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
             bucket = registrationBuckets.computeIfAbsent(ip, k -> createRegistrationBucket());
         } else if (isLogin) {
             bucket = loginBuckets.computeIfAbsent(ip, k -> perMinute(loginPerMinute));
+        } else if (isForgotPassword) {
+            bucket = forgotPasswordBuckets.computeIfAbsent(ip, k -> perMinute(forgotPasswordPerMinute));
         } else if (isSetPassword) {
             bucket = setPasswordBuckets.computeIfAbsent(ip, k -> perMinute(setPasswordPerMinute));
         } else if (isFirebaseAuth || isAppleAuth) {
