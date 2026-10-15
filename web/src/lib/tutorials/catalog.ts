@@ -327,7 +327,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "24", slug: "facilities-and-booking-approvals", topic: "operations", roles: [...PORTFOLIO, "RENTER"], durationSec: 86, youtubeId: null,
+        id: "24", slug: "facilities-and-booking-approvals", topic: "operations", roles: [...PORTFOLIO, "RENTER"], durationSec: 86, youtubeId: "a1cpEe8f5Vo",
         title: { en: "Facilities and booking approvals", ar: "المرافق والموافقة على الحجوزات" },
         description: {
             en: "Browse facilities and availability, request a booking or parking spot, and approve requests as a manager.",
