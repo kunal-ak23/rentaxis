@@ -71,6 +71,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             SET u.passwordHash = :hash,
                 u.passwordSelfSet = true,
                 u.passwordSetAt = :now,
+                u.selfRegisteredUnverified = false,
                 u.inviteToken = NULL,
                 u.inviteTokenExpiresAt = NULL
             WHERE u.inviteToken = :token
@@ -103,6 +104,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
         String getPasswordHash();
         boolean getPasswordSelfSet();
         String getStatus();
+        boolean getSelfRegisteredUnverified();
     }
 
     /**
@@ -119,7 +121,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query(value = """
             SELECT u.id AS id, u.tenant_id AS tenantId, u.password_hash AS passwordHash,
                    u.password_self_set AS passwordSelfSet,
-                   u.status AS status
+                   u.status AS status, u.self_registered_unverified AS selfRegisteredUnverified
             FROM users u
             WHERE lower(trim(u.email)) = lower(trim(:email))
               AND u.role NOT IN ('SUPER_ADMIN', 'SECURITY_GUARD')

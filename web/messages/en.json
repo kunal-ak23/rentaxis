@@ -761,6 +761,8 @@
     "giveLoginInvalidEmail": "Enter a valid email address.",
     "giveLoginFailed": "Could not give this staff member a login. Try again.",
     "giveLoginDone": "{name} can now be assigned tickets. An invite was sent to {email}.",
+    "giveLoginExisting": "{name} can now be assigned tickets. {email} already has a Miftah login, so no invite was sent: they sign in with their existing password and choose this organisation.",
+    "giveLoginLinked": "{name} can now be assigned tickets, using the existing login {email} in your organisation.",
     "hasLogin": "Login",
     "hasLoginHint": "Has a login, so can be assigned tickets",
     "totalSalaryBill": "Total Monthly Salary",

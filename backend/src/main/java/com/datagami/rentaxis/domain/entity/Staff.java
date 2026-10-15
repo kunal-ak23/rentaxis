@@ -76,4 +76,15 @@ public class Staff extends BaseTenantEntity {
             access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
     @Column(name = "user_id")
     private UUID userId;
+
+    /**
+     * Set on the give-login response only: {@code INVITED} (a new login, emailed a
+     * set-password invite), {@code EXISTING_LOGIN} (the person already has a Miftah
+     * login elsewhere and signs in with their existing password; no invite) or
+     * {@code LINKED} (an existing login of this organisation). Not stored.
+     */
+    @Transient
+    @com.fasterxml.jackson.annotation.JsonProperty(
+            access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+    private String loginOutcome;
 }

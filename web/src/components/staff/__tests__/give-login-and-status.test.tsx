@@ -59,6 +59,21 @@ describe("StaffManager — logins and status", () => {
         expect((await screen.findByTestId("staff-login-notice")).textContent).toContain("Khalid Rahman");
     });
 
+    // One login per person: the notice says what really happened.
+    it.each([
+        ["EXISTING_LOGIN", en.Staff.giveLoginExisting],
+        ["LINKED", en.Staff.giveLoginLinked],
+        ["INVITED", en.Staff.giveLoginDone],
+    ])("after %s the notice says so", async (outcome, template) => {
+        api.on("POST", "/v1/staff/s1/login", { body: { ...KHALID, userId: "user-1", loginOutcome: outcome } });
+        renderEn();
+        fireEvent.click(await screen.findByTestId("staff-give-login-s1"));
+        fireEvent.change(await screen.findByTestId("staff-login-email"), { target: { value: "k@oasis.test" } });
+        fireEvent.click(screen.getByTestId("staff-give-login-confirm"));
+        const expected = template.replace("{name}", "Khalid Rahman").replace("{email}", "k@oasis.test");
+        expect((await screen.findByTestId("staff-login-notice")).textContent).toContain(expected);
+    });
+
     it("opens Edit Staff for an inactive member with Active unticked, and saving keeps them inactive", async () => {
         renderEn();
         await screen.findAllByText("Khalid Rahman");

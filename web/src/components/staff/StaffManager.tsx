@@ -193,7 +193,13 @@ export default function StaffManager({ embedded = false }: { embedded?: boolean 
                 setLoginError(body?.message || t("giveLoginFailed"));
                 return;
             }
-            setLoginNotice(t("giveLoginDone", { name: staffName(loginFor), email }));
+            // One login per person: say what actually happened — an invite, the
+            // person's existing Miftah login (no invite), or this org's login.
+            const saved = await res.json().catch(() => null);
+            const outcome = saved?.loginOutcome;
+            const key = outcome === "EXISTING_LOGIN" ? "giveLoginExisting"
+                : outcome === "LINKED" ? "giveLoginLinked" : "giveLoginDone";
+            setLoginNotice(t(key, { name: staffName(loginFor), email }));
             setLoginFor(null);
             fetchStaff();
         } catch {

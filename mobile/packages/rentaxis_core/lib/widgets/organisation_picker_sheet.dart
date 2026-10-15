@@ -5,6 +5,30 @@ import 'package:flutter/material.dart';
 /// 409 and the candidates ([AuthState.tenantChoices], each `{tenantId,
 /// tenantName}`). This asks which one to open and returns its `tenantId`, or
 /// null when the sheet is dismissed.
+/// Roles the resident (renter) app can open.
+const residentAppRoles = {'RENTER'};
+
+/// Roles the manager app can open.
+const managerAppRoles = {
+  'TENANT_ADMIN',
+  'PROPERTY_MANAGER',
+  'ACCOUNTANT',
+  'TENANT_USER',
+  'SUPER_ADMIN',
+};
+
+/// The 409 choices this app can open (review P3-4): a person may be a renter in
+/// one organisation and staff in another, and each app offers only its own. A
+/// choice without a role (an older server) is kept.
+List<Map<String, dynamic>> choicesForApp(
+  List<Map<String, dynamic>> choices,
+  Set<String> appRoles,
+) {
+  return choices
+      .where((c) => c['role'] == null || appRoles.contains(c['role']))
+      .toList();
+}
+
 Future<String?> showOrganisationPicker(
   BuildContext context,
   List<Map<String, dynamic>> choices, {
