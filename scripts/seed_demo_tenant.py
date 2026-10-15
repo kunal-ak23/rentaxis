@@ -87,8 +87,8 @@ def phone(n):
 ADMIN_EMAIL = os.environ.get("DEMO_ADMIN_EMAIL", f"admin@{DEMO_EMAIL_DOMAIN}")
 ADMIN_PASSWORD = DEMO_PASSWORD
 # The Company Admin's display name. The dashboard greets by first name, so a
-# branded demo sets a person's name; unset, the historical "<brand> Demo Admin".
-ADMIN_NAME = os.environ.get("DEMO_ADMIN_NAME") or f"{DEMO_BRAND} Demo Admin"
+# fictional person's name by default ("Good afternoon, Huda", not "..., Sandbox").
+ADMIN_NAME = os.environ.get("DEMO_ADMIN_NAME") or "Huda Rahman"
 OUT_FILE = Path(
     os.environ.get(
         "DEMO_OUTPUT_FILE",
@@ -1068,25 +1068,29 @@ def main():
         return ", ".join(f"{n} {s.lower()}" for s, n in sorted(counts.items()))
 
     # The register is walked relative to the day the seed runs, the way a
-    # landlord's office would have kept it: a cheque dated more than two weeks
-    # ago has been banked and has cleared, one dated in the last two weeks is
-    # banked and waiting on the bank, and a future-dated one is still in the
-    # safe (REGISTERED). A fixed walk ("first three cleared") left a sandbox
-    # seeded in October with every cheque since July undeposited.
-    IN_CLEARING_DAYS = 14
+    # landlord's office would have kept it: cheques whose date has passed were
+    # banked and cleared, future-dated ones are still in the safe (REGISTERED).
+    # A fixed walk ("first three cleared") left a sandbox seeded in October with
+    # every cheque since July undeposited. The exceptions are named per lease:
+    # `in_clearing` rows stop at DEPOSITED, `hold` rows stay REGISTERED. Both
+    # are past their date, so the dashboard counts them overdue (ChequeDueRules:
+    # a matured cheque is due until its funds arrive) — that is the point of them.
+    def past_dated(rows):
+        return sorted((r for r in rows if r.get("mode", "PDC") == "PDC"
+                       and dt.date.fromisoformat(r["chequeDate"]) <= TODAY),
+                      key=lambda r: r["chequeDate"])
 
-    def walk_by_date(rows, hold=()):
+    def walk_by_date(rows, hold=(), in_clearing=()):
         held = {r["id"] for r in hold}
+        clearing = {r["id"] for r in in_clearing}
         for r in rows:
             if r["id"] in held or r.get("status") in ("BOUNCED", "REPLACED"):
                 continue
-            age = (TODAY - dt.date.fromisoformat(r["chequeDate"])).days
-            if age < 0:
+            if dt.date.fromisoformat(r["chequeDate"]) > TODAY:
                 continue
-            advance(r, "DEPOSITED" if age <= IN_CLEARING_DAYS else "CLEARED")
+            advance(r, "DEPOSITED" if r["id"] in clearing else "CLEARED")
 
-    # Ahmed: a clean quarterly tenant — everything due has cleared, the latest
-    # cheque is with the bank, anything future-dated is still registered.
+    # Ahmed: the clean quarterly tenant — every cheque that has come due cleared.
     walk_by_date(rows_for(lease_ahmed["id"]))
     log(f"Ahmed: {tally(rows_for(lease_ahmed['id']))}")
 
@@ -1113,14 +1117,17 @@ def main():
             ],
         })
         log("Fatima: Q2 cheque returned and replaced by two rows")
-    walk_by_date(rows_for(lease_fatima["id"]))
+    # Her latest matured cheque is banked but not yet cleared: one to chase.
+    rows = rows_for(lease_fatima["id"])
+    latest = [r for r in past_dated(rows) if r.get("status") not in ("BOUNCED", "REPLACED")][-1:]
+    walk_by_date(rows, in_clearing=latest if latest and latest[0].get("status") != "CLEARED" else ())
     log(f"Fatima: {tally(rows_for(lease_fatima['id']))}")
 
     # Rajesh: monthly; his most recent past-dated cheque was never banked, so the
     # register shows it overdue / to deposit. Everything before it has cleared.
     rows = rows_for(lease_rajesh["id"])
-    past = [r for r in rows[1:] if dt.date.fromisoformat(r["chequeDate"]) <= TODAY]
-    overdue = past[-1:] if past else []
+    past = past_dated(rows[1:])
+    overdue = [r for r in past[-1:] if r.get("status") == "REGISTERED"]
     walk_by_date(rows, hold=overdue)
     log(f"Rajesh: {tally(rows_for(lease_rajesh['id']))}"
         + (f", cheque {overdue[0].get('chequeNumber')} left overdue" if overdue else ""))
