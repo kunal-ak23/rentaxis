@@ -126,7 +126,7 @@ export default function MeetingsPage() {
                 setLoadError(tCommon("loadFailedMeetings"));
             }
         } catch { /* ignore */ }
-    }, [isRenter, currentPage, itemsPerPage, statusFilter, typeFilter, purposeFilter]);
+    }, [isRenter, currentPage, itemsPerPage, statusFilter, typeFilter, purposeFilter, tCommon]);
 
     useEffect(() => {
         if (session !== undefined) {
