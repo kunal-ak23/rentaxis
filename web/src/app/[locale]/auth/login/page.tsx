@@ -9,7 +9,6 @@ import { Mail, Lock, ArrowRight, Loader2, Eye, EyeOff } from "lucide-react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { safeCallbackUrl } from "@/lib/session/proxyFetchGuard";
-import { useTranslations } from "next-intl";
 
 /** The Auth catalogue key for each sign-in refusal that is not a wrong password. */
 const LOCKED_OUT_KEYS: Record<string, "accountInactive" | "orgInactive" | "rateLimited"> = {
