@@ -102,6 +102,29 @@ export const PERMISSIONS = {
     // Posting/reversing journal vouchers. Mirrors JournalController's
     // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')").
     canPostJournals: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // Opening a journal: the journal detail page, the journals list and the
+    // contract page's "View posting journal" link and Journals section (which
+    // reads GET /finance/journals?leaseId). Mirrors JournalController's
+    // class-level @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')")
+    // on its GETs. PROPERTY_MANAGER is absent because the controller refuses it:
+    // the sandbox role test (M2) found the link shown to a manager who then got
+    // "Access denied". Its own key, not canPostJournals, so a future read-only
+    // widening of the GETs does not also widen posting.
+    canViewJournals: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
+    // Home's summary tiles and 12-month chart. Mirrors DashboardController's
+    // GET /dashboard/summary and /monthly-collections:
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT','PROPERTY_MANAGER')").
+    // ACCOUNTANT reads every lease and the cheque register tenant-wide already,
+    // so the same totals on Home are nothing new. A role outside this list
+    // (TENANT_USER) gets a Home with no figures instead of a failed fetch.
+    canViewDashboardSummary: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
+    // A contract's supporting documents (the Attachments section). Mirrors
+    // LeaseAttachmentController#list and #download:
+    // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER','RENTER')").
+    // ACCOUNTANT is absent because the controller refuses it (as it does the
+    // generated contract, canDownloadContracts); the section is hidden rather
+    // than shown empty over a 403.
+    canViewLeaseAttachments: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'RENTER'] as UserRole[],
     // Chart of accounts, property account mappings, template and defaults.
     // Mirrors AccountController/PropertyAccountController's
     // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')").

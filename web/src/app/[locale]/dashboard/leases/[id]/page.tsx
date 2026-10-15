@@ -171,6 +171,11 @@ export default function LeaseDetailPage() {
     const canCancelCheques = hasPermission(userRole, "canCancelCheques");
     const canSeeBadDebts = hasPermission(userRole, "canAccessFinance");
     const canGenerateContract = hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN"]);
+    // Sandbox role test M2/M4: links and sections are offered only to roles whose
+    // endpoint answers — a property manager cannot open a journal, an accountant
+    // cannot list a contract's attachments.
+    const canViewJournals = hasPermission(userRole, "canViewJournals");
+    const canViewAttachments = hasPermission(userRole, "canViewLeaseAttachments");
     // The header's own gates (Terminate, Give notice, Settlement, Raise penalty…)
     // are read in `leasePermsFor` (src/lib/leases/leaseActions.ts).
 
@@ -259,9 +264,10 @@ export default function LeaseDetailPage() {
     }, [leaseId, t]);
 
     const loadAttachments = useCallback(async () => {
+        if (!canViewAttachments) return;
         const res = await fetch(`/api/proxy/v1/leases/${leaseId}/attachments`);
         if (res.ok) setAttachments(await res.json());
-    }, [leaseId]);
+    }, [leaseId, canViewAttachments]);
 
     useEffect(() => {
         if (!canView && userRole) {
@@ -641,7 +647,7 @@ export default function LeaseDetailPage() {
                                     {t("renewFrom", { number: lease.renewedFromLeaseId.slice(0, 8) })}
                                 </Link>
                             )}
-                            {posted && lease.postingJournalId && (
+                            {posted && lease.postingJournalId && canViewJournals && (
                                 <Link href={`/dashboard/finance/journals/${lease.postingJournalId}`} className="text-primary hover:underline" data-testid="lease-posting-journal">
                                     {t("viewJournal")} · {t("postedAt", { date: fmtIsoDate(lease.postedAt, locale) })}
                                 </Link>
@@ -969,9 +975,11 @@ export default function LeaseDetailPage() {
                         <LeaseSection id="penalties" title={tA("sectionPenalties")} defaultOpen={true} forceOpen={focus.section === "penalties"} focusSeq={focus.seq}>
                             <LeasePenaltiesTab key={penaltyKey} leaseId={leaseId} userRole={userRole} minDate={earliestEventDate} />
                         </LeaseSection>
+                        {canViewJournals && (
                         <LeaseSection id="journals" title={tA("sectionJournals")} defaultOpen={false} forceOpen={focus.section === "journals"} focusSeq={focus.seq}>
                             <LeaseJournalsTab leaseId={leaseId} renterId={lease.renterId} renterName={lease.renterName} />
                         </LeaseSection>
+                        )}
                         <LeaseSection id="recognition" title={tA("sectionRecognition")} defaultOpen={false} forceOpen={focus.section === "recognition"} focusSeq={focus.seq}>
                             <div data-testid="lease-recognition">
                                 <RecognitionScheduleTab
@@ -1045,6 +1053,7 @@ export default function LeaseDetailPage() {
                                 </div>
                             </div>
                         </LeaseSection>
+                        {canViewAttachments && (
                         <LeaseSection id="attachments" title={tA("sectionAttachments")} defaultOpen={true} forceOpen={focus.section === "attachments"} focusSeq={focus.seq}>
                             <div className="bg-surface rounded-xl border border-border">
                                 <div className="px-5 py-3.5 border-b border-border">
@@ -1117,6 +1126,7 @@ export default function LeaseDetailPage() {
                                 </div>
                             </div>
                         </LeaseSection>
+                        )}
                         {(addenda.length > 0 || canExtend) && (
                             <LeaseSection id="addenda" title={tA("sectionAddenda")} defaultOpen={true} forceOpen={focus.section === "addenda"} focusSeq={focus.seq}>
                                 <LeaseAddendaPanel leaseId={lease.id} addenda={addenda} canRecordEjari={canExtend} onChanged={loadLease} />
