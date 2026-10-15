@@ -6,6 +6,8 @@ mobile apps use, so it doubles as a smoke test of the prod API.
 
 What it creates:
   - Named demo organisation (DEMO_ORG_NAME, default "Miftah Sandbox") + TENANT_ADMIN login
+    (DEMO_CREATE_ADMIN=false: no Company Admin login; the super admin writes
+    everything acting inside the org, and the property manager hosts meetings)
   - Features enabled: LISTINGS, MEETINGS, LEASE_RENEWALS, GATEPASS
     (EMAIL_NOTIFICATIONS only with DEMO_EMAIL_NOTIFICATIONS=true)
   - Chart of accounts + charge-type catalogue + per-property account sets
@@ -35,6 +37,10 @@ password every login this run creates gets) and console output is redacted.
 Usage:
   # Prod: super admin from web/e2e-prod/.env.local, password typed, never echoed.
   read -rs DEMO_PASSWORD && export DEMO_PASSWORD && python3 scripts/seed_demo_tenant.py
+
+  # Client sandbox: no Company Admin login (a person creates it afterwards).
+  read -rs DEMO_PASSWORD && export DEMO_PASSWORD && \
+    DEMO_CREATE_ADMIN=false python3 scripts/seed_demo_tenant.py
   PROD_BASE_URL=http://localhost:8080 \
   PROD_SUPERADMIN_EMAIL=... PROD_SUPERADMIN_PASSWORD=... \
   python3 scripts/seed_demo_tenant.py
@@ -84,6 +90,11 @@ PHONE_BLOCK = os.environ.get("DEMO_PHONE_BLOCK", "+97155555")
 # Off unless asked for: every renter and staff mailbox is fictional, so
 # notification mail would only bounce. Account invites are not gated by this.
 EMAIL_NOTIFICATIONS = os.environ.get("DEMO_EMAIL_NOTIFICATIONS", "false").lower() == "true"
+# DEMO_CREATE_ADMIN=false: create no Company Admin (TENANT_ADMIN) login. The org
+# and all its data are then written by the super admin acting inside the org
+# (bearer token + X-Tenant-Id on the API, the active_tenant_id cookie on the web
+# proxy), so the org's real administrator can be created by a person afterwards.
+CREATE_ADMIN = os.environ.get("DEMO_CREATE_ADMIN", "true").lower() != "false"
 
 
 def phone(n):
@@ -503,7 +514,7 @@ def main():
 
     # ── 1. Superadmin: tenant + admin user + features ───────────────────────
     sa = Api(base, web_base)
-    sa.login(sa_email, sa_password)
+    sa_user = sa.login(sa_email, sa_password)
     log(f"logged in as superadmin {sa_email}")
 
     existing = [
@@ -573,38 +584,50 @@ def main():
     )
     log("feature MOBILE_FINANCE explicitly off (mobile finance screens hidden)")
 
-    try:
-        sa.post(
-            "/api/admin/users",
-            json={
-                "email": ADMIN_EMAIL,
-                "password": ADMIN_PASSWORD,
-                "name": ADMIN_NAME,
-                "role": "TENANT_ADMIN",
-                "tenantId": tenant_id,
-                "phoneNumber": phone(100),
-            },
-        )
-        log(f"tenant admin created: {ADMIN_EMAIL}")
-    except RuntimeError:
-        log(f"tenant admin already exists: {ADMIN_EMAIL}")
-        # Keep a re-run's display name in step with DEMO_ADMIN_NAME.
-        existing = next(
-            (u for u in (sa.get("/api/admin/users") or [])
-             if (u.get("email") or "").lower() == ADMIN_EMAIL.lower()
-             and str(u.get("tenantId")) == str(tenant_id)),
-            None,
-        )
-        if existing and existing.get("name") != ADMIN_NAME:
-            sa.put(f"/api/admin/users/{existing['id']}", json={"name": ADMIN_NAME})
-            log(f"tenant admin renamed to {ADMIN_NAME}")
-    out["adminLogin"] = {"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
+    if not CREATE_ADMIN:
+        log("no Company Admin login created (DEMO_CREATE_ADMIN=false); "
+            "seeding as the super admin inside the organisation")
+    else:
+        try:
+            sa.post(
+                "/api/admin/users",
+                json={
+                    "email": ADMIN_EMAIL,
+                    "password": ADMIN_PASSWORD,
+                    "name": ADMIN_NAME,
+                    "role": "TENANT_ADMIN",
+                    "tenantId": tenant_id,
+                    "phoneNumber": phone(100),
+                },
+            )
+            log(f"tenant admin created: {ADMIN_EMAIL}")
+        except RuntimeError:
+            log(f"tenant admin already exists: {ADMIN_EMAIL}")
+            # Keep a re-run's display name in step with DEMO_ADMIN_NAME.
+            existing = next(
+                (u for u in (sa.get("/api/admin/users") or [])
+                 if (u.get("email") or "").lower() == ADMIN_EMAIL.lower()
+                 and str(u.get("tenantId")) == str(tenant_id)),
+                None,
+            )
+            if existing and existing.get("name") != ADMIN_NAME:
+                sa.put(f"/api/admin/users/{existing['id']}", json={"name": ADMIN_NAME})
+                log(f"tenant admin renamed to {ADMIN_NAME}")
+        out["adminLogin"] = {"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
 
     # ── 2. Tenant admin: properties + units ─────────────────────────────────
     api = Api(base, web_base)
-    admin_user = api.login(ADMIN_EMAIL, ADMIN_PASSWORD)
-    admin_user_id = admin_user["id"]
-    out["adminUserId"] = admin_user_id
+    if CREATE_ADMIN:
+        admin_user = api.login(ADMIN_EMAIL, ADMIN_PASSWORD)
+        admin_user_id = admin_user["id"]
+        out["adminUserId"] = admin_user_id
+    else:
+        # The super admin's own session, pointed at this organisation. A
+        # separate Api so the super-admin client above stays unscoped.
+        api.login(sa_email, sa_password)
+        api.headers["X-Tenant-Id"] = str(tenant_id)
+        api.headers.pop("X-User-Tenant-Id", None)
+        admin_user_id = None  # meetings are hosted by the property manager
 
     # Branding: upload as the tenant admin (the asset lands in this tenant's
     # own container, the only place the PDF renderers read a logo from), then
@@ -1372,7 +1395,13 @@ def main():
     # ── 6. Marketplace listings for vacant units ─────────────────────────────
     # Caddy doesn't route /api/listings to the backend (only /api/v1 and
     # /api/admin), so go through the Next.js proxy with a NextAuth session.
-    api.login_nextauth(ADMIN_EMAIL, ADMIN_PASSWORD)
+    if CREATE_ADMIN:
+        api.login_nextauth(ADMIN_EMAIL, ADMIN_PASSWORD)
+    else:
+        # The web proxy acts in the organisation the active_tenant_id cookie
+        # names; a SUPER_ADMIN session may name any.
+        api.login_nextauth(sa_email, sa_password)
+        api.s.cookies.set("active_tenant_id", str(tenant_id))
     LISTINGS = "/api/proxy/listings"
 
     listed_units = set()
@@ -1497,6 +1526,57 @@ def main():
                     )
             log(f"media uploaded (fallback placeholders): {title}")
 
+    # ── 6b. Staff logins (before meetings: with no Company Admin login, the
+    # property manager hosts them) ───────────────────────────────────────────
+    existing_users = api.get("/api/admin/users") or []
+
+    def ensure_operator(email, name, role, phone_number, legacy_names=()):
+        user = next((u for u in existing_users if u.get("email") == email), None)
+        if user and user.get("name") in legacy_names:
+            # Name only: role, organisation and property assignments stay as they are.
+            user = api.put(f"/api/admin/users/{user['id']}", json={"name": name}) or user
+        if not user:
+            user = api.post("/api/admin/users", json={
+                "email": email,
+                "password": DEMO_PASSWORD,
+                "name": name,
+                "role": role,
+                "tenantId": tenant_id,
+                "phoneNumber": phone_number,
+            })
+            existing_users.append(user)
+        try:
+            api.post(f"/api/admin/users/{user['id']}/properties/{tower['id']}")
+        except RuntimeError as exc:
+            if "409" not in str(exc):
+                raise
+        return user
+
+    manager = ensure_operator(
+        f"manager@{DEMO_EMAIL_DOMAIN}",
+        "Maya Khoury",
+        "PROPERTY_MANAGER",
+        os.environ.get("DEMO_MANAGER_PHONE", phone(106)),
+        legacy_names=("Maya Tutorial Manager",),
+    )
+    guard = ensure_operator(
+        f"guard@{DEMO_EMAIL_DOMAIN}",
+        "Samir Nasser",
+        "SECURITY_GUARD",
+        os.environ.get("DEMO_GUARD_PHONE", phone(107)),
+        legacy_names=("Samir Tutorial Guard",),
+    )
+    api.put(
+        f"/api/v1/gatepass/guards/{guard['id']}/properties",
+        json=[tower["id"]],
+    )
+    out["operatorLogins"] = [
+        {"role": "PROPERTY_MANAGER", "email": manager["email"], "password": DEMO_PASSWORD},
+        {"role": "SECURITY_GUARD", "email": guard["email"], "password": DEMO_PASSWORD},
+    ]
+    log("property manager and security guard accounts ready")
+    host_user_id = admin_user_id or manager["id"]
+
     # ── 7. Meetings ──────────────────────────────────────────────────────────
     def at_hour(days_ahead, hour):
         d = dt.datetime.combine(
@@ -1524,7 +1604,7 @@ def main():
                 "title": "Replacement cheque — Fatima Al Zaabi (A-102)",
                 "notes": "Bounced Q2 cheque; renter bringing a replacement.",
                 "slotStart": at_hour(1, 10),
-                "hostUserId": admin_user_id,
+                "hostUserId": host_user_id,
                 "leaseId": lease_fatima["id"],
                 "propertyId": tower["id"],
                 "unitId": a102["id"],
@@ -1541,7 +1621,7 @@ def main():
                 "title": "Penthouse viewing — M-1502",
                 "notes": "Prospect viewing for the marina penthouse listing.",
                 "slotStart": at_hour(2, 15),
-                "hostUserId": admin_user_id,
+                "hostUserId": host_user_id,
                 "propertyId": marina["id"],
                 "unitId": m1502["id"],
             },
@@ -1651,53 +1731,6 @@ def main():
         api.put(f"/api/v1/staff/{staff_member['id']}", json=staff_payload)
     log("property operations ready: building, contact, amenity, parking, staff")
 
-    existing_users = api.get("/api/admin/users") or []
-
-    def ensure_operator(email, name, role, phone_number, legacy_names=()):
-        user = next((u for u in existing_users if u.get("email") == email), None)
-        if user and user.get("name") in legacy_names:
-            # Name only: role, organisation and property assignments stay as they are.
-            user = api.put(f"/api/admin/users/{user['id']}", json={"name": name}) or user
-        if not user:
-            user = api.post("/api/admin/users", json={
-                "email": email,
-                "password": DEMO_PASSWORD,
-                "name": name,
-                "role": role,
-                "tenantId": tenant_id,
-                "phoneNumber": phone_number,
-            })
-            existing_users.append(user)
-        try:
-            api.post(f"/api/admin/users/{user['id']}/properties/{tower['id']}")
-        except RuntimeError as exc:
-            if "409" not in str(exc):
-                raise
-        return user
-
-    manager = ensure_operator(
-        f"manager@{DEMO_EMAIL_DOMAIN}",
-        "Maya Khoury",
-        "PROPERTY_MANAGER",
-        os.environ.get("DEMO_MANAGER_PHONE", phone(106)),
-        legacy_names=("Maya Tutorial Manager",),
-    )
-    guard = ensure_operator(
-        f"guard@{DEMO_EMAIL_DOMAIN}",
-        "Samir Nasser",
-        "SECURITY_GUARD",
-        os.environ.get("DEMO_GUARD_PHONE", phone(107)),
-        legacy_names=("Samir Tutorial Guard",),
-    )
-    api.put(
-        f"/api/v1/gatepass/guards/{guard['id']}/properties",
-        json=[tower["id"]],
-    )
-    out["operatorLogins"] = [
-        {"role": "PROPERTY_MANAGER", "email": manager["email"], "password": DEMO_PASSWORD},
-        {"role": "SECURITY_GUARD", "email": guard["email"], "password": DEMO_PASSWORD},
-    ]
-    log("property manager and security guard accounts ready")
 
     resident_api = Api(base)
     resident_api.login(ahmed["email"], DEMO_PASSWORD)
@@ -1879,7 +1912,8 @@ def main():
     if REDACT_CREDENTIALS:
         print("  Credentials redacted from console output.")
     else:
-        print(f"  Tenant admin : {ADMIN_EMAIL} / {ADMIN_PASSWORD}")
+        if CREATE_ADMIN:
+            print(f"  Tenant admin : {ADMIN_EMAIL} / {ADMIN_PASSWORD}")
         for r in out["renterLogins"]:
             print(f"  Renter       : {r['email']} / {r['password']}")
 
