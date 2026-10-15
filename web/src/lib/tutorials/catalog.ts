@@ -293,7 +293,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "46", slug: "period-lock-and-year-end-close", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 150, youtubeId: null,
+        id: "46", slug: "period-lock-and-year-end-close", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 170, youtubeId: "ex4na1Mp-EU",
         title: { en: "Period lock and year-end close", ar: "إقفال الفترات وإقفال نهاية السنة" },
         description: {
             en: "Lock closed months, close the fiscal year into retained earnings, and re-open it if you must.",
