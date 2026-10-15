@@ -996,7 +996,8 @@ public class UserService {
 
         UserRole previousRole = user.getRole();
         UUID previousTenantId = user.getTenantId();
-        boolean emailChanged = !user.getEmail().equals(normalizedEmail);
+        // Case-insensitive: a legacy mixed-case address is the same login, not a new one.
+        boolean emailChanged = !user.getEmail().trim().equalsIgnoreCase(normalizedEmail);
         user.setEmail(normalizedEmail);
         user.setName(name);
         user.setRole(role);
