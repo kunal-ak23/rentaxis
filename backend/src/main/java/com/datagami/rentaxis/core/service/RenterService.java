@@ -252,16 +252,23 @@ public class RenterService {
             List<User> sameEmail = tenantId == null ? List.of()
                     : userRepository.findInTenantByEmailNormalised(tenantId, dto.getEmail());
             if (sameEmail.isEmpty()) {
-                portalUser = userService.createUser(
+                // One login per person (2026-10-15): someone who already has a
+                // Miftah login in another organisation gets this organisation's
+                // RENTER membership with their existing password and no invite.
+                UserService.CreatedUser created = userService.createUser(
                         dto.getEmail(),
                         null,
                         dto.getNameEn(),
                         UserRole.RENTER,
                         tenantId != null ? tenantId.toString() : null,
                         dto.getPhone(),
-                        "system"
+                        "system",
+                        false
                 );
-                outcome = RenterDTO.PortalAccount.INVITED;
+                portalUser = created.user();
+                outcome = created.existingLogin()
+                        ? RenterDTO.PortalAccount.EXISTING_LOGIN
+                        : RenterDTO.PortalAccount.INVITED;
             } else {
                 User existing = sameEmail.size() == 1 ? sameEmail.get(0) : null;
                 boolean candidate = mayLink
@@ -387,6 +394,13 @@ public class RenterService {
                     throw new BusinessRuleViolationException(EMAIL_TAKEN_MESSAGE, EMAIL_TAKEN_CODE, null);
                 }
                 portalUser.setEmail(normalizedNewEmail);
+                // One login per person: the row's password is no longer known to
+                // be the new address's owner's, so it is never copied to their
+                // other organisations; and a reset link minted for the old
+                // address dies with it (a pending invite is re-sent below).
+                portalUser.setPasswordSelfSet(false);
+                boolean invitePending = portalUser.hasPendingInvite();
+                if (!invitePending) portalUser.clearInvite();
                 try {
                     userRepository.saveAndFlush(portalUser);
                 } catch (org.springframework.dao.DataIntegrityViolationException e) {
@@ -404,7 +418,7 @@ public class RenterService {
                 // C1: the invite (if still outstanding) was minted for the address
                 // just replaced; its link must die with that address, not keep
                 // working against the corrected account.
-                if (portalUser.hasPendingInvite()) {
+                if (invitePending) {
                     userService.resendInvite(portalUser.getId());
                 }
             }

@@ -19,6 +19,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -64,7 +65,7 @@ class RenterPortalInviteOnlyTest {
         user.setInviteToken("a".repeat(64));
         user.setInviteTokenExpiresAt(Instant.now().plusSeconds(3600));
         when(userService.createUser(anyString(), any(), anyString(), any(UserRole.class),
-                any(), any(), anyString())).thenReturn(user);
+                any(), any(), anyString(), anyBoolean())).thenReturn(new UserService.CreatedUser(user, false));
 
         tenantId = UUID.randomUUID();
         TenantContextHolder.setTenantId(tenantId);
@@ -89,7 +90,7 @@ class RenterPortalInviteOnlyTest {
         service.createRenter(renterDto());
 
         verify(userService).createUser(eq("ahmed@example.invalid"), isNull(), anyString(),
-                eq(UserRole.RENTER), any(), any(), anyString());
+                eq(UserRole.RENTER), any(), any(), anyString(), eq(false));
     }
 
     @Test
@@ -109,7 +110,7 @@ class RenterPortalInviteOnlyTest {
 
         RenterDTO created = service.createRenter(dto);
 
-        verify(userService, never()).createUser(any(), any(), any(), any(), any(), any(), any());
+        verify(userService, never()).createUser(any(), any(), any(), any(), any(), any(), any(), anyBoolean());
         assertThat(created.isInvitePending()).isFalse();
     }
 
@@ -132,6 +133,6 @@ class RenterPortalInviteOnlyTest {
         verify(userRepository).findInTenantByEmailNormalised(eq(tenantId), eq("ahmed@example.invalid"));
         assertThat(created.getUserId()).isNotEqualTo(foreign.getId()).isNull();
         assertThat(created.getPortalAccount()).isEqualTo(RenterDTO.PortalAccount.SKIPPED_EMAIL_IN_USE);
-        verify(userService, never()).createUser(any(), any(), any(), any(), any(), any(), any());
+        verify(userService, never()).createUser(any(), any(), any(), any(), any(), any(), any(), anyBoolean());
     }
 }

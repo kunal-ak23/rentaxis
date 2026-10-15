@@ -63,7 +63,7 @@ public class AppleAuthService {
             throw invalid(null);
         }
 
-        List<User> candidates = userRepository.findAllByEmail(identity.email().toLowerCase().trim())
+        List<User> candidates = userRepository.findAllByEmailNormalised(identity.email())
                 .stream()
                 .filter(user -> eligible(user, identity.clientId()))
                 .filter(user -> tenantMatches(user, tenantId))

@@ -160,6 +160,22 @@ describe("RentersPage create form", () => {
         expect(screen.queryByText("sentBody")).toBeNull();
     });
 
+    // One login per person: someone who already signs in to Miftah elsewhere
+    // is added with their existing password; no invite was sent.
+    it("says the person can sign in with their existing Miftah password", async () => {
+        postResponse = { ok: true, status: 201, body: { id: "r1", invitePending: false, portalAccount: "EXISTING_LOGIN" } };
+        render(<RentersPage />);
+
+        fireEvent.click((await screen.findAllByText("addRenter"))[0]);
+        fireEvent.change(screen.getByPlaceholderText("John Doe"), { target: { value: "New Renter" } });
+        fireEvent.change(screen.getByPlaceholderText("john@example.com"), { target: { value: "r@x.com" } });
+        fireEvent.click(screen.getByText("create"));
+
+        expect(await screen.findByText("existingLoginBody")).toBeTruthy();
+        expect(screen.queryByText("sentBody")).toBeNull();
+        expect(screen.queryByText("sentTitle")).toBeNull();
+    });
+
     it("says no email was given when that is why there is no portal account", async () => {
         postResponse = { ok: true, status: 201, body: { id: "r1", invitePending: false } };
         render(<RentersPage />);

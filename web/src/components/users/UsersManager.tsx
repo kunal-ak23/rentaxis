@@ -10,6 +10,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import { assignableRoles, getRoleLabel, getRoleLabelKey, PROVISIONABLE_ROLES, type UserRole } from "@/lib/rbac";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { ResendInviteButton } from "@/components/users/ResendInviteButton";
+import { SendPasswordResetButton } from "@/components/users/SendPasswordResetButton";
 import { AccessDeniedState, LoadFailedState } from "@/components/ui/PageStates";
 import { loadList } from "@/lib/api/listLoad";
 import { isAbortError } from "@/lib/api/abort";
@@ -87,6 +88,9 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
 
     // Form error (create/update failures, e.g. duplicate email or 403)
     const [formError, setFormError] = useState<string | null>(null);
+    // One login per person: the person created already had a Miftah login, so no
+    // invite was sent — they sign in with their existing password.
+    const [existingLoginNotice, setExistingLoginNotice] = useState(false);
 
     // Form state
     const [email, setEmail] = useState("");
@@ -265,6 +269,10 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
             // Surface backend failures (duplicate email, guard-phone conflict,
             // role-hierarchy 403, ...) instead of leaving the form open silently.
             await throwIfNotOk(res);
+            if (!editingUserId) {
+                const created = await res.json().catch(() => null);
+                setExistingLoginNotice(created?.existingLogin === true);
+            }
             setShowForm(false);
             resetForm();
             fetchUsers();
@@ -275,6 +283,8 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                 await reloadAssignments(editingUserId);
                 fetchUsers();
                 setFormError(tU("userChanged"));
+            } else if (errorCode(e) === "user.passwordSharedAcrossOrgs") {
+                setFormError(tInv("passwordSharedAcrossOrgs"));
             } else {
                 setFormError(e instanceof ApiError ? e.message : tU("genericError"));
             }
@@ -436,6 +446,19 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                 </div>
             </div>
 
+            {existingLoginNotice && (
+                <div className="bg-primary/10 border border-primary/20 text-foreground text-xs font-medium rounded-lg px-4 py-3 flex items-center justify-between gap-3" role="status" data-testid="user-existing-login">
+                    <span>{tInv("existingLoginBody")}</span>
+                    <button
+                        onClick={() => setExistingLoginNotice(false)}
+                        aria-label={tU("dismiss")}
+                        className="text-muted hover:text-foreground transition-colors cursor-pointer shrink-0"
+                    >
+                        <X size={14} />
+                    </button>
+                </div>
+            )}
+
             {/* Delete error banner */}
             {deleteError && (
                 <div className="bg-error/10 border border-error/20 text-error text-xs font-medium rounded-lg px-4 py-3 flex items-center justify-between gap-3" role="alert">
@@ -511,6 +534,9 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                                                 <td className="py-4 px-2 text-right">
                                                     <div className="flex justify-end gap-2">
                                                         {u.invitePending && <ResendInviteButton userId={u.id} onSent={fetchUsers} />}
+                                                        {!u.invitePending && u.tenantId && u.role !== "SECURITY_GUARD" && u.role !== "SUPER_ADMIN" && (
+                                                            <SendPasswordResetButton userId={u.id} />
+                                                        )}
                                                         <button
                                                             onClick={() => handleEdit(u)}
                                                             className="text-xs px-3 py-1.5 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-all duration-200 font-bold cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
@@ -611,8 +637,10 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                                     <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-2 ml-1">
                                         {tU("password")} {editingUserId && tU("passwordKeepHint")}
                                     </label>
-                                    {!editingUserId && (
+                                    {!editingUserId ? (
                                         <p className="text-[10px] text-muted mb-2 ml-1">{tInv("passwordRequired")}</p>
+                                    ) : role !== "SUPER_ADMIN" && (
+                                        <p className="text-[10px] text-muted mb-2 ml-1" data-testid="user-password-edit-hint">{tInv("passwordEditHint")}</p>
                                     )}
                                     <input
                                         type="password"

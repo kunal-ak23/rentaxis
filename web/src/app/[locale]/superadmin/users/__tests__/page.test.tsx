@@ -41,6 +41,9 @@ let postBodies: Record<string, unknown>[];
 let resendUrls: string[];
 let propertyUrls: string[];
 let postResponse: { ok: boolean; status: number; body: unknown };
+let putResponse: { ok: boolean; status: number; body: unknown } | null;
+let resetUrls: string[];
+let listUsers: unknown[];
 let deleteResponse: { ok: boolean; status: number; body: unknown };
 
 beforeEach(() => {
@@ -49,6 +52,9 @@ beforeEach(() => {
     resendUrls = [];
     propertyUrls = [];
     postResponse = { ok: true, status: 200, body: pmUser };
+    putResponse = null;
+    resetUrls = [];
+    listUsers = [{ ...pmUser, invitePending: true }];
     deleteResponse = { ok: true, status: 200, body: {} };
     global.fetch = vi.fn(async (url: unknown, init?: RequestInit) => {
         const u = String(url);
@@ -58,10 +64,14 @@ beforeEach(() => {
         }
         if (u.includes(`/admin/users/${PM_ID}`) && method === "PUT") {
             putBodies.push(JSON.parse(String(init?.body)));
-            return jsonRes(pmUser);
+            return putResponse ? jsonRes(putResponse.body, putResponse.ok, putResponse.status) : jsonRes(pmUser);
         }
         if (u.includes(`/admin/users/${PM_ID}`) && method === "DELETE") {
             return jsonRes(deleteResponse.body, deleteResponse.ok, deleteResponse.status);
+        }
+        if (u.includes("/send-password-reset") && method === "POST") {
+            resetUrls.push(u);
+            return { ok: true, status: 204, json: async () => null, text: async () => "" } as unknown as Response;
         }
         if (u.includes("/resend-invite") && method === "POST") {
             resendUrls.push(u);
@@ -72,7 +82,7 @@ beforeEach(() => {
             return jsonRes(postResponse.body, postResponse.ok, postResponse.status);
         }
         if (u.includes("/admin/users")) {
-            return jsonRes([{ ...pmUser, invitePending: true }]);
+            return jsonRes(listUsers);
         }
         if (u.includes("/admin/tenants/t1/properties")) {
             // A SUPER_ADMIN's picker reads the edited user's organisation by id (break round 1, F7).
@@ -215,6 +225,68 @@ describe("SuperAdminUsersPage", () => {
         await new Promise(r => setTimeout(r, 20));
         expect(resendUrls).toEqual([]);
         expect(screen.queryByText(en.Invites.resent)).toBeNull();
+    });
+});
+
+// One login per person across organisations (2026-10-15).
+describe("one login per person", () => {
+    it("tells the admin a person who already has a Miftah login was added without an invite", async () => {
+        postResponse = { ok: true, status: 200, body: { ...pmUser, existingLogin: true, invitePending: false } };
+        render(<SuperAdminUsersPage />);
+
+        fireEvent.click(await screen.findByText("New User"));
+        fireEvent.change(screen.getByPlaceholderText("e.g. Acme Corp Admin"), { target: { value: "Shared" } });
+        fireEvent.change(screen.getByPlaceholderText("e.g. admin@acmecorp.com"), { target: { value: "s@x.com" } });
+        fireEvent.click(screen.getByText("Provision User"));
+
+        expect((await screen.findByTestId("user-existing-login")).textContent).toContain(en.Invites.existingLoginBody);
+    });
+
+    it("says nothing about an existing login for an ordinary invite", async () => {
+        render(<SuperAdminUsersPage />);
+        fireEvent.click(await screen.findByText("New User"));
+        fireEvent.change(screen.getByPlaceholderText("e.g. Acme Corp Admin"), { target: { value: "New" } });
+        fireEvent.change(screen.getByPlaceholderText("e.g. admin@acmecorp.com"), { target: { value: "n@x.com" } });
+        fireEvent.click(screen.getByText("Provision User"));
+        await waitFor(() => expect(postBodies.length).toBe(1));
+        expect(screen.queryByTestId("user-existing-login")).toBeNull();
+    });
+
+    it("emails a reset link for a user who has a password, after a confirm, and shows no link", async () => {
+        listUsers = [{ ...pmUser, invitePending: false }];
+        const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+        render(<SuperAdminUsersPage />);
+
+        fireEvent.click(await screen.findByText(en.Invites.resetPassword));
+
+        expect(confirm).toHaveBeenCalledWith(en.Invites.resetConfirm);
+        await waitFor(() => expect(resetUrls).toEqual([`/api/proxy/admin/users/${PM_ID}/send-password-reset`]));
+        expect(await screen.findByText(en.Invites.resetSent)).toBeTruthy();
+        expect(screen.queryByText(/set-password\?token=/)).toBeNull();
+    });
+
+    it("offers resend invite, not a reset, while the invite is pending", async () => {
+        render(<SuperAdminUsersPage />);
+        expect(await screen.findByText(en.Invites.resend)).toBeTruthy();
+        expect(screen.queryByText(en.Invites.resetPassword)).toBeNull();
+    });
+
+    it("explains why a typed password was refused for a login shared with another organisation", async () => {
+        putResponse = {
+            ok: false, status: 400,
+            body: { error: true, message: "server words", status: 400, code: "user.passwordSharedAcrossOrgs", args: {} },
+        };
+        render(<SuperAdminUsersPage />);
+
+        fireEvent.click(await screen.findByText("Edit"));
+        // The manager's assignments load before the panel can be saved.
+        await screen.findAllByText("Tower A");
+        expect(screen.getByTestId("user-password-edit-hint").textContent).toBe(en.Invites.passwordEditHint);
+        fireEvent.change(screen.getByPlaceholderText(en.UsersAdmin.passwordKeepPlaceholder), { target: { value: "typed-pass-1" } });
+        fireEvent.click(screen.getByText("Update User"));
+
+        expect(await screen.findByText(en.Invites.passwordSharedAcrossOrgs)).toBeTruthy();
+        expect(putBodies).toEqual([{ password: "typed-pass-1" }]);
     });
 });
 

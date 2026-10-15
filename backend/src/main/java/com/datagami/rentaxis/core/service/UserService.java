@@ -265,6 +265,190 @@ public class UserService {
         return saved;
     }
 
+    static final java.time.Duration RESET_VALIDITY = java.time.Duration.ofHours(24);
+    private static final java.time.Duration RESET_COOLDOWN = java.time.Duration.ofMinutes(1);
+
+    /**
+     * An admin's "reset password" (one login per person, rule 3): emails the
+     * person a link to choose a new password, which then applies in every
+     * organisation they sign in to. The admin never sees the link or chooses the
+     * password, so an admin of one organisation cannot set the credential that
+     * opens another. Nothing changes until the person uses the link; their
+     * current password keeps working meanwhile (a password sign-in retires the
+     * link, as it does an invite).
+     *
+     * <p>The link rides on the invite-token columns and is redeemed by the same
+     * {@code /auth/set-password}. Throttled to one per user per minute; the
+     * redemption endpoint keeps its own rate limit. Authorization (the caller's
+     * tenant and rank) is the controller's job, as for every admin mutation.
+     */
+    @Transactional
+    public void sendPasswordReset(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new com.datagami.rentaxis.api.exception.NotFoundException("User not found"));
+        if (user.getRole() == UserRole.SECURITY_GUARD) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    "Security guards sign in with their phone number; there is no password to reset.",
+                    "user.resetGuard", java.util.Map.of());
+        }
+        if (user.getTenantId() == null) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    "A platform administrator's password is set in the edit form.",
+                    "user.resetNoOrganisation", java.util.Map.of());
+        }
+        if (user.getStatus() != com.datagami.rentaxis.domain.entity.enums.UserStatus.ACTIVE) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    "This user is inactive; reactivate them before sending a password reset.",
+                    "user.resetInactive", java.util.Map.of());
+        }
+        if (user.getEmail() == null || user.getEmail().isBlank()) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    "This user has no email address to send a reset link to.",
+                    "user.resetNoEmail", java.util.Map.of());
+        }
+        if (user.hasPendingInvite()) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    "This user has not set a password yet; resend their invite instead.",
+                    "user.resetInvitePending", java.util.Map.of());
+        }
+        Instant now = Instant.now();
+        if (user.getInviteTokenExpiresAt() != null
+                && user.getInviteTokenExpiresAt().isAfter(now.plus(RESET_VALIDITY).minus(RESET_COOLDOWN))) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    "A reset link was sent to this user less than a minute ago.",
+                    "user.resetRecentlySent", java.util.Map.of());
+        }
+        Instant expiresAt = now.plus(RESET_VALIDITY);
+        user.setInviteToken(generateInviteToken());
+        user.setInviteTokenExpiresAt(expiresAt);
+        User saved = userRepository.saveAndFlush(user);
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.PASSWORD_RESET_REQUESTED,
+                saved.getTenantId(),
+                new com.datagami.rentaxis.core.email.event.payload.PasswordResetRequestedPayload(
+                        saved.getId(), saved.getName(), "/auth/set-password?token=" + saved.getInviteToken(),
+                        expiresAt.toString()),
+                // A nonce, never the token: dedup keys are stored and logged (PR #342 review I4).
+                "PASSWORD_RESET_REQUESTED:" + saved.getId() + ":" + UUID.randomUUID()));
+        AUDIT.info("password-reset-link-sent user={}", saved.getId());
+    }
+
+    /** How long a self-service "forgot password" link works. */
+    public static final java.time.Duration FORGOT_VALIDITY = java.time.Duration.ofMinutes(45);
+
+    /**
+     * Person-level forgot-password links (changeset 167). Field-injected so the
+     * constructor every test builds by hand stays as it was; null only there.
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.core.service.auth.PasswordResetTokenStore resetLinks;
+
+    /**
+     * Self-service "forgot password" (public, unauthenticated). If this email has
+     * an ACTIVE login other than a SECURITY_GUARD's (phone OTP) or a SUPER_ADMIN's,
+     * a single-use link valid {@link #FORGOT_VALIDITY} is mailed to the address.
+     *
+     * <p>Review P2-1: the link belongs to the person (normalised email), not to a
+     * users row — so a row someone else controls (an organisation registered with
+     * this address, an admin-typed legacy row) can neither receive it nor retire
+     * it by signing in, and the email carries Miftah's own branding, never one
+     * organisation's ({@code tenantId} null). It does not touch any row's invite or
+     * admin-reset link, so it is always sent (review P3-2); the per-address limit
+     * in {@code ForgotPasswordService} bounds it.
+     *
+     * <p>Says nothing to its caller: {@code ForgotPasswordService} runs it after the
+     * endpoint has answered.
+     */
+    @Transactional
+    public void sendForgottenPasswordLink(String email) {
+        List<UserRepository.SharedLogin> active = sharedLogins(email).stream()
+                .filter(UserService::isActive)
+                .filter(l -> l.getTenantId() != null)
+                .toList();
+        if (active.isEmpty() || resetLinks == null) {
+            AUDIT.info("forgot-password no-login");
+            return;
+        }
+        // The address is the same on every row; this one only names the recipient
+        // (name, language) for the mail pipeline. One the person's login includes, if any.
+        UserRepository.SharedLogin recipient = active.stream().filter(UserService::joinsPersonLogin)
+                .findFirst().orElse(active.get(0));
+        String token = generateInviteToken();
+        Instant expiresAt = Instant.now().plus(FORGOT_VALIDITY);
+        String address = email.trim().toLowerCase();
+        resetLinks.issue(address, token, expiresAt);
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.PASSWORD_RESET_REQUESTED,
+                null,
+                // toEmail: mailed to the address asked for, captured now — never to
+                // the row's address at dispatch, which its org can change (re-review P2-A).
+                new com.datagami.rentaxis.core.email.event.payload.PasswordResetRequestedPayload(
+                        recipient.getId(), null, "/auth/set-password?token=" + token, expiresAt.toString(),
+                        address),
+                "PASSWORD_RESET_REQUESTED:" + recipient.getId() + ":forgot:" + UUID.randomUUID()));
+        AUDIT.info("forgot-password link-sent recipient={}", recipient.getId());
+    }
+
+    /** What the set-password page shows for a person-level link: email, a name, expiry; or why not. */
+    public record PersonLinkInfo(String email, String name, Instant expiresAt, boolean expired) {
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<PersonLinkInfo> findPersonLink(String token) {
+        if (resetLinks == null) return Optional.empty();
+        return resetLinks.find(token)
+                .filter(l -> l.usedAt() == null)
+                .map(l -> new PersonLinkInfo(l.email(),
+                        // No name: every row's name was written by some organisation's
+                        // admin, and none may put words on the person's reset page
+                        // (re-review P3-c). The page greets by address.
+                        null,
+                        l.expiresAt(), l.expiresAt().isBefore(Instant.now())));
+    }
+
+    /**
+     * Redeems a person-level link: the new password is self-set on every ACTIVE row
+     * of the person's shared login, sessions end everywhere, deactivated rows lose
+     * their old password, and the person's other outstanding links die.
+     *
+     * <p>Rows from public self-registration that were never verified (review P3-5)
+     * are left out — unless they are the person's only active login, in which case
+     * this link is exactly the proof they were waiting for.
+     */
+    private InviteResult acceptPersonLink(String token, String newRawPassword) {
+        if (resetLinks == null) return InviteResult.NOT_FOUND;
+        var link = resetLinks.find(token);
+        if (link.isEmpty()) return InviteResult.NOT_FOUND;
+        if (link.get().usedAt() != null) return InviteResult.ALREADY_USED;
+        Instant now = Instant.now();
+        if (link.get().expiresAt().isBefore(now)) return InviteResult.EXPIRED;
+        String email = link.get().email();
+
+        List<UserRepository.SharedLogin> rows = sharedLogins(email);
+        List<UUID> joined = rows.stream().filter(UserService::isActive).filter(UserService::joinsPersonLogin)
+                .map(UserRepository.SharedLogin::getId).toList();
+        boolean onlyUnverified = joined.isEmpty();
+        List<UUID> targets = onlyUnverified
+                ? rows.stream().filter(UserService::isActive).map(UserRepository.SharedLogin::getId).toList()
+                : joined;
+        if (targets.isEmpty()) return InviteResult.NOT_FOUND;
+        if (resetLinks.consume(token, now) == 0) return InviteResult.ALREADY_USED;
+        resetLinks.retireAll(email, now);
+
+        String hash = passwordEncoder.encode(newRawPassword);
+        writePersonPassword(targets, hash, true, null, "forgot");
+        if (onlyUnverified) userRepository.markRegistrationVerified(targets);
+        clearInactivePasswords(rows.stream().filter(l -> !isActive(l)).filter(UserService::joinsPersonLogin)
+                .map(UserRepository.SharedLogin::getId).toList(), null, "forgot");
+
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.PASSWORD_CHANGED,
+                null,
+                new PasswordChangedPayload(targets.get(0), null, now.toString(), null, email),
+                "PASSWORD_CHANGED:" + targets.get(0) + ":forgot:" + UUID.randomUUID()));
+        return InviteResult.OK;
+    }
+
     private static String generateInviteToken() {
         java.security.SecureRandom rng = new java.security.SecureRandom();
         byte[] buf = new byte[32];
@@ -274,9 +458,140 @@ public class UserService {
         return sb.toString();
     }
 
+    // --- One login per person across organisations (2026-10-15) ---------------
+    //
+    // users rows are per organisation, but the password belongs to the person:
+    // every row with the same normalised email shares the one the person sets.
+    //
+    //   * The person sets it — an emailed invite or reset link (proves the inbox),
+    //     or /me/password from their current one — and it is written to each of
+    //     their rows. A change from /me/password reaches only the rows that
+    //     current password already opens: knowing one organisation's password
+    //     proves nothing about a row that has another (rule 5's leftovers, or a
+    //     password an admin typed).
+    //   * A new row for someone who already has a login reuses it, no invite —
+    //     but only a password the person chose (password_self_set). One an admin
+    //     typed is never copied, or that admin's password would open the next
+    //     organisation to add the person.
+    //   * An admin never types a password for a login that exists in another
+    //     organisation; they send a reset link (sendPasswordReset), and the
+    //     person's own choice then applies everywhere.
+    //
+    // SUPER_ADMIN and SECURITY_GUARD rows never share: a SUPER_ADMIN has no
+    // organisation (its login must not become an org picker) and a guard signs
+    // in by phone OTP.
+
+    public static final String PASSWORD_SHARED_CODE = "user.passwordSharedAcrossOrgs";
+    public static final String PASSWORD_SHARED_MESSAGE = "This person uses the same Miftah login in another"
+            + " organisation, so only they can change its password. Send them a password reset link instead.";
+
+    /** Password events per row, for the security trail. Never the password or a link. */
+    private static final org.slf4j.Logger AUDIT = org.slf4j.LoggerFactory.getLogger("security.audit");
+
+    /** Whether rows of this role share the person's password. Exhaustive, like {@link #getsTenantMembership}. */
+    static boolean sharesPersonLogin(UserRole role) {
+        return switch (role) {
+            case TENANT_ADMIN, PROPERTY_MANAGER, ACCOUNTANT, TENANT_USER, RENTER -> true;
+            case SUPER_ADMIN, SECURITY_GUARD -> false;
+        };
+    }
+
+    private List<UserRepository.SharedLogin> sharedLogins(String email) {
+        if (email == null || email.isBlank()) return List.of();
+        return userRepository.findSharedLogins(email);
+    }
+
+    private static boolean isActive(UserRepository.SharedLogin login) {
+        return com.datagami.rentaxis.domain.entity.enums.UserStatus.ACTIVE.name().equals(login.getStatus());
+    }
+
+    /**
+     * Review P3-5: an admin row made by public self-registration, never verified by
+     * a link to its address, is not part of the person's shared login — anyone can
+     * register an organisation with someone else's email.
+     */
+    private static boolean joinsPersonLogin(UserRepository.SharedLogin login) {
+        return !login.getSelfRegisteredUnverified();
+    }
+
+    /**
+     * Review P2-1: when the person sets a new password, a deactivated row must not
+     * keep the old one (it would work again on reactivation). Its password is
+     * replaced by an unusable one; after reactivation the admin sends a reset link
+     * or the person uses "Forgot password".
+     */
+    private void clearInactivePasswords(java.util.Collection<UUID> rowIds, UUID originRowId, String reason) {
+        if (rowIds.isEmpty()) return;
+        userRepository.writeSharedPassword(rowIds, passwordEncoder.encode(generateUnusableGuardSecret()),
+                false, Instant.now());
+        for (UUID id : rowIds) {
+            tokenRevocation.revokeAllTokens(id);
+            AUDIT.info("password-cleared user={} via={} origin={} (inactive)", id, reason, originRowId);
+        }
+    }
+
+    /**
+     * The person's own password (newest first) from an ACTIVE row outside
+     * {@code tenantId}, for a new membership row there. Empty when they have no
+     * login, or none whose password they chose themselves.
+     */
+    private Optional<String> reusableOwnPassword(String email, UUID tenantId) {
+        return sharedLogins(email).stream()
+                .filter(UserService::isActive)
+                .filter(UserService::joinsPersonLogin)
+                .filter(UserRepository.SharedLogin::getPasswordSelfSet)
+                .filter(l -> !tenantId.equals(l.getTenantId()))
+                .map(UserRepository.SharedLogin::getPasswordHash)
+                .findFirst();
+    }
+
+    /**
+     * Whether this email has an ACTIVE password-sharing row other than
+     * {@code exceptId} (review P3-2: a deactivated row is not "signs in elsewhere").
+     */
+    private boolean hasOtherLogin(String email, UUID exceptId) {
+        return sharedLogins(email).stream().filter(UserService::isActive)
+                .anyMatch(l -> !l.getId().equals(exceptId));
+    }
+
+    private static void refuseTypedPasswordForSharedLogin() {
+        throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                PASSWORD_SHARED_MESSAGE, PASSWORD_SHARED_CODE, java.util.Map.of());
+    }
+
+    /**
+     * Writes {@code hash} to {@code rowIds} (the same person's other rows), ends
+     * their sessions and records it per row.
+     */
+    private void writePersonPassword(java.util.Collection<UUID> rowIds, String hash, boolean selfSet,
+                                     UUID originRowId, String reason) {
+        if (rowIds.isEmpty()) return;
+        userRepository.writeSharedPassword(rowIds, hash, selfSet, Instant.now());
+        for (UUID id : rowIds) {
+            tokenRevocation.revokeAllTokens(id);
+            AUDIT.info("password-set user={} via={} origin={} selfSet={}", id, reason, originRowId, selfSet);
+        }
+    }
+
+    public record CreatedUser(User user, boolean existingLogin) {
+    }
+
     @Transactional
     public User createUser(String email, String rawPassword, String name, UserRole role, String tenantId,
             String phoneNumber, String addedByContext) {
+        return createUser(email, rawPassword, name, role, tenantId, phoneNumber, addedByContext, false).user();
+    }
+
+    /**
+     * @param typedPasswordMustBeUnshared true for an admin creating someone: a
+     *        password they type is refused when the email already signs in to
+     *        another organisation. Self-registration passes false — the person
+     *        typed their own; the new row keeps it, unshared and never copied
+     *        (registration proves nothing about the inbox).
+     */
+    @Transactional
+    public CreatedUser createUser(String email, String rawPassword, String name, UserRole role, String tenantId,
+            String phoneNumber, String addedByContext, boolean typedPasswordMustBeUnshared) {
         String normalizedEmail = email.toLowerCase().trim();
         UUID tenantUuid = (tenantId != null && !tenantId.isBlank()) ? UUID.fromString(tenantId) : null;
 
@@ -313,9 +628,23 @@ public class UserService {
         // generateUnusableGuardSecret. This also makes a null rawPassword safe for
         // the one role that has no use for one.
         boolean passwordSupplied = rawPassword != null && !rawPassword.isBlank();
-        boolean issuesInviteToken = issuesInviteToken(role, passwordSupplied);
+
+        // One login per person: someone who already signs in elsewhere keeps
+        // their password here too, and is not invited to choose another.
+        String reusedHash = null;
+        if (tenantUuid != null && sharesPersonLogin(role)) {
+            if (passwordSupplied && typedPasswordMustBeUnshared && hasOtherLogin(normalizedEmail, null)) {
+                refuseTypedPasswordForSharedLogin();
+            }
+            if (!passwordSupplied) {
+                reusedHash = reusableOwnPassword(normalizedEmail, tenantUuid).orElse(null);
+            }
+        }
+        boolean issuesInviteToken = reusedHash == null && issuesInviteToken(role, passwordSupplied);
         String secret;
-        if (role == UserRole.SECURITY_GUARD) {
+        if (reusedHash != null) {
+            secret = null;
+        } else if (role == UserRole.SECURITY_GUARD) {
             secret = generateUnusableGuardSecret();
         } else if (passwordSupplied) {
             requireStrongEnough(rawPassword);
@@ -329,7 +658,15 @@ public class UserService {
         } else {
             throw new IllegalArgumentException("A password is required for the " + role + " role.");
         }
-        user.setPasswordHash(passwordEncoder.encode(secret));
+        if (reusedHash != null) {
+            user.setPasswordHash(reusedHash);
+            user.setPasswordSelfSet(true);
+            user.setPasswordSetAt(Instant.now());
+        } else {
+            user.setPasswordHash(passwordEncoder.encode(secret));
+            user.setPasswordSelfSet(false);
+            user.setPasswordSetAt(passwordSupplied && role != UserRole.SECURITY_GUARD ? Instant.now() : null);
+        }
         user.setName(name);
         user.setRole(role);
         user.setPhoneNumber(normalizedPhone);
@@ -393,7 +730,10 @@ public class UserService {
                     "TENANT_ADMIN_ADDED:" + saved.getId()));
         }
 
-        return saved;
+        if (reusedHash != null) {
+            AUDIT.info("password-set user={} via=existing-login selfSet=true", saved.getId());
+        }
+        return new CreatedUser(saved, reusedHash != null);
     }
 
     /**
@@ -402,7 +742,9 @@ public class UserService {
      * (typically by password match during login).
      */
     public List<User> findAllByEmail(String email) {
-        return userRepository.findAllByEmail(email.toLowerCase().trim());
+        // Review P3-3: case-insensitive, so a legacy mixed-case row
+        // ("Legacy@Example.com") can sign in — the same match a reset uses.
+        return userRepository.findAllByEmailNormalised(email);
     }
 
     public Optional<User> findByInviteToken(String token) {
@@ -467,21 +809,34 @@ public class UserService {
         // Pre-flight read: lets us return distinct error codes (NOT_FOUND / EXPIRED / ALREADY_USED)
         // for better UX without needing two atomic UPDATEs.
         var maybe = userRepository.findByInviteToken(token);
-        if (maybe.isEmpty()) return InviteResult.NOT_FOUND;
+        // Not a row's invite or admin-reset link: perhaps a person-level forgot-password one.
+        if (maybe.isEmpty()) return acceptPersonLink(token, newRawPassword);
         User probe = maybe.get();
         if (probe.getInviteTokenExpiresAt() == null) return InviteResult.ALREADY_USED;
         if (probe.getInviteTokenExpiresAt().isBefore(Instant.now())) return InviteResult.EXPIRED;
 
         // Atomic redeem: returns 0 if a concurrent caller already cleared the token.
-        int updated = userRepository.redeemInviteToken(
-                token,
-                passwordEncoder.encode(newRawPassword),
-                Instant.now());
+        String hash = passwordEncoder.encode(newRawPassword);
+        int updated = userRepository.redeemInviteToken(token, hash, Instant.now());
         if (updated == 0) {
             return InviteResult.ALREADY_USED;
         }
         // A new password ends every session opened with the old one (audit P1-2).
         tokenRevocation.revokeAllTokens(probe.getId());
+        AUDIT.info("password-set user={} via=link selfSet=true", probe.getId());
+
+        // The link was mailed to this address, so it proves the inbox: the
+        // person's password is now this one in every organisation they belong to.
+        if (sharesPersonLogin(probe.getRole())) {
+            List<UserRepository.SharedLogin> rows = sharedLogins(probe.getEmail()).stream()
+                    .filter(UserService::joinsPersonLogin)
+                    .filter(l -> !l.getId().equals(probe.getId()))
+                    .toList();
+            writePersonPassword(rows.stream().filter(UserService::isActive)
+                    .map(UserRepository.SharedLogin::getId).toList(), hash, true, probe.getId(), "link");
+            clearInactivePasswords(rows.stream().filter(l -> !isActive(l))
+                    .map(UserRepository.SharedLogin::getId).toList(), probe.getId(), "link");
+        }
 
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.PASSWORD_CHANGED,
@@ -502,14 +857,48 @@ public class UserService {
      */
     @Transactional
     public int changePassword(User user, String newRawPassword) {
-        user.setPasswordHash(passwordEncoder.encode(newRawPassword));
+        return changePassword(user, null, newRawPassword);
+    }
+
+    /**
+     * As above, and — one login per person — the new password also goes to the
+     * person's other rows that {@code currentRawPassword} (already verified
+     * against {@code user} by the caller) opens. A row with a different password
+     * is left alone: knowing this one proves nothing about it. The new password
+     * is the person's own only if every row it replaces was.
+     */
+    @Transactional
+    public int changePassword(User user, String currentRawPassword, String newRawPassword) {
+        String hash = passwordEncoder.encode(newRawPassword);
+        boolean selfSet = user.isPasswordSelfSet();
+        List<UUID> others = List.of();
+        List<UUID> inactiveWithOldPassword = List.of();
+        // A self-registered, unverified row changes alone (review P3-5).
+        if (currentRawPassword != null && sharesPersonLogin(user.getRole()) && !user.isSelfRegisteredUnverified()) {
+            List<UserRepository.SharedLogin> opened = sharedLogins(user.getEmail()).stream()
+                    .filter(UserService::joinsPersonLogin)
+                    .filter(l -> !l.getId().equals(user.getId()))
+                    .filter(l -> passwordEncoder.matches(currentRawPassword, l.getPasswordHash()))
+                    .toList();
+            List<UserRepository.SharedLogin> active = opened.stream().filter(UserService::isActive).toList();
+            selfSet = selfSet && active.stream().allMatch(UserRepository.SharedLogin::getPasswordSelfSet);
+            others = active.stream().map(UserRepository.SharedLogin::getId).toList();
+            inactiveWithOldPassword = opened.stream().filter(l -> !isActive(l))
+                    .map(UserRepository.SharedLogin::getId).toList();
+        }
+        user.setPasswordHash(hash);
+        user.setPasswordSelfSet(selfSet);
+        user.setPasswordSetAt(Instant.now());
         // The holder chose a password; an outstanding invite link must not
         // outlive that (PR #342 review I1).
         user.clearInvite();
-        userRepository.save(user);
+        userRepository.saveAndFlush(user);
         // Ends every other session, including a thief's (audit P1-2). The caller
         // gets a fresh token from AuthController so their own session survives.
         tokenRevocation.revokeAllTokens(user.getId());
+        AUDIT.info("password-set user={} via=change selfSet={}", user.getId(), selfSet);
+        writePersonPassword(others, hash, selfSet, user.getId(), "change");
+        clearInactivePasswords(inactiveWithOldPassword, user.getId(), "change");
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.PASSWORD_CHANGED,
                 user.getTenantId(),
@@ -599,8 +988,27 @@ public class UserService {
             throw new IllegalArgumentException(GUARD_PHONE_TAKEN);
         }
 
+        boolean passwordTyped = rawPassword != null && !rawPassword.isBlank();
+        if (passwordTyped && sharesPersonLogin(role) && hasOtherLogin(normalizedEmail, id)) {
+            // Rule 3: an admin never sets a password that opens another organisation.
+            refuseTypedPasswordForSharedLogin();
+        }
+
         UserRole previousRole = user.getRole();
         UUID previousTenantId = user.getTenantId();
+        boolean emailChanged = !user.getEmail().equals(normalizedEmail);
+        boolean reissueInvite = false;
+        if (emailChanged) {
+            // A link minted for the old address must not set the password of the
+            // person at the new one (an admin could invite an inbox they read,
+            // repoint the row at someone else and redeem it everywhere that
+            // person signs in). A pending invite is re-sent to the new address,
+            // as the renter edit does; a reset link simply dies. The password
+            // on the row is no longer known to be the new address's owner's.
+            reissueInvite = user.hasPendingInvite() && !passwordTyped;
+            user.clearInvite();
+            user.setPasswordSelfSet(false);
+        }
         user.setEmail(normalizedEmail);
         user.setName(name);
         user.setRole(role);
@@ -609,12 +1017,19 @@ public class UserService {
         UUID newTenantId = (tenantId != null && !tenantId.isBlank()) ? UUID.fromString(tenantId) : null;
         user.setTenantId(newTenantId);
 
-        if (rawPassword != null && !rawPassword.isBlank()) {
+        if (passwordTyped) {
             requireStrongEnough(rawPassword);
             user.setPasswordHash(passwordEncoder.encode(rawPassword));
+            // Typed by an admin: never the person's own, never copied elsewhere.
+            user.setPasswordSelfSet(false);
+            user.setPasswordSetAt(Instant.now());
             // A set password retires the invite: otherwise the old link, or a
             // resend, could replace it (PR #342 review I1).
             user.clearInvite();
+        }
+        if (reissueInvite) {
+            user.setInviteToken(generateInviteToken());
+            user.setInviteTokenExpiresAt(Instant.now().plus(INVITE_VALIDITY));
         }
 
         // Same translation as createUser, and saveAndFlush for the same reason —
@@ -654,8 +1069,14 @@ public class UserService {
         // them, or the password, changes, the old tokens describe somebody
         // this user no longer is (audit P1-2: a demoted admin kept admin for 30
         // days and could mint a new admin with it).
-        boolean passwordSet = rawPassword != null && !rawPassword.isBlank();
-        if (previousRole != role || !java.util.Objects.equals(previousTenantId, newTenantId) || passwordSet) {
+        if (passwordTyped) {
+            AUDIT.info("password-set user={} via=admin-typed selfSet=false", saved.getId());
+        }
+        if (reissueInvite) {
+            publishInvite(saved, "USER_INVITED:" + saved.getId() + ":email-change:" + UUID.randomUUID());
+        }
+        if (previousRole != role || !java.util.Objects.equals(previousTenantId, newTenantId) || passwordTyped
+                || emailChanged) {
             tokenRevocation.revokeAllTokens(saved.getId());
         } else {
             // The legacy X-User-* path reads role, tenant and memberships through

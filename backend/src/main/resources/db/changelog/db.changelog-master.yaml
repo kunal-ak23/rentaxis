@@ -331,3 +331,9 @@ databaseChangeLog:
       file: db/changelog/changesets/163-cheque-image-crops.yaml
   - include:
       file: db/changelog/changesets/164-ux-gaps-5.yaml
+  - include:
+      file: db/changelog/changesets/165-user-password-self-set.yaml
+  - include:
+      file: db/changelog/changesets/166-user-self-registered-unverified.yaml
+  - include:
+      file: db/changelog/changesets/167-password-reset-tokens.yaml

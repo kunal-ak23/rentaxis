@@ -42,10 +42,13 @@ public class AuthController {
     private final FirebaseGuardAuthService firebaseGuardAuthService;
     private final AppleAuthService appleAuthService;
     private final AuthTokenService authTokenService;
+    private final com.datagami.rentaxis.core.service.auth.ForgotPasswordService forgotPasswordService;
 
     public AuthController(UserService userService, LandlordOrgService orgService, PasswordEncoder passwordEncoder,
             FirebaseGuardAuthService firebaseGuardAuthService, AppleAuthService appleAuthService,
-            AuthTokenService authTokenService) {
+            AuthTokenService authTokenService,
+            com.datagami.rentaxis.core.service.auth.ForgotPasswordService forgotPasswordService) {
+        this.forgotPasswordService = forgotPasswordService;
         this.userService = userService;
         this.orgService = orgService;
         this.passwordEncoder = passwordEncoder;
@@ -90,7 +93,12 @@ public class AuthController {
     public record LoginAmbiguousResponse(List<TenantCandidate> tenants) {
     }
 
-    public record TenantCandidate(String tenantId, String tenantName) {
+    /**
+     * {@code role} is the caller's role in that organisation (review P3-4): each
+     * app offers only the organisations it can open — the resident app RENTER, the
+     * manager app staff roles. The caller already proved the password for each.
+     */
+    public record TenantCandidate(String tenantId, String tenantName, String role) {
     }
 
     /**
@@ -210,7 +218,8 @@ public class AuthController {
                             u.getTenantId().toString(),
                             orgService.findById(u.getTenantId())
                                     .map(LandlordOrg::getName)
-                                    .orElse("(unknown)")))
+                                    .orElse("(unknown)"),
+                            u.getRole().name()))
                     .toList();
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(new LoginAmbiguousResponse(tenants));
@@ -289,6 +298,10 @@ public class AuthController {
                 org.getId().toString(),
                 null,
                 "system");
+        // Review P3-5: registration is public and proves nothing about the inbox, so
+        // this row stays out of the person's shared login until a link is redeemed on it.
+        user.setSelfRegisteredUnverified(true);
+        userService.saveUser(user);
 
         return ResponseEntity.ok(new AuthResponse(
                 user.getId().toString(),
@@ -346,11 +359,35 @@ public class AuthController {
                             user.getTenantId().toString(),
                             orgService.findById(user.getTenantId())
                                     .map(LandlordOrg::getName)
-                                    .orElse("(unknown)")))
+                                    .orElse("(unknown)"),
+                            user.getRole().name()))
                     .toList();
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(new LoginAmbiguousResponse(tenants));
         }
+    }
+
+    public record ForgotPasswordRequest(String email) {
+    }
+
+    /** The one answer, for an address with a login and for one without. */
+    public static final String FORGOT_PASSWORD_ANSWER =
+            "If an account exists for this email, we've sent a link to reset the password.";
+
+    /**
+     * Public "forgot password": always 202 with the same body, whatever the email.
+     * The link (single use, 45 minutes) is mailed only if the email has a login
+     * other than a security guard's or a platform administrator's; redeeming it on
+     * {@code /auth/set-password} sets the person's password in every organisation
+     * they belong to. Rate-limited per IP ({@code PublicRateLimitFilter}) and per
+     * email ({@code ForgotPasswordService}).
+     */
+    @PostMapping("/forgot-password")
+    public ResponseEntity<java.util.Map<String, String>> forgotPassword(
+            @RequestBody(required = false) ForgotPasswordRequest request) {
+        forgotPasswordService.request(request == null ? null : request.email());
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(java.util.Map.of("message", FORGOT_PASSWORD_ANSWER));
     }
 
     @GetMapping("/set-password/validate")
@@ -364,7 +401,12 @@ public class AuthController {
                     return ResponseEntity.ok(new InviteTokenInfoResponse(
                             u.getEmail(), u.getName(), u.getInviteTokenExpiresAt()));
                 })
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
+                .orElseGet(() -> userService.findPersonLink(token)
+                        // A person-level forgot-password link (review P2-1).
+                        .map(l -> l.expired()
+                                ? ResponseEntity.status(HttpStatus.GONE).<InviteTokenInfoResponse>build()
+                                : ResponseEntity.ok(new InviteTokenInfoResponse(l.email(), l.name(), l.expiresAt())))
+                        .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build()));
     }
 
     @PostMapping("/set-password")
@@ -564,7 +606,9 @@ public class AuthController {
 
         // changePassword is @Transactional — the entity write and event publish
         // share the same transaction, so TransactionalEventListener fires on commit.
-        int tokenVersion = userService.changePassword(user, request.newPassword());
+        // One login per person: also written to the person's other organisations
+        // that the verified current password opens.
+        int tokenVersion = userService.changePassword(user, request.currentPassword(), request.newPassword());
 
         // The change revoked every token this user holds, the one on this
         // request included (audit P1-2). Hand the caller a replacement so the

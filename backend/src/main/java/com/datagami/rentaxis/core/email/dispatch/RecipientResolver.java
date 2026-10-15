@@ -40,6 +40,17 @@ public class RecipientResolver {
         if (result.isEmpty()) {
             log.warn("No email recipients resolved for event {} payload={}", type, payload);
         }
+        // Re-review P2-A: a payload that names its address (toEmail) is mailed there,
+        // not to the row's current email, and greets by that address rather than a
+        // name the row's organisation wrote. The row only supplies id and language.
+        String fixed = readString(payload, "toEmail");
+        if (fixed != null && !fixed.isBlank()) {
+            List<ResolvedRecipient> pinned = new ArrayList<>();
+            for (ResolvedRecipient r : result) {
+                pinned.add(new ResolvedRecipient(r.userId(), fixed, fixed, r.locale(), r.role()));
+            }
+            return dedupByUserId(pinned);
+        }
         return dedupByUserId(result);
     }
 
@@ -70,6 +81,19 @@ public class RecipientResolver {
             if (id != null) return List.of(id);
         }
         return List.of();
+    }
+
+    private String readString(Object payload, String fieldName) {
+        if (payload == null) return null;
+        try {
+            Object v = payload.getClass().getMethod(fieldName).invoke(payload);
+            return v instanceof String str ? str : null;
+        } catch (NoSuchMethodException e) {
+            return null;
+        } catch (Exception e) {
+            log.warn("Failed to read {} on {}: {}", fieldName, payload.getClass().getSimpleName(), e.getMessage());
+            return null;
+        }
     }
 
     private UUID readUuid(Object payload, String fieldName) {

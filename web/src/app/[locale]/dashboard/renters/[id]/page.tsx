@@ -11,6 +11,7 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 import { formatCurrency } from "@/lib/format";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { ResendInviteButton } from "@/components/users/ResendInviteButton";
+import { SendPasswordResetButton } from "@/components/users/SendPasswordResetButton";
 import { ApiError, type Cheque, type LeaseStatus } from "@/lib/api/leasing";
 import { chequeSummary } from "@/components/renters/chequeSummary";
 import { EditRenterDialog } from "@/components/renters/EditRenterDialog";
@@ -294,6 +295,9 @@ export default function RenterDetailPage() {
                     )}
                     {canManageRenters && renter.invitePending && renter.userId && (
                         <ResendInviteButton userId={renter.userId} onSent={refreshRenter} />
+                    )}
+                    {canManageRenters && !renter.invitePending && renter.userId && (
+                        <SendPasswordResetButton userId={renter.userId} />
                     )}
                     {canSeeLedger && (
                         <Link

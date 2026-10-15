@@ -18,6 +18,9 @@ const PUBLIC_PROXY_PATHS = new Set<string>([
     // -> POST /api/auth/set-password (permitAll via /api/auth/**): invite activation —
     //    the invitee is setting their first password, so they cannot have a session yet.
     '/api/proxy/auth/set-password',
+    // -> POST /api/auth/forgot-password (permitAll via /api/auth/**): a signed-out
+    //    person asks for a reset link; the answer is the same for every email.
+    '/api/proxy/auth/forgot-password',
     // -> POST /api/v1/public/renewal-intent (permitAll via /api/v1/public/**): signed-token
     //    renewal confirmation from the reminder email; must work for logged-out renters.
     '/api/proxy/v1/public/renewal-intent',

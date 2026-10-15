@@ -150,4 +150,20 @@ class AuthService {
       rethrow;
     }
   }
+
+  /// Public "forgot password". The server answers every email the same way
+  /// (202), whether or not it has a login, and 429 when this device's address
+  /// has asked too often. Returns the status; never throws on a server answer.
+  Future<int> requestPasswordReset(String email) async {
+    try {
+      final response = await _dio.post(
+        '/auth/forgot-password',
+        data: {'email': email.trim()},
+      );
+      return response.statusCode ?? 202;
+    } on DioException catch (e) {
+      if (e.response != null) return e.response!.statusCode ?? 500;
+      rethrow;
+    }
+  }
 }
