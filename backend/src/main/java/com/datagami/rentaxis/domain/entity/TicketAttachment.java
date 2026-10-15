@@ -24,6 +24,13 @@ public class TicketAttachment extends BaseTenantEntity {
     @Column(name = "file_url", nullable = false, columnDefinition = "text")
     private String fileUrl;
 
+    /**
+     * The name of the file as uploaded ("Ejari contract.pdf"), path stripped (S17-04,
+     * changeset 168). The download is saved under it. NULL on older rows.
+     */
+    @Column(name = "file_name", length = 255)
+    private String fileName;
+
     @Column(name = "file_type", length = 100)
     private String fileType;
 

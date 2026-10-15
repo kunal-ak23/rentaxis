@@ -1,0 +1,26 @@
+databaseChangeLog:
+  # S17-04 (2-year simulation, 2026-10-16): a ticket attachment downloaded as
+  # "attachment-<id>.pdf" because the uploaded file's name was never kept. The
+  # name the user uploaded is stored now (path stripped, at most 255 characters)
+  # and served through AttachmentNames like lease and voucher attachments (#404).
+  # Existing rows keep NULL and download under the old generated name.
+  - changeSet:
+      id: 168-ticket-attachment-file-name
+      author: claude
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: ticket_attachments
+                columnName: file_name
+      changes:
+        - addColumn:
+            tableName: ticket_attachments
+            columns:
+              - column:
+                  name: file_name
+                  type: varchar(255)
+      rollback:
+        - dropColumn:
+            tableName: ticket_attachments
+            columnName: file_name

@@ -1247,7 +1247,30 @@ public class MaintenanceTicketService {
         TicketAttachment a = attachmentRepository.findById(attachmentId)
                 .orElseThrow(() -> new NotFoundException("Attachment not found"));
         return com.datagami.rentaxis.core.util.AttachmentNames.download(
-                content, storedBaseName(a.getFileUrl()), a.getFileUrl(), a.getFileType(), "attachment");
+                content, displayName(a), a.getFileUrl(), a.getFileType(), "attachment");
+    }
+
+    /** The uploaded file's name (S17-04); rows from before it was kept use the stored blob's. */
+    private static String displayName(TicketAttachment a) {
+        return a.getFileName() != null && !a.getFileName().isBlank() ? a.getFileName() : storedBaseName(a.getFileUrl());
+    }
+
+    /**
+     * The uploaded file's own name, as the user's device named it: any path a browser
+     * sent is dropped, control characters removed, at most 255 characters (keeping the
+     * extension). Null when nothing usable is left.
+     */
+    static String uploadedFileName(String originalFilename) {
+        if (originalFilename == null) return null;
+        String s = originalFilename;
+        s = s.substring(Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\')) + 1);
+        s = s.replaceAll("\\p{Cntrl}", "").strip();
+        if (s.isEmpty() || s.equals(".") || s.equals("..")) return null;
+        if (s.length() > 255) {
+            String ext = com.datagami.rentaxis.core.util.AttachmentNames.extensionOf(s);
+            s = s.substring(0, 255 - ext.length()) + ext;
+        }
+        return s;
     }
 
     /** "ab12cd34" of a stored ".../ticket-attachments/ab12cd34.pdf" — the extension is added back by the caller. */
@@ -1267,8 +1290,8 @@ public class MaintenanceTicketService {
         requireAcceptableAttachment(file);
 
         byte[] bytes = file.getBytes();
-        // The blob name keeps the original file's extension (or the one its type names):
-        // a ticket attachment has no display name, so the download is saved under it.
+        // The blob name keeps the original file's extension (or the one its type names);
+        // the uploaded name is kept on the row and the download is saved under it (S17-04).
         String contentType = com.datagami.rentaxis.core.util.AttachmentNames.uploadContentType(
                 file.getOriginalFilename(), file.getContentType());
         String ext = com.datagami.rentaxis.core.util.AttachmentNames.uploadExtension(file.getOriginalFilename(), contentType);
@@ -1285,6 +1308,7 @@ public class MaintenanceTicketService {
         attachment.setTicket(ticket);
         attachment.setFileUrl(fileUrl);
         attachment.setFileType(contentType);
+        attachment.setFileName(uploadedFileName(file.getOriginalFilename()));
         attachment.setFileSize(file.getSize());
         attachment.setUploadedBy(callerUserId());
         attachment.setUploadedAt(Instant.now());
@@ -1358,7 +1382,7 @@ public class MaintenanceTicketService {
         dto.setTicketId(attachment.getTicket() != null ? attachment.getTicket().getId() : null);
         dto.setFileUrl(attachment.getFileUrl());
         dto.setDownloadName(com.datagami.rentaxis.core.util.AttachmentNames.downloadName(
-                storedBaseName(attachment.getFileUrl()), attachment.getFileUrl(), attachment.getFileType(), null, "attachment"));
+                displayName(attachment), attachment.getFileUrl(), attachment.getFileType(), null, "attachment"));
         dto.setFileType(attachment.getFileType());
         dto.setFileSize(attachment.getFileSize());
         dto.setUploadedAt(attachment.getUploadedAt());
