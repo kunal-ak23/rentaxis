@@ -59,7 +59,13 @@ public class EmailDispatcher {
         // Defaults to OFF — flipped on per-tenant from the admin UI during phased rollout.
         // Account-access mail (invites, password reset/changed) is exempt: see
         // EmailEventType.bypassesTenantGate.
+        //
+        // S17-03: an event with no tenant is platform mail (a SUPER_ADMIN's "New
+        // Organization Created"); there is no organisation whose rollout flag could
+        // hold it back. It used to reach the per-tenant cache with a null key, which
+        // threw an NPE in afterCompletion and dropped the mail.
         if (!event.getType().bypassesTenantGate()
+                && event.getTenantId() != null
                 && !tenantFeatureService.isEnabled(event.getTenantId(), TenantFeature.EMAIL_NOTIFICATIONS)) {
             log.info("email.dispatch.skipped reason=feature_disabled tenant_id={} event_type={}",
                     event.getTenantId(), event.getType());

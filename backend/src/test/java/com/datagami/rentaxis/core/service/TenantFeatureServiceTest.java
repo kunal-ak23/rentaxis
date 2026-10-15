@@ -42,6 +42,16 @@ class TenantFeatureServiceTest {
         verify(repository).findByTenantId(tenantId);
     }
 
+    /** S17-03: platform scope (no tenant) has no overrides; Caffeine would NPE on the null key. */
+    @Test
+    void isEnabled_returnsEnumDefault_forNoTenant_withoutTouchingTheCache() {
+        assertThat(service.isEnabled(null, TenantFeature.EMAIL_NOTIFICATIONS))
+                .isEqualTo(TenantFeature.EMAIL_NOTIFICATIONS.isDefaultEnabled());
+        assertThat(service.isEnabled(null, TenantFeature.GATEPASS))
+                .isEqualTo(TenantFeature.GATEPASS.isDefaultEnabled());
+        verifyNoInteractions(repository);
+    }
+
     @Test
     void isEnabled_returnsDbValue_whenRowExists() {
         TenantFeatureEntity entity = new TenantFeatureEntity();

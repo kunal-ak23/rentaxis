@@ -31,7 +31,13 @@ public class TenantFeatureService {
         this.repository = repository;
     }
 
+    /**
+     * A null tenant (platform scope: a SUPER_ADMIN with no organisation selected) has
+     * no overrides, so the feature's default applies. Caffeine refuses a null key with
+     * an NPE (S17-03), so it never reaches the cache.
+     */
     public boolean isEnabled(UUID tenantId, TenantFeature feature) {
+        if (tenantId == null) return feature.isDefaultEnabled();
         Map<TenantFeature, Boolean> flags = cache.get(tenantId, this::loadAll);
         return flags.getOrDefault(feature, feature.isDefaultEnabled());
     }
