@@ -436,7 +436,7 @@ class RecognitionServiceIT extends AbstractPostgresIT {
     @Test
     void lockedPeriodEntriesAreSkippedNotFailed() {
         UUID leaseId = galah();
-        fiscal.lockThrough(LocalDate.of(2026, 10, 31));
+        com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, LocalDate.of(2026, 10, 31));
 
         RecognitionService.RecognitionRunResult result = recognition.runTo(LocalDate.of(2026, 11, 30), false);
 

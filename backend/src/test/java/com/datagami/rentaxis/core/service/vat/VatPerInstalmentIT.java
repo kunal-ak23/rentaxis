@@ -83,6 +83,7 @@ class VatPerInstalmentIT extends AbstractPostgresIT {
     @Autowired LeaseTerminationService termination;
     @Autowired LeaseRenewalService renewal;
     @Autowired VatTaxPointService vatTaxPoints;
+    @Autowired com.datagami.rentaxis.core.service.recognition.RecognitionService recognition;
     @Autowired VatTaxPointJob job;
     @Autowired TaxInvoiceService taxInvoices;
     @Autowired LeaseService leaseService;
@@ -500,6 +501,11 @@ class VatPerInstalmentIT extends AbstractPostgresIT {
         assertThat(fiscal.get().getBooksLockedThrough()).isNull();
 
         vatTaxPoints.runTo(LocalDate.of(2026, 5, 31), false);
+        // Bug 46: May's rent must be recognised too before May can be locked.
+        assertThatThrownBy(() -> fiscal.lockThrough(LocalDate.of(2026, 5, 31)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Run month-end recognition through 31/05/2026 first");
+        recognition.runTo(LocalDate.of(2026, 5, 31), false);
         fiscal.lockThrough(LocalDate.of(2026, 5, 31));
         assertThat(fiscal.get().getBooksLockedThrough()).isEqualTo(LocalDate.of(2026, 5, 31));
     }

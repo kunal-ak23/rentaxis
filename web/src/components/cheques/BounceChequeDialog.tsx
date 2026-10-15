@@ -42,7 +42,7 @@ export default function BounceChequeDialog({ cheque, onClose, onDone }: Props) {
     const tCommon = useTranslations("Common");
 
     const [date, setDate] = useState(businessTodayIso());
-    const [failureReason, setFailureReason] = useState<ChequeFailureReason>("BOUNCE");
+    const [failureReason, setFailureReason] = useState<ChequeFailureReason | "">("");
     const [notes, setNotes] = useState("");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -50,7 +50,7 @@ export default function BounceChequeDialog({ cheque, onClose, onDone }: Props) {
     useEffect(() => {
         if (!cheque) return;
         setDate(businessTodayIso());
-        setFailureReason("BOUNCE");
+        setFailureReason("");
         setNotes("");
         setError(null);
     }, [cheque]);
@@ -64,7 +64,7 @@ export default function BounceChequeDialog({ cheque, onClose, onDone }: Props) {
             await chequeApi.bounce(cheque.id, {
                 date,
                 notes: notes || null,
-                failureReason,
+                failureReason: failureReason as ChequeFailureReason,
             });
             onDone(date);
         } catch (e) {
@@ -88,7 +88,7 @@ export default function BounceChequeDialog({ cheque, onClose, onDone }: Props) {
             cancelText={tl("cancel")}
             busy={busy}
             destructive
-            confirmDisabled={!date || dateAfterToday}
+            confirmDisabled={!date || dateAfterToday || !failureReason}
             confirmTestId="cheque-bounce-confirm"
         >
             <div className="space-y-3">
@@ -119,6 +119,8 @@ export default function BounceChequeDialog({ cheque, onClose, onDone }: Props) {
                         value={failureReason}
                         onChange={e => setFailureReason(e.target.value as ChequeFailureReason)}
                     >
+                        {/* PR #400 review P3-4: the bank's reason is chosen, never defaulted. */}
+                        <option value="" disabled>{t("chooseFailureReason")}</option>
                         {FAILURE_REASONS.map(r => (
                             <option key={r} value={r}>{t(`failureReasons.${r}`)}</option>
                         ))}

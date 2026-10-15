@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import LeaseDialog from "@/components/leases/LeaseDialog";
 import BulkChequeUploadFlow from "@/components/cheques/BulkChequeUploadFlow";
 import { leaseIsCollectable } from "@/components/cheques/registerActions";
+import { formatDate } from "@/lib/format";
 import { leaseApi, type Cheque, type LeaseDetail, type LeaseStatus } from "@/lib/api/leasing";
 
 /**
@@ -39,6 +40,16 @@ const scannableLease = (l: Pick<LeaseDetail, "status">) => l.status === "DRAFT" 
 /** What the server drops before it pages (PR #396 review P3-2): the rest are filtered again client-side. */
 const NOT_SCANNABLE: LeaseStatus[] = ["CLOSED", "PENDING_SIGNATURE"];
 const PAGE = 10;
+
+/**
+ * Tutorial 15: searching "Ahmed" listed his DRAFT renewal first, which dead-ends
+ * ("no post-dated cheque waiting for a scan"). Contracts on the books come first,
+ * drafts after; the server's order is kept within each group.
+ */
+export function rankForScan<T extends Pick<LeaseDetail, "status">>(leases: T[]): T[] {
+    const rank = (l: T) => (leaseIsCollectable(l.status) ? 0 : 1);
+    return leases.map((l, i) => ({ l, i })).sort((a, b) => rank(a.l) - rank(b.l) || a.i - b.i).map(x => x.l);
+}
 
 export default function ScanChequesLauncher({ open, leaseId, chequeId, propertyId, onClose, onDone }: Props) {
     const t = useTranslations("Cheques");
@@ -87,7 +98,7 @@ export default function ScanChequesLauncher({ open, leaseId, chequeId, propertyI
             .paged({ search: query.trim(), propertyId: propertyId || undefined, excludeStatus: NOT_SCANNABLE, page: pageNo, size: PAGE })
             .then(res => {
                 const rows = res.content.filter(scannableLease);
-                setResults(prev => (append ? [...prev, ...rows] : rows));
+                setResults(prev => rankForScan(append ? [...prev, ...rows] : rows));
                 setPage(pageNo);
                 setHasMore((pageNo + 1) * PAGE < res.totalElements);
             })
@@ -175,6 +186,11 @@ export default function ScanChequesLauncher({ open, leaseId, chequeId, propertyI
                                         >
                                             <span className="font-semibold">{l.unitIdentifier ?? "—"}</span>
                                             <span className="text-muted"> · {l.renterName ?? "—"} · {l.propertyName ?? "—"} · {tl(`leaseStatus.${l.status}`)}</span>
+                                            {l.startDate && l.endDate && (
+                                                <span className="block text-[10px] text-muted tabular-nums">
+                                                    <bdi dir="ltr">{formatDate(l.startDate)} – {formatDate(l.endDate)}</bdi>
+                                                </span>
+                                            )}
                                         </button>
                                     </li>
                                 ))}

@@ -17,6 +17,9 @@ vi.mock("@/lib/api/ledger", async orig => {
     const m = await orig<typeof import("@/lib/api/ledger")>();
     return { ...m, ledgerApi: { ...m.ledgerApi, fiscal: api } };
 });
+vi.mock("@/i18n/routing", () => ({
+    Link: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a href={String(href)} {...props}>{children}</a>,
+}));
 vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "ACCOUNTANT" } } }) }));
 vi.mock("@/components/finance/FiscalYearsCard", () => ({ default: () => null }));
 vi.mock("@/components/finance/bankrec/BankLocksCard", () => ({ BankLocksCard: () => null }));

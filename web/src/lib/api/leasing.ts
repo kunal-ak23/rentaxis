@@ -1,4 +1,5 @@
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
+import { announcingChange } from "@/lib/countsStale";
 import type { AccountRole, Page, JournalEntry } from "@/lib/api/ledger";
 
 export { ApiError };
@@ -845,6 +846,8 @@ export type RecognitionRunResult = {
   alreadyRecognised?: number;
   /** Review of R4-B M10: rows a contract change cancelled or reversed meanwhile — nothing to recognise. */
   withdrawnMeanwhile?: number;
+  /** PR #400 review P2-1: locked months this run recognised as catch-ups (absent when none). */
+  lockedCatchUp?: LockedCatchUpResult | null;
 };
 
 /** F14-27: `GET /finance/recognition/status` — a warning banner's whole answer. */
@@ -857,6 +860,21 @@ export type RecognitionStatusSummary = {
   lastRunPosted: number;
   lastRunFailed: number;
   lastRunErrors: string[];
+  /** PR #400 review P2-1: rows the period lock closed while still PLANNED (an older server omits them). */
+  lockedUnrecognised?: number;
+  lockedUnrecognisedAmount?: number;
+  booksLockedThrough?: string | null;
+};
+
+/** PR #400 review P2-1: what "Catch up locked months" did, or would do. */
+export type LockedCatchUpResult = {
+  preview: boolean;
+  leases: number;
+  months: number;
+  amount: number;
+  postedOn: string | null;
+  monthsNamed: string[];
+  errors: string[];
 };
 
 // ---- termination (spec §9.1 — api/dto/lease) ----
@@ -1548,6 +1566,9 @@ export const recognitionApi = {
   leaseSchedule: (leaseId: string) => get<RecognitionEntry[]>(`/leases/${leaseId}/recognition`),
   /** F14-27: whether the close is behind, and how the last run went. */
   status: () => get<RecognitionStatusSummary>("/finance/recognition/status"),
+  /** PR #400 review P2-1: recognise months the lock closed while still planned, dated the day after the lock. */
+  catchUpLocked: (preview: boolean) =>
+    send<LockedCatchUpResult>("POST", `/finance/recognition/catch-up-locked${qs({ preview })}`),
 };
 
 /** Who gave notice (#27): the renter leaving, or the landlord serving notice. */
@@ -1600,33 +1621,33 @@ export const chequeApi = {
   aging: (propertyId?: string, asOf?: string) => get<AgingReport>(`/cheques/aging${qs({ propertyId, asOf })}`),
   statsByLeases: (leaseIds: string[]) => send<LeaseChequeStats[]>("POST", "/cheques/stats-by-leases", leaseIds),
   get: (id: string) => get<Cheque>(`/cheques/${id}`),
-  deposit: (id: string, body?: ChequeActionInput) => send<Cheque>("PUT", `/cheques/${id}/deposit`, body),
-  depositBatch: (body: DepositBatchInput) => send<Cheque[]>("POST", "/cheques/deposit-batch", body),
-  clear: (id: string, body?: ChequeActionInput) => send<Cheque>("PUT", `/cheques/${id}/clear`, body),
+  deposit: (id: string, body?: ChequeActionInput) => announcingChange(send<Cheque>("PUT", `/cheques/${id}/deposit`, body)),
+  depositBatch: (body: DepositBatchInput) => announcingChange(send<Cheque[]>("POST", "/cheques/deposit-batch", body)),
+  clear: (id: string, body?: ChequeActionInput) => announcingChange(send<Cheque>("PUT", `/cheques/${id}/clear`, body)),
   /** All or nothing: one row that is not DEPOSITED 400s the call, naming it. */
-  clearBatch: (body: ClearBatchInput) => send<Cheque[]>("POST", "/cheques/clear-batch", body),
-  receive: (id: string, body?: ChequeActionInput) => send<Cheque>("PUT", `/cheques/${id}/receive`, body),
+  clearBatch: (body: ClearBatchInput) => announcingChange(send<Cheque[]>("POST", "/cheques/clear-batch", body)),
+  receive: (id: string, body?: ChequeActionInput) => announcingChange(send<Cheque>("PUT", `/cheques/${id}/receive`, body)),
   /** Where receiving/clearing this row posts when no account is named, and what else it may post to. */
   settlementTarget: (id: string) => get<SettlementTarget>(`/cheques/${id}/settlement-target`),
   /** `body.failureReason` is required — the backend 400s a bounce without one. */
-  bounce: (id: string, body: ChequeActionInput) => send<Cheque>("PUT", `/cheques/${id}/bounce`, body),
-  replace: (id: string, body: ReplaceChequeInput) => send<Cheque[]>("POST", `/cheques/${id}/replace`, body),
+  bounce: (id: string, body: ChequeActionInput) => announcingChange(send<Cheque>("PUT", `/cheques/${id}/bounce`, body)),
+  replace: (id: string, body: ReplaceChequeInput) => announcingChange(send<Cheque[]>("POST", `/cheques/${id}/replace`, body)),
   /**
    * `moveVatTo` names another pending instalment of the same lease to carry this
    * row's undeclared VAT; the server refuses to cancel a row with PLANNED VAT
    * without it (spec 2026-09-24 §1).
    */
   cancel: (id: string, body?: ChequeActionInput, moveVatTo?: string | null) =>
-    send<Cheque>("PUT", `/cheques/${id}/cancel${qs({ moveVatTo })}`, body),
-  updateDetails: (id: string, body: ChequeRowInput) => send<Cheque>("PUT", `/cheques/${id}/details`, body),
+    announcingChange(send<Cheque>("PUT", `/cheques/${id}/cancel${qs({ moveVatTo })}`, body)),
+  updateDetails: (id: string, body: ChequeRowInput) => announcingChange(send<Cheque>("PUT", `/cheques/${id}/details`, body)),
   /**
    * Put an ONLINE_PENDING row back on the register (→ REGISTERED) when the
    * gateway session was abandoned and never called back. Staff-only
    * (`canManageCheques`); the renter's own abandonment is handled by
    * `onlinePayApi.cancel`.
    */
-  releaseOnline: (id: string, body?: ChequeActionInput) => send<Cheque>("POST", `/cheques/${id}/release-online`, body),
-  cashReceipt: (leaseId: string, body: ChequeRowInput) => send<Cheque>("POST", `/cheques/lease/${leaseId}/cash-receipt`, body),
+  releaseOnline: (id: string, body?: ChequeActionInput) => announcingChange(send<Cheque>("POST", `/cheques/${id}/release-online`, body)),
+  cashReceipt: (leaseId: string, body: ChequeRowInput) => announcingChange(send<Cheque>("POST", `/cheques/lease/${leaseId}/cash-receipt`, body)),
   /** Not a fetch — the endpoint streams a PDF; callers open/download this path directly. */
   receiptUrl: (id: string) => `${BASE}/cheques/${id}/receipt`,
   /** The attached scan, streamed by the app (cheque images sit in a private container; the stored blob URL answers 403). */
@@ -1635,17 +1656,17 @@ export const chequeApi = {
 
 export const penaltyApi = {
   list: (q: PenaltyListQuery) => get<Page<PenaltyAssessment>>(`/penalties${qs(q)}`),
-  propose: (body: ProposePenaltyInput) => send<PenaltyAssessment>("POST", "/penalties", body),
+  propose: (body: ProposePenaltyInput) => announcingChange(send<PenaltyAssessment>("POST", "/penalties", body)),
   /**
    * Break-it R2 money2 F5: `expectedAmount` is the amount the queue showed; a proposal
    * reduced since is refused with 409 `penalty.changed` rather than charged.
    */
   approve: (id: string, date?: string, expectedAmount?: number) =>
-    send<PenaltyAssessment>("POST", `/penalties/${id}/approve`, { date, expectedAmount }),
-  waive: (id: string, note?: string) => send<PenaltyAssessment>("POST", `/penalties/${id}/waive`, { note }),
+    announcingChange(send<PenaltyAssessment>("POST", `/penalties/${id}/approve`, { date, expectedAmount })),
+  waive: (id: string, note?: string) => announcingChange(send<PenaltyAssessment>("POST", `/penalties/${id}/waive`, { note })),
   /** F14-28: PROPOSED only; 0 < amount < the current amount; note required. Status stays PROPOSED. */
-  reduce: (id: string, amount: number, note: string) => send<PenaltyAssessment>("POST", `/penalties/${id}/reduce`, { amount, note }),
-  reverse: (id: string, body: { date?: string; note?: string }) => send<PenaltyAssessment>("POST", `/penalties/${id}/reverse`, body),
+  reduce: (id: string, amount: number, note: string) => announcingChange(send<PenaltyAssessment>("POST", `/penalties/${id}/reduce`, { amount, note })),
+  reverse: (id: string, body: { date?: string; note?: string }) => announcingChange(send<PenaltyAssessment>("POST", `/penalties/${id}/reverse`, body)),
   mine: () => get<PenaltyAssessment[]>("/penalties/mine"),
 };
 

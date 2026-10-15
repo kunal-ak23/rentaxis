@@ -31,7 +31,12 @@ function renderFlow(canProposeFee = true) {
     render(<NextIntlClientProvider locale="en" messages={en}><BounceFlow cheque={CHEQUE} canProposeFee={canProposeFee} onClose={onClose} onChanged={onChanged} /></NextIntlClientProvider>);
     return { onChanged, onClose };
 }
+/** PR #400 review P3-4: the bank's reason is chosen before the bounce can be confirmed. */
+function chooseReason(value = "BOUNCE") {
+    fireEvent.change(screen.getByTestId("bounce-failure-reason"), { target: { value } });
+}
 async function bounce() {
+    chooseReason();
     fireEvent.click(screen.getByTestId("cheque-bounce-confirm"));
     return screen.findByTestId("bounce-flow");
 }
@@ -107,6 +112,7 @@ describe("BounceFlow", () => {
     it("stays on the bounce step when the bounce is refused", async () => {
         api.bounce.mockRejectedValue(new (await import("@/lib/api/leasing")).ApiError(400, "Only a deposited cheque can bounce."));
         const { onChanged } = renderFlow();
+        chooseReason();
         fireEvent.click(screen.getByTestId("cheque-bounce-confirm"));
         expect(await screen.findByTestId("bounce-error")).toHaveTextContent("Only a deposited cheque can bounce.");
         expect(screen.queryByTestId("bounce-flow")).toBeNull();

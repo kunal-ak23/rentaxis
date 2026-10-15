@@ -476,6 +476,115 @@ public class RecognitionService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP));
     }
 
+    // ------------------------------------------------------------------
+    // locked months never recognised (PR #400 review P2-1)
+    // ------------------------------------------------------------------
+
+    /**
+     * What the locked-months catch-up did, or would do, for one lease or a whole
+     * organisation: how many leases, how many monthly rows, how much, and the day it
+     * posts on (the first day after the lock).
+     */
+    public record LockedCatchUp(int leases, int months, BigDecimal amount, LocalDate postedOn,
+                                List<String> monthsNamed) {
+        public static LockedCatchUp none(LocalDate postedOn) {
+            return new LockedCatchUp(0, 0, BigDecimal.ZERO.setScale(2), postedOn, List.of());
+        }
+    }
+
+    /** The period lock, for the recognition screen's status. */
+    @Transactional(readOnly = true)
+    public LocalDate booksLockedThroughForStatus() {
+        return booksLockedThrough();
+    }
+
+    /** "MM/yyyy" strings in calendar order. */
+    public static final java.util.Comparator<String> MONTH_ORDER = java.util.Comparator
+            .comparing((String m) -> m.substring(3)).thenComparing(m -> m.substring(0, 2));
+
+    /** The leases holding PLANNED rows inside the period lock (none without a lock). */
+    @Transactional(readOnly = true)
+    public List<UUID> leasesWithLockedPlanned() {
+        LocalDate locked = booksLockedThrough();
+        return locked == null ? List.of() : entries.findLeaseIdsWithPlannedThrough(requireTenant(), locked);
+    }
+
+    /** PLANNED rows inside the period lock, for the recognition screen: how many and how much. */
+    @Transactional(readOnly = true)
+    public LockedUnrecognised lockedUnrecognisedAll() {
+        LocalDate locked = booksLockedThrough();
+        if (locked == null) return new LockedUnrecognised(0, BigDecimal.ZERO.setScale(2));
+        Object[] row = entries.plannedInsideLock(requireTenant(), locked).get(0);
+        long n = ((Number) row[0]).longValue();
+        BigDecimal amt = row[1] instanceof BigDecimal b ? b : new BigDecimal(String.valueOf(row[1]));
+        return new LockedUnrecognised((int) n, amt.setScale(2, RoundingMode.HALF_UP));
+    }
+
+    /**
+     * Recognise one lease's months that the period lock closed while they were still
+     * PLANNED — books locked before the lock learned to refuse that (bug 46). The run
+     * can never post them (it never posts into a locked period) and the lock could not
+     * move past them, so they would sit in advance rent for ever.
+     *
+     * <p>The rows are cancelled and their total posted as one catch-up {@code CIL} per
+     * (deferral, income) account pair, dated the first open day — the day after the
+     * lock — exactly as an amendment folds locked months (#372): the locked period is
+     * never written into, the per-property accounts are the rows' own, and the
+     * narration names the months. Nothing happens while that day is still ahead of
+     * {@code today}. The previous owner's days of an acquired lease are not ours and
+     * are left alone.</p>
+     */
+    @Transactional
+    public LockedCatchUp catchUpLockedLease(UUID leaseId, LocalDate today, boolean preview) {
+        Lease lease = lease(leaseId);
+        LocalDate locked = booksLockedThrough();
+        if (locked == null) return LockedCatchUp.none(null);
+        LocalDate d = locked.plusDays(1);
+        if (today != null && d.isAfter(today)) return LockedCatchUp.none(d);
+        LocalDate own = lease.getUnit() == null || lease.getUnit().getProperty() == null ? null
+                : lease.getUnit().getProperty().getBooksStartDate();
+        java.time.format.DateTimeFormatter mmyyyy = java.time.format.DateTimeFormatter.ofPattern("MM/yyyy");
+
+        Map<List<UUID>, BigDecimal> sum = new java.util.LinkedHashMap<>();
+        Map<List<UUID>, LocalDate> from = new java.util.LinkedHashMap<>();
+        Map<List<UUID>, LocalDate> to = new java.util.LinkedHashMap<>();
+        Map<List<UUID>, UUID> lineOf = new java.util.LinkedHashMap<>();
+        Map<List<UUID>, java.util.Set<String>> monthsOf = new java.util.LinkedHashMap<>();
+        java.util.Set<List<UUID>> fees = new java.util.HashSet<>();
+        java.util.Set<String> allMonths = new java.util.TreeSet<>(MONTH_ORDER);
+        int rows = 0;
+        for (RecognitionEntry e : entries.findByLease_IdOrderByPeriodStartAsc(leaseId)) {
+            if (e.getStatus() != RecognitionStatus.PLANNED || e.getPeriodEnd().isAfter(locked)) continue;
+            if (own != null && e.getPeriodEnd().isBefore(own)) continue;
+            RentSegment seg = e.getSegment();
+            List<UUID> key = List.of(poster.deferralAccountId(seg, lease), poster.incomeAccountId(seg, lease));
+            if (!preview) {
+                RecognitionEntry row = lock(e.getId());
+                if (row.getStatus() != RecognitionStatus.PLANNED) continue;
+                row.setStatus(RecognitionStatus.CANCELLED);
+                entries.save(row);
+            }
+            rows++;
+            sum.merge(key, e.getAmount(), BigDecimal::add);
+            from.merge(key, e.getPeriodStart(), (x, y) -> x.isBefore(y) ? x : y);
+            to.merge(key, e.getPeriodEnd(), (x, y) -> x.isAfter(y) ? x : y);
+            lineOf.putIfAbsent(key, seg.getLeaseLineId());
+            if (seg.getIncomeAccountId() != null) fees.add(key);
+            String m = e.getPeriodEnd().format(mmyyyy);
+            monthsOf.computeIfAbsent(key, k -> new java.util.TreeSet<>(MONTH_ORDER)).add(m);
+            allMonths.add(m);
+        }
+        BigDecimal total = BigDecimal.ZERO;
+        for (List<UUID> key : sum.keySet()) {
+            BigDecimal amount = sum.get(key).setScale(2, RoundingMode.HALF_UP);
+            total = total.add(amount);
+            if (preview || amount.signum() == 0) continue;
+            postCatchUp(lease, key, fees.contains(key), lineOf.get(key), from.get(key), to.get(key).plusDays(1), d,
+                    amount, "locked months never recognised: " + String.join(", ", monthsOf.get(key)), null);
+        }
+        return new LockedCatchUp(rows > 0 ? 1 : 0, rows, total.setScale(2, RoundingMode.HALF_UP), d, List.copyOf(allMonths));
+    }
+
     /** A line's recognition window and value, or null when it has nothing to recognise. */
     private record Window(LocalDate from, LocalDate to, BigDecimal net, boolean fee) { }
 

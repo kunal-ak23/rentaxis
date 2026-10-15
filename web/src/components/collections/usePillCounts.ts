@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { COUNTS_STALE_EVENT } from "@/lib/countsStale";
 import { chequeApi, penaltyApi } from "@/lib/api/leasing";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import type { PillCounts } from "./CollectionPills";
@@ -11,11 +12,21 @@ import type { PillCounts } from "./CollectionPills";
  * GET /cheques/summary dueCount, overdueCount, bouncedCount; Penalties =
  * GET /penalties?status=PROPOSED totalElements. Post-dated (per month) and the
  * register (everything) have none. A failed call leaves its pill without a number.
+ *
+ * Read again whenever a deposit, bounce, replace or penalty action succeeds
+ * (the API layer announces {@link COUNTS_STALE_EVENT}) — tutorial 15: the pills
+ * kept their page-load numbers until a full reload.
  */
 export function usePillCounts(role: UserRole | undefined, propertyId: string): PillCounts {
     // Counts are kept per (role, property): a reply for another filter never mixes in.
     const key = `${role ?? ""}|${propertyId}`;
     const [state, setState] = useState<{ key: string; counts: PillCounts }>({ key, counts: {} });
+    const [tick, setTick] = useState(0);
+    useEffect(() => {
+        const onStale = () => setTick(n => n + 1);
+        window.addEventListener(COUNTS_STALE_EVENT, onStale);
+        return () => window.removeEventListener(COUNTS_STALE_EVENT, onStale);
+    }, []);
     useEffect(() => {
         let alive = true;
         const put = (c: PillCounts) => {
@@ -30,6 +41,6 @@ export function usePillCounts(role: UserRole | undefined, propertyId: string): P
             penaltyApi.list({ status: "PROPOSED", propertyId: pid, page: 0, size: 1 }).then(p => put({ penalties: p.totalElements })).catch(() => {});
         }
         return () => { alive = false; };
-    }, [role, propertyId, key]);
+    }, [role, propertyId, key, tick]);
     return state.key === key ? state.counts : {};
 }

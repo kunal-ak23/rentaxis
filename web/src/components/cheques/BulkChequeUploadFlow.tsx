@@ -100,6 +100,8 @@ const KNOWN_UPLOAD_ERRORS = new Set([
   "cheque_upload_pdf_unreadable",
   "cheque_upload_pdf_not_supported",
   "cheque_upload_busy",
+  "cheque_storage_unavailable",
+  "cheque_upload_timeout",
 ]);
 
 /** One review row per cheque the file holds; a failed file still gets one row to fill in or remove. */
@@ -128,6 +130,17 @@ function rowsForFile(fileId: string, response: ChequeMultiExtractionResponse | n
 /** A new target is a new comparison: any amount confirmation was about the old one. */
 function withTarget(r: RowState, rowId: string | null): RowState {
   return r.rowId === rowId ? r : { ...r, rowId, amountConfirmed: false };
+}
+
+/**
+ * Tutorial 15: the reader answered but read nothing (OCR unavailable, a blurred
+ * photo) — the row is all blanks. Said so on the row instead of a silent empty row.
+ */
+export function nothingRead(file: BulkExtractItem | undefined, det: DetectedChequeItem | null): boolean {
+  if (!file || file.status !== "extracted") return false;
+  const ex = det?.extracted;
+  if (!ex) return true;
+  return !ex.chequeNumber && !ex.bankName && !ex.payerName && !ex.chequeDate && ex.amount == null;
 }
 
 function detectionOf(file: BulkExtractItem | undefined, row: RowState): DetectedChequeItem | null {
@@ -613,6 +626,11 @@ export default function BulkChequeUploadFlow({ leaseId, rows, onlyChequeId, onSu
                                 <span>{t("confirmCrop")}</span>
                               </label>
                             </>
+                          )}
+                          {nothingRead(item, det) && (
+                            <p className="mt-1 max-w-[9rem] text-[10px] text-amber-800" role="alert" data-testid="cheque-nothing-read">
+                              <AlertTriangle size={10} className="inline" /> {t("nothingRead")}
+                            </p>
                           )}
                           {item.status === "failed" && (
                             <p className="mt-1 text-[10px] text-red-700">

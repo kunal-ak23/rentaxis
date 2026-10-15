@@ -44,7 +44,13 @@ public class RentCollectionSettingsService {
         settings.setGracePeriodDays(dto.getGracePeriodDays());
         settings.setPenaltyType(dto.getPenaltyType() != null ? PenaltyType.valueOf(dto.getPenaltyType()) : PenaltyType.NONE);
         settings.setPenaltyAmount(dto.getPenaltyAmount());
-        settings.setOnlinePaymentEnabled(dto.getOnlinePaymentEnabled());
+        // Null (an older client, or a form that never showed the switch) keeps what is
+        // stored; a new row starts OFF — online payment is an opt-in.
+        if (dto.getOnlinePaymentEnabled() != null) {
+            settings.setOnlinePaymentEnabled(dto.getOnlinePaymentEnabled());
+        } else if (settings.getOnlinePaymentEnabled() == null) {
+            settings.setOnlinePaymentEnabled(false);
+        }
         // Fine override fields — null preserved as null (= use org-level defaults)
         settings.setFineBounceAmount(dto.getFineBounceAmount());
         settings.setFineSignatureMismatchAmount(dto.getFineSignatureMismatchAmount());
@@ -70,7 +76,7 @@ public class RentCollectionSettingsService {
         dto.setGracePeriodDays(settings.getGracePeriodDays());
         dto.setPenaltyType(settings.getPenaltyType() != null ? settings.getPenaltyType().name() : PenaltyType.NONE.name());
         dto.setPenaltyAmount(settings.getPenaltyAmount());
-        dto.setOnlinePaymentEnabled(settings.getOnlinePaymentEnabled());
+        dto.setOnlinePaymentEnabled(Boolean.TRUE.equals(settings.getOnlinePaymentEnabled()));
         dto.setFineBounceAmount(settings.getFineBounceAmount());
         dto.setFineSignatureMismatchAmount(settings.getFineSignatureMismatchAmount());
         dto.setFineAccountClosedAmount(settings.getFineAccountClosedAmount());

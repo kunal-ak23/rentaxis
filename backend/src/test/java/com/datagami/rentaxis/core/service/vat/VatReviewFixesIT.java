@@ -64,6 +64,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest
 class VatReviewFixesIT extends AbstractPostgresIT {
 
+    // PR #400 review P3-1: the realistic companions lock the normal way (recognise, then lock).
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.recognition.RecognitionService recognitionForLock;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.vat.VatTaxPointService vatForLock;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService fiscalForLock;
+
     @Autowired LeasePostingService posting;
     @Autowired ChequeGenerationService chequeGeneration;
     @Autowired ChequeService chequeService;
@@ -228,10 +236,18 @@ class VatReviewFixesIT extends AbstractPostgresIT {
     // ------------------------------------------------------------------
 
     /** Books locked through 30/06: May's point is posted, and the lock goes on. */
+    /** PR #400 review P3-1: the same state reached the normal way (VAT declared, rent recognised, then lock). */
+    private UUID lockedThroughJuneAfterRecognising() {
+        UUID leaseId = workedExample();
+        com.datagami.rentaxis.testsupport.LockedBooks.lockAfterRecognising(recognitionForLock, vatForLock, fiscalForLock,
+                LocalDate.of(2026, 6, 30));
+        return leaseId;
+    }
+
     private UUID lockedThroughJune() {
         UUID leaseId = workedExample();
         vatTaxPoints.runTo(LocalDate.of(2026, 6, 30), false);
-        fiscal.lockThrough(LocalDate.of(2026, 6, 30));
+        com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, LocalDate.of(2026, 6, 30));
         return leaseId;
     }
 
@@ -239,6 +255,32 @@ class VatReviewFixesIT extends AbstractPostgresIT {
     @Test
     void anAddendumRowWhoseTaxPointFallsInTheLockedPeriodIsRefused() {
         UUID leaseId = lockedThroughJune();
+        ChequeRowInput june = LeaseTestFixtures.chequeRow("1050", LocalDate.of(2026, 6, 1));
+
+        // Refused up front with the other problems ("Cheque …"), not by the schedule
+        // builder's backstop ("Instalment …") after the rows are written.
+        assertThatThrownBy(() -> variations.addCharge(leaseId, new AddChargeRequest(LocalDate.of(2026, 6, 1),
+                LocalDate.of(2026, 7, 10), null, "parking",
+                List.of(vatLine("PARKING_FEE", "1000")), List.of(june))))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Cheque " + june.chequeNumber()
+                        + "'s VAT tax point (2026-06-01) falls in a locked period: books are locked through 2026-06-30");
+        assertThat(schedule(leaseId)).noneMatch(p -> p.taxPointDate().equals(LocalDate.of(2026, 6, 1)));
+
+        // Dated after the lock, the same addendum posts and gets its point.
+        variations.addCharge(leaseId, new AddChargeRequest(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 10),
+                null, "parking", List.of(vatLine("PARKING_FEE", "1000")),
+                List.of(LeaseTestFixtures.chequeRow("1050", LocalDate.of(2026, 7, 15)))));
+        assertThat(schedule(leaseId)).anySatisfy(p -> {
+            assertThat(p.taxPointDate()).isEqualTo(LocalDate.of(2026, 7, 15));
+            assertThat(p.vatAmount()).isEqualByComparingTo("50.00");
+        });
+    }
+
+    /** PR #400 review P3-1: the same, with the lock reached the normal way (recognise, then lock). */
+    @Test
+    void anAddendumRowWhoseTaxPointFallsInTheLockedPeriodIsRefused_afterRecognisingThenLocking() {
+        UUID leaseId = lockedThroughJuneAfterRecognising();
         ChequeRowInput june = LeaseTestFixtures.chequeRow("1050", LocalDate.of(2026, 6, 1));
 
         // Refused up front with the other problems ("Cheque …"), not by the schedule
@@ -272,10 +314,34 @@ class VatReviewFixesIT extends AbstractPostgresIT {
                 .hasMessageContaining("Cheque " + june.chequeNumber() + "'s VAT tax point (2026-06-20) falls in a locked period");
     }
 
+    /** PR #400 review P3-1: the same, with the lock reached the normal way (recognise, then lock). */
+    @Test
+    void anExtensionRowWhoseTaxPointFallsInTheLockedPeriodIsRefused_afterRecognisingThenLocking() {
+        UUID leaseId = lockedThroughJuneAfterRecognising();
+
+        ChequeRowInput june = LeaseTestFixtures.chequeRow("31500", LocalDate.of(2026, 6, 20));
+        assertThatThrownBy(() -> renewal.extend(leaseId, new ExtendLeaseRequest(LocalDate.of(2027, 7, 31),
+                LocalDate.of(2026, 7, 10), List.of(vatLine("RENT", "30000")), List.of(june))))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Cheque " + june.chequeNumber() + "'s VAT tax point (2026-06-20) falls in a locked period");
+    }
+
     /** Moving a cancelled row's VAT onto an instalment dated in the locked period would strand it. */
     @Test
     void vatCannotBeMovedOntoAnInstalmentInTheLockedPeriod() {
         UUID leaseId = lockedThroughJune();
+        List<ChequeDTO> rows = register(leaseId);
+
+        assertThatThrownBy(() -> chequeService.cancel(rows.get(3).id(), null, rows.get(0).id()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("falls in a locked period: books are locked through 2026-06-30");
+        assertThat(register(leaseId).get(3).status().name()).isEqualTo("REGISTERED");
+    }
+
+    /** PR #400 review P3-1: the same, with the lock reached the normal way (recognise, then lock). */
+    @Test
+    void vatCannotBeMovedOntoAnInstalmentInTheLockedPeriod_afterRecognisingThenLocking() {
+        UUID leaseId = lockedThroughJuneAfterRecognising();
         List<ChequeDTO> rows = register(leaseId);
 
         assertThatThrownBy(() -> chequeService.cancel(rows.get(3).id(), null, rows.get(0).id()))
@@ -292,6 +358,22 @@ class VatReviewFixesIT extends AbstractPostgresIT {
     @Test
     void terminatingWithAnUndeclaredPointInTheLockedPeriodSaysWhatToDo() {
         UUID leaseId = lockedThroughJune();
+        UUID augPoint = pointOf(register(leaseId).get(1).id());
+        jdbc.update("update vat_tax_points set tax_point_date = ? where id = ?", LocalDate.of(2026, 6, 15), augPoint);
+
+        assertThatThrownBy(() -> termination.terminate(leaseId,
+                new TerminateLeaseRequest(LocalDate.of(2026, 10, 31), null, null, null), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("VAT of 1500.00 on 2026-06-15 has not been declared and falls in the locked period")
+                .hasMessageContaining("reopen that period");
+        assertThat(jdbc.queryForObject("select status from leases where id = ?", String.class, leaseId))
+                .isEqualTo("ACTIVE");
+    }
+
+    /** PR #400 review P3-1: the same, with the lock reached the normal way (recognise, then lock). */
+    @Test
+    void terminatingWithAnUndeclaredPointInTheLockedPeriodSaysWhatToDo_afterRecognisingThenLocking() {
+        UUID leaseId = lockedThroughJuneAfterRecognising();
         UUID augPoint = pointOf(register(leaseId).get(1).id());
         jdbc.update("update vat_tax_points set tax_point_date = ? where id = ?", LocalDate.of(2026, 6, 15), augPoint);
 

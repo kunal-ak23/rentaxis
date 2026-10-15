@@ -55,6 +55,7 @@ class BooksStartForwardMoveIT extends AbstractPostgresIT {
     @Autowired ChargeTypeService chargeTypeService;
     @Autowired TransactionTemplate tx;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.datagami.rentaxis.core.service.recognition.RecognitionService recognition;
 
     private LeaseTestFixtures fixtures;
 
@@ -128,6 +129,37 @@ class BooksStartForwardMoveIT extends AbstractPostgresIT {
                 });
         assertThat(lock()).as("nothing moved").isEqualTo(LocalDate.of(2026, 4, 30));
         assertThat(booksStart()).isEqualTo(LocalDate.of(2026, 5, 1));
+    }
+
+    // ------------------------------------------------------------------
+    // Tutorial 46 / bug 46: the user's period lock (and so the year-end close, which
+    // locks through lockThrough) must not strand PLANNED recognition, like VAT.
+    // ------------------------------------------------------------------
+
+    @Test
+    void aLockOverPlannedRecognitionIsRefusedNamingTheMonthsUntilRecognitionRuns() {
+        setBooksStart(LocalDate.of(2026, 5, 1));
+        LocalDate start = LocalDate.of(2026, 6, 1);
+        fixtures.postedLease(start, start, start.plusYears(1).minusDays(1), List.of(line("RENT", "60000")), 2,
+                LeaseTestFixtures.nextChequeBook());
+        // June and July recognised; August still PLANNED (the tutorial: September PLANNED, lock to 30/09).
+        tx.executeWithoutResult(st -> recognition.runTo(LocalDate.of(2026, 7, 31), false));
+        tx.executeWithoutResult(st -> fiscal.lockThrough(LocalDate.of(2026, 7, 31)));
+        assertThat(lock()).as("everything through July is recognised").isEqualTo(LocalDate.of(2026, 7, 31));
+
+        assertThatThrownBy(() -> tx.executeWithoutResult(st -> fiscal.lockThrough(LocalDate.of(2026, 9, 30))))
+                .isInstanceOfSatisfying(BusinessRuleViolationException.class, e -> {
+                    assertThat(e.getCode()).isEqualTo("fiscal.recognitionPendingForLock");
+                    assertThat(e.getArgs()).containsEntry("through", "30/09/2026")
+                            .containsEntry("months", "08/2026, 09/2026")
+                            .containsEntry("count", "2");
+                    assertThat(e.getMessage()).contains("08/2026, 09/2026");
+                });
+        assertThat(lock()).as("nothing moved").isEqualTo(LocalDate.of(2026, 7, 31));
+
+        tx.executeWithoutResult(st -> recognition.runTo(LocalDate.of(2026, 9, 30), false));
+        tx.executeWithoutResult(st -> fiscal.lockThrough(LocalDate.of(2026, 9, 30)));
+        assertThat(lock()).as("recognition run: the lock is accepted").isEqualTo(LocalDate.of(2026, 9, 30));
     }
 
     // ------------------------------------------------------------------

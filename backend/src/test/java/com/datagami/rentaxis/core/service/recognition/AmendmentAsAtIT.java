@@ -395,7 +395,7 @@ class AmendmentAsAtIT extends AbstractPostgresIT {
     private void run(boolean cutOver, String newRent, String newFee, boolean lock, LocalDate recognisedThrough) {
         UUID leaseId = lease(cutOver);
         recognition.runTo(recognisedThrough, false);
-        if (lock) tx.executeWithoutResult(s -> fiscal.lockThrough(JUN_30));
+        if (lock) tx.executeWithoutResult(s -> com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, JUN_30));
 
         Map<String, BigDecimal> jun = asAt(leaseId, JUN_30);
         Map<String, BigDecimal> aug = asAt(leaseId, AUG_31);

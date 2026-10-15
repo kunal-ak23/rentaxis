@@ -162,6 +162,21 @@ class PenaltyRuleEngineTest {
         verifyNoInteractions(assessmentService);
     }
 
+    /** PR #400 review P3-4: a return with no recorded reason is not called a BOUNCE. */
+    @Test
+    void aReturnWithoutAReasonCarriesNoReasonArg() {
+        fineConfig(cfg(2, true, false));
+        bouncesOnThisLease(2);
+        Cheque c = cheque("100042", "12750", LocalDate.of(2026, 11, 2), null);
+        c.setBouncedAt(LocalDate.of(2026, 11, 9));
+
+        engine.onBounce(c);
+
+        verify(assessmentService).proposeBySystem(eq(lease), eq(c), eq(PenaltyReason.CHEQUE_RETURN),
+                eq(new BigDecimal("500")), org.mockito.ArgumentMatchers.anyString(), eq(LocalDate.of(2026, 11, 9)),
+                eq("chequeReturned"), eq(java.util.Map.of("cheque", "100042", "bounces", "2")));
+    }
+
     /** Inclusive: a threshold of 2 fires on the second returned cheque, not the third. */
     @Test
     void atTheThresholdOneProposalIsRaisedForTheConfiguredBounceFine() {

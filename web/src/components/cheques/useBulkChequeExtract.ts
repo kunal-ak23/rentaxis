@@ -69,10 +69,35 @@ export function normalizeExtraction(
   };
 }
 
-async function extractOne(file: File): Promise<ChequeMultiExtractionResponse> {
+/**
+ * How long one file may take before the row says so (tutorial 15: with blob storage
+ * down the extraction hung with no feedback). A slow model read of a busy photo takes
+ * well under a minute; two is generous.
+ */
+export const EXTRACT_TIMEOUT_MS = 120_000;
+
+/**
+ * `key` identifies the file (PR #400 review P3-3): the server stores a file once per key,
+ * so a Retry after the page stopped waiting gets the first attempt's answer, never a
+ * second stored scan.
+ */
+async function extractOne(file: File, key?: string): Promise<ChequeMultiExtractionResponse> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch("/api/proxy/v1/cheques/extract-many", { method: "POST", body: form });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), EXTRACT_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch("/api/proxy/v1/cheques/extract-many", {
+      method: "POST", body: form, signal: controller.signal,
+      headers: key ? { "Idempotency-Key": key } : undefined,
+    });
+  } catch (e) {
+    if (controller.signal.aborted) throw new ChequeExtractError("Reading this file took too long", "cheque_upload_timeout");
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new ChequeExtractError(err.error ?? `Upload failed (${res.status})`, err.code ?? null);
@@ -123,7 +148,7 @@ export function useBulkChequeExtract() {
       if (!job) return;
       setItem(job.id, { status: "extracting" });
       try {
-        const response = await extractOne(job.file);
+        const response = await extractOne(job.file, job.id);
         job.status = "extracted";
         job.response = response;
         setItem(job.id, { status: "extracted", response });
@@ -159,7 +184,7 @@ export function useBulkChequeExtract() {
     inFlight.current.add(id);
     setItem(id, { status: "extracting", error: null, errorCode: null });
     try {
-      const response = await extractOne(target.file);
+      const response = await extractOne(target.file, target.id);
       setItem(id, { status: "extracted", response });
       return response;
     } catch (e) {

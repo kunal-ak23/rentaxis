@@ -707,7 +707,8 @@ export default function ChequeGrid({
                                                     onClick={() => onScanRow(c)}
                                                     className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold bg-input text-foreground hover:bg-border transition-colors cursor-pointer whitespace-nowrap"
                                                 >
-                                                    <Camera size={10} /> {t("attachScan")}
+                                                    {/* Tutorial 15: a row with a scan offers to replace it (the icon by the number opens it). */}
+                                                    <Camera size={10} /> {c.imageUrl ? tc("replaceScan") : t("attachScan")}
                                                 </button>
                                             )}
                                         </div>

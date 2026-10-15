@@ -77,6 +77,7 @@ describe("BounceChequeDialog", () => {
                 <BounceChequeDialog cheque={CHEQUE} onClose={() => {}} onDone={() => {}} />
             </NextIntlClientProvider>,
         );
+        fireEvent.change(screen.getByTestId("bounce-failure-reason"), { target: { value: "BOUNCE" } });
         fireEvent.click(screen.getByTestId("cheque-bounce-confirm"));
         expect(await screen.findByTestId("bounce-error")).toHaveTextContent("رقم القيد لهذا التاريخ مستخدم بالفعل");
     });
@@ -113,7 +114,12 @@ describe("BounceChequeDialog", () => {
         expect(options).toContainEqual({ value: "STOPPED_PAYMENT", text: "Payment stopped" });
         expect(options).toContainEqual({
             value: "TECHNICAL_RETURN",
-            text: "Technical return (stale, post-dated, amount mismatch)",
+            text: "Technical return (stale, post-dated, amount in words and figures differ)",
         });
+        // PR #400 review P3-4: nothing is pre-chosen; the first real reason reads "Insufficient funds / other"
+        // (truthful for rows recorded before the specific reasons existed).
+        expect(options[0].value).toBe("");
+        expect(options[1]).toEqual({ value: "BOUNCE", text: "Insufficient funds / other" });
+        expect(screen.getByTestId("cheque-bounce-confirm")).toBeDisabled();
     });
 });

@@ -179,6 +179,9 @@ public class OnlinePaymentService {
         java.util.Set<UUID> writeOffPending = chequeQueryService.pendingWriteOffItems(rows);
         Map<UUID, BigDecimal> penaltyByLease = penaltyOutstandingByLease(rows);
         Map<UUID, Boolean> onlineByProperty = new HashMap<>();
+        // Product ruling (cheques, cash and bank transfer; no Razorpay by default): "Pay now"
+        // needs a configured gateway for the organisation as well as the property's opt-in.
+        boolean gatewayActive = !tenantGatewayConfigRepository.findByIsActiveTrueOrderByCreatedAtAscIdAsc().isEmpty();
 
         List<RenterChequeDTO> result = new ArrayList<>(rows.size());
         for (Cheque c : rows) {
@@ -198,7 +201,7 @@ public class OnlinePaymentService {
             boolean overdue = ChequeDueRules.tenantOverdue(c, grace, today, open);
             Property property = c.getProperty();
             Unit unit = c.getUnit();
-            boolean onlineEnabled = property == null || onlineByProperty.computeIfAbsent(
+            boolean onlineEnabled = gatewayActive && property != null && onlineByProperty.computeIfAbsent(
                     property.getId(), this::onlinePaymentEnabled);
 
             result.add(new RenterChequeDTO(
@@ -328,16 +331,19 @@ public class OnlinePaymentService {
     }
 
     /**
-     * Whether the property takes online payments — an opt-out, not an opt-in.
+     * Whether the property takes online payments — an opt-in.
      *
-     * <p>A property with no {@code RentCollectionSettings} row has never been
-     * configured either way, and reading that as "disabled" would hide the pay
-     * button on every property an admin has not visited.</p>
+     * <p>The product collects by cheque, cash and bank transfer; online payment is
+     * offered only where an admin switched it on. A property with no
+     * {@code RentCollectionSettings} row, or a row whose flag is null, has never
+     * been switched on, so it takes none (tutorial 21: every due cheque showed
+     * "Pay Now" with no gateway configured).</p>
      */
     private boolean onlinePaymentEnabled(UUID propertyId) {
         return rentCollectionSettingsRepository.findByPropertyId(propertyId)
                 .map(RentCollectionSettings::getOnlinePaymentEnabled)
-                .orElse(Boolean.TRUE) != Boolean.FALSE;
+                .map(Boolean.TRUE::equals)
+                .orElse(false);
     }
 
     // ------------------------------------------------------------------
@@ -467,7 +473,9 @@ public class OnlinePaymentService {
                         + "Please contact the property office.", BOUNCE_BALANCE_UNKNOWN, Map.of());
             }
         }
-        if (cheque.getProperty() != null && !onlinePaymentEnabled(cheque.getProperty().getId())) {
+        // PR #400 review P3-2: the renter list's rule — a row with no property takes no
+        // online payment either (opt-in is per property).
+        if (cheque.getProperty() == null || !onlinePaymentEnabled(cheque.getProperty().getId())) {
             throw new BusinessRuleViolationException("Online payment is switched off for this property");
         }
 

@@ -29,11 +29,11 @@ vi.mock("next/link", () => ({
     ),
 }));
 
-const api = vi.hoisted(() => ({ pending: vi.fn(), run: vi.fn(), fiscal: vi.fn(), status: vi.fn() }));
+const api = vi.hoisted(() => ({ pending: vi.fn(), run: vi.fn(), fiscal: vi.fn(), status: vi.fn(), catchUp: vi.fn() }));
 
 vi.mock("@/lib/api/leasing", async orig => {
     const m = await orig<typeof import("@/lib/api/leasing")>();
-    return { ...m, recognitionApi: { ...m.recognitionApi, pending: api.pending, run: api.run, status: api.status } };
+    return { ...m, recognitionApi: { ...m.recognitionApi, pending: api.pending, run: api.run, status: api.status, catchUpLocked: api.catchUp } };
 });
 vi.mock("@/lib/api/ledger", async orig => {
     const m = await orig<typeof import("@/lib/api/ledger")>();
@@ -322,5 +322,30 @@ describe("month-end close — behind warning (F14-27)", () => {
         const errors = screen.getByTestId("recognition-last-run-errors");
         expect(errors).toHaveTextContent("Lease l-1: books locked through 2026-08-31");
         expect(errors).toHaveTextContent("Lease l-2: negative recognised amount");
+    });
+
+    /** PR #400 review P2-1: months the lock closed while still planned can be caught up from here. */
+    it("offers Catch up locked months when the lock holds unrecognised months, and reports what it posted", async () => {
+        api.status.mockResolvedValue({
+            behind: 0, behindAmount: 0, oldestPeriodEnd: null, lastRunFor: null,
+            lastRunFinishedAt: null, lastRunPosted: 0, lastRunFailed: 0, lastRunErrors: [],
+            lockedUnrecognised: 2, lockedUnrecognisedAmount: 10000, booksLockedThrough: "2026-09-30",
+        });
+        api.catchUp.mockResolvedValue({ preview: false, leases: 1, months: 2, amount: 10000, postedOn: "2026-10-01",
+            monthsNamed: ["08/2026", "09/2026"], errors: [] });
+        renderPage();
+        const warning = await screen.findByTestId("recognition-locked-unrecognised");
+        expect(warning).toHaveTextContent("10,000.00");
+        fireEvent.click(screen.getByTestId("recognition-catch-up-locked"));
+        await waitFor(() => expect(api.catchUp).toHaveBeenCalledWith(false));
+        const done = await screen.findByTestId("recognition-catch-up-done");
+        expect(done).toHaveTextContent("08/2026, 09/2026");
+        expect(done).toHaveTextContent("10,000.00");
+    });
+
+    it("shows no catch-up when nothing is stranded inside the lock", async () => {
+        renderPage();
+        await waitFor(() => expect(api.status).toHaveBeenCalled());
+        expect(screen.queryByTestId("recognition-locked-unrecognised")).toBeNull();
     });
 });

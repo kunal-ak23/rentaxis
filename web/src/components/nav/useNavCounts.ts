@@ -6,6 +6,7 @@ import { ledgerApi } from "@/lib/api/ledger";
 import { isBooksLive } from "@/lib/nav/accountingNav";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { readActiveOrgCookie } from "@/lib/session/orgSync";
+import { COUNTS_STALE_EVENT } from "@/lib/countsStale";
 
 export type NavCounts = { collectionBadge: number | null; chequesToDeposit: number | null; booksLockedThrough: string | null; booksLive: boolean };
 
@@ -24,7 +25,7 @@ export const NAV_COUNTS_MAX_AGE_MS = 30_000;
  * period lock) dispatches this on `window`, and the counts are read again at once
  * rather than when they next go stale.
  */
-export const NAV_COUNTS_STALE_EVENT = "rentaxis:nav-counts-stale";
+export const NAV_COUNTS_STALE_EVENT = COUNTS_STALE_EVENT;
 
 export function useNavCounts(role: UserRole | undefined, pathname = ""): NavCounts {
     const [counts, setCounts] = useState<NavCounts>({ collectionBadge: null, chequesToDeposit: null, booksLockedThrough: null, booksLive: true });

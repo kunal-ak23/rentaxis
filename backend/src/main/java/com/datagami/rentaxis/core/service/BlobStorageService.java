@@ -94,6 +94,12 @@ public class BlobStorageService {
             throw new BlobStorageException("Failed to read upload stream for " + blobPath, e);
         } catch (com.azure.storage.blob.models.BlobStorageException e) {
             throw new BlobStorageException("Failed to upload blob " + blobPath, e);
+        } catch (BlobStorageException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            // The store unreachable (connection refused, timed out): the SDK throws an
+            // unchecked I/O error, not a BlobStorageException. Said the same way.
+            throw new BlobStorageException("Blob storage unreachable uploading " + blobPath, e);
         }
     }
 
@@ -121,6 +127,12 @@ public class BlobStorageService {
             throw new BlobStorageException("Failed to read cheque image bytes for " + blobPath, e);
         } catch (com.azure.storage.blob.models.BlobStorageException e) {
             throw new BlobStorageException("Failed to upload blob " + blobPath, e);
+        } catch (BlobStorageException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            // The store unreachable (connection refused, timed out): the SDK throws an
+            // unchecked I/O error, not a BlobStorageException. Said the same way.
+            throw new BlobStorageException("Blob storage unreachable uploading " + blobPath, e);
         }
     }
 
@@ -545,8 +557,17 @@ public class BlobStorageService {
                         throw new BlobStorageException(
                                 "AZURE_STORAGE_CONNECTION_STRING is not configured");
                     }
+                    // Tutorial 15: with storage unreachable a cheque scan hung for minutes
+                    // on the SDK's default retries (4 tries, back-off up to 120 s) with
+                    // nothing on screen. Two tries of 20 s, 0.5–1 s back-off: one blob call
+                    // gives up within ~41 s, so a dead store answers the named 503 well
+                    // inside the scan page's two minutes (PR #400 review P3-3). A 10 MB
+                    // upload to Azure takes a few seconds.
                     local = new BlobServiceClientBuilder()
                             .connectionString(connectionString)
+                            .retryOptions(new com.azure.storage.common.policy.RequestRetryOptions(
+                                    com.azure.storage.common.policy.RetryPolicyType.EXPONENTIAL,
+                                    2, 20, 500L, 1_000L, null))
                             .buildClient();
                     this.serviceClient = local;
                 }

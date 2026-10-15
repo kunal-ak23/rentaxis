@@ -25,10 +25,13 @@ public class ChequeExtractionController {
 
     private final ChequeExtractionService service;
     private final ChequeMultiExtractionService multiService;
+    private final com.datagami.rentaxis.core.service.cheque.ChequeExtractionIdempotency idempotency;
 
-    public ChequeExtractionController(ChequeExtractionService service, ChequeMultiExtractionService multiService) {
+    public ChequeExtractionController(ChequeExtractionService service, ChequeMultiExtractionService multiService,
+                                      com.datagami.rentaxis.core.service.cheque.ChequeExtractionIdempotency idempotency) {
         this.service = service;
         this.multiService = multiService;
+        this.idempotency = idempotency;
     }
 
     @PostMapping(value = "/extract", consumes = "multipart/form-data")
@@ -51,12 +54,16 @@ public class ChequeExtractionController {
      */
     @PostMapping(value = "/extract-many", consumes = "multipart/form-data")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
-    public ResponseEntity<ChequeMultiExtractionResponseDTO> extractMany(@RequestPart("file") MultipartFile file) {
+    public ResponseEntity<ChequeMultiExtractionResponseDTO> extractMany(
+            @RequestPart("file") MultipartFile file,
+            // PR #400 review P3-3: one key per file from the scan page; a retry after the
+            // page stopped waiting gets the first attempt's answer, never a second blob.
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Idempotency-Key", required = false) String key) {
         var tenantId = TenantContextHolder.getTenantId();
         if (tenantId == null) {
             throw new IllegalArgumentException("Tenant context is required");
         }
-        return ResponseEntity.ok(multiService.extractAndStore(tenantId, file));
+        return ResponseEntity.ok(idempotency.once(tenantId, key, () -> multiService.extractAndStore(tenantId, file)));
     }
 
     @ExceptionHandler(ChequeUploadRefusedException.class)
@@ -67,6 +74,23 @@ public class ChequeExtractionController {
             default -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(Map.of("error", ex.getMessage(), "code", ex.getCode()));
+    }
+
+    /** Code the web maps to "storage not reachable, nothing was saved" (tutorial 15). */
+    public static final String STORAGE_UNAVAILABLE = "cheque_storage_unavailable";
+
+    /**
+     * Tutorial 15: blob storage down. A clear 503 the scan page can name, instead of a
+     * bare 500 (or a hang) — nothing was stored: the multi-cheque path removes what it
+     * had issued before rethrowing.
+     */
+    @ExceptionHandler(com.datagami.rentaxis.core.service.BlobStorageService.BlobStorageException.class)
+    public ResponseEntity<Map<String, String>> handleStorage(
+            com.datagami.rentaxis.core.service.BlobStorageService.BlobStorageException ex) {
+        org.slf4j.LoggerFactory.getLogger(ChequeExtractionController.class).warn("Cheque scan storage failed: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
+                "error", "Cheque storage is not reachable right now, so nothing was saved. Try again in a few minutes.",
+                "code", STORAGE_UNAVAILABLE));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

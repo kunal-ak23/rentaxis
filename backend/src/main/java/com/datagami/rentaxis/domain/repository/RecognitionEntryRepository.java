@@ -68,4 +68,35 @@ public interface RecognitionEntryRepository extends JpaRepository<RecognitionEnt
      */
     Optional<RecognitionEntry> findFirstByTenantIdAndStatusAndPeriodEndLessThanEqualOrderByPeriodEndAsc(
             UUID tenantId, RecognitionStatus status, LocalDate to);
+
+    /**
+     * The distinct period ends still PLANNED after {@code after} and on or before {@code through},
+     * oldest first — what moving the period lock from {@code after} to {@code through} would strand.
+     * Rows already inside the lock are not counted: the run cannot post them, the locked-months
+     * catch-up does (PR #400 review P2-1).
+     */
+    @Query("""
+            select distinct e.periodEnd from RecognitionEntry e
+            where e.tenantId = :tenantId and e.status = com.datagami.rentaxis.domain.entity.enums.RecognitionStatus.PLANNED
+              and e.periodEnd > :after and e.periodEnd <= :through
+            order by e.periodEnd""")
+    List<LocalDate> findPlannedPeriodEndsBetween(@Param("tenantId") UUID tenantId, @Param("after") LocalDate after,
+                                                 @Param("through") LocalDate through);
+
+    long countByTenantIdAndStatusAndPeriodEndGreaterThanAndPeriodEndLessThanEqual(
+            UUID tenantId, RecognitionStatus status, LocalDate after, LocalDate through);
+
+    /** Leases holding a PLANNED row inside the period lock — what the locked-months catch-up visits. */
+    @Query("""
+            select distinct e.lease.id from RecognitionEntry e
+            where e.tenantId = :tenantId and e.status = com.datagami.rentaxis.domain.entity.enums.RecognitionStatus.PLANNED
+              and e.periodEnd <= :lockedThrough""")
+    List<UUID> findLeaseIdsWithPlannedThrough(@Param("tenantId") UUID tenantId, @Param("lockedThrough") LocalDate lockedThrough);
+
+    /** PLANNED rows inside the period lock: how many, for the recognition screen. */
+    @Query("""
+            select count(e), coalesce(sum(e.amount), 0) from RecognitionEntry e
+            where e.tenantId = :tenantId and e.status = com.datagami.rentaxis.domain.entity.enums.RecognitionStatus.PLANNED
+              and e.periodEnd <= :lockedThrough""")
+    List<Object[]> plannedInsideLock(@Param("tenantId") UUID tenantId, @Param("lockedThrough") LocalDate lockedThrough);
 }

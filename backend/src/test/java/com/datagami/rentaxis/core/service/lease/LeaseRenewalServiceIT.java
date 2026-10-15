@@ -96,6 +96,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         com.datagami.rentaxis.testsupport.TimelineClockConfig.class})
 class LeaseRenewalServiceIT extends AbstractPostgresIT {
 
+    // PR #400 review P3-1: the realistic companions lock the normal way (recognise, then lock).
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.recognition.RecognitionService recognitionForLock;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.vat.VatTaxPointService vatForLock;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.ledger.TenantFiscalSettingsService fiscalForLock;
+
     @Autowired LeaseRenewalService renewal;
     @Autowired LeasePostingService posting;
     @Autowired LeaseVariationService variations;
@@ -1010,7 +1018,26 @@ class LeaseRenewalServiceIT extends AbstractPostgresIT {
     void extendIntoALockedPeriodChangesNothing() {
         UUID leaseId = postedWithFee();
         long journalsBefore = journalEntryRows();
-        fiscal.lockThrough(LocalDate.of(2027, 9, 30));
+        com.datagami.rentaxis.testsupport.LockedBooks.lockOverPlanned(jdbc, LocalDate.of(2027, 9, 30));
+
+        assertThatThrownBy(() -> renewal.extend(leaseId, extension("12000", "12000")))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Cannot post on 2027-09-20: books are locked through 2027-09-30");
+
+        Lease lease = reread(leaseId);
+        assertThat(lease.getEndDate()).isEqualTo(END);
+        assertThat(leaseLines(leaseId)).hasSize(2);
+        assertThat(registerOf(leaseId)).hasSize(5);
+        assertThat(journalEntryRows()).isEqualTo(journalsBefore);
+    }
+
+    /** PR #400 review P3-1: the same, with the lock reached the normal way (recognise, then lock). */
+    @Test
+    void extendIntoALockedPeriodChangesNothing_afterRecognisingThenLocking() {
+        UUID leaseId = postedWithFee();
+        long journalsBefore = journalEntryRows();
+        com.datagami.rentaxis.testsupport.LockedBooks.lockAfterRecognising(recognitionForLock, vatForLock, fiscalForLock, LocalDate.of(2027, 9, 30));
+        journalsBefore = journalEntryRows(); // the run posted recognition; measure from here
 
         assertThatThrownBy(() -> renewal.extend(leaseId, extension("12000", "12000")))
                 .isInstanceOf(BusinessRuleViolationException.class)

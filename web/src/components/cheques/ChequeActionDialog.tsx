@@ -87,7 +87,7 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
 
     const [date, setDate] = useState(businessTodayIso());
     const [notes, setNotes] = useState("");
-    const [failureReason, setFailureReason] = useState<ChequeFailureReason>("BOUNCE");
+    const [failureReason, setFailureReason] = useState<ChequeFailureReason | "">("");
     const [debitAccountId, setDebitAccountId] = useState<string | null>(null);
     const [chequeNumber, setChequeNumber] = useState("");
     const [chequeDate, setChequeDate] = useState("");
@@ -103,7 +103,7 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
         if (!action || !cheque) return;
         setDate(businessTodayIso());
         setNotes("");
-        setFailureReason("BOUNCE");
+        setFailureReason("");
         // A receive starts with no account: the server's settlement target fills it
         // (R2 N-3), and a failed lookup must not fall back to the row's stamped leaf.
         setDebitAccountId(action === "receive" ? null : cheque.debitAccountId);
@@ -208,7 +208,7 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
                     await chequeApi.receive(cheque.id, { date, notes: notes || null, debitAccountId, notOnStatement: cover.notOnStatement || undefined });
                     break;
                 case "bounce":
-                    await chequeApi.bounce(cheque.id, { date, notes: notes || null, failureReason });
+                    await chequeApi.bounce(cheque.id, { date, notes: notes || null, failureReason: failureReason as ChequeFailureReason });
                     break;
                 case "cancel":
                     await chequeApi.cancel(cheque.id, { date, notes: notes || null }, vatMove ? moveVatTo || null : null);
@@ -280,6 +280,7 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
                 // R2 N-3: nothing to confirm until the server has said where it posts.
                 || (action === "receive" && !settlement)
                 || bankDateAfterToday
+                || (action === "bounce" && !failureReason)
             }
             confirmTestId={`cheque-${action}-confirm`}
         >
@@ -374,6 +375,7 @@ export default function ChequeActionDialog({ action, cheque, propertyId, onClose
                             value={failureReason}
                             onChange={e => setFailureReason(e.target.value as ChequeFailureReason)}
                         >
+                            <option value="" disabled>{t("chooseFailureReason")}</option>
                             {FAILURE_REASONS.map(r => (
                                 <option key={r} value={r}>
                                     {t(`failureReasons.${r}`)}
