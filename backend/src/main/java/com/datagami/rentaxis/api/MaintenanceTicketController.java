@@ -158,7 +158,7 @@ public class MaintenanceTicketController {
         var file = ticketService.download(attachmentId);
         return ResponseEntity.ok()
                 .header("Content-Disposition", com.datagami.rentaxis.core.util.AttachmentNames.attachment(file.filename()))
-                .contentType(org.springframework.http.MediaType.parseMediaType(file.contentType()))
+                .contentType(com.datagami.rentaxis.core.util.AttachmentNames.mediaType(file.contentType()))
                 .body(file.content());
     }
 

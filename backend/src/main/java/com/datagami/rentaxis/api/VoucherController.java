@@ -200,7 +200,7 @@ public class VoucherController {
         String contentType = meta.fileType() == null ? "application/octet-stream" : meta.fileType();
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition(meta.downloadName()))
-                .contentType(MediaType.parseMediaType(contentType))
+                .contentType(com.datagami.rentaxis.core.util.AttachmentNames.mediaType(contentType))
                 .body(new InputStreamResource(attachments.download(attachmentId)));
     }
 

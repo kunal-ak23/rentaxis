@@ -7,7 +7,6 @@ import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -49,7 +48,7 @@ public class DeductionAttachmentController {
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         com.datagami.rentaxis.core.util.AttachmentNames.attachment(meta.getDownloadName()))
-                .contentType(MediaType.parseMediaType(contentType))
+                .contentType(com.datagami.rentaxis.core.util.AttachmentNames.mediaType(contentType))
                 .body(resource);
     }
 

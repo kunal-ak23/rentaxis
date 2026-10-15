@@ -96,6 +96,33 @@ class AttachmentDownloadNameTest {
         assertThat(header.substring(0, header.indexOf("; filename*"))).isEqualTo("attachment; filename=\"a_b__Set-Cookie_ x_.pdf\"");
     }
 
+    @Test
+    void onlySafeTypesAreServedAsThemselves() {
+        assertThat(AttachmentNames.servedContentType("application/pdf; charset=binary", "/x/a.pdf", null)).isEqualTo("application/pdf");
+        assertThat(AttachmentNames.servedContentType("image/heic", "/x/a.heic", null)).isEqualTo("image/heic");
+        for (String risky : new String[]{"text/html", "image/svg+xml", "application/xml", "text/xml",
+                "application/javascript", "text/javascript", "application/xhtml+xml", "application/x-msdownload"}) {
+            assertThat(AttachmentNames.servedContentType(risky, "/x/a.pdf", PDF)).as(risky).isEqualTo("application/octet-stream");
+        }
+        // A malformed legacy value is not served as itself either.
+        assertThat(AttachmentNames.servedContentType("pdf", "/x/a.pdf", null)).isEqualTo("application/octet-stream");
+        assertThat(AttachmentNames.servedContentType(null, "/x/a.html", null)).isEqualTo("application/octet-stream");
+    }
+
+    @Test
+    void aMalformedContentTypeFallsBackToOctetStreamInsteadOfFailing() {
+        assertThat(AttachmentNames.mediaType("not a type/;;")).isEqualTo(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM);
+        assertThat(AttachmentNames.mediaType("pdf")).isEqualTo(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM);
+        assertThat(AttachmentNames.mediaType(null)).isEqualTo(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM);
+        assertThat(AttachmentNames.mediaType("application/pdf")).isEqualTo(org.springframework.http.MediaType.APPLICATION_PDF);
+    }
+
+    @Test
+    void anAsteriskIsPercentEncodedInFilenameStar() {
+        String header = AttachmentNames.attachment("rent*2026.pdf");
+        assertThat(header.substring(header.indexOf("filename*="))).isEqualTo("filename*=UTF-8''rent%2A2026.pdf");
+    }
+
     // ------------------------------------------------------------ contract attachments
 
     private LeaseAttachmentService leaseService(LeaseAttachmentRepository repo, Lease lease) {
@@ -168,6 +195,16 @@ class AttachmentDownloadNameTest {
         AttachmentNames.Download got = leaseService(repo, lease).download(old.getId());
         assertThat(got.filename()).isEqualTo("aadhar.pdf");
         assertThat(got.contentType()).isEqualTo("application/pdf");
+
+        // A malformed legacy content type still downloads (as bytes), never a 500.
+        old.setFileType("pdf");
+        AttachmentNames.Download odd = leaseService(repo, lease).download(old.getId());
+        assertThat(odd.contentType()).isEqualTo("application/octet-stream");
+        assertThat(AttachmentNames.mediaType(odd.contentType())).isEqualTo(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM);
+        // Parameters on a known type are dropped, not parsed.
+        old.setFileType("application/pdf;;=");
+        assertThat(leaseService(repo, lease).download(old.getId()).contentType()).isEqualTo("application/pdf");
+        assertThat(odd.filename()).isEqualTo("aadhar.pdf");
     }
 
     // ------------------------------------------------------------ settlement deduction evidence

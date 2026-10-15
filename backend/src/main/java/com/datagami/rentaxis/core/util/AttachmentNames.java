@@ -149,11 +149,38 @@ public final class AttachmentNames {
     /** The Content-Type to serve: the stored one, else what the extension or bytes say, else octet-stream. */
     public static String servedContentType(String storedType, String storedPath, byte[] head) {
         String t = normalisedType(storedType);
-        if (t != null && !OCTET_STREAM.equals(t) && t.contains("/")) return storedType.trim();
-        String byExt = typeForExtension(extensionOf(storedPath));
-        if (byExt != null) return byExt;
-        String sniffed = sniffType(head);
-        return sniffed != null ? sniffed : OCTET_STREAM;
+        String candidate;
+        if (t != null && !OCTET_STREAM.equals(t)) {
+            candidate = t;
+        } else {
+            String byExt = typeForExtension(extensionOf(storedPath));
+            candidate = byExt != null ? byExt : sniffType(head);
+        }
+        // Only formats a browser will not run as a page or script are served as themselves;
+        // text/html, SVG, XML, JavaScript and anything unknown or malformed go out as bytes.
+        return candidate != null && SAFE_SERVED_TYPES.contains(candidate) ? candidate : OCTET_STREAM;
+    }
+
+    /** Content types an attachment download may carry; everything else is served as octet-stream. */
+    static final java.util.Set<String> SAFE_SERVED_TYPES = java.util.Set.of(
+            "application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp", "image/heic", "image/heif",
+            "video/mp4", "video/quicktime", "audio/mpeg", "application/zip", "text/plain", "text/csv",
+            "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+
+    /**
+     * The {@link org.springframework.http.MediaType} to serve: a stored value that does not
+     * parse (a malformed legacy content type) falls back to octet-stream instead of a 500.
+     */
+    public static org.springframework.http.MediaType mediaType(String contentType) {
+        try {
+            return contentType == null || contentType.isBlank()
+                    ? org.springframework.http.MediaType.APPLICATION_OCTET_STREAM
+                    : org.springframework.http.MediaType.parseMediaType(contentType);
+        } catch (IllegalArgumentException e) { // InvalidMediaTypeException, InvalidMimeTypeException
+            return org.springframework.http.MediaType.APPLICATION_OCTET_STREAM;
+        }
     }
 
     /**
@@ -184,7 +211,8 @@ public final class AttachmentNames {
     public static String contentDisposition(String disposition, String filename) {
         String name = filename == null || filename.isBlank() ? "attachment" : filename;
         String asciiSafe = name.replaceAll("[\"\\r\\n\\\\/:*?<>|;%]", "_").replaceAll("[^\\x20-\\x7E]", "_");
-        String encoded = URLEncoder.encode(name, StandardCharsets.UTF_8).replace("+", "%20");
+        // URLEncoder leaves "*" bare, which RFC 5987 attr-char does not allow.
+        String encoded = URLEncoder.encode(name, StandardCharsets.UTF_8).replace("+", "%20").replace("*", "%2A");
         return disposition + "; filename=\"" + asciiSafe + "\"; filename*=UTF-8''" + encoded;
     }
 
