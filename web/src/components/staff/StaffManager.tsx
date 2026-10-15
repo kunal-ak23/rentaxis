@@ -114,7 +114,7 @@ export default function StaffManager({ embedded = false }: { embedded?: boolean 
             if (res.ok) {
                 const data = await res.json();
                 if (!isCurrent()) return;
-                data.sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
+                data.sort((a: { id?: string }, b: { id?: string }) => (a.id || '').localeCompare(b.id || ''));
                 setStaff(data);
                 setLoadError(null);
             } else {
@@ -360,25 +360,25 @@ export default function StaffManager({ embedded = false }: { embedded?: boolean 
                 </div>
             )}
             {/* Header */}
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-8">
                 <div>
                     <Heading className="mb-1">{t("title")}</Heading>
                     <p className="text-sm text-muted">{t("description")}</p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <div className="relative">
+                    <div className="relative flex-1 sm:flex-none">
                         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
                         <input
                             type="text"
                             placeholder="Search..."
                             value={searchQuery}
                             onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                            className="pl-9 pr-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
+                            className="pl-9 pr-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-full sm:w-64 transition-all"
                         />
                     </div>
                     <button
                         onClick={openAddModal}
-                        className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer flex items-center gap-2"
+                        className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer flex items-center gap-2 shrink-0"
                     >
                         <Plus size={14} />
                         {t("addStaff")}
