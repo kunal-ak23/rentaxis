@@ -310,7 +310,7 @@ export const TUTORIALS: Tutorial[] = [
         relatedArticles: ["renter--making-payments", "renter--renter-portal-overview"],
     },
     {
-        id: "22", slug: "submit-and-manage-maintenance-tickets", topic: "operations", roles: [...PORTFOLIO, "TENANT_USER", "RENTER"], durationSec: 117, youtubeId: null,
+        id: "22", slug: "submit-and-manage-maintenance-tickets", topic: "operations", roles: [...PORTFOLIO, "TENANT_USER", "RENTER"], durationSec: 117, youtubeId: "iiY8wGnPZBk",
         title: { en: "Submit and manage maintenance tickets", ar: "تقديم طلبات الصيانة وإدارتها" },
         description: {
             en: "Raise a ticket, assign and track it, confirm closure with a one-time code and review ticket reports.",
