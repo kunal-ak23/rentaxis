@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Palm Ridge Properties (fictional demo mark)">
+  <title>Palm Ridge Properties — fictional demo mark</title>
+  <!-- Invented for the accounting tutorials. Not a real company's mark. -->
+  <circle cx="256" cy="256" r="240" fill="#1F4D3A"/>
+  <circle cx="256" cy="256" r="214" fill="none" stroke="#EFE3C8" stroke-width="6"/>
+  <clipPath id="pr-inner"><circle cx="256" cy="256" r="211"/></clipPath>
+  <g clip-path="url(#pr-inner)">
+    <circle cx="340" cy="190" r="46" fill="#C9A227"/>
+    <path d="M40 372 L 170 286 L 250 336 L 360 250 L 480 330 L 480 520 L 40 520 Z" fill="#2E6B52"/>
+    <path d="M40 410 L 190 332 L 280 380 L 380 318 L 480 372 L 480 520 L 40 520 Z" fill="#EFE3C8" opacity="0.92"/>
+    <g fill="none" stroke="#EFE3C8" stroke-linecap="round">
+      <path d="M200 380 C 204 316 206 262 214 196" stroke-width="12"/>
+      <path d="M214 196 C 180 172 146 170 110 184" stroke-width="10"/>
+      <path d="M214 196 C 196 158 168 138 130 132" stroke-width="10"/>
+      <path d="M214 196 C 224 154 250 130 288 124" stroke-width="10"/>
+      <path d="M214 196 C 250 176 284 178 314 196" stroke-width="10"/>
+      <path d="M214 196 C 218 170 214 144 204 118" stroke-width="10"/>
+    </g>
+  </g>
+</svg>

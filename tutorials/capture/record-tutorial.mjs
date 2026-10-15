@@ -14,6 +14,7 @@ import {
 } from './lib/context.mjs';
 import { installCursorOverlay, patchLocatorForCapture, pointerAt } from './lib/cursor.mjs';
 import { narrationDurationSeconds } from './lib/narration.mjs';
+import { setScenePlannedStart } from './lib/proof.mjs';
 import {
   addCallout, auditVisibleDialogContrast, clearCallout, pageReadyAt, suppressAutomaticOnboarding,
 } from './lib/page.mjs';
@@ -40,7 +41,10 @@ const sceneWeights = scenes.map((scene) => {
   return Number.isFinite(weight) && weight > 0 ? weight : 1;
 });
 const totalSceneWeight = sceneWeights.reduce((total, weight) => total + weight, 0);
-const browser = await chromium.launch({ headless: true });
+// A scenario that shows a PDF inline (tutorial 11's contract preview) asks for
+// the full Chromium build: the default headless shell has no PDF viewer and
+// renders the preview as an empty frame.
+const browser = await chromium.launch({ headless: true, ...(scenario.browserChannel ? { channel: scenario.browserChannel } : {}) });
 const recordedVideoPaths = [];
 // Seconds of lead-in (blank document, loading shell) at the start of each clip.
 const clipLeadIns = [];
@@ -58,8 +62,14 @@ async function authenticatedStorageState(role) {
   }
   const credentials = role === 'tenantAdmin'
     ? seed.adminLogin
+    // The accounting track (Palm Ridge Properties) records most scenes as its Accountant.
+    : role === 'accountant'
+      ? seed.accountantLogin
     : role === 'renter'
       ? seed.renterLogins?.find((login) => login.name === 'Ahmed Hassan') || seed.renterLogins?.[0]
+    // `renter:<name>` signs in as that seeded tenant (tutorial 11: Rajesh Kumar).
+    : role.startsWith('renter:')
+      ? seed.renterLogins?.find((login) => login.name === role.slice('renter:'.length))
       : role === 'propertyManager'
         ? seed.operatorLogins?.find((login) => login.role === 'PROPERTY_MANAGER')
         : role === 'securityGuard'
@@ -90,6 +100,13 @@ async function authenticatedStorageState(role) {
 // context and page when both run as the same role.
 let live = null;
 let recordingStartedAt = null;
+// Anchored scenarios (`anchored: true`): a scene that continues the previous
+// clip is planned to start where the previous one was planned to end, so one
+// slow step (a cold backend posting a contract) is caught up by the scenes
+// after it instead of pushing every later cue late. A new clip re-anchors on
+// its own start: the time spent opening a context is not in the video.
+let plannedStart = null;
+let plannedDuration = 0;
 
 async function closeLive() {
   if (!live) return;
@@ -181,6 +198,26 @@ try {
   const defaultRole = scenario.role || 'superadmin';
   const host = new URL(baseURL).hostname;
 
+  // Warm-up (capture only): record-local.sh restores a database snapshot right
+  // before the capture, so the backend starts cold and the first page loads
+  // run seconds slow, on camera. A scenario can list read-only pages
+  // (`warmup: [{ role, path }]`) to open once, unrecorded, before the take.
+  if (!validateOnly && Array.isArray(scenario.warmup)) {
+    for (const { role, path: warmPath } of scenario.warmup) {
+      const context = await browser.newContext({ baseURL, storageState: await authenticatedStorageState(role) });
+      await suppressAutomaticOnboarding(context);
+      await context.addCookies([{ name: 'active_tenant_id', value: tenantId, domain: host, path: '/' }]);
+      const page = await context.newPage();
+      for (let round = 0; round < 2; round += 1) {
+        await page.goto(`${baseURL}${warmPath}`, { waitUntil: 'commit', timeout: 60_000 }).catch(() => {});
+        await page.locator('main').waitFor({ state: 'visible', timeout: 60_000 }).catch(() => {});
+        await page.waitForTimeout(2500);
+      }
+      await context.close();
+    }
+    console.log('warmup=done');
+  }
+
   for (const [sceneIndex, scene] of scenes.entries()) {
     const role = scene.role || defaultRole;
     if (!scene.continues || !live || live.role !== role) {
@@ -194,6 +231,9 @@ try {
 
     const startedAt = Date.now();
     recordingStartedAt ??= startedAt;
+    const anchored = scenario.anchored === true && scene.continues && plannedStart !== null;
+    plannedStart = anchored ? plannedStart + plannedDuration * 1000 : startedAt;
+    setScenePlannedStart(scenario.anchored === true ? plannedStart : null);
     if (!validateOnly) {
       // Approximate offset into the recording, for checking scenes against subtitle cues.
       console.log(`scene=${sceneIndex + 1} starts_at=${((startedAt - recordingStartedAt) / 1000).toFixed(1)}s title=${scene.title}`);
@@ -223,7 +263,8 @@ try {
       // pays the pause after its callout clears (below), which would otherwise
       // push every later scene behind the narration.
       : Math.max(1, targetDuration * (sceneWeights[sceneIndex] / totalSceneWeight) - (scene.continues ? 0.4 : clipOverheadSeconds));
-    const elapsedSeconds = (Date.now() - startedAt) / 1000;
+    plannedDuration = sceneDuration + (validateOnly ? 0.1 : 0.4);
+    const elapsedSeconds = (Date.now() - (scenario.anchored === true ? plannedStart : startedAt)) / 1000;
     await page.waitForTimeout(Math.max(500, (sceneDuration - elapsedSeconds) * 1000));
     await clearCallout(page);
     await page.waitForTimeout(validateOnly ? 100 : 400);

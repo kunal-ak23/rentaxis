@@ -1,0 +1,179 @@
+1
+00:00:00,000 --> 00:00:03,611
+This tutorial shows how Miftah's chart of
+accounts is organised,
+
+2
+00:00:03,611 --> 00:00:07,222
+how every property gets its own set of
+accounts, and
+
+3
+00:00:07,222 --> 00:00:10,471
+which account each charge on a contract
+posts to.
+
+4
+00:00:10,471 --> 00:00:14,082
+As the Accountant, open Accounting and
+choose Chart of Accounts.
+
+5
+00:00:14,082 --> 00:00:16,610
+The tree groups every account under five
+
+6
+00:00:16,610 --> 00:00:19,137
+types: assets, liabilities, income,
+expenses and equity.
+
+7
+00:00:19,137 --> 00:00:23,109
+Groups such as Rental Receivable and Bank
+only hold other accounts.
+
+8
+00:00:23,109 --> 00:00:26,359
+The accounts beneath them, the leaves, are
+where journals
+
+9
+00:00:26,359 --> 00:00:29,247
+post, and a balance is always the sum
+
+10
+00:00:29,247 --> 00:00:32,136
+of its journal lines, never a typed
+figure.
+
+11
+00:00:32,136 --> 00:00:35,025
+Filter by property and choose Palm Ridge
+Residences.
+
+12
+00:00:35,025 --> 00:00:37,913
+Now you see that building's own accounts:
+its
+
+13
+00:00:37,913 --> 00:00:40,802
+Rent Receivable, PDC Receivable, Emirates
+Islamic bank account,
+
+14
+00:00:40,802 --> 00:00:43,329
+Advance Rent, Security Deposit and Rental
+Income.
+
+15
+00:00:43,329 --> 00:00:46,579
+Each building keeps its own books inside
+the organisation.
+
+16
+00:00:46,579 --> 00:00:50,912
+Open the property itself, Palm Ridge
+Residences, and its Ledger accounts tab.
+
+17
+00:00:50,912 --> 00:00:54,162
+Every role, such as Rent Receivable or
+Advance Rent,
+
+18
+00:00:54,162 --> 00:00:57,050
+points to one account for this property,
+and
+
+19
+00:00:57,050 --> 00:00:59,939
+Change maps a role to a different one.
+
+20
+00:00:59,939 --> 00:01:03,550
+Posting rules only name roles; the
+property decides the account.
+
+21
+00:01:03,550 --> 00:01:06,438
+Next, open Property account template under
+One-time setup.
+
+22
+00:01:06,438 --> 00:01:09,688
+For every role there is a name pattern,
+where
+
+23
+00:01:09,688 --> 00:01:12,938
+the placeholder is replaced by the
+property's name, and
+
+24
+00:01:12,938 --> 00:01:15,826
+the parent group the new account files
+under.
+
+25
+00:01:15,826 --> 00:01:18,354
+When a building is added, its account
+
+26
+00:01:18,354 --> 00:01:20,881
+set is created from this template
+automatically.
+
+27
+00:01:20,881 --> 00:01:25,214
+Further down, Default accounts are the
+company-wide accounts that are not per
+
+28
+00:01:25,214 --> 00:01:29,186
+building: the Cash Account, Output VAT on
+Sales, Input VAT on
+
+29
+00:01:29,186 --> 00:01:33,158
+Purchases, PDC Payable for issued cheques,
+and bank charges and interest.
+
+30
+00:01:33,158 --> 00:01:34,602
+Finally, open Charge types.
+
+31
+00:01:34,602 --> 00:01:37,491
+These are the charges a contract can
+carry.
+
+32
+00:01:37,491 --> 00:01:41,102
+Rent is earned day by day over the term,
+and
+
+33
+00:01:41,102 --> 00:01:44,713
+a security deposit is held for the tenant,
+never income.
+
+34
+00:01:44,713 --> 00:01:49,046
+For each fee you choose how it is earned:
+the Parking Fee
+
+35
+00:01:49,046 --> 00:01:53,017
+over the term, like rent; the Admin Fee
+and the Renewal
+
+36
+00:01:53,017 --> 00:01:56,989
+Fee once, when charged; and Utilities
+recovered at cost, not income.
+
+37
+00:01:56,989 --> 00:02:00,600
+The charge type decides where each
+contract line is credited.

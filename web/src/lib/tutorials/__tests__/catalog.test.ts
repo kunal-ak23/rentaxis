@@ -27,9 +27,18 @@ const tut = (over: Partial<Tutorial>): Tutorial => ({
 });
 
 describe("tutorial catalogue shape", () => {
-    it("seeds exactly the web tutorials 01–28 and 34–37, in order", () => {
-        const want = [...Array.from({ length: 28 }, (_, i) => String(i + 1).padStart(2, "0")), "34", "35", "36", "37"];
-        expect(TUTORIALS.map((t) => t.id)).toEqual(want);
+    it("seeds the web tutorials 01–15, 17–28 and 34–46 (16 dropped), the accounting track in track order", () => {
+        const ids = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => String(from + i).padStart(2, "0"));
+        const track = ["38", "39", "17", "34", "35", "40", "36", "41", "42", "43", "44", "19", "45", "18", "37", "20", "46"];
+        expect(TUTORIALS.map((t) => t.id)).toEqual([...ids(1, 15), ...track, ...ids(21, 28)]);
+    });
+
+    it("opens the accounting topic with the overview and follows an accountant's year", () => {
+        // .superpowers/accounting-tutorials.md: overview, books start, chart, posting, … year-end close.
+        const accounting = TUTORIALS.filter((t) => t.topic === "accounting").map((t) => t.id);
+        expect(accounting[0]).toBe("38");
+        expect(accounting.at(-1)).toBe("46");
+        expect(accounting).toEqual(["38", "39", "17", "34", "40", "36", "41", "42", "43", "44", "19", "45", "18", "37", "20", "46"]);
     });
 
     it.each(TUTORIALS.map((t) => [t.id, t] as const))("%s is complete and well-formed", (_id, t) => {
@@ -92,9 +101,14 @@ describe("catalogue helpers", () => {
         expect(publishedTutorials(list).map((t) => t.id)).toEqual(["01", "04"]);
     });
 
-    it("the real catalogue publishes 01-10, each with an 11-character YouTube id", () => {
+    it("the real catalogue publishes the uploaded tutorials, each with an 11-character YouTube id", () => {
         const published = publishedTutorials(TUTORIALS);
-        expect(published.map((t) => t.id)).toEqual(["01", "02", "03", "04", "05", "06", "07", "08", "09", "10"]);
+        expect(published.map((t) => t.id)).toEqual([
+            "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15",
+            // The accounting topic lists its entries in track order (38, the overview, first).
+            "38", "39", "17", "34", "35", "40", "36", "41", "42", "43", "44", "19", "45", "18", "37", "20",
+            "21", "22", "23", "24", "25", "28",
+        ]);
         for (const t of published) expect(t.youtubeId).toMatch(/^[A-Za-z0-9_-]{11}$/);
     });
 

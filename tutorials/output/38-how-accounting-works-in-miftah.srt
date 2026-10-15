@@ -1,0 +1,194 @@
+1
+00:00:00,000 --> 00:00:03,404
+This tutorial follows one tenancy
+contract's money through
+
+2
+00:00:03,404 --> 00:00:06,382
+Miftah's books, from posting to the
+reports.
+
+3
+00:00:06,382 --> 00:00:10,212
+As the Accountant, open Omar Haddad's
+contract for unit
+
+4
+00:00:10,212 --> 00:00:13,615
+R-101 at Palm Ridge Residences: a 5,000
+security
+
+5
+00:00:13,615 --> 00:00:17,019
+deposit, and 72,000 in rent for the year.
+
+6
+00:00:17,019 --> 00:00:18,721
+Select View posting journal.
+
+7
+00:00:18,721 --> 00:00:21,699
+Posting wrote one tenancy contract
+journal, TCO.
+
+8
+00:00:21,699 --> 00:00:25,103
+It debits Rent Receivable with 5,000 and
+72,000:
+
+9
+00:00:25,103 --> 00:00:28,082
+the 77,000 Omar has agreed to pay.
+
+10
+00:00:28,082 --> 00:00:31,911
+It credits Security Deposit with 5,000,
+because the deposit
+
+11
+00:00:31,911 --> 00:00:35,315
+is held for Omar and is not income.
+
+12
+00:00:35,315 --> 00:00:39,144
+And it credits Advance Rent with 72,000,
+because the
+
+13
+00:00:39,144 --> 00:00:42,548
+rent is billed now but not yet earned.
+
+14
+00:00:42,548 --> 00:00:45,952
+Back on the contract, open the Cheques
+tab.
+
+15
+00:00:45,952 --> 00:00:48,505
+Omar handed over five post-dated cheques.
+
+16
+00:00:48,505 --> 00:00:51,909
+Journal Vouchers lists every journal the
+contract wrote.
+
+17
+00:00:51,909 --> 00:00:55,738
+After the TCO come five post-dated cheque
+journals, PDR.
+
+18
+00:00:55,738 --> 00:00:59,993
+In the Rent Receivable ledger below, each
+one credits Rent
+
+19
+00:00:59,993 --> 00:01:04,247
+Receivable against PDC Receivable, and the
+balance falls to zero:
+
+20
+00:01:04,247 --> 00:01:08,502
+with the cheques in hand, Omar owes
+nothing on paper.
+
+21
+00:01:08,502 --> 00:01:10,630
+Cheque 110102 cleared in January.
+
+22
+00:01:10,630 --> 00:01:12,757
+Banking a cheque writes nothing.
+
+23
+00:01:12,757 --> 00:01:17,437
+Clearing writes a receipt journal, CRT: it
+debits the Emirates Islamic
+
+24
+00:01:17,437 --> 00:01:22,118
+account for Palm Ridge Residences with
+18,000, and credits PDC Receivable.
+
+25
+00:01:22,118 --> 00:01:26,372
+The money is the company's when the bank
+pays it.
+
+26
+00:01:26,372 --> 00:01:28,074
+Now open Revenue recognition.
+
+27
+00:01:28,074 --> 00:01:32,755
+The rent is spread over the term by the
+day: October's
+
+28
+00:01:32,755 --> 00:01:37,009
+31 days earn 6,115.07, and November's 30
+days earn 5,917.81.
+
+29
+00:01:37,009 --> 00:01:41,690
+October's journal debits Advance Rent and
+credits Rental Income with 6,115.07.
+
+30
+00:01:41,690 --> 00:01:45,944
+Income is earned day by day, whenever the
+cash arrives.
+
+31
+00:01:45,944 --> 00:01:48,497
+Next, a cheque that went wrong.
+
+32
+00:01:48,497 --> 00:01:51,476
+Open the Tenant Ledger for Layla Nasser.
+
+33
+00:01:51,476 --> 00:01:55,305
+Her rent receivable was at zero until the
+bank
+
+34
+00:01:55,305 --> 00:01:59,134
+returned cheque 220102 in February, and
+15,000 came back.
+
+35
+00:01:59,134 --> 00:02:02,538
+Two replacement cheques of 7,500 closed it
+again.
+
+36
+00:02:02,538 --> 00:02:07,644
+Open the return journal, CBR: it debits
+Rent Receivable and credits PDC
+
+37
+00:02:07,644 --> 00:02:12,324
+Receivable with 15,000, so the debt is
+back on the tenant.
+
+38
+00:02:12,324 --> 00:02:15,303
+In the Trial Balance, the grand total
+
+39
+00:02:15,303 --> 00:02:17,855
+of the debits equals the credits.
+
+40
+00:02:17,855 --> 00:02:20,834
+Profit and Loss shows the rental income
+
+41
+00:02:20,834 --> 00:02:23,812
+earned in August, not the cash collected.
+
+42
+00:02:23,812 --> 00:02:27,216
+One ledger feeds every one of these
+screens.

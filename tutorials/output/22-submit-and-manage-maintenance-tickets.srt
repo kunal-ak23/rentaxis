@@ -1,0 +1,184 @@
+1
+00:00:00,000 --> 00:00:02,782
+This tutorial follows a maintenance ticket
+in Oasis
+
+2
+00:00:02,782 --> 00:00:05,564
+Crest Properties, from the Tenant's report
+to closure,
+
+3
+00:00:05,564 --> 00:00:08,346
+with the work assigned to the maintenance
+supervisor.
+
+4
+00:00:08,346 --> 00:00:10,780
+Signed in as the Tenant Ahmed Hassan,
+
+5
+00:00:10,780 --> 00:00:13,215
+open My Tickets and select Create Ticket.
+
+6
+00:00:13,215 --> 00:00:16,344
+Give it a short title and describe the
+problem.
+
+7
+00:00:16,344 --> 00:00:19,474
+The property and unit come from the
+Tenant's contract.
+
+8
+00:00:19,474 --> 00:00:23,647
+Choose the category, HVAC, and the
+priority, High, then select Create Ticket.
+
+9
+00:00:23,647 --> 00:00:26,081
+The ticket joins the list as Open.
+
+10
+00:00:26,081 --> 00:00:28,516
+Now sign in as the Company Admin.
+
+11
+00:00:28,516 --> 00:00:32,341
+Khalid Rahman is on the staff list as the
+Maintenance Supervisor,
+
+12
+00:00:32,341 --> 00:00:35,818
+but tickets are assigned to people who can
+sign in.
+
+13
+00:00:35,818 --> 00:00:38,600
+In Settings, Users and staff, select New
+User.
+
+14
+00:00:38,600 --> 00:00:41,730
+Enter his name and email, choose Company
+User, the
+
+15
+00:00:41,730 --> 00:00:44,860
+role for the maintenance team, and select
+Provision User.
+
+16
+00:00:44,860 --> 00:00:47,294
+No password is set here: Khalid gets
+
+17
+00:00:47,294 --> 00:00:49,728
+an email invite to choose his own.
+
+18
+00:00:49,728 --> 00:00:53,554
+His login now appears in the Users list as
+a Company
+
+19
+00:00:53,554 --> 00:00:57,031
+User, with Resend invite in case the email
+is lost.
+
+20
+00:00:57,031 --> 00:00:59,813
+Now open the new ticket from Operations,
+Tickets.
+
+21
+00:00:59,813 --> 00:01:02,247
+Select Assign To and pick Khalid Rahman.
+
+22
+00:01:02,247 --> 00:01:04,682
+The status moves to Assigned, and Khalid
+
+23
+00:01:04,682 --> 00:01:07,116
+can update the tickets assigned to him.
+
+24
+00:01:07,116 --> 00:01:10,941
+Reply to the Tenant with the visit time,
+and set the
+
+25
+00:01:10,941 --> 00:01:14,419
+estimated hours, so the Tenant knows when
+to expect him.
+
+26
+00:01:14,419 --> 00:01:16,853
+When the work starts, select Start Work.
+
+27
+00:01:16,853 --> 00:01:19,287
+When it is finished, select Mark Resolved.
+
+28
+00:01:19,287 --> 00:01:23,460
+Back as the Tenant, the resolved ticket
+shows a six-digit closure code.
+
+29
+00:01:23,460 --> 00:01:26,938
+The Tenant shares it only when the work is
+done.
+
+30
+00:01:26,938 --> 00:01:29,372
+The Company Admin enters the code under
+
+31
+00:01:29,372 --> 00:01:31,458
+Close with OTP and selects Close.
+
+32
+00:01:31,458 --> 00:01:33,197
+The ticket is now Closed.
+
+33
+00:01:33,197 --> 00:01:37,022
+Its activity history records the
+assignment, each status change and the
+
+34
+00:01:37,022 --> 00:01:40,500
+closure with the code, with who did it and
+when.
+
+35
+00:01:40,500 --> 00:01:43,630
+Ticket Reports counts tickets by status,
+category and priority,
+
+36
+00:01:43,630 --> 00:01:46,759
+with the average resolution time and the
+average satisfaction.
+
+37
+00:01:46,759 --> 00:01:49,889
+Finally, back as the Tenant, rate the
+service: five
+
+38
+00:01:49,889 --> 00:01:52,671
+stars and a short comment, then Submit
+Rating.
+
+39
+00:01:52,671 --> 00:01:55,105
+The rating is saved with the ticket
+
+40
+00:01:55,105 --> 00:01:57,192
+and counts towards the satisfaction
+average.

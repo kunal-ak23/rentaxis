@@ -25,7 +25,13 @@ case "$PROD_BASE_URL $backend_url" in
   http://localhost:*" "http://localhost:*|http://127.0.0.1:*" "http://127.0.0.1:*) ;;
   *) echo "Refusing: record-local.sh records against a localhost stack only ($PROD_BASE_URL, $backend_url)." >&2; exit 2 ;;
 esac
-export TUTORIAL_SEED_MANIFEST=${TUTORIAL_SEED_MANIFEST:-"$tut/work/seed/oasis-crest.out.json"}
+# The accounting track records on Palm Ridge Properties (tutorials/seed/seed_palm_ridge.py);
+# everything else on Oasis Crest.
+case "$id" in
+  14|17|18|19|20|35|36|37|38|39|40|41|42|43|44|45|46) default_manifest="$tut/work/seed/palm-ridge.out.json" ;;
+  *) default_manifest="$tut/work/seed/oasis-crest.out.json" ;;
+esac
+export TUTORIAL_SEED_MANIFEST=${TUTORIAL_SEED_MANIFEST:-$default_manifest}
 export TUTORIAL_AUTH_STATE=${TUTORIAL_AUTH_STATE:-"$tut/.auth/superadmin-local.json"}
 export TUTORIAL_OUTPUT_DIR="$tut/output"
 export TUTORIAL_AUDIO_OUTPUT_DIR="$tut/audio-generated"
@@ -47,6 +53,18 @@ mkdir -p "$TUTORIAL_WORK_DIR" "$tut/qa"
 log="$TUTORIAL_WORK_DIR/record.log"
 : > "$log"
 
+# A tutorial whose flow cannot be undone in the app (posting, terminating)
+# has a database snapshot of its starting state, `recording-stack.sh snapshot
+# pre<id>`. When it exists, the proof and the capture each start from it.
+reset_to_snapshot() {
+  if [[ "$(psql -h "${TUTORIAL_DB_HOST:-127.0.0.1}" -p "${TUTORIAL_DB_PORT:-5432}" -U postgres -Atc \
+      "select 1 from pg_database where datname='${TUTORIAL_DB:-rentaxis_tutorials}_snap_pre$id'" postgres)" == 1 ]]; then
+    echo "== restoring snapshot pre$id"
+    "$tut/recording-stack.sh" restore "pre$id" 2>&1 | tee -a "$log"
+  fi
+}
+reset_to_snapshot
+
 # Fresh local super-admin session (the helper refuses non-localhost and
 # non-gitignored output paths).
 node "$tut/capture/local-auth.mjs" "$PROD_BASE_URL" "$TUTORIAL_AUTH_STATE" >> "$log"
@@ -58,7 +76,9 @@ delete_takes_drafts() {
   ids=$(grep -oE 'draft_contract_id=[0-9a-f-]{36}' "$log" | cut -d= -f2 | sort -u || true)
   if [[ -n "$ids" ]]; then
     # shellcheck disable=SC2086
-    node "$tut/capture/local-delete-drafts.mjs" "$TUTORIAL_SEED_MANIFEST" "$backend_url" $ids | tee -a "$log"
+    # A take that moved its contract past DRAFT (tutorial 11 signs it) leaves it for the
+    # scenario's own off-camera cleanup on its next run; that is not a failed take.
+    node "$tut/capture/local-delete-drafts.mjs" "$TUTORIAL_SEED_MANIFEST" "$backend_url" $ids 2>&1 | tee -a "$log" || true
   fi
 }
 trap delete_takes_drafts EXIT
@@ -72,6 +92,7 @@ echo "== proof (validate-only) tutorial $id"
 grep -q '^scenario_validation=passed$' "$log" || { echo "Proof failed; nothing recorded." >&2; exit 1; }
 delete_takes_drafts
 
+reset_to_snapshot
 echo "== capture tutorial $id"
 set +e
 "$tut/capture-tutorial.sh" "$id" "$TUTORIAL_VOICE" "$TUTORIAL_SPEECH_RATE" 2>&1 | tee -a "$log"

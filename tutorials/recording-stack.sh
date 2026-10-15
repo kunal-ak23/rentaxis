@@ -8,6 +8,7 @@
 #   tutorials/recording-stack.sh seed [--reset] [--refresh-branding]  # seed "Oasis Crest Properties" (idempotent)
 #   tutorials/recording-stack.sh stop     # stop only the processes this script started
 #   tutorials/recording-stack.sh status
+#   tutorials/recording-stack.sh snapshot|restore|drop-snapshot <tag>  # DB copy (restarts the backend)
 #
 # Everything lives under tutorials/work/stack/ (gitignored). Ports are
 # overridable; the defaults stay clear of the user's stack (3000-3002/8081),
@@ -34,9 +35,12 @@ case "$backend_port $web_port" in
     echo "Refusing ports $backend_port/$web_port: reserved for other local stacks." >&2; exit 2 ;;
 esac
 
+# A second backend (e.g. a scratch database for a first seed run) gets its own
+# pid and log files, so it never stops or overwrites the recording stack's.
+if [[ "$backend_port" != 8084 ]]; then pids="$stack/pids-$backend_port"; logs="$stack/logs-$backend_port"; fi
 mkdir -p "$logs" "$pids"
 
-listening_pid() { lsof -nP -tiTCP:"$1" -sTCP:LISTEN 2>/dev/null | head -1; }
+listening_pid() { lsof -nP -tiTCP:"$1" -sTCP:LISTEN 2>/dev/null | head -1 || true; }
 
 wait_for_gradle() {
   while pgrep -f "[G]radleWrapperMain|[G]radleWorkerMain" >/dev/null; do
@@ -100,8 +104,23 @@ start_backend() {
     # Never send anything outward from a recording: stub payments, blank
     # email/SMS and AI. Blob storage stays on the local Azurite of .env.backend.
     export RENTAXIS_GATEWAY_STUB_ENABLED=true
-    export AZURE_COMMUNICATION_CONNECTION_STRING= AZURE_OPENAI_API_KEY= AZURE_OPENAI_ENDPOINT=
+    export AZURE_COMMUNICATION_CONNECTION_STRING=
+    # Cheque OCR stays off unless a take needs the scan (tutorial 15):
+    # TUTORIAL_CHEQUE_OCR=on keeps .env.backend's Azure OpenAI settings so a
+    # fictional cheque photo is read. Everything else outward stays blank.
+    if [[ "${TUTORIAL_CHEQUE_OCR:-off}" != on ]]; then
+      export AZURE_OPENAI_API_KEY= AZURE_OPENAI_ENDPOINT=
+    fi
     export SPRING_JPA_SHOW_SQL=false RENTAXIS_RECOGNITION_JOB_CATCH_UP_ENABLED=false
+    # Nightly jobs off by default (TUTORIAL_NIGHTLY_JOBS=on to keep them): a
+    # recording replays a seeded, dated story, and a job that posts September
+    # recognition or VAT tax points overnight, expires a contract or sweeps
+    # executed copies would change it between the proof and the capture.
+    if [[ "${TUTORIAL_NIGHTLY_JOBS:-off}" == off ]]; then
+      export RENTAXIS_RECOGNITION_JOB_ENABLED=false RENTAXIS_VAT_TAX_POINT_JOB_ENABLED=false \
+        RENTAXIS_LEASE_EXPIRY_JOB_ENABLED=false RENTAXIS_EXECUTED_COPY_SWEEP_JOB_ENABLED=false \
+        RENTAXIS_NOTIFICATIONS_DAILY_JOB_ENABLED=false RENTAXIS_LISTING_UPCOMING_JOB_ENABLED=false
+    fi
     export APP_RENEWAL_PORTAL_BASE_URL="$web_url"
     cd "$src/backend"
     nohup java -Xmx2g -jar "$jar" > "$logs/backend.log" 2>&1 &
@@ -178,6 +197,57 @@ stop_one() {
   echo "$name: stopped"
 }
 
+# Database snapshots, so a tutorial whose flow cannot be undone in the app
+# (posting a contract, terminating one) starts every run from the same state:
+# its proof, its capture and any retake. A snapshot is a template copy of the
+# recording database (`<db>_snap_<tag>`); restoring stops only the backend
+# this script started, recreates the database from the snapshot and starts the
+# backend again. The web server stays up. Tutorial databases on localhost only.
+snap_name() {
+  [[ "$1" =~ ^[a-z0-9_]{1,32}$ ]] || { echo "snapshot tag must match [a-z0-9_]{1,32}: $1" >&2; exit 2; }
+  echo "${db_name}_snap_$1"
+}
+assert_tutorial_db() {
+  [[ "$db_name" =~ ^rentaxis_tutorials[a-z0-9_]*$ ]] || { echo "Refusing: $db_name is not a tutorial database." >&2; exit 2; }
+  case "$db_host" in 127.0.0.1|localhost) ;; *) echo "Refusing: database host $db_host is not local." >&2; exit 2 ;; esac
+}
+db_exists() {
+  [[ "$(psql -h "$db_host" -p "$db_port" -U postgres -Atc "select 1 from pg_database where datname='$1'" postgres)" == 1 ]]
+}
+stop_backend_and_wait() {
+  local pid; pid=$(cat "$pids/backend.pid" 2>/dev/null || true)
+  stop_one backend "$backend_port"
+  for _ in $(seq 1 60); do
+    [[ -z "$(listening_pid "$backend_port")" ]] && { [[ -z "$pid" ]] || ! kill -0 "$pid" 2>/dev/null; } && return
+    sleep 1
+  done
+  echo "backend did not stop" >&2; exit 1
+}
+snapshot() {
+  assert_tutorial_db
+  local snap; snap=$(snap_name "$1")
+  stop_backend_and_wait
+  if db_exists "$snap"; then dropdb -h "$db_host" -p "$db_port" -U postgres "$snap"; fi
+  createdb -h "$db_host" -p "$db_port" -U postgres -T "$db_name" "$snap"
+  echo "snapshot=$snap"
+  start_backend
+}
+restore() {
+  assert_tutorial_db
+  local snap; snap=$(snap_name "$1")
+  db_exists "$snap" || { echo "no snapshot $snap" >&2; exit 1; }
+  stop_backend_and_wait
+  dropdb -h "$db_host" -p "$db_port" -U postgres --force "$db_name"
+  createdb -h "$db_host" -p "$db_port" -U postgres -T "$snap" "$db_name"
+  echo "restored=$snap"
+  start_backend
+}
+drop_snapshot() {
+  assert_tutorial_db
+  local snap; snap=$(snap_name "$1")
+  if db_exists "$snap"; then dropdb -h "$db_host" -p "$db_port" -U postgres "$snap"; echo "dropped=$snap"; fi
+}
+
 status() {
   echo "built_from=$(cat "$stack/BUILT_FROM" 2>/dev/null || echo none) head=$(git -C "$repo" rev-parse --short=7 HEAD)"
   echo "database=$db_name@$db_host:$db_port"
@@ -198,6 +268,9 @@ case "${1:-}" in
     ensure_db; start_backend; start_web; status ;;
   stop) stop_one web "$web_port"; stop_one backend "$backend_port" ;;
   seed) shift; seed "$@" ;;
+  snapshot) snapshot "${2:?snapshot tag}" ;;
+  restore) restore "${2:?snapshot tag}" ;;
+  drop-snapshot) drop_snapshot "${2:?snapshot tag}" ;;
   status) status ;;
-  *) echo "Usage: $0 build|start|seed|stop|status" >&2; exit 2 ;;
+  *) echo "Usage: $0 build|start|seed|stop|status|snapshot <tag>|restore <tag>|drop-snapshot <tag>" >&2; exit 2 ;;
 esac

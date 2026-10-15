@@ -1,0 +1,154 @@
+1
+00:00:00,000 --> 00:00:03,743
+Every report in Miftah is read from the
+same
+
+2
+00:00:03,743 --> 00:00:07,487
+ledger, so the reports always agree with
+each other.
+
+3
+00:00:07,487 --> 00:00:11,230
+As the Accountant, open Profit and Loss
+for the
+
+4
+00:00:11,230 --> 00:00:14,974
+year from 1 September 2025 to 31 August
+2026.
+
+5
+00:00:14,974 --> 00:00:19,965
+Rental income is 567,333.63: rent earned
+day by day, not cash collected.
+
+6
+00:00:19,965 --> 00:00:22,461
+Fees, parking, maintenance charges and the
+
+7
+00:00:22,461 --> 00:00:24,957
+cheque return penalty sit beside it.
+
+8
+00:00:24,957 --> 00:00:28,700
+The 5,000 recovered from a written-off
+debt is other
+
+9
+00:00:28,700 --> 00:00:32,444
+income, and the write-off itself,
+11,326.03, is an expense.
+
+10
+00:00:32,444 --> 00:00:36,603
+Net operating income for the year is
+494,787.54, and the
+
+11
+00:00:36,603 --> 00:00:40,347
+badge confirms that the report ties to the
+ledger.
+
+12
+00:00:40,347 --> 00:00:45,338
+Open the Property Profit Report to see
+each building on its own.
+
+13
+00:00:45,338 --> 00:00:49,497
+Pick August 2026 and compare it with the
+previous period.
+
+14
+00:00:49,497 --> 00:00:53,657
+The Business Centre and the Residences
+each show their income,
+
+15
+00:00:53,657 --> 00:00:57,816
+expenses and NOI, with the change against
+July beside them.
+
+16
+00:00:57,816 --> 00:01:01,560
+Next, the Balance Sheet as at 31 August
+2026.
+
+17
+00:01:01,560 --> 00:01:05,719
+PDC receivable, 165,985, is the paper
+still in the drawer.
+
+18
+00:01:05,719 --> 00:01:09,879
+Advance rent, 214,145.83, is rent billed
+but not yet earned,
+
+19
+00:01:09,879 --> 00:01:14,038
+and the 42,200 of security deposits are
+held for tenants.
+
+20
+00:01:14,038 --> 00:01:16,950
+Retained earnings carry the closed 2025
+year,
+
+21
+00:01:16,950 --> 00:01:19,861
+and this year's result sits below them.
+
+22
+00:01:19,861 --> 00:01:23,189
+Assets equal liabilities plus equity, in
+every column.
+
+23
+00:01:23,189 --> 00:01:27,348
+The Owner Statement gives one building's
+month in a form
+
+24
+00:01:27,348 --> 00:01:31,508
+you can send to its owner: income and NOI,
+instalments
+
+25
+00:01:31,508 --> 00:01:35,667
+due, what was collected and what is
+outstanding, deposits held
+
+26
+00:01:35,667 --> 00:01:39,411
+and expenses, with a PDF in English or
+Arabic.
+
+27
+00:01:39,411 --> 00:01:40,243
+Finally, aging.
+
+28
+00:01:40,243 --> 00:01:43,986
+Payables aging lists what is owed to each
+supplier
+
+29
+00:01:43,986 --> 00:01:47,314
+by days past due, as of any date,
+
+30
+00:01:47,314 --> 00:01:50,641
+and ties every total to the supplier's
+ledger.
+
+31
+00:01:50,641 --> 00:01:55,217
+For tenants, the aging strip on Cheque and
+Cash Collection sorts
+
+32
+00:01:55,217 --> 00:01:59,376
+what is due by how many days it is
+overdue.

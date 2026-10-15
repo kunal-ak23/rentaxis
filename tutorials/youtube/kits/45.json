@@ -1,0 +1,68 @@
+{
+  "id": "45",
+  "slug": "bank-reconciliation",
+  "title": "Miftah tutorial 45 · Bank reconciliation",
+  "description": "Import a bank statement, match it to the books, book the bank-only lines and finalise the month.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 Bank Reconciliation\n0:17 Import the Statement\n0:43 Auto-match\n0:53 Book a Bank Charge\n1:21 Interest and an Unidentified Receipt\n1:40 Reconcile and Finalize\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nاستورد كشف الحساب البنكي، وطابقه مع الدفاتر، وسجّل البنود الواردة في كشف البنك فقط، واعتمد تسوية الشهر.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "chart of accounts",
+    "journal voucher",
+    "financial reports",
+    "accounting software",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Accounting",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0.0,
+      "start": "0:00",
+      "label": "Bank Reconciliation"
+    },
+    {
+      "startSec": 17.771,
+      "start": "0:17",
+      "label": "Import the Statement"
+    },
+    {
+      "startSec": 43.216,
+      "start": "0:43",
+      "label": "Auto-match"
+    },
+    {
+      "startSec": 53.313,
+      "start": "0:53",
+      "label": "Book a Bank Charge"
+    },
+    {
+      "startSec": 81.989,
+      "start": "1:21",
+      "label": "Interest and an Unidentified Receipt"
+    },
+    {
+      "startSec": 100.568,
+      "start": "1:40",
+      "label": "Reconcile and Finalize"
+    }
+  ],
+  "durationSec": 130,
+  "roles": [
+    "TENANT_ADMIN",
+    "ACCOUNTANT"
+  ],
+  "topic": "accounting",
+  "captionsFile": "tutorials/output/45-bank-reconciliation.srt",
+  "videoFile": "tutorials/output/45-bank-reconciliation.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/45.png"
+}

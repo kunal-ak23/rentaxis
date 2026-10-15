@@ -1,0 +1,64 @@
+{
+  "id": "20",
+  "slug": "dashboards-and-financial-reports",
+  "title": "Miftah tutorial 20 · Financial reports: profit and loss, balance sheet, owner statement and aging",
+  "description": "Read the Profit & Loss, the Property Profit Report by building, the Balance Sheet, the Owner Statement and receivable and payable aging.\n\nWho this is for: Accountant, Company Admin, System Admin.\n\nChapters:\n0:00 Profit & Loss\n0:40 Property Profit Report\n0:57 Balance Sheet\n1:23 Owner Statement\n1:39 Aging\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nاقرأ قائمة الأرباح والخسائر وتقرير أرباح العقار لكل مبنى والميزانية العمومية وكشف حساب المالك وأعمار الذمم المدينة والدائنة.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "chart of accounts",
+    "journal voucher",
+    "financial reports",
+    "accounting software",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Accounting",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0.0,
+      "start": "0:00",
+      "label": "Profit & Loss"
+    },
+    {
+      "startSec": 40.347,
+      "start": "0:40",
+      "label": "Property Profit Report"
+    },
+    {
+      "startSec": 57.816,
+      "start": "0:57",
+      "label": "Balance Sheet"
+    },
+    {
+      "startSec": 83.189,
+      "start": "1:23",
+      "label": "Owner Statement"
+    },
+    {
+      "startSec": 99.411,
+      "start": "1:39",
+      "label": "Aging"
+    }
+  ],
+  "durationSec": 120,
+  "roles": [
+    "SUPER_ADMIN",
+    "TENANT_ADMIN",
+    "ACCOUNTANT"
+  ],
+  "topic": "accounting",
+  "captionsFile": "tutorials/output/20-dashboards-and-financial-reports.srt",
+  "videoFile": "tutorials/output/20-dashboards-and-financial-reports.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/20.png"
+}

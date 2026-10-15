@@ -40,13 +40,28 @@ scripts/seed_demo_tenant.out.json
 scripts/seed_demo_tenant.out.*.bak.json
 scripts/seed_tutorial_tenant.out.json
 scripts/__pycache__/
-# Approved narrated tutorial deliverables belong to the project and must remain
-# visible to version control/workspace backup. Keep raw footage and intermediates
-# local-only, but do not silently ignore the final MP4/SRT outputs.
+# Tutorial outputs: captions (.srt) are versioned; video masters (.mp4/.webm) stay
+# local and are published on YouTube (tutorials/youtube/uploads.json). Only the
+# masters already tracked on main (01-10, 34-37) remain in git.
 tutorials/output/*
 !tutorials/output/
-!tutorials/output/*.mp4
 !tutorials/output/*.srt
+tutorials/output/*.mp4
+tutorials/output/*.webm
+!tutorials/output/01-sign-in-and-navigate-miftah.mp4
+!tutorials/output/02-dashboard-search-notifications-and-help.mp4
+!tutorials/output/03-roles-permissions-and-organisation-switching.mp4
+!tutorials/output/04-provision-organisations-and-manage-feature-access.mp4
+!tutorials/output/05-create-users-and-staff.mp4
+!tutorials/output/06-create-a-project-and-property-portfolio.mp4
+!tutorials/output/07-buildings-units-contacts-amenities-and-parking.mp4
+!tutorials/output/08-import-a-property-portfolio-in-bulk.mp4
+!tutorials/output/09-manage-tenants-and-portal-access.mp4
+!tutorials/output/10-draft-a-tenancy-contract-and-generate-its-cheques.mp4
+!tutorials/output/34-post-a-tenancy-contract.mp4
+!tutorials/output/35-register-and-clear-cheques.mp4
+!tutorials/output/36-month-end-recognition.mp4
+!tutorials/output/37-tenant-ledger.mp4
 tutorials/raw/
 tutorials/work/
 tutorials/.env.local

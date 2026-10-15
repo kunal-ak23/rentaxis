@@ -1,0 +1,127 @@
+1
+00:00:00,000 --> 00:00:03,471
+This tutorial covers gate passes in Oasis
+Crest Properties: a
+
+2
+00:00:03,471 --> 00:00:06,942
+Tenant invites visitors, a manager
+approves the regular ones, and
+
+3
+00:00:06,942 --> 00:00:10,066
+the Company Admin sets how the gate treats
+walk-ins.
+
+4
+00:00:10,066 --> 00:00:12,496
+Signed in as the Tenant Ahmed Hassan,
+
+5
+00:00:12,496 --> 00:00:14,925
+open Gate passes and select Request pass.
+
+6
+00:00:14,925 --> 00:00:17,702
+For a dinner guest, enter the name and
+
+7
+00:00:17,702 --> 00:00:20,479
+mobile number, a purpose and the car's
+plate.
+
+8
+00:00:20,479 --> 00:00:23,950
+Single visit is for a one-off visit: pick
+today, from
+
+9
+00:00:23,950 --> 00:00:27,421
+six to eleven in the evening, and select
+Create pass.
+
+10
+00:00:27,421 --> 00:00:31,239
+The pass is active at once, with a gate
+code to
+
+11
+00:00:31,239 --> 00:00:35,057
+send to the guest; the guard enters it at
+the gate.
+
+12
+00:00:35,057 --> 00:00:38,875
+A housekeeper who comes every week needs a
+Recurring pass instead.
+
+13
+00:00:38,875 --> 00:00:41,652
+Enter her name, number and purpose, set
+the
+
+14
+00:00:41,652 --> 00:00:44,429
+first and last day, and select Request
+pass.
+
+15
+00:00:44,429 --> 00:00:46,164
+It waits as Awaiting approval.
+
+16
+00:00:46,164 --> 00:00:50,329
+Now sign in as the Company Admin and open
+Gate pass approvals.
+
+17
+00:00:50,329 --> 00:00:54,495
+Check the guest, unit, validity and
+purpose, then select Approve and confirm.
+
+18
+00:00:54,495 --> 00:00:56,577
+Maria Santos's pass is now active.
+
+19
+00:00:56,577 --> 00:01:00,395
+Under Policy and visitors, each property
+sets its access policy for
+
+20
+00:01:00,395 --> 00:01:04,213
+walk-in visitors: whether the Tenant
+approves new visitors, whether a photo
+
+21
+00:01:04,213 --> 00:01:08,031
+is required, and how long the gate waits
+for an answer.
+
+22
+00:01:08,031 --> 00:01:11,502
+Below are the regular visitors registered
+per unit, and the
+
+23
+00:01:11,502 --> 00:01:14,973
+guard postings that decide which
+properties each guard works at.
+
+24
+00:01:14,973 --> 00:01:18,444
+Back as the Tenant, the recurring pass is
+now Active.
+
+25
+00:01:18,444 --> 00:01:21,915
+Open it to see the gate code and the
+validity.
+
+26
+00:01:21,915 --> 00:01:25,039
+Share the code only with the visitor it is
+
+27
+00:01:25,039 --> 00:01:27,816
+for: anyone holding it can be let in.

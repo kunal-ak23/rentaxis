@@ -1,0 +1,68 @@
+{
+  "id": "41",
+  "slug": "vat-per-instalment-and-the-vat-return",
+  "title": "Miftah tutorial 41 · VAT per instalment and the VAT return",
+  "description": "See how 5% VAT on a commercial contract waits as not yet due until each instalment's date, then file the quarter's VAT return.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 A Commercial Contract with VAT\n0:20 The Contract Journal\n0:43 VAT on Every Instalment\n0:55 Tax Points\n1:23 Declare Tax Points\n1:37 The VAT Return\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nتعرّف على كيفية بقاء ضريبة القيمة المضافة بنسبة 5% على العقد التجاري غير مستحقة حتى تاريخ كل دفعة، ثم قدّم الإقرار الضريبي للربع.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "chart of accounts",
+    "journal voucher",
+    "financial reports",
+    "accounting software",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Accounting",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0.0,
+      "start": "0:00",
+      "label": "A Commercial Contract with VAT"
+    },
+    {
+      "startSec": 20.68,
+      "start": "0:20",
+      "label": "The Contract Journal"
+    },
+    {
+      "startSec": 43.657,
+      "start": "0:43",
+      "label": "VAT on Every Instalment"
+    },
+    {
+      "startSec": 55.529,
+      "start": "0:55",
+      "label": "Tax Points"
+    },
+    {
+      "startSec": 83.485,
+      "start": "1:23",
+      "label": "Declare Tax Points"
+    },
+    {
+      "startSec": 97.272,
+      "start": "1:37",
+      "label": "The VAT Return"
+    }
+  ],
+  "durationSec": 133,
+  "roles": [
+    "TENANT_ADMIN",
+    "ACCOUNTANT"
+  ],
+  "topic": "accounting",
+  "captionsFile": "tutorials/output/41-vat-per-instalment-and-the-vat-return.srt",
+  "videoFile": "tutorials/output/41-vat-per-instalment-and-the-vat-return.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/41.png"
+}

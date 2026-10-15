@@ -1,0 +1,139 @@
+1
+00:00:00,000 --> 00:00:03,179
+This tutorial books a meeting in Oasis
+Crest Properties:
+
+2
+00:00:03,179 --> 00:00:06,358
+a Tenant asks for one, the Company Admin
+approves
+
+3
+00:00:06,358 --> 00:00:09,536
+it, and meetings that are over get closed
+off.
+
+4
+00:00:09,536 --> 00:00:12,009
+Signed in as the Tenant Ahmed Hassan,
+
+5
+00:00:12,009 --> 00:00:14,128
+open Meetings and select New Meeting.
+
+6
+00:00:14,128 --> 00:00:16,600
+Choose Office Visit, then Next; a Property
+
+7
+00:00:16,600 --> 00:00:19,073
+Visit would meet at the unit instead.
+
+8
+00:00:19,073 --> 00:00:23,311
+The purpose is Tenancy Contract Renewal,
+for his contract on unit A-101.
+
+9
+00:00:23,311 --> 00:00:26,137
+Pick a date, and the wizard lists the
+
+10
+00:00:26,137 --> 00:00:28,609
+host's free slots; take the first one.
+
+11
+00:00:28,609 --> 00:00:31,435
+For a renewal the Tenant can propose
+terms:
+
+12
+00:00:31,435 --> 00:00:34,260
+twelve months at 88,000, with a short
+note.
+
+13
+00:00:34,260 --> 00:00:36,733
+The last step lists every choice for
+
+14
+00:00:36,733 --> 00:00:38,852
+a final check; select Request Meeting.
+
+15
+00:00:38,852 --> 00:00:43,090
+It is listed as Requested, with the
+Company Admin as the host.
+
+16
+00:00:43,090 --> 00:00:45,563
+Now sign in as the Company Admin.
+
+17
+00:00:45,563 --> 00:00:48,035
+The calendar shows every meeting, and the
+
+18
+00:00:48,035 --> 00:00:50,154
+new request sits on its day.
+
+19
+00:00:50,154 --> 00:00:53,333
+Open it to see the date and time, who
+
+20
+00:00:53,333 --> 00:00:56,159
+asked, the linked contract and the renewal
+proposal.
+
+21
+00:00:56,159 --> 00:00:56,865
+Select Approve.
+
+22
+00:00:56,865 --> 00:00:59,338
+The meeting is now Approved, with
+Complete,
+
+23
+00:00:59,338 --> 00:01:01,457
+Mark No Show and Cancel available.
+
+24
+00:01:01,457 --> 00:01:03,929
+Meetings in the past need closing off.
+
+25
+00:01:03,929 --> 00:01:07,461
+Fatima Al Zaabi's cheque replacement visit
+took place on the
+
+26
+00:01:07,461 --> 00:01:10,640
+twenty-ninth of September, so open it and
+select Complete.
+
+27
+00:01:10,640 --> 00:01:13,112
+The penthouse viewing on the thirtieth was
+
+28
+00:01:13,112 --> 00:01:15,585
+never confirmed and did not take place.
+
+29
+00:01:15,585 --> 00:01:18,057
+Select Cancel, so it stays on record
+
+30
+00:01:18,057 --> 00:01:20,176
+as Cancelled instead of being deleted.
+
+31
+00:01:20,176 --> 00:01:22,649
+Finally, filter the list by status:
+Approved
+
+32
+00:01:22,649 --> 00:01:24,768
+shows the meetings still to come.

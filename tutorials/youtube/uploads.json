@@ -1,29 +1,4 @@
 {
-  "10": {
-    "youtubeVideoId": "Wag-eszCzqM",
-    "uploadedAt": "2026-09-28T21:19:25.048Z",
-    "visibility": "public"
-  },
-  "34": {
-    "youtubeVideoId": null,
-    "uploadedAt": null,
-    "visibility": null
-  },
-  "35": {
-    "youtubeVideoId": null,
-    "uploadedAt": null,
-    "visibility": null
-  },
-  "36": {
-    "youtubeVideoId": null,
-    "uploadedAt": null,
-    "visibility": null
-  },
-  "37": {
-    "youtubeVideoId": null,
-    "uploadedAt": null,
-    "visibility": null
-  },
   "01": {
     "youtubeVideoId": "Ieo6R_6q_kE",
     "uploadedAt": "2026-09-28T20:54:19.302Z",
@@ -67,6 +42,151 @@
   "09": {
     "youtubeVideoId": "aNcKWqSNRF8",
     "uploadedAt": "2026-09-28T21:16:46.131Z",
+    "visibility": "public"
+  },
+  "10": {
+    "youtubeVideoId": "Wag-eszCzqM",
+    "uploadedAt": "2026-09-28T21:19:25.048Z",
+    "visibility": "public"
+  },
+  "11": {
+    "youtubeVideoId": "85sO-iLpEHA",
+    "uploadedAt": "2026-10-01T12:43:54.000Z",
+    "visibility": "public"
+  },
+  "12": {
+    "youtubeVideoId": "rLwltCxGZBQ",
+    "uploadedAt": "2026-10-01T00:00:00.000Z",
+    "visibility": "public"
+  },
+  "13": {
+    "youtubeVideoId": "nzKOEO8MjOs",
+    "uploadedAt": "2026-10-01T11:00:00.000Z",
+    "visibility": "public"
+  },
+  "14": {
+    "youtubeVideoId": "SJRZi5tivc0",
+    "uploadedAt": "2026-10-01T11:10:00.000Z",
+    "visibility": "public"
+  },
+  "15": {
+    "youtubeVideoId": "eqmaPuAxEyU",
+    "uploadedAt": "2026-10-05T12:37:05.000Z",
+    "visibility": "public",
+    "replaces": {
+      "youtubeVideoId": "XqvjRldLnOk",
+      "visibility": "unlisted",
+      "reason": "re-recorded with the cheque scan"
+    }
+  },
+  "17": {
+    "youtubeVideoId": "seIQjEg9AQE",
+    "uploadedAt": "2026-10-01T11:20:00.000Z",
+    "visibility": "public"
+  },
+  "18": {
+    "youtubeVideoId": "HbwwwY3AF1w",
+    "uploadedAt": "2026-10-05T09:38:21.000Z",
+    "visibility": "public"
+  },
+  "19": {
+    "youtubeVideoId": "-Lqw49fknJ8",
+    "uploadedAt": "2026-10-05T10:05:29.000Z",
+    "visibility": "public"
+  },
+  "20": {
+    "youtubeVideoId": "96Ax9VLH7nw",
+    "uploadedAt": "2026-10-15T09:42:10.000Z",
+    "visibility": "public"
+  },
+  "21": {
+    "youtubeVideoId": "-rlmAdcRiV0",
+    "uploadedAt": "2026-10-05T12:53:16.000Z",
+    "visibility": "public"
+  },
+  "22": {
+    "youtubeVideoId": "iiY8wGnPZBk",
+    "uploadedAt": "2026-10-15T09:44:12.000Z",
+    "visibility": "public"
+  },
+  "23": {
+    "youtubeVideoId": "xikLrBq0EqQ",
+    "uploadedAt": "2026-10-15T09:46:56.000Z",
+    "visibility": "public"
+  },
+  "24": {
+    "youtubeVideoId": "a1cpEe8f5Vo",
+    "uploadedAt": "2026-10-15T09:48:28.000Z",
+    "visibility": "public"
+  },
+  "25": {
+    "youtubeVideoId": "FurKmjl77BY",
+    "uploadedAt": "2026-10-15T09:49:54.000Z",
+    "visibility": "public"
+  },
+  "28": {
+    "youtubeVideoId": "UkxzYMoqN0g",
+    "uploadedAt": "2026-10-15T09:51:23.000Z",
+    "visibility": "public"
+  },
+  "34": {
+    "youtubeVideoId": "IOlWHhomeBU",
+    "uploadedAt": "2026-10-01T11:30:00.000Z",
+    "visibility": "public"
+  },
+  "35": {
+    "youtubeVideoId": "g_X1xVVTRKk",
+    "uploadedAt": "2026-10-05T10:58:16.000Z",
+    "visibility": "public"
+  },
+  "36": {
+    "youtubeVideoId": "qhprxarzR4w",
+    "uploadedAt": "2026-10-01T15:19:55.000Z",
+    "visibility": "public"
+  },
+  "37": {
+    "youtubeVideoId": "OP4fOCccZWc",
+    "uploadedAt": "2026-10-05T09:16:04.000Z",
+    "visibility": "public"
+  },
+  "38": {
+    "youtubeVideoId": "WKMbpGSgrdU",
+    "uploadedAt": "2026-10-01T11:40:00.000Z",
+    "visibility": "public"
+  },
+  "39": {
+    "youtubeVideoId": "jGsnA2bUlOQ",
+    "uploadedAt": "2026-10-01T11:40:00.000Z",
+    "visibility": "public"
+  },
+  "40": {
+    "youtubeVideoId": "f-7dfm5hgyA",
+    "uploadedAt": "2026-10-05T11:13:11.000Z",
+    "visibility": "public"
+  },
+  "41": {
+    "youtubeVideoId": "7NLo7eNepM8",
+    "uploadedAt": "2026-10-05T10:47:37.000Z",
+    "visibility": "public"
+  },
+  "42": {
+    "youtubeVideoId": "g5T8WEPwJvU",
+    "uploadedAt": "2026-09-29T08:56:39.610Z",
+    "visibility": "public"
+  },
+  "43": {
+    "youtubeVideoId": "ewNV-NBy8zI",
+    "uploadedAt": "2026-09-29T08:52:16.336Z",
+    "visibility": "public"
+  },
+  "44": {
+    "youtubeVideoId": "EFaGtSVA-KM",
+    "uploadedAt": "2026-10-01T12:11:54.000Z",
+    "visibility": "public"
+  },
+  "45": {
+    "youtubeVideoId": "twa9qUyLqIc",
+    "uploadedAt": "2026-10-05T12:15:41.000Z",
     "visibility": "public"
   }
 }

@@ -1,0 +1,166 @@
+1
+00:00:00,000 --> 00:00:03,824
+This tutorial covers three changes to a
+tenancy contract,
+
+2
+00:00:03,824 --> 00:00:07,223
+and what each one writes in the books.
+
+3
+00:00:07,223 --> 00:00:08,498
+First, a renewal.
+
+4
+00:00:08,498 --> 00:00:12,322
+As the Company Admin, open Omar Haddad's
+contract for
+
+5
+00:00:12,322 --> 00:00:16,146
+R-101, which ends on 30 September, and
+choose Renew.
+
+6
+00:00:16,146 --> 00:00:21,244
+The new term runs from 1 October 2026 to
+30 September 2027.
+
+7
+00:00:21,244 --> 00:00:24,219
+Choose By percent and enter 5: the
+
+8
+00:00:24,219 --> 00:00:26,768
+rent moves from 72,000 to 75,600.
+
+9
+00:00:26,768 --> 00:00:29,742
+Keep Carry deposit forward, add a Renewal
+
+10
+00:00:29,742 --> 00:00:32,292
+Fee of 525, and select Renew.
+
+11
+00:00:32,292 --> 00:00:35,691
+The renewal is a new draft contract, with
+
+12
+00:00:35,691 --> 00:00:39,090
+its own cheques and its own posting
+journal.
+
+13
+00:00:39,090 --> 00:00:42,064
+Priya Raman's contract shows the finished
+result.
+
+14
+00:00:42,064 --> 00:00:46,313
+Its header reads Rent revised from 64,000
+to 67,200, plus
+
+15
+00:00:46,313 --> 00:00:50,562
+5 percent, and links back to the contract
+it renewed.
+
+16
+00:00:50,562 --> 00:00:53,961
+The Renewal Fee is income when charged,
+and
+
+17
+00:00:53,961 --> 00:00:57,360
+it is not copied at the next renewal.
+
+18
+00:00:57,360 --> 00:01:01,609
+In its journals, the deposit carried
+forward is a journal
+
+19
+00:01:01,609 --> 00:01:05,433
+voucher: the deposit never left, so 3,200
+moves from
+
+20
+00:01:05,433 --> 00:01:09,257
+the old contract's Security Deposit to the
+new one's.
+
+21
+00:01:09,257 --> 00:01:10,956
+Second, a rent-free period.
+
+22
+00:01:10,956 --> 00:01:14,356
+Sahara Design Studio took office BC-302 at
+96,000
+
+23
+00:01:14,356 --> 00:01:17,755
+a year, with February free for their
+fit-out.
+
+24
+00:01:17,755 --> 00:01:22,004
+The concession is 7,364.38, so the rent
+line posts 88,635.62,
+
+25
+00:01:22,004 --> 00:01:26,252
+and VAT of 4,431.78 is charged on that
+lower figure.
+
+26
+00:01:26,252 --> 00:01:31,351
+Income is spread evenly over the whole
+term, the free month included.
+
+27
+00:01:31,351 --> 00:01:33,051
+Third, a unit transfer.
+
+28
+00:01:33,051 --> 00:01:37,300
+Open Mohammed Al Rashid's contract for
+R-202 and choose Transfer.
+
+29
+00:01:37,300 --> 00:01:41,548
+He moves to R-203 after the night of 30
+September.
+
+30
+00:01:41,548 --> 00:01:44,948
+The preview lists his cheques, each to
+carry
+
+31
+00:01:44,948 --> 00:01:47,922
+to the new contract, keep or return.
+
+32
+00:01:47,922 --> 00:01:52,171
+It shows what he has earned on the current
+unit,
+
+33
+00:01:52,171 --> 00:01:55,995
+the 13,264.93 he has paid ahead, which
+moves to
+
+34
+00:01:55,995 --> 00:01:59,819
+the new contract, and his 3,900 deposit,
+carried across.
+
+35
+00:01:59,819 --> 00:02:03,218
+There is no gap to collect, and nothing
+
+36
+00:02:03,218 --> 00:02:06,192
+is posted until the new contract is.

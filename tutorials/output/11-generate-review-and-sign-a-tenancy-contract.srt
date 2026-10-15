@@ -1,0 +1,102 @@
+1
+00:00:00,000 --> 00:00:04,078
+This tutorial generates a tenancy contract
+from a draft, and has
+
+2
+00:00:04,078 --> 00:00:07,785
+the tenant review and accept it in the
+tenant portal.
+
+3
+00:00:07,785 --> 00:00:10,380
+As a Company Admin, open the draft
+
+4
+00:00:10,380 --> 00:00:12,604
+for unit A-201, Rajesh Kumar's contract.
+
+5
+00:00:12,604 --> 00:00:14,087
+Its status is Draft.
+
+6
+00:00:14,087 --> 00:00:17,053
+Open the Attachments tab and select
+Preview Contract.
+
+7
+00:00:17,053 --> 00:00:21,130
+The contract is rendered with the
+organisation's details, the tenant, the
+
+8
+00:00:21,130 --> 00:00:25,208
+term, every charge, and the cheques, and
+nothing is saved yet.
+
+9
+00:00:25,208 --> 00:00:28,915
+If anything is wrong, cancel and correct
+the draft first.
+
+10
+00:00:28,915 --> 00:00:31,881
+When it is right, select Confirm and Save.
+
+11
+00:00:31,881 --> 00:00:35,588
+The contract is generated and numbered,
+the status becomes Pending
+
+12
+00:00:35,588 --> 00:00:38,924
+Signature, and the contract is listed
+under Contract documents.
+
+13
+00:00:38,924 --> 00:00:41,149
+Now sign in as the tenant.
+
+14
+00:00:41,149 --> 00:00:45,226
+Rajesh's portal shows the new contract for
+A-201, awaiting his signature.
+
+15
+00:00:45,226 --> 00:00:49,675
+He can download it to read, and then
+accept or reject it.
+
+16
+00:00:49,675 --> 00:00:51,899
+Select Accept Tenancy Contract, and
+confirm.
+
+17
+00:00:51,899 --> 00:00:56,348
+The portal now says it was accepted, and
+is awaiting the landlord.
+
+18
+00:00:56,348 --> 00:00:59,684
+Had he rejected it, the contract would go
+back
+
+19
+00:00:59,684 --> 00:01:02,650
+to Draft, to be corrected and generated
+again.
+
+20
+00:01:02,650 --> 00:01:05,245
+Back as the Company Admin, the contract
+
+21
+00:01:05,245 --> 00:01:07,840
+shows Accepted by tenant, with the date.
+
+22
+00:01:07,840 --> 00:01:12,288
+It stays pending until it is posted, which
+has its own tutorial.

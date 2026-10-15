@@ -757,10 +757,35 @@ function buildTags(entry) {
     return unique;
 }
 
+/**
+ * The final take's own scene starts (tutorials/qa/<id>-record.log, `scene=N starts_at=Xs
+ * title=…`), snapped to the nearest caption start; a scene within 10 s of the previous
+ * one replaces it (the later scene is the one on screen). Preferred over the fuzzy match:
+ * that drifted 7-10 s on several accounting takes. Null when the log is missing.
+ */
+function deriveChaptersFromRecordLog(id, cues, durationSec) {
+    const logPath = path.join(REPO_ROOT, "tutorials/qa", `${id}-record.log`);
+    if (!existsSync(logPath)) return null;
+    const scenes = [...readFileSync(logPath, "utf8").matchAll(/^scene=\d+ starts_at=([\d.]+)s title=(.*)$/gm)]
+        .map((m) => ({ at: Number(m[1]), title: m[2].trim() }));
+    if (scenes.length === 0) return null;
+    const out = [];
+    for (const sc of scenes) {
+        const startSec = sc.at === 0 ? 0 : cues.reduce((best, c) => (Math.abs(c.start - sc.at) < Math.abs(best - sc.at) ? c.start : best), cues[0].start);
+        if (out.length && startSec - out[out.length - 1].startSec < 10) out.pop();
+        out.push({ startSec, label: toTitleCase(sc.title) });
+    }
+    out[0].startSec = 0;
+    while (out.length > 1 && durationSec - out[out.length - 1].startSec < 10) out.pop();
+    return out;
+}
+
 function buildKit(entry, cues, mp4RelPath, srtRelPath, scenarioScenes) {
     const durationSec = Math.max(entry.durationSec, Math.ceil(cues[cues.length - 1].end));
-    let chapters;
-    if (scenarioScenes && scenarioScenes.length > 0) {
+    let chapters = deriveChaptersFromRecordLog(entry.id, cues, durationSec);
+    if (chapters && chapters.length >= 3) {
+        // the recorded scene starts
+    } else if (scenarioScenes && scenarioScenes.length > 0) {
         chapters = deriveChaptersFromScenes(scenarioScenes, cues, durationSec);
     } else {
         console.warn(`warning: tutorial ${entry.id} has no scene data (tutorials/capture/scenarios/${entry.id}.mjs) — using caption-derived chapters (SRT fallback)`);

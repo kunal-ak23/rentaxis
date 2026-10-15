@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 520" width="520" height="520" role="img" aria-label="Palm Ridge Properties demo stamp (not valid)">
+  <title>Palm Ridge Properties — fictional demo stamp, not valid</title>
+  <defs>
+    <path id="pr-top" d="M 94 260 A 166 166 0 0 1 426 260"/>
+    <path id="pr-bottom" d="M 86 262 A 174 174 0 0 0 434 262"/>
+  </defs>
+  <g fill="none" stroke="#1D4F8F" opacity="0.9">
+    <circle cx="260" cy="260" r="236" stroke-width="10"/>
+    <circle cx="260" cy="260" r="206" stroke-width="4"/>
+    <circle cx="260" cy="260" r="118" stroke-width="4"/>
+  </g>
+  <g fill="#1D4F8F" font-family="Arial, Helvetica, sans-serif" font-weight="700" opacity="0.9">
+    <text font-size="23" letter-spacing="1"><textPath href="#pr-top" startOffset="50%" text-anchor="middle">PALM RIDGE PROPERTIES L.L.C.</textPath></text>
+    <text font-size="22" letter-spacing="3"><textPath href="#pr-bottom" startOffset="50%" text-anchor="middle">DUBAI · U.A.E.</textPath></text>
+    <text x="260" y="248" font-size="30" text-anchor="middle">DEMO</text>
+    <text x="260" y="284" font-size="22" text-anchor="middle">NOT VALID</text>
+    <text x="260" y="316" font-size="16" text-anchor="middle">LIC. 000000</text>
+  </g>
+</svg>

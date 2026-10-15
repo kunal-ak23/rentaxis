@@ -41,8 +41,16 @@ task_subtitles="$task_output_dir/${task_slug}.srt"
 case "$task_tts_provider" in
   azure)
     task_audio="$task_audio_dir/${task_slug}-azure.mp3"
-    node "$task_root/tutorials/synthesize-azure-narration.mjs" \
-      "$task_narration" "$task_audio" "$task_voice" "$task_rate"
+    if [[ -n "${TUTORIAL_NARRATION_AUDIO:-}" ]]; then
+      # Reuse the timing take the scenario's cues were measured on: a fresh
+      # synthesis of the same text can run seconds longer or shorter.
+      [[ -f "$TUTORIAL_NARRATION_AUDIO" && "$TUTORIAL_NARRATION_AUDIO" -nt "$task_narration" ]] \
+        || { echo "TUTORIAL_NARRATION_AUDIO is missing or older than $task_narration" >&2; exit 2; }
+      cp "$TUTORIAL_NARRATION_AUDIO" "$task_audio"
+    else
+      node "$task_root/tutorials/synthesize-azure-narration.mjs" \
+        "$task_narration" "$task_audio" "$task_voice" "$task_rate"
+    fi
     ;;
   openai)
     task_audio="$task_audio_dir/${task_slug}-openai.wav"

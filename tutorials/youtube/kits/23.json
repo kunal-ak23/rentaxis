@@ -1,0 +1,54 @@
+{
+  "id": "23",
+  "slug": "schedule-and-manage-meetings",
+  "title": "Miftah tutorial 23 · Schedule and manage meetings",
+  "description": "Request a meeting about a property or unit, approve it, follow it on the calendar and mark it complete.\n\nWho this is for: Company Admin, Property Manager, Tenant.\n\nChapters:\n0:00 Request a Meeting\n0:43 Approve It\n1:01 Close Off the Past\n\nPart of the Miftah web course — playlist: Miftah · Operations\n\nاطلب اجتماعًا بشأن عقار أو وحدة، ووافق عليه، وتابعه في التقويم، وسجّل اكتماله.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "maintenance tickets",
+    "facilities booking",
+    "gate pass",
+    "meetings",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Operations",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0.0,
+      "start": "0:00",
+      "label": "Request a Meeting"
+    },
+    {
+      "startSec": 43.1,
+      "start": "0:43",
+      "label": "Approve It"
+    },
+    {
+      "startSec": 61.5,
+      "start": "1:01",
+      "label": "Close Off the Past"
+    }
+  ],
+  "durationSec": 85,
+  "roles": [
+    "TENANT_ADMIN",
+    "PROPERTY_MANAGER",
+    "RENTER"
+  ],
+  "topic": "operations",
+  "captionsFile": "tutorials/output/23-schedule-and-manage-meetings.srt",
+  "videoFile": "tutorials/output/23-schedule-and-manage-meetings.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/23.png"
+}

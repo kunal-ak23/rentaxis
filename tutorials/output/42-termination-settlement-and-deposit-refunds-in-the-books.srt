@@ -1,0 +1,148 @@
+1
+00:00:00,000 --> 00:00:03,959
+This tutorial follows a tenancy contract
+that ended
+
+2
+00:00:03,959 --> 00:00:07,424
+early, from termination to the deposit
+refund.
+
+3
+00:00:07,424 --> 00:00:11,878
+As the Accountant, open Grace Okafor's
+contract for R-203:
+
+4
+00:00:11,878 --> 00:00:16,333
+70,000 of rent a year from 15 October
+2025.
+
+5
+00:00:16,333 --> 00:00:20,292
+She relocated and left on 31 May 2026.
+
+6
+00:00:20,292 --> 00:00:25,736
+The contract is Closed, and its settlement
+summary shows the 3,500
+
+7
+00:00:25,736 --> 00:00:30,686
+deposit held, 750 of deductions and a
+refund of 11,332.19.
+
+8
+00:00:30,686 --> 00:00:32,665
+Open the Cheques tab.
+
+9
+00:00:32,665 --> 00:00:34,645
+Three rent cheques cleared.
+
+10
+00:00:34,645 --> 00:00:38,110
+The July cheque was dated after she
+
+11
+00:00:38,110 --> 00:00:41,574
+left, so termination returned it to her.
+
+12
+00:00:41,574 --> 00:00:46,029
+In the Rent Receivable ledger below, the
+reversal of
+
+13
+00:00:46,029 --> 00:00:50,483
+its post-dated cheque journal debits Rent
+Receivable with 17,500.
+
+14
+00:00:50,483 --> 00:00:54,937
+Termination also wrote a TCR journal: the
+rent after
+
+15
+00:00:54,937 --> 00:00:58,897
+31 May was never earned, so Advance Rent
+
+16
+00:00:58,897 --> 00:01:02,856
+is debited and Rent Receivable credited
+with 26,082.19.
+
+17
+00:01:02,856 --> 00:01:06,321
+The balance ends at 8,582.19 in credit,
+
+18
+00:01:06,321 --> 00:01:09,785
+because Grace paid more than she used.
+
+19
+00:01:09,785 --> 00:01:11,765
+Now open the settlement.
+
+20
+00:01:11,765 --> 00:01:16,219
+The statement is computed from the ledger:
+earned rent
+
+21
+00:01:16,219 --> 00:01:20,674
+43,917.81, received 56,000 with the
+deposit, a receivable balance
+
+22
+00:01:20,674 --> 00:01:24,633
+of minus 8,582.19, and 3,500 of deposit
+held.
+
+23
+00:01:24,633 --> 00:01:30,077
+Move-out cleaning of 750 is deducted, so
+the refund to Grace
+
+24
+00:01:30,077 --> 00:01:35,027
+is 11,332.19, and it has been paid, with
+nothing outstanding.
+
+25
+00:01:35,027 --> 00:01:37,501
+Open the settlement journal, STL.
+
+26
+00:01:37,501 --> 00:01:42,946
+It debits Security Deposit with 3,500 and
+Rent Receivable with 8,582.19,
+
+27
+00:01:42,946 --> 00:01:48,390
+and credits Maintenance Charges with 750
+and Refunds payable with 11,332.19.
+
+28
+00:01:48,390 --> 00:01:52,844
+Until it is paid, the refund is a
+liability.
+
+29
+00:01:52,844 --> 00:01:56,804
+It was paid by transfer five days later.
+
+30
+00:01:56,804 --> 00:02:01,258
+In Journal Voucher, the payment voucher
+BPV debits Refunds
+
+31
+00:02:01,258 --> 00:02:05,713
+payable and credits the Emirates Islamic
+account for the
+
+32
+00:02:05,713 --> 00:02:09,672
+Residences with 11,332.19, and the
+liability is cleared.

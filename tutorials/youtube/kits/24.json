@@ -1,0 +1,59 @@
+{
+  "id": "24",
+  "slug": "facilities-and-booking-approvals",
+  "title": "Miftah tutorial 24 · Facilities and booking approvals",
+  "description": "Browse facilities and availability, request a booking or parking spot, and approve requests as a manager.\n\nWho this is for: Company Admin, Property Manager, Tenant.\n\nChapters:\n0:00 Bookable Inventory\n0:21 Request a Booking\n0:49 Review and Approve\n1:15 Approved\n\nPart of the Miftah web course — playlist: Miftah · Operations\n\nتصفّح المرافق ومواعيد توفرها، واطلب حجزًا أو موقف سيارة، ووافق على الطلبات بصفتك مديرًا.",
+  "tags": [
+    "miftah",
+    "property management",
+    "property management software",
+    "UAE",
+    "Dubai",
+    "maintenance tickets",
+    "facilities booking",
+    "gate pass",
+    "meetings",
+    "landlord software",
+    "real estate management"
+  ],
+  "category": "Education",
+  "language": "en",
+  "visibility": "unlisted",
+  "madeForKids": false,
+  "playlists": [
+    "Miftah · Operations",
+    "Miftah · Complete web course"
+  ],
+  "chapters": [
+    {
+      "startSec": 0.0,
+      "start": "0:00",
+      "label": "Bookable Inventory"
+    },
+    {
+      "startSec": 21.8,
+      "start": "0:21",
+      "label": "Request a Booking"
+    },
+    {
+      "startSec": 49.9,
+      "start": "0:49",
+      "label": "Review and Approve"
+    },
+    {
+      "startSec": 75.2,
+      "start": "1:15",
+      "label": "Approved"
+    }
+  ],
+  "durationSec": 87,
+  "roles": [
+    "TENANT_ADMIN",
+    "PROPERTY_MANAGER",
+    "RENTER"
+  ],
+  "topic": "operations",
+  "captionsFile": "tutorials/output/24-facilities-and-booking-approvals.srt",
+  "videoFile": "tutorials/output/24-facilities-and-booking-approvals.mp4",
+  "thumbnail": "tutorials/youtube/thumbnails/24.png"
+}

@@ -1,8 +1,8 @@
 {
   "id": "37",
   "slug": "tenant-ledger",
-  "title": "Miftah tutorial 37 · Tenant ledger",
-  "description": "Read a Tenant's ledger for a posted contract, see how a returned cheque reopens it and check the trial balance.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 Introduction\n0:33 The tenancy contract debited it with the\n1:17 The contract credited the whole year, and\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nاقرأ دفتر أستاذ المستأجر لعقد مرحَّل، وتعرّف على أثر الشيك المرتجع، وتحقّق من ميزان المراجعة.",
+  "title": "Miftah tutorial 37 · Tenant ledger, control account and trial balance",
+  "description": "Read a Tenant's ledger, tie it to the Rent Receivable control account in the general ledger, and check the trial balance.\n\nWho this is for: Accountant, Company Admin.\n\nChapters:\n0:00 One Block Per Account\n0:39 A Returned Cheque\n0:57 Earned, Held and Cleared\n1:09 The Journal Behind a Row\n1:22 The Control Account\n1:39 The Trial Balance\n\nPart of the Miftah web course — playlist: Miftah · Accounting\n\nاقرأ دفتر أستاذ المستأجر، وطابقه مع حساب الإيجار المستحق الرقابي في دفتر الأستاذ العام، وتحقّق من ميزان المراجعة.",
   "tags": [
     "miftah",
     "property management",
@@ -26,22 +26,37 @@
   ],
   "chapters": [
     {
-      "startSec": 0,
+      "startSec": 0.0,
       "start": "0:00",
-      "label": "Introduction"
+      "label": "One Block Per Account"
     },
     {
-      "startSec": 33.837,
-      "start": "0:33",
-      "label": "The tenancy contract debited it with the"
+      "startSec": 39.835,
+      "start": "0:39",
+      "label": "A Returned Cheque"
     },
     {
-      "startSec": 77.469,
-      "start": "1:17",
-      "label": "The contract credited the whole year, and"
+      "startSec": 57.493,
+      "start": "0:57",
+      "label": "Earned, Held and Cleared"
+    },
+    {
+      "startSec": 69.813,
+      "start": "1:09",
+      "label": "The Journal Behind a Row"
+    },
+    {
+      "startSec": 82.133,
+      "start": "1:22",
+      "label": "The Control Account"
+    },
+    {
+      "startSec": 99.792,
+      "start": "1:39",
+      "label": "The Trial Balance"
     }
   ],
-  "durationSec": 118,
+  "durationSec": 111,
   "roles": [
     "TENANT_ADMIN",
     "ACCOUNTANT"

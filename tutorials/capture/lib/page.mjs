@@ -112,18 +112,32 @@ export async function revealCursor(page) {
  *   never appears in a frame. The lease overview prints the renter's email and
  *   phone in a card beside the charge lines, on a page short enough to fit a
  *   1080-tall frame whole — there is nowhere to scroll them to. Those two rows
- *   are hidden for the accounting tutorials and for tutorial 10 (which ends on
+ *   are hidden for the accounting tutorials, the contract lifecycle ones (11-13) and for tutorial 10 (which ends on
  *   the draft it creates), the ones that hold on that page. The renter's NAME
  *   stays: it is what names the contract. Tutorial 02 opens the same page
  *   from global search.
  */
-export const PRIVACY_SENSITIVE_TUTORIALS = new Set(['02', '10', '34', '35', '36', '37']);
+export const PRIVACY_SENSITIVE_TUTORIALS = new Set(['02', '10', '11', '12', '13', '14', '17', '18', '19', '20', '34', '35', '36',
+  '37', '38', '39', '40', '41', '42', '43', '44', '45', '46']);
 
 export const CAPTURE_STYLE_RULES = [
   'nextjs-portal, [data-nextjs-toast], #__next-build-watcher { display: none !important; }',
   ...(PRIVACY_SENSITIVE_TUTORIALS.has(tutorialId)
     ? ['div.justify-between:has(> span > svg.lucide-mail),'
        + ' div.justify-between:has(> span > svg.lucide-phone) { visibility: hidden !important; }']
+    : []),
+  // The Tenant Ledger's tenant picker prints each tenant's email beside the
+  // name, in the closed combobox and in every option (accounting track).
+  ...(PRIVACY_SENSITIVE_TUTORIALS.has(tutorialId)
+    ? ['#ledger-renter span.text-muted, [role="listbox"] > [role="option"] > span.text-muted { visibility: hidden !important; }']
+    : []),
+  // Bank Accounts (tutorial 19): the ACCOUNT NUMBER and IBAN columns, and the
+  // same two inputs in the bank account form (the only form with selects).
+  ...(tutorialId === '19'
+    ? ['main:has(button[aria-label="Edit Bank Account"]) tbody td:nth-child(2),'
+       + ' main:has(button[aria-label="Edit Bank Account"]) tbody td:nth-child(3),'
+       + ' form:has(select) > div:nth-child(2) > input, form:has(select) > div:nth-child(3) > input'
+       + ' { filter: blur(6px) !important; }']
     : []),
   // Settings › Users & staff lists every user with EMAIL and PHONE columns,
   // tenants included; tutorial 05 holds on that table. Only those columns'

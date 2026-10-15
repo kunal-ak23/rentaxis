@@ -1,0 +1,153 @@
+1
+00:00:00,000 --> 00:00:03,244
+Most journals in Miftah write themselves:
+posting a
+
+2
+00:00:03,244 --> 00:00:06,083
+contract, clearing a cheque, closing a
+month.
+
+3
+00:00:06,083 --> 00:00:08,921
+The journal voucher is for everything
+else.
+
+4
+00:00:08,921 --> 00:00:11,354
+As the Accountant, open Journal Voucher.
+
+5
+00:00:11,354 --> 00:00:16,220
+Every entry in the books is listed here,
+manual and automatic, with
+
+6
+00:00:16,220 --> 00:00:21,086
+its document type: TCO for a tenancy
+contract, PDR for a cheque
+
+7
+00:00:21,086 --> 00:00:25,547
+received, CIL for month-end recognition,
+and JV for a manual journal.
+
+8
+00:00:25,547 --> 00:00:26,764
+Filter on JV.
+
+9
+00:00:26,764 --> 00:00:31,224
+In April, the cash from Arjun Mehta's
+returned cheque was banked.
+
+10
+00:00:31,224 --> 00:00:34,063
+JV-26/1 debits the Emirates Islamic
+account 14,000
+
+11
+00:00:34,063 --> 00:00:36,496
+and credits the Cash Account 14,000.
+
+12
+00:00:36,496 --> 00:00:39,740
+The money moved from the cash box to
+
+13
+00:00:39,740 --> 00:00:42,578
+the bank, so no tenant balance changes.
+
+14
+00:00:42,578 --> 00:00:43,795
+Now a correction.
+
+15
+00:00:43,795 --> 00:00:47,850
+A 600 deep-cleaning bill was booked to
+Repairs and Maintenance.
+
+16
+00:00:47,850 --> 00:00:49,472
+Select New Journal Voucher.
+
+17
+00:00:49,472 --> 00:00:54,338
+Enter the date, 30 September, after the
+locked period; the property, Palm
+
+18
+00:00:54,338 --> 00:00:58,799
+Ridge Residences; and a narration that
+tells the next reader why.
+
+19
+00:00:58,799 --> 00:01:00,421
+Debit Cleaning Services 600.
+
+20
+00:01:00,421 --> 00:01:03,259
+Until the other side is entered, Miftah
+
+21
+00:01:03,259 --> 00:01:06,098
+shows the difference and will not post.
+
+22
+00:01:06,098 --> 00:01:08,125
+Credit Repairs and Maintenance 600.
+
+23
+00:01:08,125 --> 00:01:11,369
+Debits now equal credits, so Post is
+enabled.
+
+24
+00:01:11,369 --> 00:01:12,586
+JV-26/3 is posted.
+
+25
+00:01:12,586 --> 00:01:15,830
+Now suppose the bill had already been
+moved.
+
+26
+00:01:15,830 --> 00:01:19,074
+You never edit or delete a posted journal.
+
+27
+00:01:19,074 --> 00:01:23,129
+Select Reverse, keep 30 September, give a
+reason, and confirm.
+
+28
+00:01:23,129 --> 00:01:27,995
+Miftah posts JV-26/4, the mirror image,
+linked as the reversal of JV-26/3.
+
+29
+00:01:27,995 --> 00:01:30,834
+The original stays in the ledger, marked
+
+30
+00:01:30,834 --> 00:01:33,672
+Reversed, and the two net to zero.
+
+31
+00:01:33,672 --> 00:01:36,511
+Journals the system writes, such as a
+
+32
+00:01:36,511 --> 00:01:39,349
+contract's TCO, have no Reverse button
+here.
+
+33
+00:01:39,349 --> 00:01:42,593
+They are corrected from their own
+document, so
+
+34
+00:01:42,593 --> 00:01:45,432
+the contract and its ledger never
+disagree.

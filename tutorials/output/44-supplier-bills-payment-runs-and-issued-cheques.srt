@@ -1,0 +1,183 @@
+1
+00:00:00,000 --> 00:00:02,768
+This tutorial covers the money going out:
+
+2
+00:00:02,768 --> 00:00:05,536
+supplier bills, paying them, and supplier
+cheques.
+
+3
+00:00:05,536 --> 00:00:08,699
+As the Accountant, open Receipt and
+Payment Vouchers.
+
+4
+00:00:08,699 --> 00:00:13,444
+Every supplier bill and every payment of
+the year is listed here.
+
+5
+00:00:13,444 --> 00:00:16,607
+Create a Purchase Invoice from BlueWave
+Cleaning for
+
+6
+00:00:16,607 --> 00:00:19,375
+September's common-area cleaning at Palm
+Ridge Residences.
+
+7
+00:00:19,375 --> 00:00:21,748
+Enter BlueWave's invoice number and date.
+
+8
+00:00:21,748 --> 00:00:24,516
+The due date follows their 30-day terms.
+
+9
+00:00:24,516 --> 00:00:28,074
+The line goes to Cleaning Services: 2,400,
+plus 5
+
+10
+00:00:28,074 --> 00:00:31,238
+percent VAT of 120, a total of 2,520.
+
+11
+00:00:31,238 --> 00:00:35,192
+Post it, then open its journal from the
+voucher list.
+
+12
+00:00:35,192 --> 00:00:39,937
+The purchase invoice journal debits
+Cleaning Services with 2,400 and Input VAT
+
+13
+00:00:39,937 --> 00:00:44,286
+with 120, and credits BlueWave with 2,520,
+the amount you owe.
+
+14
+00:00:44,286 --> 00:00:48,636
+Input VAT is VAT you can reclaim on your
+VAT return.
+
+15
+00:00:48,636 --> 00:00:50,218
+Now open Payables aging.
+
+16
+00:00:50,218 --> 00:00:54,567
+BlueWave's 2,520 sits in Current, because
+it is not due yet.
+
+17
+00:00:54,567 --> 00:00:59,312
+The last column checks that each
+supplier's open invoices add up to
+
+18
+00:00:59,312 --> 00:01:03,662
+their balance in the ledger, and here the
+difference is zero.
+
+19
+00:01:03,662 --> 00:01:07,616
+To pay, open Payment runs and start a new
+run.
+
+20
+00:01:07,616 --> 00:01:11,965
+List what is due by 31 October and tick
+BlueWave's invoice.
+
+21
+00:01:11,965 --> 00:01:14,733
+Pay by transfer on 30 September, from
+
+22
+00:01:14,733 --> 00:01:17,501
+the Emirates Islamic account for the
+Residences.
+
+23
+00:01:17,501 --> 00:01:20,665
+The preview shows the payment voucher
+before anything
+
+24
+00:01:20,665 --> 00:01:23,828
+is written: BlueWave debited, the bank
+credited, 2,520.
+
+25
+00:01:23,828 --> 00:01:27,387
+It also warns that BlueWave has no bank
+account
+
+26
+00:01:27,387 --> 00:01:30,550
+number on file for the bank upload file.
+
+27
+00:01:30,550 --> 00:01:31,736
+Post the run.
+
+28
+00:01:31,736 --> 00:01:34,504
+Each supplier gets one payment voucher,
+and
+
+29
+00:01:34,504 --> 00:01:36,877
+if anything fails, nothing is posted.
+
+30
+00:01:36,877 --> 00:01:40,435
+When you pay by a cheque dated later, the
+
+31
+00:01:40,435 --> 00:01:43,994
+bank has not paid yet, so the voucher
+credits
+
+32
+00:01:43,994 --> 00:01:47,157
+PDC Payable, issued cheques, instead of
+the bank.
+
+33
+00:01:47,157 --> 00:01:48,344
+Open Issued cheques.
+
+34
+00:01:48,344 --> 00:01:51,902
+BlueWave's August cheque, 004501, was
+presented on 12 September.
+
+35
+00:01:51,902 --> 00:01:55,461
+Presenting it posted a journal that debits
+PDC Payable
+
+36
+00:01:55,461 --> 00:01:59,020
+and credits the bank: the bank balance
+falls when
+
+37
+00:01:59,020 --> 00:02:02,579
+the bank pays, not when you write the
+cheque.
+
+38
+00:02:02,579 --> 00:02:06,137
+Cheque 004521 is dated 20 October and
+still outstanding,
+
+39
+00:02:06,137 --> 00:02:09,696
+and the outstanding total equals the PDC
+Payable balance.

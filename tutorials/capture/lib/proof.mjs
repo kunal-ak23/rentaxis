@@ -30,3 +30,21 @@ export async function waitForInputValue(page, rowSelector, value) {
     { timeout: navTimeoutMs },
   );
 }
+
+/**
+ * A scene's clock: `await at(12.5)` waits until 12.5 s after the scene started,
+ * so an action lands on its subtitle cue (measure the cues with the timing
+ * audio, subtract the scene's first cue). Skipped when only validating.
+ */
+let scenePlannedStart = null;
+/** Set by the runner for anchored scenarios: when this scene was planned to start (ms). */
+export function setScenePlannedStart(ms) { scenePlannedStart = ms; }
+
+export function sceneClock(page) {
+  const startedAt = scenePlannedStart ?? Date.now();
+  return async (seconds) => {
+    if (validateOnly) return;
+    const wait = startedAt + seconds * 1000 - Date.now();
+    if (wait > 0) await page.waitForTimeout(wait);
+  };
+}

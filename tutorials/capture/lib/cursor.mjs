@@ -10,6 +10,8 @@ import { navTimeoutMs, validateOnly } from './context.mjs';
 /** Runs in the page (init script): draws the cursor, ripple and focus ring. */
 export function installCursorOverlay() {
   if (window.__rentaxisCursor) return;
+  // Top document only: a frame (the PDF viewer's, say) would draw a second, stale arrow.
+  if (window !== window.top) return;
   window.__rentaxisCursor = true;
   const Z = '2147483647';
   const KEY = 'rentaxisCursorAt';
@@ -126,7 +128,14 @@ export async function restPointer(page, x, y) {
 
 /** Rest the pointer on (not click) a locator the narration is pointing at. */
 export async function pointAt(locator) {
-  if (validateOnly) return;
+  if (validateOnly) {
+    // The proof draws no pointer, but what the narration points at must exist:
+    // in a capture a missing target costs the whole navigation timeout and
+    // throws every later scene off its cue.
+    const found = await locator.first().waitFor({ state: 'visible', timeout: 5_000 }).then(() => true, () => false);
+    if (!found) throw new Error(`pointAt: nothing visible matches ${locator}`);
+    return;
+  }
   await glideTo(locator);
 }
 
