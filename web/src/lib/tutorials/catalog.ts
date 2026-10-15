@@ -335,7 +335,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "25", slug: "gate-passes-and-walk-in-visitors", topic: "operations", roles: [...PORTFOLIO, "RENTER"], durationSec: 88, youtubeId: null,
+        id: "25", slug: "gate-passes-and-walk-in-visitors", topic: "operations", roles: [...PORTFOLIO, "RENTER"], durationSec: 88, youtubeId: "FurKmjl77BY",
         title: { en: "Gate passes and visitor policy", ar: "تصاريح الدخول وسياسة الزوار" },
         description: {
             en: "Invite visitors with single-visit and recurring gate passes, approve recurring passes, and set the gate policy, regular visitors and guard postings.",
