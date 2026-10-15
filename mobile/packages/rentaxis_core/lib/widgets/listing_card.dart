@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../utils/l10n.dart';
+import '../utils/media_url.dart';
 import 'distance_chip.dart';
 import 'price_label.dart';
 import 'shimmer_loading.dart';
@@ -41,7 +42,7 @@ class ListingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = _L(context.isAr);
-    final coverUrl = listing['coverPhotoUrl'] as String?;
+    final coverUrl = resolveMediaUrl(listing['coverPhotoUrl'] as String?);
     final title = listing['title'] as String? ?? l.listingFallback;
     final propertyName = listing['propertyName'] as String?;
     final beds = listing['bedrooms'] as int?;

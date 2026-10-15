@@ -42,6 +42,10 @@ import java.util.stream.Collectors;
 @PreAuthorize("hasRole('RENTER')")
 public class MarketplaceController {
 
+    /** Bug 26/27: a stored photo is named by the anonymous media route, never its private blob URL. */
+    private final com.datagami.rentaxis.core.service.ListingMediaUrls mediaUrls;
+
+
     private final MarketplaceService marketplaceService;
     private final InterestService interestService;
     private final UnitListingMediaRepository mediaRepository;
@@ -56,7 +60,8 @@ public class MarketplaceController {
                                   UnitListingAmenityRepository amenityRepository,
                                   UnitListingRepository listingRepository,
                                   TenantFeatureService tenantFeatureService,
-                                  UnitRepository unitRepository) {
+                                  UnitRepository unitRepository,
+                                  com.datagami.rentaxis.core.service.ListingMediaUrls mediaUrls) {
         this.marketplaceService = marketplaceService;
         this.interestService = interestService;
         this.mediaRepository = mediaRepository;
@@ -64,6 +69,7 @@ public class MarketplaceController {
         this.listingRepository = listingRepository;
         this.tenantFeatureService = tenantFeatureService;
         this.unitRepository = unitRepository;
+        this.mediaUrls = mediaUrls;
     }
 
     @GetMapping("/{tenantSlug}/listings")
@@ -157,7 +163,14 @@ public class MarketplaceController {
         for (UnitListingInterest interest : interests) {
             UnitListing listing = byId.get(interest.getListingId());
             if (listing != null) {
-                result.add(toSummary(listing));
+                UnitListingSummaryDTO summary = toSummary(listing);
+                // PR #401 R1 P3-3: a listing no longer live has no public photo route
+                // (it would 404), so its card carries no cover and the apps show
+                // their placeholder with the listing's status.
+                if (!marketplaceService.isPubliclyVisible(listing)) {
+                    summary = withoutCover(summary);
+                }
+                result.add(summary);
             }
         }
         return ResponseEntity.ok(result);
@@ -167,6 +180,12 @@ public class MarketplaceController {
     }
 
     // ---- Helpers ----
+
+    private static UnitListingSummaryDTO withoutCover(UnitListingSummaryDTO d) {
+        return new UnitListingSummaryDTO(d.id(), d.title(), d.propertyName(), d.bedrooms(), d.bathrooms(),
+                d.annualRent(), d.status(), null, d.interestsCount(), d.lat(), d.lng(),
+                d.createdAt(), d.updatedAt(), d.slug());
+    }
 
     private void checkEnabled(UUID tenantId) {
         if (!tenantFeatureService.isEnabled(tenantId, TenantFeature.LISTINGS)) {
@@ -184,7 +203,7 @@ public class MarketplaceController {
                 .filter(m -> Boolean.TRUE.equals(m.getIsCover()))
                 .findFirst()
                 .or(() -> media.stream().findFirst())
-                .map(UnitListingMedia::getUrl)
+                .map(mediaUrls::publicUrl)
                 .orElse(null);
 
         String propertyName = unitRepository.findById(l.getUnitId())
@@ -218,7 +237,7 @@ public class MarketplaceController {
                 .toList();
 
         List<UnitListingMediaDTO> mediaDtos = media.stream()
-                .map(m -> new UnitListingMediaDTO(m.getId(), m.getMediaType(), m.getUrl(),
+                .map(m -> new UnitListingMediaDTO(m.getId(), m.getMediaType(), mediaUrls.publicUrl(m),
                         m.getCaption(), m.getSortOrder(), m.getIsCover()))
                 .toList();
 

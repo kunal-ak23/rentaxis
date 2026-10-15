@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../utils/media_url.dart';
+
 /// What a tap on an ad card does.
 enum PromoCtaType { none, website, coupon, call, whatsapp }
 
@@ -25,7 +27,8 @@ class PromoBusinessRef {
         id: json['id'] as String? ?? '',
         nameEn: json['nameEn'] as String?,
         nameAr: json['nameAr'] as String?,
-        logoUrl: json['logoUrl'] as String?,
+        // An uploaded logo is a backend route relative to the API host (ux6).
+        logoUrl: resolveMediaUrl(json['logoUrl'] as String?),
         category: json['category'] as String?,
       );
 }
@@ -123,7 +126,8 @@ class PromoAd {
         titleAr: json['titleAr'] as String?,
         subtitleEn: json['subtitleEn'] as String?,
         subtitleAr: json['subtitleAr'] as String?,
-        backgroundImageUrl: json['backgroundImageUrl'] as String?,
+        // An uploaded artwork is a backend route relative to the API host (ux6).
+        backgroundImageUrl: resolveMediaUrl(json['backgroundImageUrl'] as String?),
         accentColor: parseHexColor(json['accentColor'] as String?),
         ctaLabelEn: json['ctaLabelEn'] as String?,
         ctaLabelAr: json['ctaLabelAr'] as String?,

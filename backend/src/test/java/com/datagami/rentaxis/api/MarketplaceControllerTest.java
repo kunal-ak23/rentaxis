@@ -61,6 +61,10 @@ class MarketplaceControllerTest {
     TenantFeatureService tenantFeatureService;
     @Mock
     UnitRepository unitRepository;
+    @org.mockito.Spy
+    com.datagami.rentaxis.core.service.ListingMediaUrls mediaUrls =
+            new com.datagami.rentaxis.core.service.ListingMediaUrls(
+                    org.mockito.Mockito.mock(com.datagami.rentaxis.core.service.BlobStorageService.class));
 
     @InjectMocks
     MarketplaceController controller;
@@ -145,6 +149,29 @@ class MarketplaceControllerTest {
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(resp.getBody()).isNotNull();
+    }
+
+    /** Bug 26/27: a stored photo is named by the anonymous media route; an external link is kept. */
+    @Test
+    void getBySlug_namesStoredPhotosByTheMediaRoute() {
+        UnitListing listing = publishedListing();
+        when(marketplaceService.resolveByTenantSlugAndUnitSlug("acme", "nice-flat")).thenReturn(listing);
+        com.datagami.rentaxis.domain.entity.UnitListingMedia stored = new com.datagami.rentaxis.domain.entity.UnitListingMedia();
+        stored.setId(UUID.randomUUID());
+        stored.setListingId(listing.getId());
+        stored.setUrl("https://acct.blob.core.windows.net/tenant-x/listings/" + listing.getId() + "/a.jpg");
+        stored.setBlobPath("listings/" + listing.getId() + "/a.jpg");
+        stored.setIsCover(true);
+        com.datagami.rentaxis.domain.entity.UnitListingMedia external = new com.datagami.rentaxis.domain.entity.UnitListingMedia();
+        external.setId(UUID.randomUUID());
+        external.setListingId(listing.getId());
+        external.setUrl("https://cdn.example.com/b.jpg");
+        when(mediaRepository.findByListingIdOrderBySortOrderAsc(listing.getId())).thenReturn(List.of(stored, external));
+
+        var dto = (com.datagami.rentaxis.api.dto.UnitListingDTO) controller.getBySlug("acme", "nice-flat").getBody();
+
+        assertThat(dto.media()).extracting(com.datagami.rentaxis.api.dto.UnitListingMediaDTO::url)
+                .containsExactly("/api/v1/public/listing-media/" + stored.getId(), "https://cdn.example.com/b.jpg");
     }
 
     @Test

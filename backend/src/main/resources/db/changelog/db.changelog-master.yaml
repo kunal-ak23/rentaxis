@@ -329,3 +329,5 @@ databaseChangeLog:
       file: db/changelog/changesets/162-cheque-payee-check.yaml
   - include:
       file: db/changelog/changesets/163-cheque-image-crops.yaml
+  - include:
+      file: db/changelog/changesets/164-ux-gaps-5.yaml

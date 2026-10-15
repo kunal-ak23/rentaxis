@@ -29,6 +29,10 @@ import java.util.UUID;
 @RequestMapping("/public/l")
 public class PublicListingController {
 
+    /** Bug 26/27: a stored photo is named by the anonymous media route, never its private blob URL. */
+    private final com.datagami.rentaxis.core.service.ListingMediaUrls mediaUrls;
+
+
     // Per-listing pseudo-random offset, ~220m max in any direction.
     // Deterministic per listing id (so repeat loads give the same coords)
     // but different per listing (so reversing requires knowing the seed).
@@ -48,13 +52,15 @@ public class PublicListingController {
                                     UnitListingRepository listingRepository,
                                     TenantFeatureService tenantFeatureService,
                                     UnitRepository unitRepository,
-                                    UnitListingAmenityRepository amenityRepository) {
+                                    UnitListingAmenityRepository amenityRepository,
+                                    com.datagami.rentaxis.core.service.ListingMediaUrls mediaUrls) {
         this.marketplaceService = marketplaceService;
         this.mediaRepository = mediaRepository;
         this.listingRepository = listingRepository;
         this.tenantFeatureService = tenantFeatureService;
         this.unitRepository = unitRepository;
         this.amenityRepository = amenityRepository;
+        this.mediaUrls = mediaUrls;
     }
 
     @GetMapping("/{tenantSlug}")
@@ -121,13 +127,13 @@ public class PublicListingController {
                 .filter(m -> Boolean.TRUE.equals(m.getIsCover()))
                 .findFirst()
                 .or(() -> media.stream().findFirst())
-                .map(UnitListingMedia::getUrl)
+                .map(mediaUrls::publicUrl)
                 .orElse(null);
 
         // Media gallery
         List<PublicListingDTO.MediaItem> mediaItems = media.stream()
                 .map(m -> new PublicListingDTO.MediaItem(
-                        m.getUrl(),
+                        mediaUrls.publicUrl(m),
                         m.getMediaType() != null ? m.getMediaType().name() : null,
                         m.getCaption(),
                         Boolean.TRUE.equals(m.getIsCover())

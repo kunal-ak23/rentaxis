@@ -260,7 +260,7 @@ class _ListingRow extends StatelessWidget {
                           start: Radius.circular(12),
                         ),
                         child: coverUrl != null
-                            ? Image.network(
+                            ? ApiImage(
                                 coverUrl,
                                 width: 90,
                                 height: 90,

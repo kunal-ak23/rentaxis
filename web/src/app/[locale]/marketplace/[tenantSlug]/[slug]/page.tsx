@@ -467,8 +467,9 @@ export default function ListingDetailPage({ params }: { params: Promise<{ tenant
                   </div>
                 </div>
 
-                {/* Google Maps embed */}
-                {listing.lat && listing.lng && (
+                {/* Google Maps embed — only with a key; without one Google shows an error
+                    page, and the "Get directions" link below still opens the place. */}
+                {listing.lat && listing.lng && process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() && (
                   <div className="rounded-xl overflow-hidden border border-neutral-200 mb-4">
                     <iframe
                       title="Property location"

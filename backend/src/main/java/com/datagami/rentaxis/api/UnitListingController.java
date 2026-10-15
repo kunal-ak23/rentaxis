@@ -176,6 +176,26 @@ public class UnitListingController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * A listing's stored photo or floor plan, streamed from the organisation's
+     * private container for its own staff (bug 26/27) — any status, so a draft's
+     * photos show in the editor. A property manager only for their buildings.
+     */
+    @GetMapping("/{id}/media/{mediaId}/file")
+    public ResponseEntity<byte[]> mediaFile(@PathVariable UUID id, @PathVariable UUID mediaId,
+                                            @org.springframework.web.bind.annotation.RequestHeader(
+                                                    value = org.springframework.http.HttpHeaders.IF_NONE_MATCH,
+                                                    required = false) String ifNoneMatch) {
+        checkEnabled();
+        requireListingInScope(id);
+        UnitListingService.MediaFile file = service.mediaFile(TenantContextHolder.getTenantId(), id, mediaId);
+        return ServedMedia.serve(blobStorage, file.tenantId(), file.blobPath(), true,
+                ServedMedia.Caching.PRIVATE, ifNoneMatch, "listing-media|" + mediaId + "|" + file.blobPath());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.datagami.rentaxis.core.service.BlobStorageService blobStorage;
+
     @PutMapping("/{id}/media/reorder")
     public ResponseEntity<Void> reorderMedia(@PathVariable UUID id,
                                              @RequestBody ReorderRequest body) {

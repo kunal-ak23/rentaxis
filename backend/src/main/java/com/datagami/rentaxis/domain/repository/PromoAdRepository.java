@@ -19,6 +19,9 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
 
     Page<PromoAd> findByTenantId(UUID tenantId, Pageable pageable);
 
+    /** Ads showing an uploaded image (any tenant) — the anonymous image route decides which may be served. */
+    List<PromoAd> findByBackgroundImageUrl(String backgroundImageUrl);
+
     Page<PromoAd> findByTenantIdAndBusinessId(UUID tenantId, UUID businessId, Pageable pageable);
 
     long countByBusinessId(UUID businessId);

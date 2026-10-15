@@ -88,6 +88,10 @@ class PropertyScopeCoverageTest {
     private static final Map<String, String> EXEMPT = Map.ofEntries(
             // The caller's own row: NotificationService.markAsRead looks it up by (id, caller).
             Map.entry("NotificationController#markAsRead", "caller-owned notification, findByIdAndUserIdUnfiltered"),
+            // Anonymous (PR #401): answers only a live marketplace listing's photo — what
+            // anyone may already see — and the same 404 for everything else; staff read
+            // drafts through UnitListingController#mediaFile, which IS scoped.
+            Map.entry("PublicListingMediaController#media", "anonymous; publicly visible listings only (isPubliclyVisible)"),
             // A renter has no property FK; whether a manager's renter directory is
             // property-scoped is the open product question noted under audit #72.
             // The renter's leases (/renters/{id}/leases) ARE filtered by LeaseAccessPolicy.

@@ -43,6 +43,15 @@ import java.util.stream.Collectors;
 @Transactional
 public class PromotionFeedService {
 
+    /** Uploaded promotion images are absolute in the renter's feed (ux6 R1 P2-1). */
+    private PromotionImageService images;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setImages(PromotionImageService images) {
+        this.images = images;
+    }
+
+
     static final int HOME_SLATE_SIZE = 6;
 
     /**
@@ -391,10 +400,10 @@ public class PromotionFeedService {
         return new PromoAdCardDTO(
                 a.getId(),
                 new PromoBusinessRefDTO(b.getId(), b.getNameEn(), b.getNameAr(),
-                        b.getLogoUrl(), b.getCategory()),
+                        images == null ? b.getLogoUrl() : images.forDto(b.getLogoUrl()), b.getCategory()),
                 a.getTitleEn(), a.getTitleAr(),
                 a.getSubtitleEn(), a.getSubtitleAr(),
-                a.getBackgroundImageUrl(), a.getAccentColor(),
+                images == null ? a.getBackgroundImageUrl() : images.forDto(a.getBackgroundImageUrl()), a.getAccentColor(),
                 a.getCtaType(), a.getCtaLabelEn(), a.getCtaLabelAr(),
                 a.getCtaType() == PromoCtaType.WEBSITE ? a.getCtaUrl() : null,
                 phone,
