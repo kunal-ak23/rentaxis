@@ -1,0 +1,28 @@
+databaseChangeLog:
+  # One login per person, review P3-5 (2026-10-15). /api/auth/register is public
+  # and accepts any email, so anyone could create an organisation whose admin row
+  # carries someone else's address. Such a row must not join that person's shared
+  # login: rule 1 (a password the person sets goes to every row with their email)
+  # skips it, so the organisation never appears in their sign-in picker.
+  #
+  # self_registered_unverified: true for the admin row /api/auth/register creates.
+  #   Cleared when a link mailed to that address is redeemed on that row itself
+  #   (an invite or an admin's reset link for it), or by a forgot-password link
+  #   when the person has no other active login. Every existing row: false.
+  - changeSet:
+      id: 166-user-self-registered-unverified
+      author: claude
+      changes:
+        - addColumn:
+            tableName: users
+            columns:
+              - column:
+                  name: self_registered_unverified
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            tableName: users
+            columnName: self_registered_unverified

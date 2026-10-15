@@ -69,6 +69,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("""
             UPDATE User u
             SET u.passwordHash = :hash,
+                u.passwordSelfSet = true,
+                u.passwordSetAt = :now,
+                u.selfRegisteredUnverified = false,
                 u.inviteToken = NULL,
                 u.inviteTokenExpiresAt = NULL
             WHERE u.inviteToken = :token
@@ -90,6 +93,61 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     int clearInviteToken(@Param("id") UUID id);
 
     List<User> findByTenantId(UUID tenantId);
+
+    /**
+     * One login per person (changeset 165): a membership row that shares its
+     * password with the person's other rows of the same normalised email.
+     */
+    interface SharedLogin {
+        UUID getId();
+        UUID getTenantId();
+        String getPasswordHash();
+        boolean getPasswordSelfSet();
+        String getStatus();
+        boolean getSelfRegisteredUnverified();
+    }
+
+    /**
+     * Every row of this person — normalised email — that shares the person's
+     * password, in every organisation and of any status: all roles except
+     * SUPER_ADMIN (no organisation; its login must never turn into an org
+     * picker) and SECURITY_GUARD (phone OTP only). Newest password first.
+     *
+     * <p>Native on purpose: the tenant filter would hide exactly the rows this
+     * exists to find. Callers never return these rows (or anything about them)
+     * to a client; they only write the person's own password to them, or read
+     * whether one exists.</p>
+     */
+    @Query(value = """
+            SELECT u.id AS id, u.tenant_id AS tenantId, u.password_hash AS passwordHash,
+                   u.password_self_set AS passwordSelfSet,
+                   u.status AS status, u.self_registered_unverified AS selfRegisteredUnverified
+            FROM users u
+            WHERE lower(trim(u.email)) = lower(trim(:email))
+              AND u.role NOT IN ('SUPER_ADMIN', 'SECURITY_GUARD')
+            ORDER BY u.password_set_at DESC NULLS LAST, u.created_at DESC NULLS LAST, u.id
+            """, nativeQuery = true)
+    List<SharedLogin> findSharedLogins(@Param("email") String email);
+
+    /**
+     * Writes the person's password to these rows (one login per person) and
+     * retires any link outstanding on them: the person has a password now.
+     * Native, so neither the tenant filter nor a stale persistence context
+     * narrows or overwrites it; {@code token_version} is bumped separately,
+     * through TokenRevocationService.
+     */
+    @Modifying
+    @Query(value = """
+            UPDATE users
+            SET password_hash = :hash,
+                password_self_set = :selfSet,
+                password_set_at = :now,
+                invite_token = NULL,
+                invite_token_expires_at = NULL
+            WHERE id IN (:ids)
+            """, nativeQuery = true)
+    int writeSharedPassword(@Param("ids") java.util.Collection<UUID> ids, @Param("hash") String hash,
+                            @Param("selfSet") boolean selfSet, @Param("now") Instant now);
 
     /**
      * What {@code ApiSecurityFilter} needs to decide whether a bearer token is

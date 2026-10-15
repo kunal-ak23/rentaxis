@@ -761,6 +761,8 @@
     "giveLoginInvalidEmail": "Enter a valid email address.",
     "giveLoginFailed": "Could not give this staff member a login. Try again.",
     "giveLoginDone": "{name} can now be assigned tickets. An invite was sent to {email}.",
+    "giveLoginExisting": "{name} can now be assigned tickets. {email} already has a Miftah login, so no invite was sent: they sign in with their existing password and choose this organisation.",
+    "giveLoginLinked": "{name} can now be assigned tickets, using the existing login {email} in your organisation.",
     "hasLogin": "Login",
     "hasLoginHint": "Has a login, so can be assigned tickets",
     "totalSalaryBill": "Total Monthly Salary",
@@ -3761,6 +3763,13 @@
     "pageOf": "Page {page} of {total}"
   },
   "Invites": {
+    "existingLoginBody": "This person already has a Miftah login. They can sign in with their existing password and choose this organisation. No invite was sent.",
+    "resetPassword": "Send password reset",
+    "resetConfirm": "Email this person a link to choose a new password? Their current password keeps working until they use it, and the new one applies in every organisation they sign in to.",
+    "resetSent": "Reset link sent",
+    "resetFailed": "Could not send the reset link. Please try again.",
+    "passwordSharedAcrossOrgs": "This person uses the same Miftah login in another organisation, so only they can change its password. Use “Send password reset” instead.",
+    "passwordEditHint": "A password can be typed here only for a login used in this organisation alone. To let someone choose their own, use “Send password reset”.",
     "resend": "Resend invite",
     "resent": "Invite sent",
     "resendFailed": "Could not resend the invite. Please try again.",

@@ -59,9 +59,35 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
     setState(() => _isSubmitting = true);
 
-    final success = await ref
-        .read(authProvider.notifier)
-        .login(_emailController.text.trim(), _passwordController.text);
+    final notifier = ref.read(authProvider.notifier);
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    var success = await notifier.login(email, password);
+
+    // One login per person: a password that opens several organisations
+    // comes back as a list to choose from; sign in to the one picked.
+    if (!success && mounted) {
+      final all = ref.read(authProvider).tenantChoices;
+      final choices = choicesForApp(all, residentAppRoles);
+      if (all.isNotEmpty && choices.isEmpty) {
+        notifier.reportLoginError(_L(context.isAr).noOrganisationForApp);
+      } else if (choices.length == 1) {
+        success = await notifier.login(
+          email,
+          password,
+          tenantId: choices.first['tenantId'] as String?,
+        );
+      } else if (choices.isNotEmpty) {
+        final picked = await showOrganisationPicker(
+          context,
+          choices,
+          ar: context.isAr,
+        );
+        if (picked != null && mounted) {
+          success = await notifier.login(email, password, tenantId: picked);
+        }
+      }
+    }
 
     if (!mounted) return;
     setState(() => _isSubmitting = false);
@@ -622,6 +648,9 @@ class _L {
       ar ? 'سجّل الدخول لإدارة إيجارك' : 'Sign in to manage your rentals';
   String get email => ar ? 'البريد الإلكتروني' : 'Email';
   String get password => ar ? 'كلمة المرور' : 'Password';
+  String get noOrganisationForApp => ar
+      ? 'لا يفتح حساب الدخول هذا أي سكن في هذا التطبيق. استخدم تطبيق مفتاح للإدارة أو الموقع الإلكتروني.'
+      : 'This login has no residence to open in this app. Use the Miftah manager app or the website.';
   String get emailRequired =>
       ar ? 'البريد الإلكتروني مطلوب' : 'Email is required';
   String get emailInvalid =>

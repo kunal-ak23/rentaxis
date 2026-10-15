@@ -30,6 +30,12 @@ public class RenterDTO {
     public enum PortalAccount {
         /** A new portal user was created and emailed a set-password invite. */
         INVITED,
+        /**
+         * The person already has a Miftah login (another organisation): this
+         * organisation's portal user was created with their existing password, no
+         * invite. They sign in with that password and choose this organisation.
+         */
+        EXISTING_LOGIN,
         /** The email was an unlinked portal (RENTER) user of this organisation: linked, no new invite. */
         LINKED_EXISTING,
         /**

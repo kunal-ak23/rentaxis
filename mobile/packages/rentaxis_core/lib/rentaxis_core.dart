@@ -79,6 +79,7 @@ export 'widgets/error_state.dart';
 export 'widgets/video_splash_screen.dart';
 export 'widgets/update_required_screen.dart';
 export 'widgets/update_available_banner.dart';
+export 'widgets/organisation_picker_sheet.dart';
 export 'widgets/animated_list_item.dart';
 export 'widgets/shimmer_loading.dart';
 export 'widgets/page_transitions.dart';

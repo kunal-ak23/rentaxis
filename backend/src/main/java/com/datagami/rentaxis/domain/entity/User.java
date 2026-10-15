@@ -50,6 +50,30 @@ public class User extends BaseTenantEntity {
     private Instant welcomedAt;
 
     /**
+     * Whether {@link #passwordHash} is the person's own: chosen through a link
+     * mailed to this address (invite or reset), changed from a password that was
+     * itself their own, or copied from a row where it was (changeset 165). Only
+     * such a hash is ever shared with another organisation's row of the same
+     * email — a password an admin typed must never open a second organisation.
+     */
+    @JsonIgnore
+    @Column(name = "password_self_set", nullable = false)
+    private boolean passwordSelfSet;
+
+    @JsonIgnore
+    @Column(name = "password_set_at")
+    private Instant passwordSetAt;
+
+    /**
+     * The admin row {@code /api/auth/register} created, until a link mailed to
+     * this address is redeemed on it (changeset 166). Never joins the person's
+     * shared login: registration is public and proves nothing about the inbox.
+     */
+    @JsonIgnore
+    @Column(name = "self_registered_unverified", nullable = false)
+    private boolean selfRegisteredUnverified;
+
+    /**
      * Revocation counter for bearer tokens (security audit P1-2). Every token
      * carries the value it was minted with ({@code tv} claim) and
      * {@code ApiSecurityFilter} refuses one that no longer matches.
@@ -104,7 +128,10 @@ public class User extends BaseTenantEntity {
      * set-password link to an account that already has one.
      */
     public boolean hasPendingInvite() {
-        return inviteToken != null && welcomedAt == null;
+        // Review P3-1: a link on a row that already has a usable password (one
+        // set, typed or copied — passwordSetAt) is a reset link, not an invite,
+        // even if the person has not signed in to this organisation yet.
+        return inviteToken != null && welcomedAt == null && passwordSetAt == null;
     }
 
     /** Drops the invite secret: the account has a password its holder knows. */

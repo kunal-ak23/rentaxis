@@ -52,14 +52,19 @@ public class UserController {
         // TENANT_ADMIN_ADDED (when role == TENANT_ADMIN) is published inside
         // createUser within the same @Transactional boundary so the
         // AFTER_COMMIT listener fires reliably.
-        User user = userService.createUser(
+        // One login per person: someone who already signs in to another
+        // organisation is added with their existing password (no invite), and a
+        // password typed here is refused for them (UserService rule 3).
+        UserService.CreatedUser created = userService.createUser(
                 request.email(),
                 request.password(),
                 request.name(),
                 request.role(),
                 effectiveTenantId,
                 request.phoneNumber(),
-                "admin");
+                "admin",
+                true);
+        User user = created.user();
 
         // If creating a PROPERTY_MANAGER, assign properties
         if (request.role() == UserRole.PROPERTY_MANAGER && request.propertyIds() != null) {
@@ -68,7 +73,9 @@ public class UserController {
             }
         }
 
-        return ResponseEntity.ok(UserResponseDTO.from(user));
+        UserResponseDTO body = UserResponseDTO.from(user);
+        body.setExistingLogin(created.existingLogin());
+        return ResponseEntity.ok(body);
     }
 
     /**
@@ -121,6 +128,20 @@ public class UserController {
     public ResponseEntity<UserResponseDTO> resendInvite(@PathVariable UUID id) {
         authorizeTargetUser(id);
         return ResponseEntity.ok(UserResponseDTO.from(userService.resendInvite(id)));
+    }
+
+    /**
+     * "Reset password": emails the user a link to choose a new password, which
+     * applies in every organisation they sign in to. The admin never sees the
+     * link (204, no body) and never chooses the password — an admin of one
+     * organisation cannot set the credential that opens another. Same target-user
+     * boundary as edit and delete.
+     */
+    @PostMapping("/{id}/send-password-reset")
+    public ResponseEntity<Void> sendPasswordReset(@PathVariable UUID id) {
+        authorizeTargetUser(id);
+        userService.sendPasswordReset(id);
+        return ResponseEntity.noContent().build();
     }
 
     /**

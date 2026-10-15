@@ -125,12 +125,20 @@ public class StaffService {
             if (repository.existsByUserId(login.getId())) {
                 throw new BusinessRuleViolationException("That login is already linked to another staff member");
             }
-        } else {
-            login = userService.createUser(normalized, null, staff.getNameEn(), UserRole.TENANT_USER,
-                    tenantId.toString(), null, "staff");
+            staff.setUserId(login.getId());
+            Staff saved = repository.save(staff);
+            saved.setLoginOutcome("LINKED");
+            return saved;
         }
+        // One login per person: someone who already signs in to another
+        // organisation keeps their password here; no invite, and the admin is told.
+        UserService.CreatedUser created = userService.createUser(normalized, null, staff.getNameEn(),
+                UserRole.TENANT_USER, tenantId.toString(), null, "staff", false);
+        login = created.user();
         staff.setUserId(login.getId());
-        return repository.save(staff);
+        Staff saved = repository.save(staff);
+        saved.setLoginOutcome(created.existingLogin() ? "EXISTING_LOGIN" : "INVITED");
+        return saved;
     }
 
     @Transactional
