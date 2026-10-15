@@ -68,6 +68,8 @@ export type VoucherAttachment = {
     fileType: string | null;
     fileSize: number | null;
     uploadedAt: string;
+    /** The name the download is saved as: `name` plus the stored file's extension. */
+    downloadName?: string;
 };
 
 /**

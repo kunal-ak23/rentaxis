@@ -7,7 +7,6 @@ import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -47,20 +46,20 @@ public class DeductionAttachmentController {
             throws IOException {
         DeductionAttachmentDTO meta = attachmentService.getAttachmentById(id);
         InputStreamResource resource = new InputStreamResource(attachmentService.downloadAttachmentStream(id));
-        String declared = meta.getFileType() != null ? meta.getFileType() : "application/octet-stream";
-        String safeName = meta.getName().replaceAll("[\"\\r\\n\\\\/:*?<>|]", "_");
+        // Served type: the stored one when it is a safe format, else octet-stream (PR #404).
+        String contentType = com.datagami.rentaxis.core.util.AttachmentNames.servedContentType(
+                meta.getFileType(), meta.getFileUrl(), null);
         // PR #401 R1 P3-4: the settlement preview frames a PDF scan, which an
         // "attachment" answer turns into a download. Inline only on request and
-        // only for a PDF or raster image type; anything else (the type is the
-        // uploader's claim) stays a download, and nosniff stops a browser
-        // second-guessing the type either way.
-        String type = declared.split(";")[0].trim().toLowerCase(java.util.Locale.ROOT);
-        boolean showInline = inline && INLINE_TYPES.contains(type);
+        // only for a PDF or raster image type; anything else stays a download, and
+        // nosniff stops a browser second-guessing the type either way. Either way the
+        // file is named as typed plus its extension (PR #404).
+        boolean showInline = inline && INLINE_TYPES.contains(contentType);
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        (showInline ? "inline" : "attachment") + "; filename=\"" + safeName + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, com.datagami.rentaxis.core.util.AttachmentNames.contentDisposition(
+                        showInline ? "inline" : "attachment", meta.getDownloadName()))
                 .header("X-Content-Type-Options", "nosniff")
-                .contentType(MediaType.parseMediaType(showInline ? type : declared))
+                .contentType(com.datagami.rentaxis.core.util.AttachmentNames.mediaType(contentType))
                 .body(resource);
     }
 

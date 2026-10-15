@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { storedFileSrc } from "@/lib/assetUrl";
+import { saveResponse } from "@/lib/download";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -79,6 +80,8 @@ type Reply = {
 type Attachment = {
     id: string;
     name: string;
+    /** The name the download is saved as, extension included. */
+    downloadName?: string;
     fileUrl: string;
     fileType: string;
     fileSize: number;
@@ -364,15 +367,8 @@ export default function TicketDetailPage() {
         try {
             const res = await fetch(`/api/proxy/v1/tickets/attachments/${attachmentId}/download`);
             if (!res.ok) throw new Error(`download ${res.status}`);
-            const blob = await res.blob();
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = fileName;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            // The server names the file, extension included.
+            await saveResponse(res, fileName);
         } catch {
             setAttachmentDownloadError(t("attachmentDownloadFailed"));
         }
@@ -524,7 +520,7 @@ export default function TicketDetailPage() {
                                             ) : (
                                                 <div
                                                     className="aspect-square flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-input transition-colors"
-                                                    onClick={() => handleDownloadAttachment(att.id, att.fileUrl.split("/").pop() || "file")}
+                                                    onClick={() => handleDownloadAttachment(att.id, att.downloadName ?? (att.fileUrl.split("/").pop() || "file"))}
                                                 >
                                                     <FileText size={20} className="text-muted" />
                                                     <p className="text-[9px] font-semibold text-muted uppercase">{att.fileType?.split("/")[1] || t("fileFallback")}</p>
@@ -534,7 +530,7 @@ export default function TicketDetailPage() {
                                                 <div className="flex items-center justify-between">
                                                     <p className="text-[9px] text-white font-medium truncate flex-1">{t("fileSizeKb", { size: (att.fileSize / 1024).toFixed(0) })}</p>
                                                     <div className="flex items-center gap-1">
-                                                        <button type="button" aria-label={t("downloadAttachment")} onClick={(e) => { e.stopPropagation(); handleDownloadAttachment(att.id, att.fileUrl.split("/").pop() || "file"); }} className="p-1 text-white hover:text-white/80 cursor-pointer"><Download size={11} /></button>
+                                                        <button type="button" aria-label={t("downloadAttachment")} onClick={(e) => { e.stopPropagation(); handleDownloadAttachment(att.id, att.downloadName ?? (att.fileUrl.split("/").pop() || "file")); }} className="p-1 text-white hover:text-white/80 cursor-pointer"><Download size={11} /></button>
                                                         <button type="button" aria-label={t("deleteAttachment")} onClick={(e) => { e.stopPropagation(); handleDeleteAttachment(att.id); }} className="p-1 text-red-400 hover:text-red-300 cursor-pointer"><Trash2 size={11} /></button>
                                                     </div>
                                                 </div>

@@ -169,7 +169,7 @@ function AttachmentPreviewDialog({ attachment, onClose }: {
                     <div className="flex items-center gap-2 shrink-0 ms-3">
                         <a
                             href={downloadUrl}
-                            download={attachment.name}
+                            download={attachment.downloadName ?? attachment.name}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90"
                             onClick={e => e.stopPropagation()}
                         >
@@ -189,7 +189,7 @@ function AttachmentPreviewDialog({ attachment, onClose }: {
                     ) : (
                         <a
                             href={downloadUrl}
-                            download={attachment.name}
+                            download={attachment.downloadName ?? attachment.name}
                             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold"
                         >
                             <Download size={15} /> {attachment.name}

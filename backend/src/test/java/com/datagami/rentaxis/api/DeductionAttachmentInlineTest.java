@@ -21,6 +21,7 @@ class DeductionAttachmentInlineTest {
         UUID id = UUID.randomUUID();
         DeductionAttachmentDTO meta = new DeductionAttachmentDTO();
         meta.setName("scan.pdf");
+        meta.setDownloadName("scan.pdf");
         meta.setFileType(fileType);
         when(service.getAttachmentById(id)).thenReturn(meta);
         when(service.downloadAttachmentStream(id)).thenReturn(new ByteArrayInputStream(new byte[]{1}));
@@ -42,5 +43,15 @@ class DeductionAttachmentInlineTest {
         // A declared type off the list (the uploader's claim) is never shown inline.
         assertThat(download("text/html", true).getHeaders().getFirst("Content-Disposition")).startsWith("attachment");
         assertThat(download("image/svg+xml", true).getHeaders().getFirst("Content-Disposition")).startsWith("attachment");
+    }
+
+    /** PR #404 alongside #401: inline or not, the file keeps its name, and a risky type is served as bytes. */
+    @Test
+    void theNameAndAllowListHoldInlineToo() throws Exception {
+        var pdf = download("application/pdf", true);
+        assertThat(pdf.getHeaders().getFirst("Content-Disposition"))
+                .isEqualTo("inline; filename=\"scan.pdf\"; filename*=UTF-8''scan.pdf");
+        assertThat(download("text/html", true).getHeaders().getContentType()).hasToString("application/octet-stream");
+        assertThat(download("not a type/;;", false).getHeaders().getContentType()).hasToString("application/octet-stream");
     }
 }

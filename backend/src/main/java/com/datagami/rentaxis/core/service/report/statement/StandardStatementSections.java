@@ -225,20 +225,34 @@ public final class StandardStatementSections {
         private final StatementLedger ledger;
         private final BouncedDebt bouncedDebt;
         private final com.datagami.rentaxis.domain.repository.BadDebtWriteOffRepository writeOffs;
+        private final java.time.Clock clock;
 
         public Outstanding(ChequeRepository cheques, StatementLedger ledger, BouncedDebt bouncedDebt,
-                           com.datagami.rentaxis.domain.repository.BadDebtWriteOffRepository writeOffs) {
+                           com.datagami.rentaxis.domain.repository.BadDebtWriteOffRepository writeOffs,
+                           java.time.Clock clock) {
             this.cheques = cheques;
             this.ledger = ledger;
             this.bouncedDebt = bouncedDebt;
             this.writeOffs = writeOffs;
+            this.clock = clock;
+        }
+
+        /**
+         * The day the section is evaluated on: the period's end, or today when the period
+         * has not ended yet (a Year view of the current year). A cheque dated after today
+         * is not due yet, so it cannot be overdue. A closed period is still evaluated on
+         * its own end, so it re-renders the same (PR #399).
+         */
+        static LocalDate asAt(LocalDate periodEnd, LocalDate today) {
+            return periodEnd.isAfter(today) ? today : periodEnd;
         }
 
         @Override public int order() { return 4; }
 
         @Override
         public Section build(StatementContext ctx) {
-            LocalDate at = ctx.to();
+            LocalDate at = asAt(ctx.to(), LocalDate.now(clock));
+            boolean asAtToday = at.isBefore(ctx.to());
             List<Cheque> candidates = cheques.findOwedCandidatesAt(ctx.propertyId(), at).stream()
                     .filter(c -> ctx.tenantId().equals(c.getTenantId()))
                     .toList();
@@ -277,7 +291,7 @@ public final class StandardStatementSections {
                     new Figure("registerOverdue", overdue, (long) rows.size()),
                     Figure.of("ledgerReceivable", money(receivable))),
                     List.of(new Table("overdue", List.of("renter", "unit", "chequeNumber", "chequeDate", "amount", "daysOverdue"), rows)),
-                    List.of("differsByDesign"));
+                    asAtToday ? List.of("differsByDesign", "asAtToday") : List.of("differsByDesign"));
         }
 
         /**

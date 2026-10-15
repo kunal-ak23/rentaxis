@@ -955,6 +955,8 @@ export type DeductionAttachment = {
   id: string;
   deductionId: string;
   name: string;
+  /** The name to save the file as: `name` plus the original file's extension. */
+  downloadName?: string;
   fileUrl: string;
   fileType: string;
   fileSize: number;

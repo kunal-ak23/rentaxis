@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.dto.LeaseAttachmentDTO;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.security.LeaseAccessPolicy;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.core.util.AttachmentNames;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseAttachment;
 import com.datagami.rentaxis.domain.repository.LeaseAttachmentRepository;
@@ -55,12 +56,15 @@ public class LeaseAttachmentService {
         leaseAccessPolicy.requireManageable(lease);
 
         byte[] bytes = file.getBytes();
-        String ext = getExtension(file.getOriginalFilename());
+        // The blob name keeps the original file's extension (or the one its type names),
+        // so the download can add it to the name the user typed ("aadhar" → "aadhar.pdf").
+        String contentType = AttachmentNames.uploadContentType(file.getOriginalFilename(), file.getContentType());
+        String ext = AttachmentNames.uploadExtension(file.getOriginalFilename(), contentType);
         String fileName = UUID.randomUUID().toString().substring(0, 8) + ext;
 
         String fileUrl;
         if (azureConnectionString != null && !azureConnectionString.isBlank()) {
-            fileUrl = uploadToAzure(fileName, bytes, file.getContentType());
+            fileUrl = uploadToAzure(fileName, bytes, contentType);
         } else {
             fileUrl = saveToLocal(fileName, bytes);
         }
@@ -69,7 +73,7 @@ public class LeaseAttachmentService {
         attachment.setLease(lease);
         attachment.setName(docName);
         attachment.setFileUrl(fileUrl);
-        attachment.setFileType(file.getContentType());
+        attachment.setFileType(contentType);
         attachment.setFileSize(file.getSize());
         attachment.setUploadedAt(Instant.now());
 
@@ -114,6 +118,19 @@ public class LeaseAttachmentService {
         } catch (IOException e) {
             throw new RuntimeException("Failed to read attachment file", e);
         }
+    }
+
+    /**
+     * The attachment's bytes with the name to save them as — the display name plus the
+     * original file's extension — and the Content-Type to serve. Same access checks as
+     * {@link #downloadAttachment}.
+     */
+    @Transactional(readOnly = true)
+    public AttachmentNames.Download download(UUID attachmentId) {
+        byte[] content = downloadAttachment(attachmentId);
+        LeaseAttachment a = attachmentRepository.findById(attachmentId)
+                .orElseThrow(() -> new NotFoundException("Attachment not found"));
+        return AttachmentNames.download(content, a.getName(), a.getFileUrl(), a.getFileType(), "document");
     }
 
     @Transactional
@@ -174,17 +191,12 @@ public class LeaseAttachmentService {
         return "/api/v1/assets/serve/lease-docs/" + fileName;
     }
 
-    private String getExtension(String filename) {
-        if (filename == null) return "";
-        int dot = filename.lastIndexOf('.');
-        return dot >= 0 ? filename.substring(dot) : "";
-    }
-
     private LeaseAttachmentDTO mapToDTO(LeaseAttachment a) {
         LeaseAttachmentDTO dto = new LeaseAttachmentDTO();
         dto.setId(a.getId());
         dto.setLeaseId(a.getLease().getId());
         dto.setName(a.getName());
+        dto.setDownloadName(AttachmentNames.downloadName(a.getName(), a.getFileUrl(), a.getFileType(), null, "document"));
         dto.setFileUrl(a.getFileUrl());
         dto.setFileType(a.getFileType());
         dto.setFileSize(a.getFileSize());
