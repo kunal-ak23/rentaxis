@@ -52,7 +52,7 @@ export default function SetPasswordForm({ token, email, name, locale }: Props) {
     return (
         <form onSubmit={submit} style={{ maxWidth: 420, margin: "60px auto", fontFamily: "system-ui", padding: 24 }}>
             <h1 style={{ marginBottom: 8 }}>{t("setTitle")}</h1>
-            <p style={{ marginTop: 0, color: "#475569" }}>{t("setIntro", { name, email })}</p>
+            <p style={{ marginTop: 0, color: "#475569" }}>{name ? t("setIntro", { name, email }) : t("setIntroNoName", { email })}</p>
             <label style={{ display: "block", marginTop: 24 }}>
                 <span style={{ display: "block", fontSize: 14, fontWeight: 500, marginBottom: 4 }}>{t("newPassword")}</span>
                 <input type="password" required minLength={8} value={password} onChange={e => setPassword(e.target.value)}

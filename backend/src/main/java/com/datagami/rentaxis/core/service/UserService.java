@@ -375,12 +375,16 @@ public class UserService {
                 .findFirst().orElse(active.get(0));
         String token = generateInviteToken();
         Instant expiresAt = Instant.now().plus(FORGOT_VALIDITY);
-        resetLinks.issue(email.trim().toLowerCase(), token, expiresAt);
+        String address = email.trim().toLowerCase();
+        resetLinks.issue(address, token, expiresAt);
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.PASSWORD_RESET_REQUESTED,
                 null,
+                // toEmail: mailed to the address asked for, captured now — never to
+                // the row's address at dispatch, which its org can change (re-review P2-A).
                 new com.datagami.rentaxis.core.email.event.payload.PasswordResetRequestedPayload(
-                        recipient.getId(), null, "/auth/set-password?token=" + token, expiresAt.toString()),
+                        recipient.getId(), null, "/auth/set-password?token=" + token, expiresAt.toString(),
+                        address),
                 "PASSWORD_RESET_REQUESTED:" + recipient.getId() + ":forgot:" + UUID.randomUUID()));
         AUDIT.info("forgot-password link-sent recipient={}", recipient.getId());
     }
@@ -395,19 +399,11 @@ public class UserService {
         return resetLinks.find(token)
                 .filter(l -> l.usedAt() == null)
                 .map(l -> new PersonLinkInfo(l.email(),
-                        // The greeting's name comes from a row of the person's own login: a
-                        // row someone registered with this address must not put words on
-                        // the person's reset page (sweep, review round 1).
-                        personName(l.email()),
+                        // No name: every row's name was written by some organisation's
+                        // admin, and none may put words on the person's reset page
+                        // (re-review P3-c). The page greets by address.
+                        null,
                         l.expiresAt(), l.expiresAt().isBefore(Instant.now())));
-    }
-
-    private String personName(String email) {
-        List<UserRepository.SharedLogin> active = sharedLogins(email).stream().filter(UserService::isActive).toList();
-        List<UserRepository.SharedLogin> own = active.stream().filter(UserService::joinsPersonLogin).toList();
-        return (own.isEmpty() ? active : own).stream().findFirst()
-                .flatMap(r -> userRepository.findById(r.getId())).map(User::getName)
-                .orElse(email);
     }
 
     /**
@@ -448,7 +444,7 @@ public class UserService {
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.PASSWORD_CHANGED,
                 null,
-                new PasswordChangedPayload(targets.get(0), null, now.toString(), null),
+                new PasswordChangedPayload(targets.get(0), null, now.toString(), null, email),
                 "PASSWORD_CHANGED:" + targets.get(0) + ":forgot:" + UUID.randomUUID()));
         return InviteResult.OK;
     }

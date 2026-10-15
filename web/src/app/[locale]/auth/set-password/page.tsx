@@ -9,7 +9,8 @@ interface Props {
 
 interface InviteInfo {
     email: string;
-    name: string;
+    /** Null for a forgot-password link: no organisation's text is shown on it. */
+    name: string | null;
     expiresAt: string;
 }
 
@@ -40,5 +41,5 @@ export default async function SetPasswordPage({ params, searchParams }: Props) {
         );
     }
 
-    return <SetPasswordForm token={token} email={result.info.email} name={result.info.name} locale={locale} />;
+    return <SetPasswordForm token={token} email={result.info.email} name={result.info.name ?? ""} locale={locale} />;
 }

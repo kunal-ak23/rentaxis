@@ -35,6 +35,7 @@ class ForgotPasswordIT extends AbstractCallerIdentityIT {
 
     @Autowired PasswordEncoder passwordEncoder;
     @Autowired UserService userService;
+    @Autowired org.springframework.transaction.support.TransactionTemplate tx;
     private final ObjectMapper json = new ObjectMapper();
 
     private static String email() {
@@ -243,8 +244,8 @@ class ForgotPasswordIT extends AbstractCallerIdentityIT {
 
         String page = client().get().uri("/api/auth/set-password/validate?token=" + token)
                 .retrieve().body(String.class);
-        assertThat(page).as("the reset page greets the victim, not the name the attacker chose")
-                .contains(victim.getName()).doesNotContain("Mallory");
+        assertThat(page).as("the reset page uses no name an organisation wrote")
+                .contains(email).doesNotContain("Mallory");
         assertThat(setPassword(token, NEW).getStatusCode().value()).as("the attacker's sign-ins did not kill it")
                 .isEqualTo(204);
         assertThat(passwordEncoder.matches(NEW, userRepo.findById(victim.getId()).orElseThrow().getPasswordHash()))
@@ -317,5 +318,51 @@ class ForgotPasswordIT extends AbstractCallerIdentityIT {
         String pausedHash = userRepo.findById(paused.getId()).orElseThrow().getPasswordHash();
         assertThat(passwordEncoder.matches(OLD, pausedHash)).isFalse();
         assertThat(passwordEncoder.matches(NEW, pausedHash)).isFalse();
+    }
+
+    // --- re-review round 2 ----------------------------------------------------
+
+    /**
+     * Re-review P2-A: the mail used to go to whatever address the chosen row had
+     * when the dispatcher ran, after commit. An org admin holding a row with the
+     * victim's email (an EXISTING_LOGIN renter: newest password, so it is the one
+     * chosen) repoints it in that window and receives the victim's person-level
+     * link. The window is simulated by changing the row's email inside the
+     * issuing transaction — the dispatcher only reads it after commit.
+     */
+    @Test
+    void aRowRepointedBetweenIssueAndDispatchDoesNotRedirectTheLink() throws Exception {
+        UUID orgA = newTenant("FORGOT-RACE-A");
+        UUID orgB = newTenant("FORGOT-RACE-B");
+        String victimEmail = email();
+        String mallory = "mallory-" + UUID.randomUUID() + "@evil.invalid";
+        User victim = row(orgB, UserRole.RENTER, victimEmail);
+        User adminA = row(orgA, UserRole.TENANT_ADMIN, email());
+        ResponseEntity<String> created = asSelf(org.springframework.http.HttpMethod.POST, "/api/v1/renters", adminA)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("nameEn", "Security notice: call +971 50 000 0000", "email", victimEmail))
+                .retrieve().onStatus(st -> true, (rq, rs) -> { }).toEntity(String.class);
+        assertThat(created.getStatusCode().value()).as(created.getBody()).isEqualTo(201);
+        assertThat(json.readTree(created.getBody()).get("portalAccount").asText()).isEqualTo("EXISTING_LOGIN");
+        UUID attackerRow = jdbc.queryForObject("select user_id from renters where id = ?::uuid", UUID.class,
+                json.readTree(created.getBody()).get("id").asText());
+
+        tx.executeWithoutResult(st -> {
+            userService.sendForgottenPasswordLink(victimEmail);
+            jdbc.update("update users set email = ? where id = ?", mallory, attackerRow);
+        });
+
+        assertThat(awaitMails(1, victimEmail)).as("the link goes to the address it was asked for").isEqualTo(1);
+        assertThat(resetMailsTo(mallory)).as("never to the repointed row's new address").isZero();
+        String body = jdbc.queryForObject("select body_html from email_outbox where event_type = "
+                + "'PASSWORD_RESET_REQUESTED' and lower(recipient_email) = lower(?)", String.class, victimEmail);
+        assertThat(body).as("re-review P3-c: no name a row's admin wrote").doesNotContain("Security notice");
+
+        // And the page the link opens greets nobody by an admin-written name either.
+        String page = client().get().uri("/api/auth/set-password/validate?token=" + linkTokenFrom(victimEmail))
+                .retrieve().body(String.class);
+        assertThat(page).doesNotContain("Security notice");
+        assertThat(passwordEncoder.matches(OLD, userRepo.findById(victim.getId()).orElseThrow().getPasswordHash()))
+                .isTrue();
     }
 }

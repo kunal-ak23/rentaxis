@@ -3790,6 +3790,7 @@
     "backToSignIn": "Back to sign in",
     "setTitle": "Choose your password",
     "setIntro": "Hi {name}, choose a password for {email}. It becomes your password in every organisation you belong to.",
+    "setIntroNoName": "Choose a password for {email}. It becomes your password in every organisation you belong to.",
     "newPassword": "New password",
     "confirmPassword": "Confirm password",
     "setButton": "Set password",

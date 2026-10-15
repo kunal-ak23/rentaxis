@@ -17,6 +17,11 @@ describe("SetPasswordForm", () => {
         expect(screen.getByText(en.Auth.setIntro.replace("{name}", "Pat").replace("{email}", "p@x.com"))).toBeTruthy();
     });
 
+    it("greets by address when the link names nobody (forgot-password)", () => {
+        render(<SetPasswordForm token="t" email="p@x.com" name="" locale="en" />);
+        expect(screen.getByText(en.Auth.setIntroNoName.replace("{email}", "p@x.com"))).toBeTruthy();
+    });
+
     it("explains an expired link", async () => {
         global.fetch = vi.fn(async () => ({ status: 410 }) as Response) as unknown as typeof fetch;
         const { container } = render(<SetPasswordForm token="t" email="p@x.com" name="Pat" locale="en" />);
