@@ -241,6 +241,10 @@ class ForgotPasswordIT extends AbstractCallerIdentityIT {
             assertThat(loginInto(email, "attacker-knows-1", attackerOrg).getStatusCode().value()).isEqualTo(200);
         }
 
+        String page = client().get().uri("/api/auth/set-password/validate?token=" + token)
+                .retrieve().body(String.class);
+        assertThat(page).as("the reset page greets the victim, not the name the attacker chose")
+                .contains(victim.getName()).doesNotContain("Mallory");
         assertThat(setPassword(token, NEW).getStatusCode().value()).as("the attacker's sign-ins did not kill it")
                 .isEqualTo(204);
         assertThat(passwordEncoder.matches(NEW, userRepo.findById(victim.getId()).orElseThrow().getPasswordHash()))

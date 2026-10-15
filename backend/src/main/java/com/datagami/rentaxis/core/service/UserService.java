@@ -395,10 +395,19 @@ public class UserService {
         return resetLinks.find(token)
                 .filter(l -> l.usedAt() == null)
                 .map(l -> new PersonLinkInfo(l.email(),
-                        sharedLogins(l.email()).stream().filter(UserService::isActive).findFirst()
-                                .flatMap(r -> userRepository.findById(r.getId())).map(User::getName)
-                                .orElse(l.email()),
+                        // The greeting's name comes from a row of the person's own login: a
+                        // row someone registered with this address must not put words on
+                        // the person's reset page (sweep, review round 1).
+                        personName(l.email()),
                         l.expiresAt(), l.expiresAt().isBefore(Instant.now())));
+    }
+
+    private String personName(String email) {
+        List<UserRepository.SharedLogin> active = sharedLogins(email).stream().filter(UserService::isActive).toList();
+        List<UserRepository.SharedLogin> own = active.stream().filter(UserService::joinsPersonLogin).toList();
+        return (own.isEmpty() ? active : own).stream().findFirst()
+                .flatMap(r -> userRepository.findById(r.getId())).map(User::getName)
+                .orElse(email);
     }
 
     /**
