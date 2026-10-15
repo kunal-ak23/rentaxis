@@ -367,7 +367,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
             itemCount: widget.photos.length,
             onPageChanged: (i) => setState(() => _current = i),
             itemBuilder: (_, i) {
-              final url = widget.photos[i]['url'] as String;
+              final url = resolveMediaUrl(widget.photos[i]['url'] as String?) ?? '';
               return GestureDetector(
                 onTap: () => _openGallery(context, i),
                 child: Image.network(
@@ -479,7 +479,9 @@ class _FullscreenGalleryState extends State<_FullscreenGallery> {
         itemCount: widget.photos.length,
         pageController: _pageController,
         builder: (_, i) => PhotoViewGalleryPageOptions(
-          imageProvider: NetworkImage(widget.photos[i]['url'] as String),
+          imageProvider: NetworkImage(
+            resolveMediaUrl(widget.photos[i]['url'] as String?) ?? '',
+          ),
           minScale: PhotoViewComputedScale.contained,
           maxScale: PhotoViewComputedScale.covered * 2,
         ),
@@ -861,7 +863,7 @@ class _MediaLinks extends StatelessWidget {
               _MediaBtn(
                 icon: Icons.architecture_outlined,
                 label: l.floorPlan,
-                url: fp['url'] as String,
+                url: resolveMediaUrl(fp['url'] as String?) ?? '',
               ),
             for (final v in videos)
               _MediaBtn(
