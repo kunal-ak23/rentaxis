@@ -21,7 +21,9 @@ vi.mock("@/i18n/routing", () => ({
         <a href={href} {...rest}>{children}</a>
     ),
 }));
-vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "ACCOUNTANT" } } }) }));
+// A role LeaseAttachmentController admits: the accountant is refused it, so its
+// page no longer offers the section at all (sandbox role test M4).
+vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "TENANT_ADMIN" } } }) }));
 vi.mock("@/components/finance/AccountPicker", () => ({ default: () => <div data-testid="account-picker" /> }));
 vi.mock("@/components/leases/LeaseInteractionsPanel", () => ({ default: () => null }));
 

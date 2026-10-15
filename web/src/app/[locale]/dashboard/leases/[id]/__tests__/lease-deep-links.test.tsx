@@ -114,6 +114,9 @@ describe("contract deep links", () => {
         ["tab=interactions", "activity", "interactions"],
     ])("maps the legacy ?%s to its new tab and opens the section", async (q, tab, section) => {
         search.current = q;
+        // The Attachments section is not offered to an accountant, whose
+        // LeaseAttachmentController#list answers 403 (sandbox role test M4).
+        if (section === "attachments") role = "TENANT_ADMIN";
         window.history.replaceState(null, "", `/en/dashboard/leases/lease-1?${q}`);
         renderPage();
         expect(await screen.findByTestId(`lease-tab-${tab}`)).toHaveAttribute("aria-selected", "true");

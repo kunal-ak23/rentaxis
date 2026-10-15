@@ -76,12 +76,22 @@ describe("Home (spec §1a, §6)", () => {
     });
 
     it("skips the pipeline and the unit board for a role that cannot read contracts or properties", async () => {
+        // Sandbox role test M4: TENANT_USER is refused the summary too, so its Home
+        // is the limited one — no tiles, no pipeline, no board, no lease reads.
         session.role = "TENANT_USER";
         renderHome();
-        await screen.findByTestId("kpi-unit-status");
+        await screen.findByTestId("home-limited");
+        expect(screen.queryByTestId("kpi-unit-status")).toBeNull();
         expect(screen.queryByTestId("contract-pipeline")).toBeNull();
         expect(screen.queryByTestId("unit-board")).toBeNull();
         expect(pagedCalls).toEqual([]);
+    });
+
+    it("anchors Unit Status on the tile for a role that reads contracts but not properties", async () => {
+        session.role = "ACCOUNTANT";
+        renderHome();
+        await screen.findByTestId("kpi-unit-status");
+        expect(screen.queryByTestId("unit-board")).toBeNull();
         expect(document.getElementById("unit-status")).toBe(screen.getByTestId("kpi-unit-status"));
     });
 });

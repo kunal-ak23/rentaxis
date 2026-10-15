@@ -13,7 +13,8 @@ What it creates:
   - Chart of accounts + charge-type catalogue + per-property account sets
     (generated from the tenant template) + the fiscal year opened on 1 January
     and everything before it locked
-  - 2 properties with rent-collection settings, 8 units
+  - 2 properties with rent-collection settings, 8 units; the tower's five
+    A-units sit in its one building, "Tower A" (DEMO_BUILDING_NAME)
   - 4 renters with portal (RENTER) logins
   - 4 tenancy contracts, each with its own cheque grid, covering the register:
       * walked relative to the run date: cheques dated >14 days ago cleared,
@@ -25,7 +26,9 @@ What it creates:
   - 4 published marketplace listings + 1 draft (vacant units)
   - 2 vendors, one of them with a posted purchase invoice (PISR, 5% input VAT)
     and the payment voucher (BPV) that settles it
-  - 2 meetings (cheque replacement + property viewing), one approved
+  - 2 meetings (cheque replacement + property viewing), one approved, and an
+    approved contract-renewal meeting requested by Rajesh from his portal, so a
+    renter's Meetings page has something on it
 
 Credentials & IDs are printed and written to scripts/seed_demo_tenant.out.json.
 
@@ -138,8 +141,13 @@ ORG_STAMP = os.environ.get("DEMO_ORG_STAMP")
 REFRESH_BRANDING = "--refresh-branding" in sys.argv
 # Optional naming for a branded demo (defaults are the historical names).
 DEMO_BRAND_AR = os.environ.get("DEMO_BRAND_AR") or ("ساندبوكس" if DEMO_BRAND == "Sandbox" else None)
-BUILDING_NAME_EN = os.environ.get("DEMO_BUILDING_NAME", "Palm Court")
-BUILDING_NAME_AR = os.environ.get("DEMO_BUILDING_NAME_AR", "بالم كورت")
+# The tower's one building. The A-units (A-101..A-202) are created inside it, so
+# the Owner Statement's "NOI by tower" reads "Tower A" with the property's whole
+# NOI. It used to be "Palm Court", created after the units and linked to none of
+# them, which printed "Palm Court 0.00 / Not in a building 68,054.78" (sandbox
+# role test M5).
+BUILDING_NAME_EN = os.environ.get("DEMO_BUILDING_NAME", "Tower A")
+BUILDING_NAME_AR = os.environ.get("DEMO_BUILDING_NAME_AR", "البرج أ")
 MAINTENANCE_DESK = os.environ.get("DEMO_MAINTENANCE_DESK", "Building Maintenance Desk")
 MAINTENANCE_EMAIL = os.environ.get("DEMO_MAINTENANCE_EMAIL", f"maintenance@{DEMO_EMAIL_DOMAIN}")
 
@@ -147,7 +155,7 @@ MAINTENANCE_EMAIL = os.environ.get("DEMO_MAINTENANCE_EMAIL", f"maintenance@{DEMO
 # "Tutorial" on screen; a re-run against an organisation seeded with them finds the
 # record under its old name and renames it where the API allows (so nothing is
 # created twice), and otherwise keeps it as it is.
-LEGACY_BUILDING_NAMES = ("Tutorial Operations Tower",)
+LEGACY_BUILDING_NAMES = ("Tutorial Operations Tower", "Palm Court")
 AMENITY_DESCRIPTION = "Residents' gym with cardio and free-weights areas. Book a slot in advance."
 LEGACY_MAINTENANCE_DESKS = ("Tutorial Maintenance Desk",)
 PARKING_SPOT = "B2-18"
@@ -155,6 +163,7 @@ LEGACY_PARKING_SPOTS = ("TUTORIAL-B2-18",)
 STAFF_EMPLOYEE_ID = "OPS-001"
 LEGACY_STAFF_EMPLOYEE_IDS = ("TUTORIAL-OPS-001",)
 TICKET_TITLE = "Leaking kitchen tap"
+RAJESH_MEETING_TITLE = "Contract renewal — Rajesh Kumar (A-103)"
 LEGACY_TICKET_TITLES = ("Tutorial: Leaking kitchen tap",)
 PROMO_BUSINESS_EN = "Palm Corner Cafe"
 PROMO_BUSINESS_AR = "مقهى زاوية النخيل"
@@ -780,27 +789,67 @@ def main():
         f"({len(out['accounts']['tower'])} roles on the tower, "
         f"{len(out['accounts']['marina'])} on the marina)")
 
-    def make_unit(prop, number, utype, sqft, rent):
+    def units_in_building(building_id, prop_id):
+        page = api.get(f"/api/v1/units/paged?propertyId={prop_id}"
+                       f"&buildingId={building_id}&page=0&size=1") or {}
+        return int(page.get("totalElements") or 0)
+
+    # The tower's building, before its units, so the units are created in it.
+    # There is no API to move an existing unit into a building, so an
+    # organisation whose units were created without one (an earlier seed) keeps
+    # them there, and any building on the tower holding no unit is removed: it
+    # only ever printed a 0.00 "NOI by tower" row beside "Not in a building".
+    tower_unit_numbers = {
+        u.get("unitNumber") for u in api.get(f"/api/v1/units/property/{tower['id']}") or []
+    }
+    tower_buildings = api.get(f"/api/v1/buildings/property/{tower['id']}") or []
+    tower_building = None
+    if not tower_unit_numbers & {"A-101", "A-102", "A-103", "A-201", "A-202"}:
+        tower_building, _ = find_named(
+            tower_buildings, "nameEn", BUILDING_NAME_EN, LEGACY_BUILDING_NAMES)
+        if not tower_building:
+            tower_building = api.post("/api/v1/buildings", json={
+                "property": {"id": tower["id"]},
+                "nameEn": BUILDING_NAME_EN,
+                "nameAr": BUILDING_NAME_AR,
+                "floors": 12,
+            })
+    else:
+        for b in tower_buildings:
+            if units_in_building(b["id"], tower["id"]) > 0:
+                tower_building = tower_building or b
+                continue
+            # Only the seed's own legacy building: a user's empty building (and the
+            # amenity/parking/gate scopes that cascade with it) is left alone.
+            if b.get("nameEn") not in LEGACY_BUILDING_NAMES:
+                continue
+            try:
+                api.call("DELETE", f"/api/v1/buildings/{b['id']}")
+                log(f"removed empty building '{b.get('nameEn')}' (no unit was in it)")
+            except RuntimeError as e:
+                log(f"  note: could not remove empty building '{b.get('nameEn')}': {e}")
+
+    def make_unit(prop, number, utype, sqft, rent, building=None):
         for u in api.get(f"/api/v1/units/property/{prop['id']}") or []:
             if u.get("unitNumber") == number:
                 return u
-        return api.post(
-            "/api/v1/units",
-            json={
-                "property": {"id": prop["id"]},
-                "unitNumber": number,
-                "type": utype,
-                "sizeSqft": sqft,
-                "expectedRent": rent,
-                "status": "VACANT",
-            },
-        )
+        body = {
+            "property": {"id": prop["id"]},
+            "unitNumber": number,
+            "type": utype,
+            "sizeSqft": sqft,
+            "expectedRent": rent,
+            "status": "VACANT",
+        }
+        if building:
+            body["building"] = {"id": building["id"]}
+        return api.post("/api/v1/units", json=body)
 
-    a101 = make_unit(tower, "A-101", "BHK2", 1150, 85000)
-    a102 = make_unit(tower, "A-102", "BHK1", 780, 62000)
-    a103 = make_unit(tower, "A-103", "BHK3", 1620, 120000)
-    a201 = make_unit(tower, "A-201", "BHK2", 1180, 88000)
-    a202 = make_unit(tower, "A-202", "STUDIO", 480, 42000)
+    a101 = make_unit(tower, "A-101", "BHK2", 1150, 85000, tower_building)
+    a102 = make_unit(tower, "A-102", "BHK1", 780, 62000, tower_building)
+    a103 = make_unit(tower, "A-103", "BHK3", 1620, 120000, tower_building)
+    a201 = make_unit(tower, "A-201", "BHK2", 1180, 88000, tower_building)
+    a202 = make_unit(tower, "A-202", "STUDIO", 480, 42000, tower_building)
     m1501 = make_unit(marina, "M-1501", "BHK2", 1300, 110000)
     m1502 = make_unit(marina, "M-1502", "PENTHOUSE", 3200, 320000)
     m803 = make_unit(marina, "M-803", "BHK1", 850, 78000)
@@ -1639,20 +1688,42 @@ def main():
     }
     log("2 meetings ensured (cheque replacement approved, viewing requested)")
 
+    # A meeting a renter asked for, so the tour's renter (Rajesh, A-103) has one
+    # on his portal (sandbox role test M1). A meeting's requester is whoever
+    # creates it, so it is created from his login, as the portal would, and the
+    # organisation approves it. Found again by its title among his own meetings.
+    renter_api = Api(base)
+    renter_api.login(rajesh["email"], DEMO_PASSWORD)
+    mine = renter_api.get("/api/v1/meetings/my?perspective=requester&page=0&size=100") or {}
+    mine = mine.get("content", []) if isinstance(mine, dict) else mine
+    rajesh_meeting = next(
+        (m for m in mine if isinstance(m, dict) and m.get("title") == RAJESH_MEETING_TITLE),
+        None,
+    )
+    if not rajesh_meeting:
+        rajesh_meeting = renter_api.post(
+            "/api/v1/meetings",
+            json={
+                "type": "OFFICE_VISIT",
+                "purpose": "LEASE_RENEWAL",
+                "title": RAJESH_MEETING_TITLE,
+                "notes": "I would like to talk about renewing for another year.",
+                "slotStart": at_hour(3, 11),
+                "hostUserId": host_user_id,
+                "leaseId": lease_rajesh["id"],
+                "propertyId": tower["id"],
+                "unitId": a103["id"],
+            },
+        )
+    if rajesh_meeting.get("status") == "REQUESTED":
+        api.put(f"/api/v1/meetings/{rajesh_meeting['id']}/approve")
+    out["meetings"][RAJESH_MEETING_TITLE] = rajesh_meeting["id"]
+    log("renter-requested meeting ready (Rajesh, contract renewal, approved)")
+
     # ── 8. Operational fixtures ─────────────────────────────────────────────
     # These records keep the property, staff, ticket, booking, promotions, and
     # gate-pass tutorial screens useful without requiring a live customer.
-    buildings = api.get(f"/api/v1/buildings/property/{tower['id']}") or []
-    # No rename endpoint for buildings: an organisation seeded under the legacy
-    # name keeps that building rather than getting a second one.
-    building, _ = find_named(buildings, "nameEn", BUILDING_NAME_EN, LEGACY_BUILDING_NAMES)
-    if not building:
-        building = api.post("/api/v1/buildings", json={
-            "property": {"id": tower["id"]},
-            "nameEn": BUILDING_NAME_EN,
-            "nameAr": BUILDING_NAME_AR,
-            "floors": 12,
-        })
+    # The tower's building is made in section 2, before its units (M5).
 
     contacts = api.get(f"/api/v1/properties/{tower['id']}/contacts") or []
     desk_payload = {
@@ -1729,7 +1800,8 @@ def main():
         api.post("/api/v1/staff", json=staff_payload)
     elif staff_is_legacy:
         api.put(f"/api/v1/staff/{staff_member['id']}", json=staff_payload)
-    log("property operations ready: building, contact, amenity, parking, staff")
+    log("property operations ready: contact, amenity, parking, staff"
+        + (f" (building: {tower_building.get('nameEn')})" if tower_building else " (no building)"))
 
 
     resident_api = Api(base)
