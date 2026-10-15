@@ -819,6 +819,10 @@ def main():
             if units_in_building(b["id"], tower["id"]) > 0:
                 tower_building = tower_building or b
                 continue
+            # Only the seed's own legacy building: a user's empty building (and the
+            # amenity/parking/gate scopes that cascade with it) is left alone.
+            if b.get("nameEn") not in LEGACY_BUILDING_NAMES:
+                continue
             try:
                 api.call("DELETE", f"/api/v1/buildings/{b['id']}")
                 log(f"removed empty building '{b.get('nameEn')}' (no unit was in it)")
