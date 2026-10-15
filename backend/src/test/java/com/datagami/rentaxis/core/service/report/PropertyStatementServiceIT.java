@@ -57,7 +57,30 @@ import static org.assertj.core.api.Assertions.assertThat;
  * on top of the worked example.
  */
 @SpringBootTest
+@org.springframework.context.annotation.Import(PropertyStatementServiceIT.StatementClock.class)
 class PropertyStatementServiceIT extends AbstractPostgresIT {
+
+    static final java.time.ZoneId DUBAI = java.time.ZoneId.of("Asia/Dubai");
+    /** After every period these tests read, so they stay closed periods whatever the calendar says. */
+    static final LocalDate LATER = LocalDate.of(2027, 3, 31);
+
+    /** The app clock, movable per test: "today" decides whether a period has ended. */
+    static final class MovableClock extends java.time.Clock {
+        private volatile LocalDate today = LATER;
+        void set(LocalDate d) { today = d; }
+        @Override public java.time.ZoneId getZone() { return DUBAI; }
+        @Override public java.time.Clock withZone(java.time.ZoneId zone) { return this; }
+        @Override public java.time.Instant instant() { return today.atTime(10, 0).atZone(DUBAI).toInstant(); }
+    }
+
+    @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
+    static class StatementClock {
+        @org.springframework.context.annotation.Bean
+        @org.springframework.context.annotation.Primary
+        MovableClock statementClock() { return new MovableClock(); }
+    }
+
+    @Autowired MovableClock clock;
 
     @Autowired PropertyStatementService statements;
     @Autowired LedgerQueryService ledger;
@@ -135,7 +158,10 @@ class PropertyStatementServiceIT extends AbstractPostgresIT {
     }
 
     @AfterEach
-    void clear() { TenantContextHolder.clear(); }
+    void clear() {
+        TenantContextHolder.clear();
+        clock.set(LATER);
+    }
 
     private Cheque cheque(int seq, String number, LocalDate date, String amount, String vat, ChequeRowKind kind, ChequeStatus status) {
         Cheque c = new Cheque();
@@ -503,6 +529,46 @@ class PropertyStatementServiceIT extends AbstractPostgresIT {
                 AccountRole.RENT_RECEIVABLE, "5000.00");
 
         assertThat(septemberRows()).extracting(r -> r.get(2)).containsExactlyInAnyOrder("100006", "100009", "100002");
+    }
+
+    /**
+     * A Year view of the current year ends in the future: a cheque dated later this year
+     * is not due yet, so it is not overdue (was "55 days" overdue, counted to 31 December).
+     */
+    @Test
+    void aCurrentYearViewDoesNotCountLaterChequesAsOverdue() {
+        clock.set(LocalDate.of(2026, 10, 15));
+        cheque(9, "100009", LocalDate.of(2026, 11, 15), "12000.00", "0", ChequeRowKind.RENT, ChequeStatus.REGISTERED);
+        cheque(10, "100010", LocalDate.of(2026, 12, 1), "9000.00", "0", ChequeRowKind.RENT, ChequeStatus.DEPOSITED);
+
+        PropertyStatementDTO year = statements.statement(fx.p1.getId(), LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), null);
+        // Overdue on 15 October: cheque 2, the bounced cheque 3 and August's cheque 6 — not November's or December's.
+        assertThat(fig(year, "outstanding", "registerOverdue")).isEqualByComparingTo("33000.00");
+        assertThat(count(year, "outstanding", "registerOverdue")).isEqualTo(3);
+        List<List<Object>> rows = section(year, "outstanding").tables().get(0).rows();
+        assertThat(rows).extracting(r -> r.get(2)).containsExactlyInAnyOrder("100002", "100003", "100006");
+        // Days overdue are counted to today, not to 31 December: cheque 2 (15 Sep) is 30 days late.
+        assertThat(rows).filteredOn(r -> "100002".equals(r.get(2))).extracting(r -> ((Number) r.get(5)).longValue())
+                .containsExactly(30L);
+        assertThat(section(year, "outstanding").notes()).contains("differsByDesign", "asAtToday");
+
+        // On 2 December both later cheques have fallen due and are overdue.
+        clock.set(LocalDate.of(2026, 12, 2));
+        PropertyStatementDTO later = statements.statement(fx.p1.getId(), LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), null);
+        assertThat(fig(later, "outstanding", "registerOverdue")).isEqualByComparingTo("54000.00");
+    }
+
+    /** A closed quarter is still read on its own end, whatever today is. */
+    @Test
+    void aPastQuarterIsUnchangedByToday() {
+        cheque(9, "100009", LocalDate.of(2026, 11, 15), "12000.00", "0", ChequeRowKind.RENT, ChequeStatus.REGISTERED);
+        PropertyStatementDTO q3 = statements.statement(fx.p1.getId(), LocalDate.of(2026, 7, 1), SEP_30, null);
+        clock.set(LocalDate.of(2026, 10, 15));
+        PropertyStatementDTO q3Today = statements.statement(fx.p1.getId(), LocalDate.of(2026, 7, 1), SEP_30, null);
+        assertThat(fig(q3Today, "outstanding", "registerOverdue")).isEqualByComparingTo("33000.00")
+                .isEqualByComparingTo(fig(q3, "outstanding", "registerOverdue"));
+        assertThat(section(q3Today, "outstanding").tables()).isEqualTo(section(q3, "outstanding").tables());
+        assertThat(section(q3Today, "outstanding").notes()).containsExactly("differsByDesign");
     }
 
     @Test

@@ -67,8 +67,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     // One login per person: a password that opens several organisations
     // comes back as a list to choose from; sign in to the one picked.
     if (!success && mounted) {
-      final choices = ref.read(authProvider).tenantChoices;
-      if (choices.isNotEmpty) {
+      final all = ref.read(authProvider).tenantChoices;
+      final choices = choicesForApp(all, residentAppRoles);
+      if (all.isNotEmpty && choices.isEmpty) {
+        notifier.reportLoginError(_L(context.isAr).noOrganisationForApp);
+      } else if (choices.length == 1) {
+        success = await notifier.login(
+          email,
+          password,
+          tenantId: choices.first['tenantId'] as String?,
+        );
+      } else if (choices.isNotEmpty) {
         final picked = await showOrganisationPicker(
           context,
           choices,
@@ -666,6 +675,9 @@ class _L {
   String get email => ar ? 'البريد الإلكتروني' : 'Email';
   String get password => ar ? 'كلمة المرور' : 'Password';
   String get forgotPassword => ar ? 'نسيت كلمة المرور؟' : 'Forgot password?';
+  String get noOrganisationForApp => ar
+      ? 'لا يفتح حساب الدخول هذا أي سكن في هذا التطبيق. استخدم تطبيق مفتاح للإدارة أو الموقع الإلكتروني.'
+      : 'This login has no residence to open in this app. Use the Miftah manager app or the website.';
   String get emailRequired =>
       ar ? 'البريد الإلكتروني مطلوب' : 'Email is required';
   String get emailInvalid =>

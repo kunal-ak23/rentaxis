@@ -93,7 +93,12 @@ public class AuthController {
     public record LoginAmbiguousResponse(List<TenantCandidate> tenants) {
     }
 
-    public record TenantCandidate(String tenantId, String tenantName) {
+    /**
+     * {@code role} is the caller's role in that organisation (review P3-4): each
+     * app offers only the organisations it can open — the resident app RENTER, the
+     * manager app staff roles. The caller already proved the password for each.
+     */
+    public record TenantCandidate(String tenantId, String tenantName, String role) {
     }
 
     /**
@@ -213,7 +218,8 @@ public class AuthController {
                             u.getTenantId().toString(),
                             orgService.findById(u.getTenantId())
                                     .map(LandlordOrg::getName)
-                                    .orElse("(unknown)")))
+                                    .orElse("(unknown)"),
+                            u.getRole().name()))
                     .toList();
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(new LoginAmbiguousResponse(tenants));
@@ -292,6 +298,10 @@ public class AuthController {
                 org.getId().toString(),
                 null,
                 "system");
+        // Review P3-5: registration is public and proves nothing about the inbox, so
+        // this row stays out of the person's shared login until a link is redeemed on it.
+        user.setSelfRegisteredUnverified(true);
+        userService.saveUser(user);
 
         return ResponseEntity.ok(new AuthResponse(
                 user.getId().toString(),
@@ -349,7 +359,8 @@ public class AuthController {
                             user.getTenantId().toString(),
                             orgService.findById(user.getTenantId())
                                     .map(LandlordOrg::getName)
-                                    .orElse("(unknown)")))
+                                    .orElse("(unknown)"),
+                            user.getRole().name()))
                     .toList();
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(new LoginAmbiguousResponse(tenants));

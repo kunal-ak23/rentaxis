@@ -439,6 +439,31 @@ public class UserService {
     }
 
     /**
+     * Review P3-5: an admin row made by public self-registration, never verified by
+     * a link to its address, is not part of the person's shared login — anyone can
+     * register an organisation with someone else's email.
+     */
+    private static boolean joinsPersonLogin(UserRepository.SharedLogin login) {
+        return !login.getSelfRegisteredUnverified();
+    }
+
+    /**
+     * Review P2-1: when the person sets a new password, a deactivated row must not
+     * keep the old one (it would work again on reactivation). Its password is
+     * replaced by an unusable one; after reactivation the admin sends a reset link
+     * or the person uses "Forgot password".
+     */
+    private void clearInactivePasswords(java.util.Collection<UUID> rowIds, UUID originRowId, String reason) {
+        if (rowIds.isEmpty()) return;
+        userRepository.writeSharedPassword(rowIds, passwordEncoder.encode(generateUnusableGuardSecret()),
+                false, Instant.now());
+        for (UUID id : rowIds) {
+            tokenRevocation.revokeAllTokens(id);
+            AUDIT.info("password-cleared user={} via={} origin={} (inactive)", id, reason, originRowId);
+        }
+    }
+
+    /**
      * The person's own password (newest first) from an ACTIVE row outside
      * {@code tenantId}, for a new membership row there. Empty when they have no
      * login, or none whose password they chose themselves.
@@ -446,15 +471,20 @@ public class UserService {
     private Optional<String> reusableOwnPassword(String email, UUID tenantId) {
         return sharedLogins(email).stream()
                 .filter(UserService::isActive)
+                .filter(UserService::joinsPersonLogin)
                 .filter(UserRepository.SharedLogin::getPasswordSelfSet)
                 .filter(l -> !tenantId.equals(l.getTenantId()))
                 .map(UserRepository.SharedLogin::getPasswordHash)
                 .findFirst();
     }
 
-    /** Whether this email has a password-sharing row, of any status, other than {@code exceptId}. */
+    /**
+     * Whether this email has an ACTIVE password-sharing row other than
+     * {@code exceptId} (review P3-2: a deactivated row is not "signs in elsewhere").
+     */
     private boolean hasOtherLogin(String email, UUID exceptId) {
-        return sharedLogins(email).stream().anyMatch(l -> !l.getId().equals(exceptId));
+        return sharedLogins(email).stream().filter(UserService::isActive)
+                .anyMatch(l -> !l.getId().equals(exceptId));
     }
 
     private static void refuseTypedPasswordForSharedLogin() {
@@ -728,12 +758,14 @@ public class UserService {
         // The link was mailed to this address, so it proves the inbox: the
         // person's password is now this one in every organisation they belong to.
         if (sharesPersonLogin(probe.getRole())) {
-            List<UUID> others = sharedLogins(probe.getEmail()).stream()
-                    .filter(UserService::isActive)
-                    .map(UserRepository.SharedLogin::getId)
-                    .filter(id -> !id.equals(probe.getId()))
+            List<UserRepository.SharedLogin> rows = sharedLogins(probe.getEmail()).stream()
+                    .filter(UserService::joinsPersonLogin)
+                    .filter(l -> !l.getId().equals(probe.getId()))
                     .toList();
-            writePersonPassword(others, hash, true, probe.getId(), "link");
+            writePersonPassword(rows.stream().filter(UserService::isActive)
+                    .map(UserRepository.SharedLogin::getId).toList(), hash, true, probe.getId(), "link");
+            clearInactivePasswords(rows.stream().filter(l -> !isActive(l))
+                    .map(UserRepository.SharedLogin::getId).toList(), probe.getId(), "link");
         }
 
         events.publishEvent(new EmailEvent(this,
@@ -770,14 +802,19 @@ public class UserService {
         String hash = passwordEncoder.encode(newRawPassword);
         boolean selfSet = user.isPasswordSelfSet();
         List<UUID> others = List.of();
-        if (currentRawPassword != null && sharesPersonLogin(user.getRole())) {
+        List<UUID> inactiveWithOldPassword = List.of();
+        // A self-registered, unverified row changes alone (review P3-5).
+        if (currentRawPassword != null && sharesPersonLogin(user.getRole()) && !user.isSelfRegisteredUnverified()) {
             List<UserRepository.SharedLogin> opened = sharedLogins(user.getEmail()).stream()
-                    .filter(UserService::isActive)
+                    .filter(UserService::joinsPersonLogin)
                     .filter(l -> !l.getId().equals(user.getId()))
                     .filter(l -> passwordEncoder.matches(currentRawPassword, l.getPasswordHash()))
                     .toList();
-            selfSet = selfSet && opened.stream().allMatch(UserRepository.SharedLogin::getPasswordSelfSet);
-            others = opened.stream().map(UserRepository.SharedLogin::getId).toList();
+            List<UserRepository.SharedLogin> active = opened.stream().filter(UserService::isActive).toList();
+            selfSet = selfSet && active.stream().allMatch(UserRepository.SharedLogin::getPasswordSelfSet);
+            others = active.stream().map(UserRepository.SharedLogin::getId).toList();
+            inactiveWithOldPassword = opened.stream().filter(l -> !isActive(l))
+                    .map(UserRepository.SharedLogin::getId).toList();
         }
         user.setPasswordHash(hash);
         user.setPasswordSelfSet(selfSet);
@@ -791,6 +828,7 @@ public class UserService {
         tokenRevocation.revokeAllTokens(user.getId());
         AUDIT.info("password-set user={} via=change selfSet={}", user.getId(), selfSet);
         writePersonPassword(others, hash, selfSet, user.getId(), "change");
+        clearInactivePasswords(inactiveWithOldPassword, user.getId(), "change");
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.PASSWORD_CHANGED,
                 user.getTenantId(),

@@ -58,6 +58,14 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
     private static final PathPattern PUBLIC_PATH = PARSER.parse("/public/**");
 
     /**
+     * The anonymous image routes (PR #401 R1 P3-1): each hit reads storage, so they
+     * are throttled per IP — on their own, more generous budget, because one
+     * marketplace page loads a dozen photos and must not eat the /public/ budget.
+     */
+    private static final PathPattern LISTING_MEDIA_PATH = PARSER.parse("/api/v1/public/listing-media/**");
+    private static final PathPattern PROMO_IMAGE_PATH = PARSER.parse("/api/v1/public/promo-images/**");
+
+    /**
      * Gate-pass scanning. Authenticated (SECURITY_GUARD only), unlike the two
      * prefixes above — it is throttled anyway because the credential it accepts is
      * an 8-digit numeric code (~26.6 bits), and the reply to a correct guess is
@@ -97,6 +105,7 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
     private static final PathPattern PROMO_EVENTS_PATH = PARSER.parse("/api/v1/promotions/events");
 
     private final ConcurrentHashMap<String, Bucket> publicBuckets = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Bucket> mediaBuckets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Bucket> firebaseAuthBuckets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Bucket> registrationBuckets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Bucket> scanBuckets = new ConcurrentHashMap<>();
@@ -117,6 +126,10 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
     @org.springframework.beans.factory.annotation.Value("${app.rate-limit.login-per-minute:20}")
     private int loginPerMinute = 20;
 
+    /** Anonymous image loads per minute per client IP (R1 P3-1): a busy marketplace session, a NAT. */
+    @org.springframework.beans.factory.annotation.Value("${app.rate-limit.media-per-minute:300}")
+    private int mediaPerMinute = 300;
+
     @org.springframework.beans.factory.annotation.Value("${app.rate-limit.set-password-per-minute:10}")
     private int setPasswordPerMinute = 10;
 
@@ -136,6 +149,8 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
         boolean isRegistration =
                 "POST".equals(request.getMethod()) && REGISTRATION_PATH.matches(path);
         boolean isPublic = PUBLIC_PATH.matches(path);
+        boolean isMedia = "GET".equals(request.getMethod())
+                && (LISTING_MEDIA_PATH.matches(path) || PROMO_IMAGE_PATH.matches(path));
         boolean isScan = "POST".equals(request.getMethod()) && SCAN_PATH.matches(path);
         boolean isPromoEvents =
                 "POST".equals(request.getMethod()) && PROMO_EVENTS_PATH.matches(path);
@@ -144,7 +159,7 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
         boolean isForgotPassword = "POST".equals(request.getMethod()) && FORGOT_PASSWORD_PATH.matches(path);
 
         if (!isFirebaseAuth && !isAppleAuth && !isRegistration && !isPublic && !isScan && !isPromoEvents
-                && !isLogin && !isSetPassword && !isForgotPassword) {
+                && !isLogin && !isSetPassword && !isForgotPassword && !isMedia) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -167,6 +182,8 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
             bucket = scanBuckets.computeIfAbsent(ip, k -> createScanBucket());
         } else if (isPromoEvents) {
             bucket = promoEventBuckets.computeIfAbsent(ip, k -> createPromoEventsBucket());
+        } else if (isMedia) {
+            bucket = mediaBuckets.computeIfAbsent(ip, k -> perMinute(mediaPerMinute));
         } else {
             bucket = publicBuckets.computeIfAbsent(ip, k -> createBucket());
         }

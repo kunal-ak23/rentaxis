@@ -9,6 +9,7 @@ import { Mail, Lock, ArrowRight, Loader2, Eye, EyeOff } from "lucide-react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { safeCallbackUrl } from "@/lib/session/proxyFetchGuard";
+import { useTranslations } from "next-intl";
 
 /** The Auth catalogue key for each sign-in refusal that is not a wrong password. */
 const LOCKED_OUT_KEYS: Record<string, "accountInactive" | "orgInactive" | "rateLimited"> = {
@@ -19,6 +20,7 @@ const LOCKED_OUT_KEYS: Record<string, "accountInactive" | "orgInactive" | "rateL
 
 export default function LoginPage() {
     const t = useTranslations("Auth");
+    const tGuard = useTranslations("GuardSignIn");
     const router = useRouter();
     const searchParams = useSearchParams();
     const registered = searchParams.get("registered") === "true";
@@ -269,7 +271,14 @@ export default function LoginPage() {
                     </button>
                 </form>
 
-                <div className="mt-8 pt-8 border-t border-border/50 text-center">
+                {/* Guards have no password: they sign in with their phone (tutorial 25). */}
+                <div className="mt-5 text-center">
+                    <Link href="/auth/guard" className="text-[11px] text-primary font-semibold hover:underline" data-testid="login-guard-link">
+                        {tGuard("loginLink")}
+                    </Link>
+                </div>
+
+                <div className="mt-6 pt-6 border-t border-border/50 text-center">
                     <p className="text-[11px] text-muted font-medium">
                         {t("newToMiftah")}{" "}
                         <Link href="/auth/register" className="text-accent font-bold uppercase tracking-widest ms-1 hover:brightness-110">{t("createAccount")}</Link>

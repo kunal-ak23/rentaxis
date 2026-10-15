@@ -18,10 +18,14 @@ import java.util.UUID;
  * which streams the bytes without ever revealing the storage key.
  */
 public record VoucherAttachmentDTO(UUID id, UUID voucherId, String name,
-                                   String fileType, Long fileSize, Instant uploadedAt) {
+                                   String fileType, Long fileSize, Instant uploadedAt,
+                                   String downloadName) {
 
+    /** {@code downloadName}: the display name plus the stored file's extension ("invoice" → "invoice.pdf"). */
     public static VoucherAttachmentDTO of(VoucherAttachment a) {
         return new VoucherAttachmentDTO(a.getId(), a.getVoucherId(), a.getName(),
-                a.getFileType(), a.getFileSize(), a.getUploadedAt());
+                a.getFileType(), a.getFileSize(), a.getUploadedAt(),
+                com.datagami.rentaxis.core.util.AttachmentNames.downloadName(
+                        a.getName(), a.getFileUrl(), a.getFileType(), null, "attachment"));
     }
 }

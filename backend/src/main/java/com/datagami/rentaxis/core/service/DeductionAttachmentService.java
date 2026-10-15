@@ -92,7 +92,9 @@ public class DeductionAttachmentService {
         }
 
         log.info("Uploading attachment for deduction {} - name: {}, size: {} bytes", deductionId, docName, file.getSize());
-        String ext = getExtension(file.getOriginalFilename());
+        // The blob name keeps the original file's extension (or the one its type names),
+        // so the download can add it to the name the user typed.
+        String ext = com.datagami.rentaxis.core.util.AttachmentNames.uploadExtension(file.getOriginalFilename(), contentType);
         String fileName = UUID.randomUUID() + ext;
 
         String fileUrl;
@@ -245,17 +247,14 @@ public class DeductionAttachmentService {
         return "/api/v1/assets/serve/settlement-deductions/" + deductionId + "/" + fileName;
     }
 
-    private String getExtension(String filename) {
-        if (filename == null) return "";
-        int dot = filename.lastIndexOf('.');
-        return dot >= 0 ? filename.substring(dot) : "";
-    }
 
     private DeductionAttachmentDTO mapToDTO(SettlementDeductionAttachment a) {
         DeductionAttachmentDTO dto = new DeductionAttachmentDTO();
         dto.setId(a.getId());
         dto.setDeductionId(a.getDeductionId());
         dto.setName(a.getName());
+        dto.setDownloadName(com.datagami.rentaxis.core.util.AttachmentNames.downloadName(
+                a.getName(), a.getFileUrl(), a.getFileType(), null, "attachment"));
         dto.setFileUrl(a.getFileUrl());
         dto.setFileType(a.getFileType());
         dto.setFileSize(a.getFileSize());

@@ -60,6 +60,7 @@ public class MaintenanceTicketService {
     private final com.datagami.rentaxis.core.service.ledger.EntryNumberService entryNumberService;
     private final com.datagami.rentaxis.domain.repository.RenterRepository renterRepository;
     private final com.datagami.rentaxis.core.security.PropertyScope propertyScope;
+    private final com.datagami.rentaxis.domain.repository.StaffRepository staffRepository;
 
     @Value("${AZURE_STORAGE_CONNECTION_STRING:}")
     private String azureConnectionString;
@@ -395,6 +396,10 @@ public class MaintenanceTicketService {
 
         MaintenanceTicket saved = ticketRepository.save(ticket);
         log.info("Created maintenance ticket {} for property {}", saved.getId(), property.getId());
+        // The activity history is presented as the ticket's full trail; it began at the
+        // first change, with no "created" entry (tutorial 22).
+        recordHistory(saved, "CREATED", null, saved.getStatus() != null ? saved.getStatus().name() : null,
+                null, null, reportedBy, null);
 
         // Emit TICKET_CREATED event
         try {
@@ -601,8 +606,12 @@ public class MaintenanceTicketService {
         return mapToDTO(ticket, requesterId);
     }
 
-    /** One person the ticket can be handed to. */
-    public record AssigneeOption(UUID id, String name, String role) {}
+    /**
+     * One person the ticket can be handed to. {@code designation} is the job title
+     * from the staff record linked to this login ("Give login" on the Staff page),
+     * null when the login has none.
+     */
+    public record AssigneeOption(UUID id, String name, String role, String designation) {}
 
     /**
      * Who this ticket can be assigned to, for the "Assign To..." picker: the
@@ -615,8 +624,18 @@ public class MaintenanceTicketService {
     public List<AssigneeOption> eligibleAssignees(UUID ticketId) {
         MaintenanceTicket ticket = visibleTicket(ticketId, Access.WRITE);
         UUID propertyId = ticket.getProperty() != null ? ticket.getProperty().getId() : null;
-        return userRepository.findTicketAssignees(ticket.getTenantId(), propertyId).stream()
-                .map(u -> new AssigneeOption(u.getId(), u.getName(), u.getRole()))
+        var candidates = userRepository.findTicketAssignees(ticket.getTenantId(), propertyId);
+        java.util.Map<UUID, String> designations = new java.util.HashMap<>();
+        if (!candidates.isEmpty()) {
+            for (var staff : staffRepository.findByTenantIdAndUserIdIn(ticket.getTenantId(),
+                    candidates.stream().map(UserRepository.StaffCandidate::getId).toList())) {
+                if (staff.getDesignation() != null && !staff.getDesignation().isBlank()) {
+                    designations.put(staff.getUserId(), staff.getDesignation());
+                }
+            }
+        }
+        return candidates.stream()
+                .map(u -> new AssigneeOption(u.getId(), u.getName(), u.getRole(), designations.get(u.getId())))
                 .toList();
     }
 
@@ -1094,8 +1113,14 @@ public class MaintenanceTicketService {
     public MaintenanceTicketDTO setEstimate(UUID ticketId, Integer hours) {
         MaintenanceTicket ticket = lockedVisibleTicket(ticketId);
 
+        Integer previous = ticket.getEstimatedResolutionHours();
         ticket.setEstimatedResolutionHours(hours);
         MaintenanceTicket saved = ticketRepository.save(ticket);
+        if (!java.util.Objects.equals(previous, hours)) {
+            // Notes carry "previous → new" in hours ("" for none), for the history's wording.
+            recordHistory(saved, previous == null ? "ETA_SET" : "ETA_CHANGED", null, null, null, null,
+                    callerUserId(), (previous == null ? "" : previous.toString()) + "→" + (hours == null ? "" : hours.toString()));
+        }
         return mapToDTO(saved);
     }
 
@@ -1215,18 +1240,43 @@ public class MaintenanceTicketService {
         }
     }
 
+    /** The attachment's bytes, the name to save them as (with its extension) and the type to serve. */
+    @Transactional(readOnly = true)
+    public com.datagami.rentaxis.core.util.AttachmentNames.Download download(UUID attachmentId) {
+        byte[] content = downloadAttachment(attachmentId);
+        TicketAttachment a = attachmentRepository.findById(attachmentId)
+                .orElseThrow(() -> new NotFoundException("Attachment not found"));
+        return com.datagami.rentaxis.core.util.AttachmentNames.download(
+                content, storedBaseName(a.getFileUrl()), a.getFileUrl(), a.getFileType(), "attachment");
+    }
+
+    /** "ab12cd34" of a stored ".../ticket-attachments/ab12cd34.pdf" — the extension is added back by the caller. */
+    private static String storedBaseName(String fileUrl) {
+        if (fileUrl == null) return "";
+        String s = fileUrl;
+        int q = s.indexOf('?');
+        if (q >= 0) s = s.substring(0, q);
+        String base = s.substring(s.lastIndexOf('/') + 1);
+        int dot = base.lastIndexOf('.');
+        return "attachment-" + (dot > 0 ? base.substring(0, dot) : base);
+    }
+
     @Transactional
     public TicketAttachmentDTO uploadAttachment(UUID ticketId, MultipartFile file) throws IOException {
         MaintenanceTicket ticket = visibleTicket(ticketId, Access.WRITE);
         requireAcceptableAttachment(file);
 
         byte[] bytes = file.getBytes();
-        String ext = getExtension(file.getOriginalFilename());
+        // The blob name keeps the original file's extension (or the one its type names):
+        // a ticket attachment has no display name, so the download is saved under it.
+        String contentType = com.datagami.rentaxis.core.util.AttachmentNames.uploadContentType(
+                file.getOriginalFilename(), file.getContentType());
+        String ext = com.datagami.rentaxis.core.util.AttachmentNames.uploadExtension(file.getOriginalFilename(), contentType);
         String fileName = UUID.randomUUID().toString().substring(0, 8) + ext;
 
         String fileUrl;
         if (azureConnectionString != null && !azureConnectionString.isBlank()) {
-            fileUrl = uploadToAzure(fileName, bytes, file.getContentType());
+            fileUrl = uploadToAzure(fileName, bytes, contentType);
         } else {
             fileUrl = saveToLocal(fileName, bytes);
         }
@@ -1234,7 +1284,7 @@ public class MaintenanceTicketService {
         TicketAttachment attachment = new TicketAttachment();
         attachment.setTicket(ticket);
         attachment.setFileUrl(fileUrl);
-        attachment.setFileType(file.getContentType());
+        attachment.setFileType(contentType);
         attachment.setFileSize(file.getSize());
         attachment.setUploadedBy(callerUserId());
         attachment.setUploadedAt(Instant.now());
@@ -1307,6 +1357,8 @@ public class MaintenanceTicketService {
         dto.setId(attachment.getId());
         dto.setTicketId(attachment.getTicket() != null ? attachment.getTicket().getId() : null);
         dto.setFileUrl(attachment.getFileUrl());
+        dto.setDownloadName(com.datagami.rentaxis.core.util.AttachmentNames.downloadName(
+                storedBaseName(attachment.getFileUrl()), attachment.getFileUrl(), attachment.getFileType(), null, "attachment"));
         dto.setFileType(attachment.getFileType());
         dto.setFileSize(attachment.getFileSize());
         dto.setUploadedAt(attachment.getUploadedAt());
@@ -1357,10 +1409,12 @@ public class MaintenanceTicketService {
                 .filter(t -> t.getStatus() == TicketStatus.CLOSED)
                 .count());
 
-        // Average resolution hours (for resolved/closed tickets that have resolvedAt)
+        // Average resolution hours (for resolved/closed tickets that have resolvedAt),
+        // fractional: whole hours made every ticket fixed within the hour count as 0,
+        // and a report whose resolved tickets were all quick read "--" (tutorial 22).
         OptionalDouble avgHours = allTickets.stream()
                 .filter(t -> t.getResolvedAt() != null)
-                .mapToDouble(t -> ChronoUnit.HOURS.between(t.getCreatedAt(), t.getResolvedAt()))
+                .mapToDouble(t -> ChronoUnit.SECONDS.between(t.getCreatedAt(), t.getResolvedAt()) / 3600.0)
                 .average();
         report.setAvgResolutionHours(avgHours.orElse(0.0));
 
@@ -1556,11 +1610,6 @@ public class MaintenanceTicketService {
         return "/api/v1/assets/serve/ticket-attachments/" + fileName;
     }
 
-    private String getExtension(String filename) {
-        if (filename == null) return "";
-        int dot = filename.lastIndexOf('.');
-        return dot >= 0 ? filename.substring(dot) : "";
-    }
 
     // ---- History ----
 

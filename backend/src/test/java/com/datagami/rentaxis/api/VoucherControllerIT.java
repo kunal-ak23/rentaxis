@@ -529,7 +529,10 @@ class VoucherControllerIT extends AbstractPostgresIT {
                 "/api/v1/finance/vouchers/attachments/" + attachmentId + "/download", accountant, null);
         assertThat(download.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(download.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_PDF);
-        assertThat(download.getHeaders().getFirst("Content-Disposition")).contains("Vendor invoice");
+        // The display name as typed, plus the uploaded file's extension.
+        assertThat(download.getHeaders().getFirst("Content-Disposition"))
+                .contains("filename=\"Vendor invoice.pdf\"").contains("filename*=UTF-8''Vendor%20invoice.pdf");
+        assertThat(uploaded.get("downloadName").asText()).isEqualTo("Vendor invoice.pdf");
 
         ResponseEntity<String> delete = call(HttpMethod.DELETE,
                 "/api/v1/finance/vouchers/attachments/" + attachmentId, accountant, null);
@@ -683,6 +686,9 @@ class VoucherControllerIT extends AbstractPostgresIT {
         assertThat(download.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_PDF);
         String disposition = download.getHeaders().getFirst("Content-Disposition");
         assertThat(disposition).doesNotContain("\r").doesNotContain("\n").contains("filename*=UTF-8''");
+        String encoded = disposition.substring(disposition.indexOf("filename*=UTF-8''") + "filename*=UTF-8''".length());
+        assertThat(java.net.URLDecoder.decode(encoded, java.nio.charset.StandardCharsets.UTF_8))
+                .isEqualTo("Vendor invoice — تقرير.pdf");
     }
 
     /**

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { AdCardPreview } from "./AdCardPreview";
+import { PromoImageField } from "./PromoImageField";
 import {
     PROMO_CTA_TYPES,
     type PromoAdDTO,
@@ -67,6 +68,21 @@ function hostIsAllowed(url: string, domains: string[]): boolean {
 
 /** Asia/Dubai is a fixed +04 with no DST. */
 const DUBAI_OFFSET = "+04:00";
+const DUBAI_OFFSET_MS = 4 * 60 * 60 * 1000;
+
+/**
+ * The Gulf calendar date (YYYY-MM-DD) of a stored instant (bug 28). A start is
+ * saved as Dubai midnight, i.e. 20:00Z the day before, so reading the UTC date
+ * (`slice(0, 10)`) showed — and on the next save wrote back — the previous day.
+ * Shifting the instant by +04 first gives the date that was entered, whatever
+ * the browser's own time zone.
+ */
+export function gulfDate(instant: string | null | undefined): string {
+    if (!instant) return "";
+    const ms = Date.parse(instant);
+    if (Number.isNaN(ms)) return "";
+    return new Date(ms + DUBAI_OFFSET_MS).toISOString().slice(0, 10);
+}
 
 /** Mirrors PromoAdRequest's @Pattern and the column's varchar(9). */
 const HEX_COLOUR = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
@@ -90,14 +106,15 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
     const [couponCode, setCouponCode] = useState(ad?.couponCode ?? "");
     const [couponTermsEn, setCouponTermsEn] = useState(ad?.couponTermsEn ?? "");
     const [couponTermsAr, setCouponTermsAr] = useState(ad?.couponTermsAr ?? "");
-    const [startsAt, setStartsAt] = useState(ad?.startsAt?.slice(0, 10) ?? "");
-    const [endsAt, setEndsAt] = useState(ad?.endsAt?.slice(0, 10) ?? "");
+    const [startsAt, setStartsAt] = useState(gulfDate(ad?.startsAt));
+    const [endsAt, setEndsAt] = useState(gulfDate(ad?.endsAt));
     const [priority, setPriority] = useState(ad?.priority ?? 1);
     const [placement, setPlacement] = useState<PromoPlacement>(ad?.placement ?? "HOME_AND_OFFERS");
     const [propertyIds, setPropertyIds] = useState<string[]>(ad?.propertyIds ?? []);
     const [active, setActive] = useState(ad?.active ?? true);
     const [previewAr, setPreviewAr] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
+    const [uploading, setUploading] = useState(false);
 
     // The page can render before businesses load. AdsTab disables "Add ad" in
     // that state, but this component should not post businessId: "" if it is
@@ -149,7 +166,7 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
     }
 
     function submit() {
-        if (!hasBusinesses) return;
+        if (!hasBusinesses || uploading) return;
         const found = validate();
         setErrors(found);
         if (Object.keys(found).length > 0) return;
@@ -238,12 +255,8 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
                 {err("title")}
 
                 <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="block">
-                        <span className="mb-1 block text-sm font-medium">{t("artwork")}</span>
-                        <input aria-label={t("artwork")} className="w-full rounded-lg border px-3 py-2"
-                            value={backgroundImageUrl}
-                            onChange={e => setBackgroundImageUrl(e.target.value)} />
-                    </label>
+                    <PromoImageField label={t("artwork")} value={backgroundImageUrl}
+                        onChange={setBackgroundImageUrl} onBusyChange={setUploading} />
                     <label className="block">
                         <span className="mb-1 block text-sm font-medium">{t("accentColor")}</span>
                         <input aria-label={t("accentColor")} placeholder="#FBF3E2" maxLength={9}
@@ -377,7 +390,7 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
                 </label>
 
                 <div className="flex gap-2 pt-2">
-                    <button type="button" onClick={submit} disabled={!hasBusinesses}
+                    <button type="button" onClick={submit} disabled={!hasBusinesses || uploading}
                         className="rounded-lg bg-gray-900 px-4 py-2 text-white disabled:opacity-40">
                         {t("save")}
                     </button>

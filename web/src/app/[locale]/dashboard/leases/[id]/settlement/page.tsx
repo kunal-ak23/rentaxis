@@ -16,7 +16,7 @@ import { NumberInput, focusFirstInvalidMoney } from "@/components/ui/NumberInput
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import AccountPicker from "@/components/finance/AccountPicker";
-import { assetSrc } from "@/lib/assetUrl";
+import { storedFileSrc } from "@/lib/assetUrl";
 import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 import { clampIso, fmtIsoDate, isoDayAfter, maxIso, todayIso } from "@/components/leases/leaseMath";
 import { businessTodayIso, isAfterBusinessToday } from "@/lib/businessDate";
@@ -120,7 +120,7 @@ function AttachmentThumbnail({ attachment, onDelete, onPreview, editable }: {
         >
             {isImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={assetSrc(attachment.fileUrl)} alt={attachment.name} className="w-full h-full object-cover" />
+                <img src={storedFileSrc(attachment.fileUrl, `/api/proxy/v1/settlements/attachments/${attachment.id}/download?inline=true`)} alt={attachment.name} className="w-full h-full object-cover" />
             ) : isVideo ? (
                 <Video size={20} className="text-muted" />
             ) : (
@@ -169,7 +169,7 @@ function AttachmentPreviewDialog({ attachment, onClose }: {
                     <div className="flex items-center gap-2 shrink-0 ms-3">
                         <a
                             href={downloadUrl}
-                            download={attachment.name}
+                            download={attachment.downloadName ?? attachment.name}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90"
                             onClick={e => e.stopPropagation()}
                         >
@@ -183,13 +183,13 @@ function AttachmentPreviewDialog({ attachment, onClose }: {
                 <div className="flex-1 overflow-auto bg-input/30 flex items-center justify-center p-4">
                     {isImage ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={assetSrc(attachment.fileUrl)} alt={attachment.name} className="max-w-full max-h-[70vh] object-contain rounded-lg shadow" />
+                        <img src={storedFileSrc(attachment.fileUrl, `/api/proxy/v1/settlements/attachments/${attachment.id}/download?inline=true`)} alt={attachment.name} className="max-w-full max-h-[70vh] object-contain rounded-lg shadow" />
                     ) : isPdf ? (
-                        <iframe src={assetSrc(attachment.fileUrl)} title={attachment.name} className="w-full h-[70vh] rounded-lg border border-border" />
+                        <iframe src={storedFileSrc(attachment.fileUrl, `/api/proxy/v1/settlements/attachments/${attachment.id}/download?inline=true`)} title={attachment.name} className="w-full h-[70vh] rounded-lg border border-border" />
                     ) : (
                         <a
                             href={downloadUrl}
-                            download={attachment.name}
+                            download={attachment.downloadName ?? attachment.name}
                             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold"
                         >
                             <Download size={15} /> {attachment.name}

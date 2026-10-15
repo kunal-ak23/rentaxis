@@ -56,6 +56,10 @@ server:
   port: 8080
 
 rentaxis:
+  media:
+    # The site's public origin; listing photos and promotion images in DTOs are absolute
+    # URLs on it (PR #401 R1 P2-1: installed renter apps cannot resolve a path). Empty = relative.
+    public-base-url: ${APP_PUBLIC_BASE_URL:${NEXT_PUBLIC_API_URL:}}
   cheques:
     pdf-upload:
       # Off until the PDF renderer is hardened against PDF bombs (PR #388 follow-up).

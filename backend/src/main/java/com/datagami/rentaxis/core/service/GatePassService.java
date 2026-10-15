@@ -100,6 +100,11 @@ public class GatePassService {
         if (pass.getStatus() != GatePassStatus.PENDING_APPROVAL) {
             throw new BusinessRuleViolationException("Gate pass is not pending approval");
         }
+        if (pass.effectiveStatus(Instant.now()) == GatePassStatus.EXPIRED) {
+            // The visit window closed while the request sat in the queue; approving it
+            // now would hand the resident an "approved" pass no gate will accept.
+            throw new BusinessRuleViolationException("Gate pass has expired");
+        }
 
         pass.setStatus(approved ? GatePassStatus.ACTIVE : GatePassStatus.CANCELLED);
         pass.setApprovedByUserId(approverId);
@@ -128,6 +133,9 @@ public class GatePassService {
 
         if (pass.getStatus() == GatePassStatus.USED) {
             throw new BusinessRuleViolationException("Gate pass has already been used");
+        }
+        if (pass.effectiveStatus(Instant.now()) == GatePassStatus.EXPIRED) {
+            throw new BusinessRuleViolationException("Gate pass has already expired");
         }
 
         pass.setStatus(GatePassStatus.CANCELLED);

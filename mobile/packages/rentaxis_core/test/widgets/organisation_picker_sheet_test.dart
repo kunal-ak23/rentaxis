@@ -45,4 +45,15 @@ void main() {
   testWidgets('dismissing picks nothing', (tester) async {
     expect(await pick(tester, ar: false), isNull);
   });
+
+  test('each app is offered only the organisations it can open', () {
+    const choices = [
+      {'tenantId': 'a', 'tenantName': 'Home', 'role': 'RENTER'},
+      {'tenantId': 'b', 'tenantName': 'Work', 'role': 'TENANT_ADMIN'},
+      {'tenantId': 'c', 'tenantName': 'Old server'},
+    ];
+    expect(choicesForApp(choices, residentAppRoles).map((c) => c['tenantId']), ['a', 'c']);
+    expect(choicesForApp(choices, managerAppRoles).map((c) => c['tenantId']), ['b', 'c']);
+    expect(choicesForApp([choices[1]], residentAppRoles), isEmpty);
+  });
 }
