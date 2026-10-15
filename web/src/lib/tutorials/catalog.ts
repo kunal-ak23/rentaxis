@@ -359,7 +359,7 @@ export const TUTORIALS: Tutorial[] = [
         },
     },
     {
-        id: "28", slug: "promotions-offers-and-coupons", topic: "operations", roles: ["TENANT_ADMIN"], durationSec: 94, youtubeId: null,
+        id: "28", slug: "promotions-offers-and-coupons", topic: "operations", roles: ["TENANT_ADMIN"], durationSec: 94, youtubeId: "UkxzYMoqN0g",
         title: { en: "Promotions, offers and coupons", ar: "العروض الترويجية والخصومات والقسائم" },
         description: {
             en: "Add a partner business, create a coupon ad shown to one building, and read its views and taps.",
