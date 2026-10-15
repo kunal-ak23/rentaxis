@@ -8,7 +8,7 @@ import { formatCurrencyCompact } from "@/lib/format";
 import { activityText, isolate, type ActivityItem } from "@/components/dashboard/activityText";
 import { collectionTile, type CollectionSummary } from "@/components/dashboard/collectionTile";
 import { cn } from "@/lib/utils";
-import { Activity, Calendar, Plus, TrendingDown, TrendingUp } from "lucide-react";
+import { Activity, Calendar, LifeBuoy, Plus, TrendingDown, TrendingUp } from "lucide-react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { leaseApi } from "@/lib/api/leasing";
 import { isAbortError } from "@/lib/api/abort";
@@ -175,13 +175,51 @@ function CollectionChart({ data }: { data: MonthlyPoint[] }) {
   );
 }
 
+/**
+ * Home for a role with no portfolio figures to show (TENANT_USER): the greeting
+ * and the way to Help, which is the other page the role's menu offers.
+ */
+function LimitedHome({ name }: { name?: string | null }) {
+  const t = useTranslations("Dashboard");
+  const locale = useLocale();
+  const now = new Date();
+  const hour = now.getHours();
+  const greetingKey = hour < 12 ? "greetingMorning" : hour < 18 ? "greetingAfternoon" : "greetingEvening";
+  const firstName = name?.split(" ")[0] ?? "there";
+  const dayLabel = now.toLocaleDateString(locale, { weekday: "long", day: "2-digit", month: "short", year: "numeric" });
+  return (
+    <div className="flex flex-col gap-5" data-testid="home-limited">
+      <div>
+        <p className="text-[12.5px] text-[var(--ink-500)] mb-1">{dayLabel}</p>
+        <h1 className="font-serif text-[28px] font-semibold tracking-tight m-0">{t(greetingKey, { name: firstName })}</h1>
+      </div>
+      <div className="bg-surface border border-border rounded-[var(--radius-lg)] p-6 flex flex-col items-start gap-3">
+        <p className="text-[14px] font-semibold text-foreground">{t("limitedHomeTitle")}</p>
+        <p className="text-[13px] text-[var(--ink-600)]">{t("limitedHomeBody")}</p>
+        <Link
+          href="/dashboard/help"
+          data-testid="home-limited-help"
+          className="inline-flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-semibold rounded-[var(--radius)] border border-border bg-surface hover:bg-input/40"
+        >
+          <LifeBuoy size={13} /> {t("limitedHomeHelp")}
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const t = useTranslations("Dashboard");
   const tCheques = useTranslations("Cheques");
   const locale = useLocale();
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const tToday = useTranslations("Today");
   const role = session?.user?.role as UserRole | undefined;
+  // Sandbox role test M4: a role the summary endpoints refuse (TENANT_USER) gets a
+  // Home without figures instead of two 403s and "Unable to load dashboard data".
+  // Decided only once the session has loaded, so no request goes out on a guess.
+  const sessionLoading = sessionStatus === "loading";
+  const noSummary = !!role && !hasPermission(role, "canViewDashboardSummary");
   const canManageLeases = hasPermission(role, "canManageLeases");
   const canViewLeases = hasPermission(role, "canViewLeases");
   const canSeeBoard = hasPermission(role, "canViewProperties");
@@ -193,6 +231,11 @@ export default function DashboardPage() {
   const beginSummary = useLatestRequest();
 
   useEffect(() => {
+    if (sessionLoading) return;
+    if (noSummary) {
+      setLoading(false);
+      return;
+    }
     const { signal, isCurrent } = beginSummary();
     const load = async () => {
       try {
@@ -221,7 +264,7 @@ export default function DashboardPage() {
     };
 
     load();
-  }, [beginSummary]);
+  }, [beginSummary, sessionLoading, noSummary]);
 
   // Spec §1a: the contract pipeline, from counts and bounded pages of GET /leases/paged.
   useEffect(() => {
@@ -247,6 +290,10 @@ export default function DashboardPage() {
       .catch(() => {});
     return () => { alive = false; };
   }, [canViewLeases]);
+
+  if (noSummary) {
+    return <LimitedHome name={session?.user?.name} />;
+  }
 
   if (loading) {
     return <div className="p-7 text-sm text-[var(--ink-500)]">Loading dashboard…</div>;
