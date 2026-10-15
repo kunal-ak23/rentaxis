@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/routing";
 
 interface Props {
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export default function SetPasswordForm({ token, email, name, locale }: Props) {
+    const t = useTranslations("Auth");
     const router = useRouter();
     const [password, setPassword] = useState("");
     const [confirm, setConfirm] = useState("");
@@ -20,8 +22,8 @@ export default function SetPasswordForm({ token, email, name, locale }: Props) {
     async function submit(e: React.FormEvent) {
         e.preventDefault();
         setError(null);
-        if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
-        if (password !== confirm) { setError("Passwords don't match."); return; }
+        if (password.length < 8) { setError(t("errTooShort")); return; }
+        if (password !== confirm) { setError(t("errMismatch")); return; }
         setLoading(true);
         try {
             const res = await fetch("/api/proxy/auth/set-password", {
@@ -32,16 +34,16 @@ export default function SetPasswordForm({ token, email, name, locale }: Props) {
             if (res.status === 204) {
                 router.push("/auth/login?welcome=1");
             } else if (res.status === 410) {
-                setError("This invite link has expired.");
+                setError(t("errExpired"));
             } else if (res.status === 409) {
-                setError("This invite has already been used. Please log in.");
+                setError(t("errUsed"));
             } else if (res.status === 400) {
-                setError("Password too short or invalid request.");
+                setError(t("errInvalid"));
             } else {
-                setError("Could not set password. Please try again.");
+                setError(t("errGeneric"));
             }
-        } catch (e) {
-            setError("Network error. Please try again.");
+        } catch {
+            setError(t("errNetwork"));
         } finally {
             setLoading(false);
         }
@@ -49,15 +51,15 @@ export default function SetPasswordForm({ token, email, name, locale }: Props) {
 
     return (
         <form onSubmit={submit} style={{ maxWidth: 420, margin: "60px auto", fontFamily: "system-ui", padding: 24 }}>
-            <h1 style={{ marginBottom: 8 }}>Welcome to Miftah</h1>
-            <p style={{ marginTop: 0, color: "#475569" }}>Hi {name}, set a password to activate your account ({email}).</p>
+            <h1 style={{ marginBottom: 8 }}>{t("setTitle")}</h1>
+            <p style={{ marginTop: 0, color: "#475569" }}>{t("setIntro", { name, email })}</p>
             <label style={{ display: "block", marginTop: 24 }}>
-                <span style={{ display: "block", fontSize: 14, fontWeight: 500, marginBottom: 4 }}>New password</span>
+                <span style={{ display: "block", fontSize: 14, fontWeight: 500, marginBottom: 4 }}>{t("newPassword")}</span>
                 <input type="password" required minLength={8} value={password} onChange={e => setPassword(e.target.value)}
                        style={{ display: "block", width: "100%", padding: 10, border: "1px solid #CBD5E1", borderRadius: 6 }} />
             </label>
             <label style={{ display: "block", marginTop: 16 }}>
-                <span style={{ display: "block", fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Confirm password</span>
+                <span style={{ display: "block", fontSize: 14, fontWeight: 500, marginBottom: 4 }}>{t("confirmPassword")}</span>
                 <input type="password" required minLength={8} value={confirm} onChange={e => setConfirm(e.target.value)}
                        style={{ display: "block", width: "100%", padding: 10, border: "1px solid #CBD5E1", borderRadius: 6 }} />
             </label>
@@ -65,7 +67,7 @@ export default function SetPasswordForm({ token, email, name, locale }: Props) {
             <button type="submit" disabled={loading}
                     style={{ marginTop: 20, padding: "12px 24px", background: "#0F766E", color: "#fff",
                              border: 0, borderRadius: 8, fontWeight: 600, cursor: "pointer", width: "100%" }}>
-                {loading ? "Setting…" : "Set password"}
+                {loading ? t("setting") : t("setButton")}
             </button>
         </form>
     );

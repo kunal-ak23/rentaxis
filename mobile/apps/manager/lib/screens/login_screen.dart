@@ -123,11 +123,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     }
   }
 
+  /// Public "forgot password": emails a link if the address has a login; the
+  /// answer is the same either way.
   void _handleForgotPassword() {
-    final l = _L(context.isAr);
-    ScaffoldMessenger.of(
+    showForgotPasswordSheet(
       context,
-    ).showSnackBar(SnackBar(content: Text(l.forgotPasswordHint)));
+      send: ref.read(authServiceProvider).requestPasswordReset,
+      ar: context.isAr,
+      initialEmail: _emailController.text.trim(),
+    );
   }
 
   @override
@@ -638,9 +642,6 @@ class _L {
   String get signInWithApple =>
       ar ? 'تسجيل الدخول باستخدام Apple' : 'Sign in with Apple';
   String get forgotPassword => ar ? 'نسيت كلمة المرور؟' : 'Forgot password?';
-  String get forgotPasswordHint => ar
-      ? 'يرجى التواصل مع مسؤول حسابك لإعادة تعيين كلمة المرور'
-      : 'Contact your account admin to reset your password';
   String get footer =>
       ar ? 'مفتاح · miftah.ae/admin' : 'MIFTAH · MIFTAH.AE/ADMIN';
 }

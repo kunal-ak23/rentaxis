@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { getTranslations } from "next-intl/server";
 import SetPasswordForm from "./SetPasswordForm";
 
 interface Props {
@@ -28,11 +29,13 @@ export default async function SetPasswordPage({ params, searchParams }: Props) {
 
     const result = await fetchInviteInfo(token);
     if (!result.ok) {
-        const reason = result.status === 410 ? "expired" : "invalid";
+        // The same page serves invite, admin-reset and forgot-password links.
+        const t = await getTranslations({ locale, namespace: "Auth" });
         return (
             <div style={{ padding: 32, fontFamily: "system-ui", maxWidth: 480, margin: "60px auto" }}>
-                <h2>This invite link is {reason}.</h2>
-                <p>Please ask your tenant administrator to send a new invitation.</p>
+                <h2>{result.status === 410 ? t("linkExpiredTitle") : t("linkInvalidTitle")}</h2>
+                <p>{t("linkHelp")}</p>
+                <p><a href={`/${locale}/auth/forgot-password`}>{t("forgotLink")}</a></p>
             </div>
         );
     }

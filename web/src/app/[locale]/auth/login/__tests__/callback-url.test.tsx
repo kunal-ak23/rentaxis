@@ -14,6 +14,7 @@ const { push, search, signIn, getSession } = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(search.value) }));
+vi.mock("next-intl", async () => (await import("@/test/intlMock")).englishIntl());
 vi.mock("next-auth/react", () => ({ signIn, getSession }));
 vi.mock("@/i18n/routing", () => ({
     Link: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a href={String(href)} {...props}>{children}</a>,

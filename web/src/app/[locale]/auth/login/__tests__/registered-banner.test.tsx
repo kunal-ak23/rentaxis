@@ -9,6 +9,7 @@ const { push, search } = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({
     useSearchParams: () => new URLSearchParams(search.value),
 }));
+vi.mock("next-intl", async () => (await import("@/test/intlMock")).englishIntl());
 vi.mock("next-auth/react", () => ({
     signIn: vi.fn(),
     getSession: vi.fn(),

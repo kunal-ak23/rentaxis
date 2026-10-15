@@ -333,6 +333,55 @@ public class UserService {
         AUDIT.info("password-reset-link-sent user={}", saved.getId());
     }
 
+    /** How long a self-service "forgot password" link works. */
+    public static final java.time.Duration FORGOT_VALIDITY = java.time.Duration.ofMinutes(45);
+
+    /**
+     * Self-service "forgot password" (public, unauthenticated): if this email has
+     * a password-sharing login — any ACTIVE row except SECURITY_GUARD (phone OTP)
+     * and SUPER_ADMIN — one of its rows gets a single-use link, valid
+     * {@link #FORGOT_VALIDITY}, mailed to the address. Redeeming it is the invite
+     * redemption: the new password is self-set and goes to every active row of
+     * the person, ending their sessions everywhere ({@link #acceptInvite}).
+     *
+     * <p>Says nothing to its caller. {@code ForgotPasswordService} runs it off the
+     * request thread after the endpoint has already answered, so neither the
+     * response nor its timing tells whether an account exists. A link sent less
+     * than a minute ago is not replaced (a double click, or a script).
+     */
+    @Transactional
+    public void sendForgottenPasswordLink(String email) {
+        Optional<UUID> target = sharedLogins(email).stream()
+                .filter(UserService::isActive)
+                .filter(l -> l.getTenantId() != null)
+                .map(UserRepository.SharedLogin::getId)
+                .findFirst();
+        if (target.isEmpty()) {
+            AUDIT.info("forgot-password no-login");
+            return;
+        }
+        User user = userRepository.findById(target.get()).orElse(null);
+        if (user == null) return;
+        Instant now = Instant.now();
+        if (user.getInviteTokenExpiresAt() != null && user.getInviteToken() != null
+                && user.getInviteTokenExpiresAt().isAfter(now.plus(FORGOT_VALIDITY).minus(RESET_COOLDOWN))) {
+            AUDIT.info("forgot-password cooldown user={}", user.getId());
+            return;
+        }
+        Instant expiresAt = now.plus(FORGOT_VALIDITY);
+        user.setInviteToken(generateInviteToken());
+        user.setInviteTokenExpiresAt(expiresAt);
+        User saved = userRepository.saveAndFlush(user);
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.PASSWORD_RESET_REQUESTED,
+                saved.getTenantId(),
+                new com.datagami.rentaxis.core.email.event.payload.PasswordResetRequestedPayload(
+                        saved.getId(), saved.getName(), "/auth/set-password?token=" + saved.getInviteToken(),
+                        expiresAt.toString()),
+                "PASSWORD_RESET_REQUESTED:" + saved.getId() + ":forgot:" + UUID.randomUUID()));
+        AUDIT.info("forgot-password link-sent user={}", saved.getId());
+    }
+
     private static String generateInviteToken() {
         java.security.SecureRandom rng = new java.security.SecureRandom();
         byte[] buf = new byte[32];

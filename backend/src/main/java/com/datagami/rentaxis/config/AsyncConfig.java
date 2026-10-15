@@ -63,6 +63,27 @@ public class AsyncConfig {
      * log line: the copy can always be issued again from the lease, and the post
      * it follows has already committed.
      */
+    /**
+     * Forgot-password link issuing ({@code ForgotPasswordService}), off the request
+     * thread so "an account exists" and "no account" answer in the same time: the
+     * endpoint replies before any lookup is made. Tenant-neutral, like OTP delivery.
+     * A saturated queue drops the request with a log line; the person asks again.
+     */
+    @Bean(name = "passwordResetExecutor")
+    public Executor passwordResetExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(200);
+        executor.setThreadNamePrefix("pwreset-");
+        executor.setTaskDecorator(tenantContextResetDecorator());
+        executor.setRejectedExecutionHandler((r, e) ->
+                LoggerFactory.getLogger(AsyncConfig.class)
+                        .warn("password_reset.task_rejected reason=executor_saturated queue={}", e.getQueue().size()));
+        executor.initialize();
+        return executor;
+    }
+
     @Bean(name = "documentExecutor")
     public Executor documentExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();

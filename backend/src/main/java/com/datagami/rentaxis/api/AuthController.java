@@ -42,10 +42,13 @@ public class AuthController {
     private final FirebaseGuardAuthService firebaseGuardAuthService;
     private final AppleAuthService appleAuthService;
     private final AuthTokenService authTokenService;
+    private final com.datagami.rentaxis.core.service.auth.ForgotPasswordService forgotPasswordService;
 
     public AuthController(UserService userService, LandlordOrgService orgService, PasswordEncoder passwordEncoder,
             FirebaseGuardAuthService firebaseGuardAuthService, AppleAuthService appleAuthService,
-            AuthTokenService authTokenService) {
+            AuthTokenService authTokenService,
+            com.datagami.rentaxis.core.service.auth.ForgotPasswordService forgotPasswordService) {
+        this.forgotPasswordService = forgotPasswordService;
         this.userService = userService;
         this.orgService = orgService;
         this.passwordEncoder = passwordEncoder;
@@ -351,6 +354,29 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(new LoginAmbiguousResponse(tenants));
         }
+    }
+
+    public record ForgotPasswordRequest(String email) {
+    }
+
+    /** The one answer, for an address with a login and for one without. */
+    public static final String FORGOT_PASSWORD_ANSWER =
+            "If an account exists for this email, we've sent a link to reset the password.";
+
+    /**
+     * Public "forgot password": always 202 with the same body, whatever the email.
+     * The link (single use, 45 minutes) is mailed only if the email has a login
+     * other than a security guard's or a platform administrator's; redeeming it on
+     * {@code /auth/set-password} sets the person's password in every organisation
+     * they belong to. Rate-limited per IP ({@code PublicRateLimitFilter}) and per
+     * email ({@code ForgotPasswordService}).
+     */
+    @PostMapping("/forgot-password")
+    public ResponseEntity<java.util.Map<String, String>> forgotPassword(
+            @RequestBody(required = false) ForgotPasswordRequest request) {
+        forgotPasswordService.request(request == null ? null : request.email());
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(java.util.Map.of("message", FORGOT_PASSWORD_ANSWER));
     }
 
     @GetMapping("/set-password/validate")
