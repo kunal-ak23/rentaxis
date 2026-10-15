@@ -22,6 +22,50 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 
     Page<Meeting> findByTenantId(UUID tenantId, Pageable pageable);
 
+    /**
+     * The list pages' filters (tutorial 23: the list filtered one page in the browser,
+     * so "Approved" showed one row under "Showing 1-3 of 3"). A null filter is "any".
+     */
+    String FILTERS = "AND (:status IS NULL OR m.status = :status) AND (:type IS NULL OR m.type = :type) "
+            + "AND (:purpose IS NULL OR m.purpose = :purpose)";
+
+    @Query("SELECT m FROM Meeting m WHERE m.tenantId = :tenantId " + FILTERS)
+    Page<Meeting> findByTenantIdFiltered(@Param("tenantId") UUID tenantId,
+                                         @Param("status") com.datagami.rentaxis.domain.entity.enums.MeetingStatus status,
+                                         @Param("type") com.datagami.rentaxis.domain.entity.enums.MeetingType type,
+                                         @Param("purpose") com.datagami.rentaxis.domain.entity.enums.MeetingPurpose purpose,
+                                         Pageable pageable);
+
+    @Query("SELECT m FROM Meeting m WHERE m.hostUserId = :userId " + FILTERS)
+    Page<Meeting> findByHostUserIdFiltered(@Param("userId") UUID userId,
+                                           @Param("status") com.datagami.rentaxis.domain.entity.enums.MeetingStatus status,
+                                           @Param("type") com.datagami.rentaxis.domain.entity.enums.MeetingType type,
+                                           @Param("purpose") com.datagami.rentaxis.domain.entity.enums.MeetingPurpose purpose,
+                                           Pageable pageable);
+
+    @Query("SELECT m FROM Meeting m WHERE m.requesterUserId = :userId " + FILTERS)
+    Page<Meeting> findByRequesterUserIdFiltered(@Param("userId") UUID userId,
+                                                @Param("status") com.datagami.rentaxis.domain.entity.enums.MeetingStatus status,
+                                                @Param("type") com.datagami.rentaxis.domain.entity.enums.MeetingType type,
+                                                @Param("purpose") com.datagami.rentaxis.domain.entity.enums.MeetingPurpose purpose,
+                                                Pageable pageable);
+
+    @Query(value = "SELECT m FROM Meeting m LEFT JOIN m.property p LEFT JOIN m.unit u LEFT JOIN u.property up " +
+           "LEFT JOIN m.lease l LEFT JOIN l.unit lu LEFT JOIN lu.property lup " +
+           "WHERE m.tenantId = :tenantId AND (m.hostUserId = :userId OR m.requesterUserId = :userId " +
+           "OR p.id IN :propertyIds OR up.id IN :propertyIds OR lup.id IN :propertyIds) " + FILTERS,
+           countQuery = "SELECT COUNT(m) FROM Meeting m LEFT JOIN m.property p LEFT JOIN m.unit u LEFT JOIN u.property up " +
+           "LEFT JOIN m.lease l LEFT JOIN l.unit lu LEFT JOIN lu.property lup " +
+           "WHERE m.tenantId = :tenantId AND (m.hostUserId = :userId OR m.requesterUserId = :userId " +
+           "OR p.id IN :propertyIds OR up.id IN :propertyIds OR lup.id IN :propertyIds) " + FILTERS)
+    Page<Meeting> findScopedFiltered(@Param("tenantId") UUID tenantId,
+                                     @Param("userId") UUID userId,
+                                     @Param("propertyIds") java.util.Collection<UUID> propertyIds,
+                                     @Param("status") com.datagami.rentaxis.domain.entity.enums.MeetingStatus status,
+                                     @Param("type") com.datagami.rentaxis.domain.entity.enums.MeetingType type,
+                                     @Param("purpose") com.datagami.rentaxis.domain.entity.enums.MeetingPurpose purpose,
+                                     Pageable pageable);
+
     /** Break-it round 2 M9: meetings hung off a lease being withdrawn/deleted, so the caller can detach them. */
     List<Meeting> findByLease_Id(UUID leaseId);
 

@@ -90,6 +90,8 @@ type StaffUser = {
     id: string;
     name: string;
     role: string;
+    /** From the staff record linked to this login ("Give login"), when there is one. */
+    designation?: string | null;
 };
 
 // ── Badge Maps ─────────────────────────────────────────────────────────────
@@ -140,6 +142,14 @@ export default function TicketDetailPage() {
             return notes.includes("resolved again") ? t("history.otpReissuedResolvedAgain") : t("history.otpReissued");
         }
         if (h.action === "OTP_LOCKED") return t("history.otpLocked");
+        // Tutorial 22: the history began at the first change; creation and the ETA
+        // now have entries. ETA notes are "previous→new" in hours ("" for none).
+        if (h.action === "CREATED") return t("history.created");
+        if (h.action === "ETA_SET" || h.action === "ETA_CHANGED") {
+            const [from, to] = notes.split("→");
+            if (!to) return t("history.etaCleared");
+            return from ? t("history.etaChanged", { from: Number(from), to: Number(to) }) : t("history.etaSet", { hours: Number(to) });
+        }
         // The assignee's account was deleted and the ticket went back to the queue
         // (UserReferenceReleaser): the stored note is English, so say it here.
         if (h.action === "UNASSIGNED") return t("history.unassigned");
@@ -699,10 +709,20 @@ export default function TicketDetailPage() {
                                     {showAssignDropdown && (
                                         <div className="absolute top-full inset-x-0 mt-1 bg-surface border border-border rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
                                             {staffUsers.map(user => (
-                                                <button key={user.id} onClick={() => handleAssign(user.id)} className="w-full text-start px-3 py-2 text-xs hover:bg-input transition-colors cursor-pointer">
-                                                    <span className="font-medium text-foreground">{user.name}</span> <span className="text-muted">({tRoles.has(user.role) ? tRoles(user.role) : user.role.replace(/_/g, " ")})</span>
+                                                <button key={user.id} onClick={() => handleAssign(user.id)} data-testid={`assignee-${user.id}`} className="w-full text-start px-3 py-2 text-xs hover:bg-input transition-colors cursor-pointer">
+                                                    <span className="font-medium text-foreground">{user.name}</span>
+                                                    {user.designation && <span className="text-foreground"> · {user.designation}</span>}
+                                                    {" "}<span className="text-muted">({tRoles.has(user.role) ? tRoles(user.role) : user.role.replace(/_/g, " ")})</span>
                                                 </button>
                                             ))}
+                                            {/* Tutorial 22: staff records are not logins, so they are not listed
+                                                here. Say so, and point an admin to where a login is given. */}
+                                            <p className="px-3 py-2 text-[11px] text-muted border-t border-border" data-testid="assignee-staff-hint">
+                                                {t("assigneeStaffHint")}{" "}
+                                                {hasPermission(userRole, "canAccessFinanceOps") && (
+                                                    <Link href="/dashboard/staff" className="text-primary font-semibold hover:underline">{t("assigneeStaffHintLink")}</Link>
+                                                )}
+                                            </p>
                                         </div>
                                     )}
                                 </div>

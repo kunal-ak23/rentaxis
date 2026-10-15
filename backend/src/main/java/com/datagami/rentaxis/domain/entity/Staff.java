@@ -66,4 +66,14 @@ public class Staff extends BaseTenantEntity {
 
     @Column(name = "is_active")
     private boolean isActive = true;
+
+    /**
+     * The login this staff member was given, if any (changeset 164). Tickets are
+     * assigned to logins, not to HR rows: the assignee sees and works the ticket.
+     * Set only by {@code StaffService#giveLogin}; never accepted from a request body.
+     */
+    @com.fasterxml.jackson.annotation.JsonProperty(
+            access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+    @Column(name = "user_id")
+    private UUID userId;
 }

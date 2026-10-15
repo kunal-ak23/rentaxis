@@ -152,7 +152,12 @@ export default function TicketReportsPage() {
                         <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">{t("avgResolution")}</span>
                     </div>
                     <p className="text-2xl font-bold text-foreground">
-                        {report.avgResolutionHours > 0 ? t("avgResolutionValue", { hours: report.avgResolutionHours.toFixed(1) }) : "--"}
+                        {report.avgResolutionHours <= 0
+                            ? "--"
+                            : report.avgResolutionHours < 1
+                                // Under an hour reads in minutes, never as "0.0h" (tutorial 22).
+                                ? t("avgResolutionMinutes", { minutes: Math.max(1, Math.round(report.avgResolutionHours * 60)) })
+                                : t("avgResolutionValue", { hours: report.avgResolutionHours.toFixed(1) })}
                     </p>
                 </div>
 

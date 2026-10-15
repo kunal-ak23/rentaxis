@@ -4,6 +4,9 @@ import CredentialsProvider from "next-auth/providers/credentials";
 /** Error codes authorize() surfaces to the login page (besides LOGIN_AMBIGUOUS). */
 const LOGIN_ERROR_CODES = ["ACCOUNT_INACTIVE", "ORG_INACTIVE", "RATE_LIMITED"];
 
+/** Error codes the guard phone provider surfaces to /auth/guard. */
+const GUARD_ERROR_CODES = ["RATE_LIMITED", "GUARD_PHONE_UNAVAILABLE"];
+
 /** A request header from NextAuth's req, whose headers may be a Headers or a plain record. */
 function headerValue(headers: unknown, name: string): string | undefined {
     if (!headers) return undefined;
@@ -176,6 +179,50 @@ export const authOptions: NextAuthOptions = {
                     console.error("Auth Exception:", e);
                 }
 
+                return null;
+            },
+        }),
+        // Security guards sign in with their phone (tutorial 25): password login
+        // refuses them by design (AuthController), and the web had no other way
+        // in, so the gate desk was unreachable. The browser verifies the SMS code
+        // with Firebase — exactly as the Security app does — and hands over the
+        // resulting ID token; the backend checks it and maps the phone to one
+        // active guard (/api/v1/auth/firebase, rate-limited per client IP).
+        CredentialsProvider({
+            id: "guard-phone",
+            name: "Guard phone",
+            credentials: { idToken: { label: "Firebase ID token", type: "text" } },
+            async authorize(credentials, req) {
+                const idToken = credentials?.idToken;
+                if (!idToken) return null;
+                try {
+                    const headers: Record<string, string> = { "Content-Type": "application/json" };
+                    const forwardedFor = headerValue(req?.headers, "x-forwarded-for");
+                    if (forwardedFor) headers["X-Forwarded-For"] = forwardedFor;
+                    const res = await fetch(`${process.env.BACKEND_URL || "http://localhost:8080"}/api/v1/auth/firebase`, {
+                        method: "POST",
+                        headers,
+                        body: JSON.stringify({ idToken }),
+                    });
+                    if (res.ok) {
+                        const user = await res.json();
+                        // Only a guard comes back from this endpoint; refuse anything else.
+                        if (user?.role !== "SECURITY_GUARD") return null;
+                        return {
+                            id: user.id,
+                            email: user.email,
+                            name: user.name,
+                            role: user.role,
+                            tenantId: user.tenantId,
+                            tenantIds: user.tenantIds || [],
+                        };
+                    }
+                    if (res.status === 429) throw new Error("RATE_LIMITED");
+                    if (res.status === 503) throw new Error("GUARD_PHONE_UNAVAILABLE");
+                } catch (e) {
+                    if (e instanceof Error && GUARD_ERROR_CODES.includes(e.message)) throw e;
+                    console.error("Guard auth exception:", e);
+                }
                 return null;
             },
         }),
