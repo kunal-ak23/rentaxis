@@ -366,4 +366,17 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @org.springframework.data.jpa.repository.Query(value = "SELECT id FROM users WHERE id = :id FOR UPDATE",
             nativeQuery = true)
     java.util.Optional<UUID> lockById(@org.springframework.data.repository.query.Param("id") UUID id);
+
+    /**
+     * S17-01: the organisation's ACTIVE TENANT_ADMIN rows, locked. Deactivating an
+     * admin counts these under the lock, so two admins deactivating each other at
+     * once cannot both pass "not the last active admin" (the second waits, then
+     * re-reads the first one's row as INACTIVE). Native and tenant-explicit.
+     */
+    @Query(value = """
+            SELECT id FROM users
+            WHERE tenant_id = :tenantId AND role = 'TENANT_ADMIN' AND status = 'ACTIVE'
+            ORDER BY id
+            FOR UPDATE""", nativeQuery = true)
+    List<UUID> lockActiveTenantAdmins(@Param("tenantId") UUID tenantId);
 }

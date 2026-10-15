@@ -394,13 +394,13 @@ public class RenterService {
                     throw new BusinessRuleViolationException(EMAIL_TAKEN_MESSAGE, EMAIL_TAKEN_CODE, null);
                 }
                 portalUser.setEmail(normalizedNewEmail);
-                // One login per person: the row's password is no longer known to
-                // be the new address's owner's, so it is never copied to their
-                // other organisations; and a reset link minted for the old
-                // address dies with it (a pending invite is re-sent below).
-                portalUser.setPasswordSelfSet(false);
-                boolean invitePending = portalUser.hasPendingInvite();
-                if (!invitePending) portalUser.clearInvite();
+                // S17-02 (one login per person): the row's password and any link
+                // belonged to the old address. Whatever an admin did to them while
+                // the row pointed there must not sign in as the new address's
+                // person, so the row starts over: that person's own existing login
+                // (#407 rule 2), or an invite to the new address (C1: the old link
+                // dies outright).
+                UserService.NewAddressLogin newLogin = userService.resetLoginForNewAddress(portalUser);
                 try {
                     userRepository.saveAndFlush(portalUser);
                 } catch (org.springframework.dao.DataIntegrityViolationException e) {
@@ -415,11 +415,8 @@ public class RenterService {
                 // a raw bumpTokenVersion would leave ApiSecurityFilter still
                 // accepting the old `tv` claim from cache for up to its TTL.
                 tokenRevocation.revokeAllTokens(portalUser.getId());
-                // C1: the invite (if still outstanding) was minted for the address
-                // just replaced; its link must die with that address, not keep
-                // working against the corrected account.
-                if (invitePending) {
-                    userService.resendInvite(portalUser.getId());
+                if (newLogin == UserService.NewAddressLogin.INVITE) {
+                    userService.publishNewAddressInvite(portalUser);
                 }
             }
         }

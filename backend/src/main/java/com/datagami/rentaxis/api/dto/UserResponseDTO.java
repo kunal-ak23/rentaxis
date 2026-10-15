@@ -29,6 +29,11 @@ public class UserResponseDTO {
      * password and no invite was sent. Shown to the admin creating them.
      */
     private boolean existingLogin;
+    /**
+     * Set on the reactivate response only (S17-01): EXISTING_LOGIN, INVITED or
+     * OWN_PASSWORD — see {@code UserService.LoginOnReactivation}.
+     */
+    private String reactivationLogin;
 
     public static UserResponseDTO from(User user) {
         UserResponseDTO dto = new UserResponseDTO();

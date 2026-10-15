@@ -145,6 +145,34 @@ public class UserController {
     }
 
     /**
+     * S17-01: suspends this user's login to this organisation without deleting it.
+     * Their other organisations are untouched; their sessions here end at once.
+     * Same target boundary as edit and delete (own organisation, at or below the
+     * caller's rank); never the caller's own row or the last active administrator.
+     */
+    @PostMapping("/{id}/deactivate")
+    public ResponseEntity<UserResponseDTO> deactivate(@PathVariable UUID id) {
+        authorizeTargetUser(id);
+        return ResponseEntity.ok(UserResponseDTO.from(userService.deactivate(id, currentCallerId())));
+    }
+
+    /**
+     * S17-01: lets a deactivated user sign in to this organisation again. The body's
+     * {@code reactivationLogin} says how: EXISTING_LOGIN (their password from another
+     * organisation), INVITED (a set-password link was mailed) or OWN_PASSWORD (if they
+     * cannot sign in, send them a password reset link).
+     */
+    @PostMapping("/{id}/reactivate")
+    public ResponseEntity<UserResponseDTO> reactivate(@PathVariable UUID id) {
+        authorizeTargetUser(id);
+        UserService.Reactivated result = userService.reactivate(id, currentCallerId());
+        UserResponseDTO body = UserResponseDTO.from(result.user());
+        body.setReactivationLogin(result.login().name());
+        body.setExistingLogin(result.login() == UserService.LoginOnReactivation.EXISTING_LOGIN);
+        return ResponseEntity.ok(body);
+    }
+
+    /**
      * Break-it R3 ops3 F5: what deleting this user does to work they hold, for the
      * delete dialog — {@code openTickets} return to the unassigned queue;
      * {@code meetings} they host or requested keep their history and block the delete.
@@ -253,6 +281,16 @@ public class UserController {
             }
         }
         throw new AccessDeniedException("Authenticated role could not be determined.");
+    }
+
+    /** The caller's own users row (the authenticated principal's name is its id). */
+    private UUID currentCallerId() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        try {
+            return auth == null ? null : UUID.fromString(auth.getName());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     private UUID requireCallerTenant() {
