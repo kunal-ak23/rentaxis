@@ -86,6 +86,15 @@ public class LedgerQueryService {
         return accountId != null && accounts.findById(accountId).isPresent();
     }
 
+    /**
+     * One account's balance on a lease's dimension through the end of {@code at}, debit-positive —
+     * a single aggregate, never truncated (an as-of report asks it once per lease).
+     */
+    public BigDecimal leaseBalanceThrough(UUID accountId, UUID leaseId, LocalDate at) {
+        return orZero(lines.balanceBefore(TenantContextHolder.getTenantId(), accountId, at.plusDays(1),
+                null, null, leaseId, null, false));
+    }
+
     public AccountLedgerDTO accountLedger(UUID accountId, LedgerFilter filter) {
         LedgerFilter f = filter.normalised();
         UUID tenantId = TenantContextHolder.getTenantId();

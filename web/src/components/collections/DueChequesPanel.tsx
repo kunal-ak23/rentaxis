@@ -7,6 +7,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { fmtAmount } from "@/lib/api/ledger";
 import { chequeApi, type Cheque } from "@/lib/api/leasing";
+import { daysSince, isAwaitingClearing, isStaleDeposit } from "@/components/cheques/depositedAge";
 
 /** Overdue scans the due list this many rows at a time. */
 export const OVERDUE_SCAN_SIZE = 100;
@@ -144,7 +145,21 @@ function ChequeTable({ rows, overdue }: { rows: Cheque[]; overdue: boolean }) {
                             </td>
                             <td className={`${td} tabular-nums`}>{fmtIsoDate(c.chequeDate ?? c.postingDate, locale)}</td>
                             <td className={`${td} text-end tabular-nums`}>{fmtAmount(c.amount)}</td>
-                            {overdue && <td className={`${td} text-end tabular-nums text-error`}>{c.daysOverdue}</td>}
+                            {overdue && (isAwaitingClearing(c) ? (
+                                // Tutorial 35: banked, waiting on the bank — not overdue.
+                                <td className={`${td} text-end text-muted`} data-testid={`due-awaiting-${c.id}`}>
+                                    {daysSince(c.depositedAt) === null
+                                        ? t("awaitingClearing")
+                                        : t("depositedDaysAgo", { n: daysSince(c.depositedAt) ?? 0 })}
+                                    {isStaleDeposit(daysSince(c.depositedAt)) && (
+                                        <span className="block text-warning font-semibold" data-testid={`due-stale-deposit-${c.id}`}>
+                                            {t("depositNotCleared")}
+                                        </span>
+                                    )}
+                                </td>
+                            ) : (
+                                <td className={`${td} text-end tabular-nums text-error`}>{c.daysOverdue}</td>
+                            ))}
                         </tr>
                     ))}
                 </tbody>

@@ -26,5 +26,9 @@ public record LeaseChequeStatsDTO(UUID leaseId,
                                   BigDecimal dueAmount,
                                   BigDecimal unclearedAmount,
                                   long liveCount,
-                                  BigDecimal liveAmount) {
+                                  BigDecimal liveAmount,
+                                  /* PR #399 R1 P3-3: the cleared part of liveAmount, so
+                                     liveAmount − liveClearedAmount is what the contract still
+                                     has to collect (penalty rows on neither side). */
+                                  BigDecimal liveClearedAmount) {
 }

@@ -34,6 +34,15 @@ public class Vendor extends BaseTenantEntity {
     @Column(name = "name_ar")
     private String nameAr;
 
+    /**
+     * When the vendor was created — entity lists sort oldest-first, the house rule
+     * (tutorial 19). Set by the database on insert (the column's default, so every row is
+     * on the database's clock) and never written by the app; {@code VendorService} reads it
+     * back after an insert so the create response carries it (PR #399 R1 P3-7).
+     */
+    @Column(name = "created_at", insertable = false, updatable = false)
+    private java.time.LocalDateTime createdAt;
+
     @Column(name = "trade_license_number", length = 50)
     private String tradeLicenseNumber;
 

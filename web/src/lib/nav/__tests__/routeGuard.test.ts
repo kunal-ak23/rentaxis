@@ -77,7 +77,7 @@ describe("routeDecision — role rules (F8)", () => {
         ["/en/dashboard/listings", "UnitListingController", ["TENANT_ADMIN", "PROPERTY_MANAGER"]],
         ["/en/dashboard/listings/l1", "UnitListingController", ["TENANT_ADMIN", "PROPERTY_MANAGER"]],
         ["/en/dashboard/staff", "StaffController", ["TENANT_ADMIN"]],
-        ["/en/dashboard/finance/bank-accounts", "BankAccountController", ["TENANT_ADMIN"]],
+        ["/en/dashboard/finance/bank-accounts", "BankAccountController (GETs)", ["TENANT_ADMIN", "ACCOUNTANT"]],
         ["/en/dashboard/finance/accounts", "AccountController", ["TENANT_ADMIN", "ACCOUNTANT"]],
         ["/en/dashboard/finance/vendors", "VendorController", ["TENANT_ADMIN", "ACCOUNTANT"]],
         ["/en/dashboard/meetings", "meetings (renter portal links)", ["TENANT_ADMIN", "PROPERTY_MANAGER", "RENTER"]],

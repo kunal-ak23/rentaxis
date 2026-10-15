@@ -45,7 +45,20 @@ public class BouncedDebt {
 
     /** The open amount of each row, by cheque id; a row the ledger has closed maps to zero. */
     public Map<UUID, BigDecimal> openAmounts(List<Cheque> due) {
-        return allocate(due, lease -> java.util.Optional.of(closure.receivableBalance(lease)), true);
+        return allocate(due, lease -> java.util.Optional.of(closure.receivableBalance(lease)), true,
+                c -> c.getStatus() == ChequeStatus.BOUNCED);
+    }
+
+    /**
+     * {@link #openAmounts} as the books stood at the end of {@code at} (an as-of report:
+     * the owner statement's Outstanding section). Pass only rows that had bounced by
+     * {@code at}; a row whose lease's receivable cannot be read stays at its face value.
+     */
+    public Map<UUID, BigDecimal> openAmountsAt(List<Cheque> bouncedByThen, LocalDate at) {
+        // Every row passed had bounced by `at`, whatever its status today (PR #399 R1 P2-1:
+        // a later write-off, replacement or return moves it on, and the closed period must not
+        // notice), so each shares the receivable as at `at`.
+        return allocate(bouncedByThen, lease -> closure.receivableBalanceIfKnownAt(lease, at), true, c -> true);
     }
 
     /**
@@ -55,7 +68,8 @@ public class BouncedDebt {
      * for those leases, so it is safe inside a transaction that must still commit.
      */
     public Map<UUID, BigDecimal> knownBouncedOpenAmounts(List<Cheque> rows) {
-        Map<UUID, BigDecimal> all = allocate(rows, closure::receivableBalanceIfKnown, false);
+        Map<UUID, BigDecimal> all = allocate(rows, closure::receivableBalanceIfKnown, false,
+                c -> c.getStatus() == ChequeStatus.BOUNCED);
         Map<UUID, BigDecimal> out = new LinkedHashMap<>();
         for (Cheque c : rows) {
             if (c.getStatus() == ChequeStatus.BOUNCED && all.containsKey(c.getId())) {
@@ -71,14 +85,15 @@ public class BouncedDebt {
      */
     private Map<UUID, BigDecimal> allocate(List<Cheque> due,
                                            java.util.function.Function<Lease, java.util.Optional<BigDecimal>> balance,
-                                           boolean keepUnknown) {
+                                           boolean keepUnknown,
+                                           java.util.function.Predicate<Cheque> bounced) {
         Map<UUID, BigDecimal> open = new LinkedHashMap<>();
         Map<UUID, List<Cheque>> bouncedByLease = new HashMap<>();
         Map<UUID, Lease> leases = new HashMap<>();
         for (Cheque c : due) {
             BigDecimal amount = c.getAmount() == null ? BigDecimal.ZERO : c.getAmount();
             open.put(c.getId(), amount);
-            if (closure != null && c.getStatus() == ChequeStatus.BOUNCED && c.getLease() != null) {
+            if (closure != null && bounced.test(c) && c.getLease() != null) {
                 bouncedByLease.computeIfAbsent(c.getLease().getId(), k -> new ArrayList<>()).add(c);
                 leases.putIfAbsent(c.getLease().getId(), c.getLease());
             }

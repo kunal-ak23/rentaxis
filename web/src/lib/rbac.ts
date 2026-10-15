@@ -51,6 +51,10 @@ export const PERMISSIONS = {
     // (walkthrough 13 pins `a[href*="/dashboard/finance/"]` at zero for PM).
     // Widening PM's sidebar is its own change, not this one.
     canAccessFinanceOps: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
+    // Tutorial 19: Bank Accounts is readable by the Accountant — bank reconciliation,
+    // payment runs and receipts are their work. BankAccountController admits ACCOUNTANT
+    // on its GETs; create / edit / delete stay canAccessFinanceOps (SA/TA), as there.
+    canViewBankAccounts: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
     canResolveIssues: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
     canCreateIssues: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'TENANT_USER'] as UserRole[],
     canViewOwnPayments: ['TENANT_USER'] as UserRole[],

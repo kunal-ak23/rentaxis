@@ -200,6 +200,8 @@ export const payablesApi = {
     vendorItems: (vendorId: string) => apiGet<OpenItem[]>(`/finance/vendors/${vendorId}/open-items`),
     statementPdfUrl: (vendorId: string, from: string, to: string, lang: string) =>
         `${PROXY}/finance/vendors/${vendorId}/statement.pdf${qs({ from, to, lang })}`,
+    statementCsvUrl: (vendorId: string, from: string, to: string, lang: string) =>
+        `${PROXY}/finance/vendors/${vendorId}/statement.csv${qs({ from, to, lang })}`,
     aging: (q: { asOf?: string; propertyId?: string; vendorId?: string }) =>
         apiGet<PayablesAging>(`/finance/reports/payables-aging${qs(q)}`),
     agingCsvUrl: (q: { asOf?: string; propertyId?: string; vendorId?: string }, lang: string) =>

@@ -55,6 +55,17 @@ class SupplierStatementPdfRendererTest {
         assertThat(html).contains("text-align: right");
     }
 
+    /** Tutorial 19: the account activity as CSV beside the PDF, in both languages. */
+    @Test
+    void theStatementAlsoExportsAsCsv() {
+        String en = new String(renderer.csv(statement(), "en"), java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(en).startsWith("\uFEFF");
+        assertThat(en).contains("Gulf AC Services LLC", "2026-09-01 – 2026-09-30", "Opening balance", "\"3,550.00 Cr\"",
+                "2026-09-10", "BPV-26/55", "2050.00", "Closing balance", "\"1,500.00 Cr\"");
+        String ar = new String(renderer.csv(statement(), "ar"), java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(ar).contains("الخليج لخدمات التكييف", "الرصيد الافتتاحي", "1,500.00 دائن");
+    }
+
     @Test
     void itRendersAPdf() {
         byte[] pdf = renderer.render(statement(), "ar");

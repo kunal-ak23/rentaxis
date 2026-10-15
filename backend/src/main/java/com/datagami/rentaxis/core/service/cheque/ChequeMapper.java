@@ -49,6 +49,12 @@ public final class ChequeMapper {
      */
     public static ChequeDTO toDto(Cheque c, LocalDate today, int graceDays, java.math.BigDecimal openAmount,
                                   boolean writeOffPending) {
+        return toDto(c, today, graceDays, openAmount, writeOffPending, false);
+    }
+
+    /** {@code writtenOff}: a CANCELLED row an approved write-off took (PR #399 R1 P3-3). */
+    public static ChequeDTO toDto(Cheque c, LocalDate today, int graceDays, java.math.BigDecimal openAmount,
+                                  boolean writeOffPending, boolean writtenOff) {
         boolean ledgerSettled = openAmount != null && openAmount.signum() <= 0;
         // daysOverdue is a property of the date alone, so on its own it happily
         // reports 365 for a cheque that cleared a year ago. The wire shape is read
@@ -111,7 +117,8 @@ public final class ChequeMapper {
                 c.getPayeeMismatchConfirmedByName(),
                 c.getPayeeMismatchConfirmedAt(),
                 openAmount,
-                writeOffPending);
+                writeOffPending,
+                writtenOff && c.getStatus() == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CANCELLED);
     }
 
     private static <T, R> R nullSafe(T source, Function<T, R> get) {

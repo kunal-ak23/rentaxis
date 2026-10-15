@@ -130,20 +130,39 @@ public class PayablesController {
                                             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
                                             @RequestParam(defaultValue = "en") String lang) {
-        requireTenantSelected();
-        if (to.isBefore(from)) throw new BusinessRuleViolationException("'to' must not be before 'from'");
-        if (from.plusYears(5).isBefore(to)) throw new BusinessRuleViolationException("A statement covers at most five years");
-        Vendor v = vendors.getVendorById(vendorId);
-        PayablesService.VendorPosition position = payables.vendorPosition(vendorId, to);
-        SupplierStatementPdfRenderer.Statement s = new SupplierStatementPdfRenderer.Statement(
-                v.getNameEn(), v.getNameAr(), v.getTrn(), from, to, ledger.vendorLedger(vendorId, from, to),
-                payables.ledgerBalance(vendorId, to), position.items(), position.advances(), Instant.now(), callerName());
+        SupplierStatementPdfRenderer.Statement s = statementOf(vendorId, from, to);
         String l = "ar".equals(lang) ? "ar" : "en";
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"supplier-statement-" + from + "-" + to + "-" + l + ".pdf\"")
                 .contentType(MediaType.APPLICATION_PDF)
                 .body(pdf.render(s, l));
+    }
+
+    /** The statement's account activity as CSV, beside the PDF (tutorial 19). */
+    @GetMapping("/vendors/{vendorId}/statement.csv")
+    public ResponseEntity<byte[]> statementCsv(@PathVariable UUID vendorId,
+                                               @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                               @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+                                               @RequestParam(defaultValue = "en") String lang) {
+        SupplierStatementPdfRenderer.Statement s = statementOf(vendorId, from, to);
+        String l = "ar".equals(lang) ? "ar" : "en";
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"supplier-statement-" + from + "-" + to + "-" + l + ".csv\"")
+                .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
+                .body(pdf.csv(s, l));
+    }
+
+    private SupplierStatementPdfRenderer.Statement statementOf(UUID vendorId, LocalDate from, LocalDate to) {
+        requireTenantSelected();
+        if (to.isBefore(from)) throw new BusinessRuleViolationException("'to' must not be before 'from'");
+        if (from.plusYears(5).isBefore(to)) throw new BusinessRuleViolationException("A statement covers at most five years");
+        Vendor v = vendors.getVendorById(vendorId);
+        PayablesService.VendorPosition position = payables.vendorPosition(vendorId, to);
+        return new SupplierStatementPdfRenderer.Statement(
+                v.getNameEn(), v.getNameAr(), v.getTrn(), from, to, ledger.vendorLedger(vendorId, from, to),
+                payables.ledgerBalance(vendorId, to), position.items(), position.advances(), Instant.now(), callerName());
     }
 
     // ---- plumbing

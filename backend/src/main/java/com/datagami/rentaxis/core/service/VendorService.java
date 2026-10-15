@@ -24,6 +24,9 @@ public class VendorService {
     private final AccountService accountService;
     private final AccountRepository accountRepository;
 
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entityManager;
+
     @Transactional(readOnly = true)
     public List<Vendor> getAllVendors() {
         return repository.findAllByOrderByNameEnAsc();
@@ -93,7 +96,11 @@ public class VendorService {
                 log.warn("No Vendors account group (B-01-04) for tenant; creating vendor without a ledger account");
             }
         }
-        return repository.save(vendor);
+        Vendor saved = repository.saveAndFlush(vendor);
+        // PR #399 R1 P3-7: created_at is the database's default; read it back so the response
+        // (and the list's oldest-first sort) has it without a reload.
+        entityManager.refresh(saved);
+        return saved;
     }
 
     @Transactional

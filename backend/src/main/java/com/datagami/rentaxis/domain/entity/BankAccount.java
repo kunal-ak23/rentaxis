@@ -25,6 +25,14 @@ public class BankAccount extends BaseTenantEntity {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private UUID id;
 
+    /**
+     * Set by the database on insert (the column's default) and never written by the app —
+     * read so the Bank Accounts list sorts oldest-first like every entity list (PR #399 R1 P3-6).
+     */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    @Column(name = "created_at", insertable = false, updatable = false)
+    private java.time.LocalDateTime createdAt;
+
     @Column(name = "bank_name", nullable = false)
     private String bankName;
 

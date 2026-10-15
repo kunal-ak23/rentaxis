@@ -17,6 +17,9 @@ const NEW_DESTINATIONS: Record<string, string> = {
     "/dashboard/finance/vouchers/credit-note": "/dashboard/finance/vouchers",
     // SUPER_ADMIN keeps /superadmin/users too; Settings › Users & staff embeds that same component.
     "/dashboard/settings?section=users": "/superadmin/users",
+    // Tutorial 19: the Accountant reads Bank Accounts (BankAccountController's GETs) — the
+    // accounts their bank reconciliation already works on; edit stays the admin's.
+    "/dashboard/finance/bank-accounts": "/dashboard/finance/bank-reconciliation",
 };
 
 /**
