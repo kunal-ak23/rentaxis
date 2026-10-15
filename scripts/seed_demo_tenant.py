@@ -1864,7 +1864,7 @@ def main():
             "vehicleNumber": "DXB A 24518",
             "passType": "RECURRING",
             "validFrom": (dt.datetime.now(dt.UTC) - dt.timedelta(minutes=5)).isoformat(),
-            "validTo": (dt.datetime.now(dt.UTC) + dt.timedelta(days=1)).isoformat(),
+            "validTo": (dt.datetime.now(dt.UTC) + dt.timedelta(days=30)).isoformat(),
         })
     if gate_pass.get("status") == "PENDING_APPROVAL":
         gate_pass = api.post(
