@@ -33,8 +33,15 @@ public class PublicPromoImageController {
     @GetMapping(PromotionImageService.ROUTE_PREFIX + "{file:.+}")
     public ResponseEntity<byte[]> image(@PathVariable String file,
                                         @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch) {
-        UUID owner = images.liveOwner(file).orElseThrow(() -> new NotFoundException("Image not found"));
-        return ServedMedia.serve(blobs, owner, PromotionImageService.blobPath(file), false,
-                ServedMedia.Caching.PUBLIC, ifNoneMatch, "promo-image|" + owner + "|" + file);
+        // Each live owner's own container, until one holds the file (R1 P3-2).
+        for (UUID owner : images.liveOwners(file)) {
+            try {
+                return ServedMedia.serve(blobs, owner, PromotionImageService.blobPath(file), false,
+                        ServedMedia.Caching.PUBLIC, ifNoneMatch, "promo-image|" + owner + "|" + file);
+            } catch (NotFoundException notThisOne) {
+                // another organisation's reference to the same name: try the next owner
+            }
+        }
+        throw new NotFoundException("Image not found");
     }
 }

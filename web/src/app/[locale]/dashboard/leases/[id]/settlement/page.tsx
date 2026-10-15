@@ -120,7 +120,7 @@ function AttachmentThumbnail({ attachment, onDelete, onPreview, editable }: {
         >
             {isImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={storedFileSrc(attachment.fileUrl, `/api/proxy/v1/settlements/attachments/${attachment.id}/download`)} alt={attachment.name} className="w-full h-full object-cover" />
+                <img src={storedFileSrc(attachment.fileUrl, `/api/proxy/v1/settlements/attachments/${attachment.id}/download?inline=true`)} alt={attachment.name} className="w-full h-full object-cover" />
             ) : isVideo ? (
                 <Video size={20} className="text-muted" />
             ) : (
@@ -183,9 +183,9 @@ function AttachmentPreviewDialog({ attachment, onClose }: {
                 <div className="flex-1 overflow-auto bg-input/30 flex items-center justify-center p-4">
                     {isImage ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={storedFileSrc(attachment.fileUrl, `/api/proxy/v1/settlements/attachments/${attachment.id}/download`)} alt={attachment.name} className="max-w-full max-h-[70vh] object-contain rounded-lg shadow" />
+                        <img src={storedFileSrc(attachment.fileUrl, `/api/proxy/v1/settlements/attachments/${attachment.id}/download?inline=true`)} alt={attachment.name} className="max-w-full max-h-[70vh] object-contain rounded-lg shadow" />
                     ) : isPdf ? (
-                        <iframe src={storedFileSrc(attachment.fileUrl, `/api/proxy/v1/settlements/attachments/${attachment.id}/download`)} title={attachment.name} className="w-full h-[70vh] rounded-lg border border-border" />
+                        <iframe src={storedFileSrc(attachment.fileUrl, `/api/proxy/v1/settlements/attachments/${attachment.id}/download?inline=true`)} title={attachment.name} className="w-full h-[70vh] rounded-lg border border-border" />
                     ) : (
                         <a
                             href={downloadUrl}

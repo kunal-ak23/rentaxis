@@ -59,6 +59,27 @@ class PublicRateLimitFilterTest {
     }
 
     /** Audit A-F4: password login was the one unauthenticated guessing surface with no limit. */
+    /** PR #401 R1 P3-1: the anonymous image routes read storage, so they are throttled — on their own budget. */
+    @Test
+    void anonymousImageRoutesShareAThreeHundredPerMinuteBudgetOfTheirOwn() throws Exception {
+        PublicRateLimitFilter filter = new PublicRateLimitFilter();
+        AtomicInteger forwarded = new AtomicInteger();
+        for (int i = 0; i < 300; i++) {
+            String path = i % 2 == 0 ? "/api/v1/public/listing-media/" + i : "/api/v1/public/promo-images/" + i + ".png";
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            filter.doFilter(request("GET", path), response, (req, res) -> forwarded.incrementAndGet());
+            assertThat(response.getStatus()).isEqualTo(200);
+        }
+        MockHttpServletResponse rejected = new MockHttpServletResponse();
+        filter.doFilter(request("GET", "/api/v1/public/listing-media/x"), rejected, (req, res) -> forwarded.incrementAndGet());
+        assertThat(rejected.getStatus()).isEqualTo(429);
+        assertThat(forwarded).hasValue(300);
+        // The /public/ budget is untouched by image loads.
+        MockHttpServletResponse page = new MockHttpServletResponse();
+        filter.doFilter(request("GET", "/public/l/acme"), page, (req, res) -> forwarded.incrementAndGet());
+        assertThat(page.getStatus()).isEqualTo(200);
+    }
+
     @Test
     void loginHasATwentyPerMinutePerIpBudget() throws Exception {
         PublicRateLimitFilter filter = new PublicRateLimitFilter();

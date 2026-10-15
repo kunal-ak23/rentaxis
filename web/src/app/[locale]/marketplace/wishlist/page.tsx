@@ -37,7 +37,12 @@ function StatusBadge({ status, t }: {
       </span>
     );
   }
-  return null;
+  // PR #401 R1 P3-3: unlisted or let — say so rather than show a broken photo.
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200">
+      {t('noLongerAvailable')}
+    </span>
+  );
 }
 
 // ─── Swipeable card ───────────────────────────────────────────────────────────

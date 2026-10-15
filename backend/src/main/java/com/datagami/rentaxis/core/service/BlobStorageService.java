@@ -528,6 +528,18 @@ public class BlobStorageService {
                 && blobPath.regionMatches(true, 0, prefix, 0, prefix.length());
     }
 
+    /** Whether {@code blobPath} exists in {@code tenantId}'s container (never creates the container). */
+    public boolean exists(UUID tenantId, String blobPath) {
+        if (tenantId == null || !isSafeObjectPath(blobPath)) return false;
+        try {
+            BlobContainerClient container = getServiceClient().getBlobContainerClient(containerPrefix + tenantId);
+            return container.exists() && container.getBlobClient(blobPath).exists();
+        } catch (RuntimeException e) {
+            log.warn("Could not check blob {} for tenant {}: {}", blobPath, tenantId, e.getMessage());
+            return false;
+        }
+    }
+
     /** The name of {@code tenantId}'s own (private) container, lower-cased as Azure stores it. */
     public String tenantContainerName(UUID tenantId) {
         return (containerPrefix + tenantId).toLowerCase(Locale.ROOT);

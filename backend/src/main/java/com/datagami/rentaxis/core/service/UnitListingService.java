@@ -100,7 +100,13 @@ public class UnitListingService {
     }
 
     /** Bug 26/27: stored files are named by a backend route, never by their private blob URL. */
-    private final ListingMediaUrls mediaUrls;
+    private ListingMediaUrls mediaUrls;
+
+    /** The configured bean (absolute URLs, R1 P2-1); the constructor's default serves unit tests. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setMediaUrls(ListingMediaUrls mediaUrls) {
+        this.mediaUrls = mediaUrls;
+    }
 
     @Transactional(readOnly = true)
     public Page<UnitListing> list(UUID tenantId, ListingStatus statusFilter,

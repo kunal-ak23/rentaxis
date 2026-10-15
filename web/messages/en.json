@@ -1206,6 +1206,7 @@
     "browseListings": "Browse Listings",
     "statusNotified": "Notified",
     "statusUpcoming": "Upcoming",
+    "noLongerAvailable": "No longer available",
     "amenity": {
       "POOL": "Pool",
       "GYM": "Gym",

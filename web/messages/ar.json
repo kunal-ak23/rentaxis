@@ -1206,6 +1206,7 @@
     "browseListings": "تصفح القوائم",
     "statusNotified": "تم الإخطار",
     "statusUpcoming": "قادم",
+    "noLongerAvailable": "لم يعد متاحًا",
     "amenity": {
       "POOL": "مسبح",
       "GYM": "صالة رياضية",

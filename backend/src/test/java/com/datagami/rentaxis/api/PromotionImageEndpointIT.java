@@ -69,6 +69,9 @@ class PromotionImageEndpointIT extends AbstractPostgresIT {
         when(blob.download(eq(tenantA), anyString())).thenReturn(new BlobStorageService.DownloadResult(PNG, null));
         // Tenant B's container holds no such image; what it would answer is not an image.
         when(blob.download(eq(tenantB), anyString())).thenReturn(new BlobStorageService.DownloadResult(SVG, null));
+        // Uploads land in tenant A's container; B's holds none of them.
+        when(blob.exists(eq(tenantA), anyString())).thenReturn(true);
+        when(blob.exists(eq(tenantB), anyString())).thenReturn(false);
         TenantContextHolder.clear();
     }
 
@@ -152,6 +155,19 @@ class PromotionImageEndpointIT extends AbstractPostgresIT {
                 Map.of("nameEn", "X", "logoUrl", "https://cdn.example.com/a.png"))
                 .getStatusCode().value()).isIn(200, 201);
         assertThat(anon("/api/v1/public/promo-images/not-a-file.svg").getStatusCode().value()).isEqualTo(404);
+    }
+
+    /** PR #401 R1 P3-2: another organisation cannot save A's file name, so it can never shadow A's image. */
+    @Test
+    void anotherOrganisationCannotSaveAnUploadThatIsNotInItsOwnContainer() throws Exception {
+        String url = json.readTree(upload(adminA, PNG, "logo.png").getBody()).get("url").asText();
+        ResponseEntity<byte[]> b = call(adminB, HttpMethod.POST, "/api/v1/promotions/businesses",
+                Map.of("nameEn", "Copycat", "logoUrl", url));
+        assertThat(b.getStatusCode().is4xxClientError()).isTrue();
+        assertThat(new String(b.getBody(), StandardCharsets.UTF_8)).contains("not an image uploaded by this organisation");
+        // A's own save still works.
+        assertThat(call(adminA, HttpMethod.POST, "/api/v1/promotions/businesses",
+                Map.of("nameEn", "Original", "logoUrl", url)).getStatusCode().value()).isIn(200, 201);
     }
 
     // -------------------------------------------------------------- helpers

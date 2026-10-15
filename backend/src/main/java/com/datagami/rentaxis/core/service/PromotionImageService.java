@@ -54,10 +54,52 @@ public class PromotionImageService {
     private final PromoAdRepository ads;
     private final PromoBusinessRepository businesses;
 
+    /**
+     * The site's public origin (PR #401 R1 P2-1). A renter app already installed
+     * from the store hands an image URL straight to {@code Image.network}, so the
+     * DTOs carry an absolute URL; empty (a local stack) keeps it relative.
+     */
+    private final String publicBaseUrl;
+
     public PromotionImageService(BlobStorageService blobs, PromoAdRepository ads, PromoBusinessRepository businesses) {
+        this(blobs, ads, businesses, "");
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public PromotionImageService(BlobStorageService blobs, PromoAdRepository ads, PromoBusinessRepository businesses,
+                                 @org.springframework.beans.factory.annotation.Value("${rentaxis.media.public-base-url:}")
+                                 String publicBaseUrl) {
         this.blobs = blobs;
         this.ads = ads;
         this.businesses = businesses;
+        this.publicBaseUrl = ListingMediaUrls.normaliseBase(publicBaseUrl);
+    }
+
+    /** What a DTO carries: an uploaded image's route made absolute; anything else unchanged. */
+    public String forDto(String stored) {
+        if (stored == null || publicBaseUrl.isEmpty() || !stored.startsWith(ROUTE_PREFIX)) return stored;
+        return publicBaseUrl + stored;
+    }
+
+    /**
+     * What is stored: the route of an uploaded image, relative, however the client
+     * sent it back (an editor re-saves the absolute URL its DTO carried).
+     */
+    public String normaliseForStorage(String url) {
+        if (url == null) return null;
+        if (!publicBaseUrl.isEmpty() && url.startsWith(publicBaseUrl + ROUTE_PREFIX)) {
+            return url.substring(publicBaseUrl.length());
+        }
+        return url;
+    }
+
+    /**
+     * An uploaded image may only be saved by the organisation whose container
+     * holds it (R1 P3-2): another org's file name, copied from a public URL, is
+     * refused rather than stored — so it can never make the owner's image 404.
+     */
+    public boolean ownedBy(UUID tenantId, String route) {
+        return fileOf(route).map(file -> blobs.exists(tenantId, blobPath(file))).orElse(false);
     }
 
     /** Stores an uploaded image for {@code tenantId}; returns the route to save on the ad or business. */
@@ -101,16 +143,19 @@ public class PromotionImageService {
     }
 
     /**
-     * The organisation whose live ad or business shows {@code file}, if any —
-     * the only case the anonymous route serves it.
+     * The organisations whose live ad or business shows {@code file}, in no
+     * particular order — the only case the anonymous route serves it. The route
+     * reads each one's own container until it finds the file (R1 P3-2), so a name
+     * collision can never serve, or hide, another organisation's image.
      */
     @Transactional(readOnly = true)
-    public Optional<UUID> liveOwner(String file) {
-        if (!isFileName(file)) return Optional.empty();
+    public java.util.List<UUID> liveOwners(String file) {
+        if (!isFileName(file)) return java.util.List.of();
         String route = ROUTE_PREFIX + file;
         Instant now = Instant.now();
+        java.util.LinkedHashSet<UUID> owners = new java.util.LinkedHashSet<>();
         for (PromoBusiness b : businesses.findByLogoUrl(route)) {
-            if (b.isActive()) return Optional.of(b.getTenantId());
+            if (b.isActive() && b.getTenantId() != null) owners.add(b.getTenantId());
         }
         for (PromoAd ad : ads.findByBackgroundImageUrl(route)) {
             if (!ad.isActive() || (ad.getEndsAt() != null && !ad.getEndsAt().isAfter(now))) continue;
@@ -118,8 +163,8 @@ public class PromotionImageService {
                     .filter(b -> Objects.equals(b.getTenantId(), ad.getTenantId()))
                     .map(PromoBusiness::isActive)
                     .orElse(false);
-            if (businessLive) return Optional.of(ad.getTenantId());
+            if (businessLive) owners.add(ad.getTenantId());
         }
-        return Optional.empty();
+        return java.util.List.copyOf(owners);
     }
 }

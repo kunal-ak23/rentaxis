@@ -163,7 +163,14 @@ public class MarketplaceController {
         for (UnitListingInterest interest : interests) {
             UnitListing listing = byId.get(interest.getListingId());
             if (listing != null) {
-                result.add(toSummary(listing));
+                UnitListingSummaryDTO summary = toSummary(listing);
+                // PR #401 R1 P3-3: a listing no longer live has no public photo route
+                // (it would 404), so its card carries no cover and the apps show
+                // their placeholder with the listing's status.
+                if (!marketplaceService.isPubliclyVisible(listing)) {
+                    summary = withoutCover(summary);
+                }
+                result.add(summary);
             }
         }
         return ResponseEntity.ok(result);
@@ -173,6 +180,12 @@ public class MarketplaceController {
     }
 
     // ---- Helpers ----
+
+    private static UnitListingSummaryDTO withoutCover(UnitListingSummaryDTO d) {
+        return new UnitListingSummaryDTO(d.id(), d.title(), d.propertyName(), d.bedrooms(), d.bathrooms(),
+                d.annualRent(), d.status(), null, d.interestsCount(), d.lat(), d.lng(),
+                d.createdAt(), d.updatedAt(), d.slug());
+    }
 
     private void checkEnabled(UUID tenantId) {
         if (!tenantFeatureService.isEnabled(tenantId, TenantFeature.LISTINGS)) {

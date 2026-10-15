@@ -36,6 +36,16 @@ void main() {
     expect(isStaffMediaRoute('/api/v1/public/listing-media/m1'), isFalse);
     expect(isStaffMediaRoute('https://cdn.example.com/a.jpg'), isFalse);
     expect(isStaffMediaRoute(null), isFalse);
+    // Absolute on the app's own API host: still staff-only (identity sent).
+    final host = Uri.parse(ApiClient.defaultBaseUrl).origin;
+    expect(isStaffMediaRoute('$host/api/listings/l1/media/m1/file'), isTrue);
+    // Never send identity headers to another host.
+    expect(isStaffMediaRoute('https://evil.example.com/api/listings/l1/media/m1/file'), isFalse);
+  });
+
+  test('an absolute URL from the API (installed-app compatible) is used as is', () {
+    const abs = 'https://app.rentaxis.com/api/v1/public/listing-media/m1';
+    expect(resolveMediaUrl(abs), abs);
   });
 
   test('a promotion model resolves its uploaded images', () {

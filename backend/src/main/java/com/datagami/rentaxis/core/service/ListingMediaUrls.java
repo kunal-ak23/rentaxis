@@ -26,22 +26,48 @@ public class ListingMediaUrls {
 
     private final BlobStorageService blobStorage;
 
+    /**
+     * The site's public origin, e.g. {@code https://app.rentaxis.com} (PR #401 R1
+     * P2-1): renter-app builds already in the stores pass a photo URL straight to
+     * {@code Image.network}, which cannot resolve a path, so every DTO carries an
+     * absolute URL. Configured ({@code rentaxis.media.public-base-url}, defaulting
+     * to {@code NEXT_PUBLIC_API_URL}, the origin Caddy serves), never taken from the
+     * request's Host header. Empty on a local stack: the routes stay relative.
+     */
+    private final String publicBaseUrl;
+
     public ListingMediaUrls(BlobStorageService blobStorage) {
-        this.blobStorage = blobStorage;
+        this(blobStorage, "");
     }
 
-    /** For the listing's own staff: {@code /api/listings/{listingId}/media/{id}/file}. */
+    @org.springframework.beans.factory.annotation.Autowired
+    public ListingMediaUrls(BlobStorageService blobStorage,
+                            @org.springframework.beans.factory.annotation.Value("${rentaxis.media.public-base-url:}")
+                            String publicBaseUrl) {
+        this.blobStorage = blobStorage;
+        this.publicBaseUrl = normaliseBase(publicBaseUrl);
+    }
+
+    /** {@code https://host[:port]} with no trailing slash, or empty when unset or not http(s). */
+    static String normaliseBase(String base) {
+        if (base == null || base.isBlank()) return "";
+        String b = base.trim();
+        while (b.endsWith("/")) b = b.substring(0, b.length() - 1);
+        return b.startsWith("https://") || b.startsWith("http://") ? b : "";
+    }
+
+    /** For the listing's own staff: {@code <base>/api/listings/{listingId}/media/{id}/file}. */
     public String adminUrl(UnitListingMedia m) {
         if (m == null) return null;
         return storedBlobPath(m).isPresent()
-                ? "/api/listings/" + m.getListingId() + "/media/" + m.getId() + "/file"
+                ? publicBaseUrl + "/api/listings/" + m.getListingId() + "/media/" + m.getId() + "/file"
                 : m.getUrl();
     }
 
-    /** For anyone, while the listing is live: {@code /api/v1/public/listing-media/{id}}. */
+    /** For anyone, while the listing is live: {@code <base>/api/v1/public/listing-media/{id}}. */
     public String publicUrl(UnitListingMedia m) {
         if (m == null) return null;
-        return storedBlobPath(m).isPresent() ? PUBLIC_PREFIX + m.getId() : m.getUrl();
+        return storedBlobPath(m).isPresent() ? publicBaseUrl + PUBLIC_PREFIX + m.getId() : m.getUrl();
     }
 
     /**

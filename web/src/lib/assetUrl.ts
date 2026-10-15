@@ -42,10 +42,28 @@ const PROXIED_LISTING_MEDIA_PREFIX = '/api/proxy/listings/'
  */
 export function listingMediaSrc(url: string | null | undefined): string {
   if (!url) return ''
-  if (url.startsWith(STAFF_LISTING_MEDIA_PREFIX)) {
-    return PROXIED_LISTING_MEDIA_PREFIX + url.slice(STAFF_LISTING_MEDIA_PREFIX.length)
+  // The API may name it absolutely (PR #401 R1: installed apps need that); the
+  // staff route still has to go through this site's proxy, so only its path counts.
+  const path = backendRoutePath(url, STAFF_LISTING_MEDIA_PREFIX)
+  if (path) {
+    return PROXIED_LISTING_MEDIA_PREFIX + path.slice(STAFF_LISTING_MEDIA_PREFIX.length)
   }
   return url
+}
+
+/**
+ * The path of `url` when it is one of the backend's own routes under `prefix` —
+ * given as a path, or as an absolute URL whose path is that route.
+ */
+function backendRoutePath(url: string, prefix: string): string | null {
+  if (url.startsWith(prefix)) return url
+  if (!/^https?:\/\//i.test(url)) return null
+  try {
+    const u = new URL(url)
+    return u.pathname.startsWith(prefix) ? u.pathname + u.search : null
+  } catch {
+    return null
+  }
 }
 
 const PROMO_IMAGE_ROUTE = '/api/v1/public/promo-images/'
@@ -60,8 +78,9 @@ const PROXIED_PROMO_IMAGE_PREFIX = '/api/proxy/v1/promotions/images/'
  */
 export function promoImageSrc(url: string | null | undefined): string {
   if (!url) return ''
-  if (url.startsWith(PROMO_IMAGE_ROUTE)) {
-    return PROXIED_PROMO_IMAGE_PREFIX + url.slice(PROMO_IMAGE_ROUTE.length)
+  const path = backendRoutePath(url, PROMO_IMAGE_ROUTE)
+  if (path) {
+    return PROXIED_PROMO_IMAGE_PREFIX + path.slice(PROMO_IMAGE_ROUTE.length)
   }
   return url
 }

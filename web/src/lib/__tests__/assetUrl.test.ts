@@ -63,3 +63,19 @@ describe('storedFileSrc (private attachments)', () => {
     expect(storedFileSrc(null, download)).toBe('')
   })
 })
+
+describe('absolute media URLs (PR #401 R1 P2-1)', () => {
+  it('routes an absolute staff media URL through this site\'s proxy', () => {
+    expect(listingMediaSrc('https://app.rentaxis.com/api/listings/l1/media/m1/file'))
+      .toBe('/api/proxy/listings/l1/media/m1/file')
+  })
+  it('loads an absolute public media URL as it is', () => {
+    expect(listingMediaSrc('https://app.rentaxis.com/api/v1/public/listing-media/m1'))
+      .toBe('https://app.rentaxis.com/api/v1/public/listing-media/m1')
+  })
+  it('previews an absolute uploaded promotion image through the admin route', () => {
+    expect(promoImageSrc('https://app.rentaxis.com/api/v1/public/promo-images/0b0f2c1e-1111-4222-8333-944455556666.png'))
+      .toBe('/api/proxy/v1/promotions/images/0b0f2c1e-1111-4222-8333-944455556666.png')
+    expect(promoImageSrc('https://cdn.example.com/api/v1/x.png')).toBe('https://cdn.example.com/api/v1/x.png')
+  })
+})

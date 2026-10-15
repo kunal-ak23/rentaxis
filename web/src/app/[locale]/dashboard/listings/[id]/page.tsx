@@ -545,7 +545,8 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
             role="tab"
             id={`listing-tab-${tab}`}
             aria-selected={activeTab === tab}
-            aria-controls={`listing-panel-${tab}`}
+            // Only the selected section's panel is rendered, so only it is referenced.
+            aria-controls={activeTab === tab ? `listing-panel-${tab}` : undefined}
             tabIndex={activeTab === tab ? 0 : -1}
             onClick={() => setActiveTab(tab)}
             className={cn(

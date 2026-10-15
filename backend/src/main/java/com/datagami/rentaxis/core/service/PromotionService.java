@@ -66,6 +66,14 @@ public class PromotionService {
     private final PropertyRepository propertyRepository;
     private final PromotionUrlValidator urlValidator;
 
+    /** Uploaded-image routes (ux6); optional so unit tests constructing the service keep working. */
+    private PromotionImageService images;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setImages(PromotionImageService images) {
+        this.images = images;
+    }
+
     public PromotionService(PromoBusinessRepository businessRepository,
                             PromoAdRepository adRepository,
                             PromoAdPropertyRepository adPropertyRepository,
@@ -151,7 +159,7 @@ public class PromotionService {
         if (nameEn == null) {
             throw new BusinessRuleViolationException("A business needs a name");
         }
-        String logoUrl = requireHttpsOrNull(trimToNull(req.logoUrl()), "logoUrl");
+        String logoUrl = requireHttpsOrNull(b.getTenantId(), trimToNull(req.logoUrl()), "logoUrl");
         // Normalise through the validator so the stored list and the check that
         // guards ad URLs can never disagree about what a domain looks like.
         // Entries the validator cannot turn into a hostname are reported rather
@@ -211,15 +219,22 @@ public class PromotionService {
      * allowlisted — businesses legitimately host artwork on CDNs — but https is
      * required so the request is at least encrypted and the host is a real host.
      */
-    private String requireHttpsOrNull(String url, String field) {
+    private String requireHttpsOrNull(UUID tenantId, String url, String field) {
         if (url == null) {
             return null;
         }
-        // An image uploaded here is named by its own (relative) serve route,
-        // which the renter app resolves against the API host (ux6 item 2).
+        // An image uploaded here is stored as its own (relative) serve route; the
+        // DTOs carry it absolute, and an editor sends that back (R1 P2-1).
+        if (images != null) {
+            url = images.normaliseForStorage(url);
+        }
         if (url.startsWith(PromotionImageService.ROUTE_PREFIX)) {
             if (PromotionImageService.fileOf(url).isEmpty()) {
                 throw new BusinessRuleViolationException(field + " is not a valid uploaded image");
+            }
+            // Only this organisation's own upload (R1 P3-2).
+            if (images != null && !images.ownedBy(tenantId, url)) {
+                throw new BusinessRuleViolationException(field + " is not an image uploaded by this organisation");
             }
             return url;
         }
@@ -362,7 +377,7 @@ public class PromotionService {
             throw new BusinessRuleViolationException("priority must be between 1 and 10");
         }
         String backgroundImageUrl =
-                requireHttpsOrNull(trimToNull(req.backgroundImageUrl()), "backgroundImageUrl");
+                requireHttpsOrNull(tenantId, trimToNull(req.backgroundImageUrl()), "backgroundImageUrl");
         // Re-checked here for the same reason as priority above: accent_color is
         // varchar(9), so an unvalidated value is a DataIntegrityViolationException
         // at commit — a 500 with a raw JDBC message rather than a field error.

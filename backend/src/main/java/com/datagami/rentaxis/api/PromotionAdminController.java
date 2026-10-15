@@ -71,6 +71,11 @@ public class PromotionAdminController {
     @org.springframework.beans.factory.annotation.Autowired
     private com.datagami.rentaxis.core.service.BlobStorageService blobs;
 
+    /** An uploaded image's route made absolute (R1 P2-1); null-safe for unit tests that build the controller. */
+    private String imageForDto(String stored) {
+        return images == null ? stored : images.forDto(stored);
+    }
+
     /**
      * Uploads an ad's artwork or a business logo into the organisation's private
      * container; answers the route to save in {@code backgroundImageUrl} or
@@ -237,7 +242,7 @@ public class PromotionAdminController {
         List<String> domains = b.getAllowedDomains() == null || b.getAllowedDomains().isBlank()
                 ? List.of()
                 : Arrays.stream(b.getAllowedDomains().split(",")).map(String::trim).toList();
-        return new PromoBusinessDTO(b.getId(), b.getNameEn(), b.getNameAr(), b.getLogoUrl(),
+        return new PromoBusinessDTO(b.getId(), b.getNameEn(), b.getNameAr(), imageForDto(b.getLogoUrl()),
                 b.getCategory(), b.getPhoneE164(), b.getWhatsappE164(), domains,
                 b.isActive(), adCount, b.getCreatedAt(), b.getUpdatedAt());
     }
@@ -252,7 +257,7 @@ public class PromotionAdminController {
                             PromotionStatsService.Totals totals) {
         return new PromoAdDTO(a.getId(), a.getBusinessId(), businessName,
                 a.getTitleEn(), a.getTitleAr(), a.getSubtitleEn(), a.getSubtitleAr(),
-                a.getBackgroundImageUrl(), a.getAccentColor(),
+                imageForDto(a.getBackgroundImageUrl()), a.getAccentColor(),
                 a.getCtaType(), a.getCtaLabelEn(), a.getCtaLabelAr(), a.getCtaUrl(),
                 a.getCouponCode(), a.getCouponTermsEn(), a.getCouponTermsAr(),
                 a.getStartsAt(), a.getEndsAt(), a.getPriority(), a.getPlacement(), a.isActive(),

@@ -19,7 +19,19 @@ String? resolveMediaUrl(String? url, {String? apiBase}) {
 
 /// True for a route only the signed-in staff of the organisation may load —
 /// the listing editor's `/api/listings/{id}/media/{mediaId}/file`.
-bool isStaffMediaRoute(String? url) => url != null && url.startsWith('/api/listings/');
+bool isStaffMediaRoute(String? url) {
+  if (url == null) return false;
+  if (url.startsWith('/api/listings/')) return true;
+  // The API may name it absolutely (PR #401 R1); only on the app's own API host
+  // are the signed-in identity headers sent.
+  final uri = Uri.tryParse(url);
+  final api = Uri.tryParse(ApiClient.defaultBaseUrl);
+  return uri != null &&
+      api != null &&
+      uri.hasScheme &&
+      uri.host == api.host &&
+      uri.path.startsWith('/api/listings/');
+}
 
 /// The same identity headers the API client sends ([AuthInterceptor]), for an
 /// image request to a staff-only media route.
