@@ -50,6 +50,21 @@ public class User extends BaseTenantEntity {
     private Instant welcomedAt;
 
     /**
+     * Whether {@link #passwordHash} is the person's own: chosen through a link
+     * mailed to this address (invite or reset), changed from a password that was
+     * itself their own, or copied from a row where it was (changeset 165). Only
+     * such a hash is ever shared with another organisation's row of the same
+     * email — a password an admin typed must never open a second organisation.
+     */
+    @JsonIgnore
+    @Column(name = "password_self_set", nullable = false)
+    private boolean passwordSelfSet;
+
+    @JsonIgnore
+    @Column(name = "password_set_at")
+    private Instant passwordSetAt;
+
+    /**
      * Revocation counter for bearer tokens (security audit P1-2). Every token
      * carries the value it was minted with ({@code tv} claim) and
      * {@code ApiSecurityFilter} refuses one that no longer matches.

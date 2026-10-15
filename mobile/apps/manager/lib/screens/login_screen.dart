@@ -62,9 +62,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
     setState(() => _isSubmitting = true);
 
-    final success = await ref
-        .read(authProvider.notifier)
-        .login(_emailController.text.trim(), _passwordController.text);
+    final notifier = ref.read(authProvider.notifier);
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    var success = await notifier.login(email, password);
+
+    // One login per person: a password that opens several organisations
+    // comes back as a list to choose from; sign in to the one picked.
+    if (!success && mounted) {
+      final choices = ref.read(authProvider).tenantChoices;
+      if (choices.isNotEmpty) {
+        final picked = await showOrganisationPicker(
+          context,
+          choices,
+          ar: context.isAr,
+        );
+        if (picked != null && mounted) {
+          success = await notifier.login(email, password, tenantId: picked);
+        }
+      }
+    }
 
     if (!mounted) return;
     setState(() => _isSubmitting = false);

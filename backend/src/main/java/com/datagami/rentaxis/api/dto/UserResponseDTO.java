@@ -23,6 +23,12 @@ public class UserResponseDTO {
      */
     private boolean invitePending;
     private java.time.Instant inviteExpiresAt;
+    /**
+     * Set on the create response only: this person already had a Miftah login
+     * (another organisation), so the new membership signs in with their existing
+     * password and no invite was sent. Shown to the admin creating them.
+     */
+    private boolean existingLogin;
 
     public static UserResponseDTO from(User user) {
         UserResponseDTO dto = new UserResponseDTO();

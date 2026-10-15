@@ -564,7 +564,9 @@ public class AuthController {
 
         // changePassword is @Transactional — the entity write and event publish
         // share the same transaction, so TransactionalEventListener fires on commit.
-        int tokenVersion = userService.changePassword(user, request.newPassword());
+        // One login per person: also written to the person's other organisations
+        // that the verified current password opens.
+        int tokenVersion = userService.changePassword(user, request.currentPassword(), request.newPassword());
 
         // The change revoked every token this user holds, the one on this
         // request included (audit P1-2). Hand the caller a replacement so the
