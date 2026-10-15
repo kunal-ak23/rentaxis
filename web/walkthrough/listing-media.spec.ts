@@ -136,10 +136,12 @@ test('00 seed an organisation with a published and a draft listing, each with a 
     };
     const pm = await upload(pub.id, [20, 140, 200]);
     const dm = await upload(draft.id, [200, 80, 20]);
-    expect(pm.url).toBe(`/api/listings/${pub.id}/media/${pm.id}/file`);
+    // Absolute on the configured public origin when one is set (PR #401 R1 P2-1).
+    expect(pm.url.endsWith(`/api/listings/${pub.id}/media/${pm.id}/file`)).toBe(true);
     await api(admin, 'POST', `/api/listings/${pub.id}/publish`);
     const detail = await api<{ tenantSlug: string; slug: string; media: { url: string }[] }>(admin, 'GET', `/api/listings/${pub.id}`);
     expect(detail.media[0].url).not.toContain('devstoreaccount1');
+    if (process.env.WT_EXPECT_ABSOLUTE) expect(detail.media[0].url).toMatch(/^https?:\/\//);
 
     // A renter with a portal login, for the marketplace.
     const renterEmail = `ux6-renter-${SUFFIX}@sweep.test`;
@@ -180,6 +182,13 @@ test('anonymous: the public listing page shows the photo; a draft photo is not p
     await page.goto(`/l/${fx.tenantSlug}/${fx.published.slug}`);
     const srcs = await expectImagesLoaded(page, `img[src*="/api/v1/public/listing-media/"]`, 1);
     expect(srcs[0]).toContain(fx.publishedMediaId);
+
+    // An installed app hands the DTO's URL straight to Image.network: it must be absolute and load as is.
+    const dto = await (await page.request.get(`${BACKEND}/public/l/${fx.tenantSlug}/${fx.published.slug}`)).json();
+    if (process.env.WT_EXPECT_ABSOLUTE) expect(dto.coverPhotoUrl).toMatch(/^https?:\/\//);
+    const asIs = await page.request.get(new URL(dto.coverPhotoUrl, page.url()).toString());
+    expect(asIs.status()).toBe(200);
+    expect(asIs.headers()['content-type']).toBe('image/png');
 
     const draftPublic = await page.request.get(`/api/v1/public/listing-media/${fx.draftMediaId}`);
     expect(draftPublic.status()).toBe(404);
