@@ -155,11 +155,11 @@ public class MaintenanceTicketController {
     @GetMapping("/attachments/{attachmentId}/download")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<byte[]> downloadAttachment(@PathVariable UUID attachmentId) {
-        byte[] content = ticketService.downloadAttachment(attachmentId);
+        var file = ticketService.download(attachmentId);
         return ResponseEntity.ok()
-                .header("Content-Disposition", "attachment")
-                .contentType(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM)
-                .body(content);
+                .header("Content-Disposition", com.datagami.rentaxis.core.util.AttachmentNames.attachment(file.filename()))
+                .contentType(org.springframework.http.MediaType.parseMediaType(file.contentType()))
+                .body(file.content());
     }
 
     @PutMapping("/{id}/rate")

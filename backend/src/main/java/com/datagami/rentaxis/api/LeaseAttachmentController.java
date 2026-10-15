@@ -2,6 +2,7 @@ package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.LeaseAttachmentDTO;
 import com.datagami.rentaxis.core.service.LeaseAttachmentService;
+import com.datagami.rentaxis.core.util.AttachmentNames;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -39,11 +40,11 @@ public class LeaseAttachmentController {
     @GetMapping("/attachments/{id}/download")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'RENTER')")
     public ResponseEntity<byte[]> download(@PathVariable UUID id) {
-        byte[] content = attachmentService.downloadAttachment(id);
+        AttachmentNames.Download file = attachmentService.download(id);
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=document")
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                .body(content);
+                .header(HttpHeaders.CONTENT_DISPOSITION, AttachmentNames.attachment(file.filename()))
+                .contentType(MediaType.parseMediaType(file.contentType()))
+                .body(file.content());
     }
 
     @DeleteMapping("/attachments/{id}")

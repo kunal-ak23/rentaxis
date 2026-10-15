@@ -44,10 +44,11 @@ public class DeductionAttachmentController {
     public ResponseEntity<Resource> download(@PathVariable UUID id) throws IOException {
         DeductionAttachmentDTO meta = attachmentService.getAttachmentById(id);
         InputStreamResource resource = new InputStreamResource(attachmentService.downloadAttachmentStream(id));
-        String contentType = meta.getFileType() != null ? meta.getFileType() : "application/octet-stream";
-        String safeName = meta.getName().replaceAll("[\"\\r\\n\\\\/:*?<>|]", "_");
+        String contentType = com.datagami.rentaxis.core.util.AttachmentNames.servedContentType(
+                meta.getFileType(), meta.getFileUrl(), null);
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + safeName + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        com.datagami.rentaxis.core.util.AttachmentNames.attachment(meta.getDownloadName()))
                 .contentType(MediaType.parseMediaType(contentType))
                 .body(resource);
     }

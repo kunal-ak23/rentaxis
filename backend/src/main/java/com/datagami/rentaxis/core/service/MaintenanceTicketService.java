@@ -1215,18 +1215,43 @@ public class MaintenanceTicketService {
         }
     }
 
+    /** The attachment's bytes, the name to save them as (with its extension) and the type to serve. */
+    @Transactional(readOnly = true)
+    public com.datagami.rentaxis.core.util.AttachmentNames.Download download(UUID attachmentId) {
+        byte[] content = downloadAttachment(attachmentId);
+        TicketAttachment a = attachmentRepository.findById(attachmentId)
+                .orElseThrow(() -> new NotFoundException("Attachment not found"));
+        return com.datagami.rentaxis.core.util.AttachmentNames.download(
+                content, storedBaseName(a.getFileUrl()), a.getFileUrl(), a.getFileType(), "attachment");
+    }
+
+    /** "ab12cd34" of a stored ".../ticket-attachments/ab12cd34.pdf" — the extension is added back by the caller. */
+    private static String storedBaseName(String fileUrl) {
+        if (fileUrl == null) return "";
+        String s = fileUrl;
+        int q = s.indexOf('?');
+        if (q >= 0) s = s.substring(0, q);
+        String base = s.substring(s.lastIndexOf('/') + 1);
+        int dot = base.lastIndexOf('.');
+        return "attachment-" + (dot > 0 ? base.substring(0, dot) : base);
+    }
+
     @Transactional
     public TicketAttachmentDTO uploadAttachment(UUID ticketId, MultipartFile file) throws IOException {
         MaintenanceTicket ticket = visibleTicket(ticketId, Access.WRITE);
         requireAcceptableAttachment(file);
 
         byte[] bytes = file.getBytes();
-        String ext = getExtension(file.getOriginalFilename());
+        // The blob name keeps the original file's extension (or the one its type names):
+        // a ticket attachment has no display name, so the download is saved under it.
+        String contentType = com.datagami.rentaxis.core.util.AttachmentNames.uploadContentType(
+                file.getOriginalFilename(), file.getContentType());
+        String ext = com.datagami.rentaxis.core.util.AttachmentNames.uploadExtension(file.getOriginalFilename(), contentType);
         String fileName = UUID.randomUUID().toString().substring(0, 8) + ext;
 
         String fileUrl;
         if (azureConnectionString != null && !azureConnectionString.isBlank()) {
-            fileUrl = uploadToAzure(fileName, bytes, file.getContentType());
+            fileUrl = uploadToAzure(fileName, bytes, contentType);
         } else {
             fileUrl = saveToLocal(fileName, bytes);
         }
@@ -1234,7 +1259,7 @@ public class MaintenanceTicketService {
         TicketAttachment attachment = new TicketAttachment();
         attachment.setTicket(ticket);
         attachment.setFileUrl(fileUrl);
-        attachment.setFileType(file.getContentType());
+        attachment.setFileType(contentType);
         attachment.setFileSize(file.getSize());
         attachment.setUploadedBy(callerUserId());
         attachment.setUploadedAt(Instant.now());
@@ -1307,6 +1332,8 @@ public class MaintenanceTicketService {
         dto.setId(attachment.getId());
         dto.setTicketId(attachment.getTicket() != null ? attachment.getTicket().getId() : null);
         dto.setFileUrl(attachment.getFileUrl());
+        dto.setDownloadName(com.datagami.rentaxis.core.util.AttachmentNames.downloadName(
+                storedBaseName(attachment.getFileUrl()), attachment.getFileUrl(), attachment.getFileType(), null, "attachment"));
         dto.setFileType(attachment.getFileType());
         dto.setFileSize(attachment.getFileSize());
         dto.setUploadedAt(attachment.getUploadedAt());
@@ -1556,11 +1583,6 @@ public class MaintenanceTicketService {
         return "/api/v1/assets/serve/ticket-attachments/" + fileName;
     }
 
-    private String getExtension(String filename) {
-        if (filename == null) return "";
-        int dot = filename.lastIndexOf('.');
-        return dot >= 0 ? filename.substring(dot) : "";
-    }
 
     // ---- History ----
 

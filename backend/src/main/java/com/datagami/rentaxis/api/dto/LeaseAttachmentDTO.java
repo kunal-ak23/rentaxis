@@ -9,6 +9,8 @@ public class LeaseAttachmentDTO {
     private UUID id;
     private UUID leaseId;
     private String name;
+    /** The name to save the file as: the display name plus the original file's extension. */
+    private String downloadName;
     private String fileUrl;
     private String fileType;
     private Long fileSize;
