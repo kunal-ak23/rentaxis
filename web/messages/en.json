@@ -4064,6 +4064,7 @@
     "note": {
       "register": "Operational figures from the cheque register; not a ledger balance.",
       "differsByDesign": "The register and the ledger differ by design: the contract bills rent in advance.",
+      "asAtToday": "The period has not ended yet: outstanding and overdue are as at today.",
       "directPaymentsOnly": "Only payment vouchers that debit an expense directly are shown until supplier allocation lands.",
       "inputVatHeaderProperty": "Input VAT on a voucher with no header property is under Unassigned.",
       "notCashAtBank": "Net property cash movement, not cash at bank: a bank account can serve several properties.",
