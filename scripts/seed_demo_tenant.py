@@ -700,6 +700,9 @@ def main():
                 "fineAccountClosedAmount": 500.0,
                 "fineGraceDays": 3,
                 "finePerDayRate": 50.0,
+                # Collection is by cheque, cash and bank transfer: no renter
+                # "Pay Now". Unset reads as on until PR #400 makes it opt-in.
+                "onlinePaymentEnabled": False,
             },
         )
         return p
@@ -901,7 +904,8 @@ def main():
                 "payeeBank": bank, "amount": float(amount),
                 "narration": narration, "mode": mode}
 
-    def make_lease(unit, renter, contract_ref, lines, cheques, terms, post=True):
+    def make_lease(unit, renter, contract_ref, lines, cheques, terms, post=True,
+                   start=None, end=None, signed=None, dated=None):
         """Create-or-fetch a DRAFT lease, give it its grid, then post it.
 
         Every half is idempotent: a lease already on the unit is returned as it
@@ -927,10 +931,10 @@ def main():
             lease = api.post("/api/v1/leases", json={
                 "unitId": unit["id"],
                 "renterId": renter["id"],
-                "startDate": iso(year_start),
-                "endDate": iso(year_end),
-                "agreementDate": iso(agreement_date),
-                "contractDate": iso(contract_date),
+                "startDate": iso(start or year_start),
+                "endDate": iso(end or year_end),
+                "agreementDate": iso(signed or agreement_date),
+                "contractDate": iso(dated or contract_date),
                 "gracePeriodDays": 5,
                 "paymentTerms": terms,
                 "paymentMethod": "CHEQUE",
@@ -977,7 +981,9 @@ def main():
     )
 
     # Rajesh — monthly, with the year's parking folded into January.
-    # 135,000 = 12,000 + 13,000 + 11 × 10,000.
+    # 135,000 = 12,000 + 13,000 + 11 × 10,000. No VAT on any line: a VAT-able
+    # charge needs the organisation's TRN on every instalment's tax invoice, and
+    # the sandbox has no TRN unless DEMO_ORG_TRN is given.
     ORDINALS = {1: "1st", 2: "2nd", 3: "3rd"}
     rajesh_cheques = [cheque(1, "400300", year_start, 12000, "Security Deposit",
                              bank="Dubai Islamic Bank")]
@@ -996,16 +1002,27 @@ def main():
 
     # Sara — left in DRAFT on purpose, grid and all. Posting it is the one
     # moment in the demo where the audience watches TCO and PDR journals appear.
+    # A new letting, so it starts on the 1st of next month and every cheque is
+    # still in the future: posted on the day, nothing on it is born overdue.
     # 140,000 = 30,000 + 4 × 27,500.
+    sara_start = (TODAY.replace(day=1) + dt.timedelta(days=32)).replace(day=1)
+    sara_end = sara_start.replace(year=sara_start.year + 1) - dt.timedelta(days=1)
+
+    def months_after(d, n):
+        y, m = divmod(d.month - 1 + n, 12)
+        return d.replace(year=d.year + y, month=m + 1)
+
+    sara_grid = [cheque(1, "500400", sara_start, 30000, "Security Deposit",
+                        posting_date=TODAY)]
+    for q in range(4):
+        sara_grid.append(cheque(q + 2, f"50040{q + 1}", months_after(sara_start, 3 * q), 27500,
+                                f"Rent - {ORDINALS.get(q + 1, f'{q + 1}th')} Installment",
+                                posting_date=TODAY))
     lease_sara = make_lease(
         m1501, sara, "MH/2001",
         [line("SECURITY_DEPOSIT", 30000), line("RENT", 110000)],
-        [cheque(1, "500400", year_start, 30000, "Security Deposit"),
-         cheque(2, "500401", year_start, 27500, "Rent - 1st Installment"),
-         cheque(3, "500402", dt.date(TODAY.year, 4, 1), 27500, "Rent - 2nd Installment"),
-         cheque(4, "500403", dt.date(TODAY.year, 7, 1), 27500, "Rent - 3rd Installment"),
-         cheque(5, "500404", dt.date(TODAY.year, 10, 1), 27500, "Rent - 4th Installment")],
-        terms=4, post=False,
+        sara_grid, terms=4, post=False,
+        start=sara_start, end=sara_end, signed=TODAY, dated=TODAY,
     )
     log("3 posted contracts (quarterly, quarterly, monthly) + 1 draft to post live")
 
