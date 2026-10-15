@@ -293,6 +293,30 @@ class TicketRenterIsolationIT extends AbstractPostgresIT {
         }
     }
 
+    /** Ticket attachments download with their extension and real type, not as a bare "attachment". */
+    @Test
+    void aTicketAttachmentDownloadsWithItsExtensionAndType() throws Exception {
+        as(userA, "RENTER");
+        byte[] jpeg = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0, 0x10, 'J', 'F', 'I', 'F'};
+        var photo = tickets.uploadAttachment(reportedByA,
+                new org.springframework.mock.web.MockMultipartFile("file", "leak.jpg", "image/jpeg", jpeg));
+        assertThat(photo.getDownloadName()).endsWith(".jpg");
+        var got = tickets.download(photo.getId());
+        assertThat(got.filename()).endsWith(".jpg");
+        assertThat(got.contentType()).isEqualTo("image/jpeg");
+        assertThat(got.content()).isEqualTo(jpeg);
+
+        // The mobile apps send files as application/octet-stream: the extension names the type.
+        byte[] pdf = "%PDF-1.4 receipt".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        var invoice = tickets.uploadAttachment(reportedByA,
+                new org.springframework.mock.web.MockMultipartFile("file", "invoice.pdf", "application/octet-stream", pdf));
+        assertThat(invoice.getFileType()).isEqualTo("application/pdf");
+        var gotPdf = tickets.download(invoice.getId());
+        assertThat(gotPdf.filename()).endsWith(".pdf");
+        assertThat(gotPdf.contentType()).isEqualTo("application/pdf");
+        SecurityContextHolder.clearContext();
+    }
+
     @Test
     void staffStillReachEveryTicketInTheirTenant() {
         User admin = user(UserRole.TENANT_ADMIN);

@@ -21,7 +21,8 @@ import {
     Wrench, Building2, Home, Tag, AlertTriangle, CheckCircle, X, FileText, Trash2,
 } from "lucide-react";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
-import { assetSrc } from "@/lib/assetUrl";
+import { storedFileSrc } from "@/lib/assetUrl";
+import { saveResponse } from "@/lib/download";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -79,6 +80,8 @@ type Reply = {
 type Attachment = {
     id: string;
     name: string;
+    /** The name the download is saved as, extension included. */
+    downloadName?: string;
     fileUrl: string;
     fileType: string;
     fileSize: number;
@@ -90,6 +93,8 @@ type StaffUser = {
     id: string;
     name: string;
     role: string;
+    /** From the staff record linked to this login ("Give login"), when there is one. */
+    designation?: string | null;
 };
 
 // ── Badge Maps ─────────────────────────────────────────────────────────────
@@ -140,6 +145,14 @@ export default function TicketDetailPage() {
             return notes.includes("resolved again") ? t("history.otpReissuedResolvedAgain") : t("history.otpReissued");
         }
         if (h.action === "OTP_LOCKED") return t("history.otpLocked");
+        // Tutorial 22: the history began at the first change; creation and the ETA
+        // now have entries. ETA notes are "previous→new" in hours ("" for none).
+        if (h.action === "CREATED") return t("history.created");
+        if (h.action === "ETA_SET" || h.action === "ETA_CHANGED") {
+            const [from, to] = notes.split("→");
+            if (!to) return t("history.etaCleared");
+            return from ? t("history.etaChanged", { from: Number(from), to: Number(to) }) : t("history.etaSet", { hours: Number(to) });
+        }
         // The assignee's account was deleted and the ticket went back to the queue
         // (UserReferenceReleaser): the stored note is English, so say it here.
         if (h.action === "UNASSIGNED") return t("history.unassigned");
@@ -354,15 +367,8 @@ export default function TicketDetailPage() {
         try {
             const res = await fetch(`/api/proxy/v1/tickets/attachments/${attachmentId}/download`);
             if (!res.ok) throw new Error(`download ${res.status}`);
-            const blob = await res.blob();
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = fileName;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            // The server names the file, extension included.
+            await saveResponse(res, fileName);
         } catch {
             setAttachmentDownloadError(t("attachmentDownloadFailed"));
         }
@@ -496,7 +502,7 @@ export default function TicketDetailPage() {
                                             {isImage ? (
                                                 <div
                                                     className="aspect-square bg-cover bg-center cursor-pointer hover:opacity-90 transition-opacity"
-                                                    style={{ backgroundImage: `url(${assetSrc(att.fileUrl)})` }}
+                                                    style={{ backgroundImage: `url(${storedFileSrc(att.fileUrl, `/api/proxy/v1/tickets/attachments/${att.id}/download`)})` }}
                                                     onClick={() => setLightboxIndex(mediaIndex)}
                                                 />
                                             ) : isVideo ? (
@@ -504,7 +510,7 @@ export default function TicketDetailPage() {
                                                     className="aspect-square relative cursor-pointer hover:opacity-90 transition-opacity"
                                                     onClick={() => setLightboxIndex(mediaIndex)}
                                                 >
-                                                    <video src={assetSrc(att.fileUrl)} className="w-full h-full object-cover" preload="metadata" muted />
+                                                    <video src={storedFileSrc(att.fileUrl, `/api/proxy/v1/tickets/attachments/${att.id}/download`)} className="w-full h-full object-cover" preload="metadata" muted />
                                                     <div className="absolute inset-0 flex items-center justify-center bg-black/20">
                                                         <div className="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center">
                                                             <div className="w-0 h-0 border-t-[8px] border-t-transparent border-b-[8px] border-b-transparent border-l-[14px] border-l-foreground ml-1" />
@@ -514,7 +520,7 @@ export default function TicketDetailPage() {
                                             ) : (
                                                 <div
                                                     className="aspect-square flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-input transition-colors"
-                                                    onClick={() => handleDownloadAttachment(att.id, att.fileUrl.split("/").pop() || "file")}
+                                                    onClick={() => handleDownloadAttachment(att.id, att.downloadName ?? (att.fileUrl.split("/").pop() || "file"))}
                                                 >
                                                     <FileText size={20} className="text-muted" />
                                                     <p className="text-[9px] font-semibold text-muted uppercase">{att.fileType?.split("/")[1] || t("fileFallback")}</p>
@@ -524,7 +530,7 @@ export default function TicketDetailPage() {
                                                 <div className="flex items-center justify-between">
                                                     <p className="text-[9px] text-white font-medium truncate flex-1">{t("fileSizeKb", { size: (att.fileSize / 1024).toFixed(0) })}</p>
                                                     <div className="flex items-center gap-1">
-                                                        <button type="button" aria-label={t("downloadAttachment")} onClick={(e) => { e.stopPropagation(); handleDownloadAttachment(att.id, att.fileUrl.split("/").pop() || "file"); }} className="p-1 text-white hover:text-white/80 cursor-pointer"><Download size={11} /></button>
+                                                        <button type="button" aria-label={t("downloadAttachment")} onClick={(e) => { e.stopPropagation(); handleDownloadAttachment(att.id, att.downloadName ?? (att.fileUrl.split("/").pop() || "file")); }} className="p-1 text-white hover:text-white/80 cursor-pointer"><Download size={11} /></button>
                                                         <button type="button" aria-label={t("deleteAttachment")} onClick={(e) => { e.stopPropagation(); handleDeleteAttachment(att.id); }} className="p-1 text-red-400 hover:text-red-300 cursor-pointer"><Trash2 size={11} /></button>
                                                     </div>
                                                 </div>
@@ -699,10 +705,20 @@ export default function TicketDetailPage() {
                                     {showAssignDropdown && (
                                         <div className="absolute top-full inset-x-0 mt-1 bg-surface border border-border rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
                                             {staffUsers.map(user => (
-                                                <button key={user.id} onClick={() => handleAssign(user.id)} className="w-full text-start px-3 py-2 text-xs hover:bg-input transition-colors cursor-pointer">
-                                                    <span className="font-medium text-foreground">{user.name}</span> <span className="text-muted">({tRoles.has(user.role) ? tRoles(user.role) : user.role.replace(/_/g, " ")})</span>
+                                                <button key={user.id} onClick={() => handleAssign(user.id)} data-testid={`assignee-${user.id}`} className="w-full text-start px-3 py-2 text-xs hover:bg-input transition-colors cursor-pointer">
+                                                    <span className="font-medium text-foreground">{user.name}</span>
+                                                    {user.designation && <span className="text-foreground"> · {user.designation}</span>}
+                                                    {" "}<span className="text-muted">({tRoles.has(user.role) ? tRoles(user.role) : user.role.replace(/_/g, " ")})</span>
                                                 </button>
                                             ))}
+                                            {/* Tutorial 22: staff records are not logins, so they are not listed
+                                                here. Say so, and point an admin to where a login is given. */}
+                                            <p className="px-3 py-2 text-[11px] text-muted border-t border-border" data-testid="assignee-staff-hint">
+                                                {t("assigneeStaffHint")}{" "}
+                                                {hasPermission(userRole, "canAccessFinanceOps") && (
+                                                    <Link href="/dashboard/staff" className="text-primary font-semibold hover:underline">{t("assigneeStaffHintLink")}</Link>
+                                                )}
+                                            </p>
                                         </div>
                                     )}
                                 </div>
@@ -826,11 +842,11 @@ export default function TicketDetailPage() {
                 const mediaItems = attachments.filter(a => a.fileType?.startsWith("image/") || a.fileType?.startsWith("video/"));
                 return mediaItems.length > 0 ? (
                     <ImageLightbox
-                        images={mediaItems.map(a => ({ url: assetSrc(a.fileUrl), name: a.fileUrl.split("/").pop() || "file", type: a.fileType }))}
+                        images={mediaItems.map(a => ({ url: storedFileSrc(a.fileUrl, `/api/proxy/v1/tickets/attachments/${a.id}/download`), name: a.fileUrl.split("/").pop() || "file", type: a.fileType }))}
                         initialIndex={Math.min(lightboxIndex, mediaItems.length - 1)}
                         onClose={() => setLightboxIndex(null)}
                         onDownload={(url, name) => {
-                            const att = attachments.find(a => assetSrc(a.fileUrl) === url);
+                            const att = attachments.find(a => storedFileSrc(a.fileUrl, `/api/proxy/v1/tickets/attachments/${a.id}/download`) === url);
                             if (att) handleDownloadAttachment(att.id, name);
                         }}
                     />

@@ -165,8 +165,15 @@ export default function BookingsPage() {
                         <option key={p.id} value={p.id}>{propertyName(p)}</option>
                     ))}
                 </select>
+                {/* Pending is the default: this page is the decision queue. The select
+                    must always show the filter actually applied — autoComplete="off"
+                    stops the browser restoring an old "All statuses" choice on Back
+                    while the list (React state) still loads only pending requests. */}
                 <select
                     value={status}
+                    autoComplete="off"
+                    aria-label={t("colStatus")}
+                    data-testid="bookings-status-filter"
                     onChange={e => setStatus(e.target.value as "" | BookingRequestStatus)}
                     className="bg-input border border-border rounded-lg px-3 py-2 text-xs font-semibold text-foreground cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                 >
@@ -261,7 +268,19 @@ export default function BookingsPage() {
                     <div className="text-center py-12 text-muted font-medium text-xs">{t("loading")}</div>
                 )}
                 {!loading && rows.length === 0 && !error && (
-                    <div className="text-center py-12 text-muted font-medium text-xs">{t("noBookings")}</div>
+                    <div className="text-center py-12 text-muted font-medium text-xs" data-testid="bookings-empty">
+                        {status ? t("noBookingsWithStatus", { status: t(`status${status}`) }) : t("noBookings")}
+                        {status && (
+                            <button
+                                type="button"
+                                onClick={() => setStatus("")}
+                                className="block mx-auto mt-2 text-primary font-semibold cursor-pointer hover:underline"
+                                data-testid="bookings-show-all"
+                            >
+                                {t("showAllStatuses")}
+                            </button>
+                        )}
+                    </div>
                 )}
                 {!loading && totalElements > PAGE_SIZE && (
                     <div className="px-6 pb-4">

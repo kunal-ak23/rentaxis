@@ -5,6 +5,7 @@ import { useTranslations, useLocale } from "next-intl";
 import { useSession } from "next-auth/react";
 import { ArrowLeft, Dumbbell, Car, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { tenantCanCancel } from "@/lib/bookings/cancellable";
 import { Link } from "@/i18n/routing";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
@@ -436,7 +437,10 @@ export default function RenterFacilitiesPage() {
                                 <p className="text-[10px] text-muted">{t("pendingHint", { count: s.pendingCount })}</p>
                                 <button
                                     onClick={() => openRequest({ resourceType: "PARKING_SPOT", resourceId: s.id, name: s.spotNumber, propertyId: s.propertyId })}
-                                    disabled={noActiveLease || s.held}
+                                    // A pending request of the caller's own for this spot: a second
+                                    // one is a duplicate (tutorial 24).
+                                    disabled={noActiveLease || s.held || myOpen?.status === "PENDING"}
+                                    data-testid={`request-spot-${s.id}`}
                                     className="mt-auto self-start px-4 py-2 bg-primary/10 text-primary hover:bg-primary/20 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {t("request")}
@@ -501,8 +505,11 @@ export default function RenterFacilitiesPage() {
                                             </td>
                                             <td className="px-6 py-4">
                                                 <div className="flex justify-end">
-                                                    {b.status === "PENDING" && (
+                                                    {/* Pending, or an approved amenity before its slot
+                                                        starts (the backend reverses its fee) — tutorial 24. */}
+                                                    {tenantCanCancel(b) && (
                                                         <button
+                                                            data-testid={`cancel-booking-${b.id}`}
                                                             onClick={() => setPendingAction({ kind: "cancel", booking: b })}
                                                             className="px-3 py-1.5 bg-error/10 text-error hover:bg-error/20 rounded-lg text-[11px] font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-error/30"
                                                         >
@@ -625,7 +632,8 @@ export default function RenterFacilitiesPage() {
                 onClose={() => setPendingAction(null)}
                 onConfirm={runPendingAction}
                 title={pendingAction?.kind === "release" ? t("releaseSpot") : t("cancelRequest")}
-                description={pendingAction?.kind === "release" ? t("releaseSpotConfirm") : t("cancelRequestConfirm")}
+                description={pendingAction?.kind === "release" ? t("releaseSpotConfirm")
+                    : pendingAction?.booking.status === "APPROVED" ? t("cancelApprovedConfirm") : t("cancelRequestConfirm")}
                 confirmText={pendingAction?.kind === "release" ? t("releaseSpot") : t("cancelRequest")}
                 isDestructive={pendingAction?.kind === "cancel"}
                 isLoading={actionLoading}

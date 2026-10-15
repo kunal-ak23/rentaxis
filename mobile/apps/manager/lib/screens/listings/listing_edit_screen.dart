@@ -1128,7 +1128,7 @@ class _MediaTabState extends State<_MediaTab> {
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(10),
-                      child: Image.network(
+                      child: ApiImage(
                         url,
                         fit: BoxFit.cover,
                         errorBuilder: (_, _, _) =>

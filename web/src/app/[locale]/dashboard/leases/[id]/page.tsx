@@ -1,6 +1,7 @@
 "use client";
 
 import { focusFirstInvalidMoney } from "@/components/ui/NumberInput";
+import { saveResponse } from "@/lib/download";
 import { useCallback, useEffect, useState } from "react";
 import { ContractDocuments } from "@/components/leases/ContractDocuments";
 import { useParams, useSearchParams } from "next/navigation";
@@ -70,7 +71,7 @@ import {
  */
 
 type Renter = { id: string; nameEn: string; nameAr: string; email: string; phone: string; primaryLanguage: string };
-type Attachment = { id: string; name: string; fileUrl: string; fileType: string; fileSize: number; uploadedAt: string };
+type Attachment = { id: string; name: string; downloadName?: string; fileUrl: string; fileType: string; fileSize: number; uploadedAt: string };
 type Ticket = { id: string; title: string; status: string; priority: string; category: string; createdAt: string };
 // Which contracts have a settlement to open (and may generate one) lives in
 // `src/lib/leases/leaseActions.ts` (hasSettlement, canGenerateContract).
@@ -493,15 +494,8 @@ export default function LeaseDetailPage() {
     const downloadBlob = async (url: string, name: string) => {
         const res = await fetch(url);
         if (!res.ok) return;
-        const blob = await res.blob();
-        const href = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = href;
-        a.download = name;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(href);
+        // The server names the file: the document's name plus its extension ("aadhar.pdf").
+        await saveResponse(res, name);
     };
 
     if ((userRole && !canView) || forbidden) {
@@ -1072,7 +1066,7 @@ export default function LeaseDetailPage() {
                                                     </div>
                                                     <div className="flex items-center gap-2 shrink-0">
                                                         <button
-                                                            onClick={() => downloadBlob(`/api/proxy/v1/leases/attachments/${doc.id}/download`, doc.name)}
+                                                            onClick={() => downloadBlob(`/api/proxy/v1/leases/attachments/${doc.id}/download`, doc.downloadName ?? doc.name)}
                                                             aria-label={tMaster("download")}
                                                             className="p-1 text-primary hover:text-primary/80 cursor-pointer"
                                                         >

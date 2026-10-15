@@ -11,6 +11,8 @@ import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { formatNumber } from "@/lib/format";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { termMonths } from "@/lib/meetings/renewalDates";
 import {
     ArrowLeft, Loader2, Calendar, Clock, User, Building2, Home,
     FileText, CheckCircle, X, AlertTriangle, Hash,
@@ -47,9 +49,15 @@ type Meeting = {
     unitId: string | null;
     unitNumber: string | null;
     details: MeetingDetail | null;
+    cancellationReason?: string | null;
+    cancelledByName?: string | null;
+    cancelledAt?: string | null;
     createdAt: string;
     updatedAt: string;
 };
+
+/** The longest reason the server keeps (meetings.cancellation_reason). */
+const CANCEL_REASON_MAX = 500;
 
 // ── Badge Maps ─────────────────────────────────────────────────────────────
 
@@ -84,6 +92,9 @@ export default function MeetingDetailPage() {
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
+    // Tutorial 23: Cancel acted on one click, with no reason. It now asks first.
+    const [confirmCancel, setConfirmCancel] = useState(false);
+    const [cancelReason, setCancelReason] = useState("");
 
     // ── Fetch ────────────────────────────────────────────────────────────
 
@@ -110,23 +121,34 @@ export default function MeetingDetailPage() {
 
     // ── Actions ──────────────────────────────────────────────────────────
 
-    const performAction = async (action: string) => {
+    const performAction = async (action: string, body?: Record<string, unknown>) => {
         setActionLoading(action);
         setActionError(null);
         try {
             const res = await fetch(`/api/proxy/v1/meetings/${meetingId}/${action}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
+                ...(body ? { body: JSON.stringify(body) } : {}),
             });
             // Surface backend failures (e.g. "Cannot approve meeting in
             // status: ...") instead of silently doing nothing.
             await throwIfNotOk(res);
             await fetchMeeting();
+            return true;
         } catch (err) {
             setActionError(err instanceof ApiError ? err.message : t("actionFailed"));
+            return false;
         } finally {
             setActionLoading(null);
         }
+    };
+
+    const submitCancel = async () => {
+        const reason = cancelReason.trim();
+        const ok = await performAction("cancel", reason ? { reason } : {});
+        // The dialog closes either way; a refusal shows in the page's error line.
+        setConfirmCancel(false);
+        if (ok) setCancelReason("");
     };
 
     // ── Loading / Not Found ──────────────────────────────────────────────
@@ -263,7 +285,8 @@ export default function MeetingDetailPage() {
                     )}
                     {canCancel && (
                         <button
-                            onClick={() => performAction("cancel")}
+                            onClick={() => setConfirmCancel(true)}
+                            data-testid="meeting-cancel"
                             disabled={actionLoading !== null}
                             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-error text-white text-xs font-semibold hover:bg-error/90 transition-all disabled:opacity-60 cursor-pointer"
                         >
@@ -280,6 +303,28 @@ export default function MeetingDetailPage() {
             {actionError && (
                 <div className="bg-error/10 border border-error/20 text-error text-xs font-medium rounded-lg px-3 py-2" role="alert">
                     {actionError}
+                </div>
+            )}
+
+            {/* Who cancelled it, when and why */}
+            {meeting.status === "CANCELLED" && (meeting.cancelledAt || meeting.cancellationReason) && (
+                <div className="bg-surface rounded-xl border border-border p-5" data-testid="meeting-cancellation">
+                    <h2 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">{t("cancellation.title")}</h2>
+                    {meeting.cancelledAt && (
+                        <p className="text-xs text-foreground">
+                            {t("cancellation.by", {
+                                name: meeting.cancelledByName || "—",
+                                date: new Date(meeting.cancelledAt).toLocaleString(dateLocale, {
+                                    dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Dubai",
+                                }),
+                            })}
+                        </p>
+                    )}
+                    <p className="text-xs text-muted mt-1 whitespace-pre-wrap break-words">
+                        {meeting.cancellationReason
+                            ? t("cancellation.reason", { reason: meeting.cancellationReason })
+                            : t("cancellation.noReason")}
+                    </p>
                 </div>
             )}
 
@@ -407,9 +452,7 @@ export default function MeetingDetailPage() {
                                     </tr>
                                 )}
                                 {meeting.details.proposedStartDate && meeting.details.proposedEndDate && (() => {
-                                    const start = new Date(meeting.details.proposedStartDate!);
-                                    const end = new Date(meeting.details.proposedEndDate!);
-                                    const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+                                    const months = termMonths(meeting.details.proposedStartDate!, meeting.details.proposedEndDate!);
                                     return months > 0 ? (
                                         <tr className="border-b border-border">
                                             <td className="py-2 text-muted">{t("create.reviewDuration")}</td>
@@ -447,6 +490,33 @@ export default function MeetingDetailPage() {
                 </div>
             )}
 
+            <ConfirmDialog
+                isOpen={confirmCancel}
+                onClose={() => { if (actionLoading === null) setConfirmCancel(false); }}
+                onConfirm={submitCancel}
+                title={t("cancelConfirm.title")}
+                description={t("cancelConfirm.body")}
+                confirmText={t("cancelConfirm.confirm")}
+                cancelText={t("cancelConfirm.keep")}
+                isDestructive
+                isLoading={actionLoading === "cancel"}
+                confirmTestId="meeting-cancel-confirm"
+            >
+                <label htmlFor="meeting-cancel-reason" className="block text-[11px] font-semibold text-muted uppercase tracking-wider mb-1">
+                    {t("cancelConfirm.reasonLabel")}
+                </label>
+                <textarea
+                    id="meeting-cancel-reason"
+                    data-testid="meeting-cancel-reason"
+                    value={cancelReason}
+                    maxLength={CANCEL_REASON_MAX}
+                    rows={3}
+                    onChange={e => setCancelReason(e.target.value)}
+                    placeholder={t("cancelConfirm.reasonPlaceholder")}
+                    className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-sm text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
+                />
+                <p className="text-[10px] text-muted">{t("cancelConfirm.reasonHint")}</p>
+            </ConfirmDialog>
         </div>
     );
 }

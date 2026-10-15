@@ -5,17 +5,21 @@ Repeatable, API-driven (no SQL). Exercises the same endpoints the web and
 mobile apps use, so it doubles as a smoke test of the prod API.
 
 What it creates:
-  - Named demo tenant + TENANT_ADMIN login
-  - Features enabled: LISTINGS, MEETINGS, LEASE_RENEWALS
+  - Named demo organisation (DEMO_ORG_NAME, default "Miftah Sandbox") + TENANT_ADMIN login
+    (DEMO_CREATE_ADMIN=false: no Company Admin login; the super admin writes
+    everything acting inside the org, and the property manager hosts meetings)
+  - Features enabled: LISTINGS, MEETINGS, LEASE_RENEWALS, GATEPASS
+    (EMAIL_NOTIFICATIONS only with DEMO_EMAIL_NOTIFICATIONS=true)
   - Chart of accounts + charge-type catalogue + per-property account sets
     (generated from the tenant template) + the fiscal year opened on 1 January
     and everything before it locked
   - 2 properties with rent-collection settings, 8 units
   - 4 renters with portal (RENTER) logins
   - 4 tenancy contracts, each with its own cheque grid, covering the register:
-      * quarterly, 3 cleared + 1 deposited + 1 still registered
+      * walked relative to the run date: cheques dated >14 days ago cleared,
+        the last 14 days deposited, future-dated still registered
       * quarterly, one cheque returned by the bank and replaced by two
-      * monthly, 5 cleared and the next instalment overdue
+      * monthly, the most recent past-dated cheque left undeposited (overdue)
       * one left in DRAFT with its grid, to post live in the demo
   - Month-end income recognition run to the end of last month (CIL journals)
   - 4 published marketplace listings + 1 draft (vacant units)
@@ -25,11 +29,26 @@ What it creates:
 
 Credentials & IDs are printed and written to scripts/seed_demo_tenant.out.json.
 
+Every person, mailbox and phone number it invents is fictional: mailboxes on
+DEMO_EMAIL_DOMAIN (default miftah-sandbox.example.invalid), phones in the
+DEMO_PHONE_BLOCK 555 block. Off a local stack DEMO_PASSWORD is required (the one
+password every login this run creates gets) and console output is redacted.
+
 Usage:
-  python3 scripts/seed_demo_tenant.py                  # uses web/e2e-prod/.env.local
+  # Prod: super admin from web/e2e-prod/.env.local, password typed, never echoed.
+  read -rs DEMO_PASSWORD && export DEMO_PASSWORD && python3 scripts/seed_demo_tenant.py
+
+  # Client sandbox: no Company Admin login (a person creates it afterwards).
+  read -rs DEMO_PASSWORD && export DEMO_PASSWORD && \
+    DEMO_CREATE_ADMIN=false python3 scripts/seed_demo_tenant.py
   PROD_BASE_URL=http://localhost:8080 \
   PROD_SUPERADMIN_EMAIL=... PROD_SUPERADMIN_PASSWORD=... \
   python3 scripts/seed_demo_tenant.py
+
+  # The older prod demo org (App Store reviewer logins) predates these defaults:
+  DEMO_TENANT_NAME="Al Ashram Demo Account" DEMO_BRAND="Al Ashram" \
+  DEMO_EMAIL_DOMAIN=alashramdemo.com DEMO_ADMIN_NAME="Al Ashram Demo Admin" \
+  DEMO_EMAIL_NOTIFICATIONS=true DEMO_PHONE_BLOCK=+97155556 python3 scripts/seed_demo_tenant.py
 
   # Split local stack (no Caddy in front): the API and the web app are two
   # different origins, and the marketplace-listing step needs the web one.
@@ -49,16 +68,43 @@ from zoneinfo import ZoneInfo
 import requests
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-TENANT_NAME = os.environ.get("DEMO_TENANT_NAME", "Al Ashram Demo Account")
-DEMO_BRAND = os.environ.get("DEMO_BRAND", "Al Ashram")
-DEMO_EMAIL_DOMAIN = os.environ.get("DEMO_EMAIL_DOMAIN", "alashramdemo.com")
-# One easy password everywhere — this is throwaway demo data.
-DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "Demo@1234")
+# The organisation this run seeds (and finds again on a re-run). DEMO_ORG_NAME
+# is the name to use; DEMO_TENANT_NAME is its older spelling, still honoured so
+# existing runs (the tutorial stack, the "Al Ashram Demo Account" org) resolve to
+# the org they seeded. The default is the client sandbox, which must not collide
+# with the "Miftah Demo" org already on prod.
+TENANT_NAME = (os.environ.get("DEMO_ORG_NAME") or os.environ.get("DEMO_TENANT_NAME")
+               or "Miftah Sandbox")
+DEMO_BRAND = os.environ.get("DEMO_BRAND", "Sandbox")
+# Every mailbox the seed invents is on a reserved, undeliverable domain (RFC 2606
+# .invalid), so an invite or notification can never reach a real person.
+DEMO_EMAIL_DOMAIN = os.environ.get("DEMO_EMAIL_DOMAIN", "miftah-sandbox.example.invalid")
+# One password for every login this run creates. Required whenever the target is
+# not a local stack (see require_password); locally it falls back to a test value.
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD")
+LOCAL_TEST_PASSWORD = "Demo@1234"
+# Fictional phone numbers: one "555" block, numbered per role below. Override the
+# block (DEMO_PHONE_BLOCK) to seed a second org — a SECURITY_GUARD phone is unique
+# across the whole platform, so two orgs on the same block collide on the guard.
+PHONE_BLOCK = os.environ.get("DEMO_PHONE_BLOCK", "+97155555")
+# Off unless asked for: every renter and staff mailbox is fictional, so
+# notification mail would only bounce. Account invites are not gated by this.
+EMAIL_NOTIFICATIONS = os.environ.get("DEMO_EMAIL_NOTIFICATIONS", "false").lower() == "true"
+# DEMO_CREATE_ADMIN=false: create no Company Admin (TENANT_ADMIN) login. The org
+# and all its data are then written by the super admin acting inside the org
+# (bearer token + X-Tenant-Id on the API, the active_tenant_id cookie on the web
+# proxy), so the org's real administrator can be created by a person afterwards.
+CREATE_ADMIN = os.environ.get("DEMO_CREATE_ADMIN", "true").lower() != "false"
+
+
+def phone(n):
+    """A fictional mobile in the seed's 555 block, e.g. phone(101) -> +971555550101."""
+    return f"{PHONE_BLOCK}{n:04d}"
 ADMIN_EMAIL = os.environ.get("DEMO_ADMIN_EMAIL", f"admin@{DEMO_EMAIL_DOMAIN}")
 ADMIN_PASSWORD = DEMO_PASSWORD
 # The Company Admin's display name. The dashboard greets by first name, so a
-# branded demo sets a person's name; unset, the historical "<brand> Demo Admin".
-ADMIN_NAME = os.environ.get("DEMO_ADMIN_NAME") or f"{DEMO_BRAND} Demo Admin"
+# fictional person's name by default ("Good afternoon, Huda", not "..., Sandbox").
+ADMIN_NAME = os.environ.get("DEMO_ADMIN_NAME") or "Huda Rahman"
 OUT_FILE = Path(
     os.environ.get(
         "DEMO_OUTPUT_FILE",
@@ -91,11 +137,11 @@ ORG_LOGO = os.environ.get("DEMO_ORG_LOGO")
 ORG_STAMP = os.environ.get("DEMO_ORG_STAMP")
 REFRESH_BRANDING = "--refresh-branding" in sys.argv
 # Optional naming for a branded demo (defaults are the historical names).
-DEMO_BRAND_AR = os.environ.get("DEMO_BRAND_AR")
+DEMO_BRAND_AR = os.environ.get("DEMO_BRAND_AR") or ("ساندبوكس" if DEMO_BRAND == "Sandbox" else None)
 BUILDING_NAME_EN = os.environ.get("DEMO_BUILDING_NAME", "Palm Court")
 BUILDING_NAME_AR = os.environ.get("DEMO_BUILDING_NAME_AR", "بالم كورت")
 MAINTENANCE_DESK = os.environ.get("DEMO_MAINTENANCE_DESK", "Building Maintenance Desk")
-MAINTENANCE_EMAIL = os.environ.get("DEMO_MAINTENANCE_EMAIL", "maintenance@palmcourt.example.com")
+MAINTENANCE_EMAIL = os.environ.get("DEMO_MAINTENANCE_EMAIL", f"maintenance@{DEMO_EMAIL_DOMAIN}")
 
 # Names earlier versions of this seed gave its operational fixtures. They showed
 # "Tutorial" on screen; a re-run against an organisation seeded with them finds the
@@ -361,6 +407,53 @@ def _listing_images(title, listing_id):
     return paths
 
 
+def _specimen_cheque(row, payer):
+    """A plainly fake cheque image for the scan viewer: SPECIMEN watermark, no
+    bank artwork, the row's own number/date/amount. None when Pillow is missing."""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        print("  ! Pillow not installed; no specimen cheque scan seeded")
+        return None
+
+    def font(size, bold=False):
+        for path in (("/System/Library/Fonts/Supplemental/Arial Bold.ttf" if bold
+                      else "/System/Library/Fonts/Supplemental/Arial.ttf"),
+                     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
+            try:
+                return ImageFont.truetype(path, size)
+            except OSError:
+                continue
+        return ImageFont.load_default()
+
+    w, h = 1600, 720
+    img = Image.new("RGB", (w, h), (236, 242, 236))
+    d = ImageDraw.Draw(img)
+    d.rectangle([12, 12, w - 12, h - 12], outline=(60, 90, 70), width=4)
+    d.text((48, 40), "SANDBOX SAMPLE BANK", font=font(40, True), fill=(30, 60, 45))
+    d.text((48, 92), "Fictional cheque for demonstration only", font=font(24), fill=(80, 100, 85))
+    d.text((w - 420, 48), f"Date  {row['chequeDate']}", font=font(32), fill=(20, 20, 20))
+    d.text((48, 210), f"Pay  {TENANT_NAME}", font=font(38), fill=(20, 20, 20))
+    d.line([(140, 258), (w - 360, 258)], fill=(90, 90, 90), width=2)
+    amount = f"{float(row.get('amount') or 0):,.2f}"
+    d.rectangle([w - 340, 196, w - 48, 262], outline=(40, 40, 40), width=3)
+    d.text((w - 325, 208), f"AED {amount}", font=font(34, True), fill=(20, 20, 20))
+    d.text((48, 300), f"Dirhams {amount} only", font=font(30), fill=(20, 20, 20))
+    d.line([(w - 520, 520), (w - 80, 520)], fill=(90, 90, 90), width=2)
+    d.text((w - 520, 530), payer, font=font(28), fill=(20, 20, 20))
+    d.text((48, h - 90), f"{row['chequeNumber']}   000000000   0000000000000",
+           font=font(34), fill=(30, 30, 30))
+    stamp = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    ImageDraw.Draw(stamp).text((360, 330), "SPECIMEN", font=font(170, True),
+                               fill=(200, 40, 40, 90))
+    img = Image.alpha_composite(img.convert("RGBA"), stamp.rotate(12, center=(w / 2, h / 2)))
+    out_dir = Path("/tmp/rentaxis-specimen-cheques")
+    out_dir.mkdir(exist_ok=True)
+    path = out_dir / f"{row['chequeNumber']}.png"
+    img.convert("RGB").save(path, "PNG")
+    return str(path)
+
+
 def iso(d):
     return d.isoformat()
 
@@ -374,6 +467,28 @@ def page_items(payload):
     if isinstance(payload, dict) and isinstance(payload.get("content"), list):
         return payload["content"]
     return []
+
+
+def is_local(url):
+    host = (re.match(r"^[a-z]+://([^/:]+)", url or "") or [None, ""])[1]
+    return host in ("localhost", "127.0.0.1", "[::1]") or host.endswith(".localhost")
+
+
+def require_password(base):
+    """Pick the one password this run gives every login it creates.
+
+    Off a local stack it must come from DEMO_PASSWORD: a password baked into a
+    public repository is not a password. Off a local stack the console output is
+    also always redacted, whatever the flags say; the manifest (gitignored, on the
+    operator's machine) keeps the credentials."""
+    global DEMO_PASSWORD, ADMIN_PASSWORD, REDACT_CREDENTIALS
+    if not is_local(base):
+        REDACT_CREDENTIALS = True
+        if not DEMO_PASSWORD or DEMO_PASSWORD == LOCAL_TEST_PASSWORD:
+            sys.exit(f"DEMO_PASSWORD must be set (and not the local test value) "
+                     f"to seed {base}")
+    DEMO_PASSWORD = DEMO_PASSWORD or LOCAL_TEST_PASSWORD
+    ADMIN_PASSWORD = DEMO_PASSWORD
 
 
 def main():
@@ -391,13 +506,15 @@ def main():
             "(checked env and web/e2e-prod/.env.local)"
         )
 
+    require_password(base)
+
     out = {"baseUrl": base, "seededAt": dt.datetime.now().isoformat()}
 
     print(f"Seeding '{TENANT_NAME}' on {base}")
 
     # ── 1. Superadmin: tenant + admin user + features ───────────────────────
     sa = Api(base, web_base)
-    sa.login(sa_email, sa_password)
+    sa_user = sa.login(sa_email, sa_password)
     log(f"logged in as superadmin {sa_email}")
 
     existing = [
@@ -448,19 +565,15 @@ def main():
         },
     )
 
-    for feature in (
-        "LISTINGS",
-        "MEETINGS",
-        "EMAIL_NOTIFICATIONS",
-        "LEASE_RENEWALS",
-        "GATEPASS",
-    ):
+    features = ["LISTINGS", "MEETINGS", "LEASE_RENEWALS", "GATEPASS"]
+    if EMAIL_NOTIFICATIONS:
+        features.insert(2, "EMAIL_NOTIFICATIONS")
+    for feature in features:
         sa.put(
             f"/api/admin/tenants/{tenant_id}/features/{feature}",
             json={"enabled": True},
         )
-    log("features enabled: LISTINGS, MEETINGS, EMAIL_NOTIFICATIONS, "
-        "LEASE_RENEWALS, GATEPASS")
+    log(f"features enabled: {', '.join(features)}")
     # Mobile finance/lease/cheque screens stay hidden until the apps are rewritten
     # for accounting v2. Set explicitly rather than relying on the default, because
     # this tenant is also the App Store reviewer's tenant and the flag is the one
@@ -471,38 +584,50 @@ def main():
     )
     log("feature MOBILE_FINANCE explicitly off (mobile finance screens hidden)")
 
-    try:
-        sa.post(
-            "/api/admin/users",
-            json={
-                "email": ADMIN_EMAIL,
-                "password": ADMIN_PASSWORD,
-                "name": ADMIN_NAME,
-                "role": "TENANT_ADMIN",
-                "tenantId": tenant_id,
-                "phoneNumber": "+971501110000",
-            },
-        )
-        log(f"tenant admin created: {ADMIN_EMAIL}")
-    except RuntimeError:
-        log(f"tenant admin already exists: {ADMIN_EMAIL}")
-        # Keep a re-run's display name in step with DEMO_ADMIN_NAME.
-        existing = next(
-            (u for u in (sa.get("/api/admin/users") or [])
-             if (u.get("email") or "").lower() == ADMIN_EMAIL.lower()
-             and str(u.get("tenantId")) == str(tenant_id)),
-            None,
-        )
-        if existing and existing.get("name") != ADMIN_NAME:
-            sa.put(f"/api/admin/users/{existing['id']}", json={"name": ADMIN_NAME})
-            log(f"tenant admin renamed to {ADMIN_NAME}")
-    out["adminLogin"] = {"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
+    if not CREATE_ADMIN:
+        log("no Company Admin login created (DEMO_CREATE_ADMIN=false); "
+            "seeding as the super admin inside the organisation")
+    else:
+        try:
+            sa.post(
+                "/api/admin/users",
+                json={
+                    "email": ADMIN_EMAIL,
+                    "password": ADMIN_PASSWORD,
+                    "name": ADMIN_NAME,
+                    "role": "TENANT_ADMIN",
+                    "tenantId": tenant_id,
+                    "phoneNumber": phone(100),
+                },
+            )
+            log(f"tenant admin created: {ADMIN_EMAIL}")
+        except RuntimeError:
+            log(f"tenant admin already exists: {ADMIN_EMAIL}")
+            # Keep a re-run's display name in step with DEMO_ADMIN_NAME.
+            existing = next(
+                (u for u in (sa.get("/api/admin/users") or [])
+                 if (u.get("email") or "").lower() == ADMIN_EMAIL.lower()
+                 and str(u.get("tenantId")) == str(tenant_id)),
+                None,
+            )
+            if existing and existing.get("name") != ADMIN_NAME:
+                sa.put(f"/api/admin/users/{existing['id']}", json={"name": ADMIN_NAME})
+                log(f"tenant admin renamed to {ADMIN_NAME}")
+        out["adminLogin"] = {"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
 
     # ── 2. Tenant admin: properties + units ─────────────────────────────────
     api = Api(base, web_base)
-    admin_user = api.login(ADMIN_EMAIL, ADMIN_PASSWORD)
-    admin_user_id = admin_user["id"]
-    out["adminUserId"] = admin_user_id
+    if CREATE_ADMIN:
+        admin_user = api.login(ADMIN_EMAIL, ADMIN_PASSWORD)
+        admin_user_id = admin_user["id"]
+        out["adminUserId"] = admin_user_id
+    else:
+        # The super admin's own session, pointed at this organisation. A
+        # separate Api so the super-admin client above stays unscoped.
+        api.login(sa_email, sa_password)
+        api.headers["X-Tenant-Id"] = str(tenant_id)
+        api.headers.pop("X-User-Tenant-Id", None)
+        admin_user_id = None  # meetings are hosted by the property manager
 
     # Branding: upload as the tenant admin (the asset lands in this tenant's
     # own container, the only place the PDF renderers read a logo from), then
@@ -603,6 +728,9 @@ def main():
                 "fineAccountClosedAmount": 500.0,
                 "fineGraceDays": 3,
                 "finePerDayRate": 50.0,
+                # Collection is by cheque, cash and bank transfer: no renter
+                # "Pay Now". Unset reads as on until PR #400 makes it opt-in.
+                "onlinePaymentEnabled": False,
             },
         )
         return p
@@ -724,19 +852,19 @@ def main():
         return r
 
     ahmed = make_renter(
-        "Ahmed Hassan", "أحمد حسن", f"ahmed@{DEMO_EMAIL_DOMAIN}", "+971501234001"
+        "Ahmed Hassan", "أحمد حسن", f"ahmed@{DEMO_EMAIL_DOMAIN}", phone(101)
     )
     fatima = make_renter(
         "Fatima Al Zaabi", "فاطمة الزعابي", f"fatima@{DEMO_EMAIL_DOMAIN}",
-        "+971501234002",
+        phone(102),
     )
     rajesh = make_renter(
         "Rajesh Kumar", "راجيش كومار", f"rajesh@{DEMO_EMAIL_DOMAIN}",
-        "+971501234003",
+        phone(103),
     )
     sara = make_renter(
         "Sara Mansour", "سارة منصور", f"sara@{DEMO_EMAIL_DOMAIN}",
-        "+971501234004",
+        phone(104),
     )
     out["renterLogins"] = [
         {"name": r["nameEn"], "email": r["email"], "password": DEMO_PASSWORD}
@@ -804,7 +932,8 @@ def main():
                 "payeeBank": bank, "amount": float(amount),
                 "narration": narration, "mode": mode}
 
-    def make_lease(unit, renter, contract_ref, lines, cheques, terms, post=True):
+    def make_lease(unit, renter, contract_ref, lines, cheques, terms, post=True,
+                   start=None, end=None, signed=None, dated=None):
         """Create-or-fetch a DRAFT lease, give it its grid, then post it.
 
         Every half is idempotent: a lease already on the unit is returned as it
@@ -830,10 +959,10 @@ def main():
             lease = api.post("/api/v1/leases", json={
                 "unitId": unit["id"],
                 "renterId": renter["id"],
-                "startDate": iso(year_start),
-                "endDate": iso(year_end),
-                "agreementDate": iso(agreement_date),
-                "contractDate": iso(contract_date),
+                "startDate": iso(start or year_start),
+                "endDate": iso(end or year_end),
+                "agreementDate": iso(signed or agreement_date),
+                "contractDate": iso(dated or contract_date),
                 "gracePeriodDays": 5,
                 "paymentTerms": terms,
                 "paymentMethod": "CHEQUE",
@@ -880,7 +1009,9 @@ def main():
     )
 
     # Rajesh — monthly, with the year's parking folded into January.
-    # 135,000 = 12,000 + 13,000 + 11 × 10,000.
+    # 135,000 = 12,000 + 13,000 + 11 × 10,000. No VAT on any line: a VAT-able
+    # charge needs the organisation's TRN on every instalment's tax invoice, and
+    # the sandbox has no TRN unless DEMO_ORG_TRN is given.
     ORDINALS = {1: "1st", 2: "2nd", 3: "3rd"}
     rajesh_cheques = [cheque(1, "400300", year_start, 12000, "Security Deposit",
                              bank="Dubai Islamic Bank")]
@@ -899,16 +1030,27 @@ def main():
 
     # Sara — left in DRAFT on purpose, grid and all. Posting it is the one
     # moment in the demo where the audience watches TCO and PDR journals appear.
+    # A new letting, so it starts on the 1st of next month and every cheque is
+    # still in the future: posted on the day, nothing on it is born overdue.
     # 140,000 = 30,000 + 4 × 27,500.
+    sara_start = (TODAY.replace(day=1) + dt.timedelta(days=32)).replace(day=1)
+    sara_end = sara_start.replace(year=sara_start.year + 1) - dt.timedelta(days=1)
+
+    def months_after(d, n):
+        y, m = divmod(d.month - 1 + n, 12)
+        return d.replace(year=d.year + y, month=m + 1)
+
+    sara_grid = [cheque(1, "500400", sara_start, 30000, "Security Deposit",
+                        posting_date=TODAY)]
+    for q in range(4):
+        sara_grid.append(cheque(q + 2, f"50040{q + 1}", months_after(sara_start, 3 * q), 27500,
+                                f"Rent - {ORDINALS.get(q + 1, f'{q + 1}th')} Installment",
+                                posting_date=TODAY))
     lease_sara = make_lease(
         m1501, sara, "MH/2001",
         [line("SECURITY_DEPOSIT", 30000), line("RENT", 110000)],
-        [cheque(1, "500400", year_start, 30000, "Security Deposit"),
-         cheque(2, "500401", year_start, 27500, "Rent - 1st Installment"),
-         cheque(3, "500402", dt.date(TODAY.year, 4, 1), 27500, "Rent - 2nd Installment"),
-         cheque(4, "500403", dt.date(TODAY.year, 7, 1), 27500, "Rent - 3rd Installment"),
-         cheque(5, "500404", dt.date(TODAY.year, 10, 1), 27500, "Rent - 4th Installment")],
-        terms=4, post=False,
+        sara_grid, terms=4, post=False,
+        start=sara_start, end=sara_end, signed=TODAY, dated=TODAY,
     )
     log("3 posted contracts (quarterly, quarterly, monthly) + 1 draft to post live")
 
@@ -970,21 +1112,39 @@ def main():
             counts[r["status"]] = counts.get(r["status"], 0) + 1
         return ", ".join(f"{n} {s.lower()}" for s, n in sorted(counts.items()))
 
-    # Ahmed: deposit and the first two rent cheques cleared, Q3 banked and
-    # waiting on the bank, Q4 still sitting in the register.
-    rows = rows_for(lease_ahmed["id"])
-    for r in rows[:3]:
-        advance(r, "CLEARED")
-    advance(rows[3], "DEPOSITED")
+    # The register is walked relative to the day the seed runs, the way a
+    # landlord's office would have kept it: cheques whose date has passed were
+    # banked and cleared, future-dated ones are still in the safe (REGISTERED).
+    # A fixed walk ("first three cleared") left a sandbox seeded in October with
+    # every cheque since July undeposited. The exceptions are named per lease:
+    # `in_clearing` rows stop at DEPOSITED, `hold` rows stay REGISTERED. Both
+    # are past their date, so the dashboard counts them overdue (ChequeDueRules:
+    # a matured cheque is due until its funds arrive) — that is the point of them.
+    def past_dated(rows):
+        return sorted((r for r in rows if r.get("mode", "PDC") == "PDC"
+                       and dt.date.fromisoformat(r["chequeDate"]) <= TODAY),
+                      key=lambda r: r["chequeDate"])
+
+    def walk_by_date(rows, hold=(), in_clearing=()):
+        held = {r["id"] for r in hold}
+        clearing = {r["id"] for r in in_clearing}
+        for r in rows:
+            if r["id"] in held or r.get("status") in ("BOUNCED", "REPLACED"):
+                continue
+            if dt.date.fromisoformat(r["chequeDate"]) > TODAY:
+                continue
+            advance(r, "DEPOSITED" if r["id"] in clearing else "CLEARED")
+
+    # Ahmed: the clean quarterly tenant — every cheque that has come due cleared.
+    walk_by_date(rows_for(lease_ahmed["id"]))
     log(f"Ahmed: {tally(rows_for(lease_ahmed['id']))}")
 
-    # Fatima: deposit and Q1 cleared; Q2 returned by the bank and replaced by
-    # two smaller cheques, each registering its own PDR. One bounce does not
-    # cross the org's auto-propose threshold (2 — FineSettingsInitializer), so
-    # the penalty is proposed by hand from the Penalties tab in the live demo.
+    # Fatima: her Q2 cheque was returned by the bank and replaced by two smaller
+    # cheques, each registering its own PDR. One bounce does not cross the org's
+    # auto-propose threshold (2 — FineSettingsInitializer), so the penalty is
+    # proposed by hand from the Penalties tab in the live demo.
     rows = rows_for(lease_fatima["id"])
-    for r in rows[:2]:
-        advance(r, "CLEARED")
+    walk_by_date(rows[:2])
     bounced = advance(rows[2], "BOUNCED")
     bounced_payment_id = bounced["id"]
     if bounced["status"] == "BOUNCED" and not bounced.get("replacedById"):
@@ -1002,14 +1162,52 @@ def main():
             ],
         })
         log("Fatima: Q2 cheque returned and replaced by two rows")
+    # Her latest matured cheque is banked but not yet cleared: one to chase.
+    rows = rows_for(lease_fatima["id"])
+    latest = [r for r in past_dated(rows) if r.get("status") not in ("BOUNCED", "REPLACED")][-1:]
+    walk_by_date(rows, in_clearing=latest if latest and latest[0].get("status") != "CLEARED" else ())
     log(f"Fatima: {tally(rows_for(lease_fatima['id']))}")
 
-    # Rajesh: deposit and five months cleared; the sixth is past its date and
-    # unpaid, so the register shows it as overdue.
+    # Rajesh: monthly; his most recent past-dated cheque was never banked, so the
+    # register shows it overdue / to deposit. Everything before it has cleared.
     rows = rows_for(lease_rajesh["id"])
-    for r in rows[:6]:
-        advance(r, "CLEARED")
-    log(f"Rajesh: {tally(rows_for(lease_rajesh['id']))}, the next one overdue")
+    past = past_dated(rows[1:])
+    overdue = [r for r in past[-1:] if r.get("status") == "REGISTERED"]
+    walk_by_date(rows, hold=overdue)
+    log(f"Rajesh: {tally(rows_for(lease_rajesh['id']))}"
+        + (f", cheque {overdue[0].get('chequeNumber')} left overdue" if overdue else ""))
+
+    # One scanned cheque, so the register's scan viewer has something to show:
+    # a generated SPECIMEN image (no real bank artwork, no real person) sent
+    # through the same extract -> bulk-attach path the upload screen uses, and
+    # attached to Rajesh's first still-registered cheque with that row's own
+    # number, date and bank, so nothing on the row changes but the image.
+    scan_target = next((r for r in rows_for(lease_rajesh["id"])
+                        if r.get("status") == "REGISTERED"), None)
+    if scan_target and not scan_target.get("imageUrl"):
+        image = _specimen_cheque(scan_target, rajesh.get("nameEn") or "Rajesh Kumar")
+        if image:
+            with open(image, "rb") as fh:
+                extracted = api.post("/api/v1/cheques/extract",
+                                     files={"file": ("specimen-cheque.png", fh, "image/png")})
+            meta = (extracted or {}).get("image") or {}
+            api.post(f"/api/v1/leases/{lease_rajesh['id']}/cheques/bulk-attach", json={
+                "items": [{
+                    "chequeId": scan_target["id"],
+                    "chequeNumber": scan_target["chequeNumber"],
+                    "chequeDate": scan_target["chequeDate"],
+                    "bankName": scan_target.get("payeeBank") or scan_target.get("bankName")
+                                or "Dubai Islamic Bank",
+                    "payerName": rajesh.get("nameEn"),
+                    "imageUrl": meta.get("url"),
+                    "imageBlobPath": meta.get("blobPath"),
+                    "imageUploadedAt": meta.get("uploadedAt"),
+                    "payeeMismatchConfirmed": True,
+                }],
+            })
+            log(f"specimen scan attached to cheque {scan_target['chequeNumber']}")
+    elif scan_target:
+        log(f"cheque {scan_target['chequeNumber']} already has a scan")
 
     out["cheques"] = {
         key: [{"id": r["id"], "seqNo": r["seqNo"], "status": r["status"]}
@@ -1030,7 +1228,7 @@ def main():
         if isinstance(v, dict)
     }
 
-    def make_vendor(name_en, name_ar, contact, phone, trn):
+    def make_vendor(name_en, name_ar, contact, phone, trn, legacy=()):
         """A PISR with input VAT needs the supplier's TRN (finance-ops spec §2),
         so a vendor from an earlier run without one is given it."""
         body = {
@@ -1038,17 +1236,22 @@ def main():
             "contactPerson": contact, "phone": phone,
             "trn": trn, "paymentTermsDays": 30, "active": True,
         }
-        existing = existing_vendors.get(name_en)
+        existing, is_legacy = find_named(
+            list(existing_vendors.values()), "nameEn", name_en, legacy)
         if existing is None:
             return api.post("/api/v1/vendors", json=body)
-        if not existing.get("trn"):
+        if is_legacy or not existing.get("trn"):
             return api.put(f"/api/v1/vendors/{existing['id']}", json=body)
         return existing
 
-    fm_vendor = make_vendor("Emirates Facility Management", "إدارة المرافق",
-                            "Imran Shaikh", "+97143330001", "100300400500003")
-    cleaning_vendor = make_vendor("Gulf Cleaning Services", "خدمات الخليج للتنظيف",
-                                  "Maria Santos", "+97143330002", "100300400600003")
+    # Invented supplier names: earlier runs used names a real UAE company could
+    # trade under, and a re-run renames those vendors in place.
+    fm_vendor = make_vendor("Dunelight Facility Services", "خدمات ضوء الكثبان للمرافق",
+                            "Imran Shaikh", "+97145550201", "100300400500003",
+                            legacy=("Emirates Facility Management",))
+    cleaning_vendor = make_vendor("Saltmarsh Cleaning Co.", "شركة سولت مارش للتنظيف",
+                                  "Maria Santos", "+97145550202", "100300400600003",
+                                  legacy=("Gulf Cleaning Services",))
     for v in (fm_vendor, cleaning_vendor):
         log(f"vendor ready: {v.get('nameEn')}")
 
@@ -1129,7 +1332,7 @@ def main():
             "docType": "PISR",
             "docDate": iso(dt.date(TODAY.year, 2, 10)),
             "vendorId": fm_vendor["id"],
-            "invoiceNumber": f"EFM-{TODAY.year}-0114",
+            "invoiceNumber": f"DFS-{TODAY.year}-0114",
             # The date on the supplier's paper; due 30 days later (vendor terms).
             "supplierInvoiceDate": iso(dt.date(TODAY.year, 2, 10)),
             "propertyId": tower["id"],
@@ -1156,7 +1359,7 @@ def main():
             "propertyId": tower["id"],
             "paymentAccountId": out["accounts"]["tower"]["BANK"],
             "paymentMethod": "TRANSFER",
-            "paymentReference": f"TRF-EFM-{TODAY.year}-0114",
+            "paymentReference": f"TRF-DFS-{TODAY.year}-0114",
             "lines": [{
                 "accountId": vendor_payable_id(fm_vendor),
                 "description": "Fire safety AMC — invoice settled in full",
@@ -1192,7 +1395,13 @@ def main():
     # ── 6. Marketplace listings for vacant units ─────────────────────────────
     # Caddy doesn't route /api/listings to the backend (only /api/v1 and
     # /api/admin), so go through the Next.js proxy with a NextAuth session.
-    api.login_nextauth(ADMIN_EMAIL, ADMIN_PASSWORD)
+    if CREATE_ADMIN:
+        api.login_nextauth(ADMIN_EMAIL, ADMIN_PASSWORD)
+    else:
+        # The web proxy acts in the organisation the active_tenant_id cookie
+        # names; a SUPER_ADMIN session may name any.
+        api.login_nextauth(sa_email, sa_password)
+        api.s.cookies.set("active_tenant_id", str(tenant_id))
     LISTINGS = "/api/proxy/listings"
 
     listed_units = set()
@@ -1287,6 +1496,7 @@ def main():
             for m in detail.get("media") or []:
                 api.call("DELETE", f"{LISTINGS}/{lid}/media/{m['id']}",
                          headers={})
+            uploaded = 0
             for i, (path, caption) in enumerate(photos):
                 with open(path, "rb") as fh:
                     r = api.s.post(
@@ -1299,7 +1509,9 @@ def main():
                     if r.status_code not in (200, 201):
                         log(f"WARN media upload failed for {title}: "
                             f"{r.status_code} {r.text[:120]}")
-            log(f"media uploaded: {title} ({len(photos)} photos)")
+                    else:
+                        uploaded += 1
+            log(f"media uploaded: {title} ({uploaded} of {len(photos)} photos)")
         elif len(photos) < 4 and len(detail.get("media") or []) < 4:
             # Network/photo failures: fall back to generated placeholders so
             # the listing is never left bare.
@@ -1313,6 +1525,57 @@ def main():
                         timeout=120,
                     )
             log(f"media uploaded (fallback placeholders): {title}")
+
+    # ── 6b. Staff logins (before meetings: with no Company Admin login, the
+    # property manager hosts them) ───────────────────────────────────────────
+    existing_users = api.get("/api/admin/users") or []
+
+    def ensure_operator(email, name, role, phone_number, legacy_names=()):
+        user = next((u for u in existing_users if u.get("email") == email), None)
+        if user and user.get("name") in legacy_names:
+            # Name only: role, organisation and property assignments stay as they are.
+            user = api.put(f"/api/admin/users/{user['id']}", json={"name": name}) or user
+        if not user:
+            user = api.post("/api/admin/users", json={
+                "email": email,
+                "password": DEMO_PASSWORD,
+                "name": name,
+                "role": role,
+                "tenantId": tenant_id,
+                "phoneNumber": phone_number,
+            })
+            existing_users.append(user)
+        try:
+            api.post(f"/api/admin/users/{user['id']}/properties/{tower['id']}")
+        except RuntimeError as exc:
+            if "409" not in str(exc):
+                raise
+        return user
+
+    manager = ensure_operator(
+        f"manager@{DEMO_EMAIL_DOMAIN}",
+        "Maya Khoury",
+        "PROPERTY_MANAGER",
+        os.environ.get("DEMO_MANAGER_PHONE", phone(106)),
+        legacy_names=("Maya Tutorial Manager",),
+    )
+    guard = ensure_operator(
+        f"guard@{DEMO_EMAIL_DOMAIN}",
+        "Samir Nasser",
+        "SECURITY_GUARD",
+        os.environ.get("DEMO_GUARD_PHONE", phone(107)),
+        legacy_names=("Samir Tutorial Guard",),
+    )
+    api.put(
+        f"/api/v1/gatepass/guards/{guard['id']}/properties",
+        json=[tower["id"]],
+    )
+    out["operatorLogins"] = [
+        {"role": "PROPERTY_MANAGER", "email": manager["email"], "password": DEMO_PASSWORD},
+        {"role": "SECURITY_GUARD", "email": guard["email"], "password": DEMO_PASSWORD},
+    ]
+    log("property manager and security guard accounts ready")
+    host_user_id = admin_user_id or manager["id"]
 
     # ── 7. Meetings ──────────────────────────────────────────────────────────
     def at_hour(days_ahead, hour):
@@ -1341,7 +1604,7 @@ def main():
                 "title": "Replacement cheque — Fatima Al Zaabi (A-102)",
                 "notes": "Bounced Q2 cheque; renter bringing a replacement.",
                 "slotStart": at_hour(1, 10),
-                "hostUserId": admin_user_id,
+                "hostUserId": host_user_id,
                 "leaseId": lease_fatima["id"],
                 "propertyId": tower["id"],
                 "unitId": a102["id"],
@@ -1358,7 +1621,7 @@ def main():
                 "title": "Penthouse viewing — M-1502",
                 "notes": "Prospect viewing for the marina penthouse listing.",
                 "slotStart": at_hour(2, 15),
-                "hostUserId": admin_user_id,
+                "hostUserId": host_user_id,
                 "propertyId": marina["id"],
                 "unitId": m1502["id"],
             },
@@ -1395,7 +1658,7 @@ def main():
     desk_payload = {
         "category": "BUILDING_MAINTENANCE",
         "name": MAINTENANCE_DESK,
-        "phone": "+971500000003",
+        "phone": phone(110),
         "email": MAINTENANCE_EMAIL,
         "notes": "Available around the clock",
         "sortOrder": 0,
@@ -1456,7 +1719,7 @@ def main():
         "department": "Operations",
         "monthlySalary": 7500,
         "joinDate": (staff_member or {}).get("joinDate") or iso(TODAY - dt.timedelta(days=120)),
-        "phone": "+971500000004",
+        "phone": phone(111),
         "emiratesId": "",
         "passportNumber": "",
         "active": True,
@@ -1468,53 +1731,6 @@ def main():
         api.put(f"/api/v1/staff/{staff_member['id']}", json=staff_payload)
     log("property operations ready: building, contact, amenity, parking, staff")
 
-    existing_users = api.get("/api/admin/users") or []
-
-    def ensure_operator(email, name, role, phone_number, legacy_names=()):
-        user = next((u for u in existing_users if u.get("email") == email), None)
-        if user and user.get("name") in legacy_names:
-            # Name only: role, organisation and property assignments stay as they are.
-            user = api.put(f"/api/admin/users/{user['id']}", json={"name": name}) or user
-        if not user:
-            user = api.post("/api/admin/users", json={
-                "email": email,
-                "password": DEMO_PASSWORD,
-                "name": name,
-                "role": role,
-                "tenantId": tenant_id,
-                "phoneNumber": phone_number,
-            })
-            existing_users.append(user)
-        try:
-            api.post(f"/api/admin/users/{user['id']}/properties/{tower['id']}")
-        except RuntimeError as exc:
-            if "409" not in str(exc):
-                raise
-        return user
-
-    manager = ensure_operator(
-        f"manager@{DEMO_EMAIL_DOMAIN}",
-        "Maya Khoury",
-        "PROPERTY_MANAGER",
-        os.environ.get("DEMO_MANAGER_PHONE", "+971500000006"),
-        legacy_names=("Maya Tutorial Manager",),
-    )
-    guard = ensure_operator(
-        f"guard@{DEMO_EMAIL_DOMAIN}",
-        "Samir Nasser",
-        "SECURITY_GUARD",
-        os.environ.get("DEMO_GUARD_PHONE", "+971500000007"),
-        legacy_names=("Samir Tutorial Guard",),
-    )
-    api.put(
-        f"/api/v1/gatepass/guards/{guard['id']}/properties",
-        json=[tower["id"]],
-    )
-    out["operatorLogins"] = [
-        {"role": "PROPERTY_MANAGER", "email": manager["email"], "password": DEMO_PASSWORD},
-        {"role": "SECURITY_GUARD", "email": guard["email"], "password": DEMO_PASSWORD},
-    ]
-    log("property manager and security guard accounts ready")
 
     resident_api = Api(base)
     resident_api.login(ahmed["email"], DEMO_PASSWORD)
@@ -1567,8 +1783,8 @@ def main():
         "nameEn": PROMO_BUSINESS_EN,
         "nameAr": PROMO_BUSINESS_AR,
         "category": "DINING",
-        "phoneE164": "+971500000006",
-        "whatsappE164": "+971500000006",
+        "phoneE164": phone(120),
+        "whatsappE164": phone(120),
         "allowedDomains": ["example.com"],
         "active": True,
     }
@@ -1617,13 +1833,13 @@ def main():
         "requireFreshPhoto": True,
         "approvalTimeoutMinutes": 20,
     })
-    visitor_phone = "+971500009991"
+    visitor_phone = phone(130)
     try:
         api.post("/api/v1/gatepass/visitors/registration", json={
             "propertyId": tower["id"],
             "unitId": a101["id"],
             # Upserted by phone, so a re-run also renames an older registration.
-            "name": "Rapid Fix Technical Services",
+            "name": "Quillfix Technical Services",
             "phone": visitor_phone,
             "visitorType": "SERVICE_VENDOR",
             "validFrom": (dt.datetime.now(dt.UTC) - dt.timedelta(hours=1)).isoformat(),
@@ -1643,7 +1859,7 @@ def main():
         gate_pass = resident_api.post("/api/v1/gatepass", json={
             "unitId": a101["id"],
             "guestName": "Layla Mansour",
-            "guestPhone": "+971500000005",
+            "guestPhone": phone(131),
             "purpose": "Family visit",
             "vehicleNumber": "DXB A 24518",
             "passType": "RECURRING",
@@ -1696,7 +1912,8 @@ def main():
     if REDACT_CREDENTIALS:
         print("  Credentials redacted from console output.")
     else:
-        print(f"  Tenant admin : {ADMIN_EMAIL} / {ADMIN_PASSWORD}")
+        if CREATE_ADMIN:
+            print(f"  Tenant admin : {ADMIN_EMAIL} / {ADMIN_PASSWORD}")
         for r in out["renterLogins"]:
             print(f"  Renter       : {r['email']} / {r['password']}")
 

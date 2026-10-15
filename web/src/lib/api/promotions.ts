@@ -104,21 +104,21 @@ export async function fetchAdStats(id: string): Promise<PromoAdStatsDTO> {
   return res.json()
 }
 
-/** Reuses the shared asset endpoint — image-only, 2 MB cap, enforced server-side. */
-export async function uploadPromoImage(file: File, folder: string): Promise<string> {
+/** Largest image the upload accepts (PromotionImageService.MAX_BYTES). */
+export const PROMO_IMAGE_MAX_BYTES = 2 * 1024 * 1024
+
+/**
+ * Uploads an ad's artwork or a business logo into the organisation's private
+ * storage (ux6 item 2). Answers the route to save in `backgroundImageUrl` or
+ * `logoUrl`; the server decides the type from the bytes (PNG, JPEG, GIF, WebP).
+ */
+export async function uploadPromoImage(file: File): Promise<string> {
   const form = new FormData()
   form.append('file', file)
-  // `folder` goes in the query string only — AssetController reads it with
-  // @RequestParam, which resolves either, and sending both invites them to drift.
-  const res = await fetch(`/api/proxy/v1/assets/upload?folder=${encodeURIComponent(folder)}`, {
-    method: 'POST', body: form,
-  })
+  const res = await fetch('/api/proxy/v1/promotions/images', { method: 'POST', body: form })
   await throwIfNotOk(res)
   const data: { url?: string } = await res.json()
-  // Defensive: AssetController returns `url` on every 200 path, and its failure
-  // paths are non-2xx and already handled above. 502, not 500 — if this fires
-  // the server answered successfully with a body we did not expect, which is a
-  // contract mismatch rather than a server fault.
+  // 502, not 500 — a 2xx without a URL is a contract mismatch, not a server fault.
   if (!data.url) throw new ApiError(502, 'Upload succeeded but returned no URL')
   return data.url
 }

@@ -62,6 +62,16 @@ public class Meeting extends BaseTenantEntity {
     @JoinColumn(name = "unit_id")
     private Unit unit;
 
+    /** Why it was cancelled, as the canceller typed it (optional; changeset 164). */
+    @Column(name = "cancellation_reason", length = 500)
+    private String cancellationReason;
+
+    @Column(name = "cancelled_by_user_id")
+    private UUID cancelledByUserId;
+
+    @Column(name = "cancelled_at")
+    private Instant cancelledAt;
+
     @Version
     private Long version;
 

@@ -33,6 +33,9 @@ export async function generateMetadata({
     listing.seoDescription ||
     `${listing.bedrooms != null ? `${listing.bedrooms}BR` : ''} in ${listing.area ?? ''}, ${listing.emirate ?? ''}. ${listing.rentRangeLabel}/year`
 
+  // A stored photo is now a backend route relative to this site (bug 26/27), so
+  // crawlers need the site's origin to fetch og:image.
+  const siteUrl = process.env.NEXTAUTH_URL || process.env.AUTH_URL
   const images: { url: string }[] = listing.ogImageUrl
     ? [{ url: listing.ogImageUrl }]
     : listing.coverPhotoUrl
@@ -40,6 +43,7 @@ export async function generateMetadata({
     : []
 
   return {
+    ...(siteUrl ? { metadataBase: new URL(siteUrl) } : {}),
     title,
     description,
     keywords: listing.seoKeywords ?? undefined,

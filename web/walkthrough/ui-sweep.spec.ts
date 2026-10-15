@@ -710,3 +710,99 @@ for (const { role } of ROLES) {
         });
     }
 }
+
+// Tutorial 25 (ux5): a security guard signs in on the web with their phone and an
+// SMS code — the Security app's flow — and lands on the gate desk, seeing only the
+// gate screens. Runs against the Firebase Auth emulator (WT_FIREBASE_EMULATOR =
+// host:port, the same one the backend's FIREBASE_AUTH_EMULATOR_HOST and the web's
+// FIREBASE_AUTH_EMULATOR_HOST point at), which hands out the code over REST; with
+// no emulator the test is skipped, and says so. EN and AR, laptop and phone.
+const FIREBASE_EMULATOR = process.env.WT_FIREBASE_EMULATOR;
+const FIREBASE_PROJECT = process.env.WT_FIREBASE_PROJECT || 'demo-rentaxis';
+
+/** A UAE mobile number per run (9 digits after +971, starting 5), for the guard's phone. */
+function guardNational(): string {
+    let h = 0;
+    for (const c of SUFFIX) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    return `5${String(h % 100_000_000).padStart(8, '0')}`;
+}
+
+async function emulatorCode(phoneE164: string, after: number): Promise<string> {
+    let code: string | undefined;
+    await expect.poll(async () => {
+        const res = await fetch(`http://${FIREBASE_EMULATOR}/emulator/v1/projects/${FIREBASE_PROJECT}/verificationCodes`);
+        const body = await res.json() as { verificationCodes?: { phoneNumber: string; code: string }[] };
+        const mine = (body.verificationCodes ?? []).filter(v => v.phoneNumber === phoneE164);
+        code = mine.length > after ? mine[mine.length - 1].code : undefined;
+        return code;
+    }, { timeout: 20_000, message: `an SMS code for ${phoneE164} in the emulator` }).toBeTruthy();
+    return code!;
+}
+
+for (const locale of LOCALES) {
+    test(`guard web sign-in ${locale}`, async ({ browser }) => {
+        test.skip(!FIREBASE_EMULATOR, 'set WT_FIREBASE_EMULATOR (and run the stack against the Firebase Auth emulator) to sweep guard sign-in');
+        const { tenantId, propertyId } = fixture();
+        const failures: string[] = [];
+        const msgs = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'messages', `${locale}.json`), 'utf8'));
+        const national = guardNational();
+        const phone = `+971${national}`;
+
+        // The guard, provisioned as an admin does it (Users & staff), posted to the property.
+        const scopedAdmin = { id: '', role: 'SUPER_ADMIN', tenantId };
+        const su = await api<{ id: string }>(null, 'POST', '/api/auth/login', { email: 'admin@rentaxis.com', password: 'admin123' });
+        scopedAdmin.id = su.id;
+        const existing = await api<{ id: string; phoneNumber: string | null; role: string }[]>(scopedAdmin, 'GET', '/api/admin/users');
+        let guard = existing.find(u => u.role === 'SECURITY_GUARD' && u.phoneNumber === phone);
+        if (!guard) {
+            guard = await api<{ id: string; phoneNumber: string; role: string }>(scopedAdmin, 'POST', '/api/admin/users', {
+                name: `Sweep guard`, email: `sweep-guard-${SUFFIX}@example.invalid`, role: 'SECURITY_GUARD',
+                tenantId, phoneNumber: phone,
+            });
+            await api(scopedAdmin, 'PUT', `/api/v1/gatepass/guards/${guard.id}/properties`, [propertyId]);
+        }
+
+        // The email sign-in page offers the guard's way in.
+        const first = await browser.newContext({ baseURL: BASE_URL });
+        const login = await first.newPage();
+        await login.goto(`/${locale}/auth/login`);
+        await expect(login.getByTestId('login-guard-link')).toHaveText(msgs.GuardSignIn.loginLink);
+        await first.close();
+
+        for (const viewport of WIDTHS) {
+            const at = `guard ${locale} ${viewport.width}px`;
+            const context = await browser.newContext({ baseURL: BASE_URL, viewport });
+            const page = await context.newPage();
+            await check(page, `/${locale}/auth/guard`, 'SECURITY_GUARD', failures);
+            const before = await (async () => {
+                const res = await fetch(`http://${FIREBASE_EMULATOR}/emulator/v1/projects/${FIREBASE_PROJECT}/verificationCodes`);
+                const body = await res.json() as { verificationCodes?: { phoneNumber: string }[] };
+                return (body.verificationCodes ?? []).filter(v => v.phoneNumber === phone).length;
+            })();
+
+            // A wrong number is refused on the page, before any SMS.
+            await page.getByTestId('guard-phone').fill('5012');
+            await page.getByTestId('guard-send-code').click();
+            await expect(page.getByTestId('guard-error'), `${at} short number refused`).toBeVisible();
+
+            await page.getByTestId('guard-phone').fill(`0${national}`);
+            await page.getByTestId('guard-send-code').click();
+            const code = await emulatorCode(phone, before);
+            await expect(page.getByTestId('guard-resend'), `${at} resend waits out the cooldown`).toBeDisabled();
+            await page.getByTestId('guard-code').fill(code);
+            await page.getByTestId('guard-verify').click();
+            await page.waitForURL(/\/dashboard\/gatepass\/gate/, { timeout: 60_000 });
+
+            // Only the gate screens: the desk itself, and no staff/finance links anywhere.
+            await check(page, `/${locale}/dashboard/gatepass/gate`, 'SECURITY_GUARD', failures);
+            for (const href of ['/dashboard/leases', '/dashboard/finance', '/dashboard/properties', '/dashboard/tickets']) {
+                expect(await page.locator(`a[href*="${href}"]`).count(), `${at} no link to ${href}`).toBe(0);
+            }
+            // A staff page typed in is refused, not rendered.
+            await page.goto(`/${locale}/dashboard/leases`);
+            await expect(page.getByTestId('page-access-denied'), `${at} leases refused`).toBeVisible();
+            await context.close();
+        }
+        expect(failures).toEqual([]);
+    });
+}

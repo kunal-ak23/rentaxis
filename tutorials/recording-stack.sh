@@ -127,7 +127,7 @@ start_backend() {
     echo $! > "$pids/backend.pid"
   )
   echo -n "backend: starting on $backend_port "
-  for _ in $(seq 1 90); do
+  for _ in $(seq 1 "${TUTORIAL_BACKEND_WAIT_TRIES:-90}"); do  # 2 s each; raise on a loaded machine
     if curl -fsS -o /dev/null "$backend_url/actuator/health" 2>/dev/null \
        || curl -s -o /dev/null -w '%{http_code}' "$backend_url/api/auth/login" 2>/dev/null | grep -qE '^(4|2)'; then
       echo "up"; return

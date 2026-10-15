@@ -55,6 +55,7 @@ export 'theme/status_helpers.dart';
 
 // Utils
 export 'utils/formatters.dart';
+export 'utils/media_url.dart';
 export 'utils/l10n.dart';
 export 'utils/error_message.dart';
 
@@ -70,6 +71,7 @@ export 'ui/miftah_header.dart';
 
 // Widgets
 export 'widgets/status_badge.dart';
+export 'widgets/api_image.dart';
 export 'widgets/loading_overlay.dart';
 export 'widgets/offline_status_banner.dart';
 export 'widgets/empty_state.dart';

@@ -107,6 +107,8 @@ public final class StatementLabels {
                 "أرقام تشغيلية من سجل الشيكات، وليست رصيداً دفترياً.");
         put("note.differsByDesign", "The register and the ledger differ by design: the contract bills rent in advance.",
                 "يختلف السجل عن دفتر الأستاذ عن قصد: العقد يفوتر الإيجار مقدماً.");
+        put("note.asAtToday", "The period has not ended yet: outstanding and overdue are as at today.",
+                "لم تنتهِ الفترة بعد: المستحق والمتأخر محسوبان حتى اليوم.");
         put("note.directPaymentsOnly", "Only payment vouchers that debit an expense directly are shown until supplier allocation lands.",
                 "تظهر فقط سندات الصرف التي تقيد المصروف مباشرة إلى أن يتوفر تخصيص الموردين.");
         put("note.paidBySubledger", "Supplier payments count when allocated to an invoice of this property, at the property's share of the invoice; a released allocation comes back off.",

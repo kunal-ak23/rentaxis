@@ -35,6 +35,7 @@ import {
 import { stripInvalidIdParams } from "@/lib/urlIds";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { isAbortError } from "@/lib/api/abort";
+import { saveResponse } from "@/lib/download";
 
 type Lease = LeaseDetail;
 
@@ -67,6 +68,8 @@ type LeaseAttachment = {
     id: string;
     leaseId: string;
     name: string;
+    /** The name to save the file as: `name` plus the original file's extension. */
+    downloadName?: string;
     fileUrl: string;
     fileType: string;
     fileSize: number;
@@ -600,17 +603,8 @@ function LeasesList() {
 
     const handleDocDownload = async (attachmentId: string, fileName: string) => {
         const res = await fetch(`/api/proxy/v1/leases/attachments/${attachmentId}/download`);
-        if (res.ok) {
-            const blob = await res.blob();
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = fileName;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        }
+        // The server names the file: the document's name plus its extension ("aadhar.pdf").
+        if (res.ok) await saveResponse(res, fileName);
     };
 
     // #79: a PENDING_SIGNATURE lease the renter has already accepted is ready to
@@ -1217,7 +1211,7 @@ function LeasesList() {
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2 shrink-0">
-                                            <button onClick={() => handleDocDownload(doc.id, doc.name)} className="text-[10px] font-semibold text-primary hover:text-primary/80 cursor-pointer">{t("download")}</button>
+                                            <button onClick={() => handleDocDownload(doc.id, doc.downloadName ?? doc.name)} className="text-[10px] font-semibold text-primary hover:text-primary/80 cursor-pointer">{t("download")}</button>
                                             <button onClick={() => handleDocDelete(doc.id, docsLeaseId)} className="text-[10px] font-semibold text-error hover:text-error/80 cursor-pointer">{t("delete")}</button>
                                         </div>
                                     </div>
