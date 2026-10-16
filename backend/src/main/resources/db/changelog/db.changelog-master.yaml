@@ -337,3 +337,5 @@ databaseChangeLog:
       file: db/changelog/changesets/166-user-self-registered-unverified.yaml
   - include:
       file: db/changelog/changesets/167-password-reset-tokens.yaml
+  - include:
+      file: db/changelog/changesets/168-ticket-attachment-file-name.yaml

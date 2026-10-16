@@ -317,6 +317,55 @@ class TicketRenterIsolationIT extends AbstractPostgresIT {
         SecurityContextHolder.clearContext();
     }
 
+    /**
+     * S17-04: a ticket attachment downloads under the name it was uploaded with, as
+     * lease and voucher attachments do (#404): RFC 5987 for a non-ASCII name, the
+     * ASCII fallback made safe, any path a browser sent dropped, and the type still
+     * from the safe-type allow-list.
+     */
+    @Test
+    void aTicketAttachmentDownloadsUnderTheNameItWasUploadedWith() throws Exception {
+        as(userA, "RENTER");
+        byte[] pdf = "%PDF-1.4 tenancy".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        var contract = tickets.uploadAttachment(reportedByA,
+                new org.springframework.mock.web.MockMultipartFile("file", "Ejari contract.pdf", "application/pdf", pdf));
+        var arabic = tickets.uploadAttachment(reportedByA,
+                new org.springframework.mock.web.MockMultipartFile("file", "عقد الإيجار*.pdf", "application/octet-stream", pdf));
+        byte[] jpeg = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0, 0x10, 'J', 'F', 'I', 'F'};
+        var fromWindows = tickets.uploadAttachment(reportedByA,
+                new org.springframework.mock.web.MockMultipartFile("file", "C:\\Users\\me\\Leak photo.JPG", "image/jpeg", jpeg));
+        SecurityContextHolder.clearContext();
+
+        assertThat(contract.getDownloadName()).isEqualTo("Ejari contract.pdf");
+        assertThat(fromWindows.getDownloadName()).isEqualTo("Leak photo.JPG");
+
+        ResponseEntity<byte[]> got = spec(userA, HttpMethod.GET, "/attachments/" + contract.getId() + "/download", null)
+                .retrieve().onStatus(s -> true, (req, res) -> { }).toEntity(byte[].class);
+        assertThat(got.getStatusCode().value()).isEqualTo(200);
+        assertThat(got.getHeaders().getFirst("Content-Disposition"))
+                .isEqualTo("attachment; filename=\"Ejari contract.pdf\"; filename*=UTF-8''Ejari%20contract.pdf");
+        assertThat(got.getHeaders().getContentType().toString()).isEqualTo("application/pdf");
+        assertThat(got.getBody()).isEqualTo(pdf);
+
+        ResponseEntity<byte[]> gotArabic = spec(userA, HttpMethod.GET, "/attachments/" + arabic.getId() + "/download", null)
+                .retrieve().onStatus(s -> true, (req, res) -> { }).toEntity(byte[].class);
+        String disposition = gotArabic.getHeaders().getFirst("Content-Disposition");
+        assertThat(disposition).contains("filename*=UTF-8''"
+                + java.net.URLEncoder.encode("عقد الإيجار*.pdf", java.nio.charset.StandardCharsets.UTF_8)
+                        .replace("+", "%20").replace("*", "%2A"));
+        assertThat(disposition).doesNotContain("*.pdf\"").contains("filename=\"");
+        assertThat(gotArabic.getHeaders().getContentType().toString()).isEqualTo("application/pdf");
+
+        ResponseEntity<byte[]> gotJpeg = spec(userA, HttpMethod.GET, "/attachments/" + fromWindows.getId() + "/download", null)
+                .retrieve().onStatus(s -> true, (req, res) -> { }).toEntity(byte[].class);
+        assertThat(gotJpeg.getHeaders().getFirst("Content-Disposition")).contains("filename=\"Leak photo.JPG\"");
+
+        // A row from before the name was kept still downloads under the generated one.
+        UUID legacy = attachmentOn(reportedByA, userA.getId());
+        assertThat(jdbc.queryForObject("SELECT file_name FROM ticket_attachments WHERE id = ?", String.class, legacy))
+                .isNull();
+    }
+
     @Test
     void staffStillReachEveryTicketInTheirTenant() {
         User admin = user(UserRole.TENANT_ADMIN);

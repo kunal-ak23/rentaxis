@@ -375,8 +375,12 @@ class OneLoginPerPersonIT extends AbstractCallerIdentityIT {
                 .retrieve().onStatus(s -> true, (rq, rs) -> { }).toEntity(String.class);
         assertThat(set.getStatusCode().value()).as("the old link died with the old address").isEqualTo(404);
         assertThat(hashOf(inB.getId())).isEqualTo(inB.getPasswordHash());
+        // S17-02: the repointed row starts over for the victim's address, as adding
+        // her would: her own existing login (rule 2), never what the row had before.
+        assertThat(hashOf(inA)).isEqualTo(inB.getPasswordHash());
         assertThat(jdbc.queryForObject("select password_self_set from users where id = ?", Boolean.class, inA))
-                .isFalse();
+                .isTrue();
+        assertThat(outbox("USER_INVITED", inA)).as("only the first invite, to the admin's inbox").isEqualTo(1);
     }
 
     // --- isolation ----------------------------------------------------------------

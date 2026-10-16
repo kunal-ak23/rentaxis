@@ -42,6 +42,21 @@ type User = {
     id: string; name: string; email: string; role: string; tenantId: string;
     /** True while the set-password invite is unused (#7). */
     invitePending?: boolean;
+    /** ACTIVE or INACTIVE: an inactive login cannot sign in to this organisation (S17-01). */
+    status?: string;
+    phoneNumber?: string;
+};
+
+/** A row of the property picker (/v1/properties or the organisation's properties). */
+type PropertyOption = { property: { id: string; nameEn?: string; nameAr?: string } };
+
+/** How a reactivated login signs in again (UserService.LoginOnReactivation). */
+type ReactivationLogin = "EXISTING_LOGIN" | "INVITED" | "OWN_PASSWORD";
+
+/** The status refusals the server words for us (S17-01), by code. */
+const STATUS_ERROR_KEYS: Record<string, "deactivateSelf" | "lastActiveAdmin"> = {
+    "user.deactivateSelf": "deactivateSelf",
+    "user.lastActiveAdmin": "lastActiveAdmin",
 };
 
 /**
@@ -52,6 +67,8 @@ type User = {
  */
 const PASSWORD_ON_CREATE_ROLES = new Set(["SUPER_ADMIN"]);
 
+const isInactive = (u: User) => u.status === "INACTIVE";
+
 export default function UsersManager({ embedded = false }: { embedded?: boolean } = {}) {
     const tNav = useTranslations("Navigation");
     const Heading = embedded ? "h2" : "h1";
@@ -60,12 +77,12 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
     // English fallback rather than letting next-intl throw.
     const roleLabel = (role: string) =>
         tRoles.has(getRoleLabelKey(role)) ? tRoles(getRoleLabelKey(role)) : getRoleLabel(role);
-    const t = useTranslations("Index"); // Or custom namespace
     const tInv = useTranslations("Invites");
     const tU = useTranslations("UsersAdmin");
     const { data: session } = useSession();
     const currentRole = session?.user?.role as UserRole | undefined;
     const currentTenantId = (session?.user?.tenantId as string | undefined) || "";
+    const currentUserId = (session?.user?.id as string | undefined) || "";
     const isSuperAdmin = currentRole === "SUPER_ADMIN";
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
@@ -85,6 +102,11 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
     // Break-it R3 ops3 F5: what deleting the user does to their open work.
     const [deleteImpact, setDeleteImpact] = useState<{ openTickets: number; meetings: number } | null>(null);
     const beginImpact = useLatestRequest();
+
+    // S17-01: deactivate / reactivate one login (never deleted).
+    const [statusTarget, setStatusTarget] = useState<{ user: User; action: "deactivate" | "reactivate" } | null>(null);
+    const [statusBusy, setStatusBusy] = useState(false);
+    const [statusNotice, setStatusNotice] = useState<string | null>(null);
 
     // Form error (create/update failures, e.g. duplicate email or 403)
     const [formError, setFormError] = useState<string | null>(null);
@@ -118,7 +140,7 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
     const [tenants, setTenants] = useState<Tenant[]>([]);
 
     // Properties for Property Manager assignment
-    const [properties, setProperties] = useState<any[]>([]);
+    const [properties, setProperties] = useState<PropertyOption[]>([]);
     const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
     // What the edit panel loaded (break-it R3 ops3 F4): the PUT sends only what
     // changed, and assignments go with the set loaded here, so a colleague's change
@@ -329,6 +351,37 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
         }
     };
 
+    const confirmStatusChange = async () => {
+        if (!statusTarget) return;
+        const { user, action } = statusTarget;
+        setStatusBusy(true);
+        setDeleteError(null);
+        setStatusNotice(null);
+        try {
+            const res = await fetch(`/api/proxy/admin/users/${encodeURIComponent(user.id)}/${action}`, { method: "POST" });
+            await throwIfNotOk(res);
+            if (action === "reactivate") {
+                const body = await res.json().catch(() => null);
+                const login = body?.reactivationLogin as ReactivationLogin | undefined;
+                setStatusNotice(login === "EXISTING_LOGIN"
+                    ? tU("reactivatedExistingLogin", { name: user.name })
+                    : login === "INVITED"
+                        ? tU("reactivatedInvited", { name: user.name })
+                        : tU("reactivatedOwnPassword", { name: user.name }));
+            } else {
+                setStatusNotice(tU("deactivated", { name: user.name }));
+            }
+            fetchUsers();
+        } catch (e) {
+            console.error(e);
+            const key = STATUS_ERROR_KEYS[errorCode(e) ?? ""];
+            setDeleteError(key ? tU(key) : e instanceof ApiError ? e.message : tU("statusChangeFailed"));
+        } finally {
+            setStatusBusy(false);
+            setStatusTarget(null);
+        }
+    };
+
     const handleDeleteClick = async (id: string) => {
         setUserToDelete(id);
         setDeleteError(null);
@@ -363,14 +416,14 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
         // Non-super-admins can only operate within their own tenant; never let an
         // edited user's stored tenantId override that scope.
         setTenantId(isSuperAdmin ? (user.tenantId || "") : currentTenantId);
-        setPhoneNumber((user as any).phoneNumber || "");
+        setPhoneNumber(user.phoneNumber || "");
         setPassword("");
         setLoadedUser({
             email: user.email,
             name: user.name,
             role: user.role,
             tenantId: isSuperAdmin ? (user.tenantId || "") : currentTenantId,
-            phoneNumber: (user as { phoneNumber?: string }).phoneNumber || "",
+            phoneNumber: user.phoneNumber || "",
         });
         setLoadedPropertyIds(null);
         setAssignmentsLoad("loading");
@@ -420,25 +473,25 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
     return (
         <div className="space-y-6 max-w-5xl mx-auto w-full pb-20">
             {/* Header Area */}
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-8">
                 <div>
                     <Heading className="mb-1">{tNav("users")}</Heading>
                     <p className="text-sm text-muted">{isSuperAdmin ? tU("subtitleSuperAdmin") : tU("subtitle")}</p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <div className="relative group">
+                    <div className="relative group flex-1 sm:flex-none">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted group-focus-within:text-primary transition-colors" />
                         <input
                             type="text"
                             placeholder={tU("searchPlaceholder")}
                             value={searchQuery}
                             onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                            className="w-64 border border-border rounded-lg bg-surface text-foreground p-2.5 pl-9 text-xs placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200 font-medium shadow-sm shadow-black/[0.02]"
+                            className="w-full sm:w-64 border border-border rounded-lg bg-surface text-foreground p-2.5 pl-9 text-xs placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200 font-medium shadow-sm shadow-black/[0.02]"
                         />
                     </div>
                     <button
                         onClick={() => { resetForm(); setShowForm(true); }}
-                        className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer flex items-center gap-2"
+                        className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer flex items-center gap-2 shrink-0"
                     >
                         <Plus size={14} />
                         {tU("newUser")}
@@ -451,6 +504,19 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                     <span>{tInv("existingLoginBody")}</span>
                     <button
                         onClick={() => setExistingLoginNotice(false)}
+                        aria-label={tU("dismiss")}
+                        className="text-muted hover:text-foreground transition-colors cursor-pointer shrink-0"
+                    >
+                        <X size={14} />
+                    </button>
+                </div>
+            )}
+
+            {statusNotice && (
+                <div className="bg-primary/10 border border-primary/20 text-foreground text-xs font-medium rounded-lg px-4 py-3 flex items-center justify-between gap-3" role="status" data-testid="user-status-notice">
+                    <span>{statusNotice}</span>
+                    <button
+                        onClick={() => setStatusNotice(null)}
                         aria-label={tU("dismiss")}
                         className="text-muted hover:text-foreground transition-colors cursor-pointer shrink-0"
                     >
@@ -501,13 +567,14 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                             </div>
                         ) : (
                             <div className="overflow-x-auto">
-                                <table className="w-full text-left border-collapse">
+                                <table className="w-full text-start border-collapse">
                                     <thead>
                                         <tr className="border-b border-border">
                                             <th className="pb-4 bg-input/50 text-[11px] font-semibold text-muted uppercase tracking-wider px-2">{tU("colName")}</th>
                                             <th className="pb-4 bg-input/50 text-[11px] font-semibold text-muted uppercase tracking-wider px-2">{tU("colEmail")}</th>
                                             <th className="pb-4 bg-input/50 text-[11px] font-semibold text-muted uppercase tracking-wider px-2">{tU("colPhone")}</th>
                                             <th className="pb-4 bg-input/50 text-[11px] font-semibold text-muted uppercase tracking-wider px-2">{tU("colRole")}</th>
+                                            <th className="pb-4 bg-input/50 text-[11px] font-semibold text-muted uppercase tracking-wider px-2">{tU("colStatus")}</th>
                                             <th className="pb-4 bg-input/50 text-[11px] font-semibold text-muted uppercase tracking-wider px-2">{tU("colOrganisationId")}</th>
                                             <th className="pb-4 bg-input/50 text-[11px] font-semibold text-muted uppercase tracking-wider px-2 text-right">{tU("colActions")}</th>
                                         </tr>
@@ -517,7 +584,7 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                                             <tr key={u.id} className="border-b border-border hover:bg-input/30 transition-colors group">
                                                 <td className="py-4 px-2 font-bold">{u.name}</td>
                                                 <td className="py-4 px-2 text-muted">{u.email}</td>
-                                                <td className="py-4 px-2 text-muted font-mono text-[10px]">{(u as any).phoneNumber || "-"}</td>
+                                                <td className="py-4 px-2 text-muted font-mono text-[10px]">{u.phoneNumber || "-"}</td>
                                                 <td className="py-4 px-2">
                                                     <span className={cn(
                                                         "px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-wide",
@@ -528,14 +595,33 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                                                         {roleLabel(u.role)}
                                                     </span>
                                                 </td>
+                                                <td className="py-4 px-2">
+                                                    <span data-testid="user-status" className={cn(
+                                                        "px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-wide whitespace-nowrap",
+                                                        isInactive(u) ? "bg-error/10 text-error border border-error/20"
+                                                            : "bg-input text-foreground border border-border"
+                                                    )}>
+                                                        {isInactive(u) ? tU("statusInactive") : tU("statusActive")}
+                                                    </span>
+                                                </td>
                                                 <td className="py-4 px-2 text-muted font-mono text-[10px] truncate max-w-[120px]">
                                                     {u.tenantId || tU("notAvailable")}
                                                 </td>
                                                 <td className="py-4 px-2 text-right">
-                                                    <div className="flex justify-end gap-2">
-                                                        {u.invitePending && <ResendInviteButton userId={u.id} onSent={fetchUsers} />}
-                                                        {!u.invitePending && u.tenantId && u.role !== "SECURITY_GUARD" && u.role !== "SUPER_ADMIN" && (
+                                                    <div className="flex flex-wrap justify-end gap-2">
+                                                        {u.invitePending && !isInactive(u) && <ResendInviteButton userId={u.id} onSent={fetchUsers} />}
+                                                        {!u.invitePending && !isInactive(u) && u.tenantId && u.role !== "SECURITY_GUARD" && u.role !== "SUPER_ADMIN" && (
                                                             <SendPasswordResetButton userId={u.id} />
+                                                        )}
+                                                        {/* S17-01: an organisation's login, never your own or a platform admin's. */}
+                                                        {u.tenantId && u.role !== "SUPER_ADMIN" && u.id !== currentUserId && (
+                                                            <button
+                                                                onClick={() => setStatusTarget({ user: u, action: isInactive(u) ? "reactivate" : "deactivate" })}
+                                                                data-testid={isInactive(u) ? "user-reactivate" : "user-deactivate"}
+                                                                className="text-xs px-3 py-1.5 bg-input text-foreground border border-border rounded-lg hover:bg-input/70 transition-all duration-200 font-bold cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none whitespace-nowrap"
+                                                            >
+                                                                {isInactive(u) ? tU("reactivate") : tU("deactivate")}
+                                                            </button>
                                                         )}
                                                         <button
                                                             onClick={() => handleEdit(u)}
@@ -758,6 +844,23 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                     </div>
                 </div>
             )}
+
+            {/* Confirm deactivate / reactivate (S17-01) */}
+            <ConfirmDialog
+                isOpen={statusTarget !== null}
+                onClose={() => setStatusTarget(null)}
+                onConfirm={confirmStatusChange}
+                title={statusTarget?.action === "reactivate" ? tU("reactivateTitle") : tU("deactivateTitle")}
+                description={statusTarget
+                    ? tU(statusTarget.action === "reactivate" ? "reactivateDescription" : "deactivateDescription",
+                        { name: statusTarget.user.name })
+                    : undefined}
+                confirmText={statusTarget?.action === "reactivate" ? tU("reactivate") : tU("deactivate")}
+                cancelText={tU("cancel")}
+                isDestructive={statusTarget?.action === "deactivate"}
+                isLoading={statusBusy}
+                confirmTestId="user-status-confirm"
+            />
 
             {/* Confirm Delete Dialog */}
             <ConfirmDialog

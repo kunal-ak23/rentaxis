@@ -996,19 +996,8 @@ public class UserService {
 
         UserRole previousRole = user.getRole();
         UUID previousTenantId = user.getTenantId();
-        boolean emailChanged = !user.getEmail().equals(normalizedEmail);
-        boolean reissueInvite = false;
-        if (emailChanged) {
-            // A link minted for the old address must not set the password of the
-            // person at the new one (an admin could invite an inbox they read,
-            // repoint the row at someone else and redeem it everywhere that
-            // person signs in). A pending invite is re-sent to the new address,
-            // as the renter edit does; a reset link simply dies. The password
-            // on the row is no longer known to be the new address's owner's.
-            reissueInvite = user.hasPendingInvite() && !passwordTyped;
-            user.clearInvite();
-            user.setPasswordSelfSet(false);
-        }
+        // Case-insensitive: a legacy mixed-case address is the same login, not a new one.
+        boolean emailChanged = !user.getEmail().trim().equalsIgnoreCase(normalizedEmail);
         user.setEmail(normalizedEmail);
         user.setName(name);
         user.setRole(role);
@@ -1016,6 +1005,20 @@ public class UserService {
 
         UUID newTenantId = (tenantId != null && !tenantId.isBlank()) ? UUID.fromString(tenantId) : null;
         user.setTenantId(newTenantId);
+
+        // S17-02: a link minted for the old address must not set the password of the
+        // person at the new one, and neither may the row's password: whatever an
+        // admin did to it while it pointed at another inbox (typed it, redeemed a
+        // reset or invite mailed there) would otherwise sign in as the new
+        // address's person. The row starts over for the new address: that
+        // person's own existing login (#407 rule 2) or an invite. A password typed
+        // in this same edit (allowed only when the new address signs in nowhere
+        // else, rule 3 above) replaces it below.
+        NewAddressLogin newAddressLogin = null;
+        if (emailChanged) {
+            newAddressLogin = resetLoginForNewAddress(user);
+        }
+        boolean reissueInvite = newAddressLogin == NewAddressLogin.INVITE && !passwordTyped;
 
         if (passwordTyped) {
             requireStrongEnough(rawPassword);
@@ -1026,10 +1029,6 @@ public class UserService {
             // A set password retires the invite: otherwise the old link, or a
             // resend, could replace it (PR #342 review I1).
             user.clearInvite();
-        }
-        if (reissueInvite) {
-            user.setInviteToken(generateInviteToken());
-            user.setInviteTokenExpiresAt(Instant.now().plus(INVITE_VALIDITY));
         }
 
         // Same translation as createUser, and saveAndFlush for the same reason —
@@ -1072,8 +1071,12 @@ public class UserService {
         if (passwordTyped) {
             AUDIT.info("password-set user={} via=admin-typed selfSet=false", saved.getId());
         }
+        if (emailChanged) {
+            AUDIT.info("email-changed user={} login={}", saved.getId(),
+                    passwordTyped ? "admin-typed" : newAddressLogin);
+        }
         if (reissueInvite) {
-            publishInvite(saved, "USER_INVITED:" + saved.getId() + ":email-change:" + UUID.randomUUID());
+            publishNewAddressInvite(saved);
         }
         if (previousRole != role || !java.util.Objects.equals(previousTenantId, newTenantId) || passwordTyped
                 || emailChanged) {
@@ -1118,6 +1121,204 @@ public class UserService {
         // No row, no valid token (the filter refuses a missing user); drop the
         // cached state so that holds from the next request, not in 30 s.
         tokenRevocation.evictUserAfterCommit(id);
+    }
+
+    // --- S17-01: deactivate / reactivate one membership row -----------------------
+    //
+    // A users row is one person's membership of one organisation. Deactivating it
+    // closes that organisation to them (sign-in, the 409 picker and every live
+    // session of that row) and leaves their other organisations alone; nothing is
+    // deleted, so history (meetings, tickets, leases) stays attached.
+
+    public static final String DEACTIVATE_SELF_CODE = "user.deactivateSelf";
+    public static final String DEACTIVATE_SELF_MESSAGE = "You cannot change the status of your own login.";
+    public static final String LAST_ACTIVE_ADMIN_CODE = "user.lastActiveAdmin";
+    public static final String LAST_ACTIVE_ADMIN_MESSAGE =
+            "This is the organisation's last active administrator. Make someone else an administrator first.";
+    public static final String NO_ORGANISATION_CODE = "user.statusNoOrganisation";
+    public static final String NO_ORGANISATION_MESSAGE =
+            "A platform administrator belongs to no organisation and cannot be deactivated here.";
+
+    /** How a reactivated row signs in again. */
+    public enum LoginOnReactivation {
+        /** The person's own password from another organisation, as when they are added (#407 rule 2). */
+        EXISTING_LOGIN,
+        /** The row never had a password its holder knows: a fresh set-password invite was mailed. */
+        INVITED,
+        /**
+         * The row keeps its own password. If the person changed their password while
+         * the row was inactive, #407 cleared it here: the admin sends a reset link.
+         */
+        OWN_PASSWORD
+    }
+
+    public record Reactivated(User user, LoginOnReactivation login) {
+    }
+
+    private User lockedStatusTarget(UUID targetId, UUID callerId) {
+        userRepository.lockById(targetId);
+        User user = userRepository.findById(targetId)
+                .orElseThrow(() -> new com.datagami.rentaxis.api.exception.NotFoundException("User not found"));
+        if (targetId.equals(callerId)) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    DEACTIVATE_SELF_MESSAGE, DEACTIVATE_SELF_CODE, java.util.Map.of());
+        }
+        if (user.getTenantId() == null) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    NO_ORGANISATION_MESSAGE, NO_ORGANISATION_CODE, java.util.Map.of());
+        }
+        return user;
+    }
+
+    /**
+     * Deactivates one membership row. The caller's tenant and rank are checked by the
+     * controller; here: never the caller's own row, never a platform administrator,
+     * never the organisation's last ACTIVE TENANT_ADMIN. Its sessions end at once
+     * (token version bumped and the filter's cache evicted) and any outstanding
+     * invite or reset link on it dies. Idempotent.
+     */
+    @Transactional
+    public User deactivate(UUID targetId, UUID callerId) {
+        // S17 P3-2: the organisation's active admin rows are locked first, in id
+        // order, and the target's row only after them. Locking the target first and
+        // the admins second deadlocked two admins deactivating each other at the same
+        // moment: each held its own target and waited for the other's (Postgres
+        // aborted one, a 409). With one order for everybody the second simply waits,
+        // then re-reads the first one's row. Always taken, not only for an admin
+        // target: the role read here is not locked yet, and a row promoted in between
+        // would otherwise take the admin locks after its own again.
+        Optional<UUID> organisation = userRepository.findTenantIdById(targetId);
+        List<UUID> activeAdmins = organisation.isPresent()
+                ? userRepository.lockActiveTenantAdmins(organisation.get())
+                : List.of();
+        User user = lockedStatusTarget(targetId, callerId);
+        if (user.getStatus() == com.datagami.rentaxis.domain.entity.enums.UserStatus.INACTIVE) {
+            return user;
+        }
+        if (user.getRole() == UserRole.TENANT_ADMIN) {
+            if (!user.getTenantId().equals(organisation.orElse(null))) {
+                activeAdmins = userRepository.lockActiveTenantAdmins(user.getTenantId());
+            }
+            if (activeAdmins.stream().allMatch(targetId::equals)) {
+                throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                        LAST_ACTIVE_ADMIN_MESSAGE, LAST_ACTIVE_ADMIN_CODE, java.util.Map.of());
+            }
+        }
+        user.setStatus(com.datagami.rentaxis.domain.entity.enums.UserStatus.INACTIVE);
+        // A suspended membership holds no live link: an invite or reset redeemed now
+        // would hand its holder a password for a row they are not meant to use.
+        user.clearInvite();
+        User saved = userRepository.saveAndFlush(user);
+        tokenRevocation.revokeAllTokens(saved.getId());
+        AUDIT.info("membership-deactivated user={} tenant={} role={} by={}",
+                saved.getId(), saved.getTenantId(), saved.getRole(), callerId);
+        return saved;
+    }
+
+    /**
+     * Reactivates one membership row (same boundary as {@link #deactivate}). How the
+     * person signs in again follows #407:
+     * <ol>
+     *   <li>they have their own (self-set, verified, ACTIVE) login in another
+     *       organisation → this row takes that password, as an added member would;</li>
+     *   <li>else the row never had a password its holder knows (never signed in,
+     *       none set) → a fresh set-password invite is mailed;</li>
+     *   <li>else the row keeps its own password — which #407 already cleared if the
+     *       person changed theirs while this row was inactive; then the admin sends
+     *       a reset link. Sessions from before the deactivation stay revoked.</li>
+     * </ol>
+     */
+    @Transactional
+    public Reactivated reactivate(UUID targetId, UUID callerId) {
+        User user = lockedStatusTarget(targetId, callerId);
+        if (user.getStatus() == com.datagami.rentaxis.domain.entity.enums.UserStatus.ACTIVE) {
+            return new Reactivated(user, LoginOnReactivation.OWN_PASSWORD);
+        }
+        user.setStatus(com.datagami.rentaxis.domain.entity.enums.UserStatus.ACTIVE);
+        LoginOnReactivation login = LoginOnReactivation.OWN_PASSWORD;
+        Optional<String> own = sharesPersonLogin(user.getRole()) && !user.isSelfRegisteredUnverified()
+                ? reusableOwnPassword(user.getEmail(), user.getTenantId())
+                : Optional.empty();
+        if (own.isPresent()) {
+            user.setPasswordHash(own.get());
+            user.setPasswordSelfSet(true);
+            user.setPasswordSetAt(Instant.now());
+            user.clearInvite();
+            login = LoginOnReactivation.EXISTING_LOGIN;
+        } else if (user.getWelcomedAt() == null && user.getPasswordSetAt() == null
+                && issuesInviteToken(user.getRole(), false)
+                && user.getEmail() != null && !user.getEmail().isBlank()) {
+            user.setInviteToken(generateInviteToken());
+            user.setInviteTokenExpiresAt(Instant.now().plus(INVITE_VALIDITY));
+            login = LoginOnReactivation.INVITED;
+        }
+        User saved = userRepository.saveAndFlush(user);
+        tokenRevocation.evictUserAfterCommit(saved.getId());
+        if (login == LoginOnReactivation.INVITED) {
+            publishInvite(saved, "USER_INVITED:" + saved.getId() + ":reactivated:" + UUID.randomUUID());
+        }
+        AUDIT.info("membership-reactivated user={} tenant={} role={} by={} login={}",
+                saved.getId(), saved.getTenantId(), saved.getRole(), callerId, login);
+        return new Reactivated(saved, login);
+    }
+
+    // --- S17-02: a row's email changes ---------------------------------------------
+
+    /** What a row repointed at a new address signs in with. */
+    public enum NewAddressLogin {
+        /** The new address's person already has their own login: this row takes it (#407 rule 2). */
+        EXISTING_LOGIN,
+        /** A set-password invite to the new address is on the row; publish it after saving. */
+        INVITE,
+        /** Password cleared; the row is inactive, so its invite is mailed on reactivation. */
+        CLEARED,
+        /** Not a password-sharing row (platform admin, guard): only its links and self-set claim are dropped. */
+        NOT_SHARED
+    }
+
+    /**
+     * S17-02: the row's email (already set on {@code user}, with its final role and
+     * tenant) changed. The password on the row belonged to whoever the old address
+     * was, and anything an admin did to it while it pointed elsewhere (a typed
+     * password, a reset or invite redeemed at an inbox they read) must not come with
+     * it to the new address's person. So the row's password and any pending link are
+     * dropped, and the new address gets exactly what a new member with that address
+     * gets: that person's own existing login, or an invite. The caller saves the row
+     * and, for {@link NewAddressLogin#INVITE}, calls {@link #publishNewAddressInvite}.
+     */
+    public NewAddressLogin resetLoginForNewAddress(User user) {
+        user.clearInvite();
+        if (user.getTenantId() == null || !sharesPersonLogin(user.getRole())) {
+            user.setPasswordSelfSet(false);
+            return NewAddressLogin.NOT_SHARED;
+        }
+        Optional<String> own = user.isSelfRegisteredUnverified()
+                ? Optional.empty()
+                : reusableOwnPassword(user.getEmail(), user.getTenantId());
+        if (own.isPresent()) {
+            user.setPasswordHash(own.get());
+            user.setPasswordSelfSet(true);
+            user.setPasswordSetAt(Instant.now());
+            return NewAddressLogin.EXISTING_LOGIN;
+        }
+        user.setPasswordHash(passwordEncoder.encode(generateUnusableGuardSecret()));
+        user.setPasswordSelfSet(false);
+        // Nobody at the new address has signed in to this row or set its password:
+        // it is an outstanding invite again (User.hasPendingInvite).
+        user.setPasswordSetAt(null);
+        user.setWelcomedAt(null);
+        if (user.getStatus() == com.datagami.rentaxis.domain.entity.enums.UserStatus.ACTIVE
+                && issuesInviteToken(user.getRole(), false)) {
+            user.setInviteToken(generateInviteToken());
+            user.setInviteTokenExpiresAt(Instant.now().plus(INVITE_VALIDITY));
+            return NewAddressLogin.INVITE;
+        }
+        return NewAddressLogin.CLEARED;
+    }
+
+    /** Mails the invite {@link #resetLoginForNewAddress} put on a saved row. */
+    public void publishNewAddressInvite(User saved) {
+        publishInvite(saved, "USER_INVITED:" + saved.getId() + ":email-change:" + UUID.randomUUID());
     }
 
     // --- Property Assignment Methods ---
