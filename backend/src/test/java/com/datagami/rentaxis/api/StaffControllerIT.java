@@ -276,4 +276,30 @@ class StaffControllerIT extends AbstractPostgresIT {
                 Map.of("email", "y-" + UUID.randomUUID() + "@example.test")).getStatusCode().value()).isEqualTo(403);
         assertThat(jdbc.queryForObject("select user_id from staff where id = ?::uuid", UUID.class, id)).isNull();
     }
+
+    // ---- delete ----
+
+    /**
+     * Tenant hardening: DELETE used {@code deleteById}, which on the filtered
+     * repository found nothing for a foreign id, deleted nothing and answered 200.
+     * Now another tenant's or a missing id is a 404, and the row is untouched.
+     */
+    @Test
+    void deleteIsTenantScopedAndAForeignOrMissingIdIs404() {
+        String own = createPlain();
+        var foreign = http.call(otherAdmin, HttpMethod.POST, "/api/v1/staff", body(otherPropertyId, null));
+        assertThat(foreign.getStatusCode().value()).isEqualTo(200);
+        String foreignId = (String) foreign.getBody().get("id");
+
+        assertThat(http.call(admin, HttpMethod.DELETE, "/api/v1/staff/" + foreignId, null).getStatusCode().value())
+                .isEqualTo(404);
+        assertThat(jdbc.queryForObject("select count(*) from staff where id = ?::uuid", Long.class, foreignId))
+                .isEqualTo(1);
+        assertThat(http.call(admin, HttpMethod.DELETE, "/api/v1/staff/" + UUID.randomUUID(), null)
+                .getStatusCode().value()).isEqualTo(404);
+
+        assertThat(http.call(admin, HttpMethod.DELETE, "/api/v1/staff/" + own, null).getStatusCode().value())
+                .isEqualTo(204);
+        assertThat(staffOfA()).isZero();
+    }
 }
