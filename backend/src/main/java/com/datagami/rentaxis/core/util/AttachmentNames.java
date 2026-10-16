@@ -91,7 +91,7 @@ public final class AttachmentNames {
      * {@code ?} or {@code #}: those are legal in a file name ({@code quote*2026?.pdf}) and
      * only mean "query / fragment" in a stored URL (S18-03).
      */
-    static String displayExtensionOf(String displayName) {
+    public static String displayExtensionOf(String displayName) {
         return displayName == null ? "" : lastExtension(displayName);
     }
 
