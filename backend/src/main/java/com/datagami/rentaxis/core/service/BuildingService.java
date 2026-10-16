@@ -91,8 +91,13 @@ public class BuildingService {
         return Loaded.with(building, Building::getProperty);
     }
 
+    /**
+     * Loads through {@link #getBuildingById} first: another tenant's or a missing
+     * building is a 404. {@code deleteById} on a filtered repository quietly did
+     * nothing for a foreign id and the endpoint answered 200, as if it had worked.
+     */
     @Transactional
     public void deleteBuilding(UUID id) {
-        repository.deleteById(id);
+        repository.delete(getBuildingById(id));
     }
 }

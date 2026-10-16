@@ -141,8 +141,13 @@ public class StaffService {
         return saved;
     }
 
+    /**
+     * Loads through {@link #getStaffById} first: another tenant's or a missing staff
+     * record is a 404. {@code deleteById} on a filtered repository quietly did
+     * nothing for a foreign id and the endpoint answered 200, as if it had worked.
+     */
     @Transactional
     public void deleteStaff(UUID id) {
-        repository.deleteById(id);
+        repository.delete(getStaffById(id));
     }
 }

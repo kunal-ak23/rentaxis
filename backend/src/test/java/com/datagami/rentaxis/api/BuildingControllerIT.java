@@ -45,6 +45,7 @@ class BuildingControllerIT extends AbstractPostgresIT {
 
     private CrossTenantHttp http;
     private UUID tenantA;
+    private UUID otherTenant;
     private User admin;
     private UUID propertyId;
     private UUID otherPropertyId;
@@ -52,7 +53,7 @@ class BuildingControllerIT extends AbstractPostgresIT {
     @BeforeEach
     void setUp() {
         http = new CrossTenantHttp(port, orgRepo, userRepo, accountService, propertyAccountService, propertyService);
-        http.tenant("Bldg-other-");
+        otherTenant = http.tenant("Bldg-other-");
         otherPropertyId = http.property("Other Tower").getId();
         tenantA = http.tenant("Bldg-");
         propertyId = http.property("Marina Heights").getId();
@@ -129,5 +130,31 @@ class BuildingControllerIT extends AbstractPostgresIT {
             assertThat(http.call(admin, HttpMethod.POST, "/api/v1/buildings", b).getStatusCode().value()).isEqualTo(200);
         }
         assertThat(buildingsOfA()).isEqualTo(2);
+    }
+
+    /**
+     * Tenant hardening: DELETE used {@code deleteById}, which on the filtered
+     * repository found nothing for a foreign id, deleted nothing and answered 200.
+     * Now another tenant's or a missing id is a 404, and the row is untouched.
+     */
+    @Test
+    void deleteIsTenantScopedAndAForeignOrMissingIdIs404() {
+        User otherAdmin = http.admin(otherTenant);
+        var foreign = http.call(otherAdmin, HttpMethod.POST, "/api/v1/buildings", body(otherPropertyId));
+        assertThat(foreign.getStatusCode().value()).isEqualTo(200);
+        String foreignId = (String) foreign.getBody().get("id");
+        var own = http.call(admin, HttpMethod.POST, "/api/v1/buildings", body(propertyId));
+        assertThat(own.getStatusCode().value()).isEqualTo(200);
+
+        assertThat(http.call(admin, HttpMethod.DELETE, "/api/v1/buildings/" + foreignId, null).getStatusCode().value())
+                .isEqualTo(404);
+        assertThat(jdbc.queryForObject("select count(*) from buildings where id = ?::uuid", Long.class, foreignId))
+                .isEqualTo(1);
+        assertThat(http.call(admin, HttpMethod.DELETE, "/api/v1/buildings/" + UUID.randomUUID(), null)
+                .getStatusCode().value()).isEqualTo(404);
+
+        assertThat(http.call(admin, HttpMethod.DELETE, "/api/v1/buildings/" + own.getBody().get("id"), null)
+                .getStatusCode().value()).isEqualTo(200);
+        assertThat(buildingsOfA()).isZero();
     }
 }
