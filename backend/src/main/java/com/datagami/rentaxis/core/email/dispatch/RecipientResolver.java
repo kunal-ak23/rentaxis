@@ -71,7 +71,7 @@ public class RecipientResolver {
             case RENTER -> uuidField(payload, "renterUserId");
             case PROPERTY_MANAGER -> uuidField(payload, "propertyManagerUserId");
             case TENANT_ADMIN, EXISTING_ADMINS -> tenantAdmins(payload);
-            case SUPER_ADMIN -> superAdmins();
+            case SUPER_ADMIN -> superAdminsFor(payload);
         };
     }
 
@@ -109,6 +109,21 @@ public class RecipientResolver {
         if (tenantId == null) return List.of();
         return userRepo.findByTenantIdAndRole(tenantId, UserRole.TENANT_ADMIN).stream()
                 .map(User::getId).toList();
+    }
+
+    /**
+     * A legacy {@code NotificationService.notify(...)} call names ONE recipient (its
+     * userId) and its caller loops over the people to tell. Resolving SUPER_ADMIN to every
+     * super admin for each of those events made event 2..N insert the rows event 1 had
+     * already inserted (dedup_key collision, S18-02). So a legacy event goes only to the
+     * user it names, and only if that user is a super admin.
+     */
+    private List<UUID> superAdminsFor(Object payload) {
+        if (payload instanceof com.datagami.rentaxis.core.email.event.payload.LegacyNotificationPayload legacy) {
+            UUID target = legacy.userId();
+            return superAdmins().stream().filter(id -> id.equals(target)).toList();
+        }
+        return superAdmins();
     }
 
     private List<UUID> superAdmins() {
