@@ -238,8 +238,11 @@ function StartForm({ first, nextFrom, busy, onStart }: {
 function Figures({ rec, onOpen }: { rec: Reconciliation; onOpen: (title: string, items: RecItem[]) => void }) {
     const t = useTranslations("BankRec");
     const unrecorded = rec.unrecordedCredits - rec.unrecordedDebits;
+    // Review P3-11: while the day order is unconfirmed, the derived closing is only what
+    // the imported lines add up to — not the bank's figure, and not one to copy.
+    const fromLines = !rec.closingTyped && rec.checks.some(c => c.code === "LINE_ORDER" && !c.ok);
     const cells: { key: string; value: number | null; items?: RecItem[]; strong?: boolean }[] = [
-        { key: "statementClosing", value: rec.statementClosing },
+        { key: fromLines ? "statementClosingFromLines" : "statementClosing", value: rec.statementClosing },
         { key: "depositsInTransit", value: rec.depositsInTransit, items: rec.depositsInTransitItems },
         { key: "unpresentedPayments", value: -rec.unpresentedPayments, items: rec.unpresentedItems },
         ...(rec.bookedAfterPeriod !== 0 ? [{ key: "bookedAfterPeriod", value: -rec.bookedAfterPeriod, items: rec.bookedAfterItems }] : []),
@@ -255,7 +258,10 @@ function Figures({ rec, onOpen }: { rec: Reconciliation; onOpen: (title: string,
                 const body = (
                     <>
                         <span className={`${label} block`}>{t(`fig_${c.key}`)}</span>
-                        <Money v={c.value} strong={c.strong} testId={`rec-figure-${c.key}`} />
+                        <Money v={c.value} strong={c.strong} testId={`rec-figure-${c.key === "statementClosingFromLines" ? "statementClosing" : c.key}`} />
+                        {c.key === "statementClosingFromLines" && (
+                            <span className="block text-[10px] text-error break-words" data-testid="rec-closing-from-lines">{t("closingFromLinesHint")}</span>
+                        )}
                         {c.items && <span className="block text-[10px] text-muted">{t("itemCount", { count: c.items.length })}</span>}
                     </>
                 );

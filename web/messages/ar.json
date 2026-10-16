@@ -4740,6 +4740,8 @@
     "startFirstHint": "تبدأ التسوية الأولى في أي يوم بعد فتح الدفاتر؛ تُدرج البنود المعلقة في بدايتها بعد ذلك.",
     "startNextHint": "تبدأ في اليوم التالي لنهاية آخر تسوية معتمدة، برصيدها الختامي.",
     "fig_statementClosing": "الرصيد حسب الكشف",
+    "fig_statementClosingFromLines": "من البنود المستوردة، لا من كشف البنك",
+    "closingFromLinesHint": "أدخل الرصيد الختامي من كشف البنك الورقي؛ لا تنسخ هذا الرقم.",
     "fig_depositsInTransit": "+ إيداعات في الطريق",
     "fig_unpresentedPayments": "− مدفوعات لم تقدم بعد",
     "fig_bookedAfterPeriod": "− مسجلة بعد الفترة",

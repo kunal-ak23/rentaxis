@@ -88,6 +88,39 @@ const ROWS = [
 beforeEach(() => { session.role = "ACCOUNTANT"; });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
+/** #97 review P3-11: September's last day came from two files and nothing typed the closing. */
+const UNCONFIRMED: Reconciliation = {
+    ...SEPT, canFinalize: false,
+    checks: [...SEPT.checks, { code: "LINE_ORDER" as const, ok: false,
+        message: "Lines on 30/09/2026 came from more than one file, so their order and completeness are not confirmed" }],
+};
+
+describe("an unconfirmed day order (review P3-11)", () => {
+    for (const locale of ["en", "ar"] as const) {
+        it(`labels the derived closing as the imported lines' figure, not the bank's (${locale})`, async () => {
+            stubFetch([{ match: "/bank-accounts/ba-1/reconciliations", body: ROWS },
+                { match: "/reconciliations/rec-9", body: UNCONFIRMED }]);
+            const msgs = locale === "ar" ? ar : en;
+            renderIn(locale, <ReconciliationPanel bankAccountId="ba-1" />);
+            const figure = await screen.findByTestId("rec-figure-statementClosing");
+            const cell = figure.parentElement!;
+            expect(cell).toHaveTextContent(msgs.BankRec.fig_statementClosingFromLines);
+            expect(cell).not.toHaveTextContent(msgs.BankRec.fig_statementClosing);
+            expect(screen.getByTestId("rec-closing-from-lines")).toHaveTextContent(msgs.BankRec.closingFromLinesHint);
+        });
+    }
+
+    it("keeps the plain label once the closing is typed", async () => {
+        stubFetch([{ match: "/bank-accounts/ba-1/reconciliations", body: ROWS },
+            { match: "/reconciliations/rec-9", body: { ...UNCONFIRMED, closingTyped: true,
+                checks: [...SEPT.checks, OK("LINE_ORDER", "typed from the paper statement")] } }]);
+        renderIn("en", <ReconciliationPanel bankAccountId="ba-1" />);
+        const figure = await screen.findByTestId("rec-figure-statementClosing");
+        expect(figure.parentElement!).toHaveTextContent(en.BankRec.fig_statementClosing);
+        expect(screen.queryByTestId("rec-closing-from-lines")).toBeNull();
+    });
+});
+
 describe("the reconciliation statement", () => {
     it("shows the worked example at 0.00, opens each figure's items and finalizes after a confirmation", async () => {
         stubFetch([{ match: "/bank-accounts/ba-1/reconciliations", body: ROWS },

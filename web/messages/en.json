@@ -4740,6 +4740,8 @@
     "startFirstHint": "The first reconciliation starts on any day the books are open; items outstanding at its start are listed next.",
     "startNextHint": "It starts the day after the last finalized one ended, with that one's closing balance.",
     "fig_statementClosing": "Balance per statement",
+    "fig_statementClosingFromLines": "From the imported lines, not the bank's statement",
+    "closingFromLinesHint": "Type the closing balance from the paper statement; do not copy this figure.",
     "fig_depositsInTransit": "+ Deposits in transit",
     "fig_unpresentedPayments": "− Unpresented payments",
     "fig_bookedAfterPeriod": "− Booked after the period",
