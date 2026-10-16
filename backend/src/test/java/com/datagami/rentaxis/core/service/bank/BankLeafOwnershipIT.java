@@ -180,6 +180,9 @@ class BankLeafOwnershipIT extends AbstractPostgresIT {
 
         assertThat(ownerOf(leaf)).as("the building's bank owns the building's leaf").isEqualTo(enbd.getId());
         assertThat(coaOf(enbd)).isEqualTo(leaf);
+        // S20-04: the leaf was named after the operating bank; it now carries its owner's name.
+        assertThat(jdbc.queryForObject("select name from accounts where id = ?", String.class, leaf))
+                .isEqualTo("ENBD - " + org.building().getNameEn());
         assertThat(ownerOf(leafOf(a.property()))).as("the operating bank keeps the rest").isEqualTo(org.operating().getId());
         assertThat(ownedBankLeaf.forProperty(org.building().getId())).contains(leaf);
         assertThat(ownership(b)).as("organisation B untouched").isEqualTo(before);
