@@ -1671,7 +1671,6 @@
     "errTimeout": "The approval timeout must be between 1 and 1440 minutes.",
     "regularVisitorsTitle": "Regular visitors",
     "regularVisitorsDescription": "Register a maid, driver or vendor for a unit. The guard recognises them by mobile number.",
-    "unitsLoadError": "Units could not be loaded.",
     "registerVisitor": "Register visitor",
     "visitorRegistered": "{name} is registered.",
     "visitorRegisterError": "The visitor could not be registered.",

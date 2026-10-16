@@ -943,11 +943,13 @@ function LeasesTab({ propertyId }: { propertyId: string }) {
     const [total, setTotal] = useState(0);
     const begin = useLatestRequest();
 
-    // Scale follow-up: a page of the property's contracts from GET /leases/paged?propertyId=
-    // (newest start first), not every contract the building ever had.
+    // Scale follow-up: a page of the property's contracts from GET /leases/paged?propertyId=,
+    // not every contract the building ever had. Oldest first, the house order for entity
+    // lists (review P3-4): leases carry no createdAt, and the old /leases/property list had
+    // no order at all, so the start date stands in (the server breaks ties by id).
     useEffect(() => {
         const { signal, isCurrent } = begin();
-        const sp = new URLSearchParams({ propertyId, page: String(page - 1), size: String(size), sort: "startDate,desc" });
+        const sp = new URLSearchParams({ propertyId, page: String(page - 1), size: String(size), sort: "startDate,asc" });
         fetch(`/api/proxy/v1/leases/paged?${sp.toString()}`, { signal })
             .then(res => (res.ok ? res.json() : null))
             .then(body => {

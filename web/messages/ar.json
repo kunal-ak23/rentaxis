@@ -1671,7 +1671,6 @@
     "errTimeout":"يجب أن تكون مهلة الموافقة بين 1 و1440 دقيقة.",
     "regularVisitorsTitle": "الزوار المنتظمون",
     "regularVisitorsDescription": "سجّل عاملة منزلية أو سائقًا أو مزوّد خدمة لوحدة معيّنة، ويتعرّف عليه الحارس برقم جواله.",
-    "unitsLoadError": "تعذّر تحميل الوحدات.",
     "registerVisitor": "تسجيل الزائر",
     "visitorRegistered": "تم تسجيل {name}.",
     "visitorRegisterError": "تعذّر تسجيل الزائر.",
