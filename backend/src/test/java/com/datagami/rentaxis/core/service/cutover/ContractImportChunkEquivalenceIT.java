@@ -27,7 +27,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * reference kept from before a clear, and if every pending write is flushed before the
  * clear. Counting rows cannot show either, so this imports the same workbook into two
  * fresh organisations — once clearing every {@value #CHUNK} rows, so clears land in the
- * middle of every phase (units, renters, both contract passes, the cheque pass), and once
+ * middle of every phase (properties, units, renters, both contract passes, the cheque
+ * pass), and once
  * never clearing — posts both batches, and compares the rows themselves.</p>
  *
  * <p>Each row is reduced to a natural key and its columns as JSON, with ids, timestamps,
@@ -42,6 +43,8 @@ class ContractImportChunkEquivalenceIT extends AbstractPostgresIT {
     /** Prime, and smaller than every phase, so clears never line up with a phase boundary. */
     static final int CHUNK = 7;
     static final int CONTRACTS = 37;
+    /** More than {@link #CHUNK}, so the properties phase clears too (S19 review P3-2). */
+    static final int PROPERTIES = 9;
 
     @Autowired CutoverFixture fixture;
     @Autowired ContractImportValidator validator;
@@ -64,8 +67,12 @@ class ContractImportChunkEquivalenceIT extends AbstractPostgresIT {
                 .anyMatch(r -> r.startsWith("L|")).anyMatch(r -> r.startsWith("LL|"))
                 .anyMatch(r -> r.startsWith("C|")).anyMatch(r -> r.startsWith("U|"))
                 .anyMatch(r -> r.startsWith("BL|")).anyMatch(r -> r.startsWith("BE|"))
-                .anyMatch(r -> r.startsWith("B|")).anyMatch(r -> r.startsWith("J|"));
+                .anyMatch(r -> r.startsWith("B|")).anyMatch(r -> r.startsWith("J|"))
+                .anyMatch(r -> r.startsWith("P|")).anyMatch(r -> r.startsWith("PM|"))
+                .anyMatch(r -> r.startsWith("A|"));
         assertThat(chunked.stream().filter(r -> r.startsWith("L|"))).hasSize(CONTRACTS);
+        assertThat(chunked.stream().filter(r -> r.startsWith("P|"))).hasSize(PROPERTIES);
+        assertThat(PROPERTIES).as("a clear lands inside the properties phase").isGreaterThan(CHUNK);
         System.out.println("S19-01 equivalence rows by kind: " + chunked.stream().collect(
                 java.util.stream.Collectors.groupingBy(r -> r.substring(0, r.indexOf('|')),
                         java.util.TreeMap::new, java.util.stream.Collectors.counting())));
@@ -106,6 +113,15 @@ class ContractImportChunkEquivalenceIT extends AbstractPostgresIT {
                 + "'payee_mismatch_confirmed_by_name'))";
         List<String> out = new ArrayList<>();
         String[] queries = {
+                "select 'P|'||p.name_en||'|'||" + n.formatted("p") + " from properties p where p.tenant_id=?",
+                // Every role of every property, and the account it lands on — the sheet's
+                // names and the template's generated leaves alike.
+                "select 'PM|'||p.name_en||'|'||m.role||'|'||a.name||'|'||" + n.formatted("m")
+                        + " from property_account_mappings m join properties p on p.id=m.property_id"
+                        + " join accounts a on a.id=m.account_id where p.tenant_id=?",
+                "select 'A|'||a.name||'|'||coalesce(pa.name,'-')||'|'||coalesce(p.name_en,'-')||'|'||" + n.formatted("a")
+                        + " from accounts a left join accounts pa on pa.id=a.parent_id"
+                        + " left join properties p on p.id=a.property_id where a.tenant_id=?",
                 "select 'U|'||p.name_en||'|'||coalesce(b.name_en,'-')||'|'||u.unit_number||'|'||" + n.formatted("u")
                         + " from units u join properties p on p.id=u.property_id left join buildings b on b.id=u.building_id"
                         + " where u.tenant_id=?",
@@ -141,7 +157,8 @@ class ContractImportChunkEquivalenceIT extends AbstractPostgresIT {
     }
 
     /**
-     * {@value #CONTRACTS} contracts over two properties and three buildings, with spare
+     * {@value #CONTRACTS} contracts over {@value #PROPERTIES} properties (the first and the
+     * last naming their accounts, the rest left to the template), with spare
      * units, a VAT-bearing commercial contract every fourth row, a parking line every third,
      * a discount every fifth, and cheques in every importable state (registered, deposited,
      * cleared, bounced, and transfers that cleared).
@@ -152,11 +169,21 @@ class ContractImportChunkEquivalenceIT extends AbstractPostgresIT {
         row(p, 0, "PropertyName", "PropertyNameAr", "Emirate", "Address", "Type", "MakaniNumber",
                 "RentalIncomeAccount", "RentalReceivableAccount", "AdvanceRentAccount", "BankAccount",
                 "PdcReceivableAccount", "SecurityDepositAccount");
-        String[] properties = {"Equiv Tower " + tag, "Equiv Court " + tag};
-        row(p, 1, properties[0], "", "DUBAI", "Plot 1", "MIXED", "",
-                "Rental Income ST1", "Rent Receivable - ST1", "Advance Rent - ST1", "Sample Bank - ST1",
-                "PDC Receivable ST1", "Security Deposit ST1");
-        row(p, 2, properties[1], "", "SHARJAH", "Plot 2", "RESIDENTIAL", "", "", "", "", "", "", "");
+        String[] properties = new String[PROPERTIES];
+        for (int k = 0; k < PROPERTIES; k++) {
+            properties[k] = (k == 0 ? "Equiv Tower " : "Equiv Court " + (char) ('A' + k) + " ") + tag;
+            // The first and the last name their accounts: the last one is written after
+            // a clear, so its mappings go through account references from before it.
+            boolean named = k == 0 || k == PROPERTIES - 1;
+            if (named) {
+                row(p, k + 1, properties[k], "", "DUBAI", "Plot " + (k + 1), "MIXED", "",
+                        "Rental Income ST1", "Rent Receivable - ST1", "Advance Rent - ST1", "Sample Bank - ST1",
+                        "PDC Receivable ST1", "Security Deposit ST1");
+            } else {
+                row(p, k + 1, properties[k], "", "SHARJAH", "Plot " + (k + 1), "RESIDENTIAL", "",
+                        "", "", "", "", "", "");
+            }
+        }
 
         Sheet u = wb.createSheet("Units");
         row(u, 0, "PropertyName", "BuildingName", "UnitNumber", "UnitType", "SizeSqft", "ExpectedRent");
@@ -174,7 +201,7 @@ class ContractImportChunkEquivalenceIT extends AbstractPostgresIT {
         int ur = 1, cr = 1, qr = 1;
         int units = CONTRACTS + 6;   // some stay vacant
         for (int i = 1; i <= units; i++) {
-            String property = properties[i % 2];
+            String property = properties[i % PROPERTIES];
             String building = i % 2 == 0 ? (i % 4 == 0 ? "North" : "South") : "";
             String unit = String.valueOf(200 + i);
             row(u, ur++, property, building, unit, i % 4 == 0 ? "OFFICE" : "STUDIO", String.valueOf(400 + i),
