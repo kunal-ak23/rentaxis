@@ -31,6 +31,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -44,6 +46,16 @@ import static org.mockito.Mockito.when;
  * <p>Uses Testcontainers Postgres + a mocked {@link EmailSender} to avoid hitting
  * Azure ACS. The rest of the pipeline (dispatcher, renderer, repository, worker)
  * is exercised against the real Spring context and a real database.</p>
+ *
+ * <p><b>No scheduled worker in this context.</b> The real {@link EmailOutboxWorker}'s
+ * {@code @Scheduled} tick runs as soon as the context starts and drains every PENDING
+ * row the shared database holds — other classes leave plenty — through this class's
+ * mocked sender. A call to the mock from that thread between {@code when(sender.send(..))}
+ * and {@code thenAnswer(..)} takes the stubbing for itself (Mockito stubbing is not
+ * thread-safe), so the test's own send got {@code null}, failed, and left the row
+ * PENDING (full-suite flake, 2026-10). The worker is replaced by a mock, so nothing but
+ * this test calls the sender; the test drives {@link EmailOutboxRowProcessor} directly,
+ * which is the per-row work the tick would do.</p>
  */
 @SpringBootTest
 class EmailPipelineE2ETest extends AbstractPostgresIT {
@@ -53,7 +65,8 @@ class EmailPipelineE2ETest extends AbstractPostgresIT {
     @Autowired UserRepository userRepo;
     @Autowired LandlordOrgRepository landlordOrgRepo;
     @Autowired EmailOutboxRepository outboxRepo;
-    @Autowired EmailOutboxWorker worker;
+    /** Replaced so its scheduled tick never touches the shared mock; see the class comment. */
+    @MockitoBean EmailOutboxWorker worker;
     @Autowired EmailOutboxRowProcessor processor;
     @Autowired TransactionTemplate tx;
     @Autowired TenantFeatureService tenantFeatureService;
@@ -112,5 +125,7 @@ class EmailPipelineE2ETest extends AbstractPostgresIT {
         assertThat(providerCallHadOpenTransaction)
                 .as("external email provider call must not hold database locks")
                 .isFalse();
+        // Only this test's row reached the provider: no other thread used the mock.
+        verify(sender, times(1)).send(any(EmailOutbox.class));
     }
 }

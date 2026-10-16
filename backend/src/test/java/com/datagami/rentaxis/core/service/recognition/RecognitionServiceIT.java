@@ -638,6 +638,42 @@ class RecognitionServiceIT extends AbstractPostgresIT {
         assertTrialBalanceBalances();
     }
 
+    /**
+     * The flake behind {@link #amendIsSafeWithTheSegmentAlreadyInThePersistenceContext}:
+     * an amendment dated the lease's first day leaves the cancelled segment and its
+     * replacement on the same {@code from_date}, and "order by from_date" alone leaves
+     * the order between them to Postgres — heap or index order, whichever plan it picks.
+     * In a full run (one shared database, autovacuum, pages other classes filled) the
+     * cancelled segment's updated row version can land after the new segment, and the
+     * list reads ACTIVE, CANCELLED.
+     *
+     * <p>Deterministic: rewrite the cancelled row (a no-op update still writes a new
+     * row version, placed after the replacement's) and read with a sequential scan,
+     * which returns rows in heap order. The segments must still come back in the order
+     * they were made.</p>
+     */
+    @Test
+    void segmentsOnTheSameStartDateReadInTheOrderTheyWereMadeWhateverTheHeapOrder() {
+        UUID leaseId = galah();
+        setChequeTotalTo(leaseId, "62000");
+        posting.amendLines(leaseId, List.of(line("RENT", "60000"), line("ADMIN_FEE", "2000")), "Rent corrected");
+        UUID cancelledId = jdbc.queryForObject(
+                "select id from rent_segments where lease_id = ? and status = 'CANCELLED'", UUID.class, leaseId);
+        assertThat(jdbc.queryForObject("select count(distinct from_date) from rent_segments where lease_id = ?",
+                Long.class, leaseId)).as("the tie this is about").isEqualTo(1L);
+
+        // Move the cancelled row's live version behind the replacement's in the heap.
+        jdbc.update("update rent_segments set status = status where id = ?", cancelledId);
+
+        List<RentSegment> read = tx.execute(s -> {
+            jdbc.execute("set local enable_indexscan = off");
+            jdbc.execute("set local enable_bitmapscan = off");
+            return segments.findByLease_IdOrderByFromDateAsc(leaseId);
+        });
+        assertThat(read).extracting(RentSegment::getStatus)
+                .containsExactly(SegmentStatus.CANCELLED, SegmentStatus.ACTIVE);
+    }
+
     // ------------------------------------------------------------------
     // extension
     // ------------------------------------------------------------------

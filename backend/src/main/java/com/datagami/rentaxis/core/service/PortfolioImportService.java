@@ -795,28 +795,36 @@ public class PortfolioImportService {
             job.setStatus("PERSISTING");
             importJobRepository.save(job);
             long persistStarted = System.nanoTime();
+            long persistedMs;
+            // A v1 workbook posts its ACTIVE rows straight after the persist; timed on
+            // its own (S19 review P3-4), so persistMs is the persist and nothing else.
+            // A cut-over workbook posts later, from the batch screen: postMs is 0.
+            long postedMs = 0;
 
             if (ContractImportValidator.isV2Workbook(workbook)) {
                 contractPersistService.persist(workbook, job, outcome.warnings());
+                persistedMs = (System.nanoTime() - persistStarted) / 1_000_000;
             } else {
                 PortfolioImportPersistService.PersistResult persisted =
                         persistService.persistWorkbook(workbook, job, outcome.warnings());
+                persistedMs = (System.nanoTime() - persistStarted) / 1_000_000;
                 // Only now, with the leases committed: each ACTIVE row posts in a
                 // transaction of its own, and a new transaction cannot see rows the
                 // persist transaction had not yet committed.
+                long postStarted = System.nanoTime();
                 postRequestedLeases(persisted, job, auth);
+                postedMs = (System.nanoTime() - postStarted) / 1_000_000;
             }
 
-            long persistedMs = (System.nanoTime() - persistStarted) / 1_000_000;
             job.setStatus("COMPLETED");
             job.setCompletedAt(Instant.now());
             importJobRepository.save(job);
 
             // The phase split is there so a slow import says which half was slow (S19-01).
             log.info("Portfolio import completed: jobId={}, properties={}, units={}, leases={}, schedules={},"
-                            + " validateMs={}, persistMs={}",
+                            + " validateMs={}, persistMs={}, postMs={}",
                     job.getId(), job.getPropertiesCreated(), job.getUnitsCreated(),
-                    job.getLeasesCreated(), job.getSchedulesCreated(), validatedMs, persistedMs);
+                    job.getLeasesCreated(), job.getSchedulesCreated(), validatedMs, persistedMs, postedMs);
         } catch (BusinessRuleViolationException e) {
             // A workbook this import will not accept at all — not an .xlsx, macro
             // enabled, password protected, or past a size limit. It is a statement
