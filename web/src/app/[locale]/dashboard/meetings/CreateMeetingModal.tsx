@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 import { BUSINESS_TIME_ZONE, businessTodayIso } from "@/lib/businessDate";
 import { renewalTerm } from "@/lib/meetings/renewalDates";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
+import { LeasePicker } from "@/components/pickers/LeasePicker";
+import type { LeaseDetail } from "@/lib/api/leasing";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -64,12 +66,31 @@ function formatTime(iso: string, locale: string): string {
     });
 }
 
+/** A row of GET /leases/my-leases, as far as this dialog reads it. */
+type MyLeaseRow = Partial<Lease> & { id: string; status: string; unitNumber?: string };
+
+/** The fields the meeting steps read from a contract row (GET /leases/paged). */
+function toMeetingLease(l: LeaseDetail): Lease {
+    return {
+        id: l.id,
+        propertyId: l.propertyId ?? undefined,
+        propertyName: l.propertyName ?? "—",
+        unitIdentifier: l.unitIdentifier ?? "—",
+        status: l.status,
+        endDate: l.endDate,
+    };
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────
 
 export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session }: Props) {
     const t = useTranslations("Meetings");
     const locale = useLocale();
     const isRenter = session?.user?.role === "RENTER";
+    const leaseOptionLabel = useCallback(
+        (l: LeaseDetail) => t("create.leaseOption", { property: l.propertyName ?? "—", unit: l.unitIdentifier ?? "—" }),
+        [t],
+    );
 
     // Step
     const [step, setStep] = useState(1);
@@ -80,7 +101,14 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
     // Step 2 — Office Visit
     const [officePurpose, setOfficePurpose] = useState<OfficePurpose | "">("");
     const [selectedLeaseId, setSelectedLeaseId] = useState("");
+    // A renter picks from their own contracts (GET /leases/my-leases, a handful);
+    // staff search the organisation's ACTIVE contracts on the server (scale #6:
+    // the old GET /leases loaded every contract ever written into a <select>).
     const [leases, setLeases] = useState<Lease[]>([]);
+    const [pickedLease, setPickedLease] = useState<Lease | null>(null);
+    const selectedLease: Lease | undefined = isRenter
+        ? leases.find((l) => l.id === selectedLeaseId)
+        : pickedLease && pickedLease.id === selectedLeaseId ? pickedLease : undefined;
 
     // Step 2 — Property Visit
     const [selectedPropertyId, setSelectedPropertyId] = useState("");
@@ -123,6 +151,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
             setMeetingType("");
             setOfficePurpose("");
             setSelectedLeaseId("");
+            setPickedLease(null);
             setSelectedPropertyId("");
             setSelectedUnitId("");
             setSelectedDate("");
@@ -145,14 +174,14 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
     // ── Data fetching ───────────────────────────────────────────────────
 
     const fetchLeases = useCallback(async () => {
+        if (!isRenter) return; // staff: LeasePicker searches /leases/paged
         try {
-            const endpoint = isRenter ? "/api/proxy/v1/leases/my-leases" : "/api/proxy/v1/leases";
-            const res = await fetch(endpoint);
+            const res = await fetch("/api/proxy/v1/leases/my-leases");
             if (res.ok) {
                 const data = await res.json();
-                const arr = Array.isArray(data) ? data : data.content ?? [];
-                const active = arr.filter((l: any) => l.status === "ACTIVE");
-                setLeases(active.map((l: any) => ({
+                const arr: MyLeaseRow[] = Array.isArray(data) ? data : data.content ?? [];
+                const active = arr.filter((l) => l.status === "ACTIVE");
+                setLeases(active.map((l) => ({
                     id: l.id,
                     propertyId: l.propertyId,
                     propertyName: l.propertyName ?? "—",
@@ -294,7 +323,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
 
     const pmPropertyId = meetingType === "PROPERTY_VISIT"
         ? selectedPropertyId
-        : leases.find(l => l.id === selectedLeaseId)?.propertyId ?? "";
+        : selectedLease?.propertyId ?? "";
 
     useEffect(() => {
         if (step !== 3 || !needsPmPicker()) return;
@@ -403,7 +432,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
             body.detailNotes = chequeNotes;
         }
         if (officePurpose === "LEASE_RENEWAL") {
-            const lease = leases.find(l => l.id === selectedLeaseId);
+            const lease = selectedLease;
             if (lease?.endDate) {
                 // The renewal starts the day after the current contract ends.
                 const term = renewalTerm(lease.endDate, renewalMonths ? parseInt(renewalMonths, 10) : null);
@@ -454,7 +483,6 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
 
     if (!isOpen) return null;
 
-    const selectedLease = leases.find((l) => l.id === selectedLeaseId);
     const selectedProperty = properties.find((p) => p.id === selectedPropertyId);
     const selectedUnit = units.find((u) => u.id === selectedUnitId);
     const showPmPicker = step === 3 && needsPmPicker();
@@ -543,20 +571,36 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                             </div>
                             <div>
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t("create.relatedLease")} *</label>
-                                <select
-                                    value={selectedLeaseId}
-                                    onChange={(e) => setSelectedLeaseId(e.target.value)}
-                                    className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
-                                >
-                                    <option value="">{t("create.selectLeasePlaceholder")}</option>
-                                    {leases.map((l) => (
-                                        <option key={l.id} value={l.id}>
-                                            {t("create.leaseOption", { property: l.propertyName, unit: l.unitIdentifier })}
-                                        </option>
-                                    ))}
-                                </select>
-                                {leases.length === 0 && (
-                                    <p className="text-[10px] text-muted mt-1">{t("create.noActiveLeases")}</p>
+                                {isRenter ? (
+                                    <>
+                                        <select
+                                            value={selectedLeaseId}
+                                            onChange={(e) => setSelectedLeaseId(e.target.value)}
+                                            className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
+                                        >
+                                            <option value="">{t("create.selectLeasePlaceholder")}</option>
+                                            {leases.map((l) => (
+                                                <option key={l.id} value={l.id}>
+                                                    {t("create.leaseOption", { property: l.propertyName, unit: l.unitIdentifier })}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        {leases.length === 0 && (
+                                            <p className="text-[10px] text-muted mt-1">{t("create.noActiveLeases")}</p>
+                                        )}
+                                    </>
+                                ) : (
+                                    <LeasePicker
+                                        value={selectedLeaseId}
+                                        status="ACTIVE"
+                                        label={leaseOptionLabel}
+                                        placeholder={t("create.selectLeasePlaceholder")}
+                                        testId="meeting-lease-picker"
+                                        onChange={(id, l) => {
+                                            setSelectedLeaseId(id);
+                                            setPickedLease(l ? toMeetingLease(l) : null);
+                                        }}
+                                    />
                                 )}
                             </div>
                         </div>
@@ -741,7 +785,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                             ) : officePurpose === "LEASE_RENEWAL" ? (
                                 <div className="space-y-3">
                                     {(() => {
-                                        const lease = leases.find(l => l.id === selectedLeaseId);
+                                        const lease = selectedLease;
                                         return lease?.endDate ? (
                                             <div className="bg-input/40 rounded-lg px-3 py-2 text-xs text-muted">
                                                 {t("create.currentLeaseEnds", {
@@ -840,7 +884,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                                 {officePurpose === "LEASE_RENEWAL" && (
                                     <>
                                         {(() => {
-                                            const lease = leases.find(l => l.id === selectedLeaseId);
+                                            const lease = selectedLease;
                                             return lease?.endDate
                                                 ? <ReviewRow label={t("create.reviewRenewalStart")} value={fmtIsoDate(renewalTerm(lease.endDate, null).start, locale)} />
                                                 : null;
