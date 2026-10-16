@@ -246,10 +246,9 @@ public class ChequeQueryService {
         BigDecimal before = ZERO;
         int upTo = (int) Math.min(Math.max(0, offset), count);
         if (upTo > 0) {
-            for (BigDecimal a : chequeRepository.postDatedAmounts(propertyId, w[0], w[1], scope.unrestricted(), ids,
-                    PageRequest.of(0, upTo, PDC_SORT))) {
-                if (a != null) before = before.add(a);
-            }
+            BigDecimal sum = chequeRepository.postDatedAmountBefore(tenantScope().tenantId(), tenantScope().allTenants(),
+                    propertyId, w[0], w[1], scope.unrestricted(), ids, upTo);
+            if (sum != null) before = sum;
         }
         return new com.datagami.rentaxis.api.dto.cheque.PostDatedTotalsDTO(count, total, days, before);
     }
