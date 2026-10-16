@@ -57,8 +57,10 @@ public class RecognitionEventListener {
     }
 
     /**
-     * An addendum's RENT lines get a segment each over their own window, exactly
-     * as an extension's do; its fees have no schedule.
+     * An addendum's lines get a segment each over their own window, exactly as an
+     * extension's do: its RENT lines, and (F14-18) every fee the lease earns over
+     * the term ({@code LeasePostingService.earnedOverTerm}), which the addendum's
+     * TCO deferred. A ONE_OFF fee was income at posting and has no schedule.
      */
     @EventListener
     public void onLeaseVaried(LeaseVariedEvent event) {
