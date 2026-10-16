@@ -438,6 +438,16 @@ class BankLeafOwnershipIT extends AbstractPostgresIT {
         }
         assertThat(days(a)).containsExactly("2026-09-10:false");
         assertThat(days(b)).containsExactly("2026-09-10:false");
+        // Changeset 171: those days were de-duplicated by the old rule: unproven too.
+        for (int run = 0; run < 2; run++) {
+            tx.executeWithoutResult(st -> com.datagami.rentaxis.testsupport.ChangesetSql
+                    .of("171-bank-statement-day-evidence.yaml").forEach(jdbc::execute));
+        }
+        for (LeaseTestFixtures fx : List.of(a, b)) {
+            assertThat(jdbc.queryForList("select txn_date || ':' || merge_unproven || ':' || start_known || ':' || end_known "
+                    + "from bank_statement_days where tenant_id = ?", String.class, fx.tenantId()))
+                    .containsExactly("2026-09-10:true:false:false");
+        }
         assertThat(jdbc.queryForObject("select count(*) from bank_statement_days d join bank_accounts x on x.id = d.bank_account_id "
                 + "where d.tenant_id <> x.tenant_id", Integer.class)).isZero();
     }

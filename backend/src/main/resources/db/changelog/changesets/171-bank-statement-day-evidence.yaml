@@ -1,0 +1,50 @@
+# Sim round 20 S20-01 / S20-03 (follow-up to #97 review P2-2): what is known about a
+# stored statement day, beside 170's order_confirmed.
+#   - merge_unproven: a file's line was taken for an identical stored line while
+#     the file did not hold the whole day. It may have been a second, separate
+#     line (a fee, its reversal, the fee again: a file ending at the first fee and
+#     one starting at the second look like a one-line overlap). Finalize is refused
+#     until a file holding the whole day is imported; a typed balance cannot settle
+#     it, because the lost lines can net to nothing.
+#   - start_known / end_known: the stored lines begin at the day's first line / run
+#     to its last line. They let a part re-import that adds nothing leave the day as
+#     it is (S20-03) only where its lines are provably the same lines.
+#
+# Backfill: rows 170 marked unconfirmed (days of open periods built from more than
+# one import) were de-duplicated by the old rule, which could take a genuine line
+# for an identical one; they become unproven too. start_known/end_known start false
+# everywhere (nothing is known about legacy days). Only bank_statement_days changes.
+# Idempotent: the column adds are guarded, the UPDATE only sets what is not set.
+databaseChangeLog:
+  - changeSet:
+      id: 171-bank-statement-day-evidence
+      author: claude
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: bank_statement_days
+                columnName: merge_unproven
+      changes:
+        - addColumn:
+            tableName: bank_statement_days
+            columns:
+              - column: { name: merge_unproven, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
+              - column: { name: start_known, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
+              - column: { name: end_known, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
+        - sql:
+            comment: Legacy multi-import days of open periods are unproven
+            splitStatements: false
+            sql: |
+              UPDATE bank_statement_days SET merge_unproven = TRUE
+               WHERE NOT order_confirmed AND NOT merge_unproven;
+      rollback:
+        - dropColumn:
+            tableName: bank_statement_days
+            columnName: merge_unproven
+        - dropColumn:
+            tableName: bank_statement_days
+            columnName: start_known
+        - dropColumn:
+            tableName: bank_statement_days
+            columnName: end_known

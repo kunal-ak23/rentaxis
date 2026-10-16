@@ -149,12 +149,15 @@ class StatementOrderPropertyTest {
         Map<String, Line> byHash = new HashMap<>();
         List<String> stored = new ArrayList<>();
         boolean confirmed = true;                                // no row: confirmed
+        BankStatementImportService.DayState state = BankStatementImportService.DayState.UNKNOWN;
         for (List<Line> f : files) {
             if (!accepted(f)) continue;
             f.forEach(l -> byHash.put(l.hash(), l));
-            BankStatementImportService.Settled s = BankStatementImportService.settle(stored, f.stream().map(Line::hash).toList(), false);
+            BankStatementImportService.Settled s = BankStatementImportService.settle(stored, f.stream().map(Line::hash).toList(),
+                    BankStatementImportService.Pos.SINGLE, state);
             if (s == null) continue;
             stored = new ArrayList<>(s.order());
+            state = s.state();
             confirmed = s.confirmed();
         }
         return new Day(stored.stream().map(byHash::get).toList(), confirmed);
@@ -249,14 +252,21 @@ class StatementOrderPropertyTest {
         return true;
     }
 
-    /** The bank account's stored lines after importing {@code files} in turn, exactly as the service decides. */
-    record Books(List<BankStatementImportService.StoredLine> lines, Set<LocalDate> unconfirmed) { }
+    /**
+     * The bank account's stored lines (with their dates) after importing {@code files}
+     * in turn, exactly as the service decides; its unconfirmed and unproven days; and
+     * the bank's lines that arrived in some accepted file.
+     */
+    record Books(List<BankStatementImportService.StoredLine> lines, List<LocalDate> dates, Set<LocalDate> unconfirmed,
+                 Set<LocalDate> unproven, Set<Integer> arrived) { }
 
     private static Books importStatement(List<List<Bank>> files) {
         Map<LocalDate, List<BankStatementImportService.StoredLine>> stored = new TreeMap<>();
-        Set<LocalDate> unconfirmed = new HashSet<>();
+        Map<LocalDate, BankStatementImportService.DayState> states = new HashMap<>();
+        Set<Integer> arrived = new HashSet<>();
         for (List<Bank> f : files) {
             if (f.isEmpty() || !acceptedRows(f)) continue;
+            f.forEach(l -> arrived.add(l.index()));
             List<StatementMapper.Row> rows = f.stream().map(Bank::row).toList();
             BankStatementImportService.Matched m = BankStatementImportService.match(BANK, rows, stored);
             TreeMap<LocalDate, List<Integer>> fileDays = new TreeMap<>();
@@ -274,15 +284,25 @@ class StatementOrderPropertyTest {
                         byHash.put(h, new BankStatementImportService.StoredLine(h, l.amount(), l.description(), l.balance()));
                     }
                 }
-                boolean enclosed = day.getKey().isAfter(fileDays.firstKey()) && day.getKey().isBefore(fileDays.lastKey());
+                BankStatementImportService.Pos pos = BankStatementImportService.Pos.of(day.getKey(), fileDays.firstKey(),
+                        fileDays.lastKey());
                 BankStatementImportService.Settled s = BankStatementImportService.settle(
-                        have.stream().map(BankStatementImportService.StoredLine::hash).toList(), fileHashes, enclosed);
+                        have.stream().map(BankStatementImportService.StoredLine::hash).toList(), fileHashes, pos,
+                        states.getOrDefault(day.getKey(), BankStatementImportService.DayState.UNKNOWN));
                 if (s == null) continue;
                 stored.put(day.getKey(), s.order().stream().map(byHash::get).toList());
-                if (s.confirmed()) unconfirmed.remove(day.getKey()); else unconfirmed.add(day.getKey());
+                states.put(day.getKey(), s.state());
             }
         }
-        return new Books(stored.values().stream().flatMap(List::stream).toList(), unconfirmed);
+        List<BankStatementImportService.StoredLine> lines = new ArrayList<>();
+        List<LocalDate> dates = new ArrayList<>();
+        stored.forEach((d, ls) -> ls.forEach(l -> { lines.add(l); dates.add(d); }));
+        Set<LocalDate> unconfirmed = new HashSet<>(), unproven = new HashSet<>();
+        states.forEach((d, st) -> {
+            if (!st.confirmed()) unconfirmed.add(d);
+            if (!st.confirmed() && st.unproven()) unproven.add(d);
+        });
+        return new Books(lines, dates, unconfirmed, unproven, arrived);
     }
 
     /**
@@ -296,13 +316,16 @@ class StatementOrderPropertyTest {
      *
      * <p>Finalize as the service does it: with every day confirmed, on the lines'
      * own opening (derived, or known) and closing; with any day unconfirmed
-     * ({@code LINE_ORDER}), on the bank's typed opening and closing. Asserted: no
-     * finalize at an opening or closing other than the bank's.</p>
+     * ({@code LINE_ORDER}), on the bank's typed opening and closing, the chain
+     * not held against those days (S20-02); with any day unproven, not at all.
+     * Asserted: no finalize at an opening or closing other than the bank's, and
+     * no finalize with a line any accepted file brought missing from the books —
+     * even when the lost lines net to nothing (S20-01).</p>
      */
     @Test
     void repeatingLinesNeverFinalizeAWrongBalance() {
         Random rnd = new Random(9704);
-        int finalized = 0, refused = 0, typed = 0, derivedOk = 0;
+        int finalized = 0, refused = 0, typed = 0, derivedOk = 0, unprovenRefused = 0;
         for (int trial = 0; trial < 60_000; trial++) {
             List<Bank> truth = statement(rnd);
             if (truth.size() < 4) continue;
@@ -327,38 +350,61 @@ class StatementOrderPropertyTest {
             Books books = importStatement(files);
             if (books.lines().isEmpty()) continue;
             boolean confirmed = books.unconfirmed().isEmpty();
+            if (!books.unproven().isEmpty()) {
+                // LINE_ORDER fails whatever is typed: a file holding the whole day is needed.
+                unprovenRefused++;
+                continue;
+            }
             if (!confirmed) typed++;
             List<BankReconciliationService.SL> sl = new ArrayList<>();
             for (int i = 0; i < books.lines().size(); i++) {
                 BankStatementImportService.StoredLine l = books.lines().get(i);
-                sl.add(new BankReconciliationService.SL(UUID.randomUUID(), DAYS[0], i + 1, l.description(), null, null, l.amount(), l.balance()));
+                sl.add(new BankReconciliationService.SL(UUID.randomUUID(), books.dates().get(i), i + 1, l.description(), null, null,
+                        l.amount(), l.balance()));
             }
             BigDecimal movement = books.lines().stream().map(BankStatementImportService.StoredLine::amount)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             BankStatementImportService.StoredLine first = books.lines().get(0);
             BigDecimal derivedOpening = first.balance().subtract(first.amount());
             BigDecimal closing = confirmed ? books.lines().get(books.lines().size() - 1).balance() : trueClosing;
+            // S20-02: with the paper's balances typed, the unconfirmed days' order is not held against them.
+            Set<LocalDate> skipped = confirmed ? Set.of() : books.unconfirmed();
             for (boolean derived : new boolean[]{true, false}) {
                 BigDecimal opening = derived && confirmed ? derivedOpening : OPENING;
-                boolean passes = BankReconciliationService.continuity(opening, closing, movement, sl, DAYS[0]).ok();
+                boolean passes = BankReconciliationService.continuity(opening, closing, movement, sl, DAYS[0], skipped,
+                        books.unconfirmed()).ok();
                 if (passes) {
                     finalized++;
                     if (derived && confirmed) derivedOk++;
-                    assertThat(opening).as("trial %d (%s opening): truth %s, books %s, unconfirmed %s — wrong opening",
-                            trial, derived ? "derived" : "known", truth, books.lines(), books.unconfirmed())
-                            .isEqualByComparingTo(OPENING);
-                    assertThat(closing).as("trial %d (%s opening): truth %s, books %s, unconfirmed %s — wrong closing",
-                            trial, derived ? "derived" : "known", truth, books.lines(), books.unconfirmed())
-                            .isEqualByComparingTo(trueClosing);
+                    String what = String.format("trial %d (%s opening): truth %s, books %s, unconfirmed %s", trial,
+                            derived ? "derived" : "known", truth, books.lines(), books.unconfirmed());
+                    assertThat(opening).as(what + " — wrong opening").isEqualByComparingTo(OPENING);
+                    assertThat(closing).as(what + " — wrong closing").isEqualByComparingTo(trueClosing);
+                    // S20-01: every bank line some accepted file brought is in the books, even when
+                    // the lost ones would net to nothing. Identical lines are counted, not placed.
+                    Map<String, Integer> have = new HashMap<>();
+                    for (int i = 0; i < books.lines().size(); i++) {
+                        BankStatementImportService.StoredLine l = books.lines().get(i);
+                        have.merge(books.dates().get(i) + "|" + l.amount() + "|" + l.description() + "|" + l.balance(), 1, Integer::sum);
+                    }
+                    Map<String, Integer> brought = new HashMap<>();
+                    for (Bank l : truth) {
+                        if (books.arrived().contains(l.index())) {
+                            brought.merge(l.date() + "|" + l.amount() + "|" + l.description() + "|" + l.balance(), 1, Integer::sum);
+                        }
+                    }
+                    brought.forEach((k, n) -> assertThat(have.getOrDefault(k, 0))
+                            .as(what + " — a line a file brought was silently lost: " + k).isGreaterThanOrEqualTo(n));
                 } else {
                     refused++;
                 }
             }
         }
-        assertThat(typed).as("days left unconfirmed").isGreaterThan(5_000);
+        assertThat(unprovenRefused).as("unproven statements refused").isGreaterThan(1_000);
+        assertThat(typed).as("days left unconfirmed (typed balances)").isGreaterThan(1_000);
         assertThat(derivedOk).as("statements finalized on the lines alone").isGreaterThan(500);
-        assertThat(refused).isGreaterThan(10_000);
-        assertThat(finalized).isGreaterThan(10_000);
+        assertThat(refused).as("refused").isGreaterThan(1_000);
+        assertThat(finalized).as("finalized").isGreaterThan(1_000);
     }
 
     /**

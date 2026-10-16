@@ -544,17 +544,160 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         actions.post(new BankRecDTOs.PostLinesInput(List.of(first), "CHARGE", false, null, null, marinaBank.getId(), true, null));
         actions.post(new BankRecDTOs.PostLinesInput(List.of(second), "CHARGE", false, null, null, marinaBank.getId(), true, null));
 
-        // An export of 10/09 alone cannot vouch that its first charge is not the stored one
-        // seen from elsewhere in the day: the day is not confirmed, so the paper's closing is asked for.
+        // An export of 10/09 alone cannot vouch that its second charge is the stored one and
+        // not a third, identical charge: the day is unproven, and a typed balance does not settle it.
         UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"), null)).id();
         BankRecDTOs.Reconciliation r = recs.get(id);
         assertThat(check(r, "CONTINUITY").ok()).as(check(r, "CONTINUITY").message()).isTrue();
         assertThat(check(r, "LINE_ORDER").ok()).isFalse();
         recs.update(id, new BankRecDTOs.ReconciliationInput(null, SEP_30, new BigDecimal("1000.00"), new BigDecimal("980.00")));
         r = recs.get(id);
-        assertThat(check(r, "LINE_ORDER").message()).contains("typed from the paper statement");
+        assertThat(check(r, "LINE_ORDER").ok()).isFalse();
+        assertThat(check(r, "LINE_ORDER").message()).contains("A typed balance cannot settle this");
+        // The statement from 09/09 to 11/09 holds the whole of 10/09: two charges, no third.
+        importText("""
+                09/09/2026,09/09/2026,PRE IN,,,10.00,"1,010.00"
+                09/09/2026,09/09/2026,PRE OUT,,10.00,,"1,000.00"
+                10/09/2026,10/09/2026,SERVICE CHARGE,,10.00,,990.00
+                10/09/2026,10/09/2026,SERVICE CHARGE,,10.00,,980.00
+                11/09/2026,11/09/2026,FEE AFTER,,5.00,,975.00
+                """);
+        book("PRE IN", "INTEREST");
+        book("PRE OUT", "CHARGE");
+        book("FEE AFTER", "CHARGE");
+        recs.update(id, new BankRecDTOs.ReconciliationInput(null, SEP_30, new BigDecimal("1000.00"), null));
+        r = recs.get(id);
+        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_lines where bank_account_id = ? and txn_date = ?",
+                Integer.class, ei.getId(), LocalDate.of(2026, 9, 10))).isEqualTo(2);
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
+    }
+
+    /**
+     * Sim round 20 S20-01 (ADCB, 07/02/2023, here on 07/09): an SMS alert charge, its
+     * reversal and the charge again; the two charges are identical in every field.
+     * The first export ends at the first charge, the second starts at the second
+     * charge, and the reversal is in neither. The second charge was taken for the
+     * first, so both it and the reversal were missing — and they net to nothing, so
+     * the typed paper closing agreed and the reconciliation finalized. Now the day is
+     * unproven: no typed balance clears it, only a statement holding the whole day,
+     * which brings both lines in.
+     */
+    @Test
+    void aReversalBetweenTwoIdenticalChargesIsNotLost() {
+        jv(AUG_31, marinaBank, "1000.00");
+        BankRecDTOs.ImportResult before = importText("""
+                06/09/2026,06/09/2026,CHQ CLEARING 502773,,,100.00,"1,100.00"
+                07/09/2026,07/09/2026,SMS ALERT CHARGES,,10.50,,"1,089.50"
+                """);
+        assertThat(before.linesNew()).isEqualTo(2);
+        BankRecDTOs.ImportResult after = importText("""
+                07/09/2026,07/09/2026,SMS ALERT CHARGES,,10.50,,"1,089.50"
+                07/09/2026,07/09/2026,CHQ PAID 800005,,27.00,,"1,062.50"
+                11/09/2026,11/09/2026,INWARD TT RENT,,,64.25,"1,126.75"
+                """);
+        assertThat(after.linesDuplicate()).as("the second charge looks like the first").isEqualTo(1);
+        for (String d : List.of("SMS ALERT CHARGES", "CHQ PAID 800005")) book(d, "CHARGE");
+        for (String d : List.of("CHQ CLEARING 502773", "INWARD TT RENT")) book(d, "INTEREST");
+
+        // The careful user: types the paper's balances. They agree with the lines (1,000 → 1,126.75),
+        // but the day stays refused.
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("1126.75"))).id();
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        assertThat(check(r, "CONTINUITY").ok()).isTrue();
+        assertThat(check(r, "DIFFERENCE").ok()).isTrue();
+        assertThat(check(r, "LINE_ORDER").ok()).isFalse();
+        assertThat(check(r, "LINE_ORDER").message()).contains("On 07/09/2026").contains("A typed balance cannot settle this");
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("A typed balance cannot settle this");
+        assertThat(reconciledThrough()).isNull();
+
+        // The statement from 06/09 to 11/09: the reversal and the second charge come in.
+        BankRecDTOs.ImportResult recover = importText("""
+                06/09/2026,06/09/2026,CHQ CLEARING 502773,,,100.00,"1,100.00"
+                07/09/2026,07/09/2026,SMS ALERT CHARGES,,10.50,,"1,089.50"
+                07/09/2026,07/09/2026,SMS ALERT CHARGES REVERSAL,,,10.50,"1,100.00"
+                07/09/2026,07/09/2026,SMS ALERT CHARGES,,10.50,,"1,089.50"
+                07/09/2026,07/09/2026,CHQ PAID 800005,,27.00,,"1,062.50"
+                11/09/2026,11/09/2026,INWARD TT RENT,,,64.25,"1,126.75"
+                """);
+        assertThat(recover.linesNew()).isEqualTo(2);
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_lines where bank_account_id = ? and description = ?",
+                Integer.class, ei.getId(), "SMS ALERT CHARGES")).isEqualTo(2);
+        UUID second = jdbc.queryForObject("""
+                select id from bank_statement_lines where bank_account_id = ? and description = 'SMS ALERT CHARGES'
+                order by seq desc limit 1""", UUID.class, ei.getId());
+        UUID reversal = jdbc.queryForObject("select id from bank_statement_lines where bank_account_id = ? and description = ?",
+                UUID.class, ei.getId(), "SMS ALERT CHARGES REVERSAL");
+        actions.post(new BankRecDTOs.PostLinesInput(List.of(second), "CHARGE", false, null, null, marinaBank.getId(), true, null));
+        actions.post(new BankRecDTOs.PostLinesInput(List.of(reversal), "INTEREST", false, null, null, marinaBank.getId(), true, null));
+        r = recs.get(id);
+        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+        assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
+        assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
+    }
+
+    /**
+     * Sim round 20 S20-02: a month cut into stretches mid-day and imported out of
+     * order, nothing missing and no line in two files. LINE_ORDER asks for the paper's
+     * closing; once typed, the order the pieces were stored in is not held against
+     * the lines (CONTINUITY used to say "Lines may be missing … import the missing
+     * lines" although none were): the total decides.
+     */
+    @Test
+    void outOfOrderPiecesWithNothingMissingFinalizeOnTheTypedClosing() {
+        jv(AUG_31, marinaBank, "1000.00");
+        // The bank: 10/09 −5 → 995, +20 → 1,015, −10 → 1,005, +7 → 1,012. Cut after the second line.
+        importText("""
+                10/09/2026,10/09/2026,FEE C,,10.00,,"1,005.00"
+                10/09/2026,10/09/2026,CREDIT D,,,7.00,"1,012.00"
+                """);
+        importText("""
+                10/09/2026,10/09/2026,FEE A,,5.00,,995.00
+                10/09/2026,10/09/2026,CREDIT B,,,20.00,"1,015.00"
+                """);
+        for (String d : List.of("FEE A", "FEE C")) book(d, "CHARGE");
+        for (String d : List.of("CREDIT B", "CREDIT D")) book(d, "INTEREST");
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"), null)).id();
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        assertThat(check(r, "LINE_ORDER").ok()).isFalse();
+        assertThat(check(r, "CONTINUITY").ok()).isFalse();
+        assertThat(check(r, "CONTINUITY").message()).contains("came from more than one file")
+                .doesNotContain("Import the missing lines");
+        recs.update(id, new BankRecDTOs.ReconciliationInput(null, SEP_30, new BigDecimal("1000.00"), new BigDecimal("1012.00")));
+        r = recs.get(id);
+        assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
+        assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
+    }
+
+    /**
+     * Sim round 20 S20-03: a statement over several days, then a part of it again
+     * (other bytes, nothing new). Its first and last days are the same lines the
+     * statement pinned: the part's first day holds that day's last lines, its last
+     * day the first ones. Nothing is unconfirmed; the reconciliation needs no typing.
+     */
+    @Test
+    void aPartReImportThatAddsNothingLeavesItsDaysConfirmed() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importText("""
+                09/09/2026,09/09/2026,FEE A,,5.00,,995.00
+                10/09/2026,10/09/2026,FEE B,,5.00,,990.00
+                10/09/2026,10/09/2026,CREDIT C,,,10.00,"1,000.00"
+                11/09/2026,11/09/2026,FEE D,,5.00,,995.00
+                11/09/2026,11/09/2026,CREDIT E,,,10.00,"1,005.00"
+                12/09/2026,12/09/2026,FEE F,,5.00,,"1,000.00"
+                """);
+        BankRecDTOs.ImportResult part = importText("""
+                10/09/2026,10/09/2026,CREDIT C,,,10.00,"1,000.00"
+                11/09/2026,11/09/2026,FEE D,,5.00,,995.00
+                """);
+        assertThat(part.linesNew()).isZero();
+        for (String d : List.of("FEE A", "FEE B", "FEE D", "FEE F")) book(d, "CHARGE");
+        for (String d : List.of("CREDIT C", "CREDIT E")) book(d, "INTEREST");
+        BankRecDTOs.Reconciliation r = recs.create(ei.getId(), period(SEP_1, SEP_30));
+        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+        assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
     }
 
     /**
@@ -611,9 +754,13 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         BankRecDTOs.Reconciliation r = recs.get(id);
         assertThat(r.statementClosing()).as("the last line imported").isEqualByComparingTo("990.00");
         assertThat(check(r, "CONTINUITY").ok()).isFalse();
-        assertThat(check(r, "CONTINUITY").message()).contains("Lines may be missing before 10/09/2026");
+        assertThat(check(r, "CONTINUITY").message()).contains("The lines on 10/09/2026 came from more than one file")
+                .contains("lines may be missing");
         assertThat(r.canFinalize()).isFalse();
-        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("Import the missing lines");
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("came from more than one file");
+        // The paper's closing (990) with the lines' 995: the missing −5 shows in the total.
+        recs.update(id, new BankRecDTOs.ReconciliationInput(null, SEP_30, new BigDecimal("1000.00"), new BigDecimal("990.00")));
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("Statement lines add up to 995.00");
         assertThat(reconciledThrough()).isNull();
     }
 
@@ -653,15 +800,16 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(check(r, "CONTINUITY").ok()).as("the stored order chains round the gap").isTrue();
         assertThat(r.statementClosing()).isEqualByComparingTo("990.00");
         assertThat(check(r, "LINE_ORDER").ok()).isFalse();
-        assertThat(check(r, "LINE_ORDER").message()).contains("Lines on 10/09/2026 came from more than one file")
-                .contains("Type the closing balance").contains("from the day before to the day after");
+        // [C, D, E] took D and E for the stored ones without holding the whole day: unproven.
+        assertThat(check(r, "LINE_ORDER").message()).contains("On 10/09/2026")
+                .contains("A typed balance cannot settle this").contains("from the day before to the day after");
         assertThat(r.canFinalize()).isFalse();
-        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("came from more than one file");
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("A typed balance cannot settle this");
 
         // The paper statement's closing: the lines add up to 990.00, so the missing line shows.
         recs.update(id, new BankRecDTOs.ReconciliationInput(null, SEP_30, new BigDecimal("1000.00"), new BigDecimal("1000.00")));
         r = recs.get(id);
-        assertThat(check(r, "LINE_ORDER").ok()).isTrue();
+        assertThat(check(r, "LINE_ORDER").ok()).as("typed balances do not settle an unproven day").isFalse();
         assertThat(check(r, "CONTINUITY").ok()).isFalse();
         assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("Statement lines add up to 990.00");
         assertThat(reconciledThrough()).isNull();
@@ -765,8 +913,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(recs.get(sep).checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
         recs.finalizeRec(sep);
         recs.reopen(sep, "restating September");
-        assertThat(jdbc.queryForList("select txn_date || ':' || order_confirmed from bank_statement_days where bank_account_id = ?",
-                String.class, ei.getId())).containsExactly("2026-09-10:false");
+        assertThat(jdbc.queryForList("select txn_date || ':' || order_confirmed || ':' || merge_unproven from bank_statement_days "
+                + "where bank_account_id = ?", String.class, ei.getId())).containsExactly("2026-09-10:false:true");
         UUID again = recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
         assertThat(check(recs.get(again), "LINE_ORDER").ok()).isFalse();
     }
@@ -783,8 +931,14 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"), null)).id();
         BankRecDTOs.Reconciliation r = recs.get(id);
         assertThat(check(r, "CONTINUITY").ok()).isFalse();
-        assertThat(check(r, "CONTINUITY").message()).contains("Lines may be missing before 10/09/2026");
-        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("Import the missing lines");
+        // The two lines came from two files: the break is reported as such (S20-02) …
+        assertThat(check(r, "CONTINUITY").message()).contains("The lines on 10/09/2026 came from more than one file")
+                .contains("lines may be missing");
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("came from more than one file");
+        // … and the paper's closing exposes the missing line through the total.
+        recs.update(id, new BankRecDTOs.ReconciliationInput(null, SEP_30, new BigDecimal("1000.00"), new BigDecimal("1025.00")));
+        assertThat(check(recs.get(id), "CONTINUITY").message()).contains("Statement lines add up to 970.00");
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("Statement lines add up to 970.00");
     }
 
     @Test

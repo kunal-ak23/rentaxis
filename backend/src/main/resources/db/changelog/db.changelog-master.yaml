@@ -343,3 +343,5 @@ databaseChangeLog:
       file: db/changelog/changesets/169-move-unposted-building-bank-leaves.yaml
   - include:
       file: db/changelog/changesets/170-bank-statement-day-order.yaml
+  - include:
+      file: db/changelog/changesets/171-bank-statement-day-evidence.yaml

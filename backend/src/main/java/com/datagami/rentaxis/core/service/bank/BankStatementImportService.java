@@ -461,23 +461,38 @@ public class BankStatementImportService {
         }
         if (fileDays.isEmpty()) return;
         LocalDate firstDay = fileDays.firstKey(), lastDay = fileDays.lastKey();
+        Map<LocalDate, DayState> states = new HashMap<>();
+        jdbc.query("""
+                select txn_date, order_confirmed, merge_unproven, start_known, end_known from bank_statement_days
+                where tenant_id = :t and bank_account_id = :b and txn_date in (:d)""",
+                new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("d", fileDays.keySet()),
+                rs -> { states.put(rs.getObject("txn_date", LocalDate.class), new DayState(rs.getBoolean("order_confirmed"),
+                        rs.getBoolean("merge_unproven"), rs.getBoolean("start_known"), rs.getBoolean("end_known"))); });
         for (Map.Entry<LocalDate, List<String>> day : fileDays.entrySet()) {
             List<String> stored = storedDays.getOrDefault(day.getKey(), List.of());
-            boolean enclosed = day.getKey().isAfter(firstDay) && day.getKey().isBefore(lastDay);
-            Settled s = settle(stored, day.getValue(), enclosed);
+            Pos pos = Pos.of(day.getKey(), firstDay, lastDay);
+            // No row: a day imported before changeset 171 (or never): nothing is known
+            // about where its lines sit in the day, and they were de-duplicated by the
+            // old rule.
+            DayState was = states.getOrDefault(day.getKey(), DayState.UNKNOWN);
+            Settled s = settle(stored, day.getValue(), pos, was);
             if (s == null) continue;
             // A day inside a finalized reconciliation never takes new lines (refused
             // above); one with nothing new is left alone there too.
             if (!s.addsLines() && locked != null && !day.getKey().isAfter(locked)) continue;
             if (!s.order().equals(s.before())) resequence(t, bankAccountId, day.getKey(), s.order());
-            boolean covers = s.confirmed();
+            DayState now = s.state();
             jdbc.update("""
-                    insert into bank_statement_days (tenant_id, bank_account_id, txn_date, order_confirmed, updated_at)
-                    values (:t, :b, :d, :ok, now())
+                    insert into bank_statement_days (tenant_id, bank_account_id, txn_date, order_confirmed, merge_unproven,
+                                                     start_known, end_known, updated_at)
+                    values (:t, :b, :d, :ok, :unproven, :start, :end, now())
                     on conflict (bank_account_id, txn_date)
-                    do update set order_confirmed = excluded.order_confirmed, updated_at = excluded.updated_at""",
+                    do update set order_confirmed = excluded.order_confirmed, merge_unproven = excluded.merge_unproven,
+                                  start_known = excluded.start_known, end_known = excluded.end_known,
+                                  updated_at = excluded.updated_at""",
                     new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("d", day.getKey())
-                            .addValue("ok", covers));
+                            .addValue("ok", now.confirmed()).addValue("unproven", now.unproven())
+                            .addValue("start", now.startKnown()).addValue("end", now.endKnown()));
         }
     }
 
@@ -500,51 +515,124 @@ public class BankStatementImportService {
     }
 
     /**
+     * Where a day sits in a file. A file is one contiguous stretch of the
+     * statement, so on a day that is not its first date its lines start at the
+     * day's first line, and on a day that is not its last date they run to the
+     * day's last line.
+     */
+    enum Pos {
+        /** The file's only date: its lines are some stretch of the day. */
+        SINGLE,
+        /** The first of several dates: its lines are the day's last lines. */
+        FIRST,
+        /** The last of several dates: its lines are the day's first lines. */
+        LAST,
+        /** Neither: the file holds the whole day. */
+        INTERIOR;
+
+        static Pos of(LocalDate day, LocalDate first, LocalDate last) {
+            if (first.equals(last)) return SINGLE;
+            if (day.equals(first)) return FIRST;
+            if (day.equals(last)) return LAST;
+            return INTERIOR;
+        }
+
+        boolean startsTheDay() {
+            return this == LAST || this == INTERIOR;
+        }
+
+        boolean endsTheDay() {
+            return this == FIRST || this == INTERIOR;
+        }
+    }
+
+    /**
+     * What is known about a stored day ({@code bank_statement_days}).
+     *
+     * @param confirmed  its lines are in the bank's order (no typed balance needed)
+     * @param unproven   a file's line was taken for a stored identical line while
+     *                   the file did not hold the whole day: it may have been a
+     *                   second, separate line, and only a file holding the whole
+     *                   day can settle that (S20-01)
+     * @param startKnown the stored lines begin at the day's first line
+     * @param endKnown   the stored lines run to the day's last line
+     */
+    record DayState(boolean confirmed, boolean unproven, boolean startKnown, boolean endKnown) {
+        /** A day with no row: imported before changeset 171, or never. */
+        static final DayState UNKNOWN = new DayState(true, false, false, false);
+    }
+
+    /**
      * One day after one import, from line hashes: {@code before} is the stored
      * order once the new lines are appended, {@code order} the day's order after
-     * the import, {@code confirmed} whether that order is now confirmed.
+     * the import, {@code state} what is known about the day then.
      */
-    record Settled(List<String> before, List<String> order, boolean confirmed, boolean addsLines) { }
+    record Settled(List<String> before, List<String> order, boolean addsLines, DayState state) {
+        boolean confirmed() {
+            return state.confirmed();
+        }
+    }
 
     /**
      * #97: what one import does to one day ({@code stored}: the day's stored
      * hashes in seq order; {@code file}: the file's lines of that day in file
      * order, each the hash of the stored line it was matched to or a new one;
-     * {@code enclosed}: the file also has lines on an earlier and on a later date,
-     * so it holds the whole day).
+     * {@code pos}: where the day sits in the file; {@code was}: what was known).
      *
      * <ul>
      *   <li>Nothing stored yet: the day is the file's lines, confirmed.</li>
-     *   <li>The file's lines are exactly the stored ones, in the same order (the
-     *       same day imported again): nothing is learnt; null, the day is left as
-     *       it is.</li>
-     *   <li>The file holds the whole day and every stored line: the day takes the
-     *       file's order, confirmed.</li>
-     *   <li>Otherwise: new lines go where {@link #dayOrder} puts them, and the day
-     *       is not confirmed.</li>
+     *   <li>The file holds the whole day and every stored line: the day becomes
+     *       the file's lines in the file's order, confirmed and complete.</li>
+     *   <li>The file adds nothing and its lines are exactly the stored lines at
+     *       the place its position fixes — the day's first lines when the stored
+     *       lines are known to start the day, its last lines when they are known
+     *       to end it, any run of a complete day: the same lines again (a part
+     *       re-import); null, the day is left as it is (S20-03).</li>
+     *   <li>Otherwise the day is not confirmed. If any of the file's lines was
+     *       taken for a stored one, the day is also <em>unproven</em>.</li>
      * </ul>
      *
-     * <p>Why a whole day (review P2-2): two lines of a day can be identical —
-     * same amount, description and running balance — at different places (a fee,
-     * its refund, the fee again). Taking a file's line for a stored identical one
-     * is then a guess about where the stored one sits; so is taking a stored line
-     * for a file's. If the file holds the whole day, the guess cannot lose a line:
-     * the day becomes exactly the file's lines. If it holds only part of the day,
-     * a line it brings may be a later occurrence of a stored one and vanish into
-     * it, and the day — however tidy its chain — ends early. Then the day is not
-     * confirmed and the reconciliation asks for the typed statement balances.</p>
+     * <p>Why (review P2-2, sim S20-01): two lines of a day can be identical —
+     * same amount, description and running balance — at different places: a fee,
+     * its reversal, the fee again. A file that ends at the first fee and a file
+     * that starts at the second look exactly like two files overlapping by one
+     * line. Taking the second fee for the first loses it — and the reversal
+     * between them, if no file brought it, nets it to nothing, so no balance can
+     * show it. Only a file that holds the whole day can say how many such lines
+     * there are. Until one is imported, an unproven day cannot be finalized,
+     * typed balances or not.</p>
      */
-    static Settled settle(List<String> stored, List<String> file, boolean enclosed) {
+    static Settled settle(List<String> stored, List<String> file, Pos pos, DayState was) {
         Set<String> inStored = new HashSet<>(stored);
         boolean addsLines = file.stream().anyMatch(h -> !inStored.contains(h));
-        if (stored.isEmpty()) return new Settled(List.copyOf(file), List.copyOf(file), true, true);
-        if (file.equals(stored)) return null;
+        boolean matched = file.stream().anyMatch(inStored::contains);
+        if (stored.isEmpty()) {
+            return new Settled(List.copyOf(file), List.copyOf(file), true,
+                    new DayState(true, false, pos.startsTheDay(), pos.endsTheDay()));
+        }
         boolean covers = new HashSet<>(file).containsAll(stored);
         List<String> before = addsLines ? appended(stored, file) : stored;
-        if (covers && enclosed) {
-            return new Settled(before, addsLines ? dayOrder(stored, file) : List.copyOf(file), true, addsLines);
+        if (covers && pos == Pos.INTERIOR) {
+            return new Settled(before, addsLines ? dayOrder(stored, file) : List.copyOf(file), addsLines,
+                    new DayState(true, false, true, true));
         }
-        return new Settled(before, addsLines ? dayOrder(stored, file) : stored, false, addsLines);
+        if (!addsLines && sameLinesAgain(stored, file, pos, was)) return null;
+        return new Settled(before, addsLines ? dayOrder(stored, file) : stored, addsLines,
+                new DayState(false, was.unproven() || matched, false, false));
+    }
+
+    /** S20-03: the file's lines are the stored ones its position pins them to (see {@link #settle}). */
+    static boolean sameLinesAgain(List<String> stored, List<String> file, Pos pos, DayState was) {
+        if (was.unproven() || file.size() > stored.size()) return false;
+        if (was.startKnown() && pos.startsTheDay() && stored.subList(0, file.size()).equals(file)) return true;
+        if (was.endKnown() && pos.endsTheDay()
+                && stored.subList(stored.size() - file.size(), stored.size()).equals(file)) return true;
+        if (was.startKnown() && was.endKnown() && was.confirmed()) {
+            for (int i = 0; i + file.size() <= stored.size(); i++) {
+                if (stored.subList(i, i + file.size()).equals(file)) return true;
+            }
+        }
+        return false;
     }
 
     /** Stored lines, then the file's new ones in file order: what an import did before #97. */

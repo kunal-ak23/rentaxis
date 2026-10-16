@@ -384,8 +384,15 @@ public class BankReconciliationService {
                     : "This reconciliation starts on " + from.format(DMY) + "; the previous one ended on "
                             + prev.get().to().format(DMY) + ", so it must start on " + next.format(DMY)));
         }
-        checks.add(continuity(opening, closing, movement, period, from));
-        lineOrder(t, b, from, to, closingTyped, !first || r.opening() != null, first && r.opening() != null).ifPresent(checks::add);
+        // #97: days whose line order no single file fixed, and of those the ones where a
+        // file's line was taken for an identical stored one (bank_statement_days).
+        Map<LocalDate, Boolean> unconfirmed = unconfirmedDays(t, b, from, to);
+        boolean openingKnown = !first || r.opening() != null;
+        // S20-02: with the paper's balances typed, the order of an unconfirmed day's
+        // lines is not evidence of anything: the total decides there, not the chain.
+        Set<LocalDate> chainSkipped = closingTyped && openingKnown ? unconfirmed.keySet() : Set.of();
+        checks.add(continuity(opening, closing, movement, period, from, chainSkipped, unconfirmed.keySet()));
+        lineOrder(unconfirmed, closingTyped, openingKnown, first && r.opening() != null).ifPresent(checks::add);
 
         // ---- book side
         BigDecimal book = sum(jdbc.queryForObject("""
@@ -581,6 +588,18 @@ public class BankReconciliationService {
      */
     static BankRecDTOs.Check continuity(BigDecimal opening, BigDecimal closing, BigDecimal movement,
                                                List<SL> period, LocalDate from) {
+        return continuity(opening, closing, movement, period, from, Set.of(), Set.of());
+    }
+
+    /**
+     * As above; the per-line comparison is skipped on {@code chainSkipped} days (an
+     * unconfirmed day order with the paper's balances typed, S20-02), and a break
+     * on an {@code unconfirmed} day says how to settle it instead of "import the
+     * missing lines".
+     */
+    static BankRecDTOs.Check continuity(BigDecimal opening, BigDecimal closing, BigDecimal movement,
+                                        List<SL> period, LocalDate from, Set<LocalDate> chainSkipped,
+                                        Set<LocalDate> unconfirmed) {
         if (opening == null) {
             return new BankRecDTOs.Check("CONTINUITY", false, "Type the statement balance at "
                     + from.minusDays(1).format(DMY) + ": no statement line gives it");
@@ -592,6 +611,13 @@ public class BankReconciliationService {
         BigDecimal running = opening;
         for (SL l : period) {
             running = running.add(l.amount());
+            if (chainSkipped.contains(l.txn())) continue;
+            if (l.balance() != null && l.balance().compareTo(running) != 0 && unconfirmed.contains(l.txn())) {
+                return new BankRecDTOs.Check("CONTINUITY", false, "The lines on " + l.txn().format(DMY)
+                        + " came from more than one file and do not chain in the order they were imported: lines may be "
+                        + "missing, or only their order is unknown. Type the closing balance from the paper statement "
+                        + "(the total then decides), or import a statement that runs from the day before to the day after.");
+            }
             if (l.balance() != null && l.balance().compareTo(running) != 0) {
                 return new BankRecDTOs.Check("CONTINUITY", false, "Lines may be missing before " + l.txn().format(DMY)
                         + ": the statement balance there is " + StatementValues.money(l.balance()) + ", the lines add up to "
@@ -616,20 +642,52 @@ public class BankReconciliationService {
      * check {@code opening + movement = closing} decides. Absent when every day is
      * confirmed.
      */
-    private Optional<BankRecDTOs.Check> lineOrder(UUID t, UUID b, LocalDate from, LocalDate to, boolean closingTyped,
-                                                  boolean openingKnown, boolean typedOpening) {
-        List<LocalDate> days = jdbc.queryForList("""
-                select d.txn_date from bank_statement_days d
+    /** The period's unconfirmed days that still have lines, each with whether it is unproven. */
+    private Map<LocalDate, Boolean> unconfirmedDays(UUID t, UUID b, LocalDate from, LocalDate to) {
+        Map<LocalDate, Boolean> out = new TreeMap<>();
+        jdbc.query("""
+                select d.txn_date, d.merge_unproven from bank_statement_days d
                 where d.tenant_id = :t and d.bank_account_id = :b and not d.order_confirmed
                   and d.txn_date between :from and :to
                   and exists (select 1 from bank_statement_lines l where l.tenant_id = d.tenant_id
-                              and l.bank_account_id = d.bank_account_id and l.txn_date = d.txn_date)
-                order by d.txn_date""",
+                              and l.bank_account_id = d.bank_account_id and l.txn_date = d.txn_date)""",
                 new MapSqlParameterSource("t", t).addValue("b", b).addValue("from", from).addValue("to", to),
-                LocalDate.class);
-        if (days.isEmpty()) return Optional.empty();
-        String list = days.stream().limit(5).map(d -> d.format(DMY)).collect(Collectors.joining(", "))
+                rs -> { out.put(rs.getObject("txn_date", LocalDate.class), rs.getBoolean("merge_unproven")); });
+        return out;
+    }
+
+    private static String dayList(Collection<LocalDate> days) {
+        return days.stream().limit(5).map(d -> d.format(DMY)).collect(Collectors.joining(", "))
                 + (days.size() > 5 ? " and " + (days.size() - 5) + " more" : "");
+    }
+
+    /**
+     * {@code LINE_ORDER}: absent when every day of the period is confirmed.
+     *
+     * <ul>
+     *   <li>An <em>unproven</em> day (a file's line was taken for an identical
+     *       stored one while the file did not hold the whole day; sim S20-01)
+     *       fails it whatever is typed: the line taken may have been a second,
+     *       separate one, and lines that net to nothing show in no balance. Only a
+     *       file holding the whole day settles it.</li>
+     *   <li>Otherwise an unconfirmed day (lines from separate files, review P2-1)
+     *       needs the closing balance — and on a first reconciliation the opening —
+     *       typed from the paper statement; the order-independent total check then
+     *       decides.</li>
+     * </ul>
+     */
+    private static Optional<BankRecDTOs.Check> lineOrder(Map<LocalDate, Boolean> unconfirmed, boolean closingTyped,
+                                                        boolean openingKnown, boolean typedOpening) {
+        if (unconfirmed.isEmpty()) return Optional.empty();
+        List<LocalDate> unproven = unconfirmed.entrySet().stream().filter(Map.Entry::getValue).map(Map.Entry::getKey).toList();
+        if (!unproven.isEmpty()) {
+            return Optional.of(new BankRecDTOs.Check("LINE_ORDER", false, "On " + dayList(unproven)
+                    + " a line in one file was taken for an identical line already imported from another, but the file "
+                    + "did not hold the whole day, so it may have been a second, separate line (a fee charged twice, say). "
+                    + "A typed balance cannot settle this: import a statement that runs from the day before to the day after "
+                    + (unproven.size() == 1 ? "that day" : "each of them") + "."));
+        }
+        String list = dayList(unconfirmed.keySet());
         boolean ok = closingTyped && openingKnown;
         // Review P3-11: the check knows only that a balance was typed, not that it
         // came from the paper statement; it says what it relies on.
@@ -641,8 +699,8 @@ public class BankReconciliationService {
                         + "confirmed and a missing line could go unnoticed. Type the "
                         + (openingKnown ? "closing balance" : "opening and closing balances")
                         + " from the paper statement (not the figure the imported lines give), or import a statement "
-                        + "that runs from the day before to the day after " + (days.size() == 1 ? "that day" : "each of them")
-                        + "."));
+                        + "that runs from the day before to the day after "
+                        + (unconfirmed.size() == 1 ? "that day" : "each of them") + "."));
     }
 
     /** Spec §4 precondition 6: the opening items explain exactly the gap between the statement and the books at the start. */
@@ -794,10 +852,12 @@ public class BankReconciliationService {
                 new MapSqlParameterSource("b", r.bankAccountId()).addValue("t", t).addValue("r", back));
         // Review P3-10: changeset 170 left the days of finalized periods alone. Once
         // the period is open again, its days built from more than one import, with no
-        // order recorded at import, are unconfirmed, as 170 marked open periods.
+        // order recorded at import, are unconfirmed, as 170 marked open periods — and
+        // unproven, as 171 marks them: the old de-duplication may have taken a
+        // genuine line for an identical one.
         jdbc.update("""
-                insert into bank_statement_days (tenant_id, bank_account_id, txn_date, order_confirmed, updated_at)
-                select l.tenant_id, l.bank_account_id, l.txn_date, false, now()
+                insert into bank_statement_days (tenant_id, bank_account_id, txn_date, order_confirmed, merge_unproven, updated_at)
+                select l.tenant_id, l.bank_account_id, l.txn_date, false, true, now()
                   from bank_statement_lines l
                  where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date between :from and :to
                  group by l.tenant_id, l.bank_account_id, l.txn_date
