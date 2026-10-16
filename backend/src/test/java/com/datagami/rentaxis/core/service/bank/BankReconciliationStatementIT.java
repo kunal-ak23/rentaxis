@@ -467,10 +467,11 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
     }
 
     /**
-     * #97 P2-1: lines back-filled into a day (a second, fuller export of the same
-     * statement) get later seqs than the lines they sit between. The day's first
-     * line (derived opening), a middle line (the per-line chain) and its last line
-     * (derived closing) are all back-filled here; finalize still goes through.
+     * #97 P2-1: lines back-filled into a day by a second, fuller export of the same
+     * statement. The import puts the day in that file's order (it contains every
+     * line already stored for the day), so the strict per-line check passes. The
+     * day's first line (derived opening), a middle line and its last line (derived
+     * closing) are all back-filled here; finalize goes through.
      */
     @Test
     void linesBackFilledIntoADayStillChainAndFinalize() {
@@ -509,7 +510,38 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(reconciledThrough()).isEqualTo(SEP_30);
     }
 
-    /** #97 P2-1: re-ordering is within a day only — a line that is genuinely missing is still reported. */
+    /** #97 P2-1: a line that is genuinely missing from a day is still reported. */
+    /**
+     * #97 review P1-1: the bank's 10/09 is −5 → 995, −5 → 990 (never imported),
+     * +5 → 995, −5 → 990. Imported in the bank's own order, the remaining lines
+     * can be chained round the gap by balance alone (FEE ONE, FEE THREE, REFUND
+     * closes at 995 with a difference of 0). Nothing re-orders them: the second
+     * file shares no line with the day, so its lines follow the first file's, and
+     * the per-line check refuses the reconciliation, as it did before #97.
+     */
+    @Test
+    void aLineMissingFromAnInOrderDayIsNotHiddenByReordering() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importText("""
+                10/09/2026,10/09/2026,FEE ONE,,5.00,,995.00
+                """);
+        importText("""
+                10/09/2026,10/09/2026,REFUND,,,5.00,995.00
+                10/09/2026,10/09/2026,FEE THREE,,5.00,,990.00
+                """);
+        book("FEE ONE", "CHARGE");
+        book("REFUND", "INTEREST");
+        book("FEE THREE", "CHARGE");
+        UUID id = recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        assertThat(r.statementClosing()).as("the last line imported").isEqualByComparingTo("990.00");
+        assertThat(check(r, "CONTINUITY").ok()).isFalse();
+        assertThat(check(r, "CONTINUITY").message()).contains("Lines may be missing before 10/09/2026");
+        assertThat(r.canFinalize()).isFalse();
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("Import the missing lines");
+        assertThat(reconciledThrough()).isNull();
+    }
+
     @Test
     void aLineStillMissingFromADayIsStillReported() {
         jv(AUG_31, marinaBank, "1000.00");

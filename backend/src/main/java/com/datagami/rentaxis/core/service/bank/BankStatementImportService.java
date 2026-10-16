@@ -329,10 +329,14 @@ public class BankStatementImportService {
         Long maxSeq = jdbc.queryForObject("select coalesce(max(seq), 0) from bank_statement_lines where bank_account_id = :b and tenant_id = :t",
                 new MapSqlParameterSource("t", t).addValue("b", bankAccountId), Long.class);
         long seq = maxSeq == null ? 0 : maxSeq;
+        // #97: the stored lines of each day this file adds lines to, before the insert.
+        Map<LocalDate, List<String>> storedDays = storedDays(t, bankAccountId, r.rows(), hashes, existing);
+        Map<String, Long> newSeqs = new HashMap<>();
         List<SqlParameterSource> batch = new ArrayList<>();
         for (int i = 0; i < r.rows().size(); i++) {
             if (existing.contains(hashes.get(i))) continue;
             StatementMapper.Row row = r.rows().get(i);
+            newSeqs.put(hashes.get(i), seq + 1);
             batch.add(new MapSqlParameterSource("id", UUID.randomUUID()).addValue("t", t).addValue("b", bankAccountId)
                     .addValue("imp", imp.getId()).addValue("seq", ++seq).addValue("txn", row.txnDate())
                     .addValue("val", row.valueDate()).addValue("descr", row.description()).addValue("ref", row.reference())
@@ -346,8 +350,110 @@ public class BankStatementImportService {
                     values (:id, :t, :b, :imp, :seq, :txn, :val, :descr, :ref, :chq, :amt, :bal, :hash, :row)""",
                     batch.toArray(SqlParameterSource[]::new));
         }
+        resequenceDays(t, bankAccountId, r.rows(), hashes, storedDays, newSeqs);
         imports.save(imp);
         return result("IMPORTED", null, grid, kind, r, List.of(), warnings, fresh, dup, preview, imp.getId(), detected);
+    }
+
+    /**
+     * #97: the line hashes already stored for each day on which this file brings a
+     * new line, in stored {@code seq} order. Days with nothing new are not touched.
+     */
+    private Map<LocalDate, List<String>> storedDays(UUID t, UUID bankAccountId, List<StatementMapper.Row> rows,
+                                                    List<String> hashes, Set<String> existing) {
+        Set<LocalDate> days = new TreeSet<>();
+        for (int i = 0; i < rows.size(); i++) {
+            if (!existing.contains(hashes.get(i))) days.add(rows.get(i).txnDate());
+        }
+        Map<LocalDate, List<String>> out = new HashMap<>();
+        if (days.isEmpty()) return out;
+        jdbc.query("""
+                select txn_date, line_hash from bank_statement_lines
+                where tenant_id = :t and bank_account_id = :b and txn_date in (:d) order by txn_date, seq""",
+                new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("d", days),
+                rs -> { out.computeIfAbsent(rs.getObject("txn_date", LocalDate.class), k -> new ArrayList<>())
+                        .add(rs.getString("line_hash")); });
+        return out;
+    }
+
+    /**
+     * #97: after the insert, each day that already had lines is put in the order
+     * {@link #dayOrder} gives, by handing that day's own seq values out again in
+     * that order. Only the order within the day changes; other days keep theirs.
+     */
+    private void resequenceDays(UUID t, UUID bankAccountId, List<StatementMapper.Row> rows, List<String> hashes,
+                                Map<LocalDate, List<String>> storedDays, Map<String, Long> newSeqs) {
+        for (Map.Entry<LocalDate, List<String>> day : storedDays.entrySet()) {
+            List<String> stored = day.getValue();
+            List<String> file = new ArrayList<>();
+            for (int i = 0; i < rows.size(); i++) {
+                if (rows.get(i).txnDate().equals(day.getKey())) file.add(hashes.get(i));
+            }
+            List<String> appended = appended(stored, file);
+            List<String> order = dayOrder(stored, file);
+            if (order.equals(appended)) continue;
+            List<Long> pool = new ArrayList<>(jdbc.queryForList("""
+                    select seq from bank_statement_lines where tenant_id = :t and bank_account_id = :b and txn_date = :d
+                    order by seq""", new MapSqlParameterSource("t", t).addValue("b", bankAccountId)
+                    .addValue("d", day.getKey()), Long.class));
+            List<SqlParameterSource> updates = new ArrayList<>();
+            for (int i = 0; i < order.size(); i++) {
+                updates.add(new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("h", order.get(i))
+                        .addValue("s", pool.get(i)));
+            }
+            jdbc.batchUpdate("""
+                    update bank_statement_lines set seq = :s
+                    where tenant_id = :t and bank_account_id = :b and line_hash = :h""",
+                    updates.toArray(SqlParameterSource[]::new));
+            log.info("Statement import for bank account {}: {} re-sequenced to the file's order", bankAccountId, day.getKey());
+        }
+    }
+
+    /** Stored lines, then the file's new ones in file order: what an import did before #97. */
+    static List<String> appended(List<String> stored, List<String> file) {
+        Set<String> inStored = new HashSet<>(stored);
+        List<String> out = new ArrayList<>(stored);
+        file.stream().filter(h -> !inStored.contains(h)).forEach(out::add);
+        return out;
+    }
+
+    /**
+     * #97 P2-1: the order of one day's lines after an import, from line hashes.
+     *
+     * <p>A file is one contiguous stretch of the bank's statement, in the bank's
+     * order (the import checks its running balance). When it contains stored lines
+     * of the day, it is the authority for everything between the first and the
+     * last of them: the day becomes the stored lines before that stretch, the
+     * whole file, then the stored lines after it. That is how a fuller export
+     * back-fills lines in the middle of a day.</p>
+     *
+     * <p>Otherwise the old order stands — stored lines, then the new ones — and
+     * the reconciliation's strict per-line check decides:</p>
+     * <ul>
+     *   <li>the file shares no line with the day (nothing says where its lines
+     *       belong, so they go after the ones imported earlier);</li>
+     *   <li>a stored line inside the file's stretch is missing from the file (the
+     *       file and the stored lines disagree).</li>
+     * </ul>
+     * <p>No order is ever guessed from balances: re-ordering by balance can chain
+     * the remaining lines round a missing one (review P1-1).</p>
+     */
+    static List<String> dayOrder(List<String> stored, List<String> file) {
+        Set<String> inFile = new HashSet<>(file);
+        int first = -1, last = -1;
+        for (int i = 0; i < stored.size(); i++) {
+            if (!inFile.contains(stored.get(i))) continue;
+            if (first < 0) first = i;
+            last = i;
+        }
+        if (first < 0) return appended(stored, file);
+        for (int i = first; i <= last; i++) {
+            if (!inFile.contains(stored.get(i))) return appended(stored, file);
+        }
+        List<String> out = new ArrayList<>(stored.subList(0, first));
+        out.addAll(file);
+        out.addAll(stored.subList(last + 1, stored.size()));
+        return out;
     }
 
     /**
