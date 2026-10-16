@@ -20,6 +20,7 @@ import { AccessDeniedState, LoadFailedState, NotFoundState } from "@/components/
 import { BUILDING_FLOORS_MAX, BUILDING_FLOORS_MIN, floorsInRange, refusalOf, sizeIsValid } from "@/lib/units/unitRules";
 import { useLatestRequest, type RequestTicket } from "@/hooks/useLatestRequest";
 import { isAbortError } from "@/lib/api/abort";
+import { Pagination } from "@/components/ui/Pagination";
 
 type PropertyContact = {
     id: string;
@@ -937,24 +938,28 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
 function LeasesTab({ propertyId }: { propertyId: string }) {
     const t = useTranslations("MasterData");
     const [leases, setLeases] = useState<any[]>([]);
+    const [page, setPage] = useState(1);
+    const [size, setSize] = useState(25);
+    const [total, setTotal] = useState(0);
     const begin = useLatestRequest();
 
+    // Scale follow-up: a page of the property's contracts from GET /leases/paged?propertyId=
+    // (newest start first), not every contract the building ever had.
     useEffect(() => {
-        fetchLeases();
-    }, [propertyId]);
-
-    const fetchLeases = async () => {
         const { signal, isCurrent } = begin();
-        try {
-            const res = await fetch(`/api/proxy/v1/leases/property/${propertyId}`, { signal });
-            if (!res.ok) return;
-            const rows = await res.json();
-            if (isCurrent()) setLeases(rows);
-        } catch (err) {
-            if (isAbortError(err) || !isCurrent()) return;
-            console.error(err);
-        }
-    };
+        const sp = new URLSearchParams({ propertyId, page: String(page - 1), size: String(size), sort: "startDate,desc" });
+        fetch(`/api/proxy/v1/leases/paged?${sp.toString()}`, { signal })
+            .then(res => (res.ok ? res.json() : null))
+            .then(body => {
+                if (!body || !isCurrent()) return;
+                setLeases(body.content ?? []);
+                setTotal(body.totalElements ?? 0);
+            })
+            .catch(err => {
+                if (isAbortError(err) || !isCurrent()) return;
+                console.error(err);
+            });
+    }, [propertyId, page, size, begin]);
 
     const getStatusColor = (status: string) => {
         switch (status) {
@@ -970,7 +975,7 @@ function LeasesTab({ propertyId }: { propertyId: string }) {
     return (
         <div>
             <h2 className="text-lg font-bold mb-6">{t("leases")}</h2>
-            <div className="bg-surface border border-border rounded-xl overflow-hidden">
+            <div className="bg-surface border border-border rounded-xl overflow-x-auto">
                 <table className="w-full text-start text-sm">
                     <thead className="bg-background text-muted text-xs font-semibold uppercase tracking-[0.15em]">
                         <tr>
@@ -1010,6 +1015,13 @@ function LeasesTab({ propertyId }: { propertyId: string }) {
                     <div className="text-center py-12 text-muted font-medium text-xs">{t("noContractsForProperty")}</div>
                 )}
             </div>
+            <Pagination
+                currentPage={page}
+                totalItems={total}
+                itemsPerPage={size}
+                onPageChange={setPage}
+                onItemsPerPageChange={n => { setSize(n); setPage(1); }}
+            />
         </div>
     );
 }
