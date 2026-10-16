@@ -222,6 +222,62 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
                                     @Param("buildingId") UUID buildingId,
                                     @Param("excluded") Collection<LeaseStatus> excluded);
 
+    /**
+     * The contracts list's free-text search and property-manager scope, in the database
+     * (scale follow-up to PR #366). Both used to run in memory over every contract with the
+     * requested status: about 190 ms a keystroke at 2,000 contracts, growing linearly.
+     *
+     * <p>The term matches exactly what the in-memory filter matched on the mapped DTO, and
+     * nothing more: the unit number, the renter's name, the property's name, the Ejari number
+     * (each {@code lower(column)} containing the lower-cased term), or a status whose name
+     * contains it ({@code statusHits}, resolved in Java from the enum). {@code pattern} is
+     * {@code %term%} with {@code %}, {@code _} and {@code \} escaped, so they match literally,
+     * as {@code String.contains} did. Each column side is a {@code lower(...)} expression the
+     * pg_trgm GIN indexes of changesets 146/148/174 cover, and the joined tables are matched
+     * through id subqueries so each can use its own index.</p>
+     *
+     * <p>{@code tenantId} is bound on the lease and on every subquery: the Hibernate tenant
+     * filter is only on inside a transaction, and these must not rely on it.</p>
+     *
+     * <p>Parameters that cannot be empty or null in an {@code in} list are guarded by a flag:
+     * {@code allowed} is every status not excluded (the caller returns an empty page itself
+     * when that is none), {@code scoped}/{@code visible} is a property manager's assigned
+     * properties (never empty when {@code scoped}: no assignments means an empty page before
+     * the query), {@code hasStatusHits}/{@code statusHits} likewise.</p>
+     */
+    @Query("""
+        select l from Lease l
+        where l.tenantId = :tenantId
+          and l.status in :allowed
+          and (cast(:status as string) is null or l.status = :status)
+          and (cast(:propertyId as java.util.UUID) is null or l.unit.property.id = :propertyId)
+          and (cast(:buildingId as java.util.UUID) is null or l.unit.building.id = :buildingId)
+          and (:scoped = false or l.unit.id in (
+                select su.id from Unit su where su.tenantId = :tenantId and su.property.id in :visible))
+          and (cast(:pattern as string) is null
+               or l.unit.id in (select u.id from Unit u
+                                where u.tenantId = :tenantId and lower(u.unitNumber) like :pattern escape '\\')
+               or l.renter.id in (select r.id from Renter r
+                                  where r.tenantId = :tenantId and lower(r.nameEn) like :pattern escape '\\')
+               or l.unit.id in (select pu.id from Unit pu
+                                where pu.tenantId = :tenantId and pu.property.id in (
+                                    select p.id from Property p
+                                    where p.tenantId = :tenantId and lower(p.nameEn) like :pattern escape '\\'))
+               or lower(l.ejariNumber) like :pattern escape '\\'
+               or (:hasStatusHits = true and l.status in :statusHits))
+        """)
+    Page<Lease> searchText(@Param("tenantId") UUID tenantId,
+                           @Param("allowed") Collection<LeaseStatus> allowed,
+                           @Param("status") LeaseStatus status,
+                           @Param("propertyId") UUID propertyId,
+                           @Param("buildingId") UUID buildingId,
+                           @Param("scoped") boolean scoped,
+                           @Param("visible") Collection<UUID> visible,
+                           @Param("pattern") String pattern,
+                           @Param("hasStatusHits") boolean hasStatusHits,
+                           @Param("statusHits") Collection<LeaseStatus> statusHits,
+                           Pageable pageable);
+
     List<Lease> findByUnitId(UUID unitId);
 
     List<Lease> findByUnitIdAndStatus(UUID unitId, LeaseStatus status);

@@ -9,6 +9,7 @@ import { useBuildings } from "@/hooks/useBuildings";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { LoadFailedState } from "@/components/ui/PageStates";
 import { Pagination } from "@/components/ui/Pagination";
+import { UnitPicker } from "@/components/pickers/UnitPicker";
 import {
     ErrorLine, GatePassPage, GatePassTabs, inputClass, labelClass, pageOf, primaryButton, secondaryButton,
 } from "@/components/gatepass/shared";
@@ -19,7 +20,6 @@ import {
 
 /** GET /api/v1/properties wraps each property in a portfolio row (see the report page). */
 type PropertyRow = { property: { id: string; nameEn: string; nameAr: string | null } };
-type UnitRow = { id: string; unitNumber: string };
 /** The slice of UserResponseDTO read here — note `phoneNumber`, not `phone`. */
 type StaffUser = { id: string; name: string | null; email: string | null; phoneNumber?: string | null; role: string };
 
@@ -197,8 +197,6 @@ function PolicySection({ propertyId }: { propertyId: string }) {
 
 function RegularVisitorSection({ propertyId }: { propertyId: string }) {
     const t = useTranslations("GatePass");
-    const [units, setUnits] = useState<UnitRow[]>([]);
-    const [unitsError, setUnitsError] = useState<string | null>(null);
     const [unitId, setUnitId] = useState("");
     const [name, setName] = useState("");
     const [phone, setPhone] = useState("");
@@ -209,14 +207,14 @@ function RegularVisitorSection({ propertyId }: { propertyId: string }) {
     const [notice, setNotice] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
 
-    useEffect(() => {
-        let alive = true;
-        fetch(`/api/proxy/v1/units/property/${encodeURIComponent(propertyId)}`)
-            .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-            .then((rows: UnitRow[]) => { if (alive) setUnits([...rows].sort((a, b) => a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true }))); })
-            .catch(() => { if (alive) setUnitsError(t("unitsLoadError")); });
-        return () => { alive = false; };
-    }, [propertyId, t]);
+    // Scale follow-up: the unit is picked by server search within this property
+    // (GET /units/search?propertyId=), not from every unit of the building loaded up front.
+    // A unit chosen for another property does not carry over.
+    const [unitProperty, setUnitProperty] = useState(propertyId);
+    if (unitProperty !== propertyId) {
+        setUnitProperty(propertyId);
+        setUnitId("");
+    }
 
     const submit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -251,11 +249,8 @@ function RegularVisitorSection({ propertyId }: { propertyId: string }) {
             <form onSubmit={submit} noValidate className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="visitor-form">
                 <div>
                     <label htmlFor="rv-unit" className={labelClass}>{t("colUnit")}</label>
-                    <select id="rv-unit" value={unitId} onChange={e => setUnitId(e.target.value)} className={inputClass}>
-                        <option value="">{t("chooseUnit")}</option>
-                        {units.map(u => <option key={u.id} value={u.id}>{u.unitNumber}</option>)}
-                    </select>
-                    {unitsError && <p className="text-[11px] text-error mt-1">{unitsError}</p>}
+                    <UnitPicker id="rv-unit" testId="rv-unit" value={unitId} onChange={id => setUnitId(id)}
+                                propertyId={propertyId} placeholder={t("chooseUnit")} className="w-full" />
                 </div>
                 <div>
                     <label htmlFor="rv-name" className={labelClass}>{t("visitorName")}</label>

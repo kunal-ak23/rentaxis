@@ -106,6 +106,7 @@ class PropertyScopeCoverageTest {
             Map.entry("ChequeController#postDated", "SQL-scoped: ChequeQueryService.scope() -> visiblePropertyIds"),
             Map.entry("ChequeController#returned", "SQL-scoped: ChequeQueryService.scope() -> visiblePropertyIds"),
             Map.entry("ChequeController#postDatedPaged", "SQL-scoped: ChequeQueryService.scope() -> visiblePropertyIds"),
+            Map.entry("ChequeController#postDatedTotals", "SQL-scoped: ChequeQueryService.scope() -> visiblePropertyIds"),
             // Scale PR A names lookups: the caller's property set is a query parameter
             // (scopedPropertyIds) and an id outside it is simply not returned
             // (ScaleListEndpointsIT pins both for a manager).

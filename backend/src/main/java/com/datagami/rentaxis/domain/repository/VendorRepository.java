@@ -32,4 +32,23 @@ public interface VendorRepository extends JpaRepository<Vendor, UUID> {
             @org.springframework.data.repository.query.Param("tenantId") UUID tenantId,
             @org.springframework.data.repository.query.Param("q") String q,
             org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * {@link #searchPaged} narrowed to active (or inactive) vendors when {@code anyActive} is
+     * false — the pickers offer active suppliers only, as their whole-list selects did.
+     */
+    @org.springframework.data.jpa.repository.Query("""
+        select v from Vendor v
+        where v.tenantId = :tenantId
+          and (:anyActive = true or v.isActive = :active)
+          and (cast(:q as string) is null
+               or lower(v.nameEn) like :q or lower(v.nameAr) like :q or lower(v.trn) like :q
+               or lower(v.email) like :q or lower(v.phone) like :q or lower(v.contactPerson) like :q)
+        """)
+    org.springframework.data.domain.Page<Vendor> searchPagedByActive(
+            @org.springframework.data.repository.query.Param("tenantId") UUID tenantId,
+            @org.springframework.data.repository.query.Param("q") String q,
+            @org.springframework.data.repository.query.Param("anyActive") boolean anyActive,
+            @org.springframework.data.repository.query.Param("active") boolean active,
+            org.springframework.data.domain.Pageable pageable);
 }

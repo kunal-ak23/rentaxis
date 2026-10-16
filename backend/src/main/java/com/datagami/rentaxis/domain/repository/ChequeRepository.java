@@ -293,6 +293,67 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
                                     Pageable pageable);
 
     /**
+     * {@link #findPostDatedPaged}'s rows per maturity date: {@code [LocalDate chequeDate, Long count,
+     * BigDecimal amount]}, in date order: one row per maturity date in the window. The web always
+     * sends both ends of a window of at most 366 days; a from-only or to-only request is open to
+     * 2099 / from 2000 ({@code ChequeQueryService.pdcWindow}), so it can be one row per day of
+     * that span. The paged post-dated screen shows each day's full subtotal and the window's
+     * total from it.
+     */
+    @Query("""
+        select c.chequeDate, count(c), coalesce(sum(c.amount), 0) from Cheque c
+        where c.status in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED,
+                           com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED,
+                           com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING)
+          and c.chequeDate >= :from and c.chequeDate <= :to
+          and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
+                                     com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
+          and (cast(:propertyId as java.util.UUID) is null or c.property.id = :propertyId)
+          and (:unrestricted = true or c.property.id in :propertyIds)
+        group by c.chequeDate
+        order by c.chequeDate
+        """)
+    List<Object[]> postDatedByDay(@Param("propertyId") UUID propertyId,
+                                  @Param("from") LocalDate from,
+                                  @Param("to") LocalDate to,
+                                  @Param("unrestricted") boolean unrestricted,
+                                  @Param("propertyIds") Collection<UUID> propertyIds);
+
+    /**
+     * The running total a page of {@link #findPostDatedPaged} opens with: the sum of the first
+     * {@code limit} rows in that query's order ({@code chequeDate, seqNo, id}), added up in SQL
+     * (review P3-1: it used to pull {@code offset} amounts into Java).
+     *
+     * <p>Native, so the Hibernate tenant filter does not apply: {@code tenant_id} is bound here
+     * ({@code allTenants} only for a SUPER_ADMIN with no organisation selected, as on
+     * {@link #OPEN_DUE_CTE}), and the status, window, lease-status and property-scope predicates
+     * are {@link #findPostDatedPaged}'s, column for column.</p>
+     */
+    @Query(nativeQuery = true, value = """
+        select coalesce(sum(x.amount), 0) from (
+            select c.amount
+            from cheques c
+                 join leases l on l.id = c.lease_id
+            where (:allTenants = true or c.tenant_id = :tenantId)
+              and c.status in ('REGISTERED', 'DEPOSITED', 'ONLINE_PENDING')
+              and c.cheque_date >= :from and c.cheque_date <= :to
+              and l.status not in ('DRAFT', 'PENDING_SIGNATURE')
+              and (cast(:propertyId as uuid) is null or c.property_id = :propertyId)
+              and (:unrestricted = true or c.property_id in (:propertyIds))
+            order by c.cheque_date asc, c.seq_no asc, c.id asc
+            limit :limit
+        ) x
+        """)
+    java.math.BigDecimal postDatedAmountBefore(@Param("tenantId") UUID tenantId,
+                                               @Param("allTenants") boolean allTenants,
+                                               @Param("propertyId") UUID propertyId,
+                                               @Param("from") LocalDate from,
+                                               @Param("to") LocalDate to,
+                                               @Param("unrestricted") boolean unrestricted,
+                                               @Param("propertyIds") Collection<UUID> propertyIds,
+                                               @Param("limit") int limit);
+
+    /**
      * Count and value per status for the register's summary tiles, in one pass over
      * the index rather than one query per tile.
      *

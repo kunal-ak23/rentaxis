@@ -1671,7 +1671,6 @@
     "errTimeout": "The approval timeout must be between 1 and 1440 minutes.",
     "regularVisitorsTitle": "Regular visitors",
     "regularVisitorsDescription": "Register a maid, driver or vendor for a unit. The guard recognises them by mobile number.",
-    "unitsLoadError": "Units could not be loaded.",
     "registerVisitor": "Register visitor",
     "visitorRegistered": "{name} is registered.",
     "visitorRegisterError": "The visitor could not be registered.",
@@ -4280,6 +4279,10 @@
     "issuedCheques": "Issued cheques"
   },
   "PaymentRuns": {
+    "allStatuses": "All statuses",
+    "paymentDateFrom": "Payment date from",
+    "paymentDateTo": "Payment date to",
+    "noRunsFiltered": "No payment runs match these filters.",
     "missingSelected": "{count, plural, one {# selected invoice is} other {# selected invoices are}} not in the open list any more (paid elsewhere, or outside the filters).",
     "dropMissing": "Drop them",
     "goneSelected": "{count, plural, one {# selected invoice is} other {# selected invoices are}} no longer open (paid or reversed elsewhere).",
@@ -5248,6 +5251,7 @@
     "unavailable": "Tower filter (towers could not be loaded)"
   },
   "Pickers": {
+    "selectVendor": "Select a vendor",
     "searching": "Searching…",
     "noMatches": "No matches",
     "searchFailed": "Search failed — try again",
