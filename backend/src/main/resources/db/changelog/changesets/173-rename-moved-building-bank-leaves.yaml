@@ -1,0 +1,37 @@
+# Review P3-16 (sim round 20 S20-04 for existing data): a building's BANK leaf is named
+# "<operating bank> - <building>" when the operating bank takes it at property creation.
+# Since S20-04 the service renames it when the building's own bank account takes it;
+# changeset 169 moved such leaves in bulk without renaming them. 169 is left as it is
+# (editing an applied changeset would change its checksum); this renames what it moved.
+#
+# Exactly: a BANK-subtype leaf scoped to a property, owned by a bank account attached to
+# that same property, whose name starts with "<another bank account's bank name> - "
+# of the same organisation (the longest such name), and not already with its owner's
+# name, becomes "<owner's bank name> - <the rest>". Only accounts.name changes.
+# Idempotent: a renamed leaf starts with its owner's name and is not picked again.
+databaseChangeLog:
+  - changeSet:
+      id: 173-rename-moved-building-bank-leaves
+      author: claude
+      changes:
+        - sql:
+            comment: Moved building leaves take their owner's bank name
+            splitStatements: false
+            sql: |
+              UPDATE accounts a
+                 SET name = x.owner_name || substr(a.name, length(x.old_name) + 1), updated_at = CURRENT_TIMESTAMP
+                FROM (SELECT DISTINCT ON (acc.id) acc.id, ob.bank_name AS owner_name, other.bank_name AS old_name
+                        FROM accounts acc
+                        JOIN bank_account_ledgers l ON l.account_id = acc.id AND l.tenant_id = acc.tenant_id
+                        JOIN bank_accounts ob ON ob.id = l.bank_account_id AND ob.tenant_id = l.tenant_id
+                        JOIN bank_accounts other ON other.tenant_id = acc.tenant_id AND other.id <> ob.id
+                                               AND other.bank_name <> ob.bank_name
+                       WHERE acc.account_sub_type = 'BANK' AND NOT acc.is_group
+                         AND acc.property_id IS NOT NULL AND ob.property_id = acc.property_id
+                         AND left(acc.name, length(other.bank_name) + 3) = other.bank_name || ' - '
+                         AND left(acc.name, length(ob.bank_name) + 3) <> ob.bank_name || ' - '
+                       ORDER BY acc.id, length(other.bank_name) DESC) x
+               WHERE a.id = x.id;
+      rollback:
+        - sql:
+            sql: SELECT 1

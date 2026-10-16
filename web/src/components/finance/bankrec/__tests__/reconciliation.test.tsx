@@ -121,6 +121,54 @@ describe("an unconfirmed day order (review P3-11)", () => {
     });
 });
 
+/** Review P2-3: 07/09 is unproven; its paper totals settle it. */
+const UNPROVEN: Reconciliation = {
+    ...SEPT, canFinalize: false,
+    checks: [...SEPT.checks, { code: "LINE_ORDER" as const, ok: false,
+        message: "On 07/09/2026 a line in one file was taken for an identical line already imported from another" }],
+    unprovenDays: [{ date: "2026-09-07", typedDebits: null, typedCredits: null, status: "NEEDED" }],
+};
+
+describe("day totals for an unproven day (review P2-3)", () => {
+    for (const locale of ["en", "ar"] as const) {
+        it(`asks for the day's paper totals and sends them (${locale})`, async () => {
+            stubFetch([{ match: "/bank-accounts/ba-1/reconciliations", body: ROWS },
+                { method: "PUT", match: "/reconciliations/rec-9/day-totals", body: UNPROVEN },
+                { match: "/reconciliations/rec-9", body: UNPROVEN }]);
+            const msgs = locale === "ar" ? ar : en;
+            renderIn(locale, <ReconciliationPanel bankAccountId="ba-1" />);
+            const box = await screen.findByTestId("rec-day-totals");
+            expect(box).toHaveTextContent(msgs.BankRec.dayTotalsTitle);
+            expect(screen.getByTestId("rec-day-status-2026-09-07")).toHaveTextContent(msgs.BankRec.dayStatus_NEEDED);
+            const save = screen.getByTestId("rec-day-totals-save");
+            fireEvent.change(screen.getByTestId("rec-day-debits-2026-09-07"), { target: { value: "37.50" } });
+            expect(save).toBeDisabled();   // both totals or neither
+            fireEvent.change(screen.getByTestId("rec-day-credits-2026-09-07"), { target: { value: "10.50" } });
+            expect(save).not.toBeDisabled();
+            fireEvent.click(save);
+            await waitFor(() => expect(calls.some(c => c.method === "PUT" && c.url.includes("/day-totals"))).toBe(true));
+            const put = calls.find(c => c.method === "PUT" && c.url.includes("/day-totals"))!;
+            expect(put.body).toEqual({ days: [{ date: "2026-09-07", debits: 37.5, credits: 10.5 }] });
+        });
+    }
+
+    it("shows a disagreement as a missing line", async () => {
+        stubFetch([{ match: "/bank-accounts/ba-1/reconciliations", body: ROWS },
+            { match: "/reconciliations/rec-9", body: { ...UNPROVEN,
+                unprovenDays: [{ date: "2026-09-07", typedDebits: 37.5, typedCredits: 10.5, status: "MISMATCH" }] } }]);
+        renderIn("en", <ReconciliationPanel bankAccountId="ba-1" />);
+        expect(await screen.findByTestId("rec-day-status-2026-09-07")).toHaveTextContent(en.BankRec.dayStatus_MISMATCH);
+        expect((screen.getByTestId("rec-day-debits-2026-09-07") as HTMLInputElement).value).toMatch(/^37\.50?$/);
+    });
+
+    it("has no day-totals box when no day is unproven", async () => {
+        stubFetch([{ match: "/bank-accounts/ba-1/reconciliations", body: ROWS }, { match: "/reconciliations/rec-9", body: SEPT }]);
+        renderIn("en", <ReconciliationPanel bankAccountId="ba-1" />);
+        await screen.findByTestId("rec-figure-statementClosing");
+        expect(screen.queryByTestId("rec-day-totals")).toBeNull();
+    });
+});
+
 describe("the reconciliation statement", () => {
     it("shows the worked example at 0.00, opens each figure's items and finalizes after a confirmation", async () => {
         stubFetch([{ match: "/bank-accounts/ba-1/reconciliations", body: ROWS },

@@ -1,0 +1,54 @@
+# Review P2-3 (follow-up to sim round 20 S20-01): the typed way out of an unproven day,
+# and where each statement line came from.
+#   - bank_rec_day_totals: a day's total debits and total credits typed from the paper
+#     statement on a draft reconciliation. When they agree with the day's stored lines
+#     the day is proven (a missing fee and its missing reversal change both totals,
+#     though not the balance). Kept with the reconciliation as the audit of what was typed.
+#   - bank_statement_line_sources: every import that brought a stored line — the one
+#     that stored it and each later one that matched it as a duplicate. Deleting an
+#     import then keeps a line another import also brought (review P3-15), and the
+#     day's state can be recomputed.
+# Backfill: each existing line gets its own import as its source (what is known).
+databaseChangeLog:
+  - changeSet:
+      id: 172-bank-rec-day-totals
+      author: claude
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                tableName: bank_rec_day_totals
+      changes:
+        - createTable:
+            tableName: bank_rec_day_totals
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_rec_day_totals_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: reconciliation_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_rec_day_totals_rec, referencedTableName: bank_reconciliations, referencedColumnNames: id } }
+              - column: { name: txn_date, type: date, constraints: { nullable: false } }
+              - column: { name: debit_total, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: credit_total, type: "numeric(14,2)", constraints: { nullable: false } }
+              - column: { name: entered_by, type: uuid }
+              - column: { name: entered_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+        - addUniqueConstraint: { tableName: bank_rec_day_totals, columnNames: "reconciliation_id, txn_date", constraintName: ux_bank_rec_day_totals }
+        - createIndex: { tableName: bank_rec_day_totals, indexName: idx_bank_rec_day_totals_tenant, columns: [ { column: { name: tenant_id } }, { column: { name: reconciliation_id } } ] }
+        - createTable:
+            tableName: bank_statement_line_sources
+            columns:
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_line_sources_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: line_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_line_sources_line, referencedTableName: bank_statement_lines, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: import_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_line_sources_import, referencedTableName: bank_statement_imports, referencedColumnNames: id } }
+        - addPrimaryKey: { tableName: bank_statement_line_sources, columnNames: "line_id, import_id", constraintName: pk_bank_statement_line_sources }
+        - createIndex: { tableName: bank_statement_line_sources, indexName: idx_bank_line_sources_import, columns: [ { column: { name: import_id } } ] }
+        - sql:
+            comment: Each existing line's own import is its source
+            splitStatements: false
+            sql: |
+              INSERT INTO bank_statement_line_sources (tenant_id, line_id, import_id)
+              SELECT tenant_id, id, import_id FROM bank_statement_lines
+              ON CONFLICT DO NOTHING;
+      rollback:
+        - dropTable:
+            tableName: bank_statement_line_sources
+        - dropTable:
+            tableName: bank_rec_day_totals

@@ -261,10 +261,18 @@ class StatementOrderPropertyTest {
                  Set<LocalDate> unproven, Set<Integer> arrived) { }
 
     private static Books importStatement(List<List<Bank>> files) {
+        return importFiles(files.stream().map(f -> new FileSpec(f, false, false)).toList());
+    }
+
+    /** A statement file: its lines, and whether it carries explicit opening/closing balance rows. */
+    record FileSpec(List<Bank> lines, boolean openingRow, boolean closingRow) { }
+
+    private static Books importFiles(List<FileSpec> specs) {
         Map<LocalDate, List<BankStatementImportService.StoredLine>> stored = new TreeMap<>();
         Map<LocalDate, BankStatementImportService.DayState> states = new HashMap<>();
         Set<Integer> arrived = new HashSet<>();
-        for (List<Bank> f : files) {
+        for (FileSpec spec : specs) {
+            List<Bank> f = spec.lines();
             if (f.isEmpty() || !acceptedRows(f)) continue;
             f.forEach(l -> arrived.add(l.index()));
             List<StatementMapper.Row> rows = f.stream().map(Bank::row).toList();
@@ -285,7 +293,7 @@ class StatementOrderPropertyTest {
                     }
                 }
                 BankStatementImportService.Pos pos = BankStatementImportService.Pos.of(day.getKey(), fileDays.firstKey(),
-                        fileDays.lastKey());
+                        fileDays.lastKey(), spec.openingRow(), spec.closingRow());
                 BankStatementImportService.Settled s = BankStatementImportService.settle(
                         have.stream().map(BankStatementImportService.StoredLine::hash).toList(), fileHashes, pos,
                         states.getOrDefault(day.getKey(), BankStatementImportService.DayState.UNKNOWN));
@@ -317,7 +325,11 @@ class StatementOrderPropertyTest {
      * <p>Finalize as the service does it: with every day confirmed, on the lines'
      * own opening (derived, or known) and closing; with any day unconfirmed
      * ({@code LINE_ORDER}), on the bank's typed opening and closing, the chain
-     * not held against those days (S20-02); with any day unproven, not at all.
+     * not held against those days (S20-02); with a day unproven, only when the
+     * day's total debits and credits typed from the bank's true lines agree with
+     * the stored ones (review P2-3), and then as any unconfirmed day (typed
+     * closing). A first draft let a proven day go on the lines' own closing: the
+     * model found an order that chained round a line missing on another day.
      * Asserted: no finalize at an opening or closing other than the bank's, and
      * no finalize with a line any accepted file brought missing from the books —
      * even when the lost lines net to nothing (S20-01).</p>
@@ -325,7 +337,7 @@ class StatementOrderPropertyTest {
     @Test
     void repeatingLinesNeverFinalizeAWrongBalance() {
         Random rnd = new Random(9704);
-        int finalized = 0, refused = 0, typed = 0, derivedOk = 0, unprovenRefused = 0;
+        int finalized = 0, refused = 0, typed = 0, derivedOk = 0, unprovenRefused = 0, provenByTotals = 0;
         for (int trial = 0; trial < 60_000; trial++) {
             List<Bank> truth = statement(rnd);
             if (truth.size() < 4) continue;
@@ -349,19 +361,31 @@ class StatementOrderPropertyTest {
             Collections.shuffle(files, rnd);
             Books books = importStatement(files);
             if (books.lines().isEmpty()) continue;
-            boolean confirmed = books.unconfirmed().isEmpty();
-            if (!books.unproven().isEmpty()) {
-                // LINE_ORDER fails whatever is typed: a file holding the whole day is needed.
-                unprovenRefused++;
-                continue;
-            }
-            if (!confirmed) typed++;
             List<BankReconciliationService.SL> sl = new ArrayList<>();
             for (int i = 0; i < books.lines().size(); i++) {
                 BankStatementImportService.StoredLine l = books.lines().get(i);
                 sl.add(new BankReconciliationService.SL(UUID.randomUUID(), books.dates().get(i), i + 1, l.description(), null, null,
                         l.amount(), l.balance()));
             }
+            if (!books.unproven().isEmpty()) {
+                // Review P2-3: the user types each unproven day's total debits and credits
+                // from the paper statement — the bank's true lines — and the service compares.
+                List<BankReconciliationService.SL> bank = truth.stream().map(l -> new BankReconciliationService.SL(
+                        UUID.randomUUID(), l.date(), l.index(), l.description(), null, null, l.amount(), l.balance())).toList();
+                boolean allAgree = books.unproven().stream().allMatch(d -> {
+                    BigDecimal[] paper = BankReconciliationService.dayTotals(bank, d);
+                    return BankReconciliationService.totalsAgree(BankReconciliationService.dayTotals(sl, d), paper[0], paper[1]);
+                });
+                if (!allAgree) {
+                    unprovenRefused++;
+                    continue;
+                }
+                provenByTotals++;
+            }
+            // Days the totals proved have all their lines but no known order: like every
+            // unconfirmed day, they need the typed closing (and opening).
+            boolean confirmed = books.unconfirmed().isEmpty();
+            if (!confirmed) typed++;
             BigDecimal movement = books.lines().stream().map(BankStatementImportService.StoredLine::amount)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             BankStatementImportService.StoredLine first = books.lines().get(0);
@@ -376,8 +400,9 @@ class StatementOrderPropertyTest {
                 if (passes) {
                     finalized++;
                     if (derived && confirmed) derivedOk++;
-                    String what = String.format("trial %d (%s opening): truth %s, books %s, unconfirmed %s", trial,
-                            derived ? "derived" : "known", truth, books.lines(), books.unconfirmed());
+                    String what = String.format("trial %d (%s opening): truth %s, books %s, unconfirmed %s, unproven %s, files %s", trial,
+                            derived ? "derived" : "known", truth, books.lines(), books.unconfirmed(), books.unproven(),
+                            files.stream().map(f -> f.stream().map(Bank::index).toList()).toList());
                     assertThat(opening).as(what + " — wrong opening").isEqualByComparingTo(OPENING);
                     assertThat(closing).as(what + " — wrong closing").isEqualByComparingTo(trueClosing);
                     // S20-01: every bank line some accepted file brought is in the books, even when
@@ -400,7 +425,8 @@ class StatementOrderPropertyTest {
                 }
             }
         }
-        assertThat(unprovenRefused).as("unproven statements refused").isGreaterThan(1_000);
+        assertThat(unprovenRefused).as("unproven days whose paper totals disagree: refused").isGreaterThan(1_000);
+        assertThat(provenByTotals).as("unproven days settled by their paper totals").isGreaterThan(1_000);
         assertThat(typed).as("days left unconfirmed (typed balances)").isGreaterThan(1_000);
         assertThat(derivedOk).as("statements finalized on the lines alone").isGreaterThan(500);
         assertThat(refused).as("refused").isGreaterThan(1_000);
@@ -431,6 +457,147 @@ class StatementOrderPropertyTest {
                     .as("trial %d", trial).containsExactlyElementsOf(once.lines().stream()
                             .map(BankStatementImportService.StoredLine::balance).toList());
         }
+    }
+
+    // ------------------------------------------------------------------ review P2-3: friction
+
+    /** 91 days: lines on 70% of days (varied narrations), and a fee / reversal / fee on 5%. */
+    private static List<Bank> quarter(Random rnd) {
+        List<Bank> out = new ArrayList<>();
+        BigDecimal b = OPENING;
+        LocalDate d = LocalDate.of(2026, 7, 1);
+        for (int day = 0; day < 92; day++, d = d.plusDays(1)) {
+            if (rnd.nextInt(100) < 70) {
+                for (int i = 0, n = 1 + rnd.nextInt(5); i < n; i++) {
+                    BigDecimal a = BigDecimal.valueOf((rnd.nextInt(400) - 200) * 5L + 1).setScale(2);
+                    b = b.add(a);
+                    out.add(new Bank(out.size(), d, a, "TXN " + out.size(), b));
+                }
+            }
+            if (rnd.nextInt(100) < 5) {
+                BigDecimal fee = new BigDecimal("-10.50");
+                for (BigDecimal a : List.of(fee, fee.negate(), fee)) {
+                    b = b.add(a);
+                    out.add(new Bank(out.size(), d, a, a.signum() < 0 ? "SMS ALERT CHARGES" : "SMS ALERT CHARGES REVERSAL", b));
+                }
+            }
+        }
+        return out;
+    }
+
+    private static List<Bank> between(List<Bank> lines, LocalDate from, LocalDate to) {
+        return lines.stream().filter(l -> !l.date().isBefore(from) && !l.date().isAfter(to)).toList();
+    }
+
+    /** What reconciling one calendar month takes after a habit's imports. */
+    enum Effort { FREE, TYPED_CLOSING, TYPED_DAY_TOTALS, BLOCKED }
+
+    private static Map<Effort, Integer> effort(List<Bank> truth, List<FileSpec> files) {
+        Books books = importFiles(files);
+        Map<Effort, Integer> out = new EnumMap<>(Effort.class);
+        List<BankReconciliationService.SL> bank = truth.stream().map(l -> new BankReconciliationService.SL(
+                UUID.randomUUID(), l.date(), l.index(), l.description(), null, null, l.amount(), l.balance())).toList();
+        List<BankReconciliationService.SL> sl = new ArrayList<>();
+        for (int i = 0; i < books.lines().size(); i++) {
+            BankStatementImportService.StoredLine l = books.lines().get(i);
+            sl.add(new BankReconciliationService.SL(UUID.randomUUID(), books.dates().get(i), i + 1, l.description(), null, null,
+                    l.amount(), l.balance()));
+        }
+        for (int m = 7; m <= 9; m++) {
+            LocalDate from = LocalDate.of(2026, m, 1), to = from.withDayOfMonth(from.lengthOfMonth());
+            Set<LocalDate> unconfirmed = new HashSet<>(), unproven = new HashSet<>();
+            books.unconfirmed().stream().filter(d -> !d.isBefore(from) && !d.isAfter(to)).forEach(unconfirmed::add);
+            books.unproven().stream().filter(d -> !d.isBefore(from) && !d.isAfter(to)).forEach(unproven::add);
+            Effort e;
+            if (unproven.stream().anyMatch(d -> {
+                BigDecimal[] paper = BankReconciliationService.dayTotals(bank, d);
+                return !BankReconciliationService.totalsAgree(BankReconciliationService.dayTotals(sl, d), paper[0], paper[1]);
+            })) e = Effort.BLOCKED;
+            else if (!unproven.isEmpty()) e = Effort.TYPED_DAY_TOTALS;
+            else if (!unconfirmed.isEmpty()) e = Effort.TYPED_CLOSING;
+            else e = Effort.FREE;
+            out.merge(e, 1, Integer::sum);
+        }
+        return out;
+    }
+
+    /**
+     * Review P2-3 (5): what ordinary export habits cost per monthly reconciliation,
+     * over 200 random quarters each — nothing missing, so every refusal would be false.
+     * The bar: no habit is ever blocked (a spanning export is never the only way out).
+     * The table goes to the PR body.
+     */
+    @Test
+    void frictionByExportHabit() {
+        Map<String, java.util.function.BiFunction<List<Bank>, Random, List<FileSpec>>> habits = new LinkedHashMap<>();
+        habits.put("calendar months, no overlap", (t, r) -> months(t, 0, false));
+        habits.put("calendar months, no overlap, bank prints opening/closing rows", (t, r) -> months(t, 0, true));
+        habits.put("weekly whole days, no overlap", (t, r) -> {
+            List<FileSpec> out = new ArrayList<>();
+            for (LocalDate d = LocalDate.of(2026, 7, 1); !d.isAfter(LocalDate.of(2026, 9, 30)); d = d.plusDays(7)) {
+                out.add(new FileSpec(between(t, d, d.plusDays(6)), false, false));
+            }
+            return out;
+        });
+        habits.put("daily, end of day", (t, r) -> t.stream().map(Bank::date).distinct()
+                .map(d -> new FileSpec(between(t, d, d), false, false)).toList());
+        habits.put("the same month imported twice", (t, r) -> {
+            List<FileSpec> out = new ArrayList<>(months(t, 0, false));
+            out.addAll(months(t, 0, false));
+            return out;
+        });
+        habits.put("months overlapping by one whole day", (t, r) -> months(t, 1, false));
+        habits.put("months overlapping by one whole day, bank prints opening/closing rows", (t, r) -> months(t, 1, true));
+        habits.put("month export cut mid-day on its last day, next export from that day", (t, r) -> {
+            List<FileSpec> out = new ArrayList<>();
+            int start = 0;
+            for (int m = 7; m <= 9; m++) {
+                LocalDate last = LocalDate.of(2026, m, 1).withDayOfMonth(LocalDate.of(2026, m, 1).lengthOfMonth());
+                List<Bank> upTo = t.stream().filter(l -> !l.date().isAfter(last)).toList();
+                List<Bank> lastDay = between(t, last, last);
+                int cut = upTo.size() - (lastDay.isEmpty() ? 0 : r.nextInt(lastDay.size() + 1));
+                if (m == 9) cut = upTo.size();
+                out.add(new FileSpec(t.subList(start, Math.max(start, cut)), false, false));
+                int dayStart = upTo.size() - lastDay.size();
+                start = Math.min(dayStart, cut);
+            }
+            return out;
+        });
+        habits.put("daily download mid-day, whole day again next morning", (t, r) -> {
+            List<FileSpec> out = new ArrayList<>();
+            for (LocalDate d : t.stream().map(Bank::date).distinct().toList()) {
+                List<Bank> day = between(t, d, d);
+                out.add(new FileSpec(day.subList(0, r.nextInt(day.size() + 1)), false, false));
+                out.add(new FileSpec(day, false, false));
+            }
+            return out;
+        });
+        StringBuilder table = new StringBuilder("| export habit | free | typed closing | typed day totals + closing | blocked |\n|---|---:|---:|---:|---:|\n");
+        for (var h : habits.entrySet()) {
+            Map<Effort, Integer> total = new EnumMap<>(Effort.class);
+            Random rnd = new Random(9706);
+            for (int q = 0; q < 200; q++) {
+                List<Bank> truth = quarter(rnd);
+                effort(truth, h.getValue().apply(truth, rnd)).forEach((k, v) -> total.merge(k, v, Integer::sum));
+            }
+            int n = total.values().stream().mapToInt(Integer::intValue).sum();
+            java.util.function.Function<Effort, String> pct = e -> String.format("%d%%", Math.round(100.0 * total.getOrDefault(e, 0) / n));
+            table.append("| ").append(h.getKey()).append(" | ").append(pct.apply(Effort.FREE)).append(" | ")
+                    .append(pct.apply(Effort.TYPED_CLOSING)).append(" | ").append(pct.apply(Effort.TYPED_DAY_TOTALS)).append(" | ")
+                    .append(pct.apply(Effort.BLOCKED)).append(" |\n");
+            assertThat(total.getOrDefault(Effort.BLOCKED, 0)).as(h.getKey() + " blocked").isZero();
+        }
+        System.out.println("FRICTION TABLE\n" + table);
+    }
+
+    /** Calendar-month exports; {@code overlapDays} back into the previous month. */
+    private static List<FileSpec> months(List<Bank> t, int overlapDays, boolean rows) {
+        List<FileSpec> out = new ArrayList<>();
+        for (int m = 7; m <= 9; m++) {
+            LocalDate from = LocalDate.of(2026, m, 1), to = from.withDayOfMonth(from.lengthOfMonth());
+            out.add(new FileSpec(between(t, m == 7 ? from : from.minusDays(overlapDays), to), rows, rows));
+        }
+        return out;
     }
 
     /** The rules of {@link BankStatementImportService#dayOrder} on named examples. */

@@ -45,7 +45,13 @@ public final class StatementMapper {
      * naming its row; the import is refused while there are any.
      */
     public record Result(List<Row> rows, List<String> errors, List<String> warnings, List<String> missingColumns,
-                         BigDecimal openingBalance, BigDecimal closingBalance, boolean hasBalance, Order order) {
+                         BigDecimal openingBalance, BigDecimal closingBalance, boolean hasBalance, Order order,
+                         boolean openingRow, boolean closingRow) {
+        public Result(List<Row> rows, List<String> errors, List<String> warnings, List<String> missingColumns,
+                      BigDecimal openingBalance, BigDecimal closingBalance, boolean hasBalance, Order order) {
+            this(rows, errors, warnings, missingColumns, openingBalance, closingBalance, hasBalance, order, false, false);
+        }
+
         public boolean ok() {
             return errors.isEmpty() && missingColumns.isEmpty();
         }
@@ -193,11 +199,20 @@ public final class StatementMapper {
             case REVERSED -> reversed(rows);
             case DATE -> rows.stream().sorted(Comparator.comparing(Row::txnDate)).toList();
         };
+        // Review P2-3 (2): an explicit "Opening balance" / "Closing balance" row is the
+        // bank saying where its date-range export starts and ends — at the start of the
+        // first date and the end of the last. Trusted only when it agrees with the
+        // lines' own running balance.
+        boolean openingRow = false, closingRow = false;
         if (hasBalance && !book.isEmpty()) {
-            if (opening == null) opening = book.get(0).balance().subtract(book.get(0).amount());
-            if (closing == null) closing = book.get(book.size() - 1).balance();
+            BigDecimal firstBefore = book.get(0).balance().subtract(book.get(0).amount());
+            BigDecimal lastAfter = book.get(book.size() - 1).balance();
+            openingRow = opening != null && opening.compareTo(firstBefore) == 0;
+            closingRow = closing != null && closing.compareTo(lastAfter) == 0;
+            if (opening == null) opening = firstBefore;
+            if (closing == null) closing = lastAfter;
         }
-        return new Result(book, errors, warnings, missing, opening, closing, hasBalance, order);
+        return new Result(book, errors, warnings, missing, opening, closing, hasBalance, order, openingRow, closingRow);
     }
 
     private static final Pattern NUMERIC_DATE = Pattern.compile("^(\\d{1,2})[/.-](\\d{1,2})[/.-](\\d{4}|\\d{2})\\b");

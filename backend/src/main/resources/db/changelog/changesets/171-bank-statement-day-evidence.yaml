@@ -10,11 +10,16 @@
 #     to its last line. They let a part re-import that adds nothing leave the day as
 #     it is (S20-03) only where its lines are provably the same lines.
 #
-# Backfill: rows 170 marked unconfirmed (days of open periods built from more than
-# one import) were de-duplicated by the old rule, which could take a genuine line
-# for an identical one; they become unproven too. start_known/end_known start false
-# everywhere (nothing is known about legacy days). Only bank_statement_days changes.
-# Idempotent: the column adds are guarded, the UPDATE only sets what is not set.
+# Backfill: every day of an open period (after reconciled_through) with lines that
+# more than one import's date range (first_date..last_date) covered was imported
+# under the old de-duplication, which could take a genuine line for an identical one
+# — even when that import stored nothing for the day (review P3-14: an import that
+# brought only "duplicates" left no line, so counting lines' imports, as 170 does,
+# misses it). Those days become unconfirmed and unproven (170's rows are a subset).
+# A reconciliation over such a day needs its total debits and credits typed from the
+# paper statement (or a statement holding the whole day). start_known/end_known
+# start false everywhere. Only bank_statement_days changes.
+# Idempotent: the column adds are guarded; the INSERT … ON CONFLICT sets each row once.
 databaseChangeLog:
   - changeSet:
       id: 171-bank-statement-day-evidence
@@ -33,11 +38,22 @@ databaseChangeLog:
               - column: { name: start_known, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
               - column: { name: end_known, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
         - sql:
-            comment: Legacy multi-import days of open periods are unproven
+            comment: Legacy days of open periods that more than one import covered are unconfirmed and unproven
             splitStatements: false
             sql: |
-              UPDATE bank_statement_days SET merge_unproven = TRUE
-               WHERE NOT order_confirmed AND NOT merge_unproven;
+              INSERT INTO bank_statement_days (tenant_id, bank_account_id, txn_date, order_confirmed, merge_unproven,
+                                               start_known, end_known, updated_at)
+              SELECT l.tenant_id, l.bank_account_id, l.txn_date, FALSE, TRUE, FALSE, FALSE, CURRENT_TIMESTAMP
+                FROM (SELECT DISTINCT tenant_id, bank_account_id, txn_date FROM bank_statement_lines) l
+                JOIN bank_accounts b ON b.id = l.bank_account_id AND b.tenant_id = l.tenant_id
+               WHERE (b.reconciled_through IS NULL OR l.txn_date > b.reconciled_through)
+                 AND (SELECT count(*) FROM bank_statement_imports i
+                       WHERE i.tenant_id = l.tenant_id AND i.bank_account_id = l.bank_account_id
+                         AND i.first_date IS NOT NULL AND i.last_date IS NOT NULL
+                         AND l.txn_date BETWEEN i.first_date AND i.last_date) > 1
+              ON CONFLICT (bank_account_id, txn_date)
+              DO UPDATE SET order_confirmed = FALSE, merge_unproven = TRUE
+               WHERE bank_statement_days.order_confirmed OR NOT bank_statement_days.merge_unproven;
       rollback:
         - dropColumn:
             tableName: bank_statement_days

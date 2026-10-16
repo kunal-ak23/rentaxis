@@ -232,6 +232,8 @@ public class BankReconciliationService {
         Rec r0 = load(t, recId, false);
         matches.lockAccount(t, r0.bankAccountId());
         requireDraft(load(t, recId, true));
+        jdbc.update("delete from bank_rec_day_totals where reconciliation_id = :id and tenant_id = :t",
+                new MapSqlParameterSource("id", recId).addValue("t", t));
         jdbc.update("delete from bank_reconciliations where id = :id and tenant_id = :t and status = 'DRAFT'",
                 new MapSqlParameterSource("id", recId).addValue("t", t));
     }
@@ -306,7 +308,8 @@ public class BankReconciliationService {
                 s.unrecordedCredits(), s.unrecordedDebits(), s.adjustedBank(), s.adjustedBook(), s.difference(),
                 s.depositsInTransitItems(), s.unpresentedItems(), s.bookedAfterItems(), s.unrecordedItems(),
                 s.withoutEvidenceCount(), s.matchedByMethod(), s.checks(), false, s.preparedAt(), s.preparedByName(),
-                r.finalizedAt(), userName(r.finalizedBy()), r.reopenedAt(), userName(r.reopenedBy()), r.reopenReason());
+                r.finalizedAt(), userName(r.finalizedBy()), r.reopenedAt(), userName(r.reopenedBy()), r.reopenReason(),
+                s.unprovenDays() == null ? List.of() : s.unprovenDays());
     }
 
     // ------------------------------------------------------------------ figures
@@ -387,12 +390,16 @@ public class BankReconciliationService {
         // #97: days whose line order no single file fixed, and of those the ones where a
         // file's line was taken for an identical stored one (bank_statement_days).
         Map<LocalDate, Boolean> unconfirmed = unconfirmedDays(t, b, from, to);
+        // Review P2-3: an unproven day is proven by the day's total debits and total
+        // credits typed from the paper statement, when they agree with its stored lines.
+        List<BankRecDTOs.UnprovenDay> unprovenDays = dayProof(t, r.id(), unconfirmed, period);
         boolean openingKnown = !first || r.opening() != null;
         // S20-02: with the paper's balances typed, the order of an unconfirmed day's
         // lines is not evidence of anything: the total decides there, not the chain.
         Set<LocalDate> chainSkipped = closingTyped && openingKnown ? unconfirmed.keySet() : Set.of();
         checks.add(continuity(opening, closing, movement, period, from, chainSkipped, unconfirmed.keySet()));
-        lineOrder(unconfirmed, closingTyped, openingKnown, first && r.opening() != null).ifPresent(checks::add);
+        lineOrder(unconfirmed, unprovenDays, closingTyped, openingKnown, first && r.opening() != null)
+                .ifPresent(checks::add);
 
         // ---- book side
         BigDecimal book = sum(jdbc.queryForObject("""
@@ -563,7 +570,8 @@ public class BankReconciliationService {
                 openingTotal, ditTotal, unpresentedTotal, bookedAfterTotal, unrecordedCredits, unrecordedDebits,
                 adjustedBank, adjustedBook, difference, dit, unpresented, bookedAfter, unrecorded, withoutEvidence,
                 byMethod, checks, canFinalize, Instant.now(clock), userName(BankStatementImportService.currentUserId()),
-                r.finalizedAt(), userName(r.finalizedBy()), r.reopenedAt(), userName(r.reopenedBy()), r.reopenReason());
+                r.finalizedAt(), userName(r.finalizedBy()), r.reopenedAt(), userName(r.reopenedBy()), r.reopenReason(),
+                unprovenDays);
     }
 
     /**
@@ -676,18 +684,35 @@ public class BankReconciliationService {
      *       decides.</li>
      * </ul>
      */
-    private static Optional<BankRecDTOs.Check> lineOrder(Map<LocalDate, Boolean> unconfirmed, boolean closingTyped,
+    private static Optional<BankRecDTOs.Check> lineOrder(Map<LocalDate, Boolean> unconfirmed,
+                                                        List<BankRecDTOs.UnprovenDay> unprovenDays, boolean closingTyped,
                                                         boolean openingKnown, boolean typedOpening) {
         if (unconfirmed.isEmpty()) return Optional.empty();
-        List<LocalDate> unproven = unconfirmed.entrySet().stream().filter(Map.Entry::getValue).map(Map.Entry::getKey).toList();
-        if (!unproven.isEmpty()) {
-            return Optional.of(new BankRecDTOs.Check("LINE_ORDER", false, "On " + dayList(unproven)
+        List<LocalDate> mismatch = unprovenDays.stream().filter(d -> "MISMATCH".equals(d.status()))
+                .map(BankRecDTOs.UnprovenDay::date).toList();
+        List<LocalDate> needed = unprovenDays.stream().filter(d -> "NEEDED".equals(d.status()))
+                .map(BankRecDTOs.UnprovenDay::date).toList();
+        if (!mismatch.isEmpty()) {
+            return Optional.of(new BankRecDTOs.Check("LINE_ORDER", false, "On " + dayList(mismatch)
+                    + " the total debits and credits typed from the paper statement do not agree with the imported "
+                    + "lines: a line is missing. Import a statement that runs from the day before to the day after "
+                    + (mismatch.size() == 1 ? "that day" : "each of them") + ", or delete the imports that brought "
+                    + "its lines and import one statement holding the whole day."));
+        }
+        if (!needed.isEmpty()) {
+            return Optional.of(new BankRecDTOs.Check("LINE_ORDER", false, "On " + dayList(needed)
                     + " a line in one file was taken for an identical line already imported from another, but the file "
                     + "did not hold the whole day, so it may have been a second, separate line (a fee charged twice, say). "
-                    + "A typed balance cannot settle this: import a statement that runs from the day before to the day after "
-                    + (unproven.size() == 1 ? "that day" : "each of them") + "."));
+                    + "A typed closing balance cannot settle this. Type " + (needed.size() == 1 ? "that day's" : "each day's")
+                    + " total debits and total credits from the paper statement; or import a statement that runs from "
+                    + "the day before to the day after; or delete the imports that brought its lines and import one "
+                    + "statement holding the whole day."));
         }
-        String list = dayList(unconfirmed.keySet());
+        // Days proven by their typed totals have all their lines, but not a known order:
+        // like any unconfirmed day they need the typed closing (an order that chains by
+        // chance can hide a line missing elsewhere behind a wrong derived closing).
+        Map<LocalDate, Boolean> rest = new TreeMap<>(unconfirmed);
+        String list = dayList(rest.keySet());
         boolean ok = closingTyped && openingKnown;
         // Review P3-11: the check knows only that a balance was typed, not that it
         // came from the paper statement; it says what it relies on.
@@ -700,7 +725,98 @@ public class BankReconciliationService {
                         + (openingKnown ? "closing balance" : "opening and closing balances")
                         + " from the paper statement (not the figure the imported lines give), or import a statement "
                         + "that runs from the day before to the day after "
-                        + (unconfirmed.size() == 1 ? "that day" : "each of them") + "."));
+                        + (rest.size() == 1 ? "that day" : "each of them") + "."));
+    }
+
+    /**
+     * Review P2-3: each unproven day of the period with the totals typed for it on this
+     * reconciliation, and whether they prove it.
+     *
+     * <p>Why debits and credits, not the closing: a missing fee and its missing
+     * reversal (S20-01) leave the balance as it was, but they take one amount out of
+     * the day's debits and another out of its credits. The stored lines are always
+     * some of the bank's lines (a line is stored only from a file), so equal debit
+     * and credit totals mean no line with an amount is missing.</p>
+     */
+    private List<BankRecDTOs.UnprovenDay> dayProof(UUID t, UUID recId, Map<LocalDate, Boolean> unconfirmed, List<SL> period) {
+        List<LocalDate> unproven = unconfirmed.entrySet().stream().filter(Map.Entry::getValue).map(Map.Entry::getKey).toList();
+        if (unproven.isEmpty()) return List.of();
+        Map<LocalDate, BigDecimal[]> typed = new HashMap<>();
+        jdbc.query("""
+                select txn_date, debit_total, credit_total from bank_rec_day_totals
+                where tenant_id = :t and reconciliation_id = :r""",
+                new MapSqlParameterSource("t", t).addValue("r", recId),
+                rs -> { typed.put(rs.getObject("txn_date", LocalDate.class),
+                        new BigDecimal[]{rs.getBigDecimal("debit_total"), rs.getBigDecimal("credit_total")}); });
+        List<BankRecDTOs.UnprovenDay> out = new ArrayList<>();
+        for (LocalDate d : unproven) {
+            BigDecimal[] tt = typed.get(d);
+            if (tt == null) {
+                out.add(new BankRecDTOs.UnprovenDay(d, null, null, "NEEDED"));
+                continue;
+            }
+            boolean agree = totalsAgree(dayTotals(period, d), tt[0], tt[1]);
+            out.add(new BankRecDTOs.UnprovenDay(d, tt[0], tt[1], agree ? "PROVEN" : "MISMATCH"));
+        }
+        return out;
+    }
+
+    /**
+     * Both totals must agree — not their difference: a missing fee and its missing
+     * reversal leave the difference (and the balance) as it was.
+     */
+    static boolean totalsAgree(BigDecimal[] lines, BigDecimal typedDebits, BigDecimal typedCredits) {
+        return lines[0].compareTo(typedDebits) == 0 && lines[1].compareTo(typedCredits) == 0;
+    }
+
+    /** A day's stored lines: {total debits, total credits}, both positive. */
+    static BigDecimal[] dayTotals(List<SL> lines, LocalDate day) {
+        BigDecimal debits = BigDecimal.ZERO, credits = BigDecimal.ZERO;
+        for (SL l : lines) {
+            if (!l.txn().equals(day)) continue;
+            if (l.amount().signum() < 0) debits = debits.add(l.amount().negate());
+            else credits = credits.add(l.amount());
+        }
+        return new BigDecimal[]{debits.setScale(2, RoundingMode.HALF_UP), credits.setScale(2, RoundingMode.HALF_UP)};
+    }
+
+    /**
+     * Review P2-3: the paper statement's total debits and credits for days of a draft,
+     * kept with the reconciliation (audit). Replaces what was typed for those days;
+     * both totals null removes a day.
+     */
+    @Transactional
+    public BankRecDTOs.Reconciliation setDayTotals(UUID recId, BankRecDTOs.DayTotalsInput in) {
+        UUID t = BankAccountLedgerService.requireTenant();
+        Rec r0 = load(t, recId, false);
+        matches.lockAccount(t, r0.bankAccountId());
+        Rec r = load(t, recId, true);
+        requireDraft(r);
+        if (in == null || in.days() == null) throw new BusinessRuleViolationException("Give the days and their totals");
+        UUID user = BankStatementImportService.currentUserId();
+        for (BankRecDTOs.DayTotalInput d : in.days()) {
+            if (d.date() == null || d.date().isBefore(r.from()) || d.date().isAfter(r.to())) {
+                throw new BusinessRuleViolationException("A day's totals must be for a day of the period ("
+                        + r.from().format(DMY) + " – " + r.to().format(DMY) + ")");
+            }
+            MapSqlParameterSource p = new MapSqlParameterSource("t", t).addValue("r", recId).addValue("d", d.date());
+            jdbc.update("delete from bank_rec_day_totals where tenant_id = :t and reconciliation_id = :r and txn_date = :d", p);
+            if (d.debits() == null && d.credits() == null) continue;
+            if (d.debits() == null || d.credits() == null) {
+                throw new BusinessRuleViolationException("Give both the total debits and the total credits for "
+                        + d.date().format(DMY) + " (0.00 when there are none)");
+            }
+            if (d.debits().signum() < 0 || d.credits().signum() < 0) {
+                throw new BusinessRuleViolationException("Day totals are amounts without a sign");
+            }
+            jdbc.update("""
+                    insert into bank_rec_day_totals (id, tenant_id, reconciliation_id, txn_date, debit_total, credit_total,
+                                                     entered_by, entered_at)
+                    values (:id, :t, :r, :d, :dr, :cr, :u, now())""",
+                    p.addValue("id", UUID.randomUUID()).addValue("dr", money(d.debits())).addValue("cr", money(d.credits()))
+                            .addValue("u", user));
+        }
+        return view(t, load(t, recId, false));
     }
 
     /** Spec §4 precondition 6: the opening items explain exactly the gap between the statement and the books at the start. */
@@ -790,7 +906,7 @@ public class BankReconciliationService {
                 v.bookedAfterPeriod(), v.unrecordedCredits(), v.unrecordedDebits(), v.adjustedBank(), v.adjustedBook(),
                 v.difference(), v.depositsInTransitItems(), v.unpresentedItems(), v.bookedAfterItems(),
                 v.unrecordedItems(), v.withoutEvidenceCount(), v.matchedByMethod(), v.checks(), false, v.preparedAt(),
-                v.preparedByName(), now, userName(user), null, null, null);
+                v.preparedByName(), now, userName(user), null, null, null, v.unprovenDays());
         String snapshot;
         try {
             snapshot = json.writeValueAsString(snap);
@@ -858,10 +974,12 @@ public class BankReconciliationService {
         jdbc.update("""
                 insert into bank_statement_days (tenant_id, bank_account_id, txn_date, order_confirmed, merge_unproven, updated_at)
                 select l.tenant_id, l.bank_account_id, l.txn_date, false, true, now()
-                  from bank_statement_lines l
-                 where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date between :from and :to
-                 group by l.tenant_id, l.bank_account_id, l.txn_date
-                having count(distinct l.import_id) > 1
+                  from (select distinct tenant_id, bank_account_id, txn_date from bank_statement_lines
+                         where tenant_id = :t and bank_account_id = :b and txn_date between :from and :to) l
+                 where (select count(*) from bank_statement_imports i
+                         where i.tenant_id = l.tenant_id and i.bank_account_id = l.bank_account_id
+                           and i.first_date is not null and i.last_date is not null
+                           and l.txn_date between i.first_date and i.last_date) > 1
                 on conflict (bank_account_id, txn_date) do nothing""",
                 new MapSqlParameterSource("b", r.bankAccountId()).addValue("t", t).addValue("from", r.from())
                         .addValue("to", r.to()));

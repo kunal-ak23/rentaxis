@@ -345,3 +345,7 @@ databaseChangeLog:
       file: db/changelog/changesets/170-bank-statement-day-order.yaml
   - include:
       file: db/changelog/changesets/171-bank-statement-day-evidence.yaml
+  - include:
+      file: db/changelog/changesets/172-bank-rec-day-totals.yaml
+  - include:
+      file: db/changelog/changesets/173-rename-moved-building-bank-leaves.yaml

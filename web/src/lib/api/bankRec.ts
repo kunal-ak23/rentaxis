@@ -267,7 +267,19 @@ export type Reconciliation = {
     reopenedAt: string | null;
     reopenedByName: string | null;
     reopenReason: string | null;
+    /** Review P2-3: days whose lines a file may have merged; absent on snapshots made before it. */
+    unprovenDays?: UnprovenDay[];
 };
+
+/** A day to prove with its paper-statement totals. The lines' own totals are never sent, so they cannot be copied. */
+export type UnprovenDay = {
+    date: string;
+    typedDebits: number | null;
+    typedCredits: number | null;
+    status: "NEEDED" | "PROVEN" | "MISMATCH";
+};
+
+export type DayTotalInput = { date: string; debits: number | null; credits: number | null };
 
 export type ReconciliationInput = {
     periodFrom?: string | null;
@@ -382,6 +394,8 @@ export const bankRecApi = {
     updateReconciliation: (recId: string, body: ReconciliationInput) =>
         apiSend<Reconciliation>("PUT", `${ROOT}/reconciliations/${recId}`, body),
     discardReconciliation: (recId: string) => apiSend<void>("DELETE", `${ROOT}/reconciliations/${recId}`),
+    setDayTotals: (recId: string, days: DayTotalInput[]) =>
+        apiSend<Reconciliation>("PUT", `${ROOT}/reconciliations/${recId}/day-totals`, { days }),
     finalizeReconciliation: (recId: string) => apiSend<Reconciliation>("POST", `${ROOT}/reconciliations/${recId}/finalize`),
     reopenReconciliation: (recId: string, reason: string) =>
         apiSend<Reconciliation>("POST", `${ROOT}/reconciliations/${recId}/reopen`, { reason }),

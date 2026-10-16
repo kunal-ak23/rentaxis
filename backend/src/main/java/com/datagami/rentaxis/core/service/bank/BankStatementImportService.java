@@ -347,7 +347,21 @@ public class BankStatementImportService {
                     values (:id, :t, :b, :imp, :seq, :txn, :val, :descr, :ref, :chq, :amt, :bal, :hash, :row)""",
                     batch.toArray(SqlParameterSource[]::new));
         }
-        settleDays(t, bankAccountId, r.rows(), hashes, storedDays, locked);
+        // Review P2-3/P3-15: which imports brought each line — this one, for the lines it
+        // stored and for the stored lines it matched.
+        MapSqlParameterSource src = new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("imp", imp.getId());
+        jdbc.update("""
+                insert into bank_statement_line_sources (tenant_id, line_id, import_id)
+                select tenant_id, id, import_id from bank_statement_lines where tenant_id = :t and import_id = :imp
+                on conflict do nothing""", src);
+        if (!existing.isEmpty()) {
+            jdbc.update("""
+                    insert into bank_statement_line_sources (tenant_id, line_id, import_id)
+                    select tenant_id, id, :imp from bank_statement_lines
+                    where tenant_id = :t and bank_account_id = :b and line_hash in (:h)
+                    on conflict do nothing""", src.addValue("h", existing));
+        }
+        settleDays(t, bankAccountId, r.rows(), hashes, storedDays, locked, r.openingRow(), r.closingRow());
         imports.save(imp);
         return result("IMPORTED", null, grid, kind, r, List.of(), warnings, fresh, dup, preview, imp.getId(), detected);
     }
@@ -454,7 +468,8 @@ public class BankStatementImportService {
      * while a day of its period is unconfirmed.</p>
      */
     private void settleDays(UUID t, UUID bankAccountId, List<StatementMapper.Row> rows, List<String> hashes,
-                            Map<LocalDate, List<String>> storedDays, LocalDate locked) {
+                            Map<LocalDate, List<String>> storedDays, LocalDate locked, boolean openingRow,
+                            boolean closingRow) {
         TreeMap<LocalDate, List<String>> fileDays = new TreeMap<>();
         for (int i = 0; i < rows.size(); i++) {
             fileDays.computeIfAbsent(rows.get(i).txnDate(), k -> new ArrayList<>()).add(hashes.get(i));
@@ -470,7 +485,7 @@ public class BankStatementImportService {
                         rs.getBoolean("merge_unproven"), rs.getBoolean("start_known"), rs.getBoolean("end_known"))); });
         for (Map.Entry<LocalDate, List<String>> day : fileDays.entrySet()) {
             List<String> stored = storedDays.getOrDefault(day.getKey(), List.of());
-            Pos pos = Pos.of(day.getKey(), firstDay, lastDay);
+            Pos pos = Pos.of(day.getKey(), firstDay, lastDay, openingRow, closingRow);
             // No row: a day imported before changeset 171 (or never): nothing is known
             // about where its lines sit in the day, and they were de-duplicated by the
             // old rule.
@@ -531,10 +546,21 @@ public class BankStatementImportService {
         INTERIOR;
 
         static Pos of(LocalDate day, LocalDate first, LocalDate last) {
-            if (first.equals(last)) return SINGLE;
-            if (day.equals(first)) return FIRST;
-            if (day.equals(last)) return LAST;
-            return INTERIOR;
+            return of(day, first, last, false, false);
+        }
+
+        /**
+         * With an explicit opening-balance row the export starts at the start of its
+         * first date; with a closing-balance row it ends at the end of its last
+         * (review P2-3, StatementMapper.Result#openingRow).
+         */
+        static Pos of(LocalDate day, LocalDate first, LocalDate last, boolean openingRow, boolean closingRow) {
+            boolean starts = !day.equals(first) || openingRow;
+            boolean ends = !day.equals(last) || closingRow;
+            if (starts && ends) return INTERIOR;
+            if (starts) return LAST;
+            if (ends) return FIRST;
+            return SINGLE;
         }
 
         boolean startsTheDay() {
@@ -730,7 +756,7 @@ public class BankStatementImportService {
                         .filter(c -> known.contains(c.trim().replaceFirst("^0+(?=.)", ""))).findFirst().orElse(null)))
                 .toList();
         return new StatementMapper.Result(rows, r.errors(), r.warnings(), r.missingColumns(), r.openingBalance(),
-                r.closingBalance(), r.hasBalance(), r.order());
+                r.closingBalance(), r.hasBalance(), r.order(), r.openingRow(), r.closingRow());
     }
 
     /** One hash per row; {@code occurrence} counts identical lines (same day, amount, description) earlier in the file. */
@@ -911,8 +937,55 @@ public class BankStatementImportService {
             jdbc.update("delete from bank_match_book_items where tenant_id = :t and match_id in (:m)", mp);
             jdbc.update("delete from bank_matches where tenant_id = :t and id in (:m)", mp);
         }
+        // The days this import brought lines to (stored or matched), before anything moves.
+        List<LocalDate> days = jdbc.queryForList("""
+                select distinct l.txn_date from bank_statement_lines l
+                where l.tenant_id = :t and l.bank_account_id = :b
+                  and (l.import_id = :i or exists (select 1 from bank_statement_line_sources s
+                                                    where s.line_id = l.id and s.import_id = :i))""", p, LocalDate.class);
+        // Review P3-15: a line this import stored that another import also brought stays,
+        // now belonging to the earliest such import; only lines no other import brought go.
+        jdbc.update("""
+                update bank_statement_lines l
+                   set import_id = (select s.import_id from bank_statement_line_sources s
+                                      join bank_statement_imports i on i.id = s.import_id
+                                     where s.line_id = l.id and s.import_id <> :i
+                                     order by i.imported_at, i.id limit 1)
+                 where l.tenant_id = :t and l.import_id = :i
+                   and exists (select 1 from bank_statement_line_sources s where s.line_id = l.id and s.import_id <> :i)""", p);
+        jdbc.update("delete from bank_statement_line_sources where tenant_id = :t and import_id = :i", p);
         jdbc.update("delete from bank_statement_lines where tenant_id = :t and import_id = :i", p);
+        recomputeDays(t, imp.getBankAccountId(), importId, days);
         imports.delete(imp);
+    }
+
+    /**
+     * Review P2-3 (3): after an import is deleted, a day whose remaining lines all came
+     * from one import, which is also the only other import covering the day, is that
+     * import's stretch again — in its order, nothing taken for anything — so its row goes
+     * (confirmed). A day with no lines left loses its row. Any other day keeps its state:
+     * deleting lines proves nothing about the ones left.
+     */
+    private void recomputeDays(UUID t, UUID bankAccountId, UUID deletedImport, List<LocalDate> days) {
+        for (LocalDate d : days) {
+            MapSqlParameterSource p = new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("d", d)
+                    .addValue("x", deletedImport);
+            List<UUID> sources = jdbc.queryForList("""
+                    select distinct s.import_id from bank_statement_line_sources s
+                    join bank_statement_lines l on l.id = s.line_id
+                    where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date = :d""", p, UUID.class);
+            Integer lines = jdbc.queryForObject("""
+                    select count(*) from bank_statement_lines where tenant_id = :t and bank_account_id = :b and txn_date = :d""",
+                    p, Integer.class);
+            List<UUID> covering = jdbc.queryForList("""
+                    select id from bank_statement_imports where tenant_id = :t and bank_account_id = :b and id <> :x
+                      and first_date is not null and last_date is not null and :d between first_date and last_date""",
+                    p, UUID.class);
+            boolean oneSource = lines != null && lines > 0 && sources.size() == 1 && covering.equals(sources);
+            if ((lines != null && lines == 0) || oneSource) {
+                jdbc.update("delete from bank_statement_days where tenant_id = :t and bank_account_id = :b and txn_date = :d", p);
+            }
+        }
     }
 
     // ------------------------------------------------------------------ storage

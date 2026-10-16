@@ -33,7 +33,7 @@ class BankReconciliationPdfRendererTest {
                         "Cheque 000077", "000077", new BigDecimal("-8000.00"), false)),
                 List.of(), List.of(), 1, Map.of("CREATED", 4, "AUTO_GROUP", 1), List.of(), false,
                 Instant.parse("2026-10-01T06:00:00Z"), "Accountant", Instant.parse("2026-10-01T07:00:00Z"), "Admin",
-                null, null, null);
+                null, null, null, java.util.List.of());
     }
 
     @Test

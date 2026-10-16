@@ -431,6 +431,9 @@ class BankLeafOwnershipIT extends AbstractPostgresIT {
             importDay(ei, "10/09/2026,10/09/2026,FEE THREE,,5.00,,985.00\n");
             importDay(ei, "10/09/2026,10/09/2026,FEE FOUR,,5.00,,980.00\n");
             importDay(ei, "11/09/2026,11/09/2026,FEE FIVE,,5.00,,975.00\n11/09/2026,11/09/2026,FEE SIX,,5.00,,970.00\n");
+            // P3-14: a second import of 12/09 brought only a duplicate: one import's lines, two imports' ranges.
+            importDay(ei, "12/09/2026,12/09/2026,FEE SEVEN,,5.00,,965.00\n");
+            importDay(ei, "12/09/2026,12/09/2026,FEE  SEVEN,,5.00,,965.00\n");
             reconcileThrough(ei, LocalDate.of(2026, 9, 9));
             assertThat(days(fx)).as("written by the imports").contains("2026-09-08:false", "2026-09-10:false");
             jdbc.update("delete from bank_statement_days where tenant_id = ?", fx.tenantId());
@@ -448,10 +451,41 @@ class BankLeafOwnershipIT extends AbstractPostgresIT {
         }
         for (LeaseTestFixtures fx : List.of(a, b)) {
             assertThat(jdbc.queryForList("select txn_date || ':' || merge_unproven || ':' || start_known || ':' || end_known "
-                    + "from bank_statement_days where tenant_id = ?", String.class, fx.tenantId()))
-                    .containsExactly("2026-09-10:true:false:false");
+                    + "from bank_statement_days where tenant_id = ? order by txn_date", String.class, fx.tenantId()))
+                    .containsExactly("2026-09-10:true:false:false", "2026-09-12:true:false:false");
         }
         assertThat(jdbc.queryForObject("select count(*) from bank_statement_days d join bank_accounts x on x.id = d.bank_account_id "
                 + "where d.tenant_id <> x.tenant_id", Integer.class)).isZero();
+    }
+    /**
+     * Review P3-16: changeset 169 moved building leaves without renaming them; 173 gives
+     * them their owner's bank name, in each organisation, once.
+     */
+    @Test
+    void changeset173RenamesLeavesThat169Moved() {
+        Org other = operatingBankThenBuilding(b, "Palm Court");
+        BankAccount bBank = legacyBuildingBank(b, other.building(), "2020000000001");
+        Org org = operatingBankThenBuilding(a, "Marina Tower");
+        BankAccount aBank = legacyBuildingBank(a, org.building(), "1010000000001");
+        UUID leaf = leafOf(org.building());
+        UUID gla = leafOf(a.property());
+        String glaName = jdbc.queryForObject("select name from accounts where id = ?", String.class, gla);
+        tx.executeWithoutResult(st -> com.datagami.rentaxis.testsupport.ChangesetSql
+                .of("169-move-unposted-building-bank-leaves.yaml").forEach(jdbc::execute));
+        assertThat(ownerOf(leaf)).isEqualTo(aBank.getId());
+        assertThat(jdbc.queryForObject("select name from accounts where id = ?", String.class, leaf))
+                .as("169 moves without renaming").startsWith("Emirates Islamic - ");
+        for (int run = 0; run < 2; run++) {
+            tx.executeWithoutResult(st -> com.datagami.rentaxis.testsupport.ChangesetSql
+                    .of("173-rename-moved-building-bank-leaves.yaml").forEach(jdbc::execute));
+        }
+        assertThat(jdbc.queryForObject("select name from accounts where id = ?", String.class, leaf))
+                .isEqualTo("ENBD - " + org.building().getNameEn());
+        assertThat(jdbc.queryForObject("select name from accounts where id = ?", String.class, gla))
+                .as("a leaf still with the operating bank keeps its name").isEqualTo(glaName);
+        in(b);
+        assertThat(ownerOf(leafOf(other.building()))).isEqualTo(bBank.getId());
+        assertThat(jdbc.queryForObject("select name from accounts where id = ?", String.class, leafOf(other.building())))
+                .isEqualTo("ENBD - " + other.building().getNameEn());
     }
 }

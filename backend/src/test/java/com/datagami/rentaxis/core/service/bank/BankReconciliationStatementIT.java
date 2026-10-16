@@ -553,7 +553,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         recs.update(id, new BankRecDTOs.ReconciliationInput(null, SEP_30, new BigDecimal("1000.00"), new BigDecimal("980.00")));
         r = recs.get(id);
         assertThat(check(r, "LINE_ORDER").ok()).isFalse();
-        assertThat(check(r, "LINE_ORDER").message()).contains("A typed balance cannot settle this");
+        assertThat(check(r, "LINE_ORDER").message()).contains("A typed closing balance cannot settle this");
         // The statement from 09/09 to 11/09 holds the whole of 10/09: two charges, no third.
         importText("""
                 09/09/2026,09/09/2026,PRE IN,,,10.00,"1,010.00"
@@ -609,9 +609,20 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(check(r, "CONTINUITY").ok()).isTrue();
         assertThat(check(r, "DIFFERENCE").ok()).isTrue();
         assertThat(check(r, "LINE_ORDER").ok()).isFalse();
-        assertThat(check(r, "LINE_ORDER").message()).contains("On 07/09/2026").contains("A typed balance cannot settle this");
-        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("A typed balance cannot settle this");
+        assertThat(check(r, "LINE_ORDER").message()).contains("On 07/09/2026").contains("A typed closing balance cannot settle this")
+                .contains("total debits and total credits");
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("A typed closing balance cannot settle this");
         assertThat(reconciledThrough()).isNull();
+
+        // Review P2-3: the day's totals from the paper — debits 10.50 + 10.50 + 27.00, credits
+        // 10.50 — do not agree with the stored lines (37.50 / 0.00): the missing pair shows.
+        r = recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(
+                new BankRecDTOs.DayTotalInput(LocalDate.of(2026, 9, 7), new BigDecimal("48.00"), new BigDecimal("10.50")))));
+        assertThat(r.unprovenDays()).singleElement().extracting(BankRecDTOs.UnprovenDay::status).isEqualTo("MISMATCH");
+        assertThat(check(r, "LINE_ORDER").message()).contains("do not agree with the imported lines: a line is missing");
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("a line is missing");
+        assertThat(jdbc.queryForObject("select count(*) from bank_rec_day_totals where reconciliation_id = ?", Integer.class, id))
+                .as("kept with the reconciliation").isEqualTo(1);
 
         // The statement from 06/09 to 11/09: the reversal and the second charge come in.
         BankRecDTOs.ImportResult recover = importText("""
@@ -636,6 +647,110 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
+    }
+
+    /**
+     * Review P2-3, the first-day trap: a test extract of 01/09 (the account's first
+     * statement day), then 01/09–02/09, then the full 01/09–03/09. 01/09 is unproven
+     * and no file can ever start the day before it. Its total debits and credits from
+     * the paper settle it, with the paper's opening and closing as for any day whose
+     * order no file fixed.
+     */
+    @Test
+    void theFirstStatementDayIsSettledByItsPaperTotals() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importText("""
+                01/09/2026,01/09/2026,FEE ONE,,5.00,,995.00
+                """);
+        importText("""
+                01/09/2026,01/09/2026,FEE ONE,,5.00,,995.00
+                01/09/2026,01/09/2026,CREDIT TWO,,,20.00,"1,015.00"
+                02/09/2026,02/09/2026,FEE THREE,,5.00,,"1,010.00"
+                """);
+        importText("""
+                01/09/2026,01/09/2026,FEE ONE,,5.00,,995.00
+                01/09/2026,01/09/2026,CREDIT TWO,,,20.00,"1,015.00"
+                02/09/2026,02/09/2026,FEE THREE,,5.00,,"1,010.00"
+                03/09/2026,03/09/2026,FEE FOUR,,5.00,,"1,005.00"
+                """);
+        for (String d : List.of("FEE ONE", "FEE THREE", "FEE FOUR")) book(d, "CHARGE");
+        book("CREDIT TWO", "INTEREST");
+        UUID id = recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        assertThat(r.unprovenDays()).singleElement().satisfies(d -> {
+            assertThat(d.date()).isEqualTo(SEP_1);
+            assertThat(d.status()).isEqualTo("NEEDED");
+        });
+        assertThat(check(r, "LINE_ORDER").ok()).isFalse();
+        r = recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(
+                new BankRecDTOs.DayTotalInput(SEP_1, new BigDecimal("5.00"), new BigDecimal("20.00")))));
+        assertThat(r.unprovenDays()).singleElement().extracting(BankRecDTOs.UnprovenDay::status).isEqualTo("PROVEN");
+        // All its lines are there; its order is still not known, so the paper's balances are asked for.
+        assertThat(check(r, "LINE_ORDER").ok()).isFalse();
+        assertThat(check(r, "LINE_ORDER").message()).contains("Type the opening and closing balances");
+        r = recs.update(id, new BankRecDTOs.ReconciliationInput(null, SEP_30, new BigDecimal("1000.00"), new BigDecimal("1005.00")));
+        assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
+        BankRecDTOs.Reconciliation done = recs.finalizeRec(id);
+        assertThat(done.status()).isEqualTo("FINALIZED");
+        assertThat(done.unprovenDays()).singleElement().extracting(BankRecDTOs.UnprovenDay::typedDebits)
+                .isEqualTo(new BigDecimal("5.00"));
+    }
+
+    /**
+     * Review P2-3 (2): a date-range export with explicit "Opening balance" and "Closing
+     * balance" rows starts at the start of its first date and ends at the end of its
+     * last, so it holds those days whole and settles them like a spanning export.
+     */
+    @Test
+    void anExportWithOpeningAndClosingRowsHoldsItsFirstAndLastDaysWhole() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importText("""
+                01/09/2026,01/09/2026,FEE ONE,,5.00,,995.00
+                """);
+        importText("""
+                01/09/2026,01/09/2026,Opening balance,,,,"1,000.00"
+                01/09/2026,01/09/2026,FEE ONE,,5.00,,995.00
+                01/09/2026,01/09/2026,CREDIT TWO,,,20.00,"1,015.00"
+                02/09/2026,02/09/2026,FEE THREE,,5.00,,"1,010.00"
+                02/09/2026,02/09/2026,Closing balance,,,,"1,010.00"
+                """);
+        assertThat(jdbc.queryForList("select txn_date || ':' || order_confirmed || ':' || merge_unproven from bank_statement_days "
+                + "where bank_account_id = ? order by txn_date", String.class, ei.getId()))
+                .containsExactly("2026-09-01:true:false", "2026-09-02:true:false");
+        for (String d : List.of("FEE ONE", "FEE THREE")) book(d, "CHARGE");
+        book("CREDIT TWO", "INTEREST");
+        BankRecDTOs.Reconciliation r = recs.create(ei.getId(), period(SEP_1, SEP_30));
+        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+        assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
+    }
+
+    /**
+     * Review P2-3 (3) and P3-15: deleting the test extract keeps its line — the full
+     * export brought it too — and recomputes the day: its lines now all come from one
+     * import, so it is confirmed again.
+     */
+    @Test
+    void deletingAnImportKeepsLinesOthersBroughtAndRecomputesTheDay() {
+        jv(AUG_31, marinaBank, "1000.00");
+        BankRecDTOs.ImportResult extract = importText("""
+                01/09/2026,01/09/2026,FEE ONE,,5.00,,995.00
+                """);
+        importText("""
+                01/09/2026,01/09/2026,FEE ONE,,5.00,,995.00
+                01/09/2026,01/09/2026,CREDIT TWO,,,20.00,"1,015.00"
+                02/09/2026,02/09/2026,FEE THREE,,5.00,,"1,010.00"
+                """);
+        assertThat(jdbc.queryForObject("select merge_unproven from bank_statement_days where bank_account_id = ? and txn_date = ?",
+                Boolean.class, ei.getId(), SEP_1)).isTrue();
+        imports.delete(extract.importId());
+        assertThat(jdbc.queryForList("select description from bank_statement_lines where bank_account_id = ? order by txn_date, seq",
+                String.class, ei.getId())).containsExactly("FEE ONE", "CREDIT TWO", "FEE THREE");
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_days where bank_account_id = ? and txn_date = ?",
+                Integer.class, ei.getId(), SEP_1)).as("one import's stretch again: confirmed").isZero();
+        for (String d : List.of("FEE ONE", "FEE THREE")) book(d, "CHARGE");
+        book("CREDIT TWO", "INTEREST");
+        BankRecDTOs.Reconciliation r = recs.create(ei.getId(), period(SEP_1, SEP_30));
+        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
     }
 
     /**
@@ -802,9 +917,9 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(check(r, "LINE_ORDER").ok()).isFalse();
         // [C, D, E] took D and E for the stored ones without holding the whole day: unproven.
         assertThat(check(r, "LINE_ORDER").message()).contains("On 10/09/2026")
-                .contains("A typed balance cannot settle this").contains("from the day before to the day after");
+                .contains("A typed closing balance cannot settle this").contains("from the day before to the day after");
         assertThat(r.canFinalize()).isFalse();
-        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("A typed balance cannot settle this");
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("A typed closing balance cannot settle this");
 
         // The paper statement's closing: the lines add up to 990.00, so the missing line shows.
         recs.update(id, new BankRecDTOs.ReconciliationInput(null, SEP_30, new BigDecimal("1000.00"), new BigDecimal("1000.00")));
