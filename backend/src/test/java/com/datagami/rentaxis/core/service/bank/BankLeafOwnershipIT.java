@@ -205,6 +205,12 @@ class BankLeafOwnershipIT extends AbstractPostgresIT {
         assertThat(jdbc.queryForObject("select property_id from accounts where id = ?", UUID.class, own))
                 .isEqualTo(org.building().getId());
         assertThat(ledgers.requireLeafSet(enbd.getId())).containsExactly(own);
+        // Review P3-6: the building's BANK mapping follows, so its new receipts land in its own bank.
+        assertThat(leafOf(org.building())).isEqualTo(own);
+        assertThat(ownedBankLeaf.forProperty(org.building().getId())).contains(own);
+        assertThat(jdbc.queryForObject("select report_line from accounts where id = ?", String.class, own)).isEqualTo("BANK");
+        assertThat(jdbc.queryForObject("select count(*) from journal_lines where account_id = ?", Integer.class, leaf))
+                .as("the posting stays where it was booked").isEqualTo(1);
         assertThat(ownership(b)).isEqualTo(before);
     }
 
@@ -365,5 +371,30 @@ class BankLeafOwnershipIT extends AbstractPostgresIT {
         assertThat(ownerOf(leafOf(other.building()))).as("B's leaf goes to B's own bank account").isEqualTo(bBank.getId());
         assertThat(jdbc.queryForObject("select count(*) from bank_account_ledgers l join bank_accounts x on x.id = l.bank_account_id "
                 + "where l.tenant_id <> x.tenant_id", Integer.class)).isZero();
+    }
+    /** Review P3-8: two building bank accounts on one leaf — the default one takes it, a NULL is_default is not default. */
+    @Test
+    void changeset169TieBreakPrefersTheDefaultAndTreatsNullAsNotDefault() {
+        Org org = operatingBankThenBuilding(a, "Marina Tower");
+        UUID leaf = leafOf(org.building());
+        BankAccount older = legacyBuildingBank(a, org.building(), "1010000000001");
+        BankAccount flagged = legacyBuildingBank(a, org.building(), "1010000000002");
+        BankAccount newest = legacyBuildingBank(a, org.building(), "1010000000003");
+        // Only raw SQL can write a NULL (the entity field is a primitive): the oldest has one.
+        jdbc.update("update bank_accounts set is_default = null where id = ?", older.getId());
+        jdbc.update("update bank_accounts set is_default = true where id = ?", flagged.getId());
+        tx.executeWithoutResult(st -> com.datagami.rentaxis.testsupport.ChangesetSql
+                .of("169-move-unposted-building-bank-leaves.yaml").forEach(jdbc::execute));
+        assertThat(ownerOf(leaf)).isEqualTo(flagged.getId());
+
+        // Without a default, the oldest takes it.
+        jdbc.update("update bank_account_ledgers set bank_account_id = ? where account_id = ?", org.operating().getId(), leaf);
+        jdbc.update("update bank_accounts set is_default = false where id = ?", flagged.getId());
+        jdbc.update("update bank_accounts set created_at = created_at - interval '1 day' where id = ?", older.getId());
+        tx.executeWithoutResult(st -> com.datagami.rentaxis.testsupport.ChangesetSql
+                .of("169-move-unposted-building-bank-leaves.yaml").forEach(jdbc::execute));
+        assertThat(ownerOf(leaf)).isEqualTo(older.getId());
+        assertThat(jdbc.queryForObject("select count(*) from bank_account_ledgers where bank_account_id = ?", Integer.class,
+                newest.getId())).isZero();
     }
 }

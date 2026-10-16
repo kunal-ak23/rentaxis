@@ -11,7 +11,7 @@
 #   - the leaf has no journal line at all (so no reconciliation, finalized or
 #     draft, no match and no book balance of the old owner includes it).
 # Where two such bank accounts point at one leaf, the default one, else the
-# oldest, takes it. Only bank_account_ledgers.bank_account_id changes; no journal,
+# oldest, takes it (a NULL is_default counts as not default). Only bank_account_ledgers.bank_account_id changes; no journal,
 # reconciliation, match or bank_accounts row is touched.
 # Idempotent: a bank account that took its leaf owns one, so a second run finds
 # nothing. A leaf with postings is left with its owner (the service now gives a
@@ -37,7 +37,7 @@ databaseChangeLog:
                                           WHERE o.tenant_id = b.tenant_id AND o.bank_account_id = b.id)
                          AND NOT EXISTS (SELECT 1 FROM journal_lines jl
                                           WHERE jl.tenant_id = a.tenant_id AND jl.account_id = a.id)
-                       ORDER BY b.tenant_id, b.coa_account_id, b.is_default DESC, b.created_at ASC, b.id) x
+                       ORDER BY b.tenant_id, b.coa_account_id, COALESCE(b.is_default, FALSE) DESC, b.created_at ASC, b.id) x
                WHERE l.tenant_id = x.tenant_id AND l.account_id = x.coa_account_id AND l.bank_account_id <> x.id;
       rollback:
         - sql:

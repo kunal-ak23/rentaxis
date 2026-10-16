@@ -238,7 +238,8 @@ public class BankAccountService {
      * it moves to this one if it has no postings yet (nothing reconciled or matched
      * can include it). A property's leaf that does have postings stays where it is;
      * a bank account defaulted from that property then gets a leaf of its own
-     * instead of owning nothing ("one bank per building").
+     * instead of owning nothing ("one bank per building"), and the property's BANK
+     * mapping moves to that leaf so the building's new receipts land in it.
      */
     private void ownLeaf(BankAccount b, boolean fromProperty) {
         if (b.getCoaAccount() == null || b.getCoaAccount().getAccountSubType() != AccountSubType.BANK
@@ -246,13 +247,24 @@ public class BankAccountService {
         repository.flush();
         OwnedBankLeaf.Claim c = ownedBankLeaf.claim(b.getId(), b.getCoaAccount().getId(), true);
         if (c == OwnedBankLeaf.Claim.OWNED_ELSEWHERE && fromProperty) {
+            UUID old = b.getCoaAccount().getId();
             Account own = newOwnLeaf(b, true);
             if (own == null) return;
             b.setCoaAccount(own);
             repository.saveAndFlush(b);
             ownedBankLeaf.claim(b.getId(), own.getId(), false);
+            // Review P3-6: the building's receipts resolve AccountRole.BANK through its
+            // mapping; it now names the building's own bank leaf, so new receipts land
+            // there. Postings already made stay on the old leaf with its bank account.
+            var p = new org.springframework.jdbc.core.namedparam.MapSqlParameterSource("t", b.getTenantId())
+                    .addValue("p", b.getProperty().getId()).addValue("old", old).addValue("new", own.getId());
+            jdbc.update("""
+                    update property_account_mappings set account_id = :new
+                    where tenant_id = :t and property_id = :p and role = 'BANK' and account_id = :old""", p);
+            jdbc.update("update accounts set report_line = 'BANK' where tenant_id = :t and id = :new and report_line is null", p);
             log.info("Bank account {}: property {}'s bank leaf already has postings under another bank account; "
-                    + "created its own leaf {}", b.getId(), b.getProperty().getId(), own.getCode());
+                    + "created its own leaf {} and pointed the property's BANK mapping at it",
+                    b.getId(), b.getProperty().getId(), own.getCode());
         }
     }
 
