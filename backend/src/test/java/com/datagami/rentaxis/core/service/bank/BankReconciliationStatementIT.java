@@ -626,6 +626,12 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         // E was stored before D: the opening read off E is 995, not the 1,000 the books hold.
         assertThat(recs.get(id).statementOpening()).isEqualByComparingTo("995.00");
         assertThat(check(recs.get(id), "OPENING_ITEMS").ok()).isFalse();
+        // A first reconciliation needs both balances typed; the closing alone is not enough.
+        recs.update(id, new BankRecDTOs.ReconciliationInput(null, SEP_30, null, new BigDecimal("1000.00")));
+        assertThat(check(recs.get(id), "LINE_ORDER").ok()).isFalse();
+        recs.update(id, new BankRecDTOs.ReconciliationInput(null, SEP_30, new BigDecimal("1000.00"), new BigDecimal("1000.00")));
+        assertThat(check(recs.get(id), "LINE_ORDER").ok()).isTrue();
+        recs.update(id, period(null, SEP_30));
 
         BankRecDTOs.ImportResult again = importText("""
                 10/09/2026,10/09/2026,FEE D,,5.00,,995.00
