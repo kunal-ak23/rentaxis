@@ -1133,6 +1133,15 @@ public class ContractImportValidator {
         private final UUID tenantId = requireTenant();
         private final Map<String, AccountMatch> chart = loadChart();
 
+        /*
+         * Per-pass memos (S19-01). A charge type code recurs on most lines and a
+         * property name on every contract of that property; asking the database
+         * again for each row returned the same answer at a query a row. The pass is
+         * one read-only transaction, so an answer cannot go stale inside it.
+         */
+        private final Map<String, Optional<ChargeTypeRef>> chargeTypeByCode = new HashMap<>();
+        private final Map<String, List<Unit>> unitsByPropertyName = new HashMap<>();
+
         private UUID requireTenant() {
             UUID id = TenantContextHolder.getTenantId();
             if (id == null) {
@@ -1156,6 +1165,11 @@ public class ContractImportValidator {
         }
 
         @Override public ChargeTypeRef chargeType(String code) {
+            return chargeTypeByCode.computeIfAbsent(code.trim().toLowerCase(Locale.ROOT),
+                    k -> Optional.ofNullable(loadChargeType(code))).orElse(null);
+        }
+
+        private ChargeTypeRef loadChargeType(String code) {
             Optional<ChargeType> found = chargeTypes.findByCodeIgnoreCase(code.trim());
             if (found.isPresent()) {
                 ChargeType c = found.get();
@@ -1226,18 +1240,24 @@ public class ContractImportValidator {
         }
 
         @Override public String liveLeaseOn(String propertyName, String buildingName, String unitNumber) {
-            for (Property p : properties.findByTenantIdAndNameEnIn(tenantId, List.of(propertyName))) {
-                for (Unit u : units.findByPropertyId(p.getId())) {
-                    if (!unitNumber.trim().equalsIgnoreCase(u.getUnitNumber())) continue;
-                    String existingBuilding = u.getBuilding() == null ? "" : u.getBuilding().getNameEn();
-                    if (!buildingName.trim().equalsIgnoreCase(existingBuilding == null ? "" : existingBuilding)) {
-                        continue;
-                    }
-                    for (Lease l : leases.findByUnitIdAndStatusIn(u.getId(), LeaseService.LIVE)) {
-                        String who = l.getRenter() == null ? "another renter" : l.getRenter().getNameEn();
-                        return "already let to " + who + " until " + l.getEndDate()
-                                + " (lease " + l.getId() + ", " + l.getStatus() + ")";
-                    }
+            // Keyed on the name exactly as asked: the query compares it exactly too.
+            List<Unit> held = unitsByPropertyName.computeIfAbsent(propertyName, name -> {
+                List<Unit> all = new ArrayList<>();
+                for (Property p : properties.findByTenantIdAndNameEnIn(tenantId, List.of(name))) {
+                    all.addAll(units.findByPropertyId(p.getId()));
+                }
+                return all;
+            });
+            for (Unit u : held) {
+                if (!unitNumber.trim().equalsIgnoreCase(u.getUnitNumber())) continue;
+                String existingBuilding = u.getBuilding() == null ? "" : u.getBuilding().getNameEn();
+                if (!buildingName.trim().equalsIgnoreCase(existingBuilding == null ? "" : existingBuilding)) {
+                    continue;
+                }
+                for (Lease l : leases.findByUnitIdAndStatusIn(u.getId(), LeaseService.LIVE)) {
+                    String who = l.getRenter() == null ? "another renter" : l.getRenter().getNameEn();
+                    return "already let to " + who + " until " + l.getEndDate()
+                            + " (lease " + l.getId() + ", " + l.getStatus() + ")";
                 }
             }
             return null;

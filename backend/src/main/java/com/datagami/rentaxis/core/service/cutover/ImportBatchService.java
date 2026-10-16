@@ -194,7 +194,10 @@ public class ImportBatchService {
         ImportBatch b = get(batchId);
         if (leaseId == null) throw new BusinessRuleViolationException("A batch link needs a lease id");
         links.save(new ImportBatchLease(batchId, leaseId));
-        b.setLeasesImported(links.findByBatchIdOrderByLeaseIdAsc(batchId).size());
+        // A count, not the list: the importer calls this once per contract, and
+        // loading every link so far to take its size made a workbook of n
+        // contracts hydrate n²/2 rows (S19-01).
+        b.setLeasesImported(Math.toIntExact(links.countByBatchId(batchId)));
         batches.save(b);
     }
 
