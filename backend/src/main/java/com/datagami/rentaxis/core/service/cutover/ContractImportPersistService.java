@@ -115,7 +115,7 @@ public class ContractImportPersistService {
     static final int NEVER_CLEAR = 0;
 
     /**
-     * How many rows (units, renters, contracts) are written between two
+     * How many rows (properties, units, renters, contracts) are written between two
      * {@link #checkpoint} clears. See there for why there are any at all.
      * Configuration, not state: nothing changes it after the bean is built, so a
      * test that wants another interval sets the property for its own context.
@@ -163,7 +163,7 @@ public class ContractImportPersistService {
         ImportBatch batch = batches.create(job.getId(), batchLabel(job));
         Map<String, Account> accountsByName = chartByName();
 
-        Properties properties = writeProperties(wb, accountsByName, warnings, batch);
+        Properties properties = writeProperties(wb, accountsByName, warnings, batch, chunks);
         Units units = writeUnits(wb, properties.byName(), batch, chunks);
         RentersWritten renters = writeRenters(wb, batch, chunks);
         Map<String, Renter> rentersByEmail = renters.byEmail();
@@ -270,7 +270,7 @@ public class ContractImportPersistService {
     private record Properties(Map<String, Property> byName, int mappingsCreated) {}
 
     private Properties writeProperties(Workbook wb, Map<String, Account> accountsByName,
-                                       List<ImportErrorDTO> warnings, ImportBatch batch) {
+                                       List<ImportErrorDTO> warnings, ImportBatch batch, Chunks chunks) {
         Sheet sheet = wb.getSheet("Properties");
         SheetCells.HeaderIndex hi = new SheetCells.HeaderIndex(sheet);
         Map<String, Property> byName = new LinkedHashMap<>();
@@ -316,6 +316,12 @@ public class ContractImportPersistService {
                 mappingsCreated++;
             }
             propertyAccounts.generateMissing(saved.getId());
+            // S19 review P3-2: each property brings six-plus mappings and its generated
+            // leaves, all dirty-checked by every flush that follows. Safe to clear: the
+            // map's properties are only used later as a foreign key (units, buildings,
+            // leases) or for their id and name, and the mapping calls above take ids and
+            // re-read the property, so nothing is mutated through a detached copy.
+            checkpoint(byName.size(), chunks);
         }
         return new Properties(byName, mappingsCreated);
     }
