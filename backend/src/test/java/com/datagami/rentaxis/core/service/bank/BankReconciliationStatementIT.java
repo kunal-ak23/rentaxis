@@ -466,6 +466,66 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
     }
 
+    /**
+     * #97 P2-1: lines back-filled into a day (a second, fuller export of the same
+     * statement) get later seqs than the lines they sit between. The day's first
+     * line (derived opening), a middle line (the per-line chain) and its last line
+     * (derived closing) are all back-filled here; finalize still goes through.
+     */
+    @Test
+    void linesBackFilledIntoADayStillChainAndFinalize() {
+        jv(AUG_31, marinaBank, "1000.00");
+        // The bank's own order on 10/09: +5 → 1,005; −10 → 995; +50 → 1,045; −20 → 1,025.
+        // Two short extracts brought in the second and the fourth line (a file with a
+        // gap inside it is refused at import, so a gap comes from two files)…
+        importText("""
+                10/09/2026,10/09/2026,SERVICE CHARGE,,10.00,,995.00
+                """);
+        importText("""
+                10/09/2026,10/09/2026,TRANSFER FEE,,20.00,,"1,025.00"
+                """);
+        // …then the full statement back-fills the first and the third.
+        BankRecDTOs.ImportResult full = importText("""
+                10/09/2026,10/09/2026,CREDIT INTEREST,,,5.00,"1,005.00"
+                10/09/2026,10/09/2026,SERVICE CHARGE,,10.00,,995.00
+                10/09/2026,10/09/2026,PROFIT SHARE,,,50.00,"1,045.00"
+                10/09/2026,10/09/2026,TRANSFER FEE,,20.00,,"1,025.00"
+                """);
+        assertThat(full.linesNew()).isEqualTo(2);
+        assertThat(full.linesDuplicate()).isEqualTo(2);
+        book("CREDIT INTEREST", "INTEREST");
+        book("SERVICE CHARGE", "CHARGE");
+        book("PROFIT SHARE", "INTEREST");
+        book("TRANSFER FEE", "CHARGE");
+
+        BankRecDTOs.Reconciliation r = recs.create(ei.getId(), period(SEP_1, SEP_30));
+        assertThat(r.statementOpening()).isEqualByComparingTo("1000.00");
+        assertThat(r.statementClosing()).isEqualByComparingTo("1025.00");
+        assertThat(r.bookBalance()).isEqualByComparingTo("1025.00");
+        assertThat(check(r, "CONTINUITY").ok()).as(check(r, "CONTINUITY").message()).isTrue();
+        assertThat(r.difference()).isEqualByComparingTo("0.00");
+        assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
+        assertThat(recs.finalizeRec(r.id()).status()).isEqualTo("FINALIZED");
+        assertThat(reconciledThrough()).isEqualTo(SEP_30);
+    }
+
+    /** #97 P2-1: re-ordering is within a day only — a line that is genuinely missing is still reported. */
+    @Test
+    void aLineStillMissingFromADayIsStillReported() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importText("""
+                10/09/2026,10/09/2026,SERVICE CHARGE,,10.00,,995.00
+                """);
+        importText("""
+                10/09/2026,10/09/2026,TRANSFER FEE,,20.00,,"1,025.00"
+                """);
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"), null)).id();
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        assertThat(check(r, "CONTINUITY").ok()).isFalse();
+        assertThat(check(r, "CONTINUITY").message()).contains("Lines may be missing before 10/09/2026");
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("Import the missing lines");
+    }
+
     @Test
     void periodsChainAndOnlyTheLatestIsReopened() {
         UUID sep = smallSeptember(true);

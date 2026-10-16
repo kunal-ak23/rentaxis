@@ -354,7 +354,10 @@ public class BankReconciliationService {
         List<BankRecDTOs.Check> checks = new ArrayList<>();
 
         // ---- statement side
-        List<SL> period = jdbc.query("select " + LINE_COLUMNS + """
+        // #97 P2-1: seq is import order, so a line back-filled into a day sorts after
+        // the day's later lines. Within a day the lines are put in running-balance
+        // order (chained) before anything reads "first", "last" or the per-line chain.
+        List<SL> stored = jdbc.query("select " + LINE_COLUMNS + """
                  from bank_statement_lines l where l.tenant_id = :t and l.bank_account_id = :b
                   and l.txn_date between :from and :to order by l.txn_date, l.seq""", p, (rs, i) -> sl(rs));
         BigDecimal opening;
@@ -363,16 +366,27 @@ public class BankReconciliationService {
         } else if (r.opening() != null) {
             opening = r.opening();
         } else {
-            opening = jdbc.query("select " + LINE_COLUMNS + """
-                     from bank_statement_lines l where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date >= :from
-                    order by l.txn_date, l.seq limit 1""", p, (rs, i) -> sl(rs)).stream().findFirst()
+            List<SL> firstDay = chainDay(jdbc.query("select " + LINE_COLUMNS + """
+                     from bank_statement_lines l where l.tenant_id = :t and l.bank_account_id = :b
+                      and l.txn_date = (select min(x.txn_date) from bank_statement_lines x
+                                        where x.tenant_id = :t and x.bank_account_id = :b and x.txn_date >= :from)
+                    order by l.seq""", p, (rs, i) -> sl(rs)), null);
+            opening = firstDay.stream().findFirst()
                     .filter(l -> l.balance() != null).map(l -> l.balance().subtract(l.amount())).orElse(null);
         }
+        List<SL> period = chainOrder(stored, opening);
         boolean closingTyped = r.closing() != null;
-        BigDecimal closing = closingTyped ? r.closing() : jdbc.query("select " + LINE_COLUMNS + """
-                 from bank_statement_lines l where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date <= :to
-                order by l.txn_date desc, l.seq desc limit 1""", p, (rs, i) -> sl(rs)).stream().findFirst()
-                .map(SL::balance).orElse(null);
+        BigDecimal closing = null;
+        if (closingTyped) {
+            closing = r.closing();
+        } else {
+            List<SL> lastDay = chainDay(jdbc.query("select " + LINE_COLUMNS + """
+                     from bank_statement_lines l where l.tenant_id = :t and l.bank_account_id = :b
+                      and l.txn_date = (select max(x.txn_date) from bank_statement_lines x
+                                        where x.tenant_id = :t and x.bank_account_id = :b and x.txn_date <= :to)
+                    order by l.seq""", p, (rs, i) -> sl(rs)), null);
+            if (!lastDay.isEmpty()) closing = lastDay.get(lastDay.size() - 1).balance();
+        }
         BigDecimal movement = period.stream().map(SL::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
 
         // Chain: the start and the opening balance follow the latest finalized reconciliation.
@@ -567,6 +581,66 @@ public class BankReconciliationService {
         if (m == null) return true;
         if (m.lines.stream().anyMatch(l -> !l.txn().isBefore(start) && !l.txn().isAfter(to))) return false;
         return !(m.lines.isEmpty() && m.journalDates.values().stream().noneMatch(d -> d.isAfter(to)));
+    }
+
+    /**
+     * #97 P2-1: lines ordered by (date, seq), re-ordered within each day along the
+     * running-balance chain, starting from {@code opening} (then each day from the
+     * previous day's last balance). A statement prints a day's lines in balance
+     * order, but {@code seq} is the order lines were imported in, so a line
+     * back-filled into a day comes after the lines it precedes. Days are never
+     * re-ordered.
+     */
+    static List<SL> chainOrder(List<SL> lines, BigDecimal opening) {
+        List<SL> out = new ArrayList<>(lines.size());
+        BigDecimal start = opening;
+        int i = 0;
+        while (i < lines.size()) {
+            LocalDate day = lines.get(i).txn();
+            int j = i;
+            while (j < lines.size() && lines.get(j).txn().equals(day)) j++;
+            List<SL> ordered = chainDay(lines.subList(i, j), start);
+            out.addAll(ordered);
+            start = ordered.get(ordered.size() - 1).balance();
+            i = j;
+        }
+        return out;
+    }
+
+    /**
+     * One day's lines (in seq order) in running-balance order: from the line whose
+     * balance before it ({@code balance − amount}) is {@code start}, each next line
+     * is the one whose balance before it is the previous line's balance. With no
+     * {@code start} (or one no line follows), the chain starts at the line whose
+     * balance before it is no other line's balance. Ties keep seq order. A day with
+     * a line without a running balance, or whose chain breaks, keeps seq order from
+     * the break: the continuity check then reports the gap as before.
+     */
+    static List<SL> chainDay(List<SL> day, BigDecimal start) {
+        if (day.size() < 2 || day.stream().anyMatch(l -> l.balance() == null)) return List.copyOf(day);
+        List<SL> rest = new ArrayList<>(day);
+        BigDecimal cur = start;
+        if (cur == null || rest.stream().noneMatch(l -> before(l).compareTo(start) == 0)) {
+            cur = rest.stream().map(BankReconciliationService::before)
+                    .filter(b -> rest.stream().noneMatch(o -> o.balance().compareTo(b) == 0))
+                    .findFirst().orElse(null);
+            if (cur == null) return List.copyOf(day);
+        }
+        List<SL> out = new ArrayList<>(day.size());
+        while (!rest.isEmpty()) {
+            BigDecimal c = cur;
+            Optional<SL> next = rest.stream().filter(l -> before(l).compareTo(c) == 0).findFirst();
+            if (next.isEmpty()) break;
+            out.add(next.get());
+            rest.remove(next.get());
+            cur = next.get().balance();
+        }
+        out.addAll(rest);
+        return out;
+    }
+
+    private static BigDecimal before(SL l) {
+        return l.balance().subtract(l.amount());
     }
 
     /** Spec §4 precondition 1, with the per-line balance chain the import only warned about. */
