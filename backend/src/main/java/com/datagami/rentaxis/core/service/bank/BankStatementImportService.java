@@ -329,14 +329,12 @@ public class BankStatementImportService {
         Long maxSeq = jdbc.queryForObject("select coalesce(max(seq), 0) from bank_statement_lines where bank_account_id = :b and tenant_id = :t",
                 new MapSqlParameterSource("t", t).addValue("b", bankAccountId), Long.class);
         long seq = maxSeq == null ? 0 : maxSeq;
-        // #97: the stored lines of each day this file adds lines to, before the insert.
-        Map<LocalDate, List<String>> storedDays = storedDays(t, bankAccountId, r.rows(), hashes, existing);
-        Map<String, Long> newSeqs = new HashMap<>();
+        // #97: the stored lines of each day in this file, before the insert.
+        Map<LocalDate, List<String>> storedDays = storedDays(t, bankAccountId, r.rows());
         List<SqlParameterSource> batch = new ArrayList<>();
         for (int i = 0; i < r.rows().size(); i++) {
             if (existing.contains(hashes.get(i))) continue;
             StatementMapper.Row row = r.rows().get(i);
-            newSeqs.put(hashes.get(i), seq + 1);
             batch.add(new MapSqlParameterSource("id", UUID.randomUUID()).addValue("t", t).addValue("b", bankAccountId)
                     .addValue("imp", imp.getId()).addValue("seq", ++seq).addValue("txn", row.txnDate())
                     .addValue("val", row.valueDate()).addValue("descr", row.description()).addValue("ref", row.reference())
@@ -350,21 +348,15 @@ public class BankStatementImportService {
                     values (:id, :t, :b, :imp, :seq, :txn, :val, :descr, :ref, :chq, :amt, :bal, :hash, :row)""",
                     batch.toArray(SqlParameterSource[]::new));
         }
-        resequenceDays(t, bankAccountId, r.rows(), hashes, storedDays, newSeqs);
+        settleDays(t, bankAccountId, r.rows(), hashes, storedDays, locked);
         imports.save(imp);
         return result("IMPORTED", null, grid, kind, r, List.of(), warnings, fresh, dup, preview, imp.getId(), detected);
     }
 
-    /**
-     * #97: the line hashes already stored for each day on which this file brings a
-     * new line, in stored {@code seq} order. Days with nothing new are not touched.
-     */
-    private Map<LocalDate, List<String>> storedDays(UUID t, UUID bankAccountId, List<StatementMapper.Row> rows,
-                                                    List<String> hashes, Set<String> existing) {
+    /** #97: the line hashes already stored for each day of this file, in stored {@code seq} order. */
+    private Map<LocalDate, List<String>> storedDays(UUID t, UUID bankAccountId, List<StatementMapper.Row> rows) {
         Set<LocalDate> days = new TreeSet<>();
-        for (int i = 0; i < rows.size(); i++) {
-            if (!existing.contains(hashes.get(i))) days.add(rows.get(i).txnDate());
-        }
+        rows.forEach(row -> days.add(row.txnDate()));
         Map<LocalDate, List<String>> out = new HashMap<>();
         if (days.isEmpty()) return out;
         jdbc.query("""
@@ -377,36 +369,89 @@ public class BankStatementImportService {
     }
 
     /**
-     * #97: after the insert, each day that already had lines is put in the order
-     * {@link #dayOrder} gives, by handing that day's own seq values out again in
-     * that order. Only the order within the day changes; other days keep theirs.
+     * #97: after the insert, settles each day of the file.
+     *
+     * <ul>
+     *   <li>A day the file brings new lines to is put in the order {@link #dayOrder}
+     *       gives, by handing that day's own seq values out again in that order
+     *       (other days keep theirs). Its order is confirmed when the file
+     *       contained every line already stored for the day, and unconfirmed
+     *       otherwise (review P2-1): lines from separate files that share no line
+     *       may sit in any order, and can chain round a missing one.</li>
+     *   <li>A day the file brings nothing new to, but contains in full, takes the
+     *       file's order and becomes confirmed: re-importing a day's full
+     *       statement is how an unconfirmed day is confirmed. Days inside a
+     *       finalized reconciliation are left alone.</li>
+     * </ul>
+     *
+     * <p>The state is kept per bank account and day in {@code bank_statement_days}
+     * (no row: confirmed). The reconciliation asks for a typed closing balance
+     * while a day of its period is unconfirmed.</p>
      */
-    private void resequenceDays(UUID t, UUID bankAccountId, List<StatementMapper.Row> rows, List<String> hashes,
-                                Map<LocalDate, List<String>> storedDays, Map<String, Long> newSeqs) {
-        for (Map.Entry<LocalDate, List<String>> day : storedDays.entrySet()) {
-            List<String> stored = day.getValue();
-            List<String> file = new ArrayList<>();
-            for (int i = 0; i < rows.size(); i++) {
-                if (rows.get(i).txnDate().equals(day.getKey())) file.add(hashes.get(i));
-            }
-            List<String> appended = appended(stored, file);
-            List<String> order = dayOrder(stored, file);
-            if (order.equals(appended)) continue;
-            List<Long> pool = new ArrayList<>(jdbc.queryForList("""
-                    select seq from bank_statement_lines where tenant_id = :t and bank_account_id = :b and txn_date = :d
-                    order by seq""", new MapSqlParameterSource("t", t).addValue("b", bankAccountId)
-                    .addValue("d", day.getKey()), Long.class));
-            List<SqlParameterSource> updates = new ArrayList<>();
-            for (int i = 0; i < order.size(); i++) {
-                updates.add(new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("h", order.get(i))
-                        .addValue("s", pool.get(i)));
-            }
-            jdbc.batchUpdate("""
-                    update bank_statement_lines set seq = :s
-                    where tenant_id = :t and bank_account_id = :b and line_hash = :h""",
-                    updates.toArray(SqlParameterSource[]::new));
-            log.info("Statement import for bank account {}: {} re-sequenced to the file's order", bankAccountId, day.getKey());
+    private void settleDays(UUID t, UUID bankAccountId, List<StatementMapper.Row> rows, List<String> hashes,
+                            Map<LocalDate, List<String>> storedDays, LocalDate locked) {
+        Map<LocalDate, List<String>> fileDays = new TreeMap<>();
+        for (int i = 0; i < rows.size(); i++) {
+            fileDays.computeIfAbsent(rows.get(i).txnDate(), k -> new ArrayList<>()).add(hashes.get(i));
         }
+        for (Map.Entry<LocalDate, List<String>> day : fileDays.entrySet()) {
+            List<String> stored = storedDays.getOrDefault(day.getKey(), List.of());
+            Settled s = settle(stored, day.getValue());
+            if (s == null) continue;
+            // A day inside a finalized reconciliation never takes new lines (refused
+            // above); one with nothing new is left alone there too.
+            if (!s.addsLines() && locked != null && !day.getKey().isAfter(locked)) continue;
+            if (!s.order().equals(s.before())) resequence(t, bankAccountId, day.getKey(), s.order());
+            boolean covers = s.confirmed();
+            jdbc.update("""
+                    insert into bank_statement_days (tenant_id, bank_account_id, txn_date, order_confirmed, updated_at)
+                    values (:t, :b, :d, :ok, now())
+                    on conflict (bank_account_id, txn_date)
+                    do update set order_confirmed = excluded.order_confirmed, updated_at = excluded.updated_at""",
+                    new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("d", day.getKey())
+                            .addValue("ok", covers));
+        }
+    }
+
+    /** Hands the day's own seq values out again in {@code order} (line hashes). */
+    private void resequence(UUID t, UUID bankAccountId, LocalDate day, List<String> order) {
+        List<Long> pool = new ArrayList<>(jdbc.queryForList("""
+                select seq from bank_statement_lines where tenant_id = :t and bank_account_id = :b and txn_date = :d
+                order by seq""", new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("d", day),
+                Long.class));
+        List<SqlParameterSource> updates = new ArrayList<>();
+        for (int i = 0; i < order.size(); i++) {
+            updates.add(new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("h", order.get(i))
+                    .addValue("s", pool.get(i)));
+        }
+        jdbc.batchUpdate("""
+                update bank_statement_lines set seq = :s
+                where tenant_id = :t and bank_account_id = :b and line_hash = :h""",
+                updates.toArray(SqlParameterSource[]::new));
+        log.info("Statement import for bank account {}: {} re-sequenced to the file's order", bankAccountId, day);
+    }
+
+    /**
+     * One day after one import, from line hashes: {@code before} is the stored
+     * order once the new lines are appended, {@code order} the day's order after
+     * the import, {@code confirmed} whether that order is now confirmed.
+     */
+    record Settled(List<String> before, List<String> order, boolean confirmed, boolean addsLines) { }
+
+    /**
+     * #97: what one import does to one day ({@code stored}: the day's stored
+     * hashes in seq order; {@code file}: the file's lines of that day in file
+     * order). With new lines: {@link #dayOrder}, confirmed when the file contains
+     * every stored line. With none: a file containing the whole day re-orders and
+     * confirms it; otherwise null (the day is left as it is).
+     */
+    static Settled settle(List<String> stored, List<String> file) {
+        Set<String> inStored = new HashSet<>(stored);
+        boolean addsLines = file.stream().anyMatch(h -> !inStored.contains(h));
+        boolean covers = new HashSet<>(file).containsAll(stored);
+        if (addsLines) return new Settled(appended(stored, file), dayOrder(stored, file), covers, true);
+        if (!covers || stored.isEmpty()) return null;
+        return new Settled(stored, List.copyOf(file), true, false);
     }
 
     /** Stored lines, then the file's new ones in file order: what an import did before #97. */

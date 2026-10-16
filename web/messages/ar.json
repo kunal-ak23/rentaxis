@@ -4720,6 +4720,7 @@
     "recFirst": "التسوية الأولى",
     "withoutEvidence": "{count} شيك/شيكات مقاصة يدوياً بلا سطر في كشف البنك بعد: تبقى في الطريق حتى يظهرها البنك.",
     "check_CONTINUITY": "تسلسل الكشف",
+    "check_LINE_ORDER": "ترتيب البنود مؤكد",
     "check_UNRECORDED": "كل الأسطر مطابقة",
     "check_DIFFERENCE": "الفرق 0.00",
     "check_SUGGESTED": "لا مقترحات معلقة",

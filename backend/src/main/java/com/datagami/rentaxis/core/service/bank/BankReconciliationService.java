@@ -385,6 +385,7 @@ public class BankReconciliationService {
                             + prev.get().to().format(DMY) + ", so it must start on " + next.format(DMY)));
         }
         checks.add(continuity(opening, closing, movement, period, from));
+        lineOrder(t, b, from, to, closingTyped, !first || r.opening() != null).ifPresent(checks::add);
 
         // ---- book side
         BigDecimal book = sum(jdbc.queryForObject("""
@@ -603,6 +604,39 @@ public class BankReconciliationService {
                 ? StatementValues.money(opening) + " + " + StatementValues.money(movement) + " = " + StatementValues.money(closing)
                 : "Statement lines add up to " + StatementValues.money(added) + ", the closing balance is "
                         + StatementValues.money(closing) + ": import the missing lines.");
+    }
+
+    /**
+     * #97 review P2-1: a day of the period whose lines came from separate files
+     * that do not fix their order ({@code bank_statement_days.order_confirmed} is
+     * false). In the order they were stored, the lines of such a day may chain
+     * round a missing line, so the balances the lines give are not evidence
+     * enough: the closing balance (and, on a first reconciliation, the opening)
+     * must be typed from the paper statement. Then the order-independent total
+     * check {@code opening + movement = closing} decides. Absent when every day is
+     * confirmed.
+     */
+    private Optional<BankRecDTOs.Check> lineOrder(UUID t, UUID b, LocalDate from, LocalDate to, boolean closingTyped,
+                                                  boolean openingKnown) {
+        List<LocalDate> days = jdbc.queryForList("""
+                select d.txn_date from bank_statement_days d
+                where d.tenant_id = :t and d.bank_account_id = :b and not d.order_confirmed
+                  and d.txn_date between :from and :to
+                  and exists (select 1 from bank_statement_lines l where l.tenant_id = d.tenant_id
+                              and l.bank_account_id = d.bank_account_id and l.txn_date = d.txn_date)
+                order by d.txn_date""",
+                new MapSqlParameterSource("t", t).addValue("b", b).addValue("from", from).addValue("to", to),
+                LocalDate.class);
+        if (days.isEmpty()) return Optional.empty();
+        String list = days.stream().limit(5).map(d -> d.format(DMY)).collect(Collectors.joining(", "))
+                + (days.size() > 5 ? " and " + (days.size() - 5) + " more" : "");
+        boolean ok = closingTyped && openingKnown;
+        return Optional.of(new BankRecDTOs.Check("LINE_ORDER", ok, ok
+                ? "Lines on " + list + " came from separate files; the typed statement balances confirm none is missing"
+                : "Lines on " + list + " came from separate files, so their order is not confirmed and a missing line "
+                        + "could go unnoticed. Type the " + (openingKnown ? "closing balance" : "opening and closing balances")
+                        + " from the paper statement, or import the full statement for "
+                        + (days.size() == 1 ? "that day" : "those days") + " again."));
     }
 
     /** Spec §4 precondition 6: the opening items explain exactly the gap between the statement and the books at the start. */

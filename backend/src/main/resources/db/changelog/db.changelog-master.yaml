@@ -341,3 +341,5 @@ databaseChangeLog:
       file: db/changelog/changesets/168-ticket-attachment-file-name.yaml
   - include:
       file: db/changelog/changesets/169-move-unposted-building-bank-leaves.yaml
+  - include:
+      file: db/changelog/changesets/170-bank-statement-day-order.yaml

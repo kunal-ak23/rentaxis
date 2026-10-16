@@ -222,7 +222,7 @@ export type RecItem = {
     withoutEvidence: boolean;
 };
 
-export type RecCheckCode = "CONTINUITY" | "UNRECORDED" | "DIFFERENCE" | "SUGGESTED" | "NOT_FUTURE" | "OPENING_ITEMS" | "CHAIN";
+export type RecCheckCode = "CONTINUITY" | "LINE_ORDER" | "UNRECORDED" | "DIFFERENCE" | "SUGGESTED" | "NOT_FUTURE" | "OPENING_ITEMS" | "CHAIN";
 export type RecCheck = { code: RecCheckCode; ok: boolean; message: string };
 
 /** BankRecDTOs.Reconciliation: live while DRAFT, the finalize snapshot afterwards. */

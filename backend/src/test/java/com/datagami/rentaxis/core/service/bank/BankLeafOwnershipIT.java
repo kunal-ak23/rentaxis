@@ -74,6 +74,7 @@ class BankLeafOwnershipIT extends AbstractPostgresIT {
     @Autowired ChargeTypeService chargeTypeService;
     @Autowired JdbcTemplate jdbc;
     @Autowired BankAccountRepository bankAccountRepo;
+    @Autowired BankStatementImportService statementImports;
     @Autowired org.springframework.transaction.support.TransactionTemplate tx;
 
     LeaseTestFixtures a, b;
@@ -396,5 +397,48 @@ class BankLeafOwnershipIT extends AbstractPostgresIT {
         assertThat(ownerOf(leaf)).isEqualTo(older.getId());
         assertThat(jdbc.queryForObject("select count(*) from bank_account_ledgers where bank_account_id = ?", Integer.class,
                 newest.getId())).isZero();
+    }
+    // ------------------------------------------------------------------ changeset 170
+
+    private void importDay(BankAccount x, String rows) {
+        statementImports.importFile(x.getId(), "inline-" + UUID.randomUUID() + ".csv",
+                (BankReconciliationStatementIT.HEAD + rows).getBytes(java.nio.charset.StandardCharsets.UTF_8), null, false);
+    }
+
+    private List<String> days(LeaseTestFixtures fx) {
+        return jdbc.queryForList("""
+                select d.txn_date || ':' || d.order_confirmed from bank_statement_days d
+                join bank_accounts b on b.id = d.bank_account_id and b.tenant_id = d.tenant_id
+                where d.tenant_id = ? order by d.txn_date""", String.class, fx.tenantId());
+    }
+
+    /**
+     * #97 review P2-1, changeset 170's backfill: a day of an open period whose lines
+     * came from more than one import is unconfirmed; a one-file day, and a day inside
+     * a finalized reconciliation, get no row (confirmed). Per organisation.
+     */
+    @Test
+    void changeset170MarksMultiFileDaysOfOpenPeriodsUnconfirmed() {
+        for (LeaseTestFixtures fx : List.of(b, a)) {
+            in(fx);
+            BankAccount ei = bank("Emirates Islamic", "0260000000123", null);
+            statementImports.saveProfile(ei.getId(), BankReconciliationStatementIT.enbdProfile());
+            importDay(ei, "08/09/2026,08/09/2026,FEE ONE,,5.00,,995.00\n");
+            importDay(ei, "08/09/2026,08/09/2026,FEE TWO,,5.00,,990.00\n");
+            importDay(ei, "10/09/2026,10/09/2026,FEE THREE,,5.00,,985.00\n");
+            importDay(ei, "10/09/2026,10/09/2026,FEE FOUR,,5.00,,980.00\n");
+            importDay(ei, "11/09/2026,11/09/2026,FEE FIVE,,5.00,,975.00\n11/09/2026,11/09/2026,FEE SIX,,5.00,,970.00\n");
+            reconcileThrough(ei, LocalDate.of(2026, 9, 9));
+            assertThat(days(fx)).as("written by the imports").contains("2026-09-08:false", "2026-09-10:false");
+            jdbc.update("delete from bank_statement_days where tenant_id = ?", fx.tenantId());
+        }
+        for (int run = 0; run < 2; run++) {
+            tx.executeWithoutResult(st -> com.datagami.rentaxis.testsupport.ChangesetSql
+                    .of("170-bank-statement-day-order.yaml").forEach(jdbc::execute));
+        }
+        assertThat(days(a)).containsExactly("2026-09-10:false");
+        assertThat(days(b)).containsExactly("2026-09-10:false");
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_days d join bank_accounts x on x.id = d.bank_account_id "
+                + "where d.tenant_id <> x.tenant_id", Integer.class)).isZero();
     }
 }

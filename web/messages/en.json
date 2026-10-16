@@ -4720,6 +4720,7 @@
     "recFirst": "First reconciliation",
     "withoutEvidence": "{count} cheque(s) cleared by hand with no statement line yet: they stay in transit until the bank shows them.",
     "check_CONTINUITY": "Statement continuity",
+    "check_LINE_ORDER": "Line order confirmed",
     "check_UNRECORDED": "Every line matched",
     "check_DIFFERENCE": "Difference 0.00",
     "check_SUGGESTED": "No suggestion waiting",

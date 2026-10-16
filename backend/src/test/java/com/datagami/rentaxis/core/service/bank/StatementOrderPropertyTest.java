@@ -141,6 +141,81 @@ class StatementOrderPropertyTest {
             assertThat(check(stored).ok()).as("trial %d: %s", trial, check(stored).message()).isTrue();
         }
     }
+    /** A day after imports in any order: its stored lines in seq order, and whether its order is confirmed. */
+    record Day(List<Line> stored, boolean confirmed) { }
+
+    /** Imports {@code files} in the given order, as {@link BankStatementImportService#settle} decides; none skipped. */
+    private static Day importAnyOrder(List<List<Line>> files) {
+        Map<String, Line> byHash = new HashMap<>();
+        List<String> stored = new ArrayList<>();
+        boolean confirmed = true;                                // no row: confirmed
+        for (List<Line> f : files) {
+            if (!accepted(f)) continue;
+            f.forEach(l -> byHash.put(l.hash(), l));
+            BankStatementImportService.Settled s = BankStatementImportService.settle(stored, f.stream().map(Line::hash).toList());
+            if (s == null) continue;
+            stored = new ArrayList<>(s.order());
+            confirmed = s.confirmed();
+        }
+        return new Day(stored.stream().map(byHash::get).toList(), confirmed);
+    }
+
+    /**
+     * #97 review P2-1: extracts of a day imported in <em>any</em> order, the case
+     * the time-order test above leaves out. The first and the last line of the day
+     * always arrive (else no one could tell), one line in between never does, and
+     * 1–4 random stretches plus a stretch from the first line and one to the last
+     * are imported in a shuffled order.
+     *
+     * <p>Finalize is modelled as the service does it: a confirmed day needs only
+     * the lines (known opening, closing from the last stored line); an unconfirmed
+     * day ({@code LINE_ORDER}) needs the closing typed from the paper statement,
+     * which is the bank's true closing. Asserted: a finalize never goes through at
+     * a closing other than the bank's.</p>
+     */
+    @Test
+    void importsInAnyOrderNeverFinalizeAWrongClosing() {
+        Random rnd = new Random(9703);
+        int finalized = 0, refused = 0, typed = 0;
+        for (int trial = 0; trial < 50_000; trial++) {
+            List<Line> truth = day(rnd);
+            BigDecimal trueClosing = truth.get(truth.size() - 1).balance();
+            int k = 1 + rnd.nextInt(truth.size() - 2);           // neither the first nor the last line
+            List<Line> received = new ArrayList<>(truth);
+            received.remove(k);
+            List<List<Line>> files = new ArrayList<>(stretches(rnd, received));
+            files.add(received.subList(0, 1 + rnd.nextInt(k)));                        // from the first line
+            files.add(received.subList(k + rnd.nextInt(received.size() - k), received.size())); // to the last
+            Collections.shuffle(files, rnd);
+            Day d = importAnyOrder(files);
+            if (d.stored().isEmpty()) continue;
+            if (d.confirmed()) {
+                // Confirmed: the last file held the whole stored day, so it is in the bank's order.
+                List<Line> trueOrder = d.stored().stream().sorted(Comparator.comparingInt(Line::index)).toList();
+                assertThat(d.stored()).as("trial %d: confirmed but not in the bank's order", trial).containsExactlyElementsOf(trueOrder);
+            }
+            BigDecimal closing = d.confirmed() ? d.stored().get(d.stored().size() - 1).balance() : trueClosing;
+            if (!d.confirmed()) typed++;
+            List<BankReconciliationService.SL> sl = new ArrayList<>();
+            for (int i = 0; i < d.stored().size(); i++) {
+                Line l = d.stored().get(i);
+                sl.add(new BankReconciliationService.SL(UUID.randomUUID(), DAY, i + 1, l.hash(), null, null, l.amount(), l.balance()));
+            }
+            BigDecimal movement = d.stored().stream().map(Line::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
+            boolean passes = BankReconciliationService.continuity(OPENING, closing, movement, sl, DAY.withDayOfMonth(1)).ok();
+            if (passes) {
+                finalized++;
+                assertThat(closing).as("trial %d: truth %s, stored %s (confirmed %s) finalized at a wrong closing",
+                        trial, truth, d.stored(), d.confirmed()).isEqualByComparingTo(trueClosing);
+            } else {
+                refused++;
+            }
+        }
+        assertThat(refused).as("statements with a missing line refused").isGreaterThan(20_000);
+        assertThat(typed).as("unconfirmed days met").isGreaterThan(1_000);
+        assertThat(finalized + refused).isGreaterThan(40_000);
+    }
+
     /** The rules of {@link BankStatementImportService#dayOrder} on named examples. */
     @Test
     void dayOrderExamples() {
