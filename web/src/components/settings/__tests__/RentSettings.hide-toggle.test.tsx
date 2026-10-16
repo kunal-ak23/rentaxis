@@ -29,6 +29,8 @@ describe("RentSettings inside Settings › Rent & fines", () => {
         fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "p1" } });
         await screen.findByText("Settings");
         expect(screen.queryByRole("switch")).toBeNull();
+        // #99 R1: the renewal warning percentage reads left-to-right in Arabic too.
+        expect(screen.getByTestId("renewal-warn-percent")).toHaveAttribute("dir", "ltr");
         fireEvent.click(screen.getByRole("button", { name: /save/i }));
         await waitFor(() => expect(posted).toHaveLength(1));
         expect(posted[0]).toMatchObject({ onlinePaymentEnabled: true, dueDayOfMonth: 3 });

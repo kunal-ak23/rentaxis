@@ -357,6 +357,7 @@ export default function RentSettings({ embedded = false, hideOnlinePaymentToggle
                                 id="renewal-warn-percent"
                                 data-testid="renewal-warn-percent"
                                 type="number"
+                                dir="ltr"
                                 min={0}
                                 step="0.1"
                                 value={settings.renewalIncreaseWarnPercent ?? ""}
