@@ -17,6 +17,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import AccountPicker from "@/components/finance/AccountPicker";
 import { storedFileSrc } from "@/lib/assetUrl";
+import { badDebtsApi } from "@/lib/api/badDebts";
+import { stillDueOf, writtenOffTotal } from "@/components/leases/writtenOff";
 import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 import { clampIso, fmtIsoDate, isoDayAfter, maxIso, todayIso } from "@/components/leases/leaseMath";
 import { businessTodayIso, isAfterBusinessToday } from "@/lib/businessDate";
@@ -219,6 +221,8 @@ export default function SettlementPage() {
     const canTerminate = hasPermission(userRole, "canPreviewTermination");
     // F14-36: paying a deposit refund out is an ordinary voucher post.
     const canPayRefund = hasPermission(userRole, "canManageVouchers");
+    // #102: write-offs are finance data — the same gate as the lease card.
+    const canSeeBadDebts = hasPermission(userRole, "canAccessFinance");
 
     const [lease, setLease] = useState<LeaseDetail | null>(null);
     const [statement, setStatement] = useState<SettlementStatement | null>(null);
@@ -314,6 +318,26 @@ export default function SettlementPage() {
     }, [canView, userRole, load]);
 
     const finalized = storedRow?.status === "FINALIZED";
+
+    /**
+     * #102: a FINALIZED statement with a balance due reads like the lease's
+     * Settlement Summary card — what was written off as bad debt since, and
+     * what is still due. Same source (`badDebtsApi.forLease`) and the same
+     * math (`writtenOff.ts`), so the two screens never disagree.
+     */
+    const [writtenOff, setWrittenOff] = useState(0);
+    const finalBalanceDue = finalized ? (storedRow?.balanceDue ?? 0) : 0;
+    useEffect(() => {
+        if (!canSeeBadDebts || finalBalanceDue <= 0) {
+            setWrittenOff(0);
+            return;
+        }
+        let live = true;
+        badDebtsApi.forLease(leaseId)
+            .then(ws => { if (live) setWrittenOff(writtenOffTotal(ws)); })
+            .catch(() => { /* the breakdown is extra; the balance due still shows */ });
+        return () => { live = false; };
+    }, [leaseId, canSeeBadDebts, finalBalanceDue]);
     const settleable = !!lease && SETTLEABLE.includes(lease.status);
     const editable = canSettle && !finalized;
 
@@ -849,6 +873,12 @@ export default function SettlementPage() {
                         </span>
                     </div>
                     {netRefund === 0 && <p className="text-[11px] text-muted">{t("settled")}</p>}
+                    {finalized && netRefund < 0 && writtenOff > 0 && (
+                        <div className="space-y-2" data-testid="settlement-write-off-breakdown">
+                            <Row label={t("writtenOff")} value={`- ${fmtAmount(writtenOff)}`} tone="success" testId="settlement-written-off" />
+                            <Row label={t("stillDue")} value={fmtAmount(stillDueOf(finalBalanceDue, writtenOff))} tone="error" testId="settlement-still-due" />
+                        </div>
+                    )}
                 </div>
             )}
 

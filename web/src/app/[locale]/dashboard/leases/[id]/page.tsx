@@ -43,6 +43,7 @@ import ReduceLeaseDialog from "@/components/leases/ReduceLeaseDialog";
 import LeaseAssignmentCard from "@/components/leases/LeaseAssignmentCard";
 import BadDebtCard from "@/components/leases/BadDebtCard";
 import { badDebtsApi } from "@/lib/api/badDebts";
+import { stillDueOf, writtenOffTotal } from "@/components/leases/writtenOff";
 import TransferLeaseDialog from "@/components/leases/TransferLeaseDialog";
 import LeaseAddendaPanel from "@/components/leases/LeaseAddendaPanel";
 import LeaseJournalsTab from "@/components/leases/LeaseJournalsTab";
@@ -1202,7 +1203,7 @@ export default function LeaseDetailPage() {
                                 <Detail label={tSettlement("writtenOff")} value={formatCurrency(writtenOff)} />
                                 {(settlement.balanceDue ?? 0) > 0 && (
                                     <Detail label={tSettlement("stillDue")}
-                                            value={formatCurrency(Math.max(0, (settlement.balanceDue ?? 0) - writtenOff))} />
+                                            value={formatCurrency(stillDueOf(settlement.balanceDue, writtenOff))} />
                                 )}
                             </>
                         )}
@@ -1452,7 +1453,7 @@ function WrittenOffLoader({ leaseId, onLoaded }: { leaseId: string; onLoaded: (a
         badDebtsApi.forLease(leaseId)
             .then(ws => {
                 if (!live) return;
-                onLoaded(ws.filter(w => w.status === "WRITTEN_OFF").reduce((sum, w) => sum + w.amount, 0));
+                onLoaded(writtenOffTotal(ws));
             })
             .catch(() => { /* not shown */ });
         return () => { live = false; };
