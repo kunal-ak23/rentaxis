@@ -17,6 +17,9 @@ public interface ImportBatchLeaseRepository extends JpaRepository<ImportBatchLea
 
     List<ImportBatchLease> findByBatchIdOrderByLeaseIdAsc(UUID batchId);
 
+    /** How many leases the batch holds, without loading them (S19-01). */
+    long countByBatchId(UUID batchId);
+
     /**
      * The other direction: which batch (or batches) created this lease.
      *

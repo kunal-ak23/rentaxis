@@ -779,6 +779,7 @@ public class PortfolioImportService {
             job.setStatus("VALIDATING");
             importJobRepository.save(job);
 
+            long started = System.nanoTime();
             ValidationOutcome outcome = forceCutover ? contractValidator.validate(workbook) : validateAll(workbook);
             if (!outcome.errors().isEmpty()) {
                 job.setStatus("VALIDATION_FAILED");
@@ -790,8 +791,10 @@ public class PortfolioImportService {
 
             // Phase 2: Persist. Warnings (if any) are folded into the JSONB wrapper
             // alongside the new counters by the persist service.
+            long validatedMs = (System.nanoTime() - started) / 1_000_000;
             job.setStatus("PERSISTING");
             importJobRepository.save(job);
+            long persistStarted = System.nanoTime();
 
             if (ContractImportValidator.isV2Workbook(workbook)) {
                 contractPersistService.persist(workbook, job, outcome.warnings());
@@ -804,13 +807,16 @@ public class PortfolioImportService {
                 postRequestedLeases(persisted, job, auth);
             }
 
+            long persistedMs = (System.nanoTime() - persistStarted) / 1_000_000;
             job.setStatus("COMPLETED");
             job.setCompletedAt(Instant.now());
             importJobRepository.save(job);
 
-            log.info("Portfolio import completed: jobId={}, properties={}, units={}, leases={}, schedules={}",
+            // The phase split is there so a slow import says which half was slow (S19-01).
+            log.info("Portfolio import completed: jobId={}, properties={}, units={}, leases={}, schedules={},"
+                            + " validateMs={}, persistMs={}",
                     job.getId(), job.getPropertiesCreated(), job.getUnitsCreated(),
-                    job.getLeasesCreated(), job.getSchedulesCreated());
+                    job.getLeasesCreated(), job.getSchedulesCreated(), validatedMs, persistedMs);
         } catch (BusinessRuleViolationException e) {
             // A workbook this import will not accept at all — not an .xlsx, macro
             // enabled, password protected, or past a size limit. It is a statement
