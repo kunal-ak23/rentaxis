@@ -36,10 +36,10 @@ class TenantFiscalSettingsServiceTest {
     /** No VAT tax point is waiting in this unit's world, so the lock is never refused for one. */
     com.datagami.rentaxis.domain.repository.VatTaxPointRepository vatTaxPoints =
             mock(com.datagami.rentaxis.domain.repository.VatTaxPointRepository.class);
+    jakarta.persistence.EntityManager em = mock(jakarta.persistence.EntityManager.class);
     TenantFiscalSettingsService service =
             new TenantFiscalSettingsService(repo, openingBalances, journals, importBatches, vatTaxPoints,
-                    mock(com.datagami.rentaxis.domain.repository.RecognitionEntryRepository.class),
-                    mock(jakarta.persistence.EntityManager.class));
+                    mock(com.datagami.rentaxis.domain.repository.RecognitionEntryRepository.class), em);
     UUID tenant = UUID.randomUUID();
 
     @BeforeEach void ctx() { TenantContextHolder.setTenantId(tenant); when(repo.save(any())).thenAnswer(i -> i.getArgument(0)); }
@@ -243,15 +243,42 @@ class TenantFiscalSettingsServiceTest {
         service.assertOpen(LocalDate.of(2026, 9, 29));
     }
 
+    /** The count of CLOSED fiscal years the start-month guard reads (native, tenant bound). */
+    private jakarta.persistence.Query closedYears(long n) {
+        jakarta.persistence.Query q = mock(jakarta.persistence.Query.class);
+        when(em.createNativeQuery(org.mockito.ArgumentMatchers.contains("fiscal_year_closes"))).thenReturn(q);
+        when(q.setParameter(org.mockito.ArgumentMatchers.anyString(), any())).thenReturn(q);
+        when(q.getSingleResult()).thenReturn(n);
+        return q;
+    }
+
     @Test
     void fiscalYearStartMonthMustBeACalendarMonth() {
         when(repo.findById(tenant)).thenReturn(Optional.of(settings(1, null)));
+        closedYears(0);
         assertThatThrownBy(() -> service.setFiscalYearStartMonth(0))
                 .isInstanceOf(BusinessRuleViolationException.class);
         assertThatThrownBy(() -> service.setFiscalYearStartMonth(13))
                 .isInstanceOf(BusinessRuleViolationException.class);
         assertThat(service.setFiscalYearStartMonth(1).getFiscalYearStartMonth()).isEqualTo(1);
         assertThat(service.setFiscalYearStartMonth(12).getFiscalYearStartMonth()).isEqualTo(12);
+    }
+
+    /**
+     * #99 R1: a closed year was cut on the start month it was closed under, so the
+     * month is frozen while any year is CLOSED; saving the same month is not a change.
+     */
+    @Test
+    void theStartMonthIsFrozenWhileAFiscalYearIsClosed() {
+        when(repo.findById(tenant)).thenReturn(Optional.of(settings(1, null)));
+        jakarta.persistence.Query q = closedYears(2);
+        assertThatThrownBy(() -> service.setFiscalYearStartMonth(4))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("cannot change while 2 fiscal year(s) are closed")
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("fiscal.startMonthClosedYears");
+        verify(q).setParameter("t", tenant);
+        verify(repo, org.mockito.Mockito.never()).save(any());
+        assertThat(service.setFiscalYearStartMonth(1).getFiscalYearStartMonth()).as("unchanged month is a no-op").isEqualTo(1);
     }
 
     @Test

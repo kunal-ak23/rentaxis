@@ -2945,6 +2945,7 @@
         "vatPendingInLock": "Post the VAT tax points through {through} first: one dated {date} has not been declared yet, and locking the books would leave it undeclared.",
         "booksStartTooFar": "The books cannot start on {date}: that is more than three months ahead (the latest is {latest}). Check the year.",
         "lockBackwards": "The period lock cannot move back from {current}: journals are posted inside it. Re-open the latest closed fiscal year instead.",
+        "startMonthClosedYears": "The fiscal year start month cannot change while {count} fiscal year(s) are closed. Re-open them first.",
         "changed": "The period lock changed since you opened this, and has been reloaded. Review the move again; nothing was re-opened."
       },
       "listing": {
