@@ -266,14 +266,12 @@ public class BankStatementImportService {
             jdbc.queryForList("select id from bank_accounts where id = :b and tenant_id = :t for update",
                     new MapSqlParameterSource("t", t).addValue("b", bankAccountId), UUID.class);
         }
-        List<String> hashes = hashes(bankAccountId, r.rows());
-        Set<String> existing = new HashSet<>();
-        for (int i = 0; i < hashes.size(); i += 1000) {
-            existing.addAll(jdbc.queryForList(
-                    "select line_hash from bank_statement_lines where bank_account_id = :b and tenant_id = :t and line_hash in (:h)",
-                    new MapSqlParameterSource("t", t).addValue("b", bankAccountId)
-                            .addValue("h", hashes.subList(i, Math.min(hashes.size(), i + 1000))), String.class));
-        }
+        // #97 review P2-2: the stored lines of every day in the file, and which of
+        // them each file row is (a duplicate) or is not (a new line).
+        Map<LocalDate, List<StoredLine>> stored = storedLines(t, bankAccountId, r.rows());
+        Matched matched = match(bankAccountId, r.rows(), stored);
+        List<String> hashes = matched.hashes();
+        Set<String> existing = matched.duplicates();
         List<String> warnings = new ArrayList<>(r.warnings());
         continuityWarning(t, bankAccountId, r).ifPresent(warnings::add);
         driftWarning(t, bankAccountId, r.rows(), hashes, existing).ifPresent(warnings::add);
@@ -330,7 +328,8 @@ public class BankStatementImportService {
                 new MapSqlParameterSource("t", t).addValue("b", bankAccountId), Long.class);
         long seq = maxSeq == null ? 0 : maxSeq;
         // #97: the stored lines of each day in this file, before the insert.
-        Map<LocalDate, List<String>> storedDays = storedDays(t, bankAccountId, r.rows());
+        Map<LocalDate, List<String>> storedDays = new HashMap<>();
+        stored.forEach((d, ls) -> storedDays.put(d, ls.stream().map(StoredLine::hash).toList()));
         List<SqlParameterSource> batch = new ArrayList<>();
         for (int i = 0; i < r.rows().size(); i++) {
             if (existing.contains(hashes.get(i))) continue;
@@ -353,19 +352,84 @@ public class BankStatementImportService {
         return result("IMPORTED", null, grid, kind, r, List.of(), warnings, fresh, dup, preview, imp.getId(), detected);
     }
 
-    /** #97: the line hashes already stored for each day of this file, in stored {@code seq} order. */
-    private Map<LocalDate, List<String>> storedDays(UUID t, UUID bankAccountId, List<StatementMapper.Row> rows) {
+    /** A stored statement line, as de-duplication and day ordering need it. */
+    record StoredLine(String hash, BigDecimal amount, String description, BigDecimal balance) { }
+
+    /** #97: the lines already stored for each day of this file, in stored {@code seq} order. */
+    private Map<LocalDate, List<StoredLine>> storedLines(UUID t, UUID bankAccountId, List<StatementMapper.Row> rows) {
         Set<LocalDate> days = new TreeSet<>();
         rows.forEach(row -> days.add(row.txnDate()));
-        Map<LocalDate, List<String>> out = new HashMap<>();
+        Map<LocalDate, List<StoredLine>> out = new HashMap<>();
         if (days.isEmpty()) return out;
         jdbc.query("""
-                select txn_date, line_hash from bank_statement_lines
+                select txn_date, line_hash, amount, description, running_balance from bank_statement_lines
                 where tenant_id = :t and bank_account_id = :b and txn_date in (:d) order by txn_date, seq""",
                 new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("d", days),
                 rs -> { out.computeIfAbsent(rs.getObject("txn_date", LocalDate.class), k -> new ArrayList<>())
-                        .add(rs.getString("line_hash")); });
+                        .add(new StoredLine(rs.getString("line_hash"), rs.getBigDecimal("amount"),
+                                rs.getString("description"), rs.getBigDecimal("running_balance"))); });
         return out;
+    }
+
+    /** Each file row's line hash, in file order, and the hashes of the rows that are already stored. */
+    record Matched(List<String> hashes, Set<String> duplicates) { }
+
+    /**
+     * #97 review P2-2: which stored line, if any, each file row is.
+     *
+     * <p>A row is a stored line of its day with the same amount and description
+     * (as the hash normalises them) and the same running balance. When either side
+     * has no balance (a mapping without the balance column, PR #353 P2-2), amount
+     * and description decide. Each stored line is taken by at most one row, in
+     * file order against stored order. The old rule — "same date, amount,
+     * description and n-th such line <em>within this file</em>" — took a partial
+     * file's second fee for a fuller file's first one and silently dropped the
+     * genuine first.</p>
+     *
+     * <p>A new row gets {@code lineHash(…, n)} with the lowest {@code n} no stored
+     * or earlier new line of the day holds, so the hash stays unique per bank
+     * account; for a day with nothing stored that is the old in-file occurrence,
+     * so exact re-imports still match line for line.</p>
+     */
+    static Matched match(UUID bankAccountId, List<StatementMapper.Row> rows, Map<LocalDate, List<StoredLine>> stored) {
+        List<String> hashes = new ArrayList<>(rows.size());
+        Set<String> duplicates = new HashSet<>();
+        Map<LocalDate, Set<String>> occupied = new HashMap<>();
+        Set<StoredLine> claimed = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (StatementMapper.Row row : rows) {
+            List<StoredLine> day = stored.getOrDefault(row.txnDate(), List.of());
+            BigDecimal amount = row.amount().setScale(2, java.math.RoundingMode.HALF_UP);
+            String desc = StatementValues.normalise(row.description());
+            StoredLine twin = null;
+            StoredLine anyTwin = null;
+            for (StoredLine s : day) {
+                if (claimed.contains(s) || s.amount().compareTo(amount) != 0
+                        || !StatementValues.normalise(s.description()).equals(desc)) continue;
+                if (row.balance() == null || s.balance() == null) {
+                    if (anyTwin == null) anyTwin = s;
+                } else if (s.balance().compareTo(row.balance()) == 0) {
+                    twin = s;
+                    break;
+                }
+            }
+            if (twin == null) twin = anyTwin;
+            if (twin != null) {
+                claimed.add(twin);
+                duplicates.add(twin.hash());
+                hashes.add(twin.hash());
+                continue;
+            }
+            Set<String> taken = occupied.computeIfAbsent(row.txnDate(),
+                    d -> new HashSet<>(day.stream().map(StoredLine::hash).toList()));
+            String h;
+            int n = 0;
+            do {
+                h = StatementValues.lineHash(bankAccountId, row.txnDate(), row.amount(), row.description(), n++);
+            } while (taken.contains(h));
+            taken.add(h);
+            hashes.add(h);
+        }
+        return new Matched(hashes, duplicates);
     }
 
     /**
@@ -374,14 +438,15 @@ public class BankStatementImportService {
      * <ul>
      *   <li>A day the file brings new lines to is put in the order {@link #dayOrder}
      *       gives, by handing that day's own seq values out again in that order
-     *       (other days keep theirs). Its order is confirmed when the file
-     *       contained every line already stored for the day, and unconfirmed
-     *       otherwise (review P2-1): lines from separate files that share no line
-     *       may sit in any order, and can chain round a missing one.</li>
-     *   <li>A day the file brings nothing new to, but contains in full, takes the
-     *       file's order and becomes confirmed: re-importing a day's full
-     *       statement is how an unconfirmed day is confirmed. Days inside a
-     *       finalized reconciliation are left alone.</li>
+     *       (other days keep theirs). Its order is confirmed when nothing was
+     *       stored for it, or when the file holds the whole day (it also has lines
+     *       on the days before and after) and every line already stored; it is
+     *       unconfirmed otherwise (review P2-1, P2-2; see {@link #settle}).</li>
+     *   <li>A day the file brings nothing new to, but holds whole together with
+     *       every stored line, takes the file's order and becomes confirmed:
+     *       importing a statement that runs from the day before to the day after
+     *       is how an unconfirmed day is confirmed. Days inside a finalized
+     *       reconciliation are left alone.</li>
      * </ul>
      *
      * <p>The state is kept per bank account and day in {@code bank_statement_days}
@@ -390,13 +455,16 @@ public class BankStatementImportService {
      */
     private void settleDays(UUID t, UUID bankAccountId, List<StatementMapper.Row> rows, List<String> hashes,
                             Map<LocalDate, List<String>> storedDays, LocalDate locked) {
-        Map<LocalDate, List<String>> fileDays = new TreeMap<>();
+        TreeMap<LocalDate, List<String>> fileDays = new TreeMap<>();
         for (int i = 0; i < rows.size(); i++) {
             fileDays.computeIfAbsent(rows.get(i).txnDate(), k -> new ArrayList<>()).add(hashes.get(i));
         }
+        if (fileDays.isEmpty()) return;
+        LocalDate firstDay = fileDays.firstKey(), lastDay = fileDays.lastKey();
         for (Map.Entry<LocalDate, List<String>> day : fileDays.entrySet()) {
             List<String> stored = storedDays.getOrDefault(day.getKey(), List.of());
-            Settled s = settle(stored, day.getValue());
+            boolean enclosed = day.getKey().isAfter(firstDay) && day.getKey().isBefore(lastDay);
+            Settled s = settle(stored, day.getValue(), enclosed);
             if (s == null) continue;
             // A day inside a finalized reconciliation never takes new lines (refused
             // above); one with nothing new is left alone there too.
@@ -441,17 +509,42 @@ public class BankStatementImportService {
     /**
      * #97: what one import does to one day ({@code stored}: the day's stored
      * hashes in seq order; {@code file}: the file's lines of that day in file
-     * order). With new lines: {@link #dayOrder}, confirmed when the file contains
-     * every stored line. With none: a file containing the whole day re-orders and
-     * confirms it; otherwise null (the day is left as it is).
+     * order, each the hash of the stored line it was matched to or a new one;
+     * {@code enclosed}: the file also has lines on an earlier and on a later date,
+     * so it holds the whole day).
+     *
+     * <ul>
+     *   <li>Nothing stored yet: the day is the file's lines, confirmed.</li>
+     *   <li>The file's lines are exactly the stored ones, in the same order (the
+     *       same day imported again): nothing is learnt; null, the day is left as
+     *       it is.</li>
+     *   <li>The file holds the whole day and every stored line: the day takes the
+     *       file's order, confirmed.</li>
+     *   <li>Otherwise: new lines go where {@link #dayOrder} puts them, and the day
+     *       is not confirmed.</li>
+     * </ul>
+     *
+     * <p>Why a whole day (review P2-2): two lines of a day can be identical —
+     * same amount, description and running balance — at different places (a fee,
+     * its refund, the fee again). Taking a file's line for a stored identical one
+     * is then a guess about where the stored one sits; so is taking a stored line
+     * for a file's. If the file holds the whole day, the guess cannot lose a line:
+     * the day becomes exactly the file's lines. If it holds only part of the day,
+     * a line it brings may be a later occurrence of a stored one and vanish into
+     * it, and the day — however tidy its chain — ends early. Then the day is not
+     * confirmed and the reconciliation asks for the typed statement balances.</p>
      */
-    static Settled settle(List<String> stored, List<String> file) {
+    static Settled settle(List<String> stored, List<String> file, boolean enclosed) {
         Set<String> inStored = new HashSet<>(stored);
         boolean addsLines = file.stream().anyMatch(h -> !inStored.contains(h));
+        if (stored.isEmpty()) return new Settled(List.copyOf(file), List.copyOf(file), true, true);
+        if (file.equals(stored)) return null;
         boolean covers = new HashSet<>(file).containsAll(stored);
-        if (addsLines) return new Settled(appended(stored, file), dayOrder(stored, file), covers, true);
-        if (!covers || stored.isEmpty()) return null;
-        return new Settled(stored, List.copyOf(file), true, false);
+        List<String> before = addsLines ? appended(stored, file) : stored;
+        if (covers && enclosed) {
+            return new Settled(before, addsLines ? dayOrder(stored, file) : List.copyOf(file), true, addsLines);
+        }
+        return new Settled(before, addsLines ? dayOrder(stored, file) : stored, false, addsLines);
     }
 
     /** Stored lines, then the file's new ones in file order: what an import did before #97. */

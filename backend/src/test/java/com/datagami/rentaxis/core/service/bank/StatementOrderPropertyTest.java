@@ -152,7 +152,7 @@ class StatementOrderPropertyTest {
         for (List<Line> f : files) {
             if (!accepted(f)) continue;
             f.forEach(l -> byHash.put(l.hash(), l));
-            BankStatementImportService.Settled s = BankStatementImportService.settle(stored, f.stream().map(Line::hash).toList());
+            BankStatementImportService.Settled s = BankStatementImportService.settle(stored, f.stream().map(Line::hash).toList(), false);
             if (s == null) continue;
             stored = new ArrayList<>(s.order());
             confirmed = s.confirmed();
@@ -214,6 +214,177 @@ class StatementOrderPropertyTest {
         assertThat(refused).as("statements with a missing line refused").isGreaterThan(20_000);
         assertThat(typed).as("unconfirmed days met").isGreaterThan(1_000);
         assertThat(finalized + refused).isGreaterThan(40_000);
+    }
+
+    // ------------------------------------------------------------------ #97 review P2-2
+
+    static final UUID BANK = UUID.fromString("00000000-0000-0000-0000-000000000097");
+    static final LocalDate[] DAYS = {LocalDate.of(2026, 9, 9), LocalDate.of(2026, 9, 10), LocalDate.of(2026, 9, 11)};
+
+    /** A line of a several-day statement whose narration is only "FEE" or "CREDIT": lines repeat. */
+    record Bank(int index, LocalDate date, BigDecimal amount, String description, BigDecimal balance) {
+        StatementMapper.Row row() {
+            return new StatementMapper.Row(index, date, date, description, null, null, amount, balance);
+        }
+    }
+
+    private static List<Bank> statement(Random rnd) {
+        List<Bank> out = new ArrayList<>();
+        BigDecimal b = OPENING;
+        for (LocalDate d : DAYS) {
+            int n = 1 + rnd.nextInt(5);
+            for (int i = 0; i < n; i++) {
+                BigDecimal a = BigDecimal.valueOf(AMOUNTS[rnd.nextInt(AMOUNTS.length)]).setScale(2);
+                b = b.add(a);
+                out.add(new Bank(out.size(), d, a, a.signum() < 0 ? "FEE" : "CREDIT", b));
+            }
+        }
+        return out;
+    }
+
+    private static boolean acceptedRows(List<Bank> file) {
+        for (int i = 1; i < file.size(); i++) {
+            if (file.get(i - 1).balance().add(file.get(i).amount()).compareTo(file.get(i).balance()) != 0) return false;
+        }
+        return true;
+    }
+
+    /** The bank account's stored lines after importing {@code files} in turn, exactly as the service decides. */
+    record Books(List<BankStatementImportService.StoredLine> lines, Set<LocalDate> unconfirmed) { }
+
+    private static Books importStatement(List<List<Bank>> files) {
+        Map<LocalDate, List<BankStatementImportService.StoredLine>> stored = new TreeMap<>();
+        Set<LocalDate> unconfirmed = new HashSet<>();
+        for (List<Bank> f : files) {
+            if (f.isEmpty() || !acceptedRows(f)) continue;
+            List<StatementMapper.Row> rows = f.stream().map(Bank::row).toList();
+            BankStatementImportService.Matched m = BankStatementImportService.match(BANK, rows, stored);
+            TreeMap<LocalDate, List<Integer>> fileDays = new TreeMap<>();
+            for (int i = 0; i < rows.size(); i++) fileDays.computeIfAbsent(rows.get(i).txnDate(), k -> new ArrayList<>()).add(i);
+            for (Map.Entry<LocalDate, List<Integer>> day : fileDays.entrySet()) {
+                List<BankStatementImportService.StoredLine> have = stored.getOrDefault(day.getKey(), List.of());
+                Map<String, BankStatementImportService.StoredLine> byHash = new HashMap<>();
+                have.forEach(l -> byHash.put(l.hash(), l));
+                List<String> fileHashes = new ArrayList<>();
+                for (int i : day.getValue()) {
+                    String h = m.hashes().get(i);
+                    fileHashes.add(h);
+                    if (!m.duplicates().contains(h)) {
+                        Bank l = f.get(i);
+                        byHash.put(h, new BankStatementImportService.StoredLine(h, l.amount(), l.description(), l.balance()));
+                    }
+                }
+                boolean enclosed = day.getKey().isAfter(fileDays.firstKey()) && day.getKey().isBefore(fileDays.lastKey());
+                BankStatementImportService.Settled s = BankStatementImportService.settle(
+                        have.stream().map(BankStatementImportService.StoredLine::hash).toList(), fileHashes, enclosed);
+                if (s == null) continue;
+                stored.put(day.getKey(), s.order().stream().map(byHash::get).toList());
+                if (s.confirmed()) unconfirmed.remove(day.getKey()); else unconfirmed.add(day.getKey());
+            }
+        }
+        return new Books(stored.values().stream().flatMap(List::stream).toList(), unconfirmed);
+    }
+
+    /**
+     * #97 review P2-2: a statement over three days whose lines repeat — only "FEE"
+     * and "CREDIT", four amounts, and a balance that keeps coming back, so whole
+     * lines (date, amount, narration and running balance) recur within a day. One
+     * or two lines never arrive (never the first or the last); the rest arrives as
+     * random stretches, one from the first line and one to the last, imported in
+     * any order, de-duplicated and settled by the service's own
+     * {@code match}/{@code settle}.
+     *
+     * <p>Finalize as the service does it: with every day confirmed, on the lines'
+     * own opening (derived, or known) and closing; with any day unconfirmed
+     * ({@code LINE_ORDER}), on the bank's typed opening and closing. Asserted: no
+     * finalize at an opening or closing other than the bank's.</p>
+     */
+    @Test
+    void repeatingLinesNeverFinalizeAWrongBalance() {
+        Random rnd = new Random(9704);
+        int finalized = 0, refused = 0, typed = 0, derivedOk = 0;
+        for (int trial = 0; trial < 60_000; trial++) {
+            List<Bank> truth = statement(rnd);
+            if (truth.size() < 4) continue;
+            BigDecimal trueClosing = truth.get(truth.size() - 1).balance();
+            int drops = rnd.nextInt(3);
+            List<Bank> received = new ArrayList<>(truth);
+            Set<Integer> dropped = new HashSet<>();
+            while (dropped.size() < drops) dropped.add(1 + rnd.nextInt(truth.size() - 2));
+            received.removeIf(l -> dropped.contains(l.index()));
+            int firstGap = 0;
+            while (firstGap < received.size() && received.get(firstGap).index() == firstGap) firstGap++;
+            int lastGap = received.size() - 1;
+            while (lastGap > 0 && received.get(lastGap).index() - received.get(lastGap - 1).index() == 1) lastGap--;
+            List<List<Bank>> files = new ArrayList<>();
+            for (int f = 0, n = 2 + rnd.nextInt(4); f < n; f++) {
+                int a = rnd.nextInt(received.size());
+                files.add(received.subList(a, a + 1 + rnd.nextInt(received.size() - a)));
+            }
+            files.add(received.subList(0, 1 + rnd.nextInt(Math.max(1, Math.min(firstGap, received.size())))));
+            files.add(received.subList(lastGap + rnd.nextInt(received.size() - lastGap), received.size()));
+            Collections.shuffle(files, rnd);
+            Books books = importStatement(files);
+            if (books.lines().isEmpty()) continue;
+            boolean confirmed = books.unconfirmed().isEmpty();
+            if (!confirmed) typed++;
+            List<BankReconciliationService.SL> sl = new ArrayList<>();
+            for (int i = 0; i < books.lines().size(); i++) {
+                BankStatementImportService.StoredLine l = books.lines().get(i);
+                sl.add(new BankReconciliationService.SL(UUID.randomUUID(), DAYS[0], i + 1, l.description(), null, null, l.amount(), l.balance()));
+            }
+            BigDecimal movement = books.lines().stream().map(BankStatementImportService.StoredLine::amount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BankStatementImportService.StoredLine first = books.lines().get(0);
+            BigDecimal derivedOpening = first.balance().subtract(first.amount());
+            BigDecimal closing = confirmed ? books.lines().get(books.lines().size() - 1).balance() : trueClosing;
+            for (boolean derived : new boolean[]{true, false}) {
+                BigDecimal opening = derived && confirmed ? derivedOpening : OPENING;
+                boolean passes = BankReconciliationService.continuity(opening, closing, movement, sl, DAYS[0]).ok();
+                if (passes) {
+                    finalized++;
+                    if (derived && confirmed) derivedOk++;
+                    assertThat(opening).as("trial %d (%s opening): truth %s, books %s, unconfirmed %s — wrong opening",
+                            trial, derived ? "derived" : "known", truth, books.lines(), books.unconfirmed())
+                            .isEqualByComparingTo(OPENING);
+                    assertThat(closing).as("trial %d (%s opening): truth %s, books %s, unconfirmed %s — wrong closing",
+                            trial, derived ? "derived" : "known", truth, books.lines(), books.unconfirmed())
+                            .isEqualByComparingTo(trueClosing);
+                } else {
+                    refused++;
+                }
+            }
+        }
+        assertThat(typed).as("days left unconfirmed").isGreaterThan(5_000);
+        assertThat(derivedOk).as("statements finalized on the lines alone").isGreaterThan(500);
+        assertThat(refused).isGreaterThan(10_000);
+        assertThat(finalized).isGreaterThan(10_000);
+    }
+
+    /**
+     * #97 review P2-2: exact re-imports stay idempotent — a statement imported
+     * again in pieces (or whole, in a different file) adds nothing, however much
+     * its lines repeat.
+     */
+    @Test
+    void reImportingTheSameLinesAddsNothing() {
+        Random rnd = new Random(9705);
+        for (int trial = 0; trial < 5_000; trial++) {
+            List<Bank> truth = statement(rnd);
+            Books once = importStatement(List.of(truth));
+            List<List<Bank>> pieces = new ArrayList<>();
+            for (int f = 0, n = 1 + rnd.nextInt(4); f < n; f++) {
+                int a = rnd.nextInt(truth.size());
+                pieces.add(truth.subList(a, a + 1 + rnd.nextInt(truth.size() - a)));
+            }
+            pieces.add(0, truth);
+            pieces.add(truth);
+            Books again = importStatement(pieces);
+            assertThat(again.lines()).as("trial %d", trial).hasSize(truth.size());
+            assertThat(again.lines().stream().map(BankStatementImportService.StoredLine::balance).toList())
+                    .as("trial %d", trial).containsExactlyElementsOf(once.lines().stream()
+                            .map(BankStatementImportService.StoredLine::balance).toList());
+        }
     }
 
     /** The rules of {@link BankStatementImportService#dayOrder} on named examples. */

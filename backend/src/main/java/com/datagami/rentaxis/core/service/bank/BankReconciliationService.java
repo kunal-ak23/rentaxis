@@ -385,7 +385,7 @@ public class BankReconciliationService {
                             + prev.get().to().format(DMY) + ", so it must start on " + next.format(DMY)));
         }
         checks.add(continuity(opening, closing, movement, period, from));
-        lineOrder(t, b, from, to, closingTyped, !first || r.opening() != null).ifPresent(checks::add);
+        lineOrder(t, b, from, to, closingTyped, !first || r.opening() != null, first && r.opening() != null).ifPresent(checks::add);
 
         // ---- book side
         BigDecimal book = sum(jdbc.queryForObject("""
@@ -617,7 +617,7 @@ public class BankReconciliationService {
      * confirmed.
      */
     private Optional<BankRecDTOs.Check> lineOrder(UUID t, UUID b, LocalDate from, LocalDate to, boolean closingTyped,
-                                                  boolean openingKnown) {
+                                                  boolean openingKnown, boolean typedOpening) {
         List<LocalDate> days = jdbc.queryForList("""
                 select d.txn_date from bank_statement_days d
                 where d.tenant_id = :t and d.bank_account_id = :b and not d.order_confirmed
@@ -631,12 +631,18 @@ public class BankReconciliationService {
         String list = days.stream().limit(5).map(d -> d.format(DMY)).collect(Collectors.joining(", "))
                 + (days.size() > 5 ? " and " + (days.size() - 5) + " more" : "");
         boolean ok = closingTyped && openingKnown;
+        // Review P3-11: the check knows only that a balance was typed, not that it
+        // came from the paper statement; it says what it relies on.
         return Optional.of(new BankRecDTOs.Check("LINE_ORDER", ok, ok
-                ? "Lines on " + list + " came from separate files; the typed statement balances confirm none is missing"
-                : "Lines on " + list + " came from separate files, so their order is not confirmed and a missing line "
-                        + "could go unnoticed. Type the " + (openingKnown ? "closing balance" : "opening and closing balances")
-                        + " from the paper statement, or import the full statement for "
-                        + (days.size() == 1 ? "that day" : "those days") + " again."));
+                ? "Lines on " + list + " came from more than one file; the reconciliation relies on the "
+                        + (openingKnown && closingTyped && !typedOpening ? "closing balance" : "statement balances")
+                        + " typed from the paper statement"
+                : "Lines on " + list + " came from more than one file, so their order and completeness are not "
+                        + "confirmed and a missing line could go unnoticed. Type the "
+                        + (openingKnown ? "closing balance" : "opening and closing balances")
+                        + " from the paper statement (not the figure the imported lines give), or import a statement "
+                        + "that runs from the day before to the day after " + (days.size() == 1 ? "that day" : "each of them")
+                        + "."));
     }
 
     /** Spec §4 precondition 6: the opening items explain exactly the gap between the statement and the books at the start. */
@@ -786,6 +792,19 @@ public class BankReconciliationService {
                 new MapSqlParameterSource("id", recId).addValue("t", t).addValue("u", user).addValue("why", reason.trim()));
         jdbc.update("update bank_accounts set reconciled_through = :r where id = :b and tenant_id = :t",
                 new MapSqlParameterSource("b", r.bankAccountId()).addValue("t", t).addValue("r", back));
+        // Review P3-10: changeset 170 left the days of finalized periods alone. Once
+        // the period is open again, its days built from more than one import, with no
+        // order recorded at import, are unconfirmed, as 170 marked open periods.
+        jdbc.update("""
+                insert into bank_statement_days (tenant_id, bank_account_id, txn_date, order_confirmed, updated_at)
+                select l.tenant_id, l.bank_account_id, l.txn_date, false, now()
+                  from bank_statement_lines l
+                 where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date between :from and :to
+                 group by l.tenant_id, l.bank_account_id, l.txn_date
+                having count(distinct l.import_id) > 1
+                on conflict (bank_account_id, txn_date) do nothing""",
+                new MapSqlParameterSource("b", r.bankAccountId()).addValue("t", t).addValue("from", r.from())
+                        .addValue("to", r.to()));
         log.warn("Bank reconciliation {} ({} – {}) reopened by {}: {}", recId, r.from(), r.to(), user, reason.trim());
         return view(t, load(t, recId, false));
     }
