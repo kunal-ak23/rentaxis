@@ -5259,7 +5259,9 @@
     "typeToSearch": "اكتب للبحث",
     "commercial": "تجاري",
     "selectUnit": "اختر وحدة",
-    "selectRenter": "اختر مستأجرًا"
+    "selectRenter": "اختر مستأجرًا",
+    "selectContract": "اختر عقدًا",
+    "searchContracts": "الوحدة أو المستأجر أو العقار أو رقم إيجاري"
   },
   "PageState": {
     "accessDeniedTitle": "تم رفض الوصول",

@@ -5259,7 +5259,9 @@
     "typeToSearch": "Type to search",
     "commercial": "Commercial",
     "selectUnit": "Select a unit",
-    "selectRenter": "Select a tenant"
+    "selectRenter": "Select a tenant",
+    "selectContract": "Select a contract",
+    "searchContracts": "Unit, tenant, property or Ejari"
   },
   "PageState": {
     "accessDeniedTitle": "Access denied",
