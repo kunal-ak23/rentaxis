@@ -84,6 +84,8 @@ const PREVIEW = {
 type Route = { method?: string; match: string; body: unknown; status?: number };
 let calls: { method: string; url: string; body: unknown }[];
 
+const pageOf = <T,>(content: T[]) => ({ content, totalElements: content.length, totalPages: 1, number: 0, size: 25 });
+
 function stubFetch(routes: Route[]) {
     calls = [];
     vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
@@ -308,13 +310,34 @@ describe("payment-run wizard", () => {
 });
 
 describe("payment runs list and a posted run", () => {
-    it("lists runs with their status", async () => {
-        stubFetch([{ match: "/payment-runs", body: [RUN, { ...RUN, id: "run-2", runNumber: "PR-26/5", status: "POSTED" }] }]);
+    it("lists runs with their status, a page at a time from the paged endpoint", async () => {
+        stubFetch([{ match: "/payment-runs/paged", body: pageOf([RUN, { ...RUN, id: "run-2", runNumber: "PR-26/5", status: "POSTED" }]) }]);
         renderIn("en", <PaymentRunsPage />);
         const table = await screen.findByTestId("runs-table");
         await waitFor(() => expect(within(table).getByText("PR-26/5")).toBeInTheDocument());
         expect(within(table).getByText("Posted")).toBeInTheDocument();
         expect(within(table).getByText("Draft")).toBeInTheDocument();
+        const read = new URL(calls[0].url, "http://x");
+        expect(read.pathname).toBe("/api/proxy/v1/finance/payment-runs/paged");
+        expect(read.searchParams.get("page")).toBe("0");
+        expect(read.searchParams.get("size")).toBe("25");
+        // Scale follow-up: never the unbounded list.
+        expect(calls.some(c => c.url.endsWith("/finance/payment-runs"))).toBe(false);
+    });
+
+    it("filters by status and payment date on the server, from page 1", async () => {
+        stubFetch([{ match: "/payment-runs/paged", body: pageOf([]) }]);
+        renderIn("ar", <PaymentRunsPage />);
+        await waitFor(() => expect(calls.length).toBeGreaterThan(0));
+        fireEvent.change(screen.getByTestId("runs-status"), { target: { value: "POSTED" } });
+        fireEvent.change(screen.getByTestId("runs-from"), { target: { value: "2026-09-01" } });
+        fireEvent.change(screen.getByTestId("runs-to"), { target: { value: "2026-09-30" } });
+        await waitFor(() => {
+            const q = new URL(calls.at(-1)!.url, "http://x").searchParams;
+            expect([q.get("status"), q.get("from"), q.get("to"), q.get("page")]).toEqual(["POSTED", "2026-09-01", "2026-09-30", "0"]);
+        });
+        expect(await screen.findByText(ar.PaymentRuns.noRunsFiltered)).toBeInTheDocument();
+        expect(screen.getByText(ar.PaymentRuns.allStatuses)).toBeInTheDocument();
     });
 
     it("refuses a property manager", () => {
@@ -355,9 +378,41 @@ describe("issued cheques", () => {
         { match: "/issued-cheques/summary", body: SUMMARY },
         { method: "POST", match: "/issued-cheques/c31/present", body: { ...CHEQUE, status: "PRESENTED" } },
         { method: "POST", match: "/issued-cheques/c31/cancel", body: { ...CHEQUE, status: "CANCELLED" } },
-        { match: "/issued-cheques", body: [CHEQUE] },
-        { match: "/vendors", body: [{ id: "gulf", nameEn: "Gulf AC Services", active: true }] },
+        { match: "/issued-cheques/paged", body: pageOf([CHEQUE]) },
+        { match: "/vendors/paged", body: pageOf([{ id: "gulf", nameEn: "Gulf AC Services", active: true }]) },
     ]));
+
+    it("reads the register a page at a time, with the filters of the last Show", async () => {
+        renderIn("en", <IssuedChequesPage />);
+        await screen.findByTestId("present-000031");
+        const first = new URL(calls.find(c => c.url.includes("/issued-cheques/paged"))!.url, "http://x").searchParams;
+        expect([first.get("status"), first.get("page"), first.get("size")]).toEqual(["ISSUED", "0", "25"]);
+        expect(calls.some(c => /\/issued-cheques(\?|$)/.test(c.url))).toBe(false);
+
+        fireEvent.change(screen.getByTestId("cheque-status"), { target: { value: "PRESENTED" } });
+        fireEvent.click(screen.getByTestId("cheque-due-only"));
+        // Not yet: filters apply on Show.
+        expect(new URL(calls.filter(c => c.url.includes("/issued-cheques/paged")).at(-1)!.url, "http://x").searchParams.get("status"))
+            .toBe("ISSUED");
+        fireEvent.click(screen.getByTestId("cheque-filter"));
+        await waitFor(() => {
+            const q = new URL(calls.filter(c => c.url.includes("/issued-cheques/paged")).at(-1)!.url, "http://x").searchParams;
+            expect([q.get("status"), q.get("duePresent")]).toEqual(["PRESENTED", "true"]);
+        });
+        // No whole vendor list for the cut-over form's picker.
+        expect(calls.some(c => c.url.endsWith("/v1/vendors"))).toBe(false);
+    });
+
+    it("picks the cut-over vendor by server search, active suppliers only", async () => {
+        renderIn("en", <IssuedChequesPage />);
+        await screen.findByTestId("present-000031");
+        fireEvent.click(screen.getByTestId("opening-vendor"));
+        // The register row names the vendor too: pick from the picker's own list.
+        fireEvent.click(await within(await screen.findByRole("listbox")).findByText("Gulf AC Services"));
+        const q = new URL(calls.find(c => c.url.includes("/vendors/paged"))!.url, "http://x").searchParams;
+        expect(q.get("active")).toBe("true");
+        expect(screen.getByTestId("opening-vendor")).toHaveTextContent("Gulf AC Services");
+    });
 
     it("shows the tie-out and the past-date flag, and presents on a date not before the cheque's", async () => {
         renderIn("en", <IssuedChequesPage />);

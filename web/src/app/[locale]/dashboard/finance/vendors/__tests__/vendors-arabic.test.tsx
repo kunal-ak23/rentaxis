@@ -23,7 +23,10 @@ const VENDOR = {
 
 beforeEach(() => {
     global.fetch = vi.fn(async (url: unknown) => {
-        const body = String(url).includes("/finance/accounts") ? [] : [VENDOR];
+        const u = String(url);
+        // Scale follow-up: the list reads GET /vendors/paged, a page of rows.
+        const body = u.includes("/finance/accounts") ? [] : u.includes("/vendors/paged")
+            ? { content: [VENDOR], totalElements: 1, totalPages: 1, number: 0, size: 25 } : [VENDOR];
         return { ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) } as unknown as Response;
     }) as unknown as typeof fetch;
 });

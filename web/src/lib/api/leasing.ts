@@ -1466,6 +1466,21 @@ export type PostDatedQuery = {
   to?: string;
 };
 
+/** `GET /cheques/post-dated/paged`: the window and property of {@link PostDatedQuery}, a page at a time. */
+export type PostDatedPageQuery = PostDatedQuery & { page?: number; size?: number };
+
+/**
+ * `GET /cheques/post-dated/totals` (scale follow-up): what one page cannot add up — the window's
+ * count and total, each maturity date's full subtotal, and `amountBefore`, the running total of
+ * every row ahead of row `offset` (the first row of the page on screen).
+ */
+export type PostDatedTotals = {
+  count: number;
+  total: number;
+  days: { date: string; count: number; amount: number }[];
+  amountBefore: number;
+};
+
 export type PenaltyListQuery = {
   leaseId?: string;
   status?: PenaltyAssessmentStatus;
@@ -1618,6 +1633,10 @@ export const chequeApi = {
   returned: (q: { propertyId?: string; page?: number; size?: number }) => get<Page<Cheque>>(`/cheques/returned${qs(q)}`),
   toDeposit: (q: ChequeDueQuery) => get<Page<Cheque>>(`/cheques/to-deposit${qs(q)}`),
   postDated: (q: PostDatedQuery) => get<Cheque[]>(`/cheques/post-dated${qs(q)}`),
+  /** The post-dated book a page at a time, in maturity order (scale follow-up; `postDated` is unbounded). */
+  postDatedPaged: (q: PostDatedPageQuery) => get<Page<Cheque>>(`/cheques/post-dated/paged${qs(q)}`),
+  postDatedTotals: (q: PostDatedQuery & { offset?: number }) =>
+    get<PostDatedTotals>(`/cheques/post-dated/totals${qs(q)}`),
   /** The controller also takes `asOf`; the brief only names `propertyId`, so it is optional and second. */
   summary: (propertyId?: string, asOf?: string) => get<ChequeSummary>(`/cheques/summary${qs({ propertyId, asOf })}`),
   aging: (propertyId?: string, asOf?: string) => get<AgingReport>(`/cheques/aging${qs({ propertyId, asOf })}`),

@@ -1,4 +1,4 @@
-import { apiGet, apiSend, qs } from "@/lib/api/ledger";
+import { apiGet, apiSend, qs, type Page } from "@/lib/api/ledger";
 
 /**
  * Supplier AP (finance-ops spec §2, PR 3a): open items, advances, allocations,
@@ -369,8 +369,13 @@ export type IssuedChequeSummary = {
     duePresentCount: number;
 };
 
+/** `GET /finance/payment-runs/paged`: by status and payment date (both ends inclusive), oldest first. */
+export type PaymentRunPageQuery = { status?: PaymentRunStatus; from?: string; to?: string; page?: number; size?: number };
+
 export const paymentRunsApi = {
     list: () => apiGet<PaymentRun[]>("/finance/payment-runs"),
+    /** Scale follow-up: the runs list a page at a time, filtered on the server (`list` is unbounded). */
+    paged: (q: PaymentRunPageQuery) => apiGet<Page<PaymentRun>>(`/finance/payment-runs/paged${qs(q)}`),
     get: (id: string) => apiGet<PaymentRun>(`/finance/payment-runs/${id}`),
     candidates: (q: { dueBefore?: string; vendorId?: string; propertyId?: string; includePartPaid?: boolean; excludeRunId?: string }) =>
         apiGet<RunCandidates>(`/finance/payment-runs/candidates${qs(q)}`),
@@ -387,9 +392,22 @@ export const paymentRunsApi = {
 /** `IssuedChequeActionDTO` for `POST .../present`: F14-20's notOnStatement flag. */
 export type IssuedChequeActionInput = { date: string; reason?: string | null; notOnStatement?: boolean };
 
+export type IssuedChequeQuery = { status?: IssuedChequeStatus; bankAccountId?: string; from?: string; to?: string; duePresent?: boolean };
+
+/** A vendor as the pickers need it (`GET /vendors/paged` rows carry the whole master record). */
+export type VendorOption = { id: string; nameEn: string; nameAr?: string | null; active: boolean; trn?: string | null };
+
+export const vendorLookupApi = {
+    /** Server-searched vendors, by name; `active` narrows to active (or inactive) suppliers. */
+    search: (q: { q?: string; active?: boolean; size?: number }) =>
+        apiGet<Page<VendorOption>>(`/vendors/paged${qs({ q: q.q || undefined, active: q.active, page: 0, size: q.size ?? 20 })}`),
+};
+
 export const issuedChequesApi = {
-    list: (q: { status?: IssuedChequeStatus; bankAccountId?: string; from?: string; to?: string; duePresent?: boolean }) =>
-        apiGet<IssuedCheque[]>(`/finance/issued-cheques${qs(q)}`),
+    list: (q: IssuedChequeQuery) => apiGet<IssuedCheque[]>(`/finance/issued-cheques${qs(q)}`),
+    /** Scale follow-up: the register a page at a time, in cheque-date order (`list` is unbounded). */
+    paged: (q: IssuedChequeQuery & { page?: number; size?: number }) =>
+        apiGet<Page<IssuedCheque>>(`/finance/issued-cheques/paged${qs(q)}`),
     summary: () => apiGet<IssuedChequeSummary>("/finance/issued-cheques/summary"),
     present: (id: string, body: IssuedChequeActionInput) => apiSend<IssuedCheque>("POST", `/finance/issued-cheques/${id}/present`, body),
     cancel: (id: string, date: string, reason: string) =>

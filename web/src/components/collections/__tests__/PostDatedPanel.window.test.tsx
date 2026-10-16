@@ -21,7 +21,10 @@ vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: "
 const postDated = vi.fn();
 vi.mock("@/lib/api/leasing", async orig => {
     const m = await orig<typeof import("@/lib/api/leasing")>();
-    return { ...m, chequeApi: { ...m.chequeApi, postDated: (...a: unknown[]) => postDated(...(a as [])) } };
+    // Scale follow-up: the panel reads a page of the book plus its totals.
+    return { ...m, chequeApi: { ...m.chequeApi,
+        postDatedPaged: (...a: unknown[]) => postDated(...(a as [])),
+        postDatedTotals: async () => ({ count: 0, total: 0, days: [], amountBefore: 0 }) } };
 });
 
 // 20:30 UTC on 29 September is 00:30 on 30 September in Dubai: the business date is the 30th.
@@ -34,7 +37,7 @@ beforeEach(() => {
     window.history.replaceState(null, "", "/en/dashboard/collections?tab=post-dated");
     global.fetch = vi.fn(async () => ({ ok: true, json: async () => [] })) as unknown as typeof fetch;
     postDated.mockReset();
-    postDated.mockResolvedValue([]);
+    postDated.mockResolvedValue({ content: [], totalElements: 0, totalPages: 0, number: 0, size: 50 });
 });
 
 afterEach(() => {
@@ -45,7 +48,14 @@ afterEach(() => {
 
 const renderPanel = (locale: "en" | "ar" = "en") =>
     render(<NextIntlClientProvider locale={locale} messages={locale === "en" ? en : ar}><PostDatedPanel embedded /></NextIntlClientProvider>);
-const lastQuery = () => postDated.mock.calls.at(-1)?.[0];
+/** The window and property of the last page asked for (page and size are the paging, not the query). */
+const lastQuery = () => {
+    const q = postDated.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined;
+    if (!q) return q;
+    const { page, size, ...rest } = q;
+    void page; void size;
+    return rest;
+};
 const params = () => new URL(window.location.href).searchParams;
 
 describe("pdcWindow", () => {

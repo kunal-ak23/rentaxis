@@ -43,6 +43,9 @@ beforeEach(() => {
             return { ok: saveResponse.ok, status: saveResponse.status, text: async () => JSON.stringify(saveResponse.body) } as unknown as Response;
         }
         if (u.includes("/finance/accounts")) return { ok: true, status: 200, json: async () => [] } as unknown as Response;
+        if (u.includes("/vendors/paged")) {
+            return { ok: true, status: 200, json: async () => ({ content: [vendor], totalElements: 1, totalPages: 1, number: 0, size: 25 }) } as unknown as Response;
+        }
         return { ok: true, status: 200, json: async () => [vendor] } as unknown as Response;
     }) as unknown as typeof fetch;
 });
