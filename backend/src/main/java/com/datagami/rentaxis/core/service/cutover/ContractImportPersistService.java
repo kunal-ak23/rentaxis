@@ -108,18 +108,20 @@ public class ContractImportPersistService {
 
     private static final ObjectMapper JOB_DETAILS_MAPPER = new ObjectMapper();
 
+    /** {@code rentaxis.import.clear-interval} when it is not set. */
+    static final int DEFAULT_CLEAR_INTERVAL = 50;
+
+    /** {@link #persist(Workbook, ImportJob, List, int)}'s "never clear". */
+    static final int NEVER_CLEAR = 0;
+
     /**
      * How many rows (units, renters, contracts) are written between two
      * {@link #checkpoint} clears. See there for why there are any at all.
+     * Configuration, not state: nothing changes it after the bean is built, so a
+     * test that wants another interval sets the property for its own context.
      */
-    static final int DEFAULT_CLEAR_EVERY = 50;
-
-    private int clearEvery = DEFAULT_CLEAR_EVERY;
-
-    /** For the scaling guard test only: a small chunk shows the shape with a small workbook. */
-    void setClearEveryForTest(int clearEvery) {
-        this.clearEvery = clearEvery <= 0 ? DEFAULT_CLEAR_EVERY : clearEvery;
-    }
+    @org.springframework.beans.factory.annotation.Value("${rentaxis.import.clear-interval:" + DEFAULT_CLEAR_INTERVAL + "}")
+    private int clearInterval = DEFAULT_CLEAR_INTERVAL;
 
     /** What the import wrote, for the job row and for the caller's log line. */
     public record ContractImportSummary(UUID batchId, int propertiesCreated, int buildingsCreated,
@@ -138,7 +140,19 @@ public class ContractImportPersistService {
      */
     @Transactional
     public ContractImportSummary persist(Workbook wb, ImportJob job, List<ImportErrorDTO> validationWarnings) {
+        return persist(wb, job, validationWarnings, clearInterval);
+    }
+
+    /**
+     * The same, with the clear interval given per call — for the equivalence test,
+     * which imports one workbook twice in one context (chunked, and never cleared)
+     * and compares the rows. {@link #NEVER_CLEAR} (or any value below 1) never clears.
+     */
+    @Transactional
+    ContractImportSummary persist(Workbook wb, ImportJob job, List<ImportErrorDTO> validationWarnings,
+                                  int clearEvery) {
         requireTenant();
+        Chunks chunks = new Chunks(clearEvery);
         List<ImportErrorDTO> warnings = new ArrayList<>(validationWarnings == null ? List.of() : validationWarnings);
 
         // The lines are built by catalogue code, so the catalogue has to exist first.
@@ -150,13 +164,13 @@ public class ContractImportPersistService {
         Map<String, Account> accountsByName = chartByName();
 
         Properties properties = writeProperties(wb, accountsByName, warnings, batch);
-        Units units = writeUnits(wb, properties.byName(), batch);
-        RentersWritten renters = writeRenters(wb, batch);
+        Units units = writeUnits(wb, properties.byName(), batch, chunks);
+        RentersWritten renters = writeRenters(wb, batch, chunks);
         Map<String, Renter> rentersByEmail = renters.byEmail();
         int rentersCreated = renters.created();
         Contracts contracts = writeContracts(wb, properties.byName(), units.byKey(), rentersByEmail,
-                accountsByName, batch);
-        int chequesCreated = writeCheques(wb, contracts, accountsByName);
+                accountsByName, batch, chunks);
+        int chequesCreated = writeCheques(wb, contracts, accountsByName, chunks);
 
         // Roles nobody named and no template covers: reported, never guessed. A lease
         // whose role is unmapped imports fine and refuses to post, and finding that
@@ -221,7 +235,7 @@ public class ContractImportPersistService {
     }
 
     /**
-     * Every {@link #clearEvery} rows, write what is pending and empty the
+     * Every {@code clearEvery} rows, write what is pending and empty the
      * persistence context (S19-01).
      *
      * <p>The whole workbook is one transaction, and every repository query in it
@@ -240,11 +254,14 @@ public class ContractImportPersistService {
      * passes and into the cheque pass by id and re-read, so each one is changed
      * as a managed row. The flush comes first, so a clear never drops a write.</p>
      */
-    private void checkpoint(int written) {
-        if (written % clearEvery != 0) return;
+    private void checkpoint(int written, Chunks chunks) {
+        if (chunks.clearEvery() < 1 || written % chunks.clearEvery() != 0) return;
         entityManager.flush();
         entityManager.clear();
     }
+
+    /** One import's clear interval, handed down the phases rather than kept on the singleton. */
+    private record Chunks(int clearEvery) {}
 
     // ------------------------------------------------------------------
     // 1. Properties, and the six account columns
@@ -309,7 +326,7 @@ public class ContractImportPersistService {
 
     private record Units(Map<String, Unit> byKey, int buildings) {}
 
-    private Units writeUnits(Workbook wb, Map<String, Property> propertyByName, ImportBatch batch) {
+    private Units writeUnits(Workbook wb, Map<String, Property> propertyByName, ImportBatch batch, Chunks chunks) {
         Sheet sheet = wb.getSheet("Units");
         Map<String, Building> buildingByKey = new LinkedHashMap<>();
         Map<String, Unit> byKey = new LinkedHashMap<>();
@@ -362,7 +379,7 @@ public class ContractImportPersistService {
             Unit savedUnit = unitRepository.save(u);
             batches.linkEntity(batch.getId(), ImportedEntityType.UNIT, savedUnit.getId());
             byKey.put(ContractImportValidator.unitKey(propertyName, buildingName, unitNumber), savedUnit);
-            checkpoint(byKey.size());
+            checkpoint(byKey.size(), chunks);
         }
         return new Units(byKey, buildingByKey.size());
     }
@@ -391,7 +408,7 @@ public class ContractImportPersistService {
     /** The sheet's renters by email (new and matched), and how many were created. */
     private record RentersWritten(Map<String, Renter> byEmail, int created) {}
 
-    private RentersWritten writeRenters(Workbook wb, ImportBatch batch) {
+    private RentersWritten writeRenters(Workbook wb, ImportBatch batch, Chunks chunks) {
         Sheet sheet = wb.getSheet("Renters");
         Map<String, Renter> byEmail = new LinkedHashMap<>();
         int created = 0;
@@ -399,7 +416,7 @@ public class ContractImportPersistService {
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i);
             if (row == null || SheetCells.isRowEmpty(row)) continue;
-            checkpoint(++seen);
+            checkpoint(++seen, chunks);
             // S16-10: listed again by a later workbook — the same person, one record.
             Renter existing = existingRenter(SheetCells.getCellString(row, 2), SheetCells.getCellString(row, 0),
                     "Renters", i + 1, "Email");
@@ -434,7 +451,8 @@ public class ContractImportPersistService {
 
     private Contracts writeContracts(Workbook wb, Map<String, Property> propertyByName,
                                      Map<String, Unit> unitByKey, Map<String, Renter> renterByEmail,
-                                     Map<String, Account> accountsByName, ImportBatch batch) {
+                                     Map<String, Account> accountsByName, ImportBatch batch,
+                                     Chunks chunks) {
         Sheet sheet = wb.getSheet("Contracts");
         SheetCells.HeaderIndex hi = new SheetCells.HeaderIndex(sheet);
 
@@ -460,7 +478,7 @@ public class ContractImportPersistService {
                 if (lease.getUnit() != null && lease.getUnit().getProperty() != null) {
                     propertyIds.add(lease.getUnit().getProperty().getId());
                 }
-                checkpoint(leaseByNumber.size());
+                checkpoint(leaseByNumber.size(), chunks);
             }
 
             BigDecimal gross = new BigDecimal(SheetCells.cell(row, hi, "GrossAmount").trim());
@@ -490,7 +508,7 @@ public class ContractImportPersistService {
             leaseService.applyLines(lease, linesByNumber.get(e.getKey()));
             leaseService.syncDerivedTotals(lease);
             leaseRepository.save(lease);
-            checkpoint(++linesApplied);
+            checkpoint(++linesApplied, chunks);
         }
         for (LeaseLineInput in : linesByNumber.values().stream().flatMap(List::stream).toList()) {
             if (in.creditAccountId() != null) continue;
@@ -569,7 +587,8 @@ public class ContractImportPersistService {
     // 5. Cheques -> DRAFT rows carrying what bulk post must replay
     // ------------------------------------------------------------------
 
-    private int writeCheques(Workbook wb, Contracts contracts, Map<String, Account> accountsByName) {
+    private int writeCheques(Workbook wb, Contracts contracts, Map<String, Account> accountsByName,
+                             Chunks chunks) {
         Sheet sheet = wb.getSheet("Cheques");
         if (sheet == null) return 0;
         SheetCells.HeaderIndex hi = new SheetCells.HeaderIndex(sheet);
@@ -648,7 +667,7 @@ public class ContractImportPersistService {
             }
             chequeRepository.saveAll(stored);
             created += stored.size();
-            checkpoint(++contractsDone);
+            checkpoint(++contractsDone, chunks);
         }
         return created;
     }

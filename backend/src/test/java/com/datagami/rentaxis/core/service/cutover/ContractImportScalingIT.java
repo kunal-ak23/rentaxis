@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import com.datagami.rentaxis.testsupport.AbstractPostgresIT;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.TestPropertySource;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -42,13 +43,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the workbook. The statement count per contract is held flat as well, so a
  * per-row query that loads a growing set (the batch's link list did) is caught
  * too, and the batch's link rows are never read back (the per-contract lease
- * count used to load them all). The chunk is set small so that a small workbook already spans several
- * chunks.</p>
+ * count used to load them all). The chunk is set small, through the property and
+ * for this context only, so that a small workbook already spans several chunks.</p>
  */
 @SpringBootTest
+@TestPropertySource(properties = "rentaxis.import.clear-interval=" + ContractImportScalingIT.CHUNK)
 class ContractImportScalingIT extends AbstractPostgresIT {
 
-    private static final int CHUNK = 10;
+    static final int CHUNK = 10;
     private static final int SMALL = 10;
     private static final int LARGE = 60;
 
@@ -71,13 +73,11 @@ class ContractImportScalingIT extends AbstractPostgresIT {
                         if (ARMED.get()) FLUSHED_ENTITIES.incrementAndGet();
                     });
         }
-        contractPersist.setClearEveryForTest(CHUNK);
         fixture.authenticateAsTenantAdmin();
     }
 
     @AfterEach
     void tearDown() {
-        contractPersist.setClearEveryForTest(ContractImportPersistService.DEFAULT_CLEAR_EVERY);
         ARMED.set(false);
         TenantContextHolder.clear();
         fixture.clearAuthentication();
