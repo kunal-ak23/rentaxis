@@ -618,8 +618,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         // 10.50 — do not agree with the stored lines (37.50 / 0.00): the missing pair shows.
         r = recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(
                 new BankRecDTOs.DayTotalInput(LocalDate.of(2026, 9, 7), new BigDecimal("48.00"), new BigDecimal("10.50")))));
-        assertThat(r.unprovenDays()).singleElement().extracting(BankRecDTOs.UnprovenDay::status).isEqualTo("MISMATCH");
-        assertThat(check(r, "LINE_ORDER").message()).contains("do not agree with the imported lines: a line is missing");
+        assertThat(r.unprovenDays()).singleElement().extracting(BankRecDTOs.UnprovenDay::status).isEqualTo("ENTERED");
+        assertThat(check(r, "LINE_ORDER").message()).contains("do not all agree with the imported lines: a line is missing");
         assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("a line is missing");
         assertThat(jdbc.queryForObject("select count(*) from bank_rec_day_totals where reconciliation_id = ?", Integer.class, id))
                 .as("kept with the reconciliation").isEqualTo(1);
@@ -684,7 +684,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(check(r, "LINE_ORDER").ok()).isFalse();
         r = recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(
                 new BankRecDTOs.DayTotalInput(SEP_1, new BigDecimal("5.00"), new BigDecimal("20.00")))));
-        assertThat(r.unprovenDays()).singleElement().extracting(BankRecDTOs.UnprovenDay::status).isEqualTo("PROVEN");
+        assertThat(r.unprovenDays()).singleElement().extracting(BankRecDTOs.UnprovenDay::status).isEqualTo("ENTERED");
         // All its lines are there; its order is still not known, so the paper's balances are asked for.
         assertThat(check(r, "LINE_ORDER").ok()).isFalse();
         assertThat(check(r, "LINE_ORDER").message()).contains("Type the opening and closing balances");
@@ -708,7 +708,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 01/09/2026,01/09/2026,FEE ONE,,5.00,,995.00
                 """);
         importText("""
-                01/09/2026,01/09/2026,Opening balance,,,,"1,000.00"
+                31/08/2026,31/08/2026,Opening balance,,,,"1,000.00"
                 01/09/2026,01/09/2026,FEE ONE,,5.00,,995.00
                 01/09/2026,01/09/2026,CREDIT TWO,,,20.00,"1,015.00"
                 02/09/2026,02/09/2026,FEE THREE,,5.00,,"1,010.00"
@@ -722,6 +722,33 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         BankRecDTOs.Reconciliation r = recs.create(ei.getId(), period(SEP_1, SEP_30));
         assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
+    }
+
+    /**
+     * Review P2-4: a time-window export (say 07:00–16:00 on 01/09) prints an Opening row
+     * at its window's edge, dated the same day as its first line. It does not prove the
+     * day's start, so the day the test extract also brought stays unproven. A Closing
+     * row proves a day's end only once that day is over.
+     */
+    @Test
+    void boundaryRowsOfATimeWindowExportProveNothing() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importText("""
+                01/09/2026,01/09/2026,FEE ONE,,5.00,,995.00
+                """);
+        importText("""
+                01/09/2026,01/09/2026,Opening balance,,,,"1,000.00"
+                01/09/2026,01/09/2026,FEE ONE,,5.00,,995.00
+                01/09/2026,01/09/2026,CREDIT TWO,,,20.00,"1,015.00"
+                01/09/2026,01/09/2026,Closing balance,,,,"1,015.00"
+                """);
+        assertThat(jdbc.queryForObject("select merge_unproven from bank_statement_days where bank_account_id = ? and txn_date = ?",
+                Boolean.class, ei.getId(), SEP_1)).isTrue();
+        // Today's lines with a Closing row: the day is not over (TODAY), so no proof either.
+        assertThat(BankStatementImportService.closingProves(true, TODAY, TODAY)).isFalse();
+        assertThat(BankStatementImportService.closingProves(true, TODAY.minusDays(1), TODAY)).isTrue();
+        assertThat(StatementMapper.openingProves(SEP_1, SEP_1)).isFalse();
+        assertThat(StatementMapper.openingProves(AUG_31, SEP_1)).isTrue();
     }
 
     /**

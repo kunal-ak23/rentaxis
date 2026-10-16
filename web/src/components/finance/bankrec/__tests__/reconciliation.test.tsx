@@ -152,13 +152,26 @@ describe("day totals for an unproven day (review P2-3)", () => {
         });
     }
 
-    it("shows a disagreement as a missing line", async () => {
+    it("says only overall, once every day is entered, whether the totals agree (P3-20)", async () => {
         stubFetch([{ match: "/bank-accounts/ba-1/reconciliations", body: ROWS },
             { match: "/reconciliations/rec-9", body: { ...UNPROVEN,
-                unprovenDays: [{ date: "2026-09-07", typedDebits: 37.5, typedCredits: 10.5, status: "MISMATCH" }] } }]);
+                checks: [...SEPT.checks, { code: "LINE_ORDER" as const, ok: false,
+                    message: "The total debits and credits typed from the paper statement for 07/09/2026 do not all agree with the imported lines: a line is missing." }],
+                unprovenDays: [{ date: "2026-09-07", typedDebits: 37.5, typedCredits: 10.5, status: "ENTERED" }] } }]);
         renderIn("en", <ReconciliationPanel bankAccountId="ba-1" />);
-        expect(await screen.findByTestId("rec-day-status-2026-09-07")).toHaveTextContent(en.BankRec.dayStatus_MISMATCH);
+        expect(await screen.findByTestId("rec-day-status-2026-09-07")).toHaveTextContent(en.BankRec.dayStatus_ENTERED);
+        expect(screen.getByTestId("rec-day-totals-result")).toHaveTextContent(en.BankRec.dayTotalsDisagree);
         expect((screen.getByTestId("rec-day-debits-2026-09-07") as HTMLInputElement).value).toMatch(/^37\.50?$/);
+    });
+
+    it("gives no verdict while a day is still needed", async () => {
+        stubFetch([{ match: "/bank-accounts/ba-1/reconciliations", body: ROWS },
+            { match: "/reconciliations/rec-9", body: { ...UNPROVEN, unprovenDays: [
+                { date: "2026-09-07", typedDebits: 37.5, typedCredits: 10.5, status: "ENTERED" },
+                { date: "2026-09-08", typedDebits: null, typedCredits: null, status: "NEEDED" }] } }]);
+        renderIn("en", <ReconciliationPanel bankAccountId="ba-1" />);
+        await screen.findByTestId("rec-day-totals");
+        expect(screen.queryByTestId("rec-day-totals-result")).toBeNull();
     });
 
     it("has no day-totals box when no day is unproven", async () => {

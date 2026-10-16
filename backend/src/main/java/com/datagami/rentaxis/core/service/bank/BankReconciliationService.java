@@ -392,13 +392,16 @@ public class BankReconciliationService {
         Map<LocalDate, Boolean> unconfirmed = unconfirmedDays(t, b, from, to);
         // Review P2-3: an unproven day is proven by the day's total debits and total
         // credits typed from the paper statement, when they agree with its stored lines.
-        List<BankRecDTOs.UnprovenDay> unprovenDays = dayProof(t, r.id(), unconfirmed, period);
+        List<BankRecDTOs.UnprovenDay> dayVerdicts = dayProof(t, r.id(), unconfirmed, period);
+        // P3-20: the page sees only whether a day's totals were entered, not the verdict.
+        List<BankRecDTOs.UnprovenDay> unprovenDays = dayVerdicts.stream().map(d -> "NEEDED".equals(d.status()) ? d
+                : new BankRecDTOs.UnprovenDay(d.date(), d.typedDebits(), d.typedCredits(), "ENTERED")).toList();
         boolean openingKnown = !first || r.opening() != null;
         // S20-02: with the paper's balances typed, the order of an unconfirmed day's
         // lines is not evidence of anything: the total decides there, not the chain.
         Set<LocalDate> chainSkipped = closingTyped && openingKnown ? unconfirmed.keySet() : Set.of();
         checks.add(continuity(opening, closing, movement, period, from, chainSkipped, unconfirmed.keySet()));
-        lineOrder(unconfirmed, unprovenDays, closingTyped, openingKnown, first && r.opening() != null)
+        lineOrder(unconfirmed, dayVerdicts, closingTyped, openingKnown, first && r.opening() != null)
                 .ifPresent(checks::add);
 
         // ---- book side
@@ -692,13 +695,6 @@ public class BankReconciliationService {
                 .map(BankRecDTOs.UnprovenDay::date).toList();
         List<LocalDate> needed = unprovenDays.stream().filter(d -> "NEEDED".equals(d.status()))
                 .map(BankRecDTOs.UnprovenDay::date).toList();
-        if (!mismatch.isEmpty()) {
-            return Optional.of(new BankRecDTOs.Check("LINE_ORDER", false, "On " + dayList(mismatch)
-                    + " the total debits and credits typed from the paper statement do not agree with the imported "
-                    + "lines: a line is missing. Import a statement that runs from the day before to the day after "
-                    + (mismatch.size() == 1 ? "that day" : "each of them") + ", or delete the imports that brought "
-                    + "its lines and import one statement holding the whole day."));
-        }
         if (!needed.isEmpty()) {
             return Optional.of(new BankRecDTOs.Check("LINE_ORDER", false, "On " + dayList(needed)
                     + " a line in one file was taken for an identical line already imported from another, but the file "
@@ -707,6 +703,16 @@ public class BankReconciliationService {
                     + " total debits and total credits from the paper statement; or import a statement that runs from "
                     + "the day before to the day after; or delete the imports that brought its lines and import one "
                     + "statement holding the whole day."));
+        }
+        // Review P3-20: only once every unproven day's totals are typed, and only the
+        // overall result — no per-day verdict to probe the stored totals with.
+        if (!mismatch.isEmpty()) {
+            List<LocalDate> all = unprovenDays.stream().map(BankRecDTOs.UnprovenDay::date).toList();
+            return Optional.of(new BankRecDTOs.Check("LINE_ORDER", false, "The total debits and credits typed from the "
+                    + "paper statement for " + dayList(all) + " do not all agree with the imported lines: a line is "
+                    + "missing. Check the figures against the paper statement; or import a statement that runs from the "
+                    + "day before to the day after each such day; or delete the imports that brought their lines and "
+                    + "import one statement holding the whole day."));
         }
         // Days proven by their typed totals have all their lines, but not a known order:
         // like any unconfirmed day they need the typed closing (an order that chains by

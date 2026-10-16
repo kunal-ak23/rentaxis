@@ -361,13 +361,26 @@ public class BankStatementImportService {
                     where tenant_id = :t and bank_account_id = :b and line_hash in (:h)
                     on conflict do nothing""", src.addValue("h", existing));
         }
-        settleDays(t, bankAccountId, r.rows(), hashes, storedDays, locked, r.openingRow(), r.closingRow());
+        // Review P2-4: a Closing row proves the last day whole only once that day is over.
+        LocalDate lastLine = r.rows().stream().map(StatementMapper.Row::txnDate).max(Comparator.naturalOrder()).orElse(null);
+        settleDays(t, bankAccountId, r.rows(), hashes, storedDays, locked, r.openingRow(),
+                closingProves(r.closingRow(), lastLine, LocalDate.now(clock)));
         imports.save(imp);
         return result("IMPORTED", null, grid, kind, r, List.of(), warnings, fresh, dup, preview, imp.getId(), detected);
     }
 
     /** A stored statement line, as de-duplication and day ordering need it. */
     record StoredLine(String hash, BigDecimal amount, String description, BigDecimal balance) { }
+
+    /**
+     * Review P2-4: a Closing row (agreeing with the lines) proves the file's last day is
+     * held to its end only when that day was over at import — the file's last line is
+     * dated before the import date. A window export taken during the day prints one at
+     * its mid-day edge.
+     */
+    static boolean closingProves(boolean closingRow, LocalDate lastLineDate, LocalDate importDate) {
+        return closingRow && lastLineDate != null && importDate != null && lastLineDate.isBefore(importDate);
+    }
 
     /** #97: the lines already stored for each day of this file, in stored {@code seq} order. */
     private Map<LocalDate, List<StoredLine>> storedLines(UUID t, UUID bankAccountId, List<StatementMapper.Row> rows) {

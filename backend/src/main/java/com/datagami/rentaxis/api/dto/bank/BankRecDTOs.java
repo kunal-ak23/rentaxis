@@ -163,9 +163,10 @@ public final class BankRecDTOs {
     /**
      * Review P2-3: a day of the period where a file's line was taken for an identical
      * stored one without the file holding the whole day. {@code status}: NEEDED (type
-     * the day's total debits and credits from the paper statement), PROVEN (the typed
-     * totals agree with the stored lines), MISMATCH (they do not: a line is missing).
-     * The lines' own totals are not shown, so they cannot be copied into the inputs.
+     * the day's total debits and credits from the paper statement) or ENTERED. Whether
+     * they agree with the stored lines is said only overall, once every day's totals are
+     * entered (LINE_ORDER; review P3-20), and the lines' own totals are never shown, so
+     * neither can be probed or copied.
      */
     public record UnprovenDay(LocalDate date, BigDecimal typedDebits, BigDecimal typedCredits, String status) { }
 

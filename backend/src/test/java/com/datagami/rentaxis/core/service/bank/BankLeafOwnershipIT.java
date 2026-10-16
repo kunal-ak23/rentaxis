@@ -475,6 +475,11 @@ class BankLeafOwnershipIT extends AbstractPostgresIT {
         assertThat(ownerOf(leaf)).isEqualTo(aBank.getId());
         assertThat(jdbc.queryForObject("select name from accounts where id = ?", String.class, leaf))
                 .as("169 moves without renaming").startsWith("Emirates Islamic - ");
+        // P3-17: a hand-typed leaf of the building, starting with the operating bank's name, owned by its bank.
+        UUID petty = accountService.createLeaf("Emirates Islamic - petty cash", accountService.getAccountByCode("A-02-02"),
+                org.building().getId()).getId();
+        jdbc.update("insert into bank_account_ledgers (tenant_id, bank_account_id, account_id) values (?, ?, ?)",
+                a.tenantId(), aBank.getId(), petty);
         for (int run = 0; run < 2; run++) {
             tx.executeWithoutResult(st -> com.datagami.rentaxis.testsupport.ChangesetSql
                     .of("173-rename-moved-building-bank-leaves.yaml").forEach(jdbc::execute));
@@ -483,6 +488,8 @@ class BankLeafOwnershipIT extends AbstractPostgresIT {
                 .isEqualTo("ENBD - " + org.building().getNameEn());
         assertThat(jdbc.queryForObject("select name from accounts where id = ?", String.class, gla))
                 .as("a leaf still with the operating bank keeps its name").isEqualTo(glaName);
+        assertThat(jdbc.queryForObject("select name from accounts where id = ?", String.class, petty))
+                .as("a hand-typed name is kept").isEqualTo("Emirates Islamic - petty cash");
         in(b);
         assertThat(ownerOf(leafOf(other.building()))).isEqualTo(bBank.getId());
         assertThat(jdbc.queryForObject("select name from accounts where id = ?", String.class, leafOf(other.building())))

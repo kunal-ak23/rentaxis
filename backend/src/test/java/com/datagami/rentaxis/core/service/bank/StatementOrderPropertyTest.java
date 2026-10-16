@@ -261,11 +261,29 @@ class StatementOrderPropertyTest {
                  Set<LocalDate> unproven, Set<Integer> arrived) { }
 
     private static Books importStatement(List<List<Bank>> files) {
-        return importFiles(files.stream().map(f -> new FileSpec(f, false, false)).toList());
+        return importFiles(files.stream().map(FileSpec::plain).toList());
     }
 
     /** A statement file: its lines, and whether it carries explicit opening/closing balance rows. */
-    record FileSpec(List<Bank> lines, boolean openingRow, boolean closingRow) { }
+    /**
+     * A statement file: its lines, the date of its Opening-balance row (null: none),
+     * whether it prints an agreeing Closing-balance row, and the day it was imported.
+     * Whether the rows prove anything is the service's own decision (review P2-4).
+     */
+    record FileSpec(List<Bank> lines, LocalDate openingRowDate, boolean closingRow, LocalDate importDate) {
+        static FileSpec plain(List<Bank> lines) {
+            return new FileSpec(lines, null, false, null);
+        }
+
+        boolean openingProves() {
+            return !lines.isEmpty() && StatementMapper.openingProves(openingRowDate, lines.get(0).date());
+        }
+
+        boolean closingProves() {
+            return !lines.isEmpty() && BankStatementImportService.closingProves(closingRow, lines.get(lines.size() - 1).date(),
+                    importDate);
+        }
+    }
 
     private static Books importFiles(List<FileSpec> specs) {
         Map<LocalDate, List<BankStatementImportService.StoredLine>> stored = new TreeMap<>();
@@ -293,7 +311,7 @@ class StatementOrderPropertyTest {
                     }
                 }
                 BankStatementImportService.Pos pos = BankStatementImportService.Pos.of(day.getKey(), fileDays.firstKey(),
-                        fileDays.lastKey(), spec.openingRow(), spec.closingRow());
+                        fileDays.lastKey(), spec.openingProves(), spec.closingProves());
                 BankStatementImportService.Settled s = BankStatementImportService.settle(
                         have.stream().map(BankStatementImportService.StoredLine::hash).toList(), fileHashes, pos,
                         states.getOrDefault(day.getKey(), BankStatementImportService.DayState.UNKNOWN));
@@ -434,6 +452,94 @@ class StatementOrderPropertyTest {
     }
 
     /**
+     * Review P2-4: time-window exports cut mid-day, each printing an Opening row dated
+     * its first line's day and an agreeing Closing row, downloaded on the day its window
+     * ends — the shape that reopened S20-01 when boundary rows were trusted on the bank's
+     * word. Repeating lines, 0–2 lines lost, windows in any order and overlapping; plus
+     * the statement's true start (opening row dated the day before: a real proof) and its
+     * true end downloaded the next day (closing row: a real proof). Finalize
+     * as the service decides (typed day totals and balances from the bank's true lines).
+     * Required: no wrong opening or closing, and no line a file brought lost.
+     */
+    @Test
+    void timeWindowExportsWithBoundaryRowsNeverHideALine() {
+        Random rnd = new Random(9707);
+        int finalized = 0;
+        for (int trial = 0; trial < 60_000; trial++) {
+            List<Bank> truth = statement(rnd);
+            if (truth.size() < 4) continue;
+            int drops = rnd.nextInt(3);
+            List<Bank> received = new ArrayList<>(truth);
+            Set<Integer> dropped = new HashSet<>();
+            while (dropped.size() < drops) dropped.add(1 + rnd.nextInt(truth.size() - 2));
+            received.removeIf(l -> dropped.contains(l.index()));
+            List<FileSpec> files = new ArrayList<>();
+            for (int f = 0, n = 2 + rnd.nextInt(4); f < n; f++) {
+                int a = rnd.nextInt(received.size());
+                List<Bank> w = received.subList(a, a + 1 + rnd.nextInt(received.size() - a));
+                files.add(new FileSpec(w, w.get(0).date(), true, w.get(w.size() - 1).date()));
+            }
+            // The statement's true start, with its opening dated the day before (a real proof),
+            // cut mid-day and downloaded at its end; and its true end, downloaded the next day.
+            // (Both reach no further than the first / from the last lost line, so they are accepted:
+            // the first and the last line of the statement always arrive, as in the tests above.)
+            int firstGap = 0;
+            while (firstGap < received.size() && received.get(firstGap).index() == firstGap) firstGap++;
+            int lastGap = received.size() - 1;
+            while (lastGap > 0 && received.get(lastGap).index() - received.get(lastGap - 1).index() == 1) lastGap--;
+            List<Bank> head = received.subList(0, 1 + rnd.nextInt(Math.max(1, Math.min(firstGap, received.size()))));
+            files.add(new FileSpec(head, DAYS[0].minusDays(1), true, head.get(head.size() - 1).date()));
+            int z = lastGap + rnd.nextInt(received.size() - lastGap);
+            files.add(new FileSpec(received.subList(z, received.size()), received.get(z).date(), true, DAYS[2].plusDays(1)));
+            Collections.shuffle(files, rnd);
+            Books books = importFiles(files);
+            if (books.lines().isEmpty()) continue;
+            List<BankReconciliationService.SL> sl = new ArrayList<>();
+            for (int i = 0; i < books.lines().size(); i++) {
+                BankStatementImportService.StoredLine l = books.lines().get(i);
+                sl.add(new BankReconciliationService.SL(UUID.randomUUID(), books.dates().get(i), i + 1, l.description(), null, null,
+                        l.amount(), l.balance()));
+            }
+            List<BankReconciliationService.SL> bank = truth.stream().map(l -> new BankReconciliationService.SL(
+                    UUID.randomUUID(), l.date(), l.index(), l.description(), null, null, l.amount(), l.balance())).toList();
+            if (!books.unproven().stream().allMatch(d -> {
+                BigDecimal[] paper = BankReconciliationService.dayTotals(bank, d);
+                return BankReconciliationService.totalsAgree(BankReconciliationService.dayTotals(sl, d), paper[0], paper[1]);
+            })) continue;
+            boolean confirmed = books.unconfirmed().isEmpty();
+            BigDecimal trueClosing = truth.get(truth.size() - 1).balance();
+            BigDecimal closing = confirmed ? books.lines().get(books.lines().size() - 1).balance() : trueClosing;
+            BigDecimal movement = books.lines().stream().map(BankStatementImportService.StoredLine::amount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BankStatementImportService.StoredLine first = books.lines().get(0);
+            for (boolean derived : new boolean[]{true, false}) {
+                BigDecimal opening = derived && confirmed ? first.balance().subtract(first.amount()) : OPENING;
+                if (!BankReconciliationService.continuity(opening, closing, movement, sl, DAYS[0],
+                        confirmed ? Set.of() : books.unconfirmed(), books.unconfirmed()).ok()) continue;
+                finalized++;
+                String what = String.format("trial %d: truth %s, books %s, unconfirmed %s", trial, truth, books.lines(),
+                        books.unconfirmed());
+                assertThat(opening).as(what + " — wrong opening").isEqualByComparingTo(OPENING);
+                assertThat(closing).as(what + " — wrong closing").isEqualByComparingTo(trueClosing);
+                Map<String, Integer> have = new HashMap<>();
+                for (int i = 0; i < books.lines().size(); i++) {
+                    BankStatementImportService.StoredLine l = books.lines().get(i);
+                    have.merge(books.dates().get(i) + "|" + l.amount() + "|" + l.description() + "|" + l.balance(), 1, Integer::sum);
+                }
+                for (Bank l : truth) {
+                    if (!books.arrived().contains(l.index())) continue;
+                    String k = l.date() + "|" + l.amount() + "|" + l.description() + "|" + l.balance();
+                    long brought = truth.stream().filter(x -> books.arrived().contains(x.index())
+                            && (x.date() + "|" + x.amount() + "|" + x.description() + "|" + x.balance()).equals(k)).count();
+                    assertThat((long) have.getOrDefault(k, 0)).as(what + " — a line a file brought was lost: " + k)
+                            .isGreaterThanOrEqualTo(brought);
+                }
+            }
+        }
+        assertThat(finalized).as("finalized").isGreaterThan(1_000);
+    }
+
+    /**
      * #97 review P2-2: exact re-imports stay idempotent — a statement imported
      * again in pieces (or whole, in a different file) adds nothing, however much
      * its lines repeat.
@@ -530,24 +636,25 @@ class StatementOrderPropertyTest {
     @Test
     void frictionByExportHabit() {
         Map<String, java.util.function.BiFunction<List<Bank>, Random, List<FileSpec>>> habits = new LinkedHashMap<>();
-        habits.put("calendar months, no overlap", (t, r) -> months(t, 0, false));
-        habits.put("calendar months, no overlap, bank prints opening/closing rows", (t, r) -> months(t, 0, true));
+        habits.put("calendar months, no overlap", (t, r) -> months(t, 0, Rows.NONE));
+        habits.put("calendar months, no overlap, opening row dated the day before", (t, r) -> months(t, 0, Rows.DAY_BEFORE));
         habits.put("weekly whole days, no overlap", (t, r) -> {
             List<FileSpec> out = new ArrayList<>();
             for (LocalDate d = LocalDate.of(2026, 7, 1); !d.isAfter(LocalDate.of(2026, 9, 30)); d = d.plusDays(7)) {
-                out.add(new FileSpec(between(t, d, d.plusDays(6)), false, false));
+                out.add(FileSpec.plain(between(t, d, d.plusDays(6))));
             }
             return out;
         });
         habits.put("daily, end of day", (t, r) -> t.stream().map(Bank::date).distinct()
-                .map(d -> new FileSpec(between(t, d, d), false, false)).toList());
+                .map(d -> FileSpec.plain(between(t, d, d))).toList());
         habits.put("the same month imported twice", (t, r) -> {
-            List<FileSpec> out = new ArrayList<>(months(t, 0, false));
-            out.addAll(months(t, 0, false));
+            List<FileSpec> out = new ArrayList<>(months(t, 0, Rows.NONE));
+            out.addAll(months(t, 0, Rows.NONE));
             return out;
         });
-        habits.put("months overlapping by one whole day", (t, r) -> months(t, 1, false));
-        habits.put("months overlapping by one whole day, bank prints opening/closing rows", (t, r) -> months(t, 1, true));
+        habits.put("months overlapping by one whole day", (t, r) -> months(t, 1, Rows.NONE));
+        habits.put("months overlapping by one whole day, opening row dated the day before", (t, r) -> months(t, 1, Rows.DAY_BEFORE));
+        habits.put("months overlapping by one whole day, opening row dated the first day", (t, r) -> months(t, 1, Rows.SAME_DAY));
         habits.put("month export cut mid-day on its last day, next export from that day", (t, r) -> {
             List<FileSpec> out = new ArrayList<>();
             int start = 0;
@@ -557,7 +664,7 @@ class StatementOrderPropertyTest {
                 List<Bank> lastDay = between(t, last, last);
                 int cut = upTo.size() - (lastDay.isEmpty() ? 0 : r.nextInt(lastDay.size() + 1));
                 if (m == 9) cut = upTo.size();
-                out.add(new FileSpec(t.subList(start, Math.max(start, cut)), false, false));
+                out.add(FileSpec.plain(t.subList(start, Math.max(start, cut))));
                 int dayStart = upTo.size() - lastDay.size();
                 start = Math.min(dayStart, cut);
             }
@@ -567,8 +674,8 @@ class StatementOrderPropertyTest {
             List<FileSpec> out = new ArrayList<>();
             for (LocalDate d : t.stream().map(Bank::date).distinct().toList()) {
                 List<Bank> day = between(t, d, d);
-                out.add(new FileSpec(day.subList(0, r.nextInt(day.size() + 1)), false, false));
-                out.add(new FileSpec(day, false, false));
+                out.add(FileSpec.plain(day.subList(0, r.nextInt(day.size() + 1))));
+                out.add(FileSpec.plain(day));
             }
             return out;
         });
@@ -590,12 +697,25 @@ class StatementOrderPropertyTest {
         System.out.println("FRICTION TABLE\n" + table);
     }
 
-    /** Calendar-month exports; {@code overlapDays} back into the previous month. */
-    private static List<FileSpec> months(List<Bank> t, int overlapDays, boolean rows) {
+    /** How a date-range export prints its Opening-balance row. */
+    enum Rows { NONE, DAY_BEFORE, SAME_DAY }
+
+    /**
+     * Calendar-month exports, {@code overlapDays} back into the previous month,
+     * downloaded the day after the range ends (so a Closing row, when printed, proves).
+     */
+    private static List<FileSpec> months(List<Bank> t, int overlapDays, Rows rows) {
         List<FileSpec> out = new ArrayList<>();
         for (int m = 7; m <= 9; m++) {
-            LocalDate from = LocalDate.of(2026, m, 1), to = from.withDayOfMonth(from.lengthOfMonth());
-            out.add(new FileSpec(between(t, m == 7 ? from : from.minusDays(overlapDays), to), rows, rows));
+            LocalDate to = LocalDate.of(2026, m, 1).withDayOfMonth(LocalDate.of(2026, m, 1).lengthOfMonth());
+            LocalDate from = m == 7 ? LocalDate.of(2026, m, 1) : LocalDate.of(2026, m, 1).minusDays(overlapDays);
+            List<Bank> lines = between(t, from, to);
+            LocalDate openingDate = switch (rows) {
+                case NONE -> null;
+                case DAY_BEFORE -> from.minusDays(1);
+                case SAME_DAY -> lines.isEmpty() ? from : lines.get(0).date();
+            };
+            out.add(new FileSpec(lines, openingDate, rows != Rows.NONE, to.plusDays(1)));
         }
         return out;
     }

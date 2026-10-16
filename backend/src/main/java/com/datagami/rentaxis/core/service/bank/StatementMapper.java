@@ -100,6 +100,7 @@ public final class StatementMapper {
         List<Row> rows = new ArrayList<>();
         BigDecimal opening = null;
         BigDecimal closing = null;
+        LocalDate openingDate = null;
         int balanceMissing = 0;
         for (int r = Math.max(p.getFirstDataRow(), 1) - 1; r < grid.rows().size() && errors.size() < MAX_ERRORS; r++) {
             int fileRow = r + 1;
@@ -131,6 +132,11 @@ public final class StatementMapper {
             if (amount == null) {
                 if (OPENING.matcher(description).find()) {
                     opening = balance;
+                    try {
+                        openingDate = noDate ? null : StatementValues.date(dateCell, formats);
+                    } catch (DateTimeParseException e) {
+                        openingDate = null;
+                    }
                 } else if (CLOSING.matcher(description).find()) {
                     closing = balance;
                 } else if (!(noDate || TOTAL.matcher(description).find())) {
@@ -199,20 +205,30 @@ public final class StatementMapper {
             case REVERSED -> reversed(rows);
             case DATE -> rows.stream().sorted(Comparator.comparing(Row::txnDate)).toList();
         };
-        // Review P2-3 (2): an explicit "Opening balance" / "Closing balance" row is the
-        // bank saying where its date-range export starts and ends — at the start of the
-        // first date and the end of the last. Trusted only when it agrees with the
-        // lines' own running balance.
+        // Review P2-3 (2), P2-4: an explicit "Opening balance" / "Closing balance" row.
+        // Agreeing with the lines' running balance proves only that no line is missing
+        // inside the file, not where its window began: a time-window export prints one
+        // at a mid-day edge. So an Opening row counts as proof that the first day is
+        // held from its start only when the row is dated before the first line's day
+        // (the window demonstrably began on an earlier day). A Closing row is reported
+        // here when it agrees; the import trusts it only for a day that is over
+        // (BankStatementImportService). Otherwise both stay balance cross-checks.
         boolean openingRow = false, closingRow = false;
         if (hasBalance && !book.isEmpty()) {
             BigDecimal firstBefore = book.get(0).balance().subtract(book.get(0).amount());
             BigDecimal lastAfter = book.get(book.size() - 1).balance();
-            openingRow = opening != null && opening.compareTo(firstBefore) == 0;
+            openingRow = opening != null && opening.compareTo(firstBefore) == 0
+                    && openingProves(openingDate, book.get(0).txnDate());
             closingRow = closing != null && closing.compareTo(lastAfter) == 0;
             if (opening == null) opening = firstBefore;
             if (closing == null) closing = lastAfter;
         }
         return new Result(book, errors, warnings, missing, opening, closing, hasBalance, order, openingRow, closingRow);
+    }
+
+    /** Review P2-4: an Opening row proves its file starts at a day's start only when dated before the first line's day. */
+    static boolean openingProves(LocalDate openingRowDate, LocalDate firstLineDate) {
+        return openingRowDate != null && firstLineDate != null && openingRowDate.isBefore(firstLineDate);
     }
 
     private static final Pattern NUMERIC_DATE = Pattern.compile("^(\\d{1,2})[/.-](\\d{1,2})[/.-](\\d{4}|\\d{2})\\b");

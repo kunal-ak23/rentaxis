@@ -343,6 +343,7 @@ function DayTotals({ rec, busy, onSave }: {
 }) {
     const t = useTranslations("BankRec");
     const days = rec.unprovenDays ?? [];
+    const lineOrder = rec.checks.find(c => c.code === "LINE_ORDER");
     const [values, setValues] = useState<Record<string, { debits: string; credits: string }>>(() =>
         Object.fromEntries(days.map(d => [d.date, {
             debits: d.typedDebits === null ? "" : String(d.typedDebits),
@@ -371,11 +372,16 @@ function DayTotals({ rec, busy, onSave }: {
                             <MoneyTextInput options={UNSIGNED} className={`${field} w-full`} value={v.credits}
                                             onChange={x => set(d.date, "credits", x)} data-testid={`rec-day-credits-${d.date}`} />
                         </label>
-                        <span className={`text-[11px] font-semibold ${d.status === "PROVEN" ? "text-success" : d.status === "MISMATCH" ? "text-error" : "text-muted"}`}
+                        <span className="text-[11px] font-semibold text-muted"
                               data-testid={`rec-day-status-${d.date}`}>{t(`dayStatus_${d.status}`)}</span>
                     </li>
                 ))}
             </ul>
+            {days.every(d => d.status === "ENTERED") && lineOrder && (
+                <p className={`text-xs ${lineOrder.ok ? "text-success" : "text-error"}`} data-testid="rec-day-totals-result">
+                    {lineOrder.ok || !lineOrder.message.includes("do not all agree") ? t("dayTotalsAgree") : t("dayTotalsDisagree")}
+                </p>
+            )}
             <button type="button" className={small} disabled={busy || invalid} data-testid="rec-day-totals-save"
                     onClick={() => onSave(rows.map(({ d, v }) => ({
                         date: d.date,

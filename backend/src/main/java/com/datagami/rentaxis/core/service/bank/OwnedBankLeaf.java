@@ -169,15 +169,16 @@ public class OwnedBankLeaf {
                 where tenant_id = :t and account_id = :a and bank_account_id = :o""", p.addValue("o", owner));
         // S20-04: a building's leaf is named "<operating bank> - <building>" when the
         // operating bank takes it at property creation; on the move it takes the new
-        // bank's name, so the chart does not say one bank while another owns it. A
-        // name someone typed (not starting with the old bank's name) is kept.
+        // bank's name, so the chart does not say one bank while another owns it. Only
+        // that exact generated name changes (review P3-17); a name someone typed is kept.
         jdbc.update("""
-                update accounts a set name = nb.bank_name || substr(a.name, length(ob.bank_name) + 1), updated_at = now()
-                  from bank_accounts ob, bank_accounts nb
+                update accounts a set name = nb.bank_name || ' - ' || p.name_en, updated_at = now()
+                  from bank_accounts ob, bank_accounts nb, properties p
                  where a.id = :a and a.tenant_id = :t
                    and ob.id = :o and ob.tenant_id = :t and nb.id = :b and nb.tenant_id = :t
+                   and p.id = a.property_id and p.tenant_id = :t
                    and ob.bank_name <> nb.bank_name
-                   and left(a.name, length(ob.bank_name) + 3) = ob.bank_name || ' - '""", p);
+                   and a.name = ob.bank_name || ' - ' || p.name_en""", p);
         return Claim.MOVED;
     }
 

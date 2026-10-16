@@ -276,7 +276,8 @@ export type UnprovenDay = {
     date: string;
     typedDebits: number | null;
     typedCredits: number | null;
-    status: "NEEDED" | "PROVEN" | "MISMATCH";
+    /** Whether this day's totals were entered; the verdict comes only overall, in LINE_ORDER (review P3-20). */
+    status: "NEEDED" | "ENTERED";
 };
 
 export type DayTotalInput = { date: string; debits: number | null; credits: number | null };
