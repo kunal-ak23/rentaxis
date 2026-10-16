@@ -495,4 +495,15 @@ class BankLeafOwnershipIT extends AbstractPostgresIT {
         assertThat(jdbc.queryForObject("select name from accounts where id = ?", String.class, leafOf(other.building())))
                 .isEqualTo("ENBD - " + other.building().getNameEn());
     }
+    /** Review P3-17: the move renames only the generated "<bank> - <building>" name; a typed one stays. */
+    @Test
+    void aMovedLeafWithAHandTypedNameKeepsIt() {
+        Org org = operatingBankThenBuilding(a, "Marina Tower");
+        UUID leaf = leafOf(org.building());
+        jdbc.update("update accounts set name = 'Emirates Islamic - petty cash' where id = ?", leaf);
+        BankAccount enbd = bank("ENBD", "1010000000001", org.building());
+        assertThat(ownerOf(leaf)).isEqualTo(enbd.getId());
+        assertThat(jdbc.queryForObject("select name from accounts where id = ?", String.class, leaf))
+                .isEqualTo("Emirates Islamic - petty cash");
+    }
 }
