@@ -569,7 +569,9 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                                     <option value="OTHER">{t("other")}</option>
                                 </select>
                             </div>
-                            <div>
+                            {/* The picker's panel hangs below its trigger; while it is open the
+                                field makes room for it so the scrolling body does not clip it. */}
+                            <div className={cn(!isRenter && "has-[[role=listbox]]:pb-72")}>
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t("create.relatedLease")} *</label>
                                 {isRenter ? (
                                     <>
