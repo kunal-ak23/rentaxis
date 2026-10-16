@@ -262,6 +262,13 @@ class ChargeRecognitionIT extends AbstractPostgresIT {
                 false, true, admin.displayOrder(), com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.RENT_LIKE);
         assertThatThrownBy(() -> tx.execute(s -> chargeTypeService.update(admin.id(), toDeposit)))
                 .hasMessageContaining("ADMIN_FEE is on 1 lease(s)");
+        // The credit role alone is part of the rule: posted lines are found again by it.
+        var otherRole = new com.datagami.rentaxis.api.dto.lease.ChargeTypeDTO(parking.id(), "PARKING_FEE", parking.nameEn(),
+                parking.nameAr(), AccountRole.OTHER_INCOME, parking.behaviour(), parking.vatApplicableDefault(), true,
+                parking.displayOrder(), parking.recognition());
+        assertThatThrownBy(() -> tx.execute(s -> chargeTypeService.update(parking.id(), otherRole)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("its kind, account and how it is earned cannot change");
         // A rename is not a rule change; a type only a draft uses may change its rule.
         var renamed = new com.datagami.rentaxis.api.dto.lease.ChargeTypeDTO(parking.id(), "PARKING_FEE", "Covered parking",
                 parking.nameAr(), parking.role(), parking.behaviour(), parking.vatApplicableDefault(), true,

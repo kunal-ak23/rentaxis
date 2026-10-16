@@ -2997,7 +2997,7 @@
         "deactivateWithBalance": "Account {account} still has a balance of {balance}; move the balance (or close the fiscal year) before deactivating it."
       },
       "chargeType": {
-        "ruleInUse": "{code} is on {count} lease(s) already past draft, so its kind and how it is earned cannot change. Create a new charge type for the new rule."
+        "ruleInUse": "{code} is on {count} lease(s) already past draft, so its kind, its account and how it is earned cannot change. Create a new charge type for the new rule."
       },
       "lease": {
         "reductionNegative": "Line {line} ({code}): the new amount would take the rest of the term below zero.",
