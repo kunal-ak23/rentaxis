@@ -83,6 +83,19 @@ public final class AttachmentNames {
         if (q >= 0) s = s.substring(0, q);
         int h = s.indexOf('#');
         if (h >= 0) s = s.substring(0, h);
+        return lastExtension(s);
+    }
+
+    /**
+     * The extension of a typed display name. Unlike {@link #extensionOf} it does NOT cut at
+     * {@code ?} or {@code #}: those are legal in a file name ({@code quote*2026?.pdf}) and
+     * only mean "query / fragment" in a stored URL (S18-03).
+     */
+    public static String displayExtensionOf(String displayName) {
+        return displayName == null ? "" : lastExtension(displayName);
+    }
+
+    private static String lastExtension(String s) {
         int slash = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\'));
         String base = s.substring(slash + 1);
         int dot = base.lastIndexOf('.');
@@ -192,7 +205,7 @@ public final class AttachmentNames {
         String name = displayName == null ? "" : displayName.strip();
         if (name.isEmpty()) name = fallback == null || fallback.isBlank() ? "attachment" : fallback;
         if (extension == null || extension.isEmpty()) return name;
-        String own = extensionOf(name);
+        String own = displayExtensionOf(name);
         if (own.equals(extension) || sameFormat(own, extension)) return name;
         return name + extension;
     }

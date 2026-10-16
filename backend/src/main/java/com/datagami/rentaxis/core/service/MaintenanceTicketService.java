@@ -1267,7 +1267,7 @@ public class MaintenanceTicketService {
         s = s.replaceAll("\\p{Cntrl}", "").strip();
         if (s.isEmpty() || s.equals(".") || s.equals("..")) return null;
         if (s.length() > 255) {
-            String ext = com.datagami.rentaxis.core.util.AttachmentNames.extensionOf(s);
+            String ext = com.datagami.rentaxis.core.util.AttachmentNames.displayExtensionOf(s);
             s = s.substring(0, 255 - ext.length()) + ext;
         }
         return s;

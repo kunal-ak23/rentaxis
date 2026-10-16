@@ -429,8 +429,14 @@ function MarketplaceContent({ tenantSlug }: { tenantSlug: string }) {
         : enriched;
       setListings(sorted);
       setTotalElements(data.totalElements);
-    } catch {
-      setError(t('errorLoad'));
+    } catch (err) {
+      if ((err as { status?: number })?.status === 404) {
+        // Another organisation's (or an unknown) marketplace: nothing to list, the normal empty state.
+        setListings([]);
+        setTotalElements(0);
+      } else {
+        setError(t('errorLoad'));
+      }
     } finally {
       setLoading(false);
     }

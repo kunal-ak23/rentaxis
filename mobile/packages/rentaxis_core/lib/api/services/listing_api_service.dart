@@ -20,23 +20,32 @@ class ListingApiService {
     int size = 20,
     String sort = 'createdAt,asc',
   }) async {
-    final response = await _dio.get(
-      '/marketplace/$tenantSlug/listings',
-      queryParameters: {
-        'minBedrooms': ?minBedrooms,
-        'minRent': ?minRent,
-        'maxRent': ?maxRent,
-        'furnishing': ?furnishing,
-        'availableNow': ?availableNow,
-        'nearLat': ?nearLat,
-        'nearLng': ?nearLng,
-        'radiusKm': ?radiusKm,
-        'page': page,
-        'size': size,
-        'sort': sort,
-      },
-    );
-    return response.data as Map<String, dynamic>;
+    try {
+      final response = await _dio.get(
+        '/marketplace/$tenantSlug/listings',
+        queryParameters: {
+          'minBedrooms': ?minBedrooms,
+          'minRent': ?minRent,
+          'maxRent': ?maxRent,
+          'furnishing': ?furnishing,
+          'availableNow': ?availableNow,
+          'nearLat': ?nearLat,
+          'nearLng': ?nearLng,
+          'radiusKm': ?radiusKm,
+          'page': page,
+          'size': size,
+          'sort': sort,
+        },
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      // The marketplace is per organisation: an unknown or other organisation's slug is a
+      // 404, which reads as "nothing to browse here", not as a failure.
+      if (e.response?.statusCode == 404) {
+        return {'content': [], 'totalElements': 0};
+      }
+      rethrow;
+    }
   }
 
   Future<Map<String, dynamic>> getMarketplaceListing(
