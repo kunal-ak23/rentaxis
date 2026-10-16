@@ -42,6 +42,7 @@ class MembershipStatusIT extends AbstractCallerIdentityIT {
 
     @Autowired PasswordEncoder passwordEncoder;
     @Autowired UserService userService;
+    @Autowired javax.sql.DataSource dataSource;
 
     private final ObjectMapper json = new ObjectMapper();
 
@@ -424,5 +425,67 @@ class MembershipStatusIT extends AbstractCallerIdentityIT {
         ResponseEntity<String> on = as(adminA, HttpMethod.POST, "/api/admin/users/" + renter.getId() + "/reactivate", null);
         assertThat(json.readTree(on.getBody()).get("reactivationLogin").asText()).isEqualTo("INVITED");
         assertThat(invites(renter.getId())).isEqualTo(1);
+    }
+
+    /**
+     * S17 P3-2: two admins deactivating each other at the same moment. Each request
+     * used to lock its own target first and the organisation's admin rows second, so
+     * each ended up holding the row the other was waiting for: Postgres aborted one
+     * as a deadlock and its admin got a 409. A third admin's row, the lowest id of
+     * the three and held here, lines both requests up at the admin lock so the
+     * interleaving is reproduced every run rather than by chance. With every request
+     * taking the admin rows first, in id order, the second waits for the first and
+     * both deactivations go through (the third admin stays, so neither is the last).
+     */
+    @Test
+    void twoAdminsDeactivatingEachOtherAtOnceDoNotDeadlock() throws Exception {
+        UUID orgA = newTenant("S17-A");
+        List<User> admins = new java.util.ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            admins.add(member(orgA, UserRole.TENANT_ADMIN, email(), "admin-" + i + "-password", false));
+        }
+        // Postgres's uuid order, which is what ORDER BY id locks by (not UUID.compareTo).
+        List<UUID> byId = jdbc.queryForList("select id from users where tenant_id = ? and role = 'TENANT_ADMIN'"
+                + " order by id", UUID.class, orgA);
+        java.util.function.Function<UUID, User> admin =
+                id -> admins.stream().filter(u -> u.getId().equals(id)).findFirst().orElseThrow();
+        UUID blocker = byId.get(0);
+        User first = admin.apply(byId.get(1));
+        User second = admin.apply(byId.get(2));
+
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try (java.sql.Connection hold = dataSource.getConnection()) {
+            hold.setAutoCommit(false);
+            try (var lock = hold.prepareStatement("select id from users where id = ? for update")) {
+                lock.setObject(1, blocker);
+                lock.executeQuery().close();
+            }
+            var firstOff = pool.submit(() -> as(first, HttpMethod.POST,
+                    "/api/admin/users/" + second.getId() + "/deactivate", null));
+            var secondOff = pool.submit(() -> as(second, HttpMethod.POST,
+                    "/api/admin/users/" + first.getId() + "/deactivate", null));
+            // Both requests are inside their transactions, waiting on the held row.
+            long deadline = System.currentTimeMillis() + 15_000;
+            while (waitingOnALock() < 2) {
+                assertThat(System.currentTimeMillis()).as("both requests reach the admin lock").isLessThan(deadline);
+                Thread.sleep(50);
+            }
+            hold.commit();
+
+            ResponseEntity<String> a = firstOff.get(30, java.util.concurrent.TimeUnit.SECONDS);
+            ResponseEntity<String> b = secondOff.get(30, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(a.getStatusCode().value()).as(a.getBody()).isEqualTo(200);
+            assertThat(b.getStatusCode().value()).as(b.getBody()).isEqualTo(200);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(statusOf(first.getId())).isEqualTo("INACTIVE");
+        assertThat(statusOf(second.getId())).isEqualTo("INACTIVE");
+        assertThat(statusOf(blocker)).isEqualTo("ACTIVE");
+    }
+
+    private int waitingOnALock() {
+        return jdbc.queryForObject("select count(*) from pg_stat_activity where datname = current_database()"
+                + " and wait_event_type = 'Lock'", Integer.class);
     }
 }

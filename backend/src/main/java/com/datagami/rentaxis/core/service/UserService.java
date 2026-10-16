@@ -1179,12 +1179,26 @@ public class UserService {
      */
     @Transactional
     public User deactivate(UUID targetId, UUID callerId) {
+        // S17 P3-2: the organisation's active admin rows are locked first, in id
+        // order, and the target's row only after them. Locking the target first and
+        // the admins second deadlocked two admins deactivating each other at the same
+        // moment: each held its own target and waited for the other's (Postgres
+        // aborted one, a 409). With one order for everybody the second simply waits,
+        // then re-reads the first one's row. Always taken, not only for an admin
+        // target: the role read here is not locked yet, and a row promoted in between
+        // would otherwise take the admin locks after its own again.
+        Optional<UUID> organisation = userRepository.findTenantIdById(targetId);
+        List<UUID> activeAdmins = organisation.isPresent()
+                ? userRepository.lockActiveTenantAdmins(organisation.get())
+                : List.of();
         User user = lockedStatusTarget(targetId, callerId);
         if (user.getStatus() == com.datagami.rentaxis.domain.entity.enums.UserStatus.INACTIVE) {
             return user;
         }
         if (user.getRole() == UserRole.TENANT_ADMIN) {
-            List<UUID> activeAdmins = userRepository.lockActiveTenantAdmins(user.getTenantId());
+            if (!user.getTenantId().equals(organisation.orElse(null))) {
+                activeAdmins = userRepository.lockActiveTenantAdmins(user.getTenantId());
+            }
             if (activeAdmins.stream().allMatch(targetId::equals)) {
                 throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
                         LAST_ACTIVE_ADMIN_MESSAGE, LAST_ACTIVE_ADMIN_CODE, java.util.Map.of());

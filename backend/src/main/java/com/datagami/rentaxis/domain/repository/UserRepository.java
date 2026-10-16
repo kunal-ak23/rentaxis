@@ -368,6 +368,15 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     java.util.Optional<UUID> lockById(@org.springframework.data.repository.query.Param("id") UUID id);
 
     /**
+     * S17 P3-2: the organisation a user row belongs to, read without loading (or
+     * locking) the entity, so {@code UserService.deactivate} can take the
+     * organisation's admin locks before the target row's. JPQL, so the tenant
+     * filter applies: another organisation's id reads as empty.
+     */
+    @Query("SELECT u.tenantId FROM User u WHERE u.id = :id")
+    Optional<UUID> findTenantIdById(@Param("id") UUID id);
+
+    /**
      * S17-01: the organisation's ACTIVE TENANT_ADMIN rows, locked. Deactivating an
      * admin counts these under the lock, so two admins deactivating each other at
      * once cannot both pass "not the last active admin" (the second waits, then
