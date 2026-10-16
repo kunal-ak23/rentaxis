@@ -141,4 +141,20 @@ class StatementOrderPropertyTest {
             assertThat(check(stored).ok()).as("trial %d: %s", trial, check(stored).message()).isTrue();
         }
     }
+    /** The rules of {@link BankStatementImportService#dayOrder} on named examples. */
+    @Test
+    void dayOrderExamples() {
+        // A fuller file covering the stored lines: the day takes the file's order.
+        assertThat(BankStatementImportService.dayOrder(List.of("A", "C"), List.of("B", "A", "M", "C")))
+                .containsExactly("B", "A", "M", "C");
+        // Stored lines outside the file's stretch keep their place around it.
+        assertThat(BankStatementImportService.dayOrder(List.of("P", "A", "C", "S"), List.of("A", "M", "C")))
+                .containsExactly("P", "A", "M", "C", "S");
+        // No line in common: the new lines follow (the review P1-1 case).
+        assertThat(BankStatementImportService.dayOrder(List.of("ONE"), List.of("REFUND", "THREE")))
+                .containsExactly("ONE", "REFUND", "THREE");
+        // The file leaves out a stored line inside its stretch: it is not the authority; nothing moves.
+        assertThat(BankStatementImportService.dayOrder(List.of("A", "B", "C"), List.of("X", "A", "C")))
+                .containsExactly("A", "B", "C", "X");
+    }
 }
