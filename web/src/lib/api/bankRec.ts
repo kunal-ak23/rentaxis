@@ -269,6 +269,8 @@ export type Reconciliation = {
     reopenReason: string | null;
     /** Review P2-3: days whose lines a file may have merged; absent on snapshots made before it. */
     unprovenDays?: UnprovenDay[];
+    /** Final review P3-21: the overall verdict on the typed day totals; null/absent when no day is unproven. */
+    dayTotalsVerdict?: "AGREE" | "DISAGREE" | "PENDING" | null;
 };
 
 /** A day to prove with its paper-statement totals. The lines' own totals are never sent, so they cannot be copied. */

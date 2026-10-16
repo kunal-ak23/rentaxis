@@ -309,7 +309,7 @@ public class BankReconciliationService {
                 s.depositsInTransitItems(), s.unpresentedItems(), s.bookedAfterItems(), s.unrecordedItems(),
                 s.withoutEvidenceCount(), s.matchedByMethod(), s.checks(), false, s.preparedAt(), s.preparedByName(),
                 r.finalizedAt(), userName(r.finalizedBy()), r.reopenedAt(), userName(r.reopenedBy()), r.reopenReason(),
-                s.unprovenDays() == null ? List.of() : s.unprovenDays());
+                s.unprovenDays() == null ? List.of() : s.unprovenDays(), s.dayTotalsVerdict());
     }
 
     // ------------------------------------------------------------------ figures
@@ -574,7 +574,7 @@ public class BankReconciliationService {
                 adjustedBank, adjustedBook, difference, dit, unpresented, bookedAfter, unrecorded, withoutEvidence,
                 byMethod, checks, canFinalize, Instant.now(clock), userName(BankStatementImportService.currentUserId()),
                 r.finalizedAt(), userName(r.finalizedBy()), r.reopenedAt(), userName(r.reopenedBy()), r.reopenReason(),
-                unprovenDays);
+                unprovenDays, dayTotalsVerdict(dayVerdicts));
     }
 
     /**
@@ -775,6 +775,13 @@ public class BankReconciliationService {
         return lines[0].compareTo(typedDebits) == 0 && lines[1].compareTo(typedCredits) == 0;
     }
 
+    /** P3-21: the overall verdict on the typed day totals, for the page to show without parsing a message. */
+    static String dayTotalsVerdict(List<BankRecDTOs.UnprovenDay> verdicts) {
+        if (verdicts.isEmpty()) return null;
+        if (verdicts.stream().anyMatch(d -> "NEEDED".equals(d.status()))) return "PENDING";
+        return verdicts.stream().anyMatch(d -> "MISMATCH".equals(d.status())) ? "DISAGREE" : "AGREE";
+    }
+
     /** A day's stored lines: {total debits, total credits}, both positive. */
     static BigDecimal[] dayTotals(List<SL> lines, LocalDate day) {
         BigDecimal debits = BigDecimal.ZERO, credits = BigDecimal.ZERO;
@@ -912,7 +919,7 @@ public class BankReconciliationService {
                 v.bookedAfterPeriod(), v.unrecordedCredits(), v.unrecordedDebits(), v.adjustedBank(), v.adjustedBook(),
                 v.difference(), v.depositsInTransitItems(), v.unpresentedItems(), v.bookedAfterItems(),
                 v.unrecordedItems(), v.withoutEvidenceCount(), v.matchedByMethod(), v.checks(), false, v.preparedAt(),
-                v.preparedByName(), now, userName(user), null, null, null, v.unprovenDays());
+                v.preparedByName(), now, userName(user), null, null, null, v.unprovenDays(), v.dayTotalsVerdict());
         String snapshot;
         try {
             snapshot = json.writeValueAsString(snap);

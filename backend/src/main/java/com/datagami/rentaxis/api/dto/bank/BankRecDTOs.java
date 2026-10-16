@@ -158,7 +158,8 @@ public final class BankRecDTOs {
                                  Map<String, Integer> matchedByMethod, List<Check> checks, boolean canFinalize,
                                  Instant preparedAt, String preparedByName, Instant finalizedAt,
                                  String finalizedByName, Instant reopenedAt, String reopenedByName,
-                                 String reopenReason, List<UnprovenDay> unprovenDays) { }
+                                 String reopenReason, List<UnprovenDay> unprovenDays,
+                                 String dayTotalsVerdict) { }
 
     /**
      * Review P2-3: a day of the period where a file's line was taken for an identical
@@ -169,6 +170,9 @@ public final class BankRecDTOs {
      * neither can be probed or copied.
      */
     public record UnprovenDay(LocalDate date, BigDecimal typedDebits, BigDecimal typedCredits, String status) { }
+
+    // Final review P3-21: dayTotalsVerdict on Reconciliation — null when no day is unproven;
+    // PENDING while a day's totals are still needed; AGREE / DISAGREE once all are entered.
 
     /** One day's totals from the paper statement; both null removes them. */
     public record DayTotalInput(@NotNull LocalDate date, @com.datagami.rentaxis.api.validation.Money BigDecimal debits,

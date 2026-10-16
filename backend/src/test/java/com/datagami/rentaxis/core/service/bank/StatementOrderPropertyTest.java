@@ -266,13 +266,13 @@ class StatementOrderPropertyTest {
 
     /** A statement file: its lines, and whether it carries explicit opening/closing balance rows. */
     /**
-     * A statement file: its lines, the date of its Opening-balance row (null: none),
-     * whether it prints an agreeing Closing-balance row, and the day it was imported.
+     * A statement file: its lines, the dates of its Opening- and Closing-balance rows
+     * (null: none), and the day it was imported (which proves nothing: final review).
      * Whether the rows prove anything is the service's own decision (review P2-4).
      */
-    record FileSpec(List<Bank> lines, LocalDate openingRowDate, boolean closingRow, LocalDate importDate) {
+    record FileSpec(List<Bank> lines, LocalDate openingRowDate, LocalDate closingRowDate, LocalDate importDate) {
         static FileSpec plain(List<Bank> lines) {
-            return new FileSpec(lines, null, false, null);
+            return new FileSpec(lines, null, null, null);
         }
 
         boolean openingProves() {
@@ -280,8 +280,7 @@ class StatementOrderPropertyTest {
         }
 
         boolean closingProves() {
-            return !lines.isEmpty() && BankStatementImportService.closingProves(closingRow, lines.get(lines.size() - 1).date(),
-                    importDate);
+            return !lines.isEmpty() && StatementMapper.closingProves(closingRowDate, lines.get(lines.size() - 1).date());
         }
     }
 
@@ -453,11 +452,12 @@ class StatementOrderPropertyTest {
 
     /**
      * Review P2-4: time-window exports cut mid-day, each printing an Opening row dated
-     * its first line's day and an agreeing Closing row, downloaded on the day its window
-     * ends — the shape that reopened S20-01 when boundary rows were trusted on the bank's
-     * word. Repeating lines, 0–2 lines lost, windows in any order and overlapping; plus
-     * the statement's true start (opening row dated the day before: a real proof) and its
-     * true end downloaded the next day (closing row: a real proof). Finalize
+     * its first line's day and an agreeing Closing ("Available balance") row dated its
+     * last line's day — half downloaded on the day the window ends, half imported a day
+     * or more later (final review: the import date proves nothing about the window) — the
+     * shape that reopened S20-01 when boundary rows were trusted on the bank's word. Repeating lines, 0–2 lines lost, windows in any order and overlapping; plus
+     * the statement's true start (Opening row dated the day before: a real proof) and its
+     * true end (Closing row dated the day after: a real proof). Finalize
      * as the service decides (typed day totals and balances from the bank's true lines).
      * Required: no wrong opening or closing, and no line a file brought lost.
      */
@@ -477,10 +477,12 @@ class StatementOrderPropertyTest {
             for (int f = 0, n = 2 + rnd.nextInt(4); f < n; f++) {
                 int a = rnd.nextInt(received.size());
                 List<Bank> w = received.subList(a, a + 1 + rnd.nextInt(received.size() - a));
-                files.add(new FileSpec(w, w.get(0).date(), true, w.get(w.size() - 1).date()));
+                // Final review: half are imported a day or more after their window ended.
+                LocalDate imported = w.get(w.size() - 1).date().plusDays(rnd.nextBoolean() ? 0 : 1 + rnd.nextInt(5));
+                files.add(new FileSpec(w, w.get(0).date(), w.get(w.size() - 1).date(), imported));
             }
-            // The statement's true start, with its opening dated the day before (a real proof),
-            // cut mid-day and downloaded at its end; and its true end, downloaded the next day.
+            // The statement's true start, its Opening row dated the day before (a real proof),
+            // cut mid-day; and its true end, its Closing row dated the day after.
             // (Both reach no further than the first / from the last lost line, so they are accepted:
             // the first and the last line of the statement always arrive, as in the tests above.)
             int firstGap = 0;
@@ -488,9 +490,11 @@ class StatementOrderPropertyTest {
             int lastGap = received.size() - 1;
             while (lastGap > 0 && received.get(lastGap).index() - received.get(lastGap - 1).index() == 1) lastGap--;
             List<Bank> head = received.subList(0, 1 + rnd.nextInt(Math.max(1, Math.min(firstGap, received.size()))));
-            files.add(new FileSpec(head, DAYS[0].minusDays(1), true, head.get(head.size() - 1).date()));
+            files.add(new FileSpec(head, DAYS[0].minusDays(1), head.get(head.size() - 1).date(),
+                    head.get(head.size() - 1).date().plusDays(rnd.nextBoolean() ? 0 : 1 + rnd.nextInt(5))));
             int z = lastGap + rnd.nextInt(received.size() - lastGap);
-            files.add(new FileSpec(received.subList(z, received.size()), received.get(z).date(), true, DAYS[2].plusDays(1)));
+            files.add(new FileSpec(received.subList(z, received.size()), received.get(z).date(), DAYS[2].plusDays(1),
+                    DAYS[2].plusDays(1 + rnd.nextInt(5))));
             Collections.shuffle(files, rnd);
             Books books = importFiles(files);
             if (books.lines().isEmpty()) continue;
@@ -637,7 +641,7 @@ class StatementOrderPropertyTest {
     void frictionByExportHabit() {
         Map<String, java.util.function.BiFunction<List<Bank>, Random, List<FileSpec>>> habits = new LinkedHashMap<>();
         habits.put("calendar months, no overlap", (t, r) -> months(t, 0, Rows.NONE));
-        habits.put("calendar months, no overlap, opening row dated the day before", (t, r) -> months(t, 0, Rows.DAY_BEFORE));
+        habits.put("calendar months, no overlap, balance rows dated outside the range", (t, r) -> months(t, 0, Rows.OUTSIDE));
         habits.put("weekly whole days, no overlap", (t, r) -> {
             List<FileSpec> out = new ArrayList<>();
             for (LocalDate d = LocalDate.of(2026, 7, 1); !d.isAfter(LocalDate.of(2026, 9, 30)); d = d.plusDays(7)) {
@@ -653,8 +657,8 @@ class StatementOrderPropertyTest {
             return out;
         });
         habits.put("months overlapping by one whole day", (t, r) -> months(t, 1, Rows.NONE));
-        habits.put("months overlapping by one whole day, opening row dated the day before", (t, r) -> months(t, 1, Rows.DAY_BEFORE));
-        habits.put("months overlapping by one whole day, opening row dated the first day", (t, r) -> months(t, 1, Rows.SAME_DAY));
+        habits.put("months overlapping by one whole day, balance rows dated outside the range", (t, r) -> months(t, 1, Rows.OUTSIDE));
+        habits.put("months overlapping by one whole day, balance rows dated on the range's days", (t, r) -> months(t, 1, Rows.INSIDE));
         habits.put("month export cut mid-day on its last day, next export from that day", (t, r) -> {
             List<FileSpec> out = new ArrayList<>();
             int start = 0;
@@ -697,8 +701,8 @@ class StatementOrderPropertyTest {
         System.out.println("FRICTION TABLE\n" + table);
     }
 
-    /** How a date-range export prints its Opening-balance row. */
-    enum Rows { NONE, DAY_BEFORE, SAME_DAY }
+    /** How a date-range export dates its Opening/Closing-balance rows. */
+    enum Rows { NONE, OUTSIDE, INSIDE }
 
     /**
      * Calendar-month exports, {@code overlapDays} back into the previous month,
@@ -712,10 +716,15 @@ class StatementOrderPropertyTest {
             List<Bank> lines = between(t, from, to);
             LocalDate openingDate = switch (rows) {
                 case NONE -> null;
-                case DAY_BEFORE -> from.minusDays(1);
-                case SAME_DAY -> lines.isEmpty() ? from : lines.get(0).date();
+                case OUTSIDE -> from.minusDays(1);
+                case INSIDE -> from;
             };
-            out.add(new FileSpec(lines, openingDate, rows != Rows.NONE, to.plusDays(1)));
+            LocalDate closingDate = switch (rows) {
+                case NONE -> null;
+                case OUTSIDE -> to.plusDays(1);
+                case INSIDE -> to;
+            };
+            out.add(new FileSpec(lines, openingDate, closingDate, to.plusDays(1)));
         }
         return out;
     }

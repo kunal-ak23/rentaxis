@@ -681,10 +681,12 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
             assertThat(d.date()).isEqualTo(SEP_1);
             assertThat(d.status()).isEqualTo("NEEDED");
         });
+        assertThat(r.dayTotalsVerdict()).isEqualTo("PENDING");
         assertThat(check(r, "LINE_ORDER").ok()).isFalse();
         r = recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(
                 new BankRecDTOs.DayTotalInput(SEP_1, new BigDecimal("5.00"), new BigDecimal("20.00")))));
         assertThat(r.unprovenDays()).singleElement().extracting(BankRecDTOs.UnprovenDay::status).isEqualTo("ENTERED");
+        assertThat(r.dayTotalsVerdict()).isEqualTo("AGREE");
         // All its lines are there; its order is still not known, so the paper's balances are asked for.
         assertThat(check(r, "LINE_ORDER").ok()).isFalse();
         assertThat(check(r, "LINE_ORDER").message()).contains("Type the opening and closing balances");
@@ -727,8 +729,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
     /**
      * Review P2-4: a time-window export (say 07:00–16:00 on 01/09) prints an Opening row
      * at its window's edge, dated the same day as its first line. It does not prove the
-     * day's start, so the day the test extract also brought stays unproven. A Closing
-     * row proves a day's end only once that day is over.
+     * day's start, so the day the test extract also brought stays unproven. Likewise a
+     * Closing row proves a day's end only when dated after it.
      */
     @Test
     void boundaryRowsOfATimeWindowExportProveNothing() {
@@ -744,11 +746,48 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 """);
         assertThat(jdbc.queryForObject("select merge_unproven from bank_statement_days where bank_account_id = ? and txn_date = ?",
                 Boolean.class, ei.getId(), SEP_1)).isTrue();
-        // Today's lines with a Closing row: the day is not over (TODAY), so no proof either.
-        assertThat(BankStatementImportService.closingProves(true, TODAY, TODAY)).isFalse();
-        assertThat(BankStatementImportService.closingProves(true, TODAY.minusDays(1), TODAY)).isTrue();
         assertThat(StatementMapper.openingProves(SEP_1, SEP_1)).isFalse();
         assertThat(StatementMapper.openingProves(AUG_31, SEP_1)).isTrue();
+        assertThat(StatementMapper.closingProves(SEP_1, SEP_1)).isFalse();
+        assertThat(StatementMapper.closingProves(LocalDate.of(2026, 9, 2), SEP_1)).isTrue();
+    }
+
+    /**
+     * Final review, P2-4 (closing side), the reviewer's end-to-end repro: 10/09 runs
+     * SMS charge −10.50 → 989.50, its reversal +10.50 → 1,000, the charge again −10.50 →
+     * 989.50. A noon export holds the first charge and an "Available balance" row
+     * (989.50, dated 10/09); an afternoon window export holds the second charge with an
+     * Opening and a Closing row dated 10/09. Both are imported weeks later. When the
+     * import date made the noon Closing row "the end of the day", the second charge was
+     * taken for the first, the day stayed confirmed and the reconciliation finalized
+     * with the reversal and the second charge missing. Now neither row proves anything,
+     * the day is unproven, and the paper's day totals expose the missing pair.
+     */
+    @Test
+    void aMiddayAvailableBalanceImportedLaterDoesNotEndTheDay() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importText("""
+                10/09/2026,10/09/2026,SMS ALERT CHARGES,,10.50,,989.50
+                10/09/2026,10/09/2026,Available balance,,,,989.50
+                """);
+        BankRecDTOs.ImportResult afternoon = importText("""
+                10/09/2026,10/09/2026,Opening balance,,,,"1,000.00"
+                10/09/2026,10/09/2026,SMS ALERT CHARGES,,10.50,,989.50
+                10/09/2026,10/09/2026,Closing balance,,,,989.50
+                """);
+        assertThat(afternoon.linesDuplicate()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select merge_unproven from bank_statement_days where bank_account_id = ? and txn_date = ?",
+                Boolean.class, ei.getId(), SEP_10)).isTrue();
+        book("SMS ALERT CHARGES", "CHARGE");
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("989.50"))).id();
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("A typed closing balance cannot settle this");
+        BankRecDTOs.Reconciliation r = recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(
+                new BankRecDTOs.DayTotalInput(SEP_10, new BigDecimal("21.00"), new BigDecimal("10.50")))));
+        assertThat(check(r, "LINE_ORDER").message()).contains("a line is missing");
+        assertThat(r.dayTotalsVerdict()).isEqualTo("DISAGREE");
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("a line is missing");
+        assertThat(reconciledThrough()).isNull();
     }
 
     /**

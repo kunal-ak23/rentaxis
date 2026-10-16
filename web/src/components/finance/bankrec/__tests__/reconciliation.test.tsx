@@ -157,18 +157,37 @@ describe("day totals for an unproven day (review P2-3)", () => {
             { match: "/reconciliations/rec-9", body: { ...UNPROVEN,
                 checks: [...SEPT.checks, { code: "LINE_ORDER" as const, ok: false,
                     message: "The total debits and credits typed from the paper statement for 07/09/2026 do not all agree with the imported lines: a line is missing." }],
-                unprovenDays: [{ date: "2026-09-07", typedDebits: 37.5, typedCredits: 10.5, status: "ENTERED" }] } }]);
+                unprovenDays: [{ date: "2026-09-07", typedDebits: 37.5, typedCredits: 10.5, status: "ENTERED" }],
+                dayTotalsVerdict: "DISAGREE" } }]);
         renderIn("en", <ReconciliationPanel bankAccountId="ba-1" />);
         expect(await screen.findByTestId("rec-day-status-2026-09-07")).toHaveTextContent(en.BankRec.dayStatus_ENTERED);
         expect(screen.getByTestId("rec-day-totals-result")).toHaveTextContent(en.BankRec.dayTotalsDisagree);
         expect((screen.getByTestId("rec-day-debits-2026-09-07") as HTMLInputElement).value).toMatch(/^37\.50?$/);
     });
 
+    for (const locale of ["en", "ar"] as const) {
+        it(`shows the API's verdict, not one read off another failure's message (P3-21, ${locale})`, async () => {
+            // Every day entered and agreeing, but LINE_ORDER fails for another reason (the closing is not typed).
+            stubFetch([{ match: "/bank-accounts/ba-1/reconciliations", body: ROWS },
+                { match: "/reconciliations/rec-9", body: { ...UNPROVEN,
+                    checks: [...SEPT.checks, { code: "LINE_ORDER" as const, ok: false,
+                        message: "Lines on 07/09/2026 came from more than one file … Type the opening and closing balances" }],
+                    unprovenDays: [{ date: "2026-09-07", typedDebits: 37.5, typedCredits: 10.5, status: "ENTERED" }],
+                    dayTotalsVerdict: "AGREE" } }]);
+            const msgs = locale === "ar" ? ar : en;
+            renderIn(locale, <ReconciliationPanel bankAccountId="ba-1" />);
+            const result = await screen.findByTestId("rec-day-totals-result");
+            expect(result).toHaveTextContent(msgs.BankRec.dayTotalsAgree);
+            expect(result).toHaveAttribute("data-verdict", "AGREE");
+            expect(result.className).toContain("text-success");
+        });
+    }
+
     it("gives no verdict while a day is still needed", async () => {
         stubFetch([{ match: "/bank-accounts/ba-1/reconciliations", body: ROWS },
             { match: "/reconciliations/rec-9", body: { ...UNPROVEN, unprovenDays: [
                 { date: "2026-09-07", typedDebits: 37.5, typedCredits: 10.5, status: "ENTERED" },
-                { date: "2026-09-08", typedDebits: null, typedCredits: null, status: "NEEDED" }] } }]);
+                { date: "2026-09-08", typedDebits: null, typedCredits: null, status: "NEEDED" }], dayTotalsVerdict: "PENDING" } }]);
         renderIn("en", <ReconciliationPanel bankAccountId="ba-1" />);
         await screen.findByTestId("rec-day-totals");
         expect(screen.queryByTestId("rec-day-totals-result")).toBeNull();
