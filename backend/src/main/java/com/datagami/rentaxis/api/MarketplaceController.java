@@ -87,6 +87,7 @@ public class MarketplaceController {
             @RequestParam(required = false) Double radiusKm,
             @PageableDefault(sort = "createdAt", direction = Sort.Direction.ASC) Pageable pageable) {
         UUID tenantId = marketplaceService.resolveTenantSlug(tenantSlug);
+        requireOwnOrganisation(tenantId);
         checkEnabled(tenantId);
         MarketplaceSearchRequest req = new MarketplaceSearchRequest(
                 minBedrooms, minRent, maxRent, furnishing,
@@ -134,9 +135,7 @@ public class MarketplaceController {
     @GetMapping("/me/wishlist")
     @org.springframework.transaction.annotation.Transactional(readOnly = true)   // maps lazy associations (OSIV is off)
     public ResponseEntity<List<UnitListingSummaryDTO>> wishlist() {
-        // No checkEnabled() here: wishlist is intentionally cross-tenant (a renter may
-        // have wishlisted listings from multiple landlords). A per-tenant feature gate
-        // cannot meaningfully apply. Hiding the wishlist after disabling LISTINGS would
+        // No checkEnabled() here: hiding the wishlist after LISTINGS is switched off would
         // confuse renters who already expressed interest.
         UUID renterUserId = currentUserId();
         List<UnitListingInterest> interests = interestService.wishlistForRenter(renterUserId);
@@ -144,13 +143,10 @@ public class MarketplaceController {
             return ResponseEntity.ok(List.of());
         }
 
-        // Wishlist is intentionally cross-tenant: a renter may have wishlisted
-        // listings across multiple landlords. We bypass MarketplaceService
-        // (which would apply tenant scoping) and load the listings directly
-        // by id in a single query. NOTE: derived JpaRepository queries are
-        // not intercepted by TenantAspect, so this is safe today; if that
-        // changes, this query must use @Query(nativeQuery = true) or be
-        // explicitly excluded.
+        // The wishlist is per organisation, like the rest of the marketplace: the interest
+        // rows and the listings below are read under the session's tenant filter
+        // (TenantAspect wraps every domain repository method, derived queries included), so a
+        // renter sees the listings they saved in the organisation they are signed into.
         List<UUID> listingIds = interests.stream()
                 .map(UnitListingInterest::getListingId)
                 .collect(Collectors.toList());
@@ -185,6 +181,19 @@ public class MarketplaceController {
         return new UnitListingSummaryDTO(d.id(), d.title(), d.propertyName(), d.bedrooms(), d.bathrooms(),
                 d.annualRent(), d.status(), null, d.interestsCount(), d.lat(), d.lng(),
                 d.createdAt(), d.updatedAt(), d.slug());
+    }
+
+    /**
+     * The marketplace is per landlord (per organisation): a signed-in user sees only their
+     * own organisation's listings. Another organisation's slug is a 404, the same answer the
+     * detail and interest endpoints already give, and not an empty 200 list (S18-01). The
+     * public pages ({@code /public/l/...}) are separate and unchanged.
+     */
+    private void requireOwnOrganisation(UUID tenantId) {
+        UUID sessionTenant = com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId();
+        if (sessionTenant != null && !sessionTenant.equals(tenantId)) {
+            throw new NotFoundException("Tenant not found");
+        }
     }
 
     private void checkEnabled(UUID tenantId) {

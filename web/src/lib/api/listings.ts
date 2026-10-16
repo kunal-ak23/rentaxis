@@ -66,7 +66,11 @@ export async function fetchMarketplaceListings(
   if (token) headers['Authorization'] = `Bearer ${token}`
 
   const res = await fetch(`${MARKET_BASE}/${tenantSlug}/listings?${q.toString()}`, { headers })
-  if (!res.ok) throw new Error(`Failed to fetch marketplace listings: ${res.status}`)
+  if (!res.ok) {
+    // The marketplace is per organisation: an unknown or other organisation's slug is a 404.
+    // Callers show the normal empty state for it, not a load error.
+    throw Object.assign(new Error(`Failed to fetch marketplace listings: ${res.status}`), { status: res.status })
+  }
   return res.json()
 }
 
