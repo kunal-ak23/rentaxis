@@ -282,7 +282,13 @@ public class PropertyAccountService {
             mappingRepo.save(m);
             if (operating.isPresent()) {
                 accountRepo.flush();
-                ownedBankLeaf.attach(operating.get().id(), leaf.getId());
+                // #98 M3: a leaf reused by name may carry history; attach checks the
+                // operating bank account's reconciliation lock like setLeaves does.
+                if (ownedBankLeaf.attach(operating.get().id(), leaf.getId())
+                        == com.datagami.rentaxis.core.service.bank.OwnedBankLeaf.Claim.LOCKED) {
+                    log.warn("Bank leaf {} of property {} has postings inside {}'s finalized reconciliation; left unattached",
+                            leaf.getCode(), propertyId, operating.get().bankName());
+                }
             }
         }
         generateDirectExpenseLeaves(property, propertyId);

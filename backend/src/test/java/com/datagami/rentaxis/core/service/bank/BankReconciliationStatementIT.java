@@ -577,8 +577,12 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 """);
         assertThat(late.status()).isEqualTo("INVALID");
         assertThat(late.errors()).singleElement().asString().contains("inside the reconciliation finalized through 30/09/2026");
-        assertThatThrownBy(() -> ledgers.setLeaves(ei.getId(), List.of(marinaBank.getId())))
+        // Marina's leaf carries September's postings: it cannot leave the reconciled set.
+        assertThatThrownBy(() -> ledgers.setLeaves(ei.getId(), List.of(palmBank.getId())))
                 .hasMessageContaining("cannot leave its set");
+        // #98 M1: Palm's leaf has no postings, so nothing signed off changes when it leaves.
+        assertThat(ledgers.setLeaves(ei.getId(), List.of(marinaBank.getId()))).extracting(BankRecDTOs.Leaf::id)
+                .containsExactly(marinaBank.getId());
         // After a reopen, the match can be undone again.
         recs.reopen(sep, "restating");
         assertThat(matches.undo(charge, false, null, "oops").status()).isEqualTo("UNDONE");
