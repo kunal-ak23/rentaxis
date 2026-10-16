@@ -194,15 +194,64 @@ public class ChequeQueryService {
     public Page<ChequeDTO> postDatedPaged(UUID propertyId, YearMonth month, LocalDate from, LocalDate to,
                                           int page, int size) {
         Scope scope = scope(propertyId);
-        Pageable pageable = PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, MAX_PAGE_SIZE)), DEFAULT_SORT);
+        Pageable pageable = PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, MAX_PAGE_SIZE)), PDC_SORT);
         if (scope.blocked()) {
             return Page.empty(pageable);
         }
+        LocalDate[] w = pdcWindow(month, from, to);
+        return toPage(chequeRepository.findPostDatedPaged(propertyId, w[0], w[1], scope.unrestricted(),
+                nonEmpty(scope.propertyIds()), pageable));
+    }
+
+    /**
+     * Maturity order with the id last: many instalments share a date and a sequence number
+     * (every contract's first cheque is #1), and without a unique key Postgres may order those
+     * differently from one page request to the next, repeating or skipping a row.
+     */
+    private static final Sort PDC_SORT = Sort.by(Sort.Order.asc("chequeDate"), Sort.Order.asc("seqNo"),
+            Sort.Order.asc("id"));
+
+    private static LocalDate[] pdcWindow(YearMonth month, LocalDate from, LocalDate to) {
         YearMonth ym = month != null ? month : YearMonth.now();
         LocalDate lo = from != null ? from : (to != null ? LocalDate.of(2000, 1, 1) : ym.atDay(1));
         LocalDate hi = to != null ? to : (from != null ? LocalDate.of(2099, 12, 31) : ym.atEndOfMonth());
-        return toPage(chequeRepository.findPostDatedPaged(propertyId, lo, hi, scope.unrestricted(),
-                scope.propertyIds(), pageable));
+        return new LocalDate[]{lo, hi};
+    }
+
+    /**
+     * What the paged post-dated screen cannot add up from one page (scale follow-up): the
+     * window's count and total, each maturity date's full count and subtotal, and
+     * {@code amountBefore} — the running total of the rows ahead of {@code offset} in
+     * {@link #postDatedPaged}'s order, which the page's running-total column starts from.
+     * Same window, scope and filters as {@link #postDatedPaged}.
+     */
+    public com.datagami.rentaxis.api.dto.cheque.PostDatedTotalsDTO postDatedTotals(UUID propertyId, YearMonth month,
+            LocalDate from, LocalDate to, int offset) {
+        Scope scope = scope(propertyId);
+        if (scope.blocked()) {
+            return new com.datagami.rentaxis.api.dto.cheque.PostDatedTotalsDTO(0, ZERO, List.of(), ZERO);
+        }
+        LocalDate[] w = pdcWindow(month, from, to);
+        Collection<UUID> ids = nonEmpty(scope.propertyIds());
+        List<com.datagami.rentaxis.api.dto.cheque.PostDatedTotalsDTO.Day> days = new java.util.ArrayList<>();
+        long count = 0;
+        BigDecimal total = ZERO;
+        for (Object[] r : chequeRepository.postDatedByDay(propertyId, w[0], w[1], scope.unrestricted(), ids)) {
+            long n = ((Number) r[1]).longValue();
+            BigDecimal amt = r[2] == null ? ZERO : new BigDecimal(r[2].toString());
+            days.add(new com.datagami.rentaxis.api.dto.cheque.PostDatedTotalsDTO.Day((LocalDate) r[0], n, amt));
+            count += n;
+            total = total.add(amt);
+        }
+        BigDecimal before = ZERO;
+        int upTo = (int) Math.min(Math.max(0, offset), count);
+        if (upTo > 0) {
+            for (BigDecimal a : chequeRepository.postDatedAmounts(propertyId, w[0], w[1], scope.unrestricted(), ids,
+                    PageRequest.of(0, upTo, PDC_SORT))) {
+                if (a != null) before = before.add(a);
+            }
+        }
+        return new com.datagami.rentaxis.api.dto.cheque.PostDatedTotalsDTO(count, total, days, before);
     }
 
     /** The largest page a paged register endpoint serves. */

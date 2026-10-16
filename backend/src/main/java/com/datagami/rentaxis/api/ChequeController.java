@@ -169,6 +169,22 @@ public class ChequeController {
         return queryService.postDatedPaged(propertyId, parseMonth(month), from, to, page, size);
     }
 
+    /**
+     * The paged post-dated book's totals (scale follow-up): window count and total, per-day
+     * subtotals, and the running total ahead of row {@code offset} ({@code page × size} of the
+     * page on screen). Same window and scope as {@code /post-dated/paged}.
+     */
+    @GetMapping("/post-dated/totals")
+    @PreAuthorize(STAFF)
+    public com.datagami.rentaxis.api.dto.cheque.PostDatedTotalsDTO postDatedTotals(
+            @RequestParam(required = false) UUID propertyId,
+            @RequestParam(required = false) String month,
+            @RequestParam(required = false) LocalDate from,
+            @RequestParam(required = false) LocalDate to,
+            @RequestParam(defaultValue = "0") int offset) {
+        return queryService.postDatedTotals(propertyId, parseMonth(month), from, to, offset);
+    }
+
     @GetMapping("/summary")
     @PreAuthorize(STAFF)
     public ChequeSummaryDTO summary(@RequestParam(required = false) UUID propertyId,

@@ -32,6 +32,27 @@ public class VendorService {
         return repository.findAllByOrderByNameEnAsc();
     }
 
+    /**
+     * {@code GET /vendors/paged} with the list screen's needs (scale follow-up): {@code active}
+     * narrows to active or inactive suppliers (null: both), and {@code oldest} orders the house
+     * way for entity lists — created first, then name, then id — instead of by name.
+     */
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<Vendor> searchPaged(String q, Boolean active, boolean oldest,
+                                                                   int page, int size) {
+        org.springframework.data.domain.Sort sort = oldest
+                ? org.springframework.data.domain.Sort.by(
+                        org.springframework.data.domain.Sort.Order.asc("createdAt"),
+                        org.springframework.data.domain.Sort.Order.asc("nameEn"),
+                        org.springframework.data.domain.Sort.Order.asc("id"))
+                : org.springframework.data.domain.Sort.by(
+                        org.springframework.data.domain.Sort.Order.asc("nameEn"),
+                        org.springframework.data.domain.Sort.Order.asc("id"));
+        return repository.searchPagedByActive(com.datagami.rentaxis.core.util.Search.requireTenant(),
+                com.datagami.rentaxis.core.util.Search.like(q), active == null, active != null && active,
+                com.datagami.rentaxis.core.util.Search.page(page, size, sort));
+    }
+
     /** {@code GET /vendors/paged} (scale P1-3): searched (names, TRN, email, phone, contact) and paged, by name. */
     @Transactional(readOnly = true)
     public org.springframework.data.domain.Page<Vendor> searchPaged(String q, int page, int size) {

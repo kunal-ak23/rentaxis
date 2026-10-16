@@ -293,6 +293,52 @@ public interface ChequeRepository extends JpaRepository<Cheque, UUID> {
                                     Pageable pageable);
 
     /**
+     * {@link #findPostDatedPaged}'s rows per maturity date: {@code [LocalDate chequeDate, Long count,
+     * BigDecimal amount]}, in date order. A window is at most a year, so this is at most 366 rows;
+     * the paged post-dated screen shows each day's full subtotal and the window's total from it.
+     */
+    @Query("""
+        select c.chequeDate, count(c), coalesce(sum(c.amount), 0) from Cheque c
+        where c.status in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED,
+                           com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED,
+                           com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING)
+          and c.chequeDate >= :from and c.chequeDate <= :to
+          and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
+                                     com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
+          and (cast(:propertyId as java.util.UUID) is null or c.property.id = :propertyId)
+          and (:unrestricted = true or c.property.id in :propertyIds)
+        group by c.chequeDate
+        order by c.chequeDate
+        """)
+    List<Object[]> postDatedByDay(@Param("propertyId") UUID propertyId,
+                                  @Param("from") LocalDate from,
+                                  @Param("to") LocalDate to,
+                                  @Param("unrestricted") boolean unrestricted,
+                                  @Param("propertyIds") Collection<UUID> propertyIds);
+
+    /**
+     * The amounts of {@link #findPostDatedPaged}'s rows in page order, for the running total a
+     * page opens with: the caller asks for the first {@code offset} rows (same sort) and adds them.
+     */
+    @Query("""
+        select c.amount from Cheque c
+        where c.status in (com.datagami.rentaxis.domain.entity.enums.ChequeStatus.REGISTERED,
+                           com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED,
+                           com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING)
+          and c.chequeDate >= :from and c.chequeDate <= :to
+          and c.lease.status not in (com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT,
+                                     com.datagami.rentaxis.domain.entity.enums.LeaseStatus.PENDING_SIGNATURE)
+          and (cast(:propertyId as java.util.UUID) is null or c.property.id = :propertyId)
+          and (:unrestricted = true or c.property.id in :propertyIds)
+        """)
+    List<java.math.BigDecimal> postDatedAmounts(@Param("propertyId") UUID propertyId,
+                                                @Param("from") LocalDate from,
+                                                @Param("to") LocalDate to,
+                                                @Param("unrestricted") boolean unrestricted,
+                                                @Param("propertyIds") Collection<UUID> propertyIds,
+                                                Pageable pageable);
+
+    /**
      * Count and value per status for the register's summary tiles, in one pass over
      * the index rather than one query per tile.
      *

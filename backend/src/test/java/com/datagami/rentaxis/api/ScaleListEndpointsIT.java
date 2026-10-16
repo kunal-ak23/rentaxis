@@ -304,6 +304,60 @@ class ScaleListEndpointsIT extends AbstractPostgresIT {
         assertThat(total(get(pm, "/api/v1/cheques/post-dated/paged?propertyId=" + palm.getId()))).isZero();
     }
 
+    /**
+     * Scale follow-up: the paged post-dated screen reads the window's totals, each day's full
+     * subtotal and the running total ahead of its page from {@code /post-dated/totals}; they add
+     * up to what the rows say, page by page, and a manager outside the building gets nothing.
+     */
+    @Test
+    void postDatedTotalsAddUpWhatThePagesHold() {
+        String window = "from=" + LocalDate.now() + "&to=" + LocalDate.now().plusYears(1).minusDays(1);
+        JsonNode totals = get(admin, "/api/v1/cheques/post-dated/totals?" + window);
+        assertThat(totals.get("count").asLong()).isEqualTo(4);
+        assertThat(totals.get("total").decimalValue()).isEqualByComparingTo("48000");
+        assertThat(totals.get("days")).hasSize(4);
+        assertThat(totals.get("amountBefore").decimalValue()).isEqualByComparingTo("0");
+
+        java.math.BigDecimal running = java.math.BigDecimal.ZERO;
+        for (int page = 0; page < 2; page++) {
+            JsonNode before = get(admin, "/api/v1/cheques/post-dated/totals?" + window + "&offset=" + (page * 2));
+            assertThat(before.get("amountBefore").decimalValue()).isEqualByComparingTo(running);
+            for (JsonNode row : get(admin, "/api/v1/cheques/post-dated/paged?" + window + "&page=" + page + "&size=2")
+                    .get("content")) {
+                running = running.add(row.get("amount").decimalValue());
+            }
+        }
+        assertThat(running).isEqualByComparingTo("48000");
+        assertThat(get(admin, "/api/v1/cheques/post-dated/totals?" + window + "&offset=99").get("amountBefore")
+                .decimalValue()).isEqualByComparingTo("48000");
+
+        assertThat(get(pm, "/api/v1/cheques/post-dated/totals?" + window).get("count").asLong()).isEqualTo(4);
+        JsonNode outside = get(pm, "/api/v1/cheques/post-dated/totals?" + window + "&propertyId=" + palm.getId());
+        assertThat(outside.get("count").asLong()).isZero();
+        assertThat(outside.get("days")).isEmpty();
+    }
+
+    /** Scale follow-up: the vendors list pages by the house order and the pickers offer active suppliers only. */
+    @Test
+    void vendorsPagedFiltersByActiveAndOrdersOldestFirst() {
+        Vendor dormant = new Vendor();
+        dormant.setNameEn("Emrill Dormant");
+        dormant.setActive(false);
+        vendorService.createVendor(dormant);
+        Vendor late = new Vendor();
+        late.setNameEn("Aardvark Emrill Late");
+        vendorService.createVendor(late);
+
+        assertThat(names(get(admin, "/api/v1/vendors/paged?q=emrill"), "nameEn"))
+                .containsExactly("Aardvark Emrill Late", "Emrill Dormant", "Emrill Services LLC");
+        assertThat(names(get(admin, "/api/v1/vendors/paged?q=emrill&order=oldest"), "nameEn"))
+                .containsExactly("Emrill Services LLC", "Emrill Dormant", "Aardvark Emrill Late");
+        assertThat(names(get(admin, "/api/v1/vendors/paged?q=emrill&active=true"), "nameEn"))
+                .containsExactly("Aardvark Emrill Late", "Emrill Services LLC");
+        assertThat(names(get(admin, "/api/v1/vendors/paged?q=emrill&active=false"), "nameEn"))
+                .containsExactly("Emrill Dormant");
+    }
+
     /** The register search the coordinator reported from production: any capital letter found nothing. */
     @Test
     void theChequeRegisterSearchIgnoresCase() {
