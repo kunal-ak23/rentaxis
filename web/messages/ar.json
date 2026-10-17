@@ -3237,6 +3237,8 @@
     "confirmBalanceDue": "الرصيد المستحق على المستأجر: {amount}",
     "stillDue": "المتبقي على المستأجر",
     "writtenOff": "مشطوب كدين معدوم",
+    "writtenOffSinceMoveOut": "مشطوب كدين معدوم منذ الإخلاء",
+    "writtenOffTenancyTotal": "إجمالي المشطوب خلال مدة العقد",
     "title": "التسوية",
     "desc": "كشف إخلاء العرض، محسوبًا من دفتر الأستاذ.",
     "asOf": "كما في",

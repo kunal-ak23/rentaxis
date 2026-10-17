@@ -1098,6 +1098,11 @@ export type SettlementResponse = {
   penaltiesOutstanding: number | null;
   /** max(-netRefund, 0). */
   balanceDue: number | null;
+  /**
+   * #102 (review P2-1): on a FINALIZED row, what the renter owes now — live from the
+   * ledger (rent + PDC receivable on the lease and renter). Null on a draft.
+   */
+  stillDue?: number | null;
   /** F14-36: ignored on finalize now and always null — kept for old rows. */
   refundBankAccountId: string | null;
   /** F14-36: Σ of the BPVs posted against this settlement's refund. */

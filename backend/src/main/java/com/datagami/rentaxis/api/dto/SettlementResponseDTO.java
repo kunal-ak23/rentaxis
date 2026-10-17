@@ -54,6 +54,14 @@ public class SettlementResponseDTO {
     private BigDecimal penaltiesOutstanding;
     /** What the renter still owes — {@code max(-netRefund, 0)}. */
     private BigDecimal balanceDue;
+    /**
+     * #102 / review P2-1: on a FINALIZED row, what the renter still owes on this
+     * lease <em>now</em>, read live from the ledger — the rent receivable plus the
+     * PDC receivable (the settlement's collection row and any cheque still held),
+     * on the lease and its renter, floored at zero. Unlike {@link #balanceDue} it
+     * moves with every receipt and write-off after the move-out. Null on a draft.
+     */
+    private BigDecimal stillDue;
     private UUID refundBankAccountId;
 
     // --- what finalise wrote --------------------------------------------

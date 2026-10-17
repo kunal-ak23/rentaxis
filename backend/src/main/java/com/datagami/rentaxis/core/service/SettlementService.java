@@ -865,6 +865,7 @@ public class SettlementService {
         response.setDepositsHeld(settlement.getDepositsHeld());
         response.setPenaltiesOutstanding(settlement.getPenaltiesOutstanding());
         response.setBalanceDue(settlement.getBalanceDue());
+        response.setStillDue(settlement.getStatus() == SettlementStatus.FINALIZED ? liveStillDue(lease) : null);
         response.setRefundBankAccountId(settlement.getRefundBankAccountId());
         response.setJournalId(settlement.getJournalId());
         response.setJournalNumber(settlement.getJournalId() == null ? null
@@ -1276,6 +1277,22 @@ public class SettlementService {
     }
 
     /** The lease's own receivable leaf when it overrides the property's (spec §6.3). */
+    /**
+     * #102 / review P2-1: what the renter owes on this lease today, from the ledger —
+     * the rent receivable and the PDC receivable (where the settlement's collection
+     * row and any cheque still held sit), on the lease and its renter. A write-off
+     * made before the move-out is already out of these balances and a receipt after
+     * it already in, so neither is counted twice. Read-only.
+     */
+    private BigDecimal liveStillDue(Lease lease) {
+        UUID renterId = lease.getRenter() == null ? null : lease.getRenter().getId();
+        LedgerQueryService.LedgerFilter f = new LedgerQueryService.LedgerFilter(null, null, null, null, lease.getId(), renterId);
+        BigDecimal receivable = ledgerQueryService.accountLedger(receivableAccountOf(lease), f).closingBalance();
+        BigDecimal pdc = ledgerQueryService.accountLedger(
+                accountResolver.resolve(AccountRole.PDC_RECEIVABLE, propertyIdOf(lease)).getId(), f).closingBalance();
+        return money(receivable.add(pdc).max(BigDecimal.ZERO));
+    }
+
     private UUID receivableAccountOf(Lease lease) {
         return lease.getReceivableAccountId() != null
                 ? lease.getReceivableAccountId()

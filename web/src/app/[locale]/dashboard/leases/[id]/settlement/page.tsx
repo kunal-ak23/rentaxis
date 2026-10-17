@@ -18,7 +18,7 @@ import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import AccountPicker from "@/components/finance/AccountPicker";
 import { storedFileSrc } from "@/lib/assetUrl";
 import { badDebtsApi } from "@/lib/api/badDebts";
-import { stillDueOf, writtenOffTotal } from "@/components/leases/writtenOff";
+import { stillDueOf, writtenOffTotals } from "@/components/leases/writtenOff";
 import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 import { clampIso, fmtIsoDate, isoDayAfter, maxIso, todayIso } from "@/components/leases/leaseMath";
 import { businessTodayIso, isAfterBusinessToday } from "@/lib/businessDate";
@@ -320,24 +320,27 @@ export default function SettlementPage() {
     const finalized = storedRow?.status === "FINALIZED";
 
     /**
-     * #102: a FINALIZED statement with a balance due reads like the lease's
-     * Settlement Summary card — what was written off as bad debt since, and
-     * what is still due. Same source (`badDebtsApi.forLease`) and the same
-     * math (`writtenOff.ts`), so the two screens never disagree.
+     * #102 (review P2-1): a FINALIZED statement with a balance due says what is
+     * still due — the server's live ledger figure (`storedRow.stillDue`), which
+     * already reflects every receipt and write-off since — and, for finance
+     * roles, the write-offs dated on or after the move-out (plus the tenancy's
+     * total when earlier ones exist). Same helper as the lease card.
      */
-    const [writtenOff, setWrittenOff] = useState(0);
+    const [writtenOff, setWrittenOff] = useState({ total: 0, sinceMoveOut: 0 });
     const finalBalanceDue = finalized ? (storedRow?.balanceDue ?? 0) : 0;
+    const finalSettlementDate = finalized ? (storedRow?.settlementDate ?? null) : null;
+    const stillDue = finalized ? stillDueOf(storedRow) : null;
     useEffect(() => {
         if (!canSeeBadDebts || finalBalanceDue <= 0) {
-            setWrittenOff(0);
+            setWrittenOff({ total: 0, sinceMoveOut: 0 });
             return;
         }
         let live = true;
         badDebtsApi.forLease(leaseId)
-            .then(ws => { if (live) setWrittenOff(writtenOffTotal(ws)); })
+            .then(ws => { if (live) setWrittenOff(writtenOffTotals(ws, finalSettlementDate)); })
             .catch(() => { /* the breakdown is extra; the balance due still shows */ });
         return () => { live = false; };
-    }, [leaseId, canSeeBadDebts, finalBalanceDue]);
+    }, [leaseId, canSeeBadDebts, finalBalanceDue, finalSettlementDate]);
     const settleable = !!lease && SETTLEABLE.includes(lease.status);
     const editable = canSettle && !finalized;
 
@@ -901,10 +904,17 @@ export default function SettlementPage() {
                         </span>
                     </div>
                     {netRefund === 0 && <p className="text-[11px] text-muted">{t("settled")}</p>}
-                    {finalized && netRefund < 0 && writtenOff > 0 && (
+                    {finalized && netRefund < 0 && (writtenOff.total > 0 || (stillDue != null && stillDue !== finalBalanceDue)) && (
                         <div className="space-y-2" data-testid="settlement-write-off-breakdown">
-                            <Row label={t("writtenOff")} value={`- ${fmtAmount(writtenOff)}`} tone="success" testId="settlement-written-off" />
-                            <Row label={t("stillDue")} value={fmtAmount(stillDueOf(finalBalanceDue, writtenOff))} tone="error" testId="settlement-still-due" />
+                            {writtenOff.sinceMoveOut > 0 && (
+                                <Row label={t("writtenOffSinceMoveOut")} value={`- ${fmtAmount(writtenOff.sinceMoveOut)}`} tone="success" testId="settlement-written-off" />
+                            )}
+                            {writtenOff.total > writtenOff.sinceMoveOut && (
+                                <Row label={t("writtenOffTenancyTotal")} value={fmtAmount(writtenOff.total)} testId="settlement-written-off-total" />
+                            )}
+                            {stillDue != null && (
+                                <Row label={t("stillDue")} value={fmtAmount(stillDue)} tone="error" testId="settlement-still-due" />
+                            )}
                         </div>
                     )}
                 </div>

@@ -3237,6 +3237,8 @@
     "confirmBalanceDue": "Balance the tenant owes: {amount}",
     "stillDue": "Still due from tenant",
     "writtenOff": "Written off as bad debt",
+    "writtenOffSinceMoveOut": "Written off since the move-out",
+    "writtenOffTenancyTotal": "Written off over the tenancy (total)",
     "title": "Settlement",
     "desc": "The move-out statement, computed from the ledger.",
     "asOf": "As of",
