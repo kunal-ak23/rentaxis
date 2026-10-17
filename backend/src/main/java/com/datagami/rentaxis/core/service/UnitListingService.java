@@ -208,9 +208,22 @@ public class UnitListingService {
      * all renters who have shown active interest. Pass {@code null} to clear the date
      * (unit available immediately, e.g. after termination).
      */
-    public void syncAvailableFrom(UUID unitId, LocalDate date) {
+    public void syncAvailableFrom(UUID unitId, LocalDate requested) {
+        LocalDate date = requested;
+        if (date == null) {
+            // #101: the lease that ended may not be the unit's last — a renewal or a new
+            // renter's lease already posted on it still holds the unit. Then the unit is
+            // not vacant: the listing stays unlisted and is available from the day after
+            // that lease, never "available now".
+            LocalDate heldUntil = heldUntil(unitId);
+            if (heldUntil != null) date = heldUntil.plusDays(1);
+        }
         // F14-51: "available now" is the unit becoming vacant.
         if (date == null) onUnitVacant(unitId);
+        syncListingDate(unitId, date);
+    }
+
+    private void syncListingDate(UUID unitId, LocalDate date) {
         listingRepository.findByUnitId(unitId).ifPresent(listing -> {
             listing.setAvailableFrom(date);
             listingRepository.save(listing);
@@ -327,6 +340,17 @@ public class UnitListingService {
             return l.getIntendedMoveOutDate();
         }
         return l.getEndDate();
+    }
+
+    /** The last day a current (active or notice-given) lease holds the unit, or null when none does. */
+    private LocalDate heldUntil(UUID unitId) {
+        java.util.UUID tenantId = com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId();
+        return leaseRepository.findByUnitIdAndStatusIn(unitId, OCCUPYING).stream()
+                .filter(l -> tenantId == null || Objects.equals(l.getTenantId(), tenantId))
+                .map(UnitListingService::occupiedUntil)
+                .filter(Objects::nonNull)
+                .max(LocalDate::compareTo)
+                .orElse(null);
     }
 
     private void requireUnitFreeBy(UnitListing listing) {
