@@ -2415,12 +2415,12 @@
     "depositCarriedForward": "Deposit carried forward",
     "dryRunTransfer": {
       "title": "The transfer also posts",
-      "pdrReversals": "{count, plural, one {# cheque reversal} other {# cheque reversals}} on the old lease ({date})",
-      "tcr": "Unearned rent reversed on the old lease ({date})",
+      "pdrReversals": "{count, plural, one {# cheque reversal} other {# cheque reversals}} on the old contract ({date})",
+      "tcr": "Unearned rent reversed on the old contract ({date})",
       "tcrVat": "VAT on the unearned rent",
-      "balancePrepaid": "Prepaid balance carried to this lease ({date})",
-      "balanceOwed": "Balance owed carried to this lease ({date})",
-      "deposit": "Deposit carried to this lease"
+      "balancePrepaid": "Prepaid balance carried to this contract ({date})",
+      "balanceOwed": "Balance owed carried to this contract ({date})",
+      "deposit": "Deposit carried to this contract"
     },
     "savedAsDraftNeedsAccountant": "Saved as a draft — an accountant must post it.",
     "postedBanner": "Posted as {tco}",
@@ -3248,8 +3248,8 @@
     "receivableHint": "Positive means the tenant owes; negative means the landlord does.",
     "depositsHeld": "Deposits held",
     "depositCarriedTo": "Deposit carried to {unit}",
-    "depositCarriedToHidden": "Deposit carried to the new lease",
-    "depositCarriedHint": "Moved to the new lease on transfer. It is not refundable on this statement.",
+    "depositCarriedToHidden": "Deposit carried to the new contract",
+    "depositCarriedHint": "Moved to the new contract on transfer. It is not refundable on this statement.",
     "penaltiesOutstanding": "Penalties outstanding",
     "penaltiesHint": "Already in the receivable balance — shown, never added.",
     "instrumentsOutstanding": "Instruments outstanding",

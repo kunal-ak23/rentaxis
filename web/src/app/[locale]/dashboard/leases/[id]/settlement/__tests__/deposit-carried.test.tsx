@@ -111,7 +111,7 @@ describe("Deposit carried to the new lease (#100-d)", () => {
         api.statement.mockResolvedValue(statement({ leaseId: null, unitIdentifier: null, amount: 3000 }));
         renderPage();
         const line = await screen.findByTestId("settlement-deposit-carried");
-        expect(line).toHaveTextContent("Deposit carried to the new lease");
+        expect(line).toHaveTextContent("Deposit carried to the new contract");
         expect(screen.queryByTestId("settlement-deposit-carried-link")).toBeNull();
     });
 

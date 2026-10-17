@@ -48,11 +48,11 @@ describe("PostLeaseDialog transfer journal groups", () => {
         const block = await screen.findByTestId("post-transfer-journals");
         expect(block).toHaveTextContent("The transfer also posts");
         expect(screen.getByTestId("post-transfer-pdr")).toHaveTextContent("30,000.00");
-        expect(block).toHaveTextContent("2 cheque reversals on the old lease");
+        expect(block).toHaveTextContent("2 cheque reversals on the old contract");
         expect(screen.getByTestId("post-transfer-tcr")).toHaveTextContent("37,808.22");
         expect(screen.getByTestId("post-transfer-tcr-vat")).toHaveTextContent("1,890.41");
         expect(screen.getByTestId("post-transfer-balance")).toHaveTextContent("7,808.22");
-        expect(block).toHaveTextContent("Prepaid balance carried to this lease");
+        expect(block).toHaveTextContent("Prepaid balance carried to this contract");
         expect(screen.getByTestId("post-transfer-deposit")).toHaveTextContent("3,000.00");
         // The old counts line is still there.
         expect(screen.getByTestId("post-journals")).toHaveTextContent("1 TCO with 2 lines, 3 PDR");
@@ -71,7 +71,7 @@ describe("PostLeaseDialog transfer journal groups", () => {
             },
         });
         const block = await screen.findByTestId("post-transfer-journals");
-        expect(block).toHaveTextContent("Balance owed carried to this lease");
+        expect(block).toHaveTextContent("Balance owed carried to this contract");
         expect(screen.queryByTestId("post-transfer-pdr")).toBeNull();
         expect(screen.queryByTestId("post-transfer-tcr-vat")).toBeNull();
         expect(screen.queryByTestId("post-transfer-deposit")).toBeNull();
