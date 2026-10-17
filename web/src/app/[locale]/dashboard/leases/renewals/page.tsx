@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft, Search } from "lucide-react";
 import { useSession } from "next-auth/react";
@@ -17,14 +17,21 @@ import BulkTerminate from "@/components/leases/renewals/BulkTerminate";
 
 const select = "bg-surface border border-border rounded-lg px-3 py-2 text-xs text-foreground cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none";
 
-/** Writes the queue's state into the URL (bookmarkable; Home's "Needs you now" links here). */
-function setQuery(changes: Partial<Record<keyof QueueState, string | null>>) {
-    const url = new URL(window.location.href);
-    for (const [k, v] of Object.entries(changes)) {
-        if (v) url.searchParams.set(k, v);
-        else url.searchParams.delete(k);
-    }
-    window.history.replaceState(window.history.state, "", url.toString());
+/**
+ * The queue's state in the URL (bookmarkable; Home's "Needs you now" links here). Written with
+ * the Next router, so `useSearchParams` re-renders the page — a bare `history.replaceState`
+ * changed the address bar and left the queue on the old stage (found in the browser sweep).
+ */
+function useSetQuery() {
+    const router = useRouter();
+    return useCallback((changes: Partial<Record<keyof QueueState, string | null>>) => {
+        const url = new URL(window.location.href);
+        for (const [k, v] of Object.entries(changes)) {
+            if (v) url.searchParams.set(k, v);
+            else url.searchParams.delete(k);
+        }
+        router.replace(`${url.pathname}${url.search}`, { scroll: false });
+    }, [router]);
 }
 
 export default function RenewalSeasonPage() {
@@ -46,6 +53,7 @@ function RenewalSeason() {
     const tList = useTranslations("ListActions");
     const locale = useLocale();
     const sp = useSearchParams();
+    const setQuery = useSetQuery();
     const today = businessTodayIso();
     const state = parseQueueState(new URLSearchParams(sp?.toString() ?? ""), today);
     const properties = useNameLookup("properties");
@@ -65,13 +73,13 @@ function RenewalSeason() {
         if (draft.trim() === state.search) return;
         const h = setTimeout(() => setQuery({ search: draft.trim() || null }), 350);
         return () => clearTimeout(h);
-    }, [draft, state.search]);
+    }, [draft, state.search, setQuery]);
     const [floorDraft, setFloorDraft] = useState(state.floor);
     useEffect(() => {
         if (floorDraft.trim() === state.floor) return;
         const h = setTimeout(() => setQuery({ floor: floorDraft.trim() || null }), 350);
         return () => clearTimeout(h);
-    }, [floorDraft, state.floor]);
+    }, [floorDraft, state.floor, setQuery]);
 
     const monthName = (ym: string) => new Date(`${ym}-01T00:00:00Z`)
         .toLocaleDateString(locale === "ar" ? "ar-AE" : "en-GB", { month: "long", year: "numeric", timeZone: "UTC" });

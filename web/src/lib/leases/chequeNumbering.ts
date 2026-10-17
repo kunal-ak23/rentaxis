@@ -51,12 +51,19 @@ function cells(line: string): string[] {
  * Apply a CSV of `contract, due_date, cheque_number[, bank[, cheque_date]]` to the grid. The
  * contract is any key of a draft (its own or the renewed contract's number, the unit, the id),
  * the due date the row's date as loaded. A header line is skipped. Lines that match no row, or
- * have no number, are reported by line number and change nothing.
+ * have no number, are reported by line number and change nothing; so is a line that two drafts
+ * could both take (a unit number shared by two buildings, on the same due date).
  */
 export function applyChequeCsv(text: string, drafts: CsvDraft[], edits: Record<string, Edit>):
     { edits: Record<string, Edit>; applied: number; unmatched: number[] } {
-    const byKey = new Map<string, CsvDraft>();
-    for (const d of drafts) for (const k of d.keys) if (k) byKey.set(norm(k), d);
+    // A key can name several drafts (the same unit number in two buildings): the due date then
+    // decides, and a line two drafts could both take is not applied.
+    const byKey = new Map<string, CsvDraft[]>();
+    for (const d of drafts) {
+        for (const k of new Set(d.keys.filter((x): x is string => !!x).map(norm))) {
+            byKey.set(k, [...(byKey.get(k) ?? []), d]);
+        }
+    }
     const next = { ...edits };
     const unmatched: number[] = [];
     let applied = 0;
@@ -64,9 +71,11 @@ export function applyChequeCsv(text: string, drafts: CsvDraft[], edits: Record<s
         if (!line.trim()) return;
         const [contract = "", due = "", number = "", bank = "", chequeDate = ""] = cells(line);
         if (i === 0 && !csvDate(due)) return; // a header
-        const draft = byKey.get(norm(contract));
         const dueIso = csvDate(due);
-        const row = draft && dueIso ? draft.rows.find(c => c.chequeDate === dueIso) : undefined;
+        const candidates = dueIso
+            ? (byKey.get(norm(contract)) ?? []).flatMap(d => d.rows.filter(c => c.chequeDate === dueIso))
+            : [];
+        const row = candidates.length === 1 ? candidates[0] : undefined;
         if (!row || !number.trim()) {
             unmatched.push(i + 1);
             return;

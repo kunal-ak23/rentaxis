@@ -48,4 +48,15 @@ describe("CSV import", () => {
         expect(r.edits.r2).toEqual({ chequeNumber: "500002", payeeBank: "FAB", chequeDate: "2028-04-05" });
         expect(r.edits.s1).toEqual({ chequeNumber: "600001", payeeBank: "ADCB", chequeDate: "2028-01-01" });
     });
+
+    it("lets the due date pick between two drafts sharing a unit number, and refuses a line both could take", () => {
+        const drafts = [
+            { draftId: "d1", keys: ["07-04", "d1"], rows: [c("a1", "2027-01-04")] },
+            { draftId: "d2", keys: ["07-04", "d2"], rows: [c("b1", "2027-01-20"), c("b2", "2027-01-04")] },
+        ];
+        const r = applyChequeCsv("07-04,20/01/2027,1\n07-04,04/01/2027,2", drafts, {});
+        expect(r.edits.b1?.chequeNumber).toBe("1");
+        expect(r.edits.a1).toBeUndefined();
+        expect(r.unmatched).toEqual([2]);
+    });
 });
