@@ -96,12 +96,26 @@ describe("renter facilities: allocated parking", () => {
 });
 
 describe("renter facilities: booked ranges and end date", () => {
-    it("shows each booked range under the bookable spot, dd/mm/yyyy", async () => {
+    // Each date is wrapped in FSI (U+2068) ... PDI (U+2069) so it keeps its order inside Arabic text.
+    const iso = (d: string) => `\u2068${d}\u2069`;
+
+    it("shows each booked range under the bookable spot, dd/mm/yyyy, each date isolated", async () => {
         api.fetchMyFacilities.mockResolvedValue(facilities);
         renderPage();
-        expect(await screen.findByTestId("spot-booked-spot-1-0")).toHaveTextContent("Booked: 01/03/2027 – 31/03/2027");
-        expect(screen.getByTestId("spot-booked-spot-1-1")).toHaveTextContent("Booked: from 15/06/2027");
-        expect(screen.getByTestId("spot-booked-spot-1-2")).toHaveTextContent("Booked: until 10/02/2027");
+        expect(await screen.findByTestId("spot-booked-spot-1-0")).toHaveTextContent(`Booked: ${iso("01/03/2027")} – ${iso("31/03/2027")}`);
+        expect(screen.getByTestId("spot-booked-spot-1-1")).toHaveTextContent(`Booked: from ${iso("15/06/2027")}`);
+        expect(screen.getByTestId("spot-booked-spot-1-2")).toHaveTextContent(`Booked: until ${iso("10/02/2027")}`);
+    });
+
+    it("a held bay with booked ranges keeps Request enabled (it is only taken for those dates)", async () => {
+        api.fetchMyFacilities.mockResolvedValue({
+            ...facilities,
+            parkingSpots: [{ ...facilities.parkingSpots[0], held: true }],
+        });
+        renderPage();
+        const request = await screen.findByTestId("request-spot-spot-1");
+        expect(screen.getByTestId("spot-booked-spot-1-0")).toBeInTheDocument();
+        expect(request).toBeEnabled();
     });
 
     async function openDialog() {

@@ -93,53 +93,80 @@ describe("ParkingTab attached unit", () => {
         expect(screen.getByTestId("spot-current-attachment")).toHaveTextContent(`${en.Facilities.attachedTo} 101 · Tower A`);
     });
 
-    it("attaches: saving with a unit chosen calls setParkingSpotAttachment with that unit", async () => {
+    const lastUpdateBody = () => api.updateParkingSpot.mock.calls.at(-1)![1];
+
+    it("attaches: a changed pick rides on the one update request (setAttachment + attachedUnitId)", async () => {
         renderTab([scoped]);
         const select = await openEdit();
         fireEvent.change(select, { target: { value: "u3" } });
         save();
-        await waitFor(() => expect(api.setParkingSpotAttachment).toHaveBeenCalledTimes(1));
-        expect(api.setParkingSpotAttachment).toHaveBeenCalledWith("s1", "u3");
-        // The ordinary edit is saved first.
-        expect(api.updateParkingSpot).toHaveBeenCalledTimes(1);
-        expect(api.updateParkingSpot.mock.invocationCallOrder[0]).toBeLessThan(api.setParkingSpotAttachment.mock.invocationCallOrder[0]);
+        await waitFor(() => expect(api.updateParkingSpot).toHaveBeenCalledTimes(1));
+        expect(api.updateParkingSpot.mock.calls[0][0]).toBe("s1");
+        expect(lastUpdateBody()).toMatchObject({ spotNumber: "P-1", setAttachment: true, attachedUnitId: "u3" });
+        // The server does detach/update/attach atomically: no separate attachment call.
+        expect(api.setParkingSpotAttachment).not.toHaveBeenCalled();
     });
 
-    it("detaches: choosing 'Not attached' detaches first, then saves the edit (one attachment call)", async () => {
+    it("detaches: choosing 'Not attached' sends setAttachment with a null unit in the same request", async () => {
         renderTab([attached]);
         const select = await openEdit();
         fireEvent.change(select, { target: { value: "" } });
         save();
         await waitFor(() => expect(api.updateParkingSpot).toHaveBeenCalledTimes(1));
-        expect(api.setParkingSpotAttachment).toHaveBeenCalledTimes(1);
-        expect(api.setParkingSpotAttachment).toHaveBeenCalledWith("s2", null);
-        expect(api.setParkingSpotAttachment.mock.invocationCallOrder[0]).toBeLessThan(api.updateParkingSpot.mock.invocationCallOrder[0]);
+        expect(lastUpdateBody()).toMatchObject({ setAttachment: true, attachedUnitId: null });
+        expect(api.setParkingSpotAttachment).not.toHaveBeenCalled();
     });
 
-    it("moves an attached bay to another unit in the order detach, update, attach", async () => {
+    it("moves an attached bay to another unit in ONE request", async () => {
         renderTab([attached]);
         const select = await openEdit();
         fireEvent.change(select, { target: { value: "u3" } });
         save();
-        await waitFor(() => expect(api.setParkingSpotAttachment).toHaveBeenCalledTimes(2));
-        expect(api.setParkingSpotAttachment.mock.calls).toEqual([["s2", null], ["s2", "u3"]]);
-        expect(api.updateParkingSpot).toHaveBeenCalledTimes(1);
-        const [detach, attach] = api.setParkingSpotAttachment.mock.invocationCallOrder;
-        const update = api.updateParkingSpot.mock.invocationCallOrder[0];
-        expect(detach).toBeLessThan(update);
-        expect(update).toBeLessThan(attach);
+        await waitFor(() => expect(api.updateParkingSpot).toHaveBeenCalledTimes(1));
+        expect(lastUpdateBody()).toMatchObject({ setAttachment: true, attachedUnitId: "u3" });
+        expect(api.setParkingSpotAttachment).not.toHaveBeenCalled();
     });
 
-    it("does not save the edit when the detach step is refused, and shows why", async () => {
+    it("an unchanged selection sends no setAttachment / attachedUnitId keys", async () => {
+        for (const bay of [attached, scoped]) {
+            renderTab([bay]);
+            await openEdit();
+            save();
+            await waitFor(() => expect(api.updateParkingSpot).toHaveBeenCalledTimes(1));
+            expect(lastUpdateBody()).not.toHaveProperty("setAttachment");
+            expect(lastUpdateBody()).not.toHaveProperty("attachedUnitId");
+            expect(api.setParkingSpotAttachment).not.toHaveBeenCalled();
+            cleanup();
+            vi.clearAllMocks();
+        }
+    });
+
+    it("shows a refused save in the user's language and keeps the dialog open", async () => {
         renderTab([attached]);
-        api.setParkingSpotAttachment.mockRejectedValue(
+        api.updateParkingSpot.mockRejectedValue(
             new ApiError(400, "English fallback", JSON.stringify({ message: "English fallback", code: "parking.attachHasBookings", args: {} })),
         );
         const select = await openEdit();
         fireEvent.change(select, { target: { value: "u3" } });
         save();
         expect(await screen.findByText(en.Common.errors.parking.attachHasBookings)).toBeInTheDocument();
-        expect(api.updateParkingSpot).not.toHaveBeenCalled();
+        expect(screen.getByTestId("spot-attached-unit")).toBeInTheDocument();
+        expect(api.setParkingSpotAttachment).not.toHaveBeenCalled();
+    });
+
+    it("keeps the bay's unit selected when the unit list fails to load, and 'Not attached' still detaches", async () => {
+        renderTab([attached]);
+        api.fetchPropertyUnits.mockRejectedValue(new Error("boom"));
+        fireEvent.click((await screen.findAllByLabelText(en.Facilities.editSpot))[0]);
+        expect(await screen.findByText(en.Facilities.unitsLoadError)).toBeInTheDocument();
+        const select = screen.getByTestId("spot-attached-unit") as HTMLSelectElement;
+        expect(select.value).toBe("u1");
+        expect(within(select).getAllByRole("option").map(o => o.textContent))
+            .toEqual([en.Facilities.notAttachedOption, "101 · Tower A"]);
+        fireEvent.change(select, { target: { value: "" } });
+        save();
+        await waitFor(() => expect(api.updateParkingSpot).toHaveBeenCalledTimes(1));
+        expect(lastUpdateBody()).toMatchObject({ setAttachment: true, attachedUnitId: null });
     });
 
     it("offers units of the towers currently ticked in the dialog, not only the saved ones", async () => {
@@ -150,34 +177,6 @@ describe("ParkingTab attached unit", () => {
         expect(within(select).getByRole("option", { name: "201 · Tower B" })).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "Tower A" }));
         expect(within(select).queryByRole("option", { name: "101 · Tower A" })).toBeNull();
-    });
-
-    it("does not call setParkingSpotAttachment when the selection is unchanged", async () => {
-        renderTab([attached]);
-        await openEdit();
-        save();
-        await waitFor(() => expect(api.updateParkingSpot).toHaveBeenCalledTimes(1));
-        expect(api.setParkingSpotAttachment).not.toHaveBeenCalled();
-
-        cleanup();
-        vi.clearAllMocks();
-        renderTab([scoped]);
-        await openEdit();
-        save();
-        await waitFor(() => expect(api.updateParkingSpot).toHaveBeenCalledTimes(1));
-        expect(api.setParkingSpotAttachment).not.toHaveBeenCalled();
-    });
-
-    it("shows a refused attachment in the user's language and keeps the dialog open", async () => {
-        renderTab([scoped]);
-        api.setParkingSpotAttachment.mockRejectedValue(
-            new ApiError(400, "English fallback", JSON.stringify({ message: "English fallback", code: "parking.attachHasBookings", args: {} })),
-        );
-        const select = await openEdit();
-        fireEvent.change(select, { target: { value: "u1" } });
-        save();
-        expect(await screen.findByText(en.Common.errors.parking.attachHasBookings)).toBeInTheDocument();
-        expect(screen.getByTestId("spot-attached-unit")).toBeInTheDocument();
     });
 
     describe("adding a bay", () => {

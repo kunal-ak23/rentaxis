@@ -427,6 +427,8 @@ export type DiscardResult = {
     buildingsDeleted: number;
     rentersDeleted: number;
     propertiesDeleted: number;
+    /** Bays the batch's Parking sheet created (changeset 175). */
+    parkingBaysDeleted?: number;
     kept: DiscardKept[];
 };
 

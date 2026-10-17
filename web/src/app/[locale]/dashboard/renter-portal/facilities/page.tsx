@@ -263,11 +263,16 @@ export default function RenterFacilitiesPage() {
         !type || type === "FREE" || !amount ? t("feeFree")
             : t(type === "PER_HOUR" ? "feePerHour" : "feePerBooking", { amount: amount.toFixed(2) });
     const formatDate = (iso: string) => parseDateOnly(iso).toLocaleDateString(dateLocale(locale));
-    /** "Booked: 01/03/2027 – 31/03/2027", "Booked: from 01/03/2027", "Booked: until 31/03/2027". */
+    /**
+     * "Booked: 01/03/2027 – 31/03/2027", "Booked: from 01/03/2027", "Booked: until 31/03/2027".
+     * Each date is wrapped in FSI…PDI (what <bdi> does) so an Arabic sentence cannot
+     * reorder the digits or the two ends of the range.
+     */
+    const isolatedDate = (iso: string) => `\u2068${formatDate(iso)}\u2069`;
     const bookedLabel = (r: BookedRange) =>
-        r.from && r.to ? t("bookedRange", { from: formatDate(r.from), to: formatDate(r.to) })
-            : r.from ? t("bookedFrom", { from: formatDate(r.from) })
-                : r.to ? t("bookedUntil", { to: formatDate(r.to) })
+        r.from && r.to ? t("bookedRange", { from: isolatedDate(r.from), to: isolatedDate(r.to) })
+            : r.from ? t("bookedFrom", { from: isolatedDate(r.from) })
+                : r.to ? t("bookedUntil", { to: isolatedDate(r.to) })
                     : t("bookedOpen");
     const amenityName = (nameEn: string, nameAr: string | null) =>
         locale === "ar" && nameAr ? nameAr : nameEn;
@@ -499,8 +504,10 @@ export default function RenterFacilitiesPage() {
                                 <button
                                     onClick={() => openRequest({ resourceType: "PARKING_SPOT", resourceId: s.id, name: s.spotNumber, propertyId: s.propertyId })}
                                     // A pending request of the caller's own for this spot: a second
-                                    // one is a duplicate (tutorial 24).
-                                    disabled={noActiveLease || s.held || myOpen?.status === "PENDING"}
+                                    // one is a duplicate (tutorial 24). A bay held today stays
+                                    // requestable: bookings are by date range, the booked ranges are
+                                    // listed above, and the server refuses an overlap (booking.spotTaken).
+                                    disabled={noActiveLease || myOpen?.status === "PENDING"}
                                     data-testid={`request-spot-${s.id}`}
                                     className="mt-auto self-start px-4 py-2 bg-primary/10 text-primary hover:bg-primary/20 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >

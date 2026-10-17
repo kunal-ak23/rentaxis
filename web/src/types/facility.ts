@@ -175,6 +175,9 @@ export interface ParkingSpotUpdateRequest {
   covered?: boolean
   active?: boolean
   buildingIds?: string[]
+  /** true: set the attachment to `attachedUnitId` (null = detach) in the same server transaction as the edit. */
+  setAttachment?: boolean
+  attachedUnitId?: string | null
 }
 
 export interface ParkingSpotBulkCreateRequest {

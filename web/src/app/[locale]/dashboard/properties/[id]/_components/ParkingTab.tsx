@@ -12,7 +12,6 @@ import {
     updateParkingSpot,
     bulkCreateParkingSpots,
     deactivateParkingSpot,
-    setParkingSpotAttachment,
     fetchPropertyUnits,
     parseSpotNumbers,
     ApiError,
@@ -140,37 +139,22 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
                 // "clear it", so an edit that blanks the level must send ""
                 // verbatim, not fall back to omitting the field.
                 //
-                // When the attachment changed it is its own pair of calls, around the
-                // update: the server refuses a tower change that would strand the bay's
-                // CURRENT unit, and checks a NEW unit against the towers stored at that
-                // moment. So detach first, update (new towers), then attach the new pick.
-                // An unchanged selection makes no attachment call at all. If a later call
-                // is refused, the earlier ones already happened: reload so the row shows them.
+                // A changed attachment rides on the same request (setAttachment): the
+                // server detaches, applies the edit and attaches the new pick in ONE
+                // transaction, so a refused part leaves the bay exactly as it was — no
+                // window where it is detached and bookable. An unchanged pick sends nothing.
                 const wasAttached = mode.spot.attachedUnitId ?? null;
                 const changed = (attachedUnitId || null) !== wasAttached;
-                let touched = false;
-                try {
-                    if (changed && wasAttached) {
-                        await setParkingSpotAttachment(mode.spot.id, null);
-                        touched = true;
-                    }
-                    await updateParkingSpot(mode.spot.id, {
-                        spotNumber,
-                        level,
-                        covered,
-                        active,
-                        buildingIds,
-                        feeType,
-                        feeAmount: feeType === "FREE" ? null : feeAmount,
-                    });
-                    touched = true;
-                    if (changed && attachedUnitId) {
-                        await setParkingSpotAttachment(mode.spot.id, attachedUnitId);
-                    }
-                } catch (err) {
-                    if (touched) load(page);
-                    throw err;
-                }
+                await updateParkingSpot(mode.spot.id, {
+                    spotNumber,
+                    level,
+                    covered,
+                    active,
+                    buildingIds,
+                    feeType,
+                    feeAmount: feeType === "FREE" ? null : feeAmount,
+                    ...(changed ? { setAttachment: true, attachedUnitId: attachedUnitId || null } : {}),
+                });
                 setMode(null);
                 // Editing doesn't change row order — stay on the current page.
                 load(page);
@@ -267,11 +251,17 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
     // Units a bay can be attached to: the property's, limited to the towers ticked in the
     // dialog when any are. The chosen unit always stays listed (even if the towers were then
     // changed to exclude it) so the select shows what will be sent; the server refuses a mismatch.
-    const unitOptions = mode
+    const unitOptions: PropertyUnitRow[] = mode
         ? propertyUnits.filter(u =>
             buildingIds.length === 0 || (u.building?.id != null && buildingIds.includes(u.building.id))
             || u.id === attachedUnitId)
         : [];
+    // The bay's current unit is always an option, even before (or without) the unit list:
+    // otherwise the select would show "Not attached" while the state still holds the unit,
+    // and choosing "Not attached" would fire no change and never detach.
+    const current = mode?.kind === "edit" ? mode.spot : null;
+    const currentMissing = current?.attachedUnitId
+        && !unitOptions.some(u => u.id === current.attachedUnitId);
 
     return (
         <div>
@@ -522,6 +512,13 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
                                     className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
                                 >
                                     <option value="">{t("notAttachedOption")}</option>
+                                    {currentMissing && current?.attachedUnitId && (
+                                        <option value={current.attachedUnitId}>
+                                            {current.attachedBuildingName
+                                                ? `${current.attachedUnitNumber ?? ""} · ${current.attachedBuildingName}`
+                                                : current.attachedUnitNumber ?? current.attachedUnitId}
+                                        </option>
+                                    )}
                                     {unitOptions.map(u => {
                                         const b = buildingName(u.building?.id);
                                         return (

@@ -188,8 +188,9 @@ describe("RenterFacilitiesPage stale-state resync", () => {
         expect(api.fetchMyFacilities).toHaveBeenCalledTimes(2);
         await waitFor(() => expect(screen.getByText("held")).toBeInTheDocument());
         expect(screen.queryByText("available")).not.toBeInTheDocument();
-        // The Request button is now disabled — no more guaranteed-409 retries.
-        expect(screen.getByRole("button", { name: "request" })).toBeDisabled();
+        // Held no longer disables Request: the spot is only taken for the dates it is booked,
+        // so the renter can still ask for other dates (the server refuses an overlap).
+        expect(screen.getByRole("button", { name: "request" })).toBeEnabled();
     });
 
     it("shows each amenity's fee before booking (F14-50)", async () => {
