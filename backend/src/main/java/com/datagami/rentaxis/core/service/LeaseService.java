@@ -193,6 +193,59 @@ public class LeaseService {
     @Transactional(readOnly = true)
     public Page<LeaseDTO> getAllLeasesPaged(String search, LeaseStatus status, UUID propertyId, UUID buildingId,
                                             java.util.Collection<LeaseStatus> excludeStatuses, Pageable pageable) {
+        return getAllLeasesPaged(search, status, propertyId, buildingId, excludeStatuses, ExpiryFilter.NONE, pageable);
+    }
+
+    /**
+     * Whether a contract already has a successor drafted from it — a renewal, or a unit
+     * transfer, either of which {@code LeaseRenewalService.renew} refuses to renew past.
+     */
+    public enum SuccessorState { ANY, NONE, DRAFTED }
+
+    /**
+     * Scale PR C: the season's "not renewing" reading. {@code UNMARKED}: no soft mark;
+     * {@code NOT_RENEWING}: marked, or the renter (or landlord) gave notice.
+     */
+    public enum RenewalMark { ANY, UNMARKED, NOT_RENEWING }
+
+    /**
+     * The renewal season's filters on the contracts list (scale #16): the expiry window
+     * (inclusive), the floor (a unit-number prefix, as {@code GET /units/paged?floor=}) and
+     * whether a successor exists. {@link #NONE} is the plain list.
+     */
+    public record ExpiryFilter(LocalDate endFrom, LocalDate endTo, String floor, SuccessorState successor,
+                               RenewalMark mark) {
+        public static final ExpiryFilter NONE = new ExpiryFilter(null, null, null, SuccessorState.ANY, RenewalMark.ANY);
+
+        public ExpiryFilter(LocalDate endFrom, LocalDate endTo, String floor, SuccessorState successor) {
+            this(endFrom, endTo, floor, successor, RenewalMark.ANY);
+        }
+
+        boolean isEmpty() {
+            return endFrom == null && endTo == null && (floor == null || floor.isBlank())
+                    && (successor == null || successor == SuccessorState.ANY)
+                    && (mark == null || mark == RenewalMark.ANY);
+        }
+
+        int markCode() {
+            return mark == RenewalMark.UNMARKED ? 1 : mark == RenewalMark.NOT_RENEWING ? 2 : 0;
+        }
+
+        int successorCode() {
+            return successor == SuccessorState.NONE ? 1 : successor == SuccessorState.DRAFTED ? 2 : 0;
+        }
+    }
+
+    /**
+     * {@link #getAllLeasesPaged} with the renewal season's filters. Any of them sends the read
+     * through {@link #searchInDatabase}, which binds the tenant, the caller's property scope and
+     * every filter in one SQL statement; with none set the paths above are unchanged.
+     */
+    @Transactional(readOnly = true)
+    public Page<LeaseDTO> getAllLeasesPaged(String search, LeaseStatus status, UUID propertyId, UUID buildingId,
+                                            java.util.Collection<LeaseStatus> excludeStatuses, ExpiryFilter expiry,
+                                            Pageable pageable) {
+        ExpiryFilter queue = expiry == null ? ExpiryFilter.NONE : expiry;
         UUID tenantId = TenantContextHolder.getTenantId();
         String normalizedSearch = search == null ? null : search.trim();
         java.util.Set<LeaseStatus> excluded = excludeStatuses == null || excludeStatuses.isEmpty()
@@ -200,6 +253,14 @@ public class LeaseService {
 
         boolean hasTerm = normalizedSearch != null && !normalizedSearch.isEmpty();
         pageable = withIdTiebreak(pageable);
+
+        if (!queue.isEmpty()) {
+            // A renter-scoped caller never reaches this (the controller admits staff only);
+            // refused rather than answered from a path that does not know their scope.
+            if (leaseAccessPolicy.callerIsRenter()) return new PageImpl<>(List.of(), pageable, 0);
+            return searchInDatabase(tenantId, hasTerm ? normalizedSearch : null, status, propertyId, buildingId,
+                    excluded, queue, pageable);
+        }
 
         if (!hasTerm && !leaseAccessPolicy.isRestricted()) {
             return mapPage(excluded.isEmpty()
@@ -213,7 +274,7 @@ public class LeaseService {
         // per lease and per assignment, not a property list.
         if (!leaseAccessPolicy.callerIsRenter()) {
             return searchInDatabase(tenantId, hasTerm ? normalizedSearch : null, status, propertyId, buildingId,
-                    excluded, pageable);
+                    excluded, ExpiryFilter.NONE, pageable);
         }
 
         List<LeaseDTO> readable = mapAll(leaseAccessPolicy.filterReadable(excluded.isEmpty()
@@ -244,7 +305,8 @@ public class LeaseService {
      * Arabic has no case, so an Arabic term matches byte for byte, as {@code String.contains} did.
      */
     private Page<LeaseDTO> searchInDatabase(UUID tenantId, String term, LeaseStatus status, UUID propertyId,
-                                            UUID buildingId, java.util.Set<LeaseStatus> excluded, Pageable pageable) {
+                                            UUID buildingId, java.util.Set<LeaseStatus> excluded, ExpiryFilter expiry,
+                                            Pageable pageable) {
         java.util.EnumSet<LeaseStatus> allowed = java.util.EnumSet.allOf(LeaseStatus.class);
         allowed.removeAll(excluded);
         List<UUID> visible = leaseAccessPolicy.visiblePropertyIds();
@@ -265,7 +327,9 @@ public class LeaseService {
         List<UUID> visibleParam = scoped ? visible : List.of(new UUID(0L, 0L));
         java.util.Collection<LeaseStatus> hitsParam = statusHits.isEmpty() ? allowed : statusHits;
         return mapPage(leaseRepository.searchText(tenantId, allowed, status, propertyId, buildingId,
-                scoped, visibleParam, pattern, !statusHits.isEmpty(), hitsParam, pageable));
+                scoped, visibleParam, pattern, !statusHits.isEmpty(), hitsParam, expiry.endFrom(), expiry.endTo(),
+                com.datagami.rentaxis.core.util.Search.prefix(expiry.floor()), expiry.successorCode(), expiry.markCode(),
+                pageable));
     }
 
     /**
@@ -848,6 +912,7 @@ public class LeaseService {
         LeaseStatus previous = lease.getStatus();
         lease.setStatus(LeaseStatus.TERMINATED);
         lease.setTerminatedOn(t);
+        lease.clearNotRenewing();
         lease.setTerminationNotes("Transferred to " + unitLabel(successor));
         lease.setTerminationJournalId(tcrId);
         releaseUnitIfNoOtherActiveLease(lease);
@@ -2151,6 +2216,8 @@ public class LeaseService {
         LeaseStatus previousStatus = lease.getStatus();
         lease.setStatus(LeaseStatus.TERMINATED);
         lease.setTerminatedOn(terminatedOn);
+        // Scale PR C (re-review P3-4): the season's "not renewing" mark says nothing once it has ended.
+        lease.clearNotRenewing();
         lease.setTerminationNotes(notes);
         lease.setTerminationJournalId(terminationJournalId);
 
@@ -2408,7 +2475,29 @@ public class LeaseService {
                               java.util.Set<UUID> credited,
                               java.util.Map<UUID, Lease> successors,
                               java.util.Map<UUID, List<LeaseLine>> lines,
-                              java.util.Map<UUID, List<com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod>> rentFree) {
+                              java.util.Map<UUID, List<com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod>> rentFree,
+                              /* Scale #16: the renewal drafted (or posted) from each lease. */
+                              java.util.Map<UUID, Lease> renewals,
+                              /* Scale PR C: the soft "not renewing" mark: at, by name, note. */
+                              java.util.Map<UUID, Object[]> marks) {
+    }
+
+    /** Scale PR C: the authors of the "not renewing" marks on a page of rows, by name. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.domain.repository.UserRepository markUsers;
+
+    /** The roles that may see the renewal season's staff-only notes on a contract. */
+    private static final java.util.Set<String> STAFF_ROLES = java.util.Set.of(
+            "ROLE_SUPER_ADMIN", "ROLE_TENANT_ADMIN", "ROLE_ACCOUNTANT", "ROLE_PROPERTY_MANAGER");
+
+    /** Whether the authenticated caller holds a staff role (and no authentication is not staff). */
+    static boolean callerIsStaff() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) return false;
+        for (var a : auth.getAuthorities()) {
+            if (STAFF_ROLES.contains(a.getAuthority())) return true;
+        }
+        return false;
     }
 
     /** IN lists are cut at this size so an unbounded list stays within Postgres' bind limit. */
@@ -2420,6 +2509,8 @@ public class LeaseService {
         java.util.Map<UUID, List<LeaseDocument>> docs = new java.util.HashMap<>();
         java.util.Set<UUID> credited = new java.util.HashSet<>();
         java.util.Map<UUID, Lease> successors = new java.util.HashMap<>();
+        java.util.Map<UUID, Lease> renewals = new java.util.HashMap<>();
+        java.util.Map<UUID, Object[]> marks = new java.util.HashMap<>();
         java.util.Map<UUID, List<LeaseLine>> lines = new java.util.HashMap<>();
         java.util.Map<UUID, List<com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod>> rentFree = new java.util.HashMap<>();
         for (int i = 0; i < ids.size(); i += MAP_CHUNK) {
@@ -2437,6 +2528,9 @@ public class LeaseService {
             for (Lease b : leaseRepository.findByTransferredFromLeaseIdIn(chunk)) {
                 successors.putIfAbsent(b.getTransferredFromLeaseId(), b);
             }
+            for (Lease r : leaseRepository.findByRenewedFromLeaseIdIn(chunk)) {
+                renewals.putIfAbsent(r.getRenewedFromLeaseId(), r);
+            }
             for (LeaseLine l : leaseLineRepository.findByLeaseIdsOrderBySeqNo(chunk)) {
                 lines.computeIfAbsent(l.getLease().getId(), k -> new java.util.ArrayList<>()).add(l);
             }
@@ -2446,7 +2540,26 @@ public class LeaseService {
                 }
             }
         }
-        return new MapContext(ejari, docs, credited, successors, lines, rentFree);
+        // The "not renewing" marks are on the leases themselves; who set each, by name, in one lookup.
+        // Round-2 review P2: the mark is staff-only. Every LeaseDTO is mapped here, so a caller who
+        // is not staff (a renter on /my-leases or any other door, a system job) never gets it.
+        boolean staff = callerIsStaff();
+        for (Lease l : staff ? leases : List.<Lease>of()) {
+            if (l.getId() != null && l.getNotRenewingAt() != null) {
+                marks.put(l.getId(), new Object[] {l.getId(), l.getNotRenewingAt(), l.getNotRenewingBy(), l.getNotRenewingNote()});
+            }
+        }
+        if (!marks.isEmpty() && markUsers != null) {
+            java.util.Set<UUID> byIds = new java.util.HashSet<>();
+            for (Object[] m : marks.values()) if (m[2] != null) byIds.add((UUID) m[2]);
+            java.util.Map<UUID, String> names = new java.util.HashMap<>();
+            for (var u : markUsers.findAllById(byIds)) names.put(u.getId(), u.getName());
+            for (var e : marks.entrySet()) {
+                Object[] m = e.getValue();
+                e.setValue(new Object[] {m[0], m[1], m[2] == null ? null : names.get((UUID) m[2]), m[3]});
+            }
+        }
+        return new MapContext(ejari, docs, credited, successors, lines, rentFree, renewals, marks);
     }
 
     /** A page (or list) of leases mapped with one batch of side queries, in the order given. */
@@ -2522,6 +2635,17 @@ public class LeaseService {
                 dto.setTransferredToUnit(b.getUnit() != null ? b.getUnit().getUnitNumber() : null);
                 dto.setTransferredToStatus(b.getStatus() != null ? b.getStatus().name() : null);
             }
+        }
+        Object[] mark = lease.getId() == null ? null : ctx.marks().get(lease.getId());
+        if (mark != null) {
+            dto.setNotRenewingAt((Instant) mark[1]);
+            dto.setNotRenewingByName((String) mark[2]);
+            dto.setNotRenewingNote((String) mark[3]);
+        }
+        Lease renewal = lease.getId() == null ? null : ctx.renewals().get(lease.getId());
+        if (renewal != null) {
+            dto.setRenewedToLeaseId(renewal.getId());
+            dto.setRenewedToStatus(renewal.getStatus() != null ? renewal.getStatus().name() : null);
         }
         dto.setChainId(lease.getChainId());
         dto.setReceivableAccountId(lease.getReceivableAccountId());

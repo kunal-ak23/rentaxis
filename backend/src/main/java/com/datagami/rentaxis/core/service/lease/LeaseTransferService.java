@@ -176,6 +176,8 @@ public class LeaseTransferService {
         dto.setLines(lines);
 
         LeaseDTO b = leaseService.createTransferDraft(dto, a, t);
+        // Scale PR C (re-review P3-4): the tenancy continues on another unit.
+        a.clearNotRenewing();
         Lease successor = leaseRepository.findById(b.getId()).orElseThrow();
         leaseAccessPolicy.requireManageable(successor);
         savePlan(a, successor, t, r.chequeDispositions());

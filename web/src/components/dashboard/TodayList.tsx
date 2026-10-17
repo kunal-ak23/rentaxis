@@ -5,7 +5,9 @@ import { useLocale, useTranslations } from "next-intl";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { hasPermission, type UserRole } from "@/lib/rbac";
-import { chequeApi, recognitionApi, type Cheque, type RecognitionStatusSummary } from "@/lib/api/leasing";
+import { chequeApi, leaseApi, recognitionApi, type Cheque, type RecognitionStatusSummary } from "@/lib/api/leasing";
+import { businessTodayIso } from "@/lib/businessDate";
+import { defaultMonth, monthRange, stageQuery } from "@/lib/leases/renewalSeason";
 import { formatCurrencyCompact } from "@/lib/format";
 import { fmtAmount } from "@/lib/api/ledger";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
@@ -14,7 +16,7 @@ import { usePillCounts } from "@/components/collections/usePillCounts";
 import type { PipelineStage } from "@/lib/dashboard/pipeline";
 import FollowUpsWidget from "./FollowUpsWidget";
 
-export type TodayRowId = "deposit" | "overdue" | "ending" | "drafts" | "tickets" | "penalties" | "recognition" | "recognitionFailed" | "followUps";
+export type TodayRowId = "deposit" | "overdue" | "ending" | "renewals" | "drafts" | "tickets" | "penalties" | "recognition" | "recognitionFailed" | "followUps";
 export interface TodayRowDef { id: TodayRowId; href: string | null; testId: string }
 
 /** Ticket statuses that still need someone (TicketStatus minus RESOLVED and CLOSED). */
@@ -34,6 +36,8 @@ export function todayRowDefs(role: UserRole | undefined): TodayRowDef[] {
     if (tabs.has("overdue")) add("overdue", collectionsHref("overdue"));
     if (hasPermission(role, "canViewLeases")) {
         add("ending", "/dashboard/leases?view=expiring");
+        // Scale #16: next month's contracts with no renewal drafted yet, in the renewal season queue.
+        add("renewals", `/dashboard/leases/renewals?month=${defaultMonth(businessTodayIso())}`);
         add("drafts", "/dashboard/leases?view=draft");
     }
     if (hasPermission(role, "canResolveIssues")) add("tickets", "/dashboard/tickets");
@@ -70,6 +74,11 @@ export default function TodayList({ role, pipeline }: { role: UserRole | undefin
         const set = (id: TodayRowId, n: number) => { if (alive) setCounts(c => ({ ...c, [id]: n })); };
         const ids = new Set(todayRowDefs(role).map(d => d.id));
         // Counts only (size=1 or a status summary): nothing here grows with the portfolio.
+        if (ids.has("renewals")) {
+            const { from, to } = monthRange(defaultMonth(businessTodayIso()));
+            leaseApi.paged({ endDateFrom: from, endDateTo: to, ...stageQuery("todo"), size: 1 })
+                .then(p => set("renewals", p.totalElements ?? 0)).catch(() => {});
+        }
         if (ids.has("tickets")) countOpenTickets().then(n => set("tickets", n)).catch(() => {});
         if (ids.has("recognition")) {
             recognitionApi.status().then(s => {

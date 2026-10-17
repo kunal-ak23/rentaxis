@@ -18,7 +18,7 @@ describe("buildNav — rail sections and panel items per role (all flags on)", (
         expect(shape(rail).map(([id]) => id)).toEqual(["home", "leasing", "collection", "accounting", "operations", "settings", "more"]);
         expect(shape(rail)).toEqual([
             ["home", ["today", "unit-status"]],
-            ["leasing", ["contracts", "tenants", "properties", "enquiry"]],
+            ["leasing", ["contracts", "renewal-season", "tenants", "properties", "enquiry"]],
             ["collection", ["deposit", "due", "overdue", "returned", "post-dated", "penalties", "all"]],
             ["accounting", ["accounts", "opening-balances", "vouchers", "payment-runs", "issued-cheques", "journals", "credit-note",
                 "general-ledger", "tenant-ledger", "trial-balance", "cheque-registers", "aging", "opening-items", "vendors",
@@ -41,7 +41,7 @@ describe("buildNav — rail sections and panel items per role (all flags on)", (
     it("PROPERTY_MANAGER", () => {
         expect(shape(buildNav(ctx("PROPERTY_MANAGER")))).toEqual([
             ["home", ["today", "unit-status"]],
-            ["leasing", ["contracts", "tenants", "properties", "enquiry"]],
+            ["leasing", ["contracts", "renewal-season", "tenants", "properties", "enquiry"]],
             ["collection", ["deposit", "due", "overdue", "returned", "post-dated", "penalties", "all"]],
             ["accounting", ["aging", "penalties", "balance-sheet", "property-pl", "property-statement"]],
             ["operations", ["tickets", "bookings"]],
@@ -49,10 +49,10 @@ describe("buildNav — rail sections and panel items per role (all flags on)", (
         ]);
     });
 
-    it("ACCOUNTANT sees Home, Leasing (contracts only), Collection and Accounting", () => {
+    it("ACCOUNTANT sees Home, Leasing (contracts and the renewal season), Collection and Accounting", () => {
         const rail = buildNav(ctx("ACCOUNTANT"));
         expect(rail.map(s => s.id)).toEqual(["home", "leasing", "collection", "accounting"]);
-        expect(rail[1].groups.flatMap(g => g.items.map(i => i.id))).toEqual(["contracts"]);
+        expect(rail[1].groups.flatMap(g => g.items.map(i => i.id))).toEqual(["contracts", "renewal-season"]);
     });
 
     it("TENANT_USER and SECURITY_GUARD see Home only — no My Unit link", () => {
@@ -106,7 +106,7 @@ describe("flags", () => {
     });
     it("gates Enquiry on LISTINGS", () => {
         const leasing = buildNav(ctx("TENANT_ADMIN", [])).find(s => s.id === "leasing")!;
-        expect(leasing.groups[0].items.map(i => i.id)).toEqual(["contracts", "tenants", "properties"]);
+        expect(leasing.groups[0].items.map(i => i.id)).toEqual(["contracts", "renewal-season", "tenants", "properties"]);
     });
 });
 
@@ -161,6 +161,7 @@ describe("activeNav", () => {
     it.each([
         ["/en/dashboard", "home", "today"],
         ["/ar/dashboard/leases/abc", "leasing", "contracts"],
+        ["/dashboard/leases/renewals", "leasing", "renewal-season"],
         ["/en/dashboard/finance/journals/new", "accounting", "journals"],
         ["/en/dashboard/collections", "collection", "deposit"],
         ["/en/dashboard/staff", "operations", "staff"],

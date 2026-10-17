@@ -371,6 +371,10 @@ class OsivOffWriteSweepIT extends AbstractPostgresIT {
         call(out, admin, HttpMethod.POST, "/api/v1/buildings", Map.of("nameEn", "Tower B", "property", Map.of("id", f.property().getId())));
         call(out, admin, HttpMethod.POST, "/api/v1/units", Map.of("unitNumber", "901", "property", Map.of("id", f.property().getId())));
         call(out, admin, HttpMethod.POST, "/api/v1/leases/" + leaseId + "/renewal/mark-renewed", Map.of());
+        // the renewal season (scale #16/#17): a manager drafts and previews in bulk
+        call(out, pm, HttpMethod.POST, "/api/v1/leases/terminate-batch/preview", Map.of("leaseIds", List.of(leaseId)));
+        call(out, pm, HttpMethod.POST, "/api/v1/leases/renew-batch", Map.of("leaseIds", List.of(leaseId),
+                "rule", Map.of("mode", "NONE"), "carryDepositForward", true, "generateGrid", true));
         // the cheque desk (cheques-only collection)
         call(out, admin, HttpMethod.PUT, "/api/v1/cheques/" + chequeId + "/receive", null);
         call(out, admin, HttpMethod.PUT, "/api/v1/cheques/" + chequeId + "/deposit", null);
