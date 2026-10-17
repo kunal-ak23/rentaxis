@@ -587,6 +587,33 @@ class BookingServiceTest {
         verify(eventPublisher, never()).publishEvent(any());
     }
 
+    /**
+     * #101: the slot check and the fee reversal read the service's Dubai clock, not the
+     * JVM's — "today" here is 01/08/2026, so a 05/08 slot has not started and the fee
+     * is reversed as of 01/08 (the wall clock is long past both).
+     */
+    @Test
+    void cancel_approvedAmenity_readsTheDubaiClockForTheSlotAndTheReversalDate() {
+        BookingFeeService fees = mock(BookingFeeService.class);
+        service.setBookingFees(fees);
+        BookingRequest b = booking(BookingResourceType.AMENITY, BookingRequestStatus.APPROVED);
+        b.setPreferredDate(LocalDate.of(2026, 8, 5));
+        b.setPreferredStartTime(java.time.LocalTime.of(9, 0));
+        when(bookingRepository.findByIdForUpdate(b.getId())).thenReturn(Optional.of(b));
+
+        assertThat(service.cancel(tenantId, b.getId(), renterUserId).getStatus()).isEqualTo(BookingRequestStatus.CANCELLED);
+        verify(fees).reverseOnCancel(b, LocalDate.of(2026, 8, 1));
+
+        service.setClock(Clock.fixed(LocalDate.of(2026, 8, 5).atTime(9, 30).atZone(BookingService.DUBAI).toInstant(),
+                BookingService.DUBAI));
+        BookingRequest started = booking(BookingResourceType.AMENITY, BookingRequestStatus.APPROVED);
+        started.setPreferredDate(LocalDate.of(2026, 8, 5));
+        started.setPreferredStartTime(java.time.LocalTime.of(9, 0));
+        when(bookingRepository.findByIdForUpdate(started.getId())).thenReturn(Optional.of(started));
+        assertThatThrownBy(() -> service.cancel(tenantId, started.getId(), renterUserId))
+                .isInstanceOf(BusinessRuleViolationException.class).hasMessageContaining("slot has started");
+    }
+
     @Test
     void cancel_approved_throws400() {
         // requirePending guards cancel too — an APPROVED parking booking must not be

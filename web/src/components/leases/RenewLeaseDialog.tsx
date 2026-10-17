@@ -306,7 +306,7 @@ export default function RenewLeaseDialog({ open, lease, chargeTypes, onClose, on
                                 </label>
                             ))}
                             {mode === "PERCENT" && (
-                                <input aria-label={tr("percent")} data-testid="renew-percent" type="number" step="0.01"
+                                <input aria-label={tr("percent")} data-testid="renew-percent" type="number" step="0.01" dir="ltr"
                                     className={`${field} w-28 text-end`} value={percent} onChange={e => setPercent(e.target.value)} />
                             )}
                             {mode === "AMOUNT" && (

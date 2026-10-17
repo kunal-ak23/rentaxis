@@ -398,7 +398,35 @@ public class SettlementService {
                 unrecognised, money(totalDeductionVat),
                 money(totalDeductions.add(totalDeductionVat)),
                 vatLease ? com.datagami.rentaxis.core.service.lease.LeaseVat.RATE : BigDecimal.ZERO,
-                List.copyOf(VATABLE_RECHARGES));
+                List.copyOf(VATABLE_RECHARGES),
+                depositCarriedTo(lease));
+    }
+
+    /**
+     * #100-d: on a lease transferred out, where its deposit went. The posted
+     * successor (via {@code transferred_from_lease_id}) carried it with a {@code JV};
+     * the figure is what that journal moved off this lease. Display only: it is not
+     * in {@code depositsHeld} (the ledger already shows zero there) and never in
+     * {@code netRefund}. The successor's id and unit are withheld from a caller who
+     * may not read that lease (another building), so the line still explains the
+     * zero without naming a lease they cannot open.
+     */
+    private com.datagami.rentaxis.api.dto.settlement.DepositCarriedDTO depositCarriedTo(Lease lease) {
+        Lease successor = leaseRepository.findByTransferredFromLeaseId(lease.getId()).stream()
+                .filter(s -> s.getPostingJournalId() != null && s.getStatus() != LeaseStatus.DRAFT)
+                .findFirst().orElse(null);
+        if (successor == null) {
+            return null;
+        }
+        BigDecimal carried = depositLedger.carriedToSuccessor(lease, successor.getId());
+        if (carried.signum() <= 0) {
+            return null;
+        }
+        boolean readable = leaseAccessPolicy.canRead(successor);
+        return new com.datagami.rentaxis.api.dto.settlement.DepositCarriedDTO(
+                readable ? successor.getId() : null,
+                readable && successor.getUnit() != null ? successor.getUnit().getUnitNumber() : null,
+                money(carried));
     }
 
     /**
@@ -837,6 +865,7 @@ public class SettlementService {
         response.setDepositsHeld(settlement.getDepositsHeld());
         response.setPenaltiesOutstanding(settlement.getPenaltiesOutstanding());
         response.setBalanceDue(settlement.getBalanceDue());
+        response.setStillDue(settlement.getStatus() == SettlementStatus.FINALIZED ? liveStillDue(lease) : null);
         response.setRefundBankAccountId(settlement.getRefundBankAccountId());
         response.setJournalId(settlement.getJournalId());
         response.setJournalNumber(settlement.getJournalId() == null ? null
@@ -1248,6 +1277,22 @@ public class SettlementService {
     }
 
     /** The lease's own receivable leaf when it overrides the property's (spec §6.3). */
+    /**
+     * #102 / review P2-1: what the renter owes on this lease today, from the ledger —
+     * the rent receivable and the PDC receivable (where the settlement's collection
+     * row and any cheque still held sit), on the lease and its renter. A write-off
+     * made before the move-out is already out of these balances and a receipt after
+     * it already in, so neither is counted twice. Read-only.
+     */
+    private BigDecimal liveStillDue(Lease lease) {
+        UUID renterId = lease.getRenter() == null ? null : lease.getRenter().getId();
+        LedgerQueryService.LedgerFilter f = new LedgerQueryService.LedgerFilter(null, null, null, null, lease.getId(), renterId);
+        BigDecimal receivable = ledgerQueryService.accountLedger(receivableAccountOf(lease), f).closingBalance();
+        BigDecimal pdc = ledgerQueryService.accountLedger(
+                accountResolver.resolve(AccountRole.PDC_RECEIVABLE, propertyIdOf(lease)).getId(), f).closingBalance();
+        return money(receivable.add(pdc).max(BigDecimal.ZERO));
+    }
+
     private UUID receivableAccountOf(Lease lease) {
         return lease.getReceivableAccountId() != null
                 ? lease.getReceivableAccountId()

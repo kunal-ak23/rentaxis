@@ -43,7 +43,9 @@ import ReduceLeaseDialog from "@/components/leases/ReduceLeaseDialog";
 import LeaseAssignmentCard from "@/components/leases/LeaseAssignmentCard";
 import BadDebtCard from "@/components/leases/BadDebtCard";
 import { badDebtsApi } from "@/lib/api/badDebts";
+import { stillDueOf, writtenOffTotals } from "@/components/leases/writtenOff";
 import TransferLeaseDialog from "@/components/leases/TransferLeaseDialog";
+import LeaseHistoryStrip from "@/components/leases/LeaseHistoryStrip";
 import LeaseAddendaPanel from "@/components/leases/LeaseAddendaPanel";
 import LeaseJournalsTab from "@/components/leases/LeaseJournalsTab";
 import LeasePenaltiesTab from "@/components/leases/LeasePenaltiesTab";
@@ -188,7 +190,7 @@ export default function LeaseDetailPage() {
     const [tickets, setTickets] = useState<Ticket[]>([]);
     const [settlement, setSettlement] = useState<SettlementResponse | null>(null);
     // F15-22: what has been written off as bad debt, shown apart from the settlement's balance due.
-    const [writtenOff, setWrittenOff] = useState(0);
+    const [writtenOff, setWrittenOff] = useState({ total: 0, sinceMoveOut: 0 });
     const [loading, setLoading] = useState(true);
     const [banner, setBanner] = useState<string | null>(null);
     /** What a post, amendment or extension did that is worth knowing but is not an error (backend PR #372). */
@@ -653,6 +655,8 @@ export default function LeaseDetailPage() {
                                 </Link>
                             )}
                         </div>
+                        {/* #100-e: the whole chain of renewals and transfers, not just the one-hop links above. */}
+                        <LeaseHistoryStrip leaseId={lease.id} />
                         {/* Demo feedback 2026-09-29: what is still expected on this contract, one click from the Cheques tab. */}
                         {!drafting && (
                             <button
@@ -1179,7 +1183,7 @@ export default function LeaseDetailPage() {
                 )}
 
                 {settlement && settlement.status === "FINALIZED" && canSeeBadDebts && (
-                    <WrittenOffLoader leaseId={leaseId} onLoaded={setWrittenOff} />
+                    <WrittenOffLoader leaseId={leaseId} settlementDate={settlement.settlementDate} onLoaded={setWrittenOff} />
                 )}
                 {settlement && settlement.status === "FINALIZED" && (
                     <div
@@ -1197,14 +1201,17 @@ export default function LeaseDetailPage() {
                             label={(settlement.balanceDue ?? 0) > 0 ? tSettlement("balanceDue") : tSettlement("refundDue")}
                             value={formatCurrency((settlement.balanceDue ?? 0) > 0 ? settlement.balanceDue : settlement.refundAmount)}
                         />
-                        {writtenOff > 0 && (
-                            <>
-                                <Detail label={tSettlement("writtenOff")} value={formatCurrency(writtenOff)} />
-                                {(settlement.balanceDue ?? 0) > 0 && (
-                                    <Detail label={tSettlement("stillDue")}
-                                            value={formatCurrency(Math.max(0, (settlement.balanceDue ?? 0) - writtenOff))} />
-                                )}
-                            </>
+                        {/* Review P2-1: write-offs dated since the move-out, the tenancy's total when
+                            earlier ones exist, and what is still due — live from the ledger. */}
+                        {writtenOff.sinceMoveOut > 0 && (
+                            <Detail label={tSettlement("writtenOffSinceMoveOut")} value={formatCurrency(writtenOff.sinceMoveOut)} />
+                        )}
+                        {writtenOff.total > writtenOff.sinceMoveOut && (
+                            <Detail label={tSettlement("writtenOffTenancyTotal")} value={formatCurrency(writtenOff.total)} />
+                        )}
+                        {(settlement.balanceDue ?? 0) > 0 && stillDueOf(settlement) != null
+                            && (writtenOff.total > 0 || stillDueOf(settlement) !== settlement.balanceDue) && (
+                            <Detail label={tSettlement("stillDue")} value={formatCurrency(stillDueOf(settlement))} />
                         )}
                         {settlement.journalNumber && (
                             <Detail label={tSettlement("journalNumber")} value={settlement.journalNumber} />
@@ -1446,16 +1453,19 @@ function Detail({ label, value, icon, rtl }: { label: string; value: string; ico
 }
 
 /** F15-22: the amount written off as bad debt on this lease (write-offs in force). */
-function WrittenOffLoader({ leaseId, onLoaded }: { leaseId: string; onLoaded: (amount: number) => void }) {
+function WrittenOffLoader({ leaseId, settlementDate, onLoaded }: {
+    leaseId: string; settlementDate: string | null;
+    onLoaded: (amounts: { total: number; sinceMoveOut: number }) => void;
+}) {
     useEffect(() => {
         let live = true;
         badDebtsApi.forLease(leaseId)
             .then(ws => {
                 if (!live) return;
-                onLoaded(ws.filter(w => w.status === "WRITTEN_OFF").reduce((sum, w) => sum + w.amount, 0));
+                onLoaded(writtenOffTotals(ws, settlementDate));
             })
             .catch(() => { /* not shown */ });
         return () => { live = false; };
-    }, [leaseId, onLoaded]);
+    }, [leaseId, settlementDate, onLoaded]);
     return null;
 }

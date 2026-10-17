@@ -132,6 +132,26 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, UUID> 
     BigDecimal creditBalanceForLease(@Param("tenantId") UUID tenantId, @Param("accountId") UUID accountId,
                                      @Param("leaseId") UUID leaseId);
 
+    /**
+     * #100-d: what the {@code JV}s a successor lease wrote moved off these accounts on
+     * the predecessor's lease dimension — Σdebit − Σcredit, debit-positive (a deposit
+     * carried out of the old lease is a debit on its liability). Reversed journals and
+     * their reversals are left out, so a carry that was undone reports nothing.
+     * Read-only; the statement uses it to explain a zero deposit, never to post.
+     */
+    @Query(value = """
+        select coalesce(sum(l.debit),0) - coalesce(sum(l.credit),0)
+        from journal_lines l join journal_entries e on e.id = l.journal_entry_id
+        where l.tenant_id = :tenantId and e.tenant_id = :tenantId
+          and l.account_id in (:accountIds) and l.lease_id = :leaseId
+          and e.doc_type = 'JV' and e.source_type = 'LEASE' and e.source_id = :successorId
+          and e.reversed_by_id is null and e.reversal_of_id is null
+        """, nativeQuery = true)
+    BigDecimal debitMovedBySuccessorJv(@Param("tenantId") UUID tenantId,
+                                       @Param("accountIds") java.util.Collection<UUID> accountIds,
+                                       @Param("leaseId") UUID leaseId,
+                                       @Param("successorId") UUID successorId);
+
     @Query(value = """
         select l.account_id as accountId, coalesce(sum(l.debit),0) as debit, coalesce(sum(l.credit),0) as credit
         from journal_lines l join journal_entries e on e.id = l.journal_entry_id

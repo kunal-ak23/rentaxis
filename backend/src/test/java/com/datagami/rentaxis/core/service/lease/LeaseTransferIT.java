@@ -142,7 +142,20 @@ class LeaseTransferIT extends AbstractPostgresIT {
         UUID b = draftB(a, target, "41589.04");
         assertThat(lease(b).getStatus()).isEqualTo(LeaseStatus.DRAFT);
         assertThat(journalCount(JournalDocType.TCR)).as("a draft writes nothing").isZero();
-        assertThat(posting.dryRun(b).ok()).isTrue();
+        PostLeaseDryRunResponse dry = posting.dryRun(b);
+        assertThat(dry.ok()).isTrue();
+        // #100-f: the review lists the transfer's own journal groups, in posting order.
+        PostLeaseDryRunResponse.TransferJournals groups = dry.journals().transfer();
+        assertThat(groups).isNotNull();
+        assertThat(groups.moveDate()).isEqualTo(T);
+        assertThat(groups.pdrReversals()).as("July and October carried").isEqualTo(2);
+        assertThat(groups.pdrReversalTotal()).isEqualByComparingTo("30000");
+        assertThat(groups.unearned()).isEqualByComparingTo("37808.22");
+        assertThat(groups.unearnedVat()).isZero();
+        assertThat(groups.balanceCarried()).isEqualByComparingTo("-7808.22");
+        assertThat(groups.balanceCarriedDate()).isEqualTo(B_START);
+        assertThat(groups.depositCarried()).isEqualByComparingTo("3000");
+        assertThat(journalCount(JournalDocType.TCR)).as("the dry run writes nothing").isZero();
 
         posting.post(b);
 
@@ -248,6 +261,61 @@ class LeaseTransferIT extends AbstractPostgresIT {
         assertThat(dry.journals().pdr()).isEqualTo(dry.carriedCheques().size());
         posting.post(b);
         assertThat(lease(b).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+        assertTrialBalanceBalances();
+    }
+
+    /**
+     * #100 (spec §2 "concurrent posts"): two Post clicks on the same transfer race.
+     * The post locks B, then A; the loser finds B no longer a draft and is refused.
+     * One TCO on B, one TCR on A, and the books still balance.
+     */
+    @Test
+    void twoConcurrentPostsOfOneTransferPostItOnce() throws Exception {
+        UUID a = leaseA(true);
+        Property other = tx.execute(s -> fixtures.createProperty("CC"));
+        Unit target = tx.execute(s -> fixtures.createUnit(other, "C-301"));
+        UUID b = transfers.draft(a, request(T, target.getId(), List.of(line("RENT", "37808.22"))), posting).getId();
+        UUID tenant = fixtures.tenantId();
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        var go = new java.util.concurrent.CountDownLatch(1);
+        try {
+            java.util.concurrent.Callable<Object> post = () -> {
+                TenantContextHolder.setTenantId(tenant);
+                LeaseTestFixtures.authenticateAsTenantAdmin();
+                try {
+                    go.await(20, java.util.concurrent.TimeUnit.SECONDS);
+                    return posting.post(b);
+                } finally {
+                    TenantContextHolder.clear();
+                    LeaseTestFixtures.clearAuth();
+                }
+            };
+            var one = pool.submit(post);
+            var two = pool.submit(post);
+            go.countDown();
+            int ok = 0;
+            List<Throwable> refused = new java.util.ArrayList<>();
+            for (var f : List.of(one, two)) {
+                try {
+                    f.get(60, java.util.concurrent.TimeUnit.SECONDS);
+                    ok++;
+                } catch (java.util.concurrent.ExecutionException e) {
+                    refused.add(e.getCause());
+                }
+            }
+            assertThat(ok).as("exactly one post wins").isEqualTo(1);
+            assertThat(refused).singleElement().isInstanceOf(BusinessRuleViolationException.class);
+        } finally {
+            go.countDown();
+            pool.shutdownNow();
+        }
+        assertThat(jdbc.queryForObject("select count(*) from journal_entries where tenant_id = ? and lease_id = ? and doc_type = 'TCO'",
+                Long.class, tenant, b)).isEqualTo(1L);
+        assertThat(jdbc.queryForObject("select count(*) from journal_entries where tenant_id = ? and lease_id = ? and doc_type = 'TCR'",
+                Long.class, tenant, a)).isEqualTo(1L);
+        assertThat(lease(b).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+        // Fully carried, A has nothing left to settle and closes.
+        assertThat(lease(a).getStatus()).isIn(LeaseStatus.TERMINATED, LeaseStatus.CLOSED);
         assertTrialBalanceBalances();
     }
 
@@ -427,6 +495,60 @@ class LeaseTransferIT extends AbstractPostgresIT {
         assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, a, fixtures.property())).isEqualByComparingTo("15000");
         assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, b, fixtures.property())).isZero();
         assertTrialBalanceBalances();
+    }
+
+    /** #100-f: a lease that is not a transfer successor has no transfer groups (old clients see the three counts). */
+    @Test
+    void aPlainDraftsDryRunHasNoTransferGroups() {
+        UUID plain = fixtures.draftLease(CONTRACT, START, END, List.of(line("RENT", "60000")));
+        PostLeaseDryRunResponse dry = posting.dryRun(plain);
+        assertThat(dry.journals().transfer()).isNull();
+        assertThat(dry.journals().tco()).isEqualTo(1);
+    }
+
+    /**
+     * #100-d: the statement of the lease left behind explains its zero deposit with a
+     * "carried to" line, the figure the deposit JV moved — not refundable, so it is
+     * not in the net refund — and a manager who cannot read B's building sees the
+     * amount without B's id or unit.
+     */
+    @Test
+    void theLeaseLeftBehindShowsItsDepositCarriedToTheNewLease() {
+        UUID a = leaseA(false);   // April bounced, so A stays TERMINATED and needs a settlement
+        Cheque april = chequeOn(a, APR);
+        chequeService.deposit(april.getId(), ChequeActionRequest.on(APR));
+        chequeService.bounce(april.getId(), new ChequeActionRequest(APR, null, ChequeFailureReason.BOUNCE, null));
+        var before = settlements.statement(a);
+        assertThat(before.depositCarriedTo()).as("nothing carried before the transfer").isNull();
+        assertThat(before.depositsHeld()).isEqualByComparingTo("3000");
+
+        Property other = tx.execute(s -> fixtures.createProperty("OTD"));
+        Unit target = tx.execute(s -> fixtures.createUnit(other, "B-310"));
+        UUID b = draftB(a, target, "41589.04");
+        assertThat(settlements.statement(a).depositCarriedTo()).as("a draft transfer carries nothing").isNull();
+        posting.post(b);
+        long journalsBefore = jdbc.queryForObject("select count(*) from journal_entries where tenant_id = ?",
+                Long.class, fixtures.tenantId());
+
+        var stmt = settlements.statement(a);
+        assertThat(stmt.depositsHeld()).isZero();
+        assertThat(stmt.depositCarriedTo()).isNotNull();
+        assertThat(stmt.depositCarriedTo().leaseId()).isEqualTo(b);
+        assertThat(stmt.depositCarriedTo().unitIdentifier()).isEqualTo("B-310");
+        assertThat(stmt.depositCarriedTo().amount()).isEqualByComparingTo("3000");
+        // Display only: the refund is the bounced debt, the carried deposit not offered back.
+        assertThat(stmt.netRefund()).isEqualByComparingTo("-15000");
+        assertThat(settlements.statement(b).depositCarriedTo()).as("B has no successor").isNull();
+        assertThat(jdbc.queryForObject("select count(*) from journal_entries where tenant_id = ?",
+                Long.class, fixtures.tenantId())).as("reading writes nothing").isEqualTo(journalsBefore);
+
+        // A manager of A's building only: the line still explains the zero, B stays unnamed.
+        asPropertyManagerFor(fixtures.property().getId());
+        var masked = settlements.statement(a).depositCarriedTo();
+        assertThat(masked.amount()).isEqualByComparingTo("3000");
+        assertThat(masked.leaseId()).isNull();
+        assertThat(masked.unitIdentifier()).isNull();
+        fixtures.asTenantAdmin();
     }
 
     /**
@@ -624,6 +746,27 @@ class LeaseTransferIT extends AbstractPostgresIT {
         chequeGeneration.saveRows(b.getId(), List.of(row("620001", B_START, B_START, "3780.82")));
         return b.getId();
     }
+
+    /** A PROPERTY_MANAGER in the security context, assigned to {@code propertyId} only. */
+    private void asPropertyManagerFor(UUID propertyId) {
+        var pm = new com.datagami.rentaxis.domain.entity.User();
+        pm.setEmail("pm-" + UUID.randomUUID() + "@t.io");
+        pm.setName("PM");
+        pm.setRole(com.datagami.rentaxis.domain.entity.enums.UserRole.PROPERTY_MANAGER);
+        pm.setStatus(com.datagami.rentaxis.domain.entity.enums.UserStatus.ACTIVE);
+        pm.setPasswordHash("x");
+        pm.setTenantId(fixtures.tenantId());
+        UUID userId = userRepo.save(pm).getId();
+        var assignment = new com.datagami.rentaxis.domain.entity.UserPropertyAssignment();
+        assignment.setUserId(userId);
+        assignment.setPropertyId(propertyId);
+        assignmentRepo.save(assignment);
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(userId.toString(), null,
+                        List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_PROPERTY_MANAGER"))));
+    }
+
+    @Autowired com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository assignmentRepo;
 
     private static TransferLeaseRequest request(LocalDate t, UUID unit, List<LeaseLineInput> lines) {
         return new TransferLeaseRequest(t, unit, null, null, lines, null);

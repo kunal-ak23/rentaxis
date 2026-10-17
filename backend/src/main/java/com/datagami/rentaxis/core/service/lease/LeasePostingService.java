@@ -489,8 +489,10 @@ public class LeasePostingService {
         List<String> transferProblems = new ArrayList<>();
         List<String> notices = new ArrayList<>();
         List<PostLeaseDryRunResponse.CarriedCheque> carried = List.of();
+        LeaseTransferService.Estimate transferEstimate = null;
         if (lease.getTransferredFromLeaseId() != null && lease.getStatus() == LeaseStatus.DRAFT) {
             LeaseTransferService.Estimate est = transfers.estimateForDryRun(lease);
+            transferEstimate = est;
             transferProblems.addAll(est.problems());
             // F15-13: the review lists the instruments the post re-registers on this grid.
             carried = est.carried().stream().map(c -> new PostLeaseDryRunResponse.CarriedCheque(c.getSeqNo(),
@@ -528,14 +530,24 @@ public class LeasePostingService {
         // should see the number before the JV exists. The lock problem it could hit
         // is the contract date's, which is already in `errors`: the JV is dated the
         // same day as the TCO.
+        BigDecimal depositCarried = depositCarryForward.total(lease);
+        // #100-f: a transfer successor's review lists the transfer's own groups too.
+        PostLeaseDryRunResponse.TransferJournals transferJournals = null;
+        if (transferEstimate != null && transferEstimate.groups() != null) {
+            LeaseTransferService.Groups g = transferEstimate.groups();
+            transferJournals = new PostLeaseDryRunResponse.TransferJournals(g.moveDate(), g.pdrReversals(),
+                    g.pdrReversalTotal(), g.unearned(), g.unearnedVat(), transferEstimate.carriedBalance(),
+                    g.moveDate().plusDays(1), depositCarried);
+        }
         return new PostLeaseDryRunResponse(
                 errors.isEmpty(),
                 errors,
                 plan.contractValue(),
                 plan.contractValueInclVat(),
                 plan.chequeTotal(),
-                depositCarryForward.total(lease),
-                new PostLeaseDryRunResponse.JournalPlan(1, plan.pairs().size() * 2, cheques.size() + carried.size()),
+                depositCarried,
+                new PostLeaseDryRunResponse.JournalPlan(1, plan.pairs().size() * 2, cheques.size() + carried.size(),
+                        transferJournals),
                 carried, notices);
     }
 

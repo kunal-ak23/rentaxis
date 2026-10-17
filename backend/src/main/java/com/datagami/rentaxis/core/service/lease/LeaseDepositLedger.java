@@ -108,6 +108,31 @@ public class LeaseDepositLedger {
         return byAccount;
     }
 
+    /**
+     * #100-d: how much of this lease's deposit its successor's carry {@code JV} moved
+     * off it — read from that journal, so it is the figure that actually moved, not
+     * what the successor holds today (the successor may since have refunded part of
+     * it). Zero when nothing was carried. Display only.
+     */
+    @Transactional(readOnly = true)
+    public BigDecimal carriedToSuccessor(Lease predecessor, UUID successorId) {
+        if (predecessor == null || successorId == null) {
+            return BigDecimal.ZERO;
+        }
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId == null) {
+            throw new IllegalStateException(
+                    "No tenant in context; a lease's deposit carry cannot be read without one");
+        }
+        List<UUID> accounts = depositAccountsAlongChain(predecessor);
+        if (accounts.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal moved = journalLineRepository.debitMovedBySuccessorJv(tenantId, accounts,
+                predecessor.getId(), successorId);
+        return moved == null || moved.signum() <= 0 ? BigDecimal.ZERO : moved;
+    }
+
     /** Σ of {@link #heldByAccount}: the single figure a preview or a review screen shows. */
     @Transactional(readOnly = true)
     public BigDecimal depositHeld(Lease lease) {

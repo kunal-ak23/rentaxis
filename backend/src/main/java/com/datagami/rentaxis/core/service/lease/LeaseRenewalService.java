@@ -311,8 +311,8 @@ public class LeaseRenewalService {
             lines = new ArrayList<>(copied.lines());
             sources = copied.sources();
             skipped = copied.skippedOneOff();
-            LeaseLine contractRent = LeaseService.contractRentLine(predecessor,
-                    leaseLineRepository.findByLease_IdOrderBySeqNoAsc(predecessor.getId()));
+            List<LeaseLine> predecessorLines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(predecessor.getId());
+            LeaseLine contractRent = LeaseService.contractRentLine(predecessor, predecessorLines);
             int rentIndex = contractRent == null ? -1 : sources.indexOf(contractRent);
             if (rentIndex >= 0) {
                 // PR #358 R1 P2-3: the base is what the renter pays — headline less the
@@ -343,7 +343,12 @@ public class LeaseRenewalService {
                         if (change.percent() == null) {
                             throw new BusinessRuleViolationException("Enter the rent change in percent.");
                         }
-                        if (!sameTermLength(predecessor.getStartDate(), predecessor.getEndDate(), r.startDate(), r.endDate())) {
+                        // #99 R1: measured against the term the contract rent was priced for.
+                        // After an extension the lease runs longer than that rent covers, so
+                        // a 12-month renewal of an extended 12-month contract is a like-for-like
+                        // escalation, and a 15-month one would stretch a year's rent over 15.
+                        LocalDate[] priced = contractRentTerm(predecessor, predecessorLines, contractRent);
+                        if (!sameTermLength(priced[0], priced[1], r.startDate(), r.endDate())) {
                             throw new BusinessRuleViolationException(
                                     "The term length changed; enter the new rent amount instead of a percentage.");
                         }
@@ -560,6 +565,25 @@ public class LeaseRenewalService {
                     "There is nothing to copy from the lease being renewed; send the renewal's lines explicitly.");
         }
         return new Copied(copied, copiedFrom, skipped);
+    }
+
+    /**
+     * The window the contract's own rent line was priced for: its own period when it
+     * carries one, else the lease's start to the day before the first extension's
+     * rent window (an extension moves the lease's end, never this line's), else the
+     * lease's term.
+     */
+    static LocalDate[] contractRentTerm(Lease lease, List<LeaseLine> lines, LeaseLine contractRent) {
+        LocalDate start = contractRent.getPeriodStart() != null ? contractRent.getPeriodStart() : lease.getStartDate();
+        if (contractRent.getPeriodEnd() != null) return new LocalDate[] {start, contractRent.getPeriodEnd()};
+        LocalDate end = lease.getEndDate();
+        for (LeaseLine l : lines) {
+            if (l == contractRent || l.getAddendumId() != null || l.getChargeType() == null
+                    || l.getChargeType().getBehaviour() != ChargeBehaviour.RENT || !isExtensionLine(l, lease)) continue;
+            LocalDate before = l.getPeriodStart().minusDays(1);
+            if (end == null || before.isBefore(end)) end = before;
+        }
+        return new LocalDate[] {start, end};
     }
 
     /** A RENT line dated from after the lease's start — only an extension writes one. */

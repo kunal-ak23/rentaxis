@@ -80,6 +80,7 @@ public class LeaseController {
     private final com.datagami.rentaxis.core.service.lease.LeaseReductionService leaseReductionService;
     private final com.datagami.rentaxis.core.service.lease.LeaseAssignmentService leaseAssignmentService;
     private final com.datagami.rentaxis.core.service.lease.LeaseTransferService leaseTransferService;
+    private final com.datagami.rentaxis.core.service.lease.LeaseChainService leaseChainService;
 
     /**
      * ACCOUNTANT on every read below.
@@ -133,6 +134,18 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
     public ResponseEntity<LeaseDTO> getLeaseById(@PathVariable UUID id) {
         return ResponseEntity.ok(leaseService.getLeaseById(id));
+    }
+
+    /**
+     * #100-e: the lease's whole history — every renewal and unit transfer, oldest
+     * first, each labelled RENEWED or TRANSFERRED. The same read gate as
+     * {@code GET /{id}}; contracts of the chain on a building the caller may not
+     * read are left out.
+     */
+    @GetMapping("/{id}/chain")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<List<com.datagami.rentaxis.api.dto.lease.LeaseChainLinkDTO>> getLeaseChain(@PathVariable UUID id) {
+        return ResponseEntity.ok(leaseChainService.chain(id));
     }
 
     @PostMapping
