@@ -6,7 +6,7 @@ import { useTranslations, useLocale } from "next-intl";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { Plus, X, FileText, Calendar, DollarSign, Home, CheckCircle, Ban, AlertCircle, LayoutGrid, Columns3, Download, Sparkles, Loader2, RefreshCw, Pencil, List, Eye, Search, Upload, Trash2 } from "lucide-react";
 import LeaseWizard from "./LeaseWizard";
-import { useRouter } from "@/i18n/routing";
+import { Link, useRouter } from "@/i18n/routing";
 import { Pagination } from "@/components/ui/Pagination";
 import { useSession } from "next-auth/react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
@@ -969,6 +969,16 @@ function LeasesList() {
                                 : tl("bulkPost", { n: selected.size })}
                         </button>
                     )}
+                    {canViewLeases && (
+                        <Link
+                            href="/dashboard/leases/renewals"
+                            data-testid="lease-renewal-season"
+                            className="flex items-center gap-2 bg-surface border border-border text-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:border-primary transition-all duration-200"
+                        >
+                            <Calendar size={14} />
+                            {tc("renewalSeason")}
+                        </Link>
+                    )}
                     {canManageLeases && (
                         <button
                             data-testid="lease-new"
@@ -997,6 +1007,14 @@ function LeasesList() {
                     {listRead.which === "expiring"
                         ? (boundedCapped ? tc("expiringCapped", { count: leases.length }) : tc("expiringNote"))
                         : (boundedCapped ? tc("upcomingCapped", { count: leases.length }) : tc("upcomingNote"))}
+                    {listRead.which === "expiring" && (
+                        <>
+                            {" "}
+                            <Link href="/dashboard/leases/renewals" className="font-semibold text-primary hover:underline" data-testid="lease-expiring-queue">
+                                {tc("workInQueue")}
+                            </Link>
+                        </>
+                    )}
                 </p>
             )}
 

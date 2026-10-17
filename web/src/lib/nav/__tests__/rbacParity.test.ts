@@ -20,6 +20,8 @@ const NEW_DESTINATIONS: Record<string, string> = {
     // Tutorial 19: the Accountant reads Bank Accounts (BankAccountController's GETs) — the
     // accounts their bank reconciliation already works on; edit stays the admin's.
     "/dashboard/finance/bank-accounts": "/dashboard/finance/bank-reconciliation",
+    // Scale #16/#17: the renewal season queue works the same contracts as the list, under its gate (canViewLeases).
+    "/dashboard/leases/renewals": "/dashboard/leases",
 };
 
 /**

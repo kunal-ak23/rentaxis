@@ -49,10 +49,10 @@ const stage = (id: string, count: number, capped = false) => ({ id, count, cappe
 describe("Needs you now", () => {
     it("gates rows by the pages they open", () => {
         expect(todayRowDefs("TENANT_ADMIN").map(r => r.id)).toEqual(
-            ["deposit", "overdue", "ending", "drafts", "tickets", "penalties", "recognition", "recognitionFailed", "followUps"]);
-        expect(todayRowDefs("PROPERTY_MANAGER").map(r => r.id)).toEqual(["deposit", "overdue", "ending", "drafts", "tickets", "followUps"]);
+            ["deposit", "overdue", "ending", "renewals", "drafts", "tickets", "penalties", "recognition", "recognitionFailed", "followUps"]);
+        expect(todayRowDefs("PROPERTY_MANAGER").map(r => r.id)).toEqual(["deposit", "overdue", "ending", "renewals", "drafts", "tickets", "followUps"]);
         expect(todayRowDefs("ACCOUNTANT").map(r => r.id)).toEqual(
-            ["deposit", "overdue", "ending", "drafts", "penalties", "recognition", "recognitionFailed", "followUps"]);
+            ["deposit", "overdue", "ending", "renewals", "drafts", "penalties", "recognition", "recognitionFailed", "followUps"]);
         expect(todayRowDefs("TENANT_USER")).toEqual([]);
         expect(todayRowDefs("RENTER")).toEqual([]);
     });
@@ -101,6 +101,25 @@ describe("Needs you now", () => {
         expect(screen.getByTestId("follow-ups-widget")).toBeInTheDocument();
     });
 
+    it("counts next month's contracts with no renewal drafted and opens the renewal season queue on that month", async () => {
+        const calls: string[] = [];
+        global.fetch = vi.fn(async (u: RequestInfo | URL) => {
+            const url = String(u);
+            calls.push(url);
+            if (url.includes("/leases/paged")) return { ok: true, status: 200, json: async () => ({ totalElements: 312, content: [] }) };
+            return { ok: true, status: 200, json: async () => ({ totalElements: 0 }) };
+        }) as unknown as typeof fetch;
+        render(<TodayList role="PROPERTY_MANAGER" pipeline={[stage("expiring", 0), stage("draft", 0)]} />);
+        const row = await screen.findByTestId("today-renewals");
+        expect(row).toHaveTextContent("312");
+        expect(row.getAttribute("href")).toMatch(/^\/dashboard\/leases\/renewals\?month=\d{4}-\d{2}$/);
+        const q = new URL(calls.find(c => c.includes("/leases/paged"))!, "http://x").searchParams;
+        expect(q.get("successor")).toBe("NONE");
+        expect(q.get("endDateFrom")).toMatch(/-01$/);
+        expect(q.get("excludeStatus")?.split(",")).not.toContain("ACTIVE");
+        expect(q.get("size")).toBe("1");
+    });
+
     it("says so when nothing needs attention, and renders nothing for a role with no rows", async () => {
         global.fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ totalElements: 0 }) })) as unknown as typeof fetch;
         const { container, unmount } = render(<TodayList role="TENANT_USER" pipeline={null} />);
@@ -111,7 +130,7 @@ describe("Needs you now", () => {
         vi.mocked(chequeApi.summary).mockResolvedValueOnce({ overdueCount: 0, dueCount: 0, bouncedCount: 0 } as never);
         render(<TodayList role="PROPERTY_MANAGER" pipeline={[stage("expiring", 0), stage("draft", 0)]} />);
         await waitFor(() => expect(chequeApi.summary).toHaveBeenCalled());
-        await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(5)); // 4 ticket counts + follow-ups
+        await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(6)); // 4 ticket counts + follow-ups + renewals due
         expect(screen.getByTestId("today-all-clear")).toBeInTheDocument();
     });
 });

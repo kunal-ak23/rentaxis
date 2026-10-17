@@ -33,7 +33,7 @@ export const DASHBOARD_ROUTES: RouteEntry[] = [
     // GETs admit it); the pages render read-only for that role.
     r(`${D}/properties`, propertyReadAllow), r(`${D}/properties/[id]`, propertyReadAllow), r(`${D}/properties/[id]/units`, propertyReadAllow),
     r(`${D}/renters`, "canViewLeases"), r(`${D}/renters/[id]`, "canViewLeases"),
-    r(`${D}/leases`, "canViewLeases"), r(`${D}/leases/[id]`, "canViewLeases"),
+    r(`${D}/leases`, "canViewLeases"), r(`${D}/leases/[id]`, "canViewLeases"), r(`${D}/leases/renewals`, "canViewLeases"),
     r(`${D}/leases/[id]/terminate`, "canPreviewTermination"), r(`${D}/leases/[id]/settlement`, "canViewSettlement"),
     r(`${D}/listings`, "canViewProperties", "LISTINGS"), r(`${D}/listings/[id]`, "canViewProperties", "LISTINGS"),
     r(`${D}/tickets`, ticketsAllow), r(`${D}/tickets/[id]`, ticketsAllow), r(`${D}/tickets/reports`, "canViewProperties"),
