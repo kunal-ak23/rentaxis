@@ -59,6 +59,47 @@ describe("bulk cheque numbering", () => {
         expect(screen.getByTestId("numbering-csv-report")).toHaveTextContent("2 rows filled, 1 lines not matched. Lines: 4.");
     });
 
+    it("never sends a date that is not real: the CSV line is reported, and a bad row date is a row error", async () => {
+        render(<BulkChequeNumbersDialog targets={[target("d1", 7)]} onClose={() => {}} />);
+        await screen.findByTestId("numbering-row-d1-c2");
+        type("numbering-csv-text", "contract,due_date,cheque_number,bank,cheque_date\nGLA-0007,01/01/2028,111,ADCB,1/15/2028\nGLA-0007,2028-02-01,112,ADCB,31/02/2028");
+        fireEvent.click(screen.getByTestId("numbering-csv-apply"));
+        expect(screen.getByTestId("numbering-csv-report")).toHaveTextContent("not applied: 2, 3.");
+        expect(screen.getByTestId("numbering-number-d1-c1")).toHaveValue("");
+        // A row whose date is not real (as a pasted value could leave it) is held back with a row error.
+        type("numbering-number-d1-c1", "111");
+        type("numbering-number-d1-c2", "112");
+        fireEvent.change(screen.getByTestId("numbering-date-d1-c2"), { target: { value: "" } });
+        expect(screen.getByTestId("numbering-error-d1-c2")).toHaveTextContent("Enter the cheque date.");
+        fireEvent.click(screen.getByTestId("numbering-save"));
+        await waitFor(() => expect(screen.getByTestId("numbering-draft-d1")).toHaveAttribute("data-ok", "false"));
+        expect(api.callsTo("POST", "/leases/cheques-batch").filter(c => !c.url.includes("load"))).toHaveLength(0);
+    });
+
+    it("warns when a number is on two drafts, saves digits as ASCII, and shows the server's refusals in the user's words", async () => {
+        api.on("POST", /\/leases\/cheques-batch$/, () => ({
+            body: [
+                { leaseId: "d1", ok: true, version: 4, cheques: null, rowErrors: [] },
+                { leaseId: "d2", ok: false, version: 3, code: "cheque.rowsRefused", args: { count: 1 }, message: "1 row(s) need attention",
+                    rowErrors: [{ chequeId: "d2-c1", field: "amount", code: "cheque.amountChanged", message: "The amount is 21000 now" }] },
+            ],
+        }));
+        render(<BulkChequeNumbersDialog targets={[target("d1"), target("d2")]} onClose={() => {}} />);
+        await screen.findByTestId("numbering-row-d2-c2");
+        type("numbering-number-d1-c1", "\u0665\u0660\u0660\u0660\u0660\u0661");
+        type("numbering-number-d1-c2", "500002");
+        type("numbering-number-d2-c1", "500001");
+        type("numbering-number-d2-c2", "600002");
+        expect(screen.getByTestId("numbering-warning-d1-c1")).toHaveTextContent("The same number is on");
+        expect(screen.getByTestId("numbering-warning-d2-c1")).toBeInTheDocument();
+        fireEvent.click(screen.getByTestId("numbering-save"));
+        await waitFor(() => expect(screen.getByTestId("numbering-draft-d2")).toHaveAttribute("data-ok", "false"));
+        const sent = api.callsTo("POST", "/leases/cheques-batch").filter(c => !c.url.includes("load"))[0].body as { drafts: { rows: { chequeNumber: string }[] }[] };
+        expect(sent.drafts[0].rows[0].chequeNumber).toBe("500001");
+        expect(screen.getByTestId("numbering-error-d2-c1")).toHaveTextContent("The amount changed since the grid was loaded; reload the grid.");
+        expect(screen.getByTestId("numbering-draft-d2")).toHaveTextContent("1 row(s) need attention; nothing was saved for this contract.");
+    });
+
     it("holds back a draft with a repeated number, saves the others, and shows the server's row errors", async () => {
         api.on("POST", /\/leases\/cheques-batch$/, c => ({
             body: (c.body as { drafts: { leaseId: string }[] }).drafts.map(d => d.leaseId === "d3"
@@ -77,7 +118,8 @@ describe("bulk cheque numbering", () => {
         expect(sent.drafts.map(d => d.leaseId)).toEqual(["d1", "d3"]);
         expect(screen.getByTestId("numbering-draft-d2")).toHaveAttribute("data-ok", "false");
         expect(screen.getByTestId("numbering-draft-d3")).toHaveAttribute("data-ok", "false");
-        expect(screen.getByTestId("numbering-error-d3-c2")).toHaveTextContent("The amount is 21000 now");
+        // The server's code is shown in the user's language, not the server's English.
+        expect(screen.getByTestId("numbering-error-d3-c2")).toHaveTextContent("The amount changed since the grid was loaded");
         // What was typed in the refused drafts is kept.
         expect(screen.getByTestId("numbering-number-d3-c1")).toHaveValue("d31");
         expect(screen.getByTestId("numbering-summary")).toHaveTextContent("1 of 3 saved, 2 need attention.");

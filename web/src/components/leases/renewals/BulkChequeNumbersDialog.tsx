@@ -10,7 +10,7 @@ import { fmtIsoDate } from "@/components/leases/leaseMath";
 import { formatCurrency } from "@/lib/format";
 import { ApiError, chequeBatchApi, type Cheque, type DraftGrid, type DraftNumbers } from "@/lib/api/leasing";
 import { BATCH_CHUNK, chunks } from "@/lib/leases/renewalSeason";
-import { applyChequeCsv, chequeRowProblems, type CsvDraft, type Edit } from "@/lib/leases/chequeNumbering";
+import { applyChequeCsv, chequeRowProblems, crossDraftRepeats, normNumber, type CsvDraft, type Edit } from "@/lib/leases/chequeNumbering";
 
 /** A renewal draft to number, with the predecessor's facts the queue row already knows. */
 export interface NumberingTarget { draftId: string; predecessorContract: string | null; unitIdentifier: string | null; renterName: string | null }
@@ -89,6 +89,14 @@ export default function BulkChequeNumbersDialog({ targets, onClose }: { targets:
         return out;
     }, [order, grids, edits, t]);
 
+    // Re-review P3-2: a number also used on another draft of this batch — a warning, not a refusal.
+    const repeats = useMemo(() => crossDraftRepeats(order.map(x => ({ draftId: x.draftId, rows: draftRows(grids[x.draftId]) })), edits),
+        [order, grids, edits]);
+    const labelOfDraft = (draftId: string) => {
+        const x = targets.find(y => y.draftId === draftId);
+        return x ? `${grids[draftId]?.contractNumber ?? x.predecessorContract ?? x.unitIdentifier ?? "—"}` : draftId;
+    };
+
     const setEdit = (chequeId: string, field: keyof Edit, value: string) =>
         setEdits(prev => ({ ...prev, [chequeId]: { ...prev[chequeId], [field]: value } }));
 
@@ -101,7 +109,8 @@ export default function BulkChequeNumbersDialog({ targets, onClose }: { targets:
         const r = applyChequeCsv(csv, drafts, edits);
         setEdits(r.edits);
         setCsvReport(t("csvApplied", { applied: r.applied, unmatched: r.unmatched.length })
-            + (r.unmatched.length ? ` ${t("csvUnmatchedLines", { lines: r.unmatched.slice(0, 10).join(", ") })}` : ""));
+            + (r.unmatched.length ? ` ${t("csvUnmatchedLines", { lines: r.unmatched.slice(0, 10).join(", ") })}` : "")
+            + (r.invalidDates.length ? ` ${t("csvInvalidDates", { lines: r.invalidDates.slice(0, 10).join(", ") })}` : ""));
     };
 
     const save = async () => {
@@ -120,7 +129,7 @@ export default function BulkChequeNumbersDialog({ targets, onClose }: { targets:
                 version: grids[x.draftId].version,
                 rows: draftRows(grids[x.draftId]).map(c => ({
                     chequeId: c.id,
-                    chequeNumber: edits[c.id]?.chequeNumber.trim() || null,
+                    chequeNumber: normNumber(edits[c.id]?.chequeNumber) || null,
                     payeeBank: edits[c.id]?.payeeBank.trim() || null,
                     chequeDate: edits[c.id]?.chequeDate || null,
                     amount: c.amount,
@@ -137,7 +146,8 @@ export default function BulkChequeNumbersDialog({ targets, onClose }: { targets:
                     } else {
                         next[x.draftId] = {
                             error: r ? (serverText(tCommon, r) || t("batchFailed")) : t("notProcessed"),
-                            rowErrors: Object.fromEntries((r?.rowErrors ?? []).filter(e => e.chequeId).map(e => [e.chequeId!, e.message])),
+                            rowErrors: Object.fromEntries((r?.rowErrors ?? []).filter(e => e.chequeId)
+                                .map(e => [e.chequeId!, serverText(tCommon, e) || e.message])),
                         };
                     }
                 }
@@ -243,6 +253,11 @@ export default function BulkChequeNumbersDialog({ targets, onClose }: { targets:
                                                     <input type="date" className={input} value={e.chequeDate} disabled={st.saved || busy} aria-label={t("colChequeDate")}
                                                         onChange={ev => setEdit(c.id, "chequeDate", ev.target.value)} data-testid={`numbering-date-${c.id}`} /></label>
                                                 {problem && <p className="col-span-2 md:col-span-5 text-[11px] text-error" data-testid={`numbering-error-${c.id}`}>{problem}</p>}
+                                                {!problem && repeats[c.id] && (
+                                                    <p className="col-span-2 md:col-span-5 text-[11px] text-warning" data-testid={`numbering-warning-${c.id}`}>
+                                                        {t("numberAlsoOn", { contract: labelOfDraft(repeats[c.id]) })}
+                                                    </p>
+                                                )}
                                             </li>
                                         );
                                     })}

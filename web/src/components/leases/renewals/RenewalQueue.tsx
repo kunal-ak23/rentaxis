@@ -11,6 +11,7 @@ import RenewLeaseDialog from "@/components/leases/RenewLeaseDialog";
 import ExtendLeaseDialog from "@/components/leases/ExtendLeaseDialog";
 import GiveNoticeDialog from "@/components/leases/GiveNoticeDialog";
 import { fmtIsoDate } from "@/components/leases/leaseMath";
+import { serverText } from "@/components/finance/bankrec/serverText";
 import { formatCurrency } from "@/lib/format";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { isAbortError } from "@/lib/api/abort";
@@ -44,6 +45,7 @@ export default function RenewalQueue({ filters, onStage, perms }: {
 }) {
     const t = useTranslations("RenewalSeason");
     const tl = useTranslations("Leasing");
+    const tCommon = useTranslations("Common");
     const locale = useLocale();
     const router = useRouter();
     const [rows, setRows] = useState<LeaseDetail[]>([]);
@@ -171,7 +173,7 @@ export default function RenewalQueue({ filters, onStage, perms }: {
             await renewalMarkApi.undo(l.id);
             reload();
         } catch (e) {
-            setError(e instanceof ApiError ? e.message : t("batchFailed"));
+            setError(e instanceof ApiError ? (serverText(tCommon, e) || e.message) : t("batchFailed"));
         }
     };
 

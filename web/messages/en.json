@@ -2987,6 +2987,12 @@
       },
       "cheque": {
         "tooManyInstalments": "The term has {months} whole month(s) from the first due date, so it takes at most {months} cheque(s), one a month; {count} would put two cheques on the same date.",
+        "rowsRefused": "{count} row(s) need attention; nothing was saved for this contract.",
+        "notInDraft": "This row is not a draft cheque of this contract any more; reload the grid.",
+        "amountChanged": "The amount changed since the grid was loaded; reload the grid.",
+        "numberRequired": "Enter the cheque number.",
+        "numberRepeated": "This cheque number is used twice in this contract.",
+        "dateRequired": "Enter the cheque date.",
         "noBankForProperty": "No bank account is set up for this property. Attach one of its ledger accounts to a bank account, or receive into cash.",
         "clearBeforeDeposit": "{row} was deposited on {deposited}; it cannot clear on {date}",
         "clearBeforeChequeDate": "{row} is dated {chequeDate}; it cannot clear on {date}",
@@ -3019,6 +3025,9 @@
       },
       "lease": {
         "reductionNegative": "Line {line} ({code}): the new amount would take the rest of the term below zero.",
+        "notDraft": "Only a draft contract's cheques are numbered here; this one is {status}.",
+        "markNotRenewingStatus": "Only a running, on-notice or expired contract can be marked not renewing; this one is {status}.",
+        "markNotRenewingHasSuccessor": "This contract already has a renewal or transfer drafted; delete that draft first if it is not renewing.",
         "reductionNotLower": "Line {line} ({code}): the new amount is not lower than what the charge still has to earn; a credit addendum only reduces.",
         "reductionNotScheduled": "Line {line} ({code}) has nothing left to earn from the effective date (a one-off fee, a fee taken to income at posting, or a charge whose period has ended), so it cannot be reduced.",
         "reductionChequeGap": "The cheques handed back ({returned}) less the replacements ({replaced}) must come to the credit of {credit}; they are {gap} {direction, select, short {short} other {over}}.",
@@ -5437,6 +5446,8 @@
   },
   "RenewalSeason": {
     "title": "Renewal season",
+    "csvInvalidDates": "Lines with a date that is not a real yyyy-mm-dd or dd/mm/yyyy date, not applied: {lines}.",
+    "numberAlsoOn": "The same number is on {contract} in this batch; check the line is for the right contract.",
     "subtitle": "Tenancy Contracts ending in a month, worked from one queue: renew, extend, not renewing, contact — or many at once.",
     "backToContracts": "Tenancy Contracts",
     "tabRenewals": "Renewals",
@@ -5565,6 +5576,7 @@
     "markNote": "Reason (optional)",
     "numbering": {
       "numberRequired": "Enter the cheque number.",
+      "dateInvalid": "This is not a real date.",
       "dateRequired": "Enter the cheque date.",
       "numberRepeated": "This cheque number is used twice in this contract."
     },
@@ -5576,7 +5588,7 @@
     "numberingSummary": "{saved} of {total} saved, {attention} need attention.",
     "postTheDrafts": "Post the drafts",
     "csvTitle": "Import from CSV",
-    "csvHelp": "One line per cheque: contract (the renewal's or the current contract's number, or the unit), due date, cheque number, bank (optional), cheque date (optional).",
+    "csvHelp": "One line per cheque: contract (the renewal's or the current contract's number, or the unit), due date, cheque number, bank (optional), cheque date (optional). Dates as yyyy-mm-dd or dd/mm/yyyy (day first); any other format is refused, never guessed. A value with a comma goes in double quotes. Two cheques of one contract on the same due date cannot be told apart by CSV; type those.",
     "csvApply": "Apply",
     "csvApplied": "{applied} rows filled, {unmatched} lines not matched.",
     "csvUnmatchedLines": "Lines: {lines}.",
