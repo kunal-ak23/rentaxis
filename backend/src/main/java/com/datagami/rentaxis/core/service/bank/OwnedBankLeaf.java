@@ -159,6 +159,7 @@ public class OwnedBankLeaf {
             int n = jdbc.update("""
                     insert into bank_account_ledgers (tenant_id, bank_account_id, account_id) values (:t, :b, :a)
                     on conflict do nothing""", p);
+            if (n > 0) renameDefaultNamed(t, bankAccountId, List.of(accountId));
             return n > 0 ? Claim.ADOPTED : Claim.OWNED_ELSEWHERE;
         }
         if (!moveUnposted || !buildingLeaf(t, bankAccountId, accountId) || postings(t, accountId, null) > 0) {
@@ -212,7 +213,7 @@ public class OwnedBankLeaf {
     public int attachUnownedPropertyLeaves(UUID bankAccountId) {
         UUID t = TenantContextHolder.getTenantId();
         if (t == null || bankAccountId == null) return 0;
-        return jdbc.update("""
+        List<UUID> taken = jdbc.queryForList("""
                 insert into bank_account_ledgers (tenant_id, bank_account_id, account_id)
                 select distinct a.tenant_id, b.id, a.id
                 from bank_accounts b
@@ -222,8 +223,41 @@ public class OwnedBankLeaf {
                  and a.account_sub_type = 'BANK' and not a.is_group and a.is_active and a.property_id = m.property_id
                 where b.id = :b and b.tenant_id = :t
                   and not exists (select 1 from bank_account_ledgers l where l.tenant_id = a.tenant_id and l.account_id = a.id)
-                on conflict do nothing""",
-                new MapSqlParameterSource("t", t).addValue("b", bankAccountId));
+                on conflict do nothing
+                returning account_id""",
+                new MapSqlParameterSource("t", t).addValue("b", bankAccountId), UUID.class);
+        renameDefaultNamed(t, bankAccountId, taken);
+        return taken.size();
+    }
+
+    /**
+     * The BANK leaf name a property is given while no bank account owns it: the seeded
+     * template's (S21-04), and the one seeded before it, which named one client's bank.
+     */
+    static final List<String> UNOWNED_DEFAULT_PREFIXES = List.of("Bank - ", "Emirates Islamic - ");
+
+    /**
+     * Sim r21 S21-04: a property's bank leaf generated before any bank account took it
+     * carries the template's name ("Bank - <property>", or the old seed's
+     * "Emirates Islamic - <property>"); once a bank account adopts it, it is named after
+     * that bank, as a leaf generated with the bank in place is. Only that exact,
+     * untouched name changes, and only {@code name}: a name someone typed is kept, and
+     * {@code name_ar} is the generic "bank account" label.
+     */
+    public void renameDefaultNamed(UUID t, UUID bankAccountId, List<UUID> accountIds) {
+        if (accountIds.isEmpty()) return;
+        jdbc.update("""
+                update accounts a set name = nb.bank_name || ' - ' || p.name_en, updated_at = now()
+                  from bank_accounts nb, properties p
+                 where a.tenant_id = :t and a.id in (:a)
+                   and nb.id = :b and nb.tenant_id = :t
+                   and p.id = a.property_id and p.tenant_id = :t
+                   and a.account_sub_type = 'BANK' and not a.is_group
+                   and a.name in (cast(:names0 as text) || p.name_en, cast(:names1 as text) || p.name_en)
+                   and a.name <> nb.bank_name || ' - ' || p.name_en""",
+                new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("a", accountIds)
+                        .addValue("names0", UNOWNED_DEFAULT_PREFIXES.get(0))
+                        .addValue("names1", UNOWNED_DEFAULT_PREFIXES.get(1)));
     }
 
     /** Whether this tenant has any bank account with a ledger leaf. */

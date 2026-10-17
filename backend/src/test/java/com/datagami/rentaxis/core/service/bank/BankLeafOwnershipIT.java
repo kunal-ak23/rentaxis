@@ -506,4 +506,101 @@ class BankLeafOwnershipIT extends AbstractPostgresIT {
         assertThat(jdbc.queryForObject("select name from accounts where id = ?", String.class, leaf))
                 .isEqualTo("Emirates Islamic - petty cash");
     }
+
+    // ------------------------------------------------------------------ S21-04: names
+
+    private String nameOf(UUID leaf) {
+        return jdbc.queryForObject("select name from accounts where id = ?", String.class, leaf);
+    }
+
+    /**
+     * Sim r21 S21-04: a property created before the organisation has any bank account
+     * gets a neutral bank leaf ("Bank - <property>", not one client's bank). The bank
+     * account that adopts it — on creation, or when the leaf joins its set — names it
+     * after its own bank. A name someone typed is kept, and so is another
+     * organisation's.
+     */
+    @Test
+    void aLeafMadeBeforeAnyBankIsNamedNeutrallyAndThenAfterTheBankThatTakesIt() {
+        in(b);
+        Property bTower = property("Palm Court " + UUID.randomUUID().toString().substring(0, 8));
+        in(a);
+        assertThat(propertyAccountService.getTemplate()).filteredOn(r -> r.role() == com.datagami.rentaxis.domain.entity.enums.AccountRole.BANK)
+                .singleElement().extracting(com.datagami.rentaxis.api.dto.ledger.TemplateRowDTO::namePattern)
+                .isEqualTo("Bank - {property}");
+        UUID gla = leafOf(a.property());
+        assertThat(nameOf(gla)).isEqualTo("Bank - " + a.property().getNameEn());
+        Property typed = property("Sea View " + UUID.randomUUID().toString().substring(0, 8));
+        UUID typedLeaf = leafOf(typed);
+        jdbc.update("update accounts set name = 'Bank - Sea View escrow' where id = ?", typedLeaf);
+        Property later = property("Creek Gate " + UUID.randomUUID().toString().substring(0, 8));
+        UUID laterLeaf = leafOf(later);
+
+        BankAccount enbd = bank("Emirates NBD", "1010000000001", null);
+        assertThat(ownerOf(gla)).isEqualTo(enbd.getId());
+        assertThat(nameOf(gla)).isEqualTo("Emirates NBD - " + a.property().getNameEn());
+        assertThat(nameOf(typedLeaf)).as("a typed name is kept").isEqualTo("Bank - Sea View escrow");
+
+        // A leaf joining a set by hand: the old seed's name (as on existing organisations) takes the bank's.
+        jdbc.update("delete from bank_account_ledgers where account_id = ?", laterLeaf);
+        jdbc.update("update accounts set name = ? where id = ?", "Emirates Islamic - " + later.getNameEn(), laterLeaf);
+        BankAccount adcb = bank("ADCB", "2020000000002", later);
+        assertThat(ownerOf(laterLeaf)).isEqualTo(adcb.getId());
+        assertThat(nameOf(laterLeaf)).isEqualTo("ADCB - " + later.getNameEn());
+        jdbc.update("delete from bank_account_ledgers where account_id = ?", laterLeaf);
+        jdbc.update("update accounts set name = ? where id = ?", "Bank - " + later.getNameEn(), laterLeaf);
+        ledgers.setLeaves(enbd.getId(), List.of(coaOf(enbd), gla, typedLeaf, laterLeaf));
+        assertThat(nameOf(laterLeaf)).isEqualTo("Emirates NBD - " + later.getNameEn());
+
+        in(b);
+        assertThat(nameOf(leafOf(bTower))).as("organisation B: untouched").isEqualTo("Bank - " + bTower.getNameEn());
+    }
+
+    /**
+     * Sim r21 S21-04, existing data: changeset 176 renames a property leaf still named
+     * "Emirates Islamic - <property>" (the old seed) after the bank that owns it, when
+     * that bank is not Emirates Islamic. A leaf Emirates Islamic owns, a leaf no bank
+     * owns and a typed name are kept. The old seeded template pattern becomes neutral
+     * unless the organisation banks with Emirates Islamic. Per organisation, idempotent.
+     */
+    @Test
+    void changeset176RenamesOnlyUntouchedDefaultNamesOfLeavesAnotherBankOwns() {
+        in(a);
+        BankAccount enbd = bank("Emirates NBD", "1010000000001", null);
+        UUID gla = leafOf(a.property());
+        Property unowned = property("Old Town " + UUID.randomUUID().toString().substring(0, 8));
+        UUID unownedLeaf = leafOf(unowned);
+        jdbc.update("delete from bank_account_ledgers where account_id = ?", unownedLeaf);
+        UUID petty = accountService.createLeaf("Emirates Islamic - petty cash", accountService.getAccountByCode("A-02-02"),
+                a.property().getId()).getId();
+        jdbc.update("insert into bank_account_ledgers (tenant_id, bank_account_id, account_id) values (?, ?, ?)",
+                a.tenantId(), enbd.getId(), petty);
+        in(b);
+        BankAccount ei = bank("Emirates Islamic", "0260000000123", null);
+        UUID bGla = leafOf(b.property());
+        assertThat(ownerOf(bGla)).isEqualTo(ei.getId());
+        // As on prod before this change: the old seed's names and pattern.
+        jdbc.update("update accounts set name = ? where id = ?", "Emirates Islamic - " + a.property().getNameEn(), gla);
+        jdbc.update("update accounts set name = ? where id = ?", "Emirates Islamic - " + unowned.getNameEn(), unownedLeaf);
+        assertThat(nameOf(bGla)).as("adopted by Emirates Islamic").isEqualTo("Emirates Islamic - " + b.property().getNameEn());
+        jdbc.update("update property_account_template_rows set name_pattern = 'Emirates Islamic - {property}' "
+                + "where tenant_id in (?, ?) and role = 'BANK'", a.tenantId(), b.tenantId());
+        assertThat(nameOf(gla)).isEqualTo("Emirates Islamic - " + a.property().getNameEn());
+        assertThat(nameOf(unownedLeaf)).isEqualTo("Emirates Islamic - " + unowned.getNameEn());
+
+        for (int run = 0; run < 2; run++) {
+            tx.executeWithoutResult(st -> com.datagami.rentaxis.testsupport.ChangesetSql
+                    .of("176-bank-leaf-default-name.yaml").forEach(jdbc::execute));
+        }
+
+        assertThat(nameOf(gla)).isEqualTo("Emirates NBD - " + a.property().getNameEn());
+        assertThat(nameOf(unownedLeaf)).as("no bank owns it yet").isEqualTo("Emirates Islamic - " + unowned.getNameEn());
+        assertThat(nameOf(petty)).as("a typed name").isEqualTo("Emirates Islamic - petty cash");
+        assertThat(nameOf(bGla)).as("Emirates Islamic's own leaf").isEqualTo("Emirates Islamic - " + b.property().getNameEn());
+        assertThat(jdbc.queryForObject("select name_pattern from property_account_template_rows where tenant_id = ? and role = 'BANK'",
+                String.class, a.tenantId())).isEqualTo("Bank - {property}");
+        assertThat(jdbc.queryForObject("select name_pattern from property_account_template_rows where tenant_id = ? and role = 'BANK'",
+                String.class, b.tenantId())).as("an organisation banking with Emirates Islamic keeps it")
+                .isEqualTo("Emirates Islamic - {property}");
+    }
 }

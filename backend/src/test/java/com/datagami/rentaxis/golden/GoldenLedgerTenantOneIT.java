@@ -163,6 +163,14 @@ class GoldenLedgerTenantOneIT extends AbstractPostgresIT {
         // the lease answers "Lease not found". See LeaseTestFixtures' own note.
         LeaseTestFixtures.authenticateAsTenantAdmin();
         ground.seedAccounting();
+        // The client banks with Emirates Islamic, and its export names the bank leaf
+        // after it. The seeded pattern names no bank (sim r21 S21-04), so the client's
+        // organisation carries its own, as an organisation edits its template.
+        propertyAccounts.saveTemplate(propertyAccounts.getTemplate().stream()
+                .filter(r -> r.role() == AccountRole.BANK)
+                .map(r -> new com.datagami.rentaxis.api.dto.ledger.TemplateRowDTO(r.role(), "Emirates Islamic - {property}",
+                        r.parentAccountId(), r.parentCode(), r.enabled()))
+                .toList());
 
         // The books open before the contract date, otherwise the period lock rejects
         // the TCO. setBooksStartDate derives the lock; lockThrough states it anyway,
