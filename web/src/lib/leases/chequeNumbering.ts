@@ -155,11 +155,14 @@ export function applyChequeCsv(text: string, drafts: CsvDraft[], edits: Record<s
     let applied = 0;
     const lines = text.replace(/^﻿/, "").split(/\r?\n/);
     const sep = separatorOf(lines.find(l => l.trim()) ?? "");
+    // Sim r22 S22-05: the header is the first non-blank line (a file may open with blank
+    // lines), and an Arabic header is a header too.
+    const headerAt = lines.findIndex(l => l.trim());
     lines.forEach((line, i) => {
         if (!line.trim()) return;
         const [contract = "", due = "", number = "", bank = "", chequeDate = ""] = csvCells(line, sep);
         const dueIso = csvDate(due);
-        if (i === 0 && !dueIso && /[a-z]/i.test(due)) return; // a header
+        if (i === headerAt && !dueIso && /[a-z\u0600-\u06FF]/i.test(due)) return; // a header
         const chequeIso = chequeDate.trim() ? csvDate(chequeDate) : null;
         if (!dueIso || (chequeDate.trim() && !chequeIso)) {
             invalidDates.push(i + 1);

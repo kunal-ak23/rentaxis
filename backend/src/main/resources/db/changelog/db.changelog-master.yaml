@@ -353,3 +353,9 @@ databaseChangeLog:
       file: db/changelog/changesets/174-lease-not-renewing-mark.yaml
   - include:
       file: db/changelog/changesets/175-parking-attached-unit.yaml
+  - include:
+      file: db/changelog/changesets/178-recognition-value-checks.yaml
+  - include:
+      file: db/changelog/changesets/179-utilities-recoverable.yaml
+  - include:
+      file: db/changelog/changesets/180-addendum-credit-headline.yaml

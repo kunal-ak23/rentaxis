@@ -44,12 +44,31 @@ public record LeaseLineDTO(UUID id,
                            /* #99 / F15-06: what posting did with the line (RENT_LIKE | ONE_OFF | PASS_THROUGH | NONE); null on a draft. */
                            String postedRecognition,
                            /* PR #359 R1: what the line charges now after credit addenda; null when never credited. */
-                           BigDecimal currentAmount) {
+                           BigDecimal currentAmount,
+                           /* Ruling R7: the headline (gross) after credit addenda; null when never credited. */
+                           BigDecimal currentGrossAmount) {
+
+    /** The DTO without the credit-addendum figures. */
+    public LeaseLineDTO(UUID id, int seqNo, UUID chargeTypeId, String chargeTypeCode, String chargeTypeName,
+                        String behaviour, UUID creditAccountId, String creditAccountCode, String creditAccountName,
+                        BigDecimal grossAmount, BigDecimal discountAmount, BigDecimal netAmount, String narration,
+                        boolean vatApplicable, LocalDate periodStart, LocalDate periodEnd, UUID addendumId,
+                        String chargeTypeNameAr, String creditAccountNameAr, String recognition,
+                        BigDecimal rentFreeAmount, String postedRecognition, BigDecimal currentAmount) {
+        this(id, seqNo, chargeTypeId, chargeTypeCode, chargeTypeName, behaviour, creditAccountId, creditAccountCode,
+                creditAccountName, grossAmount, discountAmount, netAmount, narration, vatApplicable, periodStart,
+                periodEnd, addendumId, chargeTypeNameAr, creditAccountNameAr, recognition, rentFreeAmount,
+                postedRecognition, currentAmount, null);
+    }
 
     public LeaseLineDTO withCurrentAmount(BigDecimal amount) {
+        return withCurrentAmounts(amount, currentGrossAmount);
+    }
+
+    public LeaseLineDTO withCurrentAmounts(BigDecimal amount, BigDecimal gross) {
         return new LeaseLineDTO(id, seqNo, chargeTypeId, chargeTypeCode, chargeTypeName, behaviour, creditAccountId,
                 creditAccountCode, creditAccountName, grossAmount, discountAmount, netAmount, narration, vatApplicable,
                 periodStart, periodEnd, addendumId, chargeTypeNameAr, creditAccountNameAr, recognition, rentFreeAmount,
-                postedRecognition, amount);
+                postedRecognition, amount, gross);
     }
 }

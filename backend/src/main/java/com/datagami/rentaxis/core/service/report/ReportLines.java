@@ -79,6 +79,7 @@ public final class ReportLines {
         role(AccountRole.BANK_SUSPENSE, "Unidentified bank receipts", "مقبوضات بنكية غير محددة");
         role(AccountRole.RENTER_REFUND_PAYABLE, "Refunds payable – renters", "مبالغ مستردة مستحقة للمستأجرين");
         role(AccountRole.UNEARNED_CHARGES, "Unearned charges", "رسوم غير مكتسبة");
+        role(AccountRole.UTILITIES_RECOVERABLE, "Utilities recoverable (held)", "مرافق مستردة (محتجزة)");
         role(AccountRole.RETAINED_EARNINGS, "Retained earnings", "الأرباح المحتجزة");
         role(AccountRole.INTERPROPERTY_CLEARING, "Inter-property clearing", "مقاصة بين العقارات");
         role(AccountRole.ACQUISITION_CLEARING, "Due to/from vendor", "مستحق من/إلى البائع");
@@ -110,7 +111,7 @@ public final class ReportLines {
             case RENT_RECEIVABLE, PDC_RECEIVABLE, BANK, CASH, INPUT_VAT, INTERPROPERTY_CLEARING,
                  ACQUISITION_CLEARING -> AccountType.ASSET;
             case ADVANCE_RENT, SECURITY_DEPOSIT, PARKING_DEPOSIT, OUTPUT_VAT, OUTPUT_VAT_DEFERRED, PDC_PAYABLE,
-                 BANK_SUSPENSE, RENTER_REFUND_PAYABLE, UNEARNED_CHARGES -> AccountType.LIABILITY;
+                 BANK_SUSPENSE, RENTER_REFUND_PAYABLE, UNEARNED_CHARGES, UTILITIES_RECOVERABLE -> AccountType.LIABILITY;
             case OPENING_BALANCE_DIFFERENCE, RETAINED_EARNINGS -> AccountType.EQUITY;
         };
     }

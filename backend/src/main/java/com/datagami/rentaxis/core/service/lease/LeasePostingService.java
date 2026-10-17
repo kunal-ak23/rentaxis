@@ -590,7 +590,7 @@ public class LeasePostingService {
                 roles.add(line.getChargeType().getRole());
             }
             if (earnedOverTerm(lease, line) && line.getNetAmount() != null && line.getNetAmount().signum() > 0) {
-                roles.add(AccountRole.UNEARNED_CHARGES);
+                roles.add(deferralRole(line));
             }
             if (LeaseVat.vatOf(line).signum() > 0) {
                 roles.add(AccountRole.OUTPUT_VAT);
@@ -1130,7 +1130,7 @@ public class LeasePostingService {
                 // UNEARNED_CHARGES here, released to the line's own income account by
                 // the recognition run. Every other line credits its account as before.
                 PostingRequest.Line credited = earnedOverTerm(lease, line)
-                        ? PostingRequest.cr(AccountRole.UNEARNED_CHARGES, lineNet)
+                        ? PostingRequest.cr(deferralRole(line), lineNet)
                         : PostingRequest.cr(credit.getId(), lineNet);
                 pairs.add(PostingRequest.pair(
                         LeaseChequeRegistrar.drReceivable(lease, lineNet).withNarration(narration),
@@ -1175,6 +1175,17 @@ public class LeasePostingService {
         // Replayed contract lines were stamped ONE_OFF at the cut-over post and keep the
         // legacy rule; a PASS_THROUGH line is recovered at cost either way, never income.
         return r == ChargeRecognition.RENT_LIKE && line.getPostedRecognition() == ChargeRecognition.RENT_LIKE;
+    }
+
+    /**
+     * Where the TCO parks a line {@link #earnedOverTerm} earns over the term. Follow-up
+     * ruling R5: a utility recovered at cost is held in {@code UTILITIES_RECOVERABLE}
+     * (B-01-09), apart from the periodic fees in {@code UNEARNED_CHARGES} (B-01-08).
+     * Asked only at posting: a segment records the leaf it was deferred into, so a
+     * lease posted before the role existed keeps releasing from B-01-08.
+     */
+    public static AccountRole deferralRole(LeaseLine line) {
+        return passThrough(line.getChargeType()) ? AccountRole.UTILITIES_RECOVERABLE : AccountRole.UNEARNED_CHARGES;
     }
 
     private static boolean passThrough(ChargeType type) {

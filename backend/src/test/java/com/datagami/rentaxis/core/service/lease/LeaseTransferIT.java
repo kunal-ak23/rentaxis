@@ -648,6 +648,68 @@ class LeaseTransferIT extends AbstractPostgresIT {
     }
 
     /**
+     * Sim r22 S22-02: after an extension, B's default fee line is A's fee pro rata over the
+     * year it was charged for (3,650 × 230 ÷ 365 = 2,300), not over the extended 455 days.
+     */
+    @Test
+    void anExtendedLeasesFeeIsCarriedPerDayOfItsOwnTerm() {
+        UUID a = fixtures.draftLease(CONTRACT, START, END, List.of(line("RENT", "60000"), line("PARKING_FEE", "3650")));
+        chequeGeneration.saveRows(a, List.of(
+                row("670041", CONTRACT, JAN, "15912.50"),
+                row("670042", CONTRACT, APR, "15912.50"),
+                row("670043", CONTRACT, JUL, "15912.50"),
+                row("670044", CONTRACT, OCT, "15912.50")));
+        posting.post(a);
+        renewal.extend(a, new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(LocalDate.of(2027, 3, 31), null,
+                List.of(new LeaseLineInput(null, "RENT", new BigDecimal("14794.52"), BigDecimal.ZERO, null, null, null, null, null)),
+                List.of(LeaseTestFixtures.chequeRow("14794.52", LocalDate.of(2027, 1, 2)))));
+        var lines = tx.execute(s -> transfers.defaultLines(lease(a), B_START, END));
+        assertThat(lines).extracting(LeaseLineInput::grossAmount).contains(new BigDecimal("2300.00"));
+    }
+
+    /**
+     * Review P1-1 of PR #425 (ruling R1): a cut-over lease transferred out carried its
+     * at-posting parking into B's term (B may not charge it again), so A's settlement offers
+     * no unearned-fee refund, and an UNEARNED_FEE_REFUND line is refused on save.
+     */
+    @Test
+    void aTransferredOutCutOverLeaseOffersNoUnearnedFeeRefund() {
+        UUID a = fixtures.draftLease(CONTRACT, START, END,
+                List.of(line("RENT", "60000"), line("SECURITY_DEPOSIT", "3000"), line("PARKING_FEE", "3650")));
+        jdbc.update("update leases set fee_timing = 'AT_POSTING' where id = ?", a);
+        chequeGeneration.saveRows(a, List.of(
+                row("660040", CONTRACT, CONTRACT, "3000"),
+                row("660041", CONTRACT, JAN, "18650"),
+                row("660042", CONTRACT, APR, "15000"),
+                row("660043", CONTRACT, JUL, "15000"),
+                row("660044", CONTRACT, OCT, "15000")));
+        posting.post(a);
+        for (LocalDate d : List.of(CONTRACT, JAN, APR)) {
+            Cheque c = chequeOn(a, d);
+            chequeService.deposit(c.getId(), ChequeActionRequest.on(d));
+            chequeService.clear(c.getId(), ChequeActionRequest.on(d));
+        }
+        Unit target = tx.execute(s -> fixtures.createUnit(fixtures.property(), "A-208"));
+        UUID b = transfers.draft(a, request(T, target.getId(), null), posting).getId();
+        posting.post(b);
+        // TERMINATED by the transfer; CLOSED at once when nothing is left to collect on A.
+        assertThat(lease(a).getStatus()).isIn(LeaseStatus.TERMINATED, LeaseStatus.CLOSED);
+
+        assertThat(settlements.statement(a).unearnedFeeRefunds()).as("the fee went on into B's term").isEmpty();
+        UUID parkingIncome = tx.execute(s -> resolver.resolve(com.datagami.rentaxis.domain.entity.enums.AccountRole.PARKING_INCOME,
+                fixtures.property().getId())).getId();
+        var item = new com.datagami.rentaxis.api.dto.SaveSettlementDTO.DeductionItemDTO();
+        item.setType(com.datagami.rentaxis.domain.entity.enums.LineItemType.ADDITION);
+        item.setAdditionCategory("UNEARNED_FEE_REFUND");
+        item.setAccountId(parkingIncome);
+        item.setAmount(new BigDecimal("100.00"));
+        var draft = new com.datagami.rentaxis.api.dto.SaveSettlementDTO();
+        draft.setDeductions(List.of(item));
+        assertThatThrownBy(() -> settlements.saveDraft(a, draft, null))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("settlement.unearnedFeeNotOffered"));
+    }
+
+    /**
      * PR #359 R2: a parking deposit carried across properties twice stays a parking
      * deposit, and the third lease's ledger still sees it.
      */

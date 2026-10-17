@@ -1,0 +1,32 @@
+# Follow-up ruling R3 ("128 type check"): changeset 128 and 132 added three enum
+# columns as plain varchar. Only the JPA enums write them today; these CHECKs make
+# the database refuse anything else as well. Run
+# .superpowers/agents/prod-check-178-predeploy.sql on prod first: it must show no
+# row outside the lists below, or this changeset fails on deploy.
+#
+#   - charge_types.recognition       ChargeRecognition (NOT NULL since 128)
+#   - lease_lines.posted_recognition ChargeRecognition, NULL until the lease posts (132)
+#   - leases.fee_timing              FeeTiming (NOT NULL since 128)
+#
+# NONE is in the ChargeRecognition list because it is an enum value the entity can
+# write (a deposit line's posted_recognition is NONE).
+databaseChangeLog:
+  - changeSet:
+      id: 178-recognition-value-checks
+      author: claude
+      changes:
+        - sql:
+            sql: |
+              ALTER TABLE charge_types ADD CONSTRAINT ck_charge_types_recognition
+                CHECK (recognition IN ('RENT_LIKE', 'ONE_OFF', 'PASS_THROUGH', 'NONE'));
+              ALTER TABLE lease_lines ADD CONSTRAINT ck_lease_lines_posted_recognition
+                CHECK (posted_recognition IS NULL
+                       OR posted_recognition IN ('RENT_LIKE', 'ONE_OFF', 'PASS_THROUGH', 'NONE'));
+              ALTER TABLE leases ADD CONSTRAINT ck_leases_fee_timing
+                CHECK (fee_timing IN ('OVER_TERM', 'AT_POSTING'));
+      rollback:
+        - sql:
+            sql: |
+              ALTER TABLE leases DROP CONSTRAINT IF EXISTS ck_leases_fee_timing;
+              ALTER TABLE lease_lines DROP CONSTRAINT IF EXISTS ck_lease_lines_posted_recognition;
+              ALTER TABLE charge_types DROP CONSTRAINT IF EXISTS ck_charge_types_recognition;
