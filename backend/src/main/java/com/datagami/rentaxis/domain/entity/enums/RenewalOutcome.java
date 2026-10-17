@@ -13,7 +13,7 @@ package com.datagami.rentaxis.domain.entity.enums;
  * renters as having moved out when they had asked to stay.
  */
 public enum RenewalOutcome {
-	/** The PM created the renewal. The only CLOSED_WON outcome. */
+	/** The PM created the renewal. A CLOSED_WON outcome, as is {@link #TRANSFERRED}. */
 	RENEWED,
 
 	/** The renter said they were leaving, and the lease ended. */
@@ -30,5 +30,12 @@ public enum RenewalOutcome {
 	RENEWAL_NOT_ACTIONED,
 
 	/** The lease was terminated early, so the renewal question never arose. */
-	LEASE_TERMINATED
+	LEASE_TERMINATED,
+
+	/**
+	 * #100 (spec 2026-09-24 §2): the lease ended because the renter moved to another
+	 * unit of the same landlord. The renter was kept, so the funnel closes it won,
+	 * not as a lost renewal.
+	 */
+	TRANSFERRED
 }

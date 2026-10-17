@@ -1053,6 +1053,12 @@ export type SettlementStatement = {
   netRefund: number;
   /** PLANNED recognition rows. Non-zero → run recognition before settling. */
   unrecognisedEntries: number;
+  /**
+   * #100-d: a transferred-out lease's deposit, carried to the successor. Display only —
+   * not in `depositsHeld` and never in `netRefund`. `leaseId`/`unitIdentifier` are null
+   * when the caller may not read the successor.
+   */
+  depositCarriedTo?: { leaseId: string | null; unitIdentifier: string | null; amount: number } | null;
 };
 
 /** SettlementResponseDTO.DeductionDTO — one stored line. */
@@ -1099,6 +1105,11 @@ export type SettlementResponse = {
   penaltiesOutstanding: number | null;
   /** max(-netRefund, 0). */
   balanceDue: number | null;
+  /**
+   * #102 (review P2-1): on a FINALIZED row, what the renter owes now — live from the
+   * ledger (rent + PDC receivable on the lease and renter). Null on a draft.
+   */
+  stillDue?: number | null;
   /** F14-36: ignored on finalize now and always null — kept for old rows. */
   refundBankAccountId: string | null;
   /** F14-36: Σ of the BPVs posted against this settlement's refund. */
@@ -1163,6 +1174,34 @@ export type PostLeaseResponse = {
   notices?: string[];
 };
 
+/** LeaseChainLinkDTO (#100-e) — one contract in a lease's history. */
+export type LeaseChainLink = {
+  id: string;
+  unitIdentifier: string | null;
+  displayContractNumber: string | null;
+  startDate: string;
+  endDate: string;
+  status: LeaseDetail["status"];
+  /** How this contract followed the one before it; null for the first. */
+  link: "RENEWED" | "TRANSFERRED" | null;
+};
+
+/** PostLeaseDryRunResponse.TransferJournals (#100-f) — what a transfer posts beside B's TCO and PDRs. */
+export type TransferJournals = {
+  moveDate: string;
+  /** PDR reversals on A, dated T: rows leaving A's PDCs (carried or returned). */
+  pdrReversals: number;
+  pdrReversalTotal: number;
+  /** The TCR on A, dated T. */
+  unearned: number;
+  unearnedVat: number;
+  /** C, by a JV on T + 1: <0 prepaid, >0 owed, 0 no JV. */
+  balanceCarried: number;
+  balanceCarriedDate: string;
+  /** The deposit JV on B's contract date. */
+  depositCarried: number;
+};
+
 /** PostLeaseDryRunResponse — every validation a real post would run, nothing written. */
 export type PostLeaseDryRunResponse = {
   ok: boolean;
@@ -1171,7 +1210,11 @@ export type PostLeaseDryRunResponse = {
   contractValueInclVat: number;
   chequeTotal: number;
   depositCarriedForward: number;
-  journals: { tco: number; tcoLines: number; pdr: number };
+  journals: {
+    tco: number; tcoLines: number; pdr: number;
+    /** #100-f: on a transfer successor, the transfer's own journal groups; absent/null otherwise. */
+    transfer?: TransferJournals | null;
+  };
   /** F15-13: a transfer's carried cheques, re-registered on this grid when it posts. */
   carriedCheques?: { seqNo: number; chequeNumber: string | null; chequeDate: string | null; amount: number }[];
   /** What the real post would do that the accountant should know, not an error. */
@@ -1506,6 +1549,8 @@ export const chargeTypeApi = {
 
 export const leaseApi = {
   get: (id: string) => get<LeaseDetail>(`/leases/${id}`),
+  /** #100-e: the lease's whole history (renewals and transfers), oldest first; unreadable contracts left out. */
+  chain: (id: string) => get<LeaseChainLink[]>(`/leases/${id}/chain`),
   /**
    * The leases list. `status`, `propertyId` and `buildingId` (S16-02: the tower,
    * a Building id) are filters, not hints: they narrow the page the server

@@ -143,6 +143,29 @@ class RenewalTermsIT extends AbstractPostgresIT {
         assertThat(lines(successor.getId()).get(0).grossAmount()).isEqualByComparingTo("82667");
     }
 
+    /**
+     * #99 R1: after a three-month extension the lease runs 15 months, but its contract
+     * rent still prices 12. A 12-month renewal is a like-for-like percentage (80,000 ×
+     * 1.08); a 15-month one would stretch a year's rent over 15 months and is refused.
+     */
+    @Test
+    void aPercentageAfterAnExtensionIsMeasuredAgainstTheContractRentsTerm() {
+        UUID first = ahmed();
+        LocalDate extendedEnd = LocalDate.of(2027, 12, 31);
+        renewal.extend(first, new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(extendedEnd,
+                LocalDate.of(2027, 9, 20), List.of(line("RENT", "20000")),
+                List.of(LeaseTestFixtures.chequeRow("20000", LocalDate.of(2027, 10, 2)))));
+        LocalDate contract = R_CONTRACT;
+        LocalDate start = extendedEnd.plusDays(1);
+        assertThatThrownBy(() -> renewal.renew(first, new RenewLeaseRequest(contract, start, LocalDate.of(2029, 3, 31),
+                null, false, percent("8"), null, null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("term length changed");
+        LeaseDTO successor = renewal.renew(first, new RenewLeaseRequest(contract, start, LocalDate.of(2028, 12, 31),
+                null, false, percent("8"), null, null));
+        assertThat(lines(successor.getId()).get(0).grossAmount()).isEqualByComparingTo("86400");
+    }
+
     @Test
     void aPercentageIsRefusedWhenTheTermLengthChanges() {
         UUID first = ahmed();

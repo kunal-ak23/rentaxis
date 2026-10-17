@@ -153,6 +153,8 @@ describe("RenewLeaseDialog renewal terms (§4a, §4d)", () => {
         renderTerms();
         fireEvent.click(screen.getByTestId("renew-mode-PERCENT"));
         fireEvent.change(screen.getByTestId("renew-percent"), { target: { value: "8" } });
+        // #99 R1: digits and the sign stay left-to-right inside an Arabic dialog.
+        expect(screen.getByTestId("renew-percent")).toHaveAttribute("dir", "ltr");
         expect(await screen.findByTestId("renew-rent-preview")).toHaveTextContent("48,000.00 → 51,840.00 (+8.00%)");
         expect(screen.getByTestId("renew-rent-notice")).toHaveTextContent("5%");
         await waitFor(() => expect(renewalPreview).toHaveBeenLastCalledWith("lease-1",

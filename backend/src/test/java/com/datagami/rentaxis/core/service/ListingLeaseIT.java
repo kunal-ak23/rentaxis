@@ -146,8 +146,30 @@ class ListingLeaseIT extends AbstractPostgresIT {
         fixtures.postedLease(LocalDate.of(2026, 4, 20), LocalDate.of(2026, 5, 1), LocalDate.of(2027, 4, 30),
                 java.util.List.of(LeaseTestFixtures.line("RENT", "60000")), 4, null);
         assertThat(listingRepo.findById(listingId).orElseThrow().getStatus()).isEqualTo(ListingStatus.UNLISTED);
+        jdbc.update("update leases set status = 'TERMINATED' where unit_id = ? and tenant_id = ?",
+                fixtures.unit().getId(), fixtures.tenantId());
         tx.executeWithoutResult(s -> listings.syncAvailableFrom(fixtures.unit().getId(), null));
         assertThat(listingRepo.findById(listingId).orElseThrow().getStatus()).isEqualTo(ListingStatus.PUBLISHED);
+    }
+
+    /**
+     * #101: the lease that ended was not the unit's last — the next renter's lease is
+     * already posted on it. The unit is not vacant: an opted-in listing stays unlisted
+     * and is available from the day after that lease, not "now".
+     */
+    @Test
+    void aListingIsNotRepublishedWhileAnotherPostedLeaseHoldsTheUnit() {
+        tx.executeWithoutResult(s -> listings.setRepublishWhenVacant(fixtures.tenantId(), listingId, true));
+        UUID first = fixtures.postedLease(LocalDate.of(2026, 4, 20), LocalDate.of(2026, 5, 1), LocalDate.of(2027, 4, 30),
+                java.util.List.of(LeaseTestFixtures.line("RENT", "60000")), 4, null).lease().getId();
+        fixtures.postedLease(fixtures.unit(), fixtures.createRenter("Next Renter"), LocalDate.of(2026, 9, 1),
+                LocalDate.of(2027, 5, 1), LocalDate.of(2028, 4, 30),
+                java.util.List.of(LeaseTestFixtures.line("RENT", "62000")), 4, null);
+        jdbc.update("update leases set status = 'TERMINATED' where id = ?", first);
+        tx.executeWithoutResult(s -> listings.syncAvailableFrom(fixtures.unit().getId(), null));
+        UnitListing after = listingRepo.findById(listingId).orElseThrow();
+        assertThat(after.getStatus()).isEqualTo(ListingStatus.UNLISTED);
+        assertThat(after.getAvailableFrom()).isEqualTo(LocalDate.of(2028, 5, 1));
     }
 
     /** Break-it R3 ops3 F10: a unit with a posted lease cannot be (re)published as available, nor shown so publicly. */

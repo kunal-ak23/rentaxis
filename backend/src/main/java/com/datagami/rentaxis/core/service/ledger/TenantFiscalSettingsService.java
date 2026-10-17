@@ -466,6 +466,18 @@ public class TenantFiscalSettingsService {
     public TenantFiscalSettings setFiscalYearStartMonth(int month) {
         if (month < 1 || month > 12) throw new BusinessRuleViolationException("Fiscal year start month must be 1-12");
         TenantFiscalSettings s = get();
+        if (s.getFiscalYearStartMonth() == month) return s;
+        // #99 R1: a closed year's YEC and lock were cut on the start month it was
+        // closed under; moving the month would re-label every closed year onto dates
+        // its close never covered. Native SQL, so the tenant is bound explicitly.
+        Number closed = (Number) entityManager.createNativeQuery(
+                        "select count(*) from fiscal_year_closes where tenant_id = :t and status = 'CLOSED'")
+                .setParameter("t", s.getTenantId()).getSingleResult();
+        if (closed.longValue() > 0) {
+            throw new BusinessRuleViolationException("The fiscal year start month cannot change while "
+                    + closed.longValue() + " fiscal year(s) are closed; re-open them first.",
+                    "fiscal.startMonthClosedYears", java.util.Map.of("count", closed.longValue()));
+        }
         s.setFiscalYearStartMonth(month);
         return repo.save(s);
     }

@@ -444,7 +444,7 @@ public class BookingService {
             }
         }
         // F14-50: the fee becomes a charge on the renter's lease, posted with the approval.
-        if (bookingFees != null) bookingFees.chargeOnApproval(booking, resourceLabel(booking), java.time.LocalDate.now());
+        if (bookingFees != null) bookingFees.chargeOnApproval(booking, resourceLabel(booking), LocalDate.now(clock.withZone(DUBAI)));
         return decide(booking, BookingRequestStatus.APPROVED, adminUserId, adminNote);
     }
 
@@ -466,11 +466,11 @@ public class BookingService {
         }
         if (booking.getStatus() == BookingRequestStatus.APPROVED
                 && booking.getResourceType() == BookingResourceType.AMENITY) {
-            if (!BookingFeeService.beforeSlot(booking, java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Dubai")))) {
+            if (!BookingFeeService.beforeSlot(booking, java.time.LocalDateTime.now(clock.withZone(DUBAI)))) {
                 throw new BusinessRuleViolationException("The booking's slot has started; it can no longer be cancelled.",
                         "booking.slotStarted", java.util.Map.of());
             }
-            if (bookingFees != null) bookingFees.reverseOnCancel(booking, java.time.LocalDate.now());
+            if (bookingFees != null) bookingFees.reverseOnCancel(booking, LocalDate.now(clock.withZone(DUBAI)));
         } else {
             requirePending(booking);
         }

@@ -53,7 +53,41 @@ public record PostLeaseDryRunResponse(boolean ok,
     public record CarriedCheque(int seqNo, String chequeNumber, java.time.LocalDate chequeDate, BigDecimal amount) {
     }
 
-    /** The journals the post would write: one TCO of {@code tcoLines} lines, and {@code pdr} PDRs. */
-    public record JournalPlan(int tco, int tcoLines, int pdr) {
+    /**
+     * The journals the post would write: one TCO of {@code tcoLines} lines, and {@code pdr} PDRs.
+     *
+     * @param transfer #100-f: on a transfer successor, the groups the transfer itself posts
+     *                 (spec §2, "Postings, in order"); null for every other lease, so a
+     *                 client that predates it reads the same three counts as before.
+     */
+    public record JournalPlan(int tco, int tcoLines, int pdr, TransferJournals transfer) {
+        public JournalPlan(int tco, int tcoLines, int pdr) {
+            this(tco, tcoLines, pdr, null);
+        }
+    }
+
+    /**
+     * #100-f: the transfer's journal groups, in posting order, estimated from the ledger
+     * as it stands (nothing written).
+     *
+     * @param moveDate           T, the last day in the old unit
+     * @param pdrReversals       PDR reversals on A, dated T — one per row leaving A's PDCs
+     *                           (carried or returned)
+     * @param pdrReversalTotal   Σ of those rows
+     * @param unearned           the TCR on A, dated T: rent unearned after T
+     * @param unearnedVat        the TCR's VAT on that rent (0 when A carries no VAT)
+     * @param balanceCarried     C, carried to B by a JV on T + 1: &lt;0 prepaid (credited to
+     *                           B), &gt;0 owed (charged to B); 0 means no JV
+     * @param balanceCarriedDate the balance JV's date, T + 1
+     * @param depositCarried     the deposit JV on B's contract date: what A still holds
+     */
+    public record TransferJournals(java.time.LocalDate moveDate,
+                                   int pdrReversals,
+                                   BigDecimal pdrReversalTotal,
+                                   BigDecimal unearned,
+                                   BigDecimal unearnedVat,
+                                   BigDecimal balanceCarried,
+                                   java.time.LocalDate balanceCarriedDate,
+                                   BigDecimal depositCarried) {
     }
 }

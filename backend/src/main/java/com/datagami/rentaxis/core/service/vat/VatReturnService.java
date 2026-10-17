@@ -167,6 +167,12 @@ public class VatReturnService {
                              BigDecimal acknowledgedDifference) {
         UUID t = tenant();
         LocalDate end = endOf(periodStart);
+        // #101: serialise the tenant's filings BEFORE the overlap check. The row lock
+        // below locks nothing on a first filing, and both racers had already passed
+        // cannotFile() by the time they queued on it; the unique index only catches a
+        // second filing with the same start, so overlapping quarters with different
+        // starts (01/04 and 01/05) could both commit.
+        lockFilings(t);
         String reason = cannotFile(periodStart, end);
         if (reason != null) {
             throw new BusinessRuleViolationException(switch (reason) {
@@ -229,6 +235,7 @@ public class VatReturnService {
         if (reason == null || reason.isBlank()) {
             throw new BusinessRuleViolationException("Give a reason for re-opening the VAT return", "vat.reopenReason", Map.of());
         }
+        lockFilings(tenant());
         VatReturn r = returns.findById(id).orElseThrow(() -> new NotFoundException("VAT return not found"));
         if (!VatReturn.FILED.equals(r.getStatus())) {
             throw new BusinessRuleViolationException("This VAT return is not filed", "vat.notFiled", Map.of());
@@ -239,6 +246,13 @@ public class VatReturnService {
         r.setReopenReason(reason.trim());
         returns.save(r);
         return get(r.getPeriodStart());
+    }
+
+    /** Transaction-scoped advisory lock on the tenant's VAT filings (file and re-open). */
+    private void lockFilings(UUID t) {
+        jdbc.query("select pg_advisory_xact_lock(hashtextextended(:k, 0))",
+                new MapSqlParameterSource("k", "vat-returns:" + t),
+                (org.springframework.jdbc.core.ResultSetExtractor<Object>) rs -> null);
     }
 
     private String cannotFile(LocalDate start, LocalDate end) {
