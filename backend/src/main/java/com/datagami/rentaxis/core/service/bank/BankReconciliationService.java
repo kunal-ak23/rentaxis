@@ -745,7 +745,8 @@ public class BankReconciliationService {
 
     /**
      * The period's neighbourhood, for {@link Remedy}: each line-day within 45 days of the
-     * period that is complete, or inside the finalized reconciliation.
+     * period that is complete, or inside the finalized reconciliation and not its first
+     * reconciled line-day unless that day's start is known (review P3-2).
      */
     private Remedy remedy(UUID t, UUID b, LocalDate from, LocalDate to) {
         MapSqlParameterSource p = new MapSqlParameterSource("t", t).addValue("b", b)
@@ -757,7 +758,16 @@ public class BankReconciliationService {
                                            and txn_date between :lo and :hi) x
                 join bank_accounts ba on ba.id = :b and ba.tenant_id = :t
                 left join bank_statement_days d on d.tenant_id = :t and d.bank_account_id = :b and d.txn_date = x.txn_date
-                where x.txn_date <= ba.reconciled_through
+                where (x.txn_date <= ba.reconciled_through
+                       -- review P3-2: a finalized day is whole at its end (finalize needs the
+                       -- paper closing) but the first reconciled line-day may have begun mid-day
+                       -- with a typed opening; a statement starting there would bring earlier
+                       -- lines into the finalized period and be refused.
+                       and (coalesce(d.start_known, false)
+                            or exists (select 1 from bank_statement_lines e
+                                        where e.tenant_id = :t and e.bank_account_id = :b
+                                          and e.txn_date < x.txn_date
+                                          and e.txn_date >= coalesce(ba.rec_start_date, e.txn_date))))
                    or (d.order_confirmed and not d.merge_unproven and d.start_known and d.end_known)""", p,
                 rs -> { complete.add(rs.getObject("txn_date", LocalDate.class)); });
         return new Remedy(complete);

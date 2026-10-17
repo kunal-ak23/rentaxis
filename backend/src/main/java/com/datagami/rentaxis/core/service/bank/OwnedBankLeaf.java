@@ -173,7 +173,10 @@ public class OwnedBankLeaf {
         // bank's name, so the chart does not say one bank while another owns it. Only
         // that exact generated name changes (review P3-17); a name someone typed is kept.
         jdbc.update("""
-                update accounts a set name = nb.bank_name || ' - ' || p.name_en, updated_at = now()
+                update accounts a set name = nb.bank_name || ' - ' || p.name_en,
+                       name_en = case when a.name_en is null or a.name_en = a.name
+                                      then nb.bank_name || ' - ' || p.name_en else a.name_en end,
+                       updated_at = now()
                   from bank_accounts ob, bank_accounts nb, properties p
                  where a.id = :a and a.tenant_id = :t
                    and ob.id = :o and ob.tenant_id = :t and nb.id = :b and nb.tenant_id = :t
@@ -241,13 +244,17 @@ public class OwnedBankLeaf {
      * carries the template's name ("Bank - <property>", or the old seed's
      * "Emirates Islamic - <property>"); once a bank account adopts it, it is named after
      * that bank, as a leaf generated with the bank in place is. Only that exact,
-     * untouched name changes, and only {@code name}: a name someone typed is kept, and
-     * {@code name_ar} is the generic "bank account" label.
+     * untouched name changes. {@code name_en} follows when it still held the old name
+     * (review P2-1: the Chart of Accounts shows and saves it); a distinct English name
+     * someone typed is kept, and {@code name_ar} is the generic "bank account" label.
      */
     public void renameDefaultNamed(UUID t, UUID bankAccountId, List<UUID> accountIds) {
         if (accountIds.isEmpty()) return;
         jdbc.update("""
-                update accounts a set name = nb.bank_name || ' - ' || p.name_en, updated_at = now()
+                update accounts a set name = nb.bank_name || ' - ' || p.name_en,
+                       name_en = case when a.name_en is null or a.name_en = a.name
+                                      then nb.bank_name || ' - ' || p.name_en else a.name_en end,
+                       updated_at = now()
                   from bank_accounts nb, properties p
                  where a.tenant_id = :t and a.id in (:a)
                    and nb.id = :b and nb.tenant_id = :t

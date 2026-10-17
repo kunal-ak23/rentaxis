@@ -10,8 +10,10 @@
 #    whose owner's bank is not Emirates Islamic, becomes "<owner's bank name> - <property
 #    name>". Only that exact, untouched name changes: a hand-typed name is kept, a leaf
 #    no bank account owns is left alone (it is renamed when one adopts it), and a leaf
-#    Emirates Islamic owns keeps its name. Only accounts.name changes (name_ar is the
-#    generic "bank account" label).
+#    Emirates Islamic owns keeps its name. accounts.name changes, and name_en with it
+#    when name_en still held the old name (the Chart of Accounts shows and saves
+#    name_en; review P2-1); a distinct typed name_en is kept. name_ar is the generic
+#    "bank account" label.
 # 2. An organisation's BANK template row still on the old seeded pattern becomes the
 #    neutral one, unless the organisation banks with Emirates Islamic (then the old
 #    pattern names its bank and is left as it is).
@@ -29,7 +31,10 @@ databaseChangeLog:
             splitStatements: false
             sql: |
               UPDATE accounts a
-                 SET name = ob.bank_name || ' - ' || p.name_en, updated_at = CURRENT_TIMESTAMP
+                 SET name = ob.bank_name || ' - ' || p.name_en,
+                     name_en = CASE WHEN a.name_en IS NULL OR a.name_en = a.name
+                                    THEN ob.bank_name || ' - ' || p.name_en ELSE a.name_en END,
+                     updated_at = CURRENT_TIMESTAMP
                 FROM bank_account_ledgers l, bank_accounts ob, properties p
                WHERE l.account_id = a.id AND l.tenant_id = a.tenant_id
                  AND ob.id = l.bank_account_id AND ob.tenant_id = l.tenant_id

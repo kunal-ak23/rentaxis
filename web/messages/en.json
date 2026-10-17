@@ -4798,7 +4798,7 @@
     "startNextHint": "It starts the day after the last finalized one ended, with that one's closing balance.",
     "fig_statementClosing": "Balance per statement",
     "fig_statementClosingFromLines": "From the imported lines, not the bank's statement",
-    "closingFromLinesHint": "Do not copy this figure. Type the closing balance from the paper statement, or import the statement the check names (it gives its first and last dates); the check says which is needed.",
+    "closingFromLinesHint": "Do not copy this figure. Type the closing balance from the paper statement, or import the statement the check describes; the check says which is needed.",
     "fig_depositsInTransit": "+ Deposits in transit",
     "fig_unpresentedPayments": "− Unpresented payments",
     "fig_bookedAfterPeriod": "− Booked after the period",

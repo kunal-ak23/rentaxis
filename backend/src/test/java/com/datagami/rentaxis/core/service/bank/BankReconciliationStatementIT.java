@@ -1532,6 +1532,40 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("a line is missing");
     }
 
+    /**
+     * PR #424 review P3-2: the first reconciled line-day may have begun mid-day (the
+     * reconciliation typed its opening). A statement starting there would bring that
+     * day's earlier lines into the finalized period and be refused, so it is not named
+     * as a statement's first day.
+     */
+    @Test
+    void theFirstReconciledDayIsNotNamedWhenItMayHaveBegunMidDay() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importText("""
+                01/09/2026,01/09/2026,FEE A,,5.00,,995.00
+                """);
+        book("FEE A", "CHARGE");
+        UUID first = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_1, new BigDecimal("1000.00"),
+                new BigDecimal("995.00"))).id();
+        assertThat(recs.finalizeRec(first).status()).isEqualTo("FINALIZED");
+        LocalDate sep2 = LocalDate.of(2026, 9, 2);
+        importText("""
+                02/09/2026,02/09/2026,FEE B,,5.00,,990.00
+                """);
+        importText("""
+                02/09/2026,02/09/2026,FEE B,,5.00,,990.00
+                02/09/2026,02/09/2026,CREDIT C,,,20.00,"1,010.00"
+                03/09/2026,03/09/2026,FEE D,,5.00,,"1,005.00"
+                04/09/2026,04/09/2026,FEE E,,5.00,,"1,000.00"
+                """);
+        for (String d : List.of("FEE B", "FEE D", "FEE E")) book(d, "CHARGE");
+        book("CREDIT C", "INTEREST");
+        BankRecDTOs.Reconciliation r = recs.create(ei.getId(), period(sep2, SEP_30));
+        assertThat(r.unprovenDays()).singleElement().extracting(BankRecDTOs.UnprovenDay::date).isEqualTo(sep2);
+        assertThat(check(r, "LINE_ORDER").message()).doesNotContain("runs from 01/09/2026")
+                .contains("no statement can yet hold that day between two settled days");
+    }
+
     // ------------------------------------------------------------------ purge
 
     @Test
