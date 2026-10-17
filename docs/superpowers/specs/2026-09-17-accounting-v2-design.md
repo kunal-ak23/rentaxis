@@ -35,6 +35,23 @@ v2 replaces the finance model outright. The goal is that the client can leave PA
 | D13 | Recognition entry date | Month-end (`period_end`). PACT dates on the 1st; month-end is the correct treatment. |
 | D14 | Reports | Out of scope for v2 except the control views needed to trust inputs: General Ledger, Tenant Ledger, Vendor Ledger, Trial Balance. |
 
+### 2.1 Later rulings (follow-ups sweep, 2026-10-17)
+
+The product owner's rulings on the follow-ups report (`followups-96-106`, items R1–R13). They
+record behaviour that the sections below do not spell out.
+
+| # | Ruling |
+|---|---|
+| R1 | A ONE_OFF fee refunds nothing at termination: it is earned when charged. On a cut-over lease (`fee_timing = AT_POSTING`) a periodic (RENT_LIKE) fee was taken to income for its whole window; the settlement offers its unearned days as an optional addition, `UNEARNED_FEE_REFUND`, per day like rent (`net − earnedThrough(net, from, to, T)`), off by default. Added, the STL debits the fee's own income leaf and the refund grows by the same amount. Net only; nothing posted is restated. |
+| R2 | `fiscal_year_closes.lock_before` is an audit field. The re-open dialog shows it; re-open does not restore it (§3 of the 2026-09-24 spec moves the lock to the day before the year). |
+| R5 | Utilities recovered at cost (PASS_THROUGH) are held in `UTILITIES_RECOVERABLE`, leaf B-01-09 "Utilities recoverable (held)", not in B-01-08 with the periodic fees. Only leases posted after changeset 179 use it; a segment posted before it releases from the leaf it recorded. |
+| R7 | A credit addendum's new amount is the line's new **headline**. The rent-free concession is re-applied at the new rate (`concession × new headline ÷ old headline`), the discount stays, and the remaining days earn the resulting net pro rata. The credit stores the new gross and concession, so a renewal escalates from the headline (concessions do not renew, §4a) and a transfer carries headline less discount. |
+| R9 | An assignment cannot take effect before the outgoing renter's latest posting on the lease (`lease.assignmentBeforeLatestPosting`): its JV moves the balances as they stand after that posting. |
+| R10 | **Unit transfer: lease B takes the new-lease defaults.** B is a new contract, so it is drafted with `vat_timing = INSTALMENT` and `fee_timing = OVER_TERM` even when A is a cut-over lease on CONTRACT VAT and at-posting fees (F14-18: new contracts follow the new rule). A's at-posting fees are not among B's default lines; their unearned part travels in the carried balance C. Kept as is. |
+| R11 | A contract tax invoice (and the TI/TCN an amendment issues for it) dated in a filed VAT period is refused with `vat.periodFiled`, the journal's own message. This covers the F14-11 backfill, which has no journal. |
+| R12 | A renter cannot cancel a booking whose fee is paid (`booking.feePaid`). Staff cancel it with a reason; the fee charge is reversed with its tax credit note and the payment stays as a credit on the renter's account. |
+| R13 | BAD_DEBT and BAD_DEBT_RECOVERED stay one leaf each, organisation-wide, with the property on every line. |
+
 ## 3. Vocabulary
 
 | Term | Meaning |
