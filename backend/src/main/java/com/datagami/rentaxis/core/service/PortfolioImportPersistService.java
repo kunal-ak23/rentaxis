@@ -8,6 +8,7 @@ import com.datagami.rentaxis.api.dto.lease.LeaseLineInput;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.cheque.ChequeRowRules;
 import com.datagami.rentaxis.core.service.cutover.ContractImportLeasePoster;
+import com.datagami.rentaxis.core.service.cutover.ImportRowRefusedException;
 import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
 import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
@@ -45,6 +46,75 @@ public class PortfolioImportPersistService {
     private final ChequeGenerationService chequeGenerationService;
     private final PropertyAccountService propertyAccountService;
     private final ContractImportLeasePoster leasePoster;
+
+    private FacilityService facilityService;
+    private ParkingSheetResolver parkingSheetResolver;
+
+    /** Setter-injected: the hand-built instances in the unit tests need no new argument (and skip the Parking sheet). */
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setParkingImport(FacilityService facilityService, ParkingSheetResolver parkingSheetResolver) {
+        this.facilityService = facilityService;
+        this.parkingSheetResolver = parkingSheetResolver;
+    }
+
+    /**
+     * What the Parking sheet wrote; {@code present} is false when the workbook has no
+     * such sheet. {@code createdIds} are the bays this workbook brought into existence,
+     * which a cut-over batch records so a discard can delete them again.
+     */
+    public record ParkingImportCounts(boolean present, int created, int updated, List<UUID> createdIds) {
+        public static final ParkingImportCounts NONE = new ParkingImportCounts(false, 0, 0, List.of());
+
+        /** Onto the job's details wrapper — only when the sheet was there, so older payloads stay byte-identical. */
+        public void writeTo(PortfolioImportJobDetailsDTO details) {
+            if (!present) return;
+            details.setParkingBaysCreated(created);
+            details.setParkingBaysUpdated(updated);
+        }
+    }
+
+    /**
+     * Attached parking (changeset 175): the optional Parking sheet, written after the
+     * properties, buildings and units it names — by then everything the workbook
+     * created is in the database, so its names resolve there alone. A bay the
+     * property already has is updated in place ({@link FacilityService#importParkingSpot}).
+     * Joins the caller's transaction (this class's v1 persist, or the cut-over's), so
+     * a refused row rolls the whole workbook back, as every other sheet's would.
+     *
+     * <p>Validation has already accepted every row; a row refused here is one the
+     * organisation changed under the import (a booking taken meanwhile), reported as
+     * that row's error like {@link ImportRowRefusedException}'s other uses.</p>
+     */
+    @Transactional
+    public ParkingImportCounts persistParkingSheet(Workbook workbook) {
+        Sheet sheet = PortfolioSheets.parking(workbook);
+        if (sheet == null || facilityService == null) return ParkingImportCounts.NONE;
+        UUID tenantId = com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId();
+        List<ImportErrorDTO> problems = new ArrayList<>();
+        List<ParkingSheet.Resolved> rows = parkingSheetResolver.resolve(
+                ParkingSheet.read(sheet, problems), ParkingSheet.SheetPlaces.NONE, tenantId, problems);
+        if (!problems.isEmpty()) {
+            throw new ImportRowRefusedException(problems.getFirst());
+        }
+        List<UUID> createdIds = new ArrayList<>();
+        int updated = 0;
+        for (ParkingSheet.Resolved r : rows) {
+            ParkingSheet.Row row = r.row();
+            try {
+                FacilityService.ImportedSpot spot = facilityService.importParkingSpot(tenantId, r.propertyId(),
+                        row.bay(), row.level(), row.covered(), r.buildingId(), r.unitId());
+                if (spot.created()) {
+                    createdIds.add(spot.id());
+                } else {
+                    updated++;
+                }
+            } catch (BusinessRuleViolationException e) {
+                throw new ImportRowRefusedException(new ImportErrorDTO(
+                        PortfolioSheets.PARKING, row.rowNum(), "BayNumber", e.getMessage()));
+            }
+        }
+        return new ParkingImportCounts(true, createdIds.size(), updated, List.copyOf(createdIds));
+    }
 
     private static final Set<String> VALID_BOOLS_TRUE = Set.of("true", "yes", "1");
     private static final Set<String> VALID_BOOLS_FALSE = Set.of("false", "no", "0");
@@ -490,6 +560,9 @@ public class PortfolioImportPersistService {
             }
         }
 
+        // After the units it may attach bays to.
+        ParkingImportCounts parking = persistParkingSheet(workbook);
+
         job.setLeasesCreated(leasesCreated);
         // The column is still called schedules_created; what it counts is the cheque
         // rows the import wrote. Renaming it would be a migration for a number the
@@ -510,7 +583,8 @@ public class PortfolioImportPersistService {
         if (bookingDepositsCreated > 0) details.setBookingDepositsCreated(bookingDepositsCreated);
         if (hasWarnings) details.setWarnings(allWarnings);
         if (hasErrors) details.setErrors(allErrors);
-        if (chequesFromSheet > 0 || bookingDepositsCreated > 0 || hasWarnings || hasErrors) {
+        parking.writeTo(details);
+        if (chequesFromSheet > 0 || bookingDepositsCreated > 0 || hasWarnings || hasErrors || parking.present()) {
             writeDetails(job, details);
         }
 

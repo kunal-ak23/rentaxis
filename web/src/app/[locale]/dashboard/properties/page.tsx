@@ -866,6 +866,13 @@ function PropertiesPageInner() {
                                                 ...(portfolioResult.bookingDepositsCreated > 0
                                                     ? [{ label: t("resultBookingDeposits"), count: portfolioResult.bookingDepositsCreated }]
                                                     : []),
+                                                // Optional Parking sheet; an older server omits both counts.
+                                                ...(portfolioResult.parkingBaysCreated > 0
+                                                    ? [{ label: t("resultParkingBaysCreated"), count: portfolioResult.parkingBaysCreated }]
+                                                    : []),
+                                                ...(portfolioResult.parkingBaysUpdated > 0
+                                                    ? [{ label: t("resultParkingBaysUpdated"), count: portfolioResult.parkingBaysUpdated }]
+                                                    : []),
                                             ].map(item => (
                                                 <div key={item.label} className="bg-input/50 rounded-lg p-3 border border-border text-center">
                                                     <p className="text-lg font-bold text-foreground tabular-nums">{item.count}</p>

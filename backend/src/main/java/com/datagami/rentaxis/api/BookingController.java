@@ -233,9 +233,14 @@ public class BookingController {
         Map<UUID, Long> spotPending = batchCounts(
                 spotIds.isEmpty() ? List.of()
                         : bookingRequestRepository.countByParkingSpotIdIn(tenantId, spotIds, BookingRequestStatus.PENDING));
-        Map<UUID, Long> spotHeld = batchCounts(
-                spotIds.isEmpty() ? List.of()
-                        : bookingRequestRepository.countByParkingSpotIdIn(tenantId, spotIds, BookingRequestStatus.APPROVED));
+        // Changeset 175: held = an approved booking covers today; the renter also sees
+        // the dates bays are taken, so a later, non-overlapping range can be asked for.
+        java.util.Set<UUID> spotHeld = bookingService.spotsHeldToday(tenantId, spotIds);
+        Map<UUID, List<MyFacilitiesDTO.BookedRangeDTO>> bookedRanges = new HashMap<>();
+        for (BookingRequest b : bookingService.approvedSpotBookingsAhead(tenantId, spotIds)) {
+            bookedRanges.computeIfAbsent(b.getParkingSpotId(), k -> new java.util.ArrayList<>())
+                    .add(new MyFacilitiesDTO.BookedRangeDTO(b.getPreferredDate(), b.getPreferredEndDate()));
+        }
 
         List<MyFacilitiesDTO.RenterAmenityDTO> amenityDTOs = amenitiesById.values().stream()
                 .map(a -> new MyFacilitiesDTO.RenterAmenityDTO(a.getId(), a.getPropertyId(),
@@ -246,11 +251,27 @@ public class BookingController {
         List<MyFacilitiesDTO.RenterParkingSpotDTO> spotDTOs = spotsById.values().stream()
                 .map(s -> new MyFacilitiesDTO.RenterParkingSpotDTO(s.getId(), s.getPropertyId(),
                         propertyNameBySpot.get(s.getId()), s.getSpotNumber(), s.getLevel(),
-                        photoUrls(s.getPhotoUrls()), s.isCovered(), spotHeld.getOrDefault(s.getId(), 0L) > 0,
-                        spotPending.getOrDefault(s.getId(), 0L), s.getFeeType(), s.getFeeAmount()))
+                        photoUrls(s.getPhotoUrls()), s.isCovered(), spotHeld.contains(s.getId()),
+                        spotPending.getOrDefault(s.getId(), 0L), s.getFeeType(), s.getFeeAmount(),
+                        bookedRanges.getOrDefault(s.getId(), List.of())))
                 .toList();
 
-        return ResponseEntity.ok(new MyFacilitiesDTO(amenityDTOs, spotDTOs));
+        // Attached parking: the bays allocated to the units of the renter's current
+        // contracts — only theirs, since the units come from their own leases.
+        Map<UUID, Unit> unitsById = new LinkedHashMap<>();
+        units.forEach(u -> unitsById.putIfAbsent(u.getId(), u));
+        List<MyFacilitiesDTO.AllocatedParkingDTO> allocated = facilityService
+                .allocatedParking(tenantId, unitsById.keySet()).stream()
+                .map(s -> {
+                    Unit u = unitsById.get(s.getAttachedUnitId());
+                    return new MyFacilitiesDTO.AllocatedParkingDTO(s.getId(), s.getPropertyId(),
+                            u == null ? null : u.getProperty().getNameEn(), s.getAttachedUnitId(),
+                            u == null ? null : u.getUnitNumber(), s.getSpotNumber(), s.getLevel(),
+                            s.isCovered(), photoUrls(s.getPhotoUrls()));
+                })
+                .toList();
+
+        return ResponseEntity.ok(new MyFacilitiesDTO(amenityDTOs, spotDTOs, allocated));
     }
 
     @PostMapping("/bookings")

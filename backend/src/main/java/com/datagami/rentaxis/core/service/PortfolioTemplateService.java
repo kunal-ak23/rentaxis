@@ -20,6 +20,8 @@ public class PortfolioTemplateService {
             createRentersSheet(workbook, headerStyle);
             createLeasesSheet(workbook, headerStyle);
             createChequesSheet(workbook, headerStyle);
+            // Optional (changeset 175): one bay attached to a sample unit, one bookable.
+            createParkingSheet(workbook, headerStyle, "Marina Heights", "Tower A", "101");
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             workbook.write(out);
@@ -54,6 +56,9 @@ public class PortfolioTemplateService {
             createCutOverRentersSheet(workbook, headerStyle);
             createContractsSheet(workbook, headerStyle);
             createContractChequesSheet(workbook, headerStyle);
+            // Optional, and it imports as it stands too: the attached bay names the
+            // sample unit above, on the sample property.
+            createParkingSheet(workbook, headerStyle, "Sample Tower", "", "A-101");
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             workbook.write(out);
@@ -172,6 +177,30 @@ public class PortfolioTemplateService {
                 "25000.00", "Rent - 2nd Installment", "PDC", "REGISTERED", "", "", "");
         addRow(sheet, 3, "SAMPLE-0002", "1", "2026-09-11", "100003", "2026-10-01", "Sample Bank", "",
                 "22050.00", "Rent - 1st Installment", "PDC", "REGISTERED", "", "", "");
+
+        autoSizeColumns(sheet, headers.length);
+    }
+
+    /**
+     * Attached parking (2026-10-17 ruling): the optional Parking sheet, in both
+     * workbooks. A bay with an AttachedUnitNumber is allocated to that unit and is
+     * never bookable; a blank one leaves the bay bookable by any renter of the
+     * property. BuildingName scopes the bay to one tower (blank = all towers) and,
+     * when given, is the building the attached unit is looked up in. Re-importing a
+     * bay that already exists updates its level, covered flag and attachment in place.
+     *
+     * <p>The two sample rows are one of each, on the workbook's own sample property,
+     * so the template imports unchanged.</p>
+     */
+    private void createParkingSheet(XSSFWorkbook workbook, CellStyle headerStyle,
+                                    String sampleProperty, String sampleBuilding, String sampleUnit) {
+        XSSFSheet sheet = workbook.createSheet(PortfolioSheets.PARKING);
+        String[] headers = PortfolioSheets.PARKING_HEADERS.toArray(String[]::new);
+        createHeaderRow(sheet, headers, headerStyle);
+        addDropdown(sheet, 1, 5000, 4, 4, new String[]{"TRUE", "FALSE"});
+
+        addRow(sheet, 1, sampleProperty, sampleBuilding, "P-001", "B1", "TRUE", sampleUnit);
+        addRow(sheet, 2, sampleProperty, sampleBuilding, "P-002", "B1", "FALSE", "");
 
         autoSizeColumns(sheet, headers.length);
     }

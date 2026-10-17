@@ -11,5 +11,7 @@ public enum ImportedEntityType {
     PROPERTY,
     BUILDING,
     UNIT,
-    RENTER
+    RENTER,
+    /** A bay the optional Parking sheet created (changeset 175); an updated bay is not the batch's. */
+    PARKING_SPOT
 }

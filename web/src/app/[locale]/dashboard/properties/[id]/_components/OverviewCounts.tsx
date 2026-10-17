@@ -10,7 +10,8 @@ import { isAbortError } from "@/lib/api/abort";
 type UnitRow = { occupancy?: string | null; status?: string | null };
 
 export type UnitCounts = { total: number; occupied: number; vacant: number; reserved: number; maintenance: number };
-export type ParkingSummary = { total: number; assigned: number; free: number; inactive: number };
+/** `attached` = active bays attached to a unit (never bookable); `free = total - assigned - attached`. Absent on an older server. */
+export type ParkingSummary = { total: number; assigned: number; free: number; inactive: number; attached?: number };
 
 /**
  * Demo feedback 2026-09-29: the Overview's unit tiles, from the units the page
@@ -84,9 +85,10 @@ export function OverviewCounts({ units, propertyId, showParking }: { units: Unit
                         <Car size={12} className="text-primary/40" />
                         {t("overviewParking")}
                     </p>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-2 gap-3">
                         <Tile label={t("parkingTotal")} value={parking.total} testId="overview-parking-total" />
                         <Tile label={t("parkingAssigned")} value={parking.assigned} testId="overview-parking-assigned" tone="text-success" />
+                        <Tile label={t("parkingAttached")} value={parking.attached ?? 0} testId="overview-parking-attached" tone="text-info" />
                         <Tile label={t("parkingFree")} value={parking.free} testId="overview-parking-free" tone="text-warning" />
                     </div>
                     {parking.inactive > 0 && (

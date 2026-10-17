@@ -14,6 +14,7 @@ import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -72,11 +73,74 @@ public interface BookingRequestRepository extends JpaRepository<BookingRequest, 
     List<BookingRequest> findByTenantIdAndRenterUserIdAndAmenityIdAndStatusIn(
             UUID tenantId, UUID renterUserId, UUID amenityId, Collection<BookingRequestStatus> statuses);
 
-    boolean existsByParkingSpotIdAndStatus(UUID parkingSpotId, BookingRequestStatus status);
+    /**
+     * Attached parking (changeset 175): whether an APPROVED booking of the bay, other
+     * than {@code excludeId}, has dates overlapping {@code [from, to]} (inclusive). A
+     * stored null bound is an open end; callers pass {@code BookingService.FAR_PAST} /
+     * {@code FAR_FUTURE} for theirs. The JPQL twin of ex_booking_spot_no_overlap.
+     */
+    @Query("""
+        SELECT COUNT(b) > 0 FROM BookingRequest b
+        WHERE b.tenantId = :tenantId AND b.parkingSpotId = :spotId
+          AND b.status = com.datagami.rentaxis.domain.entity.enums.BookingRequestStatus.APPROVED
+          AND b.id <> :excludeId
+          AND (b.preferredEndDate IS NULL OR b.preferredEndDate >= :from)
+          AND (b.preferredDate IS NULL OR b.preferredDate <= :to)
+        """)
+    boolean existsApprovedSpotOverlap(@Param("tenantId") UUID tenantId, @Param("spotId") UUID spotId,
+                                      @Param("from") LocalDate from, @Param("to") LocalDate to,
+                                      @Param("excludeId") UUID excludeId);
+
+    /**
+     * The bays among {@code spotIds} held on {@code day}: an APPROVED booking whose
+     * dates cover it. An ended booking no longer holds its bay.
+     */
+    @Query("""
+        SELECT DISTINCT b.parkingSpotId FROM BookingRequest b
+        WHERE b.tenantId = :tenantId AND b.parkingSpotId IN :spotIds
+          AND b.status = com.datagami.rentaxis.domain.entity.enums.BookingRequestStatus.APPROVED
+          AND (b.preferredDate IS NULL OR b.preferredDate <= :day)
+          AND (b.preferredEndDate IS NULL OR b.preferredEndDate >= :day)
+        """)
+    List<UUID> findSpotIdsHeldOn(@Param("tenantId") UUID tenantId,
+                                 @Param("spotIds") Collection<UUID> spotIds,
+                                 @Param("day") LocalDate day);
+
+    /**
+     * APPROVED bookings of these bays that have not ended by {@code day} — the
+     * renter's "booked from … to …" hint. Dates only reach the renter, never who.
+     */
+    @Query("""
+        SELECT b FROM BookingRequest b
+        WHERE b.tenantId = :tenantId AND b.parkingSpotId IN :spotIds
+          AND b.status = com.datagami.rentaxis.domain.entity.enums.BookingRequestStatus.APPROVED
+          AND (b.preferredEndDate IS NULL OR b.preferredEndDate >= :day)
+        ORDER BY b.preferredDate ASC NULLS FIRST, b.createdAt ASC
+        """)
+    List<BookingRequest> findApprovedSpotBookingsNotEndedBy(@Param("tenantId") UUID tenantId,
+                                                            @Param("spotIds") Collection<UUID> spotIds,
+                                                            @Param("day") LocalDate day);
+
+    /**
+     * Whether the bay has a PENDING or APPROVED booking reaching {@code day} or later
+     * (an open end always does) — such a bay cannot be attached to a unit.
+     */
+    @Query("""
+        SELECT COUNT(b) > 0 FROM BookingRequest b
+        WHERE b.tenantId = :tenantId AND b.parkingSpotId = :spotId
+          AND b.status IN (com.datagami.rentaxis.domain.entity.enums.BookingRequestStatus.PENDING,
+                           com.datagami.rentaxis.domain.entity.enums.BookingRequestStatus.APPROVED)
+          AND (b.preferredEndDate IS NULL OR b.preferredEndDate >= :day)
+        """)
+    boolean existsOpenSpotBookingReaching(@Param("tenantId") UUID tenantId, @Param("spotId") UUID spotId,
+                                          @Param("day") LocalDate day);
 
     long countByAmenityIdAndStatus(UUID amenityId, BookingRequestStatus status);
 
     long countByParkingSpotIdAndStatus(UUID parkingSpotId, BookingRequestStatus status);
+
+    /** Any request at all, in any status, for one bay of one tenant (import-batch discard). */
+    long countByTenantIdAndParkingSpotId(UUID tenantId, UUID parkingSpotId);
 
     List<BookingRequest> findByAmenityIdAndStatusInOrderByCreatedAtAsc(
             UUID amenityId, Collection<BookingRequestStatus> statuses);

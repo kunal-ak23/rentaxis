@@ -1,0 +1,112 @@
+# Attached parking (2026-10-17 ruling): "only parkings that are not attached to any
+# units are available for buying and for the duration they are bought they will be
+# unavailable so parking is attached to the unit only."
+#
+#   1. parking_spots.attached_unit_id — a bay allocated to one unit (a unit may have
+#      several). The FK is composite with tenant_id, so the database itself refuses
+#      a bay pointing at another organisation's unit; deleting the unit detaches the
+#      bay (SET NULL on attached_unit_id only — tenant_id stays).
+#   2. A parking bay is held for the dates its approved booking covers, not forever.
+#      uq_booking_spot_active (69) allowed one APPROVED row per spot whatever the
+#      dates, so an ended booking blocked the bay until someone released it. It is
+#      replaced by an exclusion constraint on the date range, the same way 116
+#      replaced the one-live-lease-per-unit index.
+databaseChangeLog:
+  - changeSet:
+      id: 175-parking-attached-unit
+      author: claude
+      comment: parking_spots.attached_unit_id, same-tenant FK to units
+      changes:
+        - addColumn:
+            tableName: parking_spots
+            columns:
+              - column: { name: attached_unit_id, type: uuid }
+        - sql:
+            sql: |
+              ALTER TABLE units ADD CONSTRAINT uq_units_id_tenant UNIQUE (id, tenant_id);
+              ALTER TABLE parking_spots ADD CONSTRAINT fk_spot_attached_unit
+                FOREIGN KEY (attached_unit_id, tenant_id) REFERENCES units (id, tenant_id)
+                ON DELETE SET NULL (attached_unit_id);
+              CREATE INDEX idx_parking_spots_attached_unit ON parking_spots (tenant_id, attached_unit_id)
+                WHERE attached_unit_id IS NOT NULL;
+      rollback:
+        - sql:
+            sql: |
+              DROP INDEX IF EXISTS idx_parking_spots_attached_unit;
+              ALTER TABLE parking_spots DROP CONSTRAINT IF EXISTS fk_spot_attached_unit;
+              ALTER TABLE units DROP CONSTRAINT IF EXISTS uq_units_id_tenant;
+              ALTER TABLE parking_spots DROP COLUMN IF EXISTS attached_unit_id;
+
+  - changeSet:
+      id: 175-drop-one-approved-booking-per-spot
+      author: claude
+      comment: Drop uq_booking_spot_active; a bay is held only for its booked dates
+      changes:
+        - sql:
+            sql: DROP INDEX IF EXISTS uq_booking_spot_active
+      rollback:
+        - sql:
+            sql: >-
+              CREATE UNIQUE INDEX IF NOT EXISTS uq_booking_spot_active
+              ON booking_requests (parking_spot_id) WHERE status = 'APPROVED' AND parking_spot_id IS NOT NULL
+
+  # Separate changeset, as in 116: a database holding a malformed range (end before
+  # start) keeps the index drop and starts normally; BookingService refuses overlaps
+  # under the bay's row lock, and the constraint is created on the first deploy after
+  # the row is corrected. A NULL bound is an open end (a legacy undated request).
+  - changeSet:
+      id: 175-no-overlapping-parking-bookings
+      author: claude
+      comment: Exclusion constraint - no two APPROVED bookings of one bay with overlapping dates
+      preConditions:
+        - onFail: CONTINUE
+        - onError: CONTINUE
+        - onFailMessage: >-
+            Skipped 175-no-overlapping-parking-bookings: this database has an approved
+            parking booking whose end date is before its start date, or two approved
+            bookings of one bay that overlap. Startup continues and the service layer
+            prevents new overlaps. Correct them and the constraint is created on the
+            next deploy.
+        - sqlCheck:
+            expectedResult: 0
+            sql: >-
+              SELECT (SELECT count(*) FROM booking_requests
+                       WHERE status = 'APPROVED' AND parking_spot_id IS NOT NULL
+                         AND preferred_end_date < preferred_date)
+                   + (SELECT count(*) FROM booking_requests a JOIN booking_requests b
+                        ON a.parking_spot_id = b.parking_spot_id AND a.id < b.id
+                      WHERE a.status = 'APPROVED' AND b.status = 'APPROVED'
+                        AND (a.preferred_date IS NULL OR b.preferred_end_date IS NULL OR a.preferred_date <= b.preferred_end_date)
+                        AND (b.preferred_date IS NULL OR a.preferred_end_date IS NULL OR b.preferred_date <= a.preferred_end_date))
+      changes:
+        - sql:
+            sql: CREATE EXTENSION IF NOT EXISTS btree_gist
+        - sql:
+            sql: >-
+              ALTER TABLE booking_requests ADD CONSTRAINT ex_booking_spot_no_overlap
+              EXCLUDE USING gist (parking_spot_id WITH =,
+                                  daterange(preferred_date, preferred_end_date, '[]') WITH &&)
+              WHERE (status = 'APPROVED' AND parking_spot_id IS NOT NULL)
+      rollback:
+        - sql:
+            sql: ALTER TABLE booking_requests DROP CONSTRAINT IF EXISTS ex_booking_spot_no_overlap
+
+  # A cut-over import that creates bays from the Parking sheet records them in
+  # import_batch_entities, so discarding a DRAFT batch deletes them before the
+  # property they belong to (otherwise the property is kept as still referenced).
+  - changeSet:
+      id: 175-import-batch-entities-parking-spot
+      author: claude
+      changes:
+        - sql:
+            sql: >-
+              ALTER TABLE import_batch_entities DROP CONSTRAINT ck_import_batch_entities_type;
+              ALTER TABLE import_batch_entities ADD CONSTRAINT ck_import_batch_entities_type
+                CHECK (entity_type IN ('PROPERTY','BUILDING','UNIT','RENTER','PARKING_SPOT'))
+      rollback:
+        - sql:
+            sql: >-
+              DELETE FROM import_batch_entities WHERE entity_type = 'PARKING_SPOT';
+              ALTER TABLE import_batch_entities DROP CONSTRAINT ck_import_batch_entities_type;
+              ALTER TABLE import_batch_entities ADD CONSTRAINT ck_import_batch_entities_type
+                CHECK (entity_type IN ('PROPERTY','BUILDING','UNIT','RENTER'))

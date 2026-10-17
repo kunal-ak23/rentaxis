@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service.cutover;
 
+import com.datagami.rentaxis.core.service.PortfolioImportPersistService;
 import com.datagami.rentaxis.api.dto.ImportErrorDTO;
 import com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO;
 import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
@@ -171,6 +172,14 @@ public class ContractImportPersistService {
         Contracts contracts = writeContracts(wb, properties.byName(), units.byKey(), rentersByEmail,
                 accountsByName, batch, chunks);
         int chequesCreated = writeCheques(wb, contracts, accountsByName, chunks);
+        // Changeset 175: the optional Parking sheet, after the units it may attach
+        // bays to, in this same transaction.
+        PortfolioImportPersistService.ParkingImportCounts parking = parkingImport == null
+                ? PortfolioImportPersistService.ParkingImportCounts.NONE
+                : parkingImport.persistParkingSheet(wb);
+        for (UUID spotId : parking.createdIds()) {
+            batches.linkEntity(batch.getId(), ImportedEntityType.PARKING_SPOT, spotId);
+        }
 
         // Roles nobody named and no template covers: reported, never guessed. A lease
         // whose role is unmapped imports fine and refuses to post, and finding that
@@ -193,6 +202,7 @@ public class ContractImportPersistService {
         details.setContractsCreated(contracts.byNumber().size());
         details.setChequesFromSheet(chequesCreated);
         details.setMappingsCreated(properties.mappingsCreated());
+        parking.writeTo(details);
         try {
             job.setErrors(JOB_DETAILS_MAPPER.writeValueAsString(details));
         } catch (Exception e) {
@@ -203,6 +213,17 @@ public class ContractImportPersistService {
         return new ContractImportSummary(batch.getId(), properties.byName().size(), units.buildings(),
                 units.byKey().size(), rentersCreated, contracts.byNumber().size(),
                 chequesCreated, properties.mappingsCreated(), warnings);
+    }
+
+    private PortfolioImportPersistService parkingImport;
+
+    /**
+     * Setter-injected and lazy: the Parking sheet's writer lives with the v1 persist
+     * service, which reaches back into the cut-over package for its post phase.
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setParkingImport(@org.springframework.context.annotation.Lazy PortfolioImportPersistService parkingImport) {
+        this.parkingImport = parkingImport;
     }
 
     private static String batchLabel(ImportJob job) {

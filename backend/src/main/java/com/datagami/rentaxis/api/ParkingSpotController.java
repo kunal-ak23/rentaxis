@@ -3,6 +3,7 @@ package com.datagami.rentaxis.api;
 import com.datagami.rentaxis.core.security.PropertyScope;
 import com.datagami.rentaxis.api.dto.ParkingSpotBulkCreateRequest;
 import com.datagami.rentaxis.api.dto.ParkingSpotCreateRequest;
+import com.datagami.rentaxis.api.dto.ParkingSpotAttachmentRequest;
 import com.datagami.rentaxis.api.dto.ParkingSpotDTO;
 import com.datagami.rentaxis.api.dto.ParkingSpotUpdateRequest;
 import com.datagami.rentaxis.api.dto.ParkingSummaryDTO;
@@ -34,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -71,13 +73,15 @@ public class ParkingSpotController {
 
         List<UUID> ids = page.getContent().stream().map(ParkingSpot::getId).toList();
         Map<UUID, Long> pendingCounts = batchCounts(tenantId, ids, BookingRequestStatus.PENDING);
-        Map<UUID, Long> approvedCounts = batchCounts(tenantId, ids, BookingRequestStatus.APPROVED);
+        Set<UUID> heldToday = bookingService.spotsHeldToday(tenantId, ids);
         Map<UUID, List<UUID>> buildingIdsBySpot = batchBuildingIds(ids);
+        Map<UUID, FacilityService.AttachedUnit> attached = facilityService.attachedUnits(tenantId, page.getContent());
 
         return ResponseEntity.ok(page.map(s -> toDTO(s,
                 buildingIdsBySpot.getOrDefault(s.getId(), List.of()),
-                approvedCounts.getOrDefault(s.getId(), 0L) > 0,
-                pendingCounts.getOrDefault(s.getId(), 0L))));
+                heldToday.contains(s.getId()),
+                pendingCounts.getOrDefault(s.getId(), 0L),
+                attached)));
     }
 
     /**
@@ -111,14 +115,17 @@ public class ParkingSpotController {
         // return empty maps) so this path can't silently regress to per-row lookups.
         List<UUID> ids = created.stream().map(ParkingSpot::getId).toList();
         Map<UUID, Long> pendingCounts = batchCounts(tenantId, ids, BookingRequestStatus.PENDING);
-        Map<UUID, Long> approvedCounts = batchCounts(tenantId, ids, BookingRequestStatus.APPROVED);
+        Set<UUID> heldToday = bookingService.spotsHeldToday(tenantId, ids);
         Map<UUID, List<UUID>> buildingIdsBySpot = batchBuildingIds(ids);
+
+        Map<UUID, FacilityService.AttachedUnit> attached = facilityService.attachedUnits(tenantId, created);
 
         List<ParkingSpotDTO> dtos = created.stream()
                 .map(s -> toDTO(s,
                         buildingIdsBySpot.getOrDefault(s.getId(), List.of()),
-                        approvedCounts.getOrDefault(s.getId(), 0L) > 0,
-                        pendingCounts.getOrDefault(s.getId(), 0L)))
+                        heldToday.contains(s.getId()),
+                        pendingCounts.getOrDefault(s.getId(), 0L),
+                        attached))
                 .toList();
         return ResponseEntity.status(HttpStatus.CREATED).body(dtos);
     }
@@ -129,6 +136,22 @@ public class ParkingSpotController {
         UUID tenantId = TenantContextHolder.getTenantId();
         checkPropertyManagerAccess(facilityService.getParkingSpot(tenantId, id).getPropertyId());
         return ResponseEntity.ok(toDTO(facilityService.updateParkingSpot(tenantId, id, req)));
+    }
+
+    /**
+     * Attached parking (2026-10-17 ruling): {@code {"unitId": "<uuid>"}} allocates the
+     * bay to that unit of its property (and towers); {@code {"unitId": null}} detaches
+     * it so it is bookable again. Refused while the bay has an approved or pending
+     * booking reaching today or later. The unit is looked up in the caller's tenant
+     * only, so another organisation's unit is a 404.
+     */
+    @PutMapping("/{id}/attachment")
+    public ResponseEntity<ParkingSpotDTO> setAttachment(@PathVariable UUID id,
+                                                        @RequestBody ParkingSpotAttachmentRequest req) {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        checkPropertyManagerAccess(facilityService.getParkingSpot(tenantId, id).getPropertyId());
+        return ResponseEntity.ok(toDTO(facilityService.setParkingSpotAttachment(
+                tenantId, id, req == null ? null : req.unitId())));
     }
 
     /** Soft-deactivate — existing booking requests are untouched. */
@@ -172,14 +195,22 @@ public class ParkingSpotController {
 
     /** Single-resource mapping for create/update/delete responses — batch mapping is used for list() and bulkCreate(). */
     private ParkingSpotDTO toDTO(ParkingSpot s) {
+        UUID tenantId = TenantContextHolder.getTenantId();
         return toDTO(s, facilityService.parkingSpotBuildingIds(s.getId()),
-                bookingService.spotHeld(s.getId()), bookingService.countPendingForSpot(s.getId()));
+                bookingService.spotHeld(tenantId, s.getId()), bookingService.countPendingForSpot(s.getId()),
+                facilityService.attachedUnits(tenantId, List.of(s)));
     }
 
-    private ParkingSpotDTO toDTO(ParkingSpot s, List<UUID> buildingIds, boolean held, long pendingCount) {
+    private ParkingSpotDTO toDTO(ParkingSpot s, List<UUID> buildingIds, boolean held, long pendingCount,
+                                 Map<UUID, FacilityService.AttachedUnit> attachedUnits) {
+        FacilityService.AttachedUnit unit = s.getAttachedUnitId() == null ? null : attachedUnits.get(s.getAttachedUnitId());
         return new ParkingSpotDTO(s.getId(), s.getPropertyId(), s.getSpotNumber(), s.getLevel(),
-                photoUrls(s.getPhotoUrls()), s.isCovered(), s.isActive(), buildingIds, held, pendingCount,
-                s.getCreatedAt(), s.getUpdatedAt(), s.getFeeType(), s.getFeeAmount());
+                photoUrls(s.getPhotoUrls()), s.isCovered(), s.isActive(), buildingIds,
+                // An attached bay is not bookable, so never "held" by a booking.
+                held && s.getAttachedUnitId() == null, pendingCount,
+                s.getCreatedAt(), s.getUpdatedAt(), s.getFeeType(), s.getFeeAmount(),
+                s.getAttachedUnitId(), unit == null ? null : unit.unitNumber(),
+                unit == null ? null : unit.buildingName());
     }
 
     private List<String> photoUrls(String raw) {

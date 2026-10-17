@@ -48,6 +48,11 @@ public interface PropertyRepository extends JpaRepository<Property, UUID> {
      */
     List<Property> findByTenantIdAndNameEnIn(UUID tenantId, Collection<String> names);
 
+    /** The same, matching names case-insensitively; {@code lowerNames} must already be lower-cased. */
+    @Query("select p from Property p where p.tenantId = :tenantId and lower(p.nameEn) in :lowerNames")
+    List<Property> findByTenantIdAndNameEnLowerIn(@Param("tenantId") UUID tenantId,
+                                                  @Param("lowerNames") Collection<String> lowerNames);
+
     /**
      * Explicit tenant-scoped existence check. Used to verify a property
      * belongs to a given tenant before assigning it to a user, without
