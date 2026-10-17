@@ -44,6 +44,7 @@ vi.mock("@/lib/api/badDebts", async orig => {
 });
 
 import SettlementPage from "../page";
+import { groupFeeRefunds } from "@/components/leases/settlementMath";
 
 const LEASE = {
     id: "lease-1", unitId: "u1", renterId: "r1", unitIdentifier: "204", renterName: "Prabhjot Singh",
@@ -104,7 +105,7 @@ describe("Unearned fee refund offer (ruling R1)", () => {
                 from: "2026-01-01", to: "2026-12-31", days: 365, unearnedDays: 184, amount: 1840 }],
         } as SettlementStatement);
         renderPage();
-        const box = await screen.findByTestId("settlement-unearned-fee-l2");
+        const box = await screen.findByTestId("settlement-unearned-fee-acc-parking");
         expect(box).not.toBeChecked();
         expect(screen.getByTestId("settlement-unearned-fees")).toHaveTextContent("Parking: 184 of 365 days unearned");
         expect(screen.getByTestId("settlement-total-additions")).toHaveTextContent("0.00");
@@ -113,5 +114,17 @@ describe("Unearned fee refund offer (ruling R1)", () => {
         expect(screen.getByTestId("settlement-total-additions")).toHaveTextContent("1,840.00");
         fireEvent.click(box);
         expect(screen.getByTestId("settlement-total-additions")).not.toHaveTextContent("1,840.00");
+    });
+});
+
+describe("groupFeeRefunds (review P3-1)", () => {
+    it("merges two fees on one income leaf into one offer and keeps others apart", () => {
+        const o = (id: string, acc: string, name: string, amount: number) => ({ leaseLineId: id, chargeTypeCode: name,
+            chargeTypeName: name, chargeTypeNameAr: null, accountId: acc, accountName: null, lineAmount: 0,
+            from: "2026-01-01", to: "2026-12-31", days: 365, unearnedDays: 184, amount });
+        const merged = groupFeeRefunds([o("a", "acc-1", "Parking", 1840), o("b", "acc-1", "Parking 2", 920.5), o("c", "acc-2", "Cooling", 10)]);
+        expect(merged).toHaveLength(2);
+        expect(merged[0]).toMatchObject({ accountId: "acc-1", amount: 2760.5, chargeTypeName: "Parking + Parking 2" });
+        expect(merged[1]).toMatchObject({ accountId: "acc-2", amount: 10 });
     });
 });

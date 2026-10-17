@@ -23,7 +23,7 @@ import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 import { clampIso, fmtIsoDate, isoDayAfter, maxIso, todayIso } from "@/components/leases/leaseMath";
 import { businessTodayIso, isAfterBusinessToday } from "@/lib/businessDate";
 import {
-    netRefundOf, round2, toSaveLines, totalOf, totalVatOf, withLineVat, type SettlementRow,
+    groupFeeRefunds, netRefundOf, round2, toSaveLines, totalOf, totalVatOf, withLineVat, type SettlementRow,
 } from "@/components/leases/settlementMath";
 import {
     ApiError, leaseApi, settlementApi,
@@ -459,8 +459,11 @@ export default function SettlementPage() {
 
     /**
      * Follow-up ruling R1: tick an unearned at-posting fee to refund it (an UNEARNED_FEE_REFUND
-     * addition on the fee's own income leaf); untick to drop it. Off by default.
+     * addition on the fee's own income leaf); untick to drop it. Off by default. Review P3-1:
+     * a refund row is keyed by its income leaf (the server caps refunds per leaf), so fees that
+     * share a leaf are offered as one line with their amounts added.
      */
+    const feeOffers = useMemo(() => groupFeeRefunds(statement?.unearnedFeeRefunds ?? []), [statement]);
     const isRefunding = (o: UnearnedFeeRefund) =>
         rows.some(r => r.type === "ADDITION" && r.category === "UNEARNED_FEE_REFUND" && r.accountId === o.accountId);
     const toggleFeeRefund = (o: UnearnedFeeRefund, on: boolean) => {
@@ -894,13 +897,13 @@ export default function SettlementPage() {
                     )}
                 </div>
                 {/* Follow-up ruling R1: unearned at-posting periodic fees, offered and off by default. */}
-                {(statement?.unearnedFeeRefunds?.length ?? 0) > 0 && (
+                {feeOffers.length > 0 && (
                     <div className="px-4 py-3 border-b border-border space-y-2" data-testid="settlement-unearned-fees">
                         <p className="text-[11px] text-muted">{t("unearnedFeesHint")}</p>
-                        {statement!.unearnedFeeRefunds!.map(o => (
-                            <label key={o.leaseLineId} className="flex items-start gap-2 text-xs cursor-pointer">
+                        {feeOffers.map(o => (
+                            <label key={o.accountId} className="flex items-start gap-2 text-xs cursor-pointer">
                                 <input type="checkbox" className="mt-0.5"
-                                       data-testid={`settlement-unearned-fee-${o.leaseLineId}`}
+                                       data-testid={`settlement-unearned-fee-${o.accountId}`}
                                        disabled={!editable}
                                        checked={isRefunding(o)}
                                        onChange={e => toggleFeeRefund(o, e.target.checked)} />
