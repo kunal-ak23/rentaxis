@@ -50,6 +50,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class VatReturnServiceIT extends AbstractPostgresIT {
 
     @Autowired VatReturnService service;
+    @Autowired org.springframework.transaction.support.TransactionTemplate tx;
     @Autowired com.datagami.rentaxis.core.service.ledger.PostingService postingService;
     @Autowired com.datagami.rentaxis.core.service.lease.LeaseTerminationService termination;
     @Autowired VatTaxPointService vatTaxPoints;
@@ -244,6 +245,47 @@ class VatReturnServiceIT extends AbstractPostgresIT {
         invoice(LocalDate.of(2026, 6, 11), "GC-4", "100.00", "5");
         assertThat(service.get(Q2).status()).isEqualTo("OPEN");
         assertThat(service.filings()).extracting(VatReturnDTO.Filing::status).containsExactly("REOPENED");
+    }
+
+    /**
+     * #101: the first two filings of a tenant, for overlapping quarters with different
+     * starts (01/04 and 01/05), raced past the overlap check — no row existed to lock and
+     * the unique index only covers the same start. The second now waits for the first
+     * and is refused as overlapping.
+     */
+    @Test
+    void concurrentFirstFilingsOfOverlappingQuartersAreSerialised() throws Exception {
+        UUID tenant = fixtures.tenantId();
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        var filed = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        java.util.function.Function<java.util.concurrent.Callable<VatReturnDTO>, java.util.concurrent.Future<VatReturnDTO>> inTenant =
+                work -> pool.submit(() -> {
+                    TenantContextHolder.setTenantId(tenant);
+                    LeaseTestFixtures.authenticateAsTenantAdmin();
+                    try { return work.call(); } finally { TenantContextHolder.clear(); LeaseTestFixtures.clearAuth(); }
+                });
+        try {
+            var first = inTenant.apply(() -> tx.execute(st -> {
+                VatReturnDTO r = service.file(Q2, "FTA-A");
+                filed.countDown();
+                try { release.await(20, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException e) { throw new RuntimeException(e); }
+                return r;
+            }));
+            assertThat(filed.await(20, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            var second = inTenant.apply(() -> service.file(LocalDate.of(2026, 5, 1), "FTA-B"));
+            Thread.sleep(700);
+            assertThat(second.isDone()).as("the second filing waits for the first").isFalse();
+            release.countDown();
+            assertThat(first.get(20, java.util.concurrent.TimeUnit.SECONDS).status()).isEqualTo("FILED");
+            assertThatThrownBy(() -> second.get(20, java.util.concurrent.TimeUnit.SECONDS))
+                    .rootCause().isInstanceOf(BusinessRuleViolationException.class)
+                    .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("vat.periodOverlaps"));
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+        assertThat(service.filings()).extracting(VatReturnDTO.Filing::status).containsExactly("FILED");
     }
 
     /**
