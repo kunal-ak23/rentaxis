@@ -158,7 +158,27 @@ public final class BankRecDTOs {
                                  Map<String, Integer> matchedByMethod, List<Check> checks, boolean canFinalize,
                                  Instant preparedAt, String preparedByName, Instant finalizedAt,
                                  String finalizedByName, Instant reopenedAt, String reopenedByName,
-                                 String reopenReason) { }
+                                 String reopenReason, List<UnprovenDay> unprovenDays,
+                                 String dayTotalsVerdict) { }
+
+    /**
+     * Review P2-3: a day of the period where a file's line was taken for an identical
+     * stored one without the file holding the whole day. {@code status}: NEEDED (type
+     * the day's total debits and credits from the paper statement) or ENTERED. Whether
+     * they agree with the stored lines is said only overall, once every day's totals are
+     * entered (LINE_ORDER; review P3-20), and the lines' own totals are never shown, so
+     * neither can be probed or copied.
+     */
+    public record UnprovenDay(LocalDate date, BigDecimal typedDebits, BigDecimal typedCredits, String status) { }
+
+    // Final review P3-21: dayTotalsVerdict on Reconciliation — null when no day is unproven;
+    // PENDING while a day's totals are still needed; AGREE / DISAGREE once all are entered.
+
+    /** One day's totals from the paper statement; both null removes them. */
+    public record DayTotalInput(@NotNull LocalDate date, @com.datagami.rentaxis.api.validation.Money BigDecimal debits,
+                                @com.datagami.rentaxis.api.validation.Money BigDecimal credits) { }
+
+    public record DayTotalsInput(@NotNull List<@jakarta.validation.Valid DayTotalInput> days) { }
 
     public record AutoMatchResult(int proposed, Map<String, Integer> byMethod) { }
 

@@ -45,7 +45,13 @@ public final class StatementMapper {
      * naming its row; the import is refused while there are any.
      */
     public record Result(List<Row> rows, List<String> errors, List<String> warnings, List<String> missingColumns,
-                         BigDecimal openingBalance, BigDecimal closingBalance, boolean hasBalance, Order order) {
+                         BigDecimal openingBalance, BigDecimal closingBalance, boolean hasBalance, Order order,
+                         boolean openingRow, boolean closingRow) {
+        public Result(List<Row> rows, List<String> errors, List<String> warnings, List<String> missingColumns,
+                      BigDecimal openingBalance, BigDecimal closingBalance, boolean hasBalance, Order order) {
+            this(rows, errors, warnings, missingColumns, openingBalance, closingBalance, hasBalance, order, false, false);
+        }
+
         public boolean ok() {
             return errors.isEmpty() && missingColumns.isEmpty();
         }
@@ -94,6 +100,8 @@ public final class StatementMapper {
         List<Row> rows = new ArrayList<>();
         BigDecimal opening = null;
         BigDecimal closing = null;
+        LocalDate openingDate = null;
+        LocalDate closingDate = null;
         int balanceMissing = 0;
         for (int r = Math.max(p.getFirstDataRow(), 1) - 1; r < grid.rows().size() && errors.size() < MAX_ERRORS; r++) {
             int fileRow = r + 1;
@@ -125,8 +133,18 @@ public final class StatementMapper {
             if (amount == null) {
                 if (OPENING.matcher(description).find()) {
                     opening = balance;
+                    try {
+                        openingDate = noDate ? null : StatementValues.date(dateCell, formats);
+                    } catch (DateTimeParseException e) {
+                        openingDate = null;
+                    }
                 } else if (CLOSING.matcher(description).find()) {
                     closing = balance;
+                    try {
+                        closingDate = noDate ? null : StatementValues.date(dateCell, formats);
+                    } catch (DateTimeParseException e) {
+                        closingDate = null;
+                    }
                 } else if (!(noDate || TOTAL.matcher(description).find())) {
                     errors.add("Row " + fileRow + ": no amount");
                 }
@@ -193,11 +211,38 @@ public final class StatementMapper {
             case REVERSED -> reversed(rows);
             case DATE -> rows.stream().sorted(Comparator.comparing(Row::txnDate)).toList();
         };
+        // Review P2-3 (2), P2-4: an explicit "Opening balance" / "Closing balance" row.
+        // Agreeing with the lines' running balance proves only that no line is missing
+        // inside the file, not where its window began: a time-window export prints one
+        // at a mid-day edge. So an Opening row counts as proof that the first day is
+        // held from its start only when the row is dated before the first line's day
+        // (the window demonstrably began on an earlier day). A Closing row is reported
+        // as proof that the last day is held to its end only when the row is dated after
+        // the last line's day (final review: a midday export's "Available balance", once
+        // imported on a later day, is not the end of the day). Otherwise both stay
+        // balance cross-checks.
+        boolean openingRow = false, closingRow = false;
         if (hasBalance && !book.isEmpty()) {
-            if (opening == null) opening = book.get(0).balance().subtract(book.get(0).amount());
-            if (closing == null) closing = book.get(book.size() - 1).balance();
+            BigDecimal firstBefore = book.get(0).balance().subtract(book.get(0).amount());
+            BigDecimal lastAfter = book.get(book.size() - 1).balance();
+            openingRow = opening != null && opening.compareTo(firstBefore) == 0
+                    && openingProves(openingDate, book.get(0).txnDate());
+            closingRow = closing != null && closing.compareTo(lastAfter) == 0
+                    && closingProves(closingDate, book.get(book.size() - 1).txnDate());
+            if (opening == null) opening = firstBefore;
+            if (closing == null) closing = lastAfter;
         }
-        return new Result(book, errors, warnings, missing, opening, closing, hasBalance, order);
+        return new Result(book, errors, warnings, missing, opening, closing, hasBalance, order, openingRow, closingRow);
+    }
+
+    /** Review P2-4: an Opening row proves its file starts at a day's start only when dated before the first line's day. */
+    static boolean openingProves(LocalDate openingRowDate, LocalDate firstLineDate) {
+        return openingRowDate != null && firstLineDate != null && openingRowDate.isBefore(firstLineDate);
+    }
+
+    /** Final review, P2-4: a Closing row proves its file ends at a day's end only when dated after the last line's day. */
+    static boolean closingProves(LocalDate closingRowDate, LocalDate lastLineDate) {
+        return closingRowDate != null && lastLineDate != null && closingRowDate.isAfter(lastLineDate);
     }
 
     private static final Pattern NUMERIC_DATE = Pattern.compile("^(\\d{1,2})[/.-](\\d{1,2})[/.-](\\d{4}|\\d{2})\\b");

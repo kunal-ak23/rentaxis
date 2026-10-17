@@ -80,24 +80,132 @@ public class OwnedBankLeaf {
                 (rs, i) -> new Operating(rs.getObject("id", UUID.class), rs.getString("bank_name"))).stream().findFirst();
     }
 
-    /** Attaches {@code accountId} to the bank account, unless some bank account already owns it. */
+    /**
+     * Attaches {@code accountId} to the bank account, unless some bank account
+     * already owns it, or the bank account is reconciled and the leaf has postings
+     * on or before that date (#98 M3: a leaf reused by name at property creation
+     * could otherwise slip history into a signed-off reconciliation; the same rule
+     * as {@link BankAccountLedgerService#setLeaves}).
+     */
     @Transactional
-    public void attach(UUID bankAccountId, UUID accountId) {
-        UUID t = TenantContextHolder.getTenantId();
-        if (t == null || bankAccountId == null || accountId == null) return;
-        jdbc.update("""
-                insert into bank_account_ledgers (tenant_id, bank_account_id, account_id)
-                select :t, :b, :a
-                where exists (select 1 from bank_accounts where id = :b and tenant_id = :t)
-                  and exists (select 1 from accounts where id = :a and tenant_id = :t and account_sub_type = 'BANK'
-                              and not is_group)
-                on conflict do nothing""",
-                new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("a", accountId));
+    public Claim attach(UUID bankAccountId, UUID accountId) {
+        return claim(bankAccountId, accountId, false);
+    }
+
+    /** How {@link #claim} ended. */
+    public enum Claim {
+        /** The bank account already owned the leaf. */
+        ALREADY,
+        /** The leaf had no owner; the bank account owns it now. */
+        ADOPTED,
+        /** Another bank account owned this bank account's building's leaf, which had no postings; this one owns it now. */
+        MOVED,
+        /** Another bank account owns the leaf and keeps it. */
+        OWNED_ELSEWHERE,
+        /** The bank account is reconciled and the leaf has postings on or before that date. */
+        LOCKED,
+        /** Not an active BANK leaf of this tenant, or no such bank account. */
+        NOT_A_LEAF
     }
 
     /**
-     * R2 ruling (b): a new bank account takes every property's own bank leaf no
-     * bank account owns yet — the leaves properties created before it generated.
+     * #98 M1: makes {@code bankAccountId} own {@code accountId}.
+     *
+     * <ul>
+     *   <li>An unowned leaf is adopted, unless this bank account is reconciled and
+     *       the leaf has postings on or before that date ({@link Claim#LOCKED}).</li>
+     *   <li>A leaf another bank account owns moves only when {@code moveUnposted},
+     *       the leaf is the own leaf of the property this bank account is attached
+     *       to (a building's own bank), and it has no journal line at all: then no
+     *       reconciliation (finalized or draft), match or book balance of the old
+     *       owner includes anything from it, whether or not the old owner is
+     *       reconciled. Otherwise it stays where it is ({@link Claim#OWNED_ELSEWHERE}):
+     *       a leaf someone put in another account's set is not taken silently.</li>
+     * </ul>
+     *
+     * <p>Both bank-account rows are taken FOR UPDATE, in id order, before the
+     * postings are counted: a posting holds its leaf owner's row FOR SHARE
+     * ({@code BankLockService}), so one in flight finishes first and is counted.</p>
+     */
+    @Transactional
+    public Claim claim(UUID bankAccountId, UUID accountId, boolean moveUnposted) {
+        UUID t = TenantContextHolder.getTenantId();
+        if (t == null || bankAccountId == null || accountId == null) return Claim.NOT_A_LEAF;
+        MapSqlParameterSource p = new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("a", accountId);
+        Integer leaf = jdbc.queryForObject("""
+                select count(*) from accounts where id = :a and tenant_id = :t and account_sub_type = 'BANK'
+                  and not is_group and is_active""", p, Integer.class);
+        if (leaf == null || leaf == 0) return Claim.NOT_A_LEAF;
+        UUID owner = jdbc.queryForList("select bank_account_id from bank_account_ledgers where tenant_id = :t and account_id = :a",
+                p, UUID.class).stream().findFirst().orElse(null);
+        if (bankAccountId.equals(owner)) return Claim.ALREADY;
+        List<java.util.Map<String, Object>> rows = jdbc.queryForList("""
+                select id, reconciled_through from bank_accounts where tenant_id = :t and id in (:ids)
+                order by id for update""",
+                new MapSqlParameterSource("t", t).addValue("ids", owner == null ? List.of(bankAccountId)
+                        : List.of(bankAccountId, owner)));
+        java.time.LocalDate locked = null;
+        boolean found = false;
+        for (java.util.Map<String, Object> r : rows) {
+            if (!bankAccountId.equals(r.get("id"))) continue;
+            found = true;
+            Object d = r.get("reconciled_through");
+            if (d instanceof java.sql.Date sd) locked = sd.toLocalDate();
+            else if (d instanceof java.time.LocalDate ld) locked = ld;
+        }
+        if (!found) return Claim.NOT_A_LEAF;
+        if (locked != null && postings(t, accountId, locked) > 0) return Claim.LOCKED;
+        if (owner == null) {
+            int n = jdbc.update("""
+                    insert into bank_account_ledgers (tenant_id, bank_account_id, account_id) values (:t, :b, :a)
+                    on conflict do nothing""", p);
+            return n > 0 ? Claim.ADOPTED : Claim.OWNED_ELSEWHERE;
+        }
+        if (!moveUnposted || !buildingLeaf(t, bankAccountId, accountId) || postings(t, accountId, null) > 0) {
+            return Claim.OWNED_ELSEWHERE;
+        }
+        jdbc.update("""
+                update bank_account_ledgers set bank_account_id = :b
+                where tenant_id = :t and account_id = :a and bank_account_id = :o""", p.addValue("o", owner));
+        // S20-04: a building's leaf is named "<operating bank> - <building>" when the
+        // operating bank takes it at property creation; on the move it takes the new
+        // bank's name, so the chart does not say one bank while another owns it. Only
+        // that exact generated name changes (review P3-17); a name someone typed is kept.
+        jdbc.update("""
+                update accounts a set name = nb.bank_name || ' - ' || p.name_en, updated_at = now()
+                  from bank_accounts ob, bank_accounts nb, properties p
+                 where a.id = :a and a.tenant_id = :t
+                   and ob.id = :o and ob.tenant_id = :t and nb.id = :b and nb.tenant_id = :t
+                   and p.id = a.property_id and p.tenant_id = :t
+                   and ob.bank_name <> nb.bank_name
+                   and a.name = ob.bank_name || ' - ' || p.name_en""", p);
+        return Claim.MOVED;
+    }
+
+    /** Whether the leaf is scoped to the very property the bank account is attached to. */
+    public boolean buildingLeaf(UUID t, UUID bankAccountId, UUID accountId) {
+        Integer n = jdbc.queryForObject("""
+                select count(*) from bank_accounts b join accounts a on a.tenant_id = b.tenant_id and a.id = :a
+                where b.id = :b and b.tenant_id = :t and b.property_id is not null and a.property_id = b.property_id""",
+                new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("a", accountId), Integer.class);
+        return n != null && n > 0;
+    }
+
+    /** Journal lines on the leaf, dated on or before {@code through} (all of them when null). */
+    private int postings(UUID t, UUID accountId, java.time.LocalDate through) {
+        Integer n = jdbc.queryForObject("""
+                select count(*) from journal_lines jl join journal_entries je on je.id = jl.journal_entry_id
+                where jl.tenant_id = :t and jl.account_id = :a and (cast(:r as date) is null or je.entry_date <= :r)""",
+                new MapSqlParameterSource("t", t).addValue("a", accountId).addValue("r", through), Integer.class);
+        return n == null ? 0 : n;
+    }
+
+    /**
+     * R2 ruling (b), scoped by #98 M2: a new bank account takes the properties' own
+     * bank leaves (their BANK mapping) no bank account owns yet — the leaves
+     * properties created before it generated — within its scope: a bank account
+     * attached to a property takes only that property's; one for the whole
+     * organisation takes every property's. Hand-made BANK leaves are never taken.
      * @return how many leaves it took
      */
     @Transactional
@@ -106,10 +214,13 @@ public class OwnedBankLeaf {
         if (t == null || bankAccountId == null) return 0;
         return jdbc.update("""
                 insert into bank_account_ledgers (tenant_id, bank_account_id, account_id)
-                select a.tenant_id, :b, a.id from accounts a
-                where a.tenant_id = :t and a.account_sub_type = 'BANK' and not a.is_group and a.is_active
-                  and a.property_id is not null
-                  and exists (select 1 from bank_accounts b where b.id = :b and b.tenant_id = :t)
+                select distinct a.tenant_id, b.id, a.id
+                from bank_accounts b
+                join property_account_mappings m on m.tenant_id = b.tenant_id and m.role = 'BANK'
+                 and (b.property_id is null or m.property_id = b.property_id)
+                join accounts a on a.id = m.account_id and a.tenant_id = m.tenant_id
+                 and a.account_sub_type = 'BANK' and not a.is_group and a.is_active and a.property_id = m.property_id
+                where b.id = :b and b.tenant_id = :t
                   and not exists (select 1 from bank_account_ledgers l where l.tenant_id = a.tenant_id and l.account_id = a.id)
                 on conflict do nothing""",
                 new MapSqlParameterSource("t", t).addValue("b", bankAccountId));
