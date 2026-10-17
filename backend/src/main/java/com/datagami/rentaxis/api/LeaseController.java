@@ -80,6 +80,7 @@ public class LeaseController {
     private final com.datagami.rentaxis.core.service.lease.LeaseReductionService leaseReductionService;
     private final com.datagami.rentaxis.core.service.lease.LeaseAssignmentService leaseAssignmentService;
     private final com.datagami.rentaxis.core.service.lease.LeaseTransferService leaseTransferService;
+    private final com.datagami.rentaxis.core.service.lease.LeaseBatchService leaseBatchService;
 
     /**
      * ACCOUNTANT on every read below.
@@ -112,8 +113,53 @@ public class LeaseController {
             @RequestParam(required = false) UUID propertyId,
             @RequestParam(required = false) UUID buildingId,
             @RequestParam(required = false) List<LeaseStatus> excludeStatus,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDateFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDateTo,
+            @RequestParam(required = false) String floor,
+            @RequestParam(required = false) LeaseService.SuccessorState successor,
             @PageableDefault(size = 25, sort = "startDate", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ResponseEntity.ok(leaseService.getAllLeasesPaged(search, status, propertyId, buildingId, excludeStatus, pageable));
+        // Scale #16: the renewal season's filters — expiry window (inclusive), floor (unit-number
+        // prefix, as /units/paged?floor=) and whether a renewal/transfer was already drafted.
+        return ResponseEntity.ok(leaseService.getAllLeasesPaged(search, status, propertyId, buildingId, excludeStatus,
+                new LeaseService.ExpiryFilter(endDateFrom, endDateTo, floor,
+                        successor == null ? LeaseService.SuccessorState.ANY : successor), pageable));
+    }
+
+    /**
+     * Bulk renew (scale #16): one rule — no change, +x %, or +amount, whole AED — applied to
+     * each contract, each drafted by the single renew in a transaction of its own. Drafts
+     * only: nothing posts; the drafts go through review and the bulk post like any other.
+     * Open to the roles the single renew admits.
+     */
+    @PostMapping("/renew-batch")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<List<com.datagami.rentaxis.api.dto.lease.LeaseBatch.RenewRow>> renewBatch(
+            @Valid @RequestBody com.datagami.rentaxis.api.dto.lease.LeaseBatch.RenewRequest request) {
+        return ResponseEntity.ok(leaseBatchService.renew(request));
+    }
+
+    /**
+     * Bulk terminate, step 1 (scale #17): each contract's termination preview — the
+     * settlement figures, the cheque split, the problems and the notices — or why it cannot
+     * be terminated. Writes nothing. Open to the roles the single preview admits.
+     */
+    @PostMapping("/terminate-batch/preview")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<List<com.datagami.rentaxis.api.dto.lease.LeaseBatch.TerminatePreviewRow>> previewTerminateBatch(
+            @Valid @RequestBody com.datagami.rentaxis.api.dto.lease.LeaseBatch.TerminateRequest request) {
+        return ResponseEntity.ok(leaseBatchService.previewTerminations(request));
+    }
+
+    /**
+     * Bulk terminate, step 2: each contract ended by the single terminate with the preview's
+     * default cheque split, all or nothing per contract; a refusal is reported on its row and
+     * the others go through. Finance roles only, as the single terminate.
+     */
+    @PostMapping("/terminate-batch")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<List<com.datagami.rentaxis.api.dto.lease.LeaseBatch.TerminateRow>> terminateBatch(
+            @Valid @RequestBody com.datagami.rentaxis.api.dto.lease.LeaseBatch.TerminateRequest request) {
+        return ResponseEntity.ok(leaseBatchService.terminate(request, callerId()));
     }
 
     @GetMapping("/property/{propertyId}")

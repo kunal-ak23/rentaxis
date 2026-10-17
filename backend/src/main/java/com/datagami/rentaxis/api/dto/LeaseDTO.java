@@ -107,6 +107,9 @@ public class LeaseDTO {
     private UUID transferredToLeaseId;
     private String transferredToUnit;
     private String transferredToStatus;
+    /** Scale #16: the renewal drafted or posted from this lease, and its status; null when none. */
+    private UUID renewedToLeaseId;
+    private String renewedToStatus;
     private UUID chainId;
 
     // ---- posting ----
