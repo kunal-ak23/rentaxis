@@ -1,6 +1,8 @@
 package com.datagami.rentaxis.core.service.lease;
 
 import com.datagami.rentaxis.api.dto.LeaseDTO;
+import com.datagami.rentaxis.api.dto.lease.ChequeRowInput;
+import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.api.dto.lease.LeaseBatch;
 import com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest;
 import com.datagami.rentaxis.api.dto.lease.TerminateLeaseRequest;
@@ -258,6 +260,131 @@ public class LeaseBatchService {
                 .orElseThrow(() -> new NotFoundException("Lease not found"));
         leaseAccessPolicy.requireReadable(lease);
         return lease.getEndDate();
+    }
+
+    // ------------------------------------------------------------------
+    // bulk cheque numbering (scale PR C ruling 2)
+    // ------------------------------------------------------------------
+
+    /** Each draft's grid for the bulk numbering screen, read-only. A lease that is not a DRAFT is refused. */
+    public List<LeaseBatch.DraftGrid> draftGrids(LeaseBatch.DraftsRequest r) {
+        List<LeaseBatch.DraftGrid> rows = new ArrayList<>();
+        for (UUID leaseId : distinct(r.leaseIds())) {
+            rows.add(run(readRowTx, leaseId, id -> {
+                Lease lease = leaseRepository.findByIdScopedToTenant(id)
+                        .orElseThrow(() -> new NotFoundException("Lease not found"));
+                leaseAccessPolicy.requireReadable(lease);
+                requireDraft(lease);
+                return new LeaseBatch.DraftGrid(id, true, lease.getVersion(),
+                        LeaseService.displayContractNumber(lease.getUnit().getProperty().getCode(), lease.getContractNumber()),
+                        lease.getUnit().getUnitNumber(), lease.getRenter().getNameEn(),
+                        lease.getUnit().getProperty().getNameEn(), chequeGeneration.list(id), null, null, null);
+            }, (code, args, message) -> new LeaseBatch.DraftGrid(leaseId, false, null, null, null, null, null, null,
+                    code, args, message)));
+        }
+        return rows;
+    }
+
+    /**
+     * Number the drafts' cheques: each draft's grid saved by {@link ChequeGenerationService#saveRows}
+     * — the single grid's save — with exactly the rows the grid editor would send (every DRAFT row
+     * as loaded, its number, bank and date replaced), against the version the screen loaded. So a
+     * bulk save is a series of single saves. Before that, each row is checked: it belongs to the
+     * draft, its amount is the one shown, a post-dated cheque has a number and a date, and no number
+     * repeats within the draft; any of these refuses the draft with per-row errors and writes
+     * nothing. One transaction per draft; no journal (the rows are DRAFT).
+     */
+    public List<LeaseBatch.DraftNumbersRow> saveChequeNumbers(LeaseBatch.ChequeNumbersRequest r) {
+        if (r.drafts() == null || r.drafts().size() > LeaseBatch.MAX_LEASES) {
+            throw new BusinessRuleViolationException("At most " + LeaseBatch.MAX_LEASES + " contracts at a time.");
+        }
+        List<LeaseBatch.DraftNumbersRow> out = new ArrayList<>();
+        java.util.Set<UUID> seen = new java.util.HashSet<>();
+        for (LeaseBatch.DraftNumbers d : r.drafts()) {
+            if (d == null || d.leaseId() == null || !seen.add(d.leaseId())) continue;
+            out.add(run(d.leaseId(), id -> numberOne(d), (code, args, message) ->
+                    new LeaseBatch.DraftNumbersRow(d.leaseId(), false, null, null, List.of(), code, args, message)));
+        }
+        return out;
+    }
+
+    private LeaseBatch.DraftNumbersRow numberOne(LeaseBatch.DraftNumbers d) {
+        Lease lease = leaseRepository.findByIdScopedToTenant(d.leaseId())
+                .orElseThrow(() -> new NotFoundException("Lease not found"));
+        leaseAccessPolicy.requireManageable(lease);
+        requireDraft(lease);
+        List<com.datagami.rentaxis.domain.entity.Cheque> grid = chequeRepository.findByLease_IdOrderBySeqNoAsc(lease.getId())
+                .stream().filter(c -> c.getStatus() == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DRAFT).toList();
+        java.util.Map<UUID, com.datagami.rentaxis.domain.entity.Cheque> byId = new java.util.LinkedHashMap<>();
+        grid.forEach(c -> byId.put(c.getId(), c));
+        java.util.Map<UUID, LeaseBatch.ChequeNumberRow> edits = new java.util.LinkedHashMap<>();
+        List<LeaseBatch.RowError> errors = new ArrayList<>();
+        for (LeaseBatch.ChequeNumberRow row : d.rows() == null ? List.<LeaseBatch.ChequeNumberRow>of() : d.rows()) {
+            if (row == null) continue;
+            com.datagami.rentaxis.domain.entity.Cheque c = byId.get(row.chequeId());
+            if (c == null) {
+                errors.add(new LeaseBatch.RowError(row.chequeId(), null, "cheque.notInDraft",
+                        "This row is not a draft cheque of this contract any more; reload the grid."));
+                continue;
+            }
+            if (row.amount() != null && (c.getAmount() == null || row.amount().compareTo(c.getAmount()) != 0)) {
+                errors.add(new LeaseBatch.RowError(row.chequeId(), "amount", "cheque.amountChanged",
+                        "The amount is " + c.getAmount() + " now, not " + row.amount() + "; reload the grid."));
+            }
+            edits.put(row.chequeId(), row);
+        }
+        // Every PDC row of the draft, after the edits: a number and a date, and no number twice.
+        java.util.Map<String, UUID> numbers = new java.util.HashMap<>();
+        for (com.datagami.rentaxis.domain.entity.Cheque c : grid) {
+            LeaseBatch.ChequeNumberRow e = edits.get(c.getId());
+            String number = e != null ? blankToNull(e.chequeNumber()) : c.getChequeNumber();
+            LocalDate date = e != null && e.chequeDate() != null ? e.chequeDate() : c.getChequeDate();
+            if (c.getMode() != com.datagami.rentaxis.domain.entity.enums.ChequeMode.PDC) continue;
+            if (number == null) {
+                errors.add(new LeaseBatch.RowError(c.getId(), "chequeNumber", "cheque.numberRequired", "Enter the cheque number."));
+            } else if (numbers.putIfAbsent(number, c.getId()) != null) {
+                errors.add(new LeaseBatch.RowError(c.getId(), "chequeNumber", "cheque.numberRepeated",
+                        "Cheque number " + number + " is used twice in this contract."));
+            }
+            if (date == null) {
+                errors.add(new LeaseBatch.RowError(c.getId(), "chequeDate", "cheque.dateRequired", "Enter the cheque date."));
+            }
+        }
+        if (!errors.isEmpty()) {
+            return new LeaseBatch.DraftNumbersRow(lease.getId(), false, lease.getVersion(), null, errors,
+                    "cheque.rowsRefused", null, errors.size() + " row(s) need attention; nothing was saved for this contract.");
+        }
+        List<ChequeRowInput> input = new ArrayList<>(grid.size());
+        for (com.datagami.rentaxis.domain.entity.Cheque c : grid) {
+            input.add(gridRow(c, edits.get(c.getId())));
+        }
+        ChequeGenerationService.VersionedCheques saved = chequeGeneration.saveRows(lease.getId(), input, d.version());
+        return new LeaseBatch.DraftNumbersRow(lease.getId(), true, saved.leaseVersion(), saved.cheques(), List.of(),
+                null, null, null);
+    }
+
+    /**
+     * The row the grid editor sends for a loaded cheque ({@code ChequeGrid.toChequeRows}), with the
+     * edit's number, bank and date when there is one. Package-private for the parity test.
+     */
+    static ChequeRowInput gridRow(com.datagami.rentaxis.domain.entity.Cheque c, LeaseBatch.ChequeNumberRow edit) {
+        String number = edit != null ? blankToNull(edit.chequeNumber()) : c.getChequeNumber();
+        String bank = edit != null ? blankToNull(edit.payeeBank()) : c.getPayeeBank();
+        LocalDate date = edit != null && edit.chequeDate() != null ? edit.chequeDate() : c.getChequeDate();
+        return new ChequeRowInput(c.getId(), c.getSeqNo(), c.getPostingDate(), number, date, bank,
+                blankToNull(c.getPayerName()), c.getDebitAccount() == null ? null : c.getDebitAccount().getId(),
+                c.getAmount(), blankToNull(c.getNarration()), c.getMode(), c.getVatAmount(), c.getRowKind());
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
+    }
+
+    private static void requireDraft(Lease lease) {
+        if (lease.getStatus() != com.datagami.rentaxis.domain.entity.enums.LeaseStatus.DRAFT) {
+            throw new BusinessRuleViolationException("Only a draft contract's cheques are numbered here; this one is "
+                    + lease.getStatus() + ".", "lease.notDraft", Map.of("status", lease.getStatus().name()));
+        }
     }
 
     // ------------------------------------------------------------------

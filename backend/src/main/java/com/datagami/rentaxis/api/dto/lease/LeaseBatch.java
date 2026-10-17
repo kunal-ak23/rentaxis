@@ -118,4 +118,51 @@ public final class LeaseBatch {
     public record TerminateRow(UUID leaseId, boolean ok, LocalDate terminationDate, String status,
                                UUID terminationJournalId, String code, Map<String, Object> args, String message) {
     }
+
+    // ------------------------------------------------------------------
+    // bulk cheque numbering (scale PR C ruling 2)
+    // ------------------------------------------------------------------
+
+    /** The renewal drafts whose cheque grids are to be numbered. */
+    public record DraftsRequest(@NotEmpty(message = "Choose at least one contract")
+                                @Size(max = MAX_LEASES, message = "At most " + MAX_LEASES + " contracts at a time")
+                                List<@NotNull UUID> leaseIds) {
+    }
+
+    /**
+     * One draft's grid, as the bulk numbering screen shows it: the draft's version (sent back with
+     * the save, so a draft changed meanwhile is refused), its contract number, unit, tenant and rows.
+     */
+    public record DraftGrid(UUID leaseId, boolean ok, Long version, String contractNumber, String unitIdentifier,
+                            String renterName, String propertyName,
+                            List<com.datagami.rentaxis.api.dto.cheque.ChequeDTO> cheques,
+                            String code, Map<String, Object> args, String message) {
+    }
+
+    /** A row's number, bank and date; {@code amount} is what the screen showed, checked unchanged. */
+    public record ChequeNumberRow(@NotNull UUID chequeId, String chequeNumber, String payeeBank, LocalDate chequeDate,
+                                  BigDecimal amount) {
+    }
+
+    /** One draft's numbering, against the version the screen loaded. */
+    public record DraftNumbers(@NotNull UUID leaseId, Long version, List<@Valid ChequeNumberRow> rows) {
+    }
+
+    public record ChequeNumbersRequest(@NotEmpty(message = "Choose at least one contract")
+                                       @Size(max = MAX_LEASES, message = "At most " + MAX_LEASES + " contracts at a time")
+                                       List<@Valid @NotNull DraftNumbers> drafts) {
+    }
+
+    /** A refusal of one row of a draft's grid. */
+    public record RowError(UUID chequeId, String field, String code, String message) {
+    }
+
+    /**
+     * One draft's answer: saved (with the version it now has and its rows), or refused — on its
+     * rows ({@code rowErrors}) or as a whole ({@code message}).
+     */
+    public record DraftNumbersRow(UUID leaseId, boolean ok, Long version,
+                                  List<com.datagami.rentaxis.api.dto.cheque.ChequeDTO> cheques,
+                                  List<RowError> rowErrors, String code, Map<String, Object> args, String message) {
+    }
 }

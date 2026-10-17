@@ -214,6 +214,8 @@ public class LeaseRenewalService {
             leaseService.recordLeaseEvent(successor, LeaseStatus.DRAFT, LeaseStatus.DRAFT,
                     "Renewal drafted; Ejari registration pending");
         }
+        // Scale PR C ruling: renewing clears the soft "not renewing" mark.
+        if (renewalMarks != null) renewalMarks.clearOnContinuation(leaseId);
         // Spec §4c: shown to the operator — "Not copied: Admin Fee 1,500 (one-off)".
         draft.setSkippedOneOffLines(plan.skippedOneOff().stream().map(LeaseService::toLineDTO).toList());
         return draft;
@@ -221,6 +223,9 @@ public class LeaseRenewalService {
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.datagami.rentaxis.domain.repository.LeaseAssignmentRepository assignmentRepository;
+    /** Scale PR C: the soft "not renewing" mark a renewal or an extension clears. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.core.service.renewal.RenewalMarkService renewalMarks;
     @org.springframework.beans.factory.annotation.Autowired
     private LeaseEffectiveTerms effectiveTerms;
 
@@ -690,6 +695,8 @@ public class LeaseRenewalService {
         leaseService.recordLeaseEvent(lease, LeaseStatus.ACTIVE, LeaseStatus.ACTIVE,
                 "Lease extended from " + previousEnd + " to " + r.newEndDate()
                         + ", posted as " + tco.getEntryNumber());
+        // Scale PR C ruling: extending clears the soft "not renewing" mark.
+        if (renewalMarks != null) renewalMarks.clearOnContinuation(lease.getId());
         events.publishEvent(new LeaseExtendedEvent(lease.getTenantId(), lease.getId(),
                 previousEnd, r.newEndDate(), newLines.stream().map(LeaseLine::getId).toList()));
 

@@ -203,16 +203,32 @@ public class LeaseService {
     public enum SuccessorState { ANY, NONE, DRAFTED }
 
     /**
+     * Scale PR C: the season's "not renewing" reading. {@code UNMARKED}: no soft mark;
+     * {@code NOT_RENEWING}: marked, or the renter (or landlord) gave notice.
+     */
+    public enum RenewalMark { ANY, UNMARKED, NOT_RENEWING }
+
+    /**
      * The renewal season's filters on the contracts list (scale #16): the expiry window
      * (inclusive), the floor (a unit-number prefix, as {@code GET /units/paged?floor=}) and
      * whether a successor exists. {@link #NONE} is the plain list.
      */
-    public record ExpiryFilter(LocalDate endFrom, LocalDate endTo, String floor, SuccessorState successor) {
-        public static final ExpiryFilter NONE = new ExpiryFilter(null, null, null, SuccessorState.ANY);
+    public record ExpiryFilter(LocalDate endFrom, LocalDate endTo, String floor, SuccessorState successor,
+                               RenewalMark mark) {
+        public static final ExpiryFilter NONE = new ExpiryFilter(null, null, null, SuccessorState.ANY, RenewalMark.ANY);
+
+        public ExpiryFilter(LocalDate endFrom, LocalDate endTo, String floor, SuccessorState successor) {
+            this(endFrom, endTo, floor, successor, RenewalMark.ANY);
+        }
 
         boolean isEmpty() {
             return endFrom == null && endTo == null && (floor == null || floor.isBlank())
-                    && (successor == null || successor == SuccessorState.ANY);
+                    && (successor == null || successor == SuccessorState.ANY)
+                    && (mark == null || mark == RenewalMark.ANY);
+        }
+
+        int markCode() {
+            return mark == RenewalMark.UNMARKED ? 1 : mark == RenewalMark.NOT_RENEWING ? 2 : 0;
         }
 
         int successorCode() {
@@ -312,7 +328,8 @@ public class LeaseService {
         java.util.Collection<LeaseStatus> hitsParam = statusHits.isEmpty() ? allowed : statusHits;
         return mapPage(leaseRepository.searchText(tenantId, allowed, status, propertyId, buildingId,
                 scoped, visibleParam, pattern, !statusHits.isEmpty(), hitsParam, expiry.endFrom(), expiry.endTo(),
-                com.datagami.rentaxis.core.util.Search.prefix(expiry.floor()), expiry.successorCode(), pageable));
+                com.datagami.rentaxis.core.util.Search.prefix(expiry.floor()), expiry.successorCode(), expiry.markCode(),
+                pageable));
     }
 
     /**
@@ -2457,8 +2474,16 @@ public class LeaseService {
                               java.util.Map<UUID, List<LeaseLine>> lines,
                               java.util.Map<UUID, List<com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod>> rentFree,
                               /* Scale #16: the renewal drafted (or posted) from each lease. */
-                              java.util.Map<UUID, Lease> renewals) {
+                              java.util.Map<UUID, Lease> renewals,
+                              /* Scale PR C: the soft "not renewing" mark: at, by name, note. */
+                              java.util.Map<UUID, Object[]> marks) {
     }
+
+    /** Scale PR C: the "not renewing" marks and their authors, read for a page of rows. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.domain.repository.RenewalOpportunityRepository renewalOpportunities;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.domain.repository.UserRepository markUsers;
 
     /** IN lists are cut at this size so an unbounded list stays within Postgres' bind limit. */
     private static final int MAP_CHUNK = 1000;
@@ -2470,6 +2495,7 @@ public class LeaseService {
         java.util.Set<UUID> credited = new java.util.HashSet<>();
         java.util.Map<UUID, Lease> successors = new java.util.HashMap<>();
         java.util.Map<UUID, Lease> renewals = new java.util.HashMap<>();
+        java.util.Map<UUID, Object[]> marks = new java.util.HashMap<>();
         java.util.Map<UUID, List<LeaseLine>> lines = new java.util.HashMap<>();
         java.util.Map<UUID, List<com.datagami.rentaxis.domain.entity.LeaseRentFreePeriod>> rentFree = new java.util.HashMap<>();
         for (int i = 0; i < ids.size(); i += MAP_CHUNK) {
@@ -2490,6 +2516,12 @@ public class LeaseService {
             for (Lease r : leaseRepository.findByRenewedFromLeaseIdIn(chunk)) {
                 renewals.putIfAbsent(r.getRenewedFromLeaseId(), r);
             }
+            UUID tenant = TenantContextHolder.getTenantId();
+            if (renewalOpportunities != null && tenant != null) {
+                for (Object[] m : renewalOpportunities.findMarksForLeases(tenant, chunk)) {
+                    marks.putIfAbsent((UUID) m[0], m);
+                }
+            }
             for (LeaseLine l : leaseLineRepository.findByLeaseIdsOrderBySeqNo(chunk)) {
                 lines.computeIfAbsent(l.getLease().getId(), k -> new java.util.ArrayList<>()).add(l);
             }
@@ -2499,7 +2531,18 @@ public class LeaseService {
                 }
             }
         }
-        return new MapContext(ejari, docs, credited, successors, lines, rentFree, renewals);
+        // Who marked each contract, by name: one lookup for the page.
+        if (!marks.isEmpty() && markUsers != null) {
+            java.util.Set<UUID> byIds = new java.util.HashSet<>();
+            for (Object[] m : marks.values()) if (m[2] != null) byIds.add((UUID) m[2]);
+            java.util.Map<UUID, String> names = new java.util.HashMap<>();
+            for (var u : markUsers.findAllById(byIds)) names.put(u.getId(), u.getName());
+            for (var e : marks.entrySet()) {
+                Object[] m = e.getValue();
+                e.setValue(new Object[] {m[0], m[1], m[2] == null ? null : names.get((UUID) m[2]), m[3]});
+            }
+        }
+        return new MapContext(ejari, docs, credited, successors, lines, rentFree, renewals, marks);
     }
 
     /** A page (or list) of leases mapped with one batch of side queries, in the order given. */
@@ -2575,6 +2618,12 @@ public class LeaseService {
                 dto.setTransferredToUnit(b.getUnit() != null ? b.getUnit().getUnitNumber() : null);
                 dto.setTransferredToStatus(b.getStatus() != null ? b.getStatus().name() : null);
             }
+        }
+        Object[] mark = lease.getId() == null ? null : ctx.marks().get(lease.getId());
+        if (mark != null) {
+            dto.setNotRenewingAt((Instant) mark[1]);
+            dto.setNotRenewingByName((String) mark[2]);
+            dto.setNotRenewingNote((String) mark[3]);
         }
         Lease renewal = lease.getId() == null ? null : ctx.renewals().get(lease.getId());
         if (renewal != null) {

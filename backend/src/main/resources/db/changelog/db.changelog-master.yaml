@@ -339,3 +339,5 @@ databaseChangeLog:
       file: db/changelog/changesets/167-password-reset-tokens.yaml
   - include:
       file: db/changelog/changesets/168-ticket-attachment-file-name.yaml
+  - include:
+      file: db/changelog/changesets/174-renewal-not-renewing-mark.yaml

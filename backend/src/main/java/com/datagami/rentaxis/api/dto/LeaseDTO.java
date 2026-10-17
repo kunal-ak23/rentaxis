@@ -110,6 +110,10 @@ public class LeaseDTO {
     /** Scale #16: the renewal drafted or posted from this lease, and its status; null when none. */
     private UUID renewedToLeaseId;
     private String renewedToStatus;
+    /** Scale PR C: the soft "not renewing" mark — when, by whom (name), why; null when not marked. */
+    private java.time.Instant notRenewingAt;
+    private String notRenewingByName;
+    private String notRenewingNote;
     private UUID chainId;
 
     // ---- posting ----

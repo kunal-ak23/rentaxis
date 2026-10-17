@@ -81,6 +81,7 @@ public class LeaseController {
     private final com.datagami.rentaxis.core.service.lease.LeaseAssignmentService leaseAssignmentService;
     private final com.datagami.rentaxis.core.service.lease.LeaseTransferService leaseTransferService;
     private final com.datagami.rentaxis.core.service.lease.LeaseBatchService leaseBatchService;
+    private final com.datagami.rentaxis.core.service.renewal.RenewalMarkService renewalMarkService;
 
     /**
      * ACCOUNTANT on every read below.
@@ -117,12 +118,61 @@ public class LeaseController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDateTo,
             @RequestParam(required = false) String floor,
             @RequestParam(required = false) LeaseService.SuccessorState successor,
+            @RequestParam(required = false) LeaseService.RenewalMark mark,
             @PageableDefault(size = 25, sort = "startDate", direction = Sort.Direction.DESC) Pageable pageable) {
         // Scale #16: the renewal season's filters — expiry window (inclusive), floor (unit-number
         // prefix, as /units/paged?floor=) and whether a renewal/transfer was already drafted.
         return ResponseEntity.ok(leaseService.getAllLeasesPaged(search, status, propertyId, buildingId, excludeStatus,
                 new LeaseService.ExpiryFilter(endDateFrom, endDateTo, floor,
-                        successor == null ? LeaseService.SuccessorState.ANY : successor), pageable));
+                        successor == null ? LeaseService.SuccessorState.ANY : successor,
+                        mark == null ? LeaseService.RenewalMark.ANY : mark), pageable));
+    }
+
+    /**
+     * Bulk cheque numbering (scale PR C ruling 2), step 1: the selected renewal drafts' grids,
+     * each with the version to save against. Read-only; the roles of {@code GET /{id}/cheques}.
+     */
+    @PostMapping("/cheques-batch/load")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<List<com.datagami.rentaxis.api.dto.lease.LeaseBatch.DraftGrid>> loadChequeDrafts(
+            @Valid @RequestBody com.datagami.rentaxis.api.dto.lease.LeaseBatch.DraftsRequest request) {
+        return ResponseEntity.ok(leaseBatchService.draftGrids(request));
+    }
+
+    /**
+     * Step 2: save each draft's cheque numbers, banks and dates through the single grid save
+     * ({@code PUT /{id}/cheques}), one transaction per draft, refusals per draft and per row.
+     * Writes no journal: the rows are DRAFT. The roles of the single save.
+     */
+    @PostMapping("/cheques-batch")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<List<com.datagami.rentaxis.api.dto.lease.LeaseBatch.DraftNumbersRow>> saveChequeNumbers(
+            @Valid @RequestBody com.datagami.rentaxis.api.dto.lease.LeaseBatch.ChequeNumbersRequest request) {
+        return ResponseEntity.ok(leaseBatchService.saveChequeNumbers(request));
+    }
+
+    /** The optional body of a "not renewing" mark. */
+    public record NotRenewingRequest(@jakarta.validation.constraints.Size(max = 500) String note) {
+    }
+
+    /**
+     * Scale PR C ruling: mark the contract "not renewing" — a soft, reversible note on its renewal
+     * opportunity (who, when, why). It gives no notice and changes nothing on the lease or the
+     * unit; Give notice stays its own act. The roles of the single renew.
+     */
+    @PostMapping("/{id}/renewal/not-renewing")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<com.datagami.rentaxis.core.service.renewal.RenewalMarkService.Mark> markNotRenewing(
+            @PathVariable UUID id, @Valid @RequestBody(required = false) NotRenewingRequest request) {
+        return ResponseEntity.ok(renewalMarkService.markNotRenewing(id, request == null ? null : request.note(), callerId()));
+    }
+
+    /** Undo the "not renewing" mark. */
+    @DeleteMapping("/{id}/renewal/not-renewing")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER')")
+    public ResponseEntity<com.datagami.rentaxis.core.service.renewal.RenewalMarkService.Mark> undoNotRenewing(
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(renewalMarkService.undo(id));
     }
 
     /**

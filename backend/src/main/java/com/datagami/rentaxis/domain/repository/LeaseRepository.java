@@ -252,7 +252,8 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
      * "no renewal or transfer drafted from it yet", 2 for "one has been". The successor test is
      * {@code coalesce(renewed_from, transferred_from)}, the expression
      * {@code ux_leases_one_successor} indexes, and the one {@code LeaseRenewalService.renew}
-     * refuses on.</p>
+     * refuses on. {@code mark} (scale PR C) is 0 for any, 1 for "no soft not-renewing mark", 2 for
+     * "marked not renewing, or on notice".</p>
      */
     @Query("""
         select l from Lease l
@@ -283,6 +284,12 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
                      and coalesce(s.renewedFromLeaseId, s.transferredFromLeaseId) = l.id))
                or (:successor = 2 and exists (select s.id from Lease s where s.tenantId = :tenantId
                      and coalesce(s.renewedFromLeaseId, s.transferredFromLeaseId) = l.id)))
+          and (:mark = 0
+               or (:mark = 1 and not exists (select o.id from RenewalOpportunity o where o.tenantId = :tenantId
+                     and o.lease.id = l.id and o.notRenewingAt is not null))
+               or (:mark = 2 and (l.status = com.datagami.rentaxis.domain.entity.enums.LeaseStatus.NOTICE_GIVEN
+                     or exists (select o.id from RenewalOpportunity o where o.tenantId = :tenantId
+                     and o.lease.id = l.id and o.notRenewingAt is not null))))
         """)
     Page<Lease> searchText(@Param("tenantId") UUID tenantId,
                            @Param("allowed") Collection<LeaseStatus> allowed,
@@ -298,6 +305,7 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
                            @Param("endTo") java.time.LocalDate endTo,
                            @Param("floorPrefix") String floorPrefix,
                            @Param("successor") int successor,
+                           @Param("mark") int mark,
                            Pageable pageable);
 
     /**
@@ -309,7 +317,7 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
                                    String pattern, boolean hasStatusHits, Collection<LeaseStatus> statusHits,
                                    Pageable pageable) {
         return searchText(tenantId, allowed, status, propertyId, buildingId, scoped, visible, pattern,
-                hasStatusHits, statusHits, null, null, null, 0, pageable);
+                hasStatusHits, statusHits, null, null, null, 0, 0, pageable);
     }
 
     /**
