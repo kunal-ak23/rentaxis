@@ -16,11 +16,14 @@ import {
     type BulkTerminatePreviewRow, type BulkTerminateRow, type Cheque, type LeaseDetail, type LeaseStatus,
 } from "@/lib/api/leasing";
 import { chunks, isTerminable } from "@/lib/leases/renewalSeason";
+import { runPool } from "@/lib/pool";
 
 /** Everything but the two statuses `LeaseTerminationService.TERMINABLE` admits. */
 const NOT_TERMINABLE: LeaseStatus[] = ["DRAFT", "PENDING_SIGNATURE", "RENEWED", "TERMINATED", "EXPIRED", "CLOSED"];
 /** Previews are heavier than drafts (recognition and VAT priced per contract): smaller chunks. */
 const PREVIEW_CHUNK = 20;
+/** Preview chunks in flight at once: a preview writes nothing, so it can run beside another. */
+const PREVIEW_CONCURRENCY = 3;
 /** The most contracts one bulk terminate takes from "Select all". */
 const SELECT_ALL_CAP = 500;
 
@@ -56,6 +59,8 @@ export default function BulkTerminate({ filters, onDateChange, canTerminate }: {
     const [confirming, setConfirming] = useState(false);
     const [notes, setNotes] = useState("");
     const [results, setResults] = useState<BulkTerminateRow[] | null>(null);
+    /** Each result's unit and tenant, captured when the run starts (the selection is cleared after it). */
+    const [resultLabels, setResultLabels] = useState<Map<string, string>>(new Map());
     const [error, setError] = useState<string | null>(null);
     const begin = useLatestRequest();
 
@@ -122,10 +127,15 @@ export default function BulkTerminate({ filters, onDateChange, canTerminate }: {
         setProgress({ done: 0, total: ids.length, what: "preview" });
         const out: BulkTerminatePreviewRow[] = [];
         try {
-            for (const part of chunks(ids, PREVIEW_CHUNK)) {
-                out.push(...await leaseBatchApi.previewTerminate({ leaseIds: part, terminationDate: filters.date }));
-                setProgress({ done: out.length, total: ids.length, what: "preview" });
-            }
+            // Read-only, so three chunks at a time; the answers keep the order selected.
+            let done = 0;
+            const parts = await runPool(chunks(ids, PREVIEW_CHUNK), PREVIEW_CONCURRENCY, async part => {
+                const rows = await leaseBatchApi.previewTerminate({ leaseIds: part, terminationDate: filters.date });
+                done += rows.length;
+                setProgress({ done, total: ids.length, what: "preview" });
+                return rows;
+            });
+            out.push(...parts.flat());
         } catch (e) {
             setError(e instanceof ApiError ? (serverText(tCommon, e) || e.message) : t("batchFailed"));
         }
@@ -137,6 +147,7 @@ export default function BulkTerminate({ filters, onDateChange, canTerminate }: {
 
     const runTerminate = async () => {
         const ids = (previews ?? []).filter(p => include.has(p.leaseId)).map(p => p.leaseId);
+        setResultLabels(new Map(ids.map(id => [id, label(id)])));
         setConfirming(false);
         setError(null);
         setProgress({ done: 0, total: ids.length, what: "terminate" });
@@ -199,7 +210,7 @@ export default function BulkTerminate({ filters, onDateChange, canTerminate }: {
                         {results.map(r => (
                             <li key={r.leaseId} className="flex items-start gap-2" data-testid={`bulk-terminate-result-${r.leaseId}`} data-ok={r.ok}>
                                 {r.ok ? <CheckCircle size={14} className="text-success shrink-0 mt-0.5" /> : <XCircle size={14} className="text-error shrink-0 mt-0.5" />}
-                                <Link href={`/dashboard/leases/${r.leaseId}`} className="font-medium hover:underline">{label(r.leaseId)}</Link>
+                                <Link href={`/dashboard/leases/${r.leaseId}`} className="font-medium hover:underline">{resultLabels.get(r.leaseId) ?? label(r.leaseId)}</Link>
                                 <span className={r.ok ? "text-[var(--ink-600)]" : "text-error"}>
                                     {r.ok ? t("terminatedOn", { date: fmtIsoDate(r.terminationDate, locale) }) : (serverText(tCommon, r) || t("batchFailed"))}
                                 </span>

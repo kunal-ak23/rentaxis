@@ -70,6 +70,8 @@ describe("bulk terminate", () => {
         expect(posted).toHaveLength(1);
         expect(posted[0].body).toEqual({ leaseIds: ["a"], terminationDate: "2026-10-31", notes: "Season move-out" });
         expect(within(results).getByTestId("bulk-terminate-result-a")).toHaveTextContent("terminated on");
+        // Named by unit and tenant even though the selection was cleared after the run.
+        expect(within(results).getByTestId("bulk-terminate-result-a")).toHaveTextContent("U-a · Tenant a");
     });
 
     it("lets a manager preview but not confirm", async () => {
