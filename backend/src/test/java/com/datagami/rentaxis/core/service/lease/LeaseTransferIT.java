@@ -252,6 +252,61 @@ class LeaseTransferIT extends AbstractPostgresIT {
     }
 
     /**
+     * #100 (spec §2 "concurrent posts"): two Post clicks on the same transfer race.
+     * The post locks B, then A; the loser finds B no longer a draft and is refused.
+     * One TCO on B, one TCR on A, and the books still balance.
+     */
+    @Test
+    void twoConcurrentPostsOfOneTransferPostItOnce() throws Exception {
+        UUID a = leaseA(true);
+        Property other = tx.execute(s -> fixtures.createProperty("CC"));
+        Unit target = tx.execute(s -> fixtures.createUnit(other, "C-301"));
+        UUID b = transfers.draft(a, request(T, target.getId(), List.of(line("RENT", "37808.22"))), posting).getId();
+        UUID tenant = fixtures.tenantId();
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        var go = new java.util.concurrent.CountDownLatch(1);
+        try {
+            java.util.concurrent.Callable<Object> post = () -> {
+                TenantContextHolder.setTenantId(tenant);
+                LeaseTestFixtures.authenticateAsTenantAdmin();
+                try {
+                    go.await(20, java.util.concurrent.TimeUnit.SECONDS);
+                    return posting.post(b);
+                } finally {
+                    TenantContextHolder.clear();
+                    LeaseTestFixtures.clearAuth();
+                }
+            };
+            var one = pool.submit(post);
+            var two = pool.submit(post);
+            go.countDown();
+            int ok = 0;
+            List<Throwable> refused = new java.util.ArrayList<>();
+            for (var f : List.of(one, two)) {
+                try {
+                    f.get(60, java.util.concurrent.TimeUnit.SECONDS);
+                    ok++;
+                } catch (java.util.concurrent.ExecutionException e) {
+                    refused.add(e.getCause());
+                }
+            }
+            assertThat(ok).as("exactly one post wins").isEqualTo(1);
+            assertThat(refused).singleElement().isInstanceOf(BusinessRuleViolationException.class);
+        } finally {
+            go.countDown();
+            pool.shutdownNow();
+        }
+        assertThat(jdbc.queryForObject("select count(*) from journal_entries where tenant_id = ? and lease_id = ? and doc_type = 'TCO'",
+                Long.class, tenant, b)).isEqualTo(1L);
+        assertThat(jdbc.queryForObject("select count(*) from journal_entries where tenant_id = ? and lease_id = ? and doc_type = 'TCR'",
+                Long.class, tenant, a)).isEqualTo(1L);
+        assertThat(lease(b).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+        // Fully carried, A has nothing left to settle and closes.
+        assertThat(lease(a).getStatus()).isIn(LeaseStatus.TERMINATED, LeaseStatus.CLOSED);
+        assertTrialBalanceBalances();
+    }
+
+    /**
      * S16-06: the carried rows do not cover the new contract plus C and B has no row
      * of its own. The dry run used to drop "no cheque grid" and skip the balance
      * check, so it said ok and the post refused with the gap; it now refuses with
