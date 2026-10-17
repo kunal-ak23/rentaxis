@@ -5516,6 +5516,9 @@
     "notes": "Notes (kept on each contract)",
     "terminateSummary": "{ok} terminated, {failed} refused.",
     "terminatedOn": "terminated on {date}",
-    "toSettlements": "Go to settlements due"
+    "toSettlements": "Go to settlements due",
+    "notProcessed": "Not processed: no answer from the server for this contract. Retry it.",
+    "chunkFailed": "Not processed: {error}. Retry it.",
+    "someChunksFailed": "Some contracts could not be sent; they are listed as refused below and can be retried."
   }
 }

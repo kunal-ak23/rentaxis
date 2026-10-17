@@ -27,6 +27,11 @@ const PREVIEW_CONCURRENCY = 3;
 /** The most contracts one bulk terminate takes from "Select all". */
 const SELECT_ALL_CAP = 500;
 
+/** A contract the server never answered for: listed as refused, so it is counted and can be retried. */
+const unansweredRow = (leaseId: string, message: string): BulkTerminateRow => ({
+    leaseId, ok: false, terminationDate: null, status: null, terminationJournalId: null, code: null, args: null, message,
+});
+
 const sum = (rows: Cheque[] | undefined) => (rows ?? []).reduce((a, c) => a + Number(c.amount ?? 0), 0);
 
 export interface TerminateFilters { date: string; propertyId: string; buildingId: string; floor: string; search: string }
@@ -130,7 +135,16 @@ export default function BulkTerminate({ filters, onDateChange, canTerminate }: {
             // Read-only, so three chunks at a time; the answers keep the order selected.
             let done = 0;
             const parts = await runPool(chunks(ids, PREVIEW_CHUNK), PREVIEW_CONCURRENCY, async part => {
-                const rows = await leaseBatchApi.previewTerminate({ leaseIds: part, terminationDate: filters.date });
+                let rows: BulkTerminatePreviewRow[];
+                try {
+                    const answered = new Map((await leaseBatchApi.previewTerminate({ leaseIds: part, terminationDate: filters.date }))
+                        .map(r => [r.leaseId, r]));
+                    rows = part.map(id => answered.get(id) ?? { leaseId: id, ok: false, terminationDate: null, preview: null, message: t("notProcessed") });
+                } catch (e) {
+                    // Review P2-2: a failed chunk is listed contract by contract, not dropped.
+                    const message = e instanceof ApiError ? (serverText(tCommon, e) || e.message) : t("batchFailed");
+                    rows = part.map(id => ({ leaseId: id, ok: false, terminationDate: null, preview: null, message: t("chunkFailed", { error: message }) }));
+                }
                 done += rows.length;
                 setProgress({ done, total: ids.length, what: "preview" });
                 return rows;
@@ -151,19 +165,48 @@ export default function BulkTerminate({ filters, onDateChange, canTerminate }: {
         setConfirming(false);
         setError(null);
         setProgress({ done: 0, total: ids.length, what: "terminate" });
-        const out: BulkTerminateRow[] = [];
-        try {
-            for (const part of chunks(ids, PREVIEW_CHUNK)) {
-                out.push(...await leaseBatchApi.terminate({ leaseIds: part, terminationDate: filters.date, notes: notes.trim() || null }));
-                setProgress({ done: out.length, total: ids.length, what: "terminate" });
+        // Review P3-2: each contract is ended with the cheque split its preview showed; the server
+        // refuses one whose register has changed since, rather than re-deriving the split.
+        const splits: Record<string, { returnChequeIds: string[]; keepChequeIds: string[] }> = {};
+        for (const p of previews ?? []) {
+            if (p.preview && include.has(p.leaseId)) {
+                splits[p.leaseId] = {
+                    returnChequeIds: p.preview.chequesToReturn.map(c => c.id),
+                    keepChequeIds: p.preview.chequesToKeep.map(c => c.id),
+                };
             }
-        } catch (e) {
-            setError(e instanceof ApiError ? (serverText(tCommon, e) || e.message) : t("batchFailed"));
         }
+        const out: BulkTerminateRow[] = [];
+        let failedCall = false;
+        // Review P2-2: a chunk whose call fails marks each of its contracts as not processed and the
+        // run carries on; every contract is counted.
+        for (const part of chunks(ids, PREVIEW_CHUNK)) {
+            try {
+                const rows = await leaseBatchApi.terminate({
+                    leaseIds: part, terminationDate: filters.date, notes: notes.trim() || null,
+                    splits: Object.fromEntries(part.filter(id => splits[id]).map(id => [id, splits[id]])),
+                });
+                const answered = new Map(rows.map(r => [r.leaseId, r]));
+                out.push(...part.map(id => answered.get(id) ?? unansweredRow(id, t("notProcessed"))));
+            } catch (e) {
+                failedCall = true;
+                const message = e instanceof ApiError ? (serverText(tCommon, e) || e.message) : t("batchFailed");
+                out.push(...part.map(id => unansweredRow(id, t("chunkFailed", { error: message }))));
+            }
+            setProgress({ done: out.length, total: ids.length, what: "terminate" });
+        }
+        if (failedCall) setError(t("someChunksFailed"));
         setResults(out);
         setProgress(null);
-        setSelected(new Map());
-        setPreviews(null);
+        // The ended contracts leave the selection and the previews; the refused ones stay, still
+        // included, so "Terminate" retries exactly them.
+        const ended = new Set(out.filter(r => r.ok).map(r => r.leaseId));
+        setSelected(prev => new Map([...prev].filter(([id]) => !ended.has(id))));
+        setPreviews(prev => {
+            const left = (prev ?? []).filter(p => !ended.has(p.leaseId));
+            return left.length ? left : null;
+        });
+        setInclude(prev => new Set([...prev].filter(id => !ended.has(id))));
         load();
     };
 

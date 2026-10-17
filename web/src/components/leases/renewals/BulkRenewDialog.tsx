@@ -26,6 +26,12 @@ const num = (s: string): number | null => {
     return s.trim() !== "" && Number.isFinite(n) ? n : null;
 };
 
+/** A contract the server never answered for: listed as refused, so it is counted and can be retried. */
+const unanswered = (leaseId: string, message: string): BulkRenewRow => ({
+    leaseId, ok: false, renewalLeaseId: null, startDate: null, endDate: null, previousRent: null, newRent: null,
+    changePercent: null, chequeRows: 0, code: null, args: null, message,
+});
+
 /** The label a result row carries: unit and tenant, as on the bulk post's results. */
 export type RenewTarget = Pick<LeaseDetail, "id" | "unitIdentifier" | "renterName" | "propertyName" | "currentRentAmount" | "rentAmount">;
 
@@ -85,21 +91,31 @@ export default function BulkRenewDialog({ open, targets, chargeTypes, onClose, o
         setError(null);
         setProgress({ done: 0, total: ids.length });
         const rule: BulkRentRule = { mode, percent: mode === "PERCENT" ? pct : null, amount: mode === "ADD" ? add : null };
+        // Review P2-1: the fee carries its charge type's VAT default, exactly as the single renew
+        // dialog proposes it — never a hard-coded "no VAT".
+        const feeType = feeTypes.find(c => c.id === feeTypeId);
         const additionalLines: LeaseLineInput[] | null = feeTypeId && fee
-            ? [{ chargeTypeId: feeTypeId, grossAmount: fee, discountAmount: 0, vatApplicable: false }] : null;
+            ? [{ chargeTypeId: feeTypeId, grossAmount: fee, discountAmount: 0, vatApplicable: !!feeType?.vatApplicableDefault }] : null;
         const out: BulkRenewRow[] = [];
-        try {
-            // Sequential chunks: each call is a few seconds, and the progress is the server's own count.
-            for (const part of chunks(ids, BATCH_CHUNK)) {
+        let firstError: string | null = null;
+        // Sequential chunks: each call is a few seconds, and the progress is the server's own count.
+        // Review P2-2: a chunk whose call fails (timeout, 5xx, network) marks each of its contracts as
+        // not processed, with the error, and the run carries on — every contract is accounted for.
+        for (const part of chunks(ids, BATCH_CHUNK)) {
+            try {
                 const rows = await leaseBatchApi.renew({
                     leaseIds: part, rule, termMonths, contractDate, carryDepositForward: carryDeposit, generateGrid, additionalLines,
                 });
-                out.push(...rows);
-                setProgress({ done: out.length, total: ids.length });
+                const answered = new Map(rows.map(r => [r.leaseId, r]));
+                out.push(...part.map(id => answered.get(id) ?? unanswered(id, t("notProcessed"))));
+            } catch (e) {
+                const message = e instanceof ApiError ? (serverText(tCommon, e) || e.message) : t("batchFailed");
+                firstError ??= message;
+                out.push(...part.map(id => unanswered(id, t("chunkFailed", { error: message }))));
             }
-        } catch (e) {
-            setError(e instanceof ApiError ? (serverText(tCommon, e) || e.message) : t("batchFailed"));
+            setProgress({ done: out.length, total: ids.length });
         }
+        if (firstError) setError(t("someChunksFailed"));
         const byId = new Map(out.map(r => [r.leaseId, r]));
         setResults(keep.length ? keep.map(r => byId.get(r.leaseId) ?? r) : out);
         setProgress(null);

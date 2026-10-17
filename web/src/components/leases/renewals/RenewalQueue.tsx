@@ -18,7 +18,7 @@ import {
     ApiError, chargeTypeApi, leaseApi, terminationApi,
     type ChargeType, type GiveNoticeInput, type LeaseDetail,
 } from "@/lib/api/leasing";
-import { QUEUE_STAGES, isRenewable, monthRange, stageQuery, type QueueStage } from "@/lib/leases/renewalSeason";
+import { QUEUE_STAGES, isBulkRenewable, isRenewable, monthRange, stageQuery, type QueueStage } from "@/lib/leases/renewalSeason";
 import BulkRenewDialog from "./BulkRenewDialog";
 import ContactRenterDialog from "./ContactRenterDialog";
 
@@ -113,7 +113,7 @@ export default function RenewalQueue({ filters, onStage, perms }: {
     }, [common, filters.stage]);
 
     const reload = () => setReloadKey(k => k + 1);
-    const selectable = rows.filter(isRenewable);
+    const selectable = rows.filter(isBulkRenewable);
     const pageAllSelected = selectable.length > 0 && selectable.every(r => selected.has(r.id));
     const toggle = (l: LeaseDetail) => setSelected(prev => {
         const next = new Map(prev);
@@ -131,7 +131,7 @@ export default function RenewalQueue({ filters, onStage, perms }: {
             const next = new Map<string, LeaseDetail>();
             for (let p = 0; next.size < SELECT_ALL_CAP; p++) {
                 const data = await read(filters.stage, p, 100);
-                (data.content ?? []).filter(isRenewable).forEach(l => { if (next.size < SELECT_ALL_CAP) next.set(l.id, l); });
+                (data.content ?? []).filter(isBulkRenewable).forEach(l => { if (next.size < SELECT_ALL_CAP) next.set(l.id, l); });
                 if ((data.content ?? []).length < 100) break;
             }
             setSelected(next);
@@ -244,7 +244,7 @@ export default function RenewalQueue({ filters, onStage, perms }: {
                                 return (
                                     <tr key={l.id} data-testid={`renewal-row-${l.id}`}>
                                         <td className="p-2">
-                                            {perms.renew && isRenewable(l) && (
+                                            {perms.renew && isBulkRenewable(l) && (
                                                 <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l)} aria-label={t("selectRow", { unit: l.unitIdentifier ?? "" })} />
                                             )}
                                         </td>
@@ -271,7 +271,7 @@ export default function RenewalQueue({ filters, onStage, perms }: {
                         const s = stateOf(l);
                         return (
                             <li key={l.id} className="p-3 flex gap-3 items-start" data-testid={`renewal-card-${l.id}`}>
-                                {perms.renew && isRenewable(l)
+                                {perms.renew && isBulkRenewable(l)
                                     ? <input type="checkbox" className="mt-1" checked={selected.has(l.id)} onChange={() => toggle(l)} aria-label={t("selectRow", { unit: l.unitIdentifier ?? "" })} />
                                     : <span className="w-[13px]" />}
                                 <div className="flex-1 min-w-0 text-xs space-y-0.5">

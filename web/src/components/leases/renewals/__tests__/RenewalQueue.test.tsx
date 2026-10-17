@@ -113,6 +113,64 @@ describe("renewal season queue", () => {
         expect(screen.getByText("30 drafted, 0 refused.")).toBeInTheDocument();
     });
 
+    it("drafts a VAT-able renewal fee with its charge type's VAT, as the single renew does", async () => {
+        api.on("GET", "/finance/charge-types", { body: [
+            { id: "ct-fee", code: "ADMIN_FEE", nameEn: "Admin Fee", nameAr: null, behaviour: "FEE", active: true, vatApplicableDefault: true },
+        ] });
+        api.on("POST", "/leases/renew-batch", call => ({
+            body: (call.body as { leaseIds: string[] }).leaseIds.map(id => ({ leaseId: id, ok: true, renewalLeaseId: `n-${id}`, newRent: 80000, previousRent: null, chequeRows: 0 })),
+        }));
+        render(<RenewalQueue filters={FILTERS} onStage={() => {}} perms={ALL} />);
+        fireEvent.click(await screen.findByTestId("renewal-select-page"));
+        fireEvent.click(screen.getByTestId("renewal-bulk-renew"));
+        fireEvent.change(await screen.findByTestId("bulk-renew-fee-type"), { target: { value: "ct-fee" } });
+        fireEvent.change(screen.getByTestId("bulk-renew-fee-amount"), { target: { value: "1000" } });
+        fireEvent.click(screen.getByTestId("bulk-renew-confirm"));
+        await screen.findByTestId("bulk-renew-results");
+        expect(api.callsTo("POST", "/leases/renew-batch")[0].body).toMatchObject({
+            additionalLines: [{ chargeTypeId: "ct-fee", grossAmount: 1000, discountAmount: 0, vatApplicable: true }],
+        });
+    });
+
+    it("lists every contract of a chunk whose call failed, carries on with the next chunks, and retries them", async () => {
+        rows = Array.from({ length: 60 }, (_, i) => lease(`l${i}`));
+        let call = 0;
+        api.on("POST", "/leases/renew-batch", c => {
+            call++;
+            if (call === 2) return { status: 502, body: { message: "Bad gateway" } };
+            return { body: (c.body as { leaseIds: string[] }).leaseIds.map(id => ({ leaseId: id, ok: true, renewalLeaseId: `n-${id}`, newRent: 80000, previousRent: null, chequeRows: 0 })) };
+        });
+        render(<RenewalQueue filters={FILTERS} onStage={() => {}} perms={ALL} />);
+        fireEvent.click(await screen.findByTestId("renewal-select-all"));
+        await waitFor(() => expect(screen.getByTestId("renewal-selected-count")).toHaveTextContent("60 selected"));
+        fireEvent.click(screen.getByTestId("renewal-bulk-renew"));
+        fireEvent.click(screen.getByTestId("bulk-renew-confirm"));
+        await screen.findByTestId("bulk-renew-results");
+        // Three chunks were sent although the second failed; all 60 are counted.
+        expect(api.callsTo("POST", "/leases/renew-batch").map(c => (c.body as { leaseIds: string[] }).leaseIds.length)).toEqual([25, 25, 10]);
+        expect(screen.getByText("35 drafted, 25 refused.")).toBeInTheDocument();
+        expect(screen.getByTestId("bulk-renew-result-l30")).toHaveAttribute("data-ok", "false");
+        expect(screen.getByTestId("bulk-renew-result-l30")).toHaveTextContent("Not processed");
+        expect(screen.getByText(/Some contracts could not be sent/)).toBeInTheDocument();
+        // Retry sends exactly the 25 that were not processed.
+        fireEvent.click(screen.getByTestId("bulk-renew-retry"));
+        await waitFor(() => expect(screen.getByText("60 drafted, 0 refused.")).toBeInTheDocument());
+        const retry = api.callsTo("POST", "/leases/renew-batch")[3].body as { leaseIds: string[] };
+        expect(retry.leaseIds).toEqual(Array.from({ length: 25 }, (_, i) => `l${i + 25}`));
+    });
+
+    it("never sweeps a contract under notice into a bulk renew", async () => {
+        rows = [lease("a"), lease("n", { status: "NOTICE_GIVEN" })];
+        render(<RenewalQueue filters={{ ...FILTERS, stage: "all" }} onStage={() => {}} perms={ALL} />);
+        const notice = await screen.findByTestId("renewal-row-n");
+        expect(within(notice).queryByRole("checkbox")).toBeNull();
+        fireEvent.click(screen.getByTestId("renewal-select-all"));
+        await waitFor(() => expect(screen.getByTestId("renewal-selected-count")).toHaveTextContent("1 selected"));
+        // The row action still renews it on its own.
+        fireEvent.click(screen.getByTestId("renewal-actions-trigger-n"));
+        expect(screen.getByTestId("queue-renew-n")).toBeInTheDocument();
+    });
+
     it("offers only the actions the role may take", async () => {
         render(<RenewalQueue filters={FILTERS} onStage={() => {}} perms={{ renew: false, extend: false, notice: true }} />);
         const row = await screen.findByTestId("renewal-row-a");

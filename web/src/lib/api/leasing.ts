@@ -1641,7 +1641,11 @@ export type BulkRenewRow = BatchRefusal & {
 };
 
 /** `LeaseBatch.TerminateRequest` (scale #17): null date = each contract's own end date. */
-export type BulkTerminateInput = { leaseIds: string[]; terminationDate?: string | null; notes?: string | null };
+export type BulkTerminateInput = {
+  leaseIds: string[]; terminationDate?: string | null; notes?: string | null;
+  /** Per contract, the cheque split its preview showed; the server refuses a contract whose register changed since. */
+  splits?: Record<string, { returnChequeIds: string[]; keepChequeIds: string[] }>;
+};
 
 export type BulkTerminatePreviewRow = BatchRefusal & {
   leaseId: string;

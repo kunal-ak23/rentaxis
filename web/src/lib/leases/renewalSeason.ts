@@ -97,6 +97,15 @@ export function isRenewable(l: Pick<LeaseDetail, "status" | "renewedToLeaseId" |
         && !l.renewedToLeaseId && !l.transferredToLeaseId;
 }
 
+/**
+ * Whether bulk renew may select this row (review P3-3): renewable, and not a contract whose
+ * renter gave notice — those are renewed one at a time from the row, never swept up by
+ * "Select all" on the All stage.
+ */
+export function isBulkRenewable(l: Pick<LeaseDetail, "status" | "renewedToLeaseId" | "transferredToLeaseId">): boolean {
+    return isRenewable(l) && l.status !== "NOTICE_GIVEN";
+}
+
 /** Whether bulk terminate can take this row (`LeaseTerminationService.TERMINABLE`). */
 export function isTerminable(l: Pick<LeaseDetail, "status">): boolean {
     return l.status === "ACTIVE" || l.status === "NOTICE_GIVEN";
