@@ -1174,6 +1174,22 @@ export type LeaseChainLink = {
   link: "RENEWED" | "TRANSFERRED" | null;
 };
 
+/** PostLeaseDryRunResponse.TransferJournals (#100-f) — what a transfer posts beside B's TCO and PDRs. */
+export type TransferJournals = {
+  moveDate: string;
+  /** PDR reversals on A, dated T: rows leaving A's PDCs (carried or returned). */
+  pdrReversals: number;
+  pdrReversalTotal: number;
+  /** The TCR on A, dated T. */
+  unearned: number;
+  unearnedVat: number;
+  /** C, by a JV on T + 1: <0 prepaid, >0 owed, 0 no JV. */
+  balanceCarried: number;
+  balanceCarriedDate: string;
+  /** The deposit JV on B's contract date. */
+  depositCarried: number;
+};
+
 /** PostLeaseDryRunResponse — every validation a real post would run, nothing written. */
 export type PostLeaseDryRunResponse = {
   ok: boolean;
@@ -1182,7 +1198,11 @@ export type PostLeaseDryRunResponse = {
   contractValueInclVat: number;
   chequeTotal: number;
   depositCarriedForward: number;
-  journals: { tco: number; tcoLines: number; pdr: number };
+  journals: {
+    tco: number; tcoLines: number; pdr: number;
+    /** #100-f: on a transfer successor, the transfer's own journal groups; absent/null otherwise. */
+    transfer?: TransferJournals | null;
+  };
   /** F15-13: a transfer's carried cheques, re-registered on this grid when it posts. */
   carriedCheques?: { seqNo: number; chequeNumber: string | null; chequeDate: string | null; amount: number }[];
   /** What the real post would do that the accountant should know, not an error. */

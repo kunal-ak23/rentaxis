@@ -142,7 +142,20 @@ class LeaseTransferIT extends AbstractPostgresIT {
         UUID b = draftB(a, target, "41589.04");
         assertThat(lease(b).getStatus()).isEqualTo(LeaseStatus.DRAFT);
         assertThat(journalCount(JournalDocType.TCR)).as("a draft writes nothing").isZero();
-        assertThat(posting.dryRun(b).ok()).isTrue();
+        PostLeaseDryRunResponse dry = posting.dryRun(b);
+        assertThat(dry.ok()).isTrue();
+        // #100-f: the review lists the transfer's own journal groups, in posting order.
+        PostLeaseDryRunResponse.TransferJournals groups = dry.journals().transfer();
+        assertThat(groups).isNotNull();
+        assertThat(groups.moveDate()).isEqualTo(T);
+        assertThat(groups.pdrReversals()).as("July and October carried").isEqualTo(2);
+        assertThat(groups.pdrReversalTotal()).isEqualByComparingTo("30000");
+        assertThat(groups.unearned()).isEqualByComparingTo("37808.22");
+        assertThat(groups.unearnedVat()).isZero();
+        assertThat(groups.balanceCarried()).isEqualByComparingTo("-7808.22");
+        assertThat(groups.balanceCarriedDate()).isEqualTo(B_START);
+        assertThat(groups.depositCarried()).isEqualByComparingTo("3000");
+        assertThat(journalCount(JournalDocType.TCR)).as("the dry run writes nothing").isZero();
 
         posting.post(b);
 
@@ -482,6 +495,15 @@ class LeaseTransferIT extends AbstractPostgresIT {
         assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, a, fixtures.property())).isEqualByComparingTo("15000");
         assertThat(balanceOf(AccountRole.RENT_RECEIVABLE, b, fixtures.property())).isZero();
         assertTrialBalanceBalances();
+    }
+
+    /** #100-f: a lease that is not a transfer successor has no transfer groups (old clients see the three counts). */
+    @Test
+    void aPlainDraftsDryRunHasNoTransferGroups() {
+        UUID plain = fixtures.draftLease(CONTRACT, START, END, List.of(line("RENT", "60000")));
+        PostLeaseDryRunResponse dry = posting.dryRun(plain);
+        assertThat(dry.journals().transfer()).isNull();
+        assertThat(dry.journals().tco()).isEqualTo(1);
     }
 
     /**

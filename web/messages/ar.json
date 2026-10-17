@@ -2413,6 +2413,15 @@
     "dryRunLoading": "جارٍ فحص العقد…",
     "dryRunJournals": "{tco} قيد عقد بـ {tcoLines} بنود، و{pdr} قيد شيكات آجلة",
     "depositCarriedForward": "التأمين المُرحَّل",
+    "dryRunTransfer": {
+      "title": "يُرحِّل النقل أيضًا",
+      "pdrReversals": "{count, plural, one {عكس شيك واحد} two {عكس شيكين} few {عكس # شيكات} many {عكس # شيكًا} other {عكس # شيك}} على العقد القديم ({date})",
+      "tcr": "عكس الإيجار غير المكتسب على العقد القديم ({date})",
+      "tcrVat": "ضريبة القيمة المضافة على الإيجار غير المكتسب",
+      "balancePrepaid": "رصيد مدفوع مقدمًا منقول إلى هذا العقد ({date})",
+      "balanceOwed": "رصيد مستحق منقول إلى هذا العقد ({date})",
+      "deposit": "التأمين المنقول إلى هذا العقد"
+    },
     "savedAsDraftNeedsAccountant": "تم الحفظ كمسودة — يجب أن يقوم المحاسب بترحيله.",
     "postedBanner": "تم الترحيل باسم {tco}",
     "amendBlockedCheques": "الشيك {cheque} حالته {status}. لا يمكن التعديل إلا ما دامت كل الشيكات مسجّلة.",

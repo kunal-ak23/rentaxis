@@ -2413,6 +2413,15 @@
     "dryRunLoading": "Checking the contract…",
     "dryRunJournals": "{tco} TCO with {tcoLines} lines, {pdr} PDR",
     "depositCarriedForward": "Deposit carried forward",
+    "dryRunTransfer": {
+      "title": "The transfer also posts",
+      "pdrReversals": "{count, plural, one {# cheque reversal} other {# cheque reversals}} on the old lease ({date})",
+      "tcr": "Unearned rent reversed on the old lease ({date})",
+      "tcrVat": "VAT on the unearned rent",
+      "balancePrepaid": "Prepaid balance carried to this lease ({date})",
+      "balanceOwed": "Balance owed carried to this lease ({date})",
+      "deposit": "Deposit carried to this lease"
+    },
     "savedAsDraftNeedsAccountant": "Saved as a draft — an accountant must post it.",
     "postedBanner": "Posted as {tco}",
     "amendBlockedCheques": "Cheque {cheque} is {status}. Amend is only possible while every cheque is still Registered.",

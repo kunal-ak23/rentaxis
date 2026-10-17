@@ -9,6 +9,7 @@ import {
     type LeaseDetail,
     type PostLeaseDryRunResponse,
     type PostLeaseResponse,
+    type TransferJournals,
 } from "@/lib/api/leasing";
 import { fmtAmount } from "@/lib/api/ledger";
 import { serverText } from "@/components/finance/bankrec/serverText";
@@ -149,6 +150,10 @@ export default function PostLeaseDialog({ open, lease, onClose, onPosted, onStal
                                 ))}
                             </ul>
                         )}
+                        {/* #100-f: the transfer's own journal groups, in posting order. */}
+                        {dry.journals.transfer && (
+                            <TransferGroups groups={dry.journals.transfer} />
+                        )}
                         <p className="text-muted" data-testid="post-journals">
                             {t("dryRunJournals", {
                                 tco: dry.journals.tco,
@@ -187,6 +192,36 @@ export default function PostLeaseDialog({ open, lease, onClose, onPosted, onStal
                 )}
             </div>
         </LeaseDialog>
+    );
+}
+
+function TransferGroups({ groups }: { groups: TransferJournals }) {
+    const t = useTranslations("Leasing");
+    const moveDate = formatDate(groups.moveDate);
+    const jvDate = formatDate(groups.balanceCarriedDate);
+    return (
+        <div data-testid="post-transfer-journals">
+            <p className="text-muted font-semibold mb-1">{t("dryRunTransfer.title")}</p>
+            <dl className="space-y-1.5 rounded-xl border border-border bg-input/30 px-3 py-2.5">
+                {groups.pdrReversals > 0 && (
+                    <Row label={t("dryRunTransfer.pdrReversals", { count: groups.pdrReversals, date: moveDate })}
+                         value={fmtAmount(groups.pdrReversalTotal)} testId="post-transfer-pdr" />
+                )}
+                {groups.unearned > 0 && (
+                    <Row label={t("dryRunTransfer.tcr", { date: moveDate })} value={fmtAmount(groups.unearned)} testId="post-transfer-tcr" />
+                )}
+                {groups.unearnedVat > 0 && (
+                    <Row label={t("dryRunTransfer.tcrVat")} value={fmtAmount(groups.unearnedVat)} testId="post-transfer-tcr-vat" />
+                )}
+                {groups.balanceCarried !== 0 && (
+                    <Row label={t(groups.balanceCarried < 0 ? "dryRunTransfer.balancePrepaid" : "dryRunTransfer.balanceOwed", { date: jvDate })}
+                         value={fmtAmount(Math.abs(groups.balanceCarried))} testId="post-transfer-balance" />
+                )}
+                {groups.depositCarried > 0 && (
+                    <Row label={t("dryRunTransfer.deposit")} value={fmtAmount(groups.depositCarried)} testId="post-transfer-deposit" />
+                )}
+            </dl>
+        </div>
     );
 }
 

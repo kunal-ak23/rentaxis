@@ -467,10 +467,26 @@ public class LeaseTransferService {
 
     /** Spec §2: what the dry run of B needs, estimated with nothing written. */
     public record Estimate(BigDecimal carriedBalance, BigDecimal carriedTotal, List<String> problems,
-                           List<Cheque> carried) {
+                           List<Cheque> carried,
+                           /* #100-f: the transfer's own journal groups, for the dry run; null when A could not be estimated. */
+                           Groups groups) {
         public Estimate(BigDecimal carriedBalance, BigDecimal carriedTotal, List<String> problems) {
-            this(carriedBalance, carriedTotal, problems, List.of());
+            this(carriedBalance, carriedTotal, problems, List.of(), null);
         }
+    }
+
+    /**
+     * #100-f: what the transfer itself would post on B's post, beside B's TCO and PDRs —
+     * the figures {@link #estimateForDryRun} already works out, with nothing written.
+     *
+     * @param moveDate        T: the PDR reversals and the TCR are dated T, the balance JV T + 1
+     * @param pdrReversals    A's rows leaving its PDCs (CARRY and RETURN): one PDR reversal each
+     * @param pdrReversalTotal Σ of those rows
+     * @param unearned        the TCR on A: rent unearned after T
+     * @param unearnedVat     the TCR's VAT pairs on that unearned rent (0 when A carries no VAT)
+     */
+    public record Groups(LocalDate moveDate, int pdrReversals, BigDecimal pdrReversalTotal,
+                         BigDecimal unearned, BigDecimal unearnedVat) {
     }
 
     @Transactional(readOnly = true)
@@ -518,7 +534,11 @@ public class LeaseTransferService {
             problems.add(e.getMessage());
         }
         BigDecimal c = end.receivableAfter().subtract(bouncedTotal(register)).setScale(2, RoundingMode.HALF_UP);
-        return new Estimate(c, carried, problems, carriedRows);
+        BigDecimal leavingTotal = leaving.stream().map(Cheque::getAmount).filter(java.util.Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        Groups groups = new Groups(t, leaving.size(), leavingTotal.setScale(2, RoundingMode.HALF_UP),
+                money2(end.unearned()), money2(end.unearnedVat()));
+        return new Estimate(c, carried, problems, carriedRows, groups);
     }
 
     /**
@@ -583,6 +603,10 @@ public class LeaseTransferService {
                     "lease.transferSameUnit", Map.of());
         }
         return unit;
+    }
+
+    private static BigDecimal money2(BigDecimal v) {
+        return (v == null ? BigDecimal.ZERO : v).setScale(2, RoundingMode.HALF_UP);
     }
 
     private static BigDecimal bouncedTotal(List<Cheque> register) {
