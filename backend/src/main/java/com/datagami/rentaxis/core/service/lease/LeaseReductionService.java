@@ -454,6 +454,8 @@ public class LeaseReductionService {
         LocalDate e = r.effectiveFrom();
         List<LeaseEffectiveTerms.EffectiveLine> effective = effectiveTerms == null ? List.of()
                 : effectiveTerms.effectiveLines(lease, null);
+        LocalDate originalEnd = com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(lease,
+                leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId()));
         Map<UUID, LeaseLine> lines = new LinkedHashMap<>();
         for (LeaseLine l : leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId())) lines.put(l.getId(), l);
         Set<UUID> seen = new HashSet<>();
@@ -494,7 +496,9 @@ public class LeaseReductionService {
                         "lease.reductionNotScheduled", Map.of("line", line.getSeqNo(), "code", code));
             }
             LocalDate winFrom = line.getPeriodStart() != null ? line.getPeriodStart() : lease.getStartDate();
-            LocalDate winTo = line.getPeriodEnd() != null ? line.getPeriodEnd() : lease.getEndDate();
+            // Sim r22 S22-02: an undated line is priced over the term it was charged for, not an
+            // end date an extension moved.
+            LocalDate winTo = line.getPeriodEnd() != null ? line.getPeriodEnd() : originalEnd;
             LocalDate from = segs.stream().map(RentSegment::getFromDate).min(LocalDate::compareTo).orElseThrow();
             if (from.isBefore(e)) from = e;
             LocalDate to = segs.stream().map(RentSegment::getToDate).max(LocalDate::compareTo).orElseThrow();

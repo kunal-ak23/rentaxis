@@ -1175,6 +1175,24 @@ public class LeaseService {
     }
 
     /**
+     * Sim r22 S22-02: the end of the term the contract's own undated lines were charged for.
+     * An extension appends lines dated from after the lease's start (its window) and moves
+     * {@code lease.endDate}; the original term ends the day before the earliest such window.
+     * Without an extension it is the lease's end date.
+     */
+    public static LocalDate originalTermEnd(Lease lease, List<com.datagami.rentaxis.domain.entity.LeaseLine> lines) {
+        LocalDate end = lease.getEndDate();
+        if (lease.getStartDate() == null) return end;
+        for (com.datagami.rentaxis.domain.entity.LeaseLine l : lines) {
+            if (l.getAddendumId() != null || l.getPeriodStart() == null
+                    || !l.getPeriodStart().isAfter(lease.getStartDate())) continue;
+            LocalDate before = l.getPeriodStart().minusDays(1);
+            if (end == null || before.isBefore(end)) end = before;
+        }
+        return end;
+    }
+
+    /**
      * The contract's own RENT line: a RENT line no addendum charged, dated from the
      * lease's start (or undated). Extension and addendum rent lines are not it.
      */

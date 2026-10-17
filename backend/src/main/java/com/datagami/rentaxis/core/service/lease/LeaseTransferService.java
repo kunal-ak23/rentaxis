@@ -199,7 +199,9 @@ public class LeaseTransferService {
         List<LeaseLineInput> out = new ArrayList<>();
         // PR #359 R1 P2-1: the terms after any credit addendum on the move date.
         List<LeaseEffectiveTerms.EffectiveLine> effective = effectiveTerms.effectiveLines(a, start);
-        for (LeaseLine l : leaseLineRepository.findByLease_IdOrderBySeqNoAsc(a.getId())) {
+        List<LeaseLine> aLines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(a.getId());
+        LocalDate originalEnd = com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(a, aLines);
+        for (LeaseLine l : aLines) {
             LeaseEffectiveTerms.EffectiveLine eff = effectiveTerms.of(effective, l);
             if (eff != null && eff.removed()) continue;
             ChargeType type = l.getChargeType();
@@ -211,7 +213,8 @@ public class LeaseTransferService {
             // cut-over) was charged for the whole term and is carried to B in C.
             if (b == ChargeBehaviour.FEE && l.getPostedRecognition() == com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.ONE_OFF) continue;
             LocalDate from = l.getPeriodStart() != null ? l.getPeriodStart() : a.getStartDate();
-            LocalDate to = l.getPeriodEnd() != null ? l.getPeriodEnd() : a.getEndDate();
+            // Sim r22 S22-02: priced over the term the line was charged for, not an extended end date.
+            LocalDate to = l.getPeriodEnd() != null ? l.getPeriodEnd() : originalEnd;
             if (from.isAfter(a.getStartDate())) continue;   // an extension's window
             // Follow-up ruling R7: a credited line carries its new headline less the
             // discount, like any other line; the rent-free concession is not carried (§4a).

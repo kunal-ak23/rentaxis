@@ -648,6 +648,26 @@ class LeaseTransferIT extends AbstractPostgresIT {
     }
 
     /**
+     * Sim r22 S22-02: after an extension, B's default fee line is A's fee pro rata over the
+     * year it was charged for (3,650 × 230 ÷ 365 = 2,300), not over the extended 455 days.
+     */
+    @Test
+    void anExtendedLeasesFeeIsCarriedPerDayOfItsOwnTerm() {
+        UUID a = fixtures.draftLease(CONTRACT, START, END, List.of(line("RENT", "60000"), line("PARKING_FEE", "3650")));
+        chequeGeneration.saveRows(a, List.of(
+                row("670041", CONTRACT, JAN, "15912.50"),
+                row("670042", CONTRACT, APR, "15912.50"),
+                row("670043", CONTRACT, JUL, "15912.50"),
+                row("670044", CONTRACT, OCT, "15912.50")));
+        posting.post(a);
+        renewal.extend(a, new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(LocalDate.of(2027, 3, 31), null,
+                List.of(new LeaseLineInput(null, "RENT", new BigDecimal("14794.52"), BigDecimal.ZERO, null, null, null, null, null)),
+                List.of(LeaseTestFixtures.chequeRow("14794.52", LocalDate.of(2027, 1, 2)))));
+        var lines = tx.execute(s -> transfers.defaultLines(lease(a), B_START, END));
+        assertThat(lines).extracting(LeaseLineInput::grossAmount).contains(new BigDecimal("2300.00"));
+    }
+
+    /**
      * Review P1-1 of PR #425 (ruling R1): a cut-over lease transferred out carried its
      * at-posting parking into B's term (B may not charge it again), so A's settlement offers
      * no unearned-fee refund, and an UNEARNED_FEE_REFUND line is refused on save.
