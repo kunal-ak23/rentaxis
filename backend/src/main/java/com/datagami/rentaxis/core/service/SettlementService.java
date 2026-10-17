@@ -398,7 +398,35 @@ public class SettlementService {
                 unrecognised, money(totalDeductionVat),
                 money(totalDeductions.add(totalDeductionVat)),
                 vatLease ? com.datagami.rentaxis.core.service.lease.LeaseVat.RATE : BigDecimal.ZERO,
-                List.copyOf(VATABLE_RECHARGES));
+                List.copyOf(VATABLE_RECHARGES),
+                depositCarriedTo(lease));
+    }
+
+    /**
+     * #100-d: on a lease transferred out, where its deposit went. The posted
+     * successor (via {@code transferred_from_lease_id}) carried it with a {@code JV};
+     * the figure is what that journal moved off this lease. Display only: it is not
+     * in {@code depositsHeld} (the ledger already shows zero there) and never in
+     * {@code netRefund}. The successor's id and unit are withheld from a caller who
+     * may not read that lease (another building), so the line still explains the
+     * zero without naming a lease they cannot open.
+     */
+    private com.datagami.rentaxis.api.dto.settlement.DepositCarriedDTO depositCarriedTo(Lease lease) {
+        Lease successor = leaseRepository.findByTransferredFromLeaseId(lease.getId()).stream()
+                .filter(s -> s.getPostingJournalId() != null && s.getStatus() != LeaseStatus.DRAFT)
+                .findFirst().orElse(null);
+        if (successor == null) {
+            return null;
+        }
+        BigDecimal carried = depositLedger.carriedToSuccessor(lease, successor.getId());
+        if (carried.signum() <= 0) {
+            return null;
+        }
+        boolean readable = leaseAccessPolicy.canRead(successor);
+        return new com.datagami.rentaxis.api.dto.settlement.DepositCarriedDTO(
+                readable ? successor.getId() : null,
+                readable && successor.getUnit() != null ? successor.getUnit().getUnitNumber() : null,
+                money(carried));
     }
 
     /**

@@ -742,6 +742,34 @@ export default function SettlementPage() {
                 </div>
             )}
 
+            {/* #100-d: why a transferred-out lease holds no deposit. Display only — not refundable here. */}
+            {statement?.depositCarriedTo && (
+                <div
+                    data-testid="settlement-deposit-carried"
+                    className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-info/30 bg-info/10 px-4 py-3"
+                >
+                    <div className="min-w-0">
+                        <p className="text-xs font-semibold text-info">
+                            {statement.depositCarriedTo.leaseId ? (
+                                <Link
+                                    href={`/dashboard/leases/${statement.depositCarriedTo.leaseId}`}
+                                    className="hover:underline"
+                                    data-testid="settlement-deposit-carried-link"
+                                >
+                                    {t("depositCarriedTo", { unit: statement.depositCarriedTo.unitIdentifier ?? "—" })}
+                                </Link>
+                            ) : (
+                                t("depositCarriedToHidden")
+                            )}
+                        </p>
+                        <p className="text-[11px] text-muted mt-0.5">{t("depositCarriedHint")}</p>
+                    </div>
+                    <p className="text-sm font-bold tabular-nums text-info" data-testid="settlement-deposit-carried-amount">
+                        <bdi dir="ltr">{fmtAmount(statement.depositCarriedTo.amount)}</bdi>
+                    </p>
+                </div>
+            )}
+
             {statement?.outstandingInstruments && statement.outstandingInstruments.length > 0 && (
                 <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm">
                     <div className="px-4 py-3 border-b border-border">

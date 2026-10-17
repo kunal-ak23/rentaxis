@@ -1046,6 +1046,12 @@ export type SettlementStatement = {
   netRefund: number;
   /** PLANNED recognition rows. Non-zero → run recognition before settling. */
   unrecognisedEntries: number;
+  /**
+   * #100-d: a transferred-out lease's deposit, carried to the successor. Display only —
+   * not in `depositsHeld` and never in `netRefund`. `leaseId`/`unitIdentifier` are null
+   * when the caller may not read the successor.
+   */
+  depositCarriedTo?: { leaseId: string | null; unitIdentifier: string | null; amount: number } | null;
 };
 
 /** SettlementResponseDTO.DeductionDTO — one stored line. */

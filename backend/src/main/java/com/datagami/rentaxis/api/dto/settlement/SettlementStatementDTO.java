@@ -64,6 +64,9 @@ import java.util.List;
  * @param unrecognisedEntries  the lease's PLANNED recognition rows. Non-zero means
  *                             earned rent is missing from {@link #earnedRent} and
  *                             from the receivable; run recognition before settling.
+ * @param depositCarriedTo     #100-d: on a lease transferred out, the deposit its
+ *                             successor's {@code JV} carried away — why
+ *                             {@link #depositsHeld} is zero. Not in {@link #netRefund}.
  */
 public record SettlementStatementDTO(
         LocalDate asOf,
@@ -87,5 +90,8 @@ public record SettlementStatementDTO(
         /* F14-61: the rate a VAT-able recharge carries on this lease (0 when the lease charges no VAT),
            and which categories are VAT-able, so a screen re-pricing unsaved lines uses the same rule. */
         BigDecimal vatRate,
-        List<com.datagami.rentaxis.domain.entity.enums.DeductionCategory> vatableCategories) {
+        List<com.datagami.rentaxis.domain.entity.enums.DeductionCategory> vatableCategories,
+        /* #100-d: a transferred-out lease's deposit, carried to its successor — shown, never refunded
+           here; null unless a posted transfer carried a deposit off this lease. */
+        DepositCarriedDTO depositCarriedTo) {
 }

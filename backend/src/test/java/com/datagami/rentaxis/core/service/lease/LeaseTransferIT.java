@@ -485,6 +485,51 @@ class LeaseTransferIT extends AbstractPostgresIT {
     }
 
     /**
+     * #100-d: the statement of the lease left behind explains its zero deposit with a
+     * "carried to" line, the figure the deposit JV moved — not refundable, so it is
+     * not in the net refund — and a manager who cannot read B's building sees the
+     * amount without B's id or unit.
+     */
+    @Test
+    void theLeaseLeftBehindShowsItsDepositCarriedToTheNewLease() {
+        UUID a = leaseA(false);   // April bounced, so A stays TERMINATED and needs a settlement
+        Cheque april = chequeOn(a, APR);
+        chequeService.deposit(april.getId(), ChequeActionRequest.on(APR));
+        chequeService.bounce(april.getId(), new ChequeActionRequest(APR, null, ChequeFailureReason.BOUNCE, null));
+        var before = settlements.statement(a);
+        assertThat(before.depositCarriedTo()).as("nothing carried before the transfer").isNull();
+        assertThat(before.depositsHeld()).isEqualByComparingTo("3000");
+
+        Property other = tx.execute(s -> fixtures.createProperty("OTD"));
+        Unit target = tx.execute(s -> fixtures.createUnit(other, "B-310"));
+        UUID b = draftB(a, target, "41589.04");
+        assertThat(settlements.statement(a).depositCarriedTo()).as("a draft transfer carries nothing").isNull();
+        posting.post(b);
+        long journalsBefore = jdbc.queryForObject("select count(*) from journal_entries where tenant_id = ?",
+                Long.class, fixtures.tenantId());
+
+        var stmt = settlements.statement(a);
+        assertThat(stmt.depositsHeld()).isZero();
+        assertThat(stmt.depositCarriedTo()).isNotNull();
+        assertThat(stmt.depositCarriedTo().leaseId()).isEqualTo(b);
+        assertThat(stmt.depositCarriedTo().unitIdentifier()).isEqualTo("B-310");
+        assertThat(stmt.depositCarriedTo().amount()).isEqualByComparingTo("3000");
+        // Display only: the refund is the bounced debt, the carried deposit not offered back.
+        assertThat(stmt.netRefund()).isEqualByComparingTo("-15000");
+        assertThat(settlements.statement(b).depositCarriedTo()).as("B has no successor").isNull();
+        assertThat(jdbc.queryForObject("select count(*) from journal_entries where tenant_id = ?",
+                Long.class, fixtures.tenantId())).as("reading writes nothing").isEqualTo(journalsBefore);
+
+        // A manager of A's building only: the line still explains the zero, B stays unnamed.
+        asPropertyManagerFor(fixtures.property().getId());
+        var masked = settlements.statement(a).depositCarriedTo();
+        assertThat(masked.amount()).isEqualByComparingTo("3000");
+        assertThat(masked.leaseId()).isNull();
+        assertThat(masked.unitIdentifier()).isNull();
+        fixtures.asTenantAdmin();
+    }
+
+    /**
      * A grid that does not cover the contract plus C less the carried rows is refused
      * with the exact gap, and the whole transfer rolls back. A row kept on A stays
      * there for collection and its money reaches B through C.
@@ -679,6 +724,27 @@ class LeaseTransferIT extends AbstractPostgresIT {
         chequeGeneration.saveRows(b.getId(), List.of(row("620001", B_START, B_START, "3780.82")));
         return b.getId();
     }
+
+    /** A PROPERTY_MANAGER in the security context, assigned to {@code propertyId} only. */
+    private void asPropertyManagerFor(UUID propertyId) {
+        var pm = new com.datagami.rentaxis.domain.entity.User();
+        pm.setEmail("pm-" + UUID.randomUUID() + "@t.io");
+        pm.setName("PM");
+        pm.setRole(com.datagami.rentaxis.domain.entity.enums.UserRole.PROPERTY_MANAGER);
+        pm.setStatus(com.datagami.rentaxis.domain.entity.enums.UserStatus.ACTIVE);
+        pm.setPasswordHash("x");
+        pm.setTenantId(fixtures.tenantId());
+        UUID userId = userRepo.save(pm).getId();
+        var assignment = new com.datagami.rentaxis.domain.entity.UserPropertyAssignment();
+        assignment.setUserId(userId);
+        assignment.setPropertyId(propertyId);
+        assignmentRepo.save(assignment);
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(userId.toString(), null,
+                        List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_PROPERTY_MANAGER"))));
+    }
+
+    @Autowired com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository assignmentRepo;
 
     private static TransferLeaseRequest request(LocalDate t, UUID unit, List<LeaseLineInput> lines) {
         return new TransferLeaseRequest(t, unit, null, null, lines, null);
