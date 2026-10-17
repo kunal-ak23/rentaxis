@@ -272,6 +272,22 @@ class YearEndCloseIT extends AbstractPostgresIT {
     }
 
     /**
+     * #99 R1: the start month is frozen while a year is closed (its YEC and lock were
+     * cut on the old month); once the year is re-opened it may change again.
+     */
+    @Test
+    void theStartMonthCannotChangeWhileAYearIsClosed() {
+        twoYears(true);
+        closes.close(2024, false, TODAY);
+        assertThatThrownBy(() -> fiscal.setFiscalYearStartMonth(4))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("1 fiscal year(s) are closed");
+        assertThat(fiscal.setFiscalYearStartMonth(1).getFiscalYearStartMonth()).isEqualTo(1);
+        closes.reopen(2024, "Change of fiscal year", TODAY);
+        assertThat(fiscal.setFiscalYearStartMonth(4).getFiscalYearStartMonth()).isEqualTo(4);
+    }
+
+    /**
      * Break-it R3 money3 N6 (FY2): the re-open dialog showed the lock at 31/12/2024;
      * another tab then locked through 30/06/2025. The stale re-open is refused 409
      * fiscal.changed — nothing reversed, the newer lock kept — and a re-open carrying

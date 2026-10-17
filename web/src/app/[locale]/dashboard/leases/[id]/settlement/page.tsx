@@ -17,6 +17,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import AccountPicker from "@/components/finance/AccountPicker";
 import { storedFileSrc } from "@/lib/assetUrl";
+import { badDebtsApi } from "@/lib/api/badDebts";
+import { stillDueOf, writtenOffTotals } from "@/components/leases/writtenOff";
 import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 import { clampIso, fmtIsoDate, isoDayAfter, maxIso, todayIso } from "@/components/leases/leaseMath";
 import { businessTodayIso, isAfterBusinessToday } from "@/lib/businessDate";
@@ -219,6 +221,8 @@ export default function SettlementPage() {
     const canTerminate = hasPermission(userRole, "canPreviewTermination");
     // F14-36: paying a deposit refund out is an ordinary voucher post.
     const canPayRefund = hasPermission(userRole, "canManageVouchers");
+    // #102: write-offs are finance data — the same gate as the lease card.
+    const canSeeBadDebts = hasPermission(userRole, "canAccessFinance");
 
     const [lease, setLease] = useState<LeaseDetail | null>(null);
     const [statement, setStatement] = useState<SettlementStatement | null>(null);
@@ -314,6 +318,29 @@ export default function SettlementPage() {
     }, [canView, userRole, load]);
 
     const finalized = storedRow?.status === "FINALIZED";
+
+    /**
+     * #102 (review P2-1): a FINALIZED statement with a balance due says what is
+     * still due — the server's live ledger figure (`storedRow.stillDue`), which
+     * already reflects every receipt and write-off since — and, for finance
+     * roles, the write-offs dated on or after the move-out (plus the tenancy's
+     * total when earlier ones exist). Same helper as the lease card.
+     */
+    const [writtenOff, setWrittenOff] = useState({ total: 0, sinceMoveOut: 0 });
+    const finalBalanceDue = finalized ? (storedRow?.balanceDue ?? 0) : 0;
+    const finalSettlementDate = finalized ? (storedRow?.settlementDate ?? null) : null;
+    const stillDue = finalized ? stillDueOf(storedRow) : null;
+    useEffect(() => {
+        if (!canSeeBadDebts || finalBalanceDue <= 0) {
+            setWrittenOff({ total: 0, sinceMoveOut: 0 });
+            return;
+        }
+        let live = true;
+        badDebtsApi.forLease(leaseId)
+            .then(ws => { if (live) setWrittenOff(writtenOffTotals(ws, finalSettlementDate)); })
+            .catch(() => { /* the breakdown is extra; the balance due still shows */ });
+        return () => { live = false; };
+    }, [leaseId, canSeeBadDebts, finalBalanceDue, finalSettlementDate]);
     const settleable = !!lease && SETTLEABLE.includes(lease.status);
     const editable = canSettle && !finalized;
 
@@ -718,6 +745,34 @@ export default function SettlementPage() {
                 </div>
             )}
 
+            {/* #100-d: why a transferred-out lease holds no deposit. Display only — not refundable here. */}
+            {statement?.depositCarriedTo && (
+                <div
+                    data-testid="settlement-deposit-carried"
+                    className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-info/30 bg-info/10 px-4 py-3"
+                >
+                    <div className="min-w-0">
+                        <p className="text-xs font-semibold text-info">
+                            {statement.depositCarriedTo.leaseId ? (
+                                <Link
+                                    href={`/dashboard/leases/${statement.depositCarriedTo.leaseId}`}
+                                    className="hover:underline"
+                                    data-testid="settlement-deposit-carried-link"
+                                >
+                                    {t("depositCarriedTo", { unit: statement.depositCarriedTo.unitIdentifier ?? "—" })}
+                                </Link>
+                            ) : (
+                                t("depositCarriedToHidden")
+                            )}
+                        </p>
+                        <p className="text-[11px] text-muted mt-0.5">{t("depositCarriedHint")}</p>
+                    </div>
+                    <p className="text-sm font-bold tabular-nums text-info" data-testid="settlement-deposit-carried-amount">
+                        <bdi dir="ltr">{fmtAmount(statement.depositCarriedTo.amount)}</bdi>
+                    </p>
+                </div>
+            )}
+
             {statement?.outstandingInstruments && statement.outstandingInstruments.length > 0 && (
                 <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm">
                     <div className="px-4 py-3 border-b border-border">
@@ -849,6 +904,19 @@ export default function SettlementPage() {
                         </span>
                     </div>
                     {netRefund === 0 && <p className="text-[11px] text-muted">{t("settled")}</p>}
+                    {finalized && netRefund < 0 && (writtenOff.total > 0 || (stillDue != null && stillDue !== finalBalanceDue)) && (
+                        <div className="space-y-2" data-testid="settlement-write-off-breakdown">
+                            {writtenOff.sinceMoveOut > 0 && (
+                                <Row label={t("writtenOffSinceMoveOut")} value={`- ${fmtAmount(writtenOff.sinceMoveOut)}`} tone="success" testId="settlement-written-off" />
+                            )}
+                            {writtenOff.total > writtenOff.sinceMoveOut && (
+                                <Row label={t("writtenOffTenancyTotal")} value={fmtAmount(writtenOff.total)} testId="settlement-written-off-total" />
+                            )}
+                            {stillDue != null && (
+                                <Row label={t("stillDue")} value={fmtAmount(stillDue)} tone="error" testId="settlement-still-due" />
+                            )}
+                        </div>
+                    )}
                 </div>
             )}
 

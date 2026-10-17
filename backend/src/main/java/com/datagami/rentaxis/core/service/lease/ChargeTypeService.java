@@ -272,16 +272,22 @@ public class ChargeTypeService {
      * behaviour and recognition decided how that lease hit the books (TCO credit,
      * deferral, schedule). Changing them would make the catalogue disagree with the
      * ledger, so it is refused; a new rule goes on a new charge type.
+     *
+     * <p>The credit role too: a posted deposit is found again by its type's role
+     * ({@code LeaseDepositLedger}, {@code DepositCarryForward}), so moving a
+     * Security Deposit type onto PARKING_DEPOSIT would point the refund, forfeit and
+     * carry of every posted lease at a liability its money never went into.</p>
      */
     private void refuseRuleChangeWhenInUse(ChargeType e, ChargeTypeDTO dto) {
         boolean behaviourChanged = dto.behaviour() != null && dto.behaviour() != e.getBehaviour();
         boolean recognitionChanged = dto.recognition() != null && dto.recognition() != e.getRecognition();
-        if (!behaviourChanged && !recognitionChanged) return;
+        boolean roleChanged = dto.role() != null && dto.role() != e.getRole();
+        if (!behaviourChanged && !recognitionChanged && !roleChanged) return;
         long used = leaseLines.countNonDraftLeasesUsing(e.getId());
         if (used == 0) return;
         throw new BusinessRuleViolationException(
-                e.getCode() + " is on " + used + " lease(s) already past draft; its kind and how it is earned "
-                        + "cannot change. Create a new charge type for the new rule.",
+                e.getCode() + " is on " + used + " lease(s) already past draft; its kind, account and how it is "
+                        + "earned cannot change. Create a new charge type for the new rule.",
                 "chargeType.ruleInUse", Map.of("code", e.getCode(), "count", used));
     }
 
