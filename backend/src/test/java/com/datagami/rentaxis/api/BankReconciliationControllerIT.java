@@ -202,7 +202,8 @@ class BankReconciliationControllerIT extends AbstractPostgresIT {
         assertThat(json(upload(superAdmin, CSV, null, false)).get("linesNew").asInt()).isEqualTo(2);
 
         ResponseEntity<String> created = call(HttpMethod.POST, BASE + "/bank-accounts/" + ei.getId() + "/reconciliations", superAdmin,
-                Map.of("periodFrom", "2026-09-01", "periodTo", "2026-09-02"));
+                // The paper statement's closing (sim r22 S22-03: the export ends on its last line-day).
+                Map.of("periodFrom", "2026-09-01", "periodTo", "2026-09-02", "statementClosing", "95.00"));
         assertThat(created.getStatusCode()).as(created.getBody()).isEqualTo(HttpStatus.OK);
         JsonNode draft = json(created);
         String id = draft.get("id").asText();

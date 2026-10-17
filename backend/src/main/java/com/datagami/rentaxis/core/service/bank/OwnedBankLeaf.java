@@ -159,6 +159,7 @@ public class OwnedBankLeaf {
             int n = jdbc.update("""
                     insert into bank_account_ledgers (tenant_id, bank_account_id, account_id) values (:t, :b, :a)
                     on conflict do nothing""", p);
+            if (n > 0) renameDefaultNamed(t, bankAccountId, List.of(accountId));
             return n > 0 ? Claim.ADOPTED : Claim.OWNED_ELSEWHERE;
         }
         if (!moveUnposted || !buildingLeaf(t, bankAccountId, accountId) || postings(t, accountId, null) > 0) {
@@ -172,7 +173,10 @@ public class OwnedBankLeaf {
         // bank's name, so the chart does not say one bank while another owns it. Only
         // that exact generated name changes (review P3-17); a name someone typed is kept.
         jdbc.update("""
-                update accounts a set name = nb.bank_name || ' - ' || p.name_en, updated_at = now()
+                update accounts a set name = nb.bank_name || ' - ' || p.name_en,
+                       name_en = case when a.name_en is null or a.name_en = a.name
+                                      then nb.bank_name || ' - ' || p.name_en else a.name_en end,
+                       updated_at = now()
                   from bank_accounts ob, bank_accounts nb, properties p
                  where a.id = :a and a.tenant_id = :t
                    and ob.id = :o and ob.tenant_id = :t and nb.id = :b and nb.tenant_id = :t
@@ -212,7 +216,7 @@ public class OwnedBankLeaf {
     public int attachUnownedPropertyLeaves(UUID bankAccountId) {
         UUID t = TenantContextHolder.getTenantId();
         if (t == null || bankAccountId == null) return 0;
-        return jdbc.update("""
+        List<UUID> taken = jdbc.queryForList("""
                 insert into bank_account_ledgers (tenant_id, bank_account_id, account_id)
                 select distinct a.tenant_id, b.id, a.id
                 from bank_accounts b
@@ -222,8 +226,53 @@ public class OwnedBankLeaf {
                  and a.account_sub_type = 'BANK' and not a.is_group and a.is_active and a.property_id = m.property_id
                 where b.id = :b and b.tenant_id = :t
                   and not exists (select 1 from bank_account_ledgers l where l.tenant_id = a.tenant_id and l.account_id = a.id)
-                on conflict do nothing""",
-                new MapSqlParameterSource("t", t).addValue("b", bankAccountId));
+                on conflict do nothing
+                returning account_id""",
+                new MapSqlParameterSource("t", t).addValue("b", bankAccountId), UUID.class);
+        renameDefaultNamed(t, bankAccountId, taken);
+        return taken.size();
+    }
+
+    /**
+     * The BANK leaf name a property is given while no bank account owns it: the seeded
+     * template's (S21-04), and the one seeded before it, which named one client's bank.
+     */
+    static final List<String> UNOWNED_DEFAULT_PREFIXES = List.of("Bank - ", "Emirates Islamic - ");
+
+    /**
+     * Sim r21 S21-04: a property's bank leaf generated before any bank account took it
+     * carries the template's name ("Bank - <property>", or the old seed's
+     * "Emirates Islamic - <property>"), or the name an earlier owner gave it
+     * ("<that bank> - <property>", sim r22 S22-01); once a bank account adopts it, it is
+     * named after that bank, as a leaf generated with the bank in place is. Only that exact,
+     * untouched name changes. {@code name_en} follows when it still held the old name
+     * (review P2-1: the Chart of Accounts shows and saves it); a distinct English name
+     * someone typed is kept, and {@code name_ar} is the generic "bank account" label.
+     */
+    public void renameDefaultNamed(UUID t, UUID bankAccountId, List<UUID> accountIds) {
+        if (accountIds.isEmpty()) return;
+        jdbc.update("""
+                update accounts a set name = nb.bank_name || ' - ' || p.name_en,
+                       name_en = case when a.name_en is null or a.name_en = a.name
+                                      then nb.bank_name || ' - ' || p.name_en else a.name_en end,
+                       updated_at = now()
+                  from bank_accounts nb, properties p
+                 where a.tenant_id = :t and a.id in (:a)
+                   and nb.id = :b and nb.tenant_id = :t
+                   and p.id = a.property_id and p.tenant_id = :t
+                   and a.account_sub_type = 'BANK' and not a.is_group
+                   and (a.name in (cast(:names0 as text) || p.name_en, cast(:names1 as text) || p.name_en)
+                        -- sim r22 S22-01: or the name another bank account of the organisation
+                        -- gave it ("<that bank> - <property>"): an org-wide bank adopts every
+                        -- unowned property leaf on creation, and a leaf it later lets go keeps
+                        -- that name until the bank that takes it renames it.
+                        or exists (select 1 from bank_accounts ob
+                                    where ob.tenant_id = :t and ob.id <> :b
+                                      and a.name = ob.bank_name || ' - ' || p.name_en))
+                   and a.name <> nb.bank_name || ' - ' || p.name_en""",
+                new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("a", accountIds)
+                        .addValue("names0", UNOWNED_DEFAULT_PREFIXES.get(0))
+                        .addValue("names1", UNOWNED_DEFAULT_PREFIXES.get(1)));
     }
 
     /** Whether this tenant has any bank account with a ledger leaf. */
