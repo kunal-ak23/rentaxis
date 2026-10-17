@@ -427,7 +427,9 @@ public class SettlementService {
             return List.of();
         }
         List<com.datagami.rentaxis.api.dto.settlement.UnearnedFeeRefundDTO> out = new ArrayList<>();
-        for (com.datagami.rentaxis.domain.entity.LeaseLine line : leaseLines.findByLease_IdOrderBySeqNoAsc(lease.getId())) {
+        List<com.datagami.rentaxis.domain.entity.LeaseLine> all = leaseLines.findByLease_IdOrderBySeqNoAsc(lease.getId());
+        LocalDate chargedThrough = originalTermEnd(lease, all);
+        for (com.datagami.rentaxis.domain.entity.LeaseLine line : all) {
             var type = line.getChargeType();
             if (type == null || type.getBehaviour() != com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour.FEE
                     || type.getRecognition() != com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.RENT_LIKE
@@ -440,7 +442,10 @@ public class SettlementService {
             if (com.datagami.rentaxis.core.service.lease.LeaseVat.vatOf(line).signum() > 0) continue;
             BigDecimal net = line.getNetAmount() == null ? BigDecimal.ZERO : line.getNetAmount();
             LocalDate from = line.getPeriodStart() != null ? line.getPeriodStart() : lease.getStartDate();
-            LocalDate to = line.getPeriodEnd() != null ? line.getPeriodEnd() : lease.getEndDate();
+            // Sim r22 S22-02: an undated line was charged for the term as it stood at posting;
+            // an extension moves lease.endDate but dates its own lines, so the term ends the
+            // day before the first extension window, not at today's end date.
+            LocalDate to = line.getPeriodEnd() != null ? line.getPeriodEnd() : chargedThrough;
             if (net.signum() <= 0 || from == null || to == null || to.isBefore(from) || !end.isBefore(to)) continue;
             BigDecimal unearned = net.subtract(
                     com.datagami.rentaxis.core.service.recognition.ProrationEngine.earnedThrough(net, from, to, end));
@@ -454,6 +459,24 @@ public class SettlementService {
                     money(unearned)));
         }
         return List.copyOf(out);
+    }
+
+    /**
+     * Sim r22 S22-02: the end of the term the contract's own undated lines were charged for.
+     * An extension appends lines dated from after the lease's start (its window) and moves
+     * {@code lease.endDate}; the original term ends the day before the earliest such window.
+     * Without an extension it is the lease's end date.
+     */
+    static LocalDate originalTermEnd(Lease lease, List<com.datagami.rentaxis.domain.entity.LeaseLine> lines) {
+        LocalDate end = lease.getEndDate();
+        if (lease.getStartDate() == null) return end;
+        for (com.datagami.rentaxis.domain.entity.LeaseLine l : lines) {
+            if (l.getAddendumId() != null || l.getPeriodStart() == null
+                    || !l.getPeriodStart().isAfter(lease.getStartDate())) continue;
+            LocalDate before = l.getPeriodStart().minusDays(1);
+            if (end == null || before.isBefore(end)) end = before;
+        }
+        return end;
     }
 
     /**

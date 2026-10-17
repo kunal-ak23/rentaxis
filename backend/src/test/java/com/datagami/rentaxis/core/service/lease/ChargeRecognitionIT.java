@@ -62,6 +62,7 @@ class ChargeRecognitionIT extends AbstractPostgresIT {
     @Autowired LeasePostingService posting;
     @Autowired LeaseTerminationService termination;
     @Autowired com.datagami.rentaxis.core.service.SettlementService settlements;
+    @Autowired LeaseRenewalService renewal;
     @Autowired ChequeGenerationService chequeGeneration;
     @Autowired RecognitionService recognition;
     @Autowired LeaseService leaseService;
@@ -274,6 +275,34 @@ class ChargeRecognitionIT extends AbstractPostgresIT {
         assertThatThrownBy(() -> settlements.saveDraft(leaseId, draft(refund(leaf(AccountRole.PARKING_INCOME).getId(), "100")), null))
                 .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("settlement.unearnedFeeNotOffered"));
         settlements.saveDraft(leaseId, draft(refund(leaf(AccountRole.COOLING_CHARGES).getId(), "440.00")), null);
+    }
+
+    /**
+     * Sim r22 S22-02: an extension moves the lease's end date but dates its own lines, so a
+     * cut-over fee charged for the original year (24/09/2026 – 23/09/2027) is still measured
+     * over that year: 220 of 365 days unearned at 15/02/2027, 2,200, not 3,650 spread over
+     * the extended 464 days. More than that is refused.
+     */
+    @Test
+    void anExtensionDoesNotStretchTheWindowOfAnUnearnedFeeRefund() {
+        UUID leaseId = postedTheOldWay();
+        renewal.extend(leaseId, new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(LocalDate.of(2027, 12, 31),
+                null, List.of(new com.datagami.rentaxis.api.dto.lease.LeaseLineInput(null, "RENT", new BigDecimal("13900"),
+                        BigDecimal.ZERO, null, null, null, null, null)),
+                List.of(LeaseTestFixtures.chequeRow("13900", LocalDate.of(2027, 10, 2)))));
+        LocalDate extendedTo = tx.execute(x -> leaseRepo.findById(leaseId).orElseThrow().getEndDate());
+        assertThat(extendedTo).isEqualTo(LocalDate.of(2027, 12, 31));
+        termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, "Early exit"), null);
+
+        assertThat(settlements.statement(leaseId).unearnedFeeRefunds()).singleElement().satisfies(o -> {
+            assertThat(o.chargeTypeCode()).isEqualTo("PARKING_FEE");
+            assertThat(o.to()).isEqualTo(END);
+            assertThat(o.days()).isEqualTo(365);
+            assertThat(o.unearnedDays()).isEqualTo(220);
+            assertThat(o.amount()).isEqualByComparingTo("2200.00");
+        });
+        assertThatThrownBy(() -> settlements.saveDraft(leaseId, draft(refund(leaf(AccountRole.PARKING_INCOME).getId(), "2200.01")), null))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("settlement.unearnedFeeTooMuch"));
     }
 
     private static com.datagami.rentaxis.api.dto.SaveSettlementDTO.DeductionItemDTO refund(UUID account, String amount) {
