@@ -1,5 +1,5 @@
 // src/lib/leases/renewalSeason.ts
-import type { LeaseDetail, LeaseStatus, SuccessorState } from "../api/leasing";
+import type { LeaseDetail, LeaseStatus, RenewalMark, SuccessorState } from "../api/leasing";
 import { idParam } from "../urlIds";
 
 /**
@@ -8,9 +8,11 @@ import { idParam } from "../urlIds";
  * (`GET /leases/paged?endDateFrom=&endDateTo=&excludeStatus=&successor=`), so its count is
  * the server's total, not a page's worth of guesswork.
  *
- * - **todo**: ACTIVE or EXPIRED (a holdover), no renewal drafted yet — what bulk renew is for;
- * - **drafted**: a renewal (or transfer) has been drafted, not yet posted;
- * - **notRenewing**: the renter (or landlord) gave notice — "mark not renewing";
+ * - **todo**: ACTIVE or EXPIRED (a holdover), no renewal drafted, not marked "not renewing" —
+ *   what bulk renew is for;
+ * - **drafted**: a renewal (or transfer) has been drafted, not yet posted — where its cheques
+ *   are numbered in bulk;
+ * - **notRenewing**: marked "not renewing" (the soft, reversible mark), or on notice;
  * - **renewed**: the renewal is on the books;
  * - **all**: every contract ending in the month that has not been terminated or closed.
  */
@@ -19,18 +21,18 @@ export const QUEUE_STAGES: QueueStage[] = ["todo", "drafted", "notRenewing", "re
 
 const EVERY: LeaseStatus[] = ["DRAFT", "PENDING_SIGNATURE", "ACTIVE", "NOTICE_GIVEN", "RENEWED", "TERMINATED", "EXPIRED", "CLOSED"];
 
-const STAGE: Record<QueueStage, { statuses: LeaseStatus[]; successor: SuccessorState }> = {
-    todo: { statuses: ["ACTIVE", "EXPIRED"], successor: "NONE" },
-    drafted: { statuses: ["ACTIVE", "NOTICE_GIVEN", "EXPIRED"], successor: "DRAFTED" },
-    notRenewing: { statuses: ["NOTICE_GIVEN"], successor: "NONE" },
-    renewed: { statuses: ["RENEWED"], successor: "ANY" },
-    all: { statuses: ["ACTIVE", "NOTICE_GIVEN", "EXPIRED", "RENEWED"], successor: "ANY" },
+const STAGE: Record<QueueStage, { statuses: LeaseStatus[]; successor: SuccessorState; mark: RenewalMark }> = {
+    todo: { statuses: ["ACTIVE", "EXPIRED"], successor: "NONE", mark: "UNMARKED" },
+    drafted: { statuses: ["ACTIVE", "NOTICE_GIVEN", "EXPIRED"], successor: "DRAFTED", mark: "ANY" },
+    notRenewing: { statuses: ["ACTIVE", "NOTICE_GIVEN", "EXPIRED"], successor: "NONE", mark: "NOT_RENEWING" },
+    renewed: { statuses: ["RENEWED"], successor: "ANY", mark: "ANY" },
+    all: { statuses: ["ACTIVE", "NOTICE_GIVEN", "EXPIRED", "RENEWED"], successor: "ANY", mark: "ANY" },
 };
 
 /** The paged-read filters for a stage: the statuses it does not hold are excluded. */
-export function stageQuery(stage: QueueStage): { excludeStatus: LeaseStatus[]; successor: SuccessorState } {
+export function stageQuery(stage: QueueStage): { excludeStatus: LeaseStatus[]; successor: SuccessorState; mark: RenewalMark } {
     const s = STAGE[stage];
-    return { excludeStatus: EVERY.filter(x => !s.statuses.includes(x)), successor: s.successor };
+    return { excludeStatus: EVERY.filter(x => !s.statuses.includes(x)), successor: s.successor, mark: s.mark };
 }
 
 /** `YYYY-MM` → its first and last day (ISO). */
@@ -98,12 +100,17 @@ export function isRenewable(l: Pick<LeaseDetail, "status" | "renewedToLeaseId" |
 }
 
 /**
- * Whether bulk renew may select this row (review P3-3): renewable, and not a contract whose
- * renter gave notice — those are renewed one at a time from the row, never swept up by
- * "Select all" on the All stage.
+ * Whether bulk renew may select this row (review P3-3, PR C ruling 1): renewable, and neither
+ * on notice nor marked "not renewing" — those are renewed one at a time from the row, never
+ * swept up by "Select all".
  */
-export function isBulkRenewable(l: Pick<LeaseDetail, "status" | "renewedToLeaseId" | "transferredToLeaseId">): boolean {
-    return isRenewable(l) && l.status !== "NOTICE_GIVEN";
+export function isBulkRenewable(l: Pick<LeaseDetail, "status" | "renewedToLeaseId" | "transferredToLeaseId" | "notRenewingAt">): boolean {
+    return isRenewable(l) && l.status !== "NOTICE_GIVEN" && !l.notRenewingAt;
+}
+
+/** Whether this row's renewal draft can have its cheques numbered in bulk. */
+export function hasDraftRenewal(l: Pick<LeaseDetail, "renewedToLeaseId" | "renewedToStatus">): boolean {
+    return !!l.renewedToLeaseId && l.renewedToStatus === "DRAFT";
 }
 
 /** Whether bulk terminate can take this row (`LeaseTerminationService.TERMINABLE`). */

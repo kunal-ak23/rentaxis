@@ -179,20 +179,66 @@ describe("renewal season queue", () => {
         fireEvent.click(screen.getByTestId("renewal-actions-trigger-a"));
         expect(screen.queryByTestId("queue-renew-a")).toBeNull();
         expect(screen.queryByTestId("queue-extend-a")).toBeNull();
-        expect(screen.getByTestId("queue-not-renewing-a")).toBeInTheDocument();
+        expect(screen.queryByTestId("queue-not-renewing-a")).toBeNull();
+        expect(screen.getByTestId("queue-give-notice-a")).toBeInTheDocument();
         expect(screen.getByTestId("queue-contact-a")).toBeInTheDocument();
     });
 
-    it("marks a contract not renewing by giving notice, and re-reads the queue", async () => {
-        api.on("POST", "/leases/a/notice", { body: lease("a", { status: "NOTICE_GIVEN" }) });
+    it("marks a contract not renewing with a soft, reversible note that gives no notice", async () => {
+        api.on("POST", "/leases/a/renewal/not-renewing", { body: { leaseId: "a", notRenewing: true, at: "2026-10-17T08:00:00Z", by: "u1", note: "Moving" } });
         render(<RenewalQueue filters={FILTERS} onStage={() => {}} perms={ALL} />);
         fireEvent.click(await screen.findByTestId("renewal-actions-trigger-a"));
         fireEvent.click(screen.getByTestId("queue-not-renewing-a"));
         const reads = api.callsTo("GET", "/leases/paged").length;
+        fireEvent.change(screen.getByTestId("renewal-mark-note"), { target: { value: "Moving" } });
+        fireEvent.click(screen.getByTestId("renewal-mark-confirm"));
+        await waitFor(() => expect(api.callsTo("POST", "/leases/a/renewal/not-renewing")).toHaveLength(1));
+        expect(api.callsTo("POST", "/leases/a/renewal/not-renewing")[0].body).toEqual({ note: "Moving" });
+        // Not a notice: the notice endpoint is never called.
+        expect(api.callsTo("POST", "/notice")).toHaveLength(0);
+        await waitFor(() => expect(api.callsTo("GET", "/leases/paged").length).toBeGreaterThan(reads));
+    });
+
+    it("shows who marked a contract, lets it be undone, and keeps Renew and Extend available", async () => {
+        rows = [lease("m", { notRenewingAt: "2026-10-10T08:00:00Z", notRenewingByName: "Paul PM", notRenewingNote: "Moving" })];
+        api.on("DELETE", "/leases/m/renewal/not-renewing", { body: { leaseId: "m", notRenewing: false } });
+        render(<RenewalQueue filters={{ ...FILTERS, stage: "notRenewing" }} onStage={() => {}} perms={ALL} />);
+        const row = await screen.findByTestId("renewal-row-m");
+        expect(row).toHaveTextContent("Not renewing — marked by Paul PM on 10/10/2026 · Moving");
+        expect(within(row).queryByRole("checkbox")).toBeNull();
+        fireEvent.click(screen.getByTestId("renewal-actions-trigger-m"));
+        expect(screen.getByTestId("queue-renew-m")).toBeInTheDocument();
+        expect(screen.getByTestId("queue-extend-m")).toBeInTheDocument();
+        expect(screen.getByTestId("queue-give-notice-m")).toBeInTheDocument();
+        expect(screen.queryByTestId("queue-not-renewing-m")).toBeNull();
+        fireEvent.click(screen.getByTestId("queue-undo-not-renewing-m"));
+        await waitFor(() => expect(api.callsTo("DELETE", "/leases/m/renewal/not-renewing")).toHaveLength(1));
+    });
+
+    it("gives notice as its own action", async () => {
+        api.on("POST", "/leases/a/notice", { body: lease("a", { status: "NOTICE_GIVEN" }) });
+        render(<RenewalQueue filters={FILTERS} onStage={() => {}} perms={ALL} />);
+        fireEvent.click(await screen.findByTestId("renewal-actions-trigger-a"));
+        fireEvent.click(screen.getByTestId("queue-give-notice-a"));
         fireEvent.click(screen.getByTestId("lease-give-notice-confirm"));
         await waitFor(() => expect(api.callsTo("POST", "/leases/a/notice")).toHaveLength(1));
-        expect(api.callsTo("POST", "/leases/a/notice")[0].body).toMatchObject({ givenBy: "RENTER", notes: "Not renewing" });
-        await waitFor(() => expect(api.callsTo("GET", "/leases/paged").length).toBeGreaterThan(reads));
+        expect(api.callsTo("POST", "/renewal/not-renewing")).toHaveLength(0);
+    });
+
+    it("numbers the cheques of the selected renewal drafts from the drafted stage", async () => {
+        rows = [lease("p1", { renewedToLeaseId: "draft-1", renewedToStatus: "DRAFT" }), lease("p2", { renewedToLeaseId: "draft-2", renewedToStatus: "PENDING_SIGNATURE" })];
+        api.on("POST", "/leases/cheques-batch/load", c => ({
+            body: (c.body as { leaseIds: string[] }).leaseIds.map(id => ({ leaseId: id, ok: true, version: 1, contractNumber: null, cheques: [] })),
+        }));
+        render(<RenewalQueue filters={{ ...FILTERS, stage: "drafted" }} onStage={() => {}} perms={ALL} />);
+        const pending = await screen.findByTestId("renewal-row-p2");
+        expect(within(pending).queryByRole("checkbox")).toBeNull();
+        fireEvent.click(screen.getByTestId("renewal-select-page"));
+        expect(screen.queryByTestId("renewal-bulk-renew")).toBeNull();
+        fireEvent.click(screen.getByTestId("renewal-number-cheques"));
+        await screen.findByTestId("numbering-dialog");
+        await waitFor(() => expect(api.callsTo("POST", "/leases/cheques-batch/load")).toHaveLength(1));
+        expect(api.callsTo("POST", "/leases/cheques-batch/load")[0].body).toEqual({ leaseIds: ["draft-1"] });
     });
 
     it("shows the tenant's phone, WhatsApp and email for Contact", async () => {

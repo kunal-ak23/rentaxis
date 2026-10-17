@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { BellRing, CalendarClock, Loader2, Phone, Sparkles } from "lucide-react";
+import { BellRing, CalendarClock, Flag, Hash, Loader2, Phone, Sparkles, Undo2 } from "lucide-react";
 import { Link, useRouter } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
@@ -15,11 +15,13 @@ import { formatCurrency } from "@/lib/format";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { isAbortError } from "@/lib/api/abort";
 import {
-    ApiError, chargeTypeApi, leaseApi, terminationApi,
+    ApiError, chargeTypeApi, leaseApi, renewalMarkApi, terminationApi,
     type ChargeType, type GiveNoticeInput, type LeaseDetail,
 } from "@/lib/api/leasing";
-import { QUEUE_STAGES, isBulkRenewable, isRenewable, monthRange, stageQuery, type QueueStage } from "@/lib/leases/renewalSeason";
+import { QUEUE_STAGES, hasDraftRenewal, isBulkRenewable, isRenewable, monthRange, stageQuery, type QueueStage } from "@/lib/leases/renewalSeason";
 import BulkRenewDialog from "./BulkRenewDialog";
+import BulkChequeNumbersDialog from "./BulkChequeNumbersDialog";
+import NotRenewingDialog from "./NotRenewingDialog";
 import ContactRenterDialog from "./ContactRenterDialog";
 
 export interface QueueFilters { month: string; stage: QueueStage; propertyId: string; buildingId: string; floor: string; search: string }
@@ -61,6 +63,8 @@ export default function RenewalQueue({ filters, onStage, perms }: {
     const [noticeBusy, setNoticeBusy] = useState(false);
     const [noticeError, setNoticeError] = useState<string | null>(null);
     const [contacting, setContacting] = useState<LeaseDetail | null>(null);
+    const [marking, setMarking] = useState<LeaseDetail | null>(null);
+    const [numbering, setNumbering] = useState(false);
     const [reloadKey, setReloadKey] = useState(0);
     const begin = useLatestRequest();
     const beginCounts = useLatestRequest();
@@ -113,7 +117,11 @@ export default function RenewalQueue({ filters, onStage, perms }: {
     }, [common, filters.stage]);
 
     const reload = () => setReloadKey(k => k + 1);
-    const selectable = rows.filter(isBulkRenewable);
+    // The drafted stage selects renewal drafts for cheque numbering; every other stage selects
+    // contracts for bulk renew.
+    const drafted = filters.stage === "drafted";
+    const canSelect = (l: LeaseDetail) => (drafted ? hasDraftRenewal(l) : isBulkRenewable(l));
+    const selectable = rows.filter(canSelect);
     const pageAllSelected = selectable.length > 0 && selectable.every(r => selected.has(r.id));
     const toggle = (l: LeaseDetail) => setSelected(prev => {
         const next = new Map(prev);
@@ -131,7 +139,7 @@ export default function RenewalQueue({ filters, onStage, perms }: {
             const next = new Map<string, LeaseDetail>();
             for (let p = 0; next.size < SELECT_ALL_CAP; p++) {
                 const data = await read(filters.stage, p, 100);
-                (data.content ?? []).filter(isBulkRenewable).forEach(l => { if (next.size < SELECT_ALL_CAP) next.set(l.id, l); });
+                (data.content ?? []).filter(canSelect).forEach(l => { if (next.size < SELECT_ALL_CAP) next.set(l.id, l); });
                 if ((data.content ?? []).length < 100) break;
             }
             setSelected(next);
@@ -147,7 +155,7 @@ export default function RenewalQueue({ filters, onStage, perms }: {
         setNoticeBusy(true);
         setNoticeError(null);
         try {
-            await terminationApi.notice(noticeFor.id, { ...input, notes: input.notes || t("notRenewingNote") });
+            await terminationApi.notice(noticeFor.id, input);
             setNoticeFor(null);
             reload();
         } catch (e) {
@@ -157,12 +165,28 @@ export default function RenewalQueue({ filters, onStage, perms }: {
         }
     };
 
+    const undoMark = async (l: LeaseDetail) => {
+        setError(null);
+        try {
+            await renewalMarkApi.undo(l.id);
+            reload();
+        } catch (e) {
+            setError(e instanceof ApiError ? e.message : t("batchFailed"));
+        }
+    };
+
     const actions = (l: LeaseDetail, where: "row" | "card" = "row"): ActionsMenuItem[] => {
         const q = where === "card" ? "queue-card" : "queue";
         const items: ActionsMenuItem[] = [];
         if (perms.renew && isRenewable(l)) items.push({ id: "renew", label: t("actionRenew"), testId: `${q}-renew-${l.id}`, icon: Sparkles, onSelect: () => setRenewing(l) });
         if (perms.extend && l.status === "ACTIVE" && !l.renewedToLeaseId) items.push({ id: "extend", label: t("actionExtend"), testId: `${q}-extend-${l.id}`, icon: CalendarClock, onSelect: () => setExtending(l) });
-        if (perms.notice && l.status === "ACTIVE" && !l.renewedToLeaseId) items.push({ id: "notRenewing", label: t("actionNotRenewing"), testId: `${q}-not-renewing-${l.id}`, icon: BellRing, onSelect: () => { setNoticeError(null); setNoticeFor(l); } });
+        const continued = !!l.renewedToLeaseId || !!l.transferredToLeaseId;
+        // PR C ruling 1: "Not renewing" is a soft, reversible mark; giving notice is its own act.
+        if (perms.renew && !continued && !l.notRenewingAt && ["ACTIVE", "NOTICE_GIVEN", "EXPIRED"].includes(l.status))
+            items.push({ id: "notRenewing", label: t("actionNotRenewing"), testId: `${q}-not-renewing-${l.id}`, icon: Flag, onSelect: () => setMarking(l) });
+        if (perms.renew && l.notRenewingAt)
+            items.push({ id: "undoNotRenewing", label: t("actionUndoNotRenewing"), testId: `${q}-undo-not-renewing-${l.id}`, icon: Undo2, onSelect: () => undoMark(l) });
+        if (perms.notice && l.status === "ACTIVE" && !continued) items.push({ id: "giveNotice", label: t("actionGiveNotice"), testId: `${q}-give-notice-${l.id}`, icon: BellRing, onSelect: () => { setNoticeError(null); setNoticeFor(l); } });
         items.push({ id: "contact", label: t("actionContact"), testId: `${q}-contact-${l.id}`, icon: Phone, onSelect: () => setContacting(l) });
         return items;
     };
@@ -170,7 +194,12 @@ export default function RenewalQueue({ filters, onStage, perms }: {
     const stateOf = (l: LeaseDetail): { text: string; tone: string } => {
         if (l.renewedToLeaseId) return { text: t("stateDrafted", { status: tl(`leaseStatus.${l.renewedToStatus ?? "DRAFT"}`) }), tone: "text-primary" };
         if (l.transferredToLeaseId) return { text: t("stateTransfer"), tone: "text-muted" };
-        if (l.status === "NOTICE_GIVEN") return { text: t("stateNotRenewing"), tone: "text-warning" };
+        if (l.notRenewingAt) return {
+            text: t("stateMarked", { name: l.notRenewingByName ?? "—", date: fmtIsoDate(l.notRenewingAt, locale) })
+                + (l.notRenewingNote ? ` · ${l.notRenewingNote}` : ""),
+            tone: "text-warning",
+        };
+        if (l.status === "NOTICE_GIVEN") return { text: t("stateOnNotice"), tone: "text-warning" };
         if (l.status === "RENEWED") return { text: t("stateRenewed"), tone: "text-success" };
         if (l.status === "EXPIRED") return { text: t("stateHoldover"), tone: "text-error" };
         return { text: t("stateTodo"), tone: "text-[var(--ink-600)]" };
@@ -201,7 +230,7 @@ export default function RenewalQueue({ filters, onStage, perms }: {
                         {t("selectPage")}
                     </label>
                 )}
-                {perms.renew && total > 0 && (filters.stage === "todo" || filters.stage === "all") && (
+                {perms.renew && total > 0 && (filters.stage === "todo" || filters.stage === "all" || drafted) && (
                     <button type="button" onClick={selectAll} disabled={selectingAll} className="text-xs font-semibold text-primary hover:underline disabled:opacity-50"
                         data-testid="renewal-select-all">
                         {selectingAll ? <Loader2 size={12} className="animate-spin inline" /> : t("selectAllRenewable", { n: Math.min(total, SELECT_ALL_CAP) })}
@@ -211,10 +240,17 @@ export default function RenewalQueue({ filters, onStage, perms }: {
                     <>
                         <span className="text-xs text-muted" data-testid="renewal-selected-count">{t("selectedCount", { n: selected.size })}</span>
                         <button type="button" onClick={() => setSelected(new Map())} className="text-xs text-muted hover:underline">{t("clearSelection")}</button>
-                        <button type="button" onClick={() => setBulkOpen(true)} data-testid="renewal-bulk-renew"
-                            className="ms-auto flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:brightness-110">
-                            <Sparkles size={14} />{t("bulkRenew", { n: selected.size })}
-                        </button>
+                        {drafted ? (
+                            <button type="button" onClick={() => setNumbering(true)} data-testid="renewal-number-cheques"
+                                className="ms-auto flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:brightness-110">
+                                <Hash size={14} />{t("numberCheques", { n: selected.size })}
+                            </button>
+                        ) : (
+                            <button type="button" onClick={() => setBulkOpen(true)} data-testid="renewal-bulk-renew"
+                                className="ms-auto flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:brightness-110">
+                                <Sparkles size={14} />{t("bulkRenew", { n: selected.size })}
+                            </button>
+                        )}
                     </>
                 )}
             </div>
@@ -244,7 +280,7 @@ export default function RenewalQueue({ filters, onStage, perms }: {
                                 return (
                                     <tr key={l.id} data-testid={`renewal-row-${l.id}`}>
                                         <td className="p-2">
-                                            {perms.renew && isBulkRenewable(l) && (
+                                            {perms.renew && canSelect(l) && (
                                                 <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggle(l)} aria-label={t("selectRow", { unit: l.unitIdentifier ?? "" })} />
                                             )}
                                         </td>
@@ -271,7 +307,7 @@ export default function RenewalQueue({ filters, onStage, perms }: {
                         const s = stateOf(l);
                         return (
                             <li key={l.id} className="p-3 flex gap-3 items-start" data-testid={`renewal-card-${l.id}`}>
-                                {perms.renew && isBulkRenewable(l)
+                                {perms.renew && canSelect(l)
                                     ? <input type="checkbox" className="mt-1" checked={selected.has(l.id)} onChange={() => toggle(l)} aria-label={t("selectRow", { unit: l.unitIdentifier ?? "" })} />
                                     : <span className="w-[13px]" />}
                                 <div className="flex-1 min-w-0 text-xs space-y-0.5">
@@ -308,6 +344,18 @@ export default function RenewalQueue({ filters, onStage, perms }: {
             <GiveNoticeDialog open={!!noticeFor} busy={noticeBusy} error={noticeError} onClose={() => setNoticeFor(null)}
                 onConfirm={giveNotice} minDate={noticeFor?.contractDate ?? noticeFor?.startDate ?? null} />
             <ContactRenterDialog lease={contacting} onClose={() => setContacting(null)} />
+            {marking && (
+                <NotRenewingDialog lease={marking} onClose={() => setMarking(null)} onMarked={() => { setMarking(null); reload(); }} />
+            )}
+            {numbering && (
+                <BulkChequeNumbersDialog
+                    targets={[...selected.values()].filter(hasDraftRenewal).map(l => ({
+                        draftId: l.renewedToLeaseId!, predecessorContract: l.displayContractNumber ?? null,
+                        unitIdentifier: l.unitIdentifier ?? null, renterName: l.renterName ?? null,
+                    }))}
+                    onClose={() => { setNumbering(false); setSelected(new Map()); reload(); }}
+                />
+            )}
         </div>
     );
 }

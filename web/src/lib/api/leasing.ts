@@ -347,6 +347,10 @@ export type LeaseDetail = {
   /** Scale #16: the renewal drafted or posted from this contract, and its status; null when none. */
   renewedToLeaseId?: string | null;
   renewedToStatus?: LeaseStatus | null;
+  /** Scale PR C: the soft "not renewing" mark — when, by whom, why; null when not marked. */
+  notRenewingAt?: string | null;
+  notRenewingByName?: string | null;
+  notRenewingNote?: string | null;
   chainId: string | null;
   receivableAccountId: string | null;
   incomeAccountId: string | null;
@@ -1514,10 +1518,13 @@ export const leaseApi = {
                 /** Dropped server-side before the page is cut (CSV of statuses). */
                 excludeStatus?: LeaseStatus[];
                 /** Scale #16, the renewal season: expiry window (inclusive ISO dates), floor (unit-number prefix), successor state. */
-                endDateFrom?: string; endDateTo?: string; floor?: string; successor?: SuccessorState } = {}) =>
+                endDateFrom?: string; endDateTo?: string; floor?: string; successor?: SuccessorState;
+                /** Scale PR C: UNMARKED = no "not renewing" mark; NOT_RENEWING = marked, or on notice. */
+                mark?: RenewalMark } = {}) =>
     get<Page<LeaseDetail>>(
       `/leases/paged${qs({ search: q.search, status: q.status, propertyId: q.propertyId, buildingId: q.buildingId, excludeStatus: q.excludeStatus,
         endDateFrom: q.endDateFrom, endDateTo: q.endDateTo, floor: q.floor, successor: q.successor && q.successor !== "ANY" ? q.successor : undefined,
+        mark: q.mark && q.mark !== "ANY" ? q.mark : undefined,
         page: q.page ?? 0, size: q.size ?? 25, sort: q.sort })}`,
     ),
   createDraft: (body: DraftLeaseInput) => send<LeaseDetail>("POST", "/leases", body),
@@ -1604,6 +1611,38 @@ export type GiveNoticeInput = {
   noticeDate?: string | null;
   givenBy?: NoticeParty | null;
   intendedMoveOutDate?: string | null;
+};
+
+/** `LeaseService.RenewalMark`: the season's "not renewing" reading. */
+export type RenewalMark = "ANY" | "UNMARKED" | "NOT_RENEWING";
+
+/** `RenewalMarkService.Mark`. */
+export type NotRenewingMark = { leaseId: string; notRenewing: boolean; at: string | null; by: string | null; note: string | null };
+
+/** The soft "not renewing" mark (scale PR C ruling): a note on the renewal, no notice, reversible. */
+export const renewalMarkApi = {
+  set: (leaseId: string, note?: string | null) =>
+    announcingChange(send<NotRenewingMark>("POST", `/leases/${leaseId}/renewal/not-renewing`, { note: note ?? null })),
+  undo: (leaseId: string) =>
+    announcingChange(send<NotRenewingMark>("DELETE", `/leases/${leaseId}/renewal/not-renewing`)),
+};
+
+/** `LeaseBatch.DraftGrid`: one renewal draft's cheque grid for bulk numbering. */
+export type DraftGrid = BatchRefusal & {
+  leaseId: string; ok: boolean; version: number | null; contractNumber: string | null;
+  unitIdentifier: string | null; renterName: string | null; propertyName: string | null; cheques: Cheque[] | null;
+};
+export type ChequeNumberRow = { chequeId: string; chequeNumber: string | null; payeeBank: string | null; chequeDate: string | null; amount: number };
+export type DraftNumbers = { leaseId: string; version: number | null; rows: ChequeNumberRow[] };
+export type DraftRowError = { chequeId: string | null; field: string | null; code: string | null; message: string };
+export type DraftNumbersRow = BatchRefusal & {
+  leaseId: string; ok: boolean; version: number | null; cheques: Cheque[] | null; rowErrors: DraftRowError[];
+};
+
+/** Bulk cheque numbering of renewal drafts (`LeaseController` cheques-batch): each draft saved by the single grid save. */
+export const chequeBatchApi = {
+  load: (leaseIds: string[]) => send<DraftGrid[]>("POST", "/leases/cheques-batch/load", { leaseIds }),
+  save: (drafts: DraftNumbers[]) => announcingChange(send<DraftNumbersRow[]>("POST", "/leases/cheques-batch", { drafts })),
 };
 
 /** `LeaseService.SuccessorState`: has a renewal (or transfer) been drafted from the contract? */

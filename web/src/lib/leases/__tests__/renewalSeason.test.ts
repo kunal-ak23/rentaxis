@@ -6,13 +6,16 @@ import {
 describe("renewal season stages", () => {
     it("asks the server for each stage by excluding every status the stage does not hold", () => {
         expect(stageQuery("todo")).toEqual({
-            excludeStatus: ["DRAFT", "PENDING_SIGNATURE", "NOTICE_GIVEN", "RENEWED", "TERMINATED", "CLOSED"], successor: "NONE",
+            excludeStatus: ["DRAFT", "PENDING_SIGNATURE", "NOTICE_GIVEN", "RENEWED", "TERMINATED", "CLOSED"], successor: "NONE", mark: "UNMARKED",
         });
+        // "Not renewing" reads the soft mark (or notice), not the status alone.
+        expect(stageQuery("notRenewing")).toMatchObject({ successor: "NONE", mark: "NOT_RENEWING" });
+        expect(stageQuery("notRenewing").excludeStatus).not.toContain("ACTIVE");
         expect(stageQuery("drafted").successor).toBe("DRAFTED");
         expect(stageQuery("notRenewing").excludeStatus).not.toContain("NOTICE_GIVEN");
         expect(stageQuery("renewed").excludeStatus).not.toContain("RENEWED");
         // "All" is the month's total: never the terminated, closed or the successors' own drafts.
-        expect(stageQuery("all")).toEqual({ excludeStatus: ["DRAFT", "PENDING_SIGNATURE", "TERMINATED", "CLOSED"], successor: "ANY" });
+        expect(stageQuery("all")).toEqual({ excludeStatus: ["DRAFT", "PENDING_SIGNATURE", "TERMINATED", "CLOSED"], successor: "ANY", mark: "ANY" });
     });
 
     it("reads a contract as renewable only when nothing has been drafted from it", () => {
