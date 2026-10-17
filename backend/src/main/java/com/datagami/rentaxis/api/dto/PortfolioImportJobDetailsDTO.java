@@ -51,4 +51,12 @@ public class PortfolioImportJobDetailsDTO {
      * review I5); a warning says the same in words.
      */
     private Integer chequesWithoutNumber;
+    /**
+     * Either dialect, only when the workbook had a Parking sheet (changeset 175): bays
+     * the sheet created, and existing bays it updated in place.
+     */
+    private Integer parkingBaysCreated;
+
+    /** @see #parkingBaysCreated */
+    private Integer parkingBaysUpdated;
 }

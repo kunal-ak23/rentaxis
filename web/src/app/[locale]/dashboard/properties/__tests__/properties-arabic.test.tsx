@@ -32,7 +32,7 @@ const STATS = [{
 // Data and format names: amounts carry "AED" from the shared currency
 // formatter; the portfolio template's sheet names and "Excel"/"xlsx"/"CSV"
 // are file-format and template names a user must match.
-const DATA = ["AED", "Excel", "xlsx", "CSV", "Properties وUnits وRenters وLeases", "Marina Tower", "Units sheet row is bad"];
+const DATA = ["AED", "Excel", "xlsx", "CSV", "Properties وUnits وRenters وLeases", "Parking", "Marina Tower", "Units sheet row is bad"];
 // The workbook's own sheet name, as the server reports it.
 const SHEET = "Units";
 

@@ -19,6 +19,7 @@ import com.datagami.rentaxis.domain.repository.LeaseLineRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.MaintenanceTicketRepository;
 import com.datagami.rentaxis.domain.repository.PropertyAccountMappingRepository;
+import com.datagami.rentaxis.domain.repository.ParkingSpotRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.RecognitionEntryRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
@@ -77,6 +78,7 @@ class ImportBatchDiscardIT extends AbstractPostgresIT {
     @Autowired BuildingRepository buildingRepo;
     @Autowired RenterRepository renterRepo;
     @Autowired PropertyRepository propertyRepo;
+    @Autowired ParkingSpotRepository spotRepo;
     @Autowired PropertyAccountMappingRepository mappings;
     @Autowired MaintenanceTicketRepository tickets;
     @Autowired RecognitionEntryRepository recognitionEntries;
@@ -129,6 +131,8 @@ class ImportBatchDiscardIT extends AbstractPostgresIT {
             assertThat(propertyRepo.findAll()).hasSize(1);
             assertThat(unitRepo.findAll()).hasSize(2);
             assertThat(renterRepo.findAll()).hasSize(2);
+            // The template's Parking sheet: two sample bays, one attached (changeset 175).
+            assertThat(spotRepo.findAll()).hasSize(2);
         });
 
         DiscardResult result = discardService.discard(firstBatch);
@@ -148,6 +152,7 @@ class ImportBatchDiscardIT extends AbstractPostgresIT {
             assertThat(propertyRepo.findAll()).isEmpty();
             assertThat(unitRepo.findAll()).isEmpty();
             assertThat(renterRepo.findAll()).isEmpty();
+            assertThat(spotRepo.findAll()).isEmpty();
             // The role mappings the import wrote go with the property; the ACCOUNTS
             // they pointed at are the tenant's chart and stay.
             assertThat(mappings.findAll()).isEmpty();

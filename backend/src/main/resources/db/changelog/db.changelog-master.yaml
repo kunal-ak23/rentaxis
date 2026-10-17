@@ -349,3 +349,5 @@ databaseChangeLog:
       file: db/changelog/changesets/172-bank-rec-day-totals.yaml
   - include:
       file: db/changelog/changesets/173-rename-moved-building-bank-leaves.yaml
+  - include:
+      file: db/changelog/changesets/175-parking-attached-unit.yaml

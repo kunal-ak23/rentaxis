@@ -482,9 +482,9 @@ class BookingControllerTest {
         when(bookingRequestRepository.countByParkingSpotIdIn(
                 tenantId, List.of(s.getId(), s2.getId()), BookingRequestStatus.PENDING))
                 .thenReturn(List.<Object[]>of(new Object[]{s.getId(), 2L}, new Object[]{s2.getId(), 5L}));
-        when(bookingRequestRepository.countByParkingSpotIdIn(
-                tenantId, List.of(s.getId(), s2.getId()), BookingRequestStatus.APPROVED))
-                .thenReturn(List.<Object[]>of(new Object[]{s.getId(), 1L}));
+        // Held = an approved booking covers today (changeset 175), batched in one call.
+        when(bookingService.spotsHeldToday(tenantId, List.of(s.getId(), s2.getId())))
+                .thenReturn(java.util.Set.of(s.getId()));
 
         ResponseEntity<MyFacilitiesDTO> response = controller.myFacilities();
 
@@ -505,7 +505,7 @@ class BookingControllerTest {
         // repository queries above, never from per-resource BookingService calls.
         verify(bookingService, never()).countPendingForAmenity(any());
         verify(bookingService, never()).countPendingForSpot(any());
-        verify(bookingService, never()).spotHeld(any());
+        verify(bookingService, never()).spotHeld(any(), any());
     }
 
     @Test

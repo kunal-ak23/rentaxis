@@ -36,6 +36,15 @@ public class ParkingSpot extends BaseTenantEntity {
     @Column(nullable = false)
     private boolean active = true;
 
+    /**
+     * Attached parking (changeset 175): the unit this bay is allocated to, or null
+     * for a bookable bay. An attached bay is never bookable; the renter on that
+     * unit's current contract sees it as allocated parking. The link is to the
+     * unit, not a contract, so it carries over from one contract to the next.
+     */
+    @Column(name = "attached_unit_id")
+    private UUID attachedUnitId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 

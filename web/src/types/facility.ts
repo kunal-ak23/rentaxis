@@ -33,7 +33,13 @@ export interface ParkingSpotDTO {
   covered: boolean
   active: boolean
   buildingIds: string[]
+  /** True when an approved booking covers today; an attached bay is never held. */
   held: boolean
+  /** Attached bays belong to one unit and are never bookable. Optional for older fixtures/servers. */
+  attachedUnitId?: string | null
+  attachedUnitNumber?: string | null
+  /** EN name of the attached unit's building; null if the unit has none. */
+  attachedBuildingName?: string | null
   pendingCount: number
   createdAt: string
   updatedAt: string
@@ -87,6 +93,12 @@ export interface RenterAmenityDTO {
   pendingCount: number
 }
 
+/** An approved parking booking not yet ended; ISO yyyy-MM-dd, `to: null` = open-ended, `from: null` = since before records. */
+export interface BookedRange {
+  from: string | null
+  to: string | null
+}
+
 export interface RenterParkingSpotDTO {
   feeType?: BookingFeeType
   feeAmount?: number | null
@@ -98,11 +110,28 @@ export interface RenterParkingSpotDTO {
   covered: boolean
   held: boolean
   pendingCount: number
+  /** Approved bookings not yet ended, so the renter can pick free dates. Optional for older servers. */
+  bookedRanges?: BookedRange[]
+}
+
+/** A bay attached to the renter's current unit: included with the unit, no booking or fee. */
+export interface AllocatedParkingDTO {
+  id: string
+  propertyId: string
+  propertyName: string | null
+  unitId: string
+  unitNumber: string | null
+  spotNumber: string
+  level: string | null
+  covered: boolean
+  photoUrls: string[]
 }
 
 export interface MyFacilitiesDTO {
   amenities: RenterAmenityDTO[]
   parkingSpots: RenterParkingSpotDTO[]
+  /** Optional for older servers/fixtures; treat a missing list as empty. */
+  allocatedParking?: AllocatedParkingDTO[]
 }
 
 export interface AmenityCreateRequest {
@@ -134,6 +163,8 @@ export interface ParkingSpotCreateRequest {
   level?: string
   covered?: boolean
   buildingIds?: string[]
+  /** Create and attach in one transaction; omit for a bookable bay. */
+  attachedUnitId?: string
 }
 
 export interface ParkingSpotUpdateRequest {
@@ -144,6 +175,9 @@ export interface ParkingSpotUpdateRequest {
   covered?: boolean
   active?: boolean
   buildingIds?: string[]
+  /** true: set the attachment to `attachedUnitId` (null = detach) in the same server transaction as the edit. */
+  setAttachment?: boolean
+  attachedUnitId?: string | null
 }
 
 export interface ParkingSpotBulkCreateRequest {
@@ -152,6 +186,8 @@ export interface ParkingSpotBulkCreateRequest {
   level?: string
   covered?: boolean
   buildingIds?: string[]
+  /** Create and attach in one transaction; omit for a bookable bay. */
+  attachedUnitId?: string
 }
 
 export interface BookingCreateRequest {
@@ -159,6 +195,8 @@ export interface BookingCreateRequest {
   resourceId: string
   unitId: string
   preferredDate?: string
+  /** Parking only: last day of the booking (inclusive); omitted = open-ended. */
+  preferredEndDate?: string
   note?: string
 }
 

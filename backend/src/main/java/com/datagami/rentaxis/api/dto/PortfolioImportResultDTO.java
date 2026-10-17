@@ -32,6 +32,9 @@ public class PortfolioImportResultDTO {
     private UUID importBatchId;
     private int contractsCreated;
     private int mappingsCreated;
+    /** Either dialect (changeset 175): the Parking sheet's bays, created and updated; null when it had none. */
+    private Integer parkingBaysCreated;
+    private Integer parkingBaysUpdated;
     private List<ImportErrorDTO> errors;
     private List<ImportErrorDTO> warnings;
 }

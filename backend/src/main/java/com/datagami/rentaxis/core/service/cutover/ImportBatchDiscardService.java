@@ -13,9 +13,11 @@ import com.datagami.rentaxis.domain.entity.enums.ImportBatchStatus;
 import com.datagami.rentaxis.domain.entity.enums.ImportedEntityType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
+import com.datagami.rentaxis.domain.repository.BookingRequestRepository;
 import com.datagami.rentaxis.domain.repository.BuildingRepository;
 import com.datagami.rentaxis.domain.repository.JournalEntryRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import com.datagami.rentaxis.domain.repository.ParkingSpotRepository;
 import com.datagami.rentaxis.domain.repository.PropertyAccountMappingRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.RecognitionEntryRepository;
@@ -107,6 +109,8 @@ public class ImportBatchDiscardService {
     private final PropertyAccountMappingRepository propertyMappings;
     private final AccountRepository accounts;
     private final LeaseService leaseService;
+    private final ParkingSpotRepository spots;
+    private final BookingRequestRepository bookings;
 
     /** The run's own transaction: it holds the batch row lock and nothing else. */
     private final TransactionTemplate tx;
@@ -126,7 +130,9 @@ public class ImportBatchDiscardService {
                                      UnitRepository units, BuildingRepository buildings, RenterRepository renters,
                                      PropertyRepository properties,
                                      PropertyAccountMappingRepository propertyMappings, AccountRepository accounts,
-                                     LeaseService leaseService, PlatformTransactionManager transactionManager) {
+                                     LeaseService leaseService, ParkingSpotRepository spots,
+                                     BookingRequestRepository bookings,
+                                     PlatformTransactionManager transactionManager) {
         this.batches = batches;
         this.leases = leases;
         this.journals = journals;
@@ -139,6 +145,8 @@ public class ImportBatchDiscardService {
         this.propertyMappings = propertyMappings;
         this.accounts = accounts;
         this.leaseService = leaseService;
+        this.spots = spots;
+        this.bookings = bookings;
         this.tx = new TransactionTemplate(transactionManager);
         this.ownTx = new TransactionTemplate(transactionManager);
         this.ownTx.setPropagationBehavior(
@@ -159,7 +167,7 @@ public class ImportBatchDiscardService {
     /** What the discard did. */
     public record DiscardResult(UUID batchId, ImportBatchStatus status, int leasesDeleted,
                                 int unitsDeleted, int buildingsDeleted, int rentersDeleted,
-                                int propertiesDeleted, List<Kept> kept) {
+                                int propertiesDeleted, List<Kept> kept, int parkingBaysDeleted) {
     }
 
     /**
@@ -227,6 +235,7 @@ public class ImportBatchDiscardService {
         int buildingsDeleted = 0;
         int rentersDeleted = 0;
         int propertiesDeleted = 0;
+        int parkingBaysDeleted = 0;
         for (ImportBatchEntity e : ordered(created)) {
             Outcome outcome = deleteIfUnreferenced(e.getEntityType(), e.getEntityId());
             if (outcome.kept() != null) {
@@ -238,26 +247,30 @@ public class ImportBatchDiscardService {
                 case BUILDING -> buildingsDeleted++;
                 case RENTER -> rentersDeleted++;
                 case PROPERTY -> propertiesDeleted++;
+                case PARKING_SPOT -> parkingBaysDeleted++;
             }
         }
 
         ImportBatch discarded = batches.markDiscarded(batchId);
-        log.info("Discarded import batch {}: {} leases, {} units, {} buildings, {} renters, {} properties, {} kept",
+        log.info("Discarded import batch {}: {} leases, {} units, {} buildings, {} renters, {} properties,"
+                        + " {} parking bays, {} kept",
                 batchId, leasesDeleted, unitsDeleted, buildingsDeleted, rentersDeleted, propertiesDeleted,
-                kept.size());
+                parkingBaysDeleted, kept.size());
         return new DiscardResult(batchId, discarded.getStatus(), leasesDeleted, unitsDeleted, buildingsDeleted,
-                rentersDeleted, propertiesDeleted, List.copyOf(kept));
+                rentersDeleted, propertiesDeleted, List.copyOf(kept), parkingBaysDeleted);
     }
 
     /**
-     * Children before parents. A unit cannot go while a lease points at it, a
-     * building cannot go while a unit does, and a property cannot go while either
-     * still exists; a renter is independent of all three and goes whenever its
+     * Children before parents. A parking bay goes first: it names its property and,
+     * when attached, a unit. A unit cannot go while a lease points at it, a
+     * building cannot go while a unit does, and a property cannot go while any of
+     * them still exists; a renter is independent of all three and goes whenever its
      * leases have.
      */
     private static List<ImportBatchEntity> ordered(List<ImportBatchEntity> created) {
         List<ImportBatchEntity> out = new ArrayList<>(created);
         out.sort(Comparator.comparingInt(e -> switch (e.getEntityType()) {
+            case PARKING_SPOT -> -1;
             case UNIT -> 0;
             case BUILDING -> 1;
             case RENTER -> 2;
@@ -355,6 +368,7 @@ public class ImportBatchDiscardService {
                 case BUILDING -> deleteBuilding(id);
                 case RENTER -> deleteRenter(id);
                 case PROPERTY -> deleteProperty(id);
+                case PARKING_SPOT -> deleteParkingSpot(id);
             });
         } catch (DataIntegrityViolationException | UnexpectedRollbackException e) {
             log.info("Discard kept {} {}: still referenced ({})", type, id, mostSpecific(e));
@@ -399,6 +413,24 @@ public class ImportBatchDiscardService {
         }
         buildings.delete(building);
         buildings.flush();
+        return Outcome.DELETED;
+    }
+
+    /**
+     * A bay the Parking sheet created. A bay somebody has since booked is kept:
+     * the booking is the renter's record, and {@code fk_booking_spot} would refuse
+     * the delete anyway. Its tower scope rows go with it ({@code ON DELETE CASCADE}).
+     */
+    private Outcome deleteParkingSpot(UUID id) {
+        var spot = spots.findById(id).filter(this::ours).orElse(null);
+        if (spot == null) return Outcome.DELETED;
+        long booked = bookings.countByTenantIdAndParkingSpotId(spot.getTenantId(), id);
+        if (booked > 0) {
+            return new Outcome(new Kept(ImportedEntityType.PARKING_SPOT.name(), id, spot.getSpotNumber(),
+                    booked + " booking request(s) name this parking bay"));
+        }
+        spots.delete(spot);
+        spots.flush();
         return Outcome.DELETED;
     }
 

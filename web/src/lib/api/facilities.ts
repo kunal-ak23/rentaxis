@@ -170,6 +170,32 @@ export async function updateParkingSpot(
   )
 }
 
+/**
+ * Attach a bay to a unit (`unitId`) or detach it (`null`). Refusals are coded
+ * 400s (`parking.attachHasBookings`, `parking.attachUnitOutsideBay`); a unit
+ * that doesn't exist is a 404.
+ */
+export async function setParkingSpotAttachment(
+  id: string,
+  unitId: string | null
+): Promise<ParkingSpotDTO> {
+  return handle(
+    await fetch(`${SPOTS}/${id}/attachment`, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify({ unitId }) })
+  )
+}
+
+/** A unit as `GET /v1/units/property/{id}` returns it (only the fields the attachment picker reads). */
+export interface PropertyUnitRow {
+  id: string
+  unitNumber: string
+  building?: { id: string } | null
+}
+
+/** Every unit of a property, for the bay's "Attached unit" picker. */
+export async function fetchPropertyUnits(propertyId: string): Promise<PropertyUnitRow[]> {
+  return handle(await fetch(`/api/proxy/v1/units/property/${encodeURIComponent(propertyId)}`))
+}
+
 export async function deactivateParkingSpot(id: string): Promise<void> {
   return handleVoid(await fetch(`${SPOTS}/${id}`, { method: 'DELETE' }))
 }

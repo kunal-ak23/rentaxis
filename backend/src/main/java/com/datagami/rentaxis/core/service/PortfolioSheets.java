@@ -21,6 +21,14 @@ public final class PortfolioSheets {
     public static final String CONTRACTS = "Tenancy Contracts";
     public static final String CONTRACTS_OLD = "Leases";
 
+    /**
+     * Attached parking (changeset 175): the optional bays sheet, the same in the v1
+     * and the cut-over workbook. A workbook without it imports as it always did.
+     */
+    public static final String PARKING = "Parking";
+    public static final List<String> PARKING_HEADERS = List.of(
+            "PropertyName", "BuildingName", "BayNumber", "Level", "Covered", "AttachedUnitNumber");
+
     private PortfolioSheets() {
     }
 
@@ -34,6 +42,11 @@ public final class PortfolioSheets {
     public static Sheet contracts(Workbook wb) {
         Sheet s = wb.getSheet(CONTRACTS);
         return s != null ? s : wb.getSheet(CONTRACTS_OLD);
+    }
+
+    /** The Parking sheet, or null when the workbook has none (it is optional). */
+    public static Sheet parking(Workbook wb) {
+        return wb.getSheet(PARKING);
     }
 
     static String missing(String name, String oldName) {

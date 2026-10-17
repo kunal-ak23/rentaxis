@@ -6,11 +6,20 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.UUID;
 
-/** Creates one spot per entry in spotNumbers, all sharing level/covered/buildingIds. */
+/**
+ * Creates one spot per entry in spotNumbers, all sharing level/covered/buildingIds
+ * and, when attachedUnitId is given (changeset 175), all allocated to that unit.
+ */
 public record ParkingSpotBulkCreateRequest(
         UUID propertyId,
         List<@NotBlank @Size(max = 32) String> spotNumbers,
         @Size(max = 32) String level,
         Boolean covered,
-        List<UUID> buildingIds) {
+        List<UUID> buildingIds,
+        UUID attachedUnitId) {
+
+    public ParkingSpotBulkCreateRequest(UUID propertyId, List<String> spotNumbers, String level, Boolean covered,
+                                        List<UUID> buildingIds) {
+        this(propertyId, spotNumbers, level, covered, buildingIds, null);
+    }
 }

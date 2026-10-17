@@ -25,6 +25,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -58,6 +59,30 @@ public class FacilityService {
     private final ParkingSpotBuildingScopeRepository spotScopeRepository;
     private final PropertyRepository propertyRepository;
     private final BuildingRepository buildingRepository;
+
+    private java.time.Clock clock = java.time.Clock.system(java.time.ZoneId.of("Asia/Dubai"));
+
+    private com.datagami.rentaxis.domain.repository.BookingRequestRepository bookingRepository;
+    private com.datagami.rentaxis.domain.repository.UnitRepository unitRepository;
+    private jakarta.persistence.EntityManager entityManager;
+
+    /** Setter-injected, like BookingService's extras: hand-built unit-test instances need no new argument. */
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setAttachmentRepositories(com.datagami.rentaxis.domain.repository.BookingRequestRepository bookingRepository,
+                                          com.datagami.rentaxis.domain.repository.UnitRepository unitRepository) {
+        this.bookingRepository = bookingRepository;
+        this.unitRepository = unitRepository;
+    }
+
+    @jakarta.persistence.PersistenceContext
+    public void setEntityManager(jakarta.persistence.EntityManager entityManager) {
+        this.entityManager = entityManager;
+    }
+
+    /** Tests pin "today" (Asia/Dubai). */
+    void setClock(java.time.Clock clock) {
+        this.clock = clock;
+    }
 
     public FacilityService(PropertyAmenityRepository amenityRepository,
                            AmenityBuildingScopeRepository amenityScopeRepository,
@@ -191,13 +216,20 @@ public class FacilityService {
         return spotRepository.findByTenantId(tenantId, pageable);
     }
 
-    /** The property Overview's parking tiles (demo feedback 2026-09-29), scoped to the caller's tenant. */
+    /**
+     * The property Overview's parking tiles (demo feedback 2026-09-29), scoped to the
+     * caller's tenant. Assigned is the bookable bays an approved booking holds today;
+     * attached bays are counted apart and are never free.
+     */
     @Transactional(readOnly = true)
     public com.datagami.rentaxis.api.dto.ParkingSummaryDTO parkingSummary(UUID tenantId, UUID propertyId) {
         long total = spotRepository.countByTenantIdAndPropertyIdAndActiveTrue(tenantId, propertyId);
-        long assigned = spotRepository.countHeldActive(tenantId, propertyId);
+        long assigned = spotRepository.countHeldActive(tenantId, propertyId, LocalDate.now(clock));
+        long attached = spotRepository.countByTenantIdAndPropertyIdAndActiveTrueAndAttachedUnitIdIsNotNull(
+                tenantId, propertyId);
         long inactive = spotRepository.countByTenantIdAndPropertyIdAndActiveFalse(tenantId, propertyId);
-        return new com.datagami.rentaxis.api.dto.ParkingSummaryDTO(total, assigned, Math.max(0, total - assigned), inactive);
+        return new com.datagami.rentaxis.api.dto.ParkingSummaryDTO(
+                total, assigned, Math.max(0, total - assigned - attached), inactive, attached);
     }
 
     @Transactional(readOnly = true)
@@ -227,6 +259,12 @@ public class FacilityService {
         List<UUID> requested = validateBuildings(req.propertyId(),
                 req.buildingIds() == null ? List.of() : req.buildingIds());
         insertSpotScopeRows(tenantId, saved.getId(), requested);
+        // Attached from the start (changeset 175): same rules as the attach endpoint,
+        // in this transaction, so a refused unit creates no bay.
+        if (req.attachedUnitId() != null) {
+            spotScopeRepository.flush();
+            return setParkingSpotAttachment(tenantId, saved.getId(), req.attachedUnitId());
+        }
         return saved;
     }
 
@@ -260,13 +298,26 @@ public class FacilityService {
             ParkingSpot saved = saveSpot(
                     newSpot(tenantId, req.propertyId(), number, req.level(), req.covered()), number);
             insertSpotScopeRows(tenantId, saved.getId(), requestedBuildingIds);
+            if (req.attachedUnitId() != null) {
+                spotScopeRepository.flush();
+                saved = setParkingSpotAttachment(tenantId, saved.getId(), req.attachedUnitId());
+            }
             created.add(saved);
         }
         return created;
     }
 
     public ParkingSpot updateParkingSpot(UUID tenantId, UUID id, ParkingSpotUpdateRequest req) {
-        ParkingSpot spot = getParkingSpot(tenantId, id);
+        boolean reattach = Boolean.TRUE.equals(req.setAttachment());
+        // Under the bay's row lock: the tower check below reads the attachment, and an
+        // attach committing in between would otherwise leave a unit outside the towers.
+        ParkingSpot spot = lockParkingSpot(tenantId, id);
+        if (reattach && spot.getAttachedUnitId() != null
+                && !spot.getAttachedUnitId().equals(req.attachedUnitId())) {
+            // Detach first, in this transaction: the tower check below then judges the
+            // new towers against the NEW unit (attached at the end), not the old one.
+            spot = setParkingSpotAttachment(tenantId, id, null);
+        }
         if (req.spotNumber() != null) {
             String spotNumber = requireSpotNumber(req.spotNumber());
             if (!spotNumber.equals(spot.getSpotNumber())) {
@@ -287,11 +338,160 @@ public class FacilityService {
             spot.setFeeType(req.feeType());
             spot.setFeeAmount("FREE".equals(req.feeType()) ? java.math.BigDecimal.ZERO : req.feeAmount());
         }
+        if (req.buildingIds() != null && spot.getAttachedUnitId() != null && unitRepository != null) {
+            // An attached bay keeps its unit inside its towers: re-scoping it away from
+            // the unit is refused — detach it first.
+            ParkingSpot attached = spot;
+            unitRepository.findWithPlaceByTenantIdAndId(tenantId, attached.getAttachedUnitId()).ifPresent(unit -> {
+                UUID unitBuildingId = unit.getBuilding() == null ? null : unit.getBuilding().getId();
+                List<UUID> towers = req.buildingIds().stream().filter(Objects::nonNull).distinct().toList();
+                if (!visible(towers, unitBuildingId)) {
+                    throw new BusinessRuleViolationException(
+                            "Parking bay " + attached.getSpotNumber() + " is attached to unit " + unit.getUnitNumber()
+                                    + ", which is not in the chosen towers. Detach the bay first.",
+                            "parking.attachUnitOutsideBay",
+                            Map.of("unit", unit.getUnitNumber(), "spot", attached.getSpotNumber()));
+                }
+            });
+        }
         ParkingSpot saved = spotRepository.save(spot);
         if (req.buildingIds() != null) {
             replaceSpotScopes(tenantId, saved, req.buildingIds());
         }
+        if (reattach && req.attachedUnitId() != null) {
+            spotScopeRepository.flush();
+            saved = setParkingSpotAttachment(tenantId, id, req.attachedUnitId());
+        }
         return saved;
+    }
+
+    /**
+     * Break-it style serialisation point for a bay: takes its row lock for the
+     * caller's transaction (a booking create or approval, an attach or detach), so the
+     * attachment and overlap checks that follow cannot interleave with another
+     * writer of the same bay. The row is refreshed after the lock, so a copy this
+     * persistence context loaded earlier cannot hand back a stale attachment.
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public ParkingSpot lockParkingSpot(UUID tenantId, UUID id) {
+        ParkingSpot spot = spotRepository.findByIdForUpdate(tenantId, id)
+                .orElseThrow(() -> new NotFoundException("Parking spot not found"));
+        if (entityManager != null) entityManager.refresh(spot);
+        return spot;
+    }
+
+    /**
+     * Attached parking (2026-10-17 ruling): allocates the bay to one unit of its
+     * property — within the bay's towers when it is scoped to some — or, with a null
+     * {@code unitId}, detaches it so it is bookable again. A bay with a PENDING or
+     * APPROVED booking reaching today or later cannot be attached: that renter was
+     * promised it. Attaching to the unit it already has is a no-op.
+     */
+    public ParkingSpot setParkingSpotAttachment(UUID tenantId, UUID spotId, UUID unitId) {
+        ParkingSpot spot = lockParkingSpot(tenantId, spotId);
+        if (unitId == null) {
+            spot.setAttachedUnitId(null);
+            return spotRepository.saveAndFlush(spot);
+        }
+        if (unitId.equals(spot.getAttachedUnitId())) {
+            return spot;
+        }
+        Unit unit = unitRepository.findWithPlaceByTenantIdAndId(tenantId, unitId)
+                .orElseThrow(() -> new NotFoundException("Unit not found"));
+        requireUnitInBayPlace(spot, unit);
+        LocalDate today = LocalDate.now(clock);
+        if (bookingRepository.existsOpenSpotBookingReaching(tenantId, spot.getId(), today)) {
+            throw new BusinessRuleViolationException(
+                    "Parking bay " + spot.getSpotNumber() + " has an approved or pending booking for today or later."
+                            + " Release or reject it, or wait for it to end, before attaching the bay to a unit.",
+                    "parking.attachHasBookings", Map.of("spot", spot.getSpotNumber()));
+        }
+        spot.setAttachedUnitId(unit.getId());
+        return spotRepository.saveAndFlush(spot);
+    }
+
+    /**
+     * The Parking sheet's write (changeset 175): creates the bay, or updates the one
+     * the property already has under that number in place — level, covered flag,
+     * tower scope ({@code buildingId} null = all towers) and attachment, the row being
+     * the truth for each. The attachment goes through
+     * {@link #setParkingSpotAttachment}, so an import obeys the same rules as the edit
+     * form. Joins the import's transaction.
+     *
+     * @return the bay, and whether this call created it (false: an existing one was updated).
+     */
+    public ImportedSpot importParkingSpot(UUID tenantId, UUID propertyId, String spotNumber, String level,
+                                     boolean covered, UUID buildingId, UUID unitId) {
+        requirePropertyInTenant(tenantId, propertyId);
+        java.util.Optional<ParkingSpot> existing =
+                spotRepository.findByTenantIdAndPropertyIdAndSpotNumber(tenantId, propertyId, spotNumber)
+                        .map(found -> lockParkingSpot(tenantId, found.getId()));
+        List<UUID> scope = buildingId == null ? List.of() : List.of(buildingId);
+        ParkingSpot spot;
+        if (existing.isPresent()) {
+            spot = existing.get();
+            spot.setLevel(level == null || level.isBlank() ? null : level);
+            spot.setCovered(covered);
+            spot = spotRepository.saveAndFlush(spot);
+            replaceSpotScopes(tenantId, spot, scope);
+        } else {
+            spot = saveSpot(newSpot(tenantId, propertyId, spotNumber,
+                    level == null || level.isBlank() ? null : level, covered), spotNumber);
+            insertSpotScopeRows(tenantId, spot.getId(), validateBuildings(propertyId, scope));
+            spotScopeRepository.flush();
+        }
+        if (unitId != null || spot.getAttachedUnitId() != null) {
+            setParkingSpotAttachment(tenantId, spot.getId(), unitId);
+        }
+        return new ImportedSpot(spot.getId(), existing.isEmpty());
+    }
+
+    /** What {@link #importParkingSpot} did to one bay. */
+    public record ImportedSpot(UUID id, boolean created) {
+    }
+
+    /** The unit is in the bay's property and, when the bay is scoped to towers, in one of them. */
+    private void requireUnitInBayPlace(ParkingSpot spot, Unit unit) {
+        boolean sameProperty = unit.getProperty() != null
+                && Objects.equals(unit.getProperty().getId(), spot.getPropertyId());
+        List<UUID> towers = parkingSpotBuildingIds(spot.getId());
+        UUID unitBuildingId = unit.getBuilding() == null ? null : unit.getBuilding().getId();
+        if (!sameProperty || !visible(towers, unitBuildingId)) {
+            throw new BusinessRuleViolationException(
+                    "Unit " + unit.getUnitNumber() + " is not in parking bay " + spot.getSpotNumber()
+                            + "'s property or towers.",
+                    "parking.attachUnitOutsideBay",
+                    Map.of("unit", unit.getUnitNumber(), "spot", spot.getSpotNumber()));
+        }
+    }
+
+    /** What an attached bay shows as its unit: the unit number and its building's name. */
+    public record AttachedUnit(UUID id, String unitNumber, String buildingName) {
+    }
+
+    /** The units these bays are attached to, by unit id, in one tenant-scoped query. */
+    @Transactional(readOnly = true)
+    public Map<UUID, AttachedUnit> attachedUnits(UUID tenantId, java.util.Collection<ParkingSpot> spots) {
+        Set<UUID> unitIds = spots.stream().map(ParkingSpot::getAttachedUnitId)
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        if (unitIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, AttachedUnit> byId = new java.util.HashMap<>();
+        for (Unit u : unitRepository.findWithBuildingByTenantIdAndIdIn(tenantId, unitIds)) {
+            byId.put(u.getId(), new AttachedUnit(u.getId(), u.getUnitNumber(),
+                    u.getBuilding() == null ? null : u.getBuilding().getNameEn()));
+        }
+        return byId;
+    }
+
+    /** A renter's allocated parking: the active bays attached to any of these units. */
+    @Transactional(readOnly = true)
+    public List<ParkingSpot> allocatedParking(UUID tenantId, java.util.Collection<UUID> unitIds) {
+        if (unitIds.isEmpty()) {
+            return List.of();
+        }
+        return spotRepository.findActiveAttachedTo(tenantId, unitIds);
     }
 
     /** Soft-deactivate: hides from renters, leaves existing requests untouched. */
@@ -317,6 +517,8 @@ public class FacilityService {
      * Everything the given unit may see: amenities honour their optional building
      * scope, while active parking is available property-wide. Parking is a shared
      * inventory and the booking workflow prevents a held space being requested.
+     * Bays attached to a unit are not bookable and are left out — their unit's
+     * renter sees them as allocated parking instead ({@link #allocatedParking}).
      * Client-visible lists use the createdAt-ordered finders.
      */
     @Transactional(readOnly = true)
@@ -336,8 +538,8 @@ public class FacilityService {
                 .filter(a -> visible(amenityScopes.getOrDefault(a.getId(), List.of()), unitBuildingId))
                 .toList();
 
-        List<ParkingSpot> spots =
-                spotRepository.findByTenantIdAndPropertyIdAndActiveTrueOrderByCreatedAtAsc(tenantId, propertyId);
+        List<ParkingSpot> spots = spotRepository
+                .findByTenantIdAndPropertyIdAndActiveTrueAndAttachedUnitIdIsNullOrderByCreatedAtAsc(tenantId, propertyId);
         return new VisibleFacilities(visibleAmenities, spots);
     }
 
