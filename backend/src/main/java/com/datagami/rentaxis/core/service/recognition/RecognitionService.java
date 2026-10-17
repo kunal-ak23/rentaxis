@@ -618,7 +618,7 @@ public class RecognitionService {
         segment.setDayRate(ProrationEngine.dayRate(amount, from, to));
         segment.setStatus(SegmentStatus.ACTIVE);
         if (fee) {
-            segment.setDeferralAccountId(poster.unearnedChargesLeaf(lease));
+            segment.setDeferralAccountId(poster.deferralLeafOf(lease, line));
             segment.setIncomeAccountId(line.getCreditAccount() == null ? null : line.getCreditAccount().getId());
             if (segment.getIncomeAccountId() == null) {
                 throw new BusinessRuleViolationException("Line " + line.getSeqNo() + " has no income account to earn into.");
@@ -1517,7 +1517,7 @@ public class RecognitionService {
                 // Resolved now, in the posting transaction that just credited it, so
                 // each month's release debits the very leaf the TCO deferred into and
                 // credits the fee's own income leaf — whatever the mappings say later.
-                segment.setDeferralAccountId(poster.unearnedChargesLeaf(lease));
+                segment.setDeferralAccountId(poster.deferralLeafOf(lease, line));
                 segment.setIncomeAccountId(line.getCreditAccount() == null ? null : line.getCreditAccount().getId());
                 if (segment.getIncomeAccountId() == null) {
                     throw new BusinessRuleViolationException("Line " + line.getSeqNo() + " has no income account to earn into.");

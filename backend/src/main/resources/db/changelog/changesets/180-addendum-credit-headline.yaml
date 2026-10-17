@@ -1,0 +1,24 @@
+# Follow-up ruling R7 (100-h): a credit addendum's new amount is the line's new
+# HEADLINE (gross, before the rent-free concession). The concession is re-applied
+# at the new rate over the remaining days, and both are stored on the credit row so
+# that a renewal re-grosses from the headline (concessions do not renew, spec §4a)
+# and a transfer carries the headline less the discount.
+#
+#   - new_gross_amount:     the line's new headline over its whole window
+#   - new_rent_free_amount: the concession at the new rate over the whole window
+#
+# Both nullable: a credit written before this keeps new_line_amount (a net figure)
+# as the only amount, and readers fall back to it as before.
+databaseChangeLog:
+  - changeSet:
+      id: 180-addendum-credit-headline
+      author: claude
+      changes:
+        - addColumn:
+            tableName: lease_addendum_credits
+            columns:
+              - column: { name: new_gross_amount, type: "numeric(14,2)" }
+              - column: { name: new_rent_free_amount, type: "numeric(14,2)" }
+      rollback:
+        - dropColumn: { tableName: lease_addendum_credits, columnName: new_rent_free_amount }
+        - dropColumn: { tableName: lease_addendum_credits, columnName: new_gross_amount }

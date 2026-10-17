@@ -213,7 +213,9 @@ public class LeaseTransferService {
             LocalDate from = l.getPeriodStart() != null ? l.getPeriodStart() : a.getStartDate();
             LocalDate to = l.getPeriodEnd() != null ? l.getPeriodEnd() : a.getEndDate();
             if (from.isAfter(a.getStartDate())) continue;   // an extension's window
-            BigDecimal net = eff != null && eff.credited() ? eff.amount()
+            // Follow-up ruling R7: a credited line carries its new headline less the
+            // discount, like any other line; the rent-free concession is not carried (§4a).
+            BigDecimal net = eff != null && eff.credited() ? eff.headlineLessDiscount()
                     : l.getGrossAmount().subtract(l.getDiscountAmount() == null ? BigDecimal.ZERO : l.getDiscountAmount());
             BigDecimal amount = net.multiply(BigDecimal.valueOf(newDays))
                     .divide(BigDecimal.valueOf(ProrationEngine.daysInclusive(from, to)), 2, RoundingMode.HALF_UP);

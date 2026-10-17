@@ -46,9 +46,24 @@ public class VatPeriodLock {
         if (filed.isEmpty()) return;
         Set<UUID> vat = vatAccounts(tenantId);
         if (accountIds.stream().noneMatch(vat::contains)) return;
-        VatReturn r = filed.get();
+        throw refusal(tenantId, filed.get(), date);
+    }
+
+    /**
+     * Follow-up ruling R11 (101-a): a VAT document of ours dated in a filed period is
+     * refused with the journal's own message ({@code vat.periodFiled}), even when no
+     * journal goes with it (the F14-11 contract-invoice backfill), so a filed return's
+     * document totals never change.
+     */
+    public void assertDocumentDateOpen(UUID tenantId, LocalDate date) {
+        if (tenantId == null || date == null) return;
+        Optional<VatReturn> filed = returns.filedCovering(tenantId, date);
+        if (filed.isPresent()) throw refusal(tenantId, filed.get(), date);
+    }
+
+    private BusinessRuleViolationException refusal(UUID tenantId, VatReturn r, LocalDate date) {
         LocalDate next = firstOpenDate(tenantId, r.getPeriodEnd().plusDays(1));
-        throw new BusinessRuleViolationException("The VAT return for " + DMY.format(r.getPeriodStart()) + " – "
+        return new BusinessRuleViolationException("The VAT return for " + DMY.format(r.getPeriodStart()) + " – "
                 + DMY.format(r.getPeriodEnd()) + " is filed, so VAT dated " + DMY.format(date)
                 + " cannot change. Date the correction on or after " + DMY.format(next)
                 + "; it will show on that period's return.",

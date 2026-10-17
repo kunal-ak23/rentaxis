@@ -108,6 +108,11 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
      * the real today, and the suite changed its answer once the calendar passed RENT_1).
      */
     private static final LocalDate ON = LocalDate.of(2026, 9, 30);
+    /**
+     * Follow-up ruling R9: on a lease whose RENT_1 and RENT_2 cleared (on their own dates) the
+     * hand-over cannot be dated before the latest of those postings, so it is dated after RENT_2.
+     */
+    private static final LocalDate ON_CLEARED = LocalDate.of(2027, 1, 4);
 
     @BeforeEach
     void setUp() {
@@ -130,7 +135,7 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
         Renter b = fixtures.createRenter("Estate of the late tenant");
         BigDecimal rrBefore = balanceOf(AccountRole.RENT_RECEIVABLE, leaseId, a.getId());
 
-        LeaseAssignmentDTO draft = assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON, "Death of the tenant", null));
+        LeaseAssignmentDTO draft = assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON_CLEARED, "Death of the tenant", null));
         assertThat(draft.status()).isEqualTo("DRAFT");
         assertThat(draft.overdue()).isEmpty();
         assertThat(draft.chequesMoving()).isEqualTo(2);
@@ -217,19 +222,51 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
                 .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.assignmentFuture");
     }
 
+    /**
+     * Follow-up ruling R9 (100-j): the assignment JV moves the balances as they stand now, so
+     * it cannot be dated before the outgoing renter's latest posting on the lease (here RENT_2,
+     * cleared on 02/01/2027); dated on that day it goes through, and the trial balance holds.
+     */
+    @Test
+    void anAssignmentCannotBeDatedBeforeTheOutgoingRentersLatestPosting() {
+        UUID leaseId = lease(true);
+        Renter b = fixtures.createRenter("Heir");
+        assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON, "Heir", null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("02/01/2027")
+                .satisfies(e -> {
+                    assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.assignmentBeforeLatestPosting");
+                    assertThat(((BusinessRuleViolationException) e).getArgs()).containsEntry("date", "02/01/2027");
+                });
+        assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), RENT_2.minusDays(1), "Heir", null)))
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.assignmentBeforeLatestPosting");
+        LeaseAssignmentDTO draft = assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), RENT_2, "Heir", null));
+        // A posting on A's side after the draft (a late bounce charge, a receipt) makes the draft's date stale.
+        Cheque april = chequeOn(leaseId, RENT_3);
+        chequeService.deposit(april.getId(), ChequeActionRequest.on(RENT_3));
+        chequeService.clear(april.getId(), ChequeActionRequest.on(RENT_3));
+        assertThatThrownBy(() -> assignments.post(leaseId, draft.id(), null))
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.assignmentBeforeLatestPosting");
+        assertThat(renterOf(leaseId)).isEqualTo(fixtures.renter().getId());
+        assignments.cancel(leaseId, draft.id());
+        assignments.post(leaseId, assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), RENT_3, "Heir", null)).id(), null);
+        assertThat(renterOf(leaseId)).isEqualTo(b.getId());
+        assertTrialBalanceBalances();
+    }
+
     @Test
     void refusals() {
         UUID leaseId = lease(true);
         Renter a = fixtures.renter();
         Renter b = fixtures.createRenter("Heir");
-        assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(a.getId(), ON, "x", null)))
+        assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(a.getId(), ON_CLEARED, "x", null)))
                 .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.assignmentSameRenter");
-        assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON, " ", null)))
+        assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON_CLEARED, " ", null)))
                 .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.assignmentReason");
         assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), START.minusDays(1), "x", null)))
                 .hasMessageContaining("within the tenancy");
-        LeaseAssignmentDTO draft = assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON, "Heir", null));
-        assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON, "Heir", null)))
+        LeaseAssignmentDTO draft = assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON_CLEARED, "Heir", null));
+        assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON_CLEARED, "Heir", null)))
                 .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.assignmentDraftExists");
         assignments.cancel(leaseId, draft.id());
         assertThatThrownBy(() -> assignments.post(leaseId, draft.id(), null)).hasMessageContaining("CANCELLED");
@@ -248,7 +285,7 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
         var renewalRequest = new com.datagami.rentaxis.api.dto.lease.RenewLeaseRequest(null,
                 LocalDate.of(2027, 9, 24), LocalDate.of(2028, 9, 23), null, true);
         UUID successor = renewal.renew(leaseId, renewalRequest).getId();
-        assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON, "Heir", null)))
+        assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON_CLEARED, "Heir", null)))
                 .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.assignmentSuccessorDraft");
 
         // The renter changed under the draft (as an assignment would): the draft cannot post.
@@ -258,7 +295,7 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
         jdbc.update("update leases set renter_id = ? where id = ?", fixtures.renter().getId(), leaseId);
         tx.executeWithoutResult(st -> leaseService.deleteDraftLease(successor));
 
-        assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON, "Heir", null));
+        assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON_CLEARED, "Heir", null));
         assertThatThrownBy(() -> renewal.renew(leaseId, renewalRequest))
                 .extracting(e -> ((BusinessRuleViolationException) e).getCode()).isEqualTo("lease.assignmentPending");
         var unit = tx.execute(s -> fixtures.createUnit(fixtures.property(), "T-1"));
@@ -278,7 +315,7 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
         UUID leaseId = lease(true);
         Renter a = fixtures.renter();
         Renter b = fixtures.createRenter("Estate");
-        LeaseAssignmentDTO draft = assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON, "Death of the tenant", null));
+        LeaseAssignmentDTO draft = assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON_CLEARED, "Death of the tenant", null));
         assignments.post(leaseId, draft.id(), null);
         // No stored contract: a rendered one would name B over A's term — neither portal gets it.
         asRenter(a);
@@ -310,7 +347,7 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
         assertThatThrownBy(() -> tx.execute(s -> chequeQueries.imageOf(april.getId()))).isInstanceOf(NotFoundException.class);
         var aLeases = tx.execute(s -> leaseService.getLeasesForRenterUser(a.getUserId()));
         assertThat(aLeases).singleElement().satisfies(l -> {
-            assertThat(l.getYourAccessEndedOn()).isEqualTo(ON);
+            assertThat(l.getYourAccessEndedOn()).isEqualTo(ON_CLEARED);
             assertThat(l.getRenterName()).isEqualTo(a.getNameEn());
         });
         assertThat(documentIds(leaseId)).containsExactly(before);
@@ -322,7 +359,7 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
         asRenter(b);
         var bLeases = tx.execute(s -> leaseService.getLeasesForRenterUser(b.getUserId()));
         assertThat(bLeases).singleElement().satisfies(l -> {
-            assertThat(l.getAssignedToYouOn()).isEqualTo(ON);
+            assertThat(l.getAssignedToYouOn()).isEqualTo(ON_CLEARED);
             assertThat(l.getOpeningDeposit()).isEqualByComparingTo("3000");
             assertThat(l.getOpeningReceivable()).isEqualByComparingTo("0");
             assertThat(l.getYourAccessEndedOn()).isNull();
@@ -381,7 +418,7 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(UUID.randomUUID().toString(), null,
                         List.of(new SimpleGrantedAuthority("ROLE_PROPERTY_MANAGER"))));
-        assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON, "Heir", null)))
+        assertThatThrownBy(() -> assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON_CLEARED, "Heir", null)))
                 .isInstanceOf(NotFoundException.class);
     }
 

@@ -136,7 +136,8 @@ public class YearEndCloseService {
                     result, c == null ? null : c.getJournalId(), number,
                     c == null ? null : c.getClosedAt(), c == null ? null : c.getClosedBy(),
                     c == null ? null : c.getReopenedAt(), c == null ? null : c.getReopenedBy(),
-                    c == null ? null : c.getReopenReason(), coveredBy));
+                    c == null ? null : c.getReopenReason(), coveredBy,
+                    c == null ? null : c.getLockBefore()));
         }
         return out;
     }

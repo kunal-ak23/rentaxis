@@ -1631,11 +1631,15 @@ public class LeaseService {
         if (effectiveTerms == null || lease.getPostedAt() == null || !credited) {
             return dtos;
         }
-        java.util.Map<UUID, BigDecimal> current = new java.util.HashMap<>();
+        java.util.Map<UUID, com.datagami.rentaxis.core.service.lease.LeaseEffectiveTerms.EffectiveLine> current =
+                new java.util.HashMap<>();
         for (var e : effectiveTerms.effectiveLines(lease, null)) {
-            if (e.credited()) current.put(e.line().getId(), e.amount());
+            if (e.credited()) current.put(e.line().getId(), e);
         }
-        return dtos.stream().map(d -> current.containsKey(d.id()) ? d.withCurrentAmount(current.get(d.id())) : d).toList();
+        return dtos.stream().map(d -> {
+            var e = current.get(d.id());
+            return e == null ? d : d.withCurrentAmounts(e.amount(), e.headline());
+        }).toList();
     }
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)

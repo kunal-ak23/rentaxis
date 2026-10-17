@@ -330,8 +330,10 @@ public class LeaseRenewalService {
                 LeaseEffectiveTerms.EffectiveLine eff = effectiveTerms.of(
                         effectiveTerms.effectiveLines(predecessor, null), contractRent);
                 if (eff != null && eff.credited()) {
-                    dropped = BigDecimal.ZERO;
-                    base = eff.amount();
+                    // Follow-up ruling R7: from the credit's headline (the concession it
+                    // re-applied does not renew); a pre-180 credit has only its net figure.
+                    dropped = eff.discount();
+                    base = eff.headlineLessDiscount();
                 }
                 newRent = switch (mode) {
                     case NONE -> base;
@@ -557,8 +559,8 @@ public class LeaseRenewalService {
             copied.add(new LeaseLineInput(
                     type != null ? type.getId() : null,
                     null,
-                    credited ? eff.amount() : line.getGrossAmount(),
-                    credited ? BigDecimal.ZERO : line.getDiscountAmount(),
+                    credited ? eff.headline() : line.getGrossAmount(),
+                    credited ? eff.discount() : line.getDiscountAmount(),
                     rent ? null : line.getNarration(),
                     line.isVatApplicable(),
                     line.getCreditAccount() != null ? line.getCreditAccount().getId() : null,
