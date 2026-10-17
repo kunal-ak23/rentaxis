@@ -30,5 +30,12 @@ public enum RenewalOutcome {
 	RENEWAL_NOT_ACTIONED,
 
 	/** The lease was terminated early, so the renewal question never arose. */
-	LEASE_TERMINATED
+	LEASE_TERMINATED,
+
+	/**
+	 * #100 (spec 2026-09-24 §2): the lease ended because the renter moved to another
+	 * unit of the same landlord. The renter was kept, so the funnel closes it won,
+	 * not as a lost renewal.
+	 */
+	TRANSFERRED
 }

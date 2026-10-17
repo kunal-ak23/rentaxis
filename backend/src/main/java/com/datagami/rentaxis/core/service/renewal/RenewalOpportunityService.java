@@ -71,6 +71,18 @@ public class RenewalOpportunityService {
             // terminated lease. The funnel therefore reported renters as having
             // moved out when they had asked to stay, and those are exactly the
             // ones worth chasing.
+            // #100: a transfer ends the lease TERMINATED, but the renter stayed — in
+            // another unit, on the successor lease. That is a renter retained.
+            // A fully carried transfer leaves A nothing to settle, so it may already be CLOSED.
+            if ((s == LeaseStatus.TERMINATED || s == LeaseStatus.CLOSED)
+                    && !leaseRepository.findByTransferredFromLeaseId(o.getLease().getId()).isEmpty()) {
+                o.setStage(RenewalStage.CLOSED_WON);
+                o.setOutcome(RenewalOutcome.TRANSFERRED);
+                o.setClosedAt(now);
+                opportunityRepository.save(o);
+                closed++;
+                continue;
+            }
             RenewalOutcome outcome;
             if (s == LeaseStatus.TERMINATED || s == LeaseStatus.CLOSED) {
                 outcome = RenewalOutcome.LEASE_TERMINATED;

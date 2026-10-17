@@ -92,4 +92,24 @@ class RenewalOpportunityServiceTest extends AbstractPostgresIT {
         List<RenewalOpportunity> closedOpps = oppRepo.findByTenantIdAndStageIn(tenantId, List.of(RenewalStage.CLOSED_LOST));
         assertThat(closedOpps).hasSize(1);
     }
+
+    /** #100: a lease ended by a unit transfer kept its renter — closed won, TRANSFERRED, not a lost renewal. */
+    @Test
+    void closes_opportunity_of_a_transferred_lease_as_won_transferred() {
+        LocalDate today = LocalDate.of(2026, 6, 1);
+        Lease lease = RenewalTestFixtures.createActiveLease(orgRepo, userRepo, renterRepo, propertyRepo, unitRepo, leaseRepo, tenantId, today.minusYears(1), today.plusDays(50));
+        service.openOpportunitiesForCurrentTenant(today);
+        Lease successor = RenewalTestFixtures.createActiveLease(orgRepo, userRepo, renterRepo, propertyRepo, unitRepo, leaseRepo, tenantId, today, today.plusYears(1));
+        successor.setTransferredFromLeaseId(lease.getId());
+        leaseRepo.save(successor);
+        lease.setStatus(LeaseStatus.TERMINATED);
+        leaseRepo.save(lease);
+
+        assertThat(service.closeStaleOpportunitiesForCurrentTenant()).isEqualTo(1);
+        List<RenewalOpportunity> won = oppRepo.findByTenantIdAndStageIn(tenantId, List.of(RenewalStage.CLOSED_WON));
+        assertThat(won).singleElement().satisfies(o -> {
+            assertThat(o.getLease().getId()).isEqualTo(lease.getId());
+            assertThat(o.getOutcome()).isEqualTo(com.datagami.rentaxis.domain.entity.enums.RenewalOutcome.TRANSFERRED);
+        });
+    }
 }
