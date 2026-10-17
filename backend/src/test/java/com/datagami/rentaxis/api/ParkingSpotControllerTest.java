@@ -119,8 +119,8 @@ class ParkingSpotControllerTest {
                 .thenReturn(sourcePage);
         when(bookingRequestRepository.countByParkingSpotIdIn(eq(tenantId), any(), eq(BookingRequestStatus.PENDING)))
                 .thenReturn(List.<Object[]>of(new Object[]{s1.getId(), 1L}));
-        when(bookingRequestRepository.countByParkingSpotIdIn(eq(tenantId), any(), eq(BookingRequestStatus.APPROVED)))
-                .thenReturn(List.<Object[]>of(new Object[]{s2.getId(), 1L}));
+        // Held = an approved booking covers today (changeset 175), batched in one call.
+        when(bookingService.spotsHeldToday(eq(tenantId), any())).thenReturn(java.util.Set.of(s2.getId()));
         ParkingSpotBuildingScope scope = new ParkingSpotBuildingScope();
         scope.setParkingSpotId(s1.getId());
         UUID buildingId = UUID.randomUUID();
@@ -142,11 +142,10 @@ class ParkingSpotControllerTest {
 
         verify(bookingRequestRepository, times(1))
                 .countByParkingSpotIdIn(eq(tenantId), any(), eq(BookingRequestStatus.PENDING));
-        verify(bookingRequestRepository, times(1))
-                .countByParkingSpotIdIn(eq(tenantId), any(), eq(BookingRequestStatus.APPROVED));
+        verify(bookingService, times(1)).spotsHeldToday(eq(tenantId), any());
         verify(spotScopeRepository, times(1)).findByParkingSpotIdIn(any());
         verify(bookingService, never()).countPendingForSpot(any());
-        verify(bookingService, never()).spotHeld(any());
+        verify(bookingService, never()).spotHeld(any(), any());
         verify(facilityService, never()).parkingSpotBuildingIds(any());
     }
 
@@ -170,7 +169,7 @@ class ParkingSpotControllerTest {
         when(facilityService.createParkingSpot(eq(tenantId), any())).thenReturn(s);
         when(facilityService.parkingSpotBuildingIds(s.getId())).thenReturn(List.of());
         when(bookingService.countPendingForSpot(s.getId())).thenReturn(1L);
-        when(bookingService.spotHeld(s.getId())).thenReturn(true);
+        when(bookingService.spotHeld(tenantId, s.getId())).thenReturn(true);
 
         ResponseEntity<ParkingSpotDTO> response = controller.create(
                 new ParkingSpotCreateRequest(propertyId, "B1-07", "B1", null, null));
@@ -200,8 +199,7 @@ class ParkingSpotControllerTest {
         // 500-spot bulk otherwise).
         when(bookingRequestRepository.countByParkingSpotIdIn(eq(tenantId), any(), eq(BookingRequestStatus.PENDING)))
                 .thenReturn(List.of());
-        when(bookingRequestRepository.countByParkingSpotIdIn(eq(tenantId), any(), eq(BookingRequestStatus.APPROVED)))
-                .thenReturn(List.of());
+        when(bookingService.spotsHeldToday(eq(tenantId), any())).thenReturn(java.util.Set.of());
         when(spotScopeRepository.findByParkingSpotIdIn(any())).thenReturn(List.of());
 
         ResponseEntity<List<ParkingSpotDTO>> response = controller.bulkCreate(
@@ -216,11 +214,10 @@ class ParkingSpotControllerTest {
 
         verify(bookingRequestRepository, times(1))
                 .countByParkingSpotIdIn(eq(tenantId), any(), eq(BookingRequestStatus.PENDING));
-        verify(bookingRequestRepository, times(1))
-                .countByParkingSpotIdIn(eq(tenantId), any(), eq(BookingRequestStatus.APPROVED));
+        verify(bookingService, times(1)).spotsHeldToday(eq(tenantId), any());
         verify(spotScopeRepository, times(1)).findByParkingSpotIdIn(any());
         verify(bookingService, never()).countPendingForSpot(any());
-        verify(bookingService, never()).spotHeld(any());
+        verify(bookingService, never()).spotHeld(any(), any());
         verify(facilityService, never()).parkingSpotBuildingIds(any());
     }
 
@@ -270,7 +267,7 @@ class ParkingSpotControllerTest {
         when(facilityService.updateParkingSpot(eq(tenantId), eq(s.getId()), any())).thenReturn(s);
         when(facilityService.parkingSpotBuildingIds(s.getId())).thenReturn(List.of());
         when(bookingService.countPendingForSpot(s.getId())).thenReturn(0L);
-        when(bookingService.spotHeld(s.getId())).thenReturn(false);
+        when(bookingService.spotHeld(tenantId, s.getId())).thenReturn(false);
 
         ResponseEntity<ParkingSpotDTO> response = controller.update(s.getId(),
                 new ParkingSpotUpdateRequest("B1-08", null, null, null, null));

@@ -54,7 +54,7 @@ public class PortfolioImportService {
      */
     public ValidationOutcome validateAll(Workbook workbook) {
         if (ContractImportValidator.isV2Workbook(workbook)) {
-            return contractValidator.validate(workbook);
+            return withParkingSheet(workbook, contractValidator.validate(workbook));
         }
         List<ImportErrorDTO> errors = new ArrayList<>();
         List<ImportErrorDTO> warnings = new ArrayList<>();
@@ -103,12 +103,50 @@ public class PortfolioImportService {
         // Check DB conflicts
         validateDbConflicts(propertyNames, renterEmails, errors);
 
+        // Optional Parking sheet (changeset 175)
+        validateParkingSheet(workbook, errors);
+
         PortfolioSheets.relabel(errors, rentersSheet, leasesSheet);
         PortfolioSheets.relabel(warnings, rentersSheet, leasesSheet);
         return new ValidationOutcome(errors, warnings);
     }
 
     public record ValidationOutcome(List<ImportErrorDTO> errors, List<ImportErrorDTO> warnings) {}
+
+    private ParkingSheetResolver parkingSheetResolver;
+
+    /** Setter-injected: the hand-built instances in the unit tests need no new argument (and skip the Parking sheet). */
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setParkingSheetResolver(ParkingSheetResolver parkingSheetResolver) {
+        this.parkingSheetResolver = parkingSheetResolver;
+    }
+
+    /** The cut-over validator's outcome with the Parking sheet's rows checked as well. */
+    ValidationOutcome withParkingSheet(Workbook workbook, ValidationOutcome outcome) {
+        if (PortfolioSheets.parking(workbook) == null) return outcome;
+        List<ImportErrorDTO> errors = new ArrayList<>(outcome.errors());
+        validateParkingSheet(workbook, errors);
+        return new ValidationOutcome(errors, outcome.warnings());
+    }
+
+    /**
+     * Attached parking (changeset 175): the optional Parking sheet, in either
+     * dialect. Every row's property, building and unit must be on this workbook or
+     * already in the organisation; a BayNumber may appear once per property; an
+     * existing bay a row would attach must have no booking reaching today or later.
+     * Skipped while a mandatory sheet is missing — that error is the one to read.
+     * The database half runs in {@link ParkingSheetResolver}'s read-only transaction,
+     * tenant-scoped (this runs on the import executor's thread).
+     */
+    private void validateParkingSheet(Workbook workbook, List<ImportErrorDTO> errors) {
+        Sheet sheet = PortfolioSheets.parking(workbook);
+        if (sheet == null || parkingSheetResolver == null) return;
+        if (workbook.getSheet("Properties") == null || workbook.getSheet("Units") == null) return;
+        List<ParkingSheet.Row> rows = ParkingSheet.read(sheet, errors);
+        if (rows.isEmpty()) return;
+        parkingSheetResolver.resolve(rows, ParkingSheet.SheetPlaces.of(workbook),
+                TenantContextHolder.getTenantId(), errors);
+    }
 
     /** Summary of a Leases row, captured during validation, used by the Cheques-sheet checks. */
     record LeaseRowSummary(String paymentMethod, BigDecimal totalRent,
@@ -780,7 +818,9 @@ public class PortfolioImportService {
             importJobRepository.save(job);
 
             long started = System.nanoTime();
-            ValidationOutcome outcome = forceCutover ? contractValidator.validate(workbook) : validateAll(workbook);
+            ValidationOutcome outcome = forceCutover
+                    ? withParkingSheet(workbook, contractValidator.validate(workbook))
+                    : validateAll(workbook);
             if (!outcome.errors().isEmpty()) {
                 job.setStatus("VALIDATION_FAILED");
                 job.setErrors(objectMapper.writeValueAsString(outcome.errors()));

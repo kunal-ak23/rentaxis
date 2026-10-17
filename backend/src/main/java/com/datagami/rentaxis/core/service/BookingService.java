@@ -44,8 +44,18 @@ import java.util.UUID;
  * already be verified as leased by the caller. Cross-tenant and
  * not-visible-to-caller lookups throw {@link NotFoundException} (404, never
  * 403) so ids cannot be probed. The partial unique indexes
- * uq_booking_spot_active / uq_booking_pending_renter_* (migration 69) are the
- * DB backstops behind the conflict and idempotency checks here.
+ * uq_booking_pending_renter_* (migration 69) and the exclusion constraint
+ * ex_booking_spot_no_overlap (migration 175) are the DB backstops behind the
+ * idempotency and parking-overlap checks here.
+ *
+ * <p><b>Parking is held by date (changeset 175).</b> An APPROVED parking booking
+ * holds its bay for the dates it covers — {@code [preferredDate, preferredEndDate]},
+ * a null end being open — not until someone releases it. A request overlapping an
+ * approved booking is refused; one that does not overlap is allowed; an ended
+ * booking frees the bay. A bay attached to a unit is never bookable. Every parking
+ * create and approval takes the bay's row lock first
+ * ({@link FacilityService#lockParkingSpot}), so the attachment and overlap checks
+ * cannot interleave with a concurrent approval or attach of the same bay.</p>
  *
  * <p><b>Concurrency.</b> Every status transition (approve/reject/cancel/
  * release) loads its row under a {@code PESSIMISTIC_WRITE} lock via
@@ -65,7 +75,14 @@ public class BookingService {
     /** Migration 69's constraint/index names — kept in sync with the translation below. */
     static final String UQ_BOOKING_PENDING_RENTER_AMENITY = "uq_booking_pending_renter_amenity";
     static final String UQ_BOOKING_PENDING_RENTER_SPOT = "uq_booking_pending_renter_spot";
-    static final String UQ_BOOKING_SPOT_ACTIVE = "uq_booking_spot_active";
+    static final String EX_BOOKING_SPOT_NO_OVERLAP = "ex_booking_spot_no_overlap";
+
+    /** Stand-ins for an open bound in the parking overlap query (Postgres dates span both). */
+    static final LocalDate FAR_PAST = LocalDate.of(1, 1, 1);
+    static final LocalDate FAR_FUTURE = LocalDate.of(9999, 12, 31);
+
+    /** No booking has this id: the overlap query's "exclude nothing". */
+    private static final UUID NO_BOOKING = new UUID(0L, 0L);
 
     private static final List<BookingRequestStatus> OPEN_STATUSES =
             List.of(BookingRequestStatus.PENDING, BookingRequestStatus.APPROVED);
@@ -106,10 +123,17 @@ public class BookingService {
             throw new BusinessRuleViolationException("resourceId is required");
         }
         validateRequestedTimeWindow(req);
+        // Changeset 175: an undated parking request (older clients) runs from today,
+        // open-ended — a bay is held by date now, and "since forever" would clash with
+        // every booking the bay ever had.
+        LocalDate preferredDate = req.preferredDate();
+        if (req.resourceType() == BookingResourceType.PARKING_SPOT && preferredDate == null) {
+            preferredDate = LocalDate.now(clock.withZone(DUBAI));
+        }
         // Break-it R3 ops3 F8: not in the past, not an endless range, inside the contract.
-        validateDates(req.resourceType(), req.preferredDate(), req.preferredEndDate());
+        validateDates(req.resourceType(), preferredDate, req.preferredEndDate());
         requireWithinCurrentLease(tenantId, renterUserId, unit.getId(),
-                req.preferredDate(), req.preferredEndDate(), true);
+                preferredDate, req.preferredEndDate(), true);
 
         BookingRequest booking = new BookingRequest();
         booking.setTenantId(tenantId);
@@ -117,7 +141,7 @@ public class BookingService {
         booking.setRenterUserId(renterUserId);
         booking.setResourceType(req.resourceType());
         booking.setNote(req.note());
-        booking.setPreferredDate(req.preferredDate());
+        booking.setPreferredDate(preferredDate);
         booking.setPreferredEndDate(req.preferredEndDate());
         booking.setPreferredStartTime(req.preferredStartTime());
         booking.setPreferredEndTime(req.preferredEndTime());
@@ -164,18 +188,33 @@ public class BookingService {
             // F14-50: the fee the renter was shown, fixed now.
             booking.setFeeAmount(BookingFeeService.quote(amenity, booking));
         } else {
-            ParkingSpot spot = facilityService.getParkingSpot(tenantId, req.resourceId());
+            // Locked first load of the bay: an attach or approval racing this request
+            // waits for it, and this one sees theirs once they commit.
+            ParkingSpot spot = facilityService.lockParkingSpot(tenantId, req.resourceId());
             if (!spot.isActive() || !facilityService.parkingSpotVisibleToUnit(spot, unit)) {
                 throw new NotFoundException("Parking spot not found");
             }
+            requireNotAttached(spot);
             Optional<BookingRequest> existing =
                     bookingRepository.findFirstByTenantIdAndRenterUserIdAndParkingSpotIdAndStatus(
                             tenantId, renterUserId, spot.getId(), BookingRequestStatus.PENDING);
+            // One pending request per renter per bay (uq_booking_pending_renter_spot). A
+            // repeat of the same dates is idempotent; other dates are refused, never
+            // answered with the earlier request as if it were the new one.
             if (existing.isPresent()) {
-                return existing.get();
+                BookingRequest pending = existing.get();
+                if (Objects.equals(pending.getPreferredDate(), booking.getPreferredDate())
+                        && Objects.equals(pending.getPreferredEndDate(), booking.getPreferredEndDate())) {
+                    return pending;
+                }
+                throw new SlotConflictException(
+                        "You already have a pending request for this parking spot for other dates."
+                                + " Wait for the decision or cancel it first.",
+                        null, "booking.spotPendingExists");
             }
-            if (bookingRepository.existsByParkingSpotIdAndStatus(spot.getId(), BookingRequestStatus.APPROVED)) {
-                throw new SlotConflictException("Parking spot is already assigned", null, "booking.spotTaken");
+            if (overlapsApproved(tenantId, spot.getId(), booking)) {
+                throw new SlotConflictException("Parking spot is already booked for those dates", null,
+                        "booking.spotTaken");
             }
             booking.setParkingSpotId(spot.getId());
             booking.setPropertyId(spot.getPropertyId());
@@ -183,6 +222,23 @@ public class BookingService {
         }
 
         return saveNewBooking(tenantId, booking);
+    }
+
+    /** Changeset 175: a bay allocated to a unit is never bookable — refused here, not only hidden. */
+    private static void requireNotAttached(ParkingSpot spot) {
+        if (spot.getAttachedUnitId() != null) {
+            throw new BusinessRuleViolationException(
+                    "Parking bay " + spot.getSpotNumber() + " is allocated to a unit and cannot be booked.",
+                    "booking.spotAttached", Map.of("spot", spot.getSpotNumber()));
+        }
+    }
+
+    /** Whether another APPROVED booking of the bay overlaps this one's dates (null bound = open end). */
+    private boolean overlapsApproved(UUID tenantId, UUID spotId, BookingRequest booking) {
+        LocalDate from = booking.getPreferredDate() == null ? FAR_PAST : booking.getPreferredDate();
+        LocalDate to = booking.getPreferredEndDate() == null ? FAR_FUTURE : booking.getPreferredEndDate();
+        UUID self = booking.getId() == null ? NO_BOOKING : booking.getId();
+        return bookingRepository.existsApprovedSpotOverlap(tenantId, spotId, from, to, self);
     }
 
     private void validateRequestedTimeWindow(BookingCreateRequest req) {
@@ -360,8 +416,10 @@ public class BookingService {
      * earlier in {@link #create} is what actually delivers idempotency — it
      * runs in a fresh, non-aborted transaction, so a client that retries after
      * hitting this narrow race lands on that pre-flight and gets the existing
-     * row back. uq_booking_spot_active means the spot is already APPROVED
-     * elsewhere — surfaced as a conflict rather than silently handed back.
+     * row back. ex_booking_spot_no_overlap means an approved booking of the bay
+     * overlaps — surfaced as a conflict rather than silently handed back. (A
+     * create inserts PENDING rows, which the constraint does not cover; the
+     * translation stays for symmetry with {@link #decide}.)
      * Anything else wasn't the violation being guarded against, so it is
      * rethrown rather than mislabeled — same shape as
      * FacilityService#translateConstraintViolation.
@@ -374,8 +432,9 @@ public class BookingService {
             return new SlotConflictException(
                     "A request for this resource is already in flight, please retry", null);
         }
-        if (causeMessage != null && causeMessage.contains(UQ_BOOKING_SPOT_ACTIVE)) {
-            return new SlotConflictException("Parking spot is already assigned", null, "booking.spotTaken");
+        if (causeMessage != null && causeMessage.contains(EX_BOOKING_SPOT_NO_OVERLAP)) {
+            return new SlotConflictException("Parking spot is already booked for those dates", null,
+                    "booking.spotTaken");
         }
         return e;
     }
@@ -416,16 +475,25 @@ public class BookingService {
     public BookingRequest approve(UUID tenantId, UUID id, UUID adminUserId, String adminNote) {
         BookingRequest booking = getForUpdate(tenantId, id);
         requirePending(booking);
+        // Changeset 175: an undated parking request left from before runs from the day
+        // it is approved, open-ended (see create).
+        if (booking.getResourceType() == BookingResourceType.PARKING_SPOT && booking.getPreferredDate() == null) {
+            booking.setPreferredDate(LocalDate.now(clock.withZone(DUBAI)));
+        }
         // Break-it R3 ops3 F8: the request's dates are checked again — it may have sat
         // pending past its date, or the contract may have changed since.
         validateDates(booking.getResourceType(), booking.getPreferredDate(), booking.getPreferredEndDate());
         requireWithinCurrentLease(tenantId, booking.getRenterUserId(), booking.getUnitId(),
                 booking.getPreferredDate(), booking.getPreferredEndDate(), false);
-        if (booking.getResourceType() == BookingResourceType.PARKING_SPOT
-                && bookingRepository.existsByParkingSpotIdAndStatus(
-                        booking.getParkingSpotId(), BookingRequestStatus.APPROVED)) {
-            throw new SlotConflictException("Parking spot is already assigned to another renter", null,
-                    "booking.spotTaken");
+        if (booking.getResourceType() == BookingResourceType.PARKING_SPOT) {
+            // Under the bay's row lock, so two approvals of overlapping requests (or an
+            // approval racing an attach) run their checks one after the other.
+            ParkingSpot spot = facilityService.lockParkingSpot(tenantId, booking.getParkingSpotId());
+            requireNotAttached(spot);
+            if (overlapsApproved(tenantId, spot.getId(), booking)) {
+                throw new SlotConflictException("Parking spot is already booked for those dates", null,
+                        "booking.spotTaken");
+            }
         }
         if (booking.getResourceType() == BookingResourceType.AMENITY) {
             // Break-it R3 ops3 F7: under the amenity's row lock, so two approvals for the
@@ -581,18 +649,36 @@ public class BookingService {
         return bookingRepository.countByParkingSpotIdAndStatus(parkingSpotId, BookingRequestStatus.PENDING);
     }
 
+    /** Whether an approved booking holds the bay today (Asia/Dubai). An ended one does not. */
     @Transactional(readOnly = true)
-    public boolean spotHeld(UUID parkingSpotId) {
-        return bookingRepository.existsByParkingSpotIdAndStatus(parkingSpotId, BookingRequestStatus.APPROVED);
+    public boolean spotHeld(UUID tenantId, UUID parkingSpotId) {
+        return !bookingRepository.findSpotIdsHeldOn(tenantId, List.of(parkingSpotId), today()).isEmpty();
+    }
+
+    /** The bays among these held today — the batch form of {@link #spotHeld}. */
+    @Transactional(readOnly = true)
+    public java.util.Set<UUID> spotsHeldToday(UUID tenantId, java.util.Collection<UUID> spotIds) {
+        if (spotIds.isEmpty()) return java.util.Set.of();
+        return new java.util.HashSet<>(bookingRepository.findSpotIdsHeldOn(tenantId, spotIds, today()));
+    }
+
+    /** Approved bookings of these bays that have not ended — for the renter's "booked" hint. */
+    @Transactional(readOnly = true)
+    public List<BookingRequest> approvedSpotBookingsAhead(UUID tenantId, java.util.Collection<UUID> spotIds) {
+        if (spotIds.isEmpty()) return List.of();
+        return bookingRepository.findApprovedSpotBookingsNotEndedBy(tenantId, spotIds, today());
+    }
+
+    private LocalDate today() {
+        return LocalDate.now(clock.withZone(DUBAI));
     }
 
     /**
      * saveAndFlush for the same reason as {@link #saveNewBooking}: the write
-     * must happen inside this try so a uq_booking_spot_active race on approve
-     * (concurrent decisions on two different PENDING requests for the same
-     * spot) is caught here rather than surfacing later as an unhandled 500.
-     * The pre-flight existsByParkingSpotIdAndStatus check in {@link #approve}
-     * is the happy-path guard; this is the DB backstop.
+     * must happen inside this try so an ex_booking_spot_no_overlap violation on
+     * approve is caught here rather than surfacing later as an unhandled 500.
+     * The overlap check in {@link #approve}, under the bay's row lock, is the
+     * guard; this is the DB backstop.
      */
     private BookingRequest decide(BookingRequest booking, BookingRequestStatus status,
                                   UUID adminUserId, String adminNote) {
@@ -614,8 +700,8 @@ public class BookingService {
     private static RuntimeException translateDecideConstraintViolation(DataIntegrityViolationException e) {
         Throwable cause = e.getMostSpecificCause();
         String causeMessage = cause != null ? cause.getMessage() : null;
-        if (causeMessage != null && causeMessage.contains(UQ_BOOKING_SPOT_ACTIVE)) {
-            return new SlotConflictException("Parking spot is already assigned to another renter", null,
+        if (causeMessage != null && causeMessage.contains(EX_BOOKING_SPOT_NO_OVERLAP)) {
+            return new SlotConflictException("Parking spot is already booked for those dates", null,
                     "booking.spotTaken");
         }
         return e;

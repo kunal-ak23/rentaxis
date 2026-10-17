@@ -62,6 +62,15 @@ public interface UnitRepository extends JpaRepository<Unit, UUID> {
     @EntityGraph(attributePaths = "property")
     List<Unit> findByIdIn(Collection<UUID> ids);
 
+    /** Attached parking: the units bays point at, with their buildings, scoped to the tenant in SQL. */
+    @Query("select u from Unit u left join fetch u.building where u.tenantId = :tenantId and u.id in :ids")
+    List<Unit> findWithBuildingByTenantIdAndIdIn(@Param("tenantId") UUID tenantId,
+                                                 @Param("ids") Collection<UUID> ids);
+
+    /** Attached parking: one unit with its property and building, scoped to the tenant in SQL. */
+    @Query("select u from Unit u join fetch u.property left join fetch u.building where u.tenantId = :tenantId and u.id = :id")
+    Optional<Unit> findWithPlaceByTenantIdAndId(@Param("tenantId") UUID tenantId, @Param("id") UUID id);
+
 
     /**
      * Locks the unit row so an occupancy check and the status flip that follows

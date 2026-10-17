@@ -291,6 +291,8 @@ public class PortfolioImportController {
                     if (details.getContractsCreated() != null) dto.setContractsCreated(details.getContractsCreated());
                     if (details.getMappingsCreated() != null) dto.setMappingsCreated(details.getMappingsCreated());
                     if (details.getLeasesPosted() != null) dto.setLeasesPosted(details.getLeasesPosted());
+                    dto.setParkingBaysCreated(details.getParkingBaysCreated());
+                    dto.setParkingBaysUpdated(details.getParkingBaysUpdated());
                 } catch (Exception e) {
                     log.warn("Failed to parse import job {} errors as wrapper object: {}", job.getId(), e.toString());
                     dto.setErrors(List.of(ImportErrorDTO.file("General", "File", "Could not parse error details")));

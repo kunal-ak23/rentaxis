@@ -470,7 +470,7 @@ class FacilityServiceTest {
         when(amenityRepository.findByTenantIdAndPropertyIdAndActiveTrueOrderByCreatedAtAsc(tenantId, propertyId))
                 .thenReturn(List.of(a));
         when(amenityScopeRepository.findByAmenityIdIn(List.of(a.getId()))).thenReturn(List.of());
-        when(spotRepository.findByTenantIdAndPropertyIdAndActiveTrueOrderByCreatedAtAsc(tenantId, propertyId))
+        when(spotRepository.findByTenantIdAndPropertyIdAndActiveTrueAndAttachedUnitIdIsNullOrderByCreatedAtAsc(tenantId, propertyId))
                 .thenReturn(List.of());
 
         FacilityService.VisibleFacilities visible =
@@ -488,7 +488,7 @@ class FacilityServiceTest {
         when(amenityRepository.findByTenantIdAndPropertyIdAndActiveTrueOrderByCreatedAtAsc(tenantId, propertyId))
                 .thenReturn(List.of(a));
         when(amenityScopeRepository.findByAmenityIdIn(List.of(a.getId()))).thenReturn(List.of(scope));
-        when(spotRepository.findByTenantIdAndPropertyIdAndActiveTrueOrderByCreatedAtAsc(tenantId, propertyId))
+        when(spotRepository.findByTenantIdAndPropertyIdAndActiveTrueAndAttachedUnitIdIsNullOrderByCreatedAtAsc(tenantId, propertyId))
                 .thenReturn(List.of());
 
         FacilityService.VisibleFacilities otherTower =
@@ -511,7 +511,7 @@ class FacilityServiceTest {
                 .thenReturn(List.of(unscoped, scoped));
         when(amenityScopeRepository.findByAmenityIdIn(List.of(unscoped.getId(), scoped.getId())))
                 .thenReturn(List.of(scope));
-        when(spotRepository.findByTenantIdAndPropertyIdAndActiveTrueOrderByCreatedAtAsc(tenantId, propertyId))
+        when(spotRepository.findByTenantIdAndPropertyIdAndActiveTrueAndAttachedUnitIdIsNullOrderByCreatedAtAsc(tenantId, propertyId))
                 .thenReturn(List.of());
 
         FacilityService.VisibleFacilities visible =
@@ -536,7 +536,7 @@ class FacilityServiceTest {
         when(amenityRepository.findByTenantIdAndPropertyIdAndActiveTrueOrderByCreatedAtAsc(tenantId, propertyId))
                 .thenReturn(List.of(a));
         when(amenityScopeRepository.findByAmenityIdIn(List.of(a.getId()))).thenReturn(List.of());
-        when(spotRepository.findByTenantIdAndPropertyIdAndActiveTrueOrderByCreatedAtAsc(tenantId, propertyId))
+        when(spotRepository.findByTenantIdAndPropertyIdAndActiveTrueAndAttachedUnitIdIsNullOrderByCreatedAtAsc(tenantId, propertyId))
                 .thenReturn(List.of());
 
         FacilityService.VisibleFacilities visible =
@@ -569,7 +569,7 @@ class FacilityServiceTest {
 
         when(amenityRepository.findByTenantIdAndPropertyIdAndActiveTrueOrderByCreatedAtAsc(tenantId, propertyId))
                 .thenReturn(List.of());
-        when(spotRepository.findByTenantIdAndPropertyIdAndActiveTrueOrderByCreatedAtAsc(tenantId, propertyId))
+        when(spotRepository.findByTenantIdAndPropertyIdAndActiveTrueAndAttachedUnitIdIsNullOrderByCreatedAtAsc(tenantId, propertyId))
                 .thenReturn(List.of(unscoped, scopedToMyBuilding, scopedElsewhere));
         FacilityService.VisibleFacilities visible =
                 service.visibleFacilities(tenantId, unitInProperty(buildingId));
@@ -616,5 +616,94 @@ class FacilityServiceTest {
 
         assertThat(service.parkingSpotVisibleToUnit(scoped, unitInProperty(null))).isTrue();
         assertThat(service.parkingSpotVisibleToUnit(unscoped, unitInProperty(null))).isTrue();
+    }
+
+    // ---- attached parking (changeset 175) ----
+
+    /** The service wired for attach/detach, with a bay in {@code propertyId} scoped to {@code towers}. */
+    private record Attach(FacilityService service, ParkingSpot bay,
+                          com.datagami.rentaxis.domain.repository.BookingRequestRepository bookings,
+                          com.datagami.rentaxis.domain.repository.UnitRepository units) {}
+
+    private Attach attachFixture(List<UUID> towers) {
+        var bookings = mock(com.datagami.rentaxis.domain.repository.BookingRequestRepository.class);
+        var units = mock(com.datagami.rentaxis.domain.repository.UnitRepository.class);
+        service.setAttachmentRepositories(bookings, units);
+        service.setClock(java.time.Clock.fixed(java.time.Instant.parse("2026-10-17T08:00:00Z"),
+                java.time.ZoneId.of("Asia/Dubai")));
+        ParkingSpot bay = new ParkingSpot();
+        bay.setId(UUID.randomUUID());
+        bay.setTenantId(tenantId);
+        bay.setPropertyId(propertyId);
+        bay.setSpotNumber("P-1");
+        when(spotRepository.findByIdForUpdate(tenantId, bay.getId())).thenReturn(Optional.of(bay));
+        when(spotRepository.saveAndFlush(any(ParkingSpot.class))).thenAnswer(inv -> inv.getArgument(0));
+        List<ParkingSpotBuildingScope> scopes = new ArrayList<>();
+        for (UUID t : towers) {
+            ParkingSpotBuildingScope sc = new ParkingSpotBuildingScope();
+            sc.setParkingSpotId(bay.getId());
+            sc.setBuildingId(t);
+            scopes.add(sc);
+        }
+        when(spotScopeRepository.findByParkingSpotId(bay.getId())).thenReturn(scopes);
+        return new Attach(service, bay, bookings, units);
+    }
+
+    private Unit unitIn(UUID property, UUID building, com.datagami.rentaxis.domain.repository.UnitRepository units) {
+        Unit u = unitInProperty(building);
+        u.getProperty().setId(property);
+        u.setUnitNumber("101");
+        when(units.findWithPlaceByTenantIdAndId(tenantId, u.getId())).thenReturn(Optional.of(u));
+        return u;
+    }
+
+    @Test
+    void attach_aUnitOfTheBaysTower_setsIt_andDetachClearsIt() {
+        Attach f = attachFixture(List.of(buildingId));
+        Unit u = unitIn(propertyId, buildingId, f.units());
+
+        assertThat(f.service().setParkingSpotAttachment(tenantId, f.bay().getId(), u.getId()).getAttachedUnitId())
+                .isEqualTo(u.getId());
+        assertThat(f.service().setParkingSpotAttachment(tenantId, f.bay().getId(), null).getAttachedUnitId())
+                .isNull();
+    }
+
+    @Test
+    void attach_aUnitOfAnotherPropertyOrTower_isRefused() {
+        Attach f = attachFixture(List.of(buildingId));
+        Unit otherProperty = unitIn(UUID.randomUUID(), buildingId, f.units());
+        Unit otherTower = unitIn(propertyId, UUID.randomUUID(), f.units());
+
+        for (Unit u : List.of(otherProperty, otherTower)) {
+            assertThatThrownBy(() -> f.service().setParkingSpotAttachment(tenantId, f.bay().getId(), u.getId()))
+                    .isInstanceOf(BusinessRuleViolationException.class)
+                    .extracting(e -> ((BusinessRuleViolationException) e).getCode())
+                    .isEqualTo("parking.attachUnitOutsideBay");
+        }
+        assertThat(f.bay().getAttachedUnitId()).isNull();
+    }
+
+    @Test
+    void attach_aBayABookingStillHolds_isRefused() {
+        Attach f = attachFixture(List.of());
+        Unit u = unitIn(propertyId, buildingId, f.units());
+        when(f.bookings().existsOpenSpotBookingReaching(tenantId, f.bay().getId(),
+                java.time.LocalDate.of(2026, 10, 17))).thenReturn(true);
+
+        assertThatThrownBy(() -> f.service().setParkingSpotAttachment(tenantId, f.bay().getId(), u.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode())
+                .isEqualTo("parking.attachHasBookings");
+        assertThat(f.bay().getAttachedUnitId()).isNull();
+    }
+
+    @Test
+    void attach_aUnitTheTenantDoesNotHave_isNotFound() {
+        Attach f = attachFixture(List.of());
+        UUID foreignUnit = UUID.randomUUID();
+        when(f.units().findWithPlaceByTenantIdAndId(tenantId, foreignUnit)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> f.service().setParkingSpotAttachment(tenantId, f.bay().getId(), foreignUnit))
+                .isInstanceOf(NotFoundException.class);
     }
 }

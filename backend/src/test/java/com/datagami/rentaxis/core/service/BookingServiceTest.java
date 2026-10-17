@@ -72,6 +72,14 @@ class BookingServiceTest {
             return b;
         });
 
+        // Every parking create/approval takes the bay's lock first; by default it hands
+        // back an active, unattached bay with the id asked for.
+        when(facilityService.lockParkingSpot(any(), any())).thenAnswer(inv -> {
+            ParkingSpot s = spot(true);
+            s.setId(inv.getArgument(1));
+            return s;
+        });
+
         Property property = new Property();
         property.setId(propertyId);
         unit = new Unit();
@@ -143,12 +151,12 @@ class BookingServiceTest {
     @Test
     void create_parkingSpot_savesPendingWithDerivedPropertyAndPublishesEvent() {
         ParkingSpot s = spot(true);
-        when(facilityService.getParkingSpot(tenantId, s.getId())).thenReturn(s);
+        when(facilityService.lockParkingSpot(tenantId, s.getId())).thenReturn(s);
         when(facilityService.parkingSpotVisibleToUnit(s, unit)).thenReturn(true);
         when(bookingRepository.findFirstByTenantIdAndRenterUserIdAndParkingSpotIdAndStatus(
                 tenantId, renterUserId, s.getId(), BookingRequestStatus.PENDING))
                 .thenReturn(Optional.empty());
-        when(bookingRepository.existsByParkingSpotIdAndStatus(s.getId(), BookingRequestStatus.APPROVED))
+        when(bookingRepository.existsApprovedSpotOverlap(eq(tenantId), eq(s.getId()), any(), any(), any()))
                 .thenReturn(false);
 
         BookingRequest created = service.create(tenantId, renterUserId, unit,
@@ -166,7 +174,7 @@ class BookingServiceTest {
     @Test
     void create_inactiveSpot_throwsNotFound() {
         ParkingSpot s = spot(false);
-        when(facilityService.getParkingSpot(tenantId, s.getId())).thenReturn(s);
+        when(facilityService.lockParkingSpot(tenantId, s.getId())).thenReturn(s);
 
         assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
                 new BookingCreateRequest(BookingResourceType.PARKING_SPOT, s.getId(), unit.getId(), null, null)))
@@ -176,7 +184,7 @@ class BookingServiceTest {
     @Test
     void create_spotNotVisibleToUnit_throwsNotFound() {
         ParkingSpot s = spot(true);
-        when(facilityService.getParkingSpot(tenantId, s.getId())).thenReturn(s);
+        when(facilityService.lockParkingSpot(tenantId, s.getId())).thenReturn(s);
         when(facilityService.parkingSpotVisibleToUnit(s, unit)).thenReturn(false);
 
         assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
@@ -284,17 +292,105 @@ class BookingServiceTest {
     @Test
     void create_parkingSpotAlreadyApproved_throwsConflict() {
         ParkingSpot s = spot(true);
-        when(facilityService.getParkingSpot(tenantId, s.getId())).thenReturn(s);
+        when(facilityService.lockParkingSpot(tenantId, s.getId())).thenReturn(s);
         when(facilityService.parkingSpotVisibleToUnit(s, unit)).thenReturn(true);
         when(bookingRepository.findFirstByTenantIdAndRenterUserIdAndParkingSpotIdAndStatus(
                 tenantId, renterUserId, s.getId(), BookingRequestStatus.PENDING))
                 .thenReturn(Optional.empty());
-        when(bookingRepository.existsByParkingSpotIdAndStatus(s.getId(), BookingRequestStatus.APPROVED))
+        when(bookingRepository.existsApprovedSpotOverlap(eq(tenantId), eq(s.getId()), any(), any(), any()))
                 .thenReturn(true);
 
         assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
                 new BookingCreateRequest(BookingResourceType.PARKING_SPOT, s.getId(), unit.getId(), null, null)))
                 .isInstanceOf(SlotConflictException.class);
+    }
+
+    // ---- attached parking (changeset 175) ----
+
+    @Test
+    void create_attachedSpot_isRefusedByTheServer() {
+        ParkingSpot s = spot(true);
+        s.setAttachedUnitId(UUID.randomUUID());
+        when(facilityService.lockParkingSpot(tenantId, s.getId())).thenReturn(s);
+        when(facilityService.parkingSpotVisibleToUnit(s, unit)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.PARKING_SPOT, s.getId(), unit.getId(), null, null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode())
+                .isEqualTo("booking.spotAttached");
+        verify(bookingRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void approve_attachedSpot_isRefused() {
+        BookingRequest b = booking(BookingResourceType.PARKING_SPOT, BookingRequestStatus.PENDING);
+        when(bookingRepository.findByIdForUpdate(b.getId())).thenReturn(Optional.of(b));
+        ParkingSpot s = spot(true);
+        s.setId(b.getParkingSpotId());
+        s.setAttachedUnitId(UUID.randomUUID());
+        when(facilityService.lockParkingSpot(tenantId, b.getParkingSpotId())).thenReturn(s);
+
+        assertThatThrownBy(() -> service.approve(tenantId, b.getId(), UUID.randomUUID(), null))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .extracting(e -> ((BusinessRuleViolationException) e).getCode())
+                .isEqualTo("booking.spotAttached");
+        assertThat(b.getStatus()).isEqualTo(BookingRequestStatus.PENDING);
+    }
+
+    @Test
+    void create_parkingRange_isCheckedForOverlapByItsDates() {
+        ParkingSpot s = spot(true);
+        when(facilityService.lockParkingSpot(tenantId, s.getId())).thenReturn(s);
+        when(facilityService.parkingSpotVisibleToUnit(s, unit)).thenReturn(true);
+        when(bookingRepository.findFirstByTenantIdAndRenterUserIdAndParkingSpotIdAndStatus(
+                tenantId, renterUserId, s.getId(), BookingRequestStatus.PENDING)).thenReturn(Optional.empty());
+
+        service.create(tenantId, renterUserId, unit, new BookingCreateRequest(BookingResourceType.PARKING_SPOT,
+                s.getId(), unit.getId(), LocalDate.of(2026, 8, 10), LocalDate.of(2026, 8, 20), null, null, null));
+
+        verify(bookingRepository).existsApprovedSpotOverlap(eq(tenantId), eq(s.getId()),
+                eq(LocalDate.of(2026, 8, 10)), eq(LocalDate.of(2026, 8, 20)), any());
+    }
+
+    @Test
+    void create_parkingWhilePendingForOtherDates_isRefused_sameDatesReturnTheRequest() {
+        ParkingSpot s = spot(true);
+        BookingRequest pending = booking(BookingResourceType.PARKING_SPOT, BookingRequestStatus.PENDING);
+        pending.setPreferredDate(LocalDate.of(2026, 8, 10));
+        pending.setPreferredEndDate(LocalDate.of(2026, 8, 20));
+        when(facilityService.lockParkingSpot(tenantId, s.getId())).thenReturn(s);
+        when(facilityService.parkingSpotVisibleToUnit(s, unit)).thenReturn(true);
+        when(bookingRepository.findFirstByTenantIdAndRenterUserIdAndParkingSpotIdAndStatus(
+                tenantId, renterUserId, s.getId(), BookingRequestStatus.PENDING)).thenReturn(Optional.of(pending));
+
+        assertThat(service.create(tenantId, renterUserId, unit, new BookingCreateRequest(
+                BookingResourceType.PARKING_SPOT, s.getId(), unit.getId(),
+                LocalDate.of(2026, 8, 10), LocalDate.of(2026, 8, 20), null, null, null))).isSameAs(pending);
+
+        assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit, new BookingCreateRequest(
+                BookingResourceType.PARKING_SPOT, s.getId(), unit.getId(),
+                LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 5), null, null, null)))
+                .isInstanceOf(SlotConflictException.class)
+                .extracting("code").isEqualTo("booking.spotPendingExists");
+        verify(bookingRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void create_undatedParking_runsFromTodayOpenEnded() {
+        ParkingSpot s = spot(true);
+        when(facilityService.lockParkingSpot(tenantId, s.getId())).thenReturn(s);
+        when(facilityService.parkingSpotVisibleToUnit(s, unit)).thenReturn(true);
+        when(bookingRepository.findFirstByTenantIdAndRenterUserIdAndParkingSpotIdAndStatus(
+                tenantId, renterUserId, s.getId(), BookingRequestStatus.PENDING)).thenReturn(Optional.empty());
+
+        BookingRequest created = service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.PARKING_SPOT, s.getId(), unit.getId(), null, null));
+
+        assertThat(created.getPreferredDate()).isEqualTo(LocalDate.of(2026, 8, 1));
+        assertThat(created.getPreferredEndDate()).isNull();
+        verify(bookingRepository).existsApprovedSpotOverlap(eq(tenantId), eq(s.getId()),
+                eq(LocalDate.of(2026, 8, 1)), eq(BookingService.FAR_FUTURE), any());
     }
 
     // ---- create: DB backstop / constraint-race translation (review hardening) ----
@@ -325,12 +421,12 @@ class BookingServiceTest {
     @Test
     void create_parkingSpotPendingRaceAtSave_throwsRetryableConflict() {
         ParkingSpot s = spot(true);
-        when(facilityService.getParkingSpot(tenantId, s.getId())).thenReturn(s);
+        when(facilityService.lockParkingSpot(tenantId, s.getId())).thenReturn(s);
         when(facilityService.parkingSpotVisibleToUnit(s, unit)).thenReturn(true);
         when(bookingRepository.findFirstByTenantIdAndRenterUserIdAndParkingSpotIdAndStatus(
                 tenantId, renterUserId, s.getId(), BookingRequestStatus.PENDING))
                 .thenReturn(Optional.empty());
-        when(bookingRepository.existsByParkingSpotIdAndStatus(s.getId(), BookingRequestStatus.APPROVED))
+        when(bookingRepository.existsApprovedSpotOverlap(eq(tenantId), eq(s.getId()), any(), any(), any()))
                 .thenReturn(false);
         when(bookingRepository.saveAndFlush(any(BookingRequest.class)))
                 .thenThrow(new DataIntegrityViolationException("insert failed", new RuntimeException(
@@ -345,16 +441,16 @@ class BookingServiceTest {
     @Test
     void create_spotActiveRaceAtSave_throwsConflict() {
         ParkingSpot s = spot(true);
-        when(facilityService.getParkingSpot(tenantId, s.getId())).thenReturn(s);
+        when(facilityService.lockParkingSpot(tenantId, s.getId())).thenReturn(s);
         when(facilityService.parkingSpotVisibleToUnit(s, unit)).thenReturn(true);
         when(bookingRepository.findFirstByTenantIdAndRenterUserIdAndParkingSpotIdAndStatus(
                 tenantId, renterUserId, s.getId(), BookingRequestStatus.PENDING))
                 .thenReturn(Optional.empty());
-        when(bookingRepository.existsByParkingSpotIdAndStatus(s.getId(), BookingRequestStatus.APPROVED))
+        when(bookingRepository.existsApprovedSpotOverlap(eq(tenantId), eq(s.getId()), any(), any(), any()))
                 .thenReturn(false);
         when(bookingRepository.saveAndFlush(any(BookingRequest.class)))
                 .thenThrow(new DataIntegrityViolationException("insert failed", new RuntimeException(
-                        "duplicate key value violates unique constraint \"uq_booking_spot_active\"")));
+                        "conflicting key value violates exclusion constraint \"ex_booking_spot_no_overlap\"")));
 
         assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
                 new BookingCreateRequest(BookingResourceType.PARKING_SPOT, s.getId(), unit.getId(), null, null)))
@@ -416,8 +512,7 @@ class BookingServiceTest {
     void approve_parkingWhenSpotHeldElsewhere_throwsConflict() {
         BookingRequest b = booking(BookingResourceType.PARKING_SPOT, BookingRequestStatus.PENDING);
         when(bookingRepository.findByIdForUpdate(b.getId())).thenReturn(Optional.of(b));
-        when(bookingRepository.existsByParkingSpotIdAndStatus(b.getParkingSpotId(),
-                BookingRequestStatus.APPROVED)).thenReturn(true);
+        when(bookingRepository.existsApprovedSpotOverlap(eq(tenantId), eq(b.getParkingSpotId()), any(), any(), any())).thenReturn(true);
 
         assertThatThrownBy(() -> service.approve(tenantId, b.getId(), UUID.randomUUID(), null))
                 .isInstanceOf(SlotConflictException.class);
@@ -425,17 +520,15 @@ class BookingServiceTest {
 
     @Test
     void approve_spotActiveRaceAtSave_throwsConflict() {
-        // Pre-flight existsByParkingSpotIdAndStatus passed (false), but a concurrent
-        // approval of a sibling request for the same spot committed first — the
-        // UPDATE here trips uq_booking_spot_active. The DB backstop behind the
-        // pre-flight check.
+        // The overlap check under the bay lock passed (false), but an overlapping
+        // approval slipped past it — the UPDATE here trips ex_booking_spot_no_overlap.
+        // The DB backstop behind the locked check.
         BookingRequest b = booking(BookingResourceType.PARKING_SPOT, BookingRequestStatus.PENDING);
         when(bookingRepository.findByIdForUpdate(b.getId())).thenReturn(Optional.of(b));
-        when(bookingRepository.existsByParkingSpotIdAndStatus(b.getParkingSpotId(),
-                BookingRequestStatus.APPROVED)).thenReturn(false);
+        when(bookingRepository.existsApprovedSpotOverlap(eq(tenantId), eq(b.getParkingSpotId()), any(), any(), any())).thenReturn(false);
         when(bookingRepository.saveAndFlush(any(BookingRequest.class)))
                 .thenThrow(new DataIntegrityViolationException("update failed", new RuntimeException(
-                        "duplicate key value violates unique constraint \"uq_booking_spot_active\"")));
+                        "conflicting key value violates exclusion constraint \"ex_booking_spot_no_overlap\"")));
 
         assertThatThrownBy(() -> service.approve(tenantId, b.getId(), UUID.randomUUID(), null))
                 .isInstanceOf(SlotConflictException.class);
@@ -735,7 +828,7 @@ class BookingServiceTest {
     @Test
     void create_parkingRangeOverTwoYears_isRefused() {
         ParkingSpot s = spot(true);
-        when(facilityService.getParkingSpot(tenantId, s.getId())).thenReturn(s);
+        when(facilityService.lockParkingSpot(tenantId, s.getId())).thenReturn(s);
         when(facilityService.parkingSpotVisibleToUnit(s, unit)).thenReturn(true);
         LocalDate from = LocalDate.of(2026, 9, 1);
         assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
@@ -787,7 +880,7 @@ class BookingServiceTest {
                 .satisfies(e -> assertThat(codeOf(e)).isEqualTo("booking.outsideLease"));
         // A parking range running past the contract end.
         ParkingSpot s = spot(true);
-        when(facilityService.getParkingSpot(tenantId, s.getId())).thenReturn(s);
+        when(facilityService.lockParkingSpot(tenantId, s.getId())).thenReturn(s);
         when(facilityService.parkingSpotVisibleToUnit(s, unit)).thenReturn(true);
         assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
                 new BookingCreateRequest(BookingResourceType.PARKING_SPOT, s.getId(), unit.getId(),
@@ -861,7 +954,7 @@ class BookingServiceTest {
                         LocalDate.of(2026, 10, 12), null)).getStatus()).isEqualTo(BookingRequestStatus.PENDING);
         // A parking range across the renewal boundary.
         ParkingSpot s = spot(true);
-        when(facilityService.getParkingSpot(tenantId, s.getId())).thenReturn(s);
+        when(facilityService.lockParkingSpot(tenantId, s.getId())).thenReturn(s);
         when(facilityService.parkingSpotVisibleToUnit(s, unit)).thenReturn(true);
         assertThat(service.create(tenantId, renterUserId, unit,
                 new BookingCreateRequest(BookingResourceType.PARKING_SPOT, s.getId(), unit.getId(),
