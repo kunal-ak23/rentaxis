@@ -45,6 +45,7 @@ import BadDebtCard from "@/components/leases/BadDebtCard";
 import { badDebtsApi } from "@/lib/api/badDebts";
 import { stillDueOf, writtenOffTotal } from "@/components/leases/writtenOff";
 import TransferLeaseDialog from "@/components/leases/TransferLeaseDialog";
+import LeaseHistoryStrip from "@/components/leases/LeaseHistoryStrip";
 import LeaseAddendaPanel from "@/components/leases/LeaseAddendaPanel";
 import LeaseJournalsTab from "@/components/leases/LeaseJournalsTab";
 import LeasePenaltiesTab from "@/components/leases/LeasePenaltiesTab";
@@ -654,6 +655,8 @@ export default function LeaseDetailPage() {
                                 </Link>
                             )}
                         </div>
+                        {/* #100-e: the whole chain of renewals and transfers, not just the one-hop links above. */}
+                        <LeaseHistoryStrip leaseId={lease.id} />
                         {/* Demo feedback 2026-09-29: what is still expected on this contract, one click from the Cheques tab. */}
                         {!drafting && (
                             <button

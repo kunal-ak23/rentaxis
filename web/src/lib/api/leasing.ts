@@ -1162,6 +1162,18 @@ export type PostLeaseResponse = {
   notices?: string[];
 };
 
+/** LeaseChainLinkDTO (#100-e) — one contract in a lease's history. */
+export type LeaseChainLink = {
+  id: string;
+  unitIdentifier: string | null;
+  displayContractNumber: string | null;
+  startDate: string;
+  endDate: string;
+  status: LeaseDetail["status"];
+  /** How this contract followed the one before it; null for the first. */
+  link: "RENEWED" | "TRANSFERRED" | null;
+};
+
 /** PostLeaseDryRunResponse — every validation a real post would run, nothing written. */
 export type PostLeaseDryRunResponse = {
   ok: boolean;
@@ -1505,6 +1517,8 @@ export const chargeTypeApi = {
 
 export const leaseApi = {
   get: (id: string) => get<LeaseDetail>(`/leases/${id}`),
+  /** #100-e: the lease's whole history (renewals and transfers), oldest first; unreadable contracts left out. */
+  chain: (id: string) => get<LeaseChainLink[]>(`/leases/${id}/chain`),
   /**
    * The leases list. `status`, `propertyId` and `buildingId` (S16-02: the tower,
    * a Building id) are filters, not hints: they narrow the page the server
