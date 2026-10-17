@@ -175,3 +175,24 @@ No mobile UI for portfolio import — web-only admin/onboarding operation.
 - Import history list page
 - Partial success (skip bad rows)
 - Rollback/undo of completed imports
+
+## Addendum 2026-10-17: optional Parking sheet (attached parking, changeset 175)
+
+Both workbook dialects — the v1 portfolio template (Properties, Units, Tenants,
+Tenancy Contracts, Cheques) and the cut-over template (Properties, Units, Renters,
+Contracts, Cheques) — now carry an optional **Parking** sheet:
+
+| Column | Meaning |
+|---|---|
+| PropertyName | A property on this workbook's Properties sheet, or one the organisation already has |
+| BuildingName | Scopes the bay to one tower; blank = all towers. Also where AttachedUnitNumber is looked up |
+| BayNumber | Unique per property; re-importing an existing bay updates it in place |
+| Level | Blank clears it |
+| Covered | TRUE / FALSE (dropdown); blank = TRUE |
+| AttachedUnitNumber | The unit the bay is allocated to; blank = a bookable bay |
+
+Rules: an unknown property, building or unit is a row error; a BayNumber listed
+twice for one property is an error; a unit number found in two buildings needs its
+BuildingName; an existing bay with a pending or approved booking reaching today or
+later cannot be attached. A workbook without the sheet imports as before. Counts are
+reported as `parkingBaysCreated` / `parkingBaysUpdated` on the job.
