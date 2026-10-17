@@ -1,0 +1,38 @@
+databaseChangeLog:
+  # Scale PR C ruling (2026-10-17): "Not renewing" is a soft, reversible, staff-only mark on
+  # the contract — who set it, when, and an optional note. It gives no notice, changes no lease
+  # status, touches no listing, and (re-review P2-1) opens no renewal opportunity: nothing the
+  # renter sees, the reminder scheduler sends or the renewal funnel counts depends on it.
+  # Undo, a renewal, an extension, a transfer or a termination clears it. Existing rows: NULL.
+  - changeSet:
+      id: 174-lease-not-renewing-mark
+      author: claude
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: leases
+                columnName: not_renewing_at
+      changes:
+        - addColumn:
+            tableName: leases
+            columns:
+              - column: { name: not_renewing_at, type: timestamptz }
+              - column: { name: not_renewing_by, type: uuid }
+              - column: { name: not_renewing_note, type: varchar(500) }
+        - sql:
+            sql: >-
+              CREATE INDEX IF NOT EXISTS idx_leases_not_renewing ON leases (tenant_id, end_date)
+               WHERE not_renewing_at IS NOT NULL
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_leases_not_renewing
+        - dropColumn:
+            tableName: leases
+            columnName: not_renewing_note
+        - dropColumn:
+            tableName: leases
+            columnName: not_renewing_by
+        - dropColumn:
+            tableName: leases
+            columnName: not_renewing_at

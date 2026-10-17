@@ -318,6 +318,33 @@ public class Lease extends BaseTenantEntity {
     @Column(name = "intended_move_out_date")
     private LocalDate intendedMoveOutDate;
 
+    /**
+     * Scale PR C ruling (changeset 174): the staff-only "not renewing" mark — when, by whom, why.
+     * It is not notice and has no effect outside the renewal season queue: no renewal
+     * opportunity, nothing the renter sees, nothing the scheduler sends. Null = not marked.
+     * Never serialised from the entity; {@code LeaseDTO} carries it to staff callers only.
+     */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    @Column(name = "not_renewing_at")
+    private java.time.Instant notRenewingAt;
+
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    @Column(name = "not_renewing_by")
+    private UUID notRenewingBy;
+
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    @Column(name = "not_renewing_note", length = 500)
+    private String notRenewingNote;
+
+    /** Remove the "not renewing" mark; answers whether there was one. */
+    public boolean clearNotRenewing() {
+        boolean had = notRenewingAt != null;
+        notRenewingAt = null;
+        notRenewingBy = null;
+        notRenewingNote = null;
+        return had;
+    }
+
     /** The {@code TCR} that reversed the unearned rent, or null when nothing was unearned. */
     @Column(name = "termination_journal_id")
     private UUID terminationJournalId;

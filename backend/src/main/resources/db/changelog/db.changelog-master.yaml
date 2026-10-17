@@ -350,6 +350,8 @@ databaseChangeLog:
   - include:
       file: db/changelog/changesets/173-rename-moved-building-bank-leaves.yaml
   - include:
+      file: db/changelog/changesets/174-lease-not-renewing-mark.yaml
+  - include:
       file: db/changelog/changesets/175-parking-attached-unit.yaml
   - include:
       file: db/changelog/changesets/176-bank-leaf-default-name.yaml

@@ -244,6 +244,16 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
      * when that is none), {@code scoped}/{@code visible} is a property manager's assigned
      * properties (never empty when {@code scoped}: no assignments means an empty page before
      * the query), {@code hasStatusHits}/{@code statusHits} likewise.</p>
+     *
+     * <p>Renewal season (scale #16): {@code endFrom}/{@code endTo} bound the expiry date
+     * (inclusive; {@code idx_leases_tenant_status_end}), {@code floorPrefix} is the unit-number
+     * prefix a floor's units share — the same reading as {@code GET /units/paged?floor=}, with
+     * {@code %}, {@code _} and {@code \} escaped — and {@code successor} is 0 for any, 1 for
+     * "no renewal or transfer drafted from it yet", 2 for "one has been". The successor test is
+     * {@code coalesce(renewed_from, transferred_from)}, the expression
+     * {@code ux_leases_one_successor} indexes, and the one {@code LeaseRenewalService.renew}
+     * refuses on. {@code mark} (scale PR C) is 0 for any, 1 for "no soft not-renewing mark", 2 for
+     * "marked not renewing, or on notice".</p>
      */
     @Query("""
         select l from Lease l
@@ -265,6 +275,19 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
                                     where p.tenantId = :tenantId and lower(p.nameEn) like :pattern escape '\\'))
                or lower(l.ejariNumber) like :pattern escape '\\'
                or (:hasStatusHits = true and l.status in :statusHits))
+          and (cast(:endFrom as LocalDate) is null or l.endDate >= :endFrom)
+          and (cast(:endTo as LocalDate) is null or l.endDate <= :endTo)
+          and (cast(:floorPrefix as string) is null or l.unit.id in (select fu.id from Unit fu
+                where fu.tenantId = :tenantId and lower(fu.unitNumber) like :floorPrefix escape '\\'))
+          and (:successor = 0
+               or (:successor = 1 and not exists (select s.id from Lease s where s.tenantId = :tenantId
+                     and coalesce(s.renewedFromLeaseId, s.transferredFromLeaseId) = l.id))
+               or (:successor = 2 and exists (select s.id from Lease s where s.tenantId = :tenantId
+                     and coalesce(s.renewedFromLeaseId, s.transferredFromLeaseId) = l.id)))
+          and (:mark = 0
+               or (:mark = 1 and l.notRenewingAt is null)
+               or (:mark = 2 and (l.status = com.datagami.rentaxis.domain.entity.enums.LeaseStatus.NOTICE_GIVEN
+                     or l.notRenewingAt is not null)))
         """)
     Page<Lease> searchText(@Param("tenantId") UUID tenantId,
                            @Param("allowed") Collection<LeaseStatus> allowed,
@@ -276,7 +299,32 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
                            @Param("pattern") String pattern,
                            @Param("hasStatusHits") boolean hasStatusHits,
                            @Param("statusHits") Collection<LeaseStatus> statusHits,
+                           @Param("endFrom") java.time.LocalDate endFrom,
+                           @Param("endTo") java.time.LocalDate endTo,
+                           @Param("floorPrefix") String floorPrefix,
+                           @Param("successor") int successor,
+                           @Param("mark") int mark,
                            Pageable pageable);
+
+    /**
+     * {@link #searchText} without the renewal-season filters (scale #16): no expiry window, no
+     * floor, any successor state.
+     */
+    default Page<Lease> searchText(UUID tenantId, Collection<LeaseStatus> allowed, LeaseStatus status,
+                                   UUID propertyId, UUID buildingId, boolean scoped, Collection<UUID> visible,
+                                   String pattern, boolean hasStatusHits, Collection<LeaseStatus> statusHits,
+                                   Pageable pageable) {
+        return searchText(tenantId, allowed, status, propertyId, buildingId, scoped, visible, pattern,
+                hasStatusHits, statusHits, null, null, null, 0, 0, pageable);
+    }
+
+    /**
+     * The renewals drafted from a page of leases (scale #16: the renewal queue shows which
+     * contracts already have one). {@code renewedFromLeaseId} only; a transfer successor is
+     * {@link #findByTransferredFromLeaseIdIn}.
+     */
+    @Query("SELECT l FROM Lease l WHERE l.renewedFromLeaseId IN :leaseIds")
+    List<Lease> findByRenewedFromLeaseIdIn(@Param("leaseIds") java.util.Collection<UUID> leaseIds);
 
     List<Lease> findByUnitId(UUID unitId);
 

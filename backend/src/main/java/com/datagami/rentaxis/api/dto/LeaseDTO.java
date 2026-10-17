@@ -107,6 +107,20 @@ public class LeaseDTO {
     private UUID transferredToLeaseId;
     private String transferredToUnit;
     private String transferredToStatus;
+    /** Scale #16: the renewal drafted or posted from this lease, and its status; null when none. */
+    private UUID renewedToLeaseId;
+    private String renewedToStatus;
+    /**
+     * Scale PR C: the soft "not renewing" mark — when, by whom (name), why. Staff-only: filled
+     * only for a staff caller (LeaseService.contextFor), and left out of the JSON entirely when
+     * empty, so a renter's response has no such keys at all.
+     */
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private java.time.Instant notRenewingAt;
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private String notRenewingByName;
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private String notRenewingNote;
     private UUID chainId;
 
     // ---- posting ----
