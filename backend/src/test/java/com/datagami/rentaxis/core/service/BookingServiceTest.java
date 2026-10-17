@@ -987,6 +987,64 @@ class BookingServiceTest {
                 .satisfies(e -> assertThat(codeOf(e)).isEqualTo("booking.noActiveLease"));
     }
 
+    // ---- changeset 175: an open parking end stops at the end of the contract ----
+
+    @Test
+    void parkingWithoutAnEndDate_endsWithTheRentersContractChain() {
+        chain(lease(LeaseStatus.RENEWED, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31)),
+                lease(LeaseStatus.ACTIVE, LocalDate.of(2027, 1, 1), LocalDate.of(2027, 12, 31)));
+        ParkingSpot s = spot(true);
+        when(facilityService.lockParkingSpot(tenantId, s.getId())).thenReturn(s);
+        when(facilityService.parkingSpotVisibleToUnit(s, unit)).thenReturn(true);
+        when(bookingRepository.findFirstByTenantIdAndRenterUserIdAndParkingSpotIdAndStatus(
+                tenantId, renterUserId, s.getId(), BookingRequestStatus.PENDING)).thenReturn(Optional.empty());
+
+        BookingRequest undated = service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.PARKING_SPOT, s.getId(), unit.getId(), null, null));
+        assertThat(undated.getPreferredDate()).isEqualTo(LocalDate.of(2026, 8, 1));
+        assertThat(undated.getPreferredEndDate()).isEqualTo(LocalDate.of(2027, 12, 31));
+
+        BookingRequest startOnly = service.create(tenantId, renterUserId, unit, new BookingCreateRequest(
+                BookingResourceType.PARKING_SPOT, s.getId(), unit.getId(), LocalDate.of(2026, 9, 1), null,
+                null, null, null));
+        assertThat(startOnly.getPreferredEndDate()).isEqualTo(LocalDate.of(2027, 12, 31));
+
+        // A request left over from before the change, with no dates at all, gets both on approval.
+        BookingRequest legacy = booking(BookingResourceType.PARKING_SPOT, BookingRequestStatus.PENDING);
+        legacy.setUnitId(unit.getId());
+        legacy.setRenterUserId(renterUserId);
+        when(bookingRepository.findByIdForUpdate(legacy.getId())).thenReturn(Optional.of(legacy));
+        service.approve(tenantId, legacy.getId(), UUID.randomUUID(), null);
+        assertThat(legacy.getPreferredDate()).isEqualTo(LocalDate.of(2026, 8, 1));
+        assertThat(legacy.getPreferredEndDate()).isEqualTo(LocalDate.of(2027, 12, 31));
+    }
+
+    @Test
+    void anOpenEndedContract_leavesTheParkingEndOpen() {
+        assertThat(BookingService.chainEndCovering(List.of(
+                lease(LeaseStatus.ACTIVE, LocalDate.of(2026, 1, 1), null)), LocalDate.of(2026, 8, 1))).isNull();
+        assertThat(BookingService.chainEndCovering(List.of(
+                lease(LeaseStatus.ACTIVE, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 6, 30)),
+                lease(LeaseStatus.ACTIVE, LocalDate.of(2026, 8, 1), LocalDate.of(2027, 7, 31))),
+                LocalDate.of(2026, 8, 1))).isEqualTo(LocalDate.of(2027, 7, 31));
+    }
+
+    @Test
+    void anUndatedRepeatRequest_returnsTheRentersPendingOne() {
+        ParkingSpot s = spot(true);
+        BookingRequest pending = booking(BookingResourceType.PARKING_SPOT, BookingRequestStatus.PENDING);
+        pending.setPreferredDate(LocalDate.of(2026, 8, 1));
+        when(facilityService.lockParkingSpot(tenantId, s.getId())).thenReturn(s);
+        when(facilityService.parkingSpotVisibleToUnit(s, unit)).thenReturn(true);
+        when(bookingRepository.findFirstByTenantIdAndRenterUserIdAndParkingSpotIdAndStatus(
+                tenantId, renterUserId, s.getId(), BookingRequestStatus.PENDING)).thenReturn(Optional.of(pending));
+
+        assertThat(service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.PARKING_SPOT, s.getId(), unit.getId(), null, null)))
+                .isSameAs(pending);
+        verify(bookingRepository, never()).saveAndFlush(any());
+    }
+
     // ---- review r3C m1: a paid amenity needs a date ----
 
     @Test

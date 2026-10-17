@@ -167,7 +167,7 @@ public class ImportBatchDiscardService {
     /** What the discard did. */
     public record DiscardResult(UUID batchId, ImportBatchStatus status, int leasesDeleted,
                                 int unitsDeleted, int buildingsDeleted, int rentersDeleted,
-                                int propertiesDeleted, List<Kept> kept) {
+                                int propertiesDeleted, List<Kept> kept, int parkingBaysDeleted) {
     }
 
     /**
@@ -257,7 +257,7 @@ public class ImportBatchDiscardService {
                 batchId, leasesDeleted, unitsDeleted, buildingsDeleted, rentersDeleted, propertiesDeleted,
                 parkingBaysDeleted, kept.size());
         return new DiscardResult(batchId, discarded.getStatus(), leasesDeleted, unitsDeleted, buildingsDeleted,
-                rentersDeleted, propertiesDeleted, List.copyOf(kept));
+                rentersDeleted, propertiesDeleted, List.copyOf(kept), parkingBaysDeleted);
     }
 
     /**

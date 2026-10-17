@@ -127,13 +127,19 @@ public class BookingService {
         // open-ended — a bay is held by date now, and "since forever" would clash with
         // every booking the bay ever had.
         LocalDate preferredDate = req.preferredDate();
+        LocalDate preferredEndDate = req.preferredEndDate();
         if (req.resourceType() == BookingResourceType.PARKING_SPOT && preferredDate == null) {
             preferredDate = LocalDate.now(clock.withZone(DUBAI));
         }
+        // ...and ends with the renter's contract, not never: an open end would hold the
+        // bay against every later booking long after the renter moved out.
+        if (req.resourceType() == BookingResourceType.PARKING_SPOT && preferredEndDate == null) {
+            preferredEndDate = contractEnd(tenantId, renterUserId, unit.getId(), preferredDate);
+        }
         // Break-it R3 ops3 F8: not in the past, not an endless range, inside the contract.
-        validateDates(req.resourceType(), preferredDate, req.preferredEndDate());
+        validateDates(req.resourceType(), preferredDate, preferredEndDate);
         requireWithinCurrentLease(tenantId, renterUserId, unit.getId(),
-                preferredDate, req.preferredEndDate(), true);
+                preferredDate, preferredEndDate, true);
 
         BookingRequest booking = new BookingRequest();
         booking.setTenantId(tenantId);
@@ -142,7 +148,7 @@ public class BookingService {
         booking.setResourceType(req.resourceType());
         booking.setNote(req.note());
         booking.setPreferredDate(preferredDate);
-        booking.setPreferredEndDate(req.preferredEndDate());
+        booking.setPreferredEndDate(preferredEndDate);
         booking.setPreferredStartTime(req.preferredStartTime());
         booking.setPreferredEndTime(req.preferredEndTime());
         booking.setStatus(BookingRequestStatus.PENDING);
@@ -199,12 +205,15 @@ public class BookingService {
                     bookingRepository.findFirstByTenantIdAndRenterUserIdAndParkingSpotIdAndStatus(
                             tenantId, renterUserId, spot.getId(), BookingRequestStatus.PENDING);
             // One pending request per renter per bay (uq_booking_pending_renter_spot). A
-            // repeat of the same dates is idempotent; other dates are refused, never
-            // answered with the earlier request as if it were the new one.
+            // repeat of the same dates is idempotent, and so is an undated repeat (older
+            // clients send no dates at all, and their dates were filled in above); other
+            // dates are refused, never answered with the earlier request as if it were new.
             if (existing.isPresent()) {
                 BookingRequest pending = existing.get();
-                if (Objects.equals(pending.getPreferredDate(), booking.getPreferredDate())
-                        && Objects.equals(pending.getPreferredEndDate(), booking.getPreferredEndDate())) {
+                boolean undatedRepeat = req.preferredDate() == null && req.preferredEndDate() == null;
+                if (undatedRepeat
+                        || (Objects.equals(pending.getPreferredDate(), booking.getPreferredDate())
+                        && Objects.equals(pending.getPreferredEndDate(), booking.getPreferredEndDate()))) {
                     return pending;
                 }
                 throw new SlotConflictException(
@@ -331,6 +340,48 @@ public class BookingService {
                     renterSide ? "booking.outsideLease" : "booking.outsideRenterLease",
                     Map.of("start", start, "end", end));
         }
+    }
+
+    /**
+     * The last day of the renter's contract run on the unit that covers {@code from}
+     * (back-to-back renewals merged), or null when that run has no end date or none
+     * covers {@code from} — {@link #requireWithinCurrentLease} reports the latter.
+     */
+    private LocalDate contractEnd(UUID tenantId, UUID renterUserId, UUID unitId, LocalDate from) {
+        if (leaseRepository == null || from == null || unitId == null) return null;
+        List<Lease> leases = leaseRepository.findByUnitIdAndStatusIn(unitId, CURRENT_LEASE).stream()
+                .filter(l -> Objects.equals(l.getTenantId(), tenantId))
+                .filter(l -> l.getRenter() != null && Objects.equals(l.getRenter().getUserId(), renterUserId))
+                .toList();
+        return chainEndCovering(leases, from);
+    }
+
+    /** {@link #contractEnd}'s walk, the same run-merging as {@link #coveredByChain}. */
+    static LocalDate chainEndCovering(List<Lease> leases, LocalDate from) {
+        List<Lease> sorted = leases.stream()
+                .sorted(java.util.Comparator.comparing(Lease::getStartDate,
+                        java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())))
+                .toList();
+        LocalDate runStart = null;
+        LocalDate runEnd = null;
+        boolean open = false;
+        boolean started = false;
+        for (Lease l : sorted) {
+            LocalDate s = l.getStartDate();
+            LocalDate e = l.getEndDate();
+            boolean joins = started && (open || s == null || !s.isAfter(runEnd.plusDays(1)));
+            if (!joins) {
+                if (started && runCovers(runStart, runEnd, open, from, from)) return open ? null : runEnd;
+                runStart = s;
+                runEnd = e;
+                open = e == null;
+                started = true;
+            } else if (!open) {
+                if (e == null) open = true;
+                else if (e.isAfter(runEnd)) runEnd = e;
+            }
+        }
+        return started && runCovers(runStart, runEnd, open, from, from) && !open ? runEnd : null;
     }
 
     /** Whether [from, last] lies inside one run of back-to-back (or overlapping) lease terms. */
@@ -479,6 +530,10 @@ public class BookingService {
         // it is approved, open-ended (see create).
         if (booking.getResourceType() == BookingResourceType.PARKING_SPOT && booking.getPreferredDate() == null) {
             booking.setPreferredDate(LocalDate.now(clock.withZone(DUBAI)));
+        }
+        if (booking.getResourceType() == BookingResourceType.PARKING_SPOT && booking.getPreferredEndDate() == null) {
+            booking.setPreferredEndDate(contractEnd(tenantId, booking.getRenterUserId(), booking.getUnitId(),
+                    booking.getPreferredDate()));
         }
         // Break-it R3 ops3 F8: the request's dates are checked again — it may have sat
         // pending past its date, or the contract may have changed since.

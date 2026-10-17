@@ -422,7 +422,7 @@ class FacilityServiceTest {
     @Test
     void updateParkingSpot_changedNumberCollidesWithAnotherSpot_throws400() {
         ParkingSpot existing = spot("B1-01");
-        when(spotRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(spotRepository.findByIdForUpdate(tenantId, existing.getId())).thenReturn(Optional.of(existing));
         when(spotRepository.existsByTenantIdAndPropertyIdAndSpotNumberAndIdNot(
                 tenantId, propertyId, "B1-02", existing.getId())).thenReturn(true);
 
@@ -434,7 +434,7 @@ class FacilityServiceTest {
     @Test
     void updateParkingSpot_changedNumberFree_updatesSuccessfully() {
         ParkingSpot existing = spot("B1-01");
-        when(spotRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(spotRepository.findByIdForUpdate(tenantId, existing.getId())).thenReturn(Optional.of(existing));
         when(spotRepository.existsByTenantIdAndPropertyIdAndSpotNumberAndIdNot(
                 tenantId, propertyId, "B1-02", existing.getId())).thenReturn(false);
 
@@ -447,7 +447,7 @@ class FacilityServiceTest {
     @Test
     void updateParkingSpot_scopeSave_capturesTenantSpotAndBuildingIds() {
         ParkingSpot existing = spot("B1-01");
-        when(spotRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(spotRepository.findByIdForUpdate(tenantId, existing.getId())).thenReturn(Optional.of(existing));
         when(buildingRepository.findByPropertyId(propertyId))
                 .thenReturn(List.of(buildingInProperty(buildingId)));
 

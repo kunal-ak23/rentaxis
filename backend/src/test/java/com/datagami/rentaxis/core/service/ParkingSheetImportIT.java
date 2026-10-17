@@ -307,6 +307,20 @@ class ParkingSheetImportIT extends AbstractPostgresIT {
     }
 
     @Test
+    void aParkingSheetMissingAColumnIsAFileError_neverReadAsBlanks() throws Exception {
+        Workbook wb = v1(true, null);
+        Sheet p = sheet(wb, "Parking", "PropertyName", "BuildingName", "BayNumber", "Covered");
+        row(p, PROPERTY, "Tower A", "P-1", "TRUE");
+
+        ImportJob job = run(wb);
+
+        assertThat(job.getStatus()).isEqualTo("VALIDATION_FAILED");
+        assertThat(errors(job).stream().filter(e -> "Parking".equals(e.getSheet())).map(ImportErrorDTO::getField))
+                .containsExactlyInAnyOrder("Level", "AttachedUnitNumber");
+        assertThat(bays()).isEmpty();
+    }
+
+    @Test
     void anOlderWorkbookWithoutTheSheetStillImports() throws Exception {
         ImportJob job = run(v1(true, null));
         assertThat(job.getStatus()).as(job.getErrors()).isEqualTo("COMPLETED");

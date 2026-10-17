@@ -266,6 +266,49 @@ class AttachedParkingIT extends AbstractPostgresIT {
     }
 
     @Test
+    void anEditMovesTowersAndUnitTogether_andARefusedEditChangesNothing() {
+        UUID towerA = unitOne.getBuilding().getId();
+        UUID towerB = otherTowerUnit.getBuilding().getId();
+        assertThat(attach(admin, bay.getId(), unitOne.getId()).getStatusCode().value()).isEqualTo(200);
+
+        // Tower A → Tower B and unit 101 → 201 in one edit: neither step alone would be allowed.
+        Map<String, Object> move = new HashMap<>();
+        move.put("buildingIds", List.of(towerB.toString()));
+        move.put("setAttachment", true);
+        move.put("attachedUnitId", otherTowerUnit.getId().toString());
+        ResponseEntity<Map> moved = http.call(admin, HttpMethod.PUT, "/api/v1/parking-spots/" + bay.getId(), move);
+        assertThat(moved.getStatusCode().value()).isEqualTo(200);
+        assertThat(moved.getBody().get("attachedUnitId")).isEqualTo(otherTowerUnit.getId().toString());
+
+        // Rename + back to 101 while keeping Tower B: the attach is refused, and the whole
+        // edit with it — the bay keeps its number, its tower and unit 201 (no detached gap).
+        Map<String, Object> bad = new HashMap<>();
+        bad.put("spotNumber", "P-RENAMED");
+        bad.put("buildingIds", List.of(towerB.toString()));
+        bad.put("setAttachment", true);
+        bad.put("attachedUnitId", unitOne.getId().toString());
+        ResponseEntity<Map> refused = http.call(admin, HttpMethod.PUT, "/api/v1/parking-spots/" + bay.getId(), bad);
+        assertThat(refused.getStatusCode().value()).isEqualTo(400);
+        assertThat(code(refused)).isEqualTo("parking.attachUnitOutsideBay");
+
+        ParkingSpot after = spotRepo.findById(bay.getId()).orElseThrow();
+        assertThat(after.getAttachedUnitId()).isEqualTo(otherTowerUnit.getId());
+        assertThat(after.getSpotNumber()).isEqualTo(bay.getSpotNumber());
+        assertThat(jdbc.queryForList("select building_id from parking_spot_building_scopes where parking_spot_id = ?",
+                UUID.class, bay.getId())).containsExactly(towerB);
+
+        // setAttachment with a null unit detaches; without the flag the attachment is left alone.
+        Map<String, Object> detach = new HashMap<>();
+        detach.put("setAttachment", true);
+        detach.put("attachedUnitId", null);
+        assertThat(http.call(admin, HttpMethod.PUT, "/api/v1/parking-spots/" + bay.getId(), Map.of("level", "B2"))
+                .getBody().get("attachedUnitId")).isEqualTo(otherTowerUnit.getId().toString());
+        assertThat(http.call(admin, HttpMethod.PUT, "/api/v1/parking-spots/" + bay.getId(), detach)
+                .getBody().get("attachedUnitId")).isNull();
+        assertThat(towerA).isNotEqualTo(towerB);
+    }
+
+    @Test
     void aUnitOutsideTheBaysTowersIsRefused() {
         ResponseEntity<Map> res = attach(admin, bay.getId(), otherTowerUnit.getId());
         assertThat(res.getStatusCode().value()).isEqualTo(400);

@@ -125,13 +125,18 @@ public final class ParkingSheet {
      */
     public static List<Row> read(Sheet sheet, List<ImportErrorDTO> errors) {
         SheetCells.HeaderIndex hi = new SheetCells.HeaderIndex(sheet);
-        for (String required : List.of("PropertyName", "BayNumber")) {
-            if (hi.col(required) < 0) {
-                errors.add(ImportErrorDTO.file(PortfolioSheets.PARKING, required,
-                        "Sheet '" + PortfolioSheets.PARKING + "' has no " + required + " column"));
+        // Every column, not just the required cells: the row is the truth for its bay, so a
+        // missing Level or AttachedUnitNumber column would read as blank and clear the
+        // level or detach the bay on re-import. A missing column is a file error instead.
+        boolean missing = false;
+        for (String column : PortfolioSheets.PARKING_HEADERS) {
+            if (hi.col(column) < 0) {
+                missing = true;
+                errors.add(ImportErrorDTO.file(PortfolioSheets.PARKING, column,
+                        "Sheet '" + PortfolioSheets.PARKING + "' has no " + column + " column"));
             }
         }
-        if (hi.col("PropertyName") < 0 || hi.col("BayNumber") < 0) return List.of();
+        if (missing) return List.of();
 
         List<Row> rows = new ArrayList<>();
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
@@ -203,7 +208,8 @@ public final class ParkingSheet {
                 if (found.isEmpty()) {
                     errors.add(error(row.rowNum(), "PropertyName",
                             "Property '" + row.property() + "' is not on the Properties sheet and does not"
-                                    + " exist in this organisation"));
+                                    + " exist in this organisation. If you do not use the Parking sheet,"
+                                    + " delete its sample rows"));
                     continue;
                 }
                 propertyId = found.get();

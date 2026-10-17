@@ -79,8 +79,11 @@ public class ParkingSheetResolver {
             public Optional<UUID> property(String name) {
                 List<Property> found = propertyRepository.findByTenantIdAndNameEnLowerIn(
                         tenantId, List.of(name.trim().toLowerCase(Locale.ROOT)));
-                // Two properties differing only in case: the sheet cannot say which is meant.
-                return found.size() == 1 ? Optional.of(found.getFirst().getId()) : Optional.empty();
+                if (found.size() == 1) return Optional.of(found.getFirst().getId());
+                // Two properties differing only in case: the exact spelling decides, and
+                // without one the sheet cannot say which is meant.
+                List<Property> exact = found.stream().filter(p -> name.trim().equals(p.getNameEn())).toList();
+                return exact.size() == 1 ? Optional.of(exact.getFirst().getId()) : Optional.empty();
             }
 
             @Override

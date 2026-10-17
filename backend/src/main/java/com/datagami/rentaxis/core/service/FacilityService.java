@@ -308,7 +308,16 @@ public class FacilityService {
     }
 
     public ParkingSpot updateParkingSpot(UUID tenantId, UUID id, ParkingSpotUpdateRequest req) {
-        ParkingSpot spot = getParkingSpot(tenantId, id);
+        boolean reattach = Boolean.TRUE.equals(req.setAttachment());
+        // Under the bay's row lock: the tower check below reads the attachment, and an
+        // attach committing in between would otherwise leave a unit outside the towers.
+        ParkingSpot spot = lockParkingSpot(tenantId, id);
+        if (reattach && spot.getAttachedUnitId() != null
+                && !spot.getAttachedUnitId().equals(req.attachedUnitId())) {
+            // Detach first, in this transaction: the tower check below then judges the
+            // new towers against the NEW unit (attached at the end), not the old one.
+            spot = setParkingSpotAttachment(tenantId, id, null);
+        }
         if (req.spotNumber() != null) {
             String spotNumber = requireSpotNumber(req.spotNumber());
             if (!spotNumber.equals(spot.getSpotNumber())) {
@@ -332,21 +341,26 @@ public class FacilityService {
         if (req.buildingIds() != null && spot.getAttachedUnitId() != null && unitRepository != null) {
             // An attached bay keeps its unit inside its towers: re-scoping it away from
             // the unit is refused — detach it first.
-            unitRepository.findWithPlaceByTenantIdAndId(tenantId, spot.getAttachedUnitId()).ifPresent(unit -> {
+            ParkingSpot attached = spot;
+            unitRepository.findWithPlaceByTenantIdAndId(tenantId, attached.getAttachedUnitId()).ifPresent(unit -> {
                 UUID unitBuildingId = unit.getBuilding() == null ? null : unit.getBuilding().getId();
                 List<UUID> towers = req.buildingIds().stream().filter(Objects::nonNull).distinct().toList();
                 if (!visible(towers, unitBuildingId)) {
                     throw new BusinessRuleViolationException(
-                            "Parking bay " + spot.getSpotNumber() + " is attached to unit " + unit.getUnitNumber()
+                            "Parking bay " + attached.getSpotNumber() + " is attached to unit " + unit.getUnitNumber()
                                     + ", which is not in the chosen towers. Detach the bay first.",
                             "parking.attachUnitOutsideBay",
-                            Map.of("unit", unit.getUnitNumber(), "spot", spot.getSpotNumber()));
+                            Map.of("unit", unit.getUnitNumber(), "spot", attached.getSpotNumber()));
                 }
             });
         }
         ParkingSpot saved = spotRepository.save(spot);
         if (req.buildingIds() != null) {
             replaceSpotScopes(tenantId, saved, req.buildingIds());
+        }
+        if (reattach && req.attachedUnitId() != null) {
+            spotScopeRepository.flush();
+            saved = setParkingSpotAttachment(tenantId, id, req.attachedUnitId());
         }
         return saved;
     }
@@ -410,7 +424,8 @@ public class FacilityService {
                                      boolean covered, UUID buildingId, UUID unitId) {
         requirePropertyInTenant(tenantId, propertyId);
         java.util.Optional<ParkingSpot> existing =
-                spotRepository.findByTenantIdAndPropertyIdAndSpotNumber(tenantId, propertyId, spotNumber);
+                spotRepository.findByTenantIdAndPropertyIdAndSpotNumber(tenantId, propertyId, spotNumber)
+                        .map(found -> lockParkingSpot(tenantId, found.getId()));
         List<UUID> scope = buildingId == null ? List.of() : List.of(buildingId);
         ParkingSpot spot;
         if (existing.isPresent()) {
