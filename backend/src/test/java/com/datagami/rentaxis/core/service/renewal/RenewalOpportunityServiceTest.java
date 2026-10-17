@@ -93,6 +93,25 @@ class RenewalOpportunityServiceTest extends AbstractPostgresIT {
         assertThat(closedOpps).hasSize(1);
     }
 
+    /** Review P3-1: an abandoned transfer draft does not make an ordinary termination a transfer. */
+    @Test
+    void a_draft_transfer_successor_does_not_make_a_termination_transferred() {
+        LocalDate today = LocalDate.of(2026, 6, 1);
+        Lease lease = RenewalTestFixtures.createActiveLease(orgRepo, userRepo, renterRepo, propertyRepo, unitRepo, leaseRepo, tenantId, today.minusYears(1), today.plusDays(50));
+        service.openOpportunitiesForCurrentTenant(today);
+        Lease draft = RenewalTestFixtures.createActiveLease(orgRepo, userRepo, renterRepo, propertyRepo, unitRepo, leaseRepo, tenantId, today, today.plusYears(1));
+        draft.setStatus(LeaseStatus.DRAFT);
+        draft.setTransferredFromLeaseId(lease.getId());
+        leaseRepo.save(draft);
+        lease.setStatus(LeaseStatus.TERMINATED);
+        leaseRepo.save(lease);
+
+        assertThat(service.closeStaleOpportunitiesForCurrentTenant()).isEqualTo(1);
+        assertThat(oppRepo.findByTenantIdAndStageIn(tenantId, List.of(RenewalStage.CLOSED_LOST))).singleElement()
+                .satisfies(o -> assertThat(o.getOutcome())
+                        .isEqualTo(com.datagami.rentaxis.domain.entity.enums.RenewalOutcome.LEASE_TERMINATED));
+    }
+
     /** #100: a lease ended by a unit transfer kept its renter — closed won, TRANSFERRED, not a lost renewal. */
     @Test
     void closes_opportunity_of_a_transferred_lease_as_won_transferred() {

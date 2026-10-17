@@ -13,7 +13,7 @@ package com.datagami.rentaxis.domain.entity.enums;
  * renters as having moved out when they had asked to stay.
  */
 public enum RenewalOutcome {
-	/** The PM created the renewal. The only CLOSED_WON outcome. */
+	/** The PM created the renewal. A CLOSED_WON outcome, as is {@link #TRANSFERRED}. */
 	RENEWED,
 
 	/** The renter said they were leaving, and the lease ended. */

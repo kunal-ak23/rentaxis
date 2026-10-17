@@ -75,7 +75,11 @@ public class RenewalOpportunityService {
             // another unit, on the successor lease. That is a renter retained.
             // A fully carried transfer leaves A nothing to settle, so it may already be CLOSED.
             if ((s == LeaseStatus.TERMINATED || s == LeaseStatus.CLOSED)
-                    && !leaseRepository.findByTransferredFromLeaseId(o.getLease().getId()).isEmpty()) {
+                    // Review P3-1: a posted successor only — an abandoned transfer draft
+                    // does not turn an ordinary termination into a transfer.
+                    && leaseRepository.findByTransferredFromLeaseId(o.getLease().getId()).stream()
+                            .anyMatch(b -> b.getStatus() != LeaseStatus.DRAFT
+                                    && b.getStatus() != LeaseStatus.PENDING_SIGNATURE)) {
                 o.setStage(RenewalStage.CLOSED_WON);
                 o.setOutcome(RenewalOutcome.TRANSFERRED);
                 o.setClosedAt(now);
