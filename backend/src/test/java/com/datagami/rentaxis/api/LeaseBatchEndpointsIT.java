@@ -153,6 +153,13 @@ class LeaseBatchEndpointsIT extends AbstractPostgresIT {
         assertThat(stage.get("totalElements").asInt()).isEqualTo(1);
         assertThat(stage.get("content").get(0).get("notRenewingNote").asText()).isEqualTo("Moving out of Dubai");
         assertThat(stage.get("content").get(0).get("status").asText()).isEqualTo("ACTIVE");
+        // Round-2 review P2: staff-only. The renter's own contracts carry no trace of it, while a
+        // manager reading the same contract sees who marked it.
+        User renterUser = userRepo.findById(jdbcRenterUser(renewMe)).orElseThrow();
+        ResponseEntity<String> mine = raw(renterUser, HttpMethod.GET, "/api/v1/leases/my-leases");
+        assertThat(mine.getStatusCode().value()).isEqualTo(200);
+        assertThat(mine.getBody()).contains(renewMe.toString()).doesNotContain("notRenewing").doesNotContain("Moving out of Dubai");
+        assertThat(raw(pm, HttpMethod.GET, "/api/v1/leases/" + renewMe).getBody()).contains("\"notRenewingNote\":\"Moving out of Dubai\"");
         expect(out, 200, pm, HttpMethod.DELETE, "/api/v1/leases/" + renewMe + "/renewal/not-renewing", null);
         assertThat(expect(out, 200, admin, HttpMethod.GET,
                 "/api/v1/leases/paged?endDateFrom=2027-10-01&endDateTo=2027-10-31&mark=NOT_RENEWING", null)
@@ -214,6 +221,22 @@ class LeaseBatchEndpointsIT extends AbstractPostgresIT {
         }
         assertThat(failures).isEmpty();
         return res.getBody() == null || res.getBody().isEmpty() ? json.nullNode() : json.readTree(res.getBody());
+    }
+
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    private UUID jdbcRenterUser(UUID leaseId) {
+        return jdbc.queryForObject("select r.user_id from leases l join renters r on r.id = l.renter_id where l.id = ?",
+                UUID.class, leaseId);
+    }
+
+    private ResponseEntity<String> raw(User caller, HttpMethod method, String url) {
+        return RestClient.builder().baseUrl("http://localhost:" + port).build().method(method).uri(url)
+                .header("X-User-Id", caller.getId().toString())
+                .header("X-User-Role", caller.getRole().name())
+                .header("X-Tenant-Id", f.tenantId().toString())
+                .header("X-User-Tenant-Id", f.tenantId().toString())
+                .retrieve().onStatus(st -> true, (req, r) -> { }).toEntity(String.class);
     }
 
     private User user(UserRole role) {

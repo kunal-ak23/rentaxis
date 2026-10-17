@@ -322,13 +322,17 @@ public class Lease extends BaseTenantEntity {
      * Scale PR C ruling (changeset 174): the staff-only "not renewing" mark — when, by whom, why.
      * It is not notice and has no effect outside the renewal season queue: no renewal
      * opportunity, nothing the renter sees, nothing the scheduler sends. Null = not marked.
+     * Never serialised from the entity; {@code LeaseDTO} carries it to staff callers only.
      */
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @Column(name = "not_renewing_at")
     private java.time.Instant notRenewingAt;
 
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @Column(name = "not_renewing_by")
     private UUID notRenewingBy;
 
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @Column(name = "not_renewing_note", length = 500)
     private String notRenewingNote;
 

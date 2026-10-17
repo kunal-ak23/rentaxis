@@ -207,6 +207,26 @@ class RenewalSeasonFollowUpsIT extends AbstractPostgresIT {
         marks.markNotRenewing(a, "Owner selling the unit", admin);
         assertThat(opportunities(a)).isZero();
         assertThat(renterSees(a)).isEqualTo(portalBefore).doesNotContain("Owner selling");
+        // Round-2 review P2: no LeaseDTO a renter can be handed carries the mark — the renter's own
+        // contract list and a single contract read as the renter.
+        UUID renterUser = jdbc.queryForObject("select r.user_id from leases l join renters r on r.id = l.renter_id where l.id = ?",
+                UUID.class, a);
+        var staffAuth = SecurityContextHolder.getContext().getAuthentication();
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                renterUser.toString(), null, List.of(new SimpleGrantedAuthority("ROLE_RENTER"))));
+        try {
+            var json = new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules();
+            String mine = json.writeValueAsString(tx.execute(st -> leaseService.getLeasesForRenterUser(renterUser)));
+            assertThat(mine).contains(a.toString());
+            String one = json.writeValueAsString(tx.execute(st -> leaseService.getLeaseById(a)));
+            for (String body : List.of(mine, one)) {
+                assertThat(body).doesNotContain("notRenewing").doesNotContain("Owner selling").doesNotContain("Amira Admin");
+            }
+        } finally {
+            SecurityContextHolder.getContext().setAuthentication(staffAuth);
+        }
+        assertThat(tx.execute(st -> leaseService.getLeaseById(a)).getNotRenewingNote()).isEqualTo("Owner selling the unit");
+
         marks.undo(a);
         assertThat(renterSees(a)).isEqualTo(portalBefore);
         assertThat(jdbc.queryForObject("select count(*) from renewal_opportunities where tenant_id = ?", Integer.class, f.tenantId()))

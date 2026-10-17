@@ -2486,6 +2486,20 @@ public class LeaseService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.datagami.rentaxis.domain.repository.UserRepository markUsers;
 
+    /** The roles that may see the renewal season's staff-only notes on a contract. */
+    private static final java.util.Set<String> STAFF_ROLES = java.util.Set.of(
+            "ROLE_SUPER_ADMIN", "ROLE_TENANT_ADMIN", "ROLE_ACCOUNTANT", "ROLE_PROPERTY_MANAGER");
+
+    /** Whether the authenticated caller holds a staff role (and no authentication is not staff). */
+    static boolean callerIsStaff() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) return false;
+        for (var a : auth.getAuthorities()) {
+            if (STAFF_ROLES.contains(a.getAuthority())) return true;
+        }
+        return false;
+    }
+
     /** IN lists are cut at this size so an unbounded list stays within Postgres' bind limit. */
     private static final int MAP_CHUNK = 1000;
 
@@ -2527,7 +2541,10 @@ public class LeaseService {
             }
         }
         // The "not renewing" marks are on the leases themselves; who set each, by name, in one lookup.
-        for (Lease l : leases) {
+        // Round-2 review P2: the mark is staff-only. Every LeaseDTO is mapped here, so a caller who
+        // is not staff (a renter on /my-leases or any other door, a system job) never gets it.
+        boolean staff = callerIsStaff();
+        for (Lease l : staff ? leases : List.<Lease>of()) {
             if (l.getId() != null && l.getNotRenewingAt() != null) {
                 marks.put(l.getId(), new Object[] {l.getId(), l.getNotRenewingAt(), l.getNotRenewingBy(), l.getNotRenewingNote()});
             }
