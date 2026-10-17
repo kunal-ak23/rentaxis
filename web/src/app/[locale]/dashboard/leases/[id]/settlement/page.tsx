@@ -30,6 +30,7 @@ import {
     SETTLEMENT_ADDITION_CATEGORIES, SETTLEMENT_DEDUCTION_CATEGORIES,
     type AdditionCategory, type DeductionAttachment, type DeductionCategory,
     type LeaseDetail, type SettlementResponse, type SettlementStatement,
+    type UnearnedFeeRefund,
 } from "@/lib/api/leasing";
 
 /**
@@ -456,6 +457,32 @@ export default function SettlementPage() {
         setDirty(true);
     };
 
+    /**
+     * Follow-up ruling R1: tick an unearned at-posting fee to refund it (an UNEARNED_FEE_REFUND
+     * addition on the fee's own income leaf); untick to drop it. Off by default.
+     */
+    const isRefunding = (o: UnearnedFeeRefund) =>
+        rows.some(r => r.type === "ADDITION" && r.category === "UNEARNED_FEE_REFUND" && r.accountId === o.accountId);
+    const toggleFeeRefund = (o: UnearnedFeeRefund, on: boolean) => {
+        setRows(prev => on
+            ? [...prev, {
+                key: nextKey.current++,
+                type: "ADDITION",
+                category: "UNEARNED_FEE_REFUND",
+                description: t("unearnedFeeDescription", { fee: feeName(o) }),
+                amount: o.amount,
+                accountId: o.accountId,
+                accountName: o.accountName,
+                autoCalculated: true,
+                attachments: [],
+                vatAmount: 0,
+            }]
+            : prev.filter(r => !(r.type === "ADDITION" && r.category === "UNEARNED_FEE_REFUND" && r.accountId === o.accountId)));
+        setDirty(true);
+    };
+    const feeName = (o: UnearnedFeeRefund) =>
+        (locale === "ar" && o.chargeTypeNameAr ? o.chargeTypeNameAr : o.chargeTypeName) ?? o.chargeTypeCode ?? "";
+
     const saveDraft = async () => {
         // Break-it round 1 (money) F1: a refused amount reports 0; never save it as that.
         if (focusFirstInvalidMoney(document)) return;
@@ -866,6 +893,28 @@ export default function SettlementPage() {
                         </button>
                     )}
                 </div>
+                {/* Follow-up ruling R1: unearned at-posting periodic fees, offered and off by default. */}
+                {(statement?.unearnedFeeRefunds?.length ?? 0) > 0 && (
+                    <div className="px-4 py-3 border-b border-border space-y-2" data-testid="settlement-unearned-fees">
+                        <p className="text-[11px] text-muted">{t("unearnedFeesHint")}</p>
+                        {statement!.unearnedFeeRefunds!.map(o => (
+                            <label key={o.leaseLineId} className="flex items-start gap-2 text-xs cursor-pointer">
+                                <input type="checkbox" className="mt-0.5"
+                                       data-testid={`settlement-unearned-fee-${o.leaseLineId}`}
+                                       disabled={!editable}
+                                       checked={isRefunding(o)}
+                                       onChange={e => toggleFeeRefund(o, e.target.checked)} />
+                                <span>
+                                    {t.rich("unearnedFeeOffer", {
+                                        fee: feeName(o), days: o.unearnedDays, total: o.days,
+                                        amount: fmtAmount(o.amount),
+                                        n: chunks => <bdi dir="ltr">{chunks}</bdi>,
+                                    })}
+                                </span>
+                            </label>
+                        ))}
+                    </div>
+                )}
                 <LineTable
                     rows={additionRows}
                     allRows={rows}
@@ -1151,7 +1200,7 @@ function LineTable({
                         return (
                             <tr key={r.key} data-testid={`settlement-line-${index}`} className="border-t border-border">
                                 <td className={td}>
-                                    {editable ? (
+                                    {editable && r.category !== "UNEARNED_FEE_REFUND" ? (
                                         <select
                                             data-testid={`settlement-category-${index}`}
                                             aria-label={t("category")}
