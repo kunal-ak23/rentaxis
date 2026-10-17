@@ -102,7 +102,7 @@ public class BookingFeeService {
                         "The renter has no live lease on this unit to charge the booking fee to.", "booking.noLease", Map.of()));
         String description = "Booking fee – " + what + (b.getPreferredDate() == null ? "" : " on " + b.getPreferredDate());
         PenaltyAssessmentDTO c = charges.proposeFromSource(new ProposePenaltyRequest(lease.getId(), null,
-                PenaltyReason.BOOKING_FEE, b.getFeeAmount(), description, LocalDate.now(), null), null, SOURCE, b.getId(), true);
+                PenaltyReason.BOOKING_FEE, b.getFeeAmount(), description, on, null), null, SOURCE, b.getId(), true);
         charges.approveBySystem(c.id(), on);
         b.setChargeId(c.id());
     }
