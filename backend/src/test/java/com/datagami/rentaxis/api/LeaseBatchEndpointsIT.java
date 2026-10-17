@@ -143,6 +143,42 @@ class LeaseBatchEndpointsIT extends AbstractPostgresIT {
     }
 
     @Test
+    void theNotRenewingMarkAndBulkChequeNumberingWorkWithOsivOff(CapturedOutput out) throws Exception {
+        // PR #421 ruling 1: the soft mark, set and undone by the building's manager.
+        JsonNode marked = expect(out, 200, pm, HttpMethod.POST, "/api/v1/leases/" + renewMe + "/renewal/not-renewing",
+                Map.of("note", "Moving out of Dubai"));
+        assertThat(marked.get("notRenewing").asBoolean()).isTrue();
+        JsonNode stage = expect(out, 200, admin, HttpMethod.GET,
+                "/api/v1/leases/paged?endDateFrom=2027-10-01&endDateTo=2027-10-31&successor=NONE&mark=NOT_RENEWING", null);
+        assertThat(stage.get("totalElements").asInt()).isEqualTo(1);
+        assertThat(stage.get("content").get(0).get("notRenewingNote").asText()).isEqualTo("Moving out of Dubai");
+        assertThat(stage.get("content").get(0).get("status").asText()).isEqualTo("ACTIVE");
+        expect(out, 200, pm, HttpMethod.DELETE, "/api/v1/leases/" + renewMe + "/renewal/not-renewing", null);
+        assertThat(expect(out, 200, admin, HttpMethod.GET,
+                "/api/v1/leases/paged?endDateFrom=2027-10-01&endDateTo=2027-10-31&mark=NOT_RENEWING", null)
+                .get("totalElements").asInt()).isZero();
+
+        // Ruling 2: bulk cheque numbering of a renewal draft.
+        JsonNode renewed = expect(out, 200, pm, HttpMethod.POST, "/api/v1/leases/renew-batch", Map.of(
+                "leaseIds", List.of(renewMe), "rule", Map.of("mode", "NONE"), "contractDate", "2027-10-15",
+                "carryDepositForward", true, "generateGrid", true));
+        String draft = renewed.get(0).get("renewalLeaseId").asText();
+        JsonNode grids = expect(out, 200, pm, HttpMethod.POST, "/api/v1/leases/cheques-batch/load", Map.of("leaseIds", List.of(draft)));
+        assertThat(grids.get(0).get("ok").asBoolean()).as(grids.toString()).isTrue();
+        List<Map<String, Object>> rows = new ArrayList<>();
+        int n = 410001;
+        for (JsonNode c : grids.get(0).get("cheques")) {
+            rows.add(Map.of("chequeId", c.get("id").asText(), "chequeNumber", String.valueOf(n++), "payeeBank", "Mashreq",
+                    "chequeDate", c.get("chequeDate").asText(), "amount", c.get("amount").decimalValue()));
+        }
+        JsonNode saved = expect(out, 200, pm, HttpMethod.POST, "/api/v1/leases/cheques-batch", Map.of("drafts", List.of(
+                Map.of("leaseId", draft, "version", grids.get(0).get("version").asLong(), "rows", rows))));
+        assertThat(saved.get(0).get("ok").asBoolean()).as(saved.toString()).isTrue();
+        assertThat(saved.get(0).get("cheques").get(0).get("chequeNumber").asText()).isEqualTo("410001");
+        assertThat(failures).as("lazy loads outside a transaction / 5xx / unexpected statuses").isEmpty();
+    }
+
+    @Test
     void aBatchMustNameBetweenOneAndAHundredContracts(CapturedOutput out) throws Exception {
         List<String> tooMany = IntStream.range(0, 101).mapToObj(i -> UUID.randomUUID().toString()).toList();
         expect(out, 400, admin, HttpMethod.POST, "/api/v1/leases/renew-batch",
