@@ -63,6 +63,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class LeaseAssignmentIT extends AbstractPostgresIT {
 
     @Autowired LeaseAssignmentService assignments;
+    @Autowired com.datagami.rentaxis.core.service.ledger.PostingService postingService;
     @Autowired com.datagami.rentaxis.core.service.cheque.ChequeQueryService chequeQueries;
     @Autowired com.datagami.rentaxis.core.service.ContractGenerationService contracts;
     @Autowired com.datagami.rentaxis.core.service.LeaseAttachmentService attachmentService;
@@ -252,6 +253,28 @@ class LeaseAssignmentIT extends AbstractPostgresIT {
         assignments.post(leaseId, assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), RENT_3, "Heir", null)).id(), null);
         assertThat(renterOf(leaseId)).isEqualTo(b.getId());
         assertTrialBalanceBalances();
+    }
+
+    /**
+     * Review P3-4 of PR #425: an entry on A's side that was reversed, and its reversal, net to
+     * nothing on A, so they do not move the floor. Here a cash entry of 10/02/2027 reversed on
+     * 11/02/2027 leaves the floor at RENT_2 (02/01/2027).
+     */
+    @Test
+    void aReversedPostingDoesNotMoveTheAssignmentFloor() {
+        UUID leaseId = lease(true);
+        Renter a = fixtures.renter();
+        Renter b = fixtures.createRenter("Heir");
+        UUID propertyId = fixtures.property().getId();
+        BigDecimal amount = new BigDecimal("500");
+        var entry = tx.execute(s -> postingService.post(new com.datagami.rentaxis.core.service.ledger.PostingRequest(
+                com.datagami.rentaxis.domain.entity.enums.JournalDocType.JV, LocalDate.of(2027, 2, 10), "cash in error",
+                new com.datagami.rentaxis.core.service.ledger.PostingRequest.Dimensions(propertyId, null, leaseId, a.getId(), null),
+                com.datagami.rentaxis.domain.entity.enums.JournalSourceType.MANUAL, null, null,
+                List.of(com.datagami.rentaxis.core.service.ledger.PostingRequest.dr(AccountRole.CASH, amount), com.datagami.rentaxis.core.service.ledger.PostingRequest.cr(AccountRole.RENT_RECEIVABLE, amount)))));
+        tx.executeWithoutResult(s -> postingService.reverse(entry.getId(), LocalDate.of(2027, 2, 11), "posted in error"));
+        LeaseAssignmentDTO draft = assignments.draft(leaseId, new AssignLeaseRequest(b.getId(), ON_CLEARED, "Heir", null));
+        assertThat(draft.status()).isEqualTo("DRAFT");
     }
 
     @Test

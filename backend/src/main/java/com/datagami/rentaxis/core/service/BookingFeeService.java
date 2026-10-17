@@ -159,6 +159,15 @@ public class BookingFeeService {
                     + " cancelled.", "booking.feeWrittenOff", Map.of());
         }
         if (status != PenaltyAssessmentStatus.APPROVED) return;
+        // Review P3-5: a deposited cheque or a pending online payment may still bounce or
+        // fail, and its PDR reversal would then re-debit the renter for a cancelled fee.
+        // Cancel once the payment has cleared (credit) or failed (plain reversal).
+        com.datagami.rentaxis.domain.entity.enums.ChequeStatus row = charges.collectionStatusOf(b.getChargeId());
+        if (row == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED
+                || row == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING) {
+            throw new BusinessRuleViolationException("The fee's payment is still being collected; cancel the booking"
+                    + " once it has cleared or bounced.", "booking.feeInFlight", Map.of());
+        }
         if (feePaid(b)) {
             charges.creditCollected(b.getChargeId(), on, reason);
         } else {

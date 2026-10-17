@@ -254,6 +254,28 @@ class ChargeRecognitionIT extends AbstractPostgresIT {
         assertThat(balanceOf(parkingIncome, leaseId)).as("parking income is what was earned").isEqualByComparingTo("-1450.00");
     }
 
+    /**
+     * Review P2-1 of PR #425 (coordinator ruling): until the tax adviser rules on the credit
+     * note, a fee line that carries VAT is not offered, and its refund is refused; the
+     * VAT-free line beside it still is.
+     */
+    @Test
+    void aFeeLineWithVatIsNotOfferedForAnUnearnedRefund() {
+        UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END, List.of(line("RENT", "51000"),
+                LeaseTestFixtures.vatLine("PARKING_FEE", "3650"), line("COOLING", "730")));
+        jdbc.update("update leases set fee_timing = 'AT_POSTING' where id = ?", leaseId);
+        fixtures.generateGrid(leaseId, 4, START);
+        posting.post(leaseId);
+        termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, "Early exit"), null);
+
+        var offers = settlements.statement(leaseId).unearnedFeeRefunds();
+        assertThat(offers).extracting(o -> o.chargeTypeCode()).containsExactly("COOLING");
+        assertThat(offers.get(0).amount()).isEqualByComparingTo("440.00");   // 730 × 220 ÷ 365
+        assertThatThrownBy(() -> settlements.saveDraft(leaseId, draft(refund(leaf(AccountRole.PARKING_INCOME).getId(), "100")), null))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("settlement.unearnedFeeNotOffered"));
+        settlements.saveDraft(leaseId, draft(refund(leaf(AccountRole.COOLING_CHARGES).getId(), "440.00")), null);
+    }
+
     private static com.datagami.rentaxis.api.dto.SaveSettlementDTO.DeductionItemDTO refund(UUID account, String amount) {
         var i = new com.datagami.rentaxis.api.dto.SaveSettlementDTO.DeductionItemDTO();
         i.setType(com.datagami.rentaxis.domain.entity.enums.LineItemType.ADDITION);

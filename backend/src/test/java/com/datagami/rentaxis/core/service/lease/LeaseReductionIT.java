@@ -344,6 +344,39 @@ class LeaseReductionIT extends AbstractPostgresIT {
         assertThat(bLines).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT");
     }
 
+    /**
+     * Review P2-2 of PR #425 (coordinator ruling): newAmount is the HEADLINE on every line,
+     * including a discounted line without a rent-free window. 51,000 less a 3,000 discount
+     * (net 48,000) cut to a 39,000 headline leaves 36,000 net for the window, so the 207 days
+     * from 01/03/2027 are worth 36,000 × 207 ÷ 365 = 20,416.44 (the discount stays). A headline
+     * below the discount would take the net negative and is refused.
+     */
+    @Test
+    void onADiscountedLineTheNewAmountIsTheHeadlineAndTheDiscountStays() {
+        UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END, List.of(line("RENT", "51000", "3000")));
+        chequeGeneration.saveRows(leaseId, List.of(
+                row("400051", CONTRACT_DATE, RENT_1, "12000"),
+                row("400052", CONTRACT_DATE, RENT_2, "12000"),
+                row("400053", CONTRACT_DATE, RENT_3, "12000"),
+                row("400054", CONTRACT_DATE, RENT_4, "12000")));
+        posting.post(leaseId);
+        UUID rent = lineId(leaseId, "RENT");
+
+        ReductionPreviewDTO preview = reductions.preview(leaseId, credit(rent, "39000"));
+        assertThat(preview.problems()).isEmpty();
+        assertThat(preview.lines()).singleElement().satisfies(l -> {
+            assertThat(l.currentHeadline()).isEqualByComparingTo("51000");
+            assertThat(l.newHeadline()).isEqualByComparingTo("39000");
+            assertThat(l.newRentFree()).isEqualByComparingTo("0");
+            assertThat(l.newLineAmount()).isEqualByComparingTo("36000.00");
+            assertThat(l.remainingDays()).isEqualTo(207);
+            assertThat(l.remainingAfter()).isEqualByComparingTo("20416.44");
+            assertThat(l.credit()).isEqualByComparingTo(l.remainingBefore().subtract(new BigDecimal("20416.44")));
+        });
+        assertThat(reductions.preview(leaseId, credit(rent, "2000")).problems())
+                .extracting(ReductionPreviewDTO.Problem::code).containsExactly("lease.reductionNegative");
+    }
+
     @Test
     void refusals() {
         UUID leaseId = galah();

@@ -181,6 +181,32 @@ class BookingFeeIT extends AbstractPostgresIT {
                 .as("the 300 + 15 VAT paid is left as a credit on the renter's account").isEqualByComparingTo("-315.00");
     }
 
+    /**
+     * Review P3-5 of PR #425: a fee whose payment is still in flight (an online payment pending;
+     * the collection row is CASH, so it can never be DEPOSITED) may still fail, and its PDR
+     * reversal would then re-debit the renter for a cancelled fee. Staff cancel waits for it
+     * (booking.feeInFlight) and nothing moves; the renter is told the office cancels it.
+     */
+    @Test
+    void theOfficeWaitsForAFeePaymentInFlight() {
+        PropertyAmenity hall = amenity("Hall", "PER_BOOKING", "300");
+        BookingRequest b = book(hall, LocalDate.now().plusDays(10));
+        BookingRequest approved = tx.execute(s -> bookings.approve(fixtures.tenantId(), b.getId(), UUID.randomUUID(), null));
+        UUID row = tx.execute(s -> assessments.findById(approved.getChargeId()).orElseThrow().getCollectionCheque().getId());
+        assertThat(jdbc.queryForObject("select mode from cheques where id = ?", String.class, row)).isEqualTo("CASH");
+        jdbc.update("update cheques set status = 'ONLINE_PENDING' where id = ?", row);
+
+        assertThatThrownBy(() -> tx.executeWithoutResult(s -> bookings.cancelByStaff(fixtures.tenantId(), b.getId(),
+                UUID.randomUUID(), "Hall closed")))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("booking.feeInFlight"));
+        assertThatThrownBy(() -> tx.executeWithoutResult(s -> bookings.cancel(fixtures.tenantId(), b.getId(), renterUser)))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("booking.feePaid"));
+        assertThat(jdbc.queryForObject("select status from penalty_assessments where id = ?", String.class,
+                approved.getChargeId())).isEqualTo("APPROVED");
+        assertThat(jdbc.queryForObject("select status from booking_requests where id = ?", String.class, b.getId()))
+                .isEqualTo("APPROVED");
+    }
+
     /** PR #361 R1 P1-1: a booking whose fee was written off as a bad debt can no longer be cancelled. */
     @Test
     void aBookingWhoseFeeWasWrittenOffCannotBeCancelled() {

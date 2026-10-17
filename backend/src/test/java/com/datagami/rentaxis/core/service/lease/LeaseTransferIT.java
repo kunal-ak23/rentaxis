@@ -648,6 +648,48 @@ class LeaseTransferIT extends AbstractPostgresIT {
     }
 
     /**
+     * Review P1-1 of PR #425 (ruling R1): a cut-over lease transferred out carried its
+     * at-posting parking into B's term (B may not charge it again), so A's settlement offers
+     * no unearned-fee refund, and an UNEARNED_FEE_REFUND line is refused on save.
+     */
+    @Test
+    void aTransferredOutCutOverLeaseOffersNoUnearnedFeeRefund() {
+        UUID a = fixtures.draftLease(CONTRACT, START, END,
+                List.of(line("RENT", "60000"), line("SECURITY_DEPOSIT", "3000"), line("PARKING_FEE", "3650")));
+        jdbc.update("update leases set fee_timing = 'AT_POSTING' where id = ?", a);
+        chequeGeneration.saveRows(a, List.of(
+                row("660040", CONTRACT, CONTRACT, "3000"),
+                row("660041", CONTRACT, JAN, "18650"),
+                row("660042", CONTRACT, APR, "15000"),
+                row("660043", CONTRACT, JUL, "15000"),
+                row("660044", CONTRACT, OCT, "15000")));
+        posting.post(a);
+        for (LocalDate d : List.of(CONTRACT, JAN, APR)) {
+            Cheque c = chequeOn(a, d);
+            chequeService.deposit(c.getId(), ChequeActionRequest.on(d));
+            chequeService.clear(c.getId(), ChequeActionRequest.on(d));
+        }
+        Unit target = tx.execute(s -> fixtures.createUnit(fixtures.property(), "A-208"));
+        UUID b = transfers.draft(a, request(T, target.getId(), null), posting).getId();
+        posting.post(b);
+        // TERMINATED by the transfer; CLOSED at once when nothing is left to collect on A.
+        assertThat(lease(a).getStatus()).isIn(LeaseStatus.TERMINATED, LeaseStatus.CLOSED);
+
+        assertThat(settlements.statement(a).unearnedFeeRefunds()).as("the fee went on into B's term").isEmpty();
+        UUID parkingIncome = tx.execute(s -> resolver.resolve(com.datagami.rentaxis.domain.entity.enums.AccountRole.PARKING_INCOME,
+                fixtures.property().getId())).getId();
+        var item = new com.datagami.rentaxis.api.dto.SaveSettlementDTO.DeductionItemDTO();
+        item.setType(com.datagami.rentaxis.domain.entity.enums.LineItemType.ADDITION);
+        item.setAdditionCategory("UNEARNED_FEE_REFUND");
+        item.setAccountId(parkingIncome);
+        item.setAmount(new BigDecimal("100.00"));
+        var draft = new com.datagami.rentaxis.api.dto.SaveSettlementDTO();
+        draft.setDeductions(List.of(item));
+        assertThatThrownBy(() -> settlements.saveDraft(a, draft, null))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("settlement.unearnedFeeNotOffered"));
+    }
+
+    /**
      * PR #359 R2: a parking deposit carried across properties twice stays a parking
      * deposit, and the third lease's ledger still sees it.
      */

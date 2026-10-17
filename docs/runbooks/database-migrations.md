@@ -12,6 +12,10 @@ and test databases; check the notes below before relying on one anywhere else.
 |---|---|---|
 | `129-rent-free-periods` | **129 cannot roll back once rent-free periods exist.** Its rollback restores the old `ck_lease_lines_net` (`net = gross − discount`), which every line with `rent_free_amount > 0` violates, so the `ALTER TABLE … ADD CONSTRAINT` fails. Editing 129 is forbidden; if 129 ever has to be undone, a new changeset must first fold the concession into the discount or remove those lines. | Follow-up ruling R4, 2026-10-17 |
 
+## Rollback scope
+
+`179-utilities-recoverable` rolls back only what it wrote: the B-01-09 "Utilities recoverable (held)" leaves with no journal lines, and the UTILITIES_RECOVERABLE mappings onto those leaves. A mapping an organisation made by hand to another account is kept.
+
 ## Before a deploy that adds a CHECK or a data move
 
 Run the read-only preview for that changeset on prod first (`BEGIN TRANSACTION READ ONLY … ROLLBACK`).

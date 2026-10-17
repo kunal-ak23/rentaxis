@@ -387,14 +387,19 @@ public class LeaseAssignmentService {
                 .stream().filter(g -> g.net().signum() != 0).toList();
     }
 
-    /** Ruling R9: the latest journal date on the lease tagged to this renter (null when none). Binds tenant_id. */
+    /**
+     * Ruling R9: the latest journal date on the lease tagged to this renter (null when none),
+     * leaving out entries that were reversed and the reversals themselves (review P3-4): a pair
+     * nets to nothing on A. Binds tenant_id.
+     */
     private LocalDate latestPostingOf(Lease lease, UUID renterId) {
         return jdbc.queryForObject("""
                 select max(e.entry_date)
                   from journal_lines l
                   join journal_entries e on e.id = l.journal_entry_id
                  where l.tenant_id = :t and e.tenant_id = :t
-                   and l.lease_id = :lease and l.renter_id = :renter""",
+                   and l.lease_id = :lease and l.renter_id = :renter
+                   and e.status <> 'REVERSED' and e.reversal_of_id is null""",
                 new MapSqlParameterSource("t", lease.getTenantId()).addValue("lease", lease.getId())
                         .addValue("renter", renterId), LocalDate.class);
     }

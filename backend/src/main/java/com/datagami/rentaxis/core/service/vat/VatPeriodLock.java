@@ -58,7 +58,15 @@ public class VatPeriodLock {
     public void assertDocumentDateOpen(UUID tenantId, LocalDate date) {
         if (tenantId == null || date == null) return;
         Optional<VatReturn> filed = returns.filedCovering(tenantId, date);
-        if (filed.isPresent()) throw refusal(tenantId, filed.get(), date);
+        if (filed.isEmpty()) return;
+        // Review P3-3: a contract tax invoice is dated on the contract date, which the user
+        // cannot move, so the action is to re-open the return (or ask the tax adviser).
+        VatReturn r = filed.get();
+        throw new BusinessRuleViolationException("The VAT return for " + DMY.format(r.getPeriodStart()) + " – "
+                + DMY.format(r.getPeriodEnd()) + " is filed, and this contract's tax invoice is dated "
+                + DMY.format(date) + ", inside it. Re-open that VAT return to issue the invoice, or ask your tax adviser.",
+                "vat.contractInvoiceInFiledPeriod", Map.of("from", DMY.format(r.getPeriodStart()),
+                        "to", DMY.format(r.getPeriodEnd()), "date", DMY.format(date)));
     }
 
     private BusinessRuleViolationException refusal(UUID tenantId, VatReturn r, LocalDate date) {

@@ -344,8 +344,10 @@ class VatReturnServiceIT extends AbstractPostgresIT {
 
         assertThatThrownBy(() -> vatTaxPoints.issueContractInvoice(leaseId))
                 .isInstanceOf(BusinessRuleViolationException.class)
-                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("vat.periodFiled"))
-                .hasMessageContaining("20/04/2026").hasMessageContaining("01/07/2026");
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode())
+                        .isEqualTo("vat.contractInvoiceInFiledPeriod"))
+                .hasMessageContaining("20/04/2026").hasMessageContaining("Re-open that VAT return")
+                .satisfies(e -> assertThat(e.getMessage()).doesNotContain("Date the correction"));
         assertThat(taxInvoices.forLease(leaseId)).as("nothing issued into the filed quarter").hasSize(before);
 
         service.reopen(filed.id(), "late contract invoice");

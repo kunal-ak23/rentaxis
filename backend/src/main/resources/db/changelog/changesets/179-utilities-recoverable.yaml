@@ -41,6 +41,9 @@ databaseChangeLog:
       rollback:
         - sql:
             sql: |
-              DELETE FROM tenant_default_account_mappings WHERE role = 'UTILITIES_RECOVERABLE';
+              DELETE FROM tenant_default_account_mappings m
+               WHERE m.role = 'UTILITIES_RECOVERABLE'
+                 AND EXISTS (SELECT 1 FROM accounts a WHERE a.id = m.account_id AND a.tenant_id = m.tenant_id
+                              AND a.code = 'B-01-09' AND a.name_en = 'Utilities recoverable (held)');
               DELETE FROM accounts a WHERE a.code = 'B-01-09' AND a.name_en = 'Utilities recoverable (held)'
                 AND NOT EXISTS (SELECT 1 FROM journal_lines l WHERE l.account_id = a.id);

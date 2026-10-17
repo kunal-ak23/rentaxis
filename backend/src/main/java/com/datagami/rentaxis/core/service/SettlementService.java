@@ -419,6 +419,13 @@ public class SettlementService {
                 || lease.getPostingJournalId() == null) {
             return List.of();
         }
+        // Review P1-1: a lease transferred out (a posted successor) carried its at-posting
+        // fees into B's term, and B may not charge them again (requireNoFeeChargedTwice):
+        // the renter keeps the service, so nothing is unearned to refund.
+        if (leaseRepository.findByTransferredFromLeaseId(lease.getId()).stream()
+                .anyMatch(s -> s.getPostingJournalId() != null && s.getStatus() != LeaseStatus.DRAFT)) {
+            return List.of();
+        }
         List<com.datagami.rentaxis.api.dto.settlement.UnearnedFeeRefundDTO> out = new ArrayList<>();
         for (com.datagami.rentaxis.domain.entity.LeaseLine line : leaseLines.findByLease_IdOrderBySeqNoAsc(lease.getId())) {
             var type = line.getChargeType();
@@ -428,6 +435,9 @@ public class SettlementService {
                     || line.getCreditAccount() == null) {
                 continue;
             }
+            // Review P2-1 (coordinator ruling): a fee that carries VAT is not offered until the
+            // tax adviser rules on the credit note its refund would need.
+            if (com.datagami.rentaxis.core.service.lease.LeaseVat.vatOf(line).signum() > 0) continue;
             BigDecimal net = line.getNetAmount() == null ? BigDecimal.ZERO : line.getNetAmount();
             LocalDate from = line.getPeriodStart() != null ? line.getPeriodStart() : lease.getStartDate();
             LocalDate to = line.getPeriodEnd() != null ? line.getPeriodEnd() : lease.getEndDate();
