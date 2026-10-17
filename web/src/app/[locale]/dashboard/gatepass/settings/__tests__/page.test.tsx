@@ -36,7 +36,7 @@ beforeEach(() => {
     ] });
     api.on("GET", "/v1/buildings/property/", { body: [] });
     api.on("GET", "/v1/gatepass/policies/effective", { body: POLICY });
-    api.on("GET", "/v1/units/property/", { body: [{ id: "unit-1", unitNumber: "A-204" }] });
+    api.on("GET", "/v1/units/search", { body: [{ id: "unit-1", unitNumber: "A-204", propertyId: "prop-1", propertyName: "Palm Tower" }] });
     api.on("GET", "/admin/users", { body: [
         { id: "g-1", name: "Ravi", email: "ravi@x.test", phoneNumber: "+971500000001", role: "SECURITY_GUARD" },
         { id: "m-1", name: "Maya", email: "maya@x.test", role: "PROPERTY_MANAGER" },
@@ -110,8 +110,11 @@ describe("Gate policy & visitors", () => {
         api.on("POST", "/v1/gatepass/visitors/registration", { body: { id: "v-1", name: "Maria", phone: "+971501110000", visitorType: "MAID" } });
         render(<GatePassSettingsPage />);
         const form = await screen.findByTestId("visitor-form");
-        await waitFor(() => expect(within(form).getAllByRole("option").some(o => o.textContent === "A-204")).toBe(true));
-        fireEvent.change(within(form).getByLabelText("colUnit"), { target: { value: "unit-1" } });
+        // Scale follow-up: the unit comes from a server search within the property.
+        fireEvent.click(within(form).getByTestId("rv-unit"));
+        fireEvent.click(await within(await screen.findByRole("listbox")).findByText("A-204"));
+        expect(api.callsTo("GET", "/v1/units/search")[0].url).toContain("propertyId=prop-1");
+        expect(api.callsTo("GET", "/v1/units/property/")).toHaveLength(0);
         fireEvent.change(within(form).getByLabelText("visitorName"), { target: { value: "Maria" } });
         fireEvent.change(within(form).getByLabelText("visitorPhone"), { target: { value: "+971 50 111 0000" } });
         fireEvent.click(within(form).getByTestId("visitor-submit"));

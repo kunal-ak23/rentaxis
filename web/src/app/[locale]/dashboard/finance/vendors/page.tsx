@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { accountName } from "@/lib/api/ledger";
-import { Users, Plus, Pencil, Trash2, X, Loader2, Package, Search, AlertCircle, BookOpen, ListChecks } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Loader2, Package, Search, AlertCircle, BookOpen, ListChecks } from "lucide-react";
 import { fmtAmount } from "@/lib/api/ledger";
 import { overdueOf, payablesApi, type AgingFigures } from "@/lib/api/payables";
 import { Link } from "@/i18n/routing";
@@ -14,7 +14,7 @@ import { serverText } from "@/components/finance/bankrec/serverText";
 import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { isAbortError } from "@/lib/api/abort";
-import { oldestFirst } from "@/lib/oldestFirst";
+import type { Page } from "@/lib/api/ledger";
 
 type Account = {
     id: string;
@@ -75,8 +75,11 @@ export default function VendorsPage() {
     const [submitting, setSubmitting] = useState(false);
     const [formData, setFormData] = useState(emptyForm);
     const [searchQuery, setSearchQuery] = useState("");
+    /** The term the server is asked for: the box, trimmed, once typing pauses. */
+    const [q, setQ] = useState("");
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(25);
+    const [totalItems, setTotalItems] = useState(0);
     const [confirmDialog, setConfirmDialog] = useState<{
         title: string;
         description: string;
@@ -90,7 +93,14 @@ export default function VendorsPage() {
     const [ap, setAp] = useState<Record<string, AgingFigures>>({});
 
     useEffect(() => {
-        fetchVendors();
+        const id = setTimeout(() => {
+            setQ(searchQuery.trim());
+            setCurrentPage(1);
+        }, 250);
+        return () => clearTimeout(id);
+    }, [searchQuery]);
+
+    useEffect(() => {
         payablesApi
             .aging({})
             .then(r => setAp(Object.fromEntries(r.rows.map(row => [row.vendorId, row.figures]))))
@@ -98,17 +108,28 @@ export default function VendorsPage() {
     }, []);
 
     // Break round 3, F1: a refresh supersedes the read in flight; unmount aborts it, silently.
+    // Scale follow-up: one page from GET /vendors/paged, searched on the server (names, TRN,
+    // email, phone, contact person — the fields this box always searched) and ordered oldest
+    // first there, the house rule for entity lists (tutorial 19).
     const beginVendors = useLatestRequest();
-    const fetchVendors = async () => {
+    const fetchVendors = useCallback(async () => {
         const { signal, isCurrent } = beginVendors();
         try {
-            const res = await fetch("/api/proxy/v1/vendors", { signal });
+            const sp = new URLSearchParams({ order: "oldest", page: String(currentPage - 1), size: String(itemsPerPage) });
+            if (q) sp.set("q", q);
+            const res = await fetch(`/api/proxy/v1/vendors/paged?${sp.toString()}`, { signal });
             if (res.ok) {
-                const data = await res.json();
+                const data: Page<Vendor> = await res.json();
                 if (!isCurrent()) return;
-                // Oldest first, the house rule for entity lists (tutorial 19); name, then id, break ties.
-                (data as Vendor[]).sort(oldestFirst<Vendor>(v => v.nameEn));
-                setVendors(data);
+                const total = data.totalElements ?? 0;
+                const lastPage = Math.max(1, Math.ceil(total / itemsPerPage));
+                // A page past the end (the last row on it was just deleted) steps back instead of showing nothing.
+                if ((data.content?.length ?? 0) === 0 && total > 0 && currentPage > lastPage) {
+                    setCurrentPage(lastPage);
+                    return;
+                }
+                setVendors(data.content ?? []);
+                setTotalItems(total);
                 setLoadError(null);
             } else if (isCurrent()) {
                 // A non-2xx used to leave the state at its initial empty
@@ -123,7 +144,11 @@ export default function VendorsPage() {
         } finally {
             if (isCurrent()) setLoading(false);
         }
-    };
+    }, [q, currentPage, itemsPerPage, tCommon, beginVendors]);
+
+    useEffect(() => {
+        fetchVendors();
+    }, [fetchVendors]);
 
     const openAddModal = () => {
         setEditingVendor(null);
@@ -230,21 +255,8 @@ export default function VendorsPage() {
     const vendorName = (v: Vendor) =>
         locale === "ar" ? v.nameAr || v.nameEn : v.nameEn || v.nameAr;
 
-    const filteredVendors = searchQuery
-        ? vendors.filter((v) => {
-            const q = searchQuery.toLowerCase();
-            return (
-                (v.nameEn || "").toLowerCase().includes(q) ||
-                (v.nameAr || "").toLowerCase().includes(q) ||
-                (v.contactPerson || "").toLowerCase().includes(q) ||
-                (v.email || "").toLowerCase().includes(q) ||
-                (v.phone || "").toLowerCase().includes(q) ||
-                (v.trn || "").toLowerCase().includes(q)
-            );
-        })
-        : vendors;
-
-    const paginatedVendors = filteredVendors.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+    // The server searched and paged; this is the page on screen.
+    const paginatedVendors = vendors;
 
     const reload = () => {
         setLoadError(null);
@@ -255,20 +267,20 @@ export default function VendorsPage() {
         <div>
             {loadError && <LoadErrorBanner message={loadError} onRetry={reload} />}
             {/* Header */}
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-8">
                 <div>
                     <h1 className="mb-1">{t("title")}</h1>
                     <p className="text-sm text-muted">{t("description")}</p>
                 </div>
-                <div className="flex items-center gap-3">
-                    <div className="relative">
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                    <div className="relative flex-1 sm:flex-none">
                         <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted" />
                         <input
                             type="text"
                             placeholder={t("search")}
                             value={searchQuery}
-                            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                            className="ps-9 pe-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="ps-9 pe-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-full sm:w-64 transition-all"
                         />
                     </div>
                     <button
@@ -291,7 +303,7 @@ export default function VendorsPage() {
             )}
 
             {/* Empty State */}
-            {!loading && filteredVendors.length === 0 && (
+            {!loading && totalItems === 0 && (
                 <div className="text-center py-24 bg-background border border-dashed border-border rounded-xl flex flex-col items-center">
                     <div className="w-16 h-16 bg-surface rounded-xl flex items-center justify-center text-muted shadow-sm mb-6">
                         <Package size={28} />
@@ -306,7 +318,7 @@ export default function VendorsPage() {
             )}
 
             {/* Vendors Table */}
-            {!loading && filteredVendors.length > 0 && (
+            {!loading && totalItems > 0 && (
                 <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm">
                     <div className="overflow-x-auto">
                         <table className="w-full">
@@ -430,7 +442,7 @@ export default function VendorsPage() {
                     <div className="px-5 pb-4">
                         <Pagination
                             currentPage={currentPage}
-                            totalItems={filteredVendors.length}
+                            totalItems={totalItems}
                             itemsPerPage={itemsPerPage}
                             onPageChange={setCurrentPage}
                             onItemsPerPageChange={(n) => { setItemsPerPage(n); setCurrentPage(1); }}

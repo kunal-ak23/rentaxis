@@ -67,6 +67,9 @@ beforeEach(() => {
         if (u.includes("/finance/accounts")) {
             return { ok: true, status: 200, json: async () => [] } as unknown as Response;
         }
+        if (u.includes("/vendors/paged")) {
+            return { ok: true, status: 200, json: async () => ({ content: [vendor], totalElements: 1, totalPages: 1, number: 0, size: 25 }) } as unknown as Response;
+        }
         return { ok: true, status: 200, json: async () => [vendor] } as unknown as Response;
     }) as unknown as typeof fetch;
 });
@@ -108,7 +111,7 @@ describe("VendorsPage delete error surfacing", () => {
         // vendors list is refetched after the DELETE
         await waitFor(() => {
             const vendorGets = fetchMock.mock.calls.filter(
-                (c) => String(c[0]).endsWith("/v1/vendors") && !c[1]?.method
+                (c) => String(c[0]).includes("/v1/vendors/paged") && !c[1]?.method
             );
             expect(vendorGets.length).toBeGreaterThanOrEqual(2);
         });

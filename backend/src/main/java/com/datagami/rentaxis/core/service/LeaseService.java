@@ -162,17 +162,13 @@ public class LeaseService {
      * <ul>
      *   <li>unrestricted caller, no text term — the database filters, counts and
      *       pages, which is the common case and the only one that scales;</li>
-     *   <li>a property manager — scope is {@code LeaseAccessPolicy}'s and is more
-     *       than a property-id list, so the narrowed rows are filtered in memory and
-     *       paged after;</li>
-     *   <li>a free-text term — it matches the unit, renter and property a lease
-     *       joins to, so it is matched against the mapped DTO.</li>
+     *   <li>a property manager, or a free-text term (matching the unit, renter,
+     *       property and Ejari a lease joins to) — also in the database since the
+     *       scale follow-up: {@link LeaseAccessPolicy#visiblePropertyIds()} and the
+     *       term go into {@code LeaseRepository.searchText};</li>
+     *   <li>a renter-scoped caller — in memory over {@code filterReadable}, paged
+     *       after, so the total is the total.</li>
      * </ul>
-     *
-     * <p>In both in-memory paths the filtering happens over <em>everything</em> that
-     * matched the query and the page is cut afterwards, so the total is the total.
-     * What changed is that the query no longer hands back the whole tenant's
-     * contracts when the caller asked for one status.</p>
      */
     @Transactional(readOnly = true)
     public Page<LeaseDTO> getAllLeasesPaged(String search, LeaseStatus status, UUID propertyId,
@@ -202,10 +198,22 @@ public class LeaseService {
         java.util.Set<LeaseStatus> excluded = excludeStatuses == null || excludeStatuses.isEmpty()
                 ? java.util.Set.of() : java.util.EnumSet.copyOf(excludeStatuses);
 
-        if ((normalizedSearch == null || normalizedSearch.isEmpty()) && !leaseAccessPolicy.isRestricted()) {
+        boolean hasTerm = normalizedSearch != null && !normalizedSearch.isEmpty();
+        pageable = withIdTiebreak(pageable);
+
+        if (!hasTerm && !leaseAccessPolicy.isRestricted()) {
             return mapPage(excluded.isEmpty()
                     ? leaseRepository.search(tenantId, status, propertyId, buildingId, pageable)
                     : leaseRepository.searchExcluding(tenantId, status, propertyId, buildingId, excluded, pageable));
+        }
+
+        // Scale follow-up: the term and a property manager's scope go into the query, so the
+        // database filters, sorts, counts and pages. A renter-scoped caller (not reachable through
+        // the controller, which admits staff only) keeps the in-memory path below: its scope is
+        // per lease and per assignment, not a property list.
+        if (!leaseAccessPolicy.callerIsRenter()) {
+            return searchInDatabase(tenantId, hasTerm ? normalizedSearch : null, status, propertyId, buildingId,
+                    excluded, pageable);
         }
 
         List<LeaseDTO> readable = mapAll(leaseAccessPolicy.filterReadable(excluded.isEmpty()
@@ -226,6 +234,51 @@ public class LeaseService {
                 .collect(Collectors.toList());
 
         return pageOf(filtered, pageable);
+    }
+
+    /**
+     * {@link #getAllLeasesPaged} for a free-text term and/or a property manager, in SQL
+     * ({@link LeaseRepository#searchText}). Same matches as the in-memory filter it replaced:
+     * {@code lower(field)} contains the term lower-cased with {@link Locale#ROOT}, over the unit
+     * number, renter name, property name and Ejari number, or a status name containing it.
+     * Arabic has no case, so an Arabic term matches byte for byte, as {@code String.contains} did.
+     */
+    private Page<LeaseDTO> searchInDatabase(UUID tenantId, String term, LeaseStatus status, UUID propertyId,
+                                            UUID buildingId, java.util.Set<LeaseStatus> excluded, Pageable pageable) {
+        java.util.EnumSet<LeaseStatus> allowed = java.util.EnumSet.allOf(LeaseStatus.class);
+        allowed.removeAll(excluded);
+        List<UUID> visible = leaseAccessPolicy.visiblePropertyIds();
+        boolean scoped = visible != null;
+        if (allowed.isEmpty() || (scoped && visible.isEmpty())) {
+            return new PageImpl<>(List.of(), pageable, 0);
+        }
+        String pattern = null;
+        java.util.EnumSet<LeaseStatus> statusHits = java.util.EnumSet.noneOf(LeaseStatus.class);
+        if (term != null) {
+            String token = term.toLowerCase(Locale.ROOT);
+            pattern = com.datagami.rentaxis.core.util.Search.like(term);
+            for (LeaseStatus s : LeaseStatus.values()) {
+                if (s.name().toLowerCase(Locale.ROOT).contains(token)) statusHits.add(s);
+            }
+        }
+        // Placeholders keep the guarded `in` lists non-empty; the flags make them inert.
+        List<UUID> visibleParam = scoped ? visible : List.of(new UUID(0L, 0L));
+        java.util.Collection<LeaseStatus> hitsParam = statusHits.isEmpty() ? allowed : statusHits;
+        return mapPage(leaseRepository.searchText(tenantId, allowed, status, propertyId, buildingId,
+                scoped, visibleParam, pattern, !statusHits.isEmpty(), hitsParam, pageable));
+    }
+
+    /**
+     * Rows with the same sort key (many contracts share a start date) come back in no fixed
+     * order, so consecutive pages could repeat or skip one. The id breaks the tie; it changes
+     * nothing else about the requested order.
+     */
+    static Pageable withIdTiebreak(Pageable pageable) {
+        if (pageable == null || pageable.isUnpaged()) return pageable;
+        org.springframework.data.domain.Sort sort = pageable.getSort();
+        if (sort.getOrderFor("id") != null) return pageable;
+        return org.springframework.data.domain.PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(),
+                sort.and(org.springframework.data.domain.Sort.by("id")));
     }
 
     private Page<LeaseDTO> pageOf(List<LeaseDTO> rows, Pageable pageable) {

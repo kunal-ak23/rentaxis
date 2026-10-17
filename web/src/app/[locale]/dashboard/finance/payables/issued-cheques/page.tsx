@@ -1,7 +1,7 @@
 "use client";
 
 import { moneyValueOrNull } from "@/lib/money";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
 import { AlertTriangle, Ban, CheckCircle2, Filter, Plus, RotateCcw, ScrollText, ShieldCheck, Trash2 } from "lucide-react";
@@ -21,6 +21,8 @@ import {
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { useStatementCoverGuard } from "@/lib/statementCoverGuard";
 import { StatementCoverNotice } from "@/components/finance/StatementCoverNotice";
+import { VendorPicker } from "@/components/pickers/VendorPicker";
+import { Pagination } from "@/components/ui/Pagination";
 import { businessTodayIso } from "@/lib/businessDate";
 
 const th = "px-3 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider whitespace-nowrap text-start";
@@ -41,7 +43,6 @@ function Amount({ v, strong }: { v: number | null | undefined; strong?: boolean 
 }
 
 type Action = { kind: "present" | "cancel" | "unpresent" | "delete"; cheque: IssuedCheque };
-type VendorRow = { id: string; nameEn: string; active: boolean };
 
 /**
  * Finance → Payables → Issued cheques (finance-ops spec §2): post-dated cheques
@@ -52,6 +53,9 @@ type VendorRow = { id: string; nameEn: string; active: boolean };
  * the BPC when the bank returns a cheque unpaid. The tie-out compares what is
  * outstanding with the PDC payable balance, per bank; the cut-over check
  * compares cut-over cheques with the opening balance on PDC payable.
+ *
+ * Scale follow-up: the register is read a page at a time from `GET /issued-cheques/paged`
+ * (same filters, applied on "Show"), and the cut-over form picks its vendor by server search.
  */
 export default function IssuedChequesPage() {
     const t = useTranslations("IssuedCheques");
@@ -67,7 +71,13 @@ export default function IssuedChequesPage() {
     const [summary, setSummary] = useState<IssuedChequeSummary | null>(null);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [banks, setBanks] = useState<Account[]>([]);
-    const [vendors, setVendors] = useState<VendorRow[]>([]);
+    const [page, setPage] = useState(1);
+    const [size, setSize] = useState(25);
+    const [total, setTotal] = useState(0);
+    /** The filters of the last "Show": paging moves through those, not through half-edited ones. */
+    const [applied, setApplied] = useState<{ status: IssuedChequeStatus | ""; bankAccountId: string; duePresent: boolean }>(
+        { status: "ISSUED", bankAccountId: "", duePresent: false });
+    const seq = useRef(0);
 
     const [action, setAction] = useState<Action | null>(null);
     const [actionDate, setActionDate] = useState(todayIso);
@@ -80,36 +90,48 @@ export default function IssuedChequesPage() {
     const [openingError, setOpeningError] = useState<string | null>(null);
 
     const load = useCallback(async () => {
+        const mine = ++seq.current;
         setLoadError(null);
         try {
             const [list, s] = await Promise.all([
-                issuedChequesApi.list({ status: status || undefined, bankAccountId: bankAccountId || undefined, duePresent }),
+                issuedChequesApi.paged({ status: applied.status || undefined, bankAccountId: applied.bankAccountId || undefined,
+                    duePresent: applied.duePresent, page: page - 1, size }),
                 issuedChequesApi.summary(),
             ]);
-            setRows(list);
+            if (mine !== seq.current) return;
+            const lastPage = Math.max(1, Math.ceil((list.totalElements ?? 0) / size));
+            if ((list.content?.length ?? 0) === 0 && list.totalElements > 0 && page > lastPage) {
+                // The last row on this page was just presented or cancelled out of the filter: step back.
+                setPage(lastPage);
+                return;
+            }
+            setRows(list.content ?? []);
+            setTotal(list.totalElements ?? 0);
             setSummary(s);
         } catch (err) {
+            if (mine !== seq.current) return;
             setRows([]);
+            setTotal(0);
             setLoadError(err instanceof ApiError ? err.message : tCommon("loadFailed"));
         }
-    }, [status, bankAccountId, duePresent, tCommon]);
+    }, [applied, page, size, tCommon]);
 
+    // Filters apply on "Show" (which sets `applied`); paging re-reads with the applied ones.
     useEffect(() => {
         if (!allowed) return;
         load();
-        // Filters apply on "Show".
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [allowed]);
+    }, [allowed, load]);
+
+    const show = () => {
+        setApplied({ status, bankAccountId, duePresent });
+        setPage(1);
+    };
 
     useEffect(() => {
         if (!allowed) return;
         let alive = true;
         loadAccounts()
             .then(a => alive && setBanks(a.filter(x => !x.group && x.active && x.accountSubType === "BANK")))
-            .catch(() => {});
-        fetch("/api/proxy/v1/vendors")
-            .then(r => (r.ok ? r.json() : []))
-            .then((v: VendorRow[]) => alive && setVendors(Array.isArray(v) ? v : []))
             .catch(() => {});
         return () => {
             alive = false;
@@ -167,9 +189,6 @@ export default function IssuedChequesPage() {
     };
     const openingReady = opening.vendorId && opening.bankAccountId && opening.chequeNumber.trim() && opening.chequeDate
         && (moneyValueOrNull(opening.amount) ?? 0) > 0;
-
-    const vendorOptions = useMemo(() => [...vendors].filter(v => v.active !== false)
-        .sort((a, b) => a.nameEn.localeCompare(b.nameEn)), [vendors]);
 
     if (userRole && !allowed) {
         return (
@@ -237,7 +256,7 @@ export default function IssuedChequesPage() {
                 </div>
             )}
 
-            <form className="flex flex-wrap items-end gap-3 mb-4" onSubmit={e => { e.preventDefault(); load(); }}>
+            <form className="flex flex-wrap items-end gap-3 mb-4" onSubmit={e => { e.preventDefault(); show(); }}>
                 <label className={label}>
                     <span className="block mb-1">{t("status")}</span>
                     <select data-testid="cheque-status" className={field} value={status}
@@ -334,6 +353,15 @@ export default function IssuedChequesPage() {
                     </tbody>
                 </table>
             </div>
+            <div className="-mt-6 mb-8">
+                <Pagination
+                    currentPage={page}
+                    totalItems={total}
+                    itemsPerPage={size}
+                    onPageChange={setPage}
+                    onItemsPerPageChange={n => { setSize(n); setPage(1); }}
+                />
+            </div>
 
             <section aria-labelledby="cutover-title">
                 <h2 id="cutover-title" className="text-sm font-bold text-foreground mb-1">{t("openingTitle")}</h2>
@@ -349,11 +377,9 @@ export default function IssuedChequesPage() {
                 <div className="bg-surface rounded-xl border border-border p-4 grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
                     <label className={`${label} md:col-span-2`}>
                         <span className="block mb-1">{t("vendor")}</span>
-                        <select data-testid="opening-vendor" className={`${field} w-full`} value={opening.vendorId}
-                                onChange={e => setOpening(o => ({ ...o, vendorId: e.target.value }))}>
-                            <option value="">{t("chooseVendor")}</option>
-                            {vendorOptions.map(v => <option key={v.id} value={v.id}>{v.nameEn}</option>)}
-                        </select>
+                        <VendorPicker testId="opening-vendor" className="w-full" value={opening.vendorId}
+                                      placeholder={t("chooseVendor")}
+                                      onChange={id => setOpening(o => ({ ...o, vendorId: id }))} />
                     </label>
                     <label className={label}>
                         <span className="block mb-1">{t("bank")}</span>

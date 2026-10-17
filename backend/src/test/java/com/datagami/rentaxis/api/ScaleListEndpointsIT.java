@@ -81,6 +81,7 @@ class ScaleListEndpointsIT extends AbstractPostgresIT {
     @Autowired UserPropertyAssignmentRepository assignmentRepo;
     @Autowired MaintenanceTicketRepository ticketRepo;
     @Autowired VendorService vendorService;
+    @Autowired com.datagami.rentaxis.domain.repository.ChequeRepository chequeRepo;
 
     private final ObjectMapper json = new ObjectMapper();
 
@@ -302,6 +303,159 @@ class ScaleListEndpointsIT extends AbstractPostgresIT {
         assertThat(total(year)).isEqualTo(4);
         assertThat(year.get("content")).hasSize(2);
         assertThat(total(get(pm, "/api/v1/cheques/post-dated/paged?propertyId=" + palm.getId()))).isZero();
+    }
+
+    /**
+     * Review P2-1: the post-dated book's scope, pinned with cheques it must leave out — four on
+     * Palm (a property the manager is not assigned) and four in another organisation, all in the
+     * window. The admin sees Marina + Palm and never the other organisation; the manager sees
+     * Marina only, on the page, in its total and in every per-day subtotal.
+     */
+    @Test
+    void thePostDatedPageLeavesOutOtherPropertiesAndOrganisations() {
+        OutsideCheques outside = seedOutsideCheques();
+        String window = "from=" + LocalDate.now() + "&to=" + LocalDate.now().plusYears(1).minusDays(1);
+
+        JsonNode adminPage = get(admin, "/api/v1/cheques/post-dated/paged?" + window + "&size=50");
+        assertThat(total(adminPage)).isEqualTo(8);
+        assertThat(ids(adminPage)).containsAll(outside.palm()).doesNotContainAnyElementsOf(outside.otherOrg());
+
+        JsonNode pmPage = get(pm, "/api/v1/cheques/post-dated/paged?" + window + "&size=50");
+        assertThat(total(pmPage)).isEqualTo(4);
+        assertThat(ids(pmPage)).doesNotContainAnyElementsOf(outside.palm()).doesNotContainAnyElementsOf(outside.otherOrg());
+        for (JsonNode row : pmPage.get("content")) {
+            assertThat(row.get("propertyId").asText()).isEqualTo(marina.getId().toString());
+        }
+        assertThat(total(get(pm, "/api/v1/cheques/post-dated/paged?" + window + "&propertyId=" + palm.getId()))).isZero();
+    }
+
+    @Test
+    void thePostDatedTotalsLeaveOutOtherPropertiesAndOrganisations() {
+        seedOutsideCheques();
+        String window = "from=" + LocalDate.now() + "&to=" + LocalDate.now().plusYears(1).minusDays(1);
+
+        JsonNode adminTotals = get(admin, "/api/v1/cheques/post-dated/totals?" + window);
+        assertThat(adminTotals.get("count").asLong()).isEqualTo(8);
+        assertThat(adminTotals.get("total").decimalValue()).isEqualByComparingTo("72000");   // 48,000 Marina + 24,000 Palm
+        assertThat(sumOfDays(adminTotals)).isEqualByComparingTo("72000");
+
+        JsonNode pmTotals = get(pm, "/api/v1/cheques/post-dated/totals?" + window);
+        assertThat(pmTotals.get("count").asLong()).isEqualTo(4);
+        assertThat(pmTotals.get("total").decimalValue()).isEqualByComparingTo("48000");
+        assertThat(sumOfDays(pmTotals)).isEqualByComparingTo("48000");
+
+        // amountBefore, page by page, is the sum of the rows ahead in the caller's own book.
+        for (User caller : List.of(admin, pm)) {
+            java.math.BigDecimal running = java.math.BigDecimal.ZERO;
+            for (int page = 0; page < 4; page++) {
+                JsonNode t = get(caller, "/api/v1/cheques/post-dated/totals?" + window + "&offset=" + (page * 2));
+                assertThat(t.get("amountBefore").decimalValue()).as("%s page %d", caller.getRole(), page)
+                        .isEqualByComparingTo(running);
+                for (JsonNode row : get(caller, "/api/v1/cheques/post-dated/paged?" + window + "&page=" + page + "&size=2")
+                        .get("content")) {
+                    running = running.add(row.get("amount").decimalValue());
+                }
+            }
+        }
+        assertThat(get(pm, "/api/v1/cheques/post-dated/totals?" + window + "&offset=99").get("amountBefore")
+                .decimalValue()).isEqualByComparingTo("48000");
+        assertThat(get(admin, "/api/v1/cheques/post-dated/totals?" + window + "&offset=99").get("amountBefore")
+                .decimalValue()).isEqualByComparingTo("72000");
+    }
+
+    private record OutsideCheques(List<String> palm, List<String> otherOrg) {
+    }
+
+    /** Four post-dated cheques on Palm (organisation A) and four in a third organisation, same dates as Marina's. */
+    private OutsideCheques seedOutsideCheques() {
+        LocalDate start = LocalDate.now().plusMonths(1).withDayOfMonth(1);
+        LocalDate end = start.plusYears(1).minusDays(1);
+        TenantContextHolder.setTenantId(a.tenantId());
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        UUID palmLease = a.postedLease(a.createUnit(palm, "902"), a.createRenter("Palm PDC Payer"), LocalDate.now().minusDays(10),
+                start, end, List.of(line("RENT", "24000")), 4, LeaseTestFixtures.nextChequeNumber()).lease().getId();
+        List<String> palmCheques = chequeIdsOf(palmLease);
+
+        LeaseTestFixtures c = fixtures().bootstrap().withLeaseServices(leaseService, generation, posting);
+        UUID otherLease = c.postedLease(c.unit(), c.renter(), LocalDate.now().minusDays(10), start, end,
+                List.of(line("RENT", "36000")), 4, LeaseTestFixtures.nextChequeNumber()).lease().getId();
+        List<String> otherCheques = chequeIdsOf(otherLease);
+
+        TenantContextHolder.setTenantId(a.tenantId());
+        LeaseTestFixtures.authenticateAsTenantAdmin();
+        assertThat(palmCheques).hasSize(4);
+        assertThat(otherCheques).hasSize(4);
+        return new OutsideCheques(palmCheques, otherCheques);
+    }
+
+    private List<String> chequeIdsOf(UUID leaseId) {
+        return chequeRepo.findByLease_IdOrderBySeqNoAsc(leaseId).stream().map(ch -> ch.getId().toString()).toList();
+    }
+
+    private static List<String> ids(JsonNode page) {
+        List<String> out = new java.util.ArrayList<>();
+        page.get("content").forEach(r -> out.add(r.get("id").asText()));
+        return out;
+    }
+
+    private static java.math.BigDecimal sumOfDays(JsonNode totals) {
+        java.math.BigDecimal sum = java.math.BigDecimal.ZERO;
+        for (JsonNode d : totals.get("days")) sum = sum.add(d.get("amount").decimalValue());
+        return sum;
+    }
+
+    /**
+     * Scale follow-up: the paged post-dated screen reads the window's totals, each day's full
+     * subtotal and the running total ahead of its page from {@code /post-dated/totals}; they add
+     * up to what the rows say, page by page, and a manager outside the building gets nothing.
+     */
+    @Test
+    void postDatedTotalsAddUpWhatThePagesHold() {
+        String window = "from=" + LocalDate.now() + "&to=" + LocalDate.now().plusYears(1).minusDays(1);
+        JsonNode totals = get(admin, "/api/v1/cheques/post-dated/totals?" + window);
+        assertThat(totals.get("count").asLong()).isEqualTo(4);
+        assertThat(totals.get("total").decimalValue()).isEqualByComparingTo("48000");
+        assertThat(totals.get("days")).hasSize(4);
+        assertThat(totals.get("amountBefore").decimalValue()).isEqualByComparingTo("0");
+
+        java.math.BigDecimal running = java.math.BigDecimal.ZERO;
+        for (int page = 0; page < 2; page++) {
+            JsonNode before = get(admin, "/api/v1/cheques/post-dated/totals?" + window + "&offset=" + (page * 2));
+            assertThat(before.get("amountBefore").decimalValue()).isEqualByComparingTo(running);
+            for (JsonNode row : get(admin, "/api/v1/cheques/post-dated/paged?" + window + "&page=" + page + "&size=2")
+                    .get("content")) {
+                running = running.add(row.get("amount").decimalValue());
+            }
+        }
+        assertThat(running).isEqualByComparingTo("48000");
+        assertThat(get(admin, "/api/v1/cheques/post-dated/totals?" + window + "&offset=99").get("amountBefore")
+                .decimalValue()).isEqualByComparingTo("48000");
+
+        assertThat(get(pm, "/api/v1/cheques/post-dated/totals?" + window).get("count").asLong()).isEqualTo(4);
+        JsonNode outside = get(pm, "/api/v1/cheques/post-dated/totals?" + window + "&propertyId=" + palm.getId());
+        assertThat(outside.get("count").asLong()).isZero();
+        assertThat(outside.get("days")).isEmpty();
+    }
+
+    /** Scale follow-up: the vendors list pages by the house order and the pickers offer active suppliers only. */
+    @Test
+    void vendorsPagedFiltersByActiveAndOrdersOldestFirst() {
+        Vendor dormant = new Vendor();
+        dormant.setNameEn("Emrill Dormant");
+        dormant.setActive(false);
+        vendorService.createVendor(dormant);
+        Vendor late = new Vendor();
+        late.setNameEn("Aardvark Emrill Late");
+        vendorService.createVendor(late);
+
+        assertThat(names(get(admin, "/api/v1/vendors/paged?q=emrill"), "nameEn"))
+                .containsExactly("Aardvark Emrill Late", "Emrill Dormant", "Emrill Services LLC");
+        assertThat(names(get(admin, "/api/v1/vendors/paged?q=emrill&order=oldest"), "nameEn"))
+                .containsExactly("Emrill Services LLC", "Emrill Dormant", "Aardvark Emrill Late");
+        assertThat(names(get(admin, "/api/v1/vendors/paged?q=emrill&active=true"), "nameEn"))
+                .containsExactly("Aardvark Emrill Late", "Emrill Services LLC");
+        assertThat(names(get(admin, "/api/v1/vendors/paged?q=emrill&active=false"), "nameEn"))
+                .containsExactly("Emrill Dormant");
     }
 
     /** The register search the coordinator reported from production: any capital letter found nothing. */

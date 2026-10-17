@@ -63,7 +63,11 @@ function RentersPageInner() {
     const userRole = session?.user?.role as UserRole | undefined;
     const canManageRenters = hasPermission(userRole, 'canManageRenters');
 
-    const [viewMode, setViewMode] = useState<"table" | "cards">("table");
+    // Scale #22: the table/cards toggle is in the URL (`?view=cards`), as on
+    // the Properties list.
+    const [viewModeParam, setViewModeParam] = useUrlState("view", "table");
+    const viewMode = viewModeParam === "cards" ? "cards" : "table";
+    const setViewMode = (v: "table" | "cards") => setViewModeParam(v);
 
     // Scale P1-3: search, page and size live in the URL (bookmarkable, same
     // pattern as the Tickets/Contracts lists) via the shared `useUrlState`

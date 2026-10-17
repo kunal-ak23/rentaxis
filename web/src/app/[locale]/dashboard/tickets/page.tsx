@@ -204,8 +204,16 @@ function TicketsPageInner() {
         if (!available && buildingFilter) setBuildingFilter("");
     };
     // S16-03: a maintenance-team TENANT_USER's own worklist vs. everything they
-    // can see (also what they reported).
-    const [myOnly, setMyOnly] = useState(false);
+    // can see (also what they reported). Scale #22: kept in the URL (`?mine=1`)
+    // like the other filters, so a reload or a shared link keeps the worklist;
+    // switching it goes back to page 1, as every other filter does.
+    const [mineParam, setMineParam] = useUrlState("mine", "", (v) => v === "1");
+    const myOnly = mineParam === "1";
+    const setMyOnly = (mine: boolean) => {
+        if (mine === myOnly) return;
+        setMineParam(mine ? "1" : "");
+        setPageParam("1");
+    };
 
     // Create modal
     const [showForm, setShowForm] = useState(false);

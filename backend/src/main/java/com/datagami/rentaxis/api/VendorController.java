@@ -38,13 +38,16 @@ public class VendorController {
         return ResponseEntity.ok(service.getAllVendors());
     }
 
-    /** Scale P1-3: searched and paged in the database. */
+    /** Scale P1-3: searched and paged in the database; {@code active} and {@code order=oldest} for the list screen. */
     @GetMapping("/paged")
     public ResponseEntity<org.springframework.data.domain.Page<Vendor>> getVendorsPaged(
             @org.springframework.web.bind.annotation.RequestParam(required = false) String q,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) Boolean active,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "name") String order,
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "0") int page,
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "25") int size) {
-        return ResponseEntity.ok(service.searchPaged(q, page, size));
+        // order=oldest: the vendors list's house order (created first); default: by name, for pickers.
+        return ResponseEntity.ok(service.searchPaged(q, active, "oldest".equalsIgnoreCase(order), page, size));
     }
 
     @GetMapping("/{id}")

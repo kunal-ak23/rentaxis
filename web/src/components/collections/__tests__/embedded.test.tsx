@@ -18,7 +18,8 @@ vi.mock("@/lib/api/leasing", async orig => {
     return { ...m,
         chequeApi: { ...m.chequeApi, toDeposit: api.toDeposit.mockResolvedValue(page), list: api.list.mockResolvedValue(page),
             returned: api.returned.mockResolvedValue(page),
-            postDated: api.postDated.mockResolvedValue([]),
+            postDatedPaged: api.postDated.mockResolvedValue(page),
+            postDatedTotals: vi.fn().mockResolvedValue({ count: 0, total: 0, days: [], amountBefore: 0 }),
             summary: vi.fn().mockResolvedValue({}), aging: vi.fn().mockResolvedValue({ buckets: [], totalCount: 0 }) },
         penaltyApi: { ...m.penaltyApi, list: api.penalties.mockResolvedValue(page) } };
 });

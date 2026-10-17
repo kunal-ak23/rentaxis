@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useSession } from "next-auth/react";
 import { CalendarClock, ShieldCheck } from "lucide-react";
@@ -10,7 +10,8 @@ import { useNameLookup } from "@/components/finance/useNameLookup";
 import ChequeStatusBadge from "@/components/cheques/ChequeStatusBadge";
 import { fmtIsoDate, round2 } from "@/components/leases/leaseMath";
 import { fmtAmount } from "@/lib/api/ledger";
-import { ApiError, chequeApi, type Cheque } from "@/lib/api/leasing";
+import { ApiError, chequeApi, type Cheque, type PostDatedTotals } from "@/lib/api/leasing";
+import { Pagination } from "@/components/ui/Pagination";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { businessTodayIso } from "@/lib/businessDate";
 import { cn } from "@/lib/utils";
@@ -43,8 +44,12 @@ function reflectInUrl(w: PdcWindow) {
     window.history.replaceState(window.history.state, "", url.toString());
 }
 
-/** Maturity date grouping, in chequeDate order, each day carrying its own
- * subtotal and a running total across the whole window. */
+/** Rows per page by default; the book is read a page at a time (scale follow-up). */
+export const PDC_PAGE_SIZE = 50;
+const PAGE_SIZES = [25, 50, 100, 200];
+
+/** Maturity date grouping of one page, in chequeDate order. The subtotal is the page's share of
+ * the day; the panel shows the day's full subtotal from the totals call instead when it has it. */
 function groupByMaturity(rows: Cheque[]): { date: string; rows: Cheque[]; subtotal: number }[] {
     const byDate = new Map<string, Cheque[]>();
     for (const c of rows) {
@@ -83,21 +88,44 @@ export default function PostDatedPanel(props: { embedded?: boolean; propertyId?:
     // this panel's own picker is hidden.
     const propertyId = props.propertyId ?? ownPropertyId;
     const [rows, setRows] = useState<Cheque[]>([]);
+    const [totals, setTotals] = useState<PostDatedTotals | null>(null);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
+    const [page, setPage] = useState(1);
+    const [size, setSize] = useState(PDC_PAGE_SIZE);
+    // A new window or property starts again at page 1.
+    const filterKey = `${win.from}|${win.to}|${propertyId}`;
+    const [pageKey, setPageKey] = useState(filterKey);
+    if (pageKey !== filterKey) {
+        setPageKey(filterKey);
+        setPage(1);
+    }
+    const seq = useRef(0);
 
+    // Scale follow-up: one page of the book plus its totals (window total, each day's full
+    // subtotal, and the running total ahead of this page) instead of the whole window.
     const load = useCallback(async () => {
+        const mine = ++seq.current;
         setLoading(true);
         setLoadError(null);
+        const q = { from: win.from, to: win.to, propertyId: propertyId || undefined };
         try {
-            setRows(await chequeApi.postDated({ from: win.from, to: win.to, propertyId: propertyId || undefined }));
+            const [p, tot] = await Promise.all([
+                chequeApi.postDatedPaged({ ...q, page: page - 1, size }),
+                chequeApi.postDatedTotals({ ...q, offset: (page - 1) * size }),
+            ]);
+            if (mine !== seq.current) return;
+            setRows(p.content ?? []);
+            setTotals(tot);
         } catch (err) {
+            if (mine !== seq.current) return;
             setRows([]);
+            setTotals(null);
             setLoadError(err instanceof ApiError ? err.message : tCommon("loadFailed"));
         } finally {
-            setLoading(false);
+            if (mine === seq.current) setLoading(false);
         }
-    }, [win.from, win.to, propertyId, tCommon]);
+    }, [win.from, win.to, propertyId, page, size, tCommon]);
 
     useEffect(() => {
         if (!allowed || problem) {
@@ -115,7 +143,8 @@ export default function PostDatedPanel(props: { embedded?: boolean; propertyId?:
         choose(preset === "custom" ? { ...win, preset } : { preset, ...presetWindow(preset, businessTodayIso()) });
 
     const groups = useMemo(() => groupByMaturity(rows), [rows]);
-    const total = useMemo(() => rows.reduce((s, c) => round2(s + c.amount), 0), [rows]);
+    const dayTotals = useMemo(() => new Map((totals?.days ?? []).map(d => [d.date.slice(0, 10), d])), [totals]);
+    const total = totals ? totals.total : rows.reduce((s, c) => round2(s + c.amount), 0);
 
     if (userRole && !allowed) {
         return (
@@ -129,7 +158,7 @@ export default function PostDatedPanel(props: { embedded?: boolean; propertyId?:
         );
     }
 
-    let running = 0;
+    let running = totals?.amountBefore ?? 0;
 
     return (
         <div>
@@ -237,9 +266,10 @@ export default function PostDatedPanel(props: { embedded?: boolean; propertyId?:
                             <div className="px-4 py-2.5 bg-input/40 border-b border-border flex items-center justify-between">
                                 <span className="text-xs font-semibold">{fmtIsoDate(group.date, locale)}</span>
                                 <span className="text-xs font-semibold tabular-nums" data-testid={`post-dated-subtotal-${group.date}`}>
-                                    {t("subtotal")}: {fmtAmount(group.subtotal)}
+                                    {t("subtotal")}: {fmtAmount(dayTotals.get(group.date)?.amount ?? group.subtotal)}
                                 </span>
                             </div>
+                            <div className="overflow-x-auto">
                             <table className="w-full">
                                 <thead>
                                     <tr>
@@ -273,8 +303,17 @@ export default function PostDatedPanel(props: { embedded?: boolean; propertyId?:
                                     })}
                                 </tbody>
                             </table>
+                            </div>
                         </div>
                     ))}
+                    <Pagination
+                        currentPage={page}
+                        totalItems={totals?.count ?? rows.length}
+                        itemsPerPage={size}
+                        onPageChange={setPage}
+                        onItemsPerPageChange={n => { setSize(n); setPage(1); }}
+                        itemsPerPageOptions={PAGE_SIZES}
+                    />
                 </div>
             )}
         </div>

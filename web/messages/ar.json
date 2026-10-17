@@ -1671,7 +1671,6 @@
     "errTimeout":"يجب أن تكون مهلة الموافقة بين 1 و1440 دقيقة.",
     "regularVisitorsTitle": "الزوار المنتظمون",
     "regularVisitorsDescription": "سجّل عاملة منزلية أو سائقًا أو مزوّد خدمة لوحدة معيّنة، ويتعرّف عليه الحارس برقم جواله.",
-    "unitsLoadError": "تعذّر تحميل الوحدات.",
     "registerVisitor": "تسجيل الزائر",
     "visitorRegistered": "تم تسجيل {name}.",
     "visitorRegisterError": "تعذّر تسجيل الزائر.",
@@ -4280,6 +4279,10 @@
     "issuedCheques": "الشيكات الصادرة"
   },
   "PaymentRuns": {
+    "allStatuses": "كل الحالات",
+    "paymentDateFrom": "تاريخ الدفع من",
+    "paymentDateTo": "تاريخ الدفع إلى",
+    "noRunsFiltered": "لا توجد دفعات مجمعة تطابق هذه المرشحات.",
     "missingSelected": "{count, plural, one {فاتورة مختارة لم تعد} two {فاتورتان مختارتان لم تعودا} few {# فواتير مختارة لم تعد} many {# فاتورة مختارة لم تعد} other {# فاتورة مختارة لم تعد}} في قائمة المستحقات (سُددت من مكان آخر، أو خارج المرشحات).",
     "dropMissing": "إزالتها",
     "goneSelected": "{count, plural, one {فاتورة مختارة لم تعد مستحقة} two {فاتورتان مختارتان لم تعودا مستحقتين} few {# فواتير مختارة لم تعد مستحقة} many {# فاتورة مختارة لم تعد مستحقة} other {# فاتورة مختارة لم تعد مستحقة}} (سُددت أو عُكست في مكان آخر).",
@@ -5259,13 +5262,16 @@
     "unavailable": "عامل تصفية المبنى (تعذّر تحميل المباني)"
   },
   "Pickers": {
+    "selectVendor": "اختر موردًا",
     "searching": "جارٍ البحث…",
     "noMatches": "لا توجد نتائج",
     "searchFailed": "تعذّر البحث — حاول مرة أخرى",
     "typeToSearch": "اكتب للبحث",
     "commercial": "تجاري",
     "selectUnit": "اختر وحدة",
-    "selectRenter": "اختر مستأجرًا"
+    "selectRenter": "اختر مستأجرًا",
+    "selectContract": "اختر عقدًا",
+    "searchContracts": "الوحدة أو المستأجر أو العقار أو رقم إيجاري"
   },
   "PageState": {
     "accessDeniedTitle": "تم رفض الوصول",
