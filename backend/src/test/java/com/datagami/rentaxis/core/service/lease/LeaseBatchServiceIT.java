@@ -67,6 +67,8 @@ class LeaseBatchServiceIT extends AbstractPostgresIT {
     @Autowired LeaseBatchService batch;
     @Autowired LeaseRenewalService renewal;
     @Autowired LeaseTerminationService termination;
+    /** The same bean, spied, so a test can see the transaction a batch preview runs in (review P3-1). */
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean LeaseTerminationService terminationSpy;
     @Autowired LeasePostingService posting;
     @Autowired ChequeGenerationService chequeGeneration;
     @Autowired RentFreeService rentFree;
@@ -186,6 +188,13 @@ class LeaseBatchServiceIT extends AbstractPostgresIT {
 
     private void assertRenewParity(LeaseBatch.RentRule rule, RentChange singleChange, boolean rentFreeJanuary,
                                    List<LeaseLineInput> extra, String expectedRent) {
+        assertRenewParity(rule, singleChange, rentFreeJanuary, extra, extra, expectedRent);
+    }
+
+    /** {@code batchExtra} is what the bulk dialog sends, {@code singleExtra} what the single renew dialog sends. */
+    private void assertRenewParity(LeaseBatch.RentRule rule, RentChange singleChange, boolean rentFreeJanuary,
+                                   List<LeaseLineInput> batchExtra, List<LeaseLineInput> singleExtra, String expectedRent) {
+        List<LeaseLineInput> extra = batchExtra;
         List<UUID> viaBatch = List.of(posted(rentFreeJanuary), posted(rentFreeJanuary));
         List<UUID> byHand = List.of(posted(rentFreeJanuary), posted(rentFreeJanuary));
 
@@ -194,7 +203,7 @@ class LeaseBatchServiceIT extends AbstractPostgresIT {
         assertThat(rows).extracting(r -> r.newRent().stripTrailingZeros().toPlainString()).containsOnly(expectedRent);
 
         for (int i = 0; i < viaBatch.size(); i++) {
-            LeaseDTO hand = renewal.renew(byHand.get(i), single(singleChange, extra));
+            LeaseDTO hand = renewal.renew(byHand.get(i), single(singleChange, singleExtra));
             // "Generate cheques" on the draft, four instalments as now (the fixtures carry no payment terms).
             chequeGeneration.generate(hand.getId(), new com.datagami.rentaxis.api.dto.lease.GenerateChequesRequest(
                     4, null, null, null, null, null, null));
@@ -248,6 +257,34 @@ class LeaseBatchServiceIT extends AbstractPostgresIT {
     void aRenewalFeeIsChargedOnEveryRenewalAsOnTheSingleRenew() {
         assertRenewParity(new LeaseBatch.RentRule(LeaseBatch.RentRule.Mode.NONE, null, null), null, false,
                 List.of(line("RENEWAL_FEE", "1050")), "80000");
+    }
+
+    @Test
+    void aVatableFeeKeepsItsChargeTypesVatAsOnTheSingleRenew() {
+        // Review P2-1: the single renew dialog sends the fee with its charge type's VAT default
+        // (here on); the bulk dialog sends the same. Both draft a VAT-bearing fee line, and post the
+        // same journals, output VAT included.
+        jdbc.update("update charge_types set vat_applicable_default = true where tenant_id = ? and code = 'ADMIN_FEE'",
+                f.tenantId());
+        LeaseLineInput fee = new LeaseLineInput(null, "ADMIN_FEE", new BigDecimal("1000"), BigDecimal.ZERO,
+                null, true, null, null, null);
+        assertRenewParity(new LeaseBatch.RentRule(LeaseBatch.RentRule.Mode.NONE, null, null), null, false,
+                List.of(fee), List.of(fee), "80000");
+        UUID any = jdbc.queryForObject("""
+                select ll.lease_id from lease_lines ll join charge_types ct on ct.id = ll.charge_type_id
+                join leases l on l.id = ll.lease_id
+                where ct.code = 'ADMIN_FEE' and l.renewed_from_lease_id is not null limit 1""", UUID.class);
+        assertThat(jdbc.queryForObject("""
+                select ll.vat_applicable from lease_lines ll join charge_types ct on ct.id = ll.charge_type_id
+                where ll.lease_id = ? and ct.code = 'ADMIN_FEE'""", Boolean.class, any)).isTrue();
+        // A fee sent with no flag takes the type's default on the server too.
+        UUID a = posted(false);
+        LeaseBatch.RenewRow row = batch.renew(renewAll(List.of(a), new LeaseBatch.RentRule(LeaseBatch.RentRule.Mode.NONE, null, null),
+                false, List.of(line("ADMIN_FEE", "1000")))).get(0);
+        assertThat(row.ok()).as(row.message()).isTrue();
+        assertThat(jdbc.queryForObject("""
+                select ll.vat_applicable from lease_lines ll join charge_types ct on ct.id = ll.charge_type_id
+                where ll.lease_id = ? and ct.code = 'ADMIN_FEE'""", Boolean.class, row.renewalLeaseId())).isTrue();
     }
 
     @Test
@@ -352,6 +389,57 @@ class LeaseBatchServiceIT extends AbstractPostgresIT {
             assertThat(jdbc.queryForObject("select terminated_on from leases where id = ?", LocalDate.class, viaBatch.get(i)))
                     .isEqualTo(t);
         }
+    }
+
+    @Test
+    void theSplitThePreviewShowedIsTheSplitThatIsPostedAndAStaleOneIsRefused() {
+        // Review P3-2: the confirm sends each preview's cheque lists; the single terminate refuses a
+        // contract whose register no longer matches them, and posts exactly them otherwise.
+        LocalDate t = LocalDate.of(2027, 6, 30);
+        UUID viaBatch = posted(false);
+        UUID byHand = posted(false);
+        UUID stale = posted(false);
+        var previews = batch.previewTerminations(new LeaseBatch.TerminateRequest(List.of(viaBatch, stale), t, null));
+        java.util.Map<UUID, LeaseBatch.ChequeSplit> splits = new java.util.HashMap<>();
+        for (var p : previews) {
+            assertThat(p.ok()).as(p.message()).isTrue();
+            splits.put(p.leaseId(), new LeaseBatch.ChequeSplit(
+                    p.preview().chequesToReturn().stream().map(com.datagami.rentaxis.api.dto.cheque.ChequeDTO::id).toList(),
+                    p.preview().chequesToKeep().stream().map(com.datagami.rentaxis.api.dto.cheque.ChequeDTO::id).toList()));
+        }
+        assertThat(splits.get(viaBatch).returnChequeIds()).isNotEmpty();
+        // The stale contract's register changes after its preview: a kept cheque is no longer in either list.
+        LeaseBatch.ChequeSplit s0 = splits.get(stale);
+        splits.put(stale, new LeaseBatch.ChequeSplit(s0.returnChequeIds(), s0.keepChequeIds().subList(1, s0.keepChequeIds().size())));
+        List<String> staleBefore = journals(stale);
+
+        List<LeaseBatch.TerminateRow> rows = batch.terminate(
+                new LeaseBatch.TerminateRequest(List.of(viaBatch, stale), t, null, splits), UUID.randomUUID());
+        assertThat(rows).extracting(LeaseBatch.TerminateRow::ok).containsExactly(true, false);
+        assertThat(rows.get(1).message()).contains("in neither list");
+        assertThat(journals(stale)).isEqualTo(staleBefore);
+        assertThat(jdbc.queryForObject("select status from leases where id = ?", String.class, stale)).isEqualTo("ACTIVE");
+
+        var handPreview = tx.execute(st -> termination.preview(byHand, t));
+        termination.terminate(byHand, new TerminateLeaseRequest(t,
+                handPreview.chequesToReturn().stream().map(com.datagami.rentaxis.api.dto.cheque.ChequeDTO::id).toList(),
+                handPreview.chequesToKeep().stream().map(com.datagami.rentaxis.api.dto.cheque.ChequeDTO::id).toList(), null),
+                UUID.randomUUID());
+        assertThat(journals(viaBatch)).isEqualTo(journals(byHand));
+        assertThat(chequeStatuses(viaBatch)).isEqualTo(chequeStatuses(byHand));
+    }
+
+    @Test
+    void thePreviewRunsReadOnly() {
+        // Review P3-1: a batch preview row is a read-only transaction, as the single preview is.
+        UUID a = posted(false);
+        var seen = new java.util.concurrent.atomic.AtomicReference<Boolean>();
+        org.mockito.Mockito.doAnswer(inv -> {
+            seen.set(org.springframework.transaction.support.TransactionSynchronizationManager.isCurrentTransactionReadOnly());
+            return inv.callRealMethod();
+        }).when(terminationSpy).preview(org.mockito.ArgumentMatchers.eq(a), org.mockito.ArgumentMatchers.any());
+        batch.previewTerminations(new LeaseBatch.TerminateRequest(List.of(a), LocalDate.of(2027, 6, 30), null));
+        assertThat(seen.get()).isTrue();
     }
 
     @Test

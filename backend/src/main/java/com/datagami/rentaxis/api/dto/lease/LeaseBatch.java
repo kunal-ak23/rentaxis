@@ -86,12 +86,26 @@ public final class LeaseBatch {
      * @param terminationDate null = each contract's own end date (the season's case: the
      *                        contracts ending on a day, ended on it)
      * @param notes           kept on each lease and its event trail, as on the single terminate
+     * @param splits          per contract, the cheque split its preview showed (review P3-2): sent to
+     *                        the single terminate as its return/keep lists, which refuses the contract
+     *                        if its register changed since — what was previewed is what is posted.
+     *                        A contract with no entry takes the default split, as the single page's
+     *                        "accept the preview" does.
      */
     public record TerminateRequest(@NotEmpty(message = "Choose at least one contract")
                                    @Size(max = MAX_LEASES, message = "At most " + MAX_LEASES + " contracts at a time")
                                    List<@NotNull UUID> leaseIds,
                                    LocalDate terminationDate,
-                                   String notes) {
+                                   String notes,
+                                   Map<UUID, ChequeSplit> splits) {
+
+        public TerminateRequest(List<UUID> leaseIds, LocalDate terminationDate, String notes) {
+            this(leaseIds, terminationDate, notes, null);
+        }
+    }
+
+    /** The uncleared rows a termination hands back and keeps, as its preview listed them. */
+    public record ChequeSplit(List<UUID> returnChequeIds, List<UUID> keepChequeIds) {
     }
 
     /** One contract's termination preview: the single preview, or why there is none. */

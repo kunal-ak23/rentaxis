@@ -60,6 +60,8 @@ public class LeaseBatchService {
     private final ChequeGenerationService chequeGeneration;
     private final com.datagami.rentaxis.domain.repository.ChequeRepository chequeRepository;
     private final TransactionTemplate rowTx;
+    /** Review P3-1: previews and plans run read-only, as the single preview does — Hibernate never flushes. */
+    private final TransactionTemplate readRowTx;
 
     public LeaseBatchService(LeaseRepository leaseRepository,
                              LeaseAccessPolicy leaseAccessPolicy,
@@ -76,6 +78,9 @@ public class LeaseBatchService {
         this.chequeRepository = chequeRepository;
         this.rowTx = new TransactionTemplate(transactionManager);
         this.rowTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.readRowTx = new TransactionTemplate(transactionManager);
+        this.readRowTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.readRowTx.setReadOnly(true);
     }
 
     // ------------------------------------------------------------------
@@ -174,9 +179,9 @@ public class LeaseBatchService {
                 change, null, extra), previous);
     }
 
-    /** {@link #termsFor} in a read-only transaction of its own, for callers outside one. */
+    /** {@link #termsFor} in a read-only transaction of its own (review P3-1), for callers outside one. */
     public RenewLeaseRequest renewRequestFor(UUID leaseId, LeaseBatch.RenewRequest r) {
-        return rowTx.execute(s -> termsFor(leaseId, r)).request();
+        return readRowTx.execute(s -> termsFor(leaseId, r)).request();
     }
 
     /**
@@ -215,7 +220,7 @@ public class LeaseBatchService {
     public List<LeaseBatch.TerminatePreviewRow> previewTerminations(LeaseBatch.TerminateRequest r) {
         List<LeaseBatch.TerminatePreviewRow> rows = new ArrayList<>();
         for (UUID leaseId : distinct(r.leaseIds())) {
-            rows.add(run(leaseId, id -> {
+            rows.add(run(readRowTx, leaseId, id -> {
                 LocalDate t = dateFor(id, r.terminationDate());
                 TerminationPreviewDTO preview = terminationService.preview(id, t);
                 return new LeaseBatch.TerminatePreviewRow(id, true, t, preview, null, null, null);
@@ -235,7 +240,9 @@ public class LeaseBatchService {
         for (UUID leaseId : distinct(r.leaseIds())) {
             rows.add(run(leaseId, id -> {
                 LocalDate t = dateFor(id, r.terminationDate());
-                LeaseDTO ended = terminationService.terminate(id, new TerminateLeaseRequest(t, null, null,
+                LeaseBatch.ChequeSplit split = r.splits() == null ? null : r.splits().get(id);
+                LeaseDTO ended = terminationService.terminate(id, new TerminateLeaseRequest(t,
+                        split == null ? null : split.returnChequeIds(), split == null ? null : split.keepChequeIds(),
                         r.notes() == null || r.notes().isBlank() ? null : r.notes().trim()), byUser);
                 return new LeaseBatch.TerminateRow(id, true, t, ended.getStatus() == null ? null : ended.getStatus().name(),
                         ended.getTerminationJournalId(), null, null, null);
@@ -267,8 +274,12 @@ public class LeaseBatchService {
      * only and comes back as its row, in the single act's own words (and code, when it has one).
      */
     private <R> R run(UUID leaseId, Function<UUID, R> work, Failure<R> failure) {
+        return run(rowTx, leaseId, work, failure);
+    }
+
+    private <R> R run(TransactionTemplate tx, UUID leaseId, Function<UUID, R> work, Failure<R> failure) {
         try {
-            return rowTx.execute(s -> work.apply(leaseId));
+            return tx.execute(s -> work.apply(leaseId));
         } catch (BusinessRuleViolationException e) {
             return failure.of(e.getCode(), e.getCode() == null ? null : e.getArgs(), e.getMessage());
         } catch (NotFoundException | org.springframework.security.access.AccessDeniedException e) {
