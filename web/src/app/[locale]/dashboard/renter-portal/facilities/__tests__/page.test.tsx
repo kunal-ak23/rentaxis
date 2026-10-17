@@ -11,6 +11,8 @@ vi.mock("next-intl", () => {
         for (const [k, v] of Object.entries(vars)) out = out.replaceAll(`{${k}}`, String(v));
         return out;
     };
+    // serverText asks `t.has(code)` before translating a coded refusal; every key exists here.
+    (translate as unknown as { has: (key: string) => boolean }).has = () => true;
     return {
         useTranslations: () => translate,
         useLocale: () => "en",
@@ -191,6 +193,25 @@ describe("RenterFacilitiesPage stale-state resync", () => {
         // Held no longer disables Request: the spot is only taken for the dates it is booked,
         // so the renter can still ask for other dates (the server refuses an overlap).
         expect(screen.getByRole("button", { name: "request" })).toBeEnabled();
+    });
+
+    it("resyncs after a booking.spotAttached refusal so the newly attached bay leaves the list", async () => {
+        api.fetchMyFacilities
+            .mockResolvedValueOnce(facilitiesWithSpot(false))
+            .mockResolvedValue({ ...facilitiesWithSpot(false), parkingSpots: [] });
+        api.fetchMyBookings.mockResolvedValue([]);
+        api.createBooking.mockRejectedValue(new ApiError(400, "Parking bay P-101 is allocated to a unit",
+            JSON.stringify({ status: 400, code: "booking.spotAttached", message: "Parking bay P-101 is allocated to a unit" })));
+
+        render(<RenterFacilitiesPage />);
+        await waitFor(() => expect(screen.getByText("available")).toBeInTheDocument());
+
+        fireEvent.click(screen.getByRole("button", { name: "request" }));
+        await waitFor(() => expect(screen.getByRole("button", { name: "submitRequest" })).toBeInTheDocument());
+        fireEvent.click(screen.getByRole("button", { name: "submitRequest" }));
+
+        await waitFor(() => expect(api.fetchMyFacilities).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(screen.queryByText("available")).not.toBeInTheDocument());
     });
 
     it("shows each amenity's fee before booking (F14-50)", async () => {

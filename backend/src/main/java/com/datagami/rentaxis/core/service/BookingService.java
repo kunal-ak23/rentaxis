@@ -344,8 +344,9 @@ public class BookingService {
 
     /**
      * The last day of the renter's contract run on the unit that covers {@code from}
-     * (back-to-back renewals merged), or null when that run has no end date or none
-     * covers {@code from} — {@link #requireWithinCurrentLease} reports the latter.
+     * (back-to-back renewals merged), capped at {@link #MAX_PARKING_YEARS} after
+     * {@code from}; null when that run has no end date or none covers {@code from} —
+     * {@link #requireWithinCurrentLease} reports the latter.
      */
     private LocalDate contractEnd(UUID tenantId, UUID renterUserId, UUID unitId, LocalDate from) {
         if (leaseRepository == null || from == null || unitId == null) return null;
@@ -353,7 +354,12 @@ public class BookingService {
                 .filter(l -> Objects.equals(l.getTenantId(), tenantId))
                 .filter(l -> l.getRenter() != null && Objects.equals(l.getRenter().getUserId(), renterUserId))
                 .toList();
-        return chainEndCovering(leases, from);
+        LocalDate end = chainEndCovering(leases, from);
+        // A filled end obeys the same cap as a typed one: a contract running past
+        // MAX_PARKING_YEARS gives a booking that stops at the cap (the renter can
+        // request again later), never a rangeTooLong for dates nobody typed.
+        LocalDate cap = from.plusYears(MAX_PARKING_YEARS);
+        return end != null && end.isAfter(cap) ? cap : end;
     }
 
     /** {@link #contractEnd}'s walk, the same run-merging as {@link #coveredByChain}. */

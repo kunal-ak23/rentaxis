@@ -203,7 +203,16 @@ export default function RenterFacilitiesPage() {
                     await Promise.all([loadFacilities(), loadBookings()]);
                 } catch { /* best-effort resync; the conflict message still shows */ }
             }
-            else if (code) setDialogError(serverText(tCommon, err));
+            else if (code) {
+                setDialogError(serverText(tCommon, err));
+                // The bay was attached to a unit after this page loaded: it is not
+                // bookable any more, so resync the lists to drop it from "Parking".
+                if (code === "booking.spotAttached") {
+                    try {
+                        await Promise.all([loadFacilities(), loadBookings()]);
+                    } catch { /* best-effort resync; the message still shows */ }
+                }
+            }
             else if (err instanceof ApiError) setDialogError(err.message);
             else setDialogError(t("requestError"));
             setSubmitting(false);

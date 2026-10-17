@@ -1047,6 +1047,24 @@ class BookingServiceTest {
     }
 
     @Test
+    void aContractLongerThanTheCap_givesAnUndatedRequestAnEndAtTheCap_notARefusal() {
+        chain(lease(LeaseStatus.RENEWED, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31)),
+                lease(LeaseStatus.ACTIVE, LocalDate.of(2027, 1, 1), LocalDate.of(2029, 12, 31)));
+        ParkingSpot s = spot(true);
+        when(facilityService.lockParkingSpot(tenantId, s.getId())).thenReturn(s);
+        when(facilityService.parkingSpotVisibleToUnit(s, unit)).thenReturn(true);
+        when(bookingRepository.findFirstByTenantIdAndRenterUserIdAndParkingSpotIdAndStatus(
+                tenantId, renterUserId, s.getId(), BookingRequestStatus.PENDING)).thenReturn(Optional.empty());
+
+        BookingRequest undated = service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.PARKING_SPOT, s.getId(), unit.getId(), null, null));
+
+        assertThat(undated.getPreferredDate()).isEqualTo(LocalDate.of(2026, 8, 1));
+        assertThat(undated.getPreferredEndDate())
+                .isEqualTo(LocalDate.of(2026, 8, 1).plusYears(BookingService.MAX_PARKING_YEARS));
+    }
+
+    @Test
     void anOpenEndedContract_leavesTheParkingEndOpen() {
         assertThat(BookingService.chainEndCovering(List.of(
                 lease(LeaseStatus.ACTIVE, LocalDate.of(2026, 1, 1), null)), LocalDate.of(2026, 8, 1))).isNull();
