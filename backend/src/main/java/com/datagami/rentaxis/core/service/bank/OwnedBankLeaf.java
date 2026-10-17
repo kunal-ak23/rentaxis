@@ -242,8 +242,9 @@ public class OwnedBankLeaf {
     /**
      * Sim r21 S21-04: a property's bank leaf generated before any bank account took it
      * carries the template's name ("Bank - <property>", or the old seed's
-     * "Emirates Islamic - <property>"); once a bank account adopts it, it is named after
-     * that bank, as a leaf generated with the bank in place is. Only that exact,
+     * "Emirates Islamic - <property>"), or the name an earlier owner gave it
+     * ("<that bank> - <property>", sim r22 S22-01); once a bank account adopts it, it is
+     * named after that bank, as a leaf generated with the bank in place is. Only that exact,
      * untouched name changes. {@code name_en} follows when it still held the old name
      * (review P2-1: the Chart of Accounts shows and saves it); a distinct English name
      * someone typed is kept, and {@code name_ar} is the generic "bank account" label.
@@ -260,7 +261,14 @@ public class OwnedBankLeaf {
                    and nb.id = :b and nb.tenant_id = :t
                    and p.id = a.property_id and p.tenant_id = :t
                    and a.account_sub_type = 'BANK' and not a.is_group
-                   and a.name in (cast(:names0 as text) || p.name_en, cast(:names1 as text) || p.name_en)
+                   and (a.name in (cast(:names0 as text) || p.name_en, cast(:names1 as text) || p.name_en)
+                        -- sim r22 S22-01: or the name another bank account of the organisation
+                        -- gave it ("<that bank> - <property>"): an org-wide bank adopts every
+                        -- unowned property leaf on creation, and a leaf it later lets go keeps
+                        -- that name until the bank that takes it renames it.
+                        or exists (select 1 from bank_accounts ob
+                                    where ob.tenant_id = :t and ob.id <> :b
+                                      and a.name = ob.bank_name || ' - ' || p.name_en))
                    and a.name <> nb.bank_name || ' - ' || p.name_en""",
                 new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("a", accountIds)
                         .addValue("names0", UNOWNED_DEFAULT_PREFIXES.get(0))

@@ -309,7 +309,8 @@ public class BankReconciliationService {
                 s.depositsInTransitItems(), s.unpresentedItems(), s.bookedAfterItems(), s.unrecordedItems(),
                 s.withoutEvidenceCount(), s.matchedByMethod(), s.checks(), false, s.preparedAt(), s.preparedByName(),
                 r.finalizedAt(), userName(r.finalizedBy()), r.reopenedAt(), userName(r.reopenedBy()), r.reopenReason(),
-                s.unprovenDays() == null ? List.of() : s.unprovenDays(), s.dayTotalsVerdict());
+                s.unprovenDays() == null ? List.of() : s.unprovenDays(), s.dayTotalsVerdict(),
+                "DRAFT".equals(r.status()) ? s.remedyReopenThrough() : null);
     }
 
     // ------------------------------------------------------------------ figures
@@ -404,6 +405,10 @@ public class BankReconciliationService {
         checks.add(continuity(opening, closing, movement, period, from, chainSkipped, unconfirmed.keySet(), remedy));
         lineOrder(unconfirmed, dayVerdicts, closingTyped, openingKnown, first && r.opening() != null, remedy)
                 .ifPresent(checks::add);
+        // Sim r22 S22-03: the derived closing is the last stored line's balance. It is the
+        // bank's closing only if nothing was posted after that line up to the period end;
+        // a file that stopped mid-way through its last date cannot say so.
+        if (!closingTyped && closing != null) closingProof(t, b, to).ifPresent(checks::add);
 
         // ---- book side
         BigDecimal book = sum(jdbc.queryForObject("""
@@ -575,7 +580,7 @@ public class BankReconciliationService {
                 adjustedBank, adjustedBook, difference, dit, unpresented, bookedAfter, unrecorded, withoutEvidence,
                 byMethod, checks, canFinalize, Instant.now(clock), userName(BankStatementImportService.currentUserId()),
                 r.finalizedAt(), userName(r.finalizedBy()), r.reopenedAt(), userName(r.reopenedBy()), r.reopenReason(),
-                unprovenDays, dayTotalsVerdict(dayVerdicts));
+                unprovenDays, dayTotalsVerdict(dayVerdicts), remedy.reopenThrough());
     }
 
     /**
@@ -686,6 +691,38 @@ public class BankReconciliationService {
     }
 
     /**
+     * Sim r22 S22-03 (ruling): a reconciliation is finalized at a derived closing only when
+     * the period's last line-day is known to end where its stored lines end — a file held
+     * that day and a later one (or a Closing row dated after it): {@code end_known}, or
+     * an import that brought lines of the day and runs past it. Otherwise the closing must
+     * be typed from the paper statement (one figure); CONTINUITY then checks it against
+     * the lines. Absent when the closing is proven.
+     */
+    private Optional<BankRecDTOs.Check> closingProof(UUID t, UUID b, LocalDate to) {
+        MapSqlParameterSource p = new MapSqlParameterSource("t", t).addValue("b", b).addValue("to", to);
+        LocalDate last = jdbc.queryForObject("""
+                select max(txn_date) from bank_statement_lines where tenant_id = :t and bank_account_id = :b
+                and txn_date <= :to""", p, LocalDate.class);
+        if (last == null) return Optional.empty();
+        p.addValue("d", last);
+        Boolean ended = jdbc.queryForObject("""
+                select exists (select 1 from bank_statement_days d
+                                where d.tenant_id = :t and d.bank_account_id = :b and d.txn_date = :d and d.end_known)
+                    or exists (select 1 from bank_statement_lines l
+                                 join bank_statement_line_sources s on s.line_id = l.id and s.tenant_id = l.tenant_id
+                                 join bank_statement_imports i on i.id = s.import_id and i.tenant_id = s.tenant_id
+                                where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date = :d
+                                  and i.last_date > :d)""", p, Boolean.class);
+        if (Boolean.TRUE.equals(ended)) return Optional.empty();
+        String d = last.format(DMY);
+        return Optional.of(new BankRecDTOs.Check("CLOSING", false, "The imported lines end on " + d
+                + ", and no imported file shows that day ended there: a line the bank posted later that day"
+                + (last.isBefore(to) ? ", or after it up to " + to.format(DMY) + "," : "")
+                + " would not show in any balance. Type the closing balance at " + to.format(DMY)
+                + " from the paper statement, or import a statement that runs past " + d + "."));
+    }
+
+    /**
      * Sim r21 S21-02: how to keep overlapping exports from needing day totals. A day is
      * settled without typing only when one file holds it whole, and a file can show
      * that only for a day that is neither its first nor its last (or one its boundary
@@ -707,12 +744,34 @@ public class BankReconciliationService {
      * last day. So the edges are the nearest complete days before and after.
      */
     static final class Remedy {
-        static final Remedy NONE = new Remedy(new TreeSet<>());
+        static final Remedy NONE = new Remedy(new TreeSet<>(), null);
 
         private final TreeSet<LocalDate> complete;
+        private final LocalDate locked;
+        /** Sim r22 S22-04: set when a named statement starts inside the finalized period. */
+        private LocalDate reopenThrough;
 
-        Remedy(TreeSet<LocalDate> complete) {
+        Remedy(TreeSet<LocalDate> complete, LocalDate locked) {
             this.complete = complete;
+            this.locked = locked;
+        }
+
+        /** The finalized period a named statement reaches into, or null (S22-04). */
+        LocalDate reopenThrough() {
+            return reopenThrough;
+        }
+
+        /**
+         * S22-04: a statement whose first day is finalized imports only if it brings no new
+         * line there. The nearest settled day before is the latest one, so when it is
+         * finalized no open day could start the statement instead; say what to do if the
+         * import is refused.
+         */
+        private String lockNote(LocalDate a) {
+            if (locked == null || a.isAfter(locked)) return "";
+            reopenThrough = locked;
+            return " (it starts inside the reconciliation finalized through " + locked.format(DMY)
+                    + ": if the import is refused because it brings a line there, reopen that reconciliation first)";
         }
 
         /** The first and last dates of a statement that holds {@code first}..{@code last} whole. */
@@ -727,7 +786,8 @@ public class BankReconciliationService {
             Optional<LocalDate[]> s = span(first, last);
             if (s.isPresent()) {
                 return "; or import one statement that runs from " + s.get()[0].format(DMY) + " to " + s.get()[1].format(DMY)
-                        + ", which holds " + (first.equals(last) ? first.format(DMY) : "those days") + " whole";
+                        + ", which holds " + (first.equals(last) ? first.format(DMY) : "those days") + " whole"
+                        + lockNote(s.get()[0]);
             }
             return "; or import one statement that holds every line of the imports that brought "
                     + (first.equals(last) ? first.format(DMY) + "'s" : "those days'") + " lines, then delete those "
@@ -739,7 +799,7 @@ public class BankReconciliationService {
         String importing(LocalDate first, LocalDate last) {
             if (this == NONE) return "";
             return span(first, last).map(s -> ": one statement that runs from " + s[0].format(DMY) + " to "
-                    + s[1].format(DMY) + " brings them and leaves no day to settle").orElse("");
+                    + s[1].format(DMY) + " brings them and leaves no day to settle" + lockNote(s[0])).orElse("");
         }
     }
 
@@ -770,7 +830,9 @@ public class BankReconciliationService {
                                           and e.txn_date >= coalesce(ba.rec_start_date, e.txn_date))))
                    or (d.order_confirmed and not d.merge_unproven and d.start_known and d.end_known)""", p,
                 rs -> { complete.add(rs.getObject("txn_date", LocalDate.class)); });
-        return new Remedy(complete);
+        LocalDate locked = jdbc.queryForObject("select reconciled_through from bank_accounts where id = :b and tenant_id = :t",
+                p, LocalDate.class);
+        return new Remedy(complete, locked);
     }
 
     private static String dayList(Collection<LocalDate> days) {
@@ -1022,7 +1084,7 @@ public class BankReconciliationService {
                 v.bookedAfterPeriod(), v.unrecordedCredits(), v.unrecordedDebits(), v.adjustedBank(), v.adjustedBook(),
                 v.difference(), v.depositsInTransitItems(), v.unpresentedItems(), v.bookedAfterItems(),
                 v.unrecordedItems(), v.withoutEvidenceCount(), v.matchedByMethod(), v.checks(), false, v.preparedAt(),
-                v.preparedByName(), now, userName(user), null, null, null, v.unprovenDays(), v.dayTotalsVerdict());
+                v.preparedByName(), now, userName(user), null, null, null, v.unprovenDays(), v.dayTotalsVerdict(), null);
         String snapshot;
         try {
             snapshot = json.writeValueAsString(snap);

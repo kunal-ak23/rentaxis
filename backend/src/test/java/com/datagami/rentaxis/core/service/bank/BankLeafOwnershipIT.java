@@ -676,4 +676,36 @@ class BankLeafOwnershipIT extends AbstractPostgresIT {
         in(b);
         assertThat(nameEnOf(leafOf(other.building()))).isEqualTo("ENBD - " + other.building().getNameEn());
     }
+
+    /**
+     * Sim r22 S22-01 (scen/leafname.py): the usual set-up order. Two properties, then the
+     * org-wide Emirates NBD adopts both leaves and names them after itself; its set is then
+     * cut to the first property's leaf; ADCB, created for the second property, takes that
+     * leaf and must name it after ADCB (name and name_en), not keep "Emirates NBD - P2".
+     */
+    @Test
+    void aLeafALaterBankTakesIsNamedAfterThatBankNotTheFirstOne() {
+        in(a);
+        Property p1 = property("Marina Crest " + UUID.randomUUID().toString().substring(0, 8));
+        Property p2 = property("SZR Office Tower " + UUID.randomUUID().toString().substring(0, 8));
+        UUID l1 = leafOf(p1), l2 = leafOf(p2);
+        BankAccount enbd = bank("Emirates NBD", "1010000000001", null);
+        assertThat(nameOf(l2)).isEqualTo("Emirates NBD - " + p2.getNameEn());
+        ledgers.setLeaves(enbd.getId(), List.of(coaOf(enbd), l1, leafOf(a.property())));
+        assertThat(ownerOf(l2)).isNull();
+        BankAccount adcb = bank("ADCB", "2020000000002", p2);
+        assertThat(ownerOf(l2)).isEqualTo(adcb.getId());
+        assertThat(nameOf(l2)).isEqualTo("ADCB - " + p2.getNameEn());
+        assertThat(nameEnOf(l2)).isEqualTo("ADCB - " + p2.getNameEn());
+        assertThat(nameOf(l1)).as("the first bank's own leaf keeps its name").isEqualTo("Emirates NBD - " + p1.getNameEn());
+        // A typed name that only looks like another bank's stays when a bank takes it.
+        Property p3 = property("Creek Point " + UUID.randomUUID().toString().substring(0, 8));
+        UUID l3 = leafOf(p3);
+        jdbc.update("update accounts set name = 'Emirates NBD - Creek Point escrow', name_en = 'Emirates NBD - Creek Point escrow' "
+                + "where id = ?", l3);
+        jdbc.update("delete from bank_account_ledgers where account_id = ?", l3);
+        BankAccount fab = bank("FAB", "3030000000003", p3);
+        assertThat(ownerOf(l3)).isEqualTo(fab.getId());
+        assertThat(nameOf(l3)).isEqualTo("Emirates NBD - Creek Point escrow");
+    }
 }
