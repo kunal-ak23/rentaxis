@@ -78,6 +78,11 @@ class RenewalSeasonFollowUpsIT extends AbstractPostgresIT {
     @Autowired RenterRepository renterRepo;
     @Autowired UserPropertyAssignmentRepository assignmentRepo;
     @Autowired TransactionTemplate tx;
+    @Autowired com.datagami.rentaxis.api.RenterRenewalController renterRenewals;
+    @Autowired com.datagami.rentaxis.core.service.renewal.LeaseRenewalScheduler renewalScheduler;
+    @Autowired com.datagami.rentaxis.core.service.TenantFeatureService features;
+    @Autowired LeaseTransferService transfers;
+    @Autowired LeaseTerminationService termination;
     @Autowired JdbcTemplate jdbc;
 
     private LeaseTestFixtures f;
@@ -170,6 +175,110 @@ class RenewalSeasonFollowUpsIT extends AbstractPostgresIT {
         assertThat(marks.undo(b).notRenewing()).isFalse();
     }
 
+    private int opportunities(UUID leaseId) {
+        return jdbc.queryForObject("select count(*) from renewal_opportunities where lease_id = ?", Integer.class, leaseId);
+    }
+
+    private int reminders(UUID leaseId) {
+        return jdbc.queryForObject("select count(*) from lease_reminders r join renewal_opportunities o on o.id = r.opportunity_id"
+                + " where o.lease_id = ?", Integer.class, leaseId);
+    }
+
+    private String renterSees(UUID leaseId) throws Exception {
+        UUID renterUser = jdbc.queryForObject("select r.user_id from leases l join renters r on r.id = l.renter_id where l.id = ?",
+                UUID.class, leaseId);
+        var before = SecurityContextHolder.getContext().getAuthentication();
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                renterUser.toString(), null, List.of(new SimpleGrantedAuthority("ROLE_RENTER"))));
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()
+                    .writeValueAsString(renterRenewals.summary(renterUser.toString()));
+        } finally {
+            SecurityContextHolder.getContext().setAuthentication(before);
+        }
+    }
+
+    @Test
+    void theMarkIsInvisibleToTheRenterAndOpensNoRenewalOpportunity() throws Exception {
+        // Re-review P2-1: a contract ending in 14 months, marked by the landlord.
+        UUID a = posted();
+        String portalBefore = renterSees(a);
+        int funnelBefore = jdbc.queryForObject("select count(*) from renewal_opportunities where tenant_id = ?", Integer.class, f.tenantId());
+        marks.markNotRenewing(a, "Owner selling the unit", admin);
+        assertThat(opportunities(a)).isZero();
+        assertThat(renterSees(a)).isEqualTo(portalBefore).doesNotContain("Owner selling");
+        marks.undo(a);
+        assertThat(renterSees(a)).isEqualTo(portalBefore);
+        assertThat(jdbc.queryForObject("select count(*) from renewal_opportunities where tenant_id = ?", Integer.class, f.tenantId()))
+                .isEqualTo(funnelBefore);
+    }
+
+    @Test
+    void theSchedulerSendsNothingBecauseOfAMarkOnAContractOnNoticeEndingSoon() {
+        // Re-review P2-1: notice served, 20 days to go — the scheduler never reminds such a renter,
+        // and marking the contract must not change that.
+        features.setEnabled(f.tenantId(), com.datagami.rentaxis.domain.entity.enums.TenantFeature.LEASE_RENEWALS, true);
+        LocalDate today = LocalDate.now();
+        LocalDate end = today.plusDays(20);
+        LocalDate start = end.plusDays(1).minusYears(1);
+        UUID marked = noticeLease("N-M", start, end);
+        UUID control = noticeLease("N-C", start, end);
+        marks.markNotRenewing(marked, "Leaving anyway", admin);
+
+        renewalScheduler.runNowForTenant(f.tenantId(), today);
+        TenantContextHolder.setTenantId(f.tenantId());
+
+        assertThat(opportunities(marked)).isEqualTo(opportunities(control)).isZero();
+        assertThat(reminders(marked)).isEqualTo(reminders(control)).isZero();
+        // Neither channel: no reminder e-mail queued for the organisation (the reminder ledger above covers in-app).
+        assertThat(jdbc.queryForObject("select count(*) from email_outbox where tenant_id = ? and event_type = 'LEASE_RENEWAL_REMINDER'",
+                Integer.class, f.tenantId())).isZero();
+    }
+
+    private UUID noticeLease(String unit, LocalDate start, LocalDate end) {
+        UUID id = f.draftLease(f.createUnit(f.property(), unit), f.createRenter("R " + unit), start.minusDays(10), start, end,
+                List.of(line("RENT", "60000")));
+        f.generateGrid(id, 4, start);
+        posting.post(id);
+        leaseService.giveNotice(id, "Leaving", admin);
+        return id;
+    }
+
+    @Test
+    void extendingTransferringAndTerminatingClearTheMark() {
+        // Extend: a further month on the same contract.
+        UUID ext = posted();
+        marks.markNotRenewing(ext, null, admin);
+        LocalDate newEnd = END.plusMonths(1);
+        renewalService().extend(ext, new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(newEnd, LocalDate.of(2027, 12, 1),
+                List.of(line("RENT", "6000")), List.of(new ChequeRowInput(null, 1, LocalDate.of(2027, 12, 1), LeaseTestFixtures.nextChequeNumber(),
+                        END.plusDays(1), "ENBD", null, null, new BigDecimal("6000"), null, com.datagami.rentaxis.domain.entity.enums.ChequeMode.PDC))));
+        assertThat(marked(ext)).isFalse();
+
+        // Terminate.
+        UUID term = posted();
+        marks.markNotRenewing(term, null, admin);
+        termination.terminate(term, new com.datagami.rentaxis.api.dto.lease.TerminateLeaseRequest(LocalDate.of(2027, 6, 30), null, null, null),
+                admin);
+        assertThat(marked(term)).isFalse();
+        assertThat(queue(LeaseService.RenewalMark.NOT_RENEWING)).doesNotContain(term);
+
+        // Transfer: drafting the move to another unit continues the tenancy.
+        UUID move = posted();
+        marks.markNotRenewing(move, null, admin);
+        transfers.draft(move, new com.datagami.rentaxis.api.dto.lease.TransferLeaseRequest(LocalDate.of(2027, 7, 1),
+                f.createUnit(f.property(), "T-" + unitSeq++).getId(), null, LocalDate.of(2027, 6, 15), null, null), posting);
+        assertThat(marked(move)).isFalse();
+    }
+
+    private LeaseRenewalService renewalService() {
+        return renewal;
+    }
+
+    private boolean marked(UUID leaseId) {
+        return jdbc.queryForObject("select not_renewing_at is not null from leases where id = ?", Boolean.class, leaseId);
+    }
+
     @Test
     void aContractOnNoticeReadsAsNotRenewingWithoutAMark() {
         // Notice cannot be dated before the contract or after today, so this contract started in the past.
@@ -191,7 +300,7 @@ class RenewalSeasonFollowUpsIT extends AbstractPostgresIT {
         UUID a = posted();
         marks.markNotRenewing(a, null, admin);
         renewal.renew(a, new RenewLeaseRequest(LocalDate.of(2027, 12, 15), END.plusDays(1), END.plusYears(1), null, true));
-        assertThat(jdbc.queryForObject("select count(*) from renewal_opportunities where lease_id = ? and not_renewing_at is not null",
+        assertThat(jdbc.queryForObject("select count(*) from leases where id = ? and not_renewing_at is not null",
                 Integer.class, a)).isZero();
         assertThatThrownBy(() -> marks.markNotRenewing(a, null, admin)).hasMessageContaining("already has a renewal");
     }
@@ -227,7 +336,7 @@ class RenewalSeasonFollowUpsIT extends AbstractPostgresIT {
         TenantContextHolder.setTenantId(ourTenant);
         LeaseTestFixtures.authenticateAsTenantAdmin();
         assertThatThrownBy(() -> marks.markNotRenewing(theirs, null, admin)).isInstanceOf(NotFoundException.class);
-        assertThat(jdbc.queryForObject("select not_renewing_note from renewal_opportunities where lease_id = ?", String.class, ours))
+        assertThat(jdbc.queryForObject("select not_renewing_note from leases where id = ?", String.class, ours))
                 .isEqualTo("ours");
     }
 
@@ -342,6 +451,42 @@ class RenewalSeasonFollowUpsIT extends AbstractPostgresIT {
                 .containsExactlyInAnyOrder(second.chequeId(), third.chequeId(), fourth.chequeId());
         assertThat(gridShape(bad)).isEqualTo(badBefore);
         assertThat(gridShape(good)).allMatch(r -> r.contains("|ADCB|"));
+    }
+
+    @Test
+    void aChequeOfAnotherContractSentInADraftsRowsIsRefusedAndNothingIsWritten() {
+        UUID mine = renewalDraft();
+        UUID other = renewalDraft();
+        List<String> before = gridShape(mine);
+        List<LeaseBatch.ChequeNumberRow> rows = new ArrayList<>(numbered(mine, "450001", "FAB"));
+        ChequeDTO foreign = grid(other).get(0);
+        rows.add(new LeaseBatch.ChequeNumberRow(foreign.id(), "450099", "FAB", foreign.chequeDate(), foreign.amount()));
+        LeaseBatch.DraftNumbersRow r = batch.saveChequeNumbers(new LeaseBatch.ChequeNumbersRequest(List.of(
+                new LeaseBatch.DraftNumbers(mine, version(mine), rows)))).get(0);
+        assertThat(r.ok()).isFalse();
+        assertThat(r.rowErrors()).extracting(LeaseBatch.RowError::code).containsExactly("cheque.notInDraft");
+        assertThat(gridShape(mine)).isEqualTo(before);
+        assertThat(jdbc.queryForObject("select cheque_number from cheques where id = ?", String.class, foreign.id())).isNull();
+    }
+
+    @Test
+    void arabicIndicDigitsAreTheSameNumberAndAreSavedAsAscii() {
+        UUID draft = renewalDraft();
+        List<LeaseBatch.ChequeNumberRow> rows = new ArrayList<>(numbered(draft, "510001", "FAB"));
+        LeaseBatch.ChequeNumberRow a = rows.get(0);
+        LeaseBatch.ChequeNumberRow b = rows.get(1);
+        rows.set(0, new LeaseBatch.ChequeNumberRow(a.chequeId(), "\u0665\u0661\u0660\u0660\u0660\u0661", "FAB", a.chequeDate(), a.amount()));
+        rows.set(1, new LeaseBatch.ChequeNumberRow(b.chequeId(), "510001", "FAB", b.chequeDate(), b.amount()));
+        LeaseBatch.DraftNumbersRow refused = batch.saveChequeNumbers(new LeaseBatch.ChequeNumbersRequest(List.of(
+                new LeaseBatch.DraftNumbers(draft, version(draft), rows)))).get(0);
+        assertThat(refused.rowErrors()).extracting(LeaseBatch.RowError::code).containsExactly("cheque.numberRepeated");
+        assertThat(refused.args()).containsEntry("count", 1);
+
+        rows.set(1, new LeaseBatch.ChequeNumberRow(b.chequeId(), "\u06F5\u06F1\u06F0\u06F0\u06F0\u06F2", "FAB", b.chequeDate(), b.amount()));
+        assertThat(batch.saveChequeNumbers(new LeaseBatch.ChequeNumbersRequest(List.of(
+                new LeaseBatch.DraftNumbers(draft, version(draft), rows)))).get(0).ok()).isTrue();
+        assertThat(jdbc.queryForList("select cheque_number from cheques where lease_id = ? order by seq_no", String.class, draft))
+                .startsWith("510001", "510002");
     }
 
     @Test

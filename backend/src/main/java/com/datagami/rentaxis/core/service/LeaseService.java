@@ -912,6 +912,7 @@ public class LeaseService {
         LeaseStatus previous = lease.getStatus();
         lease.setStatus(LeaseStatus.TERMINATED);
         lease.setTerminatedOn(t);
+        lease.clearNotRenewing();
         lease.setTerminationNotes("Transferred to " + unitLabel(successor));
         lease.setTerminationJournalId(tcrId);
         releaseUnitIfNoOtherActiveLease(lease);
@@ -2215,6 +2216,8 @@ public class LeaseService {
         LeaseStatus previousStatus = lease.getStatus();
         lease.setStatus(LeaseStatus.TERMINATED);
         lease.setTerminatedOn(terminatedOn);
+        // Scale PR C (re-review P3-4): the season's "not renewing" mark says nothing once it has ended.
+        lease.clearNotRenewing();
         lease.setTerminationNotes(notes);
         lease.setTerminationJournalId(terminationJournalId);
 
@@ -2479,9 +2482,7 @@ public class LeaseService {
                               java.util.Map<UUID, Object[]> marks) {
     }
 
-    /** Scale PR C: the "not renewing" marks and their authors, read for a page of rows. */
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.datagami.rentaxis.domain.repository.RenewalOpportunityRepository renewalOpportunities;
+    /** Scale PR C: the authors of the "not renewing" marks on a page of rows, by name. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.datagami.rentaxis.domain.repository.UserRepository markUsers;
 
@@ -2516,12 +2517,6 @@ public class LeaseService {
             for (Lease r : leaseRepository.findByRenewedFromLeaseIdIn(chunk)) {
                 renewals.putIfAbsent(r.getRenewedFromLeaseId(), r);
             }
-            UUID tenant = TenantContextHolder.getTenantId();
-            if (renewalOpportunities != null && tenant != null) {
-                for (Object[] m : renewalOpportunities.findMarksForLeases(tenant, chunk)) {
-                    marks.putIfAbsent((UUID) m[0], m);
-                }
-            }
             for (LeaseLine l : leaseLineRepository.findByLeaseIdsOrderBySeqNo(chunk)) {
                 lines.computeIfAbsent(l.getLease().getId(), k -> new java.util.ArrayList<>()).add(l);
             }
@@ -2531,7 +2526,12 @@ public class LeaseService {
                 }
             }
         }
-        // Who marked each contract, by name: one lookup for the page.
+        // The "not renewing" marks are on the leases themselves; who set each, by name, in one lookup.
+        for (Lease l : leases) {
+            if (l.getId() != null && l.getNotRenewingAt() != null) {
+                marks.put(l.getId(), new Object[] {l.getId(), l.getNotRenewingAt(), l.getNotRenewingBy(), l.getNotRenewingNote()});
+            }
+        }
         if (!marks.isEmpty() && markUsers != null) {
             java.util.Set<UUID> byIds = new java.util.HashSet<>();
             for (Object[] m : marks.values()) if (m[2] != null) byIds.add((UUID) m[2]);

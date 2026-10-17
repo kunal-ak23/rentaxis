@@ -29,19 +29,4 @@ public interface RenewalOpportunityRepository extends JpaRepository<RenewalOppor
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT o FROM RenewalOpportunity o WHERE o.id = :id")
     Optional<RenewalOpportunity> findByIdForUpdate(@Param("id") UUID id);
-
-    /** Scale PR C: the opportunities of a lease that carry the "not renewing" mark (any stage). */
-    @Query("SELECT o FROM RenewalOpportunity o WHERE o.lease.id = :leaseId AND o.notRenewingAt IS NOT NULL")
-    List<RenewalOpportunity> findMarkedNotRenewing(@Param("leaseId") UUID leaseId);
-
-    /**
-     * Scale PR C: the "not renewing" marks on a page of leases — lease id, when, by whom, note —
-     * for the list's rows. {@code tenantId} is bound: this must not lean on the tenant filter.
-     */
-    @Query("""
-        SELECT o.lease.id, o.notRenewingAt, o.notRenewingBy, o.notRenewingNote FROM RenewalOpportunity o
-        WHERE o.tenantId = :tenantId AND o.lease.id IN :leaseIds AND o.notRenewingAt IS NOT NULL
-        ORDER BY o.notRenewingAt DESC
-        """)
-    List<Object[]> findMarksForLeases(@Param("tenantId") UUID tenantId, @Param("leaseIds") java.util.Collection<UUID> leaseIds);
 }

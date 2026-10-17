@@ -44,20 +44,6 @@ public class RenewalOpportunity extends BaseTenantEntity {
     @Column(length = 30)
     private RenewalOutcome outcome;
 
-    /**
-     * Scale PR C ruling (changeset 174): the soft "not renewing" mark — who set it and when,
-     * and why. It gives no notice and changes nothing on the lease; Undo, a renewal or an
-     * extension clears it. Null = not marked.
-     */
-    @Column(name = "not_renewing_at")
-    private Instant notRenewingAt;
-
-    @Column(name = "not_renewing_by")
-    private UUID notRenewingBy;
-
-    @Column(name = "not_renewing_note", length = 500)
-    private String notRenewingNote;
-
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 

@@ -285,11 +285,9 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
                or (:successor = 2 and exists (select s.id from Lease s where s.tenantId = :tenantId
                      and coalesce(s.renewedFromLeaseId, s.transferredFromLeaseId) = l.id)))
           and (:mark = 0
-               or (:mark = 1 and not exists (select o.id from RenewalOpportunity o where o.tenantId = :tenantId
-                     and o.lease.id = l.id and o.notRenewingAt is not null))
+               or (:mark = 1 and l.notRenewingAt is null)
                or (:mark = 2 and (l.status = com.datagami.rentaxis.domain.entity.enums.LeaseStatus.NOTICE_GIVEN
-                     or exists (select o.id from RenewalOpportunity o where o.tenantId = :tenantId
-                     and o.lease.id = l.id and o.notRenewingAt is not null))))
+                     or l.notRenewingAt is not null)))
         """)
     Page<Lease> searchText(@Param("tenantId") UUID tenantId,
                            @Param("allowed") Collection<LeaseStatus> allowed,

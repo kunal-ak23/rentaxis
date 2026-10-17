@@ -337,7 +337,7 @@ public class LeaseBatchService {
         java.util.Map<String, UUID> numbers = new java.util.HashMap<>();
         for (com.datagami.rentaxis.domain.entity.Cheque c : grid) {
             LeaseBatch.ChequeNumberRow e = edits.get(c.getId());
-            String number = e != null ? blankToNull(e.chequeNumber()) : c.getChequeNumber();
+            String number = e != null ? chequeNumber(e.chequeNumber()) : c.getChequeNumber();
             LocalDate date = e != null && e.chequeDate() != null ? e.chequeDate() : c.getChequeDate();
             if (c.getMode() != com.datagami.rentaxis.domain.entity.enums.ChequeMode.PDC) continue;
             if (number == null) {
@@ -352,7 +352,8 @@ public class LeaseBatchService {
         }
         if (!errors.isEmpty()) {
             return new LeaseBatch.DraftNumbersRow(lease.getId(), false, lease.getVersion(), null, errors,
-                    "cheque.rowsRefused", null, errors.size() + " row(s) need attention; nothing was saved for this contract.");
+                    "cheque.rowsRefused", Map.of("count", errors.size()),
+                    errors.size() + " row(s) need attention; nothing was saved for this contract.");
         }
         List<ChequeRowInput> input = new ArrayList<>(grid.size());
         for (com.datagami.rentaxis.domain.entity.Cheque c : grid) {
@@ -368,12 +369,29 @@ public class LeaseBatchService {
      * edit's number, bank and date when there is one. Package-private for the parity test.
      */
     static ChequeRowInput gridRow(com.datagami.rentaxis.domain.entity.Cheque c, LeaseBatch.ChequeNumberRow edit) {
-        String number = edit != null ? blankToNull(edit.chequeNumber()) : c.getChequeNumber();
+        String number = edit != null ? chequeNumber(edit.chequeNumber()) : c.getChequeNumber();
         String bank = edit != null ? blankToNull(edit.payeeBank()) : c.getPayeeBank();
         LocalDate date = edit != null && edit.chequeDate() != null ? edit.chequeDate() : c.getChequeDate();
         return new ChequeRowInput(c.getId(), c.getSeqNo(), c.getPostingDate(), number, date, bank,
                 blankToNull(c.getPayerName()), c.getDebitAccount() == null ? null : c.getDebitAccount().getId(),
                 c.getAmount(), blankToNull(c.getNarration()), c.getMode(), c.getVatAmount(), c.getRowKind());
+    }
+
+    /**
+     * A typed cheque number as saved and compared (re-review P3-1): trimmed, with Arabic-Indic
+     * (U+0660–0669) and Extended Arabic-Indic (U+06F0–06F9) digits as ASCII, so ٥٠٠٠٠١ and 500001
+     * are one number. Null when blank.
+     */
+    static String chequeNumber(String s) {
+        String t = blankToNull(s);
+        if (t == null) return null;
+        StringBuilder b = new StringBuilder(t.length());
+        for (char ch : t.toCharArray()) {
+            if (ch >= '\u0660' && ch <= '\u0669') b.append((char) ('0' + (ch - '\u0660')));
+            else if (ch >= '\u06F0' && ch <= '\u06F9') b.append((char) ('0' + (ch - '\u06F0')));
+            else b.append(ch);
+        }
+        return b.toString();
     }
 
     private static String blankToNull(String s) {
