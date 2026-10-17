@@ -1,0 +1,37 @@
+# Review P3-16 (sim round 20 S20-04 for existing data): a building's BANK leaf is named
+# "<operating bank> - <building>" when the operating bank takes it at property creation.
+# Since S20-04 the service renames it when the building's own bank account takes it;
+# changeset 169 moved such leaves in bulk without renaming them. 169 is left as it is
+# (editing an applied changeset would change its checksum); this renames what it moved.
+#
+# Exactly (review P3-17): a BANK-subtype leaf scoped to a property, owned by a bank
+# account attached to that same property, whose name is exactly
+# "<another bank account's bank name> - <that property's English name>" (the name the
+# operating bank gave it at property creation), and not already "<owner's bank name> -
+# <property name>", becomes "<owner's bank name> - <property name>". A hand-typed name
+# ("Emirates Islamic - petty cash") is left alone. Only accounts.name changes.
+# Idempotent: a renamed leaf has its owner's name and is not picked again.
+databaseChangeLog:
+  - changeSet:
+      id: 173-rename-moved-building-bank-leaves
+      author: claude
+      changes:
+        - sql:
+            comment: Moved building leaves take their owner's bank name
+            splitStatements: false
+            sql: |
+              UPDATE accounts a
+                 SET name = ob.bank_name || ' - ' || p.name_en, updated_at = CURRENT_TIMESTAMP
+                FROM bank_account_ledgers l, bank_accounts ob, properties p
+               WHERE l.account_id = a.id AND l.tenant_id = a.tenant_id
+                 AND ob.id = l.bank_account_id AND ob.tenant_id = l.tenant_id
+                 AND p.id = a.property_id AND p.tenant_id = a.tenant_id
+                 AND a.account_sub_type = 'BANK' AND NOT a.is_group
+                 AND ob.property_id = a.property_id
+                 AND a.name <> ob.bank_name || ' - ' || p.name_en
+                 AND EXISTS (SELECT 1 FROM bank_accounts other
+                              WHERE other.tenant_id = a.tenant_id AND other.id <> ob.id
+                                AND a.name = other.bank_name || ' - ' || p.name_en);
+      rollback:
+        - sql:
+            sql: SELECT 1

@@ -1,0 +1,45 @@
+# #98 M1 (PR #356 follow-up): a bank account created for a building, while the
+# building's own BANK leaf already belonged to the operating bank account, ended
+# up owning no leaf at all ("Assign a ledger account before reconciling"), and
+# the leaf could not be moved while the operating bank was reconciled.
+#
+# For existing organisations this moves exactly those leaves, and only when it
+# changes nothing anyone signed off or matched:
+#   - the bank account is active, attached to a property, and owns no leaf;
+#   - its ledger account (coa_account_id) is an active BANK leaf of that same
+#     property, owned by a different bank account;
+#   - the leaf has no journal line at all (so no reconciliation, finalized or
+#     draft, no match and no book balance of the old owner includes it).
+# Where two such bank accounts point at one leaf, the default one, else the
+# oldest, takes it (a NULL is_default counts as not default). Only bank_account_ledgers.bank_account_id changes; no journal,
+# reconciliation, match or bank_accounts row is touched.
+# Idempotent: a bank account that took its leaf owns one, so a second run finds
+# nothing. A leaf with postings is left with its owner (the service now gives a
+# new building bank account a leaf of its own in that case).
+databaseChangeLog:
+  - changeSet:
+      id: 169-move-unposted-building-bank-leaves
+      author: claude
+      changes:
+        - sql:
+            comment: Move each building's unposted bank leaf to the building's own bank account
+            splitStatements: false
+            sql: |
+              UPDATE bank_account_ledgers l
+                 SET bank_account_id = x.id
+                FROM (SELECT DISTINCT ON (b.tenant_id, b.coa_account_id) b.tenant_id, b.id, b.coa_account_id
+                        FROM bank_accounts b
+                        JOIN accounts a ON a.id = b.coa_account_id AND a.tenant_id = b.tenant_id
+                       WHERE b.is_active AND b.property_id IS NOT NULL
+                         AND a.account_sub_type = 'BANK' AND NOT a.is_group AND a.is_active
+                         AND a.property_id = b.property_id
+                         AND NOT EXISTS (SELECT 1 FROM bank_account_ledgers o
+                                          WHERE o.tenant_id = b.tenant_id AND o.bank_account_id = b.id)
+                         AND NOT EXISTS (SELECT 1 FROM journal_lines jl
+                                          WHERE jl.tenant_id = a.tenant_id AND jl.account_id = a.id)
+                       ORDER BY b.tenant_id, b.coa_account_id, COALESCE(b.is_default, FALSE) DESC, b.created_at ASC, b.id) x
+               WHERE l.tenant_id = x.tenant_id AND l.account_id = x.coa_account_id AND l.bank_account_id <> x.id;
+      rollback:
+        - sql:
+            comment: A data move with no record of the previous owner; roll back by editing the ledger-account sets
+            sql: SELECT 1

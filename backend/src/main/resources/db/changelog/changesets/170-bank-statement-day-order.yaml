@@ -1,0 +1,55 @@
+# #97 review P2-1: whether a bank account's statement lines for one day are in a
+# confirmed order. The order of a day is confirmed when the last import that
+# brought lines for that day contained every line already stored for it (the
+# file then fixes the whole day's order, BankStatementImportService.dayOrder).
+# Otherwise (lines from separate files that share no line, or a file that leaves
+# out a stored line of its stretch) the order is a guess, and a reconciliation
+# over that day needs a typed closing balance (and, on a first reconciliation, a
+# typed opening) before it can be finalized: a missing line could otherwise be
+# hidden by lines chaining round it.
+#
+# No row = confirmed (one import per day, which is the common case).
+#
+# Backfill for existing data: a day whose stored lines came from more than one
+# import, after the bank account's reconciled-through date, is marked
+# unconfirmed. Those days were imported by plain append, so their order was
+# never confirmed by a single file; days inside a finalized reconciliation are
+# not touched (they are signed off and locked). The effect on a draft is one
+# extra check, "type the closing balance" (or re-import that day's full
+# statement, which confirms it); nothing is posted, moved or deleted.
+# Idempotent: ON CONFLICT DO NOTHING.
+databaseChangeLog:
+  - changeSet:
+      id: 170-bank-statement-day-order
+      author: claude
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                tableName: bank_statement_days
+      changes:
+        - createTable:
+            tableName: bank_statement_days
+            columns:
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_statement_days_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: bank_account_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_bank_statement_days_bank_account, referencedTableName: bank_accounts, referencedColumnNames: id } }
+              - column: { name: txn_date, type: date, constraints: { nullable: false } }
+              - column: { name: order_confirmed, type: boolean, constraints: { nullable: false } }
+              - column: { name: updated_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+        - addPrimaryKey: { tableName: bank_statement_days, columnNames: "bank_account_id, txn_date", constraintName: pk_bank_statement_days }
+        - createIndex: { tableName: bank_statement_days, indexName: idx_bank_statement_days_tenant, columns: [ { column: { name: tenant_id } }, { column: { name: bank_account_id } }, { column: { name: txn_date } } ] }
+        - sql:
+            comment: Days of open periods whose lines came from more than one import are unconfirmed
+            splitStatements: false
+            sql: |
+              INSERT INTO bank_statement_days (tenant_id, bank_account_id, txn_date, order_confirmed, updated_at)
+              SELECT l.tenant_id, l.bank_account_id, l.txn_date, FALSE, CURRENT_TIMESTAMP
+                FROM bank_statement_lines l
+                JOIN bank_accounts b ON b.id = l.bank_account_id AND b.tenant_id = l.tenant_id
+               WHERE b.reconciled_through IS NULL OR l.txn_date > b.reconciled_through
+               GROUP BY l.tenant_id, l.bank_account_id, l.txn_date
+              HAVING COUNT(DISTINCT l.import_id) > 1
+              ON CONFLICT DO NOTHING;
+      rollback:
+        - dropTable:
+            tableName: bank_statement_days

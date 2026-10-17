@@ -12,6 +12,7 @@ import {
     bankRecApi,
     dmy,
     failingChecks,
+    type DayTotalInput,
     type OpeningItem,
     type RecItem,
     type Reconciliation,
@@ -148,6 +149,10 @@ export function ReconciliationPanel({ bankAccountId, onChanged, refreshKey }: {
                         </button>
                         <Downloads id={rec.id} />
                     </div>
+                    {(rec.unprovenDays ?? []).length > 0 && (
+                        <DayTotals rec={rec} busy={busy}
+                                   onSave={days => run(() => bankRecApi.setDayTotals(rec.id, days))} />
+                    )}
                     {rec.first && <OpeningItems bankAccountId={bankAccountId} rec={rec} busy={busy} run={run} />}
                 </div>
             )}
@@ -238,8 +243,11 @@ function StartForm({ first, nextFrom, busy, onStart }: {
 function Figures({ rec, onOpen }: { rec: Reconciliation; onOpen: (title: string, items: RecItem[]) => void }) {
     const t = useTranslations("BankRec");
     const unrecorded = rec.unrecordedCredits - rec.unrecordedDebits;
+    // Review P3-11: while the day order is unconfirmed, the derived closing is only what
+    // the imported lines add up to — not the bank's figure, and not one to copy.
+    const fromLines = !rec.closingTyped && rec.checks.some(c => c.code === "LINE_ORDER" && !c.ok);
     const cells: { key: string; value: number | null; items?: RecItem[]; strong?: boolean }[] = [
-        { key: "statementClosing", value: rec.statementClosing },
+        { key: fromLines ? "statementClosingFromLines" : "statementClosing", value: rec.statementClosing },
         { key: "depositsInTransit", value: rec.depositsInTransit, items: rec.depositsInTransitItems },
         { key: "unpresentedPayments", value: -rec.unpresentedPayments, items: rec.unpresentedItems },
         ...(rec.bookedAfterPeriod !== 0 ? [{ key: "bookedAfterPeriod", value: -rec.bookedAfterPeriod, items: rec.bookedAfterItems }] : []),
@@ -255,7 +263,10 @@ function Figures({ rec, onOpen }: { rec: Reconciliation; onOpen: (title: string,
                 const body = (
                     <>
                         <span className={`${label} block`}>{t(`fig_${c.key}`)}</span>
-                        <Money v={c.value} strong={c.strong} testId={`rec-figure-${c.key}`} />
+                        <Money v={c.value} strong={c.strong} testId={`rec-figure-${c.key === "statementClosingFromLines" ? "statementClosing" : c.key}`} />
+                        {c.key === "statementClosingFromLines" && (
+                            <span className="block text-[10px] text-error break-words" data-testid="rec-closing-from-lines">{t("closingFromLinesHint")}</span>
+                        )}
                         {c.items && <span className="block text-[10px] text-muted">{t("itemCount", { count: c.items.length })}</span>}
                     </>
                 );
@@ -317,6 +328,67 @@ function DraftEdit({ rec, busy, onSave }: {
                     onClick={() => { setOpen(false); onSave({ periodTo: to, statementClosing: closing ? moneyValueOrNull(closing, SIGNED) : null }); }}>{t("save")}</button>
             <button type="button" className={small} onClick={() => setOpen(false)}>{t("cancel")}</button>
         </span>
+    );
+}
+
+const UNSIGNED = { allowNegative: false } as const;
+
+/**
+ * Review P2-3: an unproven day is proven by its total debits and credits typed from
+ * the paper statement. One row per day, stacked on a phone; the lines' own totals are
+ * not shown.
+ */
+function DayTotals({ rec, busy, onSave }: {
+    rec: Reconciliation; busy: boolean; onSave: (days: DayTotalInput[]) => void;
+}) {
+    const t = useTranslations("BankRec");
+    const days = rec.unprovenDays ?? [];
+    const [values, setValues] = useState<Record<string, { debits: string; credits: string }>>(() =>
+        Object.fromEntries(days.map(d => [d.date, {
+            debits: d.typedDebits === null ? "" : String(d.typedDebits),
+            credits: d.typedCredits === null ? "" : String(d.typedCredits),
+        }])));
+    const set = (date: string, key: "debits" | "credits", v: string) =>
+        setValues(prev => ({ ...prev, [date]: { ...(prev[date] ?? { debits: "", credits: "" }), [key]: v } }));
+    const rows = days.map(d => ({ d, v: values[d.date] ?? { debits: "", credits: "" } }));
+    const invalid = rows.some(({ v }) => moneyTextInvalid(v.debits, UNSIGNED) || moneyTextInvalid(v.credits, UNSIGNED)
+        || (v.debits === "") !== (v.credits === ""));
+    return (
+        <div className="rounded-lg bg-warning/10 px-3 py-2 space-y-2" data-testid="rec-day-totals">
+            <p className="text-xs font-semibold">{t("dayTotalsTitle")}</p>
+            <p className="text-[11px] text-muted break-words">{t("dayTotalsHint")}</p>
+            <ul className="space-y-2">
+                {rows.map(({ d, v }) => (
+                    <li key={d.date} className="flex flex-col sm:flex-row sm:items-center gap-2 text-xs" data-testid={`rec-day-${d.date}`}>
+                        <bdi dir="ltr" className="font-bold sm:w-24 shrink-0">{dmy(d.date)}</bdi>
+                        <label className="flex flex-col min-w-0 sm:flex-1">
+                            <span className={label}>{t("dayDebits")}</span>
+                            <MoneyTextInput options={UNSIGNED} className={`${field} w-full`} value={v.debits}
+                                            onChange={x => set(d.date, "debits", x)} data-testid={`rec-day-debits-${d.date}`} />
+                        </label>
+                        <label className="flex flex-col min-w-0 sm:flex-1">
+                            <span className={label}>{t("dayCredits")}</span>
+                            <MoneyTextInput options={UNSIGNED} className={`${field} w-full`} value={v.credits}
+                                            onChange={x => set(d.date, "credits", x)} data-testid={`rec-day-credits-${d.date}`} />
+                        </label>
+                        <span className="text-[11px] font-semibold text-muted"
+                              data-testid={`rec-day-status-${d.date}`}>{t(`dayStatus_${d.status}`)}</span>
+                    </li>
+                ))}
+            </ul>
+            {(rec.dayTotalsVerdict === "AGREE" || rec.dayTotalsVerdict === "DISAGREE") && (
+                <p className={`text-xs ${rec.dayTotalsVerdict === "AGREE" ? "text-success" : "text-error"}`}
+                   data-testid="rec-day-totals-result" data-verdict={rec.dayTotalsVerdict}>
+                    {rec.dayTotalsVerdict === "AGREE" ? t("dayTotalsAgree") : t("dayTotalsDisagree")}
+                </p>
+            )}
+            <button type="button" className={small} disabled={busy || invalid} data-testid="rec-day-totals-save"
+                    onClick={() => onSave(rows.map(({ d, v }) => ({
+                        date: d.date,
+                        debits: v.debits === "" ? null : moneyValueOrNull(v.debits, UNSIGNED),
+                        credits: v.credits === "" ? null : moneyValueOrNull(v.credits, UNSIGNED),
+                    })))}>{t("save")}</button>
+        </div>
     );
 }
 

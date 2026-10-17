@@ -325,6 +325,14 @@ public class BankReconciliationController {
         return ResponseEntity.ok(recs.update(id, in));
     }
 
+    /** Review P2-3: the paper statement's total debits and credits for unproven days of a draft. */
+    @PutMapping("/reconciliations/{id}/day-totals")
+    public ResponseEntity<BankRecDTOs.Reconciliation> dayTotals(@PathVariable UUID id,
+                                                               @Valid @RequestBody BankRecDTOs.DayTotalsInput in) {
+        requireTenantSelected();
+        return ResponseEntity.ok(recs.setDayTotals(id, in));
+    }
+
     @DeleteMapping("/reconciliations/{id}")
     public ResponseEntity<Void> discardReconciliation(@PathVariable UUID id) {
         requireTenantSelected();

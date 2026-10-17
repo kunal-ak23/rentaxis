@@ -1,0 +1,66 @@
+# Sim round 20 S20-01 / S20-03 (follow-up to #97 review P2-2): what is known about a
+# stored statement day, beside 170's order_confirmed.
+#   - merge_unproven: a file's line was taken for an identical stored line while
+#     the file did not hold the whole day. It may have been a second, separate
+#     line (a fee, its reversal, the fee again: a file ending at the first fee and
+#     one starting at the second look like a one-line overlap). Finalize is refused
+#     until a file holding the whole day is imported; a typed balance cannot settle
+#     it, because the lost lines can net to nothing.
+#   - start_known / end_known: the stored lines begin at the day's first line / run
+#     to its last line. They let a part re-import that adds nothing leave the day as
+#     it is (S20-03) only where its lines are provably the same lines.
+#
+# Backfill: every day of an open period (after reconciled_through) with lines that
+# more than one import's date range (first_date..last_date) covered was imported
+# under the old de-duplication, which could take a genuine line for an identical one
+# — even when that import stored nothing for the day (review P3-14: an import that
+# brought only "duplicates" left no line, so counting lines' imports, as 170 does,
+# misses it). Those days become unconfirmed and unproven (170's rows are a subset).
+# A reconciliation over such a day needs its total debits and credits typed from the
+# paper statement (or a statement holding the whole day). start_known/end_known
+# start false everywhere. Only bank_statement_days changes.
+# Idempotent: the column adds are guarded; the INSERT … ON CONFLICT sets each row once.
+databaseChangeLog:
+  - changeSet:
+      id: 171-bank-statement-day-evidence
+      author: claude
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: bank_statement_days
+                columnName: merge_unproven
+      changes:
+        - addColumn:
+            tableName: bank_statement_days
+            columns:
+              - column: { name: merge_unproven, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
+              - column: { name: start_known, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
+              - column: { name: end_known, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
+        - sql:
+            comment: Legacy days of open periods that more than one import covered are unconfirmed and unproven
+            splitStatements: false
+            sql: |
+              INSERT INTO bank_statement_days (tenant_id, bank_account_id, txn_date, order_confirmed, merge_unproven,
+                                               start_known, end_known, updated_at)
+              SELECT l.tenant_id, l.bank_account_id, l.txn_date, FALSE, TRUE, FALSE, FALSE, CURRENT_TIMESTAMP
+                FROM (SELECT DISTINCT tenant_id, bank_account_id, txn_date FROM bank_statement_lines) l
+                JOIN bank_accounts b ON b.id = l.bank_account_id AND b.tenant_id = l.tenant_id
+               WHERE (b.reconciled_through IS NULL OR l.txn_date > b.reconciled_through)
+                 AND (SELECT count(*) FROM bank_statement_imports i
+                       WHERE i.tenant_id = l.tenant_id AND i.bank_account_id = l.bank_account_id
+                         AND i.first_date IS NOT NULL AND i.last_date IS NOT NULL
+                         AND l.txn_date BETWEEN i.first_date AND i.last_date) > 1
+              ON CONFLICT (bank_account_id, txn_date)
+              DO UPDATE SET order_confirmed = FALSE, merge_unproven = TRUE
+               WHERE bank_statement_days.order_confirmed OR NOT bank_statement_days.merge_unproven;
+      rollback:
+        - dropColumn:
+            tableName: bank_statement_days
+            columnName: merge_unproven
+        - dropColumn:
+            tableName: bank_statement_days
+            columnName: start_known
+        - dropColumn:
+            tableName: bank_statement_days
+            columnName: end_known
