@@ -12,11 +12,15 @@ import {
     updateParkingSpot,
     bulkCreateParkingSpots,
     deactivateParkingSpot,
+    setParkingSpotAttachment,
+    fetchPropertyUnits,
     parseSpotNumbers,
     ApiError,
     MAX_BULK_SPOT_NUMBERS,
 } from "@/lib/api/facilities";
 import { NumberInput } from "@/components/ui/NumberInput";
+import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
+import type { PropertyUnitRow } from "@/lib/api/facilities";
 import type { ParkingSpotDTO } from "@/types/facility";
 import type { BuildingOption } from "./AmenitiesTab";
 
@@ -30,8 +34,16 @@ type FormMode = { kind: "add" } | { kind: "edit"; spot: ParkingSpotDTO } | { kin
 
 const PAGE_SIZE = 10;
 
+/** "1204 · Tower A": the unit number, plus its building when it has one. */
+function attachedLabel(s: ParkingSpotDTO): string | null {
+    if (!s.attachedUnitId) return null;
+    const unit = s.attachedUnitNumber ?? "";
+    return s.attachedBuildingName ? `${unit} · ${s.attachedBuildingName}` : unit;
+}
+
 export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps) {
     const t = useTranslations("Facilities");
+    const tCommon = useTranslations("Common");
     const locale = useLocale();
     const [rows, setRows] = useState<ParkingSpotDTO[]>([]);
     const [totalElements, setTotalElements] = useState(0);
@@ -48,6 +60,10 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
     const [feeAmount, setFeeAmount] = useState(0);
     const [active, setActive] = useState(true);
     const [buildingIds, setBuildingIds] = useState<string[]>([]);
+    // The unit the bay is attached to ("" = not attached, i.e. bookable).
+    const [attachedUnitId, setAttachedUnitId] = useState("");
+    const [propertyUnits, setPropertyUnits] = useState<PropertyUnitRow[]>([]);
+    const [unitsError, setUnitsError] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
     const [deactivating, setDeactivating] = useState<ParkingSpotDTO | null>(null);
@@ -80,6 +96,7 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
             setFeeAmount(m.spot.feeAmount ?? 0);
             setActive(m.spot.active);
             setBuildingIds(m.spot.buildingIds);
+            setAttachedUnitId(m.spot.attachedUnitId ?? "");
         } else {
             setSpotNumber("");
             setBulkInput("");
@@ -87,8 +104,22 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
             setCovered(true);
             setActive(true);
             setBuildingIds([]);
+            setAttachedUnitId("");
         }
     };
+
+    // The unit picker is in every dialog (edit, add, bulk add): load the property's units
+    // when one opens (the bay's tower scope is applied below, on what comes back).
+    const dialogOpen = mode !== null;
+    useEffect(() => {
+        if (!dialogOpen) return;
+        let cancelled = false;
+        setUnitsError(false);
+        fetchPropertyUnits(propertyId)
+            .then(rows => { if (!cancelled) setPropertyUnits(Array.isArray(rows) ? rows : []); })
+            .catch(() => { if (!cancelled) { setPropertyUnits([]); setUnitsError(true); } });
+        return () => { cancelled = true; };
+    }, [dialogOpen, propertyId]);
 
     const toggleBuilding = (id: string) => {
         setBuildingIds(ids => ids.includes(id) ? ids.filter(b => b !== id) : [...ids, id]);
@@ -108,15 +139,38 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
                 // missing field as "unchanged" but an explicit "" as
                 // "clear it", so an edit that blanks the level must send ""
                 // verbatim, not fall back to omitting the field.
-                await updateParkingSpot(mode.spot.id, {
-                    spotNumber,
-                    level,
-                    covered,
-                    active,
-                    buildingIds,
-                    feeType,
-                    feeAmount: feeType === "FREE" ? null : feeAmount,
-                });
+                //
+                // When the attachment changed it is its own pair of calls, around the
+                // update: the server refuses a tower change that would strand the bay's
+                // CURRENT unit, and checks a NEW unit against the towers stored at that
+                // moment. So detach first, update (new towers), then attach the new pick.
+                // An unchanged selection makes no attachment call at all. If a later call
+                // is refused, the earlier ones already happened: reload so the row shows them.
+                const wasAttached = mode.spot.attachedUnitId ?? null;
+                const changed = (attachedUnitId || null) !== wasAttached;
+                let touched = false;
+                try {
+                    if (changed && wasAttached) {
+                        await setParkingSpotAttachment(mode.spot.id, null);
+                        touched = true;
+                    }
+                    await updateParkingSpot(mode.spot.id, {
+                        spotNumber,
+                        level,
+                        covered,
+                        active,
+                        buildingIds,
+                        feeType,
+                        feeAmount: feeType === "FREE" ? null : feeAmount,
+                    });
+                    touched = true;
+                    if (changed && attachedUnitId) {
+                        await setParkingSpotAttachment(mode.spot.id, attachedUnitId);
+                    }
+                } catch (err) {
+                    if (touched) load(page);
+                    throw err;
+                }
                 setMode(null);
                 // Editing doesn't change row order — stay on the current page.
                 load(page);
@@ -127,6 +181,8 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
                     level: level || undefined,
                     covered,
                     buildingIds,
+                    // Created and attached in one server transaction; omitted = bookable.
+                    ...(attachedUnitId ? { attachedUnitId } : {}),
                 });
                 setMode(null);
                 // Rows are sorted createdAt ASC (backend default), so a freshly
@@ -161,6 +217,8 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
                     level: level || undefined,
                     covered,
                     buildingIds,
+                    // Every bay created is attached to this one unit; omitted = bookable.
+                    ...(attachedUnitId ? { attachedUnitId } : {}),
                 });
                 setMode(null);
                 // K new rows are appended at the end (createdAt ASC); the last
@@ -168,7 +226,9 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
                 load(Math.floor((totalElements + spotNumbers.length - 1) / PAGE_SIZE));
             }
         } catch (err) {
-            setFormError(err instanceof ApiError ? err.message : t("saveError"));
+            // A coded refusal (e.g. the bay has bookings) reads in the user's language.
+            setFormError(codedOf(err).code ? serverText(tCommon, err)
+                : err instanceof ApiError ? err.message : t("saveError"));
         } finally {
             setSubmitting(false);
         }
@@ -197,6 +257,21 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
             .filter(Boolean)
             .join(", ");
     };
+
+    const buildingName = (id: string | undefined) => {
+        const b = buildings.find(x => x.id === id);
+        if (!b) return null;
+        return locale === "ar" && b.nameAr ? b.nameAr : b.nameEn;
+    };
+
+    // Units a bay can be attached to: the property's, limited to the towers ticked in the
+    // dialog when any are. The chosen unit always stays listed (even if the towers were then
+    // changed to exclude it) so the select shows what will be sent; the server refuses a mismatch.
+    const unitOptions = mode
+        ? propertyUnits.filter(u =>
+            buildingIds.length === 0 || (u.building?.id != null && buildingIds.includes(u.building.id))
+            || u.id === attachedUnitId)
+        : [];
 
     return (
         <div>
@@ -235,6 +310,7 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
                                 <th className="px-6 py-4 text-start">{t("colLevel")}</th>
                                 <th className="px-6 py-4 text-start">{t("colCovered")}</th>
                                 <th className="px-6 py-4 text-start">{t("colTowers")}</th>
+                                <th className="px-6 py-4 text-start">{t("colAttached")}</th>
                                 <th className="px-6 py-4 text-start">{t("colHeld")}</th>
                                 <th className="px-6 py-4 text-start">{t("colStatus")}</th>
                                 <th className="px-6 py-4 text-start">{t("colPending")}</th>
@@ -250,8 +326,19 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
                                         {s.covered ? t("yes") : t("no")}
                                     </td>
                                     <td className="px-6 py-4 text-muted text-xs font-medium">{towerLabel(s)}</td>
+                                    <td className="px-6 py-4 text-xs font-medium text-foreground" data-testid={`spot-attached-${s.id}`}>
+                                        {s.attachedUnitId ? (
+                                            <span>{t("attachedTo")} <span dir="ltr" className="font-bold">{attachedLabel(s)}</span></span>
+                                        ) : (
+                                            <span className="text-muted">—</span>
+                                        )}
+                                    </td>
                                     <td className="px-6 py-4">
-                                        {s.active ? (
+                                        {s.active && s.attachedUnitId ? (
+                                            <span className="px-2 py-1 text-[10px] font-bold uppercase tracking-widest rounded-md bg-input text-muted">
+                                                {t("notBookable")}
+                                            </span>
+                                        ) : s.active ? (
                                             <span className={cn(
                                                 "px-2 py-1 text-[10px] font-bold uppercase tracking-widest rounded-md",
                                                 s.held ? "bg-warning/10 text-warning" : "bg-success/10 text-success"
@@ -387,6 +474,13 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
                                 </label>
                             </div>
                             {mode.kind === "edit" && (
+                                <p className="text-xs text-muted" data-testid="spot-current-attachment">
+                                    {mode.spot.attachedUnitId
+                                        ? <>{t("attachedTo")} <span dir="ltr" className="font-bold text-foreground">{attachedLabel(mode.spot)}</span></>
+                                        : t("notAttachedNote")}
+                                </p>
+                            )}
+                            {mode.kind === "edit" && (
                                 <div className="grid grid-cols-2 gap-3">
                                     <label className="text-xs font-semibold text-foreground">
                                         {t("feeType")}
@@ -418,6 +512,26 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
                                     <span className="text-xs font-semibold text-foreground">{t("active")}</span>
                                 </label>
                             )}
+                            <div>
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1" htmlFor="spot-attached-unit">{t("attachedUnit")}</label>
+                                <select
+                                    id="spot-attached-unit"
+                                    data-testid="spot-attached-unit"
+                                    value={attachedUnitId}
+                                    onChange={e => setAttachedUnitId(e.target.value)}
+                                    className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                                >
+                                    <option value="">{t("notAttachedOption")}</option>
+                                    {unitOptions.map(u => {
+                                        const b = buildingName(u.building?.id);
+                                        return (
+                                            <option key={u.id} value={u.id}>{b ? `${u.unitNumber} · ${b}` : u.unitNumber}</option>
+                                        );
+                                    })}
+                                </select>
+                                <p className="text-[10px] text-muted mt-1">{t("attachedUnitHint")}</p>
+                                {unitsError && <p className="text-[10px] font-semibold text-error mt-1">{t("unitsLoadError")}</p>}
+                            </div>
                             <div>
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("towers")}</label>
                                 <p className="text-[10px] text-muted mb-2">{t("towersHint")}</p>

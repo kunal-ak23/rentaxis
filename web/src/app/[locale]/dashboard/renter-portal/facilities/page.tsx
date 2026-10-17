@@ -23,6 +23,7 @@ import type {
     BookingRequestDTO,
     BookingRequestStatus,
     BookingResourceType,
+    BookedRange,
 } from "@/types/facility";
 
 const STATUS_CLASSES: Record<BookingRequestStatus, string> = {
@@ -97,6 +98,8 @@ export default function RenterFacilitiesPage() {
     const [target, setTarget] = useState<RequestTarget | null>(null);
     const [unitId, setUnitId] = useState("");
     const [preferredDate, setPreferredDate] = useState("");
+    // Parking only: optional last day of the booking (blank = open-ended).
+    const [preferredEndDate, setPreferredEndDate] = useState("");
     const [note, setNote] = useState("");
     const [submitting, setSubmitting] = useState(false);
     const [dialogError, setDialogError] = useState<string | null>(null);
@@ -139,6 +142,7 @@ export default function RenterFacilitiesPage() {
     const openRequest = (rt: RequestTarget) => {
         setTarget(rt);
         setPreferredDate("");
+        setPreferredEndDate("");
         setNote("");
         setDialogError(null);
         // Only leases against the resource's own property are valid — a
@@ -162,6 +166,13 @@ export default function RenterFacilitiesPage() {
     const submitRequest = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!target || !unitId) return;
+        // The end date is optional but, when given, cannot precede the start (or today, when
+        // no start is chosen) — the date inputs' `min` is only a hint, a typed date skips it.
+        const isParking = target.resourceType === "PARKING_SPOT";
+        if (isParking && preferredEndDate && preferredEndDate < (preferredDate || toDateInput(new Date()))) {
+            setDialogError(t("endBeforeStart"));
+            return;
+        }
         setSubmitting(true);
         setDialogError(null);
         try {
@@ -170,6 +181,7 @@ export default function RenterFacilitiesPage() {
                 resourceId: target.resourceId,
                 unitId,
                 preferredDate: preferredDate || undefined,
+                preferredEndDate: isParking && preferredEndDate ? preferredEndDate : undefined,
                 note: note || undefined,
             });
         } catch (err) {
@@ -250,6 +262,13 @@ export default function RenterFacilitiesPage() {
     const feeLabel = (type?: string, amount?: number | null) =>
         !type || type === "FREE" || !amount ? t("feeFree")
             : t(type === "PER_HOUR" ? "feePerHour" : "feePerBooking", { amount: amount.toFixed(2) });
+    const formatDate = (iso: string) => parseDateOnly(iso).toLocaleDateString(dateLocale(locale));
+    /** "Booked: 01/03/2027 – 31/03/2027", "Booked: from 01/03/2027", "Booked: until 31/03/2027". */
+    const bookedLabel = (r: BookedRange) =>
+        r.from && r.to ? t("bookedRange", { from: formatDate(r.from), to: formatDate(r.to) })
+            : r.from ? t("bookedFrom", { from: formatDate(r.from) })
+                : r.to ? t("bookedUntil", { to: formatDate(r.to) })
+                    : t("bookedOpen");
     const amenityName = (nameEn: string, nameAr: string | null) =>
         locale === "ar" && nameAr ? nameAr : nameEn;
 
@@ -292,6 +311,9 @@ export default function RenterFacilitiesPage() {
 
     const amenities = facilities?.amenities ?? [];
     const parkingSpots = facilities?.parkingSpots ?? [];
+    const allocatedParking = facilities?.allocatedParking ?? [];
+    // Name the property on an allocated bay only when the renter has bays in several.
+    const allocatedProperties = new Set(allocatedParking.map(a => a.propertyId));
     // Only true once the leases fetch has actually succeeded — a failed
     // fetch (see loadLeases/throwIfNotOk) must surface as the page-level
     // error banner above, not be misread as "you have zero active leases".
@@ -323,7 +345,7 @@ export default function RenterFacilitiesPage() {
                 </div>
             )}
 
-            {amenities.length === 0 && parkingSpots.length === 0 && (
+            {amenities.length === 0 && parkingSpots.length === 0 && allocatedParking.length === 0 && (
                 <div className="text-center py-16 bg-background border border-dashed border-border rounded-xl text-xs font-medium text-muted">
                     {t("noFacilities")}
                 </div>
@@ -390,6 +412,41 @@ export default function RenterFacilitiesPage() {
                 </div>
             )}
 
+            {/* ── Allocated parking: bays attached to the renter's unit — no booking, no fee ── */}
+            {allocatedParking.length > 0 && (
+                <div className="mb-10" data-testid="allocated-parking">
+                    <div className="flex items-center gap-2 mb-1">
+                        <Car size={16} className="text-primary" />
+                        <h2 className="text-sm font-bold text-foreground tracking-tight">{t("allocatedParkingSection")}</h2>
+                    </div>
+                    <p className="text-[11px] text-muted mb-4">{t("allocatedParkingNote")}</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {allocatedParking.map(a => (
+                            <div key={a.id} data-testid={`allocated-spot-${a.id}`} className="bg-surface rounded-xl p-4 border border-border flex flex-col gap-2">
+                                <div className="flex items-start justify-between gap-2">
+                                    <p className="text-sm font-bold text-foreground" dir="ltr">{a.spotNumber}</p>
+                                    <span className="px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest rounded-md shrink-0 bg-success/10 text-success">
+                                        {t("allocated")}
+                                    </span>
+                                </div>
+                                {allocatedProperties.size > 1 && a.propertyName && (
+                                    <p className="text-[10px] font-bold text-muted">{a.propertyName}</p>
+                                )}
+                                <p className="text-xs text-muted">
+                                    {a.level ? `${t("level")}: ${a.level} · ` : ""}
+                                    {a.covered ? t("covered") : t("uncovered")}
+                                </p>
+                                {a.unitNumber && (
+                                    <p className="text-xs text-muted">
+                                        {t("unit")}: <span dir="ltr" className="font-semibold text-foreground">{a.unitNumber}</span>
+                                    </p>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* ── Parking section ───────────────────────────────────── */}
             {parkingSpots.length > 0 && (
                 <div className="mb-10">
@@ -435,6 +492,10 @@ export default function RenterFacilitiesPage() {
                                     {s.covered ? t("covered") : t("uncovered")}
                                 </p>
                                 <p className="text-[10px] text-muted">{t("pendingHint", { count: s.pendingCount })}</p>
+                                {/* Approved bookings still to come: the renter can pick dates that are free. */}
+                                {(s.bookedRanges ?? []).map((r, i) => (
+                                    <p key={i} className="text-[10px] text-muted tabular-nums" data-testid={`spot-booked-${s.id}-${i}`}>{bookedLabel(r)}</p>
+                                ))}
                                 <button
                                     onClick={() => openRequest({ resourceType: "PARKING_SPOT", resourceId: s.id, name: s.spotNumber, propertyId: s.propertyId })}
                                     // A pending request of the caller's own for this spot: a second
@@ -585,12 +646,28 @@ export default function RenterFacilitiesPage() {
                                 <input
                                     type="date"
                                     min={toDateInput(new Date())}
+                                    data-testid="request-start-date"
                                     required={!!target?.dateRequired}
                                     value={preferredDate}
                                     onChange={e => setPreferredDate(e.target.value)}
                                     className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
                                 />
                             </div>
+                            {target.resourceType === "PARKING_SPOT" && (
+                                <div>
+                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("preferredEndDate")}</label>
+                                    <input
+                                        type="date"
+                                        // No `min`: the browser would block an earlier date with its own
+                                        // unlocalized tooltip; submitRequest says why in the renter's language.
+                                        value={preferredEndDate}
+                                        onChange={e => setPreferredEndDate(e.target.value)}
+                                        data-testid="request-end-date"
+                                        className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                                    />
+                                    <p className="text-[10px] text-muted mt-1">{t("preferredEndDateHint")}</p>
+                                </div>
+                            )}
                             <div>
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("note")}</label>
                                 <textarea

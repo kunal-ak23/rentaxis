@@ -333,6 +333,9 @@ export type ContractImportResult = {
     bookingDepositsCreated: number;
     /** v1 import: ACTIVE rows that were posted; the rest are DRAFT and in `warnings`. */
     leasesPosted?: number;
+    /** Optional "Parking" sheet: bays created / updated in place. Absent on an older server. */
+    parkingBaysCreated?: number;
+    parkingBaysUpdated?: number;
     importBatchId: string | null;
     contractsCreated: number;
     mappingsCreated: number;

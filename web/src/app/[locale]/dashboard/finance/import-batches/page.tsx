@@ -492,6 +492,14 @@ export default function ImportBatchesPage() {
                                     cheques: importJob.job.chequesCreated,
                                 })}
                             </p>
+                            {((importJob.job.parkingBaysCreated ?? 0) > 0 || (importJob.job.parkingBaysUpdated ?? 0) > 0) && (
+                                <p data-testid="import-counts-parking" className="text-xs text-muted tabular-nums">
+                                    {t("importParkingCounts", {
+                                        created: importJob.job.parkingBaysCreated ?? 0,
+                                        updated: importJob.job.parkingBaysUpdated ?? 0,
+                                    })}
+                                </p>
+                            )}
                         </div>
                     )}
 
@@ -592,6 +600,7 @@ export default function ImportBatchesPage() {
                         <li>{t("cutoverHelpAccounts")}</li>
                         <li>{t("cutoverHelpCreditAccount")}</li>
                         <li>{t("cutoverHelpEjari")}</li>
+                        <li>{t("cutoverHelpParking")}</li>
                     </ul>
                 </div>
             )}
