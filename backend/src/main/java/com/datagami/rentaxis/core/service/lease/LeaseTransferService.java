@@ -277,11 +277,14 @@ public class LeaseTransferService {
      */
     private void requireNoFeeChargedTwice(Lease a, Lease b, LocalDate t) {
         java.util.Set<UUID> chargedOnA = new java.util.HashSet<>();
-        for (LeaseLine l : leaseLineRepository.findByLease_IdOrderBySeqNoAsc(a.getId())) {
+        List<LeaseLine> aLines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(a.getId());
+        // Sim r22 S22-02: an undated fee ran over the term it was charged for, not an extended end.
+        LocalDate originalEnd = com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(a, aLines);
+        for (LeaseLine l : aLines) {
             if (l.getChargeType() == null || l.getChargeType().getBehaviour() != ChargeBehaviour.FEE) continue;
             if (l.getPostedRecognition() != com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.ONE_OFF) continue;
             if (l.getChargeType().getRecognition() == null || !l.getChargeType().getRecognition().recurs()) continue;
-            LocalDate to = l.getPeriodEnd() != null ? l.getPeriodEnd() : a.getEndDate();
+            LocalDate to = l.getPeriodEnd() != null ? l.getPeriodEnd() : originalEnd;
             if (to.isAfter(t)) chargedOnA.add(l.getChargeType().getId());
         }
         for (LeaseLine l : leaseLineRepository.findByLease_IdOrderBySeqNoAsc(b.getId())) {

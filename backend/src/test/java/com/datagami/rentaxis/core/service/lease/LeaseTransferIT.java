@@ -648,6 +648,30 @@ class LeaseTransferIT extends AbstractPostgresIT {
     }
 
     /**
+     * Sim r22 S22-02 follow-through: the "charged twice" refusal asks whether A's at-posting fee
+     * still ran after T over the term it was charged for. A cut-over lease for 2025, parking
+     * charged at posting for 2025, extended through 2026 (rent only): a transfer on 15/05/2026
+     * may charge parking on B, because A's parking ended on 31/12/2025.
+     */
+    @Test
+    void anExtendedLeasesFeeThatEndedBeforeTheMoveMayBeChargedOnTheNewLease() {
+        LocalDate start = LocalDate.of(2025, 1, 1), end = LocalDate.of(2025, 12, 31);
+        UUID a = fixtures.draftLease(LocalDate.of(2024, 12, 20), start, end,
+                List.of(line("RENT", "60000"), line("PARKING_FEE", "3650")));
+        jdbc.update("update leases set fee_timing = 'AT_POSTING' where id = ?", a);
+        chequeGeneration.saveRows(a, List.of(row("680041", LocalDate.of(2024, 12, 20), LocalDate.of(2025, 1, 1), "63650")));
+        posting.post(a);
+        renewal.extend(a, new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(END, null,
+                List.of(new LeaseLineInput(null, "RENT", new BigDecimal("60000"), BigDecimal.ZERO, null, null, null, null, null)),
+                List.of(LeaseTestFixtures.chequeRow("60000", LocalDate.of(2026, 1, 1)))));
+        Unit target = tx.execute(s -> fixtures.createUnit(fixtures.property(), "A-209"));
+        LeaseDTO b = transfers.draft(a, request(T, target.getId(),
+                List.of(line("RENT", "37808.22"), line("PARKING_FEE", "2304.66"))), posting);
+        assertThat(posting.dryRun(b.getId()).errors()).as("A's parking ended on 31/12/2025, before the move")
+                .noneMatch(e -> e.contains("was charged on the old lease"));
+    }
+
+    /**
      * Sim r22 S22-02: after an extension, B's default fee line is A's fee pro rata over the
      * year it was charged for (3,650 × 230 ÷ 365 = 2,300), not over the extended 455 days.
      */
