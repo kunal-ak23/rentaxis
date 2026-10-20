@@ -1,5 +1,6 @@
 import { adminOnboardingTour } from './admin-onboarding';
 import { propertyWorkflowTour } from './property-workflow';
+import { leaseWorkflowTour } from './lease-workflow';
 import { financeOverviewTour } from './finance-overview';
 import { renterPortalTour } from './renter-portal';
 import { superAdminTour } from './super-admin';
@@ -9,6 +10,7 @@ import type { UserRole } from '@/lib/rbac';
 export const ALL_TOURS: TourDef[] = [
   adminOnboardingTour,
   propertyWorkflowTour,
+  leaseWorkflowTour,
   financeOverviewTour,
   renterPortalTour,
   superAdminTour,

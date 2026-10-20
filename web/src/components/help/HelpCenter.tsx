@@ -9,6 +9,7 @@ import {
   CreditCard,
   User,
   Settings,
+  Wrench,
   Clock,
   ChevronRight,
 } from 'lucide-react';
@@ -36,6 +37,7 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   properties: <Building2 size={18} />,
   leases: <FileText size={18} />,
   finance: <CreditCard size={18} />,
+  operations: <Wrench size={18} />,
   renter: <User size={18} />,
   admin: <Settings size={18} />,
 };

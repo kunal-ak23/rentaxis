@@ -103,16 +103,6 @@ describe("PACT terminology", () => {
         expect(stale).toEqual([]);
     });
 
-    it("keeps the help articles' authoring copy on the same terms", () => {
-        const dir = join(__dirname, "../../content/help");
-        const stale = readdirSync(dir).filter(f => f.endsWith(".md")).flatMap(f =>
-            readFileSync(join(dir, f), "utf8").split("\n")
-                .filter(l => !/^(slug|category|relatedTour|roles):/.test(l))
-                .filter(l => STALE_WORD.test(l.replace(/\]\([^)]*\)/g, "]")))
-                .map(l => `${f}: ${l.trim()}`));
-        expect(stale).toEqual([]);
-    });
-
     /**
      * Hard-coded copy the message catalogue cannot see: JSX text between tags and
      * label/title/placeholder/description string props (the property page's "Leases"

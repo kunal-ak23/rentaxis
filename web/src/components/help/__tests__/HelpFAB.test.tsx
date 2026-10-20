@@ -6,6 +6,7 @@ vi.mock("@/i18n/routing", () => ({
     usePathname: () => "/dashboard/leases",
     Link: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
 }));
+vi.mock("next-auth/react", () => ({ useSession: () => ({ data: null }) }));
 vi.mock("@/lib/help", () => ({
     getContextualHelp: () => ({ article: undefined, tour: undefined }),
 }));

@@ -3,7 +3,7 @@
 import { ArrowLeft, Clock, PlayCircle } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 import { useLocale, useTranslations } from 'next-intl';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import RoleFilter from './RoleFilter';
 import TourTrigger from '@/components/tour/TourTrigger';
@@ -11,6 +11,12 @@ import { getTourById } from '@/components/tour/tours';
 import { readingTime } from '@/lib/help';
 import type { HelpArticle as HelpArticleType } from '@/lib/help';
 import { TUTORIALS, tutorialsForArticle, type Tutorial } from '@/lib/tutorials/catalog';
+
+/** An in-app link (another article, a video, a page) stays in the app and keeps the locale. */
+const MARKDOWN_COMPONENTS: Components = {
+  a: ({ href, children }) =>
+    href?.startsWith('/') ? <Link href={href}>{children}</Link> : <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
+};
 
 interface HelpArticleProps {
   article: HelpArticleType;
@@ -82,7 +88,7 @@ export default function HelpArticle({ article, tutorials = TUTORIALS }: HelpArti
 
       {/* Article content: English markdown, laid out LTR even on an RTL page. */}
       <div lang="en" dir="ltr" className="prose prose-gray max-w-none prose-headings:text-gray-900 prose-a:text-primary prose-strong:text-gray-900 prose-table:text-sm prose-th:bg-gray-50 prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-2 prose-td:border-t prose-td:border-gray-200">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{article.content}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>{article.content}</ReactMarkdown>
       </div>
     </div>
   );

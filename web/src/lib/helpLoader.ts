@@ -1,5 +1,5 @@
 // web/src/lib/helpLoader.ts
-import type { HelpArticle } from './help';
+import { HELP_CATEGORIES, type HelpArticle } from './help';
 import type { UserRole } from './rbac';
 
 /**
@@ -64,10 +64,12 @@ export function registerArticle(slug: string, raw: string) {
 export function getAllArticles(): HelpArticle[] {
   if (_articles) return _articles;
   _articles = Object.entries(ARTICLES_RAW).map(([slug, raw]) => toArticle(slug, raw));
-  _articles.sort((a, b) => {
-    if (a.category !== b.category) return a.category.localeCompare(b.category);
-    return a.order - b.order;
-  });
+  // Categories in the help center's order (Getting Started first), then each article's order.
+  const rank = (c: string) => {
+    const i = HELP_CATEGORIES.findIndex(cat => cat.id === c);
+    return i === -1 ? HELP_CATEGORIES.length : i;
+  };
+  _articles.sort((a, b) => rank(a.category) - rank(b.category) || a.order - b.order);
   return _articles;
 }
 
