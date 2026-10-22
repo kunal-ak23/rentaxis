@@ -117,7 +117,7 @@ export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorPro
                     </select>
                 </label>
                 <PromoImageField label={t("logo")} value={logoUrl} onChange={setLogoUrl}
-                    onBusyChange={setUploading} />
+                    onBusyChange={setUploading} sizeHint={t("logoSizeHint")} />
                 <label className="block">
                     <span className="mb-1 block text-sm font-medium">{t("phone")}</span>
                     <input aria-label={t("phone")} placeholder="+971501234567"

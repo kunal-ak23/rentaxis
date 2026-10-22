@@ -12,6 +12,8 @@ interface PromoImageFieldProps {
     onChange: (url: string) => void;
     /** Reports an upload in progress, so the editor can hold Save until it lands. */
     onBusyChange?: (busy: boolean) => void;
+    /** The recommended dimensions for this image, shown under the format hint. */
+    sizeHint?: string;
 }
 
 const ACCEPT = "image/png,image/jpeg,image/gif,image/webp";
@@ -22,7 +24,7 @@ const ACCEPT = "image/png,image/jpeg,image/gif,image/webp";
  * A value saved earlier as an https link to artwork hosted elsewhere is shown
  * and kept until it is replaced or removed.
  */
-export function PromoImageField({ label, value, onChange, onBusyChange }: PromoImageFieldProps) {
+export function PromoImageField({ label, value, onChange, onBusyChange, sizeHint }: PromoImageFieldProps) {
     const t = useTranslations("Promotions");
     const inputRef = useRef<HTMLInputElement>(null);
     const hintId = useId();
@@ -96,7 +98,11 @@ export function PromoImageField({ label, value, onChange, onBusyChange }: PromoI
                     )}
                 </div>
             </div>
-            <p id={hintId} className="mt-1 text-xs text-gray-500">{t("imageHint")}</p>
+            <p id={hintId} className="mt-1 text-xs text-gray-500">
+                {t("imageHint")}
+                {/* The space keeps the two sentences apart for a screen reader. */}
+                {sizeHint && <> <span className="block">{sizeHint}</span></>}
+            </p>
             {error && <p role="alert" id={errorId} className="mt-1 text-sm text-red-600">{error}</p>}
         </div>
     );
