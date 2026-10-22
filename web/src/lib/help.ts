@@ -125,11 +125,12 @@ export const HELP_PAGE_MAP: Record<string, PageHelpEntry> = {
   '/dashboard/renter-portal/renewals': { article: 'renter--renter-portal-overview', videos: ['13'] },
 };
 
-/** The help for a page: its own entry, else the nearest parent page's (Home's, for a page with no closer one). */
 /** A map key with an `[id]` segment matches any one segment there (a contract's own page). */
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const PATTERNS = Object.keys(HELP_PAGE_MAP).filter(k => k.includes('[id]'))
-  .map(k => ({ key: k, re: new RegExp(`^${k.replace(/\[id\]/g, '[^/]+')}$`) }));
+  .map(k => ({ key: k, re: new RegExp(`^${k.split('[id]').map(escapeRe).join('[^/]+')}$`) }));
 
+/** The help for a page: its own entry, else the nearest parent page's (Home's, for a page with no closer one). */
 export function getContextualHelp(pathname: string, role?: UserRole): PageHelp {
   const stripped = pathname.replace(/^\/(en|ar)(?=\/|$)/, '') || '/';
   const parts = stripped.split('/');

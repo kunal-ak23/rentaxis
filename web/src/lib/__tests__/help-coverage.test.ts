@@ -147,7 +147,7 @@ describe("nothing the help points at is missing", () => {
     });
 
     it("tour copy uses the product's terms", () => {
-        const stale = /\b(Renters?|renters?|Leases?|leases?)\b|Super Admin|organiz/;
+        const stale = /\b(Renters?|renters?|Leases?|leases?)\b|Super Admin|Tenant Switcher|organiz/;
         const hits = ALL_TOURS.flatMap(t => [t.name, t.description, ...t.steps.flatMap(s => [s.title, s.text])]
             .filter(x => stale.test(x)).map(x => `${t.id}: ${x}`));
         expect(hits).toEqual([]);

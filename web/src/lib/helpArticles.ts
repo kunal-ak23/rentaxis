@@ -40,7 +40,7 @@ Video: [Chart of accounts, property account sets and charge types](/dashboard/he
 Pick one:
 
 - **Starting fresh** — set the **Books start date** under **Accounting › Year End Closing**, then enter **Accounting › Accounts › Opening Balances** (balances as at the day before the books start).
-- **Moving from another system** — upload the cut-over workbook under **Accounting › One-time setup › Import Batches**. It brings in the properties, units, tenants, contracts and cheques as one draft batch; **Post batch** puts it on the books. Then upload the old system's trial balance on **Opening Balances** (**Upload PACT trial balance**) and check the result in **Cut-over reconciliation**.
+- **Moving from another system** — set the **Books start date** under **Accounting › Year End Closing** first, then upload the cut-over workbook under **Accounting › One-time setup › Import Batches**. It brings in the properties, units, tenants, contracts and cheques as one draft batch; **Post batch** puts it on the books. Then upload the old system's trial balance on **Opening Balances** (**Upload PACT trial balance**) and check the result in **Cut-over reconciliation**.
 
 Video: [Start your books: opening balances and cut-over](/dashboard/help/videos?play=39). More detail: [Starting your books](/dashboard/help/finance--books-start).
 
@@ -61,7 +61,7 @@ Videos: [Create a project and property portfolio](/dashboard/help/videos?play=06
 
 Video: [Manage Tenants and portal access](/dashboard/help/videos?play=09)
 
-### 6. Contracts and cheques
+### 6. Contracts and cheques (Company Admin drafts; Company Admin or Accountant posts)
 
 1. **Leasing › Tenancy Contracts › Draft Tenancy Contract** — the tenant, the unit, the dates, the rent and the number of cheques. The **Cheques** step builds the cheque rows.
 2. **Post Contract** writes the contract's journal. Until a contract is posted it is a draft and nothing is on the books.
@@ -544,9 +544,9 @@ A cheque is **Due** once its date arrives and it has not cleared, and **Overdue*
 
 ### Depositing, clearing and bounces
 
-1. **To deposit** lists the cheques ready for the bank. **Deposit** them one by one, or several at once with **Deposit Batch** (each on its own date)
-2. When the bank confirms the money, **Clear** the cheque (or **Clear Batch**); clearing writes the receipt to the books
-3. A cheque that comes back unpaid: **Bounce** it. The same flow lets you **Replace now** with a new cheque and charge the bounce fee or penalty; **Returned / replace** lists the ones still waiting
+1. **To deposit** lists the cheques ready for the bank: tick them and **Deposit Batch**, on one date or each cheque on its own date. A single cheque can also be deposited from its row menu in the **Cheque register**.
+2. When the bank confirms the money, **Clear** the cheque from its row menu in the **Cheque register**; to clear several, filter the register to the Deposited status and use **Clear Batch**. Clearing writes the receipt to the books.
+3. A cheque that comes back unpaid: **Bounce** it from the same row menu. The same flow lets you **Replace now** with a new cheque and propose a bounce fee (finance approves it under **Penalties**); **Returned / replace** lists the ones still waiting.
 `);
 
 registerArticle('leases--renewal-season', `---
@@ -710,10 +710,11 @@ Before anything is posted, decide the day your books start in Miftah.
 
 **Accounting › One-time setup › Import Batches** takes the cut-over workbook (**Download cut-over template** first):
 
-1. **Upload cut-over workbook**: one workbook brings in the properties, units, tenants, contracts, cheques and, optionally, parking bays. Every property in it must be new. If the workbook does not validate, **nothing** is saved; correct the rows listed and upload again.
-2. The import is a **draft batch** — nothing is on the books yet. **Post batch** posts each contract at its own date, replays its cheques to their imported statuses, and recognises income up to the day before your books start.
-3. On **Opening Balances**, **Upload PACT trial balance** from the old system.
-4. **Accounting › One-time setup › Cut-over reconciliation** compares Miftah's balances as at the cut-over date with that trial balance.
+1. Set the **Books start date** (above) first — a batch cannot be posted without it.
+2. **Upload cut-over workbook**: one workbook brings in the properties, units, tenants, contracts, cheques and, optionally, parking bays. Every property in it must be new. If the workbook does not validate, **nothing** is saved; correct the rows listed and upload again.
+3. The import is a **draft batch** — nothing is on the books yet. **Post batch** posts each contract at its own date, replays its cheques to their imported statuses, and recognises income up to the day before your books start.
+4. On **Opening Balances**, **Upload PACT trial balance** from the old system.
+5. **Accounting › One-time setup › Cut-over reconciliation** compares Miftah's balances as at the cut-over date with that trial balance.
 
 Reversing a batch reverses every journal it wrote, newest first, and returns its contracts to draft.
 `);
@@ -999,7 +1000,7 @@ order: 3
 
 ### Due now
 
-The cheques you owe today, with the amount due and a running total. A cheque past its date shows how many days it is overdue; a penalty approved on your contract appears here too. **All caught up** means nothing is due right now.
+The cheques you owe today, with the amount due and a running total. A cheque past its grace period shows how many days it is overdue; a penalty approved on your contract appears here too. **All caught up** means nothing is due right now.
 
 ### Payment History
 

@@ -32,7 +32,7 @@ export const superAdminTour: TourDef = {
     {
       id: 'tenant-switcher',
       target: '[data-tour="tenant-switcher"]',
-      title: 'Tenant Switcher',
+      title: 'Organisation Switcher',
       text: 'Switch between organisations to view their data and manage their settings.',
       position: 'bottom',
     },
