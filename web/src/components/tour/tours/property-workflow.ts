@@ -18,7 +18,7 @@ export const propertyWorkflowTour: TourDef = {
       id: 'add-property-btn',
       target: '[data-tour="add-property-btn"]',
       title: 'Add a Property',
-      text: 'Add Property adds a unit to a project. A new project itself (name, emirate, type, address and Makani number) is under More › Add Project.',
+      text: 'Company Admins add here: Add Property adds a unit to a project, and More › Add Project creates the project itself (name, emirate, type, address and Makani number).',
       position: 'bottom',
     },
     {

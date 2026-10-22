@@ -4,6 +4,9 @@ import "../helpArticles";
 import { getAllArticles, getArticleBySlug } from "../helpLoader";
 import { HELP_PAGE_MAP, HELP_CATEGORIES, filterArticlesByRole, getContextualHelp } from "../help";
 import { buildNav, flattenNav } from "../nav/navModel";
+import { DASHBOARD_ROUTES, routeAllows } from "../nav/routeRegistry";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { PERMISSIONS, type UserRole } from "../rbac";
 import { TUTORIALS, publishedTutorials } from "../tutorials/catalog";
 import { ALL_TOURS, getTourById } from "@/components/tour/tours";
@@ -34,15 +37,25 @@ describe("help for every page on the rail", () => {
         expect(missing).toEqual([]);
     });
 
-    it.each(ROLES.filter(r => r !== "SUPER_ADMIN"))("%s: every rail page's article is one the role is served", role => {
-        // Super admins read the tenant articles through "Show all roles"; every other role
-        // must get an article written for it, or the help center hides what the button opens.
-        const wrong = navPaths(role).flatMap(p => {
+    it.each(ROLES.filter(r => r !== "SUPER_ADMIN"))("%s: every page the role can open gets an article it is served", role => {
+        // Every page the layout admits the role to (routeRegistry), not just its rail: an
+        // accountant opens Properties read-only though it is not on their rail. Super admins
+        // read the tenant articles through "Show all roles"; every other role must get an
+        // article written for it, or the help center hides what the button opens.
+        const pages = DASHBOARD_ROUTES.filter(e => routeAllows(e, role)).map(e => e.path.replace(/\[\w+\]/g, "x"))
+            .filter(p => !p.startsWith("/dashboard/help")); // the Help center has no page help of its own
+        const wrong = [...new Set([...pages, ...navPaths(role)])].flatMap(p => {
             const slug = getContextualHelp(p, role).article;
             const article = slug ? getArticleBySlug(slug) : undefined;
             return article?.roles.includes(role) ? [] : [`${p} → ${slug ?? "nothing"}`];
         });
         expect(wrong).toEqual([]);
+    });
+
+    it("offers nothing page-specific on the Help center itself", () => {
+        for (const p of ["/dashboard/help", "/dashboard/help/videos", "/en/dashboard/help/start"]) {
+            expect(getContextualHelp(p, "TENANT_ADMIN"), p).toEqual({});
+        }
     });
 
     it("sends the tenants page to the tenants article, not the properties one", () => {
@@ -91,6 +104,25 @@ describe("nothing the help points at is missing", () => {
     it("defines the contract-list tour the contract pages point at", () => {
         expect(getTourById("lease-workflow")?.steps.length).toBeGreaterThan(0);
         expect(new Set(ALL_TOURS.map(t => t.id)).size).toBe(ALL_TOURS.length);
+    });
+
+    it("every tour step targets an element some page or the shell renders", () => {
+        // Source of every non-test .ts/.tsx file: a target's test id or tour id must appear in it,
+        // as a literal attribute or as an id string the nav model turns into one.
+        const files: string[] = [];
+        const walk = (d: string) => readdirSync(d).forEach(n => {
+            const p = join(d, n);
+            if (statSync(p).isDirectory()) { if (n !== "__tests__" && n !== "tours") walk(p); }
+            else if (/\.tsx?$/.test(n) && !/\.test\.tsx?$/.test(n)) files.push(p);
+        });
+        walk(join(__dirname, "../.."));
+        const source = files.map(f => readFileSync(f, "utf8")).join("\n");
+        const missing = ALL_TOURS.flatMap(t => t.steps.flatMap(s => {
+            const m = s.target.match(/^\[data-(testid|tour)="([^"]+)"\]$/);
+            if (!m) return [`${t.id}/${s.id}: unsupported selector ${s.target}`];
+            return source.includes(`"${m[2]}"`) ? [] : [`${t.id}/${s.id}: ${s.target}`];
+        }));
+        expect(missing).toEqual([]);
     });
 
     it("every in-article link opens a real article or a published video", () => {

@@ -4,7 +4,7 @@ export const financeOverviewTour: TourDef = {
   id: 'finance-overview',
   name: 'Finance Module Tour',
   description: 'Understanding accounts, journals, and the ledger',
-  roles: ['TENANT_ADMIN'],
+  roles: ['TENANT_ADMIN', 'ACCOUNTANT'],
   steps: [
     {
       id: 'accounts-page',

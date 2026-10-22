@@ -35,7 +35,7 @@ export interface PageHelp {
 }
 
 /**
- * One entry per page: every nav rail/panel href has its own (help-nav-paths.test.ts),
+ * One entry per page: every page a role can open has one or a parent's (help-coverage.test.ts),
  * and a detail page (/dashboard/leases/<id>) falls back to its list page.
  * `byRole` swaps the entry for a role that sees the same URL as a different page
  * (a tenant's /dashboard/tickets is their own tickets, not the staff queue).
@@ -49,6 +49,8 @@ const PAYABLES: PageHelp = { article: 'finance--payables', videos: ['44', '19'] 
 const REPORTS: PageHelp = { article: 'finance--ledgers-and-reports', videos: ['20'] };
 
 export const HELP_PAGE_MAP: Record<string, PageHelpEntry> = {
+  // The Help center itself: no page help (its tour and videos would be Home's).
+  '/dashboard/help': {},
   // Home
   '/dashboard': { article: 'getting-started--welcome', tour: 'admin-onboarding', videos: ['02', '01'] },
   // Leasing
@@ -97,7 +99,11 @@ export const HELP_PAGE_MAP: Record<string, PageHelpEntry> = {
   // Settings
   '/dashboard/settings': { article: 'admin--tenant-settings', videos: ['05'] },
   '/superadmin/tenants': { article: 'admin--super-admin-guide', tour: 'super-admin', videos: ['04'] },
-  '/superadmin/users': { article: 'admin--super-admin-guide', videos: ['03'] },
+  '/superadmin/users': {
+    article: 'admin--super-admin-guide', videos: ['03'],
+    // A Company Admin manages their own organisation's users here.
+    byRole: { TENANT_ADMIN: { article: 'admin--managing-staff', videos: ['05', '03'] } },
+  },
   // More
   '/dashboard/meetings': {
     article: 'operations--bookings-meetings-promotions', videos: ['23'],

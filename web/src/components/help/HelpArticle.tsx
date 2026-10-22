@@ -3,6 +3,8 @@
 import { ArrowLeft, Clock, PlayCircle } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 import { useLocale, useTranslations } from 'next-intl';
+import { useSession } from 'next-auth/react';
+import type { UserRole } from '@/lib/rbac';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import RoleFilter from './RoleFilter';
@@ -10,7 +12,7 @@ import TourTrigger from '@/components/tour/TourTrigger';
 import { getTourById } from '@/components/tour/tours';
 import { readingTime } from '@/lib/help';
 import type { HelpArticle as HelpArticleType } from '@/lib/help';
-import { TUTORIALS, tutorialsForArticle, type Tutorial } from '@/lib/tutorials/catalog';
+import { TUTORIALS, filterTutorialsByRole, tutorialsForArticle, type Tutorial } from '@/lib/tutorials/catalog';
 
 /** An in-app link (another article, a video, a page) stays in the app and keeps the locale. */
 const MARKDOWN_COMPONENTS: Components = {
@@ -28,9 +30,13 @@ export default function HelpArticle({ article, tutorials = TUTORIALS }: HelpArti
   const t = useTranslations('Help');
   const locale = useLocale();
   const minutes = readingTime(article.content);
-  const relatedTour = article.relatedTour ? getTourById(article.relatedTour) : undefined;
+  const { data: session } = useSession();
+  const role = (session?.user as { role?: UserRole } | undefined)?.role;
+  // Only a tour, and only videos, made for the reader's role — as the help button offers.
+  const tour = article.relatedTour ? getTourById(article.relatedTour) : undefined;
+  const relatedTour = tour && role && tour.roles.includes(role) ? tour : undefined;
   // Published (non-null YouTube id) tutorials that list this article.
-  const videos = tutorialsForArticle(article.slug, tutorials);
+  const videos = filterTutorialsByRole(tutorialsForArticle(article.slug, tutorials), role);
   const lang: 'en' | 'ar' = locale === 'ar' ? 'ar' : 'en';
 
   return (

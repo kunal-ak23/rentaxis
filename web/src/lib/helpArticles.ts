@@ -103,13 +103,13 @@ Depending on your role, you'll have access to different features:
 
 ### Quick Start
 
-1. **Start on Home** — the **Contract pipeline** (draft to settlement), **Needs you now** (today's work), **Unit Status** with a floor-by-floor board of each property, one collections chart, and recent activity
-2. **Check the Navigation** — Pick a section on the left rail, then a page in the panel beside it
+1. **Start on Home** — for staff, the **Contract pipeline** (draft to settlement), **Needs you now** (today's work), **Unit Status** with a floor-by-floor board of each property, one collections chart, and recent activity. A tenant's Home is the tenant portal; a security guard's is the gate desk.
+2. **Check the Navigation** — Pick a section on the rail, then a page in the panel beside it
 3. **Use Help Anytime** — Click the floating **?** button on any page for that page's article, its videos and its tour
 
 ### Need a Guided Tour?
 
-Click the **?** button in the bottom-right corner and select "Take a Tour" to walk through the portal step-by-step. The **Video tutorials** tab of the Help center has a short video for most workflows.
+Click the **?** button in the bottom corner and select "Take a Tour" to walk through the portal step-by-step. The **Video tutorials** tab of the Help center has a short video for most workflows.
 `);
 
 registerArticle('getting-started--roles-and-permissions', `---
@@ -200,7 +200,7 @@ If the project has more than one tower:
 
 1. On the project's **Units** tab, click **Add Unit** (or use **Add Property** on the list page and pick the project)
 2. Enter the unit details:
-   - Unit number and floor
+   - Unit number
    - Type (Studio, 1 BHK, 2 BHK, 3 BHK, Penthouse, Retail, Office)
    - Size in square feet
    - **Expected rent (AED a year)** — the asking rent for a full year
@@ -233,14 +233,14 @@ registerArticle('properties--managing-properties', `---
 title: Managing Properties
 description: How to add, edit, and organize your properties
 category: properties
-roles: [TENANT_ADMIN, PROPERTY_MANAGER]
+roles: [TENANT_ADMIN, PROPERTY_MANAGER, ACCOUNTANT]
 order: 1
 relatedTour: property-workflow
 ---
 
 ## Managing Properties
 
-**Leasing › Properties & Units** is your central hub for your real estate portfolio. In Miftah a **project** is a building or development; each rentable unit in it is a **property**.
+**Leasing › Properties & Units** is your central hub for your real estate portfolio. In Miftah a **project** is a building or development; each rentable unit in it is a **property**. Company Admins add and edit projects; Property Managers and Accountants see them read-only.
 
 ### The List
 
@@ -250,7 +250,7 @@ The page shows your projects as cards or a table with:
 - Expected and actual rent, and revenue
 - Quick actions (open, manage)
 
-### Adding a Project
+### Adding a Project (Company Admins)
 
 1. Click **More › Add Project** (**Add Property** adds a unit to an existing project; **Import Property** and **Import Portfolio** are also under **More**)
 2. Fill in the fields:
@@ -296,7 +296,7 @@ Units are the individual rentable spaces within a project (apartments, offices, 
 
 **Unit Information:**
 - **Unit Number** — Unique within the project
-- **Floor** — Which floor the unit is on
+- **Building** — The tower it is in, when the project has more than one
 - **Type** — Studio, 1 BHK, 2 BHK, 3 BHK, Penthouse, Retail or Office
 - **Size** — In square feet
 - **Expected rent** — The asking rent **a year**, in AED. When a contract works out below it, the contract form says by how much (it never blocks).
@@ -314,7 +314,7 @@ Units are the individual rentable spaces within a project (apartments, offices, 
 | **Vacant** | No contract covers the unit today |
 | **Occupied** | A posted contract covers the unit today |
 | **Reserved** | A contract is posted but has not started yet — the badge shows the date and the tenant |
-| **Maintenance** | The unit is out of service and cannot be let |
+| **Maintenance** | The unit is under maintenance |
 
 **Home › Unit Status** shows the same statuses on a floor-by-floor board of each property.
 
@@ -377,7 +377,7 @@ registerArticle('leases--tenants-and-portal-access', `---
 title: Tenants & Portal Access
 description: Adding tenants and giving them a tenant portal login
 category: leases
-roles: [TENANT_ADMIN, PROPERTY_MANAGER]
+roles: [TENANT_ADMIN, PROPERTY_MANAGER, ACCOUNTANT]
 order: 1
 ---
 
@@ -391,7 +391,7 @@ order: 1
 2. Enter the name in English and Arabic, the email, phone, Emirates ID and preferred language
 3. If a tenant with the same details already exists, Miftah warns you — check it is not the same person before creating another record
 
-A tenant can also be created from the contract form, or come in through the portfolio or cut-over import.
+Tenants can also come in through the portfolio or cut-over import.
 
 ### Portal access
 
@@ -423,10 +423,10 @@ Tenancy Contracts are the core of Miftah — they link a tenant to a unit with p
 2. Click **Draft Tenancy Contract** (Home's **New Contract** opens the same form)
 3. Fill in the contract details:
    - **Unit** — Select from your vacant units
-   - **Tenant** — Choose an existing tenant or create a new one
+   - **Tenant** — Choose the tenant (add a new one under **Leasing › Tenants** first)
    - **Tenancy Contract Dates** — Start date and end date
    - **Rent Amount** — the rent for the whole term in AED; if it works out below the unit's asking rent a year, the form says by how much (it never blocks)
-   - **VAT and charges** — for a commercial unit, and any fees the contract carries
+   - **VAT and charges** — VAT where the contract charges it, and any fees the contract carries
    - **Security Deposit** — If applicable
    - **Number of cheques** — how many instalments the rent is paid in
 
@@ -468,7 +468,7 @@ DRAFT → PENDING_SIGNATURE → ACTIVE → NOTICE_GIVEN → TERMINATED / EXPIRED
 | **Notice Given** | Notice to end the contract has been recorded. |
 | **Terminated** | Ended before its natural end date. |
 | **Expired** | Reached its end date without a renewal. An expired contract still occupying the unit shows as *holding over* in the renewal season. |
-| **Renewed** | Reached its end date with a renewal posted after it. |
+| **Renewed** | Its renewal has been posted: the next contract takes over the unit (and the deposit). |
 | **Closed** | Settled: all financial obligations are closed. |
 
 ### Key Actions
@@ -731,7 +731,7 @@ Each instalment's VAT is declared on its tax point — its due date, or the day 
 
 ### 3. Bank reconciliation
 
-**Accounting › Bank › Bank reconciliation** — import each bank account's statement and match its lines to the books. Finalizing a reconciliation locks that bank account's postings up to its date; a Company Admin can reopen the latest one, with a reason.
+**Accounting › Bank › Bank reconciliation** — import each bank account's statement and match its lines to the books. Finalising a reconciliation locks that bank account's postings up to its date; a Company Admin can reopen the latest one, with a reason.
 
 ### 4. Lock the period
 
@@ -800,13 +800,13 @@ registerArticle('operations--tickets', `---
 title: Maintenance Tickets
 description: Assigning, resolving and closing tenants' maintenance tickets
 category: operations
-roles: [TENANT_ADMIN, PROPERTY_MANAGER]
+roles: [TENANT_ADMIN, PROPERTY_MANAGER, ACCOUNTANT, TENANT_USER]
 order: 1
 ---
 
 ## Maintenance Tickets
 
-**Operations › Tickets** holds every maintenance ticket — raised by a tenant in the portal, or by your team.
+**Operations › Tickets** holds every maintenance ticket — raised by a tenant in the portal, or by your team. Company Admins and Property Managers assign and resolve tickets; a maintenance team member with a Company User login works the tickets assigned to them.
 
 ### Ticket statuses
 
@@ -1031,7 +1031,7 @@ Miftah keeps two lists, both under **Settings › Users & staff**:
 ### Adding a user (a login)
 
 1. Go to **Settings › Users & staff** and click **New User**
-2. Enter the name, email and phone, and choose the role: **Company Admin**, **Accountant**, **Property Manager** or **Security Guard**
+2. Enter the name, email and phone, and choose the role: **Company Admin**, **Accountant**, **Property Manager**, **Security Guard** or **Company User**
 3. **Assign Properties** where the role works per property
 4. No password is set here: the user gets an email invite to choose their own. Security guards instead sign in with their mobile number and an SMS code, so enter their mobile number.
 
@@ -1095,7 +1095,7 @@ Map your chart of accounts to Miftah's automatic postings:
 `);
 
 registerArticle('admin--super-admin-guide', `---
-title: Super Admin Guide
+title: System Admin Guide
 description: System administration and multi-tenant management
 category: admin
 roles: [SUPER_ADMIN]
@@ -1103,7 +1103,7 @@ order: 3
 relatedTour: super-admin
 ---
 
-## Super Admin Guide
+## System Admin Guide
 
 As a System Admin, you have full access across all organisations in Miftah.
 
