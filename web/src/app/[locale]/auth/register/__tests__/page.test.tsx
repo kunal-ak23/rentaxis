@@ -51,7 +51,7 @@ describe("RegisterPage", () => {
         render(<RegisterPage />);
         completeForm();
 
-        fireEvent.click(screen.getByRole("button", { name: /create organization/i }));
+        fireEvent.click(screen.getByRole("button", { name: /create organisation/i }));
 
         await waitFor(() => expect(push).toHaveBeenCalledWith("/auth/login?registered=true"));
         expect(global.fetch).toHaveBeenCalledWith("/api/proxy/auth/register", expect.objectContaining({
@@ -74,7 +74,7 @@ describe("RegisterPage", () => {
         render(<RegisterPage />);
         completeForm();
 
-        fireEvent.click(screen.getByRole("button", { name: /create organization/i }));
+        fireEvent.click(screen.getByRole("button", { name: /create organisation/i }));
 
         expect(await screen.findByText("Registration is temporarily unavailable.")).toBeVisible();
         expect(push).not.toHaveBeenCalled();
@@ -85,7 +85,7 @@ describe("RegisterPage", () => {
         completeForm();
         fireEvent.change(screen.getByLabelText("Password", { exact: true }), { target: { value: "short" } });
 
-        fireEvent.click(screen.getByRole("button", { name: /create organization/i }));
+        fireEvent.click(screen.getByRole("button", { name: /create organisation/i }));
 
         expect(await screen.findByText("Password must be at least 8 characters")).toBeVisible();
         expect(global.fetch).not.toHaveBeenCalled();

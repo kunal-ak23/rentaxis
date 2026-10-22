@@ -34,6 +34,7 @@ vi.mock("react-shepherd", () => ({
 }));
 
 import TourProvider from "../TourProvider";
+import type { UserRole } from "@/lib/rbac";
 
 const store = new Map<string, string>();
 beforeEach(() => {
@@ -47,9 +48,9 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
-function mount(p: string) {
+function mount(p: string, role: UserRole = "TENANT_ADMIN") {
     path.current = p;
-    const r = render(<TourProvider role="TENANT_USER"><div /></TourProvider>);
+    const r = render(<TourProvider role={role}><div /></TourProvider>);
     act(() => { vi.advanceTimersByTime(2000); });
     return r;
 }
@@ -68,6 +69,24 @@ describe("TourProvider auto-start", () => {
         expect((tours[0].options.defaultStepOptions as { cancelIcon: { enabled: boolean } }).cancelIcon.enabled).toBe(true);
         const steps = tours[0].options.steps as { buttons: { text: string }[] }[];
         expect(steps[0].buttons.map(b => b.text)).toContain("Skip");
+        // The admin welcome tour, Leasing and Accounting included.
+        expect((tours[0].options.steps as { id: string }[]).map(s => s.id)).toContain("sidebar-finance");
+    });
+
+    it("opens a Company User's own tour, which stays off the Leasing and Accounting rail items they do not have", () => {
+        mount("/en/dashboard", "TENANT_USER");
+        expect(tours).toHaveLength(1);
+        expect(tours[0].started).toBe(true);
+        const targets = (tours[0].options.steps as { attachTo: { element: string } }[]).map(s => s.attachTo.element);
+        expect(targets).toEqual(['[data-tour="dashboard-header"]', '[data-tour="sidebar-nav"]', '[data-tour="help-fab"]', '[data-tour="header-help"]']);
+        // Finishing it is remembered under its own id, not the admin tour's.
+        act(() => { tours[0].handlers.complete?.forEach(h => h()); });
+        expect(JSON.parse(store.get("rentaxis_tours_completed")!)).toEqual(["company-user-onboarding"]);
+    });
+
+    it("does not auto-start for a role with no welcome tour (accountant)", () => {
+        mount("/en/dashboard", "ACCOUNTANT");
+        expect(tours.filter(t => t.started)).toHaveLength(0);
     });
 
     it("stays dismissed once skipped or closed", () => {
@@ -83,7 +102,7 @@ describe("TourProvider auto-start", () => {
 describe("TourProvider autoStart=false (review fix 5)", () => {
     it("does not open on the dashboard home while the layout says the page is not usable", () => {
         path.current = "/en/dashboard";
-        render(<TourProvider role="TENANT_USER" autoStart={false}><div /></TourProvider>);
+        render(<TourProvider role="TENANT_ADMIN" autoStart={false}><div /></TourProvider>);
         act(() => { vi.advanceTimersByTime(2000); });
         expect(tours.filter(t => t.started)).toHaveLength(0);
     });

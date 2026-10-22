@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import ar from "../../../messages/ar.json";
 import en from "../../../messages/en.json";
 import { getAllArticles } from "../helpLoader";
+import { ALL_TOURS } from "@/components/tour/tours";
 import "../helpArticles";
 
 type Tree = { [k: string]: string | Tree };
@@ -101,6 +102,21 @@ describe("PACT terminology", () => {
                 .filter(([, text]) => STALE_WORD.test(text.replace(/\]\([^)]*\)/g, "]")))
                 .map(([field, text]) => `${a.slug}.${field}: ${text.match(STALE_WORD)?.[0]}`));
         expect(stale).toEqual([]);
+    });
+
+    it("says Tenant / Contract and Organisation in every tour's name, description and steps", () => {
+        // Tour copy is hard-coded English in .ts files, which the message and .tsx scans miss.
+        const stale = ALL_TOURS.flatMap(t =>
+            [["name", t.name], ["description", t.description],
+                ...t.steps.flatMap(s => [[`${s.id}.title`, s.title], [`${s.id}.text`, s.text]])]
+                .filter(([, text]) => STALE_WORD.test(text) || /organiz/i.test(text))
+                .map(([field, text]) => `${t.id}.${field}: ${text}`));
+        expect(stale).toEqual([]);
+    });
+
+    it("spells Organisation the UAE way in every English label", () => {
+        const us = [...EN].filter(([, v]) => /organiz/i.test(v));
+        expect(us.map(([k, v]) => `${k}: ${v}`)).toEqual([]);
     });
 
     /**

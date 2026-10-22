@@ -135,6 +135,23 @@ describe("nothing the help points at is missing", () => {
         expect(missing).toEqual([]);
     });
 
+    it("a tour only points a role at rail items that role's rail has", () => {
+        // Review of #426: the welcome tour walked a Company User (rail: Home only) through Leasing and Accounting.
+        const railIds = (role: UserRole) => new Set([true, false].flatMap(booksLive =>
+            buildNav({ role, isEnabled: () => true, tenantSlug: "acme", booksLive })
+                .flatMap(sec => [sec.tourId, ...sec.groups.flatMap(g => g.items.map(i => i.testId))])));
+        const wrong = ALL_TOURS.flatMap(t => t.roles.flatMap(role => t.steps
+            .map(s => s.target.match(/^\[data-(?:testid|tour)="(sidebar-[^"]+)"\]$/)?.[1])
+            .filter((id): id is string => !!id && id !== "sidebar-nav" && !railIds(role).has(id))
+            .map(id => `${t.id} (${role}): ${id}`)));
+        expect(wrong).toEqual([]);
+    });
+
+    it("at most one welcome tour auto-starts per role", () => {
+        const twice = ROLES.filter(r => ALL_TOURS.filter(t => t.onboarding && t.roles.includes(r)).length > 1);
+        expect(twice).toEqual([]);
+    });
+
     it("every in-article link opens a real article or a published video", () => {
         const broken = getAllArticles().flatMap(a =>
             [...a.content.matchAll(/\]\((\/[^)]*)\)/g)].map(m => m[1]).filter(href => {

@@ -189,7 +189,7 @@ function LimitedHome({ name }: { name?: string | null }) {
   const dayLabel = now.toLocaleDateString(locale, { weekday: "long", day: "2-digit", month: "short", year: "numeric" });
   return (
     <div className="flex flex-col gap-5" data-testid="home-limited">
-      <div>
+      <div data-tour="dashboard-header">
         <p className="text-[12.5px] text-[var(--ink-500)] mb-1">{dayLabel}</p>
         <h1 className="font-serif text-[28px] font-semibold tracking-tight m-0">{t(greetingKey, { name: firstName })}</h1>
       </div>
