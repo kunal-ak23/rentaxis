@@ -75,6 +75,8 @@ describe("Home — roles without the summary (sandbox role test M4)", () => {
         expect(screen.getByTestId("home-limited-help")).toHaveAttribute("href", "/dashboard/help");
         expect(screen.queryByText(en.Dashboard.unableToLoad)).toBeNull();
         expect(dashboardCalls()).toEqual([]);
+        // The Company User welcome tour's first step points here.
+        expect(screen.getByTestId("home-limited").querySelector('[data-tour="dashboard-header"]')).not.toBeNull();
     });
 
     it("renders the limited Home in Arabic", async () => {

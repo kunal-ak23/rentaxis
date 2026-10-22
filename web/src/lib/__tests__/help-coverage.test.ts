@@ -9,7 +9,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { PERMISSIONS, type UserRole } from "../rbac";
 import { TUTORIALS, publishedTutorials } from "../tutorials/catalog";
-import { ALL_TOURS, getTourById } from "@/components/tour/tours";
+import { ALL_TOURS, getOnboardingTour, getTourById } from "@/components/tour/tours";
 
 /**
  * The help button must have something for every page a role can reach from the
@@ -144,6 +144,13 @@ describe("nothing the help points at is missing", () => {
             .map(s => s.target.match(/^\[data-(?:testid|tour)="(sidebar-[^"]+)"\]$/)?.[1])
             .filter((id): id is string => !!id && id !== "sidebar-nav" && !railIds(role).has(id))
             .map(id => `${t.id} (${role}): ${id}`)));
+        expect(wrong).toEqual([]);
+    });
+
+    it("Home's help button offers each role the welcome tour that auto-starts for it", () => {
+        const wrong = ROLES.filter(r => getOnboardingTour(r))
+            .filter(r => getContextualHelp("/dashboard", r).tour !== getOnboardingTour(r)!.id)
+            .map(r => `${r}: ${getContextualHelp("/dashboard", r).tour}`);
         expect(wrong).toEqual([]);
     });
 
