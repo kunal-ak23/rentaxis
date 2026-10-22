@@ -4,7 +4,7 @@ export const financeOverviewTour: TourDef = {
   id: 'finance-overview',
   name: 'Finance Module Tour',
   description: 'Understanding accounts, journals, and the ledger',
-  roles: ['TENANT_ADMIN'],
+  roles: ['TENANT_ADMIN', 'ACCOUNTANT'],
   steps: [
     {
       id: 'accounts-page',
@@ -27,7 +27,7 @@ export const financeOverviewTour: TourDef = {
       id: 'general-ledger-link',
       target: '[data-tour="sidebar-general-ledger"]',
       title: 'General Ledger',
-      text: 'Read any account back as a running ledger — opening balance, every line that hit it, and the closing balance — filtered by property, unit, lease or renter.',
+      text: 'Read any account back as a running ledger — opening balance, every line that hit it, and the closing balance — filtered by property, unit, contract or tenant.',
       position: 'right',
     },
     {

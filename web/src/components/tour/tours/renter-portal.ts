@@ -2,7 +2,7 @@ import type { TourDef } from './types';
 
 export const renterPortalTour: TourDef = {
   id: 'renter-portal',
-  name: 'Renter Portal Tour',
+  name: 'Tenant Portal Tour',
   description: 'Your self-service portal walkthrough',
   roles: ['RENTER'],
   steps: [
@@ -10,7 +10,7 @@ export const renterPortalTour: TourDef = {
       id: 'renter-home',
       target: '[data-tour="dashboard-header"]',
       title: 'Your Tenant Portal',
-      text: 'Welcome! This is your self-service portal where you can view contracts, make payments, and submit maintenance requests.',
+      text: 'Welcome! This is your self-service portal where you can view your contracts, follow your cheques, and submit maintenance requests.',
       position: 'bottom',
     },
     {
@@ -24,7 +24,7 @@ export const renterPortalTour: TourDef = {
       id: 'my-payments',
       target: '[data-tour="sidebar-my-payments"]',
       title: 'My Payments',
-      text: 'See your payment schedule and make online rent payments securely.',
+      text: 'See which cheques are due, which are at the bank, and your receipts. Where your landlord offers online payment, you can pay here too.',
       position: 'right',
     },
     {

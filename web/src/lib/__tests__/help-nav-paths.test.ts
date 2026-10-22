@@ -14,7 +14,7 @@ describe("help centre follows the new navigation", () => {
         for (const p of ["/dashboard/settings", "/dashboard/finance/journals"]) expect(HELP_PAGE_MAP[p], p).toBeTruthy();
     });
     it("tells no one to find a page by an old sidebar path", () => {
-        const stale = /Finance > Payments|Settings > (Account|Payment Gateway|Rent Settings)|\*\*Staff\*\* from the sidebar|\*\*Users\*\* from the sidebar|Finance > (Chart|Journal)/;
+        const stale = /Finance [>›] Payments|Settings [>›] (Account|Payment Gateway|Rent Settings)|\*\*Staff\*\* from the sidebar|\*\*Users\*\* from the sidebar|Finance [>›] (Chart|Journal)/;
         const hits = getAllArticles().filter(a => stale.test(a.content)).map(a => a.slug);
         expect(hits).toEqual([]);
     });
