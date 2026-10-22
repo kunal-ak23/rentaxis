@@ -4,7 +4,9 @@ export const adminOnboardingTour: TourDef = {
   id: 'admin-onboarding',
   name: 'Welcome Tour',
   description: 'Quick overview of your Miftah dashboard',
-  roles: ['TENANT_ADMIN', 'PROPERTY_MANAGER', 'TENANT_USER'],
+  // Company Users get their own tour (company-user-onboarding): their rail has no Leasing or Accounting.
+  roles: ['TENANT_ADMIN', 'PROPERTY_MANAGER'],
+  onboarding: true,
   steps: [
     {
       id: 'welcome',

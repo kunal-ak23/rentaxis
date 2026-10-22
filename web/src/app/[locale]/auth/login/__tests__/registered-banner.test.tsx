@@ -49,7 +49,7 @@ describe("LoginPage registration confirmation", () => {
         render(<LoginPage />);
 
         expect(screen.getByRole("status")).toHaveTextContent(
-            "Organization created successfully. Sign in with your new administrator account.",
+            "Organisation created successfully. Sign in with your new administrator account.",
         );
     });
 

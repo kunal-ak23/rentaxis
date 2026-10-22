@@ -14,5 +14,7 @@ export interface TourDef {
   name: string;
   description: string;
   roles: UserRole[];
+  /** Auto-starts on a first visit to the dashboard home for its roles (at most one per role). */
+  onboarding?: boolean;
   steps: TourStepDef[];
 }
