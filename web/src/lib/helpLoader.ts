@@ -78,6 +78,11 @@ export function registerArticleAr(slug: string, raw: string) {
   _articles = null;
 }
 
+/** The slugs that have an Arabic version registered (each must name an English article). */
+export function getArabicSlugs(): string[] {
+  return Object.keys(ARTICLES_AR_RAW);
+}
+
 export function getAllArticles(): HelpArticle[] {
   if (_articles) return _articles;
   _articles = Object.entries(ARTICLES_RAW).map(([slug, raw]) => toArticle(slug, raw));

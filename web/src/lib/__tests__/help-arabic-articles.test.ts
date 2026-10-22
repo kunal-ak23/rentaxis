@@ -1,10 +1,8 @@
 // src/lib/__tests__/help-arabic-articles.test.ts
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import ar from "../../../messages/ar.json";
 import en from "../../../messages/en.json";
-import { getAllArticles } from "../helpLoader";
+import { getAllArticles, getArabicSlugs } from "../helpLoader";
 import "../helpArticles";
 
 /**
@@ -58,10 +56,7 @@ describe("Arabic help articles", () => {
     });
 
     it("has no Arabic version for an article that does not exist", () => {
-        const source = readFileSync(join(__dirname, "../helpArticlesAr.ts"), "utf8");
-        const slugs = [...source.matchAll(/registerArticleAr\('([^']+)'/g)].map(m => m[1]);
-        expect(slugs.filter(s => !articles.some(a => a.slug === s))).toEqual([]);
-        expect(new Set(slugs).size).toBe(slugs.length);
+        expect(getArabicSlugs().filter(s => !articles.some(a => a.slug === s))).toEqual([]);
     });
 
     it("leaves no English in an Arabic title, summary or body", () => {

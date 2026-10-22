@@ -592,7 +592,7 @@ The renewals are **drafts**; nothing is posted.
 
 ### Cheque numbers for the drafts
 
-When the tenants hand over their new cheques, open the **Renewal drafted** stage, select the drafts and use **Enter cheque numbers** to fill them at once: type each number and date, or import a CSV. Each draft is saved on its own and amounts cannot change here. Then a Company Admin or Accountant posts the drafts from **Tenancy Contracts › Draft** with Post selected.
+When the tenants hand over their new cheques, open the **Renewal drafted** stage, select the drafts and use **Enter cheque numbers** to fill them at once: type each number and date, or import a CSV. Each draft is saved on its own and amounts cannot change here. Then a Company Admin or Accountant posts the drafts from **Tenancy Contracts › Draft & to sign** with **Post selected**.
 
 ### Bulk terminate
 

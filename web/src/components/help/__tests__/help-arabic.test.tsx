@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 
 import ar from "../../../../messages/ar.json";
+import en from "../../../../messages/en.json";
 import { leftoverLatinWords, visibleText } from "@/test/latinText";
 import type { HelpArticle as Article } from "@/lib/help";
 
@@ -48,6 +49,8 @@ afterEach(() => {
 
 const renderAr = (node: React.ReactNode) =>
     render(<NextIntlClientProvider locale="ar" messages={ar}>{node}</NextIntlClientProvider>);
+const renderEn = (node: React.ReactNode) =>
+    render(<NextIntlClientProvider locale="en" messages={en}>{node}</NextIntlClientProvider>);
 
 describe("help center in Arabic", () => {
     it("the index: title, categories, search, counts and tours chrome carry no English", () => {
@@ -90,5 +93,25 @@ describe("help center in Arabic", () => {
         expect(body).toHaveAttribute("dir", "ltr");
         expect(screen.getByText(ar.Help.contentEnglishOnly)).toBeInTheDocument();
         expect(leftoverLatinWords(visibleText(container), CONTENT)).toEqual([]);
+    });
+});
+
+describe("help center in English", () => {
+    it("an article with an Arabic version still reads in English, LTR, with no note", () => {
+        renderEn(<HelpArticleView article={ARTICLE_AR} />);
+
+        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(ARTICLE_AR.title);
+        const body = screen.getByText("Open the lease wizard and follow the steps.").closest("[lang]")!;
+        expect(body).toHaveAttribute("lang", "en");
+        expect(body).toHaveAttribute("dir", "ltr");
+        expect(screen.queryByText(en.Help.contentEnglishOnly)).toBeNull();
+        expect(screen.queryByText(ARTICLE_AR.ar!.title)).toBeNull();
+    });
+
+    it("the index shows the English title of an article with an Arabic version", () => {
+        renderEn(<HelpCenter articles={[ARTICLE_AR]} />);
+
+        expect(screen.getByText(ARTICLE_AR.title)).toHaveAttribute("lang", "en");
+        expect(screen.queryByText(ARTICLE_AR.ar!.title)).toBeNull();
     });
 });
