@@ -15,14 +15,14 @@ export const companyUserOnboardingTour: TourDef = {
       id: 'welcome',
       target: '[data-tour="dashboard-header"]',
       title: 'Welcome to Miftah!',
-      text: 'This is your home page. Your Company Admin decides which sections your account can open.',
+      text: 'This is your home page. Ask your Company Admin if you need access to more.',
       position: 'bottom',
     },
     {
       id: 'sidebar-nav',
       target: '[data-tour="sidebar-nav"]',
       title: 'Navigation',
-      text: 'The rail on the left holds your sections. Yours has Home; sections your Company Admin opens for you appear here too.',
+      text: 'The rail on the left holds your sections. Yours has Home.',
       position: 'right',
     },
     {
