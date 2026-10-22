@@ -60,6 +60,8 @@ export const HELP_PAGE_MAP: Record<string, PageHelpEntry> = {
     byRole: { PROPERTY_MANAGER: { article: 'leases--lease-lifecycle', tour: 'lease-workflow', videos: ['12', '13'] } },
   },
   '/dashboard/leases/renewals': { article: 'leases--renewal-season', videos: ['13', '43'] },
+  // One contract (and its Terminate / Settlement pages): its statuses and actions, for every role.
+  '/dashboard/leases/[id]': { article: 'leases--lease-lifecycle', videos: ['12', '13', '42'] },
   '/dashboard/renters': { article: 'leases--tenants-and-portal-access', videos: ['09'] },
   '/dashboard/properties': { article: 'properties--managing-properties', tour: 'property-workflow', videos: ['06', '07', '08'] },
   '/dashboard/listings': { article: 'operations--bookings-meetings-promotions' },
@@ -124,11 +126,16 @@ export const HELP_PAGE_MAP: Record<string, PageHelpEntry> = {
 };
 
 /** The help for a page: its own entry, else the nearest parent page's (Home's, for a page with no closer one). */
+/** A map key with an `[id]` segment matches any one segment there (a contract's own page). */
+const PATTERNS = Object.keys(HELP_PAGE_MAP).filter(k => k.includes('[id]'))
+  .map(k => ({ key: k, re: new RegExp(`^${k.replace(/\[id\]/g, '[^/]+')}$`) }));
+
 export function getContextualHelp(pathname: string, role?: UserRole): PageHelp {
   const stripped = pathname.replace(/^\/(en|ar)(?=\/|$)/, '') || '/';
   const parts = stripped.split('/');
   while (parts.length > 1) {
-    const entry = HELP_PAGE_MAP[parts.join('/')];
+    const path = parts.join('/');
+    const entry = HELP_PAGE_MAP[path] ?? HELP_PAGE_MAP[PATTERNS.find(p => p.re.test(path))?.key ?? ''];
     if (entry) {
       const { byRole, ...own } = entry;
       return (role && byRole?.[role]) || own;

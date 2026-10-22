@@ -18,9 +18,11 @@ order: 0
 
 Setting up Miftah goes in this order. Each step needs the one before it, so work down the list. The videos show each step on screen.
 
+Steps 1, 4, 5 and 6 are for **Company Admins**. **Accountants** start at step 2 and own steps 2, 3 and 7 (and post the contracts in step 6).
+
 > New to the accounting? Watch [How accounting works in Miftah](/dashboard/help/videos?play=38) first (2 minutes).
 
-### 1. Your organisation
+### 1. Your organisation (Company Admin)
 
 - **Settings › Organisation** holds the organisation name and the tenant portal address. Your System Admin creates the organisation and turns features (listings, meetings, gate passes) on or off.
 - Add the people who will sign in under **Settings › Users & staff** — see [Managing users and staff](/dashboard/help/admin--managing-staff).
@@ -38,11 +40,11 @@ Video: [Chart of accounts, property account sets and charge types](/dashboard/he
 Pick one:
 
 - **Starting fresh** — set the **Books start date** under **Accounting › Year End Closing**, then enter **Accounting › Accounts › Opening Balances** (balances as at the day before the books start).
-- **Moving from another system** — use the cut-over workbook under **Accounting › One-time setup › Import Batches**. It creates the properties, units, tenants, contracts and cheques in one batch, and **Cut-over reconciliation** checks the result against the trial balance you upload.
+- **Moving from another system** — upload the cut-over workbook under **Accounting › One-time setup › Import Batches**. It brings in the properties, units, tenants, contracts and cheques as one draft batch; **Post batch** puts it on the books. Then upload the old system's trial balance on **Opening Balances** (**Upload PACT trial balance**) and check the result in **Cut-over reconciliation**.
 
 Video: [Start your books: opening balances and cut-over](/dashboard/help/videos?play=39). More detail: [Starting your books](/dashboard/help/finance--books-start).
 
-### 4. Properties, units and parking
+### 4. Properties, units and parking (Company Admin)
 
 Skip this if the cut-over import created them.
 
@@ -53,7 +55,7 @@ Skip this if the cut-over import created them.
 
 Videos: [Create a project and property portfolio](/dashboard/help/videos?play=06) · [Import a property portfolio in bulk](/dashboard/help/videos?play=08)
 
-### 5. Tenants
+### 5. Tenants (Company Admin)
 
 **Leasing › Tenants › Add Tenant**. A tenant saved with an email address gets an invite to the tenant portal.
 
@@ -231,7 +233,7 @@ Your property is now set up and ready to manage!
 
 registerArticle('properties--managing-properties', `---
 title: Managing Properties
-description: How to add, edit, and organize your properties
+description: How to add, edit, and organise your properties
 category: properties
 roles: [TENANT_ADMIN, PROPERTY_MANAGER, ACCOUNTANT]
 order: 1
@@ -350,7 +352,7 @@ Each project's **Parking** tab lists its parking bays. A bay is one of two kinds
 | Kind | How it works |
 |------|-------------|
 | **Attached to a unit** | The bay comes with the unit. It is allocated to that unit's current tenant and cannot be booked. The tenant sees it under **Allocated parking** — no booking needed. |
-| **Not attached (bookable)** | Tenants of the project request it for a date range; you approve the request under **Operations › Bookings**. |
+| **Not attached (bookable)** | Tenants of the project request it, from a start date and optionally until an end date; you approve the request under **Operations › Bookings**. |
 
 ### Adding bays
 
@@ -362,13 +364,11 @@ To change a bay's attachment later, edit the spot. A bay you no longer use can b
 
 ### Bookings
 
-A tenant books a bookable bay from **Facilities & Parking** in the tenant portal, for the dates they need. Two approved bookings of the same bay cannot overlap. The request waits as **Pending** in **Operations › Bookings** until a Property Manager or Company Admin approves or rejects it. A tenant can give a bay up early with **Release Spot**.
+A tenant books a bookable bay from **Facilities & Parking** in the tenant portal, for the dates they need (leaving the end date blank books it open-ended). Two approved bookings of the same bay cannot overlap. The request waits as **Pending** in **Operations › Bookings** until a Property Manager or Company Admin approves or rejects it. A tenant can give a bay up early with **Release Spot**.
 
 ### The Parking sheet
 
 The portfolio import workbook (**Leasing › Properties & Units › More › Import Portfolio**) and the cut-over workbook have an optional **Parking** sheet. Each row adds or updates a bay; re-importing a bay updates it in place. Fill **AttachedUnitNumber** to attach the bay to a unit, or leave it blank for a bookable bay. The import result counts the bays created and updated.
-
-The parking video was recorded before bays could be attached to units.
 `);
 
 // ─── Leases ─────────────────────────────────────────────────────────────────
@@ -424,15 +424,15 @@ Tenancy Contracts are the core of Miftah — they link a tenant to a unit with p
 3. Fill in the contract details:
    - **Unit** — Select from your vacant units
    - **Tenant** — Choose the tenant (add a new one under **Leasing › Tenants** first)
-   - **Tenancy Contract Dates** — Start date and end date
-   - **Rent Amount** — the rent for the whole term in AED; if it works out below the unit's asking rent a year, the form says by how much (it never blocks)
+   - **Start and end dates**
+   - **Rent for the full term (AED)** — if it works out below the unit's asking rent a year, the form says by how much (it never blocks)
    - **VAT and charges** — VAT where the contract charges it, and any fees the contract carries
-   - **Security Deposit** — If applicable
+   - **Deposit** — If applicable
    - **Number of cheques** — how many instalments the rent is paid in
 
 ### Cheques
 
-The **Cheques** step generates one row per instalment from the contract duration, the rent and the number of cheques. Edit any row, then **Save cheques**.
+The **Cheques** step generates one row per instalment from the contract duration, the rent and the number of cheques. Edit any row, then **Save cheque grid**.
 
 To fill the cheque numbers, banks and dates from the paper cheques, click **Scan cheques** and choose photos of them (one photo may hold several cheques). Each cheque is read, matched to its row by date and amount, and shown for you to check before it is attached with its image.
 
@@ -473,7 +473,7 @@ DRAFT → PENDING_SIGNATURE → ACTIVE → NOTICE_GIVEN → TERMINATED / EXPIRED
 
 ### Key Actions
 
-The buttons at the top of a contract show the next step for its status: **Edit** and **Post Contract** for a draft; **Record payment** and **Renew** for an active contract (or one under notice); **Settlement** once it has ended. Everything else is under **More actions**: Extend Contract, Amend lines, Add charge, Transfer, Assignment, Reduce, Raise penalty, Give notice, Terminate, Write off, Download contract, Ledger, and Delete for a draft. Which actions you see depends on your role.
+The buttons at the top of a contract show the next step for its status: **Edit** and **Post Contract** for a draft; **Record payment** and **Renew** for an active contract (or one under notice); **Settlement** once it has ended. Everything else is under **More actions**: Extend Contract, Amend Lines, Add charge, Transfer to another unit, Assignment, Reduce or remove a charge, Raise penalty, Give notice, Terminate, Write off, Download Contract, Ledger, and Delete draft. Which actions you see depends on your role.
 
 - **Post Contract** — Checks the contract (a dry run), then writes its journal; this is how a draft becomes active
 - **Renew** — Drafts the next contract, starting the day after this one ends; see [Renewal season](/dashboard/help/leases--renewal-season)
@@ -527,7 +527,7 @@ The cheques are how the rent is **paid**. How it is **earned** is separate: the 
 | **Transferred** | The cheque moved to a new contract in a unit transfer |
 | **Cancelled** | The row was cancelled and its entry reversed |
 
-A cheque past its date and not yet cleared is shown as **Overdue**.
+A cheque is **Due** once its date arrives and it has not cleared, and **Overdue** once the contract's grace period has passed as well.
 
 ### Scanning cheques
 
@@ -541,7 +541,12 @@ A cheque past its date and not yet cleared is shown as **Overdue**.
 1. Go to **Cheque / Cash Collection** on the left rail
 2. Pick a status pill — **To deposit**, **Due**, **Overdue**, **Returned / replace**, **Post-dated** or **Penalties** — or open the **Cheque register** for every cheque; each pill shows how many are waiting
 3. Narrow any view to one property, or search a cheque number, tenant or unit (the search opens the register)
-4. When a cheque bounces, the same dialog lets you replace it and charge the bounce fee
+
+### Depositing, clearing and bounces
+
+1. **To deposit** lists the cheques ready for the bank. **Deposit** them one by one, or several at once with **Deposit Batch** (each on its own date)
+2. When the bank confirms the money, **Clear** the cheque (or **Clear Batch**); clearing writes the receipt to the books
+3. A cheque that comes back unpaid: **Bounce** it. The same flow lets you **Replace now** with a new cheque and charge the bounce fee or penalty; **Returned / replace** lists the ones still waiting
 `);
 
 registerArticle('leases--renewal-season', `---
@@ -569,7 +574,7 @@ Choose the month under **Expiring in**, then narrow it by property, floor, or a 
 
 A contract that has ended with no renewal shows as **Expired — holding over**.
 
-Each row offers **Renew**, **Extend**, **Mark not renewing** and **Contact** (the tenant's phone).
+Each row offers **Renew**, **Mark not renewing**, **Give notice** and **Contact** (the tenant's phone), and **Extend** for Company Admins and Accountants.
 
 ### Mark not renewing
 
@@ -586,7 +591,7 @@ The renewals are **drafts**; nothing is posted.
 
 ### Cheque numbers for the drafts
 
-When the tenants hand over their new cheques, **Enter cheque numbers** fills them for many drafts at once: type each number and date, or import a CSV. Each draft is saved on its own and amounts cannot change here. Then post the drafts from **Tenancy Contracts › Draft** with Post selected.
+When the tenants hand over their new cheques, open the **Renewal drafted** stage, select the drafts and use **Enter cheque numbers** to fill them at once: type each number and date, or import a CSV. Each draft is saved on its own and amounts cannot change here. Then a Company Admin or Accountant posts the drafts from **Tenancy Contracts › Draft** with Post selected.
 
 ### Bulk terminate
 
@@ -613,7 +618,7 @@ The current contract ends on the move date with no exit fee; the new one starts 
 
 1. Open the posted contract and choose **More actions › Transfer to another unit**
 2. **The move** — the last night in the current unit, the new (vacant) unit, when the new term ends, and the rent for the new term
-3. **Cheques** — for each uncleared cheque choose **Carry** (it moves to the new contract), **Keep** (it stays with the current one) or **Return** (it goes back to the tenant)
+3. **Cheques** — for each uncleared cheque choose **Carry** (it moves to the new contract; only a registered cheque can be carried), **Keep** (it stays with the current one) or **Return** (it goes back to the tenant)
 4. Check the summary: what was earned on the current unit, what was paid ahead or owed and carried, the deposit carried, and any **Gap to collect**
 5. **Create draft**, add cheques for any gap on the new contract's grid, then post the new contract (Company Admins and Accountants)
 
@@ -650,7 +655,7 @@ Miftah uses standard double-entry accounting with five account types:
 ### Managing Accounts
 
 1. Go to **Accounting › Accounts › Chart of Accounts**
-2. View all accounts organized by type
+2. View all accounts organised by type
 3. Click **Add Account** to create a new account
 4. Each account has a code, name, type, and optional description
 
@@ -705,10 +710,12 @@ Before anything is posted, decide the day your books start in Miftah.
 
 **Accounting › One-time setup › Import Batches** takes the cut-over workbook (**Download cut-over template** first):
 
-- One workbook creates the properties, units, tenants, contracts, cheques and, optionally, parking bays. Every property in it must be new.
-- If the workbook does not validate, **nothing** is saved; correct the rows listed and upload again.
-- Each import is one batch. Reversing a batch reverses every journal it wrote, newest first, and returns its contracts to draft.
-- **Accounting › One-time setup › Cut-over reconciliation** compares the balances as at the cut-over date with the trial balance you upload from the old system.
+1. **Upload cut-over workbook**: one workbook brings in the properties, units, tenants, contracts, cheques and, optionally, parking bays. Every property in it must be new. If the workbook does not validate, **nothing** is saved; correct the rows listed and upload again.
+2. The import is a **draft batch** — nothing is on the books yet. **Post batch** posts each contract at its own date, replays its cheques to their imported statuses, and recognises income up to the day before your books start.
+3. On **Opening Balances**, **Upload PACT trial balance** from the old system.
+4. **Accounting › One-time setup › Cut-over reconciliation** compares Miftah's balances as at the cut-over date with that trial balance.
+
+Reversing a batch reverses every journal it wrote, newest first, and returns its contracts to draft.
 `);
 
 registerArticle('finance--month-end', `---
@@ -727,7 +734,7 @@ order: 3
 
 ### 2. VAT
 
-Each instalment's VAT is declared on its tax point — its due date, or the day it was received if earlier — and issues a numbered tax invoice. The same run happens every night; run it by hand before closing a period. **Accounting › Final Reports › VAT return** shows the quarter in the FTA VAT 201 layout; each box opens its documents.
+Each instalment's VAT is declared on its tax point — its due date, or the day it was received if earlier — and issues a numbered tax invoice. The same run happens every night; run it by hand from the **Month-end recognition** page before closing a period. **Accounting › Final Reports › VAT return** shows the quarter in the FTA VAT 201 layout; each box opens its documents.
 
 ### 3. Bank reconciliation
 
@@ -755,7 +762,7 @@ order: 4
 
 ### Vouchers
 
-**Accounting › Receipts & Payments › Receipt / Payment Vouchers** records supplier (purchase) invoices, payments and receipts. **Accounting › Journal Entries › Credit Note** raises a credit note.
+**Accounting › Receipts & Payments › Receipt / Payment Vouchers** records purchase and service invoices and the payment vouchers that settle them. **Accounting › Journal Entries › Credit Note** raises a supplier credit note. Rent received from tenants is not entered here: it comes from **Cheque / Cash Collection** or a contract's **Record payment**.
 
 ### Paying suppliers
 
@@ -806,7 +813,7 @@ order: 1
 
 ## Maintenance Tickets
 
-**Operations › Tickets** holds every maintenance ticket — raised by a tenant in the portal, or by your team. Company Admins and Property Managers assign and resolve tickets; a maintenance team member with a Company User login works the tickets assigned to them.
+**Operations › Tickets** holds every maintenance ticket — raised by a tenant in the portal, or by your team. Company Admins and Property Managers assign and resolve tickets; a maintenance team member with a Company User login works the tickets assigned to them. Company Users and Accountants have no Operations section on the rail; they open tickets from a link or a notification.
 
 ### Ticket statuses
 
@@ -850,7 +857,7 @@ You sign in with your mobile number and an SMS code. Your Home is the **Gate des
 - **Expected today** — the visitors with a pass for today
 - **Walk-in visitors** — register a visitor without a pass. If the property's policy asks the tenant to approve, the visitor waits until the tenant of the unit approves; then use **Admit**. Take a photo first when the policy requires one.
 
-**Gate pass approvals** lists recurring passes (a maid, a driver) waiting for a decision. Check the guest, unit, visit window, vehicle and purpose before you **Approve**.
+**Gate pass approvals** lists recurring passes (a maid or a vendor) waiting for a decision. Check the guest, unit, visit window, vehicle and purpose before you **Approve**.
 
 ### For Company Admins and Property Managers
 
@@ -858,7 +865,7 @@ Gate passes live under **More** on the rail:
 
 - **Gate Passes** — the report of passes and scans
 - **Gate pass approvals** — the same approvals queue the guards see
-- **Gate policy & visitors** — the **Access policy** for walk-ins at each property (a tower can have its own): whether the tenant approves new visitors, or registered visitors too; whether the tenant is told when a registered visitor is let in; whether a photo is required; and how long an approval may take. **Guard postings** (Company Admins) choose the properties each guard works at — a guard sees only those properties' visitors.
+- **Gate policy & visitors** — the **Access policy** for walk-ins at each property (a tower can have its own): whether the tenant approves new visitors, or registered visitors too; whether the tenant is told when a registered visitor is let in; whether a photo is required; and how long an approval may take — and the **Regular visitors** (a maid or a vendor) who come often. **Guard postings** (Company Admins) choose the properties each guard works at — a guard sees only those properties' visitors.
 
 ### For tenants
 
@@ -997,8 +1004,8 @@ The cheques you owe today, with the amount due and a running total. A cheque pas
 ### Payment History
 
 - **At the bank** — the cheque has been deposited and is awaiting clearance. Nothing to pay.
-- **Cleared** — the money has arrived. Download the **Receipt** for it.
-- **Bounced** — the cheque was returned unpaid. Contact your landlord's team; a returned cheque is replaced, not paid here.
+- **Cleared** — the money has arrived. Download the **Receipt Voucher** for it.
+- **Bounced** — the cheque was returned unpaid. It also shows under **Due now** until it is settled: your landlord's team will replace it, or use **Pay Now** where online payment is on.
 
 Where a cheque was scanned, **View scan** opens the image of it.
 

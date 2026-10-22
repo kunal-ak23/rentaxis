@@ -28,13 +28,15 @@ function navPaths(role: UserRole): string[] {
         .filter(p => !p.startsWith("/marketplace/"));
 }
 
+/** Rail pages with no help entry of their own. */
+const unmappedRailPages = (role: UserRole) => navPaths(role).filter(p => !HELP_PAGE_MAP[p]);
+
 const entries = () => Object.entries(HELP_PAGE_MAP).flatMap(([path, { byRole, ...own }]) =>
     [[path, own] as const, ...Object.entries(byRole ?? {}).map(([r, e]) => [`${path} (${r})`, e!] as const)]);
 
 describe("help for every page on the rail", () => {
     it.each(ROLES)("%s: every rail page has its own help entry", role => {
-        const missing = navPaths(role).filter(p => !HELP_PAGE_MAP[p]);
-        expect(missing).toEqual([]);
+        expect(unmappedRailPages(role)).toEqual([]);
     });
 
     it.each(ROLES.filter(r => r !== "SUPER_ADMIN"))("%s: every page the role can open gets an article it is served", role => {
@@ -68,8 +70,16 @@ describe("help for every page on the rail", () => {
         expect(getContextualHelp("/ar/dashboard/tickets/123", "TENANT_ADMIN").article).toBe("operations--tickets");
     });
 
+    it("gives a contract's own pages the lifecycle article, and the queue its own", () => {
+        for (const role of ["TENANT_ADMIN", "ACCOUNTANT", "PROPERTY_MANAGER"] as const) {
+            expect(getContextualHelp("/en/dashboard/leases/abc", role).article).toBe("leases--lease-lifecycle");
+            expect(getContextualHelp("/dashboard/leases/abc/terminate", role).article).toBe("leases--lease-lifecycle");
+        }
+        expect(getContextualHelp("/dashboard/leases/renewals").article).toBe("leases--renewal-season");
+        expect(getContextualHelp("/dashboard/leases", "TENANT_ADMIN").article).toBe("leases--creating-a-lease");
+    });
+
     it("falls back from a detail page to its list page", () => {
-        expect(getContextualHelp("/en/dashboard/leases/abc").article).toBe("leases--creating-a-lease");
         expect(getContextualHelp("/dashboard/finance/bank-reconciliation/xyz").article).toBe("finance--month-end");
     });
 
@@ -78,7 +88,7 @@ describe("help for every page on the rail", () => {
         const saved = HELP_PAGE_MAP[path];
         delete HELP_PAGE_MAP[path];
         try {
-            expect(navPaths("ACCOUNTANT").filter(p => !HELP_PAGE_MAP[p])).toEqual([path]);
+            expect(unmappedRailPages("ACCOUNTANT")).toEqual([path]);
         } finally {
             HELP_PAGE_MAP[path] = saved;
         }
@@ -134,6 +144,13 @@ describe("nothing the help points at is missing", () => {
                 return !slug || !getArticleBySlug(slug[1]);
             }).map(href => `${a.slug}: ${href}`));
         expect(broken).toEqual([]);
+    });
+
+    it("tour copy uses the product's terms", () => {
+        const stale = /\b(Renters?|renters?|Leases?|leases?)\b|Super Admin|organiz/;
+        const hits = ALL_TOURS.flatMap(t => [t.name, t.description, ...t.steps.flatMap(s => [s.title, s.text])]
+            .filter(x => stale.test(x)).map(x => `${t.id}: ${x}`));
+        expect(hits).toEqual([]);
     });
 
     it("every article sits in a category the help center shows", () => {
