@@ -3,6 +3,7 @@
 // Each article's markdown is a template literal with a small frontmatter block (see helpLoader.ts).
 // Links to /dashboard/... open in the app; /dashboard/help/videos?play=<id> opens a video tutorial.
 import { registerArticle } from './helpLoader';
+import './helpArticlesAr'; // each article's Arabic version
 
 // ─── Getting Started ────────────────────────────────────────────────────────
 

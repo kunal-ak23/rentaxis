@@ -21,6 +21,7 @@ import { type UserRole } from '@/lib/rbac';
 import {
   HELP_CATEGORIES,
   filterArticlesByRole,
+  localizeArticle,
   searchArticles,
   readingTime,
   type HelpArticle,
@@ -173,42 +174,45 @@ export default function HelpCenter({ articles }: HelpCenterProps) {
         <div className="flex-1 min-w-0">
           {/* Search */}
           <HelpSearch onSearch={handleSearch} className="mb-6" />
-          {/* The articles themselves are English content for now; say so
+          {/* Articles with no Arabic version yet are shown in English; say so
               rather than let an Arabic reader land on them unannounced. */}
-          {locale === 'ar' && (
+          {displayedArticles.some((a) => localizeArticle(a, locale).englishFallback) && (
             <p className="-mt-3 mb-6 text-xs text-gray-500">{t('contentEnglishOnly')}</p>
           )}
 
           {/* Article grid */}
           {displayedArticles.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10">
-              {displayedArticles.map((article) => (
-                <Link
-                  key={article.slug}
-                  href={`/dashboard/help/${article.slug}`}
-                  className="group flex flex-col p-4 rounded-lg border border-gray-200 bg-white hover:shadow-md hover:border-primary/30 transition-all"
-                >
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <h3 lang="en" dir="auto" className="text-sm font-semibold text-gray-900 group-hover:text-primary transition-colors">
-                      {article.title}
-                    </h3>
-                    <ChevronRight
-                      size={16}
-                      className="text-gray-300 group-hover:text-primary shrink-0 mt-0.5 transition-colors rtl:rotate-180"
-                    />
-                  </div>
-                  <p lang="en" dir="auto" className="text-xs text-gray-500 leading-relaxed mb-3 line-clamp-2">
-                    {article.description}
-                  </p>
-                  <div className="mt-auto flex items-center justify-between">
-                    <RoleFilter roles={article.roles} compact />
-                    <span className="inline-flex items-center gap-1 text-[10px] text-gray-400">
-                      <Clock size={10} />
-                      {t('readingMinutes', { count: readingTime(article.content) })}
-                    </span>
-                  </div>
-                </Link>
-              ))}
+              {displayedArticles.map((article) => {
+                const text = localizeArticle(article, locale);
+                return (
+                  <Link
+                    key={article.slug}
+                    href={`/dashboard/help/${article.slug}`}
+                    className="group flex flex-col p-4 rounded-lg border border-gray-200 bg-white hover:shadow-md hover:border-primary/30 transition-all"
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <h3 lang={text.lang} dir="auto" className="text-sm font-semibold text-gray-900 group-hover:text-primary transition-colors">
+                        {text.title}
+                      </h3>
+                      <ChevronRight
+                        size={16}
+                        className="text-gray-300 group-hover:text-primary shrink-0 mt-0.5 transition-colors rtl:rotate-180"
+                      />
+                    </div>
+                    <p lang={text.lang} dir="auto" className="text-xs text-gray-500 leading-relaxed mb-3 line-clamp-2">
+                      {text.description}
+                    </p>
+                    <div className="mt-auto flex items-center justify-between">
+                      <RoleFilter roles={article.roles} compact />
+                      <span className="inline-flex items-center gap-1 text-[10px] text-gray-400">
+                        <Clock size={10} />
+                        {t('readingMinutes', { count: readingTime(text.content) })}
+                      </span>
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           ) : (
             <div className="text-center py-12">
