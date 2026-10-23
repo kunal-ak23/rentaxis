@@ -9,7 +9,7 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import RoleFilter from './RoleFilter';
 import TourTrigger from '@/components/tour/TourTrigger';
-import { getTourById } from '@/components/tour/tours';
+import { getOnboardingTour, getTourById } from '@/components/tour/tours';
 import { localizeArticle, readingTime } from '@/lib/help';
 import type { HelpArticle as HelpArticleType } from '@/lib/help';
 import { TUTORIALS, filterTutorialsByRole, tutorialsForArticle, type Tutorial } from '@/lib/tutorials/catalog';
@@ -36,7 +36,8 @@ export default function HelpArticle({ article, tutorials = TUTORIALS }: HelpArti
   const role = (session?.user as { role?: UserRole } | undefined)?.role;
   // Only a tour, and only videos, made for the reader's role — as the help button offers.
   const tour = article.relatedTour ? getTourById(article.relatedTour) : undefined;
-  const relatedTour = tour && role && tour.roles.includes(role) ? tour : undefined;
+  // A welcome tour the role does not get (the admin one, for a Company User) gives way to the role's own.
+  const relatedTour = tour && role && tour.roles.includes(role) ? tour : tour?.onboarding ? getOnboardingTour(role) : undefined;
   // Published (non-null YouTube id) tutorials that list this article.
   const videos = filterTutorialsByRole(tutorialsForArticle(article.slug, tutorials), role);
   const lang: 'en' | 'ar' = locale === 'ar' ? 'ar' : 'en';

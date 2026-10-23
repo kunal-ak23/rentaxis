@@ -75,7 +75,11 @@ export const HELP_PAGE_MAP: Record<string, PageHelpEntry> = {
   // The Help center itself: no page help (its tour and videos would be Home's).
   '/dashboard/help': {},
   // Home
-  '/dashboard': { article: 'getting-started--welcome', tour: 'admin-onboarding', videos: ['02', '01'] },
+  '/dashboard': {
+    article: 'getting-started--welcome', tour: 'admin-onboarding', videos: ['02', '01'],
+    // A Company User's Home has no Leasing or Accounting to tour.
+    byRole: { TENANT_USER: { article: 'getting-started--welcome', tour: 'company-user-onboarding', videos: ['02', '01'] } },
+  },
   // Leasing
   '/dashboard/leases': {
     article: 'leases--creating-a-lease', tour: 'lease-workflow', videos: ['10', '34', '12'],

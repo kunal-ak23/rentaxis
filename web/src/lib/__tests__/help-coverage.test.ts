@@ -9,7 +9,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { PERMISSIONS, type UserRole } from "../rbac";
 import { TUTORIALS, publishedTutorials } from "../tutorials/catalog";
-import { ALL_TOURS, getTourById } from "@/components/tour/tours";
+import { ALL_TOURS, getOnboardingTour, getTourById } from "@/components/tour/tours";
 
 /**
  * The help button must have something for every page a role can reach from the
@@ -133,6 +133,30 @@ describe("nothing the help points at is missing", () => {
             return source.includes(`"${m[2]}"`) ? [] : [`${t.id}/${s.id}: ${s.target}`];
         }));
         expect(missing).toEqual([]);
+    });
+
+    it("a tour only points a role at rail items that role's rail has", () => {
+        // Review of #426: the welcome tour walked a Company User (rail: Home only) through Leasing and Accounting.
+        const railIds = (role: UserRole) => new Set([true, false].flatMap(booksLive =>
+            buildNav({ role, isEnabled: () => true, tenantSlug: "acme", booksLive })
+                .flatMap(sec => [sec.tourId, ...sec.groups.flatMap(g => g.items.map(i => i.testId))])));
+        const wrong = ALL_TOURS.flatMap(t => t.roles.flatMap(role => t.steps
+            .map(s => s.target.match(/^\[data-(?:testid|tour)="(sidebar-[^"]+)"\]$/)?.[1])
+            .filter((id): id is string => !!id && id !== "sidebar-nav" && !railIds(role).has(id))
+            .map(id => `${t.id} (${role}): ${id}`)));
+        expect(wrong).toEqual([]);
+    });
+
+    it("Home's help button offers each role the welcome tour that auto-starts for it", () => {
+        const wrong = ROLES.filter(r => getOnboardingTour(r))
+            .filter(r => getContextualHelp("/dashboard", r).tour !== getOnboardingTour(r)!.id)
+            .map(r => `${r}: ${getContextualHelp("/dashboard", r).tour}`);
+        expect(wrong).toEqual([]);
+    });
+
+    it("at most one welcome tour auto-starts per role", () => {
+        const twice = ROLES.filter(r => ALL_TOURS.filter(t => t.onboarding && t.roles.includes(r)).length > 1);
+        expect(twice).toEqual([]);
     });
 
     it("every in-article link opens a real article or a published video", () => {

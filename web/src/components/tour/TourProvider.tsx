@@ -13,7 +13,7 @@ import { ShepherdJourneyProvider, useShepherd } from 'react-shepherd';
 import { useRouter } from '@/i18n/routing';
 import { usePathname } from 'next/navigation';
 import { isDashboardHome } from '@/lib/nav/routeGuard';
-import { getTourById, getToursForRole } from './tours';
+import { getOnboardingTour, getTourById, getToursForRole } from './tours';
 import type { TourDef } from './tours/types';
 import type { UserRole } from '@/lib/rbac';
 
@@ -238,12 +238,11 @@ function TourProviderInner({ children, role, autoStart = true }: InnerProps) {
     if (!role || !autoStart) return;
     if (!isOnboardingHome(pathname)) return;
 
-    const onboardingId = 'admin-onboarding';
-    const onboardingDef = getTourById(onboardingId);
+    // The role's own welcome tour: a Company User's covers only what their rail shows.
+    const onboardingId = getOnboardingTour(role)?.id;
 
     if (
-      onboardingDef &&
-      onboardingDef.roles.includes(role) &&
+      onboardingId &&
       !getCompletedTourIds().includes(onboardingId) &&
       !getDismissedTourIds().includes(onboardingId)
     ) {
