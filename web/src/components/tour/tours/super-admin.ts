@@ -2,15 +2,11 @@ import type { TourDef } from './types';
 
 export const superAdminTour: TourDef = {
   id: 'super-admin',
-  name: 'System Admin Tour',
-  description: 'System administration overview',
   roles: ['SUPER_ADMIN'],
   steps: [
     {
       id: 'admin-dashboard',
       target: '[data-tour="dashboard-header"]',
-      title: 'System Dashboard',
-      text: 'As a System Admin, you have full access across all organisations. This dashboard shows system-wide metrics.',
       position: 'bottom',
       // Organisations and Users are in the Settings panel's Administration group.
       nextRoute: '/dashboard/settings',
@@ -18,22 +14,16 @@ export const superAdminTour: TourDef = {
     {
       id: 'tenants-link',
       target: '[data-tour="sidebar-tenants"]',
-      title: 'Organisations',
-      text: 'Manage all registered organisations. Create new organisations, view their details, and monitor usage.',
       position: 'right',
     },
     {
       id: 'users-link',
       target: '[data-tour="sidebar-users"]',
-      title: 'Users',
-      text: 'Manage user accounts across all organisations. Create users, assign roles, and control access.',
       position: 'right',
     },
     {
       id: 'tenant-switcher',
       target: '[data-tour="tenant-switcher"]',
-      title: 'Organisation Switcher',
-      text: 'Switch between organisations to view their data and manage their settings.',
       position: 'bottom',
     },
   ],

@@ -49,7 +49,10 @@ describe("brand name", () => {
         expect(readFileSync(join(root, "lib/helpArticles.ts"), "utf8")).not.toMatch(OLD_BRAND);
         expect(readFileSync(join(root, "lib/helpArticlesAr.ts"), "utf8")).not.toMatch(OLD_BRAND);
         expect(JSON.stringify(adminOnboardingTour)).not.toMatch(OLD_BRAND);
-        expect(adminOnboardingTour.steps[0].title).toBe("Welcome to Miftah!");
+        const welcome = adminOnboardingTour.steps[0].id as "welcome";
+        expect(en.Tours[adminOnboardingTour.id as "admin-onboarding"].steps[welcome].title).toBe("Welcome to Miftah!");
+        expect(ar.Tours["admin-onboarding"].steps[welcome].title).toContain("مفتاح");
+        expect(JSON.stringify(en.Tours)).not.toMatch(OLD_BRAND);
     });
 
     it("the page title, login, register and public listing chrome say Miftah", () => {

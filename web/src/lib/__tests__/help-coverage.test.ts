@@ -10,6 +10,8 @@ import { join } from "node:path";
 import { PERMISSIONS, type UserRole } from "../rbac";
 import { TUTORIALS, publishedTutorials } from "../tutorials/catalog";
 import { ALL_TOURS, getOnboardingTour, getTourById } from "@/components/tour/tours";
+import en from "../../../messages/en.json";
+import ar from "../../../messages/ar.json";
 
 /**
  * The help button must have something for every page a role can reach from the
@@ -127,12 +129,28 @@ describe("nothing the help points at is missing", () => {
         });
         walk(join(__dirname, "../.."));
         const source = files.map(f => readFileSync(f, "utf8")).join("\n");
-        const missing = ALL_TOURS.flatMap(t => t.steps.flatMap(s => {
-            const m = s.target.match(/^\[data-(testid|tour)="([^"]+)"\]$/);
-            if (!m) return [`${t.id}/${s.id}: unsupported selector ${s.target}`];
-            return source.includes(`"${m[2]}"`) ? [] : [`${t.id}/${s.id}: ${s.target}`];
-        }));
+        const missing = ALL_TOURS.flatMap(t => t.steps.flatMap(s => [s.target, ...(s.mobileTarget ? [s.mobileTarget] : [])].flatMap(target => {
+            const m = target.match(/^\[data-(testid|tour)="([^"]+)"\]$/);
+            if (!m) return [`${t.id}/${s.id}: unsupported selector ${target}`];
+            return source.includes(`"${m[2]}"`) ? [] : [`${t.id}/${s.id}: ${target}`];
+        })));
         expect(missing).toEqual([]);
+    });
+
+    it("every tour has its name, description and step copy in English and Arabic, and no other", () => {
+        // Built from the tour definitions, so a new step without copy, or copy left behind by a removed step, fails.
+        const expected = ["back", "skip", "next", "done", "progress", ...ALL_TOURS.flatMap(t => [
+            `${t.id}.name`, `${t.id}.description`, ...t.steps.flatMap(s => [`${t.id}.steps.${s.id}.title`, `${t.id}.steps.${s.id}.text`])])].sort();
+        const keys = (tree: object, p = ""): string[] => Object.entries(tree)
+            .flatMap(([k, v]) => typeof v === "string" ? [p + k] : keys(v, `${p}${k}.`));
+        expect(keys(en.Tours).sort()).toEqual(expected);
+        expect(keys(ar.Tours).sort()).toEqual(expected);
+    });
+
+    it("Arabic tour copy is all Arabic", () => {
+        const copy = (tree: object, p = ""): [string, string][] => Object.entries(tree)
+            .flatMap(([k, v]) => typeof v === "string" ? [[p + k, v] as [string, string]] : copy(v, `${p}${k}.`));
+        expect(copy(ar.Tours).filter(([, v]) => /[A-Za-z]/.test(v.replace(/\{\w+\}/g, ""))).map(([k, v]) => `${k}: ${v}`)).toEqual([]);
     });
 
     it("a tour only points a role at rail items that role's rail has", () => {
@@ -172,7 +190,8 @@ describe("nothing the help points at is missing", () => {
 
     it("tour copy uses the product's terms", () => {
         const stale = /\b(Renters?|renters?|Leases?|leases?)\b|Super Admin|Tenant Switcher|organiz/;
-        const hits = ALL_TOURS.flatMap(t => [t.name, t.description, ...t.steps.flatMap(s => [s.title, s.text])]
+        const copy = (tree: object): string[] => Object.values(tree).flatMap(v => typeof v === "string" ? [v] : copy(v));
+        const hits = ALL_TOURS.flatMap(t => copy(en.Tours[t.id as keyof typeof en.Tours] as object)
             .filter(x => stale.test(x)).map(x => `${t.id}: ${x}`));
         expect(hits).toEqual([]);
     });

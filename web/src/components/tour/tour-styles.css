@@ -1,6 +1,10 @@
 /* Shepherd.js theme overrides for RentAxis */
 
 .shepherd-element {
+  /* Steps are <dialog>s, whose UA style pins both inline insets to 0. Under
+   * dir="rtl" that right: 0 beats Shepherd's inline left, so every step stuck
+   * to the right edge (and a centred one ran off a phone's left edge). */
+  right: auto;
   max-width: 360px;
   border-radius: 12px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
