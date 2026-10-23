@@ -101,7 +101,7 @@ export function PromoImageField({ label, value, onChange, onBusyChange, sizeHint
             <p id={hintId} className="mt-1 text-xs text-gray-500">
                 {t("imageHint")}
                 {/* The space keeps the two sentences apart for a screen reader. */}
-                {sizeHint && <> <span className="block">{sizeHint}</span></>}
+                {sizeHint && <>{" "}<span className="block">{sizeHint}</span></>}
             </p>
             {error && <p role="alert" id={errorId} className="mt-1 text-sm text-red-600">{error}</p>}
         </div>
