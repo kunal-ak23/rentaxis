@@ -10,7 +10,7 @@ import remarkGfm from 'remark-gfm';
 import RoleFilter from './RoleFilter';
 import TourTrigger from '@/components/tour/TourTrigger';
 import { getOnboardingTour, getTourById } from '@/components/tour/tours';
-import { readingTime } from '@/lib/help';
+import { localizeArticle, readingTime } from '@/lib/help';
 import type { HelpArticle as HelpArticleType } from '@/lib/help';
 import { TUTORIALS, filterTutorialsByRole, tutorialsForArticle, type Tutorial } from '@/lib/tutorials/catalog';
 
@@ -29,7 +29,9 @@ interface HelpArticleProps {
 export default function HelpArticle({ article, tutorials = TUTORIALS }: HelpArticleProps) {
   const t = useTranslations('Help');
   const locale = useLocale();
-  const minutes = readingTime(article.content);
+  // Under /ar the Arabic version when the article has one; the English (with a note) when not.
+  const text = localizeArticle(article, locale);
+  const minutes = readingTime(text.content);
   const { data: session } = useSession();
   const role = (session?.user as { role?: UserRole } | undefined)?.role;
   // Only a tour, and only videos, made for the reader's role — as the help button offers.
@@ -53,9 +55,9 @@ export default function HelpArticle({ article, tutorials = TUTORIALS }: HelpArti
 
       {/* Header */}
       <div className="mb-8">
-        <h1 lang="en" dir="auto" className="text-2xl font-bold text-gray-900 mb-2">{article.title}</h1>
-        {article.description && (
-          <p lang="en" dir="auto" className="text-gray-500 mb-4">{article.description}</p>
+        <h1 lang={text.lang} dir="auto" className="text-2xl font-bold text-gray-900 mb-2">{text.title}</h1>
+        {text.description && (
+          <p lang={text.lang} dir="auto" className="text-gray-500 mb-4">{text.description}</p>
         )}
         <div className="flex flex-wrap items-center gap-4">
           <RoleFilter roles={article.roles} compact />
@@ -91,11 +93,11 @@ export default function HelpArticle({ article, tutorials = TUTORIALS }: HelpArti
         </ul>
       )}
 
-      {locale === 'ar' && <p className="mb-4 text-xs text-gray-500">{t('contentEnglishOnly')}</p>}
+      {text.englishFallback && <p className="mb-4 text-xs text-gray-500">{t('contentEnglishOnly')}</p>}
 
-      {/* Article content: English markdown, laid out LTR even on an RTL page. */}
-      <div lang="en" dir="ltr" className="prose prose-gray max-w-none prose-headings:text-gray-900 prose-a:text-primary prose-strong:text-gray-900 prose-table:text-sm prose-th:bg-gray-50 prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-2 prose-td:border-t prose-td:border-gray-200">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>{article.content}</ReactMarkdown>
+      {/* Article content in its own language and direction: Arabic RTL, English LTR even on an RTL page. */}
+      <div lang={text.lang} dir={text.dir} className="prose prose-gray max-w-none prose-headings:text-gray-900 prose-a:text-primary prose-strong:text-gray-900 prose-table:text-sm prose-th:bg-gray-50 prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-2 prose-td:border-t prose-td:border-gray-200">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>{text.content}</ReactMarkdown>
       </div>
     </div>
   );

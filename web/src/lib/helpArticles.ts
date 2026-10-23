@@ -3,6 +3,7 @@
 // Each article's markdown is a template literal with a small frontmatter block (see helpLoader.ts).
 // Links to /dashboard/... open in the app; /dashboard/help/videos?play=<id> opens a video tutorial.
 import { registerArticle } from './helpLoader';
+import './helpArticlesAr'; // each article's Arabic version
 
 // ─── Getting Started ────────────────────────────────────────────────────────
 
@@ -591,7 +592,7 @@ The renewals are **drafts**; nothing is posted.
 
 ### Cheque numbers for the drafts
 
-When the tenants hand over their new cheques, open the **Renewal drafted** stage, select the drafts and use **Enter cheque numbers** to fill them at once: type each number and date, or import a CSV. Each draft is saved on its own and amounts cannot change here. Then a Company Admin or Accountant posts the drafts from **Tenancy Contracts › Draft** with Post selected.
+When the tenants hand over their new cheques, open the **Renewal drafted** stage, select the drafts and use **Enter cheque numbers** to fill them at once: type each number and date, or import a CSV. Each draft is saved on its own and amounts cannot change here. Then a Company Admin or Accountant posts the drafts from **Tenancy Contracts › Draft & to sign** with **Post selected**.
 
 ### Bulk terminate
 

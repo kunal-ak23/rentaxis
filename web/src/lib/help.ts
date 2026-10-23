@@ -9,6 +9,29 @@ export interface HelpArticle {
   order: number;
   relatedTour?: string;
   content: string;
+  /** The Arabic version, when the article has one: shown under /ar instead of the English. */
+  ar?: HelpArticleText;
+}
+
+/** The words of an article in one language. */
+export interface HelpArticleText {
+  title: string;
+  description: string;
+  content: string;
+}
+
+/** An article as a locale reads it: the Arabic version under /ar when there is one, else the English. */
+export interface LocalizedHelpArticle extends HelpArticleText {
+  lang: 'en' | 'ar';
+  dir: 'ltr' | 'rtl';
+  /** True when an Arabic reader gets the English because the article has no Arabic yet. */
+  englishFallback: boolean;
+}
+
+export function localizeArticle(article: HelpArticle, locale: string): LocalizedHelpArticle {
+  if (locale === 'ar' && article.ar) return { ...article.ar, lang: 'ar', dir: 'rtl', englishFallback: false };
+  const { title, description, content } = article;
+  return { title, description, content, lang: 'en', dir: 'ltr', englishFallback: locale === 'ar' };
 }
 
 export interface HelpCategory {
@@ -158,10 +181,13 @@ export function filterArticlesByRole(articles: HelpArticle[], role?: UserRole): 
 export function searchArticles(articles: HelpArticle[], query: string): HelpArticle[] {
   const q = query.toLowerCase().trim();
   if (!q) return articles;
+  // Either language finds the article, so a search works whichever words the reader knows.
   return articles.filter(a =>
-    a.title.toLowerCase().includes(q) ||
-    a.description.toLowerCase().includes(q) ||
-    a.content.toLowerCase().includes(q)
+    [a, a.ar].some(text => text && (
+      text.title.toLowerCase().includes(q) ||
+      text.description.toLowerCase().includes(q) ||
+      text.content.toLowerCase().includes(q)
+    ))
   );
 }
 

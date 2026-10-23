@@ -47,6 +47,7 @@ describe("brand name", () => {
 
     it("the help articles and the onboarding tour say Miftah", () => {
         expect(readFileSync(join(root, "lib/helpArticles.ts"), "utf8")).not.toMatch(OLD_BRAND);
+        expect(readFileSync(join(root, "lib/helpArticlesAr.ts"), "utf8")).not.toMatch(OLD_BRAND);
         expect(JSON.stringify(adminOnboardingTour)).not.toMatch(OLD_BRAND);
         expect(adminOnboardingTour.steps[0].title).toBe("Welcome to Miftah!");
     });
