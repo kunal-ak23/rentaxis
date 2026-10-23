@@ -12,9 +12,10 @@ import {
 import { ShepherdJourneyProvider, useShepherd } from 'react-shepherd';
 import { useRouter } from '@/i18n/routing';
 import { usePathname } from 'next/navigation';
+import { useLocale, useTranslations } from 'next-intl';
 import { isDashboardHome } from '@/lib/nav/routeGuard';
 import { getOnboardingTour, getTourById, getToursForRole } from './tours';
-import type { TourDef } from './tours/types';
+import type { TourDef, TourStepDef } from './tours/types';
 import type { UserRole } from '@/lib/rbac';
 
 import 'shepherd.js/dist/css/shepherd.css';
@@ -85,6 +86,41 @@ export function isTourCompleted(tourId: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Steps
+// ---------------------------------------------------------------------------
+
+const escapeHtml = (s: string) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/** First match that is on screen: the hidden desktop rail still matches below 768 px. */
+function visible(selector: string): HTMLElement | undefined {
+  return Array.from(document.querySelectorAll<HTMLElement>(selector)).find(el => el.getClientRects().length > 0);
+}
+
+/**
+ * Resolved when the step shows (after any nextRoute navigation): the target, else
+ * the step's phone fallback, else nothing, and Shepherd centres the step.
+ */
+export function stepElement(step: Pick<TourStepDef, 'target' | 'mobileTarget'>): HTMLElement | undefined {
+  return visible(step.target) ?? (step.mobileTarget ? visible(step.mobileTarget) : undefined);
+}
+
+/**
+ * The rail sits on the right under /ar, so a step that opens beside it opens on its
+ * left. On a phone a step with a phone target opens below it: that target is in the
+ * header, and beside it the step would cover it.
+ */
+export function stepPosition(step: Pick<TourStepDef, 'position' | 'mobileTarget'>, rtl: boolean, phone = false): TourStepDef['position'] {
+  if (phone && step.mobileTarget) return 'bottom';
+  const { position } = step;
+  if (!rtl) return position;
+  return position === 'right' ? 'left' : position === 'left' ? 'right' : position;
+}
+
+/** Below 768 px, where the rail lives in the drawer (MvpSidebar). */
+const isPhone = () => typeof window !== 'undefined' && window.matchMedia?.('(max-width: 767px)').matches === true;
+
+// ---------------------------------------------------------------------------
 // Context
 // ---------------------------------------------------------------------------
 
@@ -117,6 +153,8 @@ interface InnerProps {
 
 function TourProviderInner({ children, role, autoStart = true }: InnerProps) {
   const Shepherd = useShepherd();
+  const t = useTranslations('Tours');
+  const rtl = useLocale() === 'ar';
   const router = useRouter();
   const pathname = usePathname();
   const activeTourRef = useRef<InstanceType<typeof Shepherd.Tour> | null>(null);
@@ -145,21 +183,24 @@ function TourProviderInner({ children, role, autoStart = true }: InnerProps) {
       const def = getTourById(tourId);
       if (!def) return;
 
+      const phone = isPhone();
       const steps = def.steps.map((s, idx) => {
         const isLast = idx === def.steps.length - 1;
         const hasNextRoute = !!s.nextRoute;
 
         return {
           id: s.id,
-          attachTo: { element: s.target, on: s.position },
-          title: s.title,
-          text: `<p>${s.text}</p><div class="shepherd-progress">Step ${idx + 1} of ${def.steps.length}</div>`,
+          attachTo: { element: () => stepElement(s), on: stepPosition(s, rtl, phone) },
+          title: t(`${def.id}.steps.${s.id}.title`),
+          text: `<p>${escapeHtml(t(`${def.id}.steps.${s.id}.text`))}</p><div class="shepherd-progress">${escapeHtml(
+            t('progress', { current: idx + 1, total: def.steps.length }),
+          )}</div>`,
           canClickTarget: false,
           buttons: [
             ...(idx > 0
               ? [
                   {
-                    text: 'Back',
+                    text: t('back'),
                     classes: 'shepherd-button-secondary',
                     action: function (this: InstanceType<typeof Shepherd.Tour>) {
                       this.back();
@@ -168,7 +209,7 @@ function TourProviderInner({ children, role, autoStart = true }: InnerProps) {
                 ]
               : [
                   {
-                    text: 'Skip',
+                    text: t('skip'),
                     classes: 'shepherd-button-secondary',
                     action: function (this: InstanceType<typeof Shepherd.Tour>) {
                       this.cancel();
@@ -176,7 +217,7 @@ function TourProviderInner({ children, role, autoStart = true }: InnerProps) {
                   },
                 ]),
             {
-              text: isLast ? 'Done' : 'Next',
+              text: isLast ? t('done') : t('next'),
               classes: 'shepherd-button-primary',
               action: function (this: InstanceType<typeof Shepherd.Tour>) {
                 if (hasNextRoute) {
@@ -222,7 +263,7 @@ function TourProviderInner({ children, role, autoStart = true }: InnerProps) {
       activeTourRef.current = tour;
       tour.start();
     },
-    [Shepherd, router],
+    [Shepherd, router, t, rtl],
   );
 
   // Latest startTour for the auto-start timer, so a re-render that hands us a
