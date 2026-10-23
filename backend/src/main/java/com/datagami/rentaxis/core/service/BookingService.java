@@ -599,11 +599,46 @@ public class BookingService {
                 throw new BusinessRuleViolationException("The booking's slot has started; it can no longer be cancelled.",
                         "booking.slotStarted", java.util.Map.of());
             }
-            if (bookingFees != null) bookingFees.reverseOnCancel(booking, LocalDate.now(clock.withZone(DUBAI)));
+            if (bookingFees != null) {
+                // Ruling R12 (101-d): a paid fee is the office's to credit back, not the renter's.
+                bookingFees.requireUnpaidForRenter(booking);
+                bookingFees.reverseOnCancel(booking, LocalDate.now(clock.withZone(DUBAI)));
+            }
         } else {
             requirePending(booking);
         }
         booking.setStatus(BookingRequestStatus.CANCELLED);
+        return bookingRepository.saveAndFlush(booking);
+    }
+
+    /**
+     * Follow-up ruling R12 (101-d): staff cancel an APPROVED amenity booking whose slot
+     * has not started, with a reason. Its fee is reversed; when the renter already paid
+     * it, the payment stays on their account as a credit (a credit note), so every money
+     * movement is the office's. A pending request is rejected, not cancelled.
+     */
+    public BookingRequest cancelByStaff(UUID tenantId, UUID id, UUID staffUserId, String reason) {
+        BookingRequest booking = getForUpdate(tenantId, id);
+        if (booking.getStatus() != BookingRequestStatus.APPROVED
+                || booking.getResourceType() != BookingResourceType.AMENITY) {
+            throw new BusinessRuleViolationException("Only an approved amenity booking can be cancelled by the office;"
+                    + " reject a pending request, release a parking booking.", "booking.notCancellable", java.util.Map.of());
+        }
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessRuleViolationException("Give a reason for cancelling the booking.",
+                    "booking.cancelReason", java.util.Map.of());
+        }
+        if (!BookingFeeService.beforeSlot(booking, java.time.LocalDateTime.now(clock.withZone(DUBAI)))) {
+            throw new BusinessRuleViolationException("The booking's slot has started; it can no longer be cancelled.",
+                    "booking.slotStarted", java.util.Map.of());
+        }
+        if (bookingFees != null) {
+            bookingFees.creditOnStaffCancel(booking, LocalDate.now(clock.withZone(DUBAI)), reason.trim());
+        }
+        booking.setStatus(BookingRequestStatus.CANCELLED);
+        booking.setAdminNote(reason.trim());
+        booking.setDecidedByUserId(staffUserId);
+        booking.setDecidedAt(Instant.now());
         return bookingRepository.saveAndFlush(booking);
     }
 

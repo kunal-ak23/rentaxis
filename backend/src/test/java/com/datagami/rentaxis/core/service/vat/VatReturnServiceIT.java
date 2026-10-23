@@ -68,6 +68,8 @@ class VatReturnServiceIT extends AbstractPostgresIT {
     @Autowired UserRepository userRepo;
     @Autowired RenterRepository renterRepo;
     @Autowired UnitRepository unitRepo;
+    @Autowired TaxInvoiceService taxInvoices;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private LeaseTestFixtures fixtures;
     private Vendor vendor;
@@ -316,5 +318,40 @@ class VatReturnServiceIT extends AbstractPostgresIT {
         assertThat(service.documents(Q2, "INPUT_OTHER")).singleElement().satisfies(x -> assertThat(x.kind()).isEqualTo("OB"));
         assertThat(r.inputVatOnExempt()).isEqualByComparingTo("50.00");
         assertThat(box(r, "14").vat()).isEqualByComparingTo("-55.00");
+    }
+
+    /**
+     * Follow-up ruling R11 (101-a): the F14-11 backfill issues a contract tax invoice with
+     * no journal, so the journal lock never saw it. A CONTRACT-timing lease posted before
+     * posting issued invoices (simulated by removing its CONTRACT point) whose contract
+     * date is in a filed quarter: the backfill is refused with the journal's message and
+     * issues nothing; once the quarter is re-opened it issues the invoice.
+     */
+    @Test
+    void theContractInvoiceBackfillIsRefusedInAFiledQuarter() {
+        // A lease that carries no contract invoice of ours (as one posted before F14-11):
+        // posted on instalment timing, then marked CONTRACT once its quarter is filed.
+        Unit shop = fixtures.createUnit(fixtures.property(), "SH-1");
+        UUID leaseId = fixtures.draftLease(shop, fixtures.createRenter("Shop Co"), CONTRACT, START, END,
+                List.of(vatLine("RENT", "60000")));
+        fixtures.generateGrid(leaseId, 4, START);
+        fixtures.numberGrid(leaseId, "730001");
+        posting.post(leaseId);
+        quarter();
+        VatReturnDTO filed = service.file(Q2, "FTA-R11");
+        jdbc.update("update leases set vat_timing = 'CONTRACT' where id = ?", leaseId);
+        int before = taxInvoices.forLease(leaseId).size();
+
+        assertThatThrownBy(() -> vatTaxPoints.issueContractInvoice(leaseId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode())
+                        .isEqualTo("vat.contractInvoiceInFiledPeriod"))
+                .hasMessageContaining("20/04/2026").hasMessageContaining("Re-open that VAT return")
+                .satisfies(e -> assertThat(e.getMessage()).doesNotContain("Date the correction"));
+        assertThat(taxInvoices.forLease(leaseId)).as("nothing issued into the filed quarter").hasSize(before);
+
+        service.reopen(filed.id(), "late contract invoice");
+        assertThat(vatTaxPoints.issueContractInvoice(leaseId)).hasSize(before + 1)
+                .anySatisfy(i -> assertThat(i.issueDate()).isEqualTo(CONTRACT));
     }
 }

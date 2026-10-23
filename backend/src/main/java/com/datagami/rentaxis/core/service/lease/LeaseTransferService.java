@@ -199,7 +199,9 @@ public class LeaseTransferService {
         List<LeaseLineInput> out = new ArrayList<>();
         // PR #359 R1 P2-1: the terms after any credit addendum on the move date.
         List<LeaseEffectiveTerms.EffectiveLine> effective = effectiveTerms.effectiveLines(a, start);
-        for (LeaseLine l : leaseLineRepository.findByLease_IdOrderBySeqNoAsc(a.getId())) {
+        List<LeaseLine> aLines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(a.getId());
+        LocalDate originalEnd = com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(a, aLines);
+        for (LeaseLine l : aLines) {
             LeaseEffectiveTerms.EffectiveLine eff = effectiveTerms.of(effective, l);
             if (eff != null && eff.removed()) continue;
             ChargeType type = l.getChargeType();
@@ -211,9 +213,12 @@ public class LeaseTransferService {
             // cut-over) was charged for the whole term and is carried to B in C.
             if (b == ChargeBehaviour.FEE && l.getPostedRecognition() == com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.ONE_OFF) continue;
             LocalDate from = l.getPeriodStart() != null ? l.getPeriodStart() : a.getStartDate();
-            LocalDate to = l.getPeriodEnd() != null ? l.getPeriodEnd() : a.getEndDate();
+            // Sim r22 S22-02: priced over the term the line was charged for, not an extended end date.
+            LocalDate to = l.getPeriodEnd() != null ? l.getPeriodEnd() : originalEnd;
             if (from.isAfter(a.getStartDate())) continue;   // an extension's window
-            BigDecimal net = eff != null && eff.credited() ? eff.amount()
+            // Follow-up ruling R7: a credited line carries its new headline less the
+            // discount, like any other line; the rent-free concession is not carried (§4a).
+            BigDecimal net = eff != null && eff.credited() ? eff.headlineLessDiscount()
                     : l.getGrossAmount().subtract(l.getDiscountAmount() == null ? BigDecimal.ZERO : l.getDiscountAmount());
             BigDecimal amount = net.multiply(BigDecimal.valueOf(newDays))
                     .divide(BigDecimal.valueOf(ProrationEngine.daysInclusive(from, to)), 2, RoundingMode.HALF_UP);
@@ -272,11 +277,14 @@ public class LeaseTransferService {
      */
     private void requireNoFeeChargedTwice(Lease a, Lease b, LocalDate t) {
         java.util.Set<UUID> chargedOnA = new java.util.HashSet<>();
-        for (LeaseLine l : leaseLineRepository.findByLease_IdOrderBySeqNoAsc(a.getId())) {
+        List<LeaseLine> aLines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(a.getId());
+        // Sim r22 S22-02: an undated fee ran over the term it was charged for, not an extended end.
+        LocalDate originalEnd = com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(a, aLines);
+        for (LeaseLine l : aLines) {
             if (l.getChargeType() == null || l.getChargeType().getBehaviour() != ChargeBehaviour.FEE) continue;
             if (l.getPostedRecognition() != com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.ONE_OFF) continue;
             if (l.getChargeType().getRecognition() == null || !l.getChargeType().getRecognition().recurs()) continue;
-            LocalDate to = l.getPeriodEnd() != null ? l.getPeriodEnd() : a.getEndDate();
+            LocalDate to = l.getPeriodEnd() != null ? l.getPeriodEnd() : originalEnd;
             if (to.isAfter(t)) chargedOnA.add(l.getChargeType().getId());
         }
         for (LeaseLine l : leaseLineRepository.findByLease_IdOrderBySeqNoAsc(b.getId())) {

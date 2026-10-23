@@ -38,14 +38,22 @@ public enum AccountRole {
      * from (Dr) or to (Cr) the vendor, one leaf per acquired property under A-02-07,
      * settled against the purchase price by a JV.
      */
-    ACQUISITION_CLEARING;
+    ACQUISITION_CLEARING,
+    /**
+     * Follow-up ruling R5: utilities recovered at cost (PASS_THROUGH) billed for the
+     * term and held until each month's recovery releases them to the Utilities
+     * expense leaf (B-01-09 "Utilities recoverable (held)"). Used by leases posted
+     * after changeset 179; a segment posted before it keeps the B-01-08 leaf it
+     * recorded, so nothing already on the books moves.
+     */
+    UTILITIES_RECOVERABLE;
 
     /** Roles that are normally per-property (template rows). The rest default to tenant-level mappings. */
     public boolean isPropertyScoped() {
         return switch (this) {
             case DISCOUNT_ALLOWED, ROUNDING_OFF, CASH, OUTPUT_VAT, INPUT_VAT, OPENING_BALANCE_DIFFERENCE,
                  OUTPUT_VAT_DEFERRED, PDC_PAYABLE,
-                 BANK_CHARGES, BANK_INTEREST_INCOME, BANK_SUSPENSE, RENTER_REFUND_PAYABLE, UNEARNED_CHARGES, RETAINED_EARNINGS,
+                 BANK_CHARGES, BANK_INTEREST_INCOME, BANK_SUSPENSE, RENTER_REFUND_PAYABLE, UNEARNED_CHARGES, UTILITIES_RECOVERABLE, RETAINED_EARNINGS,
                  BAD_DEBT, BAD_DEBT_RECOVERED -> false;
             default -> true;
         };

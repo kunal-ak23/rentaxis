@@ -158,8 +158,21 @@ public class LeaseReductionService {
         return acquiredVat.vendorPart(lease, onContract);
     }
 
-    /** One line's cut, computed. */
-    private record LinePlan(LeaseLine line, List<RentSegment> segments, BigDecimal newLineAmount,
+    /** Ruling R7: the line's terms after earlier credit addenda (headline, discount, concession). Setter-injected. */
+    private LeaseEffectiveTerms effectiveTerms;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setEffectiveTerms(LeaseEffectiveTerms effectiveTerms) {
+        this.effectiveTerms = effectiveTerms;
+    }
+
+    /**
+     * One line's cut, computed. {@code newGross} is the new headline the user entered,
+     * {@code newRentFree} the concession re-applied at that rate, and {@code newLineAmount}
+     * the net over the whole window they leave (ruling R7).
+     */
+    private record LinePlan(LeaseLine line, List<RentSegment> segments, BigDecimal newGross, BigDecimal newRentFree,
+                            BigDecimal currentGross, BigDecimal newLineAmount,
                             LocalDate from, LocalDate to, int remainingDays,
                             BigDecimal before, BigDecimal after, BigDecimal credit, BigDecimal vat) {
     }
@@ -213,7 +226,8 @@ public class LeaseReductionService {
         List<ReductionPreviewDTO.LineCredit> lines = plans.stream().map(p -> new ReductionPreviewDTO.LineCredit(
                 p.line().getId(), p.line().getChargeType().getCode(), p.line().getChargeType().getNameEn(),
                 p.line().getChargeType().getNameAr(), p.line().getNetAmount(), p.newLineAmount(), p.from(), p.to(),
-                p.remainingDays(), p.before(), p.after(), p.credit(), p.vat())).toList();
+                p.remainingDays(), p.before(), p.after(), p.credit(), p.vat(), p.currentGross(), p.newGross(),
+                p.newRentFree())).toList();
         return new ReductionPreviewDTO(r == null ? null : r.effectiveFrom(), lines, s2(net), rv.fromDeferred(),
                 rv.creditNote(), s2(total), returnable, s2(returned), s2(newRows), s2(gap), problems);
     }
@@ -381,6 +395,8 @@ public class LeaseReductionService {
             c.setAddendumId(addendum.getId());
             c.setLeaseLineId(p.line().getId());
             c.setNewLineAmount(p.newLineAmount());
+            c.setNewGrossAmount(p.newGross());
+            c.setNewRentFreeAmount(p.newRentFree());
             c.setRemainingBefore(p.before());
             c.setRemainingAfter(p.after());
             c.setCreditAmount(p.credit());
@@ -436,6 +452,10 @@ public class LeaseReductionService {
 
     private List<LinePlan> plan(Lease lease, ReduceLeaseRequest r) {
         LocalDate e = r.effectiveFrom();
+        List<LeaseEffectiveTerms.EffectiveLine> effective = effectiveTerms == null ? List.of()
+                : effectiveTerms.effectiveLines(lease, null);
+        LocalDate originalEnd = com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(lease,
+                leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId()));
         Map<UUID, LeaseLine> lines = new LinkedHashMap<>();
         for (LeaseLine l : leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId())) lines.put(l.getId(), l);
         Set<UUID> seen = new HashSet<>();
@@ -447,10 +467,23 @@ public class LeaseReductionService {
                 throw new BusinessRuleViolationException("Line " + line.getSeqNo() + " is listed twice.");
             }
             String code = line.getChargeType() == null ? "?" : line.getChargeType().getCode();
-            BigDecimal newAmount = lr.newAmount() == null ? BigDecimal.ZERO : lr.newAmount().setScale(2, RoundingMode.HALF_UP);
-            if (newAmount.signum() < 0) {
+            // Follow-up ruling R7 (100-h): newAmount is the line's new HEADLINE over its whole
+            // window. The rent-free concession is re-applied at the new rate (it scales with
+            // the headline: free days are worth the new day rate), the discount stays as
+            // agreed, and the net they leave is what the remaining days earn pro rata.
+            BigDecimal newGross = lr.newAmount() == null ? BigDecimal.ZERO : lr.newAmount().setScale(2, RoundingMode.HALF_UP);
+            LeaseEffectiveTerms.EffectiveLine eff = effectiveTerms == null ? null : effectiveTerms.of(effective, line);
+            BigDecimal currentGross = eff != null ? eff.headline() : nz(line.getGrossAmount());
+            BigDecimal discount = eff != null ? eff.discount() : nz(line.getDiscountAmount());
+            BigDecimal rentFree = eff != null ? eff.rentFree() : nz(line.getRentFreeAmount());
+            BigDecimal newRentFree = newGross.signum() == 0 || rentFree.signum() == 0 || currentGross.signum() == 0
+                    ? BigDecimal.ZERO.setScale(2)
+                    : rentFree.multiply(newGross).divide(currentGross, 2, RoundingMode.HALF_UP);
+            BigDecimal newAmount = newGross.signum() == 0 ? BigDecimal.ZERO.setScale(2)
+                    : newGross.subtract(discount).subtract(newRentFree);
+            if (newGross.signum() < 0 || newAmount.signum() < 0) {
                 throw new BusinessRuleViolationException("Line " + line.getSeqNo() + " (" + code + "): a new amount of "
-                        + money(newAmount) + " would take the rest of the term below zero.",
+                        + money(newGross) + " would take the rest of the term below zero.",
                         "lease.reductionNegative", Map.of("line", line.getSeqNo(), "code", code));
             }
             boolean rent = line.getChargeType() != null && line.getChargeType().getBehaviour() == ChargeBehaviour.RENT;
@@ -463,7 +496,9 @@ public class LeaseReductionService {
                         "lease.reductionNotScheduled", Map.of("line", line.getSeqNo(), "code", code));
             }
             LocalDate winFrom = line.getPeriodStart() != null ? line.getPeriodStart() : lease.getStartDate();
-            LocalDate winTo = line.getPeriodEnd() != null ? line.getPeriodEnd() : lease.getEndDate();
+            // Sim r22 S22-02: an undated line is priced over the term it was charged for, not an
+            // end date an extension moved.
+            LocalDate winTo = line.getPeriodEnd() != null ? line.getPeriodEnd() : originalEnd;
             LocalDate from = segs.stream().map(RentSegment::getFromDate).min(LocalDate::compareTo).orElseThrow();
             if (from.isBefore(e)) from = e;
             LocalDate to = segs.stream().map(RentSegment::getToDate).max(LocalDate::compareTo).orElseThrow();
@@ -474,12 +509,13 @@ public class LeaseReductionService {
             BigDecimal credit = before.subtract(after);
             if (credit.signum() <= 0) {
                 throw new BusinessRuleViolationException("Line " + line.getSeqNo() + " (" + code + "): at "
-                        + money(newAmount) + " the rest of the term is worth " + money(after) + ", not less than the "
+                        + money(newGross) + " the rest of the term is worth " + money(after) + ", not less than the "
                         + money(before) + " still to earn; a credit addendum only reduces.",
                         "lease.reductionNotLower", Map.of("line", line.getSeqNo(), "code", code));
             }
             BigDecimal vat = LeaseVat.vatOnPortion(line, credit);
-            out.add(new LinePlan(line, segs, newAmount, from, to, remainingDays, before, after, credit,
+            out.add(new LinePlan(line, segs, newGross, newRentFree, currentGross, newAmount, from, to, remainingDays,
+                    before, after, credit,
                     vat == null ? BigDecimal.ZERO : vat));
         }
         return out;
@@ -515,6 +551,10 @@ public class LeaseReductionService {
 
     private static BigDecimal sum(List<BigDecimal> xs) {
         return xs.stream().filter(java.util.Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private static BigDecimal nz(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v;
     }
 
     private static BigDecimal s2(BigDecimal v) {

@@ -105,7 +105,9 @@ export type AdditionCategory =
   | "UTILITY_OVERPAYMENT"
   | "DEPOSIT_INTEREST"
   | "LANDLORD_COMPENSATION"
-  | "OTHER";
+  | "OTHER"
+  /** Follow-up ruling R1: an unearned at-posting periodic fee, refunded per day (debits the fee's income leaf). */
+  | "UNEARNED_FEE_REFUND";
 
 export type SettlementLineType = "DEDUCTION" | "ADDITION";
 
@@ -207,6 +209,8 @@ export type LeaseLine = {
   postedRecognition?: PostedRecognition | null;
   /** PR #359 R1: what the line charges now after credit addenda; null when never credited (0 = removed). */
   currentAmount?: number | null;
+  /** Follow-up ruling R7: the headline (gross) after credit addenda; null when never credited. */
+  currentGrossAmount?: number | null;
 };
 
 /** Spec §4b: a rent-free window, as read back (concession, days) and as sent. */
@@ -503,6 +507,9 @@ export type LeaseAddendumCredit = {
   remainingAfter: number;
   creditAmount: number;
   vatAmount: number;
+  /** Follow-up ruling R7: the new headline and the concession at that rate; null on an older credit. */
+  newGrossAmount?: number | null;
+  newRentFreeAmount?: number | null;
 };
 
 /** F14-32: ReduceLeaseRequest — a mid-term reduction as a credit addendum. */
@@ -511,7 +518,7 @@ export type ReduceLeaseInput = {
   contractDate?: string | null;
   reason?: string | null;
   ejariNumber?: string | null;
-  /** Each line cut: its new value over its whole window (0 removes it). */
+  /** Each line cut: its new HEADLINE over its whole window, before the rent-free concession (0 removes it). Ruling R7. */
   lines: { lineId: string; newAmount: number }[];
   excess: "CHEQUES" | "CREDIT";
   returnChequeIds: string[];
@@ -525,6 +532,8 @@ export type ReductionPreview = {
     lineId: string; chargeTypeCode: string; chargeTypeName: string; chargeTypeNameAr: string | null;
     lineAmount: number; newLineAmount: number; from: string; to: string; remainingDays: number;
     remainingBefore: number; remainingAfter: number; credit: number; vat: number;
+    /** Follow-up ruling R7: the headline before and after, and the concession at the new rate (absent on an older server). */
+    currentHeadline?: number; newHeadline?: number; newRentFree?: number;
   }[];
   creditNet: number;
   vatFromDeferred: number;
@@ -1059,6 +1068,27 @@ export type SettlementStatement = {
    * when the caller may not read the successor.
    */
   depositCarriedTo?: { leaseId: string | null; unitIdentifier: string | null; amount: number } | null;
+  /**
+   * Follow-up ruling R1: periodic fees a cut-over lease took to income at posting, with their
+   * unearned part (net, per day). Offered, off by default: added as an UNEARNED_FEE_REFUND addition.
+   */
+  unearnedFeeRefunds?: UnearnedFeeRefund[];
+};
+
+/** UnearnedFeeRefundDTO (ruling R1). */
+export type UnearnedFeeRefund = {
+  leaseLineId: string;
+  chargeTypeCode: string | null;
+  chargeTypeName: string | null;
+  chargeTypeNameAr: string | null;
+  accountId: string;
+  accountName: string | null;
+  lineAmount: number;
+  from: string;
+  to: string;
+  days: number;
+  unearnedDays: number;
+  amount: number;
 };
 
 /** SettlementResponseDTO.DeductionDTO — one stored line. */

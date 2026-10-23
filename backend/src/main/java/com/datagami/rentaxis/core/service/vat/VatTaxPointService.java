@@ -83,6 +83,14 @@ public class VatTaxPointService {
     private static final Set<ChequeStatus> PENDING = EnumSet.of(ChequeStatus.REGISTERED, ChequeStatus.DEPOSITED,
             ChequeStatus.ONLINE_PENDING);
 
+    /** Ruling R11: refuses a contract invoice dated in a filed VAT period. Setter-injected. */
+    private VatPeriodLock documentLock;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setDocumentLock(VatPeriodLock documentLock) {
+        this.documentLock = documentLock;
+    }
+
     private final VatTaxPointRepository points;
     private final ChequeRepository cheques;
     private final LeaseRepository leases;
@@ -546,6 +554,12 @@ public class VatTaxPointService {
         BigDecimal taxable = com.datagami.rentaxis.core.service.lease.InstalmentVat.contractTaxable(lines)
                 .subtract(declared.stream().map(VatTaxPoint::getTaxableAmount).reduce(BigDecimal.ZERO, BigDecimal::add));
         if (vat.signum() == 0) return;
+        // Follow-up ruling R11 (101-a): the contract's tax invoice (or the TI/TCN an
+        // amendment issues) is refused when its date falls in a filed VAT period, with
+        // the journal's own message. The TCO's journal is checked by PostingService, but
+        // the backfill has none and a first post can date its TCO later than the
+        // contract date this invoice carries.
+        if (documentLock != null) documentLock.assertDocumentDateOpen(lease.getTenantId(), taxPointDate);
         VatTaxPoint p = new VatTaxPoint();
         p.setTenantId(lease.getTenantId());
         p.setLeaseId(lease.getId());

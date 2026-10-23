@@ -344,6 +344,81 @@ class LeaseReductionIT extends AbstractPostgresIT {
         assertThat(bLines).extracting(LeaseLineDTO::chargeTypeCode).containsExactly("RENT");
     }
 
+    /**
+     * Review P2-2 of PR #425 (coordinator ruling): newAmount is the HEADLINE on every line,
+     * including a discounted line without a rent-free window. 51,000 less a 3,000 discount
+     * (net 48,000) cut to a 39,000 headline leaves 36,000 net for the window, so the 207 days
+     * from 01/03/2027 are worth 36,000 × 207 ÷ 365 = 20,416.44 (the discount stays). A headline
+     * below the discount would take the net negative and is refused.
+     */
+    @Test
+    void onADiscountedLineTheNewAmountIsTheHeadlineAndTheDiscountStays() {
+        UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END, List.of(line("RENT", "51000", "3000")));
+        chequeGeneration.saveRows(leaseId, List.of(
+                row("400051", CONTRACT_DATE, RENT_1, "12000"),
+                row("400052", CONTRACT_DATE, RENT_2, "12000"),
+                row("400053", CONTRACT_DATE, RENT_3, "12000"),
+                row("400054", CONTRACT_DATE, RENT_4, "12000")));
+        posting.post(leaseId);
+        UUID rent = lineId(leaseId, "RENT");
+
+        ReductionPreviewDTO preview = reductions.preview(leaseId, credit(rent, "39000"));
+        assertThat(preview.problems()).isEmpty();
+        assertThat(preview.lines()).singleElement().satisfies(l -> {
+            assertThat(l.currentHeadline()).isEqualByComparingTo("51000");
+            assertThat(l.newHeadline()).isEqualByComparingTo("39000");
+            assertThat(l.newRentFree()).isEqualByComparingTo("0");
+            assertThat(l.newLineAmount()).isEqualByComparingTo("36000.00");
+            assertThat(l.remainingDays()).isEqualTo(207);
+            assertThat(l.remainingAfter()).isEqualByComparingTo("20416.44");
+            assertThat(l.credit()).isEqualByComparingTo(l.remainingBefore().subtract(new BigDecimal("20416.44")));
+        });
+        assertThat(reductions.preview(leaseId, credit(rent, "2000")).problems())
+                .extracting(ReductionPreviewDTO.Problem::code).containsExactly("lease.reductionNegative");
+    }
+
+    /**
+     * Sim r22 S22-02, the same fallback in a reduction: after an extension the contract's own
+     * undated RENT line is still priced over its own year (365 days), not the extended term, so
+     * 39,000 for the 207 days from 01/03/2027 is 22,117.81, as on a lease never extended.
+     */
+    @Test
+    void aReductionAfterAnExtensionPricesTheContractLineOverItsOwnTerm() {
+        UUID leaseId = galahWithTwoCleared();
+        renewal.extend(leaseId, new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(LocalDate.of(2027, 12, 31),
+                null, List.of(new com.datagami.rentaxis.api.dto.lease.LeaseLineInput(null, "RENT", new BigDecimal("13900"),
+                        BigDecimal.ZERO, null, null, null, null, null)),
+                List.of(LeaseTestFixtures.chequeRow("13900", LocalDate.of(2027, 10, 2)))));
+        ReductionPreviewDTO preview = reductions.preview(leaseId, credit(lineId(leaseId, "RENT"), "39000"));
+        assertThat(preview.problems()).isEmpty();
+        assertThat(preview.lines()).singleElement().satisfies(l -> {
+            assertThat(l.remainingDays()).isEqualTo(207);
+            assertThat(l.remainingAfter()).isEqualByComparingTo("22117.81");
+        });
+    }
+
+    /** The same for an undated periodic fee: 3,650 of parking cut to 1,825 earns 1,825 × 207 ÷ 365 = 1,035.00. */
+    @Test
+    void aFeeReductionAfterAnExtensionPricesTheFeeOverItsOwnTerm() {
+        UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END, List.of(line("RENT", "51000"), line("PARKING_FEE", "3650")));
+        chequeGeneration.saveRows(leaseId, List.of(
+                row("300061", CONTRACT_DATE, RENT_1, "13662.50"),
+                row("300062", CONTRACT_DATE, RENT_2, "13662.50"),
+                row("300063", CONTRACT_DATE, RENT_3, "13662.50"),
+                row("300064", CONTRACT_DATE, RENT_4, "13662.50")));
+        posting.post(leaseId);
+        renewal.extend(leaseId, new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(LocalDate.of(2027, 12, 31),
+                null, List.of(new com.datagami.rentaxis.api.dto.lease.LeaseLineInput(null, "RENT", new BigDecimal("13900"),
+                        BigDecimal.ZERO, null, null, null, null, null)),
+                List.of(LeaseTestFixtures.chequeRow("13900", LocalDate.of(2027, 10, 2)))));
+        ReductionPreviewDTO preview = reductions.preview(leaseId, credit(lineId(leaseId, "PARKING_FEE"), "1825"));
+        assertThat(preview.problems()).isEmpty();
+        assertThat(preview.lines()).singleElement().satisfies(l -> {
+            assertThat(l.remainingDays()).isEqualTo(207);
+            assertThat(l.remainingAfter()).isEqualByComparingTo("1035.00");
+        });
+    }
+
     @Test
     void refusals() {
         UUID leaseId = galah();

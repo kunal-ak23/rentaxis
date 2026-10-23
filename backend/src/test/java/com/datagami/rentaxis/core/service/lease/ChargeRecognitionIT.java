@@ -61,6 +61,8 @@ class ChargeRecognitionIT extends AbstractPostgresIT {
 
     @Autowired LeasePostingService posting;
     @Autowired LeaseTerminationService termination;
+    @Autowired com.datagami.rentaxis.core.service.SettlementService settlements;
+    @Autowired LeaseRenewalService renewal;
     @Autowired ChequeGenerationService chequeGeneration;
     @Autowired RecognitionService recognition;
     @Autowired LeaseService leaseService;
@@ -129,7 +131,13 @@ class ChargeRecognitionIT extends AbstractPostgresIT {
         // is recovered (PR #358 R1) — never to income.
         UUID tcoId = tx.execute(s -> leaseRepo.findById(leaseId).orElseThrow().getPostingJournalId());
         List<JournalLine> tco = tx.execute(s -> journalLines.findByEntry_IdOrderByLineNoAsc(tcoId));
-        assertThat(credit(tco, leaf(AccountRole.UNEARNED_CHARGES).getId())).isEqualByComparingTo("4300");
+        // Follow-up ruling R5: parking in Unearned charges (B-01-08), the utility recovery in
+        // its own held leaf, B-01-09 "Utilities recoverable (held)".
+        assertThat(credit(tco, leaf(AccountRole.UNEARNED_CHARGES).getId())).isEqualByComparingTo("3650");
+        Account held = leaf(AccountRole.UTILITIES_RECOVERABLE);
+        assertThat(held.getCode()).isEqualTo("B-01-09");
+        assertThat(held.getNameEn()).isEqualTo("Utilities recoverable (held)");
+        assertThat(credit(tco, held.getId())).isEqualByComparingTo("650");
         assertThat(credit(tco, leaf(AccountRole.PARKING_INCOME).getId())).isEqualByComparingTo("0");
         assertThat(credit(tco, leaf(AccountRole.ADMIN_FEE).getId())).isEqualByComparingTo("1000");
         Account utilities = utilitiesLeaf();
@@ -141,6 +149,7 @@ class ChargeRecognitionIT extends AbstractPostgresIT {
         assertThat(segs).hasSize(3);
         RentSegment dewa = segs.stream().filter(sg -> utilities.getId().equals(sg.getIncomeAccountId())).findFirst().orElseThrow();
         assertThat(dewa.getAmount()).isEqualByComparingTo("650");
+        assertThat(dewa.getDeferralAccountId()).isEqualTo(held.getId());
         RentSegment parking = segs.stream().filter(sg -> leaf(AccountRole.PARKING_INCOME).getId().equals(sg.getIncomeAccountId()))
                 .findFirst().orElseThrow();
         assertThat(parking.getAmount()).isEqualByComparingTo("3650");
@@ -164,8 +173,8 @@ class ChargeRecognitionIT extends AbstractPostgresIT {
         BigDecimal dewaRecovered = posted(leaseId, "UTILITIES");
         assertThat(dewaRecovered).isPositive().isLessThan(new BigDecimal("80"));
         assertThat(balanceOf(utilities.getId(), leaseId)).isEqualByComparingTo(dewaRecovered.negate());
-        assertThat(balanceOf(leaf(AccountRole.UNEARNED_CHARGES).getId(), leaseId))
-                .isEqualByComparingTo(new BigDecimal("-3920").add(dewaRecovered));
+        assertThat(balanceOf(leaf(AccountRole.UNEARNED_CHARGES).getId(), leaseId)).isEqualByComparingTo("-3270");
+        assertThat(balanceOf(held.getId(), leaseId)).isEqualByComparingTo(new BigDecimal("-650").add(dewaRecovered));
     }
 
     /** F14-37's deferred piece: an early exit hands the unearned part of the fee back. */
@@ -185,6 +194,7 @@ class ChargeRecognitionIT extends AbstractPostgresIT {
 
         assertThat(balanceOf(leaf(AccountRole.PARKING_INCOME).getId(), leaseId)).isEqualByComparingTo("-1450");
         assertThat(balanceOf(leaf(AccountRole.UNEARNED_CHARGES).getId(), leaseId)).isEqualByComparingTo("0");
+        assertThat(balanceOf(leaf(AccountRole.UTILITIES_RECOVERABLE).getId(), leaseId)).isEqualByComparingTo("0");
         assertThat(posted(leaseId, "UTILITIES")).isEqualByComparingTo("258.22");
         // The one-off admin fee stays earned.
         assertThat(balanceOf(leaf(AccountRole.ADMIN_FEE).getId(), leaseId)).isEqualByComparingTo("-1000");
@@ -192,6 +202,149 @@ class ChargeRecognitionIT extends AbstractPostgresIT {
                 .filter(r -> "PARKING_FEE".equals(r.chargeCode()) && r.status() == RecognitionStatus.POSTED)
                 .map(RecognitionEntryDTO::amount).reduce(BigDecimal.ZERO, BigDecimal::add))
                 .isEqualByComparingTo("1450");
+    }
+
+    /**
+     * Follow-up ruling R1 (F14-37): a cut-over (at-posting) lease took the whole 3,650 of
+     * parking to income at posting. Terminated on 15/02/2027 (145 of 365 days earned), the
+     * statement offers the unearned 220 days, 2,200, per day like rent; the admin fee (one-off)
+     * and the utility recovery are not offered. Off by default: the refund is unchanged until
+     * the user adds the line. Added, it raises the refund by 2,200 and the STL debits parking
+     * income; more than the unearned part, or another account, is refused.
+     */
+    @Test
+    void aCutOverLeasesUnearnedPeriodicFeeIsAnOptionalSettlementRefund() {
+        UUID leaseId = postedTheOldWay();
+        termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, "Early exit"), null);
+        UUID parkingIncome = leaf(AccountRole.PARKING_INCOME).getId();
+
+        var statement = settlements.statement(leaseId);
+        assertThat(statement.unearnedFeeRefunds()).singleElement().satisfies(o -> {
+            assertThat(o.chargeTypeCode()).isEqualTo("PARKING_FEE");
+            assertThat(o.accountId()).isEqualTo(parkingIncome);
+            assertThat(o.days()).isEqualTo(365);
+            assertThat(o.unearnedDays()).isEqualTo(220);
+            assertThat(o.amount()).isEqualByComparingTo("2200.00");
+        });
+        assertThat(statement.additions()).as("off by default").isEmpty();
+        BigDecimal refundWithout = statement.netRefund();
+
+        assertThatThrownBy(() -> settlements.saveDraft(leaseId, draft(refund(parkingIncome, "2200.01")), null))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("settlement.unearnedFeeTooMuch"));
+        UUID adminFee = leaf(AccountRole.ADMIN_FEE).getId();
+        assertThatThrownBy(() -> settlements.saveDraft(leaseId, draft(refund(adminFee, "100")), null))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("settlement.unearnedFeeNotOffered"));
+
+        settlements.saveDraft(leaseId, draft(refund(parkingIncome, "2200.00")), null);
+        var withRefund = settlements.statement(leaseId);
+        assertThat(withRefund.netRefund().subtract(refundWithout)).isEqualByComparingTo("2200.00");
+
+        // The move-out has happened by the day the settlement is finalised.
+        var later = com.datagami.rentaxis.core.service.ledger.ManualPostingDates.BUSINESS_ZONE;
+        settlements.setManualPostingDates(new com.datagami.rentaxis.core.service.ledger.ManualPostingDates(
+                java.time.Clock.fixed(LocalDate.of(2027, 3, 1).atTime(10, 0).atZone(later).toInstant(), later)));
+        try {
+            settlements.finalizeSettlement(leaseId,
+                    new com.datagami.rentaxis.api.dto.settlement.FinalizeSettlementRequest(T, null, true), null);
+        } finally {
+            settlements.setManualPostingDates(com.datagami.rentaxis.core.service.ledger.ManualPostingDates.system());
+        }
+        UUID stl = jdbc.queryForObject("select journal_id from lease_settlements where lease_id = ?", UUID.class, leaseId);
+        assertThat(jdbc.queryForObject("select coalesce(sum(debit), 0) from journal_lines where journal_entry_id = ?"
+                + " and account_id = ?", BigDecimal.class, stl, parkingIncome)).isEqualByComparingTo("2200.00");
+        assertThat(balanceOf(parkingIncome, leaseId)).as("parking income is what was earned").isEqualByComparingTo("-1450.00");
+    }
+
+    /**
+     * Review P2-1 of PR #425 (coordinator ruling): until the tax adviser rules on the credit
+     * note, a fee line that carries VAT is not offered, and its refund is refused; the
+     * VAT-free line beside it still is.
+     */
+    @Test
+    void aFeeLineWithVatIsNotOfferedForAnUnearnedRefund() {
+        UUID leaseId = fixtures.draftLease(CONTRACT_DATE, START, END, List.of(line("RENT", "51000"),
+                LeaseTestFixtures.vatLine("PARKING_FEE", "3650"), line("COOLING", "730")));
+        jdbc.update("update leases set fee_timing = 'AT_POSTING' where id = ?", leaseId);
+        fixtures.generateGrid(leaseId, 4, START);
+        posting.post(leaseId);
+        termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, "Early exit"), null);
+
+        var offers = settlements.statement(leaseId).unearnedFeeRefunds();
+        assertThat(offers).extracting(o -> o.chargeTypeCode()).containsExactly("COOLING");
+        assertThat(offers.get(0).amount()).isEqualByComparingTo("440.00");   // 730 × 220 ÷ 365
+        assertThatThrownBy(() -> settlements.saveDraft(leaseId, draft(refund(leaf(AccountRole.PARKING_INCOME).getId(), "100")), null))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("settlement.unearnedFeeNotOffered"));
+        settlements.saveDraft(leaseId, draft(refund(leaf(AccountRole.COOLING_CHARGES).getId(), "440.00")), null);
+    }
+
+    /**
+     * Sim r22 S22-02: an extension moves the lease's end date but dates its own lines, so a
+     * cut-over fee charged for the original year (24/09/2026 – 23/09/2027) is still measured
+     * over that year: 220 of 365 days unearned at 15/02/2027, 2,200, not 3,650 spread over
+     * the extended 464 days. More than that is refused.
+     */
+    @Test
+    void anExtensionDoesNotStretchTheWindowOfAnUnearnedFeeRefund() {
+        UUID leaseId = postedTheOldWay();
+        renewal.extend(leaseId, new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(LocalDate.of(2027, 12, 31),
+                null, List.of(new com.datagami.rentaxis.api.dto.lease.LeaseLineInput(null, "RENT", new BigDecimal("13900"),
+                        BigDecimal.ZERO, null, null, null, null, null)),
+                List.of(LeaseTestFixtures.chequeRow("13900", LocalDate.of(2027, 10, 2)))));
+        LocalDate extendedTo = tx.execute(x -> leaseRepo.findById(leaseId).orElseThrow().getEndDate());
+        assertThat(extendedTo).isEqualTo(LocalDate.of(2027, 12, 31));
+        termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, "Early exit"), null);
+
+        assertThat(settlements.statement(leaseId).unearnedFeeRefunds()).singleElement().satisfies(o -> {
+            assertThat(o.chargeTypeCode()).isEqualTo("PARKING_FEE");
+            assertThat(o.to()).isEqualTo(END);
+            assertThat(o.days()).isEqualTo(365);
+            assertThat(o.unearnedDays()).isEqualTo(220);
+            assertThat(o.amount()).isEqualByComparingTo("2200.00");
+        });
+        assertThatThrownBy(() -> settlements.saveDraft(leaseId, draft(refund(leaf(AccountRole.PARKING_INCOME).getId(), "2200.01")), null))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("settlement.unearnedFeeTooMuch"));
+    }
+
+    private static com.datagami.rentaxis.api.dto.SaveSettlementDTO.DeductionItemDTO refund(UUID account, String amount) {
+        var i = new com.datagami.rentaxis.api.dto.SaveSettlementDTO.DeductionItemDTO();
+        i.setType(com.datagami.rentaxis.domain.entity.enums.LineItemType.ADDITION);
+        i.setAdditionCategory("UNEARNED_FEE_REFUND");
+        i.setDescription("Unearned parking refunded");
+        i.setAccountId(account);
+        i.setAmount(new BigDecimal(amount));
+        return i;
+    }
+
+    private static com.datagami.rentaxis.api.dto.SaveSettlementDTO draft(
+            com.datagami.rentaxis.api.dto.SaveSettlementDTO.DeductionItemDTO item) {
+        var d = new com.datagami.rentaxis.api.dto.SaveSettlementDTO();
+        d.setDeductions(List.of(item));
+        return d;
+    }
+
+    /** Follow-up ruling R3: changeset 178's CHECKs refuse a value no enum writes, in all three columns. */
+    @Test
+    void theRecognitionColumnsRefuseAnUnknownValue() {
+        UUID leaseId = posted();
+        UUID lineId = jdbc.queryForObject("select id from lease_lines where lease_id = ? order by seq_no limit 1",
+                UUID.class, leaseId);
+        UUID typeId = jdbc.queryForObject("select charge_type_id from lease_lines where id = ?", UUID.class, lineId);
+        String was = jdbc.queryForObject("select posted_recognition from lease_lines where id = ?", String.class, lineId);
+        assertThatThrownBy(() -> jdbc.update("update charge_types set recognition = 'MONTHLY' where id = ?", typeId))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_charge_types_recognition");
+        assertThatThrownBy(() -> jdbc.update("update lease_lines set posted_recognition = 'MONTHLY' where id = ?", lineId))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_lease_lines_posted_recognition");
+        assertThatThrownBy(() -> jdbc.update("update leases set fee_timing = 'LATER' where id = ?", leaseId))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_leases_fee_timing");
+        // Every value the enums write is accepted.
+        for (String v : List.of("RENT_LIKE", "ONE_OFF", "PASS_THROUGH", "NONE")) {
+            jdbc.update("update lease_lines set posted_recognition = ? where id = ?", v, lineId);
+        }
+        jdbc.update("update lease_lines set posted_recognition = null where id = ?", lineId);
+        jdbc.update("update lease_lines set posted_recognition = ? where id = ?", was, lineId);
     }
 
     /** Leases already on the books are not restated: every fee is income at posting, no fee schedule. */
