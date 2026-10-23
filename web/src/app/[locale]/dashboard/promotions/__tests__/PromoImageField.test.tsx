@@ -67,6 +67,27 @@ describe('PromoImageField', () => {
         expect(screen.getByTestId('value').textContent).toBe('')
     })
 
+    it('shows the recommended size under the format hint, in both languages', () => {
+        for (const [locale, messages] of [['en', en], ['ar', ar]] as const) {
+            render(
+                <NextIntlClientProvider locale={locale} messages={messages}>
+                    <PromoImageField label="Logo" value="" onChange={() => {}}
+                        sizeHint={messages.Promotions.logoSizeHint} />
+                </NextIntlClientProvider>,
+            )
+            const input = screen.getByLabelText(`Logo: ${messages.Promotions.uploadImage}`)
+            expect(input).toHaveAccessibleDescription(
+                `${messages.Promotions.imageHint} ${messages.Promotions.logoSizeHint}`)
+            cleanup()
+        }
+    })
+
+    it('shows only the format hint when no size is given', () => {
+        render(<Harness />)
+        const input = screen.getByLabelText(`Logo: ${en.Promotions.uploadImage}`)
+        expect(input).toHaveAccessibleDescription(en.Promotions.imageHint)
+    })
+
     it('keeps an https link saved earlier and can remove it', () => {
         render(<Harness initial="https://cdn.example.com/logo.png" />)
         expect(screen.getByRole('img', { name: 'Logo' }).getAttribute('src')).toBe('https://cdn.example.com/logo.png')

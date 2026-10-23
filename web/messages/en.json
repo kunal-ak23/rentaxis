@@ -1865,6 +1865,8 @@
     "removeImage": "Remove",
     "uploading": "Uploading…",
     "imageHint": "PNG, JPEG, GIF or WebP, up to 2 MB.",
+    "logoSizeHint": "Recommended: square, 512 × 512 px, PNG with a transparent background.",
+    "artworkSizeHint": "Recommended: 1200 × 700 px, as a JPEG or WebP to stay under 2 MB. The app crops the edges and writes the headline over the image, so keep the subject in the centre and leave text out of the image.",
     "imageTooLarge": "This image is larger than 2 MB. Choose a smaller one.",
     "imageUploadFailed": "Couldn't upload this image. Use a PNG, JPEG, GIF or WebP under 2 MB.",
     "adTitle": "Title",
