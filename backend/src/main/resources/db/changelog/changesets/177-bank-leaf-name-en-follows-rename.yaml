@@ -1,0 +1,39 @@
+# Review of PR #424, P2-1: the bank-leaf renames of changeset 173 and of the runtime
+# move (#418, S20-04) set accounts.name only. AccountService.createLeaf sets name and
+# name_en alike, and the Chart of Accounts shows name_en first and saves name from it,
+# so those leaves still read "<old bank> - <property>" there, and editing one put the
+# old name back. (176 and the runtime renames now set name_en themselves.)
+#
+# Exactly the renamed leaves: a BANK-subtype leaf scoped to a property, owned by a bank
+# account, whose name is the generated "<owner's bank name> - <property name_en>", and
+# whose name_en is still a generated default for that property and differs from name:
+# "<any bank account's bank name of the organisation> - <property>", or the template's
+# "Emirates Islamic - <property>" / "Bank - <property>". name_en becomes name. A name_en
+# someone typed (anything else) is kept. Only accounts.name_en changes.
+# Tenant-scoped (every join is on tenant_id) and idempotent (afterwards name_en = name).
+# Preview: .superpowers/agents/prod-check-176-predeploy.sql, section 177 (read-only).
+databaseChangeLog:
+  - changeSet:
+      id: 177-bank-leaf-name-en-follows-rename
+      author: claude
+      changes:
+        - sql:
+            comment: Renamed property bank leaves carry their new name in name_en too
+            splitStatements: false
+            sql: |
+              UPDATE accounts a
+                 SET name_en = a.name, updated_at = CURRENT_TIMESTAMP
+                FROM bank_account_ledgers l, bank_accounts ob, properties p
+               WHERE l.account_id = a.id AND l.tenant_id = a.tenant_id
+                 AND ob.id = l.bank_account_id AND ob.tenant_id = l.tenant_id
+                 AND p.id = a.property_id AND p.tenant_id = a.tenant_id
+                 AND a.account_sub_type = 'BANK' AND NOT a.is_group
+                 AND a.name = ob.bank_name || ' - ' || p.name_en
+                 AND a.name_en IS NOT NULL AND a.name_en <> a.name
+                 AND (a.name_en IN ('Emirates Islamic - ' || p.name_en, 'Bank - ' || p.name_en)
+                      OR EXISTS (SELECT 1 FROM bank_accounts other
+                                  WHERE other.tenant_id = a.tenant_id
+                                    AND a.name_en = other.bank_name || ' - ' || p.name_en));
+      rollback:
+        - sql:
+            sql: SELECT 1

@@ -34,6 +34,13 @@ import java.util.UUID;
 @Service
 public class PropertyAccountService {
 
+    /**
+     * S21-04: the seeded BANK leaf pattern. It names no bank: the template is seeded
+     * before the organisation has any bank account, and it used to carry one client's
+     * bank ("Emirates Islamic - {property}") into every organisation.
+     */
+    public static final String DEFAULT_BANK_PATTERN = "Bank - {property}";
+
     /** Parent of the per-property building-cost leaves. */
     private static final String DIRECT_EXPENSE_PARENT_CODE = "D-01";
 
@@ -47,7 +54,7 @@ public class PropertyAccountService {
      * Income, Admin Fee and Additional Parking all sit under C-01-01; four income
      * roles under C-01-02), so naming a leaf after its group would give four
      * different accounts the same Arabic name. Generic on purpose: the English
-     * pattern is tenant-editable ("Emirates Islamic - {property}" is only the
+     * pattern is tenant-editable ("Bank - {property}" is only the
      * seed), so the label says what the account is, not which bank. A role not
      * listed falls back to the group's Arabic name.</p>
      */
@@ -139,7 +146,10 @@ public class PropertyAccountService {
             template(AccountRole.ADVANCE_RENT, "Advance Rent - {property}", "B-01-01");
             template(AccountRole.RENTAL_INCOME, "Rental Income {property}", "C-01-01");
             template(AccountRole.PDC_RECEIVABLE, "PDC Receivable {property}", "A-02-03");
-            template(AccountRole.BANK, "Emirates Islamic - {property}", "A-02-02");
+            // S21-04: neutral until a bank account takes the leaf; then it is renamed after
+            // that bank (OwnedBankLeaf). With a bank account already in place the leaf is
+            // named after the operating bank at creation (generateMissing).
+            template(AccountRole.BANK, DEFAULT_BANK_PATTERN, "A-02-02");
             template(AccountRole.SECURITY_DEPOSIT, "Security Deposit {property}", "B-01-02");
             template(AccountRole.ADMIN_FEE, "Admin Fee - {property}", "C-01-01");
             template(AccountRole.PARKING_INCOME, "Additional Parking - {property}", "C-01-01");

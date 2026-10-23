@@ -27,10 +27,13 @@ public class BankAccountLedgerService {
 
     private final BankAccountRepository bankAccounts;
     private final NamedParameterJdbcTemplate jdbc;
+    private final OwnedBankLeaf ownedBankLeaf;
 
-    public BankAccountLedgerService(BankAccountRepository bankAccounts, NamedParameterJdbcTemplate jdbc) {
+    public BankAccountLedgerService(BankAccountRepository bankAccounts, NamedParameterJdbcTemplate jdbc,
+                                    OwnedBankLeaf ownedBankLeaf) {
         this.bankAccounts = bankAccounts;
         this.jdbc = jdbc;
+        this.ownedBankLeaf = ownedBankLeaf;
     }
 
     public static UUID requireTenant() {
@@ -158,11 +161,15 @@ public class BankAccountLedgerService {
             jdbc.update("delete from bank_account_ledgers where tenant_id = :t and bank_account_id = :b and account_id = :a",
                     new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("a", gone));
         }
+        List<UUID> joined = new ArrayList<>();
         for (UUID a : wanted) {
             if (current.contains(a)) continue;
             jdbc.update("insert into bank_account_ledgers (tenant_id, bank_account_id, account_id) values (:t, :b, :a)",
                     new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("a", a));
+            joined.add(a);
         }
+        // S21-04: a property leaf still named by the template takes its new owner's bank name.
+        ownedBankLeaf.renameDefaultNamed(t, bankAccountId, joined);
         return leaves(bankAccountId);
     }
 

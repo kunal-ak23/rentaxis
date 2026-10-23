@@ -428,3 +428,33 @@ describe("the bank account list", () => {
         expect(screen.queryByTestId("reopen-0123")).not.toBeInTheDocument();
     });
 });
+
+/** Sim r22 S22-03 / S22-04: the closing-proof check and the reopen-first hint, in both languages. */
+describe("an unproven closing and a statement reaching into a finalized month (sim r22)", () => {
+    const NEEDS_CLOSING: Reconciliation = {
+        ...SEPT, canFinalize: false, remedyReopenThrough: "2026-08-31",
+        checks: [...SEPT.checks, { code: "CLOSING" as const, ok: false,
+            message: "The imported lines end on 28/09/2026, and no imported file shows that day ended there" }],
+    };
+    for (const locale of ["en", "ar"] as const) {
+        it(`asks for the paper closing and says to reopen August first (${locale})`, async () => {
+            stubFetch([{ match: "/bank-accounts/ba-1/reconciliations", body: ROWS },
+                { match: "/reconciliations/rec-9", body: NEEDS_CLOSING }]);
+            const msgs = locale === "ar" ? ar : en;
+            renderIn(locale, <ReconciliationPanel bankAccountId="ba-1" />);
+            expect(await screen.findByTestId("rec-closing-needed")).toHaveTextContent(msgs.BankRec.closingNeededHint);
+            expect(screen.getByTestId("rec-check-CLOSING")).toHaveTextContent(msgs.BankRec.check_CLOSING);
+            expect(screen.getByTestId("rec-reopen-first")).toHaveTextContent("31/08/2026");
+            expect(screen.getByTestId("rec-finalize")).toBeDisabled();
+        });
+    }
+
+    it("shows neither hint when the closing is proven and nothing reaches a finalized month", async () => {
+        stubFetch([{ match: "/bank-accounts/ba-1/reconciliations", body: ROWS },
+            { match: "/reconciliations/rec-9", body: SEPT }]);
+        renderIn("en", <ReconciliationPanel bankAccountId="ba-1" />);
+        await screen.findByTestId("rec-checklist");
+        expect(screen.queryByTestId("rec-closing-needed")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("rec-reopen-first")).not.toBeInTheDocument();
+    });
+});

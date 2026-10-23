@@ -230,6 +230,18 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         return r.checks().stream().filter(c -> c.code().equals(code)).findFirst().orElseThrow();
     }
 
+    /**
+     * Sim r22 S22-03: the careful user types the paper statement's closing at the period end
+     * (the ruling: nothing else proves a closing when the export ended during its last day).
+     * In these scenarios every line is imported, so the paper's figure is the lines' own.
+     */
+    private BankRecDTOs.Reconciliation paperClosing(UUID id) {
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        BigDecimal typedOpening = jdbc.queryForObject("select statement_opening from bank_reconciliations where id = ?",
+                BigDecimal.class, id);
+        return recs.update(id, new BankRecDTOs.ReconciliationInput(null, r.periodTo(), typedOpening, r.statementClosing()));
+    }
+
     private static BankRecDTOs.ReconciliationInput period(LocalDate from, LocalDate to) {
         return new BankRecDTOs.ReconciliationInput(from, to, null, null);
     }
@@ -275,7 +287,9 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 null, null, VoucherPaymentMethod.CHEQUE, null)).getId(), List.of(), null,
                 VoucherService.PostOptions.of(true, false));
 
-        BankRecDTOs.Reconciliation draft = recs.create(ei.getId(), period(SEP_1, SEP_30));
+        // The paper statement's closing (S22-03: the export ends on its last line-day).
+        BankRecDTOs.Reconciliation draft = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, null,
+                new BigDecimal("328017.50")));
         return new September(draft.id(), c452, chq77, interest.journalEntryIds().get(0));
     }
 
@@ -334,7 +348,9 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThatThrownBy(() -> chequeService.clear(late.id(), ChequeActionRequest.on(SEP_29)))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessage("Emirates Islamic 0123 is reconciled through 30/09/2026. A posting dated 29/09/2026 on '"
-                        + palmBank.getName() + "' would change a signed-off reconciliation. Reopen that reconciliation first.");
+                        // S21-04: the leaf took its bank's name when Emirates Islamic adopted it.
+                        + "Emirates Islamic - " + palm.getNameEn() + "' would change a signed-off reconciliation. "
+                        + "Reopen that reconciliation first.");
         assertThat(jdbc.queryForObject("select status from cheques where id = ?", String.class, late.id())).isEqualTo("DEPOSITED");
 
         // The finalized statement is a snapshot: later postings do not move it.
@@ -351,7 +367,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         chequeService.clear(late.id(), new ChequeActionRequest(SEP_29, null, null, null, true));
 
         // A new draft for the same period is finalized again, now with the later clearing in transit.
-        BankRecDTOs.Reconciliation again = recs.create(ei.getId(), period(SEP_1, SEP_30));
+        BankRecDTOs.Reconciliation again = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, null,
+                new BigDecimal("328017.50")));
         assertThat(again.depositsInTransit()).isEqualByComparingTo("25000.00");
         assertThat(again.difference()).isEqualByComparingTo("0.00");
         recs.finalizeRec(again.id());
@@ -409,7 +426,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 """);
         book("SERVICE CHARGE", "CHARGE");
         if (bookInterest) book("CREDIT INTEREST", "INTEREST");
-        return recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
+        // The paper statement's closing (S22-03).
+        return recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, null, new BigDecimal("995.00"))).id();
     }
 
     @Test
@@ -445,12 +463,12 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThatThrownBy(() -> recs.finalizeRec(id))
                 .hasMessageContaining("Statement lines add up to 995.00, the closing balance is 1,000.00: import the missing lines.")
                 .hasMessageContaining("The difference is 5.00; it must be 0.00");
-        recs.update(id, period(null, SEP_30));
+        recs.update(id, new BankRecDTOs.ReconciliationInput(null, SEP_30, null, new BigDecimal("995.00")));
 
         // 5. A period that has not ended.
         recs.update(id, period(null, LocalDate.of(2026, 10, 31)));
         assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("The period ends on 31/10/2026, after today");
-        recs.update(id, period(null, SEP_30));
+        recs.update(id, new BankRecDTOs.ReconciliationInput(null, SEP_30, null, new BigDecimal("995.00")));
 
         // 6. The first reconciliation's opening items must explain the gap at the start.
         jv(AUG_20, marinaBank, "200.00");
@@ -502,7 +520,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         book("CREDIT INTEREST", "INTEREST");
         book("PROFIT SHARE", "INTEREST");
 
-        BankRecDTOs.Reconciliation r = recs.create(ei.getId(), period(SEP_1, SEP_30));
+        BankRecDTOs.Reconciliation r = paperClosing(recs.create(ei.getId(), period(SEP_1, SEP_30)).id());
         assertThat(r.statementOpening()).isEqualByComparingTo("1000.00");
         assertThat(r.statementClosing()).isEqualByComparingTo("1022.00");
         assertThat(r.bookBalance()).isEqualByComparingTo("1022.00");
@@ -570,6 +588,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
         assertThat(jdbc.queryForObject("select count(*) from bank_statement_lines where bank_account_id = ? and txn_date = ?",
                 Integer.class, ei.getId(), LocalDate.of(2026, 9, 10))).isEqualTo(2);
+        r = paperClosing(id);
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
     }
@@ -610,7 +629,9 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(check(r, "DIFFERENCE").ok()).isTrue();
         assertThat(check(r, "LINE_ORDER").ok()).isFalse();
         assertThat(check(r, "LINE_ORDER").message()).contains("On 07/09/2026").contains("A typed closing balance cannot settle this")
-                .contains("total debits and total credits");
+                .contains("total debits and total credits")
+                // S21-01: 06/09 and 11/09 are each held only in part, so neither is named as a statement's edge.
+                .contains("no statement can yet hold that day between two settled days").doesNotContain("runs from");
         assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("A typed closing balance cannot settle this");
         assertThat(reconciledThrough()).isNull();
 
@@ -714,7 +735,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 01/09/2026,01/09/2026,FEE ONE,,5.00,,995.00
                 01/09/2026,01/09/2026,CREDIT TWO,,,20.00,"1,015.00"
                 02/09/2026,02/09/2026,FEE THREE,,5.00,,"1,010.00"
-                02/09/2026,02/09/2026,Closing balance,,,,"1,010.00"
+                03/09/2026,03/09/2026,Closing balance,,,,"1,010.00"
                 """);
         assertThat(jdbc.queryForList("select txn_date || ':' || order_confirmed || ':' || merge_unproven from bank_statement_days "
                 + "where bank_account_id = ? order by txn_date", String.class, ei.getId()))
@@ -876,7 +897,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(part.linesNew()).isZero();
         for (String d : List.of("FEE A", "FEE B", "FEE D", "FEE F")) book(d, "CHARGE");
         for (String d : List.of("CREDIT C", "CREDIT E")) book(d, "INTEREST");
-        BankRecDTOs.Reconciliation r = recs.create(ei.getId(), period(SEP_1, SEP_30));
+        BankRecDTOs.Reconciliation r = paperClosing(recs.create(ei.getId(), period(SEP_1, SEP_30)).id());
         assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
     }
@@ -983,7 +1004,12 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(check(r, "LINE_ORDER").ok()).isFalse();
         // [C, D, E] took D and E for the stored ones without holding the whole day: unproven.
         assertThat(check(r, "LINE_ORDER").message()).contains("On 10/09/2026")
-                .contains("A typed closing balance cannot settle this").contains("from the day before to the day after");
+                .contains("A typed closing balance cannot settle this")
+                // S21-01/S21-03: 10/09 is the only day imported, so no statement can hold it between two settled
+                // days; the remedy that works after matching is named instead of "delete the imports".
+                .contains("import one statement that holds every line of the imports that brought 10/09/2026's lines, "
+                        + "then delete those imports")
+                .doesNotContain("from the day before to the day after");
         assertThat(r.canFinalize()).isFalse();
         assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("A typed closing balance cannot settle this");
 
@@ -1011,6 +1037,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         for (String d : List.of("CREDIT X", "PRE IN")) book(d, "INTEREST");
         for (String d : List.of("PRE OUT", "FEE AFTER")) book(d, "CHARGE");
         recs.update(id, new BankRecDTOs.ReconciliationInput(null, SEP_30, new BigDecimal("1000.00"), null));
+        paperClosing(id);
         r = recs.get(id);
         assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
         assertThat(r.statementClosing()).isEqualByComparingTo("995.00");
@@ -1067,6 +1094,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         BankRecDTOs.Reconciliation r = recs.get(id);
         assertThat(r.statementOpening()).isEqualByComparingTo("1000.00");
         assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+        r = paperClosing(id);
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
     }
@@ -1092,6 +1120,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         jdbc.update("delete from bank_statement_days where bank_account_id = ?", ei.getId());
         UUID sep = recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
         assertThat(recs.get(sep).checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+        paperClosing(sep);
         recs.finalizeRec(sep);
         recs.reopen(sep, "restating September");
         assertThat(jdbc.queryForList("select txn_date || ':' || order_confirmed || ':' || merge_unproven from bank_statement_days "
@@ -1148,6 +1177,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(check(recs.get(oct.id()), "CHAIN").ok()).isFalse();
         assertThatThrownBy(() -> recs.finalizeRec(oct.id())).hasMessageContaining("so it must start on 01/10/2026");
         jdbc.update("update bank_reconciliations set period_from = ? where id = ?", OCT_1, oct.id());
+        paperClosing(oct.id());
         recs.finalizeRec(oct.id());
         assertThat(reconciledThrough()).isEqualTo(OCT_5);
 
@@ -1214,6 +1244,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(r.bookBalance()).isEqualByComparingTo("4000.00");
         assertThat(r.statementClosing()).isEqualByComparingTo("4000.00");
         assertThat(r.difference()).isEqualByComparingTo("0.00");
+        paperClosing(id);
         recs.finalizeRec(id);
         assertThatThrownBy(() -> recs.addOpeningItem(ei.getId(), new BankRecDTOs.OpeningItemInput(AUG_20, "x", null, null, BigDecimal.ONE)))
                 .hasMessageContaining("fixed once the first reconciliation is finalized");
@@ -1235,7 +1266,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(r.bookedAfterPeriod()).isEqualByComparingTo("250.00");
         assertThat(r.bookedAfterItems()).singleElement().extracting(BankRecDTOs.RecItem::narration).isEqualTo("TRANSFER IN");
         assertThat(r.difference()).isEqualByComparingTo("0.00");
-        assertThat(r.canFinalize()).isTrue();
+        assertThat(r.canFinalize()).as("S22-03: the export ends on 30/09, so the paper closing is asked for").isFalse();
+        assertThat(paperClosing(r.id()).canFinalize()).isTrue();
     }
 
     // ------------------------------------------------------------------ concurrency
@@ -1266,7 +1298,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
 
             // Order 2: finalize (of a reopened draft) holds the row; the posting waits, then is refused.
             recs.reopen(id, "again");
-            UUID again = recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
+            UUID again = paperClosing(recs.create(ei.getId(), period(SEP_1, SEP_30)).id()).id();
             CountDownLatch finalized = new CountDownLatch(1);
             CountDownLatch commit = new CountDownLatch(1);
             Future<?> finalizer = pool.submit(() -> inTenant(() -> tx.executeWithoutResult(st -> {
@@ -1342,6 +1374,347 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThatThrownBy(() -> jv(SEP_15, marinaBank, "5.00")).hasMessageContaining("is reconciled through");
     }
 
+    // ------------------------------------------------------------------ sim r21 (S21-01..S21-05)
+
+    /** Head and tail of a month with the end of 08/09 in neither (sim r21 BACKFILL shapes). From 1,000. */
+    private void headAndTailWithAGapOn0809() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importText("""
+                06/09/2026,06/09/2026,CREDIT W,,,10.00,"1,010.00"
+                07/09/2026,07/09/2026,FEE A,,5.00,,"1,005.00"
+                08/09/2026,08/09/2026,FEE B,,5.00,,"1,000.00"
+                """);
+        importText("""
+                09/09/2026,09/09/2026,CREDIT D,,,20.00,"1,015.00"
+                10/09/2026,10/09/2026,FEE E,,5.00,,"1,010.00"
+                11/09/2026,11/09/2026,FEE F,,5.00,,"1,005.00"
+                """);
+        for (String d : List.of("FEE A", "FEE B", "FEE E", "FEE F")) book(d, "CHARGE");
+        for (String d : List.of("CREDIT W", "CREDIT D")) book(d, "INTEREST");
+    }
+
+    private List<String> dayRows() {
+        return jdbc.queryForList("select txn_date || ':' || order_confirmed || ':' || merge_unproven from bank_statement_days "
+                + "where bank_account_id = ? order by txn_date", String.class, ei.getId());
+    }
+
+    /**
+     * Sim r21 S21-01: a gap at the end of 08/09. The check names the statement that
+     * brings it with nothing left to settle — from 07/09 to 10/09, the nearest settled
+     * days around the two half-held days — and importing exactly that finalizes on the
+     * lines, with no day totals and no typed balance.
+     */
+    @Test
+    void theStatementTheCheckNamesBringsAGapAndLeavesNoDayToSettle() {
+        headAndTailWithAGapOn0809();
+        UUID id = recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        assertThat(check(r, "CONTINUITY").ok()).isFalse();
+        assertThat(check(r, "CONTINUITY").message()).contains("Lines may be missing before 09/09/2026")
+                .contains("one statement that runs from 07/09/2026 to 10/09/2026 brings them and leaves no day to settle");
+
+        importText("""
+                07/09/2026,07/09/2026,FEE A,,5.00,,"1,005.00"
+                08/09/2026,08/09/2026,FEE B,,5.00,,"1,000.00"
+                08/09/2026,08/09/2026,FEE C,,5.00,,995.00
+                09/09/2026,09/09/2026,CREDIT D,,,20.00,"1,015.00"
+                10/09/2026,10/09/2026,FEE E,,5.00,,"1,010.00"
+                """);
+        assertThat(dayRows()).as("every day confirmed, none unproven").allMatch(d -> d.endsWith(":true:false"));
+        book("FEE C", "CHARGE");
+        r = recs.get(id);
+        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+        assertThat(r.unprovenDays()).isEmpty();
+        r = paperClosing(id);
+        assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
+        assertThat(r.statementClosing()).isEqualByComparingTo("1005.00");
+        assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
+    }
+
+    /**
+     * Sim r21 S21-01, why the old advice cost a day: "from the day before to the day
+     * after" 08/09 ends on 09/09, which the tail holds only from some line to its end.
+     * The span's 09/09 lines may be the start of a day whose stored lines are its end
+     * with identical lines between (fee, refund, fee: S20-01), so 09/09 is unproven — by
+     * design. The check now names the statement that settles it (08/09 to 10/09, both
+     * complete) and importing that settles it without typing.
+     */
+    @Test
+    void aSpanEndingOnAHalfHeldDayLeavesItUnprovenAndTheCheckNamesTheStatementThatSettlesIt() {
+        headAndTailWithAGapOn0809();
+        importText("""
+                07/09/2026,07/09/2026,FEE A,,5.00,,"1,005.00"
+                08/09/2026,08/09/2026,FEE B,,5.00,,"1,000.00"
+                08/09/2026,08/09/2026,FEE C,,5.00,,995.00
+                09/09/2026,09/09/2026,CREDIT D,,,20.00,"1,015.00"
+                """);
+        book("FEE C", "CHARGE");
+        UUID id = recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        assertThat(r.unprovenDays()).singleElement().extracting(BankRecDTOs.UnprovenDay::date).isEqualTo(LocalDate.of(2026, 9, 9));
+        assertThat(check(r, "LINE_ORDER").message()).contains("On 09/09/2026")
+                .contains("or import one statement that runs from 08/09/2026 to 10/09/2026, which holds 09/09/2026 whole")
+                .doesNotContain("delete the imports");
+
+        importText("""
+                08/09/2026,08/09/2026,FEE B,,5.00,,"1,000.00"
+                08/09/2026,08/09/2026,FEE C,,5.00,,995.00
+                09/09/2026,09/09/2026,CREDIT D,,,20.00,"1,015.00"
+                10/09/2026,10/09/2026,FEE E,,5.00,,"1,010.00"
+                """);
+        r = recs.get(id);
+        assertThat(r.unprovenDays()).isEmpty();
+        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+        r = paperClosing(id);
+        assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
+        assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
+    }
+
+    /**
+     * Sim r21 S21-03: after auto-match and confirm, an import whose every line another
+     * import also holds can be deleted — its lines stay, re-attributed, with their
+     * matches. On the account's first statement day (no day before it can be imported),
+     * the remedy the check names works in that order: import the statement holding
+     * everything, then delete the partial imports; the day is then one import's stretch
+     * and settled. Deleting an import whose own lines are matched is still refused.
+     */
+    @Test
+    void theFirstDayIsSettledByImportingTheWholeStatementThenDeletingThePartsAfterMatching() {
+        jv(AUG_31, marinaBank, "1000.00");
+        BankRecDTOs.ImportResult extract = importText("""
+                01/09/2026,01/09/2026,FEE ONE,,5.00,,995.00
+                """);
+        BankRecDTOs.ImportResult part = importText("""
+                01/09/2026,01/09/2026,FEE ONE,,5.00,,995.00
+                01/09/2026,01/09/2026,CREDIT TWO,,,20.00,"1,015.00"
+                02/09/2026,02/09/2026,FEE THREE,,5.00,,"1,010.00"
+                """);
+        for (String d : List.of("FEE ONE", "FEE THREE")) book(d, "CHARGE");
+        book("CREDIT TWO", "INTEREST");
+        int confirmed = jdbc.queryForObject("select count(*) from bank_matches where bank_account_id = ? and status = 'CONFIRMED'",
+                Integer.class, ei.getId());
+        UUID id = recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
+        assertThat(check(recs.get(id), "LINE_ORDER").message())
+                .contains("import one statement that holds every line of the imports that brought 01/09/2026's lines, "
+                        + "then delete those imports");
+        assertThatThrownBy(() -> imports.delete(part.importId()))
+                .as("CREDIT TWO and FEE THREE are matched and only this import brought them")
+                .hasMessageContaining("only this import brought are in confirmed matches");
+
+        importText("""
+                01/09/2026,01/09/2026,FEE ONE,,5.00,,995.00
+                01/09/2026,01/09/2026,CREDIT TWO,,,20.00,"1,015.00"
+                02/09/2026,02/09/2026,FEE THREE,,5.00,,"1,010.00"
+                03/09/2026,03/09/2026,FEE FOUR,,5.00,,"1,005.00"
+                """);
+        book("FEE FOUR", "CHARGE");
+        imports.delete(extract.importId());
+        imports.delete(part.importId());
+        assertThat(jdbc.queryForList("select description from bank_statement_lines where bank_account_id = ? order by txn_date, seq",
+                String.class, ei.getId())).containsExactly("FEE ONE", "CREDIT TWO", "FEE THREE", "FEE FOUR");
+        assertThat(jdbc.queryForObject("select count(*) from bank_matches where bank_account_id = ? and status = 'CONFIRMED'",
+                Integer.class, ei.getId())).as("every match kept").isEqualTo(confirmed + 1);
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+        r = paperClosing(id);
+        assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
+        assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
+    }
+
+    /**
+     * Sim r21 S21-05, why a part re-import that adds nothing can still unprove a day
+     * (kept by design): the month's file starts 03/09 at the second of two identical
+     * SMS charges, so the first and its reversal are in no file and nothing can see
+     * them (they net to zero). A later extract holds only the first charge. It is
+     * identical to the stored one in every field, so it adds nothing — but it is a
+     * different line of the bank. Leaving 03/09 as it was would finalize without a line
+     * a file brought; it is unproven, and the paper's day totals expose the pair.
+     */
+    @Test
+    void aPartReImportThatAddsNothingButMayBeAnEarlierIdenticalLineUnprovesItsDay() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importText("""
+                03/09/2026,03/09/2026,SMS ALERT CHARGES,,10.50,,989.50
+                03/09/2026,03/09/2026,CHQ PAID 800005,,27.00,,962.50
+                04/09/2026,04/09/2026,INWARD TT RENT,,,64.25,"1,026.75"
+                05/09/2026,05/09/2026,FEE X,,5.00,,"1,021.75"
+                """);
+        BankRecDTOs.ImportResult slice = importText("""
+                03/09/2026,03/09/2026,SMS ALERT CHARGES,,10.50,,989.50
+                """);
+        assertThat(slice.linesNew()).isZero();
+        assertThat(jdbc.queryForObject("select merge_unproven from bank_statement_days where bank_account_id = ? and txn_date = ?",
+                Boolean.class, ei.getId(), SEP_3)).isTrue();
+        for (String d : List.of("SMS ALERT CHARGES", "CHQ PAID 800005", "FEE X")) book(d, "CHARGE");
+        book("INWARD TT RENT", "INTEREST");
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("1021.75"))).id();
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        assertThat(check(r, "LINE_ORDER").message()).contains("On 03/09/2026")
+                .as("S21-02: how to avoid it next time").contains("export whole days");
+        r = recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(
+                new BankRecDTOs.DayTotalInput(SEP_3, new BigDecimal("48.00"), new BigDecimal("10.50")))));
+        assertThat(r.dayTotalsVerdict()).isEqualTo("DISAGREE");
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("a line is missing");
+    }
+
+    /**
+     * PR #424 review P3-2: the first reconciled line-day may have begun mid-day (the
+     * reconciliation typed its opening). A statement starting there would bring that
+     * day's earlier lines into the finalized period and be refused, so it is not named
+     * as a statement's first day.
+     */
+    @Test
+    void theFirstReconciledDayIsNotNamedWhenItMayHaveBegunMidDay() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importText("""
+                01/09/2026,01/09/2026,FEE A,,5.00,,995.00
+                """);
+        book("FEE A", "CHARGE");
+        UUID first = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_1, new BigDecimal("1000.00"),
+                new BigDecimal("995.00"))).id();
+        assertThat(recs.finalizeRec(first).status()).isEqualTo("FINALIZED");
+        LocalDate sep2 = LocalDate.of(2026, 9, 2);
+        importText("""
+                02/09/2026,02/09/2026,FEE B,,5.00,,990.00
+                """);
+        importText("""
+                02/09/2026,02/09/2026,FEE B,,5.00,,990.00
+                02/09/2026,02/09/2026,CREDIT C,,,20.00,"1,010.00"
+                03/09/2026,03/09/2026,FEE D,,5.00,,"1,005.00"
+                04/09/2026,04/09/2026,FEE E,,5.00,,"1,000.00"
+                """);
+        for (String d : List.of("FEE B", "FEE D", "FEE E")) book(d, "CHARGE");
+        book("CREDIT C", "INTEREST");
+        BankRecDTOs.Reconciliation r = recs.create(ei.getId(), period(sep2, SEP_30));
+        assertThat(r.unprovenDays()).singleElement().extracting(BankRecDTOs.UnprovenDay::date).isEqualTo(sep2);
+        assertThat(check(r, "LINE_ORDER").message()).doesNotContain("runs from 01/09/2026")
+                .contains("no statement can yet hold that day between two settled days");
+    }
+
+    /**
+     * Sim r22 S22-03 (RAKBANK Nov 2023): the month's only export stopped during its last
+     * line-day, before a 105.00 charge the bank posted later that day. The lines chain and
+     * every day is confirmed, so nothing else fires; the lines' closing (1,150.00) is not
+     * the bank's (1,045.00). The ruling: no finalize on a closing nothing proves. Typing the
+     * paper's closing then exposes the missing charge.
+     */
+    @Test
+    void aMonthWhoseLastLineIsInNoFileIsNotFinalizedOnTheLinesClosing() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importText("""
+                26/09/2026,26/09/2026,CREDIT A,,,100.00,"1,100.00"
+                28/09/2026,28/09/2026,INWARD TT B,,,50.00,"1,150.00"
+                """);
+        book("CREDIT A", "INTEREST");
+        book("INWARD TT B", "INTEREST");
+        UUID id = recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        assertThat(check(r, "CLOSING").ok()).isFalse();
+        assertThat(check(r, "CLOSING").message()).contains("The imported lines end on 28/09/2026")
+                .contains("Type the closing balance at 30/09/2026 from the paper statement");
+        assertThat(r.checks()).filteredOn(c -> !c.code().equals("CLOSING"))
+                .allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
+        assertThat(r.canFinalize()).isFalse();
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("The imported lines end on 28/09/2026");
+        assertThat(reconciledThrough()).isNull();
+
+        recs.update(id, new BankRecDTOs.ReconciliationInput(null, SEP_30, null, new BigDecimal("1045.00")));
+        r = recs.get(id);
+        assertThat(r.checks()).noneMatch(c -> c.code().equals("CLOSING"));
+        assertThat(check(r, "CONTINUITY").message()).contains("Statement lines add up to 1,150.00");
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("Statement lines add up to 1,150.00");
+        assertThat(reconciledThrough()).isNull();
+    }
+
+    /**
+     * Sim r22 S22-03, what proves a closing: a file that runs past the period's last
+     * line-day, or a Closing row dated after it. Then the lines' closing finalizes with
+     * nothing typed.
+     */
+    @Test
+    void aClosingIsProvenByAFileThatRunsPastTheLastDayOrAClosingRowDatedAfterIt() {
+        jv(AUG_31, marinaBank, "1000.00");
+        BankRecDTOs.ImportResult sameDay = importText("""
+                28/09/2026,28/09/2026,INWARD TT B,,,50.00,"1,050.00"
+                28/09/2026,28/09/2026,Closing balance,,,,"1,050.00"
+                """);
+        UUID id = recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
+        assertThat(check(recs.get(id), "CLOSING").ok()).as("a Closing row dated the line's own day proves nothing").isFalse();
+        imports.delete(sameDay.importId());
+        BankRecDTOs.ImportResult nextDay = importText("""
+                28/09/2026,28/09/2026,INWARD TT B,,,50.00,"1,050.00"
+                29/09/2026,29/09/2026,Closing balance,,,,"1,050.00"
+                """);
+        assertThat(recs.get(id).checks()).as("a Closing row dated after it").noneMatch(c -> c.code().equals("CLOSING"));
+        imports.delete(nextDay.importId());
+        importText("""
+                28/09/2026,28/09/2026,INWARD TT B,,,50.00,"1,050.00"
+                02/10/2026,02/10/2026,FEE OCT,,5.00,,"1,045.00"
+                """);
+        book("INWARD TT B", "INTEREST");
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        assertThat(r.checks()).as("a file that runs past it").noneMatch(c -> c.code().equals("CLOSING"));
+        assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
+        assertThat(recs.finalizeRec(id).statementClosing()).isEqualByComparingTo("1050.00");
+    }
+
+    /**
+     * Sim r22 S22-03, the second proof: a day whose row a delete dropped (one import's
+     * stretch again, so nothing records where it ends) is still known to end where its
+     * lines end when the import that brought them runs past it.
+     */
+    @Test
+    void aClosingIsProvenByTheImportThatRunsPastTheDayAfterADeleteDroppedItsRow() {
+        jv(AUG_31, marinaBank, "1000.00");
+        BankRecDTOs.ImportResult extract = importText("""
+                10/09/2026,10/09/2026,FEE X,,5.00,,995.00
+                """);
+        importText("""
+                10/09/2026,10/09/2026,FEE X,,5.00,,995.00
+                11/09/2026,11/09/2026,FEE Y,,5.00,,990.00
+                """);
+        imports.delete(extract.importId());
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_days where bank_account_id = ? and txn_date = ?",
+                Integer.class, ei.getId(), SEP_10)).as("the delete dropped 10/09's row").isZero();
+        book("FEE X", "CHARGE");
+        BankRecDTOs.Reconciliation r = recs.create(ei.getId(), period(SEP_1, SEP_10));
+        assertThat(r.checks()).noneMatch(c -> c.code().equals("CLOSING"));
+        assertThat(r.statementClosing()).isEqualByComparingTo("995.00");
+    }
+
+    /**
+     * Sim r22 S22-04: a gap at the start of September whose nearest settled day before it
+     * lies in the finalized August. The named statement starts there; the check says to
+     * reopen August first if the import is refused for bringing a line into it, and the
+     * reconciliation carries that date for the page.
+     */
+    @Test
+    void aNamedStatementReachingIntoAFinalizedMonthSaysToReopenItFirst() {
+        jv(LocalDate.of(2026, 7, 31), marinaBank, "1000.00");
+        importText("""
+                29/08/2026,29/08/2026,FEE X,,5.00,,995.00
+                30/08/2026,30/08/2026,FEE Y,,5.00,,990.00
+                """);
+        book("FEE X", "CHARGE");
+        book("FEE Y", "CHARGE");
+        UUID aug = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(AUG_1, AUG_31, new BigDecimal("1000.00"),
+                new BigDecimal("990.00"))).id();
+        assertThat(recs.finalizeRec(aug).status()).isEqualTo("FINALIZED");
+        importText("""
+                03/09/2026,03/09/2026,FEE Z,,5.00,,980.00
+                04/09/2026,04/09/2026,FEE W,,5.00,,975.00
+                05/09/2026,05/09/2026,FEE V,,5.00,,970.00
+                """);
+        for (String d : List.of("FEE Z", "FEE W", "FEE V")) book(d, "CHARGE");
+        BankRecDTOs.Reconciliation r = recs.create(ei.getId(), period(SEP_1, SEP_30));
+        assertThat(check(r, "CONTINUITY").message()).contains("Lines may be missing before 03/09/2026")
+                .contains("one statement that runs from 30/08/2026 to 04/09/2026")
+                .contains("it starts inside the reconciliation finalized through 31/08/2026")
+                .contains("reopen that reconciliation first");
+        assertThat(r.remedyReopenThrough()).isEqualTo(AUG_31);
+    }
+
     // ------------------------------------------------------------------ purge
 
     @Test
@@ -1353,7 +1726,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         BankRecDTOs.OpeningItem pact = recs.addOpeningItem(ei.getId(), new BankRecDTOs.OpeningItemInput(AUG_20,
                 "PACT cheque 000009", null, "000009", new BigDecimal("-1000.00")));
         matches.manual(new BankRecDTOs.ManualMatchInput(List.of(stmt("CHQ 000009 PRESENTED").id()), List.of(), List.of(pact.id())));
-        recs.finalizeRec(recs.create(ei.getId(), period(SEP_1, SEP_30)).id());
+        recs.finalizeRec(paperClosing(recs.create(ei.getId(), period(SEP_1, SEP_30)).id()).id());
         List<String> tables = List.of("bank_reconciliations", "bank_rec_opening_items", "bank_match_book_items", "bank_matches");
         for (String table : tables) {
             assertThat(jdbc.queryForObject("select count(*) from " + table + " where tenant_id = ?", Integer.class, tenantId))
