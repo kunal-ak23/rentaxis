@@ -89,6 +89,7 @@ export function isTourCompleted(tourId: string): boolean {
 // Steps
 // ---------------------------------------------------------------------------
 
+// Shepherd sets a step's title, text and button labels as innerHTML.
 const escapeHtml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -191,7 +192,7 @@ function TourProviderInner({ children, role, autoStart = true }: InnerProps) {
         return {
           id: s.id,
           attachTo: { element: () => stepElement(s), on: stepPosition(s, rtl, phone) },
-          title: t(`${def.id}.steps.${s.id}.title`),
+          title: escapeHtml(t(`${def.id}.steps.${s.id}.title`)),
           text: `<p>${escapeHtml(t(`${def.id}.steps.${s.id}.text`))}</p><div class="shepherd-progress">${escapeHtml(
             t('progress', { current: idx + 1, total: def.steps.length }),
           )}</div>`,
@@ -200,7 +201,7 @@ function TourProviderInner({ children, role, autoStart = true }: InnerProps) {
             ...(idx > 0
               ? [
                   {
-                    text: t('back'),
+                    text: escapeHtml(t('back')),
                     classes: 'shepherd-button-secondary',
                     action: function (this: InstanceType<typeof Shepherd.Tour>) {
                       this.back();
@@ -209,7 +210,7 @@ function TourProviderInner({ children, role, autoStart = true }: InnerProps) {
                 ]
               : [
                   {
-                    text: t('skip'),
+                    text: escapeHtml(t('skip')),
                     classes: 'shepherd-button-secondary',
                     action: function (this: InstanceType<typeof Shepherd.Tour>) {
                       this.cancel();
@@ -217,7 +218,7 @@ function TourProviderInner({ children, role, autoStart = true }: InnerProps) {
                   },
                 ]),
             {
-              text: isLast ? t('done') : t('next'),
+              text: escapeHtml(isLast ? t('done') : t('next')),
               classes: 'shepherd-button-primary',
               action: function (this: InstanceType<typeof Shepherd.Tour>) {
                 if (hasNextRoute) {
