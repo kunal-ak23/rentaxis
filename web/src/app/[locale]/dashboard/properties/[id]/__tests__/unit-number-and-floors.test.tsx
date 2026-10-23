@@ -70,9 +70,9 @@ describe("property detail — Add Unit number taken (F1)", () => {
     it("says the unit already exists, in Arabic too", async () => {
         render(<NextIntlClientProvider locale="ar" messages={ar}><PropertyDetailPage /></NextIntlClientProvider>);
         fireEvent.click(await screen.findByRole("button", { name: ar.MasterData.tabUnits }));
-        fireEvent.click(await screen.findByText("Add Unit"));
+        fireEvent.click(await screen.findByText(ar.MasterData.addUnit));
         fireEvent.change(await screen.findByPlaceholderText(ar.MasterData.unitNumberPlaceholder), { target: { value: "101" } });
-        fireEvent.click(screen.getByText("Save Unit"));
+        fireEvent.click(screen.getByText(ar.MasterData.saveUnit));
         await waitFor(() => expect(posted).toHaveLength(1));
         expect(await screen.findByText("الوحدة 101 موجودة بالفعل في البرج أ. استخدم رقم وحدة مختلفاً.")).toBeInTheDocument();
     });
