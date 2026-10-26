@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.dto.lease.PostLeaseResponse;
 import com.datagami.rentaxis.api.dto.report.ReceivableAccountDTO;
 import com.datagami.rentaxis.core.security.PropertyScope;
 import com.datagami.rentaxis.core.service.AccountService;
+import com.datagami.rentaxis.core.service.ContractGenerationService;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.PropertyService;
 import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
@@ -23,11 +24,13 @@ import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQuerie
 import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQueries.Scope;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
+import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.enums.AccountRole;
 import com.datagami.rentaxis.domain.entity.enums.JournalDocType;
 import com.datagami.rentaxis.domain.entity.enums.JournalSourceType;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
+import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
@@ -48,6 +51,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -82,6 +86,8 @@ class TenantLedgerQueriesIT extends AbstractPostgresIT {
     @Autowired TenantLedgerQueries queries;
     @Autowired LeaseService leaseService;
     @Autowired ChequeGenerationService chequeGeneration;
+    @Autowired ContractGenerationService contractGeneration;
+    @Autowired LeaseRepository leaseRepo;
     @Autowired LeasePostingService leasePosting;
     @Autowired AccountService accountService;
     @Autowired PropertyService propertyService;
@@ -231,6 +237,10 @@ class TenantLedgerQueriesIT extends AbstractPostgresIT {
         });
         List<LineRow> noTenant = read(() -> queries.lines(scope().build(), List.of(new GroupKey(rr, null))));
         assertThat(noTenant).singleElement().satisfies(l -> assertThat(l.renterId()).isNull());
+        // A page's group reads as it does among all groups: the same rows with the same rn and running movement.
+        List<LineRow> a = read(() -> queries.lines(scope().build(), List.of(new GroupKey(rr, tenantA.getId()))));
+        assertThat(a).hasSize(3 + contract.cheques().size())
+                .isEqualTo(all.stream().filter(l -> tenantA.getId().equals(l.renterId())).toList());
         assertThat(read(() -> queries.lines(scope().build(), List.of()))).isEmpty();
 
         // Two accounts and two renters named crosswise: the SQL's IN lists also match (rr, Tenant A) and
@@ -272,6 +282,37 @@ class TenantLedgerQueriesIT extends AbstractPostgresIT {
         assertThat(straddling.credit()).isEqualByComparingTo("1000");
         assertThat(straddling.rowCount()).isEqualTo(1);
         assertThat(read(() -> queries.groups(scope().from(OCT_6).hideReversed(true).build()))).isEmpty();
+
+        // A pair straddling the window's end: the mirror falls after `to`, so on that day the original is still
+        // open. Hidden or not, it stays, and the closing at `to` is the same either way.
+        GroupRow atTo = read(() -> queries.groups(scope().to(OCT_5).build())).get(0);
+        GroupRow atToHidden = read(() -> queries.groups(scope().to(OCT_5).hideReversed(true).build())).get(0);
+        assertThat(atToHidden.debit()).isEqualByComparingTo("64500");
+        assertThat(atToHidden.rowCount()).isEqualTo(atTo.rowCount());
+        assertThat(closing(atToHidden)).isEqualByComparingTo(closing(atTo)).isEqualByComparingTo("1000");
+        assertThat(read(() -> queries.lines(scope().to(OCT_5).hideReversed(true).build(), null)))
+                .extracting(LineRow::entryId).contains(jv).doesNotContain(mirror);
+    }
+
+    @Test
+    void aContractIsNamedByItsNumberElseItsImportedRefElseItsUnitAndStart() {
+        UUID t = fx.tenantId();
+        UUID leaseId = contract.lease().getId();
+
+        // Posted without a contract document, so it has no number yet, and it was never imported.
+        assertThat(read(() -> queries.lease(t, leaseId))).map(NamedRef::name)
+                .contains(fx.unit().getUnitNumber() + " · " + START);
+
+        updateLease(leaseId, l -> l.setExternalContractRef("EXT-0042"));
+        assertThat(read(() -> queries.lease(t, leaseId))).map(NamedRef::name).contains("EXT-0042");
+
+        // A contract number wins over the imported reference.
+        Long n = updateLease(leaseId, contractGeneration::assignContractNumberIfNull).getContractNumber();
+        assertThat(n).isNotNull();
+        assertThat(read(() -> queries.lease(t, leaseId))).hasValueSatisfying(ref -> {
+            assertThat(ref.name()).isEqualTo(fx.property().getCode() + "/" + n);
+            assertThat(ref.nameAr()).isNull();
+        });
     }
 
     @Test
@@ -397,6 +438,14 @@ class TenantLedgerQueriesIT extends AbstractPostgresIT {
                 null, null, List.of(lines))).getId();
     }
 
+    private Lease updateLease(UUID id, Consumer<Lease> change) {
+        return new TransactionTemplate(txManager).execute(status -> {
+            Lease l = leaseRepo.findById(id).orElseThrow();
+            change.accept(l);
+            return leaseRepo.save(l);
+        });
+    }
+
     private <T> T read(Supplier<T> query) {
         return readOnly.execute(status -> query.get());
     }
@@ -417,10 +466,11 @@ class TenantLedgerQueriesIT extends AbstractPostgresIT {
         return new ScopeBuilder(fx.tenantId(), List.of(rr));
     }
 
-    /** The scope every test starts from (org A, the whole window, the property's receivable) with one thing changed. */
+    /** The scope every test starts from (org A, the whole window, the property's receivable) with what a test changes. */
     private static final class ScopeBuilder {
         private final UUID tenantId;
         private LocalDate from = FROM;
+        private LocalDate to = TO;
         private List<UUID> accounts;
         private UUID renter;
         private UUID lease;
@@ -434,6 +484,7 @@ class TenantLedgerQueriesIT extends AbstractPostgresIT {
         }
 
         ScopeBuilder from(LocalDate d) { from = d; return this; }
+        ScopeBuilder to(LocalDate d) { to = d; return this; }
         ScopeBuilder accounts(List<UUID> ids) { accounts = ids; return this; }
         ScopeBuilder renter(UUID id) { renter = id; return this; }
         ScopeBuilder lease(UUID id) { lease = id; return this; }
@@ -442,7 +493,7 @@ class TenantLedgerQueriesIT extends AbstractPostgresIT {
         ScopeBuilder hideReversed(boolean b) { hideReversed = b; return this; }
 
         Scope build() {
-            return new Scope(tenantId, from, TO, accounts, renter, lease, properties, onlyWithBalance, hideReversed);
+            return new Scope(tenantId, from, to, accounts, renter, lease, properties, onlyWithBalance, hideReversed);
         }
     }
 }

@@ -62,7 +62,8 @@ public class TenantLedgerQueries {
      * @param leaseId         one contract, or {@code null} for all
      * @param properties      the caller's resolved property selection
      * @param onlyWithBalance keep only the groups whose closing at {@code to} is not zero
-     * @param hideReversed    leave out both legs of every reversal, from the openings and the rows
+     * @param hideReversed    leave out both legs of every reversal whose two legs are on or before {@code to},
+     *                        from the openings and the rows
      */
     public record Scope(UUID tenantId, LocalDate from, LocalDate to, List<UUID> accountIds, UUID renterId, UUID leaseId,
                         PropertyScope.Selection properties, boolean onlyWithBalance, boolean hideReversed) {
@@ -116,6 +117,13 @@ public class TenantLedgerQueries {
     /** An id with its display name ({@code nameAr} {@code null} when there is none). */
     public record NamedRef(UUID id, String name, String nameAr) {}
 
+    /**
+     * The shared WHERE. "Hide reversed pairs" hides an entry only when its counterpart (the mirror of an
+     * original, or the original of a mirror; a reversal cannot itself be reversed) is also on or before
+     * {@code :to}: a pair inside the report nets to zero on every line, so hiding it leaves the closing at
+     * {@code to} unchanged, whereas an original whose mirror falls after {@code to} is still open on that day
+     * and stays, as the General Ledger at {@code to} has it.
+     */
     private static final String FILTER = """
             l.tenant_id = :t
               and l.account_id in (:accountIds)
@@ -123,7 +131,22 @@ public class TenantLedgerQueries {
               and (:hasRenter = false or l.renter_id = :renterId)
               and (:hasLease = false or l.lease_id = :leaseId)
               and (:unrestricted or coalesce(l.property_id, a.property_id) in (:propertyIds))
-              and (:hideReversed = false or (e.reversed_by_id is null and e.reversal_of_id is null))
+              and (:hideReversed = false
+                   or (e.reversed_by_id is null and e.reversal_of_id is null)
+                   or not exists (select 1 from journal_entries m
+                                  where m.tenant_id = :t
+                                    and m.id = coalesce(e.reversed_by_id, e.reversal_of_id)
+                                    and m.entry_date <= :to))
+            """;
+
+    /**
+     * The page's groups, applied inside {@code base} of {@link #LINES}: it keeps or drops whole
+     * (account, renter) partitions, so a group's {@code rn}, {@code movement} and closing are the same
+     * whichever groups are read, and a page no longer sorts the full history of every other group.
+     */
+    private static final String PAGE = """
+              and (:allGroups or (l.account_id in (:pageAccounts)
+                   and (l.renter_id in (:pageRenters) or (:pageNoTenant and l.renter_id is null))))
             """;
 
     private static final String GROUPS = """
@@ -159,7 +182,7 @@ public class TenantLedgerQueries {
                 from journal_lines l
                 join journal_entries e on e.id = l.journal_entry_id and e.tenant_id = :t
                 join accounts a on a.id = l.account_id and a.tenant_id = :t
-                where %s
+                where %s%s
             ), closing as (
                 select account_id, renter_id, sum(debit - credit) as bal from base group by account_id, renter_id
             ), win as (
@@ -180,10 +203,8 @@ public class TenantLedgerQueries {
             left join accounts ca on ca.id = s.contra_account_id and ca.tenant_id = :t
             left join cheques  c  on c.id  = s.cheque_id        and c.tenant_id  = :t
             where (:onlyWithBalance = false or k.bal <> 0)
-              and (:allGroups or (s.account_id in (:pageAccounts)
-                   and (s.renter_id in (:pageRenters) or (:pageNoTenant and s.renter_id is null))))
             order by s.account_id, s.renter_id nulls last, s.rn
-            """.formatted(FILTER);
+            """.formatted(FILTER, PAGE);
 
     private static final String COUNTER_NAMES = """
             select x.entry_id, x.account_id,
@@ -309,15 +330,18 @@ public class TenantLedgerQueries {
     }
 
     /**
-     * A contract, named as the lease screens show it ({@code <property code>/<contract number>}), else by the
-     * reference it carried in the system it was imported from; {@code nameAr} is always {@code null}.
+     * A contract, named as the lease screens show it ({@code <property code>/<contract number>}); else by the
+     * reference it carried in the system it was imported from; else, for a contract that has neither (its
+     * number is assigned only when a contract document is generated), by its unit and start date
+     * ({@code "<unit number> · <yyyy-MM-dd>"}). The name is never {@code null}; {@code nameAr} always is.
      */
     public Optional<NamedRef> lease(UUID tenantId, UUID id) {
         if (id == null) {
             return Optional.empty();
         }
         return jdbc.query("""
-                select l.id, l.contract_number, l.external_contract_ref, p.code as property_code
+                select l.id, l.contract_number, l.external_contract_ref, l.start_date, u.unit_number,
+                       p.code as property_code
                 from leases l
                 left join units u on u.id = l.unit_id and u.tenant_id = :t
                 left join properties p on p.id = u.property_id and p.tenant_id = :t
@@ -327,10 +351,20 @@ public class TenantLedgerQueries {
                     String name = rs.wasNull() ? null : LeaseService.displayContractNumber(rs.getString("property_code"), n);
                     String ref = rs.getString("external_contract_ref");
                     if (name == null && ref != null && !ref.isBlank()) {
-                        name = ref;
+                        name = ref.strip();
+                    }
+                    if (name == null) {
+                        name = unitAndStart(rs.getString("unit_number"), date(rs, "start_date"));
                     }
                     return new NamedRef(uuid(rs, "id"), name, null);
                 }).stream().findFirst();
+    }
+
+    /** {@code "<unit number> · <start date>"}, either part left out when absent; the start date is never null. */
+    static String unitAndStart(String unitNumber, LocalDate start) {
+        String unit = unitNumber == null ? "" : unitNumber.strip();
+        String date = start == null ? "" : start.toString();
+        return unit.isEmpty() || date.isEmpty() ? unit + date : unit + " · " + date;
     }
 
     /** The named accounts found in this tenant, by code; an id from elsewhere is simply absent. */
