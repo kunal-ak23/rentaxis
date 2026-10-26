@@ -68,6 +68,9 @@ class VatReturnServiceIT extends AbstractPostgresIT {
     @Autowired UserRepository userRepo;
     @Autowired RenterRepository renterRepo;
     @Autowired UnitRepository unitRepo;
+    @Autowired TaxInvoiceService taxInvoices;
+    @Autowired com.datagami.rentaxis.core.service.lease.LeaseRenewalService renewal;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private LeaseTestFixtures fixtures;
     private Vendor vendor;
@@ -316,5 +319,103 @@ class VatReturnServiceIT extends AbstractPostgresIT {
         assertThat(service.documents(Q2, "INPUT_OTHER")).singleElement().satisfies(x -> assertThat(x.kind()).isEqualTo("OB"));
         assertThat(r.inputVatOnExempt()).isEqualByComparingTo("50.00");
         assertThat(box(r, "14").vat()).isEqualByComparingTo("-55.00");
+    }
+
+    /**
+     * Follow-up ruling R11 (101-a): the F14-11 backfill issues a contract tax invoice with
+     * no journal, so the journal lock never saw it. A CONTRACT-timing lease posted before
+     * posting issued invoices (simulated by removing its CONTRACT point) whose contract
+     * date is in a filed quarter: the backfill is refused with the journal's message and
+     * issues nothing; once the quarter is re-opened it issues the invoice.
+     */
+    @Test
+    void theContractInvoiceBackfillIsRefusedInAFiledQuarter() {
+        // A lease that carries no contract invoice of ours (as one posted before F14-11):
+        // posted on instalment timing, then marked CONTRACT once its quarter is filed.
+        Unit shop = fixtures.createUnit(fixtures.property(), "SH-1");
+        UUID leaseId = fixtures.draftLease(shop, fixtures.createRenter("Shop Co"), CONTRACT, START, END,
+                List.of(vatLine("RENT", "60000")));
+        fixtures.generateGrid(leaseId, 4, START);
+        fixtures.numberGrid(leaseId, "730001");
+        posting.post(leaseId);
+        quarter();
+        VatReturnDTO filed = service.file(Q2, "FTA-R11");
+        jdbc.update("update leases set vat_timing = 'CONTRACT' where id = ?", leaseId);
+        int before = taxInvoices.forLease(leaseId).size();
+
+        assertThatThrownBy(() -> vatTaxPoints.issueContractInvoice(leaseId))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode())
+                        .isEqualTo("vat.contractInvoiceInFiledPeriod"))
+                .hasMessageContaining("20/04/2026").hasMessageContaining("Re-open that VAT return")
+                .satisfies(e -> assertThat(e.getMessage()).doesNotContain("Date the correction"));
+        assertThat(taxInvoices.forLease(leaseId)).as("nothing issued into the filed quarter").hasSize(before);
+
+        service.reopen(filed.id(), "late contract invoice");
+        assertThat(vatTaxPoints.issueContractInvoice(leaseId)).hasSize(before + 1)
+                .anySatisfy(i -> assertThat(i.issueDate()).isEqualTo(CONTRACT));
+    }
+
+    /**
+     * Sim r23 S23-02: extending a CONTRACT-timing VAT lease credits Output VAT on the extension's
+     * TCO, so the extension issues its tax invoice exactly as an addendum does (S16-04). Dated in
+     * a filed quarter it is refused by the journal lock (vat.periodFiled) and nothing is issued.
+     */
+    @Test
+    void extendingAContractVatLeaseIssuesItsTaxInvoice() {
+        Unit shop = fixtures.createUnit(fixtures.property(), "SH-2");
+        UUID leaseId = fixtures.draftLease(shop, fixtures.createRenter("Shop Two"), CONTRACT, START, END,
+                List.of(vatLine("RENT", "60000")));
+        jdbc.update("update leases set vat_timing = 'CONTRACT' where id = ?", leaseId);
+        fixtures.generateGrid(leaseId, 4, START);
+        fixtures.numberGrid(leaseId, "740001");
+        posting.post(leaseId);
+        quarter();
+        service.file(Q2, "FTA-S23");
+        int before = taxInvoices.forLease(leaseId).size();
+        java.util.function.Function<LocalDate, com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest> ext = on ->
+                new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(LocalDate.of(2027, 7, 31), on,
+                        List.of(vatLine("RENT", "18000")),
+                        List.of(LeaseTestFixtures.chequeRow("18900", LocalDate.of(2027, 5, 1))));
+
+        assertThatThrownBy(() -> renewal.extend(leaseId, ext.apply(LocalDate.of(2026, 6, 15))))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("vat.periodFiled"));
+        assertThat(taxInvoices.forLease(leaseId)).hasSize(before);
+
+        renewal.extend(leaseId, ext.apply(null));
+        var invoices = taxInvoices.forLease(leaseId);
+        assertThat(invoices).hasSize(before + 1);
+        var issued = invoices.get(invoices.size() - 1);
+        assertThat(issued.kind()).isEqualTo(com.datagami.rentaxis.domain.entity.enums.TaxInvoiceKind.TAX_INVOICE);
+        assertThat(issued.vatAmount()).isEqualByComparingTo("900.00");
+        assertThat(issued.taxableAmount()).isEqualByComparingTo("18000.00");
+    }
+
+    /**
+     * Review P2-R4-1 of #425: a CONTRACT-timing VAT lease with no contract invoice of ours (as one
+     * posted before F14-11) is extended, and the extension issues its own tax invoice (900). The
+     * F14-11 backfill then documents the contract's VAT only, 3,000, never the extension's again.
+     */
+    @Test
+    void theContractInvoiceBackfillDoesNotInvoiceAnExtensionsVatAgain() {
+        Unit shop = fixtures.createUnit(fixtures.property(), "SH-3");
+        UUID leaseId = fixtures.draftLease(shop, fixtures.createRenter("Shop Three"), CONTRACT, START, END,
+                List.of(vatLine("RENT", "60000")));
+        fixtures.generateGrid(leaseId, 4, START);
+        fixtures.numberGrid(leaseId, "750001");
+        posting.post(leaseId);
+        jdbc.update("update leases set vat_timing = 'CONTRACT' where id = ?", leaseId);
+        renewal.extend(leaseId, new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(LocalDate.of(2027, 7, 31), null,
+                List.of(vatLine("RENT", "18000")), List.of(LeaseTestFixtures.chequeRow("18900", LocalDate.of(2027, 5, 1)))));
+        int before = taxInvoices.forLease(leaseId).size();
+
+        var after = vatTaxPoints.issueContractInvoice(leaseId);
+        assertThat(after).hasSize(before + 1);
+        var contractInvoice = after.stream().filter(i -> CONTRACT.equals(i.issueDate())).findFirst().orElseThrow();
+        assertThat(contractInvoice.vatAmount()).as("the contract's own VAT, not the extension's again").isEqualByComparingTo("3000.00");
+        assertThat(contractInvoice.taxableAmount()).isEqualByComparingTo("60000.00");
+        assertThat(after.stream().map(com.datagami.rentaxis.api.dto.vat.TaxInvoiceDTO::vatAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)).isEqualByComparingTo("3900.00");
     }
 }

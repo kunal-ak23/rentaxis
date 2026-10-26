@@ -46,9 +46,32 @@ public class VatPeriodLock {
         if (filed.isEmpty()) return;
         Set<UUID> vat = vatAccounts(tenantId);
         if (accountIds.stream().noneMatch(vat::contains)) return;
+        throw refusal(tenantId, filed.get(), date);
+    }
+
+    /**
+     * Follow-up ruling R11 (101-a): a VAT document of ours dated in a filed period is
+     * refused with the journal's own message ({@code vat.periodFiled}), even when no
+     * journal goes with it (the F14-11 contract-invoice backfill), so a filed return's
+     * document totals never change.
+     */
+    public void assertDocumentDateOpen(UUID tenantId, LocalDate date) {
+        if (tenantId == null || date == null) return;
+        Optional<VatReturn> filed = returns.filedCovering(tenantId, date);
+        if (filed.isEmpty()) return;
+        // Review P3-3: a contract tax invoice is dated on the contract date, which the user
+        // cannot move, so the action is to re-open the return (or ask the tax adviser).
         VatReturn r = filed.get();
-        LocalDate next = firstOpenDate(tenantId, r.getPeriodEnd().plusDays(1));
         throw new BusinessRuleViolationException("The VAT return for " + DMY.format(r.getPeriodStart()) + " – "
+                + DMY.format(r.getPeriodEnd()) + " is filed, and this contract's tax invoice is dated "
+                + DMY.format(date) + ", inside it. Re-open that VAT return to issue the invoice, or ask your tax adviser.",
+                "vat.contractInvoiceInFiledPeriod", Map.of("from", DMY.format(r.getPeriodStart()),
+                        "to", DMY.format(r.getPeriodEnd()), "date", DMY.format(date)));
+    }
+
+    private BusinessRuleViolationException refusal(UUID tenantId, VatReturn r, LocalDate date) {
+        LocalDate next = firstOpenDate(tenantId, r.getPeriodEnd().plusDays(1));
+        return new BusinessRuleViolationException("The VAT return for " + DMY.format(r.getPeriodStart()) + " – "
                 + DMY.format(r.getPeriodEnd()) + " is filed, so VAT dated " + DMY.format(date)
                 + " cannot change. Date the correction on or after " + DMY.format(next)
                 + "; it will show on that period's return.",

@@ -49,10 +49,21 @@ public class LeaseEffectiveTerms {
      *                 new amount on or before the date, else the line's own net
      * @param credited whether a credit addendum set it (the discount and rent-free concession
      *                 are then already inside {@code amount})
+     * @param headline ruling R7: the line's headline (gross, before discount and concession)
+     *                 going forward — the credit's new gross, or the line's own gross. A credit
+     *                 written before changeset 180 stored only a net figure, so it is that.
+     * @param discount the discount that goes with {@code headline}: the line's own, or 0 for a
+     *                 pre-180 credit (its net figure already has it inside)
      */
-    public record EffectiveLine(LeaseLine line, BigDecimal amount, boolean credited) {
+    public record EffectiveLine(LeaseLine line, BigDecimal amount, boolean credited,
+                                BigDecimal headline, BigDecimal discount, BigDecimal rentFree) {
         public boolean removed() {
             return credited && amount.signum() == 0;
+        }
+
+        /** The headline less the discount: what a renewal escalates and a transfer carries (no concession, §4a). */
+        public BigDecimal headlineLessDiscount() {
+            return headline.subtract(discount);
         }
     }
 
@@ -76,8 +87,17 @@ public class LeaseEffectiveTerms {
         }
         return lines.stream().map(l -> {
             LeaseAddendumCredit c = latest.get(l.getId());
-            return c != null ? new EffectiveLine(l, c.getNewLineAmount(), true)
-                    : new EffectiveLine(l, l.getNetAmount() == null ? BigDecimal.ZERO : l.getNetAmount(), false);
+            BigDecimal discount = l.getDiscountAmount() == null ? BigDecimal.ZERO : l.getDiscountAmount();
+            BigDecimal rentFree = l.getRentFreeAmount() == null ? BigDecimal.ZERO : l.getRentFreeAmount();
+            if (c == null) {
+                return new EffectiveLine(l, l.getNetAmount() == null ? BigDecimal.ZERO : l.getNetAmount(), false,
+                        l.getGrossAmount() == null ? BigDecimal.ZERO : l.getGrossAmount(), discount, rentFree);
+            }
+            if (c.getNewGrossAmount() == null) {
+                return new EffectiveLine(l, c.getNewLineAmount(), true, c.getNewLineAmount(), BigDecimal.ZERO, BigDecimal.ZERO);
+            }
+            return new EffectiveLine(l, c.getNewLineAmount(), true, c.getNewGrossAmount(), discount,
+                    c.getNewRentFreeAmount() == null ? BigDecimal.ZERO : c.getNewRentFreeAmount());
         }).toList();
     }
 

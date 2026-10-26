@@ -303,6 +303,14 @@ export default function FiscalYearsCard({ canReopen, onChanged, lockedThrough, b
                         </p>
                     );
                 })()}
+                {/* Follow-up ruling R2: the lock as it was before this close, for the record; the re-open does not restore it. */}
+                {reopening && reopening.lockBefore !== undefined && (
+                    <p className="text-xs text-muted" data-testid="fiscal-reopen-lock-before">
+                        {reopening.lockBefore
+                            ? t.rich("reopenLockBefore", { date: formatDate(reopening.lockBefore), ...bdi })
+                            : t("reopenNoLockBefore")}
+                    </p>
+                )}
                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1" htmlFor="fiscal-reopen-reason">
                     {t("reason")}
                 </label>

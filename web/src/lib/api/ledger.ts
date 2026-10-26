@@ -70,6 +70,8 @@ export type AccountRole =
   | "RENTER_REFUND_PAYABLE"
   /** F14-18: periodic fees billed for the term and not yet earned (B-01-08). */
   | "UNEARNED_CHARGES"
+  /** Follow-up ruling R5: utilities recovered at cost, held until recovered (B-01-09). */
+  | "UTILITIES_RECOVERABLE"
   /** Spec 2026-09-24 §3: the year-end close's equity leaf (F-03). */
   | "RETAINED_EARNINGS"
   /** F15-11: inter-property clearing (A-02-06), one leaf per property. */
@@ -446,6 +448,8 @@ export type FiscalYear = {
   reopenReason: string | null;
   /** PR #369 R1: a pre-books year closed by this later year's close (re-open that one). */
   coveredBy?: number | null;
+  /** Follow-up ruling R2: the books lock before this year's close (audit; re-open does not restore it). */
+  lockBefore?: string | null;
 };
 
 export type YearCloseIssue = { code: string; message: string; args: Record<string, string> };

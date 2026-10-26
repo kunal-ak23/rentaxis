@@ -164,6 +164,17 @@ public class BookingController {
                 tenantId, id, currentUserId(), body == null ? null : body.adminNote())));
     }
 
+    /** Follow-up ruling R12: the office cancels an approved booking, crediting a paid fee back. */
+    @PostMapping("/bookings/{id}/staff-cancel")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
+    public ResponseEntity<BookingRequestDTO> staffCancel(@PathVariable UUID id,
+                                                         @Valid @RequestBody(required = false) DecisionRequest body) {
+        UUID tenantId = tenantId();
+        checkPropertyManagerAccess(bookingService.get(tenantId, id).getPropertyId());
+        return ResponseEntity.ok(toDTO(bookingService.cancelByStaff(
+                tenantId, id, currentUserId(), body == null ? null : body.adminNote())));
+    }
+
     /**
      * Shared admin/renter endpoint, branching on role like GatePassController.isGuard():
      * renters go through the owner-enforcing path, admins (after the PM assignment

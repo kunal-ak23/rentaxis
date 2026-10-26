@@ -181,6 +181,7 @@ public class PropertyAccountService {
         defaultIfMissing(AccountRole.BANK_SUSPENSE, "B-01-06");
         defaultIfMissing(AccountRole.RENTER_REFUND_PAYABLE, "B-01-07");
         defaultIfMissing(AccountRole.UNEARNED_CHARGES, "B-01-08");
+        defaultIfMissing(AccountRole.UTILITIES_RECOVERABLE, "B-01-09");
         defaultIfMissing(AccountRole.RETAINED_EARNINGS, "F-03");
         defaultIfMissing(AccountRole.INTERPROPERTY_CLEARING, "A-02-06-001");
         defaultIfMissing(AccountRole.BAD_DEBT, "D-02-004");

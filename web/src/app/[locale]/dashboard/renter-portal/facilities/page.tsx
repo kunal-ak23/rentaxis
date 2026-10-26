@@ -247,6 +247,11 @@ export default function RenterFacilitiesPage() {
             // re-fail. Resync both lists and say so in the active locale
             // instead of surfacing the raw backend English string — mirrors
             // the mobile renter app's 400 branch in my_requests_screen.dart.
+            // Follow-up ruling R12: a paid fee is the office's to cancel; say so rather than "it changed".
+            if (codedOf(err).code === "booking.feePaid") {
+                setError(serverText(tCommon, err));
+                return;
+            }
             if (err instanceof ApiError && (err.status === 400 || err.status === 409)) {
                 setError(t("requestChanged"));
                 try {

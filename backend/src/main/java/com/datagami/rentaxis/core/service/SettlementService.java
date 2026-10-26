@@ -399,7 +399,113 @@ public class SettlementService {
                 money(totalDeductions.add(totalDeductionVat)),
                 vatLease ? com.datagami.rentaxis.core.service.lease.LeaseVat.RATE : BigDecimal.ZERO,
                 List.copyOf(VATABLE_RECHARGES),
-                depositCarriedTo(lease));
+                depositCarriedTo(lease),
+                unearnedFeeRefunds(lease));
+    }
+
+    /**
+     * Follow-up ruling R1 (F14-37): on a lease posted under the at-posting rule (a
+     * cut-over), a periodic fee (a RENT_LIKE charge type: parking, cooling, service
+     * charge) was taken to income for its whole window. A termination hands back only
+     * rent and fees earned over the term, so the unearned days of these are offered
+     * here, per day like rent, for the user to refund or not. A one-off fee refunds
+     * nothing: it is earned when charged. Nothing posted is restated; the refund is a
+     * settlement line dated with the STL.
+     */
+    List<com.datagami.rentaxis.api.dto.settlement.UnearnedFeeRefundDTO> unearnedFeeRefunds(Lease lease) {
+        LocalDate end = lease.getTerminatedOn();
+        if (leaseLines == null || end == null
+                || lease.getFeeTiming() != com.datagami.rentaxis.domain.entity.enums.FeeTiming.AT_POSTING
+                || lease.getPostingJournalId() == null) {
+            return List.of();
+        }
+        // Review P1-1: a lease transferred out (a posted successor) carried its at-posting
+        // fees into B's term, and B may not charge them again (requireNoFeeChargedTwice):
+        // the renter keeps the service, so nothing is unearned to refund.
+        if (leaseRepository.findByTransferredFromLeaseId(lease.getId()).stream()
+                .anyMatch(s -> s.getPostingJournalId() != null && s.getStatus() != LeaseStatus.DRAFT)) {
+            return List.of();
+        }
+        List<com.datagami.rentaxis.api.dto.settlement.UnearnedFeeRefundDTO> out = new ArrayList<>();
+        List<com.datagami.rentaxis.domain.entity.LeaseLine> all = leaseLines.findByLease_IdOrderBySeqNoAsc(lease.getId());
+        LocalDate chargedThrough = LeaseService.originalTermEnd(lease);
+        for (com.datagami.rentaxis.domain.entity.LeaseLine line : all) {
+            var type = line.getChargeType();
+            if (type == null || type.getBehaviour() != com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour.FEE
+                    || type.getRecognition() != com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.RENT_LIKE
+                    || com.datagami.rentaxis.core.service.lease.LeasePostingService.earnedOverTerm(lease, line)
+                    || line.getCreditAccount() == null) {
+                continue;
+            }
+            // Review P2-1 (coordinator ruling): a fee that carries VAT is not offered until the
+            // tax adviser rules on the credit note its refund would need.
+            if (com.datagami.rentaxis.core.service.lease.LeaseVat.vatOf(line).signum() > 0) continue;
+            BigDecimal net = line.getNetAmount() == null ? BigDecimal.ZERO : line.getNetAmount();
+            LocalDate from = line.getPeriodStart() != null ? line.getPeriodStart() : lease.getStartDate();
+            // Sim r22 S22-02: an undated line was charged for the term as it stood at posting;
+            // an extension moves lease.endDate but dates its own lines, so the term ends the
+            // day before the first extension window, not at today's end date.
+            LocalDate to = line.getPeriodEnd() != null ? line.getPeriodEnd() : chargedThrough;
+            if (net.signum() <= 0 || from == null || to == null || to.isBefore(from) || !end.isBefore(to)) continue;
+            BigDecimal unearned = net.subtract(
+                    com.datagami.rentaxis.core.service.recognition.ProrationEngine.earnedThrough(net, from, to, end));
+            if (unearned.signum() <= 0) continue;
+            LocalDate firstUnearned = end.isBefore(from) ? from : end.plusDays(1);
+            out.add(new com.datagami.rentaxis.api.dto.settlement.UnearnedFeeRefundDTO(line.getId(), type.getCode(),
+                    type.getNameEn(), type.getNameAr(), line.getCreditAccount().getId(), line.getCreditAccount().getName(),
+                    money(net), from, to,
+                    com.datagami.rentaxis.core.service.recognition.ProrationEngine.daysInclusive(from, to),
+                    com.datagami.rentaxis.core.service.recognition.ProrationEngine.daysInclusive(firstUnearned, to),
+                    money(unearned)));
+        }
+        return List.copyOf(out);
+    }
+
+    /**
+     * Ruling R1: an {@code UNEARNED_FEE_REFUND} addition names the income leaf of a fee
+     * the statement offers, and the refunds on that leaf come to no more than its
+     * unearned part. Asked on save and again on finalise.
+     */
+    private void requireUnearnedFeeRefunds(Lease lease, List<SaveSettlementDTO.DeductionItemDTO> items) {
+        Map<UUID, BigDecimal> asked = new java.util.HashMap<>();
+        for (SaveSettlementDTO.DeductionItemDTO item : items) {
+            if (item.getType() != LineItemType.ADDITION
+                    || !AdditionCategory.UNEARNED_FEE_REFUND.name().equals(item.getAdditionCategory())) continue;
+            if (item.getAccountId() == null) {
+                throw new BusinessRuleViolationException("A refund of an unearned fee names the fee's income account.",
+                        "settlement.unearnedFeeNotOffered", Map.of());
+            }
+            asked.merge(item.getAccountId(), item.getAmount() == null ? BigDecimal.ZERO : item.getAmount(), BigDecimal::add);
+        }
+        if (asked.isEmpty()) return;
+        Map<UUID, BigDecimal> offered = new java.util.HashMap<>();
+        for (var o : unearnedFeeRefunds(lease)) offered.merge(o.accountId(), o.amount(), BigDecimal::add);
+        for (var e : asked.entrySet()) {
+            BigDecimal max = offered.get(e.getKey());
+            if (max == null) {
+                throw new BusinessRuleViolationException("Only a periodic fee this cut-over lease took to income at"
+                        + " posting can be refunded for its unearned days, and this account carries none.",
+                        "settlement.unearnedFeeNotOffered", Map.of());
+            }
+            if (money(e.getValue()).compareTo(max) > 0) {
+                throw new BusinessRuleViolationException("The unearned part of this fee is " + formatMoney(max)
+                        + "; the refund cannot be more.", "settlement.unearnedFeeTooMuch",
+                        Map.of("max", formatMoney(max)));
+            }
+        }
+    }
+
+    private static List<SaveSettlementDTO.DeductionItemDTO> asItems(List<LeaseSettlementDeduction> lines) {
+        List<SaveSettlementDTO.DeductionItemDTO> out = new ArrayList<>();
+        for (LeaseSettlementDeduction l : lines) {
+            SaveSettlementDTO.DeductionItemDTO i = new SaveSettlementDTO.DeductionItemDTO();
+            i.setType(l.getType());
+            i.setAdditionCategory(l.getAdditionCategory() == null ? null : l.getAdditionCategory().name());
+            i.setAccountId(l.getAccountId());
+            i.setAmount(l.getAmount());
+            out.add(i);
+        }
+        return out;
     }
 
     /**
@@ -504,6 +610,7 @@ public class SettlementService {
         for (SaveSettlementDTO.DeductionItemDTO item : items) {
             validateLine(item, propertyId);
         }
+        requireUnearnedFeeRefunds(lease, items);
         reconcileLines(saved.getId(), items);
         leaseSettlementDeductionRepository.flush();
 
@@ -645,6 +752,7 @@ public class SettlementService {
             requirePostableCategory(line);
             requireUsableLineAccount(line, propertyId);
         }
+        requireUnearnedFeeRefunds(lease, asItems(lines));
 
         SettlementStatementDTO statement = buildStatement(lease, lines);
         BigDecimal netRefund = statement.netRefund();
@@ -1046,6 +1154,9 @@ public class SettlementService {
             }
             requireAllowed(category);
             requireUsableAccount(item.getAccountId(), type);
+            if (category == AdditionCategory.UNEARNED_FEE_REFUND) {
+                return;   // the fee's own income leaf; requireUnearnedFeeRefunds checks it against the offer
+            }
             if (item.getAccountId() == null) {
                 // Resolved now so a missing mapping is a refusal on Save, not a
                 // surprise at Finalise when the accountant has already committed.
@@ -1123,7 +1234,7 @@ public class SettlementService {
             throw new BusinessRuleViolationException(
                     category + " is already a credit on the receivable balance, so it cannot also be an addition.");
         }
-        if (!ADDITION_ROLES.containsKey(category)) {
+        if (!ADDITION_ROLES.containsKey(category) && category != AdditionCategory.UNEARNED_FEE_REFUND) {
             throw new BusinessRuleViolationException(category + " is not a settlement addition.");
         }
     }
