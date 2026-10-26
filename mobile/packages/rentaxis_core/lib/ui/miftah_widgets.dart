@@ -573,10 +573,13 @@ class MiftahNavBar extends StatelessWidget {
         color: m.surface,
         border: Border(top: BorderSide(color: m.border)),
       ),
+      // The home indicator or the system navigation bar is the bar's bottom
+      // margin; the 8pt minimum applies only where the system reports none.
       child: SafeArea(
         top: false,
+        minimum: const EdgeInsets.only(bottom: 8),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [for (final s in slots) Expanded(child: s)],
