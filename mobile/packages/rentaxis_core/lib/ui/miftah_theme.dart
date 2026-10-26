@@ -116,6 +116,15 @@ class MiftahTheme {
         ),
       ),
 
+      // Without this the caret takes colorScheme.primary — ink in light mode,
+      // invisible on the dark fields of the sign-in screens. Brass reads on
+      // those and on the light inputs alike.
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: MiftahColors.brass,
+        selectionHandleColor: MiftahColors.brass,
+        selectionColor: MiftahColors.brass.withValues(alpha: 0.32),
+      ),
+
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: isDark ? MiftahColors.brassLight : MiftahColors.ink,
