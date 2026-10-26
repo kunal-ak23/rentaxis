@@ -80,6 +80,20 @@ class PdfGridSinkTest {
         assertThat(t.rows().get(7).cells()).containsExactly("REPORT TOTAL", "", "60,000.10", "9,500.00", "50,500.10Dr",
                 "", "", "", "", "");
 
+        // Labels span the columns Excel merges (the opening up to Balance, the totals up to Debit), so Doc Date
+        // keeps its own width; the grid opts in to landscape above nine columns.
+        assertThat(t.rows()).extracting(ReportPdf.Row::labelSpan).containsExactly(1, 1, 4, 1, 1, 1, 2, 2);
+        assertThat(d.autoLandscape()).isTrue();
+        assertThat(d.landscape()).isFalse();
+        String html = ReportPdf.html(d);
+        assertThat(html)
+                .contains("<tr class=\"OPENING\"><td colspan=\"4\">Balance brought forward</td>"
+                        + "<td class=\"num\"><span>0.00Dr</span></td><td></td>")
+                .contains("<tr class=\"STRONG\"><td colspan=\"2\">Sub Total</td><td class=\"num\"><span>60,000.10</span></td>")
+                .contains("<tr class=\"TOTAL\"><td colspan=\"2\">REPORT TOTAL</td><td class=\"num\"><span>60,000.10</span></td>")
+                .contains("<tr class=\"PLAIN\"><td>16-09-2026</td><td>Advance Rent - Sample Tower</td>")
+                .contains("size: A4 landscape");
+
         byte[] pdf = sink.bytes();
         assertThat(sink.bytes()).isSameAs(pdf);
         try (PDDocument doc = Loader.loadPDF(pdf)) {
@@ -100,6 +114,9 @@ class PdfGridSinkTest {
         });
         List<ReportPdf.Row> rows = sink.doc().tables().get(0).rows();
         assertThat(rows.get(0).style()).isEqualTo(ReportPdf.Style.BAND_GROUP);
+        // The GROUP band prints black on grey in the PDF, as in Excel.
+        assertThat(ReportPdf.html(sink.doc())).contains("tr.BAND_GROUP td {background:#7F7F7F;color:#000000;font-weight:bold}")
+                .contains("<tr class=\"BAND_GROUP\"><td colspan=\"10\">Vacant</td></tr>");
         assertThat(rows.get(1).cells().get(4)).isEqualTo("8,000.00Cr");
         assertThat(rows.get(2).style()).isEqualTo(ReportPdf.Style.HIGHLIGHT);
         assertThat(rows.get(2).cells()).containsExactly("", "", "", "12.50", "8,012.50Cr", "", "", "", "", "");
@@ -130,6 +147,14 @@ class PdfGridSinkTest {
         assertThat(t.numeric()).hasSize(9);
         assertThat(t.rows().get(4).cells()).containsExactly("16-09-2026", "PDC Receivable Sample Tower", "", "9,500.00",
                 "50,500.00Dr", "000201", "Emirates NBD", "02/10/2026", "PDR-26/1");
+
+        // A hidden column before the figures narrows the spans to the visible columns.
+        List<ReportColumn> noParticular = SampleGrid.COLUMNS.stream()
+                .map(c -> c.key().equals("particular") ? c.hiddenColumn() : c).toList();
+        List<ReportPdf.Row> rows = feed("en", noParticular, SampleGrid::feed).doc().tables().get(0).rows();
+        assertThat(rows.get(2).labelSpan()).isEqualTo(3);                  // Doc Date, Debit, Credit
+        assertThat(rows.get(6).labelSpan()).isEqualTo(1);                  // Debit is the second visible column
+        assertThat(rows.get(6).cells().get(0)).isEqualTo("Sub Total");
     }
 
     @Test

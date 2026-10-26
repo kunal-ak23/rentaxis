@@ -68,6 +68,8 @@ class ReportLabelsTest {
         assertThat(l.get("col.convertedDate", "en")).isEqualTo("ConvertedDate");
         assertThat(l.get("tenantLedger.tenantBand", "en", "Tenant A")).isEqualTo("Tenant Name : Tenant A");
         assertThat(l.get("col.docDate", "ar")).isEqualTo("تاريخ المستند");
+        // The cheque screens' own term (web Leasing.payeeBank), not a second word for the same field.
+        assertThat(l.get("col.payeeBank", "ar")).isEqualTo("بنك المستفيد");
         assertThat(l.get("col.docDate", "fr")).isEqualTo("Doc Date"); // unknown lang reads English
         assertThatThrownBy(() -> l.get("no.such.key", "en")).isInstanceOf(NoSuchMessageException.class);
     }

@@ -24,8 +24,10 @@ import java.util.regex.Pattern;
  *
  * <p>The header row sits in a {@code <thead>} that repeats on every page, every page
  * carries a "Page x / y" footer, and an optional organisation line sits above the
- * title. Band rows span the whole table; a table of more than nine columns turns
- * the page to landscape.</p>
+ * title. Band rows span the whole table, and a row's label may span its first
+ * columns ({@link Row#labelSpan()}). A document that opts in ({@link Doc#autoLandscape()},
+ * the grid reports) turns to landscape when a table has more than nine columns; every
+ * other caller keeps the orientation it asks for.</p>
  */
 public final class ReportPdf {
 
@@ -38,25 +40,44 @@ public final class ReportPdf {
      */
     public enum Style { PLAIN, HEAD, STRONG, TOTAL, OK, BAD, BAND_ACCOUNT, BAND_PARTY, BAND_GROUP, OPENING, HIGHLIGHT }
 
-    public record Row(List<String> cells, Style style) {
+    /**
+     * labelSpan: how many leading columns the first cell spans (1 = its own column only); the
+     * cells it covers are not printed. A Sub Total's label spans up to its first figure, as the
+     * Excel sink merges it, instead of widening the first column.
+     */
+    public record Row(List<String> cells, Style style, int labelSpan) {
+        public Row {
+            if (labelSpan < 1) throw new IllegalArgumentException("A label spans at least one column, not " + labelSpan);
+        }
+        public Row(List<String> cells, Style style) { this(cells, style, 1); }
         public static Row of(Style style, List<String> cells) { return new Row(cells, style); }
+        /** A row whose first cell spans the first {@code labelSpan} columns. */
+        public static Row labelled(Style style, List<String> cells, int labelSpan) { return new Row(cells, style, labelSpan); }
     }
 
     /** numeric: per column, whether it holds an amount (right-aligned in LTR, left in RTL). */
     public record Table(String caption, List<String> header, List<Boolean> numeric, List<Row> rows) { }
 
-    /** orgName: printed above the title when not {@code null}. landscape: also forced by a table of more than nine columns. */
+    /**
+     * orgName: printed above the title when not {@code null}. landscape: the caller's orientation.
+     * autoLandscape: also turn to landscape when a table has more than nine columns (the grid reports
+     * opt in; the balance sheet, P&L and VAT return keep the orientation they ask for).
+     */
     public record Doc(String lang, String title, List<String> meta, List<Table> tables, List<String> notes,
-                      boolean landscape, String orgName) {
+                      boolean landscape, String orgName, boolean autoLandscape) {
         public Doc(String lang, String title, List<String> meta, List<Table> tables, List<String> notes, boolean landscape) {
-            this(lang, title, meta, tables, notes, landscape, null);
+            this(lang, title, meta, tables, notes, landscape, null, false);
+        }
+        public Doc(String lang, String title, List<String> meta, List<Table> tables, List<String> notes, boolean landscape,
+                   String orgName) {
+            this(lang, title, meta, tables, notes, landscape, orgName, false);
         }
     }
 
     /** What XML 1.0 does not allow in a document, even escaped. */
     private static final Pattern XML_FORBIDDEN = Pattern.compile("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\uFFFE\\uFFFF]");
 
-    /** Above this many columns a table is printed in landscape. */
+    /** Above this many columns a table of an {@link Doc#autoLandscape()} document is printed in landscape. */
     private static final int PORTRAIT_MAX_COLUMNS = 9;
 
     public static byte[] render(Doc d) {
@@ -67,7 +88,7 @@ public final class ReportPdf {
         boolean ar = "ar".equals(d.lang());
         String start = ar ? "right" : "left", end = ar ? "left" : "right";
         boolean landscape = d.landscape()
-                || d.tables().stream().anyMatch(t -> t.header().size() > PORTRAIT_MAX_COLUMNS);
+                || (d.autoLandscape() && d.tables().stream().anyMatch(t -> t.header().size() > PORTRAIT_MAX_COLUMNS));
         StringBuilder b = new StringBuilder();
         b.append("<!DOCTYPE html><html lang=\"").append(ar ? "ar" : "en").append("\" dir=\"").append(ar ? "rtl" : "ltr")
                 .append("\"><head><meta charset=\"UTF-8\"/><style>")
@@ -91,7 +112,7 @@ public final class ReportPdf {
                 .append("tr.OK td { color: #1a7f37; font-weight: bold; } tr.BAD td { color: #b42318; font-weight: bold; }")
                 .append("tr.BAND_ACCOUNT td {background:#D2691E;color:#F0F8FF;font-weight:bold}")
                 .append("tr.BAND_PARTY td {background:#FFFF00}")
-                .append("tr.BAND_GROUP td {background:#7F7F7F;color:#FFFFFF;font-weight:bold}")
+                .append("tr.BAND_GROUP td {background:#7F7F7F;color:#000000;font-weight:bold}")
                 .append("tr.HIGHLIGHT td {background:#FAC08F}")
                 .append("tr.OPENING td {font-style:italic}")
                 .append(".note { color: #666; font-size: 7.5pt; margin-top: 1.5mm; }")
@@ -118,7 +139,14 @@ public final class ReportPdf {
                             .append("</td></tr>");
                     continue;
                 }
-                for (int c = 0; c < t.header().size(); c++) {
+                int c = 0;
+                int span = Math.min(r.labelSpan(), t.header().size());
+                if (span > 1) {
+                    String label = r.cells().isEmpty() ? "" : r.cells().get(0);
+                    b.append("<td colspan=\"").append(span).append("\">").append(esc(label)).append("</td>");
+                    c = span;
+                }
+                for (; c < t.header().size(); c++) {
                     String v = c < r.cells().size() ? r.cells().get(c) : "";
                     boolean n = num(t, c);
                     b.append("<td").append(n ? " class=\"num\"" : "").append(">");

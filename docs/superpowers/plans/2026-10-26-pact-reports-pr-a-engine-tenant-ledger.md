@@ -193,7 +193,7 @@ class ReportLabelsTest {
   | `col.credit` | `Credit` | `دائن` |
   | `col.balance` | `Balance` | `الرصيد` |
   | `col.chqNo` | `Chq No` | `رقم الشيك` |
-  | `col.payeeBank` | `Payee Bank` | `بنك الساحب` |
+  | `col.payeeBank` | `Payee Bank` | `بنك المستفيد` |
   | `col.bdDays` | `BDDays` | `حالة الارتجاع` |
   | `col.convertedDate` | `ConvertedDate` | `تاريخ الاستحقاق` |
   | `col.docNo` | `Doc No` | `رقم المستند` |

@@ -13,11 +13,14 @@ import java.util.UUID;
 /**
  * Renders a report grid as a PDF through {@link ReportPdf} (spec §1.3): one table of the visible
  * columns under the organisation, title, period/filter lines and "Generated … by …" line. The header
- * repeats on every page, every page is numbered, and a grid of more than nine columns prints landscape.
+ * repeats on every page, every page is numbered, and a grid of more than nine columns prints landscape
+ * (the sink opts its document in: {@link ReportPdf.Doc#autoLandscape()}).
  *
  * <ul>
- *   <li>Bands span the table in the Excel band colours; an opening row prints its label in the first
- *       column and the balance in the BALANCE column; HIGHLIGHT rows keep their fill.</li>
+ *   <li>Bands span the table in the Excel band colours; HIGHLIGHT rows keep their fill.</li>
+ *   <li>Labels span the columns the Excel sink merges: an opening's from the first column up to the one before
+ *       the BALANCE column, a Sub Total's or the REPORT TOTAL's up to the one before the first totalled
+ *       column. The first column (Doc Date) keeps its own width.</li>
  *   <li>Dates use the column's PACT pattern, money {@code #,##0.00}, balances PACT's
  *       {@code 12,345.00Dr} / {@code 8,000.00Cr}; digits are Latin in both languages.</li>
  *   <li>User-typed text is cleaned by {@link ReportFormat#cellText} (no control or bidi characters)
@@ -25,12 +28,15 @@ import java.util.UUID;
  * </ul>
  *
  * The sink only collects rows; {@link #bytes()} renders once the report has ended. One sink renders one report.
+ * A truncated report never reaches a file: {@link GridRenderer} refuses a writer that dropped rows (a 422).
  */
 public final class PdfGridSink implements ReportSink {
 
     private GridHeader header;
     private List<ReportColumn> visible;
     private int balanceIndex = -1;
+    /** The visible index of the first column with a total (SUM, COUNT or the BALANCE closing); -1 when none. */
+    private int firstTotalIndex = -1;
     private final List<ReportPdf.Row> rows = new ArrayList<>();
     private ReportPdf.Doc doc;
     private byte[] bytes;
@@ -63,6 +69,9 @@ public final class PdfGridSink implements ReportSink {
                 if (c.kind() == Kind.BALANCE) {
                     balanceIndex = cols.size();
                 }
+                if (c.totalRule() != TotalRule.NONE && firstTotalIndex < 0) {
+                    firstTotalIndex = cols.size();
+                }
                 cols.add(c);
             }
         }
@@ -88,7 +97,7 @@ public final class PdfGridSink implements ReportSink {
         if (balanceIndex >= 0) {
             cells[balanceIndex] = ReportFormat.drCr(balance);
         }
-        add(ReportPdf.Style.OPENING, Arrays.asList(cells));
+        add(ReportPdf.Style.OPENING, Arrays.asList(cells), balanceIndex);
     }
 
     @Override
@@ -103,14 +112,15 @@ public final class PdfGridSink implements ReportSink {
 
     @Override
     public void subtotal(int level, String label, Map<String, Object> totals) {
-        add(ReportPdf.Style.STRONG, totalsLine(label, totals));
+        add(ReportPdf.Style.STRONG, totalsLine(label, totals), totalsLabelSpan());
     }
 
     @Override
     public void total(String label, Map<String, Object> totals) {
-        add(ReportPdf.Style.TOTAL, totalsLine(label, totals));
+        add(ReportPdf.Style.TOTAL, totalsLine(label, totals), totalsLabelSpan());
     }
 
+    /** {@code truncated} is never printed: {@link GridRenderer} refuses a truncated report before any bytes exist. */
     @Override
     public void end(boolean truncated, boolean continuesOnNextPage) {
         requireBegun();
@@ -132,20 +142,28 @@ public final class PdfGridSink implements ReportSink {
         }
         ReportPdf.Table table = new ReportPdf.Table(null, List.copyOf(header), List.copyOf(numeric), List.copyOf(rows));
         doc = new ReportPdf.Doc(this.header.lang(), this.header.title(), List.copyOf(meta), List.of(table), List.of(),
-                false, this.header.orgName());
+                false, this.header.orgName(), true);
     }
 
     // ---------------------------------------------------------------------------------------------
 
     private void add(ReportPdf.Style style, List<String> cells) {
+        add(style, cells, 1);
+    }
+
+    /** A row whose label spans the first {@code labelSpan} columns ({@code < 2}: its own column only). */
+    private void add(ReportPdf.Style style, List<String> cells, int labelSpan) {
         requireBegun();
         if (doc != null) {
             throw new IllegalStateException("The report has already ended");
         }
-        rows.add(ReportPdf.Row.of(style, List.copyOf(cells)));
+        rows.add(ReportPdf.Row.labelled(style, List.copyOf(cells), Math.max(1, labelSpan)));
     }
 
-    /** A Sub Total or REPORT TOTAL line: the totals in their columns, the label in the first column when that is free. */
+    /**
+     * A Sub Total or REPORT TOTAL line: the totals in their columns, the label in the first column when that is
+     * free (it then spans up to the first totalled column).
+     */
     private List<String> totalsLine(String label, Map<String, Object> totals) {
         String[] out = blankLine();
         for (int i = 0; i < visible.size(); i++) {
@@ -156,6 +174,11 @@ public final class PdfGridSink implements ReportSink {
             out[0] = ReportFormat.cellText(label);
         }
         return Arrays.asList(out);
+    }
+
+    /** The columns a totals label spans: those before the first totalled one, or every column when none has a total. */
+    private int totalsLabelSpan() {
+        return firstTotalIndex < 0 ? visible.size() : firstTotalIndex;
     }
 
     private String[] blankLine() {

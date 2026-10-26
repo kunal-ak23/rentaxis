@@ -1,13 +1,24 @@
 package com.datagami.rentaxis.core.service.report;
 
+import com.datagami.rentaxis.api.dto.report.PropertyPnlDTO;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ReportPdfTest {
 
@@ -17,7 +28,7 @@ class ReportPdfTest {
         var t = new ReportPdf.Table(null, header, Collections.nCopies(10, false), List.of(
                 ReportPdf.Row.of(ReportPdf.Style.BAND_ACCOUNT, List.of("<b>Rent</b>")),
                 ReportPdf.Row.of(ReportPdf.Style.PLAIN, header)));
-        String html = ReportPdf.html(new ReportPdf.Doc("en", "T", List.of(), List.of(t), List.of(), false, "Sample Org"));
+        String html = ReportPdf.html(new ReportPdf.Doc("en", "T", List.of(), List.of(t), List.of(), false, "Sample Org", true));
         assertThat(html).contains("<thead>").contains("-fs-table-paginate: paginate").contains("counter(pages)")
                 .contains("size: A4 landscape").contains("<td colspan=\"10\">&lt;b&gt;Rent&lt;/b&gt;</td>").contains("Sample Org");
         assertThat(ReportPdf.html(new ReportPdf.Doc("ar", "T", List.of(), List.of(), List.of(), false))).contains("صفحة");
@@ -50,12 +61,63 @@ class ReportPdfTest {
         String html = ReportPdf.html(new ReportPdf.Doc("en", "T", List.of("m"), List.of(t), List.of("n"), false));
         assertThat(html).contains("size: A4;").doesNotContain("landscape").doesNotContain("class=\"org\"");
         assertThat(new ReportPdf.Doc("en", "T", List.of(), List.of(), List.of(), true).orgName()).isNull();
-        // Nine columns is still portrait; the tenth tips it to landscape.
+        assertThat(new ReportPdf.Doc("en", "T", List.of(), List.of(), List.of(), true).autoLandscape()).isFalse();
+        assertThat(new ReportPdf.Doc("en", "T", List.of(), List.of(), List.of(), true, "Org").autoLandscape()).isFalse();
         var nine = new ReportPdf.Table(null, Collections.nCopies(9, "H"), Collections.nCopies(9, false), List.of());
-        assertThat(ReportPdf.html(new ReportPdf.Doc("en", "T", List.of(), List.of(nine), List.of(), false)))
-                .contains("size: A4;");
+        var ten = new ReportPdf.Table(null, Collections.nCopies(10, "H"), Collections.nCopies(10, false), List.of());
+        // An old caller gets the orientation it asks for, whatever its column count.
+        assertThat(ReportPdf.html(new ReportPdf.Doc("en", "T", List.of(), List.of(ten), List.of(), false)))
+                .contains("size: A4;").doesNotContain("landscape");
         assertThat(ReportPdf.html(new ReportPdf.Doc("en", "T", List.of(), List.of(nine), List.of(), true)))
                 .contains("size: A4 landscape");
+        // A document that opts in (the grid reports): nine columns stay portrait, the tenth turns the page.
+        assertThat(ReportPdf.html(new ReportPdf.Doc("en", "T", List.of(), List.of(nine), List.of(), false, null, true)))
+                .contains("size: A4;");
+        assertThat(ReportPdf.html(new ReportPdf.Doc("en", "T", List.of(), List.of(ten), List.of(), false, null, true)))
+                .contains("size: A4 landscape");
+    }
+
+    @Test
+    void aTenColumnPropertyPnlKeepsItsPortraitPage() throws IOException {
+        // Two properties and the Total with a prior period: Line + 3 × (amount, prior, change) = 10 columns, which
+        // FinancialReportExport prints portrait (it asks for landscape only above three property columns).
+        List<PropertyPnlDTO.Column> columns = List.of(
+                new PropertyPnlDTO.Column(UUID.randomUUID().toString(), null, "PROPERTY", "Sample Tower", null),
+                new PropertyPnlDTO.Column(UUID.randomUUID().toString(), null, "PROPERTY", "Sample Court", null),
+                new PropertyPnlDTO.Column(PropertyPnlDTO.TOTAL, null, "TOTAL", "Total", null));
+        Map<String, PropertyPnlDTO.Amount> amounts = new LinkedHashMap<>();
+        columns.forEach(c -> amounts.put(c.key(), new PropertyPnlDTO.Amount(new BigDecimal("100.00"),
+                new BigDecimal("90.00"), new BigDecimal("10.00"), null)));
+        PropertyPnlDTO pnl = new PropertyPnlDTO(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31), "PRIOR_PERIOD",
+                LocalDate.of(2025, 12, 1), LocalDate.of(2025, 12, 31), false, columns, List.of(), amounts, amounts,
+                amounts, null, null, null);
+        try (PDDocument doc = Loader.loadPDF(FinancialReportExport.pnlPdf(pnl, "en", false))) {
+            PDRectangle page = doc.getPage(0).getMediaBox();
+            assertThat(page.getHeight()).isGreaterThan(page.getWidth());
+        }
+    }
+
+    @Test
+    void aLabelSpansItsLeadingColumnsInsteadOfWideningTheFirst() {
+        var t = new ReportPdf.Table(null, List.of("Doc Date", "Particular", "Debit", "Credit", "Balance"),
+                List.of(false, false, true, true, true), List.of(
+                ReportPdf.Row.labelled(ReportPdf.Style.OPENING, List.of("Balance brought forward", "", "", "", "0.00Dr"), 4),
+                ReportPdf.Row.labelled(ReportPdf.Style.STRONG, List.of("Sub Total", "", "10.00", "", "10.00Dr"), 2),
+                ReportPdf.Row.labelled(ReportPdf.Style.TOTAL, List.of("REPORT TOTAL", "x", "y", "z", "w"), 9),
+                ReportPdf.Row.of(ReportPdf.Style.PLAIN, List.of("16-09-2026", "Rent", "10.00", "", "10.00Dr"))));
+        String html = ReportPdf.html(new ReportPdf.Doc("en", "T", List.of(), List.of(t), List.of(), false));
+        assertThat(html)
+                .contains("<tr class=\"OPENING\"><td colspan=\"4\">Balance brought forward</td>"
+                        + "<td class=\"num\"><span>0.00Dr</span></td></tr>")
+                .contains("<tr class=\"STRONG\"><td colspan=\"2\">Sub Total</td><td class=\"num\"><span>10.00</span></td>"
+                        + "<td class=\"num\"><span></span></td><td class=\"num\"><span>10.00Dr</span></td></tr>")
+                // a span wider than the table stops at its edge
+                .contains("<tr class=\"TOTAL\"><td colspan=\"5\">REPORT TOTAL</td></tr>")
+                .contains("<tr class=\"PLAIN\"><td>16-09-2026</td><td>Rent</td>");
+        assertThat(ReportPdf.Row.of(ReportPdf.Style.PLAIN, List.of("x")).labelSpan()).isEqualTo(1);
+        assertThat(new ReportPdf.Row(List.of("x"), ReportPdf.Style.PLAIN).labelSpan()).isEqualTo(1);
+        assertThatThrownBy(() -> ReportPdf.Row.labelled(ReportPdf.Style.PLAIN, List.of("x"), 0))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -95,7 +157,8 @@ class ReportPdfTest {
         assertThat(html)
                 .contains("tr.BAND_ACCOUNT td {background:#D2691E;color:#F0F8FF;font-weight:bold}")
                 .contains("tr.BAND_PARTY td {background:#FFFF00}")
-                .contains("tr.BAND_GROUP td {background:#7F7F7F;color:#FFFFFF;font-weight:bold}")
+                // black on grey, as the Excel GROUP band
+                .contains("tr.BAND_GROUP td {background:#7F7F7F;color:#000000;font-weight:bold}")
                 .contains("tr.HIGHLIGHT td {background:#FAC08F}")
                 .contains("tr.OPENING td {font-style:italic}")
                 .contains("<tr class=\"BAND_PARTY\"><td colspan=\"3\">Tenant A</td></tr>")
