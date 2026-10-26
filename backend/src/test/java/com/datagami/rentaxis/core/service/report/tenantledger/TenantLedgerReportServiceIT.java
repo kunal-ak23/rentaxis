@@ -7,6 +7,7 @@ import com.datagami.rentaxis.api.dto.ledger.LedgerRowDTO;
 import com.datagami.rentaxis.api.dto.report.ReceivableAccountDTO;
 import com.datagami.rentaxis.api.dto.report.ReportGridDTO;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.security.PropertyScope;
 import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.PropertyService;
@@ -22,7 +23,10 @@ import com.datagami.rentaxis.core.service.ledger.PostingRequest.Dimensions;
 import com.datagami.rentaxis.core.service.ledger.PostingService;
 import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.service.report.grid.ExportFormat;
+import com.datagami.rentaxis.core.service.report.grid.ReportCaps;
 import com.datagami.rentaxis.core.service.report.grid.ReportLabels;
+import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQueries.GroupRow;
+import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQueries.Scope;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.Lease;
@@ -46,19 +50,27 @@ import com.datagami.rentaxis.testsupport.LeaseTestFixtures;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionManager;
+import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
+import org.springframework.transaction.interceptor.TransactionInterceptor;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.IntStream;
 
 import static com.datagami.rentaxis.core.service.ledger.PostingRequest.cr;
@@ -107,6 +119,10 @@ class TenantLedgerReportServiceIT extends AbstractPostgresIT {
     @Autowired LedgerQueryService ledger;
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager txManager;
+    @Autowired NamedParameterJdbcTemplate namedJdbc;
+    @Autowired PropertyScope propertyScope;
+    @Autowired ReportCaps caps;
+    @Autowired Clock clock;
 
     LeaseTestFixtures fx;
     UUID propertyId;
@@ -410,6 +426,37 @@ class TenantLedgerReportServiceIT extends AbstractPostgresIT {
         assertThatThrownBy(() -> service.receivableAccounts(orgBProperty.getId())).isInstanceOf(NotFoundException.class);
     }
 
+    @Test
+    void aPostingCommittedBetweenTheGroupsAndTheLinesReadIsNotSeen() {
+        // The groups (SQL totals, row counts) and the lines are two statements. A posting to Tenant A's receivable
+        // that commits between them must stay out of the lines, or the writer's totals check fails (a 500) and a
+        // page's span no longer lines up with the rows read: both reads have to see one snapshot.
+        TransactionTemplate elsewhere = new TransactionTemplate(txManager);
+        elsewhere.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        AtomicBoolean committed = new AtomicBoolean();
+        TenantLedgerQueries racing = new TenantLedgerQueries(namedJdbc) {
+            @Override
+            public List<GroupRow> groups(Scope s) {
+                List<GroupRow> groups = super.groups(s);
+                if (committed.compareAndSet(false, true)) {
+                    elsewhere.executeWithoutResult(st -> posting.post(new PostingRequest(JournalDocType.JV, D("2027-05-10"),
+                            "Manual", new Dimensions(propertyId, fx.unit().getId(), leaseA, tenantA.getId(), null),
+                            JournalSourceType.MANUAL, null, null, List.of(dr(AccountRole.RENT_RECEIVABLE, new BigDecimal("750")),
+                            cr(AccountRole.CASH, new BigDecimal("750"))))));
+                }
+                return groups;
+            }
+        };
+        TenantLedgerReportService racy = transactional(new TenantLedgerReportService(racing, propertyScope, labels, caps, clock));
+
+        TenantLedgerResult r = racy.export(filter(FROM, TO), ExportFormat.XLSX, "it");
+        assertThat(committed).isTrue();
+        assertThat(r.lines()).hasSize(12);
+        ReportGridDTO g = TenantLedgerGrid.json(r, labels);          // the writer checks the lines against the SQL totals
+        assertThat(total(g)).containsEntry("debit", "83900.00").containsEntry("balance", "20400.00");
+        assertThat(total(json(filter(FROM, TO)))).containsEntry("debit", "84650.00");   // the posting did commit
+    }
+
     // ------------------------------------------------------------------
 
     private LeaseTestFixtures fixtures() {
@@ -441,6 +488,14 @@ class TenantLedgerReportServiceIT extends AbstractPostgresIT {
         TransactionTemplate t = new TransactionTemplate(txManager);
         t.setReadOnly(true);
         return t.execute(s -> q.get());
+    }
+
+    /** {@code target} behind a transaction proxy built from its own {@code @Transactional}, as Spring builds the bean's. */
+    private TenantLedgerReportService transactional(TenantLedgerReportService target) {
+        ProxyFactory factory = new ProxyFactory(target);
+        factory.setProxyTargetClass(true);
+        factory.addAdvice(new TransactionInterceptor((TransactionManager) txManager, new AnnotationTransactionAttributeSource()));
+        return (TenantLedgerReportService) factory.getProxy();
     }
 
     private ReportGridDTO json(TenantLedgerFilter f) {

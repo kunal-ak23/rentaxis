@@ -20,6 +20,7 @@ import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerResult
 import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerResult.TenantGroup;
 import com.datagami.rentaxis.core.util.Search;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -46,9 +47,15 @@ import java.util.stream.Collectors;
  * report language, groups with their SQL ("authoritative") totals, and the rows of the page asked for, or of the
  * whole report for an export. {@link TenantLedgerGrid} renders it after the transaction. Every query binds the
  * caller's tenant ({@link TenantLedgerQueries}); a filter id that does not resolve in it is a 404.</p>
+ *
+ * <p>REPEATABLE READ: the groups (SQL totals, row counts) and the lines are separate statements and must see one
+ * snapshot. Under READ COMMITTED a posting committed between them reaches the lines but not the totals, so the
+ * writer's totals check fails, a page's span no longer lines up with the rows read, and an export drops the lines of
+ * a group born in the gap. {@code BalanceSheetService} does the same; a read-only transaction cannot hit a
+ * serialization failure, so there is no retry path.</p>
  */
 @Service
-@Transactional(readOnly = true, timeout = 60)
+@Transactional(readOnly = true, timeout = 60, isolation = Isolation.REPEATABLE_READ)
 public class TenantLedgerReportService {
 
     private static final ZoneId DUBAI = ZoneId.of("Asia/Dubai");
