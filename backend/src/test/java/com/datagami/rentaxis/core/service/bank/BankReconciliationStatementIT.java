@@ -630,8 +630,11 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(check(r, "LINE_ORDER").ok()).isFalse();
         assertThat(check(r, "LINE_ORDER").message()).contains("On 07/09/2026").contains("A typed closing balance cannot settle this")
                 .contains("total debits and total credits")
-                // S21-01: 06/09 and 11/09 are each held only in part, so neither is named as a statement's edge.
-                .contains("no statement can yet hold that day between two settled days").doesNotContain("runs from");
+                // S21-01: 06/09 and 11/09 are each held only in part, so neither is named as the edge of a
+                // statement that settles the day by itself ("… which holds 07/09/2026 whole").
+                .contains("no statement can yet hold that day between two settled days").doesNotContain("07/09/2026 whole")
+                // S23-05: the import-then-delete remedy names every import chained by overlap.
+                .contains("runs from 06/09/2026 to 11/09/2026 and holds every line of the imports");
         assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("A typed closing balance cannot settle this");
         assertThat(reconciledThrough()).isNull();
 
@@ -1010,8 +1013,9 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 .contains("A typed closing balance cannot settle this")
                 // S21-01/S21-03: 10/09 is the only day imported, so no statement can hold it between two settled
                 // days; the remedy that works after matching is named instead of "delete the imports".
-                .contains("import one statement that holds every line of the imports that brought 10/09/2026's lines, "
-                        + "then delete those imports")
+                .contains("import one statement that runs from 10/09/2026 to 10/09/2026 and holds every line of the "
+                        + "imports that brought 10/09/2026's lines and of every import dated inside those dates, then delete "
+                        + "all of those imports")
                 .doesNotContain("from the day before to the day after");
         assertThat(r.canFinalize()).isFalse();
         assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("A typed closing balance cannot settle this");
@@ -1498,8 +1502,9 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 Integer.class, ei.getId());
         UUID id = recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
         assertThat(check(recs.get(id), "LINE_ORDER").message())
-                .contains("import one statement that holds every line of the imports that brought 01/09/2026's lines, "
-                        + "then delete those imports");
+                .contains("import one statement that runs from 01/09/2026 to 02/09/2026 and holds every line of the "
+                        + "imports that brought 01/09/2026's lines and of every import dated inside those dates, then delete "
+                        + "all of those imports");
         assertThatThrownBy(() -> imports.delete(part.importId()))
                 .as("CREDIT TWO and FEE THREE are matched and only this import brought them")
                 .hasMessageContaining("only this import brought are in confirmed matches");
@@ -1518,6 +1523,77 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(jdbc.queryForObject("select count(*) from bank_matches where bank_account_id = ? and status = 'CONFIRMED'",
                 Integer.class, ei.getId())).as("every match kept").isEqualTo(confirmed + 1);
         BankRecDTOs.Reconciliation r = recs.get(id);
+        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+        r = paperClosing(id);
+        assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
+        assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
+    }
+
+    /** Sim r23 S23-05: an extract of 01–02/09 (kept), then two parts that overlap on 03/09. */
+    private List<BankRecDTOs.ImportResult> s2305Imports() {
+        jv(AUG_31, marinaBank, "1000.00");
+        BankRecDTOs.ImportResult k = importText("""
+                01/09/2026,01/09/2026,FEE ONE,,5.00,,995.00
+                02/09/2026,02/09/2026,FEE TWO,,5.00,,990.00
+                """);
+        BankRecDTOs.ImportResult p1 = importText("""
+                02/09/2026,02/09/2026,FEE THREE,,5.00,,985.00
+                03/09/2026,03/09/2026,FEE FOUR,,5.00,,980.00
+                """);
+        BankRecDTOs.ImportResult p2 = importText("""
+                03/09/2026,03/09/2026,FEE FOUR,,5.00,,980.00
+                03/09/2026,03/09/2026,FEE FIVE,,5.00,,975.00
+                """);
+        for (String d : List.of("FEE ONE", "FEE TWO", "FEE THREE", "FEE FOUR", "FEE FIVE")) book(d, "CHARGE");
+        return List.of(k, p1, p2);
+    }
+
+    /**
+     * Sim r23 S23-05, the mechanism: following the old remedy literally — a statement holding
+     * every line of the two imports that brought 03/09 (02/09–03/09), then deleting them —
+     * leaves 02/09 shared between that statement and the kept extract, which the statement
+     * did not hold whole: a new day to settle.
+     */
+    @Test
+    void theOldWholeThenDeleteRemedyLeftANewDayOnAnEdgeSharedWithAKeptImport() {
+        List<BankRecDTOs.ImportResult> parts = s2305Imports();
+        UUID id = recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
+        assertThat(recs.get(id).unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date)
+                .containsExactly(LocalDate.of(2026, 9, 3));
+        importText("""
+                02/09/2026,02/09/2026,FEE THREE,,5.00,,985.00
+                03/09/2026,03/09/2026,FEE FOUR,,5.00,,980.00
+                03/09/2026,03/09/2026,FEE FIVE,,5.00,,975.00
+                """);
+        imports.delete(parts.get(1).importId());
+        imports.delete(parts.get(2).importId());
+        assertThat(recs.get(id).unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date)
+                .as("the edge day shared with the kept extract").contains(LocalDate.of(2026, 9, 2));
+    }
+
+    /**
+     * Sim r23 S23-05, the fix: the remedy names the statement over every import chained by
+     * overlap (01/09–03/09, the kept extract included), and following it literally settles
+     * every day with no new one.
+     */
+    @Test
+    void theWholeThenDeleteRemedyNamesEveryOverlappingImportAndLeavesNoNewDay() {
+        List<BankRecDTOs.ImportResult> parts = s2305Imports();
+        UUID id = recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
+        assertThat(check(recs.get(id), "LINE_ORDER").message())
+                .contains("import one statement that runs from 01/09/2026 to 03/09/2026 and holds every line of the "
+                        + "imports that brought 03/09/2026's lines and of every import dated inside those dates, then "
+                        + "delete all of those imports");
+        importText("""
+                01/09/2026,01/09/2026,FEE ONE,,5.00,,995.00
+                02/09/2026,02/09/2026,FEE TWO,,5.00,,990.00
+                02/09/2026,02/09/2026,FEE THREE,,5.00,,985.00
+                03/09/2026,03/09/2026,FEE FOUR,,5.00,,980.00
+                03/09/2026,03/09/2026,FEE FIVE,,5.00,,975.00
+                """);
+        for (BankRecDTOs.ImportResult part : parts) imports.delete(part.importId());
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        assertThat(r.unprovenDays()).isEmpty();
         assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
         r = paperClosing(id);
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
