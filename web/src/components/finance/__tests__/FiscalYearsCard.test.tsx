@@ -83,6 +83,19 @@ describe("FiscalYearsCard", () => {
         expect(screen.getByTestId("fiscal-close-confirm")).toBeDisabled();
     });
 
+    /** Follow-up ruling R2: the re-open dialog shows the lock as it was before the close (audit only). */
+    it("shows the lock as it was before the close", async () => {
+        api.list.mockResolvedValue([year(2025, "OPEN", 0), { ...year(2024, "CLOSED"), lockBefore: "2024-06-30" }]);
+        renderCard();
+        fireEvent.click(await screen.findByTestId("fiscal-year-reopen-2024"));
+        expect(screen.getByTestId("fiscal-reopen-lock-before")).toHaveTextContent("The lock was 30/06/2024 before this close");
+        cleanup();
+        api.list.mockResolvedValue([year(2025, "OPEN", 0), { ...year(2024, "CLOSED"), lockBefore: null }]);
+        renderCard(true, "ar");
+        fireEvent.click(await screen.findByTestId("fiscal-year-reopen-2024"));
+        expect(screen.getByTestId("fiscal-reopen-lock-before")).toHaveTextContent(ar.FiscalYears.reopenNoLockBefore);
+    });
+
     /** Break-it R2 money2 F4: the re-open states the lock it leaves, including a later manual lock it drops. */
     it("says where the re-open moves the period lock", async () => {
         render(

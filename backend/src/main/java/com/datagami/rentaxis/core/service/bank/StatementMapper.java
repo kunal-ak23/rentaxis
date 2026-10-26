@@ -46,10 +46,10 @@ public final class StatementMapper {
      */
     public record Result(List<Row> rows, List<String> errors, List<String> warnings, List<String> missingColumns,
                          BigDecimal openingBalance, BigDecimal closingBalance, boolean hasBalance, Order order,
-                         boolean openingRow, boolean closingRow) {
+                         boolean openingRow, boolean closingRow, LocalDate closingRowDate) {
         public Result(List<Row> rows, List<String> errors, List<String> warnings, List<String> missingColumns,
                       BigDecimal openingBalance, BigDecimal closingBalance, boolean hasBalance, Order order) {
-            this(rows, errors, warnings, missingColumns, openingBalance, closingBalance, hasBalance, order, false, false);
+            this(rows, errors, warnings, missingColumns, openingBalance, closingBalance, hasBalance, order, false, false, null);
         }
 
         public boolean ok() {
@@ -222,17 +222,22 @@ public final class StatementMapper {
         // imported on a later day, is not the end of the day). Otherwise both stay
         // balance cross-checks.
         boolean openingRow = false, closingRow = false;
+        // Sim r22 S22-03 follow-up: the date of a Closing row that agrees with the lines, kept with
+        // the import, so a reconciliation can tell whether the export reached past its period end.
+        LocalDate agreeingClosingDate = null;
         if (hasBalance && !book.isEmpty()) {
             BigDecimal firstBefore = book.get(0).balance().subtract(book.get(0).amount());
             BigDecimal lastAfter = book.get(book.size() - 1).balance();
             openingRow = opening != null && opening.compareTo(firstBefore) == 0
                     && openingProves(openingDate, book.get(0).txnDate());
-            closingRow = closing != null && closing.compareTo(lastAfter) == 0
-                    && closingProves(closingDate, book.get(book.size() - 1).txnDate());
+            boolean agrees = closing != null && closing.compareTo(lastAfter) == 0;
+            closingRow = agrees && closingProves(closingDate, book.get(book.size() - 1).txnDate());
+            if (agrees) agreeingClosingDate = closingDate;
             if (opening == null) opening = firstBefore;
             if (closing == null) closing = lastAfter;
         }
-        return new Result(book, errors, warnings, missing, opening, closing, hasBalance, order, openingRow, closingRow);
+        return new Result(book, errors, warnings, missing, opening, closing, hasBalance, order, openingRow, closingRow,
+                agreeingClosingDate);
     }
 
     /** Review P2-4: an Opening row proves its file starts at a day's start only when dated before the first line's day. */

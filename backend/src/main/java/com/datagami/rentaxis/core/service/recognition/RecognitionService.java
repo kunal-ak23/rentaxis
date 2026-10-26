@@ -595,7 +595,11 @@ public class RecognitionService {
         BigDecimal net = line.getNetAmount() == null ? BigDecimal.ZERO : line.getNetAmount();
         if (net.signum() <= 0) return null;
         LocalDate from = line.getPeriodStart() != null ? line.getPeriodStart() : lease.getStartDate();
-        LocalDate to = line.getPeriodEnd() != null ? line.getPeriodEnd() : lease.getEndDate();
+        // Sim r22 S22-02: an undated line (a periodic fee) covers the term it was charged for.
+        // An extension moves lease.endDate but dates its own lines, so an amendment's rebuild
+        // must not spread the fee over the extension's months.
+        LocalDate to = line.getPeriodEnd() != null ? line.getPeriodEnd()
+                : com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(lease);
         if (from == null || to == null || to.isBefore(from)) {
             throw new BusinessRuleViolationException("Line " + line.getSeqNo()
                     + (rent ? " charges rent" : " is earned over the term")
@@ -618,7 +622,7 @@ public class RecognitionService {
         segment.setDayRate(ProrationEngine.dayRate(amount, from, to));
         segment.setStatus(SegmentStatus.ACTIVE);
         if (fee) {
-            segment.setDeferralAccountId(poster.unearnedChargesLeaf(lease));
+            segment.setDeferralAccountId(poster.deferralLeafOf(lease, line));
             segment.setIncomeAccountId(line.getCreditAccount() == null ? null : line.getCreditAccount().getId());
             if (segment.getIncomeAccountId() == null) {
                 throw new BusinessRuleViolationException("Line " + line.getSeqNo() + " has no income account to earn into.");
@@ -1492,7 +1496,9 @@ public class RecognitionService {
             if (segments.existsByLeaseLineIdAndStatusIn(line.getId(), LIVE_SEGMENTS)) continue;
 
             LocalDate from = line.getPeriodStart() != null ? line.getPeriodStart() : lease.getStartDate();
-            LocalDate to = line.getPeriodEnd() != null ? line.getPeriodEnd() : lease.getEndDate();
+            // S22-02: the same window as schedulable (identical to lease.endDate unless extended).
+            LocalDate to = line.getPeriodEnd() != null ? line.getPeriodEnd()
+                    : com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(lease);
             // Refused, not skipped. The listener's own contract is that a contract
             // whose income cannot be scheduled is a refusal the accountant sees when
             // they press Post; skipping would park the rent in ADVANCE_RENT forever
@@ -1517,7 +1523,7 @@ public class RecognitionService {
                 // Resolved now, in the posting transaction that just credited it, so
                 // each month's release debits the very leaf the TCO deferred into and
                 // credits the fee's own income leaf — whatever the mappings say later.
-                segment.setDeferralAccountId(poster.unearnedChargesLeaf(lease));
+                segment.setDeferralAccountId(poster.deferralLeafOf(lease, line));
                 segment.setIncomeAccountId(line.getCreditAccount() == null ? null : line.getCreditAccount().getId());
                 if (segment.getIncomeAccountId() == null) {
                     throw new BusinessRuleViolationException("Line " + line.getSeqNo() + " has no income account to earn into.");

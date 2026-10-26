@@ -7,5 +7,7 @@ import java.util.UUID;
 public record LeaseAddendumCreditDTO(UUID leaseLineId, String chargeTypeCode, String chargeTypeName,
                                      String chargeTypeNameAr, BigDecimal newLineAmount,
                                      BigDecimal remainingBefore, BigDecimal remainingAfter,
-                                     BigDecimal creditAmount, BigDecimal vatAmount) {
+                                     BigDecimal creditAmount, BigDecimal vatAmount,
+                                     /* Ruling R7: the new headline and the concession at that rate; null on an older credit. */
+                                     BigDecimal newGrossAmount, BigDecimal newRentFreeAmount) {
 }

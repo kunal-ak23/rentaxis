@@ -136,6 +136,14 @@ export function ReconciliationPanel({ bankAccountId, onChanged, refreshKey }: {
                             </li>
                         ))}
                     </ul>
+                    {rec.checks.some(c => c.code === "CLOSING" && !c.ok) && (
+                        <p className="text-[11px] text-muted break-words" data-testid="rec-closing-needed">{t("closingNeededHint")}</p>
+                    )}
+                    {rec.remedyReopenThrough && (
+                        <p className="text-[11px] text-muted break-words" data-testid="rec-reopen-first">
+                            {t("reopenFirstHint", { date: dmy(rec.remedyReopenThrough) })}
+                        </p>
+                    )}
                     <div className="flex flex-wrap gap-2 items-center">
                         <button type="button" className={primary} disabled={busy || !rec.canFinalize} data-testid="rec-finalize"
                                 title={failing.length ? failing.map(c => `• ${c.message}`).join("\n") : t("finalizeHint")}

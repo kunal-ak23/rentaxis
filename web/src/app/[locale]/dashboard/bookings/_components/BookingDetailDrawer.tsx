@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { X, Loader2, CalendarCheck, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { fetchBooking, approveBooking, rejectBooking, releaseBooking, ApiError } from "@/lib/api/facilities";
+import { fetchBooking, approveBooking, rejectBooking, releaseBooking, staffCancelBooking, ApiError } from "@/lib/api/facilities";
 import { codedOf, serverText } from "@/components/finance/bankrec/serverText";
 import type { BookingDetailDTO, BookingRequestDTO, BookingRequestStatus } from "@/types/facility";
 
@@ -84,13 +84,14 @@ export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDe
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  const act = async (action: "approve" | "reject" | "release") => {
+  const act = async (action: "approve" | "reject" | "release" | "cancel") => {
     setWorking(true);
     setError(null);
     try {
       let updated: BookingRequestDTO;
       if (action === "approve") updated = await approveBooking(bookingId, { adminNote: adminNote || undefined });
       else if (action === "reject") updated = await rejectBooking(bookingId, { adminNote: adminNote || undefined });
+      else if (action === "cancel") updated = await staffCancelBooking(bookingId, { adminNote: adminNote.trim() });
       else updated = await releaseBooking(bookingId);
       // Use the DTO the action response already carries — no extra round-trip.
       setDetail(prev => (prev ? { ...prev, request: updated } : prev));
@@ -102,7 +103,7 @@ export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDe
       // (another tab decided, or is deciding right now). Re-read the booking and show
       // its real state; while a competing decision is still committing, read again.
       if (status === 409 || code === "booking.notPending") {
-        const before = action === "release" ? "APPROVED" : "PENDING";
+        const before = action === "release" || action === "cancel" ? "APPROVED" : "PENDING";
         let fresh: BookingDetailDTO | null = null;
         for (let attempt = 0; attempt < 3; attempt++) {
           if (attempt > 0) await new Promise(r => setTimeout(r, DECIDED_RETRY_MS));
@@ -135,6 +136,9 @@ export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDe
   };
 
   const req = detail?.request;
+  // Follow-up ruling R12: the office cancels an approved amenity booking (a paid fee is credited back).
+  const cancellable = req?.status === "APPROVED" && req.resourceType === "AMENITY";
+  const hasActions = !!req && (req.status === "PENDING" || (req.status === "APPROVED" && req.resourceType === "PARKING_SPOT") || cancellable);
   const statusLabel = (s: BookingRequestStatus) => t(`status${s}`);
 
   return (
@@ -281,7 +285,7 @@ export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDe
         </div>
 
         {/* Footer actions */}
-        {req && (req.status === "PENDING" || (req.status === "APPROVED" && req.resourceType === "PARKING_SPOT")) && (
+        {req && hasActions && (
           <div className="shrink-0 px-6 py-4 border-t border-border bg-input/30 space-y-3">
             {error && <p className="text-xs font-semibold text-error">{error}</p>}
             {req.status === "PENDING" && (
@@ -325,10 +329,38 @@ export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDe
                 {working ? t("working") : t("release")}
               </button>
             )}
+            {cancellable && (
+              <>
+                <div>
+                  <label htmlFor="booking-cancel-reason" className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1">
+                    {t("cancelReasonLabel")}
+                  </label>
+                  <textarea
+                    id="booking-cancel-reason"
+                    data-testid="booking-cancel-reason"
+                    rows={2}
+                    maxLength={2000}
+                    dir={locale === "ar" ? "rtl" : "ltr"}
+                    className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 resize-none"
+                    value={adminNote}
+                    onChange={e => setAdminNote(e.target.value)}
+                  />
+                  <p className="text-[11px] text-muted mt-1">{t("cancelCreditHint")}</p>
+                </div>
+                <button
+                  data-testid="booking-staff-cancel"
+                  onClick={() => act("cancel")}
+                  disabled={working || !adminNote.trim()}
+                  className="w-full px-4 py-2.5 bg-error/10 text-error hover:bg-error/20 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-error/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {working ? t("working") : t("cancelBooking")}
+                </button>
+              </>
+            )}
           </div>
         )}
         {/* The footer is gone once the request is decided — the message must still show (F9). */}
-        {req && error && !(req.status === "PENDING" || (req.status === "APPROVED" && req.resourceType === "PARKING_SPOT")) && (
+        {req && error && !hasActions && (
           <div role="alert" className="shrink-0 px-6 py-4 border-t border-border text-xs font-semibold text-error">{error}</div>
         )}
         {!loading && !req && error && (

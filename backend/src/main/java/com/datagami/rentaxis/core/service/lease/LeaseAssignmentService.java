@@ -298,6 +298,18 @@ public class LeaseAssignmentService {
             throw new BusinessRuleViolationException("The assignment must take effect within the tenancy ("
                     + lease.getStartDate() + " to " + end + "), not " + r.effectiveDate() + ".");
         }
+        // Follow-up ruling R9 (100-j): the JV is dated E but moves the balances as they
+        // stand now. Dated before something already posted on the outgoing renter's side
+        // of this lease, it would move a balance that did not exist on E, so the books
+        // as at E would be wrong. Refused; date it on or after that posting.
+        LocalDate latest = latestPostingOf(lease, lease.getRenter().getId());
+        if (latest != null && r.effectiveDate().isBefore(latest)) {
+            String dmy = latest.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+            throw new BusinessRuleViolationException("The assignment cannot take effect before " + dmy + ": "
+                    + lease.getRenter().getNameEn() + " already has a posting on this lease dated " + dmy
+                    + ", and the hand-over moves the balances as they stand after it. Date it on or after " + dmy + ".",
+                    "lease.assignmentBeforeLatestPosting", Map.of("date", dmy, "from", lease.getRenter().getNameEn()));
+        }
         Renter to = renters.findById(r.toRenterId()).orElseThrow(() -> new NotFoundException("Renter not found"));
         UUID tenant = TenantContextHolder.getTenantId();
         if (tenant != null && !tenant.equals(to.getTenantId())) throw new NotFoundException("Renter not found");
@@ -373,6 +385,23 @@ public class LeaseAssignmentService {
                         rs.getObject("unit_id", UUID.class), rs.getObject("cheque_id", UUID.class),
                         rs.getBigDecimal("net").setScale(2, RoundingMode.HALF_UP)))
                 .stream().filter(g -> g.net().signum() != 0).toList();
+    }
+
+    /**
+     * Ruling R9: the latest journal date on the lease tagged to this renter (null when none),
+     * leaving out entries that were reversed and the reversals themselves (review P3-4): a pair
+     * nets to nothing on A. Binds tenant_id.
+     */
+    private LocalDate latestPostingOf(Lease lease, UUID renterId) {
+        return jdbc.queryForObject("""
+                select max(e.entry_date)
+                  from journal_lines l
+                  join journal_entries e on e.id = l.journal_entry_id
+                 where l.tenant_id = :t and e.tenant_id = :t
+                   and l.lease_id = :lease and l.renter_id = :renter
+                   and e.status <> 'REVERSED' and e.reversal_of_id is null""",
+                new MapSqlParameterSource("t", lease.getTenantId()).addValue("lease", lease.getId())
+                        .addValue("renter", renterId), LocalDate.class);
     }
 
     private UUID deferredVatLeaf(Lease lease) {

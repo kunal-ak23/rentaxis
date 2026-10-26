@@ -555,7 +555,30 @@ public class PenaltyAssessmentService {
         return reverse(id, date, note, true);
     }
 
+    /**
+     * Follow-up ruling R12 (101-d): staff cancel a booking whose fee the renter already
+     * paid. The charge is reversed like any other (its VAT on a tax credit note); the
+     * paid collection row stays as it is, so the money the renter paid is left as a
+     * credit on their receivable, which later charges net against or the settlement
+     * refunds. Staff only: the renter's own cancel is refused up front.
+     */
+    @Transactional
+    public PenaltyAssessmentDTO creditCollected(UUID id, LocalDate date, String note) {
+        return reverse(id, date, note, true, true);
+    }
+
+    /** Ruling R12: the status of the charge's collection row (null when it has none). */
+    @Transactional(readOnly = true)
+    public ChequeStatus collectionStatusOf(UUID id) {
+        return repository.findById(id).map(PenaltyAssessment::getCollectionCheque).map(Cheque::getStatus).orElse(null);
+    }
+
     private PenaltyAssessmentDTO reverse(UUID id, LocalDate date, String note, boolean checkAccess) {
+        return reverse(id, date, note, checkAccess, false);
+    }
+
+    private PenaltyAssessmentDTO reverse(UUID id, LocalDate date, String note, boolean checkAccess,
+                                         boolean creditWhenCollected) {
         PenaltyAssessment a = lock(id);
         if (checkAccess) leaseAccessPolicy.requireManageable(a.getLease());
         // PR #361 R1 P1-1: a written-off charge's receivable is already credited by the
@@ -577,7 +600,7 @@ public class PenaltyAssessmentService {
             throw new BusinessRuleViolationException("This charge's collection row is closed; it cannot be reversed.",
                     "penalty.collectionClosed", java.util.Map.of());
         }
-        if (collection != null && collection.getStatus() == ChequeStatus.CLEARED) {
+        if (collection != null && collection.getStatus() == ChequeStatus.CLEARED && !creditWhenCollected) {
             throw new BusinessRuleViolationException(
                     "Penalty was already collected; issue a refund/credit instead", "penalty.collected", java.util.Map.of());
         }
