@@ -206,28 +206,14 @@ class FinanceRegisterReportControllerIT extends AbstractPostgresIT {
 
     @Test
     void jsonXlsxAndCsvShowTheSameReportTotal() {
-        ReportGridDTO g = json("/tenant-ledger?" + Q);
-        ReportGridDTO.Item last = g.items().get(g.items().size() - 1);
-        assertThat(last.type()).isEqualTo("total");
-        BigDecimal jsonDebit = new BigDecimal(last.cells().get("debit"));
-        BigDecimal jsonCredit = new BigDecimal(last.cells().get("credit"));
-        BigDecimal jsonBalance = new BigDecimal(last.cells().get("balance"));
-        assertThat(jsonDebit).isEqualByComparingTo("53000");
+        // The receivable view: the PDRs credit what the TCO rows debit, so its balance is zero.
+        List<BigDecimal> receivable = sameReportTotalInEveryFormat(Q);
+        assertThat(receivable.get(0)).isEqualByComparingTo("53000");
 
-        XSSFRow total = reportTotalRow(sheet("/tenant-ledger.xlsx?" + Q));
-        List<BigDecimal> xlsx = IntStream.of(2, 3, 4).mapToObj(i -> {
-            Cell c = total.getCell(i);
-            assertThat(c.getCellType()).as("column %d", i).isEqualTo(CellType.NUMERIC);
-            return BigDecimal.valueOf(c.getNumericCellValue()).setScale(2, RoundingMode.HALF_UP);
-        }).toList();
-        assertThat(xlsx).isEqualTo(List.of(jsonDebit, jsonCredit, jsonBalance));
-
-        String csv = new String(file("/tenant-ledger.csv?" + Q).getBody(), StandardCharsets.UTF_8);
-        List<String> csvTotalFields = Arrays.stream(csv.split("\r\n"))
-                .filter(l -> l.startsWith("REPORT TOTAL"))
-                .findFirst().map(l -> Arrays.asList(l.split(",", -1))).orElseThrow();
-        assertThat(csvTotalFields).startsWith("REPORT TOTAL", "", jsonDebit.toPlainString(), jsonCredit.toPlainString(),
-                jsonBalance.toPlainString());
+        // A party ledger whose balance is not zero (2,000 Cr), so a sign or abs() slip in a file shows.
+        List<BigDecimal> adminFee = sameReportTotalInEveryFormat(Q + "&accountIds=" + adminFeeLeaf);
+        assertThat(adminFee.get(2).signum()).isNotZero();
+        assertThat(adminFee.get(2)).isEqualByComparingTo("-2000");
     }
 
     @Test
@@ -247,15 +233,18 @@ class FinanceRegisterReportControllerIT extends AbstractPostgresIT {
 
     @Test
     void anEmptySelectionExportsZeroTotals() {
-        XSSFRow total = reportTotalRow(sheet("/tenant-ledger.xlsx?" + Q + "&propertyId=" + emptyProperty));
-        assertThat(total.getCell(4).getNumericCellValue()).isEqualTo(0.0);
-        assertThat(json("/tenant-ledger?" + Q + "&propertyId=" + emptyProperty).items())
-                .extracting(ReportGridDTO.Item::type).containsExactly("total");
+        String q = Q + "&propertyId=" + emptyProperty;
+        XSSFRow total = reportTotalRow(sheet("/tenant-ledger.xlsx?" + q));
+        assertThat(xlsxTotals(total)).containsExactly(new BigDecimal("0.00"), new BigDecimal("0.00"),
+                new BigDecimal("0.00"));
+        List<ReportGridDTO.Item> items = json("/tenant-ledger?" + q).items();
+        assertThat(items).extracting(ReportGridDTO.Item::type).containsExactly("total");
+        for (String k : List.of("debit", "credit", "balance")) {
+            assertThat(new BigDecimal(items.get(0).cells().get(k))).as(k).isZero();
+        }
 
-        String csv = new String(file("/tenant-ledger.csv?" + Q + "&propertyId=" + emptyProperty).getBody(),
-                StandardCharsets.UTF_8);
-        assertThat(csv).contains("REPORT TOTAL");
-        ResponseEntity<byte[]> pdf = file("/tenant-ledger.pdf?" + Q + "&propertyId=" + emptyProperty);
+        assertThat(csvTotalFields("/tenant-ledger.csv?" + q)).startsWith("REPORT TOTAL", "", "0.00", "0.00", "0.00");
+        ResponseEntity<byte[]> pdf = file("/tenant-ledger.pdf?" + q);
         assertThat(pdf.getStatusCode().value()).isEqualTo(200);
         assertThat(new String(pdf.getBody(), 0, 5, ISO_8859_1)).isEqualTo("%PDF-");
     }
@@ -290,6 +279,43 @@ class FinanceRegisterReportControllerIT extends AbstractPostgresIT {
     }
 
     // ------------------------------------------------------------------
+
+    /**
+     * The REPORT TOTAL debit, credit and balance of one selection, checked equal across the JSON page, the
+     * workbook (numeric cells C to E) and the CSV.
+     */
+    private List<BigDecimal> sameReportTotalInEveryFormat(String query) {
+        ReportGridDTO g = json("/tenant-ledger?" + query);
+        ReportGridDTO.Item last = g.items().get(g.items().size() - 1);
+        assertThat(last.type()).as(query).isEqualTo("total");
+        List<BigDecimal> fromJson = List.of(new BigDecimal(last.cells().get("debit")),
+                new BigDecimal(last.cells().get("credit")), new BigDecimal(last.cells().get("balance")));
+
+        assertThat(xlsxTotals(reportTotalRow(sheet("/tenant-ledger.xlsx?" + query)))).as(query).isEqualTo(fromJson);
+        assertThat(csvTotalFields("/tenant-ledger.csv?" + query)).as(query).startsWith("REPORT TOTAL", "",
+                fromJson.get(0).toPlainString(), fromJson.get(1).toPlainString(), fromJson.get(2).toPlainString(),
+                fromJson.get(2).signum() >= 0 ? "Dr" : "Cr");
+        return fromJson;
+    }
+
+    /** Debit, credit and balance (columns C to E) of a workbook total row; each must be a real number cell. */
+    private static List<BigDecimal> xlsxTotals(XSSFRow total) {
+        return IntStream.of(2, 3, 4).mapToObj(i -> {
+            Cell c = total.getCell(i);
+            assertThat(c.getCellType()).as("column %d", i).isEqualTo(CellType.NUMERIC);
+            return BigDecimal.valueOf(c.getNumericCellValue()).setScale(2, RoundingMode.HALF_UP);
+        }).toList();
+    }
+
+    /** The fields of the CSV's REPORT TOTAL line. */
+    private List<String> csvTotalFields(String path) {
+        ResponseEntity<byte[]> r = file(path);
+        assertThat(r.getStatusCode().value()).as(path).isEqualTo(200);
+        String csv = new String(r.getBody(), StandardCharsets.UTF_8);
+        return Arrays.stream(csv.split("\r\n"))
+                .filter(l -> l.startsWith("REPORT TOTAL"))
+                .findFirst().map(l -> Arrays.asList(l.split(",", -1))).orElseThrow();
+    }
 
     private ResponseEntity<byte[]> file(String path) {
         return http.request(accountant, GET, BASE + path).retrieve().onStatus(s -> true, (req, res) -> { })
