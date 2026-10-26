@@ -8,6 +8,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * A tabular financial report as a PDF, English or Arabic (F14-10, #55): the
@@ -17,8 +18,9 @@ import java.util.List;
  * <p>The stack and resource policy of the property statement: openhtmltopdf, the
  * Noto fonts as classpath streams (the Arabic one shapes RTL text) and
  * {@link PdfResourcePolicy}, so nothing but inline {@code data:} URIs loads. Every
- * cell is escaped (account, property and document names are user-typed). Numbers
- * use Latin digits and sit in LTR spans, so a minus stays on the left in RTL.</p>
+ * cell and header line is escaped and loses the characters XML forbids (account,
+ * property, org and user names are user-typed). Numbers use Latin digits and sit
+ * in LTR spans, so a minus stays on the left in RTL.</p>
  *
  * <p>The header row sits in a {@code <thead>} that repeats on every page, every page
  * carries a "Page x / y" footer, and an optional organisation line sits above the
@@ -50,6 +52,9 @@ public final class ReportPdf {
             this(lang, title, meta, tables, notes, landscape, null);
         }
     }
+
+    /** What XML 1.0 does not allow in a document, even escaped. */
+    private static final Pattern XML_FORBIDDEN = Pattern.compile("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\uFFFE\\uFFFF]");
 
     /** Above this many columns a table is printed in landscape. */
     private static final int PORTRAIT_MAX_COLUMNS = 9;
@@ -139,9 +144,15 @@ public final class ReportPdf {
         return t.numeric() != null && c < t.numeric().size() && Boolean.TRUE.equals(t.numeric().get(c));
     }
 
+    /**
+     * {@code value} escaped for the XHTML the renderer parses. Characters XML 1.0 forbids (the C0
+     * controls but tab, newline and carriage return; U+FFFE, U+FFFF) are dropped first: the parser
+     * rejects them even as character references, so one in an org, property or user name failed the export.
+     */
     public static String esc(String value) {
         if (value == null) return "";
-        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;");
+        return XML_FORBIDDEN.matcher(value).replaceAll("")
+                .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;");
     }
 
     private static byte[] renderPdf(String html) {

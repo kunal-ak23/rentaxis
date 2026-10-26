@@ -148,6 +148,22 @@ class PdfGridSinkTest {
     }
 
     @Test
+    void controlCharactersInTheHeaderLinesStillRender() throws IOException {
+        // The org, filter and generated lines bypass cellText; a C0 control there broke the XHTML parse (a 500).
+        ReportMeta meta = new ReportMeta("sample", "tenantLedger.title", "Sample\u0001 Org",
+                List.of(new ReportFilter("filter.property", "Sample\u0007 Tower")),
+                LocalDate.of(2026, 9, 1), LocalDate.of(2027, 9, 30), null, SampleGrid.GENERATED_AT,
+                "Test\u0008 User", "en");
+        PdfGridSink sink = feed(meta, SampleGrid.COLUMNS, SampleGrid::feed);
+        byte[] pdf = sink.bytes();
+        assertThat(new String(pdf, 0, 5, StandardCharsets.ISO_8859_1)).isEqualTo("%PDF-");
+        try (PDDocument doc = Loader.loadPDF(pdf)) {
+            assertThat(visualOrder().getText(doc)).contains("Sample Org").contains("Sample Tower")
+                    .contains("Test User");
+        }
+    }
+
+    @Test
     void arabicAndAnEmptyGridStillRender() throws IOException {
         PdfGridSink ar = feed("ar", SampleGrid.COLUMNS, SampleGrid::feed);
         assertThat(ar.doc().lang()).isEqualTo("ar");
@@ -181,9 +197,13 @@ class PdfGridSinkTest {
     }
 
     private static PdfGridSink feed(String lang, List<ReportColumn> columns, Consumer<ReportWriter> feed) {
+        return feed(SampleGrid.meta(lang), columns, feed);
+    }
+
+    private static PdfGridSink feed(ReportMeta meta, List<ReportColumn> columns, Consumer<ReportWriter> feed) {
         PdfGridSink sink = new PdfGridSink();
-        ReportWriter w = new ReportWriter(sink, LABELS.bind(lang), 50_000);
-        w.begin(SampleGrid.meta(lang), columns);
+        ReportWriter w = new ReportWriter(sink, LABELS.bind(meta.lang()), 50_000);
+        w.begin(meta, columns);
         feed.accept(w);
         return sink;
     }

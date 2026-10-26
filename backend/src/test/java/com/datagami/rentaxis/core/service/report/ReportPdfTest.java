@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service.report;
 
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.IntStream;
@@ -62,6 +63,25 @@ class ReportPdfTest {
         String html = ReportPdf.html(new ReportPdf.Doc("en", "Tenant Ledger", List.of(), List.of(), List.of(), false,
                 "Sample & <Org>"));
         assertThat(html).contains("<div class=\"org\">Sample &amp; &lt;Org&gt;</div><h1>Tenant Ledger</h1>");
+    }
+
+    @Test
+    void escDropsWhatXmlForbidsAndKeepsTabsAndNewlines() {
+        assertThat(ReportPdf.esc("A\u0000\u0001\u0007\u0008\u000B\u000C\u000E\u001F\uFFFE\uFFFFb&<c>"))
+                .isEqualTo("Ab&amp;&lt;c&gt;");
+        assertThat(ReportPdf.esc("a\tb\nc\rd")).isEqualTo("a\tb\nc\rd");
+        assertThat(ReportPdf.esc(null)).isEmpty();
+    }
+
+    @Test
+    void controlCharactersInEveryTextSlotStillRender() {
+        // An old caller (VAT, balance sheet, P&L) with a control character in an account name or meta line.
+        var t = new ReportPdf.Table("Cap\u0002tion", List.of("A\u0003", "B"), List.of(false, true), List.of(
+                ReportPdf.Row.of(ReportPdf.Style.PLAIN, List.of("Rent\u0007 Income", "1.00")),
+                ReportPdf.Row.of(ReportPdf.Style.BAND_PARTY, List.of("Tenant\u0001 A"))));
+        byte[] pdf = ReportPdf.render(new ReportPdf.Doc("en", "T\u0004", List.of("Sample\u0007 Tower"), List.of(t),
+                List.of("n\u0005"), false, "Sample\u0001 Org"));
+        assertThat(new String(pdf, 0, 5, StandardCharsets.ISO_8859_1)).isEqualTo("%PDF-");
     }
 
     @Test
