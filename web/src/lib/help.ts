@@ -116,6 +116,7 @@ export const HELP_PAGE_MAP: Record<string, PageHelpEntry> = {
   '/dashboard/finance/reports/property-pl': REPORTS,
   '/dashboard/finance/reports/property-statement': REPORTS,
   '/dashboard/finance/reports/vat-return': { article: 'finance--month-end', videos: ['41'] },
+  '/dashboard/reports': REPORTS,
   '/dashboard/finance/fiscal': { article: 'finance--month-end', videos: ['46', '39'] },
   '/dashboard/finance/account-template': { article: 'finance--chart-of-accounts', videos: ['17'] },
   '/dashboard/finance/charge-types': { article: 'finance--chart-of-accounts', videos: ['17'] },
