@@ -8,6 +8,7 @@ import com.datagami.rentaxis.api.dto.ledger.AccountLedgerDTO;
 import com.datagami.rentaxis.api.dto.ledger.LedgerRowDTO;
 import com.datagami.rentaxis.api.dto.ledger.TrialBalanceRowDTO;
 import com.datagami.rentaxis.api.dto.recognition.RecognitionEntryDTO;
+import com.datagami.rentaxis.api.dto.report.ReportGridDTO;
 import com.datagami.rentaxis.core.service.AccountService;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.PropertyService;
@@ -20,6 +21,11 @@ import com.datagami.rentaxis.core.service.lease.ChargeTypeService;
 import com.datagami.rentaxis.core.service.lease.ChequeGenerationService;
 import com.datagami.rentaxis.core.service.lease.LeasePostingService;
 import com.datagami.rentaxis.core.service.recognition.RecognitionService;
+import com.datagami.rentaxis.core.service.report.grid.ExportFormat;
+import com.datagami.rentaxis.core.service.report.grid.ReportLabels;
+import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerFilter;
+import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerGrid;
+import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerReportService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Renter;
@@ -149,6 +155,8 @@ class GoldenLedgerTenantOneIT extends AbstractPostgresIT {
     @Autowired ChequeService cheques;
     @Autowired RecognitionService recognition;
     @Autowired LedgerQueryService ledger;
+    @Autowired TenantLedgerReportService tenantLedger;
+    @Autowired ReportLabels reportLabels;
 
     UUID propertyId;
     UUID renterId;
@@ -462,6 +470,41 @@ class GoldenLedgerTenantOneIT extends AbstractPostgresIT {
         assertThat(got.stream().mapToInt(LedgerDiff.RecognitionRow::days).sum()).isEqualTo(365);
         assertThat(recognition.scheduleFor(leaseId)).extracting(RecognitionEntryDTO::status)
                 .allMatch(s -> "POSTED".equals(s.name()));
+    }
+
+    /**
+     * The Tenant Ledger report (R1) on the replayed contract reads the export's receivable rows: the same
+     * documents in the same order, the same counter accounts and running balances, PACT's cheque columns and the
+     * bounced cheques' return class (reports spec §2). The fixture's twelve receivable rows are the TCO ×3, the
+     * PDR ×7 in grid order and the CBR ×2; cheques 6 and 7 bounced, so BDDays is 1 on their PDR rows and both CBRs.
+     */
+    @Test
+    void theTenantLedgerReportReproducesTheReceivableRows() {
+        replay();
+        ReportGridDTO g = TenantLedgerGrid.json(tenantLedger.export(new TenantLedgerFilter(LEDGER_FROM, LEDGER_TO, null,
+                List.of(), renterId, null, false, false, "en"), ExportFormat.XLSX, "golden"), reportLabels);
+        List<GoldenRow> expected = GoldenLedgerFixture.ledgerByAccount(LEDGER).get(RENT_RECEIVABLE);
+        List<ReportGridDTO.Item> rows = g.items().stream().filter(i -> i.type().equals("row")).toList();
+        assertThat(rows).hasSize(expected.size());
+        for (int i = 0; i < rows.size(); i++) {
+            Map<String, String> c = rows.get(i).cells();
+            GoldenRow e = expected.get(i);
+            assertThat(c.get("docDate")).as("row %d", i).isEqualTo(e.entryDate().toString());
+            assertThat(c.get("particular")).as("row %d", i).isEqualTo(e.particular());
+            assertThat(c.getOrDefault("debit", "0.00")).as("row %d", i).isEqualTo(e.debit().setScale(2).toPlainString());
+            assertThat(c.getOrDefault("credit", "0.00")).as("row %d", i).isEqualTo(e.credit().setScale(2).toPlainString());
+            assertThat(c.get("balance")).as("row %d", i).isEqualTo(e.balance().setScale(2).toPlainString());
+            assertThat(c.get("docNo")).as("row %d", i).startsWith(e.docType());
+        }
+        assertThat(g.items()).filteredOn(i -> i.type().equals("band")).extracting(ReportGridDTO.Item::label)
+                .containsExactly(RENT_RECEIVABLE, "Tenant Name : " + RENTER);
+        assertThat(rows.subList(3, 10)).extracting(i -> i.cells().get("chqNo"))
+                .containsExactly("000101", "000102", "000103", "000104", "000105", "000106", "000107");
+        assertThat(rows).extracting(i -> i.cells().get("bdDays"))
+                .containsExactly(null, null, null, null, null, null, null, null, "1", "1", "1", "1");
+        ReportGridDTO.Item total = g.items().get(g.items().size() - 1);
+        assertThat(total.cells()).containsEntry("debit", "77050.00").containsEntry("credit", "58050.00")
+                .containsEntry("balance", "19000.00");
     }
 
     @Test
