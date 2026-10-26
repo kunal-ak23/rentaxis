@@ -132,8 +132,12 @@ public class PropertyScope {
 
         public Selection {
             ids = List.copyOf(ids);
-            // Exactly one of: every property, no property, or the listed ones.
-            if ((unrestricted || empty) == !ids.isEmpty() || (unrestricted && empty)) {
+            // Exactly one of three shapes; anything else (e.g. "listed" with no ids, which would bind
+            // the sentinel and silently select nothing) is a programming error.
+            boolean all = unrestricted && !empty && ids.isEmpty();
+            boolean none = !unrestricted && empty && ids.isEmpty();
+            boolean listed = !unrestricted && !empty && !ids.isEmpty();
+            if (!(all || none || listed)) {
                 throw new IllegalArgumentException("A selection is unrestricted, empty, or lists its properties");
             }
         }

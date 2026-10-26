@@ -87,5 +87,10 @@ class PropertyScopeTest {
         assertThatThrownBy(() -> new PropertyScope.Selection(true, List.of(p1), false)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new PropertyScope.Selection(false, List.of(p1), true)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new PropertyScope.Selection(true, List.of(), true)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new PropertyScope.Selection(true, List.of(p1), true)).isInstanceOf(IllegalArgumentException.class);
+        // The three shapes that remain: every property, no property, the listed ones.
+        assertThat(new PropertyScope.Selection(true, List.of(), false).unrestricted()).isTrue();
+        assertThat(new PropertyScope.Selection(false, List.of(), true).empty()).isTrue();
+        assertThat(new PropertyScope.Selection(false, List.of(p1, p2), false).ids()).containsExactly(p1, p2);
     }
 }

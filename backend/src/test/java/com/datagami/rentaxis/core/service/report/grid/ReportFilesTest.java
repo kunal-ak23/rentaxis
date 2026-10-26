@@ -24,6 +24,21 @@ class ReportFilesTest {
     }
 
     @Test
+    void aClientThatReadsOnlyFilenameGetsAPlainAsciiName() {
+        // Spring's charset filename() writes an RFC 2047 "=?UTF-8?Q?…?=" fallback, which `curl -J` saves verbatim.
+        String ascii = ReportFiles.response(new byte[]{1}, ExportFormat.XLSX, "tenant-ledger-2026-09-01-2027-09-30.xlsx")
+                .getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION);
+        assertThat(ascii).isEqualTo("attachment; filename=\"tenant-ledger-2026-09-01-2027-09-30.xlsx\"; "
+                + "filename*=UTF-8''tenant-ledger-2026-09-01-2027-09-30.xlsx");
+        ResponseEntity<byte[]> arabic = ReportFiles.response(new byte[]{1}, ExportFormat.PDF, "دفتر \"A\".pdf");
+        assertThat(arabic.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION))
+                .doesNotContain("=?")
+                .startsWith("attachment; filename=\"____ _A_.pdf\"; filename*=UTF-8''");
+        // Spring reads filename* back first, so the real name survives the round trip.
+        assertThat(arabic.getHeaders().getContentDisposition().getFilename()).isEqualTo("دفتر \"A\".pdf");
+    }
+
+    @Test
     void eachFormatHasItsExtensionAndMediaType() {
         assertThat(ExportFormat.of("xlsx")).isEqualTo(ExportFormat.XLSX);
         assertThat(ExportFormat.of("pdf")).isEqualTo(ExportFormat.PDF);
