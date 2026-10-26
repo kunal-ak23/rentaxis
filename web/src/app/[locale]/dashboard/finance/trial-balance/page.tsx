@@ -260,7 +260,7 @@ export default function TrialBalancePage() {
         return (
             <>
                 <tr>
-                    <td colSpan={5} className="px-4 py-1.5 text-xs font-bold text-white" style={{ background: "#C8651B" }}>
+                    <td colSpan={5} className="px-4 py-1.5 text-xs font-bold bg-report-band text-report-band-fg">
                         {typeLabel(group.type)}
                     </td>
                 </tr>

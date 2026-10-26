@@ -63,6 +63,15 @@
   --sidebar-foreground:  #0B1F3A;
   --sidebar-muted:       #5C7494;
 
+  /* Report bands (PACT report layout) */
+  --report-band:         #C8651B;
+  --report-band-fg:      #FFFFFF;
+  --report-party:        #FFF4B8;
+  --report-party-fg:     #0B1F3A;
+  --report-group:        #7F7F7F;
+  --report-group-fg:     #FFFFFF;
+  --report-highlight:    #FAC08F;
+
   /* Typography */
   --font-sans:  'Inter', 'IBM Plex Sans Arabic', system-ui, sans-serif;
   --font-serif: 'Source Serif 4', Georgia, serif;
@@ -96,6 +105,14 @@
   --color-sidebar:             #FFFFFF;
   --color-sidebar-foreground:  #0B1F3A;
   --color-sidebar-muted:       rgba(11,31,58,0.45);
+  /* Report bands resolve through var() so dark mode switches them. */
+  --color-report-band:         var(--report-band);
+  --color-report-band-fg:      var(--report-band-fg);
+  --color-report-party:        var(--report-party);
+  --color-report-party-fg:     var(--report-party-fg);
+  --color-report-group:        var(--report-group);
+  --color-report-group-fg:     var(--report-group-fg);
+  --color-report-highlight:    var(--report-highlight);
   --font-sans:   'Inter', 'IBM Plex Sans Arabic', system-ui, sans-serif;
   --font-serif:  'Source Serif 4', Georgia, serif;
   --font-mono:   'JetBrains Mono', ui-monospace, monospace;
@@ -116,6 +133,13 @@
     --sidebar:             #0A1424;
     --sidebar-foreground:  #F2F5F9;
     --sidebar-muted:       #7E8FAA;
+    --report-band:         #9A4A12;
+    --report-band-fg:      #FFF4EA;
+    --report-party:        #4A4210;
+    --report-party-fg:     #F2F5F9;
+    --report-group:        #3A4558;
+    --report-group-fg:     #F2F5F9;
+    --report-highlight:    #5A3A1C;
   }
 }
 
