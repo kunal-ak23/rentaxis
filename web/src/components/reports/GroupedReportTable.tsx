@@ -19,7 +19,7 @@ const NUMERIC = new Set<GridColumn["kind"]>(["MONEY", "BALANCE", "INT", "SERIAL"
  * A free-text column's minimum width. Figures, dates and ids never wrap, so without a floor the
  * browser takes all the shortfall out of the text: a Particular broke onto four lines.
  */
-const TEXT_MIN_WIDTH = "20ch";
+const TEXT_MIN_WIDTH = "14ch";
 
 const BAND_CLASS: Record<NonNullable<GridItem["band"]>, string> = {
     ACCOUNT: "bg-report-band text-report-band-fg font-bold",

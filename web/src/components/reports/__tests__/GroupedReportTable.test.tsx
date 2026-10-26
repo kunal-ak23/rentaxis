@@ -139,10 +139,10 @@ describe("GroupedReportTable", () => {
         expect(screen.getByTestId("grid-band-1").querySelector("td")).toHaveClass("text-report-band-fg");
     });
 
-    it("gives text columns a 20ch floor and leaves every other kind at its natural width", () => {
+    it("gives text columns a 14ch floor and leaves every other kind at its natural width", () => {
         const columns = [
             { key: "particular", label: "Particular", kind: "TEXT" as const, hidden: false, link: null },
-            // The Excel width is not the screen's: a text column gets 20ch whatever the server says.
+            // The Excel width is not the screen's: a text column gets 14ch whatever the server says.
             { key: "bank", label: "Payee Bank", kind: "TEXT" as const, hidden: false, link: null, widthChars: 36 },
             { key: "ref", label: "Ref", kind: "ID_TEXT" as const, hidden: false, link: null, widthChars: 14 },
             { key: "date", label: "Date", kind: "DATE" as const, hidden: false, link: null, widthChars: 12 },
@@ -159,7 +159,7 @@ describe("GroupedReportTable", () => {
         render(<GroupedReportTable grid={{ ...grid, columns, items }} />);
         const header = (name: string) => screen.getByRole("columnheader", { name });
         for (const name of ["Particular", "Payee Bank"]) {
-            expect((header(name).firstElementChild as HTMLElement).style.minWidth).toBe("20ch");
+            expect((header(name).firstElementChild as HTMLElement).style.minWidth).toBe("14ch");
         }
         const cells = screen.getByTestId("grid-row").querySelectorAll("td");
         expect(cells[0]).not.toHaveClass("whitespace-nowrap");
@@ -173,7 +173,7 @@ describe("GroupedReportTable", () => {
 
     it("fits the tenant ledger with tight padding and scrolls inside its own box, never the page", () => {
         render(<GroupedReportTable grid={grid} />);
-        expect(screen.getByRole("columnheader", { name: "Particular" }).firstElementChild).toHaveStyle({ minWidth: "20ch" });
+        expect(screen.getByRole("columnheader", { name: "Particular" }).firstElementChild).toHaveStyle({ minWidth: "14ch" });
         expect(screen.getByRole("columnheader", { name: "Debit" })).toHaveClass("px-2");
         expect(screen.getAllByTestId("grid-row")[0].querySelector("td")).toHaveClass("px-2");
         expect(screen.getByTestId("grid-band-1").querySelector("td")).toHaveClass("px-2");
