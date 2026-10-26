@@ -80,6 +80,14 @@ public final class XlsxGridSink implements ReportSink, AutoCloseable {
     private static final int MAX_WIDTH_CHARS = 255;
     private static final float TITLE_MIN_HEIGHT = 64f;
     private static final float TITLE_LINE_HEIGHT = 15.75f;
+    /**
+     * How many column-width units (the width of one digit in the default 11 pt font) one character
+     * of the 12 pt bold title takes. Generous on purpose: an over-tall band only adds space, a short
+     * one cuts off the "Generated … by …" line.
+     */
+    private static final double TITLE_CHAR_WIDTH = 1.25;
+    /** Excel's largest row height in points. */
+    private static final float MAX_ROW_HEIGHT = 409f;
     private static final float LAST_ROW_HEIGHT = 11.25f;
 
     private static final Logger log = LoggerFactory.getLogger(XlsxGridSink.class);
@@ -186,15 +194,15 @@ public final class XlsxGridSink implements ReportSink, AutoCloseable {
             }
         }
 
-        List<String> titleLines = Stream.concat(
+        String titleText = Stream.concat(
                         Stream.concat(Stream.of(header.orgName(), header.title()), header.metaLines().stream()),
                         Stream.of(header.generatedLine()))
                 .filter(s -> s != null && !s.isBlank())
-                .toList();
+                .collect(Collectors.joining("\n"));
         Row title = newRow();
-        title.setHeightInPoints(Math.max(TITLE_MIN_HEIGHT, titleLines.size() * TITLE_LINE_HEIGHT));
+        title.setHeightInPoints(titleHeight(ReportFormat.cellText(titleText)));
         fill(title, styles.title().plain());
-        text(title.getCell(0), titleLines.stream().collect(Collectors.joining("\n")), styles.title());
+        text(title.getCell(0), titleText, styles.title());
         merge(title.getRowNum(), 0, lastCol);
 
         Row head = newRow();
@@ -357,6 +365,27 @@ public final class XlsxGridSink implements ReportSink, AutoCloseable {
         if (lastColumn > firstCol) {
             sheet.addMergedRegionUnsafe(new CellRangeAddress(row, row, firstCol, lastColumn));
         }
+    }
+
+    /**
+     * The title band's height: one {@link #TITLE_LINE_HEIGHT} per visual line, at least
+     * {@link #TITLE_MIN_HEIGHT}, at most Excel's row maximum. A line longer than the merged band wraps,
+     * so each one counts as {@code ceil(chars × TITLE_CHAR_WIDTH / visible width)} lines; the visible
+     * width is the summed width of the columns that are not hidden, in the same character units.
+     */
+    private float titleHeight(String text) {
+        int visibleWidth = 0;
+        for (ReportColumn c : columns) {
+            if (!c.hidden()) {
+                visibleWidth += Math.min(c.widthChars(), MAX_WIDTH_CHARS);
+            }
+        }
+        double perLine = Math.max(1, visibleWidth) / TITLE_CHAR_WIDTH;
+        int lines = 0;
+        for (String line : text.split("\\R", -1)) {
+            lines += Math.max(1, (int) Math.ceil(line.codePointCount(0, line.length()) / perLine));
+        }
+        return Math.min(MAX_ROW_HEIGHT, Math.max(TITLE_MIN_HEIGHT, lines * TITLE_LINE_HEIGHT));
     }
 
     private float bandHeight(Band band) {

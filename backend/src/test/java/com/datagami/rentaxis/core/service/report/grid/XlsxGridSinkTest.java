@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service.report.grid;
 
+import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.HorizontalAlignment;
@@ -56,6 +57,30 @@ class XlsxGridSinkTest {
         assertThat(s.getColumnWidth(1)).isEqualTo(36 * 256);
         assertThat(s.getWorkbook().getSheetName(0)).isEqualTo("Tenant Ledger");
         assertThat(s.isRightToLeft()).isFalse();
+        assertThat(s.getRow(0).getHeightInPoints()).isEqualTo(5 * 15.75f); // org, title, period, filter, generated
+    }
+
+    @Test
+    void theTitleBandGrowsForLinesThatWrap() {
+        List<ReportFilter> filters = new ArrayList<>();
+        for (int i = 1; i <= 8; i++) {
+            filters.add(new ReportFilter("filter.property", "Sample Tower Block " + i + " East Wing"));
+        }
+        ReportMeta many = new ReportMeta("sample", "tenantLedger.title", "Sample Org", filters,
+                LocalDate.of(2026, 9, 1), LocalDate.of(2027, 9, 30), null, SampleGrid.GENERATED_AT, "Test User", "en");
+        XSSFSheet s = render(XlsxStyle.TENANT_LEDGER, many, SampleGrid.COLUMNS, SampleGrid::feed);
+        String filterLine = s.getRow(0).getCell(0).getStringCellValue().split("\n")[3];
+        assertThat(filterLine).startsWith("Property: Sample Tower Block 1").endsWith("Block 8 East Wing");
+        int visibleWidth = SampleGrid.COLUMNS.stream().mapToInt(ReportColumn::widthChars).sum();
+        int filterLines = (int) Math.ceil((double) filterLine.length() / visibleWidth); // even at one unit a character
+        assertThat(filterLines).isGreaterThanOrEqualTo(3);
+        assertThat(s.getRow(0).getHeightInPoints()).isGreaterThanOrEqualTo((4 + filterLines) * 15.75f);
+
+        // Hidden columns add no width: on a one-column sheet the 39-character generated line wraps too.
+        List<ReportColumn> narrow = SampleGrid.COLUMNS.stream()
+                .map(c -> c.key().equals("particular") ? c : c.hiddenColumn()).toList();
+        XSSFSheet n = render(XlsxStyle.TENANT_LEDGER, "en", narrow, SampleGrid::feed);
+        assertThat(n.getRow(0).getHeightInPoints()).isGreaterThanOrEqualTo(6 * 15.75f);
     }
 
     @Test
@@ -114,8 +139,8 @@ class XlsxGridSinkTest {
         XSSFCellStyle data = (XSSFCellStyle) tco.getCell(1).getCellStyle();
         assertThat(data.getFont().getFontName()).isEqualTo("Calibri");
         assertThat(data.getFont().getFontHeightInPoints()).isEqualTo((short) 9);
-        assertThat(data.getBorderTop()).isEqualTo(org.apache.poi.ss.usermodel.BorderStyle.THIN);
-        assertThat(data.getBorderBottom()).isEqualTo(org.apache.poi.ss.usermodel.BorderStyle.THIN);
+        assertThat(data.getBorderTop()).isEqualTo(BorderStyle.THIN);
+        assertThat(data.getBorderBottom()).isEqualTo(BorderStyle.THIN);
     }
 
     @Test
@@ -148,8 +173,8 @@ class XlsxGridSinkTest {
     void userTextIsCleanedAndQuotedInBandsAndCells() {
         XSSFSheet s = render(XlsxStyle.PACT, "en", SampleGrid.COLUMNS, w -> {
             w.openGroup(1, Band.GROUP, "=Block‏ A");
-            w.row(SampleGrid.cells("particular", "@SUM(1)", "chqNo", "+000301", "docNo", "-1"), RowStyle.HIGHLIGHT,
-                    Map.of());
+            w.row(SampleGrid.cells("particular", "@SUM(1)", "chqNo", "+000301", "payeeBank", "\u200F=Tenant",
+                    "docNo", "\u200E-1"), RowStyle.HIGHLIGHT, Map.of());
             w.closeGroup("Sub Total");
             w.end();
         });
@@ -166,7 +191,12 @@ class XlsxGridSinkTest {
         assertThat(row.getCell(5).getStringCellValue()).isEqualTo("+000301");
         assertThat(row.getCell(5).getCellStyle().getQuotePrefixed()).isTrue();
         assertThat(row.getCell(5).getCellStyle().getDataFormatString()).isEqualTo("@");
+        // A leading bidi mark is stripped first, so the quote decision sees the "=" / "-" it hid.
+        assertThat(row.getCell(6).getStringCellValue()).isEqualTo("=Tenant");
+        assertThat(row.getCell(6).getCellStyle().getQuotePrefixed()).isTrue();
+        assertThat(row.getCell(9).getStringCellValue()).isEqualTo("-1");
         assertThat(row.getCell(9).getCellStyle().getQuotePrefixed()).isTrue();
+        assertThat(row.getCell(9).getCellStyle().getDataFormatString()).isEqualTo("@");
         s.forEach(r -> r.forEach(cell -> assertThat(cell.getCellType()).isNotEqualTo(CellType.FORMULA)));
     }
 
@@ -339,10 +369,14 @@ class XlsxGridSinkTest {
     }
 
     private static XSSFSheet render(XlsxStyle style, String lang, List<ReportColumn> columns, Consumer<ReportWriter> feed) {
+        return render(style, SampleGrid.meta(lang), columns, feed);
+    }
+
+    private static XSSFSheet render(XlsxStyle style, ReportMeta meta, List<ReportColumn> columns, Consumer<ReportWriter> feed) {
         byte[] bytes;
         try (XlsxGridSink sink = new XlsxGridSink(style)) {
-            ReportWriter w = new ReportWriter(sink, LABELS.bind(lang), 50_000);
-            w.begin(SampleGrid.meta(lang), columns);
+            ReportWriter w = new ReportWriter(sink, LABELS.bind(meta.lang()), 50_000);
+            w.begin(meta, columns);
             feed.accept(w);
             bytes = sink.bytes();
         }
