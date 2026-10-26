@@ -1,0 +1,56 @@
+# Sim round 21 S21-04: the seeded BANK leaf pattern was "Emirates Islamic - {property}",
+# one client's bank, so every organisation's property bank leaves were named after
+# Emirates Islamic whichever bank account owns them ("100087 Emirates Islamic - Al Wasl
+# Square belongs to bank account Emirates NBD ..."). The seed is now
+# "Bank - {property}", and a bank account that takes a leaf still carrying the
+# template's name renames it after its bank (OwnedBankLeaf). For existing data:
+#
+# 1. A BANK-subtype leaf scoped to a property, owned by a bank account (any), whose name
+#    is exactly the old default "Emirates Islamic - <that property's English name>" and
+#    whose owner's bank is not Emirates Islamic, becomes "<owner's bank name> - <property
+#    name>". Only that exact, untouched name changes: a hand-typed name is kept, a leaf
+#    no bank account owns is left alone (it is renamed when one adopts it), and a leaf
+#    Emirates Islamic owns keeps its name. accounts.name changes, and name_en with it
+#    when name_en still held the old name (the Chart of Accounts shows and saves
+#    name_en; review P2-1); a distinct typed name_en is kept. name_ar is the generic
+#    "bank account" label.
+# 2. An organisation's BANK template row still on the old seeded pattern becomes the
+#    neutral one, unless the organisation banks with Emirates Islamic (then the old
+#    pattern names its bank and is left as it is).
+#
+# Tenant-scoped (every join is on tenant_id) and idempotent: a renamed leaf no longer
+# has the old default name, and a changed template row no longer has the old pattern.
+# Preview: .superpowers/agents/prod-check-176-predeploy.sql (read-only).
+databaseChangeLog:
+  - changeSet:
+      id: 176-bank-leaf-default-name
+      author: claude
+      changes:
+        - sql:
+            comment: Property bank leaves still on the old default name take their owner's bank name
+            splitStatements: false
+            sql: |
+              UPDATE accounts a
+                 SET name = ob.bank_name || ' - ' || p.name_en,
+                     name_en = CASE WHEN a.name_en IS NULL OR a.name_en = a.name
+                                    THEN ob.bank_name || ' - ' || p.name_en ELSE a.name_en END,
+                     updated_at = CURRENT_TIMESTAMP
+                FROM bank_account_ledgers l, bank_accounts ob, properties p
+               WHERE l.account_id = a.id AND l.tenant_id = a.tenant_id
+                 AND ob.id = l.bank_account_id AND ob.tenant_id = l.tenant_id
+                 AND p.id = a.property_id AND p.tenant_id = a.tenant_id
+                 AND a.account_sub_type = 'BANK' AND NOT a.is_group
+                 AND a.name = 'Emirates Islamic - ' || p.name_en
+                 AND ob.bank_name <> 'Emirates Islamic';
+        - sql:
+            comment: The BANK template's old seeded pattern becomes the neutral one where the organisation does not bank with Emirates Islamic
+            splitStatements: false
+            sql: |
+              UPDATE property_account_template_rows t
+                 SET name_pattern = 'Bank - {property}'
+               WHERE t.role = 'BANK' AND t.name_pattern = 'Emirates Islamic - {property}'
+                 AND NOT EXISTS (SELECT 1 FROM bank_accounts b
+                                  WHERE b.tenant_id = t.tenant_id AND b.bank_name = 'Emirates Islamic');
+      rollback:
+        - sql:
+            sql: SELECT 1

@@ -319,6 +319,7 @@ public class BankStatementImportService {
         imp.setLastDate(r.rows().stream().map(StatementMapper.Row::txnDate).max(Comparator.naturalOrder()).orElse(null));
         imp.setOpeningBalance(r.openingBalance());
         imp.setClosingBalance(r.closingBalance());
+        imp.setClosingRowDate(r.closingRowDate());
         imp.setWarnings(warnings);
         imp.setImportedBy(currentUserId());
         imp = imports.saveAndFlush(imp);
@@ -759,7 +760,7 @@ public class BankStatementImportService {
                         .filter(c -> known.contains(c.trim().replaceFirst("^0+(?=.)", ""))).findFirst().orElse(null)))
                 .toList();
         return new StatementMapper.Result(rows, r.errors(), r.warnings(), r.missingColumns(), r.openingBalance(),
-                r.closingBalance(), r.hasBalance(), r.order(), r.openingRow(), r.closingRow());
+                r.closingBalance(), r.hasBalance(), r.order(), r.openingRow(), r.closingRow(), r.closingRowDate());
     }
 
     /** One hash per row; {@code occurrence} counts identical lines (same day, amount, description) earlier in the file. */
@@ -879,7 +880,9 @@ public class BankStatementImportService {
                 select distinct l.import_id from bank_statement_lines l
                 join bank_match_statement_lines ml on ml.statement_line_id = l.id
                 join bank_matches m on m.id = ml.match_id and m.status <> 'SUGGESTED'
-                where l.tenant_id = :t and l.bank_account_id = :b""",
+                where l.tenant_id = :t and l.bank_account_id = :b
+                  and """ + ONLY_THIS_IMPORT + """
+                """,
                 new MapSqlParameterSource("t", t).addValue("b", bankAccountId), UUID.class));
         return imports.findByBankAccountIdOrderByImportedAtDesc(bankAccountId).stream()
                 .map(i -> new BankRecDTOs.ImportRow(i.getId(), i.getFileName(), i.getLinesRead(), i.getLinesNew(),
@@ -890,9 +893,22 @@ public class BankStatementImportService {
     }
 
     /**
+     * The stored line {@code l} would go with its import: no other import brought it
+     * (review P3-15: a line another import also brought stays, re-attributed to it).
+     */
+    static final String ONLY_THIS_IMPORT = " not exists (select 1 from bank_statement_line_sources s"
+            + " where s.line_id = l.id and s.tenant_id = l.tenant_id and s.import_id <> l.import_id) ";
+
+    /**
      * Delete import (spec §3): its lines go, while none of them is in a CONFIRMED
      * match. An undone match is the audit trail the spec keeps (PR #353 review), so
      * a line with any match history also holds its import; only suggestions go.
+     *
+     * <p>Sim r21 S21-03: only the lines that actually go count. A line another import
+     * also brought stays — the same row, re-attributed, with its matches and their
+     * history untouched — so it holds nothing. That is what makes "import one
+     * statement holding the day whole, then delete the partial imports" work after
+     * the lines were matched and confirmed.</p>
      */
     @Transactional
     public void delete(UUID importId) {
@@ -915,16 +931,18 @@ public class BankStatementImportService {
                 select count(*) from bank_statement_lines l
                 join bank_match_statement_lines ml on ml.statement_line_id = l.id and not ml.released
                 join bank_matches m on m.id = ml.match_id and m.status = 'CONFIRMED'
-                where l.tenant_id = :t and l.import_id = :i""", p, Integer.class);
+                where l.tenant_id = :t and l.import_id = :i and """ + ONLY_THIS_IMPORT, p, Integer.class);
         if (confirmed != null && confirmed > 0) {
-            throw BankRecRefusal.refuse("importLinesConfirmed", confirmed + " line(s) of this import are in confirmed matches; "
-                    + "undo those matches first", "count", confirmed);
+            throw BankRecRefusal.refuse("importLinesConfirmed", confirmed + " line(s) only this import brought are in "
+                    + "confirmed matches; undo those matches first. Lines another import also holds are kept with their "
+                    + "matches, so importing a statement that holds these lines too, before deleting, also works.",
+                    "count", confirmed);
         }
         Integer history = jdbc.queryForObject("""
                 select count(*) from bank_statement_lines l
                 join bank_match_statement_lines ml on ml.statement_line_id = l.id
                 join bank_matches m on m.id = ml.match_id and m.status = 'UNDONE'
-                where l.tenant_id = :t and l.import_id = :i""", p, Integer.class);
+                where l.tenant_id = :t and l.import_id = :i and """ + ONLY_THIS_IMPORT, p, Integer.class);
         if (history != null && history > 0) {
             throw BankRecRefusal.refuse("importHasHistory", "Lines of this import have match history (undone matches), "
                     + "which is kept as the audit trail; the import cannot be deleted");
@@ -933,7 +951,7 @@ public class BankStatementImportService {
                 select distinct ml.match_id from bank_match_statement_lines ml
                 join bank_statement_lines l on l.id = ml.statement_line_id
                 join bank_matches m on m.id = ml.match_id and m.status = 'SUGGESTED'
-                where l.tenant_id = :t and l.import_id = :i""", p, UUID.class);
+                where l.tenant_id = :t and l.import_id = :i and """ + ONLY_THIS_IMPORT, p, UUID.class);
         if (!matches.isEmpty()) {
             MapSqlParameterSource mp = new MapSqlParameterSource("t", t).addValue("m", matches);
             jdbc.update("delete from bank_match_statement_lines where tenant_id = :t and match_id in (:m)", mp);
