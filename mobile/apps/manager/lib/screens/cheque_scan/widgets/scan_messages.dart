@@ -69,9 +69,47 @@ String attachRefusalMessage(String reason, bool ar) {
       return ar
           ? 'تم ربط شيكين بالقسط نفسه.'
           : 'Two cheques are mapped to the same instalment.';
+    case 'duplicate_image_in_request':
+      return ar
+          ? 'تم إرسال الصورة نفسها لشيكين.'
+          : 'The same image was sent for two cheques.';
+    case 'cheque_not_in_lease':
+      return ar
+          ? 'هذا القسط لا ينتمي إلى العقد المختار.'
+          : 'That instalment is not on the selected lease.';
+    case 'cheque_not_found':
+      return ar
+          ? 'لم يعد هذا القسط موجودًا. أعد التحميل وحاول مجددًا.'
+          : 'That instalment no longer exists. Reload and try again.';
+    case 'cheque_not_a_pdc':
+      return ar
+          ? 'هذا القسط ليس شيكًا مؤجلًا، فلا يمكن إرفاق صورة به.'
+          : 'That instalment is not a post-dated cheque, so a scan cannot be attached.';
     default:
       return ar
           ? 'تعذّر الحفظ ($reason). أعد التحميل وحاول مجددًا.'
           : 'Could not save ($reason). Reload and try again.';
   }
+}
+
+/// A call that never reached the server, or got no readable answer.
+String networkErrorMessage(bool ar) => ar
+    ? 'خطأ في الشبكة. يرجى المحاولة مرة أخرى.'
+    : 'Network error. Please try again.';
+
+/// The web's `amountMismatchConfirm` tick, for a picked row whose amount
+/// differs from the cheque's by more than AED 1.
+String amountConfirmLabel(bool ar) => ar
+    ? 'المبلغ على الشيك يختلف عن هذا القسط — إرفاق على أي حال'
+    : 'The amount on the cheque differs from this instalment — attach anyway';
+String amountConfirmMissing(bool ar) =>
+    ar ? 'تأكيد اختلاف المبلغ' : 'confirm the amount difference';
+
+/// "N cheques" in Arabic with the noun agreeing with the count: 1 شيك واحد,
+/// 2 شيكان (شيكين after a verbal noun), 3–10 شيكات, 11+ شيكًا.
+String arCheques(int n, {bool genitive = false}) {
+  if (n == 1) return 'شيك واحد';
+  if (n == 2) return genitive ? 'شيكين' : 'شيكان';
+  if (n <= 10) return '$n شيكات';
+  return '$n شيكًا';
 }

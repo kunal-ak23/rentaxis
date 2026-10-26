@@ -16,16 +16,14 @@ import 'steps/step3_multi_review.dart';
 import 'steps/step4_success.dart';
 import 'widgets/scan_messages.dart';
 
-/// Upload + OCR client for the wizard. Overridable in tests.
-final chequeScanExtractionServiceProvider = Provider<ChequeExtractionService>((
+final _chequeExtractionServiceProvider = Provider<ChequeExtractionService>((
   ref,
 ) {
   final client = ref.watch(apiClientProvider);
   return ChequeExtractionService(client.dio);
 });
 
-/// The v2 cheque register client for the wizard. Overridable in tests.
-final chequeRegisterApiProvider = Provider<ChequeRegisterApi>((ref) {
+final _chequeRegisterApiProvider = Provider<ChequeRegisterApi>((ref) {
   final client = ref.watch(apiClientProvider);
   return ChequeRegisterApi(client.dio);
 });
@@ -48,14 +46,8 @@ final chequeRegisterApiProvider = Provider<ChequeRegisterApi>((ref) {
 ///                       MISMATCH the operator has not confirmed — chained
 ///                       with PUT /cheques/{id}/deposit for Deposit today.
 ///   Step 4 (Success)  → receipt + scan-another / done
-///
-/// v2 retired payment schedules, and with them PUT /payments/{id}/collect:
-/// a scan now lands on a row of the lease's cheque register.
-///
-/// If [chequeId] is supplied (a register row), it is pre-selected.
 class ChequeScanFlowScreen extends ConsumerStatefulWidget {
-  final String? chequeId;
-  const ChequeScanFlowScreen({super.key, this.chequeId});
+  const ChequeScanFlowScreen({super.key});
 
   @override
   ConsumerState<ChequeScanFlowScreen> createState() =>
@@ -73,39 +65,19 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
   String? _submitError;
   int _attachedCount = 1;
 
-  @override
-  void initState() {
-    super.initState();
-    if (widget.chequeId != null) {
-      _fetchTarget(widget.chequeId!);
-    }
-  }
-
-  Future<void> _fetchTarget(String chequeId) async {
-    try {
-      final row = await ref.read(chequeRegisterApiProvider).getCheque(chequeId);
-      if (!mounted) return;
-      // Only a row a scan can land on is preselected.
-      if (isScannableRow(row)) setState(() => _target = row);
-    } catch (_) {
-      // Non-fatal — user can still pick manually.
-    }
-  }
-
   Future<void> _onCaptured(File file) async {
     setState(() {
       _captured = file;
       _step = 2;
       _scan = null;
       _extractionError = null;
+      // A new photo is a new match: the previous cheque's row does not carry.
+      _target = null;
+      _submitError = null;
     });
     try {
-      final svc = ref.read(chequeScanExtractionServiceProvider);
-      // One key per file: a retry the server already answered gets that
-      // answer back instead of a second stored scan.
-      final key =
-          'mobile-${DateTime.now().microsecondsSinceEpoch}-${file.path.hashCode}';
-      final result = await svc.extractMany(file, idempotencyKey: key);
+      final svc = ref.read(_chequeExtractionServiceProvider);
+      final result = await svc.extractMany(file);
       if (!mounted) return;
       if (result.items.isEmpty) {
         throw ChequeUploadRefused('No cheque found', null);
@@ -121,7 +93,7 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
       setState(() {
         _extractionError = e is ChequeUploadRefused
             ? uploadErrorMessage(e.code, e.message, ar)
-            : uploadErrorMessage(null, errorMessage(e, e.toString()), ar);
+            : errorMessage(e, networkErrorMessage(ar));
       });
     }
   }
@@ -134,7 +106,7 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (sheetCtx) =>
-          ChequeTargetPickerSheet(api: ref.read(chequeRegisterApiProvider)),
+          ChequeTargetPickerSheet(api: ref.read(_chequeRegisterApiProvider)),
     );
   }
 
@@ -146,16 +118,12 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
   String _attachError(Object e) {
     final ar = context.isAr;
     if (e is BulkAttachRefused) {
-      return e.rows
-          .map((r) => r.reason)
+      return e.reasons
           .toSet()
           .map((r) => attachRefusalMessage(r, ar))
           .join('\n');
     }
-    return errorMessage(
-      e,
-      ar ? 'تعذّر الحفظ. حاول مرة أخرى.' : 'Could not save. Please try again.',
-    );
+    return errorMessage(e, networkErrorMessage(ar));
   }
 
   Future<void> _onConfirm({
@@ -177,7 +145,7 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
     });
     var attached = false;
     try {
-      final api = ref.read(chequeRegisterApiProvider);
+      final api = ref.read(_chequeRegisterApiProvider);
       await api.bulkAttach(target['leaseId'].toString(), [
         buildAttachItem(
           chequeId: chequeId,
@@ -226,7 +194,7 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
       _submitError = null;
     });
     try {
-      await ref.read(chequeRegisterApiProvider).bulkAttach(leaseId, items);
+      await ref.read(_chequeRegisterApiProvider).bulkAttach(leaseId, items);
       if (!mounted) return;
       setState(() {
         _target = leaseRow;
@@ -254,10 +222,7 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
       _submitting = false;
       _attachedCount = 1;
       _disposition = Disposition.depositToday; // reset to default
-      // Keep the preselected row only if it came in via deep link.
-      if (widget.chequeId == null) {
-        _target = null;
-      }
+      _target = null;
     });
   }
 
@@ -313,9 +278,8 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
         if (scan.items.length > 1) {
           return Step3MultiReview(
             scan: scan,
-            initialTarget: _target,
             onPickLease: _openPicker,
-            loadLeaseRows: ref.read(chequeRegisterApiProvider).leaseCheques,
+            loadLeaseRows: ref.read(_chequeRegisterApiProvider).leaseCheques,
             onSubmit: _onSubmitMulti,
             submitting: _submitting,
             submitError: _submitError,
@@ -325,8 +289,8 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
         }
         return Step3Confirm(
           result: scan.items.first,
-          matchedPayment: _target,
-          onPickPayment: _pickTarget,
+          matchedCheque: _target,
+          onPickCheque: _pickTarget,
           onBack: () => setState(() => _step = 1),
           onConfirm: _onConfirm,
           submitting: _submitting,
@@ -336,7 +300,7 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
       case 4:
         return Step4Success(
           result: _scan!.items.first,
-          matchedPayment: _target,
+          matchedCheque: _target,
           disposition: _disposition,
           attachedCount: _attachedCount,
           onScanAnother: _resetForAnother,
@@ -446,7 +410,7 @@ class _ChequeTargetPickerSheetState extends State<ChequeTargetPickerSheet> {
             ),
           ),
           Text(
-            l.pickPayment,
+            l.pickCheque,
             style: l.ar
                 ? GoogleFonts.notoNaskhArabic(
                     fontSize: 18,
@@ -461,12 +425,12 @@ class _ChequeTargetPickerSheetState extends State<ChequeTargetPickerSheet> {
           ),
           const SizedBox(height: 4),
           Text(
-            l.pickPaymentHint,
+            l.pickChequeHint,
             style: bodyFont(fontSize: 12, color: m.textMuted),
           ),
           const SizedBox(height: 14),
           TextField(
-            key: const ValueKey('paymentPickerSearch'),
+            key: const ValueKey('chequePickerSearch'),
             controller: _searchController,
             onChanged: _onSearchChanged,
             textInputAction: TextInputAction.search,
@@ -478,7 +442,7 @@ class _ChequeTargetPickerSheetState extends State<ChequeTargetPickerSheet> {
               suffixIcon: _query.isEmpty
                   ? null
                   : IconButton(
-                      key: const ValueKey('paymentPickerClearSearch'),
+                      key: const ValueKey('chequePickerClearSearch'),
                       tooltip: l.clearSearch,
                       onPressed: _clearSearch,
                       icon: Icon(Icons.close, size: 18, color: m.textMuted),
@@ -625,15 +589,15 @@ class _ChequeTargetPickerSheetState extends State<ChequeTargetPickerSheet> {
   }
 }
 
-/// Payment-picker sheet strings (EN/AR). Lightweight per-widget pattern —
+/// Cheque-picker sheet strings (EN/AR). Lightweight per-widget pattern —
 /// see arabic-brief.
 class _PickerL {
   _PickerL(this.ar);
   final bool ar;
 
-  String get pickPayment =>
+  String get pickCheque =>
       ar ? 'اختر شيكًا مؤجلًا' : 'Pick a post-dated cheque';
-  String get pickPaymentHint => ar
+  String get pickChequeHint => ar
       ? 'سيتم إرفاق الشيك الممسوح بالقسط المختار في سجل الشيكات.'
       : 'The scanned cheque will be attached to the selected instalment on the register.';
   String get searchHint => ar
@@ -650,7 +614,7 @@ class _PickerL {
       ar ? 'ar' : 'en',
     ).format(count);
     return ar
-        ? '$formatted دفعة مطابقة أخرى — حدّد البحث لعرضها.'
+        ? 'عدد الشيكات المطابقة الأخرى: $formatted — حدّد البحث لعرضها.'
         : '$formatted more matches — refine the search to narrow them down.';
   }
 

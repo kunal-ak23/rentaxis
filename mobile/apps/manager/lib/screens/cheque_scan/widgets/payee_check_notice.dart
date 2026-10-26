@@ -8,8 +8,7 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 ///    server refuses an unconfirmed mismatch (`payee_mismatch_unconfirmed`),
 ///    so the wizard's submit stays off until it is ticked.
 ///  - UNREADABLE: a soft, non-blocking note.
-///  - MATCH: the name read, quietly confirmed.
-///  - null (check off, or no names listed): nothing at all.
+///  - MATCH, or null (check off, or no names listed): nothing at all.
 class PayeeCheckNotice extends StatelessWidget {
   final String? payeeCheck;
   final String? payeeName;
@@ -31,7 +30,9 @@ class PayeeCheckNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final check = payeeCheck;
-    if (check == null) return const SizedBox.shrink();
+    if (check != PayeeCheck.mismatch && check != PayeeCheck.unreadable) {
+      return const SizedBox.shrink();
+    }
     final m = context.miftah;
     final l = PayeeL(context.isAr);
     final bodyFont = l.ar
@@ -99,33 +100,23 @@ class PayeeCheckNotice extends StatelessWidget {
       );
     }
 
-    final unreadable = check == PayeeCheck.unreadable;
     return Container(
-      key: ValueKey(unreadable ? 'payeeUnreadable' : 'payeeMatch'),
+      key: const ValueKey('payeeUnreadable'),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: unreadable ? m.surfaceAlt : m.successBg,
-        border: Border.all(
-          color: unreadable ? m.border : m.success.withValues(alpha: 0.4),
-        ),
+        color: m.surfaceAlt,
+        border: Border.all(color: m.border),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            unreadable ? Icons.help_outline : Icons.verified_outlined,
-            size: 16,
-            color: unreadable ? m.textMuted : m.success,
-          ),
+          Icon(Icons.help_outline, size: 16, color: m.textMuted),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              unreadable ? l.unreadable : l.matched('\u2068$name\u2069'),
-              style: bodyFont(
-                fontSize: 12,
-                color: unreadable ? m.textSecondary : m.success,
-              ),
+              l.unreadable,
+              style: bodyFont(fontSize: 12, color: m.textSecondary),
             ),
           ),
         ],
@@ -146,8 +137,6 @@ class PayeeL {
       : 'I have checked this cheque and want to attach it anyway';
   String get unreadable =>
       ar ? 'تعذّرت قراءة اسم المستفيد.' : 'Payee name could not be read.';
-  String matched(String name) =>
-      ar ? 'اسم المستفيد مطابق: $name' : 'Payee name matches: $name';
   String get missingConfirm =>
       ar ? 'تأكيد اسم المستفيد' : 'confirm the payee name';
   String get unconfirmedError => ar

@@ -4,15 +4,11 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 
 /// The accounting-v2 cheque register, as the scan wizard needs it.
 ///
-/// v2 retired payment schedules (`/v1/payments/{id}/collect` no longer
-/// exists): a scanned cheque now lands on a row of the lease's own register
-/// through `POST /v1/leases/{leaseId}/cheques/bulk-attach` — the endpoint the
-/// web scanner uses, and the one that enforces the organisation's payee-name
+/// A scanned cheque lands on a row of the lease's own register through
+/// `POST /v1/leases/{leaseId}/cheques/bulk-attach` — the endpoint the web
+/// scanner uses, and the one that enforces the organisation's payee-name
 /// check server-side (an unconfirmed MISMATCH is refused with
 /// `payee_mismatch_unconfirmed`).
-///
-/// Lives in the manager app rather than rentaxis_core: only this wizard uses
-/// it, and the renter app depends on that package too.
 class ChequeRegisterApi {
   final Dio _dio;
   ChequeRegisterApi(this._dio);
@@ -22,7 +18,6 @@ class ChequeRegisterApi {
   /// contract being drafted takes its scans on the web.
   Future<Map<String, dynamic>> searchScannable({
     String? search,
-    int page = 0,
     int size = 50,
   }) async {
     final response = await _dio.get(
@@ -32,16 +27,9 @@ class ChequeRegisterApi {
         'mode': 'PDC',
         if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
         'sort': ['chequeDate,asc', 'seqNo,asc'],
-        'page': page,
         'size': size,
       },
     );
-    return Map<String, dynamic>.from(response.data as Map);
-  }
-
-  /// One register row (`GET /v1/cheques/{id}`).
-  Future<Map<String, dynamic>> getCheque(String id) async {
-    final response = await _dio.get('/v1/cheques/$id');
     return Map<String, dynamic>.from(response.data as Map);
   }
 
@@ -49,11 +37,7 @@ class ChequeRegisterApi {
   /// cheques of a multi-cheque photo onto that lease's instalments.
   Future<List<Map<String, dynamic>>> leaseCheques(String leaseId) async {
     final response = await _dio.get('/v1/leases/$leaseId/cheques');
-    final data = response.data;
-    final list = data is List
-        ? data
-        : (data is Map && data['content'] is List ? data['content'] : const []);
-    return (list as List)
+    return (response.data as List)
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
@@ -61,29 +45,21 @@ class ChequeRegisterApi {
 
   /// Attach scans to rows of one lease, all or nothing.
   /// Throws [BulkAttachRefused] with the server's per-row reasons.
-  Future<List<dynamic>> bulkAttach(
+  Future<void> bulkAttach(
     String leaseId,
     List<Map<String, dynamic>> items,
   ) async {
     try {
-      final response = await _dio.post(
+      await _dio.post(
         '/v1/leases/$leaseId/cheques/bulk-attach',
         data: {'items': items},
       );
-      final data = response.data;
-      if (data is Map && data['cheques'] is List) return data['cheques'];
-      if (data is Map && data['items'] is List) return data['items'];
-      return const [];
     } on DioException catch (e) {
       final body = e.response?.data;
       if (body is Map && body['rows'] is List) {
         throw BulkAttachRefused([
           for (final r in body['rows'] as List)
-            if (r is Map)
-              (
-                chequeId: r['chequeId']?.toString(),
-                reason: r['reason']?.toString() ?? '',
-              ),
+            if (r is Map) r['reason']?.toString() ?? '',
         ]);
       }
       rethrow;
@@ -91,23 +67,15 @@ class ChequeRegisterApi {
   }
 
   /// Bank the cheque today (`PUT /v1/cheques/{id}/deposit`).
-  Future<Map<String, dynamic>> deposit(String chequeId) async {
-    final response = await _dio.put('/v1/cheques/$chequeId/deposit', data: {});
-    return Map<String, dynamic>.from(response.data as Map);
+  Future<void> deposit(String chequeId) async {
+    await _dio.put('/v1/cheques/$chequeId/deposit', data: {});
   }
 }
 
-/// The server refused a bulk-attach; [rows] names each offending row.
+/// The server refused a bulk-attach; [reasons] has one entry per bad row.
 class BulkAttachRefused implements Exception {
-  final List<({String? chequeId, String reason})> rows;
-  BulkAttachRefused(this.rows);
-
-  bool get payeeMismatchUnconfirmed =>
-      rows.any((r) => r.reason == 'payee_mismatch_unconfirmed');
-
-  @override
-  String toString() =>
-      'BulkAttachRefused(${rows.map((r) => r.reason).join(', ')})';
+  final List<String> reasons;
+  BulkAttachRefused(this.reasons);
 }
 
 /// A PDC row a scan can be attached to (`ChequeDetailsService.BULK_EDITABLE`),
@@ -147,10 +115,10 @@ Map<String, dynamic> buildAttachItem({
 }
 
 /// AED: rounding on the paper, not a different cheque (web AMOUNT_TOLERANCE).
-const amountTolerance = 1;
+const _amountTolerance = 1;
 
 bool amountsDiffer(num? a, num? b) =>
-    a != null && b != null && (a - b).abs() > amountTolerance;
+    a != null && b != null && (a - b).abs() > _amountTolerance;
 
 num? asNum(dynamic raw) =>
     raw == null ? null : (raw is num ? raw : num.tryParse(raw.toString()));

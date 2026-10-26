@@ -3,13 +3,14 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
+import '../widgets/scan_messages.dart';
 import '../widgets/step_header.dart';
 import 'step3_confirm.dart' show Disposition;
 
 /// Step 4 — success state. Shows the receipt + next-action buttons.
 class Step4Success extends StatelessWidget {
   final ChequeExtractionResult result;
-  final Map<String, dynamic>? matchedPayment;
+  final Map<String, dynamic>? matchedCheque;
   final Disposition disposition;
   final VoidCallback onScanAnother;
   final VoidCallback onDone;
@@ -20,7 +21,7 @@ class Step4Success extends StatelessWidget {
   const Step4Success({
     super.key,
     required this.result,
-    required this.matchedPayment,
+    required this.matchedCheque,
     required this.disposition,
     required this.onScanAnother,
     required this.onDone,
@@ -36,7 +37,7 @@ class Step4Success extends StatelessWidget {
         : GoogleFonts.plusJakartaSans;
     final ex = result.extracted ?? const {};
     final chequeNumber = ex['chequeNumber']?.toString() ?? '—';
-    final amount = matchedPayment?['amount'];
+    final amount = matchedCheque?['amount'];
     final statusColors = _statusColors(m);
 
     return Column(
@@ -165,7 +166,7 @@ class Step4Success extends StatelessWidget {
                                 const SizedBox(height: 2),
                                 Text(
                                   l.matchLine(
-                                    matchedPayment,
+                                    matchedCheque,
                                     showInstalment: attachedCount == 1,
                                   ),
                                   style: bodyFont(
@@ -307,9 +308,9 @@ class _L {
   String get done => ar ? 'تم' : 'Done';
   String get noLeaseMatch => ar ? 'لا يوجد تطابق مع عقد' : 'No lease match';
 
-  String chequesCount(int n) => ar ? '$n شيكات' : '$n cheques';
+  String chequesCount(int n) => ar ? arCheques(n) : '$n cheques';
   String multiSubtitle(int n) => ar
-      ? 'تم إرفاق $n شيكات بأقساطها في سجل الشيكات.'
+      ? 'تم إرفاق ${arCheques(n, genitive: true)} بأقساطها في سجل الشيكات.'
       : '$n cheques are attached to their instalments on the register.';
 
   String subtitle(Disposition disposition, String chequeNumber, String? payer) {
@@ -333,14 +334,14 @@ class _L {
   }
 
   String matchLine(
-    Map<String, dynamic>? matchedPayment, {
+    Map<String, dynamic>? matchedCheque, {
     bool showInstalment = true,
   }) {
-    if (matchedPayment == null) return noLeaseMatch;
-    final prop = matchedPayment['propertyName']?.toString() ?? '';
-    final unit = matchedPayment['unitIdentifier']?.toString() ?? '';
+    if (matchedCheque == null) return noLeaseMatch;
+    final prop = matchedCheque['propertyName']?.toString() ?? '';
+    final unit = matchedCheque['unitIdentifier']?.toString() ?? '';
     if (!showInstalment) return '$prop · $unit';
-    final inst = matchedPayment['seqNo'] ?? matchedPayment['installmentNumber'];
+    final inst = matchedCheque['seqNo'];
     return ar
         ? '$prop · $unit · القسط رقم $inst'
         : '$prop · $unit · Installment #$inst';

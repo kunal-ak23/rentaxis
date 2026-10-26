@@ -8,6 +8,7 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../cheque_register_api.dart';
 import '../widgets/payee_check_notice.dart';
+import '../widgets/scan_messages.dart';
 import '../widgets/step_header.dart';
 
 /// One cheque found in a multi-cheque photo, as the operator is reviewing it.
@@ -34,6 +35,10 @@ class MultiScanRow {
   bool payeeConfirmed = false;
   bool cropConfirmed = false;
 
+  /// Attach anyway, though the row's amount differs; asked again whenever
+  /// the row changes.
+  bool amountConfirmed = false;
+
   bool get payeeBlocks =>
       scan.payeeCheck == PayeeCheck.mismatch && !payeeConfirmed;
   bool get cropBlocks => scan.cropUnreliable && !cropConfirmed;
@@ -45,9 +50,6 @@ class MultiScanRow {
 /// same flow as the web's BulkChequeUploadFlow.
 class Step3MultiReview extends StatefulWidget {
   final ChequeMultiExtractionResult scan;
-
-  /// A register row to start from (deep link); its lease is preselected.
-  final Map<String, dynamic>? initialTarget;
 
   /// Opens the register picker; any row picked names the lease.
   final Future<Map<String, dynamic>?> Function() onPickLease;
@@ -78,7 +80,6 @@ class Step3MultiReview extends StatefulWidget {
     required this.submitting,
     required this.submitError,
     required this.onBack,
-    this.initialTarget,
     this.onClose,
   });
 
@@ -95,13 +96,6 @@ class _Step3MultiReviewState extends State<Step3MultiReview> {
   bool _loadingRows = false;
   String? _loadError;
 
-  @override
-  void initState() {
-    super.initState();
-    final t = widget.initialTarget;
-    if (t != null) _selectLease(t);
-  }
-
   Future<void> _pickLease() async {
     final picked = await widget.onPickLease();
     if (picked != null && mounted) await _selectLease(picked);
@@ -117,11 +111,13 @@ class _Step3MultiReviewState extends State<Step3MultiReview> {
       for (final r in _rows) {
         r.rowId = null;
         r.pinned = false;
+        r.amountConfirmed = false;
       }
     });
     try {
       final all = await widget.loadLeaseRows(leaseId);
-      if (!mounted) return;
+      // Another lease was picked while this one loaded.
+      if (!mounted || !identical(_leaseRow, row)) return;
       final eligible = all.where(isScannableRow).toList()
         ..sort(
           (a, b) => (asNum(a['seqNo']) ?? 0).compareTo(asNum(b['seqNo']) ?? 0),
@@ -132,10 +128,10 @@ class _Step3MultiReviewState extends State<Step3MultiReview> {
       });
       _remap();
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || !identical(_leaseRow, row)) return;
       setState(() {
         _loadingRows = false;
-        _loadError = e.toString();
+        _loadError = errorMessage(e, networkErrorMessage(context.isAr));
       });
     }
   }
@@ -154,7 +150,10 @@ class _Step3MultiReviewState extends State<Step3MultiReview> {
     );
     setState(() {
       for (var i = 0; i < _rows.length; i++) {
-        if (!_rows[i].pinned) _rows[i].rowId = map[i];
+        final r = _rows[i];
+        if (r.pinned || r.rowId == map[i]) continue;
+        r.rowId = map[i];
+        r.amountConfirmed = false;
       }
     });
   }
@@ -179,6 +178,10 @@ class _Step3MultiReviewState extends State<Step3MultiReview> {
     };
   }
 
+  bool _amountBlocks(MultiScanRow r) =>
+      amountsDiffer(r.scan.amount, asNum(_rowById(r.rowId)?['amount'])) &&
+      !r.amountConfirmed;
+
   bool _ready(MultiScanRow r, Set<String> dupes) =>
       r.chequeNumber.trim().isNotEmpty &&
       !dupes.contains(r.chequeNumber.trim()) &&
@@ -187,6 +190,7 @@ class _Step3MultiReviewState extends State<Step3MultiReview> {
       r.rowId != null &&
       r.scan.imageBlobPath.isNotEmpty &&
       !r.payeeBlocks &&
+      !_amountBlocks(r) &&
       !r.cropBlocks;
 
   bool get _canSubmit {
@@ -359,7 +363,10 @@ class _Step3MultiReviewState extends State<Step3MultiReview> {
                   onPickRow: (id) => setState(() {
                     _rows[i].rowId = id;
                     _rows[i].pinned = id != null;
+                    _rows[i].amountConfirmed = false;
                   }),
+                  onAmountConfirmed: (v) =>
+                      setState(() => _rows[i].amountConfirmed = v),
                   onPayeeConfirmed: (v) =>
                       setState(() => _rows[i].payeeConfirmed = v),
                   onCropConfirmed: (v) =>
@@ -530,6 +537,7 @@ class _ChequeCard extends StatelessWidget {
   final ValueChanged<String?> onPickRow;
   final ValueChanged<bool> onPayeeConfirmed;
   final ValueChanged<bool> onCropConfirmed;
+  final ValueChanged<bool> onAmountConfirmed;
   final VoidCallback? onRemove;
   final _ML l;
 
@@ -549,6 +557,7 @@ class _ChequeCard extends StatelessWidget {
     required this.onPickRow,
     required this.onPayeeConfirmed,
     required this.onCropConfirmed,
+    required this.onAmountConfirmed,
     required this.onRemove,
     required this.l,
   });
@@ -701,7 +710,10 @@ class _ChequeCard extends StatelessWidget {
             label: l.fieldChequeDate,
             value: row.chequeDate == null
                 ? ''
-                : DateFormat('dd MMM yyyy').format(row.chequeDate!),
+                : DateFormat(
+                    'dd MMM yyyy',
+                    l.ar ? 'ar' : null,
+                  ).format(row.chequeDate!),
             onTap: onEditDate,
             l: l,
           ),
@@ -774,6 +786,18 @@ class _ChequeCard extends StatelessWidget {
               ),
               style: bodyFont(fontSize: 11.5, color: m.warning),
             ),
+            CheckboxListTile(
+              key: ValueKey('amountConfirm$index'),
+              value: row.amountConfirmed,
+              onChanged: (v) => onAmountConfirmed(v ?? false),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: Text(
+                amountConfirmLabel(l.ar),
+                style: bodyFont(fontSize: 12, color: m.textPrimary),
+              ),
+            ),
           ],
           if (row.scan.payeeCheck != null) ...[
             const SizedBox(height: 10),
@@ -836,7 +860,8 @@ class _Field extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Icon(
-              l.ar ? Icons.arrow_back_ios : Icons.arrow_forward_ios,
+              // Mirrors itself under RTL.
+              Icons.arrow_forward_ios,
               size: 11,
               color: m.textMuted,
             ),
@@ -852,7 +877,8 @@ class _ML {
   _ML(this.ar);
   final bool ar;
 
-  String title(int n) => ar ? 'مراجعة $n شيكات' : 'Review $n cheques';
+  String title(int n) =>
+      ar ? 'مراجعة ${arCheques(n, genitive: true)}' : 'Review $n cheques';
   String get save => ar ? 'حفظ' : 'Save';
   String get notDetected => ar ? 'غير مكتشف' : 'Not detected';
   String get leaseLabel => ar ? 'العقد' : 'Lease';
@@ -890,5 +916,6 @@ class _ML {
       : 'Amount $scanned ≠ instalment $expected';
   String readyCount(int ready, int total) =>
       ar ? 'جاهز: $ready من $total' : 'Ready: $ready of $total';
-  String attachAll(int n) => ar ? 'إرفاق $n شيكات' : 'Attach $n cheques';
+  String attachAll(int n) =>
+      ar ? 'إرفاق ${arCheques(n, genitive: true)}' : 'Attach $n cheques';
 }

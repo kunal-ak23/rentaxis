@@ -24,7 +24,7 @@ void main() {
     expect(find.text('Target Tower · U-4999'), findsNothing);
 
     await tester.enterText(
-      find.byKey(const ValueKey('paymentPickerSearch')),
+      find.byKey(const ValueKey('chequePickerSearch')),
       'U-4999',
     );
     await tester.pump(const Duration(milliseconds: 400));

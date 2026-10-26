@@ -87,8 +87,8 @@ void main() {
         host(
           Step3Confirm(
             result: scan(payeeCheck: PayeeCheck.mismatch),
-            matchedPayment: Map<String, dynamic>.from(target),
-            onPickPayment: () {},
+            matchedCheque: Map<String, dynamic>.from(target),
+            onPickCheque: () {},
             onBack: () {},
             submitting: false,
             submitError: null,
@@ -132,8 +132,8 @@ void main() {
         host(
           Step3Confirm(
             result: scan(payeeCheck: PayeeCheck.unreadable),
-            matchedPayment: Map<String, dynamic>.from(target),
-            onPickPayment: () {},
+            matchedCheque: Map<String, dynamic>.from(target),
+            onPickCheque: () {},
             onBack: () {},
             submitting: false,
             submitError: null,
@@ -162,8 +162,8 @@ void main() {
         host(
           Step3Confirm(
             result: scan(),
-            matchedPayment: Map<String, dynamic>.from(target),
-            onPickPayment: () {},
+            matchedCheque: Map<String, dynamic>.from(target),
+            onPickCheque: () {},
             onBack: () {},
             submitting: false,
             submitError: null,
@@ -195,8 +195,8 @@ void main() {
           ar: true,
           Step3Confirm(
             result: scan(payeeCheck: PayeeCheck.mismatch),
-            matchedPayment: Map<String, dynamic>.from(target),
-            onPickPayment: () {},
+            matchedCheque: Map<String, dynamic>.from(target),
+            onPickCheque: () {},
             onBack: () {},
             submitting: false,
             submitError: null,
@@ -217,6 +217,95 @@ void main() {
       final tick = find.text('راجعتُ هذا الشيك وأريد إرفاقه على أي حال');
       expect(tick, findsOneWidget);
       expect(Directionality.of(tester.element(tick)), TextDirection.rtl);
+    });
+  });
+
+  group('single cheque guards (Step3Confirm)', () {
+    Future<void> pump(
+      WidgetTester tester, {
+      required ChequeExtractionResult result,
+      Map<String, dynamic> row = target,
+      void Function(Disposition)? onDisposition,
+    }) async {
+      await tester.pumpWidget(
+        host(
+          Step3Confirm(
+            result: result,
+            matchedCheque: Map<String, dynamic>.from(row),
+            onPickCheque: () {},
+            onBack: () {},
+            submitting: false,
+            submitError: null,
+            onConfirm:
+                ({
+                  required chequeNumber,
+                  required bankName,
+                  required payerName,
+                  required chequeDate,
+                  required disposition,
+                  required payeeMismatchConfirmed,
+                }) => onDisposition?.call(disposition),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('an amount more than AED 1 off the row needs its tick', (
+      tester,
+    ) async {
+      await pump(tester, result: scan(amount: 9000));
+      expect(confirmButton(tester).onPressed, isNull);
+      expect(
+        find.textContaining('confirm the amount difference'),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('amountMismatchConfirm')),
+      );
+      await tester.tap(find.byKey(const ValueKey('amountMismatchConfirm')));
+      await tester.pumpAndSettle();
+      expect(confirmButton(tester).onPressed, isNotNull);
+    });
+
+    testWidgets('within AED 1 is not a mismatch', (tester) async {
+      await pump(tester, result: scan(amount: 5000.5));
+      expect(find.byKey(const ValueKey('amountMismatchConfirm')), findsNothing);
+      expect(confirmButton(tester).onPressed, isNotNull);
+    });
+
+    testWidgets('a post-dated cheque cannot be deposited today', (
+      tester,
+    ) async {
+      Disposition? sent;
+      await pump(
+        tester,
+        result: scan(date: '2099-01-01'),
+        onDisposition: (d) => sent = d,
+      );
+      expect(
+        find.text('A cheque cannot be banked before its date'),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(confirmFinder);
+      await tester.pumpAndSettle();
+      await tester.tap(confirmFinder);
+      expect(sent, Disposition.holdInSafe);
+    });
+
+    testWidgets('a cheque dated today or earlier deposits today', (
+      tester,
+    ) async {
+      Disposition? sent;
+      await pump(
+        tester,
+        result: scan(date: '2026-01-01'),
+        onDisposition: (d) => sent = d,
+      );
+      await tester.ensureVisible(confirmFinder);
+      await tester.pumpAndSettle();
+      await tester.tap(confirmFinder);
+      expect(sent, Disposition.depositToday);
     });
   });
 
@@ -257,7 +346,7 @@ void main() {
           number: '1003',
           date: '2026-12-01',
           blob: 'c3.jpg',
-          payeeCheck: PayeeCheck.match,
+          payeeCheck: 'MATCH',
           payee: 'Palm Ridge Properties',
         ),
       ],
@@ -277,8 +366,7 @@ void main() {
           host(
             Step3MultiReview(
               scan: threeCheques(),
-              initialTarget: Map<String, dynamic>.from(target),
-              onPickLease: () async => null,
+              onPickLease: () async => Map<String, dynamic>.from(target),
               loadLeaseRows: (id) async => leaseRows,
               onSubmit: (leaseId, items, _) {
                 sentLease = leaseId;
@@ -291,6 +379,8 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('multiPickLease')));
+        await tester.pumpAndSettle();
 
         expect(find.text('Review 3 cheques'), findsOneWidget);
         for (var i = 0; i < 3; i++) {
@@ -299,7 +389,8 @@ void main() {
         expect(find.byKey(const ValueKey('multiCheque3')), findsNothing);
         // Each cheque carries its own payee check.
         expect(find.byKey(const ValueKey('payeeMismatch')), findsOneWidget);
-        expect(find.byKey(const ValueKey('payeeMatch')), findsOneWidget);
+        // MATCH shows nothing, as on the web.
+        expect(find.byKey(const ValueKey('payeeUnreadable')), findsNothing);
         expect(find.text('Ready: 2 of 3'), findsOneWidget);
 
         GoldButton attach() => tester.widget<GoldButton>(
@@ -333,6 +424,63 @@ void main() {
       },
     );
 
+    testWidgets('a hand-picked row of another amount needs its tick', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1080, 4000);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+
+      List<Map<String, dynamic>>? sent;
+      await tester.pumpWidget(
+        host(
+          Step3MultiReview(
+            scan: ChequeMultiExtractionResult(
+              items: [
+                scan(number: '1001', date: '2026-10-01', blob: 'c1.jpg'),
+                scan(
+                  number: '1002',
+                  date: '2026-11-01',
+                  blob: 'c2.jpg',
+                  amount: 7000,
+                ),
+              ],
+              warnings: const [],
+            ),
+            onPickLease: () async => Map<String, dynamic>.from(target),
+            loadLeaseRows: (id) async => leaseRows,
+            onSubmit: (_, items, _) => sent = items,
+            submitting: false,
+            submitError: null,
+            onBack: () {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('multiPickLease')));
+      await tester.pumpAndSettle();
+
+      GoldButton attach() => tester.widget<GoldButton>(
+        find.byKey(const ValueKey('multiAttachButton')),
+      );
+      // The auto-map never lands a 7,000 cheque on a 5,000 row.
+      expect(find.text('Ready: 1 of 2'), findsOneWidget);
+      expect(find.byKey(const ValueKey('amountConfirm1')), findsNothing);
+
+      await tester.tap(find.byType(DropdownButtonFormField<String?>).at(1));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('#2 ·').last);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('amountConfirm1')), findsOneWidget);
+      expect(attach().onPressed, isNull);
+
+      await tester.tap(find.byKey(const ValueKey('amountConfirm1')));
+      await tester.pumpAndSettle();
+      expect(attach().onPressed, isNotNull);
+      await tester.tap(find.byKey(const ValueKey('multiAttachButton')));
+      expect(sent!.map((i) => i['chequeId']), ['row-1', 'row-2']);
+    });
+
     testWidgets('an unreliable crop must be confirmed too', (tester) async {
       tester.view.physicalSize = const Size(1080, 4000);
       tester.view.devicePixelRatio = 2;
@@ -353,8 +501,7 @@ void main() {
               ],
               warnings: const [],
             ),
-            initialTarget: Map<String, dynamic>.from(target),
-            onPickLease: () async => null,
+            onPickLease: () async => Map<String, dynamic>.from(target),
             loadLeaseRows: (id) async => leaseRows,
             onSubmit: (_, _, _) {},
             submitting: false,
@@ -363,6 +510,8 @@ void main() {
           ),
         ),
       );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('multiPickLease')));
       await tester.pumpAndSettle();
 
       GoldButton attach() => tester.widget<GoldButton>(
@@ -396,7 +545,7 @@ void main() {
         ),
         buildAttachItem(
           chequeId: 'chq-2',
-          scan: scan(payeeCheck: PayeeCheck.match, blob: 'other.jpg'),
+          scan: scan(payeeCheck: 'MATCH', blob: 'other.jpg'),
           chequeNumber: '000124',
           bankName: 'Emirates NBD',
           payerName: '',
@@ -425,6 +574,21 @@ void main() {
       expect((items[1] as Map)['payerName'], isNull);
     });
 
+    test('the picker asks only for registered post-dated cheques', () async {
+      final adapter = _RecordingAdapter(
+        (_) => _json(200, {'content': [], 'totalElements': 0}),
+      );
+      await ChequeRegisterApi(
+        Dio(BaseOptions(baseUrl: 'http://test/api'))
+          ..httpClientAdapter = adapter,
+      ).searchScannable(search: 'U-1');
+      final q = adapter.requests.single.queryParameters;
+      expect(adapter.requests.single.path, '/v1/cheques');
+      expect(q['status'], 'REGISTERED');
+      expect(q['mode'], 'PDC');
+      expect(q['search'], 'U-1');
+    });
+
     test('a server refusal surfaces as payee_mismatch_unconfirmed', () async {
       final adapter = _RecordingAdapter(
         (_) => _json(400, {
@@ -441,11 +605,9 @@ void main() {
       await expectLater(
         api.bulkAttach('lease-1', [<String, dynamic>{}]),
         throwsA(
-          isA<BulkAttachRefused>().having(
-            (e) => e.payeeMismatchUnconfirmed,
-            'payeeMismatchUnconfirmed',
-            isTrue,
-          ),
+          isA<BulkAttachRefused>().having((e) => e.reasons, 'reasons', [
+            'payee_mismatch_unconfirmed',
+          ]),
         ),
       );
     });
@@ -490,11 +652,10 @@ void main() {
         final file = File('${dir.path}/cheques.jpg')
           ..writeAsBytesSync([0xff, 0xd8, 0xff]);
 
-        final result = await svc.extractMany(file, idempotencyKey: 'key-1');
+        final result = await svc.extractMany(file);
 
         final req = adapter.requests.single;
         expect(req.path, '/v1/cheques/extract-many');
-        expect(req.headers['Idempotency-Key'], 'key-1');
         expect(result.items, hasLength(3));
         expect(result.items.map((i) => i.imageBlobPath), [
           'crop-0.jpg',
