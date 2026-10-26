@@ -742,7 +742,10 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 .containsExactly("2026-09-01:true:false", "2026-09-02:true:false");
         for (String d : List.of("FEE ONE", "FEE THREE")) book(d, "CHARGE");
         book("CREDIT TWO", "INTEREST");
+        // The Closing row (03/09) proves 02/09 whole, not the rest of September: the paper closing is typed.
         BankRecDTOs.Reconciliation r = recs.create(ei.getId(), period(SEP_1, SEP_30));
+        assertThat(check(r, "CLOSING").ok()).isFalse();
+        r = paperClosing(r.id());
         assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
     }
@@ -1629,8 +1632,10 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
 
     /**
      * Sim r22 S22-03, what proves a closing: a file that runs past the period's last
-     * line-day, or a Closing row dated after it. Then the lines' closing finalizes with
-     * nothing typed.
+     * line-day, or a Closing row dated after the period end. A Closing row dated on the
+     * line's day, after it but inside the period, or on the period end proves nothing about
+     * the lines after it; nor does an import from before the row's date was kept. Then the
+     * lines' closing finalizes with nothing typed.
      */
     @Test
     void aClosingIsProvenByAFileThatRunsPastTheLastDayOrAClosingRowDatedAfterIt() {
@@ -1646,8 +1651,24 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 28/09/2026,28/09/2026,INWARD TT B,,,50.00,"1,050.00"
                 29/09/2026,29/09/2026,Closing balance,,,,"1,050.00"
                 """);
-        assertThat(recs.get(id).checks()).as("a Closing row dated after it").noneMatch(c -> c.code().equals("CLOSING"));
+        assertThat(check(recs.get(id), "CLOSING").ok())
+                .as("a Closing row dated after the line's day but before the period end: 30/09 is not covered").isFalse();
         imports.delete(nextDay.importId());
+        BankRecDTOs.ImportResult periodEnd = importText("""
+                28/09/2026,28/09/2026,INWARD TT B,,,50.00,"1,050.00"
+                30/09/2026,30/09/2026,Closing balance,,,,"1,050.00"
+                """);
+        assertThat(check(recs.get(id), "CLOSING").ok())
+                .as("a Closing row dated on the period end: an export taken during 30/09 prints one too").isFalse();
+        imports.delete(periodEnd.importId());
+        BankRecDTOs.ImportResult after = importText("""
+                28/09/2026,28/09/2026,INWARD TT B,,,50.00,"1,050.00"
+                01/10/2026,01/10/2026,Closing balance,,,,"1,050.00"
+                """);
+        assertThat(recs.get(id).checks()).as("a Closing row dated after the period end").noneMatch(c -> c.code().equals("CLOSING"));
+        jdbc.update("update bank_statement_imports set closing_row_date = null where id = ?", after.importId());
+        assertThat(check(recs.get(id), "CLOSING").ok()).as("an import from before the row date was kept: fail closed").isFalse();
+        imports.delete(after.importId());
         importText("""
                 28/09/2026,28/09/2026,INWARD TT B,,,50.00,"1,050.00"
                 02/10/2026,02/10/2026,FEE OCT,,5.00,,"1,045.00"
@@ -1657,6 +1678,31 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(r.checks()).as("a file that runs past it").noneMatch(c -> c.code().equals("CLOSING"));
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).statementClosing()).isEqualByComparingTo("1050.00");
+    }
+
+    /**
+     * Sim r22 S22-03 follow-up, the gap a day-level proof left: an export of 01/09–15/09
+     * with its Closing row dated 15/09 (after its last line's day, 12/09) holds 12/09 whole,
+     * but the bank charged 105.00 on 20/09 and no file brought it. The row is dated before
+     * the period end, so it proves nothing about 16/09–30/09: the paper closing is asked
+     * for, and it exposes the charge.
+     */
+    @Test
+    void aClosingRowDatedInsideThePeriodDoesNotProveThePeriodEnd() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importText("""
+                12/09/2026,12/09/2026,INWARD TT B,,,50.00,"1,050.00"
+                15/09/2026,15/09/2026,Closing balance,,,,"1,050.00"
+                """);
+        assertThat(jdbc.queryForObject("select end_known from bank_statement_days where bank_account_id = ? and txn_date = ?",
+                Boolean.class, ei.getId(), LocalDate.of(2026, 9, 12))).as("12/09 itself is held whole").isTrue();
+        book("INWARD TT B", "INTEREST");
+        UUID id = recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
+        assertThat(check(recs.get(id), "CLOSING").ok()).isFalse();
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("The imported lines end on 12/09/2026");
+        recs.update(id, new BankRecDTOs.ReconciliationInput(null, SEP_30, null, new BigDecimal("945.00")));
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("Statement lines add up to 1,050.00");
+        assertThat(reconciledThrough()).isNull();
     }
 
     /**

@@ -258,7 +258,7 @@ class StatementOrderPropertyTest {
      * the bank's lines that arrived in some accepted file.
      */
     record Books(List<BankStatementImportService.StoredLine> lines, List<LocalDate> dates, Set<LocalDate> unconfirmed,
-                 Set<LocalDate> unproven, Set<Integer> arrived, Set<LocalDate> endProven) { }
+                 Set<LocalDate> unproven, Set<Integer> arrived) { }
 
     private static Books importStatement(List<List<Bank>> files) {
         return importFiles(files.stream().map(FileSpec::plain).toList());
@@ -288,15 +288,10 @@ class StatementOrderPropertyTest {
         Map<LocalDate, List<BankStatementImportService.StoredLine>> stored = new TreeMap<>();
         Map<LocalDate, BankStatementImportService.DayState> states = new HashMap<>();
         Set<Integer> arrived = new HashSet<>();
-        // Sim r22 S22-03: a day an accepted file held and then went past (the service's
-        // second closing-proof clause: an import with lines on the day and a later last date).
-        Set<LocalDate> heldToEnd = new HashSet<>();
         for (FileSpec spec : specs) {
             List<Bank> f = spec.lines();
             if (f.isEmpty() || !acceptedRows(f)) continue;
             f.forEach(l -> arrived.add(l.index()));
-            LocalDate fileLast = f.get(f.size() - 1).date();
-            f.forEach(l -> { if (l.date().isBefore(fileLast)) heldToEnd.add(l.date()); });
             List<StatementMapper.Row> rows = f.stream().map(Bank::row).toList();
             BankStatementImportService.Matched m = BankStatementImportService.match(BANK, rows, stored);
             TreeMap<LocalDate, List<Integer>> fileDays = new TreeMap<>();
@@ -327,13 +322,12 @@ class StatementOrderPropertyTest {
         List<BankStatementImportService.StoredLine> lines = new ArrayList<>();
         List<LocalDate> dates = new ArrayList<>();
         stored.forEach((d, ls) -> ls.forEach(l -> { lines.add(l); dates.add(d); }));
-        Set<LocalDate> unconfirmed = new HashSet<>(), unproven = new HashSet<>(), endProven = new HashSet<>(heldToEnd);
+        Set<LocalDate> unconfirmed = new HashSet<>(), unproven = new HashSet<>();
         states.forEach((d, st) -> {
             if (!st.confirmed()) unconfirmed.add(d);
             if (!st.confirmed() && st.unproven()) unproven.add(d);
-            if (st.endKnown()) endProven.add(d);
         });
-        return new Books(lines, dates, unconfirmed, unproven, arrived, endProven);
+        return new Books(lines, dates, unconfirmed, unproven, arrived);
     }
 
     /**
@@ -457,24 +451,37 @@ class StatementOrderPropertyTest {
     }
 
     /**
-     * Sim r22 S22-03: the statement's last lines are in no file (the only export of the
-     * month stopped during its last line-day, before a charge). The stored lines chain,
-     * every day is confirmed, and the lines' own closing is not the bank's. Finalize as
-     * the service decides it: on the lines' closing only when the last line-day is known
-     * to end there ({@code end_known}, or a file held it and went past it: closing proof,
-     * the ruling), otherwise on the paper closing typed by the user (the bank's true one).
-     * Files are stretches of the received lines in any order; some carry an honest Closing
-     * row (dated the day after, only when the file really ends at a day's end). Required:
-     * no finalize at a closing other than the bank's. Without the proof, the same model
-     * finalizes wrong closings (the check that this property bites).
+     * Sim r22 S22-03: the statement's last lines are in no file — the only export stopped
+     * during the last line-day, or a whole later day (14/09, after an export whose Closing
+     * row is dated mid-period) never arrived. The stored lines chain, every day is
+     * confirmed, and the lines' own closing is not the bank's at the period end (15/09).
+     * Finalize as the service decides it: on the lines' closing only when an accepted file
+     * that brought lines of the last line-day runs past that day or carries a Closing row
+     * dated after the period end; otherwise on the paper closing typed by the user (the
+     * bank's true one). Files are stretches in any order; each may carry an honest Closing
+     * row dated anywhere its window could have ended: the line's own day, a later day
+     * inside the period, the period end, or after it. Required: no finalize at a closing
+     * other than the bank's. A day-level proof (a Closing row dated after the line's day)
+     * finalizes wrong closings in the same model, and so does counting a row dated on the
+     * period end.
      */
     @Test
     void aMissingLastLineNeverFinalizesOnTheLinesClosing() {
         Random rnd = new Random(2203);
-        int finalizedOnLines = 0, typedClosing = 0, wrongWithoutProof = 0, trailingGaps = 0;
+        LocalDate periodEnd = LocalDate.of(2026, 9, 15);
+        int finalizedOnLines = 0, typedClosing = 0, wrongDayProof = 0, wrongOnTheEnd = 0, trailingGaps = 0, midRows = 0;
         for (int trial = 0; trial < 60_000; trial++) {
-            List<Bank> truth = statement(rnd);
+            List<Bank> truth = new ArrayList<>(statement(rnd));
             if (truth.size() < 3) continue;
+            if (rnd.nextBoolean()) {
+                // A late day: 14/09, or the period end itself; one or two lines.
+                LocalDate late = rnd.nextBoolean() ? periodEnd.minusDays(1) : periodEnd;
+                for (int k = 0, n = 1 + rnd.nextInt(2); k < n; k++) {
+                    Bank last = truth.get(truth.size() - 1);
+                    BigDecimal a = k == 0 ? new BigDecimal("-105.00") : new BigDecimal("20.00");
+                    truth.add(new Bank(truth.size(), late, a, a.signum() < 0 ? "FEE" : "CREDIT", last.balance().add(a)));
+                }
+            }
             BigDecimal trueClosing = truth.get(truth.size() - 1).balance();
             int missing = rnd.nextInt(3);
             List<Bank> received = truth.subList(0, Math.max(1, truth.size() - missing));
@@ -486,13 +493,18 @@ class StatementOrderPropertyTest {
                 int start = at > 0 && rnd.nextBoolean() ? Math.max(0, at - 1 - rnd.nextInt(2)) : at;
                 List<Bank> f = received.subList(start, end);
                 Bank last = f.get(f.size() - 1);
-                // Honest rows only: a Closing row dated the next day means the window ran into that
-                // day, so it would hold that day's lines; here the days are consecutive, so only a
-                // file ending at the statement's true last line can print one.
-                boolean endsWindow = last.index() == truth.size() - 1;
-                LocalDate closingRow = endsWindow && rnd.nextBoolean() ? last.date().plusDays(1)
-                        : rnd.nextBoolean() ? last.date() : null;
-                files.add(new FileSpec(f, null, closingRow, null));
+                // Honest rows: the window ended during the row's date, so no bank line after the file's
+                // last one is dated before it (lines later on that very day, or on the next line's
+                // day, a window ending mid-day misses: a row proves only the days before its date).
+                LocalDate next = last.index() + 1 < truth.size() ? truth.get(last.index() + 1).date() : null;
+                List<LocalDate> honest = new ArrayList<>();
+                honest.add(last.date());
+                for (LocalDate d = last.date().plusDays(1); !d.isAfter(periodEnd.plusDays(2)); d = d.plusDays(1)) {
+                    if (next == null || !d.isAfter(next)) honest.add(d);
+                }
+                LocalDate row = rnd.nextInt(3) == 0 ? null : honest.get(rnd.nextInt(honest.size()));
+                if (row != null && row.isAfter(last.date()) && !row.isAfter(periodEnd)) midRows++;
+                files.add(new FileSpec(f, null, row, null));
                 at = end;
             }
             Collections.shuffle(files, rnd);
@@ -508,9 +520,19 @@ class StatementOrderPropertyTest {
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             BigDecimal linesClosing = books.lines().get(books.lines().size() - 1).balance();
             LocalDate lastDay = books.dates().get(books.dates().size() - 1);
-            boolean proven = books.endProven().contains(lastDay);
+            boolean proven = false, dayProof = false, onTheEnd = false;
+            for (FileSpec f : files) {
+                if (f.lines().isEmpty() || !acceptedRows(f.lines()) || f.lines().stream().noneMatch(l -> l.date().equals(lastDay))) continue;
+                LocalDate fileLast = f.lines().get(f.lines().size() - 1).date();
+                LocalDate row = f.closingRowDate();
+                proven |= fileLast.isAfter(lastDay) || (row != null && row.isAfter(periodEnd));
+                dayProof |= fileLast.isAfter(lastDay) || (row != null && row.isAfter(lastDay));
+                onTheEnd |= fileLast.isAfter(lastDay) || (row != null && !row.isBefore(periodEnd));
+            }
             boolean chainOk = BankReconciliationService.continuity(OPENING, linesClosing, movement, sl, DAYS[0]).ok();
-            if (chainOk && linesClosing.compareTo(trueClosing) != 0) wrongWithoutProof++;
+            boolean wrong = chainOk && linesClosing.compareTo(trueClosing) != 0;
+            if (wrong && dayProof) wrongDayProof++;
+            if (wrong && onTheEnd) wrongOnTheEnd++;
             if (proven) {
                 if (!chainOk) continue;
                 finalizedOnLines++;
@@ -518,13 +540,14 @@ class StatementOrderPropertyTest {
                         truth, books.lines(), files.stream().map(f -> f.lines().stream().map(Bank::index).toList()
                                 + "/" + f.closingRowDate()).toList()).isEqualByComparingTo(trueClosing);
             } else {
-                // CLOSING fails: the user types the paper's closing; CONTINUITY compares it with the lines.
+                // CLOSING fails: the user types the paper's closing; CONTINUITY decides on the bank's figure.
                 typedClosing++;
-                // Whatever CONTINUITY decides now, it decides on the bank's closing: a finalize here is right.
             }
         }
         assertThat(trailingGaps).isGreaterThan(10_000);
-        assertThat(wrongWithoutProof).as("the shape: without the proof, the lines' closing would be wrong").isGreaterThan(1_000);
+        assertThat(midRows).as("Closing rows dated inside the period").isGreaterThan(5_000);
+        assertThat(wrongDayProof).as("a day-level proof would finalize wrong closings").isGreaterThan(100);
+        assertThat(wrongOnTheEnd).as("counting a row dated on the period end would too").isGreaterThan(0);
         assertThat(finalizedOnLines).as("finalized on the lines alone (proof held)").isGreaterThan(1_000);
         assertThat(typedClosing).as("asked for the paper closing").isGreaterThan(1_000);
     }

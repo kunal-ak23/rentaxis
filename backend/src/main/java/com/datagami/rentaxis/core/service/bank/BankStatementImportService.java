@@ -319,6 +319,7 @@ public class BankStatementImportService {
         imp.setLastDate(r.rows().stream().map(StatementMapper.Row::txnDate).max(Comparator.naturalOrder()).orElse(null));
         imp.setOpeningBalance(r.openingBalance());
         imp.setClosingBalance(r.closingBalance());
+        imp.setClosingRowDate(r.closingRowDate());
         imp.setWarnings(warnings);
         imp.setImportedBy(currentUserId());
         imp = imports.saveAndFlush(imp);
@@ -759,7 +760,7 @@ public class BankStatementImportService {
                         .filter(c -> known.contains(c.trim().replaceFirst("^0+(?=.)", ""))).findFirst().orElse(null)))
                 .toList();
         return new StatementMapper.Result(rows, r.errors(), r.warnings(), r.missingColumns(), r.openingBalance(),
-                r.closingBalance(), r.hasBalance(), r.order(), r.openingRow(), r.closingRow());
+                r.closingBalance(), r.hasBalance(), r.order(), r.openingRow(), r.closingRow(), r.closingRowDate());
     }
 
     /** One hash per row; {@code occurrence} counts identical lines (same day, amount, description) earlier in the file. */

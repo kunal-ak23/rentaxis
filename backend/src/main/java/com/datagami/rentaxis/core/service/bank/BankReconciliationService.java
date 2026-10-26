@@ -692,9 +692,10 @@ public class BankReconciliationService {
 
     /**
      * Sim r22 S22-03 (ruling): a reconciliation is finalized at a derived closing only when
-     * the period's last line-day is known to end where its stored lines end — a file held
-     * that day and a later one (or a Closing row dated after it): {@code end_known}, or
-     * an import that brought lines of the day and runs past it. Otherwise the closing must
+     * nothing can follow the last stored line up to the period end: an import that brought
+     * lines of the period's last line-day runs past that day, or carries a Closing row dated
+     * after the period end. ({@code end_known} is not enough: a Closing row dated after the
+     * day but before the period end proves the day's end, not the days after it.) Otherwise the closing must
      * be typed from the paper statement (one figure); CONTINUITY then checks it against
      * the lines. Absent when the closing is proven.
      */
@@ -705,14 +706,18 @@ public class BankReconciliationService {
                 and txn_date <= :to""", p, LocalDate.class);
         if (last == null) return Optional.empty();
         p.addValue("d", last);
+        // Proof that nothing follows the last stored line up to the period end: an import that
+        // brought lines of that day and either runs past it (a contiguous file: its lines of the
+        // day are the day's last ones, and its next line lies beyond the period) or carries an
+        // agreeing Closing row dated after the period end (the export reached past it). A
+        // Closing row dated on or before the period end proves nothing about the end of that
+        // day: an export taken during the period's last day prints one too.
         Boolean ended = jdbc.queryForObject("""
-                select exists (select 1 from bank_statement_days d
-                                where d.tenant_id = :t and d.bank_account_id = :b and d.txn_date = :d and d.end_known)
-                    or exists (select 1 from bank_statement_lines l
+                select exists (select 1 from bank_statement_lines l
                                  join bank_statement_line_sources s on s.line_id = l.id and s.tenant_id = l.tenant_id
                                  join bank_statement_imports i on i.id = s.import_id and i.tenant_id = s.tenant_id
                                 where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date = :d
-                                  and i.last_date > :d)""", p, Boolean.class);
+                                  and (i.last_date > :d or i.closing_row_date > :to))""", p, Boolean.class);
         if (Boolean.TRUE.equals(ended)) return Optional.empty();
         String d = last.format(DMY);
         return Optional.of(new BankRecDTOs.Check("CLOSING", false, "The imported lines end on " + d

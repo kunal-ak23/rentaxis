@@ -357,3 +357,5 @@ databaseChangeLog:
       file: db/changelog/changesets/176-bank-leaf-default-name.yaml
   - include:
       file: db/changelog/changesets/177-bank-leaf-name-en-follows-rename.yaml
+  - include:
+      file: db/changelog/changesets/181-bank-import-closing-row-date.yaml
