@@ -5821,6 +5821,7 @@
     "exportTooManyRows": "Too many rows ({rows} rows, the limit is {cap}). Narrow the filter.",
     "exportRateLimited": "Too many exports in a row. Try again in a minute.",
     "exportFailed": "The export failed. Try again.",
+    "exportDismiss": "Dismiss",
     "tablePrevious": "Previous",
     "tableNext": "Next",
     "tablePageOf": "Page {page} of {count}",

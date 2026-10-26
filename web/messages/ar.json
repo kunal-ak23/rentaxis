@@ -5821,6 +5821,7 @@
     "exportTooManyRows": "عدد الصفوف كبير ({rows} صفاً والحد {cap}). ضيّق عامل التصفية.",
     "exportRateLimited": "عمليات تصدير كثيرة متتالية. حاول بعد دقيقة.",
     "exportFailed": "تعذّر التصدير. حاول مرة أخرى.",
+    "exportDismiss": "إغلاق",
     "tablePrevious": "السابق",
     "tableNext": "التالي",
     "tablePageOf": "صفحة {page} من {count}",
