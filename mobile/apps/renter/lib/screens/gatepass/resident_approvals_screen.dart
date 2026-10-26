@@ -102,7 +102,12 @@ class ResidentApprovalsScreen extends ConsumerWidget {
             }
             return ListView.builder(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.fromLTRB(
+                16,
+                16,
+                16,
+                16 + MediaQuery.paddingOf(context).bottom,
+              ),
               itemCount: rows.length,
               itemBuilder: (context, index) =>
                   _ApprovalCard(request: rows[index]),

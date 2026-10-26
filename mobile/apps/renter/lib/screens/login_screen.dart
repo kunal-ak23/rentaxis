@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -129,8 +130,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     }
   }
 
+  // Always dark chrome, whatever the theme: light system bar icons.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AnnotatedRegion<SystemUiOverlayStyle>(
+    value: MiftahTheme.systemBars(
+      Brightness.dark,
+      navigationBar: AppColors.navyDark,
+    ),
+    child: _screen(context),
+  );
+
+  Widget _screen(BuildContext context) {
     final authState = ref.watch(authProvider);
     final l = _L(context.isAr);
 

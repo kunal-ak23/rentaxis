@@ -211,7 +211,11 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
           // ends the day before the same date `months` later (as the web).
           final months = int.tryParse(_renewalMonthsCtrl.text.trim()) ?? 12;
           final currentEnd = DateTime.parse(lease['endDate']);
-          final start = DateTime(currentEnd.year, currentEnd.month, currentEnd.day + 1);
+          final start = DateTime(
+            currentEnd.year,
+            currentEnd.month,
+            currentEnd.day + 1,
+          );
           final end = DateTime(start.year, start.month + months, start.day - 1);
           String iso(DateTime d) =>
               '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -278,7 +282,7 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
             16,
             16,
             16,
-            24,
+            24 + MediaQuery.paddingOf(context).bottom,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

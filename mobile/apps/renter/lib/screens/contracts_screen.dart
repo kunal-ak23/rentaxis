@@ -39,7 +39,12 @@ class ContractsScreen extends ConsumerWidget {
               onRefresh: refresh,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(20),
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  20,
+                  20,
+                  20 + MediaQuery.paddingOf(context).bottom,
+                ),
                 children: [
                   if (rows.isEmpty)
                     EmptyState(

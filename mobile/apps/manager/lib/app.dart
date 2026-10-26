@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
@@ -52,8 +53,14 @@ class _ManagerAppState extends ConsumerState<ManagerApp> {
         GlobalCupertinoLocalizations.delegate,
       ],
       routerConfig: router,
-      builder: (context, child) =>
-          OfflineStatusBanner(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+        // Screens without an AppBar set no system bar style of their own.
+        value: MiftahTheme.systemBars(
+          Theme.of(context).brightness,
+          navigationBar: Theme.of(context).colorScheme.surface,
+        ),
+        child: OfflineStatusBanner(child: child ?? const SizedBox.shrink()),
+      ),
       debugShowCheckedModeBanner: false,
     );
   }

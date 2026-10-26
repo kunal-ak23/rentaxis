@@ -375,7 +375,7 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
               16,
               16,
               16,
-              24,
+              24 + MediaQuery.paddingOf(context).bottom,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

@@ -148,7 +148,7 @@ class _MeetingDetailScreenState extends ConsumerState<MeetingDetailScreen> {
               16,
               16,
               16,
-              24,
+              24 + MediaQuery.paddingOf(context).bottom,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

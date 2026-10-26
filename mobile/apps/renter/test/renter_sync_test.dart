@@ -431,4 +431,37 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'the contracts list pads its end past a 48pt system navigation bar',
+    (tester) async {
+      // Android 15+ draws the app behind 3-button navigation; a list that sets
+      // its own bottom padding must add the system inset itself.
+      tester.view.padding = const FakeViewPadding(bottom: 48 * 3);
+      addTearDown(tester.view.resetPadding);
+      await pumpScreen(
+        tester,
+        routes: [
+          GoRoute(path: '/', builder: (_, _) => const ContractsScreen()),
+        ],
+        initialLocation: '/',
+        surfaceSize: const Size(390, 420),
+        overrides: [
+          renterLeasesProvider.overrideWith(
+            (ref) async => [
+              {
+                'id': 'l1',
+                'status': 'PENDING_SIGNATURE',
+                'hasContract': true,
+                'contractDocumentId': 'doc-v2',
+              },
+            ],
+          ),
+        ],
+      );
+      final list = tester.widget<ListView>(find.byType(ListView).first);
+      expect(list.padding!.resolve(TextDirection.ltr).bottom, 20 + 48);
+    },
+  );
 }
+
