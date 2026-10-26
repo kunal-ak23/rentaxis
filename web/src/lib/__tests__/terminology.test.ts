@@ -103,14 +103,17 @@ describe("PACT terminology", () => {
         expect(stale).toEqual([]);
     });
 
-    it("keeps the help articles' authoring copy on the same terms", () => {
-        const dir = join(__dirname, "../../content/help");
-        const stale = readdirSync(dir).filter(f => f.endsWith(".md")).flatMap(f =>
-            readFileSync(join(dir, f), "utf8").split("\n")
-                .filter(l => !/^(slug|category|relatedTour|roles):/.test(l))
-                .filter(l => STALE_WORD.test(l.replace(/\]\([^)]*\)/g, "]")))
-                .map(l => `${f}: ${l.trim()}`));
+    it("says Tenant / Contract and Organisation in every tour's name, description and steps", () => {
+        // Tour copy is the Tours namespace of the catalogue; the ICU scan above allows nothing there either.
+        const stale = [...EN].filter(([k]) => k.startsWith("Tours."))
+            .filter(([, text]) => STALE_WORD.test(text) || /organiz/i.test(text))
+            .map(([k, text]) => `${k}: ${text}`);
         expect(stale).toEqual([]);
+    });
+
+    it("spells Organisation the UAE way in every English label", () => {
+        const us = [...EN].filter(([, v]) => /organiz/i.test(v));
+        expect(us.map(([k, v]) => `${k}: ${v}`)).toEqual([]);
     });
 
     /**

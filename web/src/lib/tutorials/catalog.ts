@@ -49,6 +49,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Read the dashboard, find records with global search, work through notifications and use the Help center and guided tours.",
             ar: "اقرأ لوحة التحكم، وابحث عن السجلات بالبحث الشامل، وتابع الإشعارات، واستخدم مركز المساعدة والجولات الإرشادية.",
         },
+        relatedArticles: ["getting-started--welcome"],
     },
     {
         id: "03", slug: "roles-permissions-and-organisation-switching", topic: "getting-started", roles: ADMINS, durationSec: 125, youtubeId: "0LwTc07Vpn8",
@@ -93,7 +94,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Add buildings and floors, define units and their rents, and record property contacts, amenities and parking spots.",
             ar: "أضف المباني والطوابق، وحدّد الوحدات وإيجاراتها، وسجّل جهات اتصال العقار ومرافقه ومواقف السيارات.",
         },
-        relatedArticles: ["properties--units-and-buildings"],
+        relatedArticles: ["properties--units-and-buildings", "properties--parking"],
     },
     {
         id: "08", slug: "import-a-property-portfolio-in-bulk", topic: "portfolio", roles: ["TENANT_ADMIN"], durationSec: 100, youtubeId: "RY9eEIEY1bM",
@@ -102,6 +103,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Download the template, upload your portfolio, fix rows that fail validation and check what was created.",
             ar: "نزّل النموذج، وارفع محفظتك العقارية، وصحّح الصفوف التي لم تجتز التحقق، وراجع ما تم إنشاؤه.",
         },
+        relatedArticles: ["getting-started--first-property-setup"],
     },
     {
         id: "09", slug: "manage-tenants-and-portal-access", topic: "leasing", roles: PORTFOLIO, durationSec: 104, youtubeId: "aNcKWqSNRF8",
@@ -110,6 +112,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Create Tenant profiles with bilingual names, contacts and preferred language, and give a Tenant a portal account.",
             ar: "أنشئ ملفات المستأجرين بالأسماء العربية والإنجليزية وبيانات الاتصال واللغة المفضلة، وامنح المستأجر حسابًا في البوابة.",
         },
+        relatedArticles: ["leases--tenants-and-portal-access"],
     },
     {
         id: "10", slug: "draft-a-tenancy-contract-and-generate-its-cheques", topic: "leasing", roles: PORTFOLIO, durationSec: 127, youtubeId: "Wag-eszCzqM",
@@ -127,6 +130,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Generate the contract PDF, let the Tenant review it, regenerate after a rejection and record the acceptance.",
             ar: "أنشئ ملف العقد بصيغة PDF، ودع المستأجر يراجعه، وأعد إنشاءه بعد الرفض، وسجّل القبول.",
         },
+        relatedArticles: ["leases--creating-a-lease", "renter--renter-portal-overview"],
     },
     {
         id: "12", slug: "administer-an-active-tenancy-contract", topic: "leasing", roles: PORTFOLIO, durationSec: 97, youtubeId: "rLwltCxGZBQ",
@@ -144,7 +148,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Renew a contract for a new term, extend one by a month, take a Tenant's notice, terminate the contract and finalise the settlement.",
             ar: "جدّد العقد لمدة جديدة، ومدّد عقدًا لشهر إضافي، وسجّل إشعار المستأجر، وأنهِ العقد، وأكمل التسوية النهائية.",
         },
-        relatedArticles: ["leases--lease-lifecycle"],
+        relatedArticles: ["leases--lease-lifecycle", "leases--renewal-season"],
     },
     {
         id: "14", slug: "penalties-and-cheque-failure-fines", topic: "collections", roles: [...PORTFOLIO, "ACCOUNTANT", "RENTER"], durationSec: 108, youtubeId: "SJRZi5tivc0",
@@ -153,6 +157,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Configure fines, approve or waive proposed penalties and maintenance recharges, and see the journal each decision writes.",
             ar: "اضبط إعدادات الغرامات، واعتمد الغرامات المقترحة وتكاليف الصيانة المعاد تحميلها أو أعفِ منها، وتعرّف على القيد الذي يُنشئه كل قرار.",
         },
+        relatedArticles: ["leases--payment-schedules"],
     },
     {
         id: "15", slug: "manage-rent-cheques-end-to-end", topic: "collections", roles: PORTFOLIO, durationSec: 145, youtubeId: "eqmaPuAxEyU",
@@ -170,6 +175,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Follow one tenancy contract's money from posting to the reports, and see where each step shows in the tenant ledger, general ledger, trial balance and profit and loss.",
             ar: "تتبّع أموال عقد إيجار واحد من الترحيل إلى التقارير، وتعرّف على موضع كل خطوة في دفتر أستاذ المستأجر ودفتر الأستاذ العام وميزان المراجعة وقائمة الأرباح والخسائر.",
         },
+        relatedArticles: ["finance--chart-of-accounts"],
     },
     {
         id: "39", slug: "start-your-books-opening-balances-and-cut-over", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 141, youtubeId: "jGsnA2bUlOQ",
@@ -178,6 +184,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Set the date Miftah takes over your books, enter opening balances, bring running contracts across and reconcile against your old system.",
             ar: "حدّد تاريخ بدء الدفاتر في مفتاح، وأدخل الأرصدة الافتتاحية، وانقل العقود السارية، وطابق النتائج مع نظامك السابق.",
         },
+        relatedArticles: ["finance--books-start"],
     },
     {
         id: "17", slug: "chart-of-accounts-template-and-charge-types", topic: "accounting", roles: FINANCE, durationSec: 121, youtubeId: "seIQjEg9AQE",
@@ -195,6 +202,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Post a draft contract with its lines and cheque grid, and see the contract become active with its recognition schedule planned.",
             ar: "رحّل مسودة العقد مع بنودها وجدول شيكاتها، وشاهد العقد يصبح نشطًا مع جدولة الاعتراف بالإيراد.",
         },
+        relatedArticles: ["leases--creating-a-lease"],
     },
     {
         id: "35", slug: "register-and-clear-cheques", topic: "collections", roles: ["TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT"], durationSec: 95, youtubeId: "g_X1xVVTRKk",
@@ -203,6 +211,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Bank a batch of cheques, clear them when the bank confirms, and see the journal each step writes.",
             ar: "أودع مجموعة من الشيكات في البنك، وسجّل تحصيلها عند تأكيد البنك، وتعرّف على القيد الذي تُنشئه كل خطوة.",
         },
+        relatedArticles: ["leases--payment-schedules"],
     },
     {
         id: "40", slug: "returned-cheques-replace-settle-write-off-and-recover", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 122, youtubeId: "f-7dfm5hgyA",
@@ -211,6 +220,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Handle a cheque the bank returns: replace it, take cash instead, or write the debt off and record what you later recover.",
             ar: "تعامل مع الشيك الذي يرتجعه البنك: استبدله، أو اقبل مبلغه نقدًا، أو اشطب الدين كدين معدوم وسجّل ما تحصّله لاحقًا.",
         },
+        relatedArticles: ["leases--payment-schedules"],
     },
     {
         id: "36", slug: "month-end-recognition", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 109, youtubeId: "qhprxarzR4w",
@@ -219,6 +229,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Run recognition to a cut-off date and watch advance rent move into rental income, period by period.",
             ar: "شغّل الاعتراف بالإيراد حتى تاريخ الإقفال، وشاهد انتقال الإيجار المقدم إلى إيراد الإيجار فترة بعد فترة.",
         },
+        relatedArticles: ["finance--month-end"],
     },
     {
         id: "41", slug: "vat-per-instalment-and-the-vat-return", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 132, youtubeId: "7NLo7eNepM8",
@@ -227,6 +238,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "See how 5% VAT on a commercial contract waits as not yet due until each instalment's date, then file the quarter's VAT return.",
             ar: "تعرّف على كيفية بقاء ضريبة القيمة المضافة بنسبة 5% على العقد التجاري غير مستحقة حتى تاريخ كل دفعة، ثم قدّم الإقرار الضريبي للربع.",
         },
+        relatedArticles: ["finance--month-end"],
     },
     {
         id: "42", slug: "termination-settlement-and-deposit-refunds-in-the-books", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 130, youtubeId: "g5T8WEPwJvU",
@@ -235,6 +247,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Terminate a contract early, read the unearned-rent reversal, finalise the settlement and pay the deposit refund.",
             ar: "أنهِ العقد مبكرًا، واقرأ قيد عكس الإيجار غير المكتسب، واعتمد التسوية النهائية، وادفع مبلغ التأمين المسترد.",
         },
+        relatedArticles: ["leases--lease-lifecycle"],
     },
     {
         id: "43", slug: "renewals-rent-free-periods-and-unit-transfers-in-the-books", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 126, youtubeId: "ewNV-NBy8zI",
@@ -243,6 +256,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Renew a contract with an increase and a renewal fee, give a rent-free fit-out month, and move a Tenant to another unit without losing a dirham.",
             ar: "جدّد العقد بزيادة في الإيجار ورسوم تجديد، وامنح شهرًا معفى من الإيجار لفترة التجهيز، وانقل المستأجر إلى وحدة أخرى دون أن يضيع درهم واحد.",
         },
+        relatedArticles: ["leases--renewal-season", "leases--unit-transfer"],
     },
     {
         id: "44", slug: "supplier-bills-payment-runs-and-issued-cheques", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 130, youtubeId: "EFaGtSVA-KM",
@@ -251,6 +265,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Post supplier bills with input VAT, pay what is due in a payment run, and follow a post-dated supplier cheque until the bank pays it.",
             ar: "رحّل فواتير الموردين مع ضريبة المدخلات، وسدّد المستحق من خلال دفعة سداد، وتابع الشيك المؤجل الصادر للمورد حتى يصرفه البنك.",
         },
+        relatedArticles: ["finance--payables"],
     },
     {
         id: "19", slug: "vendors-and-bank-accounts", topic: "accounting", roles: FINANCE, durationSec: 95, youtubeId: "-Lqw49fknJ8",
@@ -259,6 +274,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Create and maintain vendors and bank accounts and link them to the right properties.",
             ar: "أنشئ الموردين والحسابات البنكية وحافظ عليها، واربطها بالعقارات المناسبة.",
         },
+        relatedArticles: ["finance--payables"],
     },
     {
         id: "45", slug: "bank-reconciliation", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 130, youtubeId: "twa9qUyLqIc",
@@ -267,6 +283,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Import a bank statement, match it to the books, book the bank-only lines and finalise the month.",
             ar: "استورد كشف الحساب البنكي، وطابقه مع الدفاتر، وسجّل البنود الواردة في كشف البنك فقط، واعتمد تسوية الشهر.",
         },
+        relatedArticles: ["finance--month-end"],
     },
     {
         id: "18", slug: "journal-vouchers-create-read-and-reverse", topic: "accounting", roles: FINANCE, durationSec: 105, youtubeId: "HbwwwY3AF1w",
@@ -275,6 +292,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Post a balanced journal voucher, read its lines and correct a mistake by reversing it.",
             ar: "رحّل سند قيد متوازنًا، واقرأ بنوده، وصحّح الخطأ بعكس القيد.",
         },
+        relatedArticles: ["finance--ledgers-and-reports"],
     },
     {
         id: "37", slug: "tenant-ledger", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 111, youtubeId: "OP4fOCccZWc",
@@ -283,6 +301,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Read a Tenant's ledger, tie it to the Rent Receivable control account in the general ledger, and check the trial balance.",
             ar: "اقرأ دفتر أستاذ المستأجر، وطابقه مع حساب الإيجار المستحق الرقابي في دفتر الأستاذ العام، وتحقّق من ميزان المراجعة.",
         },
+        relatedArticles: ["finance--ledgers-and-reports"],
     },
     {
         id: "20", slug: "dashboards-and-financial-reports", topic: "accounting", roles: FINANCE, durationSec: 119, youtubeId: "96Ax9VLH7nw",
@@ -291,6 +310,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Read the Profit & Loss, the Property Profit Report by building, the Balance Sheet, the Owner Statement and receivable and payable aging.",
             ar: "اقرأ قائمة الأرباح والخسائر وتقرير أرباح العقار لكل مبنى والميزانية العمومية وكشف حساب المالك وأعمار الذمم المدينة والدائنة.",
         },
+        relatedArticles: ["finance--ledgers-and-reports"],
     },
     {
         id: "46", slug: "period-lock-and-year-end-close", topic: "accounting", roles: ["TENANT_ADMIN", "ACCOUNTANT"], durationSec: 170, youtubeId: "ex4na1Mp-EU",
@@ -299,6 +319,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Lock closed months, close the fiscal year into retained earnings, and re-open it if you must.",
             ar: "أقفل الأشهر المنتهية، وأقفل السنة المالية بترحيل نتيجتها إلى الأرباح المحتجزة، وأعد فتحها عند الحاجة.",
         },
+        relatedArticles: ["finance--books-start", "finance--month-end"],
     },
     {
         id: "21", slug: "tenant-payments", topic: "tenant-portal", roles: ["RENTER"], durationSec: 58, youtubeId: "-rlmAdcRiV0",
@@ -316,7 +337,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Raise a ticket, assign and track it, confirm closure with a one-time code and review ticket reports.",
             ar: "قدّم طلب صيانة، وعيّنه وتابع حالته، وأكّد إغلاقه برمز لمرة واحدة، وراجع تقارير الطلبات.",
         },
-        relatedArticles: ["renter--submitting-tickets"],
+        relatedArticles: ["operations--tickets", "renter--submitting-tickets"],
     },
     {
         id: "23", slug: "schedule-and-manage-meetings", topic: "operations", roles: [...PORTFOLIO, "RENTER"], durationSec: 84, youtubeId: "xikLrBq0EqQ",
@@ -325,6 +346,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Request a meeting about a property or unit, approve it, follow it on the calendar and mark it complete.",
             ar: "اطلب اجتماعًا بشأن عقار أو وحدة، ووافق عليه، وتابعه في التقويم، وسجّل اكتماله.",
         },
+        relatedArticles: ["operations--bookings-meetings-promotions"],
     },
     {
         id: "24", slug: "facilities-and-booking-approvals", topic: "operations", roles: [...PORTFOLIO, "RENTER"], durationSec: 86, youtubeId: "a1cpEe8f5Vo",
@@ -333,14 +355,16 @@ export const TUTORIALS: Tutorial[] = [
             en: "Browse facilities and availability, request a booking or parking spot, and approve requests as a manager.",
             ar: "تصفّح المرافق ومواعيد توفرها، واطلب حجزًا أو موقف سيارة، ووافق على الطلبات بصفتك مديرًا.",
         },
+        relatedArticles: ["operations--bookings-meetings-promotions"],
     },
     {
-        id: "25", slug: "gate-passes-and-walk-in-visitors", topic: "operations", roles: [...PORTFOLIO, "RENTER"], durationSec: 88, youtubeId: "FurKmjl77BY",
+        id: "25", slug: "gate-passes-and-walk-in-visitors", topic: "operations", roles: [...PORTFOLIO, "SECURITY_GUARD", "RENTER"], durationSec: 88, youtubeId: "FurKmjl77BY",
         title: { en: "Gate passes and visitor policy", ar: "تصاريح الدخول وسياسة الزوار" },
         description: {
             en: "Invite visitors with single-visit and recurring gate passes, approve recurring passes, and set the gate policy, regular visitors and guard postings.",
             ar: "ادعُ زوارك بتصاريح دخول لزيارة واحدة أو متكررة، ووافق على التصاريح المتكررة، واضبط سياسة البوابة والزوار الدائمين ومواقع الحراس.",
         },
+        relatedArticles: ["operations--gate-passes"],
     },
     {
         id: "26", slug: "publish-and-manage-property-listings", topic: "portfolio", roles: PORTFOLIO, durationSec: 150, youtubeId: null,
@@ -365,6 +389,7 @@ export const TUTORIALS: Tutorial[] = [
             en: "Add a partner business, create a coupon ad shown to one building, and read its views and taps.",
             ar: "أضف نشاطًا تجاريًا شريكًا، وأنشئ إعلان قسيمة يظهر لمبنى واحد، وتابع مرات الظهور والنقرات.",
         },
+        relatedArticles: ["operations--bookings-meetings-promotions"],
     },
 ];
 

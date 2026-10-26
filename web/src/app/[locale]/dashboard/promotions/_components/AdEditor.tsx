@@ -256,7 +256,8 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
 
                 <div className="grid gap-4 sm:grid-cols-2">
                     <PromoImageField label={t("artwork")} value={backgroundImageUrl}
-                        onChange={setBackgroundImageUrl} onBusyChange={setUploading} />
+                        onChange={setBackgroundImageUrl} onBusyChange={setUploading}
+                        sizeHint={t("artworkSizeHint")} />
                     <label className="block">
                         <span className="mb-1 block text-sm font-medium">{t("accentColor")}</span>
                         <input aria-label={t("accentColor")} placeholder="#FBF3E2" maxLength={9}

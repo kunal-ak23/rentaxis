@@ -1,5 +1,5 @@
 // web/src/lib/helpLoader.ts
-import type { HelpArticle } from './help';
+import { HELP_CATEGORIES, type HelpArticle } from './help';
 import type { UserRole } from './rbac';
 
 /**
@@ -15,7 +15,7 @@ function parseFrontmatter(raw: string): { metadata: Record<string, string | stri
     const colonIdx = line.indexOf(':');
     if (colonIdx === -1) continue;
     const key = line.slice(0, colonIdx).trim();
-    let value = line.slice(colonIdx + 1).trim();
+    const value = line.slice(colonIdx + 1).trim();
     if (value.startsWith('[') && value.endsWith(']')) {
       metadata[key] = value.slice(1, -1).split(',').map(v => v.trim());
     } else {
@@ -28,6 +28,8 @@ function parseFrontmatter(raw: string): { metadata: Record<string, string | stri
 
 function toArticle(slug: string, raw: string): HelpArticle {
   const { metadata, content } = parseFrontmatter(raw);
+  const arRaw = ARTICLES_AR_RAW[slug];
+  const ar = arRaw ? parseFrontmatter(arRaw) : undefined;
   return {
     slug,
     title: (metadata.title as string) || slug,
@@ -37,12 +39,19 @@ function toArticle(slug: string, raw: string): HelpArticle {
     order: parseInt((metadata.order as string) || '99', 10),
     relatedTour: (metadata.relatedTour as string) || undefined,
     content,
+    ar: ar && {
+      title: (ar.metadata.title as string) || '',
+      description: (ar.metadata.description as string) || '',
+      content: ar.content,
+    },
   };
 }
 
 // Static article registry - each article's raw markdown content.
 // To add a new article: add an entry here with the slug and content.
 const ARTICLES_RAW: Record<string, string> = {};
+// Each article's Arabic markdown (frontmatter: title and description only), by the English article's slug.
+const ARTICLES_AR_RAW: Record<string, string> = {};
 
 // We need to populate this at build time. Use a dynamic approach with require.context
 // or statically list them. Since this is a client component context, we'll use a
@@ -61,13 +70,28 @@ export function registerArticle(slug: string, raw: string) {
   _articles = null; // invalidate cache
 }
 
+/**
+ * Register an article's Arabic version. Its slug, category, roles and order are the English article's.
+ */
+export function registerArticleAr(slug: string, raw: string) {
+  ARTICLES_AR_RAW[slug] = raw;
+  _articles = null;
+}
+
+/** The slugs that have an Arabic version registered (each must name an English article). */
+export function getArabicSlugs(): string[] {
+  return Object.keys(ARTICLES_AR_RAW);
+}
+
 export function getAllArticles(): HelpArticle[] {
   if (_articles) return _articles;
   _articles = Object.entries(ARTICLES_RAW).map(([slug, raw]) => toArticle(slug, raw));
-  _articles.sort((a, b) => {
-    if (a.category !== b.category) return a.category.localeCompare(b.category);
-    return a.order - b.order;
-  });
+  // Categories in the help center's order (Getting Started first), then each article's order.
+  const rank = (c: string) => {
+    const i = HELP_CATEGORIES.findIndex(cat => cat.id === c);
+    return i === -1 ? HELP_CATEGORIES.length : i;
+  };
+  _articles.sort((a, b) => rank(a.category) - rank(b.category) || a.order - b.order);
   return _articles;
 }
 

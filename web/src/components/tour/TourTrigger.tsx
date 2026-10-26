@@ -13,6 +13,7 @@ interface TourTriggerProps {
 
 export default function TourTrigger({ tour, variant = 'card' }: TourTriggerProps) {
   const t = useTranslations('Help');
+  const tTours = useTranslations('Tours');
   const { startTour, completedTourIds } = useTour();
   const completed = completedTourIds.includes(tour.id);
 
@@ -32,7 +33,7 @@ export default function TourTrigger({ tour, variant = 'card' }: TourTriggerProps
     <button
       onClick={() => startTour(tour.id)}
       className={cn(
-        "flex flex-col gap-2 p-4 rounded-lg border transition-all cursor-pointer text-left",
+        "flex flex-col gap-2 p-4 rounded-lg border transition-all cursor-pointer text-start",
         "hover:shadow-md hover:border-primary/30",
         completed
           ? "bg-primary/5 border-primary/20"
@@ -40,14 +41,14 @@ export default function TourTrigger({ tour, variant = 'card' }: TourTriggerProps
       )}
     >
       <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold text-gray-900">{tour.name}</span>
+        <span className="text-sm font-semibold text-gray-900">{tTours(`${tour.id}.name`)}</span>
         {completed ? (
           <CheckCircle2 size={16} className="text-primary" />
         ) : (
           <Play size={16} className="text-accent" />
         )}
       </div>
-      <p className="text-xs text-gray-500 leading-relaxed">{tour.description}</p>
+      <p className="text-xs text-gray-500 leading-relaxed">{tTours(`${tour.id}.description`)}</p>
     </button>
   );
 }

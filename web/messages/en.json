@@ -1865,6 +1865,8 @@
     "removeImage": "Remove",
     "uploading": "Uploading…",
     "imageHint": "PNG, JPEG, GIF or WebP, up to 2 MB.",
+    "logoSizeHint": "Recommended: square, 512 × 512 px, PNG with a transparent background.",
+    "artworkSizeHint": "Recommended: 1200 × 700 px, as a JPEG or WebP to stay under 2 MB. The app crops the edges and writes the headline over the image, so keep the subject in the centre and leave text out of the image.",
     "imageTooLarge": "This image is larger than 2 MB. Choose a smaller one.",
     "imageUploadFailed": "Couldn't upload this image. Use a PNG, JPEG, GIF or WebP under 2 MB.",
     "adTitle": "Title",
@@ -1946,10 +1948,10 @@
     "close": "Close search",
     "minChars": "Type at least two characters to search.",
     "unavailable": "Search is temporarily unavailable.",
-    "noResults": "No matching contracts, cheques, or organizations.",
+    "noResults": "No matching contracts, cheques, or organisations.",
     "groupLeases": "Tenancy Contracts",
     "groupPayments": "Cheques and payments",
-    "groupTenants": "Organizations",
+    "groupTenants": "Organisations",
     "leaseFallback": "Tenancy Contract",
     "cheque": "Cheque {number}",
     "installment": "Installment {number}",
@@ -2015,14 +2017,14 @@
   },
   "TenantSwitcher": {
     "administering": "Administering",
-    "currentOrganization": "Current organization",
+    "currentOrganization": "Current organisation",
     "globalView": "Global View",
-    "noMatchingOrganizations": "No matching organizations",
+    "noMatchingOrganizations": "No matching organisations",
     "noTenantsAvailable": "No organisations available",
     "organization": "Organisation",
-    "searchOrganizations": "Search organizations",
-    "searchOrganizationsPlaceholder": "Search organizations...",
-    "switchOrganization": "Switch organization"
+    "searchOrganizations": "Search organisations",
+    "searchOrganizationsPlaceholder": "Search organisations...",
+    "switchOrganization": "Switch organisation"
   },
   "PaymentSchedule": {
     "colAmount": "Amount",
@@ -3096,13 +3098,13 @@
   },
   "SuperAdmin": {
     "cancel": "Cancel",
-    "deleteTenant": "Delete organization",
-    "deleteTenantConfirmPrompt": "Type the organization name to confirm:",
-    "deleteTenantConflict": "This organization could not be deleted because records still reference it.",
-    "deleteTenantFailed": "Could not delete the organization. Please try again.",
+    "deleteTenant": "Delete organisation",
+    "deleteTenantConfirmPrompt": "Type the organisation name to confirm:",
+    "deleteTenantConflict": "This organisation could not be deleted because records still reference it.",
+    "deleteTenantFailed": "Could not delete the organisation. Please try again.",
     "deleteTenantMismatch": "The name does not match.",
     "deleteTenantTitle": "Delete {name}?",
-    "deleteTenantWarning": "This permanently deletes the organization and every record inside it — properties, units, contracts, payments, tickets, documents and uploaded files. It cannot be undone.",
+    "deleteTenantWarning": "This permanently deletes the organisation and every record inside it — properties, units, contracts, payments, tickets, documents and uploaded files. It cannot be undone.",
     "deleting": "Deleting…",
     "organisationsTitle": "Organisations",
     "orgSubtitle": "System-wide infrastructure and data isolation control.",
@@ -3821,7 +3823,7 @@
   },
   "Auth": {
     "portalTagline": "Property Management Portal",
-    "registered": "Organization created successfully. Sign in with your new administrator account.",
+    "registered": "Organisation created successfully. Sign in with your new administrator account.",
     "passwordSet": "Your password is set. Sign in with it — it works in every organisation you belong to.",
     "emailLabel": "Email Address",
     "passwordLabel": "Password",
@@ -3995,7 +3997,7 @@
     "title": "Help Center",
     "subtitle": "Find guides and tutorials for using Miftah",
     "allArticles": "All Articles",
-    "categories": {"getting-started": "Getting Started", "properties": "Properties", "leases": "Tenancy Contracts", "finance": "Finance", "renter": "Tenant Portal", "admin": "Administration"},
+    "categories": {"getting-started": "Getting Started", "properties": "Properties", "leases": "Tenancy Contracts", "finance": "Finance", "operations": "Operations", "renter": "Tenant Portal", "admin": "Administration"},
     "showAllRoles": "Show all roles",
     "searchPlaceholder": "Search help articles...",
     "clearSearch": "Clear search",
@@ -4014,13 +4016,11 @@
     "resourcesForPage": "Resources for this page",
     "viewPageHelp": "View Page Help",
     "takeTour": "Take a Tour",
+    "pageVideos": "Videos for this page",
     "openHelp": "Help",
     "closeHelp": "Close help",
     "startTour": "Start Tour",
     "retakeTour": "Retake Tour",
-    "welcomeTitle": "Welcome to Miftah!",
-    "welcomeDesc": "Take a quick tour to learn your way around the portal.",
-    "dismiss": "Dismiss",
     "tabs": {
       "label": "Help sections",
       "articles": "Articles",
@@ -5626,5 +5626,170 @@
     "colChequeNumber": "Cheque number",
     "colBank": "Bank",
     "colChequeDate": "Cheque date"
+  },
+  "Tours": {
+    "back": "Back",
+    "skip": "Skip",
+    "next": "Next",
+    "done": "Done",
+    "progress": "Step {current} of {total}",
+    "admin-onboarding": {
+      "name": "Welcome Tour",
+      "description": "Quick overview of your Miftah dashboard",
+      "steps": {
+        "welcome": {
+          "title": "Welcome to Miftah!",
+          "text": "This is your home page: the contract pipeline, what needs you now, Unit Status and the numbers that matter."
+        },
+        "sidebar-nav": {
+          "title": "Navigation",
+          "text": "The rail on the left holds your sections; the panel beside it lists the pages of the section you are in. On a phone, open them from the menu button at the top."
+        },
+        "sidebar-properties": {
+          "title": "Leasing",
+          "text": "Tenancy contracts, tenants, properties & units."
+        },
+        "sidebar-finance": {
+          "title": "Accounting",
+          "text": "Journal vouchers, registers, receipts & payments and final reports live behind this one door."
+        },
+        "help-fab": {
+          "title": "Need Help?",
+          "text": "Click this button anytime for contextual help, guided tours, or to browse the Help Center."
+        },
+        "header-help": {
+          "title": "Help & Guides",
+          "text": "Articles and tours for every page."
+        }
+      }
+    },
+    "company-user-onboarding": {
+      "name": "Welcome Tour",
+      "description": "Quick overview of your Miftah home",
+      "steps": {
+        "welcome": {
+          "title": "Welcome to Miftah!",
+          "text": "This is your home page. Ask your Company Admin if you need access to more."
+        },
+        "sidebar-nav": {
+          "title": "Navigation",
+          "text": "The rail on the left holds your sections. Yours has Home. On a phone, open it from the menu button at the top."
+        },
+        "help-fab": {
+          "title": "Need Help?",
+          "text": "Click this button anytime for contextual help, guided tours, or to browse the Help Center."
+        },
+        "header-help": {
+          "title": "Help & Guides",
+          "text": "Articles and video tutorials for your account."
+        }
+      }
+    },
+    "property-workflow": {
+      "name": "Property Setup Tour",
+      "description": "Learn how to add properties, units, and buildings",
+      "steps": {
+        "properties-page": {
+          "title": "Properties List",
+          "text": "This page shows your projects (each building or development) with their units, occupancy and rent."
+        },
+        "add-property-btn": {
+          "title": "Add a Property",
+          "text": "Company Admins add here: Add Property adds a unit to a project, and More › Add Project creates the project itself (name, emirate, type, address and Makani number)."
+        },
+        "property-table": {
+          "title": "Property Table",
+          "text": "Open a project for its Buildings, Units, Contracts, Amenities, Parking and Accounts tabs."
+        }
+      }
+    },
+    "lease-workflow": {
+      "name": "Tenancy Contracts Tour",
+      "description": "Find, draft and post tenancy contracts, and work the renewal season",
+      "steps": {
+        "contract-pills": {
+          "title": "Contracts by stage",
+          "text": "All, then one pill per stage with its count: Draft & to sign, Active, Expiring, Notice and Ended."
+        },
+        "contract-search": {
+          "title": "Find a contract",
+          "text": "Narrow the list to one property or tower, or search it."
+        },
+        "renewal-season": {
+          "title": "Renewal season",
+          "text": "The month's expiring contracts in one queue: renew, extend, mark not renewing or bulk terminate."
+        },
+        "draft-contract": {
+          "title": "Draft Tenancy Contract",
+          "text": "Company Admins draft a contract here: tenant, unit, dates, rent and the number of cheques. Open a draft and press Post Contract to put it on the books."
+        }
+      }
+    },
+    "finance-overview": {
+      "name": "Finance Module Tour",
+      "description": "Understanding accounts, journals, and the ledger",
+      "steps": {
+        "accounts-page": {
+          "title": "Chart of Accounts",
+          "text": "This is your chart of accounts — the foundation of financial tracking. Accounts are grouped by type: Asset, Liability, Equity, Income, and Expense."
+        },
+        "journals-link": {
+          "title": "Journal Voucher",
+          "text": "Every entry in the books lives here as a balanced voucher. Most are posted automatically as payments move; you can also post a manual one, and reverse anything that was wrong."
+        },
+        "general-ledger-link": {
+          "title": "General Ledger",
+          "text": "Read any account back as a running ledger — opening balance, every line that hit it, and the closing balance — filtered by property, unit, contract or tenant."
+        },
+        "cheques-link": {
+          "title": "Cheque registers",
+          "text": "Cheque registers open Cheque / Cash Collection: deposit, clear, bounce and replace tenants' cheques, with a pill for each status."
+        }
+      }
+    },
+    "renter-portal": {
+      "name": "Tenant Portal Tour",
+      "description": "Your self-service portal walkthrough",
+      "steps": {
+        "renter-home": {
+          "title": "Your Tenant Portal",
+          "text": "Welcome! This is your self-service portal where you can view your contracts, follow your cheques, and submit maintenance requests."
+        },
+        "my-leases": {
+          "title": "My Contracts",
+          "text": "View your active contract details including rent amount, dates, and contract documents."
+        },
+        "my-payments": {
+          "title": "My Payments",
+          "text": "See which cheques are due, which are at the bank, and your receipts. Where your landlord offers online payment, you can pay here too."
+        },
+        "my-tickets": {
+          "title": "My Tickets",
+          "text": "Report maintenance issues or make requests. Track the status of your tickets here."
+        }
+      }
+    },
+    "super-admin": {
+      "name": "System Admin Tour",
+      "description": "System administration overview",
+      "steps": {
+        "admin-dashboard": {
+          "title": "System Dashboard",
+          "text": "As a System Admin, you have full access across all organisations. This dashboard shows system-wide metrics."
+        },
+        "tenants-link": {
+          "title": "Organisations",
+          "text": "Manage all registered organisations. Create new organisations, view their details, and monitor usage."
+        },
+        "users-link": {
+          "title": "Users",
+          "text": "Manage user accounts across all organisations. Create users, assign roles, and control access."
+        },
+        "tenant-switcher": {
+          "title": "Organisation Switcher",
+          "text": "Switch between organisations to view their data and manage their settings."
+        }
+      }
+    }
   }
 }

@@ -1,5 +1,7 @@
 import { adminOnboardingTour } from './admin-onboarding';
+import { companyUserOnboardingTour } from './company-user-onboarding';
 import { propertyWorkflowTour } from './property-workflow';
+import { leaseWorkflowTour } from './lease-workflow';
 import { financeOverviewTour } from './finance-overview';
 import { renterPortalTour } from './renter-portal';
 import { superAdminTour } from './super-admin';
@@ -8,7 +10,9 @@ import type { UserRole } from '@/lib/rbac';
 
 export const ALL_TOURS: TourDef[] = [
   adminOnboardingTour,
+  companyUserOnboardingTour,
   propertyWorkflowTour,
+  leaseWorkflowTour,
   financeOverviewTour,
   renterPortalTour,
   superAdminTour,
@@ -17,6 +21,11 @@ export const ALL_TOURS: TourDef[] = [
 export function getToursForRole(role?: UserRole): TourDef[] {
   if (!role) return [];
   return ALL_TOURS.filter(t => t.roles.includes(role));
+}
+
+/** The tour that auto-starts for a role on its first visit to the dashboard home. */
+export function getOnboardingTour(role?: UserRole): TourDef | undefined {
+  return getToursForRole(role).find(t => t.onboarding);
 }
 
 export function getTourById(id: string): TourDef | undefined {

@@ -11,7 +11,8 @@ export default function HelpVideosPage({
   const { play } = use(searchParams);
   return (
     <div className="p-4 md:p-6 lg:p-8">
-      <VideoTutorials initialPlayId={typeof play === 'string' ? play : undefined} />
+      {/* Keyed by the video so a new ?play= (from the help button, on this page) opens its player. */}
+      <VideoTutorials key={typeof play === 'string' ? play : ''} initialPlayId={typeof play === 'string' ? play : undefined} />
     </div>
   );
 }

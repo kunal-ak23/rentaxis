@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
@@ -41,19 +41,18 @@ describe("brand name", () => {
     it("the welcome strings name Miftah in English and مفتاح in Arabic", () => {
         expect(en.Index.title).toContain("Miftah");
         expect(ar.Index.title).toContain("مفتاح");
-        expect(en.Help.welcomeTitle).toContain("Miftah");
-        expect(ar.Help.welcomeTitle).toContain("مفتاح");
+        expect(en.Help.subtitle).toContain("Miftah");
         expect(ar.Help.subtitle).toContain("مفتاح");
     });
 
     it("the help articles and the onboarding tour say Miftah", () => {
-        const helpDir = join(root, "content/help");
-        const files = readdirSync(helpDir).filter(f => f.endsWith(".md")).map(f => join(helpDir, f));
-        files.push(join(root, "lib/helpArticles.ts"));
-        const offenders = files.filter(f => OLD_BRAND.test(readFileSync(f, "utf8")));
-        expect(offenders).toEqual([]);
+        expect(readFileSync(join(root, "lib/helpArticles.ts"), "utf8")).not.toMatch(OLD_BRAND);
+        expect(readFileSync(join(root, "lib/helpArticlesAr.ts"), "utf8")).not.toMatch(OLD_BRAND);
         expect(JSON.stringify(adminOnboardingTour)).not.toMatch(OLD_BRAND);
-        expect(adminOnboardingTour.steps[0].title).toBe("Welcome to Miftah!");
+        const welcome = adminOnboardingTour.steps[0].id as "welcome";
+        expect(en.Tours[adminOnboardingTour.id as "admin-onboarding"].steps[welcome].title).toBe("Welcome to Miftah!");
+        expect(ar.Tours["admin-onboarding"].steps[welcome].title).toContain("مفتاح");
+        expect(JSON.stringify(en.Tours)).not.toMatch(OLD_BRAND);
     });
 
     it("the page title, login, register and public listing chrome say Miftah", () => {

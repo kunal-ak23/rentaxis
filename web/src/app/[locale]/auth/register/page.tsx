@@ -191,7 +191,7 @@ export default function RegisterPage() {
                             <Loader2 className="w-4 h-4 animate-spin text-accent-foreground" />
                         ) : (
                             <>
-                                Create Organization
+                                Create Organisation
                                 <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
                             </>
                         )}
