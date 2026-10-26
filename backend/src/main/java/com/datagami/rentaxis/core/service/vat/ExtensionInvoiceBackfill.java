@@ -162,13 +162,17 @@ public class ExtensionInvoiceBackfill {
         BigDecimal vat = InstalmentVat.contractVat(lines).setScale(2, RoundingMode.HALF_UP);
         BigDecimal taxable = InstalmentVat.contractTaxable(lines).setScale(2, RoundingMode.HALF_UP);
         BigDecimal ledgerVat = c.outputVat().setScale(2, RoundingMode.HALF_UP);
-        if (vat.compareTo(ledgerVat) != 0) {
+        boolean linesAgree = vat.compareTo(ledgerVat) == 0;
+        // Review P3-3 of #435: the filed quarter first. Its Output VAT is the ledger's figure, known
+        // without the lines, so a rebuilt-lines extension in a filed quarter is still disclosed.
+        if (vatLock.isFiled(tenantId, c.date())) {
+            return item(c, lease, linesAgree ? taxable : null, Outcome.FILED_PERIOD, null,
+                    "Dated inside a filed VAT return; not issued. Disclose " + ledgerVat + " on the next return."
+                            + (linesAgree ? "" : " (The extension's lines now carry VAT " + vat + ".)"));
+        }
+        if (!linesAgree) {
             return item(c, lease, null, Outcome.LINES_DIFFER, null, "The extension's lines carry VAT " + vat
                     + ", its entry " + ledgerVat + "; review it by hand.");
-        }
-        if (vatLock.isFiled(tenantId, c.date())) {
-            return item(c, lease, taxable, Outcome.FILED_PERIOD, null, "Dated inside a filed VAT return; not issued."
-                    + " Disclose " + ledgerVat + " on the next return.");
         }
         LandlordOrg org = orgs.findById(tenantId).orElse(null);
         boolean trn = (org != null && org.getTrn() != null && !org.getTrn().isBlank())

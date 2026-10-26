@@ -191,6 +191,22 @@ class ExtensionInvoiceBackfillIT extends AbstractPostgresIT {
         assertThat(extensionPoints(lease)).isZero();
     }
 
+    /** Review P3-3 of #435: an extension in a filed quarter whose lines were rebuilt is still a disclosure row. */
+    @Test
+    void aFiledQuartersExtensionWithRebuiltLinesIsStillDisclosed() {
+        UUID lease = contractVatLease("SH-16", "Shop Sixteen", "792001");
+        extendAsBefore425(lease, LocalDate.of(2026, 6, 15));
+        jdbc.update("update lease_lines set gross_amount = 20000, net_amount = 20000 where lease_id = ? and period_end = ?",
+                lease, EXT_END);
+        returns.file(Q2, "FTA-S24-03b", "Extension VAT without its tax invoice", new BigDecimal("900.00"));
+        var r = backfill.run(false);
+        assertThat(r.items()).extracting(ExtensionInvoiceBackfill.Item::outcome)
+                .containsExactly(ExtensionInvoiceBackfill.Outcome.FILED_PERIOD);
+        assertThat(r.filedPeriodVat()).isEqualByComparingTo("900.00");
+        assertThat(r.needsReview()).isZero();
+        assertThat(extensionPoints(lease)).isZero();
+    }
+
     /** An extension made on today's code already has its invoice: nothing to backfill. */
     @Test
     void anExtensionWithItsInvoiceIsNotACandidate() {

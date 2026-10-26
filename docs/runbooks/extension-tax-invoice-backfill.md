@@ -34,14 +34,20 @@ Outcomes per row:
 | outcome | meaning |
 |---|---|
 | `WOULD_ISSUE` / `ISSUED` | invoice (to be) issued; `invoiceNumber` names it |
-| `FILED_PERIOD` | the date is inside a FILED VAT return: **not issued** (ruling R11, a filed return's documents never change). Disclose the VAT on the next return. |
+| `FILED_PERIOD` | the date is inside a FILED VAT return: **not issued** (ruling R11, a filed return's documents never change). Disclose the VAT on the next return. This is checked first, so it includes an extension whose lines were rebuilt since (its `note` says so; `vat` is the ledger's Output VAT either way). |
 | `NO_TRN` | the organisation has no TRN; add it and run again |
-| `LINES_DIFFER` | the extension's lines no longer carry the TCO's VAT (lines rebuilt since); review by hand |
+| `LINES_DIFFER` | open quarter only: the extension's lines no longer carry the TCO's VAT (lines rebuilt since); review by hand |
 | `REVERSED` | the TCO was reversed; nothing to document |
 | `LOCKED` / `FAILED` | retry, or see `note` |
 
 ## 3. After
 
 Run the VAT return's output check for the open quarter: the documents-vs-ledger difference
-should be gone. For each `FILED_PERIOD` row, record a disclosure on the next return: the
-extension's entry number, date and VAT.
+should be gone, apart from any `LINES_DIFFER` / `NO_TRN` rows still to handle. For each
+`FILED_PERIOD` row, rebuilt lines included, record a disclosure on the next return: the
+extension's entry number, date and VAT (`vat`, the ledger's figure). The result's
+`filedPeriodVat` is the total to disclose.
+
+Invoice numbers: a backfilled invoice takes the next number in its date's series, so the
+series stays gapless but no longer runs in date order (as with the F14-11 contract-invoice
+backfill). Raise this with the tax adviser along with the disclosure list.
