@@ -154,8 +154,7 @@ export default function PnlTable({
                             <tr>
                                 <td
                                     colSpan={1 + columns.length * span}
-                                    className="px-3 py-1.5 text-xs font-bold text-white"
-                                    style={{ background: "#C8651B" }}
+                                    className="px-3 py-1.5 text-xs font-bold bg-report-band text-report-band-fg"
                                 >
                                     {ar && g.nameAr ? g.nameAr : g.name}
                                 </td>

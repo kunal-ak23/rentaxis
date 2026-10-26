@@ -787,10 +787,12 @@ order: 5
 
 - **Accounting › Journal Entries › Journal Voucher** — every entry posted to the books, manual and automatic. Post a manual journal here, or reverse one.
 - **Accounting › Registers › General Ledger** — every posted entry, grouped by account.
-- **Accounting › Registers › Tenant Ledger** — one tenant's postings across every account they touch.
+- **Accounting › Registers › Tenant Ledger** — PACT's tenant ledger: receivable accounts by tenant with Chq No, Payee Bank, BDDays and ConvertedDate; switch to **All accounts** for one tenant's full statement. Export Excel (PACT layout), PDF or CSV.
 - **Accounting › Registers › Trial Balance** — account balances as of a date. Debits must equal credits.
 
 ### Final reports
+
+- **Accounting › Final Reports › All reports** — every report your role can run, with a search box.
 
 | Report | Shows | Who |
 |--------|-------|-----|

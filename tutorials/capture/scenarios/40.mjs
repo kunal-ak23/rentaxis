@@ -60,7 +60,7 @@ const scenes = [
     async (page) => {
       const at = sceneClock(page);
       await at(0.6);
-      await page.goto(`/en/dashboard/finance/tenant-ledger?renterId=${palmTenant('layla')}&from=2025-09-01&to=2026-08-31`);
+      await page.goto(`/en/dashboard/finance/tenant-ledger?view=all&renterId=${palmTenant('layla')}&from=2025-09-01&to=2026-08-31`);
       const cbr = row(page, 'CBR-26/1');
       await cbr.waitFor({ state: 'visible', timeout: navTimeoutMs });
       await expectText(cbr, '15,000.00 Dr', 'Balance after the return');
