@@ -172,7 +172,7 @@ public final class ReportWriter {
         Map<String, Object> out = new LinkedHashMap<>();
         for (ReportColumn c : columns) {
             Object v = switch (c.kind()) {
-                case BALANCE -> f.running;
+                case BALANCE -> cents(f.running);
                 case SERIAL -> f.serial;
                 default -> given.get(c.key());
             };

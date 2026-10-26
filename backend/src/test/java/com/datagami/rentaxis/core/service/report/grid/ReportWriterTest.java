@@ -120,6 +120,38 @@ class ReportWriterTest {
     }
 
     @Test
+    void anAuthoritativeCountThatDisagreesIsCaughtWhenTheGridHasACountColumn() {
+        List<ReportColumn> columns = List.of(
+                ReportColumn.serial("sn", "col.docNo", 4),
+                ReportColumn.text("particular", "col.particular", 20),
+                ReportColumn.integer("lines", "col.bdDays", 6, TotalRule.COUNT),
+                ReportColumn.money("debit", "col.debit", 12));
+        w.begin(SampleGrid.meta("en"), columns);
+        w.openGroup(1, Band.GROUP, "Group A");
+        w.row(cells("particular", "x"), RowStyle.PLAIN, Map.of());
+        w.row(cells("particular", "y"), RowStyle.PLAIN, Map.of());
+
+        // the sums agree (debit 0) and the grid has no BALANCE column, so only the count can disagree
+        assertThatThrownBy(() -> w.closeGroup("Sub Total", new GroupTotals(Map.of("debit", ZERO), 3, null)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Report totals disagree")
+                .hasMessageContaining("Group A")
+                .hasMessageContaining("count");
+    }
+
+    @Test
+    void aRowBalanceIsAlwaysAtCentsEvenWithoutAnOpeningOrAmounts() {
+        w.begin(SampleGrid.meta("en"), SampleGrid.COLUMNS);
+        w.openGroup(1, Band.PARTY, "Tenant A");
+        w.row(cells("particular", "Note only"), RowStyle.PLAIN, Map.of());
+        w.closeGroup("Sub Total");
+        w.end();
+
+        assertThat(sink.rowBalances()).containsExactly(d("0.00"));
+        assertThat(sink.rowBalances().get(0).scale()).isEqualTo(2);
+    }
+
+    @Test
     void authoritativeTotalsMustAgreeWhenTheGroupWasWrittenWhole() {
         w.begin(SampleGrid.meta("en"), SampleGrid.COLUMNS);
         w.openGroup(1, Band.PARTY, "Tenant A");
@@ -235,6 +267,25 @@ class ReportWriterTest {
         assertThat(page.subtotals()).isEmpty();
         // the open group is not rolled up into the page's computed total
         assertThat(page.total()).containsEntry("debit", d("0.00")).containsEntry("balance", d("0.00"));
+    }
+
+    @Test
+    void aPartialPageThatStopsInsideAGroupPrintsTheAuthoritativeReportTotalWithoutTheCheck() {
+        w.markPartial();
+        w.begin(SampleGrid.meta("en"), SampleGrid.COLUMNS);
+        w.openGroup(1, Band.PARTY, "Tenant A");
+        w.opening(ZERO);
+        w.row(debit("10"), RowStyle.PLAIN, Map.of());
+
+        // the open group is popped without rolling up, so the computed REPORT TOTAL is 0 and would
+        // disagree with the whole report's SQL totals if they were checked
+        w.end(GroupTotals.debitCredit(ZERO, d("999"), ZERO));
+
+        assertThat(sink.ended()).isTrue();
+        assertThat(sink.total()).containsEntry("debit", d("999.00")).containsEntry("credit", d("0.00"))
+                .containsEntry("balance", d("999.00"));
+        assertThat(sink.endContinues()).isTrue();
+        assertThat(sink.endTruncated()).isFalse();
     }
 
     @Test
