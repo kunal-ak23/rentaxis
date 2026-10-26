@@ -671,7 +671,8 @@ test('10 reversing the voucher leaves the original in place and the balance at z
 test('12 the tenant ledger is empty until lease posting arrives', async ({ browser }) => {
     const { page, close } = await recorded(browser, '12-tenant-ledger-empty-state');
     try {
-        await page.goto('/en/dashboard/finance/tenant-ledger');
+        // The tenant picker and its prompt belong to the "All accounts" view; the page opens on PACT's receivable view.
+        await page.goto('/en/dashboard/finance/tenant-ledger?view=all');
         await expect(page.getByText('Pick a tenant to see their ledger')).toBeVisible();
 
         await page.locator('#ledger-renter').selectOption({ label: fx.renterName });

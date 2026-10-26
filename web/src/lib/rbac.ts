@@ -239,6 +239,11 @@ export const PERMISSIONS = {
     // #55: the VAT return; filing a quarter is TENANT_ADMIN / SUPER_ADMIN (canFileVatReturn).
     canViewVatReturn: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
     canFileVatReturn: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
+    // Accounting › Final Reports › All reports (/dashboard/reports): a list of
+    // links, no endpoint of its own. Exactly the union of the gates in
+    // lib/reports/catalog.ts (catalog.test.ts pins it), so the hub is offered
+    // to a role only when it lists at least one report that role can open.
+    canViewReportsHub: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT', 'PROPERTY_MANAGER'] as UserRole[],
 
     // ---- accounting-v2 plan 4: vouchers ----
     //

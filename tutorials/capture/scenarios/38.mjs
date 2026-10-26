@@ -159,6 +159,8 @@ const scenes = [
       await page.getByTestId('rail-accounting').click();
       await at(1.8);
       await page.getByTestId('sidebar-tenant-ledger').click();
+      // The page opens on PACT's receivable view; the one-tenant statement is "All accounts".
+      await page.getByTestId('tl-view-switch').getByRole('button', { name: 'All accounts', exact: true }).click();
       await page.getByTestId('ledger-renter-filter').waitFor({ state: 'visible', timeout: navTimeoutMs });
       await at(3.0);
       await page.getByTestId('ledger-renter-filter').click();

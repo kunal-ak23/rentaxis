@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.exception.AccessDeniedException;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.ContractChangedException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.api.exception.ReportTooLargeException;
 import com.datagami.rentaxis.api.exception.SlotConflictException;
 import com.datagami.rentaxis.core.service.BulkAttachValidationException;
 import jakarta.validation.ConstraintViolation;
@@ -98,6 +99,21 @@ public class GlobalExceptionHandler {
                 "error", true,
                 "message", ex.getMessage(),
                 "status", 400,
+                "code", ex.getCode(),
+                "args", ex.getArgs()
+        ));
+    }
+
+    /**
+     * A report export over its format's row cap (D8): 422, not the 400 of other business rules.
+     * The more specific handler wins over {@link #handleBusinessRule}.
+     */
+    @ExceptionHandler(ReportTooLargeException.class)
+    public ResponseEntity<Map<String, Object>> handleReportTooLarge(ReportTooLargeException ex) {
+        return ResponseEntity.status(422).body(Map.of(
+                "error", true,
+                "message", ex.getMessage(),
+                "status", 422,
                 "code", ex.getCode(),
                 "args", ex.getArgs()
         ));

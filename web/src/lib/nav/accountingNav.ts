@@ -1,6 +1,7 @@
 // src/lib/nav/accountingNav.ts
 import type { FiscalSettings } from "../api/ledger";
 import { hasPermission, type Permission, type UserRole } from "../rbac";
+import { catalogNavItems } from "../reports/catalog";
 import { buildCollectionsTabs } from "./collectionsModel";
 import type { Label } from "./types";
 
@@ -26,6 +27,9 @@ function collectionsHref(id: "all" | "penalties"): string {
  * it (spec "Terminology"). Every item keeps the exact gate its sidebar link
  * had before (MvpSidebar.tsx at 2026-09-25), so no role gains or loses a page.
  * Debit Note is not listed: there is no debit-note page to link to.
+ * The report items of Registers and Final Reports come from the report
+ * catalog (lib/reports/catalog.ts), so the nav and the Reports hub list the
+ * same pages under the same gates; the hub itself heads Final Reports.
  */
 const GROUPS: { id: AccountingGroupId; key: string; items: ItemDef[] }[] = [
     { id: "accounts", key: "groupAccounts", items: [
@@ -42,9 +46,7 @@ const GROUPS: { id: AccountingGroupId; key: string; items: ItemDef[] }[] = [
         item("credit-note", `${F}/vouchers/credit-note`, "AccountingNav", "creditNote", "sidebar-credit-note", "canManageVouchers"),
     ] },
     { id: "registers", key: "groupRegisters", items: [
-        item("general-ledger", `${F}/general-ledger`, "Ledger", "generalLedger", "sidebar-general-ledger", "canAccessFinance"),
-        item("tenant-ledger", `${F}/tenant-ledger`, "Ledger", "tenantLedger", "sidebar-tenant-ledger", "canAccessFinance"),
-        item("trial-balance", `${F}/trial-balance`, "Ledger", "trialBalance", "sidebar-trial-balance", "canAccessFinance"),
+        ...catalogNavItems("registers"),
         item("cheque-registers", collectionsHref("all"), "AccountingNav", "chequeRegisters", "sidebar-cheques-register", "canManageCheques", true),
     ] },
     { id: "receivablesPayables", key: "groupReceivablesPayables", items: [
@@ -59,11 +61,8 @@ const GROUPS: { id: AccountingGroupId; key: string; items: ItemDef[] }[] = [
         item("bank-reconciliation", `${F}/bank-reconciliation`, "BankRec", "sidebar", "sidebar-bank-reconciliation", "canReconcileBank"),
     ] },
     { id: "finalReports", key: "groupFinalReports", items: [
-        item("balance-sheet", `${F}/reports/balance-sheet`, "PropertyReports", "balanceSheet", "sidebar-balance-sheet", "canViewPropertyReports"),
-        item("company-pl", `${F}/reports/company-pl`, "PropertyReports", "companyPl", "sidebar-company-pl", "canViewCompanyReports"),
-        item("property-pl", `${F}/reports/property-pl`, "PropertyReports", "propertyPl", "sidebar-property-pl", "canViewPropertyReports"),
-        item("property-statement", `${F}/reports/property-statement`, "PropertyReports", "propertyStatement", "sidebar-property-statement", "canViewPropertyReports"),
-        item("vat-return", `${F}/reports/vat-return`, "PropertyReports", "vatReturn", "sidebar-vat-return", "canViewVatReturn"),
+        item("reports-hub", "/dashboard/reports", "AccountingNav", "reportsHub", "sidebar-reports-hub", "canViewReportsHub"),
+        ...catalogNavItems("finalReports"),
     ] },
     { id: "yearEnd", key: "groupYearEnd", items: [
         item("fiscal", `${F}/fiscal`, "Ledger", "fiscal", "sidebar-fiscal", "canManageAccountSetup"),
