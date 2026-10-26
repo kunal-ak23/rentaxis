@@ -69,6 +69,7 @@ class VatReturnServiceIT extends AbstractPostgresIT {
     @Autowired RenterRepository renterRepo;
     @Autowired UnitRepository unitRepo;
     @Autowired TaxInvoiceService taxInvoices;
+    @Autowired com.datagami.rentaxis.core.service.lease.LeaseRenewalService renewal;
     @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private LeaseTestFixtures fixtures;
@@ -353,5 +354,41 @@ class VatReturnServiceIT extends AbstractPostgresIT {
         service.reopen(filed.id(), "late contract invoice");
         assertThat(vatTaxPoints.issueContractInvoice(leaseId)).hasSize(before + 1)
                 .anySatisfy(i -> assertThat(i.issueDate()).isEqualTo(CONTRACT));
+    }
+
+    /**
+     * Sim r23 S23-02: extending a CONTRACT-timing VAT lease credits Output VAT on the extension's
+     * TCO, so the extension issues its tax invoice exactly as an addendum does (S16-04). Dated in
+     * a filed quarter it is refused by the journal lock (vat.periodFiled) and nothing is issued.
+     */
+    @Test
+    void extendingAContractVatLeaseIssuesItsTaxInvoice() {
+        Unit shop = fixtures.createUnit(fixtures.property(), "SH-2");
+        UUID leaseId = fixtures.draftLease(shop, fixtures.createRenter("Shop Two"), CONTRACT, START, END,
+                List.of(vatLine("RENT", "60000")));
+        jdbc.update("update leases set vat_timing = 'CONTRACT' where id = ?", leaseId);
+        fixtures.generateGrid(leaseId, 4, START);
+        fixtures.numberGrid(leaseId, "740001");
+        posting.post(leaseId);
+        quarter();
+        service.file(Q2, "FTA-S23");
+        int before = taxInvoices.forLease(leaseId).size();
+        java.util.function.Function<LocalDate, com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest> ext = on ->
+                new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(LocalDate.of(2027, 7, 31), on,
+                        List.of(vatLine("RENT", "18000")),
+                        List.of(LeaseTestFixtures.chequeRow("18900", LocalDate.of(2027, 5, 1))));
+
+        assertThatThrownBy(() -> renewal.extend(leaseId, ext.apply(LocalDate.of(2026, 6, 15))))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("vat.periodFiled"));
+        assertThat(taxInvoices.forLease(leaseId)).hasSize(before);
+
+        renewal.extend(leaseId, ext.apply(null));
+        var invoices = taxInvoices.forLease(leaseId);
+        assertThat(invoices).hasSize(before + 1);
+        var issued = invoices.get(invoices.size() - 1);
+        assertThat(issued.kind()).isEqualTo(com.datagami.rentaxis.domain.entity.enums.TaxInvoiceKind.TAX_INVOICE);
+        assertThat(issued.vatAmount()).isEqualByComparingTo("900.00");
+        assertThat(issued.taxableAmount()).isEqualByComparingTo("18000.00");
     }
 }

@@ -305,6 +305,107 @@ class ChargeRecognitionIT extends AbstractPostgresIT {
                 .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("settlement.unearnedFeeTooMuch"));
     }
 
+    private LocalDate maxSegmentTo(UUID leaseId, String narration) {
+        return jdbc.queryForObject("select max(s.to_date) from rent_segments s join lease_lines l on l.id = s.lease_line_id"
+                + " where s.lease_id = ? and l.narration = ?", LocalDate.class, leaseId, narration);
+    }
+
+    private static com.datagami.rentaxis.api.dto.lease.LeaseLineInput narrated(String code, String gross, String narration,
+                                                                               LocalDate from, LocalDate to) {
+        return new com.datagami.rentaxis.api.dto.lease.LeaseLineInput(null, code, new BigDecimal(gross), BigDecimal.ZERO,
+                narration, null, null, from, to);
+    }
+
+    /**
+     * Sim r23 S23-01 (stepped.py case A): a contract whose own RENT lines are dated in steps
+     * (year 1, year 2) is not an extended lease. Its undated parking fee is recognised over the
+     * whole two-year term, and the lease has no original end date.
+     */
+    @Test
+    void steppedRentDoesNotShortenAnUndatedFeesWindow() {
+        LocalDate end2 = LocalDate.of(2028, 9, 23), mid = LocalDate.of(2027, 9, 24);
+        UUID leaseId = fixtures.postedLease(CONTRACT_DATE, START, end2, List.of(
+                narrated("RENT", "51000", "Year 1", START, mid.minusDays(1)),
+                narrated("RENT", "53000", "Year 2", mid, end2),
+                narrated("PARKING_FEE", "6000", "Parking (whole term)", null, null)), 4, null).lease().getId();
+        assertThat(maxSegmentTo(leaseId, "Parking (whole term)")).isEqualTo(end2);
+        LocalDate original = tx.execute(x -> leaseRepo.findById(leaseId).orElseThrow().getOriginalEndDate());
+        assertThat(original).isNull();
+    }
+
+    /**
+     * Sim r23 S23-01 (stepped.py case B): a fee line the contract itself dates from month 3 does
+     * not end the term of the contract's other, undated fee.
+     */
+    @Test
+    void aDatedFeeLineDoesNotShortenAnotherFeesWindow() {
+        UUID leaseId = fixtures.postedLease(CONTRACT_DATE, START, END, List.of(
+                line("RENT", "51000"),
+                narrated("PARKING_FEE", "2500", "Second bay from December", LocalDate.of(2026, 12, 1), END),
+                narrated("PARKING_FEE", "3650", "First bay (whole term)", null, null)), 4, null).lease().getId();
+        assertThat(maxSegmentTo(leaseId, "First bay (whole term)")).isEqualTo(END);
+        assertThat(maxSegmentTo(leaseId, "Second bay from December")).isEqualTo(END);
+    }
+
+    /**
+     * Sim r23 S23-01: the original term is the extension's own record. Extended twice, the lease
+     * remembers the end before the FIRST extension, and the R1 offer still measures the cut-over
+     * fee over that year; a stepped contract that is then extended keeps its own full term.
+     */
+    @Test
+    void aTwiceExtendedLeaseRemembersTheEndBeforeItsFirstExtension() {
+        UUID leaseId = postedTheOldWay();
+        for (LocalDate to : List.of(LocalDate.of(2027, 12, 31), LocalDate.of(2028, 3, 31))) {
+            LocalDate end = tx.execute(x -> leaseRepo.findById(leaseId).orElseThrow().getEndDate());
+            renewal.extend(leaseId, new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(to, null,
+                    List.of(new com.datagami.rentaxis.api.dto.lease.LeaseLineInput(null, "RENT", new BigDecimal("12000"),
+                            BigDecimal.ZERO, null, null, null, null, null)),
+                    List.of(LeaseTestFixtures.chequeRow("12000", end.plusDays(9)))));
+        }
+        var lease = tx.execute(x -> leaseRepo.findById(leaseId).orElseThrow());
+        assertThat(lease.getOriginalEndDate()).isEqualTo(END);
+        assertThat(lease.getEndDate()).isEqualTo(LocalDate.of(2028, 3, 31));
+        termination.terminate(leaseId, new TerminateLeaseRequest(T, null, null, "Early exit"), null);
+        assertThat(settlements.statement(leaseId).unearnedFeeRefunds()).singleElement().satisfies(o -> {
+            assertThat(o.to()).isEqualTo(END);
+            assertThat(o.amount()).isEqualByComparingTo("2200.00");
+        });
+    }
+
+    /**
+     * Sim r23 S23-01: changeset 182's backfill reads the original end from the extension's own
+     * lease_events record ("Lease extended from <end> to ..."), the earliest one, never from line
+     * dates. Run here, as written in the changeset, on two extensions and a stepped contract.
+     */
+    @Test
+    void changeset182BackfillsTheOriginalEndFromTheExtensionEvents() throws Exception {
+        UUID extended = postedTheOldWay();
+        for (LocalDate to : List.of(LocalDate.of(2027, 12, 31), LocalDate.of(2028, 3, 31))) {
+            LocalDate end = tx.execute(x -> leaseRepo.findById(extended).orElseThrow().getEndDate());
+            renewal.extend(extended, new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(to, null,
+                    List.of(new com.datagami.rentaxis.api.dto.lease.LeaseLineInput(null, "RENT", new BigDecimal("12000"),
+                            BigDecimal.ZERO, null, null, null, null, null)),
+                    List.of(LeaseTestFixtures.chequeRow("12000", end.plusDays(9)))));
+        }
+        LocalDate end2 = LocalDate.of(2028, 9, 23);
+        var other = tx.execute(x -> fixtures.createUnit(fixtures.property(), "ST-1"));
+        UUID stepped = fixtures.postedLease(other, fixtures.createRenter("Stepped"), CONTRACT_DATE, START, end2, List.of(
+                narrated("RENT", "51000", "Year 1", START, LocalDate.of(2027, 9, 23)),
+                narrated("RENT", "53000", "Year 2", LocalDate.of(2027, 9, 24), end2)), 4, null).lease().getId();
+        jdbc.update("update leases set original_end_date = null where id in (?, ?)", extended, stepped);
+
+        String yaml = new String(getClass().getResourceAsStream(
+                "/db/changelog/changesets/182-lease-original-end-date.yaml").readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?s)sql: \\|\\n(\\s+UPDATE leases le.*?)\\n      rollback:").matcher(yaml);
+        assertThat(m.find()).isTrue();
+        jdbc.update(m.group(1));
+
+        assertThat(jdbc.queryForObject("select original_end_date from leases where id = ?", LocalDate.class, extended))
+                .as("the end before the first extension").isEqualTo(END);
+        assertThat(jdbc.queryForObject("select original_end_date from leases where id = ?", LocalDate.class, stepped))
+                .as("never extended: no original end, whatever its lines' dates").isNull();
+    }
+
     private static com.datagami.rentaxis.api.dto.SaveSettlementDTO.DeductionItemDTO refund(UUID account, String amount) {
         var i = new com.datagami.rentaxis.api.dto.SaveSettlementDTO.DeductionItemDTO();
         i.setType(com.datagami.rentaxis.domain.entity.enums.LineItemType.ADDITION);

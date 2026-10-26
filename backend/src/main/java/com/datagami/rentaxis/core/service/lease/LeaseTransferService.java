@@ -200,7 +200,7 @@ public class LeaseTransferService {
         // PR #359 R1 P2-1: the terms after any credit addendum on the move date.
         List<LeaseEffectiveTerms.EffectiveLine> effective = effectiveTerms.effectiveLines(a, start);
         List<LeaseLine> aLines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(a.getId());
-        LocalDate originalEnd = com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(a, aLines);
+        LocalDate originalEnd = com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(a);
         for (LeaseLine l : aLines) {
             LeaseEffectiveTerms.EffectiveLine eff = effectiveTerms.of(effective, l);
             if (eff != null && eff.removed()) continue;
@@ -279,7 +279,7 @@ public class LeaseTransferService {
         java.util.Set<UUID> chargedOnA = new java.util.HashSet<>();
         List<LeaseLine> aLines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(a.getId());
         // Sim r22 S22-02: an undated fee ran over the term it was charged for, not an extended end.
-        LocalDate originalEnd = com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(a, aLines);
+        LocalDate originalEnd = com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(a);
         for (LeaseLine l : aLines) {
             if (l.getChargeType() == null || l.getChargeType().getBehaviour() != ChargeBehaviour.FEE) continue;
             if (l.getPostedRecognition() != com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.ONE_OFF) continue;

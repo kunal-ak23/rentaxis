@@ -428,7 +428,7 @@ public class SettlementService {
         }
         List<com.datagami.rentaxis.api.dto.settlement.UnearnedFeeRefundDTO> out = new ArrayList<>();
         List<com.datagami.rentaxis.domain.entity.LeaseLine> all = leaseLines.findByLease_IdOrderBySeqNoAsc(lease.getId());
-        LocalDate chargedThrough = LeaseService.originalTermEnd(lease, all);
+        LocalDate chargedThrough = LeaseService.originalTermEnd(lease);
         for (com.datagami.rentaxis.domain.entity.LeaseLine line : all) {
             var type = line.getChargeType();
             if (type == null || type.getBehaviour() != com.datagami.rentaxis.domain.entity.enums.ChargeBehaviour.FEE

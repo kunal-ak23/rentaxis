@@ -603,6 +603,10 @@ public class LeaseRenewalService {
     // extend
     // ------------------------------------------------------------------
 
+    /** Sim r23 S23-02: the tax invoice for the VAT a CONTRACT lease's extension declares. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.datagami.rentaxis.core.service.vat.VatTaxPointService vatTaxPoints;
+
     /**
      * Make a posted lease run longer, and charge for the extra time (spec §6.7).
      *
@@ -696,6 +700,16 @@ public class LeaseRenewalService {
         // post-dated cheque needs its number. LeaseChequeRegistrar.register refuses
         // one anyway; listing it here puts it beside every other problem at once.
         problems.addAll(LeaseChequeRegistrar.missingNumbers(newRows));
+        // Sim r23 S23-02: on a CONTRACT-timing lease the extension's TCO declares its VAT at
+        // once, so it issues a tax invoice exactly as an addendum does (S16-04), and needs the
+        // supplier's TRN. A date in a filed VAT period is refused by the TCO's own journal lock.
+        java.math.BigDecimal extensionVat = InstalmentVat.contractVat(newLines);
+        boolean contractVat = lease.getVatTiming() == com.datagami.rentaxis.domain.entity.enums.VatTiming.CONTRACT
+                && extensionVat.signum() > 0;
+        if (contractVat && !postingService.hasSupplierTrn(lease)) {
+            problems.add("This extension charges VAT, so it issues a tax invoice, and the organisation has no TRN."
+                    + " Add the TRN to the organisation's details first.");
+        }
         if (problems.isEmpty() && !missing.isEmpty()) {
             throw new UnmappedAccountRoleException(missing, LeasePostingService.propertyIdOf(lease));
         }
@@ -712,7 +726,14 @@ public class LeaseRenewalService {
         for (Cheque row : newRows) {
             chequeRegistrar.register(lease, row);
         }
+        if (contractVat && vatTaxPoints != null) {
+            vatTaxPoints.recordChargeVat(lease, entryDate, tco.getId(),
+                    InstalmentVat.contractTaxable(newLines), extensionVat);
+        }
 
+        // Sim r23 S23-01: the provenance of the original term, recorded once (the first
+        // extension); the contract's own undated lines stay charged for it.
+        if (lease.getOriginalEndDate() == null) lease.setOriginalEndDate(previousEnd);
         lease.setEndDate(r.newEndDate());
         // After the end date, so totalDays counts the term the lease now has.
         leaseService.syncDerivedTotals(lease);

@@ -92,6 +92,10 @@ describe("CSV import", () => {
         const ar = applyChequeCsv("العقد,تاريخ الاستحقاق,رقم الشيك\n07-01,01/01/2028,910002", drafts, {});
         expect(ar.invalidDates).toEqual([]);
         expect(ar.edits.r1?.chequeNumber).toBe("910002");
+        // Sim r23: a title row above the header is preamble too.
+        const titled = applyChequeCsv("Cheque numbers – Tower A\ncontract,due,number\n07-01,01/01/2028,910003", drafts, {});
+        expect(titled.invalidDates).toEqual([]);
+        expect(titled.edits.r1?.chequeNumber).toBe("910003");
         // A non-date on a later line is still reported.
         expect(applyChequeCsv("\ncontract,due,number\n07-01,soon,1", drafts, {}).invalidDates).toEqual([3]);
     });

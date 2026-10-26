@@ -599,8 +599,7 @@ public class RecognitionService {
         // An extension moves lease.endDate but dates its own lines, so an amendment's rebuild
         // must not spread the fee over the extension's months.
         LocalDate to = line.getPeriodEnd() != null ? line.getPeriodEnd()
-                : com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(lease,
-                        leaseLines.findByLease_IdOrderBySeqNoAsc(lease.getId()));
+                : com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(lease);
         if (from == null || to == null || to.isBefore(from)) {
             throw new BusinessRuleViolationException("Line " + line.getSeqNo()
                     + (rent ? " charges rent" : " is earned over the term")
@@ -1499,8 +1498,7 @@ public class RecognitionService {
             LocalDate from = line.getPeriodStart() != null ? line.getPeriodStart() : lease.getStartDate();
             // S22-02: the same window as schedulable (identical to lease.endDate unless extended).
             LocalDate to = line.getPeriodEnd() != null ? line.getPeriodEnd()
-                    : com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(lease,
-                            leaseLines.findByLease_IdOrderBySeqNoAsc(lease.getId()));
+                    : com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(lease);
             // Refused, not skipped. The listener's own contract is that a contract
             // whose income cannot be scheduled is a refusal the accountant sees when
             // they press Post; skipping would park the rent in ADVANCE_RENT forever

@@ -155,14 +155,17 @@ export function applyChequeCsv(text: string, drafts: CsvDraft[], edits: Record<s
     let applied = 0;
     const lines = text.replace(/^﻿/, "").split(/\r?\n/);
     const sep = separatorOf(lines.find(l => l.trim()) ?? "");
-    // Sim r22 S22-05: the header is the first non-blank line (a file may open with blank
-    // lines), and an Arabic header is a header too.
-    const headerAt = lines.findIndex(l => l.trim());
+    // Sim r22 S22-05 / r23: blank lines, a title row and the header may come before the
+    // data. Every leading row with words, no due date and no known contract (English or
+    // Arabic) is preamble; the first other row ends it.
+    let preamble = true;
     lines.forEach((line, i) => {
         if (!line.trim()) return;
         const [contract = "", due = "", number = "", bank = "", chequeDate = ""] = csvCells(line, sep);
         const dueIso = csvDate(due);
-        if (i === headerAt && !dueIso && /[a-z\u0600-\u06FF]/i.test(due)) return; // a header
+        // A row naming a known contract is data, even with a bad date (reported below).
+        if (preamble && !dueIso && !byKey.has(norm(contract)) && /[a-z\u0600-\u06FF]/i.test(line)) return; // a title or the header
+        preamble = false;
         const chequeIso = chequeDate.trim() ? csvDate(chequeDate) : null;
         if (!dueIso || (chequeDate.trim() && !chequeIso)) {
             invalidDates.push(i + 1);

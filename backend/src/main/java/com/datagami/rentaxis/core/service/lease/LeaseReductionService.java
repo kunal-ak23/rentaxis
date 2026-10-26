@@ -454,8 +454,7 @@ public class LeaseReductionService {
         LocalDate e = r.effectiveFrom();
         List<LeaseEffectiveTerms.EffectiveLine> effective = effectiveTerms == null ? List.of()
                 : effectiveTerms.effectiveLines(lease, null);
-        LocalDate originalEnd = com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(lease,
-                leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId()));
+        LocalDate originalEnd = com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(lease);
         Map<UUID, LeaseLine> lines = new LinkedHashMap<>();
         for (LeaseLine l : leaseLineRepository.findByLease_IdOrderBySeqNoAsc(lease.getId())) lines.put(l.getId(), l);
         Set<UUID> seen = new HashSet<>();
