@@ -97,6 +97,7 @@ PromoAd _arabicAd({
   String title = 'خصم خمسة وعشرين بالمئة على برانش الجمعة في ممشى مارينا دبي',
   String? subtitle,
   String ctaType = 'NONE',
+  String? logoUrl,
 }) =>
     PromoAd.fromJson({
       'id': 'ad-ar',
@@ -104,6 +105,7 @@ PromoAd _arabicAd({
         'id': 'b-1',
         'nameEn': 'Spice Bazaar',
         'nameAr': 'سبايس بازار',
+        'logoUrl': logoUrl,
         'category': 'DINING',
       },
       'titleEn': 'Twenty five percent off every Friday brunch at the marina',
@@ -467,4 +469,99 @@ void main() {
     expect(decoration.image, isNotNull);
   });
 
+  group('business logo', () {
+    const logo = 'https://example.invalid/logo.png';
+
+    testWidgets('has no logo slot when the business has no logo',
+        (tester) async {
+      await tester.pumpWidget(host(AdCard(
+        ad: testAd(ctaType: 'COUPON', couponCode: 'MIFTAH25'),
+        onTap: () {},
+      )));
+
+      expect(find.byKey(const Key('ad-card-logo-slot')), findsNothing);
+    });
+
+    for (final arabic in [false, true]) {
+      testWidgets(
+          'sits at the bottom-end, opposite the CTA (${arabic ? 'RTL' : 'LTR'})',
+          (tester) async {
+        await tester.pumpWidget(host(
+          AdCard(
+            ad: arabic
+                ? _arabicAd(ctaType: 'COUPON', logoUrl: logo)
+                : testAd(
+                    ctaType: 'COUPON', couponCode: 'MIFTAH25', logoUrl: logo),
+            onTap: () {},
+          ),
+          arabic: arabic,
+        ));
+
+        final card = tester.getRect(find.byKey(const Key('ad-card-surface')));
+        final slot = tester.getRect(find.byKey(const Key('ad-card-logo-slot')));
+        final cta = tester.getRect(find.byKey(const Key('ad-card-cta')));
+        expect(slot.size, const Size(28, 28));
+        expect(slot.bottom, lessThanOrEqualTo(card.bottom - _cardInset));
+        expect(slot.center.dy, closeTo(cta.center.dy, 0.5));
+        if (arabic) {
+          expect(slot.left, closeTo(card.left + _cardInset, 0.5));
+          expect(slot.right, lessThan(cta.left));
+        } else {
+          expect(slot.right, closeTo(card.right - _cardInset, 0.5));
+          expect(slot.left, greaterThan(cta.right));
+        }
+      });
+    }
+
+    testWidgets('takes no room from the copy on a card with a CTA',
+        (tester) async {
+      Future<Rect> clipWith(String? logoUrl) async {
+        await tester.pumpWidget(host(AdCard(
+          ad: testAd(
+            titleEn: 'Twenty five percent off every Friday brunch at the marina',
+            subtitleEn: 'Marina walk',
+            ctaType: 'COUPON',
+            couponCode: 'MIFTAH25',
+            logoUrl: logoUrl,
+          ),
+          onTap: () {},
+        )));
+        return _copyBlock(tester).clip;
+      }
+
+      final without = await clipWith(null);
+      final withLogo = await clipWith(logo);
+      expect(withLogo.height, without.height);
+    });
+
+    for (final entry in _cardWidths.entries) {
+      for (final arabic in [false, true]) {
+        for (final scale in [1.0, 1.5]) {
+          testWidgets(
+              'a logo-only card slices no line at ${entry.key}, '
+              '${arabic ? 'Arabic' : 'English'}, ${scale}x', (tester) async {
+            await tester.pumpWidget(host(
+              AdCard(
+                ad: arabic
+                    ? _arabicAd(logoUrl: logo)
+                    : testAd(
+                        titleEn: 'Twenty five percent off every Friday brunch '
+                            'at the marina walk this month',
+                        subtitleEn: 'Marina walk',
+                        logoUrl: logo,
+                      ),
+                onTap: () {},
+              ),
+              width: entry.value,
+              textScale: scale,
+              arabic: arabic,
+            ));
+
+            expect(find.byKey(const Key('ad-card-logo-slot')), findsOneWidget);
+            _expectNoSlicedLine(tester);
+          });
+        }
+      }
+    }
+  });
 }

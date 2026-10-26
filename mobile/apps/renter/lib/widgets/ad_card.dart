@@ -18,6 +18,10 @@ const _maxHeightScale = 1.5;
 /// Space between the lines of the copy block.
 const _copyGap = 3.0;
 
+/// The business logo's tile. No taller than the CTA pill, so a card with both
+/// gives its copy no less room than a card with the pill alone.
+const _logoSize = 28.0;
+
 /// The height an [AdCard] occupies at a given text scale. The carousel needs
 /// this before it builds a card, so it lives here rather than inside the
 /// widget. Clamped at 1.5x: past that the card holds still and the copy block
@@ -51,6 +55,7 @@ class AdCard extends StatelessWidget {
     final onFill = hasImage ? Colors.white : MiftahColors.textPrimary;
     final eyebrow = ad.subtitle(isAr) ?? ad.business.name(isAr);
     final ctaLabel = ad.ctaLabel(isAr);
+    final logoUrl = ad.business.logoUrl;
     final businessName = ad.business.name(isAr);
     // When the eyebrow is showing the subtitle, the business name has nowhere
     // else to appear — and on a card with no artwork the renter has no other
@@ -174,26 +179,90 @@ class AdCard extends StatelessWidget {
                 },
               ),
             ),
-            if (ctaLabel.isNotEmpty) ...[
+            if (ctaLabel.isNotEmpty || logoUrl != null) ...[
               const SizedBox(height: 6),
-              Container(
-                key: const Key('ad-card-cta'),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                decoration: BoxDecoration(
-                  color: hasImage ? MiftahColors.surface : MiftahColors.ink,
-                  borderRadius: BorderRadius.circular(MiftahRadii.pill),
-                ),
-                child: Text(
-                  isAr ? '← $ctaLabel' : '$ctaLabel →',
-                  style: MiftahType.badge(
-                    color: hasImage ? MiftahColors.ink : MiftahColors.surface,
-                  ).copyWith(fontSize: 11),
-                ),
+              // The pill takes the start, the logo the end: the corner the
+              // copy block's start-aligned lines leave free.
+              Row(
+                children: [
+                  // Expanded + Align rather than a Spacer: the pill keeps its
+                  // natural width but is still bounded by the row, so its label
+                  // wraps at large text scales instead of overflowing it.
+                  Expanded(
+                    child: ctaLabel.isEmpty
+                        ? const SizedBox.shrink()
+                        : Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: Container(
+                              key: const Key('ad-card-cta'),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 7),
+                              decoration: BoxDecoration(
+                                color: hasImage
+                                    ? MiftahColors.surface
+                                    : MiftahColors.ink,
+                                borderRadius:
+                                    BorderRadius.circular(MiftahRadii.pill),
+                              ),
+                              child: Text(
+                                isAr ? '← $ctaLabel' : '$ctaLabel →',
+                                style: MiftahType.badge(
+                                  color: hasImage
+                                      ? MiftahColors.ink
+                                      : MiftahColors.surface,
+                                ).copyWith(fontSize: 11),
+                              ),
+                            ),
+                          ),
+                  ),
+                  if (logoUrl != null) ...[
+                    const SizedBox(width: 8),
+                    _BusinessLogo(
+                        key: const Key('ad-card-logo-slot'), url: logoUrl),
+                  ],
+                ],
               ),
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The promoted business's logo, on a white tile so a transparent PNG reads on
+/// a photo and on a colour card alike.
+///
+/// The tile appears only once the image has arrived. A logo that fails to load
+/// (a deleted blob, a business paused since the feed was fetched) leaves the
+/// corner empty rather than showing a blank white square.
+class _BusinessLogo extends StatelessWidget {
+  const _BusinessLogo({super.key, required this.url});
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    // Decorative: the card already names the business in its copy or eyebrow.
+    return ExcludeSemantics(
+      child: CachedNetworkImage(
+        imageUrl: url,
+        imageBuilder: (context, image) => Container(
+          key: const Key('ad-card-logo'),
+          width: _logoSize,
+          height: _logoSize,
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: MiftahColors.surface,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Image(image: image, fit: BoxFit.contain),
+        ),
+        // Holds the corner while loading, so the pill doesn't shift when the
+        // logo lands.
+        placeholder: (context, url) =>
+            const SizedBox(width: _logoSize, height: _logoSize),
+        errorWidget: (context, url, error) => const SizedBox.shrink(),
       ),
     );
   }

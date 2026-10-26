@@ -75,3 +75,29 @@ describe('AdCardPreview fallback surface', () => {
     })
 
 })
+
+describe('AdCardPreview business logo', () => {
+    const base = { title: 'Half off shawarma', businessName: 'Spice Bazaar' }
+    const route = '/api/v1/public/promo-images/0b0f2c1e-1111-4222-8333-944455556666.png'
+
+    it('shows the logo through the admin image route, after the CTA', () => {
+        render(<AdCardPreview {...base} ctaType="COUPON" logoUrl={route} />)
+        const logo = screen.getByTestId('ad-card-logo')
+        expect(logo.getAttribute('src'))
+            .toBe('/api/proxy/v1/promotions/images/0b0f2c1e-1111-4222-8333-944455556666.png')
+        // DOM order is start → end; dir="rtl" mirrors it, as Flutter's Row does.
+        expect(screen.getByTestId('ad-card-cta').compareDocumentPosition(logo)
+            & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    it('shows the logo on a card with no call to action', () => {
+        render(<AdCardPreview {...base} ctaType="NONE" logoUrl={route} />)
+        expect(screen.getByTestId('ad-card-logo')).toBeInTheDocument()
+        expect(screen.queryByTestId('ad-card-cta')).toBeNull()
+    })
+
+    it('draws no logo when the business has none', () => {
+        render(<AdCardPreview {...base} ctaType="COUPON" />)
+        expect(screen.queryByTestId('ad-card-logo')).toBeNull()
+    })
+})

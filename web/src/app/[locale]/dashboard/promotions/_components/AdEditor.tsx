@@ -420,6 +420,7 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
                         subtitle={previewAr ? (subtitleAr || subtitleEn) : (subtitleEn || subtitleAr)}
                         businessName={previewAr ? (business?.nameAr ?? business?.nameEn) : business?.nameEn}
                         backgroundImageUrl={backgroundImageUrl || null}
+                        logoUrl={business?.logoUrl ?? null}
                         accentColor={accentColor || null}
                         ctaType={ctaType}
                         ctaLabel={previewAr ? (ctaLabelAr || ctaLabelEn) : (ctaLabelEn || ctaLabelAr)}

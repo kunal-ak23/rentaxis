@@ -35,6 +35,8 @@ export interface AdCardPreviewProps {
     subtitle?: string | null;
     businessName?: string | null;
     backgroundImageUrl?: string | null;
+    /** The business's logo; the app draws it at the card's bottom-end. */
+    logoUrl?: string | null;
     accentColor?: string | null;
     ctaType: PromoCtaType;
     ctaLabel?: string | null;
@@ -53,7 +55,7 @@ export function defaultCtaLabel(type: PromoCtaType, rtl: boolean): string {
 }
 
 export function AdCardPreview({
-    title, subtitle, businessName, backgroundImageUrl, accentColor,
+    title, subtitle, businessName, backgroundImageUrl, logoUrl, accentColor,
     ctaType, ctaLabel, rtl = false,
 }: AdCardPreviewProps) {
     const hasImage = Boolean(backgroundImageUrl);
@@ -150,22 +152,37 @@ export function AdCardPreview({
                 )}
             </div>
 
-            {ctaType !== "NONE" && (
-                <div className="relative">
-                    <span
-                        data-testid="ad-card-cta"
-                        style={{
-                            display: "inline-block",
-                            background: hasImage ? SURFACE : INK,
-                            color: hasImage ? INK : SURFACE,
-                            borderRadius: 9999,
-                            padding: "7px 14px",
-                            fontSize: 11,
-                            fontWeight: 800,
-                        }}
-                    >
-                        {rtl ? `← ${label}` : `${label} →`}
-                    </span>
+            {(ctaType !== "NONE" || logoUrl) && (
+                // The pill takes the start and the logo the end, as on the phone.
+                <div className="relative flex items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                        {ctaType !== "NONE" && (
+                            <span
+                                data-testid="ad-card-cta"
+                                style={{
+                                    display: "inline-block",
+                                    background: hasImage ? SURFACE : INK,
+                                    color: hasImage ? INK : SURFACE,
+                                    borderRadius: 9999,
+                                    padding: "7px 14px",
+                                    fontSize: 11,
+                                    fontWeight: 800,
+                                }}
+                            >
+                                {rtl ? `← ${label}` : `${label} →`}
+                            </span>
+                        )}
+                    </div>
+                    {logoUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                            data-testid="ad-card-logo"
+                            src={promoImageSrc(logoUrl)}
+                            alt=""
+                            className="h-7 w-7 shrink-0 object-contain"
+                            style={{ background: SURFACE, borderRadius: 6, padding: 3 }}
+                        />
+                    )}
                 </div>
             )}
 

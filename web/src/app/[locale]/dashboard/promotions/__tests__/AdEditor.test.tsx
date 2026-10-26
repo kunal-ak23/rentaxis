@@ -275,6 +275,21 @@ describe('AdEditor', () => {
             .toHaveAccessibleDescription(`${messages.Promotions.imageHint} ${messages.Promotions.artworkSizeHint}`)
     })
 
+    it('previews the chosen business logo', () => {
+        render(
+            <NextIntlClientProvider locale="en" messages={messages}>
+                <AdEditor
+                    businesses={[{ ...business, logoUrl: 'https://cdn.example.com/logo.png' }]}
+                    properties={[]}
+                    ad={null}
+                    onSave={vi.fn()}
+                    onCancel={vi.fn()}
+                />
+            </NextIntlClientProvider>,
+        )
+        expect(screen.getByTestId('ad-card-logo').getAttribute('src')).toBe('https://cdn.example.com/logo.png')
+    })
+
     it('renders the live preview with the typed title', () => {
         renderEditor()
         fireEvent.change(screen.getByLabelText('Title (English)'), {
