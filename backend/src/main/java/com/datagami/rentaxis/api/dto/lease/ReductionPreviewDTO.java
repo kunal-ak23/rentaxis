@@ -36,7 +36,9 @@ public record ReductionPreviewDTO(LocalDate effectiveFrom,
                              BigDecimal lineAmount, BigDecimal newLineAmount,
                              LocalDate from, LocalDate to, int remainingDays,
                              BigDecimal remainingBefore, BigDecimal remainingAfter,
-                             BigDecimal credit, BigDecimal vat) {
+                             BigDecimal credit, BigDecimal vat,
+                             /* Ruling R7: the headline before and after, and the concession at the new rate. */
+                             BigDecimal currentHeadline, BigDecimal newHeadline, BigDecimal newRentFree) {
     }
 
     /** An uncleared instalment that could be handed back. */

@@ -63,6 +63,7 @@ class BookingFeeIT extends AbstractPostgresIT {
     @Autowired com.datagami.rentaxis.domain.repository.BookingRequestRepository bookingRepo;
     @Autowired com.datagami.rentaxis.domain.repository.LeaseRepository leaseRepo;
     @Autowired TransactionTemplate tx;
+    @Autowired com.datagami.rentaxis.core.service.cheque.ChequeService chequeService;
 
     private LeaseTestFixtures fixtures;
     private UUID renterUser;
@@ -132,6 +133,78 @@ class BookingFeeIT extends AbstractPostgresIT {
                 .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("booking.feeAmount"));
         PropertyAmenity hall = amenity("Hall", "PER_BOOKING", "300");
         assertThat(book(hall, LocalDate.now().plusDays(5)).getFeeAmount()).isEqualByComparingTo("300.00");
+    }
+
+    /**
+     * Follow-up ruling R12 (101-d): once the renter has paid the fee, their own cancel is
+     * refused up front with booking.feePaid (not the finance message "Penalty was already
+     * collected"), and nothing moves. The office cancels it with a reason: the charge is
+     * reversed with a tax credit note, the paid row stays cleared, and the 315 paid is a
+     * credit on the renter's receivable.
+     */
+    @Test
+    void aPaidFeeIsTheOfficesToCancelWithACreditNote() {
+        PropertyAmenity hall = amenity("Hall", "PER_BOOKING", "300");
+        BookingRequest b = book(hall, LocalDate.now().plusDays(10));
+        BookingRequest approved = tx.execute(s -> bookings.approve(fixtures.tenantId(), b.getId(), UUID.randomUUID(), null));
+        var charge = tx.execute(s -> {
+            var a = assessments.findById(approved.getChargeId()).orElseThrow();
+            a.getLease().getId();
+            return a;
+        });
+        UUID row = tx.execute(s -> assessments.findById(approved.getChargeId()).orElseThrow().getCollectionCheque().getId());
+        UUID leaseId = tx.execute(s -> assessments.findById(approved.getChargeId()).orElseThrow().getLease().getId());
+        chequeService.receive(row, com.datagami.rentaxis.api.dto.cheque.ChequeActionRequest.on(LocalDate.now()));
+        String receivable = "select coalesce(sum(l.debit), 0) - coalesce(sum(l.credit), 0) from journal_lines l"
+                + " join accounts a on a.id = l.account_id where l.lease_id = ? and a.account_sub_type = 'RECEIVABLE'";
+        BigDecimal before = jdbc.queryForObject(receivable, BigDecimal.class, leaseId);
+
+        assertThatThrownBy(() -> tx.executeWithoutResult(s -> bookings.cancel(fixtures.tenantId(), b.getId(), renterUser)))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("booking.feePaid"));
+        assertThat(jdbc.queryForObject("select status from booking_requests where id = ?", String.class, b.getId()))
+                .isEqualTo("APPROVED");
+        assertThat(jdbc.queryForObject("select status from penalty_assessments where id = ?", String.class, charge.getId()))
+                .isEqualTo("APPROVED");
+
+        assertThatThrownBy(() -> tx.executeWithoutResult(s -> bookings.cancelByStaff(fixtures.tenantId(), b.getId(),
+                UUID.randomUUID(), " ")))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("booking.cancelReason"));
+        BookingRequest cancelled = tx.execute(s -> bookings.cancelByStaff(fixtures.tenantId(), b.getId(),
+                UUID.randomUUID(), "Hall closed for repairs"));
+        assertThat(cancelled.getStatus()).isEqualTo(com.datagami.rentaxis.domain.entity.enums.BookingRequestStatus.CANCELLED);
+        assertThat(jdbc.queryForObject("select status from penalty_assessments where id = ?", String.class, charge.getId()))
+                .isEqualTo("REVERSED");
+        assertThat(jdbc.queryForObject("select count(*) from tax_invoices where kind = 'CREDIT_NOTE' and tenant_id = ?",
+                Integer.class, fixtures.tenantId())).isOne();
+        assertThat(jdbc.queryForObject("select status from cheques where id = ?", String.class, row)).isEqualTo("CLEARED");
+        assertThat(jdbc.queryForObject(receivable, BigDecimal.class, leaseId).subtract(before))
+                .as("the 300 + 15 VAT paid is left as a credit on the renter's account").isEqualByComparingTo("-315.00");
+    }
+
+    /**
+     * Review P3-5 of PR #425: a fee whose payment is still in flight (an online payment pending;
+     * the collection row is CASH, so it can never be DEPOSITED) may still fail, and its PDR
+     * reversal would then re-debit the renter for a cancelled fee. Staff cancel waits for it
+     * (booking.feeInFlight) and nothing moves; the renter is told the office cancels it.
+     */
+    @Test
+    void theOfficeWaitsForAFeePaymentInFlight() {
+        PropertyAmenity hall = amenity("Hall", "PER_BOOKING", "300");
+        BookingRequest b = book(hall, LocalDate.now().plusDays(10));
+        BookingRequest approved = tx.execute(s -> bookings.approve(fixtures.tenantId(), b.getId(), UUID.randomUUID(), null));
+        UUID row = tx.execute(s -> assessments.findById(approved.getChargeId()).orElseThrow().getCollectionCheque().getId());
+        assertThat(jdbc.queryForObject("select mode from cheques where id = ?", String.class, row)).isEqualTo("CASH");
+        jdbc.update("update cheques set status = 'ONLINE_PENDING' where id = ?", row);
+
+        assertThatThrownBy(() -> tx.executeWithoutResult(s -> bookings.cancelByStaff(fixtures.tenantId(), b.getId(),
+                UUID.randomUUID(), "Hall closed")))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("booking.feeInFlight"));
+        assertThatThrownBy(() -> tx.executeWithoutResult(s -> bookings.cancel(fixtures.tenantId(), b.getId(), renterUser)))
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("booking.feePaid"));
+        assertThat(jdbc.queryForObject("select status from penalty_assessments where id = ?", String.class,
+                approved.getChargeId())).isEqualTo("APPROVED");
+        assertThat(jdbc.queryForObject("select status from booking_requests where id = ?", String.class, b.getId()))
+                .isEqualTo("APPROVED");
     }
 
     /** PR #361 R1 P1-1: a booking whose fee was written off as a bad debt can no longer be cancelled. */

@@ -147,7 +147,7 @@ class LedgerQueryServiceIT extends AbstractPostgresIT {
         List<AccountLedgerDTO> l = ledger.renterLedger(renterId, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31));
         assertThat(l).extracting(AccountLedgerDTO::accountName).containsExactlyInAnyOrder(
                 "Rent Receivable - L'Olivier", "Advance Rent - L'Olivier", "Security Deposit L'Olivier", "Admin Fee - L'Olivier",
-                "PDC Receivable L'Olivier", "Emirates Islamic - L'Olivier");
+                "PDC Receivable L'Olivier", "Bank - L'Olivier");
         assertThat(ledger.renterLedger(UUID.randomUUID(), LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31))).isEmpty();
     }
 
@@ -161,7 +161,7 @@ class LedgerQueryServiceIT extends AbstractPostgresIT {
         List<AccountLedgerDTO> l = ledger.renterLedger(renterId, LocalDate.of(2026, 9, 12), LocalDate.of(2026, 9, 30));
         assertThat(l).extracting(AccountLedgerDTO::accountName).containsExactlyInAnyOrder(
                 "Rent Receivable - L'Olivier", "Advance Rent - L'Olivier", "Security Deposit L'Olivier", "Admin Fee - L'Olivier",
-                "PDC Receivable L'Olivier", "Emirates Islamic - L'Olivier");
+                "PDC Receivable L'Olivier", "Bank - L'Olivier");
         AccountLedgerDTO advance = l.stream().filter(a -> a.accountName().startsWith("Advance Rent")).findFirst().orElseThrow();
         assertThat(advance.rows()).isEmpty();
         assertThat(advance.openingBalance()).isEqualByComparingTo("-61000");
@@ -173,7 +173,7 @@ class LedgerQueryServiceIT extends AbstractPostgresIT {
     @Test
     void generalLedgerWithNoAccountIdsReturnsEveryLeafWithActivityInRange() {
         List<AccountLedgerDTO> gl = ledger.generalLedger(List.of(), new LedgerQueryService.LedgerFilter(LocalDate.of(2026, 9, 15), LocalDate.of(2026, 9, 15), null, null, null, null));
-        assertThat(gl).extracting(AccountLedgerDTO::accountName).containsExactlyInAnyOrder("Emirates Islamic - L'Olivier", "PDC Receivable L'Olivier");
+        assertThat(gl).extracting(AccountLedgerDTO::accountName).containsExactlyInAnyOrder("Bank - L'Olivier", "PDC Receivable L'Olivier");
     }
 
     /**

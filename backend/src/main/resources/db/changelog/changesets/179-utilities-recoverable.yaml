@@ -1,0 +1,49 @@
+# Follow-up ruling R5: utilities recovered at cost (PASS_THROUGH charge types) get
+# their own held leaf instead of sharing B-01-08 "Unearned charges" with the
+# deferred periodic fees.
+#
+#   - B-01-09 "Utilities recoverable (held)" for every tenant whose chart has the
+#     B-01 group and no B-01-09 yet (AccountService seeds it for new charts).
+#   - The UTILITIES_RECOVERABLE tenant default mapping onto that leaf. It maps only
+#     the leaf this changeset (or the seed) wrote, by name, so a tenant whose own
+#     chart already used B-01-09 for something else gets no mapping and is listed
+#     by .superpowers/agents/prod-check-179-predeploy.sql.
+#
+# Nothing already posted moves: a fee segment stores the deferral leaf its TCO
+# credited (rent_segments.deferral_account_id, 128), so leases posted before this
+# keep releasing from B-01-08. Only leases posted after it defer into B-01-09.
+databaseChangeLog:
+  - changeSet:
+      id: 179-utilities-recoverable
+      author: claude
+      changes:
+        - sql:
+            comment: B-01-09 Utilities recoverable (held), for every tenant whose chart has the B-01 group
+            sql: |
+              INSERT INTO accounts (id, tenant_id, code, name, name_en, name_ar, account_type, account_sub_type,
+                                    parent_id, is_system, is_group, is_active, display_order, created_at, updated_at)
+              SELECT gen_random_uuid(), g.tenant_id, 'B-01-09', 'Utilities recoverable (held)',
+                     'Utilities recoverable (held)', 'مرافق مستردة (محتجزة)', 'LIABILITY', 'ADVANCE',
+                     g.id, TRUE, FALSE, TRUE, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                FROM accounts g
+               WHERE g.code = 'B-01'
+                 AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.tenant_id = g.tenant_id AND a.code = 'B-01-09');
+        - sql:
+            comment: UTILITIES_RECOVERABLE tenant default mapping onto B-01-09
+            sql: |
+              INSERT INTO tenant_default_account_mappings (id, tenant_id, role, account_id)
+              SELECT gen_random_uuid(), a.tenant_id, 'UTILITIES_RECOVERABLE', a.id
+                FROM accounts a
+               WHERE a.code = 'B-01-09' AND a.name_en = 'Utilities recoverable (held)'
+                 AND NOT a.is_group
+                 AND NOT EXISTS (SELECT 1 FROM tenant_default_account_mappings m
+                                  WHERE m.tenant_id = a.tenant_id AND m.role = 'UTILITIES_RECOVERABLE');
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM tenant_default_account_mappings m
+               WHERE m.role = 'UTILITIES_RECOVERABLE'
+                 AND EXISTS (SELECT 1 FROM accounts a WHERE a.id = m.account_id AND a.tenant_id = m.tenant_id
+                              AND a.code = 'B-01-09' AND a.name_en = 'Utilities recoverable (held)');
+              DELETE FROM accounts a WHERE a.code = 'B-01-09' AND a.name_en = 'Utilities recoverable (held)'
+                AND NOT EXISTS (SELECT 1 FROM journal_lines l WHERE l.account_id = a.id);

@@ -1,0 +1,26 @@
+# Sim round 22 S22-03 follow-up: a reconciliation may finalize on the lines' own closing
+# when an import's Closing-balance row shows the export reached past the period end. The
+# row's date was not kept, only its balance. New nullable column; imports before it have
+# none, so they never prove a period end by their Closing row (fail closed: the user types
+# the paper closing). Schema only, no data written. Guarded, so a rerun is a no-op.
+databaseChangeLog:
+  - changeSet:
+      id: 181-bank-import-closing-row-date
+      author: claude
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: bank_statement_imports
+                columnName: closing_row_date
+      changes:
+        - addColumn:
+            tableName: bank_statement_imports
+            columns:
+              - column:
+                  name: closing_row_date
+                  type: date
+      rollback:
+        - dropColumn:
+            tableName: bank_statement_imports
+            columnName: closing_row_date

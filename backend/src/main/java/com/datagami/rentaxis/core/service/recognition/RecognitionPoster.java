@@ -308,12 +308,14 @@ public class RecognitionPoster {
     }
 
     /**
-     * F14-18: the leaf a periodic fee is deferred into — {@code UNEARNED_CHARGES}
+     * F14-18: the leaf a periodic fee is deferred into — {@code UNEARNED_CHARGES}, or
+     * {@code UTILITIES_RECOVERABLE} for a utility recovered at cost (ruling R5),
      * resolved for the lease's property. Called while building the schedule, inside
      * the posting transaction whose TCO credited the same role.
      */
-    public java.util.UUID unearnedChargesLeaf(Lease lease) {
-        return accountResolver.resolve(AccountRole.UNEARNED_CHARGES, propertyIdOf(lease)).getId();
+    public java.util.UUID deferralLeafOf(Lease lease, com.datagami.rentaxis.domain.entity.LeaseLine line) {
+        AccountRole role = com.datagami.rentaxis.core.service.lease.LeasePostingService.deferralRole(line);
+        return accountResolver.resolve(role, propertyIdOf(lease)).getId();
     }
 
     /** The lease's own income account when it names one (spec §6.3), else the property's. */

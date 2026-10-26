@@ -22,6 +22,7 @@ import type {
     SettlementLineType,
     SettlementStatement,
     SaveSettlementLine,
+    UnearnedFeeRefund,
 } from "@/lib/api/leasing";
 
 /** One editable row of the settlement grid. */
@@ -134,4 +135,26 @@ export function toSaveLines(rows: SettlementRow[]): SaveSettlementLine[] {
                     accountId: r.accountId,
                 },
         );
+}
+
+/**
+ * Review P3-1: the offers merged per income leaf. One leaf carries one refund row, so two
+ * fees on it are one line: their names joined, days shown only when they agree, amounts added.
+ */
+export function groupFeeRefunds(offers: UnearnedFeeRefund[]): UnearnedFeeRefund[] {
+    const byAccount = new Map<string, UnearnedFeeRefund>();
+    for (const o of offers) {
+        const seen = byAccount.get(o.accountId);
+        if (!seen) { byAccount.set(o.accountId, { ...o }); continue; }
+        const join = (a: string | null, b: string | null) => [a, b].filter(Boolean).join(" + ") || null;
+        byAccount.set(o.accountId, {
+            ...seen,
+            chargeTypeName: join(seen.chargeTypeName, o.chargeTypeName),
+            chargeTypeNameAr: join(seen.chargeTypeNameAr ?? seen.chargeTypeName, o.chargeTypeNameAr ?? o.chargeTypeName),
+            unearnedDays: seen.unearnedDays === o.unearnedDays ? seen.unearnedDays : Math.max(seen.unearnedDays, o.unearnedDays),
+            days: seen.days === o.days ? seen.days : Math.max(seen.days, o.days),
+            amount: Math.round((seen.amount + o.amount) * 100) / 100,
+        });
+    }
+    return [...byAccount.values()];
 }

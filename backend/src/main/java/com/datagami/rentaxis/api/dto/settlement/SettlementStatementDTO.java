@@ -93,5 +93,7 @@ public record SettlementStatementDTO(
         List<com.datagami.rentaxis.domain.entity.enums.DeductionCategory> vatableCategories,
         /* #100-d: a transferred-out lease's deposit, carried to its successor — shown, never refunded
            here; null unless a posted transfer carried a deposit off this lease. */
-        DepositCarriedDTO depositCarriedTo) {
+        DepositCarriedDTO depositCarriedTo,
+        /* Follow-up ruling R1: unearned at-posting periodic fees the user may refund (off by default). */
+        List<UnearnedFeeRefundDTO> unearnedFeeRefunds) {
 }

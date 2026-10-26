@@ -32,6 +32,14 @@ public class LeaseAddendumCredit extends BaseTenantEntity {
     @Column(name = "new_line_amount", nullable = false)
     private BigDecimal newLineAmount;
 
+    /** Ruling R7: the line's new headline (gross) over its whole window; null on a credit written before changeset 180. */
+    @Column(name = "new_gross_amount")
+    private BigDecimal newGrossAmount;
+
+    /** Ruling R7: the rent-free concession re-applied at the new rate, whole window; null before changeset 180. */
+    @Column(name = "new_rent_free_amount")
+    private BigDecimal newRentFreeAmount;
+
     @Column(name = "remaining_before", nullable = false)
     private BigDecimal remainingBefore;
 

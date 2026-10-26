@@ -112,9 +112,9 @@ class PropertyAccountServiceIT extends AbstractPostgresIT {
         int before = accountRepo.findByProperty_Id(p.getId()).size();
         service.clearMapping(p.getId(), AccountRole.BANK);
         service.generateMissing(p.getId());
-        // the existing "Emirates Islamic - Belle Vue" leaf is reused, not duplicated
+        // the existing "Bank - Belle Vue" leaf is reused, not duplicated (S21-04: the seed names no bank)
         assertThat(accountRepo.findByProperty_Id(p.getId())).hasSize(before);
-        assertThat(resolver.resolve(AccountRole.BANK, p.getId()).getName()).isEqualTo("Emirates Islamic - Belle Vue");
+        assertThat(resolver.resolve(AccountRole.BANK, p.getId()).getName()).isEqualTo("Bank - Belle Vue");
     }
 
     /**

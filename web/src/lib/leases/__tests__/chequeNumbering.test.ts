@@ -83,6 +83,31 @@ describe("CSV import", () => {
         expect(r.edits.s1).toEqual({ chequeNumber: "600001", payeeBank: "ADCB", chequeDate: "2028-01-01" });
     });
 
+    /** Sim r22 S22-05: blank lines before the header, and an Arabic header, are not "invalid dates". */
+    it("skips a header after leading blank lines, and an Arabic header", () => {
+        const drafts = [{ draftId: "d1", keys: ["07-01"], rows: [c("r1", "2028-01-01")] }];
+        const r = applyChequeCsv("\n\ncontract,due,number\n07-01,01/01/2028,910001", drafts, {});
+        expect(r.invalidDates).toEqual([]);
+        expect(r.applied).toBe(1);
+        const ar = applyChequeCsv("العقد,تاريخ الاستحقاق,رقم الشيك\n07-01,01/01/2028,910002", drafts, {});
+        expect(ar.invalidDates).toEqual([]);
+        expect(ar.edits.r1?.chequeNumber).toBe("910002");
+        // Sim r23: a title row above the header is preamble too.
+        const titled = applyChequeCsv("Cheque numbers – Tower A\ncontract,due,number\n07-01,01/01/2028,910003", drafts, {});
+        expect(titled.invalidDates).toEqual([]);
+        expect(titled.edits.r1?.chequeNumber).toBe("910003");
+        // #425 review P3-R4-4: after the header every line is data. A mistyped contract with a bad
+        // date is reported, never dropped as preamble.
+        const typo = applyChequeCsv("Cheque numbers – Tower A\ncontract,due,number\n07-0l,31/02/2028,910004", drafts, {});
+        expect(typo.invalidDates).toEqual([3]);
+        // A line of words after the data is data too (reported), never a late "header".
+        const late = applyChequeCsv("07-01,01/01/2028,910005\nsee notes,below", drafts, {});
+        expect(late.applied).toBe(1);
+        expect(late.invalidDates).toEqual([2]);
+        // A non-date on a later line is still reported.
+        expect(applyChequeCsv("\ncontract,due,number\n07-01,soon,1", drafts, {}).invalidDates).toEqual([3]);
+    });
+
     it("reads a semicolon file by its first line", () => {
         const drafts = [{ draftId: "d1", keys: ["07-01"], rows: [c("r1", "2028-01-01")] }];
         const r = applyChequeCsv("contract;due_date;cheque_number;bank\n07-01;01/01/2028;900001;Emirates NBD, Dubai", drafts, {});

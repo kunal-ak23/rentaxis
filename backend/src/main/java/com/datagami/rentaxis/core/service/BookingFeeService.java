@@ -122,6 +122,59 @@ public class BookingFeeService {
         }
     }
 
+    /** Ruling R12: a collection row in one of these has the renter's money (or a payment in flight). */
+    private static final EnumSet<com.datagami.rentaxis.domain.entity.enums.ChequeStatus> PAID = EnumSet.of(
+            com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED,
+            com.datagami.rentaxis.domain.entity.enums.ChequeStatus.CLEARED,
+            com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING);
+
+    /** Whether the booking's fee has been paid (its collection row is deposited, cleared or paying online). */
+    public boolean feePaid(BookingRequest b) {
+        if (b.getChargeId() == null) return false;
+        return PAID.contains(charges.collectionStatusOf(b.getChargeId()));
+    }
+
+    /**
+     * Follow-up ruling R12 (101-d): a renter cannot cancel a booking whose fee is paid;
+     * money movements stay in staff hands, who cancel it with a credit note.
+     */
+    public void requireUnpaidForRenter(BookingRequest b) {
+        if (feePaid(b)) {
+            throw new BusinessRuleViolationException("The fee for this booking is paid, so it cannot be cancelled here."
+                    + " Ask the management office to cancel it.", "booking.feePaid", Map.of());
+        }
+    }
+
+    /**
+     * Ruling R12: staff cancel an approved booking. An unpaid fee is reversed as on a
+     * renter's cancel; a paid one is reversed too and the payment stays as a credit on
+     * the renter's account (with a tax credit note for its VAT).
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void creditOnStaffCancel(BookingRequest b, LocalDate on, String reason) {
+        if (b.getChargeId() == null) return;
+        PenaltyAssessmentStatus status = charges.statusOf(b.getChargeId());
+        if (status == PenaltyAssessmentStatus.WRITTEN_OFF) {
+            throw new BusinessRuleViolationException("This booking's fee was written off as a bad debt; it can no longer be"
+                    + " cancelled.", "booking.feeWrittenOff", Map.of());
+        }
+        if (status != PenaltyAssessmentStatus.APPROVED) return;
+        // Review P3-5: a deposited cheque or a pending online payment may still bounce or
+        // fail, and its PDR reversal would then re-debit the renter for a cancelled fee.
+        // Cancel once the payment has cleared (credit) or failed (plain reversal).
+        com.datagami.rentaxis.domain.entity.enums.ChequeStatus row = charges.collectionStatusOf(b.getChargeId());
+        if (row == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.DEPOSITED
+                || row == com.datagami.rentaxis.domain.entity.enums.ChequeStatus.ONLINE_PENDING) {
+            throw new BusinessRuleViolationException("The fee's payment is still being collected; cancel the booking"
+                    + " once it has cleared or bounced.", "booking.feeInFlight", Map.of());
+        }
+        if (feePaid(b)) {
+            charges.creditCollected(b.getChargeId(), on, reason);
+        } else {
+            charges.reverse(b.getChargeId(), on, reason);
+        }
+    }
+
     /** Whether the slot has not started yet. */
     public static boolean beforeSlot(BookingRequest b, LocalDateTime now) {
         if (b.getPreferredDate() == null) return true;
