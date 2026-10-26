@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service.report.grid;
 
+import com.datagami.rentaxis.api.exception.ReportTooLargeException;
 import org.apache.poi.util.DefaultTempFileCreationStrategy;
 import org.apache.poi.util.TempFile;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
@@ -48,16 +49,31 @@ class GridRendererTest {
     }
 
     @Test
-    void theLabelsAndTheRowCapReachTheWriter() {
-        String csv = new String(GridRenderer.render(ExportFormat.CSV, XlsxStyle.PACT, LABELS.bind("ar"), 1, w -> {
+    void theLabelsReachTheWriter() {
+        String csv = new String(GridRenderer.render(ExportFormat.CSV, XlsxStyle.PACT, LABELS.bind("ar"), 3, w -> {
             w.begin(SampleGrid.meta("ar"), SampleGrid.COLUMNS);
             SampleGrid.feed(w);
         }), StandardCharsets.UTF_8);
         List<String> lines = csv.substring(1).lines().toList();
         assertThat(lines.get(0)).startsWith("تاريخ المستند,");
-        assertThat(lines).anySatisfy(l -> assertThat(l).contains("TCO-26/1"));
-        assertThat(lines).noneSatisfy(l -> assertThat(l).contains("PDR-26/1"));
-        assertThat(lines).noneSatisfy(l -> assertThat(l).contains("JV-26/1"));
+        // Exactly at the cap is a whole file.
+        assertThat(lines).anySatisfy(l -> assertThat(l).contains("TCO-26/1"))
+                .anySatisfy(l -> assertThat(l).contains("PDR-26/1"))
+                .anySatisfy(l -> assertThat(l).contains("JV-26/1"));
+    }
+
+    @Test
+    void aFileOverTheRowCapIsRefusedNeverCutShort() {
+        // The sample feeds three rows: a cap of two would have dropped the JV and printed a short file.
+        for (ExportFormat f : ExportFormat.values()) {
+            assertThatThrownBy(() -> GridRenderer.render(f, XlsxStyle.PACT, LABELS.bind("en"), 2, SAMPLE))
+                    .as(f.name())
+                    .isInstanceOfSatisfying(ReportTooLargeException.class, e -> {
+                        assertThat(e.getCode()).isEqualTo(f == ExportFormat.PDF
+                                ? ReportTooLargeException.CODE_PDF : ReportTooLargeException.CODE);
+                        assertThat(e.getArgs()).containsEntry("rows", 3L).containsEntry("cap", 2);
+                    });
+        }
     }
 
     @Test
@@ -76,6 +92,9 @@ class GridRendererTest {
                 w.openGroup(1, Band.PARTY, "Tenant A");
                 throw new IllegalStateException("read failed");
             })).isInstanceOf(IllegalStateException.class).hasMessage("read failed");
+            // A workbook refused at the row cap is closed unwritten too.
+            assertThatThrownBy(() -> GridRenderer.render(ExportFormat.XLSX, XlsxStyle.PACT, LABELS.bind("en"), 1, SAMPLE))
+                    .isInstanceOf(ReportTooLargeException.class);
             try (var files = Files.walk(dir)) {
                 assertThat(files.filter(Files::isRegularFile)).isEmpty();
             }

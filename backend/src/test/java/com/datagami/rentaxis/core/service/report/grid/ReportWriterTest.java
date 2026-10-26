@@ -303,6 +303,7 @@ class ReportWriterTest {
         assertThat(sink.rows()).hasSize(2);
         assertThat(capped.truncated()).isTrue();
         assertThat(capped.rowsWritten()).isEqualTo(2);
+        assertThat(capped.rowsDropped()).isEqualTo(1);
         assertThat(sink.subtotal(1)).containsEntry("debit", d("20.00"));
         assertThat(sink.endTruncated()).isTrue();
         assertThat(sink.endContinues()).isFalse();

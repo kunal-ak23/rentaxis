@@ -52,7 +52,8 @@ import java.util.stream.Stream;
  * Every cell style is made once in {@link #begin}: SXSSF shares styles across the workbook and Excel
  * caps a workbook at 64,000 of them. The sheet streams through compressed temp files, which
  * {@link #bytes()} and {@link #close()} always delete. One sink renders one report; use it in a
- * try-with-resources block.
+ * try-with-resources block. A truncated report never reaches a file: {@link GridRenderer} refuses a writer
+ * that dropped rows (a 422) and closes the sink unwritten.
  */
 public final class XlsxGridSink implements ReportSink, AutoCloseable {
 
@@ -263,6 +264,7 @@ public final class XlsxGridSink implements ReportSink, AutoCloseable {
         totalsRow(label, totals, styles.total());
     }
 
+    /** {@code truncated} is never printed: {@link GridRenderer} refuses a truncated report before any bytes exist. */
     @Override
     public void end(boolean truncated, boolean continuesOnNextPage) {
         Row last = newRow();

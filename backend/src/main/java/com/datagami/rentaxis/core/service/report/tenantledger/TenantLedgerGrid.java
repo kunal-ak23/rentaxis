@@ -122,7 +122,10 @@ public final class TenantLedgerGrid {
         return sink.result();
     }
 
-    /** The file's bytes in PACT's Tenant Ledger style; rows past {@code rowCap} are dropped and the file says so. */
+    /**
+     * The file's bytes in PACT's Tenant Ledger style. More rows than {@code rowCap} is a
+     * {@code ReportTooLargeException} (422) from {@link GridRenderer}: a file is never cut short.
+     */
     public static byte[] file(TenantLedgerResult r, ExportFormat f, ReportLabels labels, int rowCap) {
         ReportLabels.Bound bound = labels.bind(r.meta().lang());
         return GridRenderer.render(f, XlsxStyle.TENANT_LEDGER, bound, rowCap, w -> feed(r, w, bound));

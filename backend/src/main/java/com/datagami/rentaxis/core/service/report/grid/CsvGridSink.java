@@ -26,7 +26,8 @@ import java.util.UUID;
  *       mark in front of {@code =} cannot hide a formula from it.</li>
  * </ul>
  *
- * One sink renders one report.
+ * One sink renders one report. A truncated report never reaches a file: {@link GridRenderer} refuses a writer
+ * that dropped rows (a 422).
  */
 public final class CsvGridSink implements ReportSink {
 
@@ -122,6 +123,7 @@ public final class CsvGridSink implements ReportSink {
         add(totalsLine(label, totals));
     }
 
+    /** {@code truncated} is never printed: {@link GridRenderer} refuses a truncated report before any bytes exist. */
     @Override
     public void end(boolean truncated, boolean continuesOnNextPage) {
         requireOpen();

@@ -34,6 +34,10 @@ public interface ReportSink {
     /** The REPORT TOTAL, with the same cells as a subtotal. */
     void total(String label, Map<String, Object> totals);
 
-    /** The last event: {@code truncated} when rows were dropped at the row cap, {@code continuesOnNextPage} when a group stays open. */
+    /**
+     * The last event: {@code truncated} when rows were dropped at the row cap, {@code continuesOnNextPage} when a
+     * group stays open. Only the screen's JSON can report {@code truncated}: {@link GridRenderer} refuses a
+     * truncated file with a 422, so a file sink's output is never short.
+     */
     void end(boolean truncated, boolean continuesOnNextPage);
 }

@@ -31,7 +31,8 @@ import java.util.stream.Collectors;
  *       What a subtotal prints is what rolls into the parent group and the REPORT TOTAL.</li>
  *   <li>Authoritative totals (from a SQL aggregate) are checked against the writer's own whenever the
  *       group (or the whole report) was written whole and nothing was truncated, and are what is printed.</li>
- *   <li>Rows past {@code rowCap} are dropped and the report is marked truncated.</li>
+ *   <li>Rows past {@code rowCap} are dropped and the report is marked truncated ({@link #truncated()}); a
+ *       file is never written short: {@link GridRenderer} refuses it with a 422.</li>
  * </ul>
  * A writer renders one report and is not thread-safe.
  */
@@ -55,6 +56,7 @@ public final class ReportWriter {
     private boolean ended;
     private boolean truncated;
     private long rowsWritten;
+    private long rowsDropped;
 
     /** One open group, or (at the bottom of the stack, level 0) the report itself. */
     private static final class Frame {
@@ -156,6 +158,7 @@ public final class ReportWriter {
         Map<String, Object> given = checkedCells(cells);
         if (rowsWritten >= rowCap) {
             truncated = true;
+            rowsDropped++;
             return;
         }
         Frame f = frames.peek();
@@ -217,6 +220,11 @@ public final class ReportWriter {
     /** The rows passed to the sink. */
     public long rowsWritten() {
         return rowsWritten;
+    }
+
+    /** The rows dropped at the row cap: {@code rowsWritten() + rowsDropped()} is every row the report fed. */
+    public long rowsDropped() {
+        return rowsDropped;
     }
 
     // ---------------------------------------------------------------------------------------------
