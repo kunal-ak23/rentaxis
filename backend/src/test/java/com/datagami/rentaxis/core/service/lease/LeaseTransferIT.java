@@ -691,6 +691,184 @@ class LeaseTransferIT extends AbstractPostgresIT {
         assertThat(lines).extracting(LeaseLineInput::grossAmount).contains(new BigDecimal("2300.00"));
     }
 
+    // ------------------------------------------------------------------
+    // Sim r24 S24-01: what A charges for B's days, line by line
+    // ------------------------------------------------------------------
+
+    private static LeaseLineInput dated(String code, String gross, LocalDate from, LocalDate to) {
+        return new LeaseLineInput(null, code, new BigDecimal(gross), BigDecimal.ZERO, null, null, null, from, to);
+    }
+
+    private static final LocalDate MAR31 = LocalDate.of(2026, 3, 31);
+    private static final LocalDate APR1 = LocalDate.of(2026, 4, 1);
+
+    /** Stepped rent 30,000 for Jan–Mar (90 days), 45,000 for Apr–Dec (275 days). */
+    private UUID steppedDraft(LeaseLineInput... more) {
+        List<LeaseLineInput> lines = new java.util.ArrayList<>(List.of(
+                dated("RENT", "30000", START, MAR31), dated("RENT", "45000", APR1, END)));
+        lines.addAll(List.of(more));
+        return fixtures.draftLease(CONTRACT, START, END, lines);
+    }
+
+    private record L(String code, BigDecimal gross, LocalDate from, LocalDate to) {
+    }
+
+    private List<L> defaults(UUID a, LocalDate bStart, LocalDate bEnd) {
+        return tx.execute(s -> transfers.defaultLines(lease(a), bStart, bEnd).stream()
+                .map(l -> new L(chargeTypeRepo.findById(l.chargeTypeId()).orElseThrow().getCode(),
+                        l.grossAmount(), l.periodStart(), l.periodEnd())).toList());
+    }
+
+    @Autowired com.datagami.rentaxis.domain.repository.ChargeTypeRepository chargeTypeRepo;
+
+    /** The report's repro, in this file's dates: a move inside step 2 carries step 2's day rate (45,000 × 230 ÷ 275). */
+    @Test
+    void aMoveInALaterStepCarriesTheStepInForce() {
+        UUID a = steppedDraft();
+        assertThat(defaults(a, B_START, END)).containsExactly(
+                new L("RENT", new BigDecimal("37636.36"), null, null));
+    }
+
+    /** A move in step 1: the rest of step 1 at its rate, then step 2 re-dated onto B at its own figure. */
+    @Test
+    void aMoveInStepOneCarriesTheRestOfItAndTheLaterStepReDated() {
+        UUID a = steppedDraft();
+        LocalDate bStart = LocalDate.of(2026, 2, 15);
+        assertThat(defaults(a, bStart, END)).containsExactly(
+                new L("RENT", new BigDecimal("15000.00"), bStart, MAR31),   // 30,000 × 45 ÷ 90
+                new L("RENT", new BigDecimal("45000.00"), APR1, END));
+    }
+
+    /**
+     * A dated own fee ("a 2nd bay from March", 1,200 for 01/03–31/12, 306 days) running into
+     * B's term is carried at its rate (1,200 × 230 ÷ 306); a dated fee that ended before B
+     * starts is not; an undated fee runs over the own term as before.
+     */
+    @Test
+    void datedFeesActiveAfterTheMoveAreCarriedAndEndedOnesAreNot() {
+        UUID a = steppedDraft(dated("PARKING_FEE", "1200", LocalDate.of(2026, 3, 1), END),
+                dated("PARKING_FEE", "590", START, LocalDate.of(2026, 2, 28)),
+                line("PARKING_FEE", "3650"));
+        assertThat(defaults(a, B_START, END)).containsExactly(
+                new L("RENT", new BigDecimal("37636.36"), null, null),
+                new L("PARKING_FEE", new BigDecimal("901.96"), null, null),
+                new L("PARKING_FEE", new BigDecimal("2300.00"), null, null));
+    }
+
+    /**
+     * An extended flat lease (2026 at 60,000, extended through 31/03/2027 at 14,794.52): the
+     * own term's rest at the original rate, the extension window at the extension's rate,
+     * each dated onto B — not the original rate over the extended days.
+     */
+    @Test
+    void anExtendedLeasesExtensionWindowIsPricedAtTheExtensionsRate() {
+        UUID a = fixtures.draftLease(CONTRACT, START, END, List.of(line("RENT", "60000"), line("PARKING_FEE", "3650")));
+        chequeGeneration.saveRows(a, List.of(
+                row("690041", CONTRACT, JAN, "15912.50"),
+                row("690042", CONTRACT, APR, "15912.50"),
+                row("690043", CONTRACT, JUL, "15912.50"),
+                row("690044", CONTRACT, OCT, "15912.50")));
+        posting.post(a);
+        LocalDate extEnd = LocalDate.of(2027, 3, 31);
+        renewal.extend(a, new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(extEnd, null,
+                List.of(new LeaseLineInput(null, "RENT", new BigDecimal("14794.52"), BigDecimal.ZERO, null, null, null, null, null)),
+                List.of(LeaseTestFixtures.chequeRow("14794.52", LocalDate.of(2027, 1, 2)))));
+        assertThat(defaults(a, B_START, extEnd)).containsExactly(
+                new L("RENT", new BigDecimal("37808.22"), B_START, END),
+                new L("PARKING_FEE", new BigDecimal("2300.00"), B_START, END),
+                new L("RENT", new BigDecimal("14794.52"), LocalDate.of(2027, 1, 1), extEnd));
+
+        // The preview's suggested rent is what A charges for B's days; the draft takes the dated lines.
+        Unit target = tx.execute(s -> fixtures.createUnit(fixtures.property(), "A-231"));
+        assertThat(transfers.preview(a, T, target.getId(), null).suggestedRent()).isEqualByComparingTo("52602.74");
+        LeaseDTO b = transfers.draft(a, request(T, target.getId(), null), posting);
+        List<com.datagami.rentaxis.api.dto.lease.LeaseLineDTO> bLines = tx.execute(s -> leaseService.getLines(b.getId()));
+        assertThat(bLines)
+                .extracting(com.datagami.rentaxis.api.dto.lease.LeaseLineDTO::chargeTypeCode,
+                        com.datagami.rentaxis.api.dto.lease.LeaseLineDTO::grossAmount,
+                        com.datagami.rentaxis.api.dto.lease.LeaseLineDTO::periodStart)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("RENT", new BigDecimal("37808.22"), B_START),
+                        org.assertj.core.groups.Tuple.tuple("PARKING_FEE", new BigDecimal("2300.00"), B_START),
+                        org.assertj.core.groups.Tuple.tuple("RENT", new BigDecimal("14794.52"), LocalDate.of(2027, 1, 1)));
+    }
+
+    /**
+     * The defaults never offer what the post refuses: A's parking was charged at posting for
+     * 2026 (AT_POSTING, a cut-over), and the extension into 2027 charges parking again over
+     * time. A move in May finds parking already charged for B's 2026 days, so no parking line
+     * is offered — not even the extension's — and the draft's review raises no "charged twice".
+     */
+    @Test
+    void theDefaultsOfferNoFeeTypeTheOldLeaseChargedForItsWholeTerm() {
+        UUID a = fixtures.draftLease(CONTRACT, START, END, List.of(line("RENT", "60000"), line("PARKING_FEE", "3650")));
+        jdbc.update("update leases set fee_timing = 'AT_POSTING' where id = ?", a);
+        chequeGeneration.saveRows(a, List.of(row("691041", CONTRACT, JAN, "63650")));
+        posting.post(a);
+        jdbc.update("update leases set fee_timing = 'OVER_TERM' where id = ?", a);
+        LocalDate extEnd = LocalDate.of(2027, 3, 31);
+        renewal.extend(a, new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(extEnd, null,
+                List.of(new LeaseLineInput(null, "RENT", new BigDecimal("14794.52"), BigDecimal.ZERO, null, null, null, null, null),
+                        new LeaseLineInput(null, "PARKING_FEE", new BigDecimal("900"), BigDecimal.ZERO, null, null, null, null, null)),
+                List.of(LeaseTestFixtures.chequeRow("15694.52", LocalDate.of(2027, 1, 2)))));
+        assertThat(defaults(a, B_START, extEnd)).extracting(L::code).containsExactly("RENT", "RENT");
+        Unit target = tx.execute(s -> fixtures.createUnit(fixtures.property(), "A-234"));
+        LeaseDTO b = transfers.draft(a, request(T, target.getId(), null), posting);
+        assertThat(posting.dryRun(b.getId()).errors()).noneMatch(e -> e.contains("was charged on the old lease"));
+    }
+
+    /** B running past A's end: the line in force on A's last day runs on at its rate (60,000 × 261 ÷ 365). */
+    @Test
+    void aLongerNewTermRunsTheLastLineOnAtItsRate() {
+        UUID a = fixtures.draftLease(CONTRACT, START, END, List.of(line("RENT", "60000")));
+        assertThat(defaults(a, B_START, LocalDate.of(2027, 1, 31))).containsExactly(
+                new L("RENT", new BigDecimal("42904.11"), null, null));
+    }
+
+    /** The same on a stepped lease: the last step runs on (45,000 × 261 ÷ 275). */
+    @Test
+    void aLongerNewTermRunsTheLastStepOnAtItsRate() {
+        UUID a = steppedDraft();
+        assertThat(defaults(a, B_START, LocalDate.of(2027, 1, 31))).containsExactly(
+                new L("RENT", new BigDecimal("42709.09"), null, null));
+    }
+
+    /** A stepped lease transferred end to end: the preview suggests what A charges; a typed rent replaces the steps. */
+    @Test
+    void aSteppedLeaseTransfersAtTheStepsInForceAndATypedRentReplacesTheSteps() {
+        UUID a = steppedDraft();
+        chequeGeneration.saveRows(a, List.of(row("690051", CONTRACT, JAN, "75000")));
+        posting.post(a);
+        Cheque paid = chequeOn(a, JAN);
+        chequeService.deposit(paid.getId(), ChequeActionRequest.on(JAN));
+        chequeService.clear(paid.getId(), ChequeActionRequest.on(JAN));
+        Unit target = tx.execute(s -> fixtures.createUnit(fixtures.property(), "A-233"));
+        LocalDate t = LocalDate.of(2026, 2, 14);
+        TransferPreviewDTO pv = transfers.preview(a, t, target.getId(), null);
+        assertThat(pv.problems()).isEmpty();
+        assertThat(pv.suggestedRent()).isEqualByComparingTo("60000.00");   // 15,000 + 45,000
+
+        LeaseDTO typed = transfers.draft(a, new TransferLeaseRequest(t, target.getId(), null, null, null, null,
+                new BigDecimal("58000")), posting);
+        List<com.datagami.rentaxis.api.dto.lease.LeaseLineDTO> typedLines = tx.execute(s -> leaseService.getLines(typed.getId()));
+        assertThat(typedLines)
+                .extracting(com.datagami.rentaxis.api.dto.lease.LeaseLineDTO::chargeTypeCode,
+                        com.datagami.rentaxis.api.dto.lease.LeaseLineDTO::grossAmount)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("RENT", new BigDecimal("58000.00")));
+        tx.executeWithoutResult(st -> leaseService.deleteDraftLease(typed.getId()));
+
+        LeaseDTO b = transfers.draft(a, request(t, target.getId(), null), posting);
+        List<com.datagami.rentaxis.api.dto.lease.LeaseLineDTO> stepLines = tx.execute(s -> leaseService.getLines(b.getId()));
+        assertThat(stepLines)
+                .extracting(com.datagami.rentaxis.api.dto.lease.LeaseLineDTO::grossAmount,
+                        com.datagami.rentaxis.api.dto.lease.LeaseLineDTO::periodStart)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(new BigDecimal("15000.00"), t.plusDays(1)),
+                        org.assertj.core.groups.Tuple.tuple(new BigDecimal("45000.00"), APR1));
+        // B posts: A's 75,000 paid up front carries as a credit that covers B's 60,000.
+        posting.post(b.getId());
+        assertThat(lease(b.getId()).getStatus()).isEqualTo(LeaseStatus.ACTIVE);
+        assertTrialBalanceBalances();
+    }
+
     /**
      * Review P1-1 of PR #425 (ruling R1): a cut-over lease transferred out carried its
      * at-posting parking into B's term (B may not charge it again), so A's settlement offers

@@ -167,11 +167,8 @@ public class LeaseTransferService {
             // and drafted a successor with RENT 0.
             BigDecimal newRent = com.datagami.rentaxis.api.validation.MoneyAmounts.requirePositive(
                     r.rent().setScale(2, RoundingMode.HALF_UP));
-            // The rent the operator typed in place of the suggestion; the fees stay pro rata.
-            lines = lines.stream().map(l -> isRent(l.chargeTypeId())
-                    ? new LeaseLineInput(l.chargeTypeId(), l.chargeTypeCode(), newRent,
-                            BigDecimal.ZERO, l.narration(), l.vatApplicable(), l.creditAccountId(), l.periodStart(), l.periodEnd())
-                    : l).toList();
+            // The rent the operator typed in place of the suggestion; the fees stay as carried.
+            lines = withTypedRent(lines, newRent);
         }
         dto.setLines(lines);
 
@@ -188,19 +185,29 @@ public class LeaseTransferService {
     }
 
     /**
-     * The new term's lines when none are sent: the recurring lines of A (rent and
-     * fees earned over the term, not an addendum's or an extension's, not a one-off,
-     * not the deposit — that is carried), each at A's day rate for the new term's
-     * days (product decision 2026-09-24: a transfer keeps the old rent unless
-     * edited). Accounts resolve for the new property.
+     * The new term's lines when none are sent: what A charges for B's days, line by
+     * line (product decision 2026-09-24: a transfer keeps the old rent unless edited).
+     * Each recurring line of A — the contract's own lines, dated or not, and every
+     * extension's lines; not an addendum's, not a one-off, not the deposit (that is
+     * carried) — is carried for its overlap with B's term at its own day rate (net ÷
+     * the days it was charged for). A rent step or a dated fee that starts later in
+     * B's term is carried re-dated onto B; a line ended before B starts is not
+     * carried. A line in force on A's last day runs on to B's end when B ends later.
+     * Accounts resolve for the new property.
+     *
+     * <p>Sim r24 S24-01: the window of an undated line is the lease's own term, from
+     * the start to {@code leases.original_end_date} (an extension never widens it);
+     * nothing is inferred from line dates, so a stepped rent or "a 2nd bay from
+     * March" is the contract's own line, priced at its own rate.</p>
      */
     List<LeaseLineInput> defaultLines(Lease a, LocalDate start, LocalDate end) {
-        int newDays = ProrationEngine.daysInclusive(start, end);
         List<LeaseLineInput> out = new ArrayList<>();
         // PR #359 R1 P2-1: the terms after any credit addendum on the move date.
         List<LeaseEffectiveTerms.EffectiveLine> effective = effectiveTerms.effectiveLines(a, start);
         List<LeaseLine> aLines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(a.getId());
         LocalDate originalEnd = com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(a);
+        // Kept consistent with the post's refusal: never offer a fee the post refuses.
+        Set<UUID> chargedWholeTerm = feesChargedForWholeTermAfter(aLines, originalEnd, start.minusDays(1));
         for (LeaseLine l : aLines) {
             LeaseEffectiveTerms.EffectiveLine eff = effectiveTerms.of(effective, l);
             if (eff != null && eff.removed()) continue;
@@ -212,21 +219,53 @@ public class LeaseTransferService {
             // PR #359 R2: a fee A took to income at posting (the old at-posting rule, a
             // cut-over) was charged for the whole term and is carried to B in C.
             if (b == ChargeBehaviour.FEE && l.getPostedRecognition() == com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.ONE_OFF) continue;
+            if (b == ChargeBehaviour.FEE && chargedWholeTerm.contains(type.getId())) continue;
             LocalDate from = l.getPeriodStart() != null ? l.getPeriodStart() : a.getStartDate();
-            // Sim r22 S22-02: priced over the term the line was charged for, not an extended end date.
+            // Sim r22 S22-02: an undated line ran over the term it was charged for, not an extended end date.
             LocalDate to = l.getPeriodEnd() != null ? l.getPeriodEnd() : originalEnd;
-            if (from.isAfter(a.getStartDate())) continue;   // an extension's window
+            if (to.isBefore(from)) continue;
+            LocalDate onB = from.isAfter(start) ? from : start;
+            // A line in force on A's last day runs on to B's end when B runs longer.
+            LocalDate lineEnd = !to.isBefore(a.getEndDate()) && end.isAfter(to) ? end : to;
+            LocalDate offB = lineEnd.isBefore(end) ? lineEnd : end;
+            if (offB.isBefore(onB)) continue;   // ended before B starts, or starts after B ends
             // Follow-up ruling R7: a credited line carries its new headline less the
             // discount, like any other line; the rent-free concession is not carried (§4a).
             BigDecimal net = eff != null && eff.credited() ? eff.headlineLessDiscount()
                     : l.getGrossAmount().subtract(l.getDiscountAmount() == null ? BigDecimal.ZERO : l.getDiscountAmount());
-            BigDecimal amount = net.multiply(BigDecimal.valueOf(newDays))
+            BigDecimal amount = net.multiply(BigDecimal.valueOf(ProrationEngine.daysInclusive(onB, offB)))
                     .divide(BigDecimal.valueOf(ProrationEngine.daysInclusive(from, to)), 2, RoundingMode.HALF_UP);
+            boolean wholeTerm = onB.equals(start) && offB.equals(end);
             out.add(new LeaseLineInput(type.getId(), null, amount, BigDecimal.ZERO,
-                    b == ChargeBehaviour.RENT ? null : l.getNarration(), l.isVatApplicable(), null, null, null));
+                    b == ChargeBehaviour.RENT ? null : l.getNarration(), l.isVatApplicable(), null,
+                    wholeTerm ? null : onB, wholeTerm ? null : offB));
         }
         if (out.isEmpty()) {
             throw new BusinessRuleViolationException("Nothing recurring to carry into the new term; send its lines.");
+        }
+        return out;
+    }
+
+    /**
+     * The rent the operator typed in place of the suggestion: it replaces the carried
+     * rent for B's whole term — one RENT line, undated — and the fees stay as carried.
+     * Typed equal to the suggestion, the carried steps are kept as they are.
+     */
+    List<LeaseLineInput> withTypedRent(List<LeaseLineInput> lines, BigDecimal newRent) {
+        List<LeaseLineInput> rents = lines.stream().filter(l -> isRent(l.chargeTypeId())).toList();
+        BigDecimal suggested = rents.stream().map(LeaseLineInput::grossAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (rents.isEmpty() || suggested.compareTo(newRent) == 0) return lines;
+        LeaseLineInput first = rents.get(0);
+        List<LeaseLineInput> out = new ArrayList<>();
+        boolean placed = false;
+        for (LeaseLineInput l : lines) {
+            if (!isRent(l.chargeTypeId())) {
+                out.add(l);
+            } else if (!placed) {
+                out.add(new LeaseLineInput(first.chargeTypeId(), first.chargeTypeCode(), newRent, BigDecimal.ZERO,
+                        first.narration(), first.vatApplicable(), first.creditAccountId(), null, null));
+                placed = true;
+            }
         }
         return out;
     }
@@ -276,17 +315,9 @@ public class LeaseTransferService {
      * the renter twice: A's full-term charge reaches B through C.
      */
     private void requireNoFeeChargedTwice(Lease a, Lease b, LocalDate t) {
-        java.util.Set<UUID> chargedOnA = new java.util.HashSet<>();
         List<LeaseLine> aLines = leaseLineRepository.findByLease_IdOrderBySeqNoAsc(a.getId());
-        // Sim r22 S22-02: an undated fee ran over the term it was charged for, not an extended end.
-        LocalDate originalEnd = com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(a);
-        for (LeaseLine l : aLines) {
-            if (l.getChargeType() == null || l.getChargeType().getBehaviour() != ChargeBehaviour.FEE) continue;
-            if (l.getPostedRecognition() != com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.ONE_OFF) continue;
-            if (l.getChargeType().getRecognition() == null || !l.getChargeType().getRecognition().recurs()) continue;
-            LocalDate to = l.getPeriodEnd() != null ? l.getPeriodEnd() : originalEnd;
-            if (to.isAfter(t)) chargedOnA.add(l.getChargeType().getId());
-        }
+        Set<UUID> chargedOnA = feesChargedForWholeTermAfter(aLines,
+                com.datagami.rentaxis.core.service.LeaseService.originalTermEnd(a), t);
         for (LeaseLine l : leaseLineRepository.findByLease_IdOrderBySeqNoAsc(b.getId())) {
             if (l.getChargeType() != null && chargedOnA.contains(l.getChargeType().getId())) {
                 throw new BusinessRuleViolationException(l.getChargeType().getNameEn() + " was charged on the old lease"
@@ -294,6 +325,24 @@ public class LeaseTransferService {
                         "lease.transferFeeChargedTwice", Map.of("charge", l.getChargeType().getNameEn()));
             }
         }
+    }
+
+    /**
+     * The fee types A took to income at posting (ONE_OFF) whose window still runs after
+     * T. Shared by the post's refusal and {@link #defaultLines}, so the defaults never
+     * offer a line the post refuses (sim r24 S24-01).
+     */
+    static Set<UUID> feesChargedForWholeTermAfter(List<LeaseLine> aLines, LocalDate originalEnd, LocalDate t) {
+        Set<UUID> charged = new java.util.HashSet<>();
+        for (LeaseLine l : aLines) {
+            if (l.getChargeType() == null || l.getChargeType().getBehaviour() != ChargeBehaviour.FEE) continue;
+            if (l.getPostedRecognition() != com.datagami.rentaxis.domain.entity.enums.ChargeRecognition.ONE_OFF) continue;
+            if (l.getChargeType().getRecognition() == null || !l.getChargeType().getRecognition().recurs()) continue;
+            // Sim r22 S22-02: an undated fee ran over the term it was charged for, not an extended end.
+            LocalDate to = l.getPeriodEnd() != null ? l.getPeriodEnd() : originalEnd;
+            if (to.isAfter(t)) charged.add(l.getChargeType().getId());
+        }
+        return charged;
     }
 
     static String defaultDisposition(Cheque c, LocalDate t) {
