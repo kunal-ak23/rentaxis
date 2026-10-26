@@ -158,8 +158,7 @@ void main() {
       expect(find.text('CANCEL REQUEST'), findsNothing);
     });
 
-    testWidgets('an APPROVED amenity offers neither action — release is '
-        'parking-only and it is no longer PENDING', (tester) async {
+    testWidgets('an APPROVED undated amenity can be cancelled but not released', (tester) async {
       final fake = FakeFacilityService(
         bookings: [
           {...pendingPool, 'status': 'APPROVED'},
@@ -167,7 +166,7 @@ void main() {
       );
       await _pump(tester, fake: fake);
 
-      expect(find.text('CANCEL REQUEST'), findsNothing);
+      expect(find.text('CANCEL REQUEST'), findsOneWidget);
       expect(find.text('RELEASE SPOT'), findsNothing);
     });
 
@@ -500,6 +499,24 @@ void main() {
         );
       },
     );
+
+    testWidgets('a free booking shows no fee line; a paid one does', (
+      tester,
+    ) async {
+      final fake = FakeFacilityService(bookings: [
+        {...pendingPool, 'feeAmount': 0},
+        {
+          ...pendingPool,
+          'id': 'bk-2',
+          'resourceName': 'Tennis court',
+          'feeAmount': 150,
+        },
+      ]);
+      await _pump(tester, fake: fake);
+
+      expect(find.textContaining('Booking fee before VAT'), findsOneWidget);
+      expect(find.textContaining('150'), findsOneWidget);
+    });
 
     testWidgets('a PENDING request shows neither admin note nor decided-on', (
       tester,

@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import '../../utils/renter_rules.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
@@ -387,7 +388,19 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
               ),
             ),
           ],
-          if (status == 'PENDING') ...[
+          // feeAmount is never null (the column defaults to 0); a free
+          // booking shows no fee line.
+          if (((request['feeAmount'] as num?) ?? 0) > 0)
+            Text(
+              '${l.ar ? 'رسوم الحجز قبل الضريبة' : 'Booking fee before VAT'}: ${Formatters.currency(request['feeAmount'] as num)}',
+            ),
+          if (request['chargeId'] != null)
+            Text(
+              l.ar
+                  ? 'تمت إضافة الرسوم إلى حسابك'
+                  : 'Charge added to your account',
+            ),
+          if (canCancelRenterBooking(request)) ...[
             const SizedBox(height: 12),
             GoldButton.outlined(
               key: Key('cancel-$id'),

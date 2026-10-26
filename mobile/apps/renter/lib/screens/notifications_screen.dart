@@ -33,6 +33,31 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
     super.dispose();
   }
 
+  Future<void> _markRead([String? id]) async {
+    try {
+      final notifier = ref.read(notificationProvider.notifier);
+      if (id == null) {
+        await notifier.markAllAsRead();
+      } else {
+        await notifier.markAsRead(id);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            errorMessage(
+              e,
+              context.isAr
+                  ? 'تعذر تحديث الإشعار'
+                  : 'Could not update the notification',
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _loadMore() async {
     if (_isLoadingMore) return;
     setState(() => _isLoadingMore = true);
@@ -40,7 +65,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
     await ref
         .read(notificationProvider.notifier)
         .fetchNotifications(page: _currentPage);
-    if (mounted) setState(() => _isLoadingMore = false);
+    if (mounted) {
+      if (ref.read(notificationProvider).hasError) _currentPage--;
+      setState(() => _isLoadingMore = false);
+    }
   }
 
   Future<void> _refresh() async {
@@ -67,8 +95,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
         actions: [
           if (notifState.unreadCount > 0)
             TextButton(
-              onPressed: () =>
-                  ref.read(notificationProvider.notifier).markAllAsRead(),
+              onPressed: () => _markRead(),
               child: Text(
                 l.markAllRead,
                 style: const TextStyle(color: AppColors.accent, fontSize: 13),
@@ -226,16 +253,36 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
                       )
                     : null,
                 tileColor: isRead ? null : accentColor.withValues(alpha: 0.05),
-                onTap: () {
+                onTap: () async {
                   if (!isRead && notification['id'] != null) {
-                    ref
-                        .read(notificationProvider.notifier)
-                        .markAsRead(notification['id']);
+                    await _markRead(notification['id'] as String);
                   }
-                  // Deep-link: PENALTY_INCURRED → penalties screen.
-                  if (type.toUpperCase() == 'PENALTY_INCURRED') {
-                    context.push('/penalties');
-                  }
+                  if (!context.mounted) return;
+                  final reference = notification['referenceType']
+                      ?.toString()
+                      .toUpperCase();
+                  final id = notification['referenceId']?.toString();
+                  final route = switch (reference) {
+                    'TICKET' =>
+                      id == null
+                          ? '/tickets'
+                          : '/tickets/${Uri.encodeComponent(id)}',
+                    'MEETING' =>
+                      id == null
+                          ? '/meetings'
+                          : '/meetings/${Uri.encodeComponent(id)}',
+                    'LEASE' => '/contracts',
+                    'CHEQUE' || 'PAYMENT' => '/payments',
+                    'PENALTY' || 'PENALTY_ASSESSMENT' => '/penalties',
+                    'BOOKING' || 'BOOKING_REQUEST' => '/facilities/requests',
+                    'GATE_PASS' || 'GATEPASS' => '/gatepass',
+                    'RENEWAL' || 'RENEWAL_OPPORTUNITY' => '/renewals',
+                    _ =>
+                      type.toUpperCase().contains('PENALTY')
+                          ? '/penalties'
+                          : null,
+                  };
+                  if (route != null) context.push(route);
                 },
               ),
             );

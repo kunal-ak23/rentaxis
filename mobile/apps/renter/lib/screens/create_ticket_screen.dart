@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../utils/renter_rules.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -22,7 +23,12 @@ final _myLeasesForTicketProvider = FutureProvider.autoDispose<List<dynamic>>((
   ref,
 ) {
   final service = ref.watch(_leaseServiceProvider);
-  return service.getMyLeases();
+  return service.getMyLeases().then(
+    (rows) => rows
+        .whereType<Map<String, dynamic>>()
+        .where(isCurrentRenterLease)
+        .toList(),
+  );
 });
 
 /// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
@@ -216,7 +222,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (_isSubmitting || !_formKey.currentState!.validate()) return;
     final l = _L(context.isAr);
     if (_selectedCategory == null) {
       ScaffoldMessenger.of(
@@ -248,13 +254,14 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
       final ticket = await ref.read(_ticketServiceProvider).createTicket(data);
 
       // Upload attachments
+      var failedAttachments = 0;
       if (_attachments.isNotEmpty && ticket['id'] != null) {
         final service = ref.read(_ticketServiceProvider);
         for (final file in _attachments) {
           try {
             await service.uploadAttachment(ticket['id'], file.path);
           } catch (_) {
-            // Continue uploading remaining attachments
+            failedAttachments++;
           }
         }
       }
@@ -262,11 +269,17 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(l.ticketCreated),
+            content: Text(
+              failedAttachments == 0
+                  ? l.ticketCreated
+                  : (context.isAr
+                        ? 'تم إنشاء التذكرة، لكن تعذر رفع بعض المرفقات. أعد المحاولة من التذكرة.'
+                        : 'Ticket created, but some attachments failed. Retry from the ticket.'),
+            ),
             backgroundColor: AppColors.success,
           ),
         );
-        context.pop();
+        context.pushReplacement('/tickets/${ticket['id']}');
       }
     } catch (e) {
       if (mounted) {

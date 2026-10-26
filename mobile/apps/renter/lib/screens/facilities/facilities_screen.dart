@@ -26,6 +26,13 @@ class _L {
   String get request => ar ? 'طلب حجز' : 'Request';
   String get viewPhotos => ar ? 'عرض الصور' : 'View photos';
   String get photos => ar ? 'صور المرفق' : 'Facility photos';
+  String feeLabel(String? type, num amount) =>
+      type == null || type == 'FREE' || amount == 0
+      ? (ar ? 'مجاني' : 'Free')
+      : '${Formatters.currency(amount)} ${type == 'PER_HOUR' ? (ar ? 'لكل ساعة' : 'per hour') : (ar ? 'لكل حجز' : 'per booking')}';
+  String get feeDateRequired => ar
+      ? 'اختر تاريخاً لهذا الحجز المدفوع'
+      : 'Choose a date for this paid booking';
   String get held => ar ? 'محجوز' : 'Held';
   String get notBookable => ar ? 'غير قابل للحجز' : 'Not bookable';
   String get unit => ar ? 'الوحدة' : 'Unit';
@@ -470,6 +477,13 @@ class _AmenityCard extends ConsumerWidget {
                   ),
             ),
           ],
+          const SizedBox(height: 6),
+          Text(
+            l.feeLabel(
+              row['feeType'] as String?,
+              (row['feeAmount'] as num?) ?? 0,
+            ),
+          ),
           if (pendingCount > 0) ...[
             const SizedBox(height: 6),
             Text(
@@ -583,6 +597,13 @@ class _SpotCard extends ConsumerWidget {
                         .josefinSans)(fontSize: 11.5, color: m.textMuted),
             ),
           ],
+          const SizedBox(height: 6),
+          Text(
+            l.feeLabel(
+              row['feeType'] as String?,
+              (row['feeAmount'] as num?) ?? 0,
+            ),
+          ),
           if (pendingCount > 0) ...[
             const SizedBox(height: 6),
             Text(
@@ -685,7 +706,7 @@ class _FacilityPhotoSheetState extends State<_FacilityPhotoSheet> {
                 onPageChanged: (index) => setState(() => _index = index),
                 itemBuilder: (_, index) => ClipRRect(
                   borderRadius: BorderRadius.circular(14),
-                  child: Image.network(
+                  child: ApiImage(
                     widget.photos[index],
                     width: double.infinity,
                     fit: BoxFit.cover,
@@ -746,6 +767,8 @@ Future<void> _openRequestSheet(
       resourceId: resourceId,
       propertyId: propertyId,
       resourceName: name,
+      feeType: row['feeType'] as String? ?? 'FREE',
+      feeAmount: (row['feeAmount'] as num?) ?? 0,
     ),
   );
   // The sheet awaited a network round trip before popping — the calling
@@ -792,12 +815,16 @@ class _RequestSheet extends ConsumerStatefulWidget {
   final String resourceId;
   final String propertyId;
   final String resourceName;
+  final String feeType;
+  final num feeAmount;
 
   const _RequestSheet({
     required this.resourceType,
     required this.resourceId,
     required this.propertyId,
     required this.resourceName,
+    required this.feeType,
+    required this.feeAmount,
   });
 
   @override
@@ -819,11 +846,30 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
     super.dispose();
   }
 
+  num _quotedFee() {
+    if (widget.feeType == 'FREE') return 0;
+    if (widget.feeType != 'PER_HOUR') return widget.feeAmount;
+    final start = _preferredStartTime;
+    final end = _preferredEndTime;
+    final minutes = start != null && end != null
+        ? (end.hour * 60 + end.minute) - (start.hour * 60 + start.minute)
+        : 60;
+    // Match the server's four-decimal hour rounding before currency rounding.
+    final hours = ((minutes > 0 ? minutes / 60 : 1) * 10000).round() / 10000;
+    return (widget.feeAmount * hours * 100).round() / 100;
+  }
+
   Future<void> _submit() async {
     final l = _L(context.isAr);
     final unitId = _selectedUnitId;
     if (unitId == null) return;
     final isParking = widget.resourceType == 'PARKING_SPOT';
+    if (widget.feeType != 'FREE' &&
+        widget.feeAmount > 0 &&
+        _preferredDate == null) {
+      _toast(l.feeDateRequired);
+      return;
+    }
     final start = _preferredStartTime;
     final end = _preferredEndTime;
     if (isParking) {
@@ -928,6 +974,9 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
     final m = context.miftah;
     final l = _L(context.isAr);
     final isParking = widget.resourceType == 'PARKING_SPOT';
+    final dateLabel = widget.feeType != 'FREE' && widget.feeAmount > 0
+        ? (l.ar ? 'تاريخ الحجز (مطلوب)' : 'Booking date (required)')
+        : l.preferredDate;
     final leases = ref.watch(activeLeasesProvider);
 
     // A drag-to-dismiss or barrier tap must not pop the sheet mid-submit —
@@ -1019,6 +1068,18 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
                                 color: m.textPrimary,
                               ),
                       ),
+                      const SizedBox(height: 8),
+                      Text(l.feeLabel(widget.feeType, widget.feeAmount)),
+                      if (widget.feeType != 'FREE' && widget.feeAmount > 0) ...[
+                        Text(
+                          l.ar
+                              ? 'تضاف الضريبة عند تطبيقها. تُحصّل الرسوم بعد موافقة الإدارة.'
+                              : 'VAT applies where applicable. The fee is charged after management approval.',
+                        ),
+                        Text(
+                          '${l.ar ? 'الرسوم المقدرة قبل الضريبة' : 'Estimated fee before VAT'}: ${Formatters.currency(_quotedFee())}',
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       Text(
                         l.unit,
@@ -1056,7 +1117,7 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
                         ),
                       const SizedBox(height: 12),
                       Text(
-                        isParking ? l.parkingPeriod : l.preferredDate,
+                        isParking ? l.parkingPeriod : dateLabel,
                         style: TextStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w700,
@@ -1088,7 +1149,7 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
                         )
                       else ...[
                         _DateSlotField(
-                          label: l.preferredDate,
+                          label: dateLabel,
                           value: _preferredDate,
                           placeholder: l.pickADate,
                           onTap: () => _pickDate(isEnd: false),

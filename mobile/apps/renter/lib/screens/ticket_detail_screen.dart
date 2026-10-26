@@ -1,3 +1,5 @@
+import 'package:file_picker/file_picker.dart';
+import '../widgets/ticket_attachment_tile.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -44,8 +46,6 @@ class _L {
   String get description => ar ? 'الوصف' : 'DESCRIPTION';
   String get photos => ar ? 'الصور' : 'PHOTOS';
   String get addPhoto => ar ? '+ إضافة' : '+ ADD';
-  String get photoUploadSoon =>
-      ar ? 'رفع الصور قريبًا' : 'Photo upload coming soon';
   String get closingOtp => ar ? 'رمز إغلاق الطلب' : 'Closing OTP';
   String get shareOtp => ar
       ? 'شارك هذا الرمز مع مدير العقار لإغلاق الطلب'
@@ -149,7 +149,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
 
   Future<void> _sendReply() async {
     final message = _replyController.text.trim();
-    if (message.isEmpty) return;
+    if (_isSendingReply || message.isEmpty) return;
 
     setState(() => _isSendingReply = true);
     try {
@@ -170,7 +170,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
   }
 
   Future<void> _submitRating() async {
-    if (_rating == 0) return;
+    if (_isSubmittingRating || _rating == 0) return;
     setState(() => _isSubmittingRating = true);
     try {
       await ref
@@ -249,12 +249,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                             );
                           },
                           child: ListView(
-                            padding: EdgeInsets.fromLTRB(
-                              20,
-                              16,
-                              20,
-                              24,
-                            ),
+                            padding: EdgeInsets.fromLTRB(20, 16, 20, 24),
                             children: [
                               // Priority + raised time
                               AnimatedListItem(
@@ -348,50 +343,19 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                                                     const EdgeInsetsDirectional.only(
                                                       end: 10,
                                                     ),
-                                                child: _AttachmentThumb(
-                                                  att: att,
-                                                  onTap: () {
-                                                    final url =
-                                                        att['url'] ?? '';
-                                                    final name =
-                                                        (att['fileName'] ??
-                                                                att['name'] ??
-                                                                '')
-                                                            .toString();
-                                                    final isImage =
-                                                        name
-                                                            .toLowerCase()
-                                                            .endsWith('.jpg') ||
-                                                        name
-                                                            .toLowerCase()
-                                                            .endsWith('.png') ||
-                                                        name
-                                                            .toLowerCase()
-                                                            .endsWith('.jpeg');
-                                                    if (isImage &&
-                                                        url.isNotEmpty) {
-                                                      _showFullScreenImage(
-                                                        context,
-                                                        url,
-                                                      );
-                                                    }
-                                                  },
+                                                child: TicketAttachmentTile(
+                                                  attachment:
+                                                      Map<String, dynamic>.from(
+                                                        att as Map,
+                                                      ),
                                                 ),
                                               ),
                                             if (!isClosed)
                                               _AddPhotoTile(
                                                 l: l,
-                                                onTap: () {
-                                                  ScaffoldMessenger.of(
-                                                    context,
-                                                  ).showSnackBar(
-                                                    SnackBar(
-                                                      content: Text(
-                                                        l.photoUploadSoon,
-                                                      ),
-                                                    ),
-                                                  );
-                                                },
+                                                onTap: _uploadingAttachment
+                                                    ? () {}
+                                                    : _uploadAttachment,
                                               ),
                                           ],
                                         ),
@@ -401,7 +365,14 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                                   );
                                 },
                                 loading: () => const SizedBox.shrink(),
-                                error: (_, _) => const SizedBox.shrink(),
+                                error: (_, _) => ErrorState(
+                                  message: context.isAr
+                                      ? 'تعذر تحميل المرفقات'
+                                      : 'Could not load attachments',
+                                  onRetry: () => ref.invalidate(
+                                    _ticketAttachmentsProvider(widget.ticketId),
+                                  ),
+                                ),
                               ),
 
                               // OTP Section (RESOLVED status)
@@ -665,7 +636,10 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
           const SizedBox(height: 14),
           TextField(
             controller: _ratingCommentController,
-            style: GoogleFonts.plusJakartaSans(fontSize: 14, color: m.textPrimary),
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 14,
+              color: m.textPrimary,
+            ),
             decoration: InputDecoration(
               hintText: l.optionalComment,
               hintStyle: GoogleFonts.plusJakartaSans(
@@ -762,6 +736,42 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     );
   }
 
+  bool _uploadingAttachment = false;
+  Future<void> _uploadAttachment() async {
+    if (_uploadingAttachment) return;
+    setState(() => _uploadingAttachment = true);
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+      );
+      if (!mounted || result == null || result.files.single.path == null) {
+        return;
+      }
+      await ref
+          .read(_ticketServiceProvider)
+          .uploadAttachment(widget.ticketId, result.files.single.path!);
+      ref.invalidate(_ticketAttachmentsProvider(widget.ticketId));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              errorMessage(
+                e,
+                context.isAr
+                    ? 'تعذر رفع المرفق'
+                    : 'Could not upload attachment',
+              ),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingAttachment = false);
+    }
+  }
+
   Widget _buildReplyInput(_L l) {
     final m = context.miftah;
     return Container(
@@ -841,32 +851,6 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  void _showFullScreenImage(BuildContext context, String url) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.black,
-            iconTheme: const IconThemeData(color: Colors.white),
-          ),
-          body: Center(
-            child: InteractiveViewer(
-              child: Image.network(
-                url,
-                errorBuilder: (_, _, _) => const Icon(
-                  Icons.broken_image_outlined,
-                  color: Colors.white54,
-                  size: 64,
-                ),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -1036,75 +1020,6 @@ class _AssigneeCard extends StatelessWidget {
   }
 }
 
-class _AttachmentThumb extends StatelessWidget {
-  final Map<String, dynamic> att;
-  final VoidCallback onTap;
-
-  const _AttachmentThumb({required this.att, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final m = context.miftah;
-    final url = att['url'] ?? '';
-    final name = (att['fileName'] ?? att['name'] ?? '').toString();
-    final isImage =
-        name.toLowerCase().endsWith('.jpg') ||
-        name.toLowerCase().endsWith('.png') ||
-        name.toLowerCase().endsWith('.jpeg');
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 76,
-        height: 76,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          color: m.surfaceAlt,
-          border: Border.all(color: m.border),
-        ),
-        clipBehavior: Clip.hardEdge,
-        child: isImage && url.isNotEmpty
-            ? Stack(
-                fit: StackFit.expand,
-                children: [
-                  Image.network(
-                    url,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) =>
-                        Icon(Icons.broken_image, color: m.textMuted),
-                  ),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.05),
-                    ),
-                  ),
-                ],
-              )
-            : Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.insert_drive_file, color: m.textMuted, size: 24),
-                  const SizedBox(height: 4),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Text(
-                      name,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 8,
-                        color: m.textMuted,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ],
-              ),
-      ),
-    );
-  }
-}
-
 class _AddPhotoTile extends StatelessWidget {
   final VoidCallback onTap;
   final _L l;
@@ -1221,7 +1136,10 @@ class _OtpSection extends StatelessWidget {
           const SizedBox(height: 16),
           Text(
             l.shareOtp,
-            style: GoogleFonts.plusJakartaSans(fontSize: 12.5, color: m.textMuted),
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12.5,
+              color: m.textMuted,
+            ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 14),

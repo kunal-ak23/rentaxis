@@ -7,35 +7,14 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 import '../providers/promotion_provider.dart';
 import '../widgets/home_ads_strip.dart';
 import 'next_payment.dart';
+import '../providers/renter_data.dart';
+import '../utils/renter_rules.dart';
 
-final _leaseServiceProvider = Provider<LeaseService>((ref) {
-  final client = ref.watch(apiClientProvider);
-  return LeaseService(client.dio);
-});
-
-final _paymentServiceProvider = Provider<PaymentService>((ref) {
-  final client = ref.watch(apiClientProvider);
-  return PaymentService(client.dio);
-});
-
-final _homePenaltyServiceProvider = Provider<PenaltyService>((ref) {
-  final client = ref.watch(apiClientProvider);
-  return PenaltyService(client.dio);
-});
-
-final _myLeasesProvider = FutureProvider.autoDispose<List<dynamic>>((ref) {
-  return ref.watch(_leaseServiceProvider).getMyLeases();
-});
-
-final _myPaymentsProvider = FutureProvider.autoDispose<List<dynamic>>((ref) {
-  return ref.watch(_paymentServiceProvider).getMyPayments();
-});
-
+final _myLeasesProvider = renterLeasesProvider;
+final _myPaymentsProvider = renterPaymentsProvider;
 final _openPenaltyCountProvider = FutureProvider.autoDispose<int>((ref) async {
-  final list = await ref
-      .watch(_homePenaltyServiceProvider)
-      .listPenalties(status: 'open', size: 50);
-  return list.length;
+  final rows = await ref.watch(renterPenaltiesProvider.future);
+  return rows.where((r) => r['collectionStatus'] != 'CLEARED').length;
 });
 
 /// Renter Home — design screen 02.
@@ -119,22 +98,26 @@ class HomeScreen extends ConsumerWidget {
 }
 
 Map<String, dynamic>? _findActiveLease(List<dynamic> leases) {
-  for (final l in leases) {
-    if (l is Map<String, dynamic> &&
-        (l['status'] == 'ACTIVE' || l['status'] == 'PENDING_SIGNATURE')) {
-      return l;
-    }
-  }
-  if (leases.isNotEmpty && leases.first is Map<String, dynamic>) {
-    return leases.first as Map<String, dynamic>;
-  }
-  return null;
+  final ordered = orderedRenterLeases(leases);
+  return ordered
+      .where(
+        (r) =>
+            isCurrentRenterLease(r) ||
+            r['yourAccessEndedOn'] == null &&
+                const {
+                  'ACTIVE',
+                  'NOTICE_GIVEN',
+                  'PENDING_SIGNATURE',
+                }.contains(r['status']),
+      )
+      .firstOrNull;
 }
 
 int _clearedCount(List<dynamic> payments, String? leaseId) {
   if (leaseId == null) return 0;
   return payments
       .whereType<Map<String, dynamic>>()
+      .where(isRentInstrument)
       .where((p) => p['leaseId'] == leaseId && p['status'] == 'CLEARED')
       .length;
 }
@@ -143,6 +126,7 @@ int _totalInstalmentsFor(List<dynamic> payments, String? leaseId) {
   if (leaseId == null) return 0;
   return payments
       .whereType<Map<String, dynamic>>()
+      .where(isRentInstrument)
       .where((p) => p['leaseId'] == leaseId)
       .length;
 }
@@ -153,6 +137,7 @@ double _clearedAmountFor(List<dynamic> payments, String? leaseId) {
   if (leaseId == null) return 0;
   return payments
       .whereType<Map<String, dynamic>>()
+      .where(isRentInstrument)
       .where((p) => p['leaseId'] == leaseId && p['status'] == 'CLEARED')
       .fold<double>(0, (s, p) => s + ((p['amount'] ?? 0) as num).toDouble());
 }
@@ -165,6 +150,7 @@ double _scheduleTotalFor(List<dynamic> payments, String? leaseId) {
   if (leaseId == null) return 0;
   return payments
       .whereType<Map<String, dynamic>>()
+      .where(isRentInstrument)
       .where(
         (p) =>
             p['leaseId'] == leaseId &&
@@ -264,11 +250,51 @@ class _MaybeHero extends StatelessWidget {
   Widget build(BuildContext context) {
     return leasesAsync.when(
       loading: () => const _HeroSkeleton(),
-      error: (_, _) => const _NoLeaseCard(),
+      error: (_, _) => ErrorState(
+        message: context.isAr
+            ? 'تعذر تحميل العقود'
+            : 'Could not load contracts',
+      ),
       data: (leases) {
         final lease = _findActiveLease(leases);
         if (lease == null) return const _NoLeaseCard();
+        if (!isCurrentRenterLease(lease)) {
+          final ar = context.isAr;
+          return MiftahGoldCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  lease['status'] == 'PENDING_SIGNATURE'
+                      ? (ar
+                            ? 'عقد بانتظار المراجعة'
+                            : 'Contract awaiting review')
+                      : (ar ? 'عقد قادم' : 'Upcoming contract'),
+                  style: MiftahType.cardTitle(),
+                ),
+                Text(
+                  '${lease['propertyName'] ?? ''} · ${lease['unitIdentifier'] ?? ''}',
+                ),
+                Text(
+                  '${Formatters.date(lease['startDate'] as String?, ar: ar)} – ${Formatters.date(lease['endDate'] as String?, ar: ar)}',
+                ),
+                TextButton(
+                  onPressed: () => context.push('/contracts'),
+                  child: Text(ar ? 'عرض العقد' : 'View contract'),
+                ),
+              ],
+            ),
+          );
+        }
         final leaseId = lease['id']?.toString();
+        if (paymentsAsync.isLoading) return const _HeroSkeleton();
+        if (paymentsAsync.hasError) {
+          return ErrorState(
+            message: context.isAr
+                ? 'تعذر تحميل الدفعات'
+                : 'Could not load payments',
+          );
+        }
         final payments = paymentsAsync.valueOrNull ?? const [];
         return _HeroBalanceCard(
           lease: lease,
@@ -394,8 +420,10 @@ class _HeroBalanceCard extends ConsumerWidget {
       lease['unitNumber']?.toString() ?? lease['unitIdentifier']?.toString(),
     ].whereType<String>().where((s) => s.isNotEmpty).join(' · ');
 
-    final money = NumberFormat('#,##0', l.ar ? 'ar' : 'en');
-    final progress = totalCount == 0 ? 0.0 : clearedCount / totalCount;
+    final money = NumberFormat('#,##0.00', l.ar ? 'ar' : 'en');
+    final progress = totalAmount <= 0
+        ? 0.0
+        : (clearedAmount / totalAmount).clamp(0.0, 1.0);
 
     return MiftahGoldCard(
       child: Column(
@@ -459,11 +487,13 @@ class _HeroBalanceCard extends ConsumerWidget {
           if (next != null) ...[
             const SizedBox(height: 2),
             Text(
-              l.chequeLine(
-                (next?['installmentNumber'] ?? 0) as num,
-                totalCount,
-                dueRaw,
-              ),
+              next?['penaltyAssessmentId'] != null
+                  ? (l.ar ? 'غرامة / رسوم مستحقة' : 'Penalty / charge due')
+                  : l.chequeLine(
+                      (next?['installmentNumber'] ?? 0) as num,
+                      totalCount,
+                      dueRaw,
+                    ),
               style: _onGold(13, FontWeight.w600, 0.72, l.ar),
             ),
           ],
@@ -499,11 +529,9 @@ class _HeroBalanceCard extends ConsumerWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: _HeroButton(
-                  label: l.setReminder,
+                  label: l.contract,
                   filled: false,
-                  onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(l.remindersComingSoon)),
-                  ),
+                  onTap: () => context.push('/contracts'),
                 ),
               ),
             ],
@@ -633,7 +661,7 @@ class _QuickActions extends StatelessWidget {
       (Icons.receipt_long_rounded, l.cheques, '/payments'),
       (Icons.handyman_rounded, l.maintain, '/tickets'),
       (Icons.qr_code_2_rounded, l.visitors, '/gatepass'),
-      (Icons.description_rounded, l.contract, '/profile'),
+      (Icons.description_rounded, l.contract, '/contracts'),
     ];
     return Row(
       children: [
@@ -860,7 +888,7 @@ class _ActivityRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = _L(context.isAr);
-    final status = payment['status']?.toString() ?? '';
+    final status = renterPaymentStatus(payment);
     final amount = (payment['amount'] ?? 0) as num;
 
     final ({IconData icon, MiftahTone tone, String title}) spec =
@@ -885,7 +913,7 @@ class _ActivityRow extends StatelessWidget {
             tone: MiftahTone.danger,
             title: l.paymentOverdue,
           ),
-          'PENDING' => (
+          'REGISTERED' => (
             icon: Icons.receipt_long_rounded,
             tone: MiftahTone.brass,
             title: l.upcomingPayment,
@@ -897,7 +925,7 @@ class _ActivityRow extends StatelessWidget {
           ),
         };
 
-    final money = NumberFormat('#,##0', l.ar ? 'ar' : 'en');
+    final money = NumberFormat('#,##0.00', l.ar ? 'ar' : 'en');
     final when =
         payment['statusChangedAt']?.toString() ??
         payment['dueDate']?.toString();
@@ -1012,9 +1040,6 @@ class _L {
       ar ? '$cleared من $total تمت تسويتها' : '$cleared of $total cleared';
 
   String get viewCheques => ar ? 'عرض الشيكات' : 'View cheques';
-  String get setReminder => ar ? 'تذكيرني' : 'Set reminder';
-  String get remindersComingSoon =>
-      ar ? 'ميزة التذكيرات قريباً' : 'Reminders coming soon';
 
   // Quick actions
   String get cheques => ar ? 'الشيكات' : 'Cheques';

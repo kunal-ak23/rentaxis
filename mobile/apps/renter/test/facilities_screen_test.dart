@@ -28,6 +28,57 @@ DioException _dioError(Object? data, {int statusCode = 400}) {
 }
 
 void main() {
+  testWidgets(
+    'paid amenity quotes its fee and requires a date before posting',
+    (tester) async {
+      final fake = FakeFacilityService(
+        amenities: [
+          {
+            'id': 'am-paid',
+            'propertyId': 'prop-1',
+            'propertyName': 'Tower',
+            'nameEn': 'Meeting room',
+            'bookable': true,
+            'pendingCount': 0,
+            'feeType': 'PER_BOOKING',
+            'feeAmount': 125.50,
+          },
+        ],
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            facilityServiceProvider.overrideWithValue(fake),
+            activeLeasesProvider.overrideWith(
+              (ref) async => [
+                {
+                  'id': 'lease-1',
+                  'unitId': 'unit-1',
+                  'unitIdentifier': '1204',
+                  'propertyId': 'prop-1',
+                  'status': 'ACTIVE',
+                },
+              ],
+            ),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.lightTheme,
+            home: const FacilitiesScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('125.50'), findsOneWidget);
+      await tester.tap(find.text('REQUEST'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('125.50'), findsWidgets);
+      await tester.ensureVisible(find.byKey(const Key('booking-submit')));
+      await tester.tap(find.byKey(const Key('booking-submit')));
+      await tester.pumpAndSettle();
+      expect(fake.createCalls, isEmpty);
+      expect(find.textContaining('date'), findsWidgets);
+    },
+  );
   testWidgets('request sheet posts resourceType, resourceId, unitId and note', (
     tester,
   ) async {
