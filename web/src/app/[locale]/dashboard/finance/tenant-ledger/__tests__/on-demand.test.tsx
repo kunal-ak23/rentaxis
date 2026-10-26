@@ -1,4 +1,5 @@
-// Tenant Ledger: pick a tenant first, last 12 months by default, picks in the URL.
+// Tenant Ledger, "All accounts" view: pick a tenant first, last 12 months by default, picks in the URL.
+// The view opens with `view=all`, or with no view and a contract (the lease "Ledger" link).
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("next-intl", async () => (await import("@/test/intlMock")).englishIntl());
@@ -43,24 +44,26 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("Tenant Ledger — on demand", () => {
     it("asks for a tenant first and fetches nothing", async () => {
+        query.current = "view=all";
         render(<Page />);
         expect(await screen.findByText("Pick a tenant to see their ledger")).toBeInTheDocument();
         expect(renter).not.toHaveBeenCalled();
     });
 
     it("fetches the picked tenant over the last 12 months and keeps the pick in the URL", async () => {
+        query.current = "view=all";
         render(<Page />);
         await pickTenant("Samira");
         fireEvent.click(screen.getByRole("button", { name: "Apply" }));
         const range = defaultLedgerRange();
         await waitFor(() => expect(renter).toHaveBeenCalledWith("r1", { from: range.from, to: range.to }));
         const url = new URL(window.location.href);
-        expect(Object.fromEntries(url.searchParams)).toEqual({ renterId: "r1", from: range.from, to: range.to });
+        expect(Object.fromEntries(url.searchParams)).toEqual({ view: "all", renterId: "r1", from: range.from, to: range.to });
         expect(lookup.searchRenters).toHaveBeenCalled();
     });
 
     it("names the linked tenant in the sub-band with one names call for that id", async () => {
-        query.current = "renterId=r3";
+        query.current = "view=all&renterId=r3";
         const row = { entryId: "e", entryNumber: "CIL-1", entryDate: "2026-02-01", docType: "CIL", particular: "Rent", narration: "", debit: 1000, credit: 0, balance: 1000,
             propertyId: null, unitId: null, leaseId: null, renterId: null, chequeId: null }; // the row names no one: the band must
         renter.mockResolvedValue([{ accountId: "a", accountCode: "1200", accountName: "Rent Receivable", accountType: "ASSET", openingBalance: 0,
@@ -119,5 +122,8 @@ describe("Tenant Ledger — on demand", () => {
         fireEvent.click(screen.getByRole("button", { name: "Apply" }));
         await waitFor(() => expect(renter).toHaveBeenLastCalledWith("r2", expect.anything()));
         expect(new URL(window.location.href).searchParams.get("leaseId")).toBeNull();
+        // The view was pinned on arrival, so losing the contract does not send the user to the receivable view.
+        expect(new URL(window.location.href).searchParams.get("view")).toBe("all");
+        expect(screen.getByRole("button", { name: "All accounts" })).toHaveAttribute("aria-pressed", "true");
     });
 });
