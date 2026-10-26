@@ -4,15 +4,20 @@ import com.datagami.rentaxis.api.dto.ledger.AccountLedgerDTO;
 import com.datagami.rentaxis.api.dto.ledger.LedgerRowDTO;
 import com.datagami.rentaxis.api.dto.payables.AdvanceDTO;
 import com.datagami.rentaxis.api.dto.payables.OpenItemDTO;
+import com.datagami.rentaxis.testsupport.PdfWords;
+import com.datagami.rentaxis.testsupport.PdfWords.Word;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import static com.datagami.rentaxis.testsupport.PdfWords.x;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 /** The supplier statement of account (finance-ops spec §2, S11), English and Arabic. */
 class SupplierStatementPdfRendererTest {
@@ -64,6 +69,58 @@ class SupplierStatementPdfRendererTest {
                 "2026-09-10", "BPV-26/55", "2050.00", "Closing balance", "\"1,500.00 Cr\"");
         String ar = new String(renderer.csv(statement(), "ar"), java.nio.charset.StandardCharsets.UTF_8);
         assertThat(ar).contains("الخليج لخدمات التكييف", "الرصيد الافتتاحي", "1,500.00 دائن");
+    }
+
+    /**
+     * openhtmltopdf does not mirror a table for {@code dir="rtl"}: the Arabic statement writes its cells last column
+     * first, so Date prints rightmost and Balance leftmost, and the opening, closing and total labels span the
+     * rightmost columns, clear of the amounts on their left.
+     */
+    @Test
+    void anArabicPdfPrintsItsColumnsRightToLeft() throws IOException {
+        List<Word> ar = PdfWords.on(renderer.render(statement(), "ar"), 1);
+        // A ledger row: Date, Entry, Doc, Details, Debit, Credit, Balance from the right.
+        List<Word> row = PdfWords.lineOf(ar, "BPV-26/55");
+        Word balance = PdfWords.containing(row, "1,500.00");
+        assertThat(x(row, "10/09/2026")).isGreaterThan(x(row, "BPV-26/55"));
+        assertThat(x(row, "BPV-26/55")).isGreaterThan(x(row, "BPV"));
+        assertThat(x(row, "BPV")).isGreaterThan(x(row, "2,050.00"));
+        assertThat(x(row, "2,050.00")).isGreaterThan(balance.x());
+        // The header runs the same way: the Balance heading sits over the balances.
+        assertThat(PdfWords.leftmost(PdfWords.lineAbove(ar, PdfWords.first(ar, "BPV-26/55"))).x())
+                .isCloseTo(balance.x(), within(1f));
+        // The opening label is the rightmost cell, not the balance.
+        Word rightOfOpening = PdfWords.rightmost(PdfWords.lineOf(ar, PdfWords.containing(ar, "3,550.00")));
+        assertThat(rightOfOpening.arabic()).isTrue();
+        assertThat(rightOfOpening.text()).doesNotContain("3,550.00");
+        // The closing line: balance, then the debit total, then the label at the right.
+        List<Word> closing = PdfWords.lineOf(ar, PdfWords.all(ar, "2,050.00").get(1));
+        assertThat(PdfWords.containing(closing, "1,500.00").x()).isLessThan(x(closing, "2,050.00"));
+        assertThat(PdfWords.rightmost(closing).arabic()).isTrue();
+        // An open item: Invoice, Entry, Invoice date, Due date, Days overdue, Amount, Paid, Open from the right.
+        List<Word> item = PdfWords.lineOf(ar, "INV-7790");
+        assertThat(x(item, "INV-7790")).isGreaterThan(x(item, "PISR-26/21"));
+        assertThat(x(item, "PISR-26/21")).isGreaterThan(x(item, "20/08/2026"));
+        assertThat(x(item, "19/09/2026")).isGreaterThan(x(item, "11"));
+        assertThat(x(item, "2,100.00")).isGreaterThan(x(item, "600.00"));
+        assertThat(PdfWords.leftmost(item).text()).isEqualTo("1,500.00");
+        // An advance, and the net owed: text on the right, amounts on the left.
+        List<Word> advance = PdfWords.lineOf(ar, "BPV-26/60");
+        assertThat(x(advance, "BPV-26/60")).isGreaterThan(x(advance, "25/09/2026"));
+        List<Word> net = PdfWords.lineOf(ar, "1,000.00");
+        assertThat(PdfWords.leftmost(net).text()).isEqualTo("1,000.00");
+        assertThat(PdfWords.rightmost(net).arabic()).isTrue();
+    }
+
+    @Test
+    void anEnglishPdfKeepsItsColumnsLeftToRight() throws IOException {
+        List<Word> en = PdfWords.on(renderer.render(statement(), "en"), 1);
+        List<Word> row = PdfWords.lineOf(en, "BPV-26/55");
+        assertThat(x(row, "10/09/2026")).isLessThan(x(row, "BPV-26/55"));
+        assertThat(x(row, "BPV")).isLessThan(x(row, "2,050.00"));
+        assertThat(x(row, "2,050.00")).isLessThan(x(row, "1,500.00"));
+        assertThat(PdfWords.leftmost(PdfWords.lineOf(en, PdfWords.all(en, "2,050.00").get(1))).text()).isEqualTo("Closing");
+        assertThat(PdfWords.rightmost(PdfWords.lineOf(en, "1,000.00")).text()).isEqualTo("1,000.00");
     }
 
     @Test

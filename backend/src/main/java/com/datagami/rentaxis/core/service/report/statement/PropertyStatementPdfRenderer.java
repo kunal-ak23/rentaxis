@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.dto.report.PropertyStatementDTO.Figure;
 import com.datagami.rentaxis.api.dto.report.PropertyStatementDTO.Section;
 import com.datagami.rentaxis.api.dto.report.PropertyStatementDTO.Table;
 import com.datagami.rentaxis.core.util.PdfResourcePolicy;
+import com.datagami.rentaxis.core.util.PdfRow;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
@@ -26,7 +27,8 @@ import java.util.Locale;
  * but inline {@code data:} URIs. Every value that came from a user — property,
  * renter, vendor and account names, narrations — is escaped before it reaches the
  * markup. Numbers use Latin digits in both languages, and sit in LTR spans so a
- * minus sign stays on the left inside an RTL page.</p>
+ * minus sign stays on the left inside an RTL page. An Arabic table's cells are
+ * written last column first ({@link PdfRow}), so its columns run right to left.</p>
  */
 @Component
 public class PropertyStatementPdfRenderer {
@@ -69,15 +71,19 @@ public class PropertyStatementPdfRenderer {
             if (!sec.figures().isEmpty()) {
                 b.append("<table class=\"fig\">");
                 for (Figure f : sec.figures()) {
-                    b.append("<tr><td>").append(esc(StatementLabels.of("figure." + f.key(), l)));
-                    if (f.count() != null) b.append(" <span dir=\"ltr\">(").append(f.count()).append(")</span>");
-                    b.append("</td><td class=\"num\"><span>").append(StatementFormat.money(f.amount())).append("</span></td></tr>");
+                    String label = esc(StatementLabels.of("figure." + f.key(), l))
+                            + (f.count() != null ? " <span dir=\"ltr\">(" + f.count() + ")</span>" : "");
+                    b.append("<tr>").append(PdfRow.cells(ar, "<td>" + label + "</td>",
+                            "<td class=\"num\"><span>" + StatementFormat.money(f.amount()) + "</span></td>")).append("</tr>");
                 }
                 b.append("</table>");
             }
             for (Table t : sec.tables()) {
                 if (t.rows().isEmpty()) continue;
                 List<Integer> cols = StatementFormat.visibleColumns(t);
+                // openhtmltopdf lays a table's columns out left to right whatever its direction (PdfRow), so an
+                // Arabic table is written last column first: its first logical column prints rightmost.
+                if (ar) cols = cols.reversed();
                 b.append("<table><tr>");
                 for (int c : cols) {
                     b.append("<th").append(StatementFormat.numeric(t, c) ? " class=\"num\"" : "").append(">")
