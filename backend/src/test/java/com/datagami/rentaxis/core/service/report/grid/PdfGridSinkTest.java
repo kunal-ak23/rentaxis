@@ -193,6 +193,14 @@ class PdfGridSinkTest {
         PdfGridSink ar = feed("ar", SampleGrid.COLUMNS, SampleGrid::feed);
         assertThat(ar.doc().lang()).isEqualTo("ar");
         assertThat(ar.doc().tables().get(0).header().get(0)).isEqualTo("تاريخ المستند");
+        // The table runs right to left: Doc Date is the rightmost column, Doc No the leftmost, and the opening and
+        // Sub Total labels span the rightmost columns, beside Particular rather than Debit.
+        assertThat(ReportPdf.html(ar.doc()))
+                .contains("<thead><tr><th>رقم المستند</th>").contains("<th>تاريخ المستند</th></tr></thead>")
+                .containsPattern("<tr class=\"OPENING\">(<td[^>]*>(<span>)?[^<]*(</span>)?</td>){6}"
+                        + "<td colspan=\"4\">[^<]+</td></tr>")
+                .containsPattern("<tr class=\"STRONG\">(<td[^>]*>(<span>)?[^<]*(</span>)?</td>){8}"
+                        + "<td colspan=\"2\">[^<]+</td></tr>");
         assertThat(new String(ar.bytes(), 0, 5, StandardCharsets.ISO_8859_1)).isEqualTo("%PDF-");
         try (PDDocument doc = Loader.loadPDF(ar.bytes())) {
             assertThat(new PDFTextStripper().getText(doc)).contains("صفحة").doesNotContain("ةحفص");

@@ -22,6 +22,12 @@ import java.util.regex.Pattern;
  * property, org and user names are user-typed). Numbers use Latin digits and sit
  * in LTR spans, so a minus stays on the left in RTL.</p>
  *
+ * <p>An Arabic table runs right to left. openhtmltopdf does not mirror a table's
+ * columns for {@code direction: rtl}, so the Arabic html writes each header and row
+ * last column first, a spanning label last: the first logical column prints rightmost
+ * and a Sub Total's label sits over the columns it covers. Text cells align right and
+ * amounts left, the mirror of the English page.</p>
+ *
  * <p>The header row sits in a {@code <thead>} that repeats on every page, every page
  * carries a "Page x / y" footer, and an optional organisation line sits above the
  * title. Band rows span the whole table, and a row's label may span its first
@@ -125,8 +131,12 @@ public final class ReportPdf {
         for (String m : d.meta()) b.append("<div class=\"meta\">").append(esc(m)).append("</div>");
         for (Table t : d.tables()) {
             if (t.caption() != null && !t.caption().isBlank()) b.append("<h2>").append(esc(t.caption())).append("</h2>");
+            int cols = t.header().size();
             b.append("<table><thead><tr>");
-            for (int c = 0; c < t.header().size(); c++) {
+            // openhtmltopdf lays a table's columns out left to right whatever its direction, so an Arabic
+            // table is written last column first: its first logical column prints rightmost.
+            for (int i = 0; i < cols; i++) {
+                int c = ar ? cols - 1 - i : i;
                 b.append("<th").append(num(t, c) ? " class=\"num\"" : "").append(">").append(esc(t.header().get(c))).append("</th>");
             }
             b.append("</tr></thead><tbody>");
@@ -135,26 +145,18 @@ public final class ReportPdf {
                 b.append("<tr class=\"").append(style).append("\">");
                 if (isBand(style)) {
                     String label = r.cells().isEmpty() ? "" : r.cells().get(0);
-                    b.append("<td colspan=\"").append(Math.max(1, t.header().size())).append("\">").append(esc(label))
+                    b.append("<td colspan=\"").append(Math.max(1, cols)).append("\">").append(esc(label))
                             .append("</td></tr>");
                     continue;
                 }
-                int c = 0;
-                int span = Math.min(r.labelSpan(), t.header().size());
-                if (span > 1) {
-                    String label = r.cells().isEmpty() ? "" : r.cells().get(0);
-                    b.append("<td colspan=\"").append(span).append("\">").append(esc(label)).append("</td>");
-                    c = span;
+                int span = Math.min(r.labelSpan(), cols);
+                // The cells after a spanning label: in Arabic they come first, reversed, and the label last.
+                int first = span > 1 ? span : 0;
+                if (span > 1 && !ar) spanningLabel(b, r, span);
+                for (int i = first; i < cols; i++) {
+                    cell(b, t, r, ar ? cols - 1 - (i - first) : i);
                 }
-                for (; c < t.header().size(); c++) {
-                    String v = c < r.cells().size() ? r.cells().get(c) : "";
-                    boolean n = num(t, c);
-                    b.append("<td").append(n ? " class=\"num\"" : "").append(">");
-                    if (n) b.append("<span>");
-                    b.append(esc(v));
-                    if (n) b.append("</span>");
-                    b.append("</td>");
-                }
+                if (span > 1 && ar) spanningLabel(b, r, span);
                 b.append("</tr>");
             }
             b.append("</tbody></table>");
@@ -162,6 +164,23 @@ public final class ReportPdf {
         for (String n : d.notes()) b.append("<div class=\"note\">").append(esc(n)).append("</div>");
         b.append("</body></html>");
         return b.toString();
+    }
+
+    /** A row's first cell spanning its first {@code span} columns. */
+    private static void spanningLabel(StringBuilder b, Row r, int span) {
+        String label = r.cells().isEmpty() ? "" : r.cells().get(0);
+        b.append("<td colspan=\"").append(span).append("\">").append(esc(label)).append("</td>");
+    }
+
+    /** Column {@code c} of a row; an amount sits in an LTR span. */
+    private static void cell(StringBuilder b, Table t, Row r, int c) {
+        String v = c < r.cells().size() ? r.cells().get(c) : "";
+        boolean n = num(t, c);
+        b.append("<td").append(n ? " class=\"num\"" : "").append(">");
+        if (n) b.append("<span>");
+        b.append(esc(v));
+        if (n) b.append("</span>");
+        b.append("</td>");
     }
 
     private static boolean isBand(Style s) {

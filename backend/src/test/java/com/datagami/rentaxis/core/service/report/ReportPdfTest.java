@@ -4,6 +4,8 @@ import com.datagami.rentaxis.api.dto.report.PropertyPnlDTO;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.pdfbox.text.TextPosition;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -118,6 +120,115 @@ class ReportPdfTest {
         assertThat(new ReportPdf.Row(List.of("x"), ReportPdf.Style.PLAIN).labelSpan()).isEqualTo(1);
         assertThatThrownBy(() -> ReportPdf.Row.labelled(ReportPdf.Style.PLAIN, List.of("x"), 0))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    /** A ledger-shaped table: two text columns, three amounts, one more text column. */
+    private static ReportPdf.Table ledgerTable(List<String> header) {
+        return new ReportPdf.Table(null, header, List.of(false, false, true, true, true, false), List.of(
+                ReportPdf.Row.of(ReportPdf.Style.BAND_PARTY, List.of("Tenant A")),
+                ReportPdf.Row.labelled(ReportPdf.Style.OPENING, List.of("Opening", "", "", "", "0.00Dr", ""), 4),
+                ReportPdf.Row.of(ReportPdf.Style.PLAIN, List.of("16-09-2026", "Rent", "10.00", "", "10.00Dr", "TCO-26/1")),
+                ReportPdf.Row.labelled(ReportPdf.Style.STRONG, List.of("Sub Total", "", "10.00", "", "10.00Dr", ""), 2),
+                ReportPdf.Row.labelled(ReportPdf.Style.TOTAL, List.of("REPORT TOTAL", "x", "y", "z", "w", "v"), 9)));
+    }
+
+    @Test
+    void arabicTablesRunRightToLeft() {
+        // openhtmltopdf lays table columns out left to right whatever the direction, so an Arabic table
+        // emits its cells last column first: the first logical column is the rightmost on the page.
+        var t = ledgerTable(List.of("Doc Date", "Particular", "Debit", "Credit", "Balance", "Doc No"));
+        String html = ReportPdf.html(new ReportPdf.Doc("ar", "T", List.of(), List.of(t), List.of(), false));
+        assertThat(html)
+                .contains("<table><thead><tr><th>Doc No</th><th class=\"num\">Balance</th><th class=\"num\">Credit</th>"
+                        + "<th class=\"num\">Debit</th><th>Particular</th><th>Doc Date</th></tr></thead>")
+                // a band spans the table as before
+                .contains("<tr class=\"BAND_PARTY\"><td colspan=\"6\">Tenant A</td></tr>")
+                .contains("<tr class=\"PLAIN\"><td>TCO-26/1</td><td class=\"num\"><span>10.00Dr</span></td>"
+                        + "<td class=\"num\"><span></span></td><td class=\"num\"><span>10.00</span></td>"
+                        + "<td>Rent</td><td>16-09-2026</td></tr>")
+                // a label spanning the leading columns is the rightmost cell: the others come first, reversed
+                .contains("<tr class=\"OPENING\"><td></td><td class=\"num\"><span>0.00Dr</span></td>"
+                        + "<td colspan=\"4\">Opening</td></tr>")
+                .contains("<tr class=\"STRONG\"><td></td><td class=\"num\"><span>10.00Dr</span></td>"
+                        + "<td class=\"num\"><span></span></td><td class=\"num\"><span>10.00</span></td>"
+                        + "<td colspan=\"2\">Sub Total</td></tr>")
+                .contains("<tr class=\"TOTAL\"><td colspan=\"6\">REPORT TOTAL</td></tr>")
+                // amounts keep their LTR spans and sit at the cell's far side from the text
+                .contains(".num span { direction: ltr; unicode-bidi: embed; }")
+                .contains("text-align: right; }").contains("td.num, th.num { text-align: left; }");
+    }
+
+    @Test
+    void englishTablesKeepTheirLogicalOrder() {
+        var t = ledgerTable(List.of("Doc Date", "Particular", "Debit", "Credit", "Balance", "Doc No"));
+        String html = ReportPdf.html(new ReportPdf.Doc("en", "T", List.of(), List.of(t), List.of(), false));
+        assertThat(html)
+                .contains("<table><thead><tr><th>Doc Date</th><th>Particular</th><th class=\"num\">Debit</th>"
+                        + "<th class=\"num\">Credit</th><th class=\"num\">Balance</th><th>Doc No</th></tr></thead>")
+                .contains("<tr class=\"BAND_PARTY\"><td colspan=\"6\">Tenant A</td></tr>")
+                .contains("<tr class=\"PLAIN\"><td>16-09-2026</td><td>Rent</td><td class=\"num\"><span>10.00</span></td>"
+                        + "<td class=\"num\"><span></span></td><td class=\"num\"><span>10.00Dr</span></td>"
+                        + "<td>TCO-26/1</td></tr>")
+                .contains("<tr class=\"OPENING\"><td colspan=\"4\">Opening</td>"
+                        + "<td class=\"num\"><span>0.00Dr</span></td><td></td></tr>")
+                .contains("<tr class=\"STRONG\"><td colspan=\"2\">Sub Total</td><td class=\"num\"><span>10.00</span></td>"
+                        + "<td class=\"num\"><span></span></td><td class=\"num\"><span>10.00Dr</span></td><td></td></tr>")
+                .contains("<tr class=\"TOTAL\"><td colspan=\"6\">REPORT TOTAL</td></tr>")
+                .contains("text-align: left; }").contains("td.num, th.num { text-align: right; }");
+    }
+
+    @Test
+    void anArabicPdfPrintsTheFirstColumnRightmost() throws IOException {
+        // Latin markers in an Arabic document: the layout follows the document's direction, not the text's.
+        var t = new ReportPdf.Table(null, List.of("COLFIRST", "COLTEXT", "COLDEBIT", "COLLAST"),
+                List.of(false, false, true, false), List.of(
+                ReportPdf.Row.of(ReportPdf.Style.PLAIN, List.of("16-09-2026", "Rent", "48,000.00", "TCO-26/1")),
+                ReportPdf.Row.labelled(ReportPdf.Style.STRONG, List.of("SUBTOTALLABEL", "", "66,000.00", ""), 2)));
+        Map<String, Float> ar = xPositions(ReportPdf.render(
+                new ReportPdf.Doc("ar", "T", List.of(), List.of(t), List.of(), false)));
+        assertThat(ar.get("COLFIRST")).isGreaterThan(ar.get("COLTEXT"));
+        assertThat(ar.get("COLTEXT")).isGreaterThan(ar.get("COLDEBIT"));
+        assertThat(ar.get("COLDEBIT")).isGreaterThan(ar.get("COLLAST"));
+        // the Sub Total label spans the two rightmost columns, clear of the Debit figure on its left
+        assertThat(ar.get("SUBTOTALLABEL")).isGreaterThan(ar.get("66,000.00"));
+        assertThat(ar.get("16-09-2026")).isGreaterThan(ar.get("48,000.00"));
+
+        Map<String, Float> en = xPositions(ReportPdf.render(
+                new ReportPdf.Doc("en", "T", List.of(), List.of(t), List.of(), false)));
+        assertThat(en.get("COLFIRST")).isLessThan(en.get("COLTEXT"));
+        assertThat(en.get("COLDEBIT")).isLessThan(en.get("COLLAST"));
+        assertThat(en.get("SUBTOTALLABEL")).isLessThan(en.get("66,000.00"));
+    }
+
+    /** The left edge of each word drawn on page 1, by its text. */
+    private static Map<String, Float> xPositions(byte[] pdf) throws IOException {
+        Map<String, Float> x = new LinkedHashMap<>();
+        try (PDDocument doc = Loader.loadPDF(pdf)) {
+            PDFTextStripper s = new PDFTextStripper() {
+                @Override
+                protected void writeString(String text, List<TextPosition> positions) {
+                    StringBuilder word = new StringBuilder();
+                    float left = Float.MAX_VALUE;
+                    for (TextPosition p : positions) {
+                        String u = p.getUnicode();
+                        if (u == null || u.isBlank()) {
+                            if (!word.isEmpty()) x.putIfAbsent(word.toString(), left);
+                            word.setLength(0);
+                            left = Float.MAX_VALUE;
+                            continue;
+                        }
+                        word.append(u);
+                        left = Math.min(left, p.getXDirAdj());
+                    }
+                    if (!word.isEmpty()) x.putIfAbsent(word.toString(), left);
+                }
+            };
+            s.setSortByPosition(true);
+            s.setStartPage(1);
+            s.setEndPage(1);
+            s.getText(doc);
+        }
+        return x;
     }
 
     @Test
