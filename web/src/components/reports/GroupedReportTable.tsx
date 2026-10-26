@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { fmtDrCr, fmtMoney, fmtReportDate } from "@/lib/reports/format";
-import type { GridColumn, GridItem, ReportGrid } from "@/lib/api/reports";
+import type { GridColumn, GridItem, GridKind, ReportGrid } from "@/lib/api/reports";
 import { cn } from "@/lib/utils";
 
 // The rule under the header is an inset shadow: a collapsed border would scroll away from a sticky cell.
@@ -14,6 +14,23 @@ const td = "px-3 py-1.5 text-xs";
 
 /** Amount-like kinds: end-aligned, tabular, isolated left-to-right so "8,000.00Cr" never flips under RTL. */
 const NUMERIC = new Set<GridColumn["kind"]>(["MONEY", "BALANCE", "INT", "SERIAL", "PERCENT"]);
+
+/** A width by kind, in characters, for a column the server sent without `widthChars`. */
+const KIND_WIDTH: Record<GridKind, number> = {
+    TEXT: 24, ID_TEXT: 12, DATE: 12, MONEY: 14, BALANCE: 16, INT: 8, SERIAL: 6, PERCENT: 8,
+};
+const MIN_COL_CH = 6;
+const MAX_COL_CH = 40;
+
+/**
+ * A column's minimum width in `ch`: the server's Excel width, clamped so a stray
+ * value neither collapses a column nor pushes one wide past the screen.
+ */
+function columnMinCh(col: GridColumn): number {
+    const w = col.widthChars;
+    const chars = typeof w === "number" && Number.isFinite(w) && w > 0 ? w : KIND_WIDTH[col.kind] ?? KIND_WIDTH.TEXT;
+    return Math.min(MAX_COL_CH, Math.max(MIN_COL_CH, Math.round(chars)));
+}
 
 const BAND_CLASS: Record<NonNullable<GridItem["band"]>, string> = {
     ACCOUNT: "bg-report-band text-report-band-fg font-bold",
@@ -82,7 +99,9 @@ function Cell({ col, value, refs, lead }: { col: GridColumn; value: string | und
  * balance, the rows, each group's Sub Total and the REPORT TOTAL — all printed
  * as the server sent them. One `<table>` for the page so columns line up across
  * groups; it scrolls inside its own box, so a 390 px screen never scrolls
- * sideways, and its header stays in view while the rows scroll.
+ * sideways, and its header stays in view while the rows scroll. Each column is
+ * at least as wide as the server's width for it, so a Particular wraps only
+ * past its own width instead of being squeezed by figures with room to spare.
  */
 export function GroupedReportTable({ grid, onPage, groupsLabel }: {
     grid: ReportGrid;
@@ -161,12 +180,13 @@ export function GroupedReportTable({ grid, onPage, groupsLabel }: {
     return (
         <div>
             <div className="bg-surface text-foreground border border-border rounded-xl overflow-x-auto overflow-y-auto max-h-[75vh] shadow-sm">
-                <table className="w-full min-w-[900px]">
+                <table className="w-full">
                     <thead className="sticky top-0 z-10">
                         <tr>
                             {cols.map(c => (
                                 <th key={c.key} scope="col" className={cn(th, NUMERIC.has(c.kind) ? "text-end" : "text-start")}>
-                                    {c.label}
+                                    {/* The floor sits on a block in the cell: min-width on a table cell itself is not honoured by every engine. */}
+                                    <div style={{ minWidth: `${columnMinCh(c)}ch` }}>{c.label}</div>
                                 </th>
                             ))}
                         </tr>

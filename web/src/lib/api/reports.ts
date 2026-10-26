@@ -23,6 +23,11 @@ export interface GridColumn {
     hidden: boolean;
     /** Which row ref the cell drills into: `journal` → refs.entryId, `lease` → refs.leaseId, `cheque` → refs.chequeId. */
     link: "journal" | "lease" | "cheque" | null;
+    /**
+     * The column's Excel width in characters (`ReportColumn.widthChars`); the screen takes it as the
+     * column's minimum width. Optional: a payload without it gets a width by kind.
+     */
+    widthChars?: number;
 }
 
 export interface GridItem {
