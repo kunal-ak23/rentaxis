@@ -388,8 +388,7 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
               ),
             ),
           ],
-          // feeAmount is never null (the column defaults to 0); a free
-          // booking shows no fee line.
+          // A free booking, or one whose feeAmount is null, shows no fee line.
           if (((request['feeAmount'] as num?) ?? 0) > 0)
             Text(
               '${l.ar ? 'رسوم الحجز قبل الضريبة' : 'Booking fee before VAT'}: ${Formatters.currency(request['feeAmount'] as num)}',

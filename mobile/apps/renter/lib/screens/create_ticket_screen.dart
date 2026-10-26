@@ -179,12 +179,6 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
   }
 
   Future<void> _pickFromGallery() async {
-    final status = await Permission.photos.request();
-    // On some platforms, photos permission might not exist
-    if (!status.isGranted && !status.isLimited) {
-      // Try picking anyway - some platforms don't need explicit permission
-    }
-
     final picker = ImagePicker();
     final images = await picker.pickMultiImage(
       maxWidth: 1920,

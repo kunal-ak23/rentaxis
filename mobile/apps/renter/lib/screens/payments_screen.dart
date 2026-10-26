@@ -8,10 +8,6 @@ import '../utils/renter_rules.dart';
 import '../widgets/renter_document_button.dart';
 import 'next_payment.dart';
 
-// Kept public for callers that used the wallet's presentation helpers.
-String effectivePaymentStatus(Map<String, dynamic> p) => renterPaymentStatus(p);
-bool isNonRentPayment(Map<String, dynamic> p) => !isRentInstrument(p);
-
 enum _Filter { all, due, cleared, upcoming }
 
 class PaymentsScreen extends ConsumerStatefulWidget {

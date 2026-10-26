@@ -109,6 +109,9 @@ class _ContractCardState extends ConsumerState<_ContractCard> {
       ),
     );
     if (confirmed != true || !mounted || _busy) return;
+    // Held past the PUT: the renter may leave mid-request, and Home must still
+    // see the decision. A disposed ref throws; the container outlives it.
+    final container = ProviderScope.containerOf(context, listen: false);
     setState(() {
       _busy = true;
       _error = null;
@@ -124,30 +127,24 @@ class _ContractCardState extends ConsumerState<_ContractCard> {
                 ? {'documentId': widget.lease['contractDocumentId']}
                 : null,
           );
-      // The renter may have left the screen while the PUT was in flight; the
-      // decision is saved either way, and a disposed ref throws.
-      if (!mounted) return;
-      ref.invalidate(renterLeasesProvider);
-      ref.invalidate(activeLeasesProvider);
+      container.invalidate(renterLeasesProvider);
+      container.invalidate(activeLeasesProvider);
     } catch (e) {
       if (mounted) {
-        setState(
-          () => _error = errorMessage(
-            e,
-            ar
-                ? 'تعذر حفظ القرار. حدّث العقد وراجعه مجدداً.'
-                : 'Could not save your decision. Refresh and review the current contract.',
-          ),
+        final message = errorMessage(
+          e,
+          ar
+              ? 'تعذر حفظ القرار. حدّث العقد وراجعه مجدداً.'
+              : 'Could not save your decision. Refresh and review the current contract.',
         );
-      }
-      if (mounted && _error != null) {
+        setState(() => _error = message);
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(_error!)));
+        ).showSnackBar(SnackBar(content: Text(message)));
       }
       // A regenerated contract must be reviewed before another acceptance.
       _reviewed = false;
-      if (mounted) ref.invalidate(renterLeasesProvider);
+      container.invalidate(renterLeasesProvider);
     } finally {
       if (mounted) setState(() => _busy = false);
     }

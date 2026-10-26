@@ -47,11 +47,7 @@ bool isLiveInstrument(Map<String, dynamic> row) => !const {
 }.contains(row['status']);
 
 bool isRentInstrument(Map<String, dynamic> row) =>
-    isLiveInstrument(row) &&
-    row['penaltyAssessmentId'] == null &&
-    row['isBookingDeposit'] != true &&
-    row['isSecurityDeposit'] != true &&
-    row['isCharge'] != true;
+    isLiveInstrument(row) && row['penaltyAssessmentId'] == null;
 
 String renterPaymentStatus(Map<String, dynamic> row) =>
     row['overdue'] == true &&

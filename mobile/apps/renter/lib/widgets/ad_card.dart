@@ -182,8 +182,10 @@ class AdCard extends StatelessWidget {
             if (ctaLabel.isNotEmpty || logoUrl != null) ...[
               const SizedBox(height: 6),
               // The pill takes the start, the logo the end: the corner the
-              // copy block's start-aligned lines leave free.
+              // copy block's start-aligned lines leave free. Bottom-aligned so
+              // the logo keeps that corner when the label wraps.
               Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   // Expanded + Align rather than a Spacer: the pill keeps its
                   // natural width but is still bounded by the row, so its label
@@ -218,7 +220,10 @@ class AdCard extends StatelessWidget {
                   if (logoUrl != null) ...[
                     const SizedBox(width: 8),
                     _BusinessLogo(
-                        key: const Key('ad-card-logo-slot'), url: logoUrl),
+                      key: const Key('ad-card-logo-slot'),
+                      url: logoUrl,
+                      businessName: businessName,
+                    ),
                   ],
                 ],
               ),
@@ -237,14 +242,23 @@ class AdCard extends StatelessWidget {
 /// (a deleted blob, a business paused since the feed was fetched) leaves the
 /// corner empty rather than showing a blank white square.
 class _BusinessLogo extends StatelessWidget {
-  const _BusinessLogo({super.key, required this.url});
+  const _BusinessLogo({
+    super.key,
+    required this.url,
+    required this.businessName,
+  });
 
   final String url;
+  final String businessName;
 
   @override
   Widget build(BuildContext context) {
-    // Decorative: the card already names the business in its copy or eyebrow.
-    return ExcludeSemantics(
+    // Read as part of the card: a photo card with a subtitle names the
+    // business nowhere else. Not flagged as an image — the label merges into
+    // the card's tap target, and the flag would go with it.
+    return Semantics(
+      label: businessName,
+      excludeSemantics: true,
       child: CachedNetworkImage(
         imageUrl: url,
         imageBuilder: (context, image) => Container(

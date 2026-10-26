@@ -353,9 +353,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                                             if (!isClosed)
                                               _AddPhotoTile(
                                                 l: l,
-                                                onTap: _uploadingAttachment
-                                                    ? () {}
-                                                    : _uploadAttachment,
+                                                onTap: _uploadAttachment,
                                               ),
                                           ],
                                         ),

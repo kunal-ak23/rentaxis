@@ -272,15 +272,11 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
                           ? '/meetings'
                           : '/meetings/${Uri.encodeComponent(id)}',
                     'LEASE' => '/contracts',
-                    'CHEQUE' || 'PAYMENT' => '/payments',
-                    'PENALTY' || 'PENALTY_ASSESSMENT' => '/penalties',
-                    'BOOKING' || 'BOOKING_REQUEST' => '/facilities/requests',
-                    'GATE_PASS' || 'GATEPASS' => '/gatepass',
-                    'RENEWAL' || 'RENEWAL_OPPORTUNITY' => '/renewals',
-                    _ =>
-                      type.toUpperCase().contains('PENALTY')
-                          ? '/penalties'
-                          : null,
+                    'CHEQUE' => '/payments',
+                    'PENALTY' => '/penalties',
+                    'BOOKING' => '/facilities/requests',
+                    'GATE_PASS' => '/gatepass',
+                    _ => null,
                   };
                   if (route != null) context.push(route);
                 },

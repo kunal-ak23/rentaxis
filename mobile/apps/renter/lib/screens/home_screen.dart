@@ -10,8 +10,6 @@ import 'next_payment.dart';
 import '../providers/renter_data.dart';
 import '../utils/renter_rules.dart';
 
-final _myLeasesProvider = renterLeasesProvider;
-final _myPaymentsProvider = renterPaymentsProvider;
 final _openPenaltyCountProvider = FutureProvider.autoDispose<int>((ref) async {
   final rows = await ref.watch(renterPenaltiesProvider.future);
   return rows.where((r) => r['collectionStatus'] != 'CLEARED').length;
@@ -34,19 +32,19 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final leasesAsync = ref.watch(_myLeasesProvider);
-    final paymentsAsync = ref.watch(_myPaymentsProvider);
+    final leasesAsync = ref.watch(renterLeasesProvider);
+    final paymentsAsync = ref.watch(renterPaymentsProvider);
     final auth = ref.watch(authProvider);
     final penalties = ref.watch(_openPenaltyCountProvider).valueOrNull ?? 0;
 
     Future<void> refresh() async {
-      ref.invalidate(_myLeasesProvider);
-      ref.invalidate(_myPaymentsProvider);
+      ref.invalidate(renterLeasesProvider);
+      ref.invalidate(renterPaymentsProvider);
       ref.invalidate(_openPenaltyCountProvider);
       // Pull-to-refresh re-reads the day's promo slate too.
       ref.invalidate(homePromoFeedProvider);
       ref.read(notificationProvider.notifier).fetchUnreadCount();
-      await ref.read(_myLeasesProvider.future);
+      await ref.read(renterLeasesProvider.future);
     }
 
     return Column(

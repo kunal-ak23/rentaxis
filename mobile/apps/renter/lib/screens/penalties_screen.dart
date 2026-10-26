@@ -5,7 +5,7 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 import '../providers/renter_data.dart';
 import '../utils/renter_rules.dart';
 
-final penaltiesProvider = FutureProvider.autoDispose
+final _penaltiesProvider = FutureProvider.autoDispose
     .family<List<Map<String, dynamic>>, String>((ref, status) async {
       final rows = await ref.watch(renterPenaltiesProvider.future);
       return rows
@@ -17,10 +17,10 @@ final penaltiesProvider = FutureProvider.autoDispose
           .toList();
     });
 
-class PenaltiesScreen extends ConsumerWidget {
+class PenaltiesScreen extends StatelessWidget {
   const PenaltiesScreen({super.key});
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final ar = context.isAr;
     return DefaultTabController(
       length: 2,
@@ -57,7 +57,7 @@ class _PenaltyList extends ConsumerWidget {
     }
 
     return ref
-        .watch(penaltiesProvider(status))
+        .watch(_penaltiesProvider(status))
         .when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (_, _) => ErrorState(

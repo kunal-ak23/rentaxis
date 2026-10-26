@@ -116,15 +116,7 @@ class _RenewalsScreenState extends ConsumerState<RenewalsScreen> {
                                       ? 'ستظهر خيارات التجديد عند فتح نافذة التجديد.'
                                       : 'Renewal choices appear when the renewal window opens.',
                                 )
-                              else if (!const {
-                                'RENEWED',
-                                'CLOSED',
-                                'LOST',
-                                'WON',
-                                'CANCELLED',
-                                'CLOSED_WON',
-                                'CLOSED_LOST',
-                              }.contains(row['stage']))
+                              else
                                 Wrap(
                                   spacing: 8,
                                   children: [

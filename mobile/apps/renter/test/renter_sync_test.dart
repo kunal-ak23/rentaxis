@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
+import 'package:renter/providers/gate_pass_provider.dart';
 import 'package:renter/providers/renter_data.dart';
 import 'package:renter/screens/contracts_screen.dart';
 import 'package:renter/screens/payments_screen.dart';
@@ -355,6 +356,78 @@ void main() {
         find.textContaining('Awaiting management posting'),
         findsOneWidget,
       );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'a contract accepted as the renter leaves still refreshes Home\'s leases',
+    (tester) async {
+      void Function()? answerPut;
+      final client = ApiClient();
+      client.dio.interceptors.clear();
+      client.dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) => answerPut = () => handler.resolve(
+            Response(requestOptions: options, statusCode: 200, data: {}),
+          ),
+        ),
+      );
+      var leaseFetches = 0;
+      var activeFetches = 0;
+      final container = await pumpScreen(
+        tester,
+        routes: [
+          GoRoute(path: '/', builder: (_, _) => const ContractsScreen()),
+          GoRoute(path: '/home', builder: (_, _) => const SizedBox()),
+        ],
+        initialLocation: '/',
+        surfaceSize: const Size(390, 1000),
+        overrides: [
+          apiClientProvider.overrideWithValue(client),
+          renterLeasesProvider.overrideWith((ref) async {
+            leaseFetches++;
+            return [
+              {
+                'id': 'l1',
+                'status': 'PENDING_SIGNATURE',
+                'hasContract': true,
+                'contractDocumentId': 'doc-v2',
+              },
+            ];
+          }),
+          activeLeasesProvider.overrideWith((ref) async {
+            activeFetches++;
+            return [];
+          }),
+          renterDocumentProvider.overrideWithValue((path) async => [37]),
+          shareRenterDocumentProvider.overrideWithValue(
+            (bytes, name, origin) async {},
+          ),
+        ],
+      );
+      // Home's watchers, which outlive the contracts screen.
+      container.listen(renterLeasesProvider, (_, _) {});
+      container.listen(activeLeasesProvider, (_, _) {});
+
+      await tester.tap(find.text('View / save contract'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Accept'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm'));
+      await tester.pumpAndSettle();
+      expect(answerPut, isNotNull);
+
+      GoRouter.of(tester.element(find.byType(ContractsScreen))).go('/home');
+      await tester.pumpAndSettle();
+      expect(find.byType(ContractsScreen), findsNothing);
+      final leasesBefore = leaseFetches;
+      final activeBefore = activeFetches;
+
+      answerPut!();
+      await tester.pumpAndSettle();
+      expect(leaseFetches, leasesBefore + 1);
+      expect(activeFetches, activeBefore + 1);
       expect(tester.takeException(), isNull);
     },
   );
