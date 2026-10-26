@@ -793,27 +793,37 @@ class LeaseTransferIT extends AbstractPostgresIT {
     }
 
     /**
-     * The defaults never offer what the post refuses: A's parking was charged at posting for
-     * 2026 (AT_POSTING, a cut-over), and the extension into 2027 charges parking again over
-     * time. A move in May finds parking already charged for B's 2026 days, so no parking line
-     * is offered — not even the extension's — and the draft's review raises no "charged twice".
+     * Review P3-1 of #435, by window not by type: A's parking was charged at posting for 2026
+     * (AT_POSTING, a cut-over), and the extension into 2027 charges parking again over time.
+     * A move in May carries no parking for B's 2026 days (A charged them already) but does
+     * carry the extension's 2027 parking, dated to its window, and the post accepts it. A
+     * parking line by hand over B's 2026 days is still refused as a second charge.
      */
     @Test
-    void theDefaultsOfferNoFeeTypeTheOldLeaseChargedForItsWholeTerm() {
+    void anAtPostingFeeBlocksOnlyItsOwnWindowNotTheExtensionsSameFee() {
         UUID a = fixtures.draftLease(CONTRACT, START, END, List.of(line("RENT", "60000"), line("PARKING_FEE", "3650")));
         jdbc.update("update leases set fee_timing = 'AT_POSTING' where id = ?", a);
         chequeGeneration.saveRows(a, List.of(row("691041", CONTRACT, JAN, "63650")));
         posting.post(a);
         jdbc.update("update leases set fee_timing = 'OVER_TERM' where id = ?", a);
         LocalDate extEnd = LocalDate.of(2027, 3, 31);
+        LocalDate jan27 = LocalDate.of(2027, 1, 1);
         renewal.extend(a, new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(extEnd, null,
                 List.of(new LeaseLineInput(null, "RENT", new BigDecimal("14794.52"), BigDecimal.ZERO, null, null, null, null, null),
                         new LeaseLineInput(null, "PARKING_FEE", new BigDecimal("900"), BigDecimal.ZERO, null, null, null, null, null)),
                 List.of(LeaseTestFixtures.chequeRow("15694.52", LocalDate.of(2027, 1, 2)))));
-        assertThat(defaults(a, B_START, extEnd)).extracting(L::code).containsExactly("RENT", "RENT");
+        assertThat(defaults(a, B_START, extEnd)).containsExactly(
+                new L("RENT", new BigDecimal("37808.22"), B_START, END),
+                new L("RENT", new BigDecimal("14794.52"), jan27, extEnd),
+                new L("PARKING_FEE", new BigDecimal("900.00"), jan27, extEnd));
         Unit target = tx.execute(s -> fixtures.createUnit(fixtures.property(), "A-234"));
         LeaseDTO b = transfers.draft(a, request(T, target.getId(), null), posting);
         assertThat(posting.dryRun(b.getId()).errors()).noneMatch(e -> e.contains("was charged on the old lease"));
+        tx.executeWithoutResult(st -> leaseService.deleteDraftLease(b.getId()));
+
+        LeaseDTO byHand = transfers.draft(a, request(T, target.getId(), List.of(line("RENT", "52602.74"),
+                dated("PARKING_FEE", "500", B_START, END))), posting);
+        assertThat(posting.dryRun(byHand.getId()).errors()).anyMatch(e -> e.contains("was charged on the old lease"));
     }
 
     /** B running past A's end: the line in force on A's last day runs on at its rate (60,000 × 261 ÷ 365). */
