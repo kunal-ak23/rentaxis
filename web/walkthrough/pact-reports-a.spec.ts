@@ -332,6 +332,51 @@ async function hold(page: Page, ms = 2200) {
     await page.waitForTimeout(ms);
 }
 
+/**
+ * A full-page still beside the take, taken once the scenario's assertions have passed.
+ *
+ * The dashboard shell is one screen tall and scrolls inside its own content
+ * area, so `fullPage` on the recorded 720 px page captures 720 px — most of the
+ * report cut off. The still is taken instead in its own context, signed in with
+ * the same session, on the same URL, in a viewport tall enough for the whole
+ * report, and only after `ready` has re-checked what the shot is meant to show.
+ * The recorded take is never resized.
+ */
+async function still(
+    browser: Browser,
+    name: string,
+    opts: { state: string; url: string; ready: (page: Page) => Promise<void>; width?: number; height?: number },
+) {
+    fs.mkdirSync(TAKES_DIR, { recursive: true });
+    const context = await browser.newContext({
+        baseURL: BASE_URL,
+        viewport: { width: opts.width ?? 1280, height: opts.height ?? 2200 },
+        storageState: opts.state,
+    });
+    await context.addInitScript((done: string[]) => {
+        try {
+            window.localStorage.setItem('rentaxis_tours_completed', JSON.stringify(done));
+        } catch {
+            /* storage unavailable — nothing to suppress */
+        }
+    }, TOURS_DONE);
+    try {
+        const page = await context.newPage();
+        await page.goto(opts.url);
+        await opts.ready(page);
+        await page.waitForTimeout(600);
+        await page.screenshot({ path: path.join(TAKES_DIR, `${name}.png`), fullPage: true });
+        console.log(`  still saved: ${name}.png`);
+    } finally {
+        await context.close();
+    }
+}
+
+const gridReady = async (page: Page) => {
+    await expect(page.getByTestId('grid-total')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('grid-band-2')).toHaveCount(2);
+};
+
 // ── reading the report grid off the screen ──────────────────────────────────
 
 /** Each `<tr>`'s own cells, text trimmed. */
@@ -823,6 +868,7 @@ test('01 the Tenant Ledger opens on PACT’s receivable view and reads like PACT
         expect(pact(Number(apiTotal.cells['balance']))).toBe(g.total.values['Balance']);
         expect(money(Number(apiTotal.cells['debit']))).toBe(g.total.values['Debit']);
         await hold(page);
+        await still(browser, '01-tenant-ledger-pact-view', { state: STATE_ACCOUNTANT, url: page.url(), ready: gridReady });
     } finally {
         await close();
     }
@@ -891,7 +937,19 @@ test('02 export the report — Excel in PACT layout, PDF in English and Arabic, 
         expect(total, 'a REPORT TOTAL line').toBeTruthy();
         // Plain decimals and a signed balance with Dr/Cr beside it (CsvGridSink), the screen's own figures.
         expect(total!.slice(0, 6)).toEqual(['REPORT TOTAL', '', plain(a + x + b), plain(a + b), plain(x), 'Dr']);
+
         await hold(page);
+
+        // The still: the report with its export menu open on the four formats it offers.
+        await still(browser, '02-exports-menu', {
+            state: STATE_ACCOUNTANT,
+            url: page.url(),
+            ready: async p => {
+                await gridReady(p);
+                await p.getByTestId('report-export').click();
+                await expect(p.getByRole('menuitem')).toHaveText(['Excel (PACT layout)', 'PDF — English', 'PDF — Arabic', 'CSV']);
+            },
+        });
     } finally {
         await close();
     }
@@ -976,6 +1034,12 @@ test('04 the Reports hub lists what each role may open', async ({ browser }) => 
             for (const k of ['general-ledger', 'trial-balance', 'company-pl', 'vat-return']) {
                 await expect(page.getByTestId(`report-card-${k}`)).toBeVisible();
             }
+            await still(browser, '04-reports-hub-accountant', {
+                state: STATE_ACCOUNTANT,
+                url: '/en/dashboard/reports',
+                height: 1400,
+                ready: async p => expect(await reportCards(p)).toEqual(ALL_REPORTS),
+            });
             // Search narrows the cards by title and description.
             await page.getByRole('searchbox', { name: 'Search reports' }).fill('tenant');
             await expect(page.locator('[data-testid^="report-card-"]')).toHaveCount(1);
@@ -1070,6 +1134,16 @@ test('05 Arabic at 390 px — right to left, no sideways page scroll, Dr/Cr left
         const box = await table.evaluate(t => ({ scroll: t.parentElement!.scrollWidth, client: t.parentElement!.clientWidth }));
         expect(box.scroll, 'the grid scrolls inside its own container').toBeGreaterThan(box.client);
         await hold(page);
+        await still(browser, '05-arabic-390', {
+            state: STATE_ACCOUNTANT,
+            url: page.url(),
+            width: 390,
+            height: 3200,
+            ready: async p => {
+                await expect(p.locator('html')).toHaveAttribute('dir', 'rtl');
+                await gridReady(p);
+            },
+        });
     } finally {
         await close();
     }
