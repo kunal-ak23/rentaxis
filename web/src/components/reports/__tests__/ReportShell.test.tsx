@@ -35,6 +35,20 @@ describe("ReportShell", () => {
         expect(screen.getByTestId("report-table")).toBeInTheDocument();
     });
 
+    it("shows the truncated banner only over a ready report", () => {
+        const truncated = { shown: 200, total: 900 };
+        const { rerender } = render(<ReportShell {...base} state="loading" truncated={truncated}><table /></ReportShell>);
+        expect(screen.queryByTestId("report-truncated")).toBeNull();
+        rerender(<ReportShell {...base} state="error" error="Property not found" truncated={truncated}><table /></ReportShell>);
+        expect(screen.queryByTestId("report-truncated")).toBeNull();
+        rerender(<ReportShell {...base} state="empty" truncated={truncated}><table /></ReportShell>);
+        expect(screen.queryByTestId("report-truncated")).toBeNull();
+        rerender(<ReportShell {...base} state="idle" truncated={truncated}><table /></ReportShell>);
+        expect(screen.queryByTestId("report-truncated")).toBeNull();
+        rerender(<ReportShell {...base} state="ready" truncated={truncated}><table /></ReportShell>);
+        expect(screen.getByTestId("report-truncated")).toBeInTheDocument();
+    });
+
     it("prints the header, period, scope note and export slot", () => {
         render(
             <ReportShell {...base} state="ready" period="01/09/2026 – 30/09/2027" scopeNote="Your assigned properties only"

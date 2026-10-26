@@ -90,4 +90,48 @@ describe("GroupedReportTable", () => {
         // A journal column without an entry id is plain text, not a dead link.
         expect(screen.queryByRole("link", { name: "PDR-26/1" })).toBeNull();
     });
+
+    it("keeps the label and the figure when the first visible column carries a total", () => {
+        const columns = [
+            { key: "cheques", label: "Cheques", kind: "INT" as const, hidden: false, link: null },
+            { key: "particular", label: "Particular", kind: "TEXT" as const, hidden: false, link: null },
+            { key: "amount", label: "Amount", kind: "MONEY" as const, hidden: false, link: null },
+        ];
+        const items = [
+            item("row", 2, { cells: { cheques: "3", particular: "Cheques - Sample Tower", amount: "1500.00" } }),
+            item("subtotal", 2, { label: "Sub Total", cells: { cheques: "3", amount: "1500.00" } }),
+            item("total", 0, { label: "REPORT TOTAL", cells: { cheques: "7", amount: "4200.00" } }),
+        ];
+        render(<GroupedReportTable grid={{ ...grid, columns, items }} />);
+        const sub = screen.getByTestId("grid-subtotal-2");
+        expect(sub.querySelectorAll("td")).toHaveLength(3);
+        expect(sub.querySelectorAll("td")[0]).toHaveTextContent("Sub Total");
+        expect(sub.querySelectorAll("td")[0]).toHaveTextContent("3");
+        expect(sub.querySelectorAll("td")[2]).toHaveTextContent("1,500.00");
+        const total = screen.getByTestId("grid-total");
+        expect(total.querySelectorAll("td")).toHaveLength(3);
+        expect(total.querySelectorAll("td")[0]).toHaveTextContent("REPORT TOTAL");
+        expect(total.querySelectorAll("td")[0]).toHaveTextContent("7");
+        expect(total.querySelectorAll("td")[0].querySelector("bdi[dir='ltr']")).toHaveTextContent(/^7$/);
+        expect(total.querySelectorAll("td")[2]).toHaveTextContent("4,200.00");
+    });
+
+    it("keeps the opening's label when Balance is the first visible column", () => {
+        const columns = [
+            { key: "balance", label: "Balance", kind: "BALANCE" as const, hidden: false, link: null },
+            { key: "particular", label: "Particular", kind: "TEXT" as const, hidden: false, link: null },
+        ];
+        const items = [item("opening", 2, { label: "Balance brought forward", cells: { balance: "500.00" } })];
+        render(<GroupedReportTable grid={{ ...grid, columns, items }} />);
+        const opening = screen.getByTestId("grid-opening");
+        expect(opening.querySelectorAll("td")).toHaveLength(2);
+        expect(opening.querySelectorAll("td")[0]).toHaveTextContent("Balance brought forward");
+        expect(opening.querySelectorAll("td")[0]).toHaveTextContent("500.00Dr");
+    });
+
+    it("rules the sticky header with the theme's border token", () => {
+        render(<GroupedReportTable grid={grid} />);
+        const th = document.querySelector("thead th");
+        expect(th).toHaveClass("shadow-[inset_0_-1px_0_var(--color-border)]");
+    });
 });

@@ -9,7 +9,7 @@ import type { GridColumn, GridItem, ReportGrid } from "@/lib/api/reports";
 import { cn } from "@/lib/utils";
 
 // The rule under the header is an inset shadow: a collapsed border would scroll away from a sticky cell.
-const th = "px-3 py-2 text-[11px] font-semibold text-muted uppercase tracking-wider whitespace-nowrap bg-surface shadow-[inset_0_-1px_0_var(--border)]";
+const th = "px-3 py-2 text-[11px] font-semibold text-muted uppercase tracking-wider whitespace-nowrap bg-surface shadow-[inset_0_-1px_0_var(--color-border)]";
 const td = "px-3 py-1.5 text-xs";
 
 /** Amount-like kinds: end-aligned, tabular, isolated left-to-right so "8,000.00Cr" never flips under RTL. */
@@ -40,22 +40,37 @@ function drillHref(col: GridColumn, refs: Record<string, string>): string | null
     return null;
 }
 
-function Cell({ col, value, refs }: { col: GridColumn; value: string | undefined; refs: Record<string, string> }) {
-    const text = display(col, value);
-    if (!text) return <td className={cn(td, NUMERIC.has(col.kind) && "text-end")} />;
-    if (NUMERIC.has(col.kind)) {
-        return (
-            <td className={cn(td, "text-end whitespace-nowrap")}>
-                <bdi dir="ltr" className="tabular-nums">{text}</bdi>
-            </td>
-        );
-    }
-    let content: ReactNode = col.kind === "DATE" || col.kind === "ID_TEXT"
+/** A non-empty cell's content: amounts isolated left-to-right, dates and ids unbroken, drill columns linked. */
+function cellContent(col: GridColumn, text: string, refs: Record<string, string>): ReactNode {
+    if (NUMERIC.has(col.kind)) return <bdi dir="ltr" className="tabular-nums">{text}</bdi>;
+    const content: ReactNode = col.kind === "DATE" || col.kind === "ID_TEXT"
         ? <bdi dir="ltr" className={col.kind === "DATE" ? "tabular-nums" : undefined}>{text}</bdi>
         : <bdi>{text}</bdi>;
     const href = drillHref(col, refs);
-    if (href) content = <Link href={href} className="text-primary hover:underline">{content}</Link>;
-    return <td className={cn(td, (col.kind === "DATE" || col.kind === "ID_TEXT") && "whitespace-nowrap")}>{content}</td>;
+    return href ? <Link href={href} className="text-primary hover:underline">{content}</Link> : content;
+}
+
+/**
+ * One cell. `lead` is a totals or opening row's label when the first visible
+ * column itself carries a figure: the label then shares that cell, at the start,
+ * so neither the label nor the figure is lost.
+ */
+function Cell({ col, value, refs, lead }: { col: GridColumn; value: string | undefined; refs: Record<string, string>; lead?: string }) {
+    const text = display(col, value);
+    const numeric = NUMERIC.has(col.kind);
+    if (lead) {
+        return (
+            <td className={cn(td, "whitespace-nowrap")}>
+                <span className="flex items-baseline justify-between gap-3">
+                    <bdi>{lead}</bdi>
+                    {text && cellContent(col, text, refs)}
+                </span>
+            </td>
+        );
+    }
+    if (!text) return <td className={cn(td, numeric && "text-end")} />;
+    const nowrap = numeric || col.kind === "DATE" || col.kind === "ID_TEXT";
+    return <td className={cn(td, numeric && "text-end", nowrap && "whitespace-nowrap")}>{cellContent(col, text, refs)}</td>;
 }
 
 /**
@@ -79,7 +94,15 @@ export function GroupedReportTable({ grid, onPage, groupsLabel }: {
     function totalsRow(it: GridItem, key: number, testId: string, className: string) {
         // The label takes the leading columns that carry no total (PACT prints "Sub Total" across them).
         const firstTotalled = cols.findIndex(c => (it.cells[c.key] ?? "") !== "");
-        const span = firstTotalled === -1 ? cols.length : Math.max(firstTotalled, 1);
+        if (firstTotalled === 0) {
+            // The first column has a total of its own: the label shares its cell instead of covering it.
+            return (
+                <tr key={key} data-testid={testId} className={className}>
+                    {cols.map((c, j) => <Cell key={c.key} col={c} value={it.cells[c.key]} refs={{}} lead={j === 0 ? it.label ?? undefined : undefined} />)}
+                </tr>
+            );
+        }
+        const span = firstTotalled === -1 ? cols.length : firstTotalled;
         return (
             <tr key={key} data-testid={testId} className={className}>
                 <td className={td} colSpan={span}><bdi>{it.label ?? ""}</bdi></td>
@@ -112,7 +135,8 @@ export function GroupedReportTable({ grid, onPage, groupsLabel }: {
                     <tr key={i} data-testid="grid-opening" data-carried-forward={it.carriedForward || undefined}
                         className={cn("bg-input/30", it.carriedForward && "italic")}>
                         {balanceAt > 0 && <td className={td} colSpan={balanceAt}><bdi>{it.label ?? ""}</bdi></td>}
-                        <Cell col={balance} value={it.cells[balance.key]} refs={{}} />
+                        {/* With Balance first there is no column before it, so the label shares its cell. */}
+                        <Cell col={balance} value={it.cells[balance.key]} refs={{}} lead={balanceAt === 0 ? it.label ?? undefined : undefined} />
                         {after > 0 && <td colSpan={after} />}
                     </tr>
                 );

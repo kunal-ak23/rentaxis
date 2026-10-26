@@ -96,6 +96,71 @@ describe("ExportMenu", () => {
         expect(await screen.findByRole("alert")).toHaveTextContent("The export failed. Try again.");
     });
 
+    it("moves focus into the menu and through it with the arrow, Home and End keys", () => {
+        render(<ExportMenu options={options} />);
+        fireEvent.click(screen.getByRole("button", { name: "Export" }));
+        const items = screen.getAllByRole("menuitem");
+        expect(items[0]).toHaveFocus();
+        const press = (key: string) => fireEvent.keyDown(document.activeElement!, { key });
+        press("ArrowDown");
+        expect(items[1]).toHaveFocus();
+        press("End");
+        expect(items[3]).toHaveFocus();
+        press("ArrowDown"); // wraps to the first
+        expect(items[0]).toHaveFocus();
+        press("ArrowUp"); // wraps to the last
+        expect(items[3]).toHaveFocus();
+        press("Home");
+        expect(items[0]).toHaveFocus();
+    });
+
+    it("closes on Escape and gives focus back to the trigger", () => {
+        render(<ExportMenu options={options} />);
+        const trigger = screen.getByRole("button", { name: "Export" });
+        fireEvent.click(trigger);
+        expect(screen.getAllByRole("menuitem")[0]).toHaveFocus();
+        fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+        expect(screen.queryByRole("menu")).toBeNull();
+        expect(trigger).toHaveFocus();
+    });
+
+    it("closes on Tab", () => {
+        render(<ExportMenu options={options} />);
+        fireEvent.click(screen.getByRole("button", { name: "Export" }));
+        fireEvent.keyDown(document.activeElement!, { key: "Tab" });
+        expect(screen.queryByRole("menu")).toBeNull();
+    });
+
+    it("gives focus back to the trigger once a chosen export finishes", async () => {
+        let finish!: (r: Response) => void;
+        global.fetch = vi.fn(() => new Promise<Response>(r => { finish = r; })) as unknown as typeof fetch;
+        render(<ExportMenu options={options} />);
+        const trigger = screen.getByRole("button", { name: "Export" });
+        choose("CSV");
+        expect(screen.queryByRole("menu")).toBeNull();
+        // A browser drops focus to <body> while the trigger is disabled (jsdom keeps it, so drop it by hand).
+        const gone = document.body.appendChild(document.createElement("button"));
+        gone.focus();
+        gone.remove();
+        expect(document.activeElement).toBe(document.body);
+        finish(new Response("a,b", { status: 200 }));
+        await waitFor(() => expect(trigger).not.toBeDisabled());
+        expect(trigger).toHaveFocus();
+    });
+
+    it("leaves focus where the user moved it while the export ran", async () => {
+        let finish!: (r: Response) => void;
+        global.fetch = vi.fn(() => new Promise<Response>(r => { finish = r; })) as unknown as typeof fetch;
+        render(<><ExportMenu options={options} /><input aria-label="Tenant" /></>);
+        const trigger = screen.getByRole("button", { name: "Export" });
+        choose("CSV");
+        const elsewhere = screen.getByRole("textbox", { name: "Tenant" });
+        elsewhere.focus();
+        finish(new Response("a,b", { status: 200 }));
+        await waitFor(() => expect(trigger).not.toBeDisabled());
+        expect(elsewhere).toHaveFocus();
+    });
+
     it("can be disabled", () => {
         render(<ExportMenu options={options} disabled />);
         expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTranslations } from "next-intl";
 import { Download, Loader2, X } from "lucide-react";
 import { saveResponse } from "@/lib/download";
@@ -52,6 +52,12 @@ async function failureMessage(res: Response, t: Translate): Promise<string> {
  * arrives here as JSON and is shown under the button instead of as a raw JSON
  * page. The button is disabled, with a spinner, while the server prepares the
  * file.
+ *
+ * Keyboard (WAI-ARIA menu button): opening the menu focuses its first item;
+ * ArrowUp/ArrowDown (wrapping), Home and End move between items; Escape closes
+ * it and Tab closes it and moves on. Escape and a choice give focus back to the
+ * trigger, after a choice once the export ends, since the trigger is disabled
+ * while it runs.
  */
 export function ExportMenu({ options, disabled = false }: { options: ExportOption[]; disabled?: boolean }) {
     const t = useTranslations("Reports");
@@ -59,15 +65,20 @@ export function ExportMenu({ options, disabled = false }: { options: ExportOptio
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const root = useRef<HTMLDivElement>(null);
+    const trigger = useRef<HTMLButtonElement>(null);
+    const menu = useRef<HTMLDivElement>(null);
+    const refocus = useRef(false);
 
-    // Close the menu on a click outside it or on Escape.
+    // Close the menu on a click outside it, or on Escape with focus back on the trigger.
     useEffect(() => {
         if (!open) return;
         const onDown = (e: MouseEvent) => {
             if (root.current && !root.current.contains(e.target as Node)) setOpen(false);
         };
         const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") setOpen(false);
+            if (e.key !== "Escape") return;
+            setOpen(false);
+            trigger.current?.focus();
         };
         document.addEventListener("mousedown", onDown);
         document.addEventListener("keydown", onKey);
@@ -77,7 +88,42 @@ export function ExportMenu({ options, disabled = false }: { options: ExportOptio
         };
     }, [open]);
 
+    // An opened menu takes focus on its first item.
+    useEffect(() => {
+        if (open) menu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    }, [open]);
+
+    // Once a chosen export ends, focus returns to the trigger, unless the user has moved it elsewhere meanwhile.
+    useEffect(() => {
+        if (busy || !refocus.current) return;
+        refocus.current = false;
+        const active = document.activeElement;
+        if (!active || active === document.body || root.current?.contains(active)) trigger.current?.focus();
+    }, [busy]);
+
+    function onMenuKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+        if (e.key === "Tab") {
+            setOpen(false);
+            return;
+        }
+        const items = Array.from(menu.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+        if (items.length === 0) return;
+        const at = items.indexOf(document.activeElement as HTMLElement);
+        let next: number;
+        switch (e.key) {
+            case "ArrowDown": next = at < 0 ? 0 : (at + 1) % items.length; break;
+            case "ArrowUp": next = at <= 0 ? items.length - 1 : at - 1; break;
+            case "Home": next = 0; break;
+            case "End": next = items.length - 1; break;
+            default: return;
+        }
+        e.preventDefault();
+        items[next].focus();
+    }
+
     async function run(option: ExportOption) {
+        refocus.current = true;
+        trigger.current?.focus();
         setOpen(false);
         setError(null);
         setBusy(true);
@@ -95,6 +141,7 @@ export function ExportMenu({ options, disabled = false }: { options: ExportOptio
     return (
         <div ref={root} className="relative inline-block">
             <button
+                ref={trigger}
                 type="button"
                 onClick={() => setOpen(o => !o)}
                 disabled={disabled || busy}
@@ -109,8 +156,10 @@ export function ExportMenu({ options, disabled = false }: { options: ExportOptio
             </button>
             {open && (
                 <div
+                    ref={menu}
                     role="menu"
                     aria-label={t("exportMenu")}
+                    onKeyDown={onMenuKeyDown}
                     className="absolute end-0 top-full mt-1 z-30 w-56 max-w-[calc(100vw-2rem)] bg-surface border border-border rounded-xl shadow-lg py-1"
                 >
                     {options.map(o => (
@@ -118,6 +167,7 @@ export function ExportMenu({ options, disabled = false }: { options: ExportOptio
                             key={o.id}
                             type="button"
                             role="menuitem"
+                            tabIndex={-1}
                             onClick={() => run(o)}
                             className="block w-full text-start px-3 py-2 text-xs font-medium text-foreground hover:bg-input focus:bg-input focus:outline-none cursor-pointer"
                         >
