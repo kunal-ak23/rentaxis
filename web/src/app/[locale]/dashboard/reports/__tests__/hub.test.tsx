@@ -23,7 +23,7 @@ describe("Reports hub", () => {
         for (const f of ["Excel", "PDF", "CSV"]) expect(within(card).getByText(f)).toBeInTheDocument();
         expect(within(card).getByRole("link")).toHaveAttribute("href", "/dashboard/finance/tenant-ledger");
         expect(within(card).queryByText("Your assigned properties only")).toBeNull();
-        // Both sections, in catalog order; an accountant has no payables aging scope note either.
+        // Both sections, in catalog order.
         expect(screen.getByRole("heading", { name: "Registers & ledgers" })).toBeInTheDocument();
         expect(screen.getByRole("heading", { name: "Final reports" })).toBeInTheDocument();
         expect(cards()).toEqual([
@@ -31,6 +31,12 @@ describe("Reports hub", () => {
             "report-card-balance-sheet", "report-card-company-pl", "report-card-property-pl",
             "report-card-property-statement", "report-card-vat-return", "report-card-payables-aging",
         ]);
+        // The manager scope note is for managers: an accountant sees the full portfolio on the
+        // reports a manager can also run (balance sheet, property P&L/statement, payables aging).
+        for (const id of ["report-card-balance-sheet", "report-card-property-pl", "report-card-property-statement", "report-card-payables-aging"]) {
+            expect(within(screen.getByTestId(id)).queryByText("Your assigned properties only")).toBeNull();
+        }
+        expect(screen.queryByText("Your assigned properties only")).toBeNull();
     });
 
     it("shows a property manager only scoped reports, each noted", () => {
