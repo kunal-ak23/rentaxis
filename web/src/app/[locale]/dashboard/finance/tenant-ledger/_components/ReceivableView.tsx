@@ -21,13 +21,13 @@ const COUNT = new Intl.NumberFormat("en-US");
 /** The URL keys of one applied filter: the filter itself, the view, and the first page (page 0 stays out of the URL). */
 const writeApplied = (q: TenantLedgerQuery): Record<string, string | undefined> => ({ ...toUrl(q), view: "receivable", page: undefined });
 
-/** Writes the page number into the address bar, leaving every other key alone. */
+/** Writes the page number into the address bar, leaving every other key alone (`null` state: see `useReportQuery`). */
 function writePage(page: number) {
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
     if (page > 0) url.searchParams.set("page", String(page));
     else url.searchParams.delete("page");
-    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
 }
 
 /** A grid with no tenant band and no row: the filters matched nothing (the REPORT TOTAL alone is still there). */

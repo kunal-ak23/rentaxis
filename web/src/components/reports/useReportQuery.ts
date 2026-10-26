@@ -15,6 +15,12 @@ import { useSearchParams } from "next/navigation";
  *   writes every key `write` returns: a value sets it, `undefined` or `""`
  *   removes it. Keys `write` does not name are left alone, and history is
  *   replaced rather than pushed, so applying never spams back/forward.
+ * - The write passes `null` as the history state, never `history.state`. The
+ *   App Router's entries carry its `__NA` marker, and a replaceState that passes
+ *   it back is taken for one of the router's own calls: the address bar changes
+ *   but `useSearchParams` does not, so anything that mounts later (another view
+ *   of the same page) reads the URL of arrival. With `null` Next copies its
+ *   marker on and syncs `useSearchParams` (its documented pattern).
  *   Wire it as `onClick={() => apply()}`, not `onClick={apply}`, or the click
  *   event becomes the filter.
  *
@@ -40,7 +46,7 @@ export function useReportQuery<Q>(
             if (value === undefined || value === "") url.searchParams.delete(key);
             else url.searchParams.set(key, value);
         }
-        window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+        window.history.replaceState(null, "", url.pathname + url.search + url.hash);
     };
 
     return { draft, setDraft, applied, apply };

@@ -36,7 +36,8 @@ async function pickTenant(page, name) {
 const centre = (locator) => locator.evaluate((el) => el.scrollIntoView({ behavior: 'smooth', block: 'center' }));
 
 const scenes = [
-  roleRouteScene('accountant', '/en/dashboard/finance/tenant-ledger', 'One block per account',
+  // "One block per account" is the All accounts view; the page opens on PACT's receivable view.
+  roleRouteScene('accountant', '/en/dashboard/finance/tenant-ledger?view=all', 'One block per account',
     "Omar Haddad: the contract debits Rent Receivable 77,000; his five cheques credit it back to zero.", {
     weight: 40.27,
     afterNavigation: async (page) => {

@@ -94,6 +94,17 @@ export default function TenantLedgerFilters({ value, onChange, onApply }: Props)
         return { ...value, propertyId, accountIds: keep.length ? keep : undefined };
     };
 
+    /**
+     * Another tenant is another statement (as in "All accounts"): swapping one
+     * tenant for another drops the contract picked for the first, which could
+     * only empty the report. Clearing the tenant, or naming one beside a contract
+     * picked on its own, keeps the contract: it is still a scope by itself.
+     */
+    const withRenter = (renterId: string | undefined): TenantLedgerQuery => {
+        const swapped = !!renterId && !!value.renterId && renterId !== value.renterId;
+        return { ...value, renterId, leaseId: swapped ? undefined : value.leaseId };
+    };
+
     const offered = receivable.filter(a => !selected.includes(a.id));
 
     return (
@@ -162,7 +173,7 @@ export default function TenantLedgerFilters({ value, onChange, onApply }: Props)
                         testId="tl-renter-filter"
                         className={`${field} w-full sm:w-auto sm:min-w-[14rem]`}
                         value={value.renterId ?? ""}
-                        onChange={id => onChange({ ...value, renterId: id || undefined })}
+                        onChange={id => onChange(withRenter(id || undefined))}
                         placeholder={tLedger("selectRenter")}
                     />
                 </div>

@@ -106,7 +106,8 @@ export default function AllAccountsView({ viewSwitch }: { viewSwitch?: ReactNode
         set("from", next.from);
         set("to", next.to);
         const qs = q.toString();
-        window.history.replaceState(window.history.state, "", window.location.pathname + (qs ? `?${qs}` : ""));
+        // `null` state, so Next moves `useSearchParams` too and Receivable, mounted by the switch, reads this tenant.
+        window.history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
     };
 
     if (userRole && !allowed) {

@@ -37,6 +37,11 @@ vi.mock("@/lib/api/reports", async orig => {
     return { ...m, reportsApi: { ...m.reportsApi, tenantLedger: { ...m.reportsApi.tenantLedger, get, accounts } } };
 });
 vi.mock("@/lib/download", () => ({ saveResponse: vi.fn() }));
+// A contract named by the URL is read once by id for its label.
+vi.mock("@/lib/api/leasing", async orig => {
+    const m = await orig<typeof import("@/lib/api/leasing")>();
+    return { ...m, leaseApi: { ...m.leaseApi, get: vi.fn(async (id: string) => ({ id, unitIdentifier: "101", propertyName: "Sample Tower", renterName: "Tenant A" })) } };
+});
 vi.mock("@/components/finance/AccountPicker", () => ({ default: () => null, loadAccounts: async () => [] }));
 import Page from "../page";
 import { defaultLedgerRange } from "@/components/finance/LedgerFilters";
@@ -226,5 +231,47 @@ describe("Tenant Ledger — receivable (PACT) view", () => {
         await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
         expect(get).toHaveBeenLastCalledWith(expect.objectContaining({ renterId: "r1" }), 0, "en", expect.anything());
         expect(url()).toEqual({ view: "receivable", renterId: "r1" });
+    });
+
+    it("drops the contract when another tenant is picked, and keeps it when the tenant is cleared", async () => {
+        at("view=receivable&renterId=r1&leaseId=l1");
+        render(<Page />);
+        await waitFor(() => expect(get).toHaveBeenCalledWith(expect.objectContaining({ renterId: "r1", leaseId: "l1" }), 0, "en", expect.anything()));
+        expect(await screen.findByText("101 · Sample Tower")).toBeInTheDocument();
+
+        // Tenant B with Tenant A's contract could only be "Nothing to show": the bar drops the contract at once.
+        fireEvent.click(screen.getByLabelText("Tenant (optional)"));
+        fireEvent.click(await screen.findByText("Tenant B"));
+        expect(screen.queryByText("101 · Sample Tower")).toBeNull();
+        fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+        await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+        expect(get.mock.calls[1][0]).toMatchObject({ renterId: "r2" });
+        expect(get.mock.calls[1][0].leaseId).toBeUndefined();
+        expect(url()).toMatchObject({ view: "receivable", renterId: "r2" });
+        expect(url().leaseId).toBeUndefined();
+
+        // Pick the contract again, then clear the tenant: a contract alone is still a scope, so it stays.
+        cleanup();
+        get.mockClear();
+        at("view=receivable&renterId=r1&leaseId=l1");
+        render(<Page />);
+        await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+        fireEvent.click(screen.getByLabelText("Tenant (optional)"));
+        fireEvent.click(await screen.findByRole("option", { name: "Select tenant" }));
+        fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+        await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+        expect(get.mock.calls[1][0]).toMatchObject({ leaseId: "l1" });
+        expect(get.mock.calls[1][0].renterId).toBeUndefined();
+    });
+
+    it("keeps a contract picked on its own when a tenant is named beside it", async () => {
+        at("view=receivable&leaseId=l1");
+        render(<Page />);
+        await waitFor(() => expect(get).toHaveBeenCalledWith(expect.objectContaining({ leaseId: "l1" }), 0, "en", expect.anything()));
+        fireEvent.click(screen.getByLabelText("Tenant (optional)"));
+        fireEvent.click(await screen.findByText("Tenant A"));
+        fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+        await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+        expect(get.mock.calls[1][0]).toMatchObject({ renterId: "r1", leaseId: "l1" });
     });
 });

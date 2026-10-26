@@ -12,12 +12,19 @@ const VIEWS: { view: TenantLedgerView; key: "tlViewReceivable" | "tlViewAll" }[]
     { view: "all", key: "tlViewAll" },
 ];
 
-/** Sets `view` in the address bar, leaving every other key (from, to, renterId, leaseId, …) as it is. */
+/**
+ * Sets `view` in the address bar, leaving every other key (from, to, renterId, leaseId, …) as it is.
+ *
+ * The state is `null`, never `history.state`: the App Router's own entries carry its `__NA` marker,
+ * and a replaceState that passes it back is taken for one of the router's calls, so `useSearchParams`
+ * stays on the URL of arrival and the view mounted by the next switch reads stale filters. With
+ * `null` Next copies its marker on and moves `useSearchParams` to the new URL.
+ */
 function writeView(view: TenantLedgerView) {
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
     url.searchParams.set("view", view);
-    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
 }
 
 /**
