@@ -332,6 +332,8 @@ export type LineCandidates = {
     bankTrnSet: boolean;
     leaves: Leaf[];
     refused?: Refused[];
+    /** Sim r23 S23-03: the line's date is in the locked books; a posting from it is booked on this day. */
+    firstOpenDay?: string | null;
 };
 
 export type ActionResult = { matchId: string | null; journalEntryIds: string[]; entryNumbers: string[] };
@@ -390,7 +392,7 @@ export const bankRecApi = {
         apiSend<ActionResult>("POST", `${ROOT}/lines/actions/present`, body),
     post: (body: { statementLineIds: string[]; kind: PostKind; vatIncluded?: boolean; accountId?: string | null;
                    propertyId?: string | null; bankLeafId?: string | null; shared?: boolean; narration?: string | null;
-                   net?: number | null; vat?: number | null }) =>
+                   net?: number | null; vat?: number | null; bookOnFirstOpenDay?: boolean }) =>
         apiSend<ActionResult>("POST", `${ROOT}/lines/actions/post`, body),
     reconciliations: (id: string) => apiGet<ReconciliationRow[]>(`${ROOT}/bank-accounts/${id}/reconciliations`),
     createReconciliation: (id: string, body: ReconciliationInput) =>

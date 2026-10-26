@@ -109,6 +109,14 @@ public class BankStatementPostingService {
     public JournalEntry post(Kind kind, List<Line> lines, LocalDate date, UUID leafId, UUID propertyId,
                              boolean vatIncluded, boolean bankTrnSet, UUID accountId, String narration,
                              BigDecimal statedNet, BigDecimal statedVat, java.util.Set<UUID> leafSet) {
+        return post(kind, lines, date, leafId, propertyId, vatIncluded, bankTrnSet, accountId, narration,
+                statedNet, statedVat, leafSet, null);
+    }
+
+    /** @param dateNote appended to the narration (sim r23 S23-03: the bank's date of a line booked after the lock) */
+    public JournalEntry post(Kind kind, List<Line> lines, LocalDate date, UUID leafId, UUID propertyId,
+                             boolean vatIncluded, boolean bankTrnSet, UUID accountId, String narration,
+                             BigDecimal statedNet, BigDecimal statedVat, java.util.Set<UUID> leafSet, String dateNote) {
         UUID t = BankAccountLedgerService.requireTenant();
         // Finance-ops spec §4: refused early inside a reconciled period of the leaf.
         bankLock.assertOpen(List.of(leafId), date);
@@ -125,6 +133,7 @@ public class BankStatementPostingService {
                 && !text.contains(lines.get(0).reference())) {
             text = text + " (ref " + lines.get(0).reference() + ")";
         }
+        if (dateNote != null) text = text + dateNote;
         PostingRequest.Dimensions dims = propertyId == null ? null : PostingRequest.Dimensions.ofProperty(propertyId);
         List<PostingRequest.Line> jl = new ArrayList<>();
         switch (kind) {
