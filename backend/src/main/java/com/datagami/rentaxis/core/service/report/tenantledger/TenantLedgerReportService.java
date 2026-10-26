@@ -14,6 +14,7 @@ import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQuerie
 import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQueries.GroupRow;
 import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQueries.LineRow;
 import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQueries.NamedRef;
+import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQueries.PageBounds;
 import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQueries.Scope;
 import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerResult.AccountGroup;
 import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerResult.Line;
@@ -78,7 +79,7 @@ public class TenantLedgerReportService {
     /**
      * One screen page: whole tenant groups while they fit in {@code pageRows} (at most
      * {@link ReportCaps#screenPageRows()}), a longer group split across pages. A page past the end reads as the
-     * last one.
+     * last one. Only the page's rows are read, each still numbered and balanced from the start of its group.
      */
     public TenantLedgerResult page(TenantLedgerFilter f, int page, int pageRows, String generatedBy) {
         Objects.requireNonNull(f, "filter");
@@ -95,7 +96,10 @@ public class TenantLedgerReportService {
             for (int i = 0; i < onPage.size(); i++) {
                 ordinal.put(onPage.get(i).key(), span.firstGroup() + i);
             }
-            raw = queries.lines(p.scope(), onPage.stream().map(GroupRow::key).toList()).stream()
+            // The SQL reads only this page's rows; the filter below is a safety net over the same bounds.
+            PageBounds bounds = new PageBounds(onPage.get(0).key(), span.firstRow(),
+                    onPage.get(onPage.size() - 1).key(), span.lastRow());
+            raw = queries.lines(p.scope(), onPage.stream().map(GroupRow::key).toList(), bounds).stream()
                     .filter(l -> {
                         int g = ordinal.get(l.key());
                         return (g != span.firstGroup() || l.rn() >= span.firstRow())
@@ -203,7 +207,7 @@ public class TenantLedgerReportService {
             return new Prepared(t, f, meta, null, List.of(), List.of());
         }
         Scope scope = new Scope(t, f.from(), f.to(), accountIds, f.renterId(), f.leaseId(), selection,
-                f.onlyWithBalance(), f.hideReversed());
+                f.onlyWithBalance(), f.hideReversed(), ar);
         List<GroupRow> groups = queries.groups(scope);
         return new Prepared(t, f, meta, scope, groups, accountGroups(groups, l, ar));
     }

@@ -25,7 +25,10 @@ import com.datagami.rentaxis.core.service.ledger.PropertyAccountService;
 import com.datagami.rentaxis.core.service.report.grid.ExportFormat;
 import com.datagami.rentaxis.core.service.report.grid.ReportCaps;
 import com.datagami.rentaxis.core.service.report.grid.ReportLabels;
+import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQueries.GroupKey;
 import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQueries.GroupRow;
+import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQueries.LineRow;
+import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQueries.PageBounds;
 import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQueries.Scope;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
@@ -66,6 +69,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -343,6 +348,33 @@ class TenantLedgerReportServiceIT extends AbstractPostgresIT {
     }
 
     @Test
+    void pageTwoOfALongGroupReadsOnlyItsRowsAndCarriesTheBalance() {
+        // Tenant A's 12 rows at five a page: page 1 (0-based) is rows 6-10, and only those leave the database.
+        List<LineRow> fromSql = new ArrayList<>();
+        TenantLedgerQueries recording = new TenantLedgerQueries(namedJdbc) {
+            @Override
+            public List<LineRow> lines(Scope s, Collection<GroupKey> only, PageBounds bounds) {
+                List<LineRow> rows = super.lines(s, only, bounds);
+                fromSql.addAll(rows);
+                return rows;
+            }
+        };
+        TenantLedgerReportService paged = transactional(new TenantLedgerReportService(recording, propertyScope, labels, caps, clock));
+
+        TenantLedgerResult second = paged.page(filter(FROM, TO), 1, 5, "it");
+        assertThat(fromSql).extracting(LineRow::rn).containsExactly(6, 7, 8, 9, 10);
+        assertThat(second.lines()).extracting(TenantLedgerResult.Line::rn).containsExactly(6, 7, 8, 9, 10);
+
+        List<Map<String, String>> whole = rows(json(filter(FROM, TO)));
+        ReportGridDTO g = TenantLedgerGrid.json(second, labels);
+        ReportGridDTO.Item carried = g.items().stream().filter(i -> i.type().equals("opening")).findFirst().orElseThrow();
+        assertThat(carried.carriedForward()).isTrue();
+        assertThat(carried.cells().get("balance")).isEqualTo(whole.get(4).get("balance")).isEqualTo("51000.00");
+        assertThat(rows(g)).extracting(c -> c.get("docNo") + c.get("balance"))
+                .isEqualTo(whole.subList(5, 10).stream().map(c -> c.get("docNo") + c.get("balance")).toList());
+    }
+
+    @Test
     void arabicUsesArabicNamesAndBands() {
         tenantA.setNameAr("المستأجر أ");
         renterRepo.save(tenantA);
@@ -356,6 +388,22 @@ class TenantLedgerReportServiceIT extends AbstractPostgresIT {
         assertThat(total(g)).containsEntry("balance", "20400.00");
         assertThat(TenantLedgerGrid.filename(service.export(new TenantLedgerFilter(FROM, TO, null, List.of(), null, null,
                 false, false, "ar"), ExportFormat.PDF, "it"), ExportFormat.PDF)).isEqualTo("tenant-ledger-2026-09-01-2027-09-30-ar.pdf");
+
+        // Tenants follow the name the report prints: in English A before B, in Arabic B (ب) before A (ي).
+        // "No tenant" stays last in both.
+        tenantA.setNameAr("المستأجر ي");
+        renterRepo.save(tenantA);
+        Renter tenantB = addTenantB();
+        tenantB.setNameAr("المستأجر ب");
+        renterRepo.save(tenantB);
+        posting.post(new PostingRequest(JournalDocType.JV, D("2027-05-10"), "Manual", Dimensions.ofProperty(propertyId),
+                JournalSourceType.MANUAL, null, null,
+                List.of(dr(AccountRole.RENT_RECEIVABLE, new BigDecimal("750")), cr(AccountRole.CASH, new BigDecimal("750")))));
+        assertThat(bands(json(new TenantLedgerFilter(FROM, TO, null, List.of(), null, null, false, false, "ar"))))
+                .containsExactly("ACCOUNT|" + arOrEn(rr), "PARTY|اسم المستأجر : المستأجر ب",
+                        "PARTY|اسم المستأجر : المستأجر ي", "PARTY|اسم المستأجر : بدون مستأجر");
+        assertThat(bands(json(filter(FROM, TO)))).containsExactly("ACCOUNT|" + rrName, "PARTY|Tenant Name : Tenant A",
+                "PARTY|Tenant Name : Tenant B", "PARTY|Tenant Name : No tenant");
     }
 
     @Test
@@ -467,7 +515,7 @@ class TenantLedgerReportServiceIT extends AbstractPostgresIT {
     }
 
     /** Tenant B on unit "102": rent 12,000 in two cheques from 2026-10-02; the first banked, cleared and bounced that day. */
-    private void addTenantB() {
+    private Renter addTenantB() {
         Renter tenantB = fx.createRenter("Tenant B");
         Unit unitB = fx.createUnit(fx.property(), "102");
         UUID leaseB = fx.draftLease(unitB, tenantB, CONTRACT, START, END, List.of(line("RENT", "12000")));
@@ -477,6 +525,7 @@ class TenantLedgerReportServiceIT extends AbstractPostgresIT {
         cheques.deposit(first.id(), ChequeActionRequest.on(first.chequeDate()));
         cheques.clear(first.id(), ChequeActionRequest.on(first.chequeDate()));
         cheques.bounce(first.id(), new ChequeActionRequest(first.chequeDate(), null, ChequeFailureReason.BOUNCE, null));
+        return tenantB;
     }
 
     private static ChequeRowInput pdc(int seq, String number, String chequeDate, String amount, String narration) {

@@ -31,8 +31,9 @@ import java.util.UUID;
  * the window's debits and credits and its row count: the authoritative totals the report's writer cross-checks.
  * {@link #lines} gives the window's rows in the one ledger ordering ({@code entry_date, created_at,
  * entry_number, line_no}), each with its row number and running movement inside its group, so a page that
- * starts mid-group can carry the balance forward. A renter-less line is its own "No tenant" group, so an
- * account's groups add up to the account's General Ledger.</p>
+ * starts mid-group can carry the balance forward; a screen page's rows are cut in SQL ({@link PageBounds}), after
+ * the window. A renter-less line is its own "No tenant" group, so an account's groups add up to the account's
+ * General Ledger.</p>
  *
  * <p>Binding: an absent renter or lease is bound as {@link #NONE} beside a {@code :has…} flag (Postgres cannot
  * type a bare null parameter); an IN list is never empty (empty account ids short-circuit to an empty answer,
@@ -64,9 +65,12 @@ public class TenantLedgerQueries {
      * @param onlyWithBalance keep only the groups whose closing at {@code to} is not zero
      * @param hideReversed    leave out both legs of every reversal whose two legs are on or before {@code to},
      *                        from the openings and the rows
+     * @param arabic          an Arabic report: an account's tenants are ordered by the name the report prints, the
+     *                        Arabic one when the renter has it
      */
     public record Scope(UUID tenantId, LocalDate from, LocalDate to, List<UUID> accountIds, UUID renterId, UUID leaseId,
-                        PropertyScope.Selection properties, boolean onlyWithBalance, boolean hideReversed) {
+                        PropertyScope.Selection properties, boolean onlyWithBalance, boolean hideReversed,
+                        boolean arabic) {
         public Scope {
             Objects.requireNonNull(tenantId, "tenantId");
             Objects.requireNonNull(from, "from");
@@ -74,6 +78,12 @@ public class TenantLedgerQueries {
             Objects.requireNonNull(properties, "properties");
             accountIds = accountIds == null ? List.of()
                     : accountIds.stream().filter(Objects::nonNull).distinct().toList();
+        }
+
+        /** An English report's scope. */
+        public Scope(UUID tenantId, LocalDate from, LocalDate to, List<UUID> accountIds, UUID renterId, UUID leaseId,
+                     PropertyScope.Selection properties, boolean onlyWithBalance, boolean hideReversed) {
+            this(tenantId, from, to, accountIds, renterId, leaseId, properties, onlyWithBalance, hideReversed, false);
         }
 
         /** Nothing can match: no account, or a manager assigned to no property. */
@@ -84,6 +94,18 @@ public class TenantLedgerQueries {
 
     /** One group of the report: a ledger account and a renter ({@code null} = "No tenant"). */
     public record GroupKey(UUID accountId, UUID renterId) {}
+
+    /**
+     * Where a screen page starts and stops inside its groups: from row {@code firstRow} of {@code first} and up to
+     * row {@code lastRow} of {@code last} (1-based {@code rn}, inclusive; one group when the page lies inside it).
+     * The groups between the two are read whole.
+     */
+    public record PageBounds(GroupKey first, int firstRow, GroupKey last, int lastRow) {
+        public PageBounds {
+            Objects.requireNonNull(first, "first");
+            Objects.requireNonNull(last, "last");
+        }
+    }
 
     /** A group with its authoritative figures: {@code opening} before {@code from}, the window's sums and row count. */
     public record GroupRow(UUID accountId, UUID renterId, String accountCode, String accountName, String accountNameAr,
@@ -149,6 +171,18 @@ public class TenantLedgerQueries {
                    and (l.renter_id in (:pageRenters) or (:pageNoTenant and l.renter_id is null))))
             """;
 
+    /**
+     * The page's rows, applied in the outer select of {@link #LINES}, after the window: {@code rn} and
+     * {@code movement} still count over the whole group, but only the rows from {@code :firstRow} of the page's
+     * first group and up to {@code :lastRow} of its last group leave the database. A group is matched on
+     * {@code coalesce(renter_id, :none)}, so "No tenant" is the bound {@link #NONE}.
+     */
+    private static final String PAGE_ROWS = """
+              and (:allRows
+                   or ((s.account_id <> :firstAccount or coalesce(s.renter_id, :none) <> :firstRenter or s.rn >= :firstRow)
+                       and (s.account_id <> :lastAccount or coalesce(s.renter_id, :none) <> :lastRenter or s.rn <= :lastRow)))
+            """;
+
     private static final String GROUPS = """
             with base as (
                 select l.account_id, l.renter_id, e.entry_date, l.debit, l.credit
@@ -172,7 +206,10 @@ public class TenantLedgerQueries {
             left join renters r on r.id = g.renter_id and r.tenant_id = :t
             where (g.row_count > 0 or g.opening <> 0)
               and (:onlyWithBalance = false or g.opening + g.debit - g.credit <> 0)
-            order by a.code, a.id, (g.renter_id is null), lower(r.name_en), g.renter_id
+            order by a.code, a.id, (g.renter_id is null),
+                     lower(case when :arabic and nullif(btrim(r.name_ar), '') is not null then r.name_ar
+                                else r.name_en end),
+                     g.renter_id
             """.formatted(FILTER);
 
     private static final String LINES = """
@@ -203,8 +240,9 @@ public class TenantLedgerQueries {
             left join accounts ca on ca.id = s.contra_account_id and ca.tenant_id = :t
             left join cheques  c  on c.id  = s.cheque_id        and c.tenant_id  = :t
             where (:onlyWithBalance = false or k.bal <> 0)
+            %s
             order by s.account_id, s.renter_id nulls last, s.rn
-            """.formatted(FILTER, PAGE);
+            """.formatted(FILTER, PAGE, PAGE_ROWS);
 
     private static final String COUNTER_NAMES = """
             select x.entry_id, x.account_id,
@@ -221,7 +259,8 @@ public class TenantLedgerQueries {
 
     /**
      * Every (account, renter) with a non-zero opening or a row in the window, ordered: account code, account id,
-     * renters by English name with "No tenant" last, renter id.
+     * renters by name (in an {@link Scope#arabic() Arabic} report the Arabic name when the renter has one, else the
+     * English) with "No tenant" last, renter id.
      */
     public List<GroupRow> groups(Scope s) {
         if (s.selectsNothing()) {
@@ -241,10 +280,31 @@ public class TenantLedgerQueries {
      * start of the group's window, whichever groups are read.
      */
     public List<LineRow> lines(Scope s, Collection<GroupKey> only) {
+        return lines(s, only, null);
+    }
+
+    /**
+     * {@link #lines(Scope, Collection)} cut to one screen page in SQL: with {@code bounds}, only the rows of the
+     * page leave the database ({@code null} reads every row of the groups). {@code rn} and {@code movement} still
+     * count from the start of the group's window, so a page that starts mid-group carries its balance.
+     */
+    public List<LineRow> lines(Scope s, Collection<GroupKey> only, PageBounds bounds) {
         if (s.selectsNothing() || (only != null && only.isEmpty())) {
             return List.of();
         }
         MapSqlParameterSource p = params(s);
+        p.addValue("none", NONE).addValue("allRows", bounds == null);
+        if (bounds == null) {
+            p.addValue("firstAccount", NONE).addValue("firstRenter", NONE).addValue("firstRow", 1)
+                    .addValue("lastAccount", NONE).addValue("lastRenter", NONE).addValue("lastRow", Integer.MAX_VALUE);
+        } else {
+            p.addValue("firstAccount", orNone(bounds.first().accountId()))
+                    .addValue("firstRenter", orNone(bounds.first().renterId()))
+                    .addValue("firstRow", bounds.firstRow())
+                    .addValue("lastAccount", orNone(bounds.last().accountId()))
+                    .addValue("lastRenter", orNone(bounds.last().renterId()))
+                    .addValue("lastRow", bounds.lastRow());
+        }
         Set<GroupKey> wanted = only == null ? null : new HashSet<>(only);
         if (wanted == null) {
             p.addValue("allGroups", true)
@@ -403,7 +463,12 @@ public class TenantLedgerQueries {
                 .addValue("unrestricted", s.properties().unrestricted())
                 .addValue("propertyIds", s.properties().sqlIds())
                 .addValue("onlyWithBalance", s.onlyWithBalance())
-                .addValue("hideReversed", s.hideReversed());
+                .addValue("hideReversed", s.hideReversed())
+                .addValue("arabic", s.arabic());
+    }
+
+    private static UUID orNone(UUID id) {
+        return id == null ? NONE : id;
     }
 
     private static List<UUID> distinct(Collection<UUID> ids) {

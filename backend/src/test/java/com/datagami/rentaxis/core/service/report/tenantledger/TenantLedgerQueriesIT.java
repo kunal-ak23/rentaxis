@@ -21,6 +21,7 @@ import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQuerie
 import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQueries.GroupRow;
 import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQueries.LineRow;
 import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQueries.NamedRef;
+import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQueries.PageBounds;
 import com.datagami.rentaxis.core.service.report.tenantledger.TenantLedgerQueries.Scope;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
@@ -257,6 +258,49 @@ class TenantLedgerQueriesIT extends AbstractPostgresIT {
     }
 
     @Test
+    void aPageReadsOnlyItsOwnRowsEachNumberedAndBalancedAsInItsWholeGroup() {
+        Renter tenantB = fx.createRenter("Tenant B");
+        Dimensions toB = new Dimensions(propertyId, null, null, tenantB.getId(), null);
+        manualJv(toB, dr(AccountRole.RENT_RECEIVABLE, bd("400")), cr(AccountRole.CASH, bd("400")));
+        manualJv(toB, dr(AccountRole.RENT_RECEIVABLE, bd("100")), cr(AccountRole.CASH, bd("100")));
+        manualJv(Dimensions.ofProperty(propertyId), dr(AccountRole.RENT_RECEIVABLE, bd("750")), cr(AccountRole.CASH, bd("750")));
+        manualJv(Dimensions.ofProperty(propertyId), dr(AccountRole.RENT_RECEIVABLE, bd("50")), cr(AccountRole.CASH, bd("50")));
+        GroupKey a = new GroupKey(rr, tenantA.getId());
+        GroupKey b = new GroupKey(rr, tenantB.getId());
+        GroupKey none = new GroupKey(rr, null);
+        int n = 3 + contract.cheques().size();
+        List<LineRow> all = read(() -> queries.lines(scope().build(), null));
+        assertThat(all).filteredOn(l -> l.key().equals(a)).hasSize(n);
+
+        // Inside one long group: rows 2-4 of Tenant A and nothing else leave the database, and row 2's running
+        // movement already holds row 1 (the page carries the balance).
+        List<LineRow> mid = read(() -> queries.lines(scope().build(), List.of(a), new PageBounds(a, 2, a, 4)));
+        assertThat(mid).extracting(LineRow::rn).containsExactly(2, 3, 4);
+        assertThat(mid).isEqualTo(rowsOf(all, a, 2, 4));
+        LineRow first = rowsOf(all, a, 1, 1).get(0);
+        assertThat(mid.get(0).movement()).isEqualByComparingTo(first.debit().subtract(first.credit())
+                .add(mid.get(0).debit()).subtract(mid.get(0).credit()));
+
+        // Across three groups: the tail of Tenant A, the whole of Tenant B, the head of "No tenant".
+        List<LineRow> across = read(() -> queries.lines(scope().build(), List.of(a, b, none), new PageBounds(a, n - 1, none, 1)));
+        assertThat(across).isEqualTo(all.stream().filter(l -> (l.key().equals(a) && l.rn() >= n - 1)
+                || l.key().equals(b) || (l.key().equals(none) && l.rn() <= 1)).toList());
+        assertThat(across).filteredOn(l -> l.key().equals(a)).extracting(LineRow::rn).containsExactly(n - 1, n);
+        assertThat(across).filteredOn(l -> l.key().equals(b)).extracting(LineRow::rn).containsExactly(1, 2);
+        assertThat(across).filteredOn(l -> l.key().equals(none)).extracting(LineRow::rn).containsExactly(1);
+
+        // "No tenant" as the page's first group too: its second row alone, with the movement of both.
+        assertThat(read(() -> queries.lines(scope().build(), List.of(none), new PageBounds(none, 2, none, 2))))
+                .singleElement().satisfies(l -> {
+                    assertThat(l.rn()).isEqualTo(2);
+                    assertThat(l.debit()).isEqualByComparingTo("50");
+                    assertThat(l.movement()).isEqualByComparingTo("800");
+                });
+        // No bounds reads the groups whole, as before.
+        assertThat(read(() -> queries.lines(scope().build(), List.of(a, b, none), null))).isEqualTo(all);
+    }
+
+    @Test
     void hideReversedDropsBothLegs() {
         UUID jv = manualJv(new Dimensions(propertyId, null, null, tenantA.getId(), null),
                 dr(AccountRole.RENT_RECEIVABLE, bd("1000")), cr(AccountRole.CASH, bd("1000")));
@@ -452,6 +496,11 @@ class TenantLedgerQueriesIT extends AbstractPostgresIT {
 
     private static BigDecimal bd(String v) {
         return new BigDecimal(v);
+    }
+
+    /** The rows {@code from..to} (by {@code rn}, inclusive) of one group, as {@code all} has them. */
+    private static List<LineRow> rowsOf(List<LineRow> all, GroupKey key, int from, int to) {
+        return all.stream().filter(l -> l.key().equals(key) && l.rn() >= from && l.rn() <= to).toList();
     }
 
     private static BigDecimal closing(GroupRow g) {
