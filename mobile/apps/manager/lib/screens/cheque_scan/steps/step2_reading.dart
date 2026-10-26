@@ -87,6 +87,18 @@ class _Step2ReadingState extends State<Step2Reading>
                     fit: BoxFit.cover,
                     width: double.infinity,
                     height: 180,
+                    // A PDF (or a HEIC the platform cannot decode) has no
+                    // preview here; the server still reads it.
+                    errorBuilder: (_, _, _) => Container(
+                      width: double.infinity,
+                      height: 180,
+                      color: m.surfaceAlt,
+                      child: Icon(
+                        Icons.description_outlined,
+                        size: 40,
+                        color: m.textMuted,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 18),

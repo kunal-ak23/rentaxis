@@ -154,7 +154,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/scan',
         builder: (context, state) => ChequeScanFlowScreen(
-          paymentId: state.uri.queryParameters['paymentId'],
+          // A register row id. `paymentId` is the pre-v2 spelling, kept so
+          // an older link still opens the wizard.
+          chequeId:
+              state.uri.queryParameters['chequeId'] ??
+              state.uri.queryParameters['paymentId'],
         ),
       ),
       ShellRoute(

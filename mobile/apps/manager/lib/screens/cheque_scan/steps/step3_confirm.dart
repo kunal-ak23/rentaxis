@@ -3,17 +3,23 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:rentaxis_core/rentaxis_core.dart';
 
+import '../widgets/payee_check_notice.dart';
 import '../widgets/step_header.dart';
 
 enum Disposition { holdInSafe, depositToday, scheduleDeposit }
 
-/// Step 3 — show the matched payment, editable cheque fields, and disposition.
+/// Step 3 — show the matched register row, editable cheque fields, the
+/// organisation's payee check, and disposition.
 ///
-/// Match selection: if a paymentId was passed in, the parent populates
-/// [matchedPayment]. Otherwise the user can tap "Pick payment" to select.
-/// Backend doesn't have an auto-match endpoint yet, so this is manual.
+/// Match selection: if a chequeId was passed in, the parent populates
+/// [matchedPayment] (a register row, `ChequeDTO`). Otherwise the user taps
+/// "Pick payment" to select one. A payee MISMATCH keeps the confirm button
+/// off until the operator ticks "attach anyway" — the server refuses an
+/// unconfirmed one too.
 class Step3Confirm extends StatefulWidget {
   final ChequeExtractionResult result;
+
+  /// The register row (`ChequeDTO`) this cheque is for, or null.
   final Map<String, dynamic>? matchedPayment;
   final VoidCallback onPickPayment;
   final VoidCallback onBack;
@@ -24,6 +30,7 @@ class Step3Confirm extends StatefulWidget {
     required String payerName,
     required DateTime? chequeDate,
     required Disposition disposition,
+    required bool payeeMismatchConfirmed,
   })
   onConfirm;
   final bool submitting;
@@ -51,6 +58,7 @@ class _Step3ConfirmState extends State<Step3Confirm> {
   late final TextEditingController _payerNameCtrl;
   DateTime? _chequeDate;
   Disposition _disposition = Disposition.depositToday;
+  bool _payeeConfirmed = false;
 
   @override
   void initState() {
@@ -153,12 +161,18 @@ class _Step3ConfirmState extends State<Step3Confirm> {
   String _formatDate(DateTime? d, _L l) =>
       d == null ? l.notDetected : DateFormat('dd MMM yyyy').format(d);
 
+  /// A payee that matches none of the organisation's valid names is attached
+  /// only once the operator confirms it (owner ruling 2026-09-29).
+  bool get _payeeBlocks =>
+      widget.result.payeeCheck == PayeeCheck.mismatch && !_payeeConfirmed;
+
   bool get _canConfirm =>
       widget.matchedPayment != null &&
       _chequeNumberCtrl.text.isNotEmpty &&
       _bankNameCtrl.text.isNotEmpty &&
       _payerNameCtrl.text.isNotEmpty &&
       _chequeDate != null &&
+      !_payeeBlocks &&
       !widget.submitting;
 
   /// Human list of what still blocks the confirm button (empty when ready).
@@ -168,7 +182,28 @@ class _Step3ConfirmState extends State<Step3Confirm> {
     if (_bankNameCtrl.text.isEmpty) l.missingBankName,
     if (_chequeDate == null) l.missingChequeDate,
     if (_payerNameCtrl.text.isEmpty) l.missingPayerName,
+    if (_payeeBlocks) PayeeL(l.ar).missingConfirm,
   ];
+
+  /// A post-dated cheque cannot be banked before its date, and only a
+  /// registered row can be deposited (`ChequeService.deposit`).
+  bool get _depositAllowed {
+    final d = _chequeDate;
+    if (d == null) return false;
+    final status = widget.matchedPayment?['status']?.toString();
+    if (status != null && status != 'REGISTERED') return false;
+    final now = DateTime.now();
+    return !DateTime(
+      d.year,
+      d.month,
+      d.day,
+    ).isAfter(DateTime(now.year, now.month, now.day));
+  }
+
+  Disposition get _effectiveDisposition =>
+      _disposition == Disposition.depositToday && !_depositAllowed
+      ? Disposition.holdInSafe
+      : _disposition;
 
   num? get _scannedAmount => widget.result.amount;
 
@@ -299,6 +334,16 @@ class _Step3ConfirmState extends State<Step3Confirm> {
                     l: l,
                   ),
                 ],
+                if (widget.result.payeeCheck != null) ...[
+                  const SizedBox(height: 12),
+                  PayeeCheckNotice(
+                    payeeCheck: widget.result.payeeCheck,
+                    payeeName: widget.result.payeeName,
+                    confirmed: _payeeConfirmed,
+                    onConfirmedChanged: (v) =>
+                        setState(() => _payeeConfirmed = v),
+                  ),
+                ],
                 const SizedBox(height: 18),
                 _SectionLabel(text: l.whatNext, l: l),
                 const SizedBox(height: 8),
@@ -315,7 +360,8 @@ class _Step3ConfirmState extends State<Step3Confirm> {
                         icon: Icons.shield_outlined,
                         label: l.holdInSafe,
                         sub: l.holdInSafeSub,
-                        selected: _disposition == Disposition.holdInSafe,
+                        selected:
+                            _effectiveDisposition == Disposition.holdInSafe,
                         onTap: () => setState(
                           () => _disposition = Disposition.holdInSafe,
                         ),
@@ -324,8 +370,12 @@ class _Step3ConfirmState extends State<Step3Confirm> {
                       _DispositionRow(
                         icon: l.ar ? Icons.arrow_back : Icons.arrow_forward,
                         label: l.depositToday,
-                        sub: l.depositTodaySub,
-                        selected: _disposition == Disposition.depositToday,
+                        sub: _depositAllowed
+                            ? l.depositTodaySub
+                            : l.depositNotYet,
+                        selected:
+                            _effectiveDisposition == Disposition.depositToday,
+                        disabled: !_depositAllowed,
                         onTap: () => setState(
                           () => _disposition = Disposition.depositToday,
                         ),
@@ -387,7 +437,8 @@ class _Step3ConfirmState extends State<Step3Confirm> {
                           bankName: _bankNameCtrl.text,
                           payerName: _payerNameCtrl.text,
                           chequeDate: _chequeDate,
-                          disposition: _disposition,
+                          disposition: _effectiveDisposition,
+                          payeeMismatchConfirmed: _payeeConfirmed,
                         )
                       : null,
                 ),
@@ -513,7 +564,7 @@ class _MatchCard extends StatelessWidget {
                       child: _MatchStat(
                         label: l.installment,
                         value:
-                            '#${matchedPayment!['installmentNumber'] ?? '—'}',
+                            '#${matchedPayment!['seqNo'] ?? matchedPayment!['installmentNumber'] ?? '—'}',
                         l: l,
                       ),
                     ),
@@ -522,7 +573,9 @@ class _MatchCard extends StatelessWidget {
                       child: _MatchStat(
                         label: l.due,
                         value: _formatDueDate(
-                          matchedPayment!['dueDate']?.toString(),
+                          (matchedPayment!['chequeDate'] ??
+                                  matchedPayment!['dueDate'])
+                              ?.toString(),
                           l,
                         ),
                         l: l,
@@ -767,10 +820,9 @@ class _MismatchChip extends StatelessWidget {
         ),
         child: Text(
           text,
-          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
-            fontSize: 11,
-            color: m.warning,
-          ),
+          style: (l.ar
+              ? GoogleFonts.notoNaskhArabic
+              : GoogleFonts.plusJakartaSans)(fontSize: 11, color: m.warning),
         ),
       ),
     );
@@ -961,6 +1013,9 @@ class _L {
   String get depositToday => ar ? 'إيداع اليوم' : 'Deposit today';
   String get depositTodaySub =>
       ar ? 'تحديد الشيك كمودَع' : 'Mark cheque as deposited';
+  String get depositNotYet => ar
+      ? 'لا يمكن إيداع الشيك قبل تاريخه'
+      : 'A cheque cannot be banked before its date';
   String get scheduleDeposit => ar ? 'جدولة الإيداع' : 'Schedule deposit';
   String get comingSoon => ar ? 'قريباً' : 'Coming soon';
 
