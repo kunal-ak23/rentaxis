@@ -159,7 +159,7 @@ public final class BankRecDTOs {
                                  Instant preparedAt, String preparedByName, Instant finalizedAt,
                                  String finalizedByName, Instant reopenedAt, String reopenedByName,
                                  String reopenReason, List<UnprovenDay> unprovenDays,
-                                 String dayTotalsVerdict) { }
+                                 String dayTotalsVerdict, LocalDate remedyReopenThrough) { }
 
     /**
      * Review P2-3: a day of the period where a file's line was taken for an identical
@@ -171,6 +171,8 @@ public final class BankRecDTOs {
      */
     public record UnprovenDay(LocalDate date, BigDecimal typedDebits, BigDecimal typedCredits, String status) { }
 
+    // Sim r22 S22-04: remedyReopenThrough on Reconciliation — the finalized period a statement a
+    // check names starts inside (the web says to reopen it if the import is refused), else null.
     // Final review P3-21: dayTotalsVerdict on Reconciliation — null when no day is unproven;
     // PENDING while a day's totals are still needed; AGREE / DISAGREE once all are entered.
 

@@ -35,6 +35,8 @@ public class BankStatementImport extends BaseTenantEntity {
     @Column(name = "last_date") private LocalDate lastDate;
     @Column(name = "opening_balance", precision = 14, scale = 2) private BigDecimal openingBalance;
     @Column(name = "closing_balance", precision = 14, scale = 2) private BigDecimal closingBalance;
+    /** Sim r22: the date of the file's Closing-balance row when it agrees with the lines; null without one. */
+    @Column(name = "closing_row_date") private LocalDate closingRowDate;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
