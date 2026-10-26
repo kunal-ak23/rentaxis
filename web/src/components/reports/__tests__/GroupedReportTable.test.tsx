@@ -139,45 +139,47 @@ describe("GroupedReportTable", () => {
         expect(screen.getByTestId("grid-band-1").querySelector("td")).toHaveClass("text-report-band-fg");
     });
 
-    it("gives each column the server's width as its minimum, in ch", () => {
+    it("gives text columns a 20ch floor and leaves every other kind at its natural width", () => {
+        const columns = [
+            { key: "particular", label: "Particular", kind: "TEXT" as const, hidden: false, link: null },
+            // The Excel width is not the screen's: a text column gets 20ch whatever the server says.
+            { key: "bank", label: "Payee Bank", kind: "TEXT" as const, hidden: false, link: null, widthChars: 36 },
+            { key: "ref", label: "Ref", kind: "ID_TEXT" as const, hidden: false, link: null, widthChars: 14 },
+            { key: "date", label: "Date", kind: "DATE" as const, hidden: false, link: null, widthChars: 12 },
+            { key: "amount", label: "Amount", kind: "MONEY" as const, hidden: false, link: null, widthChars: 14 },
+            { key: "balance", label: "Balance", kind: "BALANCE" as const, hidden: false, link: null },
+            { key: "days", label: "Days", kind: "INT" as const, hidden: false, link: null },
+            { key: "serial", label: "Sr", kind: "SERIAL" as const, hidden: false, link: null },
+            { key: "pct", label: "Pct", kind: "PERCENT" as const, hidden: false, link: null },
+        ];
+        const items = [item("row", 1, { cells: {
+            particular: "PDC Receivable - Sample Tower", bank: "Sample Bank", ref: "PDR-26/1", date: "2026-10-26",
+            amount: "12000.00", balance: "-8000.00", days: "1", serial: "3", pct: "5",
+        } })];
+        render(<GroupedReportTable grid={{ ...grid, columns, items }} />);
+        const header = (name: string) => screen.getByRole("columnheader", { name });
+        for (const name of ["Particular", "Payee Bank"]) {
+            expect((header(name).firstElementChild as HTMLElement).style.minWidth).toBe("20ch");
+        }
+        const cells = screen.getByTestId("grid-row").querySelectorAll("td");
+        expect(cells[0]).not.toHaveClass("whitespace-nowrap");
+        expect(cells[1]).not.toHaveClass("whitespace-nowrap");
+        ["Ref", "Date", "Amount", "Balance", "Days", "Sr", "Pct"].forEach((name, i) => {
+            expect(header(name).querySelector("[style]")).toBeNull();
+            expect(header(name)).toHaveClass("whitespace-nowrap");
+            expect(cells[i + 2]).toHaveClass("whitespace-nowrap");
+        });
+    });
+
+    it("fits the tenant ledger with tight padding and scrolls inside its own box, never the page", () => {
         render(<GroupedReportTable grid={grid} />);
-        const floor = (name: string) => (screen.getByRole("columnheader", { name }).firstElementChild as HTMLElement).style.minWidth;
-        expect(floor("Doc Date")).toBe("12ch");
-        expect(floor("Particular")).toBe("36ch");
-        expect(floor("Debit")).toBe("14ch");
-        expect(floor("Balance")).toBe("16ch");
-        expect(floor("Doc No")).toBe("14ch");
+        expect(screen.getByRole("columnheader", { name: "Particular" }).firstElementChild).toHaveStyle({ minWidth: "20ch" });
+        expect(screen.getByRole("columnheader", { name: "Debit" })).toHaveClass("px-2");
+        expect(screen.getAllByTestId("grid-row")[0].querySelector("td")).toHaveClass("px-2");
+        expect(screen.getByTestId("grid-band-1").querySelector("td")).toHaveClass("px-2");
         // No fixed table width: the columns set it, and the table scrolls inside its own box.
         expect(document.querySelector("table")).not.toHaveClass("min-w-[900px]");
         expect(document.querySelector("table")!.parentElement).toHaveClass("overflow-x-auto");
-    });
-
-    it("clamps a column's width to 6–40ch and falls back to a width by kind", () => {
-        const columns = [
-            { key: "tiny", label: "Tiny", kind: "TEXT" as const, hidden: false, link: null, widthChars: 2 },
-            { key: "huge", label: "Huge", kind: "TEXT" as const, hidden: false, link: null, widthChars: 120 },
-            { key: "zero", label: "Zero", kind: "TEXT" as const, hidden: false, link: null, widthChars: 0 },
-            { key: "text", label: "Text", kind: "TEXT" as const, hidden: false, link: null },
-            { key: "amount", label: "Amount", kind: "MONEY" as const, hidden: false, link: null },
-            { key: "serial", label: "Serial", kind: "SERIAL" as const, hidden: false, link: null },
-        ];
-        render(<GroupedReportTable grid={{ ...grid, columns, items: [] }} />);
-        const floor = (name: string) => (screen.getByRole("columnheader", { name }).firstElementChild as HTMLElement).style.minWidth;
-        expect(floor("Tiny")).toBe("6ch");
-        expect(floor("Huge")).toBe("40ch");
-        expect(floor("Zero")).toBe("24ch");
-        expect(floor("Text")).toBe("24ch");
-        expect(floor("Amount")).toBe("14ch");
-        expect(floor("Serial")).toBe("6ch");
-    });
-
-    it("keeps figures and dates on one line and lets text wrap", () => {
-        render(<GroupedReportTable grid={grid} />);
-        const cells = screen.getAllByTestId("grid-row")[0].querySelectorAll("td");
-        expect(cells[0]).toHaveClass("whitespace-nowrap"); // Doc Date
-        expect(cells[1]).not.toHaveClass("whitespace-nowrap"); // Particular
-        expect(cells[2]).toHaveClass("whitespace-nowrap", "text-end"); // Debit
-        expect(cells[4]).toHaveClass("whitespace-nowrap", "text-end"); // Balance
     });
 
     it("rules the sticky header with the theme's border token", () => {

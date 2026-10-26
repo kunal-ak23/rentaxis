@@ -5,32 +5,21 @@ import { useTranslations } from "next-intl";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { fmtDrCr, fmtMoney, fmtReportDate } from "@/lib/reports/format";
-import type { GridColumn, GridItem, GridKind, ReportGrid } from "@/lib/api/reports";
+import type { GridColumn, GridItem, ReportGrid } from "@/lib/api/reports";
 import { cn } from "@/lib/utils";
 
 // The rule under the header is an inset shadow: a collapsed border would scroll away from a sticky cell.
-const th = "px-3 py-2 text-[11px] font-semibold text-muted uppercase tracking-wider whitespace-nowrap bg-surface shadow-[inset_0_-1px_0_var(--color-border)]";
-const td = "px-3 py-1.5 text-xs";
+const th = "px-2 py-2 text-[11px] font-semibold text-muted uppercase tracking-wider whitespace-nowrap bg-surface shadow-[inset_0_-1px_0_var(--color-border)]";
+const td = "px-2 py-1.5 text-xs";
 
 /** Amount-like kinds: end-aligned, tabular, isolated left-to-right so "8,000.00Cr" never flips under RTL. */
 const NUMERIC = new Set<GridColumn["kind"]>(["MONEY", "BALANCE", "INT", "SERIAL", "PERCENT"]);
 
-/** A width by kind, in characters, for a column the server sent without `widthChars`. */
-const KIND_WIDTH: Record<GridKind, number> = {
-    TEXT: 24, ID_TEXT: 12, DATE: 12, MONEY: 14, BALANCE: 16, INT: 8, SERIAL: 6, PERCENT: 8,
-};
-const MIN_COL_CH = 6;
-const MAX_COL_CH = 40;
-
 /**
- * A column's minimum width in `ch`: the server's Excel width, clamped so a stray
- * value neither collapses a column nor pushes one wide past the screen.
+ * A free-text column's minimum width. Figures, dates and ids never wrap, so without a floor the
+ * browser takes all the shortfall out of the text: a Particular broke onto four lines.
  */
-function columnMinCh(col: GridColumn): number {
-    const w = col.widthChars;
-    const chars = typeof w === "number" && Number.isFinite(w) && w > 0 ? w : KIND_WIDTH[col.kind] ?? KIND_WIDTH.TEXT;
-    return Math.min(MAX_COL_CH, Math.max(MIN_COL_CH, Math.round(chars)));
-}
+const TEXT_MIN_WIDTH = "20ch";
 
 const BAND_CLASS: Record<NonNullable<GridItem["band"]>, string> = {
     ACCOUNT: "bg-report-band text-report-band-fg font-bold",
@@ -99,9 +88,8 @@ function Cell({ col, value, refs, lead }: { col: GridColumn; value: string | und
  * balance, the rows, each group's Sub Total and the REPORT TOTAL — all printed
  * as the server sent them. One `<table>` for the page so columns line up across
  * groups; it scrolls inside its own box, so a 390 px screen never scrolls
- * sideways, and its header stays in view while the rows scroll. Each column is
- * at least as wide as the server's width for it, so a Particular wraps only
- * past its own width instead of being squeezed by figures with room to spare.
+ * sideways, and its header stays in view while the rows scroll. Figures, dates
+ * and ids keep their natural width; a text column wraps only past its own floor.
  */
 export function GroupedReportTable({ grid, onPage, groupsLabel }: {
     grid: ReportGrid;
@@ -138,7 +126,7 @@ export function GroupedReportTable({ grid, onPage, groupsLabel }: {
             case "band":
                 return (
                     <tr key={i} data-testid={`grid-band-${it.level}`}>
-                        <td colSpan={cols.length} className={cn("px-3 py-1.5 text-xs", BAND_CLASS[it.band ?? "GROUP"])}>
+                        <td colSpan={cols.length} className={cn("px-2 py-1.5 text-xs", BAND_CLASS[it.band ?? "GROUP"])}>
                             <bdi>{it.label ?? ""}</bdi>
                         </td>
                     </tr>
@@ -186,7 +174,7 @@ export function GroupedReportTable({ grid, onPage, groupsLabel }: {
                             {cols.map(c => (
                                 <th key={c.key} scope="col" className={cn(th, NUMERIC.has(c.kind) ? "text-end" : "text-start")}>
                                     {/* The floor sits on a block in the cell: min-width on a table cell itself is not honoured by every engine. */}
-                                    <div style={{ minWidth: `${columnMinCh(c)}ch` }}>{c.label}</div>
+                                    {c.kind === "TEXT" ? <div style={{ minWidth: TEXT_MIN_WIDTH }}>{c.label}</div> : c.label}
                                 </th>
                             ))}
                         </tr>
