@@ -32,9 +32,12 @@ public final class ReportFormat {
     private static final ZoneId DUBAI = ZoneId.of("Asia/Dubai");
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm", Locale.ENGLISH);
 
-    /** C0 controls except tab, line feed and carriage return; DEL; and the bidi marks, embeddings, overrides and isolates. */
+    /**
+     * C0 controls except tab, line feed and carriage return; DEL; and every Unicode Bidi_Control
+     * character: the Arabic letter mark, the LRM/RLM marks, embeddings, overrides and isolates.
+     */
     private static final Pattern CONTROL_AND_BIDI =
-            Pattern.compile("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]");
+            Pattern.compile("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]");
     private static final Pattern SHEET_NAME_FORBIDDEN = Pattern.compile("[\\[\\]:*?/\\\\]");
     private static final Pattern WHITESPACE_RUN = Pattern.compile("\\s+");
 

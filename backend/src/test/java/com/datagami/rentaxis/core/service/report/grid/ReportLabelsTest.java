@@ -5,7 +5,10 @@ import org.springframework.context.NoSuchMessageException;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.text.MessageFormat;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Properties;
 
@@ -28,6 +31,33 @@ class ReportLabelsTest {
         assertThat(ar.stringPropertyNames()).isEqualTo(en.stringPropertyNames());
         en.forEach((k, v) -> assertThat((String) v).as("en " + k).isNotBlank());
         ar.forEach((k, v) -> assertThat((String) v).as("ar " + k).isNotBlank());
+    }
+
+    @Test
+    void everyValueIsAPlainMessageFormatPattern() throws IOException {
+        for (String lang : new String[] {"en", "ar"}) {
+            load(lang).forEach((k, v) -> {
+                String value = (String) v;
+                // MessageFormat eats a lone apostrophe and quotes everything after it
+                assertThat(value).as(lang + " " + k).doesNotContain("'");
+                // parses, and every placeholder is a plain {n}: ReportLabels hands numbers over as text
+                MessageFormat parsed = new MessageFormat(value, Locale.ROOT);
+                assertThat(parsed.getFormats()).as(lang + " " + k).allMatch(Objects::isNull);
+            });
+        }
+    }
+
+    @Test
+    void numericArgumentsKeepLatinDigitsInEveryLanguage() {
+        ReportLabels l = new ReportLabels();
+        String ar = l.get("report.tooManyRows", "ar", 60000, 5000);
+        assertThat(ar).contains("60,000").contains("5,000");
+        assertThat(ar).doesNotContainPattern("[\\u0660-\\u0669\\u06F0-\\u06F9]");
+        assertThat(l.get("report.tooManyRows", "en", 60_000L, 5000))
+                .isEqualTo("Too many rows (60,000 rows, the limit is 5,000) - narrow the filter");
+        // money keeps its two decimals
+        assertThat(l.get("tenantLedger.accountSubTotal", "en", new BigDecimal("1234.50"))).isEqualTo("Sub Total (1,234.50)");
+        assertThat(l.bind("ar").get("report.tooManyRowsPdf", 6000, 5000)).contains("6,000").contains("5,000");
     }
 
     @Test

@@ -4,6 +4,8 @@ import org.springframework.context.NoSuchMessageException;
 import org.springframework.context.support.ReloadableResourceBundleMessageSource;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+import java.text.NumberFormat;
 import java.util.Locale;
 
 /**
@@ -15,6 +17,11 @@ import java.util.Locale;
  *
  * <p>Report languages are {@code ar} and {@code en}; anything else reads English. A key that is
  * missing from the bundle throws {@link NoSuchMessageException} rather than printing the key.
+ *
+ * <p>Numeric arguments are turned into Latin-digit text before MessageFormat sees them, so an
+ * Arabic label never shows Arabic-Indic digits: a {@link BigDecimal} reads as
+ * {@link ReportFormat#money}, any other {@link Number} as {@code #,##0.###}. Bundle placeholders
+ * are therefore plain {@code {0}}, never {@code {0,number}} or {@code {0,date}}.
  */
 @Component
 public class ReportLabels {
@@ -37,10 +44,29 @@ public class ReportLabels {
         return raw != null && raw.trim().equalsIgnoreCase("ar") ? "ar" : "en";
     }
 
-    /** The label for {@code key} in {@code lang}, with {@code args} filled in by MessageFormat. */
+    /** The label for {@code key} in {@code lang}, with {@code args} filled in by MessageFormat (numbers in Latin digits). */
     public String get(String key, String lang, Object... args) {
         Locale locale = "ar".equals(lang(lang)) ? ARABIC : Locale.ENGLISH;
-        return source.getMessage(key, args, locale);
+        return source.getMessage(key, latinDigits(args), locale);
+    }
+
+    /** {@code args} with every number already written out in Latin digits; other arguments are passed through. */
+    private static Object[] latinDigits(Object[] args) {
+        if (args == null || args.length == 0) {
+            return args;
+        }
+        Object[] out = new Object[args.length];
+        for (int i = 0; i < args.length; i++) {
+            Object a = args[i];
+            if (a instanceof BigDecimal b) {
+                out[i] = ReportFormat.money(b);
+            } else if (a instanceof Number n) {
+                out[i] = NumberFormat.getInstance(Locale.ROOT).format(n);
+            } else {
+                out[i] = a;
+            }
+        }
+        return out;
     }
 
     /** These labels fixed to one language. */

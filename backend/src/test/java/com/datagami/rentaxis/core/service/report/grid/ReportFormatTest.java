@@ -18,6 +18,9 @@ class ReportFormatTest {
         assertThat(ReportFormat.drCr(new BigDecimal("-0.004"))).isEqualTo("0.00Dr");
         assertThat(ReportFormat.money(new BigDecimal("1234567.891"))).isEqualTo("1,234,567.89");
         assertThat(ReportFormat.money(null)).isEmpty();
+        // half-up, not banker's rounding: HALF_EVEN would give 0.12 and 0.00Dr
+        assertThat(ReportFormat.money(new BigDecimal("0.125"))).isEqualTo("0.13");
+        assertThat(ReportFormat.drCr(new BigDecimal("-0.005"))).isEqualTo("0.01Cr");
     }
 
     @Test
@@ -40,7 +43,9 @@ class ReportFormatTest {
     @Test
     void cellTextStripsControlAndBidiAndTruncates() {
         // U+200F right-to-left mark, U+0007 bell, U+202E right-to-left override
-        assertThat(ReportFormat.cellText("A‏b\u0007c‮d")).isEqualTo("Abcd");
+        assertThat(ReportFormat.cellText("A\u200Fb\u0007c\u202Ed")).isEqualTo("Abcd");
+        // U+061C Arabic letter mark, the one Bidi_Control outside the U+200x/U+202x/U+206x blocks
+        assertThat(ReportFormat.cellText("A\u061Cb")).isEqualTo("Ab");
         assertThat(ReportFormat.cellText("x".repeat(40_000))).hasSize(32_767);
         assertThat(ReportFormat.cellText(null)).isEmpty();
     }
