@@ -549,10 +549,29 @@ public class VatTaxPointService {
                         .collect(java.util.stream.Collectors.toSet());
         List<com.datagami.rentaxis.domain.entity.LeaseLine> lines = leaseLines.findByLease_IdOrderBySeqNoAsc(lease.getId())
                 .stream().filter(l -> l.getAddendumId() == null || !documentedAddenda.contains(l.getAddendumId())).toList();
+        // Review P2-R4-1 (#425): any other contract TCO whose VAT a CHARGE point already
+        // documents (an extension's, S23-02: its lines carry no addendum id) is subtracted, so
+        // the backfill never invoices it a second time. Charges raised outside a TCO (a PEN:
+        // penalties, booking fees) are not contract lines and are not touched.
+        java.util.Set<UUID> addendumTcos = addenda.findByLease_IdOrderByCreatedAtAsc(lease.getId()).stream()
+                .map(com.datagami.rentaxis.domain.entity.LeaseAddendum::getTcoJournalId)
+                .filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+        java.util.Set<UUID> otherTcos = journals.findBySourceTypeAndSourceIdOrderByEntryDateAscCreatedAtAsc(
+                        com.datagami.rentaxis.domain.entity.enums.JournalSourceType.LEASE, lease.getId()).stream()
+                .filter(e -> e.getDocType() == com.datagami.rentaxis.domain.entity.enums.JournalDocType.TCO)
+                .map(JournalEntry::getId).filter(id -> !addendumTcos.contains(id))
+                .collect(java.util.stream.Collectors.toSet());
+        List<VatTaxPoint> chargedOnTco = points.findByLeaseIdAndStatusOrderByTaxPointDateAsc(lease.getId(),
+                        VatTaxPointStatus.POSTED).stream()
+                .filter(p -> p.getKind() == VatTaxPointKind.CHARGE && p.getJournalId() != null
+                        && otherTcos.contains(p.getJournalId()))
+                .toList();
         BigDecimal vat = com.datagami.rentaxis.core.service.lease.InstalmentVat.contractVat(lines)
-                .subtract(declared.stream().map(VatTaxPoint::getVatAmount).reduce(BigDecimal.ZERO, BigDecimal::add));
+                .subtract(declared.stream().map(VatTaxPoint::getVatAmount).reduce(BigDecimal.ZERO, BigDecimal::add))
+                .subtract(chargedOnTco.stream().map(VatTaxPoint::getVatAmount).reduce(BigDecimal.ZERO, BigDecimal::add));
         BigDecimal taxable = com.datagami.rentaxis.core.service.lease.InstalmentVat.contractTaxable(lines)
-                .subtract(declared.stream().map(VatTaxPoint::getTaxableAmount).reduce(BigDecimal.ZERO, BigDecimal::add));
+                .subtract(declared.stream().map(VatTaxPoint::getTaxableAmount).reduce(BigDecimal.ZERO, BigDecimal::add))
+                .subtract(chargedOnTco.stream().map(VatTaxPoint::getTaxableAmount).reduce(BigDecimal.ZERO, BigDecimal::add));
         if (vat.signum() == 0) return;
         // Follow-up ruling R11 (101-a): the contract's tax invoice (or the TI/TCN an
         // amendment issues) is refused when its date falls in a filed VAT period, with

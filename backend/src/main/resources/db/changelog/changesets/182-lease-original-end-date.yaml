@@ -8,7 +8,10 @@
 #   - Backfill from the extension's own record, not from dates: every extension writes a
 #     lease_events row "Lease extended from <previous end> to <new end>, ...". The
 #     earliest such row per lease gives the original end. Only rows whose date is before
-#     the lease's current end are used. Run
+#     the lease's current end are used. Only the accounting-v2 wording (", posted as <TCO>")
+#     counts: a v1 extension (April-September 2026) only moved end_date, before leases had
+#     lines, so whatever lines such a lease has were written for the extended term and its
+#     original_end_date stays NULL (the term is the end date). Run
 #     .superpowers/agents/prod-check-182-predeploy.sql on prod first.
 databaseChangeLog:
   - changeSet:
@@ -27,7 +30,7 @@ databaseChangeLog:
                 FROM (SELECT DISTINCT ON (e.lease_id) e.lease_id, e.tenant_id,
                              substring(e.notes from '^Lease extended from ([0-9]{4}-[0-9]{2}-[0-9]{2}) to')::date AS from_date
                         FROM lease_events e
-                       WHERE e.notes ~ '^Lease extended from [0-9]{4}-[0-9]{2}-[0-9]{2} to'
+                       WHERE e.notes ~ '^Lease extended from [0-9]{4}-[0-9]{2}-[0-9]{2} to [0-9]{4}-[0-9]{2}-[0-9]{2}, posted as '
                        ORDER BY e.lease_id, e.created_at ASC, e.id) x
                WHERE le.id = x.lease_id AND le.tenant_id = x.tenant_id
                  AND le.original_end_date IS NULL

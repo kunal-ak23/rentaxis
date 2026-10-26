@@ -155,17 +155,24 @@ export function applyChequeCsv(text: string, drafts: CsvDraft[], edits: Record<s
     let applied = 0;
     const lines = text.replace(/^﻿/, "").split(/\r?\n/);
     const sep = separatorOf(lines.find(l => l.trim()) ?? "");
-    // Sim r22 S22-05 / r23: blank lines, a title row and the header may come before the
-    // data. Every leading row with words, no due date and no known contract (English or
-    // Arabic) is preamble; the first other row ends it.
-    let preamble = true;
+    // Sim r22 S22-05 / r23 / #425 review P3-R4-4: blank lines and a title may come before the
+    // header. The header is the first line of words with no digits (English or Arabic); it and
+    // the lines before it are skipped, and every line after it is data, reported if it is
+    // wrong. With no such line, a first line of words with no due date is the header (S22-05).
+    const hasDigit = (l: string) => /[0-9\u0660-\u0669\u06F0-\u06F9]/.test(l);
+    const wordy = (l: string) => csvCells(l, sep).filter(c => /[a-z\u0600-\u06FF]/i.test(c)).length >= 2;
+    // Only lines before the first line with a real due date can be the header.
+    const firstData = lines.findIndex(l => l.trim() !== "" && !!csvDate(csvCells(l, sep)[1] ?? ""));
+    let headerAt = lines.findIndex((l, i) => (firstData < 0 || i < firstData) && l.trim() !== "" && wordy(l) && !hasDigit(l));
+    if (headerAt < 0) {
+        const first = lines.findIndex(l => l.trim());
+        const firstDue = first < 0 ? "" : (csvCells(lines[first], sep)[1] ?? "");
+        headerAt = first >= 0 && !csvDate(firstDue) && /[a-z\u0600-\u06FF]/i.test(firstDue) ? first : -1;
+    }
     lines.forEach((line, i) => {
-        if (!line.trim()) return;
+        if (!line.trim() || i <= headerAt) return;
         const [contract = "", due = "", number = "", bank = "", chequeDate = ""] = csvCells(line, sep);
         const dueIso = csvDate(due);
-        // A row naming a known contract is data, even with a bad date (reported below).
-        if (preamble && !dueIso && !byKey.has(norm(contract)) && /[a-z\u0600-\u06FF]/i.test(line)) return; // a title or the header
-        preamble = false;
         const chequeIso = chequeDate.trim() ? csvDate(chequeDate) : null;
         if (!dueIso || (chequeDate.trim() && !chequeIso)) {
             invalidDates.push(i + 1);

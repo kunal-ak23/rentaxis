@@ -96,6 +96,14 @@ describe("CSV import", () => {
         const titled = applyChequeCsv("Cheque numbers – Tower A\ncontract,due,number\n07-01,01/01/2028,910003", drafts, {});
         expect(titled.invalidDates).toEqual([]);
         expect(titled.edits.r1?.chequeNumber).toBe("910003");
+        // #425 review P3-R4-4: after the header every line is data. A mistyped contract with a bad
+        // date is reported, never dropped as preamble.
+        const typo = applyChequeCsv("Cheque numbers – Tower A\ncontract,due,number\n07-0l,31/02/2028,910004", drafts, {});
+        expect(typo.invalidDates).toEqual([3]);
+        // A line of words after the data is data too (reported), never a late "header".
+        const late = applyChequeCsv("07-01,01/01/2028,910005\nsee notes,below", drafts, {});
+        expect(late.applied).toBe(1);
+        expect(late.invalidDates).toEqual([2]);
         // A non-date on a later line is still reported.
         expect(applyChequeCsv("\ncontract,due,number\n07-01,soon,1", drafts, {}).invalidDates).toEqual([3]);
     });

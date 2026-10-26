@@ -391,4 +391,31 @@ class VatReturnServiceIT extends AbstractPostgresIT {
         assertThat(issued.vatAmount()).isEqualByComparingTo("900.00");
         assertThat(issued.taxableAmount()).isEqualByComparingTo("18000.00");
     }
+
+    /**
+     * Review P2-R4-1 of #425: a CONTRACT-timing VAT lease with no contract invoice of ours (as one
+     * posted before F14-11) is extended, and the extension issues its own tax invoice (900). The
+     * F14-11 backfill then documents the contract's VAT only, 3,000, never the extension's again.
+     */
+    @Test
+    void theContractInvoiceBackfillDoesNotInvoiceAnExtensionsVatAgain() {
+        Unit shop = fixtures.createUnit(fixtures.property(), "SH-3");
+        UUID leaseId = fixtures.draftLease(shop, fixtures.createRenter("Shop Three"), CONTRACT, START, END,
+                List.of(vatLine("RENT", "60000")));
+        fixtures.generateGrid(leaseId, 4, START);
+        fixtures.numberGrid(leaseId, "750001");
+        posting.post(leaseId);
+        jdbc.update("update leases set vat_timing = 'CONTRACT' where id = ?", leaseId);
+        renewal.extend(leaseId, new com.datagami.rentaxis.api.dto.lease.ExtendLeaseRequest(LocalDate.of(2027, 7, 31), null,
+                List.of(vatLine("RENT", "18000")), List.of(LeaseTestFixtures.chequeRow("18900", LocalDate.of(2027, 5, 1)))));
+        int before = taxInvoices.forLease(leaseId).size();
+
+        var after = vatTaxPoints.issueContractInvoice(leaseId);
+        assertThat(after).hasSize(before + 1);
+        var contractInvoice = after.stream().filter(i -> CONTRACT.equals(i.issueDate())).findFirst().orElseThrow();
+        assertThat(contractInvoice.vatAmount()).as("the contract's own VAT, not the extension's again").isEqualByComparingTo("3000.00");
+        assertThat(contractInvoice.taxableAmount()).isEqualByComparingTo("60000.00");
+        assertThat(after.stream().map(com.datagami.rentaxis.api.dto.vat.TaxInvoiceDTO::vatAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)).isEqualByComparingTo("3900.00");
+    }
 }

@@ -393,6 +393,11 @@ class ChargeRecognitionIT extends AbstractPostgresIT {
                 narrated("RENT", "51000", "Year 1", START, LocalDate.of(2027, 9, 23)),
                 narrated("RENT", "53000", "Year 2", LocalDate.of(2027, 9, 24), end2)), 4, null).lease().getId();
         jdbc.update("update leases set original_end_date = null where id in (?, ?)", extended, stepped);
+        // Review P3-R4-1: a v1-era event (no ", posted as") only moved end_date; it is not counted.
+        jdbc.update("insert into lease_events (id, tenant_id, lease_id, previous_state, new_state, notes, created_at)"
+                + " select gen_random_uuid(), tenant_id, ?, previous_state, new_state,"
+                + " 'Lease extended from 2027-03-31 to 2028-09-23', now() - interval '200 days'"
+                + " from lease_events where lease_id = ? limit 1", stepped, extended);
 
         String yaml = new String(getClass().getResourceAsStream(
                 "/db/changelog/changesets/182-lease-original-end-date.yaml").readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
@@ -403,7 +408,7 @@ class ChargeRecognitionIT extends AbstractPostgresIT {
         assertThat(jdbc.queryForObject("select original_end_date from leases where id = ?", LocalDate.class, extended))
                 .as("the end before the first extension").isEqualTo(END);
         assertThat(jdbc.queryForObject("select original_end_date from leases where id = ?", LocalDate.class, stepped))
-                .as("never extended: no original end, whatever its lines' dates").isNull();
+                .as("never extended by v2 (a v1 event only): no original end, whatever its lines' dates").isNull();
     }
 
     private static com.datagami.rentaxis.api.dto.SaveSettlementDTO.DeductionItemDTO refund(UUID account, String amount) {
