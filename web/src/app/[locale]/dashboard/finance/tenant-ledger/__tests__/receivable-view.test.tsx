@@ -154,25 +154,25 @@ describe("Tenant Ledger — receivable (PACT) view", () => {
         expect(fetchSpy).toHaveBeenLastCalledWith(expect.stringMatching(/^\/api\/proxy\/v1\/finance\/reports\/tenant-ledger\.pdf\?.*propertyId=p1.*lang=ar$/));
     });
 
-    it("pages by tenant groups", async () => {
+    it("pages by account–tenant groups", async () => {
         const second: ReportGrid = { ...grid, page: { ...grid.page, page: 1, firstGroup: 16, lastGroup: 30 } };
         get.mockImplementation(async (_q: unknown, page: number) => (page === 1 ? second : grid));
         at("propertyId=p1");
         render(<Page />);
-        expect(await screen.findByText("Tenants 1–16 of 41")).toBeInTheDocument();
+        expect(await screen.findByText("Account–tenant groups 1–16 of 41")).toBeInTheDocument();
         expect(screen.getByText("Page 1 of 4")).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole("button", { name: "Next" }));
         await waitFor(() => expect(get).toHaveBeenLastCalledWith(expect.objectContaining({ propertyId: "p1" }), 1, "en", expect.anything()));
         expect(url().page).toBe("1");
-        expect(await screen.findByText("Tenants 17–31 of 41")).toBeInTheDocument();
+        expect(await screen.findByText("Account–tenant groups 17–31 of 41")).toBeInTheDocument();
         expect(screen.getByText("Page 2 of 4")).toBeInTheDocument();
 
         // Applying the bar starts again from the first page, and page 0 stays out of the URL.
         fireEvent.click(screen.getByRole("button", { name: "Apply" }));
         await waitFor(() => expect(get).toHaveBeenLastCalledWith(expect.objectContaining({ propertyId: "p1" }), 0, "en", expect.anything()));
         expect(url().page).toBeUndefined();
-        expect(await screen.findByText("Tenants 1–16 of 41")).toBeInTheDocument();
+        expect(await screen.findByText("Account–tenant groups 1–16 of 41")).toBeInTheDocument();
     });
 
     it("opens the page the URL names", async () => {

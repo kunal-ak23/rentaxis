@@ -91,7 +91,7 @@ export function ReportShell({
             )}
             {state === "loading" && (
                 <div data-testid="report-loading" aria-busy="true" className="space-y-3 animate-pulse">
-                    {[1, 2, 3, 4].map(i => <div key={i} className="bg-input rounded-xl h-16" />)}
+                    {[1, 2, 3, 4].map(i => <div key={i} className="bg-border/50 rounded-xl h-16" />)}
                 </div>
             )}
             {state === "empty" && (

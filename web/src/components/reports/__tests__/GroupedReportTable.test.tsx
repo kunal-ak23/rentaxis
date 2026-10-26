@@ -49,9 +49,9 @@ describe("GroupedReportTable", () => {
     });
 
     it("cannot page before the first or past the last page, and shows no pager for one page", () => {
-        const { unmount } = render(<GroupedReportTable grid={grid} onPage={onPage} groupsLabel="Tenants 1–16 of 41" />);
+        const { unmount } = render(<GroupedReportTable grid={grid} onPage={onPage} groupsLabel="Account–tenant groups 1–16 of 41" />);
         expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
-        expect(screen.getByText("Tenants 1–16 of 41")).toBeInTheDocument();
+        expect(screen.getByText("Account–tenant groups 1–16 of 41")).toBeInTheDocument();
         unmount();
         render(<GroupedReportTable grid={{ ...grid, page: { ...grid.page, page: 3 } }} onPage={onPage} />);
         expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
@@ -86,7 +86,8 @@ describe("GroupedReportTable", () => {
         expect(screen.queryByText("Internal Col")).toBeNull();
         expect(screen.queryByText("secret")).toBeNull();
         expect(screen.getByRole("link", { name: "L-7" })).toHaveAttribute("href", "/dashboard/leases/l7");
-        expect(screen.getByTestId("grid-row")).toHaveClass("bg-report-highlight");
+        // The highlight carries its own text colour, links included: under dark mode the band is dark and the text light.
+        expect(screen.getByTestId("grid-row")).toHaveClass("bg-report-highlight", "text-report-highlight-fg", "[&_a]:text-report-highlight-fg");
         // A journal column without an entry id is plain text, not a dead link.
         expect(screen.queryByRole("link", { name: "PDR-26/1" })).toBeNull();
     });
@@ -127,6 +128,15 @@ describe("GroupedReportTable", () => {
         expect(opening.querySelectorAll("td")).toHaveLength(2);
         expect(opening.querySelectorAll("td")[0]).toHaveTextContent("Balance brought forward");
         expect(opening.querySelectorAll("td")[0]).toHaveTextContent("500.00Dr");
+    });
+
+    it("sets its own text colour on the card and the pager, so dark mode's light body text never lands on the light surface", () => {
+        render(<GroupedReportTable grid={grid} onPage={onPage} />);
+        expect(document.querySelector("table")!.closest("div")).toHaveClass("bg-surface", "text-foreground");
+        expect(screen.getByRole("button", { name: "Next" })).toHaveClass("bg-surface", "text-foreground");
+        expect(screen.getByRole("button", { name: "Previous" })).toHaveClass("bg-surface", "text-foreground");
+        // Bands keep their own pair of tokens over the card's text colour.
+        expect(screen.getByTestId("grid-band-1").querySelector("td")).toHaveClass("text-report-band-fg");
     });
 
     it("rules the sticky header with the theme's border token", () => {

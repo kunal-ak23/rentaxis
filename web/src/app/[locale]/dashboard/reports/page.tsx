@@ -91,7 +91,7 @@ export default function ReportsHubPage() {
                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                         <ul className="flex flex-wrap gap-1.5">
                                             {r.formats.map(f => (
-                                                <li key={f} className="px-2 py-0.5 rounded-md bg-input text-[11px] font-semibold text-muted">
+                                                <li key={f} className="px-2 py-0.5 rounded-md bg-border/50 text-[11px] font-semibold text-muted">
                                                     {t(FORMAT_KEY[f])}
                                                 </li>
                                             ))}

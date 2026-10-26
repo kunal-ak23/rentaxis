@@ -112,6 +112,10 @@ describe("ExportMenu", () => {
         expect(items[3]).toHaveFocus();
         press("Home");
         expect(items[0]).toHaveFocus();
+        // The focused item shows it: a tint, and a ring when focus came from the keyboard.
+        for (const item of items) {
+            expect(item).toHaveClass("focus:bg-primary/10", "focus-visible:ring-2", "focus-visible:ring-primary/40");
+        }
     });
 
     it("closes on Escape and gives focus back to the trigger", () => {

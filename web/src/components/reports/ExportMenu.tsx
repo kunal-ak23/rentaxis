@@ -149,7 +149,7 @@ export function ExportMenu({ options, disabled = false }: { options: ExportOptio
                 aria-haspopup="menu"
                 aria-expanded={open}
                 data-testid="report-export"
-                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-surface text-foreground border border-border text-xs font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:bg-input transition-all focus:ring-2 focus:ring-primary/20 focus:outline-none whitespace-nowrap"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-surface text-foreground border border-border text-xs font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/5 transition-all focus:ring-2 focus:ring-primary/20 focus:outline-none whitespace-nowrap"
             >
                 {busy ? <Loader2 size={13} className="animate-spin" aria-hidden /> : <Download size={13} aria-hidden />}
                 {busy ? t("exportBusy") : t("exportMenu")}
@@ -169,7 +169,7 @@ export function ExportMenu({ options, disabled = false }: { options: ExportOptio
                             role="menuitem"
                             tabIndex={-1}
                             onClick={() => run(o)}
-                            className="block w-full text-start px-3 py-2 text-xs font-medium text-foreground hover:bg-input focus:bg-input focus:outline-none cursor-pointer"
+                            className="block w-full text-start px-3 py-2 text-xs font-medium text-foreground hover:bg-primary/5 focus:bg-primary/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40 cursor-pointer"
                         >
                             {t(LABEL_KEY[o.id])}
                         </button>

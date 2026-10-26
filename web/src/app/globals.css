@@ -71,6 +71,7 @@
   --report-group:        #7F7F7F;
   --report-group-fg:     #FFFFFF;
   --report-highlight:    #FAC08F;
+  --report-highlight-fg: #0B1F3A;
 
   /* Typography */
   --font-sans:  'Inter', 'IBM Plex Sans Arabic', system-ui, sans-serif;
@@ -113,6 +114,7 @@
   --color-report-group:        var(--report-group);
   --color-report-group-fg:     var(--report-group-fg);
   --color-report-highlight:    var(--report-highlight);
+  --color-report-highlight-fg: var(--report-highlight-fg);
   --font-sans:   'Inter', 'IBM Plex Sans Arabic', system-ui, sans-serif;
   --font-serif:  'Source Serif 4', Georgia, serif;
   --font-mono:   'JetBrains Mono', ui-monospace, monospace;
@@ -140,6 +142,7 @@
     --report-group:        #3A4558;
     --report-group-fg:     #F2F5F9;
     --report-highlight:    #5A3A1C;
+    --report-highlight-fg: #F2F5F9;
   }
 }
 

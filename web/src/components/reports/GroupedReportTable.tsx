@@ -21,6 +21,9 @@ const BAND_CLASS: Record<NonNullable<GridItem["band"]>, string> = {
     GROUP: "bg-report-group text-report-group-fg font-bold",
 };
 
+/** A highlighted row (a returned cheque) takes the band's own text colour, its drill links too, so it reads in dark mode. */
+const HIGHLIGHT_CLASS = "bg-report-highlight text-report-highlight-fg [&_a]:text-report-highlight-fg";
+
 /** A cell's display text. Amounts are re-punctuated only — the server did every sum. */
 function display(col: GridColumn, v: string | undefined): string {
     if (v == null || v === "") return "";
@@ -124,7 +127,7 @@ export function GroupedReportTable({ grid, onPage, groupsLabel }: {
             case "opening": {
                 if (balanceAt === -1) {
                     return (
-                        <tr key={i} data-testid="grid-opening" className="bg-input/30">
+                        <tr key={i} data-testid="grid-opening" className="bg-border/30">
                             <td className={td} colSpan={cols.length}><bdi>{it.label ?? ""}</bdi></td>
                         </tr>
                     );
@@ -133,7 +136,7 @@ export function GroupedReportTable({ grid, onPage, groupsLabel }: {
                 const after = cols.length - balanceAt - 1;
                 return (
                     <tr key={i} data-testid="grid-opening" data-carried-forward={it.carriedForward || undefined}
-                        className={cn("bg-input/30", it.carriedForward && "italic")}>
+                        className={cn("bg-border/30", it.carriedForward && "italic")}>
                         {balanceAt > 0 && <td className={td} colSpan={balanceAt}><bdi>{it.label ?? ""}</bdi></td>}
                         {/* With Balance first there is no column before it, so the label shares its cell. */}
                         <Cell col={balance} value={it.cells[balance.key]} refs={{}} lead={balanceAt === 0 ? it.label ?? undefined : undefined} />
@@ -144,12 +147,12 @@ export function GroupedReportTable({ grid, onPage, groupsLabel }: {
             case "row":
                 return (
                     <tr key={i} data-testid="grid-row"
-                        className={cn("border-t border-border", it.style === "HIGHLIGHT" ? "bg-report-highlight" : "hover:bg-input/30")}>
+                        className={cn("border-t border-border", it.style === "HIGHLIGHT" ? HIGHLIGHT_CLASS : "hover:bg-primary/5")}>
                         {cols.map(c => <Cell key={c.key} col={c} value={it.cells[c.key]} refs={it.refs} />)}
                     </tr>
                 );
             case "subtotal":
-                return totalsRow(it, i, `grid-subtotal-${it.level}`, "bg-input/40 font-semibold border-t border-border");
+                return totalsRow(it, i, `grid-subtotal-${it.level}`, "bg-border/50 font-semibold border-t border-border");
             case "total":
                 return totalsRow(it, i, "grid-total", "bg-warning/10 font-bold border-t-2 border-border");
         }
@@ -157,7 +160,7 @@ export function GroupedReportTable({ grid, onPage, groupsLabel }: {
 
     return (
         <div>
-            <div className="bg-surface border border-border rounded-xl overflow-x-auto overflow-y-auto max-h-[75vh] shadow-sm">
+            <div className="bg-surface text-foreground border border-border rounded-xl overflow-x-auto overflow-y-auto max-h-[75vh] shadow-sm">
                 <table className="w-full min-w-[900px]">
                     <thead className="sticky top-0 z-10">
                         <tr>
@@ -183,7 +186,7 @@ export function GroupedReportTable({ grid, onPage, groupsLabel }: {
                             type="button"
                             onClick={() => onPage?.(page - 1)}
                             disabled={!onPage || page <= 0}
-                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border bg-surface font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:bg-input transition-colors"
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border bg-surface text-foreground font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/5 transition-colors"
                         >
                             <ChevronLeft size={14} className="rtl:rotate-180" aria-hidden />
                             {t("tablePrevious")}
@@ -192,7 +195,7 @@ export function GroupedReportTable({ grid, onPage, groupsLabel }: {
                             type="button"
                             onClick={() => onPage?.(page + 1)}
                             disabled={!onPage || page >= pageCount - 1}
-                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border bg-surface font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:bg-input transition-colors"
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border bg-surface text-foreground font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/5 transition-colors"
                         >
                             {t("tableNext")}
                             <ChevronRight size={14} className="rtl:rotate-180" aria-hidden />

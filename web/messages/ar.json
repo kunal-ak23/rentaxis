@@ -5841,7 +5841,7 @@
     "tlOnlyWithBalance": "المستأجرون ذوو الرصيد فقط",
     "tlHideReversed": "إخفاء القيود المعكوسة",
     "tlPickScope": "اختر مستأجرًا أو عقارًا أو حسابًا لعرض الدفتر",
-    "tlGroups": "المستأجرون {from}–{to} من {total}",
+    "tlGroups": "مجموعات الحساب والمستأجر {from}–{to} من {total}",
     "tlRemoveAccount": "إزالة {name}"
   }
 }

@@ -5841,7 +5841,7 @@
     "tlOnlyWithBalance": "Only tenants with a balance",
     "tlHideReversed": "Hide reversed pairs",
     "tlPickScope": "Pick a tenant, a property or an account to run the ledger",
-    "tlGroups": "Tenants {from}–{to} of {total}",
+    "tlGroups": "Account–tenant groups {from}–{to} of {total}",
     "tlRemoveAccount": "Remove {name}"
   }
 }

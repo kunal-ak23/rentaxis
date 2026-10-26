@@ -56,7 +56,7 @@ export default function TenantLedgerPage() {
                     aria-pressed={view === v.view}
                     onClick={() => setView(v.view)}
                     className={`px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer transition-colors focus:ring-2 focus:ring-primary/20 focus:outline-none ${
-                        view === v.view ? "bg-primary text-primary-foreground" : "text-muted hover:text-foreground hover:bg-input"
+                        view === v.view ? "bg-primary text-primary-foreground" : "text-muted hover:text-foreground hover:bg-primary/5"
                     }`}
                 >
                     {t(v.key)}

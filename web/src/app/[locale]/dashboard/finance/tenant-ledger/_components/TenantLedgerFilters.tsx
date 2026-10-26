@@ -7,10 +7,10 @@ import AccountPicker, { loadAccounts } from "@/components/finance/AccountPicker"
 import { useNameLookup } from "@/components/finance/useNameLookup";
 import { LeasePicker } from "@/components/pickers/LeasePicker";
 import { RenterPicker } from "@/components/pickers/RenterPicker";
-import type { Account } from "@/lib/api/ledger";
+import { accountName, type Account } from "@/lib/api/ledger";
 import { reportsApi, type ReceivableAccount, type TenantLedgerQuery } from "@/lib/api/reports";
 
-const field = "bg-input border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200";
+const field = "bg-surface text-foreground border border-border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200";
 const label = "block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5";
 
 type Props = {
@@ -62,9 +62,10 @@ export default function TenantLedgerFilters({ value, onChange, onApply }: Props)
     const selected = value.accountIds ?? [];
     const known = (id: string): { code: string; name: string; propertyId: string | null } | undefined => {
         const r = receivable.find(a => a.id === id);
-        if (r) return { code: r.code, name: locale === "ar" ? r.nameAr || r.name : r.name, propertyId: r.propertyId };
+        if (r) return { code: r.code, name: accountName(r, locale), propertyId: r.propertyId };
+        // A party-ledger pick reads in the screen's language too: its Arabic name under ar when it has one.
         const o = others.find(a => a.id === id);
-        return o ? { code: o.code, name: o.name, propertyId: o.propertyId } : undefined;
+        return o ? { code: o.code, name: accountName(o, locale), propertyId: o.propertyId } : undefined;
     };
     const accountLabel = (id: string) => {
         const a = known(id);
