@@ -2,14 +2,20 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { HelpCircle, BookOpen, Play, X } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { HelpCircle, BookOpen, Play, PlayCircle, X } from 'lucide-react';
+import { useLocale, useTranslations } from 'next-intl';
+import { useSession } from 'next-auth/react';
 import { cn } from '@/lib/utils';
 import { Link, usePathname } from '@/i18n/routing';
 import { getContextualHelp } from '@/lib/help';
 import { useTour } from '@/components/tour/TourProvider';
 import { getTourById } from '@/components/tour/tours';
 import { useAnyDialogOpen } from '@/lib/useAnyDialogOpen';
+import type { UserRole } from '@/lib/rbac';
+import { TUTORIALS, filterTutorialsByRole, publishedTutorials } from '@/lib/tutorials/catalog';
+
+/** At most this many videos in the menu; the Help center lists the rest. */
+const MAX_PAGE_VIDEOS = 3;
 
 export default function HelpFAB() {
   const t = useTranslations('Help');
@@ -18,10 +24,20 @@ export default function HelpFAB() {
   const pathname = usePathname();
   const { startTour } = useTour();
   const dialogOpen = useAnyDialogOpen();
+  const { data: session } = useSession();
+  const role = (session?.user as { role?: UserRole } | undefined)?.role;
+  const lang: 'en' | 'ar' = useLocale() === 'ar' ? 'ar' : 'en';
 
-  const ctx = getContextualHelp(pathname);
-  const hasTour = !!(ctx.tour && getTourById(ctx.tour));
+  const ctx = getContextualHelp(pathname, role);
+  const tour = ctx.tour ? getTourById(ctx.tour) : undefined;
+  const hasTour = !!(tour && role && tour.roles.includes(role));
   const hasArticle = !!ctx.article;
+  // The page's videos, in the map's order, that are published and made for this role.
+  const published = filterTutorialsByRole(publishedTutorials(TUTORIALS), role);
+  const videos = (ctx.videos ?? [])
+    .map(id => published.find(v => v.id === id))
+    .filter((v): v is (typeof published)[number] => !!v)
+    .slice(0, MAX_PAGE_VIDEOS);
 
   // Close on outside click
   useEffect(() => {
@@ -54,7 +70,7 @@ export default function HelpFAB() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.95 }}
             transition={{ duration: 0.18 }}
-            className="absolute bottom-16 end-0 w-64 rounded-xl bg-white shadow-xl border border-gray-200 overflow-hidden"
+            className="absolute bottom-16 end-0 w-72 rounded-xl bg-white shadow-xl border border-gray-200 overflow-hidden"
           >
             {/* Header */}
             <div className="bg-[var(--ink-900)] px-4 py-3 text-white">
@@ -82,7 +98,7 @@ export default function HelpFAB() {
                 <button
                   onClick={() => {
                     setOpen(false);
-                    startTour(ctx.tour!);
+                    startTour(tour!.id);
                   }}
                   className={cn(
                     'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-foreground w-full text-start',
@@ -92,6 +108,26 @@ export default function HelpFAB() {
                   <Play className="w-4 h-4 text-[var(--gold-500)] shrink-0" />
                   {t('takeTour')}
                 </button>
+              )}
+
+              {videos.length > 0 && (
+                <div data-testid="help-fab-videos" className="border-t border-gray-100 mt-1 pt-2">
+                  <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-500)]">{t('pageVideos')}</p>
+                  {videos.map(video => (
+                    <Link
+                      key={video.id}
+                      href={`/dashboard/help/videos?play=${encodeURIComponent(video.id)}`}
+                      onClick={() => setOpen(false)}
+                      className={cn(
+                        'flex items-start gap-3 px-3 py-2 rounded-lg text-sm text-foreground',
+                        'hover:bg-[var(--sand-100)] transition-colors'
+                      )}
+                    >
+                      <PlayCircle className="w-4 h-4 mt-0.5 text-[var(--gold-500)] shrink-0" aria-hidden />
+                      <span>{video.title[lang]}</span>
+                    </Link>
+                  ))}
+                </div>
               )}
 
               <Link

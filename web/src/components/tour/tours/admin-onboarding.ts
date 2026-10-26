@@ -2,51 +2,41 @@ import type { TourDef } from './types';
 
 export const adminOnboardingTour: TourDef = {
   id: 'admin-onboarding',
-  name: 'Welcome Tour',
-  description: 'Quick overview of your Miftah dashboard',
-  roles: ['TENANT_ADMIN', 'PROPERTY_MANAGER', 'TENANT_USER'],
+  // Company Users get their own tour (company-user-onboarding): their rail has no Leasing or Accounting.
+  roles: ['TENANT_ADMIN', 'PROPERTY_MANAGER'],
+  onboarding: true,
   steps: [
     {
       id: 'welcome',
       target: '[data-tour="dashboard-header"]',
-      title: 'Welcome to Miftah!',
-      text: 'This is your home page: the contract pipeline, what needs you now, Unit Status and the numbers that matter.',
       position: 'bottom',
     },
     {
       id: 'sidebar-nav',
       target: '[data-tour="sidebar-nav"]',
-      title: 'Navigation',
-      text: 'The rail on the left holds your sections; the panel beside it lists the pages of the section you are in.',
+      // Below 768 px the rail sits in the drawer the header's menu button opens.
+      mobileTarget: '[data-testid="header-menu"]',
       position: 'right',
     },
     {
       // The Leasing rail icon (its section's tourId): contracts, tenants, properties & units.
       id: 'sidebar-properties',
       target: '[data-tour="sidebar-leases"]',
-      title: 'Leasing',
-      text: 'Tenancy contracts, tenants, properties & units.',
       position: 'right',
     },
     {
       id: 'sidebar-finance',
       target: '[data-tour="sidebar-finance"]',
-      title: 'Accounting',
-      text: 'Journal vouchers, registers, receipts & payments and final reports live behind this one door.',
       position: 'right',
     },
     {
       id: 'help-fab',
       target: '[data-tour="help-fab"]',
-      title: 'Need Help?',
-      text: 'Click this button anytime for contextual help, guided tours, or to browse the Help Center.',
       position: 'top',
     },
     {
       id: 'header-help',
       target: '[data-tour="header-help"]',
-      title: 'Help & Guides',
-      text: 'Articles and tours for every page.',
       position: 'bottom',
     },
   ],

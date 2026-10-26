@@ -269,6 +269,12 @@ describe('AdEditor', () => {
         expect(onSave).not.toHaveBeenCalled()
     })
 
+    it('recommends the artwork size under the artwork upload', () => {
+        renderEditor()
+        expect(screen.getByLabelText(`${messages.Promotions.artwork}: ${messages.Promotions.uploadImage}`))
+            .toHaveAccessibleDescription(`${messages.Promotions.imageHint} ${messages.Promotions.artworkSizeHint}`)
+    })
+
     it('renders the live preview with the typed title', () => {
         renderEditor()
         fireEvent.change(screen.getByLabelText('Title (English)'), {
