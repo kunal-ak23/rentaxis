@@ -987,6 +987,17 @@ public class UserService {
             }
         }
 
+        // Review M5: a promoter is its own login, never an existing person's. Moving its
+        // address onto one would hand it that person's password (resetLoginForNewAddress
+        // reuses their own), so an address that signs in anywhere else is refused.
+        if ((role == UserRole.PROMOTER || user.getRole() == UserRole.PROMOTER)
+                && !user.getEmail().trim().equalsIgnoreCase(normalizedEmail)
+                && userRepository.existsAnyLoginWithEmailExcept(normalizedEmail, id)) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    "This email already has a Miftah login. Use another email address for the promoter.",
+                    PromoterAdminService.EXISTING_LOGIN_CODE, java.util.Map.of());
+        }
+
         // Same rule as createUser — an edited guard is exactly as unreachable as a
         // badly created one, and re-roling a user into SECURITY_GUARD arrives here
         // with a phone that has never been checked against E.164.

@@ -39,6 +39,11 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             nativeQuery = true)
     boolean existsAnyLoginWithEmail(@Param("email") String email);
 
+    /** {@link #existsAnyLoginWithEmail} leaving out one row (the user whose address is being changed). */
+    @Query(value = "SELECT EXISTS (SELECT 1 FROM users u WHERE lower(trim(u.email)) = lower(trim(:email)) AND u.id <> :id)",
+            nativeQuery = true)
+    boolean existsAnyLoginWithEmailExcept(@Param("email") String email, @Param("id") UUID id);
+
     /** A link to the address was redeemed for these rows: no longer unverified registrations. */
     @Modifying
     @Query(value = "UPDATE users SET self_registered_unverified = false WHERE id IN (:ids)", nativeQuery = true)

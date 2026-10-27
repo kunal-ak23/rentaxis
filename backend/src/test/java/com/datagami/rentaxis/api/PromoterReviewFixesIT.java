@@ -237,6 +237,22 @@ class PromoterReviewFixesIT extends AbstractPromoterIT {
         assertThat(offerIds(renterAtP2)).doesNotContain(adId);
     }
 
+    // ------------------------------------------------------------------- M5
+
+    @Test
+    void m5_aPromotersEmailCannotBeMovedOntoSomeoneElsesLogin() {
+        User elsewhere = user(org(), UserRole.TENANT_USER);
+
+        Resp res = put(admin, "/api/admin/users/" + promoter.getId(), body("email", elsewhere.getEmail()));
+
+        assertThat(res.status()).isEqualTo(400);
+        assertThat(res.text("code")).isEqualTo("promoter.existingLogin");
+        assertThat(userRepo.findById(promoter.getId()).orElseThrow().getEmail()).isNotEqualTo(elsewhere.getEmail());
+        // A fresh address is fine.
+        assertThat(put(admin, "/api/admin/users/" + promoter.getId(),
+                body("email", "promoter-" + UUID.randomUUID() + "@example.test")).status()).isEqualTo(200);
+    }
+
     // -------------------------------------------------------------- helpers
 
     private Map<String, Object> ad(String title) {
