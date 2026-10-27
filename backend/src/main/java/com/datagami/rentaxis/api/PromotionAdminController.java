@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.PromoAdDTO;
+import com.datagami.rentaxis.api.dto.PromoAdDtos;
 import com.datagami.rentaxis.api.dto.PromoAdRequest;
 import com.datagami.rentaxis.api.dto.PromoAdStatsDTO;
 import com.datagami.rentaxis.api.dto.PromoBusinessDTO;
@@ -239,31 +240,17 @@ public class PromotionAdminController {
     }
 
     private PromoBusinessDTO toDTO(PromoBusiness b, long adCount) {
-        List<String> domains = b.getAllowedDomains() == null || b.getAllowedDomains().isBlank()
-                ? List.of()
-                : Arrays.stream(b.getAllowedDomains().split(",")).map(String::trim).toList();
-        return new PromoBusinessDTO(b.getId(), b.getNameEn(), b.getNameAr(), imageForDto(b.getLogoUrl()),
-                b.getCategory(), b.getPhoneE164(), b.getWhatsappE164(), domains,
-                b.isActive(), adCount, b.getCreatedAt(), b.getUpdatedAt());
+        return PromoAdDtos.business(b, adCount, this::imageForDto);
     }
 
-    /**
-     * 26 positional arguments, seven pairs of which are adjacent and share a
-     * type. Keep the arguments one per line and in the record's declared order
-     * so a transposition is visible in review — the compiler cannot catch one.
-     * {@code listAds_mapsEverySwapProneFieldToTheRightSlot} is the backstop.
-     */
+    /** See {@link PromoAdDtos#ad}; {@code submittedByName} is the promoter who last wrote the ad. */
     private PromoAdDTO toDTO(PromoAd a, String businessName, List<UUID> propertyIds,
                             PromotionStatsService.Totals totals) {
-        return new PromoAdDTO(a.getId(), a.getBusinessId(), businessName,
-                a.getTitleEn(), a.getTitleAr(), a.getSubtitleEn(), a.getSubtitleAr(),
-                imageForDto(a.getBackgroundImageUrl()), a.getAccentColor(),
-                a.getCtaType(), a.getCtaLabelEn(), a.getCtaLabelAr(), a.getCtaUrl(),
-                a.getCouponCode(), a.getCouponTermsEn(), a.getCouponTermsAr(),
-                a.getStartsAt(), a.getEndsAt(), a.getPriority(), a.getPlacement(), a.isActive(),
-                propertyIds, totals.impressions(), totals.clicks(),
-                a.getCreatedAt(), a.getUpdatedAt(),
-                a.getRedirectUrl(),
-                a.getRedirectParams() == null ? List.of() : a.getRedirectParams());
+        return toDTO(a, businessName, propertyIds, totals, null);
+    }
+
+    private PromoAdDTO toDTO(PromoAd a, String businessName, List<UUID> propertyIds,
+                            PromotionStatsService.Totals totals, String submittedByName) {
+        return PromoAdDtos.ad(a, businessName, propertyIds, totals, submittedByName, this::imageForDto);
     }
 }

@@ -106,18 +106,32 @@ class PromoterFenceSweepIT extends AbstractPromoterIT {
                 || s.equals("GET /api/v1/org/branding/{kind}"));
     }
 
+    /**
+     * Every call the web shell makes for a signed-in promoter on every page (the web
+     * agent's list), plus the profile page's writes: all past the fence.
+     */
     @Test
     void theAllowlistReallyLetsThePromoterThrough() {
-        assertThat(get(promoter, "/api/v1/tenant/features").status()).isEqualTo(200);
-        assertThat(get(promoter, "/api/v1/tenant/info").status()).isEqualTo(200);
-        assertThat(get(promoter, "/api/auth/me").status()).isEqualTo(200);
-        assertThat(get(promoter, "/api/auth/me/tenants").status()).isEqualTo(200);
         assertThat(get(promoter, "/api/v1/notifications/unread-count").status()).isEqualTo(200);
         assertThat(get(promoter, "/api/v1/notifications?page=0&size=5").status()).isEqualTo(200);
         assertThat(put(promoter, "/api/v1/notifications/read-all", null).status()).isEqualTo(200);
+        // Someone else's (here: nobody's) notification is a 404 from the controller, not the fence's 403.
+        assertThat(put(promoter, "/api/v1/notifications/" + UUID.randomUUID() + "/read", null).status())
+                .isEqualTo(404);
+        assertThat(get(promoter, "/api/v1/tenant/features").status()).isEqualTo(200);
+        assertThat(get(promoter, "/api/v1/tenant/info").status()).isEqualTo(200);
+        assertThat(get(promoter, "/api/auth/me/tenants").status()).isEqualTo(200);
+        assertThat(get(promoter, "/api/auth/me").status()).isEqualTo(200);
+        assertThat(put(promoter, "/api/auth/me", Map.of("name", "QuickWash Promoter")).status()).isEqualTo(200);
+        // A wrong current password is the controller's refusal, past the fence.
+        assertThat(put(promoter, "/api/auth/me/password",
+                Map.of("currentPassword", "nope", "newPassword", "Another-Passw0rd!")).status()).isNotEqualTo(403);
         assertThat(bearer(promoter, HttpMethod.GET, "/api/v1/tenant/features", null).status()).isEqualTo(200);
+        assertThat(get(promoter, "/api/v1/promoter/me").status()).isEqualTo(200);
+        assertThat(bearer(promoter, HttpMethod.GET, "/api/v1/promoter/ads", null).status()).isEqualTo(200);
         // The logo route answers 404 when the organisation has none — past the fence either way.
-        assertThat(get(promoter, "/api/v1/org/branding/logo").status()).isNotEqualTo(403);
+        assertThat(get(promoter, "/api/v1/org/branding/logo?org=" + promoter.getTenantId() + "&v=abc").status())
+                .isEqualTo(404);
     }
 
     @Test

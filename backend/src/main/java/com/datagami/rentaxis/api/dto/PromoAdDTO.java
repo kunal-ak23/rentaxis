@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.api.dto;
 
 import com.datagami.rentaxis.domain.entity.PromoRedirectParam;
+import com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus;
 import com.datagami.rentaxis.domain.entity.enums.PromoCtaType;
 import com.datagami.rentaxis.domain.entity.enums.PromoPlacement;
 
@@ -46,5 +47,14 @@ public record PromoAdDTO(
         /** COUPON only (addendum A): the link "Copy code" opens, before per-renter parameters. */
         String redirectUrl,
         /** COUPON only: {@code [{name, source, value}]}, value set only for STATIC; empty = none. */
-        List<PromoRedirectParam> redirectParams) {
+        List<PromoRedirectParam> redirectParams,
+        /** PENDING / APPROVED / REJECTED (changeset 183). Only APPROVED ads reach renters. */
+        PromoApprovalStatus approvalStatus,
+        /** The admin's reason when REJECTED; null otherwise. */
+        String rejectionReason,
+        /** When a promoter last sent the ad for approval; null for an ad only admins have written. */
+        Instant submittedAt,
+        Instant reviewedAt,
+        /** The promoter who last wrote the ad; null for an ad only admins have written. */
+        String submittedByName) {
 }

@@ -1,10 +1,13 @@
 package com.datagami.rentaxis.domain.repository;
 
 import com.datagami.rentaxis.domain.entity.PromoAd;
+import com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus;
 import com.datagami.rentaxis.domain.entity.enums.PromoPlacement;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -12,6 +15,7 @@ import org.springframework.stereotype.Repository;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -25,6 +29,38 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
     Page<PromoAd> findByTenantIdAndBusinessId(UUID tenantId, UUID businessId, Pageable pageable);
 
     long countByBusinessId(UUID businessId);
+
+    // ---- approval (changeset 183) ----
+
+    Page<PromoAd> findByTenantIdAndApprovalStatus(UUID tenantId, PromoApprovalStatus status, Pageable pageable);
+
+    Page<PromoAd> findByTenantIdAndBusinessIdAndApprovalStatus(UUID tenantId, UUID businessId,
+                                                              PromoApprovalStatus status, Pageable pageable);
+
+    long countByTenantIdAndApprovalStatus(UUID tenantId, PromoApprovalStatus status);
+
+    /** A promoter's ad list: the ads of the businesses granted to it. */
+    Page<PromoAd> findByTenantIdAndBusinessIdIn(UUID tenantId, Collection<UUID> businessIds, Pageable pageable);
+
+    /**
+     * The ad, row-locked, for an approval transition or a promoter's edit: the two
+     * serialize, so an approval can neither overwrite an edit that landed after it
+     * read the row nor be lost under one.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT a FROM PromoAd a WHERE a.tenantId = :tenantId AND a.id = :id")
+    Optional<PromoAd> findForUpdate(@Param("tenantId") UUID tenantId, @Param("id") UUID id);
+
+    /** A business's ads in one approval state, row-locked (a promoter's business edit sends APPROVED ones back). */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            SELECT a FROM PromoAd a
+            WHERE a.tenantId = :tenantId AND a.businessId = :businessId AND a.approvalStatus = :status
+            ORDER BY a.id
+            """)
+    List<PromoAd> findForUpdateByBusinessAndStatus(@Param("tenantId") UUID tenantId,
+                                                   @Param("businessId") UUID businessId,
+                                                   @Param("status") PromoApprovalStatus status);
 
     /**
      * Ad counts for a page of businesses, as {@code [businessId, count]}.
