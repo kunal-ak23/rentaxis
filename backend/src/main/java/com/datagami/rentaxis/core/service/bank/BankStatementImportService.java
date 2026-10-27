@@ -987,21 +987,18 @@ public class BankStatementImportService {
     static Optional<String> movedWarning(List<StatementMapper.Row> rows, List<String> hashes, Map<String, BigDecimal> moved,
                                          Map<String, StoredLine> storedByHash) {
         if (moved.isEmpty()) return Optional.empty();
-        LocalDate from = null, to = null;
-        BigDecimal by = null;
+        // #438 review: each line's own shift — two back-values move later lines by different amounts.
+        List<String> each = new ArrayList<>();
         for (int i = 0; i < rows.size(); i++) {
             if (!moved.containsKey(hashes.get(i))) continue;
-            LocalDate d = rows.get(i).txnDate();
-            if (from == null) {
-                from = d;
-                by = moved.get(hashes.get(i)).subtract(storedByHash.get(hashes.get(i)).balance());
-            }
-            to = d;
+            each.add(dmy(rows.get(i).txnDate()) + " " + rows.get(i).description() + " by "
+                    + StatementValues.money(moved.get(hashes.get(i)).subtract(storedByHash.get(hashes.get(i)).balance())));
         }
-        return Optional.of(moved.size() + " line(s) already imported (" + dmy(from) + (from.equals(to) ? "" : " to " + dmy(to))
-                + ") carry a running balance the bank has since moved by " + StatementValues.money(by)
-                + ": the bank added a line dated before them after they were imported (a back-valued line). They were "
-                + "taken as the same lines, not stored again, and now carry this statement's balances.");
+        String list = each.size() > 20 ? String.join("; ", each.subList(0, 20)) + "; and " + (each.size() - 20) + " more"
+                : String.join("; ", each);
+        return Optional.of(moved.size() + " line(s) already imported carry a running balance the bank has since moved ("
+                + list + "): the bank added a line dated before them after they were imported (a back-valued line). They "
+                + "were taken as the same lines, not stored again, and now carry this statement's balances.");
     }
 
     private static String dmy(LocalDate d) {

@@ -1088,4 +1088,21 @@ class StatementOrderPropertyTest {
                 new StatementMapper.Row(2, d2, d2, "FEE", null, null, new BigDecimal("-5.00"), new BigDecimal("990.00")));
         assertThat(BankStatementImportService.match(BANK, head, part).duplicates()).isEmpty();
     }
+
+    /** #438 review: the moved-balance warning gives each line's own shift. */
+    @Test
+    void theMovedWarningGivesEachLinesShift() {
+        LocalDate d2 = DAYS[1], d3 = DAYS[2];
+        List<StatementMapper.Row> rows = List.of(
+                new StatementMapper.Row(1, d2, d2, "FEE", null, null, new BigDecimal("-5.00"), new BigDecimal("975.00")),
+                new StatementMapper.Row(2, d3, d3, "RENT", null, null, new BigDecimal("50.00"), new BigDecimal("990.00")));
+        Map<String, BankStatementImportService.StoredLine> stored = Map.of(
+                "A", new BankStatementImportService.StoredLine("A", new BigDecimal("-5.00"), "FEE", new BigDecimal("995.00")),
+                "B", new BankStatementImportService.StoredLine("B", new BigDecimal("50.00"), "RENT", new BigDecimal("1045.00")));
+        Map<String, BigDecimal> moved = new LinkedHashMap<>();
+        moved.put("A", new BigDecimal("975.00"));
+        moved.put("B", new BigDecimal("990.00"));
+        String w = BankStatementImportService.movedWarning(rows, List.of("A", "B"), moved, stored).orElseThrow();
+        assertThat(w).contains("10/09/2026 FEE by -20.00").contains("11/09/2026 RENT by -55.00");
+    }
 }

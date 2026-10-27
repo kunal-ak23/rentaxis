@@ -1935,7 +1935,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(lineCount()).isEqualTo(before + 1);
         assertThat(jdbc.queryForObject("select count(*) from bank_statement_lines where bank_account_id = ? and description = 'SMS CHARGE'",
                 Integer.class, ei.getId())).as("two identical genuine lines stay two").isEqualTo(2);
-        assertThat(res.warnings()).anyMatch(w -> w.contains("moved by -20.00"));
+        assertThat(res.warnings()).anyMatch(w -> w.contains("FEE C by -20.00") && w.contains("SMS CHARGE by -20.00"));
         assertThat(jdbc.queryForList("select running_balance from bank_statement_lines where bank_account_id = ? "
                 + "and txn_date between ? and ? order by txn_date, seq", BigDecimal.class, ei.getId(), AUG_31, SEP_10))
                 .extracting(BigDecimal::toPlainString)
@@ -2001,10 +2001,12 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 """);
         assertThat(dayRows()).contains("2026-09-10:true:false");
         // After the back-value: 10/09 is CREDIT B 1,020, SMS 1,015 (new), SMS 1,010, FEE C 1,000; 11/09 FEE D 995.
-        assertThat(importText("""
+        // (That the cut export's new SMS charge is taken for the stored one is the known gap S25-P1,
+        // pinned by the disabled test below; here it only sets the stage.)
+        importText("""
                 10/09/2026,10/09/2026,CREDIT B,,,10.00,"1,020.00"
                 10/09/2026,10/09/2026,SMS CHARGE,,5.00,,"1,015.00"
-                """).linesNew()).isZero();
+                """);
         BankRecDTOs.ImportResult eleventh = importText("""
                 11/09/2026,11/09/2026,FEE D,,5.00,,995.00
                 """);
@@ -2028,6 +2030,84 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 new BankRecDTOs.DayTotalInput(LocalDate.of(2026, 9, 11), new BigDecimal("5.00"), BigDecimal.ZERO))));
         assertThat(r.dayTotalsVerdict()).isEqualTo("DISAGREE");
         assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("a line is missing");
+    }
+
+    /**
+     * Known gap S25-P1 (pre-existing, #438 review): 10/09 is settled; the bank inserts an SMS
+     * charge in front of an identical one, and an export of 10/09 is cut right after it. The
+     * correct outcome is that the inserted charge is stored (or the import refused); today
+     * S20-03's "same lines again" rule takes it for the stored charge and stores nothing.
+     */
+    @Test
+    @org.junit.jupiter.api.Disabled("known gap S25-P1: sameLinesAgain drops a line inserted before an identical one on a settled day — follow-up PR")
+    void aLineInsertedBeforeAnIdenticalOneOnASettledDayIsStored() {
+        jv(AUG_31, marinaBank, "1000.00");
+        importText("""
+                09/09/2026,09/09/2026,CREDIT A,,,10.00,"1,010.00"
+                10/09/2026,10/09/2026,CREDIT B,,,10.00,"1,020.00"
+                10/09/2026,10/09/2026,SMS CHARGE,,5.00,,"1,015.00"
+                10/09/2026,10/09/2026,FEE C,,10.00,,"1,005.00"
+                11/09/2026,11/09/2026,FEE D,,5.00,,"1,000.00"
+                """);
+        BankRecDTOs.ImportResult cut = importText("""
+                10/09/2026,10/09/2026,CREDIT B,,,10.00,"1,020.00"
+                10/09/2026,10/09/2026,SMS CHARGE,,5.00,,"1,015.00"
+                """);
+        assertThat(cut.linesNew()).as("the inserted SMS charge is stored").isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from bank_statement_lines where bank_account_id = ? "
+                + "and description = 'SMS CHARGE'", Integer.class, ei.getId())).isEqualTo(2);
+    }
+
+    /**
+     * #438 review: the whole-then-delete remedy never tells the user to delete an import that
+     * cannot be deleted. August holds a one-day import of 31/08 (it owns FEE B) and is
+     * finalized; September's exports start on 31/08 and split 14/09. The statement named runs
+     * from 31/08, so the imports to delete are named one by one — the 31/08 import, inside the
+     * finalized month, is not among them — and each named one deletes.
+     */
+    @Test
+    void theWholeThenDeleteRemedyNamesOnlyImportsThatCanBeDeleted() {
+        jv(LocalDate.of(2026, 7, 31), marinaBank, "1000.00");
+        importText("""
+                03/08/2026,03/08/2026,FEE A,,5.00,,995.00
+                """);
+        BankRecDTOs.ImportResult boundary = imports.importFile(ei.getId(), "aug-31.csv", (HEAD + """
+                31/08/2026,31/08/2026,FEE B,,5.00,,990.00
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        book("FEE A", "CHARGE");
+        book("FEE B", "CHARGE");
+        UUID aug = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(AUG_1, AUG_31, new BigDecimal("1000.00"),
+                new BigDecimal("990.00"))).id();
+        assertThat(recs.finalizeRec(aug).status()).isEqualTo("FINALIZED");
+        BankRecDTOs.ImportResult a = imports.importFile(ei.getId(), "sep-a.csv", (HEAD + """
+                31/08/2026,31/08/2026,FEE B,,5.00,,990.00
+                10/09/2026,10/09/2026,FEE C,,5.00,,985.00
+                14/09/2026,14/09/2026,FEE D,,5.00,,980.00
+                14/09/2026,14/09/2026,FEE E,,5.00,,975.00
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        BankRecDTOs.ImportResult b = imports.importFile(ei.getId(), "sep-b.csv", (HEAD + """
+                14/09/2026,14/09/2026,FEE E,,5.00,,975.00
+                14/09/2026,14/09/2026,FEE F,,5.00,,970.00
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        for (String d : List.of("FEE C", "FEE D", "FEE E", "FEE F")) book(d, "CHARGE");
+        UUID id = recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
+        String msg = check(recs.get(id), "LINE_ORDER").message();
+        assertThat(msg).contains("import one statement that runs from 31/08/2026 to 14/09/2026")
+                .contains("then delete these imports: sep-a.csv (31/08/2026–14/09/2026), sep-b.csv (14/09/2026–14/09/2026)")
+                .doesNotContain("aug-31.csv").doesNotContain("every import dated inside");
+        importText("""
+                31/08/2026,31/08/2026,FEE B,,5.00,,990.00
+                10/09/2026,10/09/2026,FEE C,,5.00,,985.00
+                14/09/2026,14/09/2026,FEE D,,5.00,,980.00
+                14/09/2026,14/09/2026,FEE E,,5.00,,975.00
+                14/09/2026,14/09/2026,FEE F,,5.00,,970.00
+                """);
+        imports.delete(a.importId());
+        imports.delete(b.importId());
+        assertThatThrownBy(() -> imports.delete(boundary.importId())).hasMessageContaining("cannot be deleted");
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        assertThat(r.unprovenDays()).isEmpty();
+        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
     }
 
     /**
