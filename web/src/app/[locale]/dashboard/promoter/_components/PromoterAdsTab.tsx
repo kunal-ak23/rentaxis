@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Loader2 } from "lucide-react";
 import { Pagination } from "@/components/ui/Pagination";
+import { Toast, useToast } from "@/components/ui/Toast";
 import {
     ApiError, createPromoterAd, deletePromoterAd, fetchPromoterAds, updatePromoterAd,
 } from "@/lib/api/promoter";
@@ -37,6 +38,8 @@ export function PromoterAdsTab({ businesses, properties }: PromoterAdsTabProps) 
     const [error, setError] = useState<string | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
     const [editing, setEditing] = useState<PromoAdDTO | null | undefined>(undefined);
+    const [busy, setBusy] = useState(false);
+    const { toast, showToast } = useToast();
 
     const requestIdRef = useRef(0);
 
@@ -76,19 +79,24 @@ export function PromoterAdsTab({ businesses, properties }: PromoterAdsTabProps) 
     }
 
     async function remove(row: PromoAdDTO) {
-        if (!window.confirm(t("confirmDeleteAd", { name: row.titleEn ?? row.titleAr ?? "" }))) return;
+        if (!window.confirm(t("confirmDeleteAd"))) return;
+        setBusy(true);
         try {
-            await deletePromoterAd(row.id);
+            // Always succeeds: an ad nothing has seen is deleted; one with view
+            // history is archived, which hides it from this list too.
+            const outcome = await deletePromoterAd(row.id);
+            setNotice(null);
+            setError(null);
+            showToast(t(outcome === "ARCHIVED" ? "toastArchived" : "toastDeleted"));
+            const lastPage = Math.max(0, Math.ceil((total - 1) / PAGE_SIZE) - 1);
+            const next = Math.min(page, lastPage);
+            setPage(next);
+            await load(next, businessId);
         } catch (e) {
-            // An ad with view history cannot be deleted (a 400 with the reason).
             setError(e instanceof ApiError ? e.message : t("saveError"));
-            return;
+        } finally {
+            setBusy(false);
         }
-        setNotice(null);
-        const lastPage = Math.max(0, Math.ceil((total - 1) / PAGE_SIZE) - 1);
-        const next = Math.min(page, lastPage);
-        setPage(next);
-        await load(next, businessId);
     }
 
     if (editing !== undefined) {
@@ -175,7 +183,8 @@ export function PromoterAdsTab({ businesses, properties }: PromoterAdsTabProps) 
                                     <td className="text-end whitespace-nowrap">
                                         <button type="button" className="me-3 underline"
                                             onClick={() => { setNotice(null); setError(null); setEditing(row); }}>{t("edit")}</button>
-                                        <button type="button" className="text-red-600 underline"
+                                        <button type="button" disabled={busy}
+                                            className="text-red-600 underline disabled:opacity-40"
                                             onClick={() => void remove(row)}>{t("delete")}</button>
                                     </td>
                                 </tr>
@@ -191,6 +200,8 @@ export function PromoterAdsTab({ businesses, properties }: PromoterAdsTabProps) 
                 itemsPerPage={PAGE_SIZE}
                 onPageChange={p => setPage(p - 1)}
             />
+
+            <Toast toast={toast} />
         </div>
     );
 }

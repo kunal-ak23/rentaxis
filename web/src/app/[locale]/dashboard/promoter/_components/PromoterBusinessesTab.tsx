@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { Pagination } from "@/components/ui/Pagination";
+import { Toast, useToast } from "@/components/ui/Toast";
 import {
-    ApiError, createPromoterBusiness, updatePromoterBusiness,
+    ApiError, createPromoterBusiness, deletePromoterBusiness, updatePromoterBusiness,
 } from "@/lib/api/promoter";
 import type { PromoBusinessDTO, PromoBusinessRequest } from "@/types/promotion";
 import { BusinessEditor } from "../../promotions/_components/BusinessEditor";
@@ -34,6 +35,8 @@ export function PromoterBusinessesTab({ businesses, canCreate, onChanged }: Prom
     const [editing, setEditing] = useState<PromoBusinessDTO | null | undefined>(undefined);
     const [error, setError] = useState<string | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
+    const [busy, setBusy] = useState(false);
+    const { toast, showToast } = useToast();
 
     async function save(body: PromoBusinessRequest) {
         const wasEdit = Boolean(editing);
@@ -49,6 +52,24 @@ export function PromoterBusinessesTab({ businesses, canCreate, onChanged }: Prom
             await onChanged();
         } catch (e) {
             setError(e instanceof ApiError ? e.message : t("saveError"));
+        }
+    }
+
+    async function remove(row: PromoBusinessDTO) {
+        // The same sentence the admin gets: a business with ads is archived with
+        // them, and only an administrator can bring it back.
+        if (!window.confirm(t("confirmDeleteBusiness"))) return;
+        setBusy(true);
+        try {
+            const outcome = await deletePromoterBusiness(row.id);
+            setNotice(null);
+            setError(null);
+            showToast(t(outcome === "ARCHIVED" ? "toastArchived" : "toastDeleted"));
+            await onChanged();
+        } catch (e) {
+            setError(e instanceof ApiError ? e.message : t("saveError"));
+        } finally {
+            setBusy(false);
         }
     }
 
@@ -114,9 +135,16 @@ export function PromoterBusinessesTab({ businesses, canCreate, onChanged }: Prom
                                 <td>{row.adCount}</td>
                                 <td>{row.active ? "✓" : "—"}</td>
                                 <td className="text-end">
+                                    {/* Edit and delete are the create switch's too: a promoter who cannot
+                                        create businesses cannot change or remove them either. */}
                                     {canCreate && (
-                                        <button type="button" className="underline"
-                                            onClick={() => { setNotice(null); setError(null); setEditing(row); }}>{t("edit")}</button>
+                                        <>
+                                            <button type="button" className="me-3 underline"
+                                                onClick={() => { setNotice(null); setError(null); setEditing(row); }}>{t("edit")}</button>
+                                            <button type="button" disabled={busy}
+                                                className="text-red-600 underline disabled:opacity-40"
+                                                onClick={() => void remove(row)}>{t("delete")}</button>
+                                        </>
                                     )}
                                 </td>
                             </tr>
@@ -131,6 +159,8 @@ export function PromoterBusinessesTab({ businesses, canCreate, onChanged }: Prom
                 itemsPerPage={PAGE_SIZE}
                 onPageChange={p => setPage(p - 1)}
             />
+
+            <Toast toast={toast} />
         </div>
     );
 }

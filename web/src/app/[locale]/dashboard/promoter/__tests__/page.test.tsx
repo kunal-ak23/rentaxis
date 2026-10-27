@@ -265,3 +265,102 @@ describe('promoter portal', () => {
         expect(api.calls).toHaveLength(0)
     })
 })
+
+/** Addendum B: delete always works for a promoter too (hard delete or archive), through their own endpoints. */
+describe('promoter portal — delete', () => {
+    let confirm: ReturnType<typeof vi.spyOn>
+    beforeEach(() => {
+        confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    })
+
+    it.each([
+        ['DELETED', 'Deleted'],
+        ['ARCHIVED', 'Archived'],
+    ])('deletes an ad and toasts "%s" from the outcome', async (outcome, text) => {
+        plan()
+        api.on('DELETE', `${PROMOTER_API}ads/live`, { body: { outcome } })
+        renderPortal()
+        await screen.findByText('Ad live')
+        const loads = api.callsTo('GET', `${PROMOTER_API}ads`).length
+
+        fireEvent.click(within(rowOf('Ad live')).getByRole('button', { name: 'Delete' }))
+
+        expect(await screen.findByTestId('toast')).toHaveTextContent(text)
+        expect(confirm).toHaveBeenCalledWith(
+            'Delete this ad? If tenants have already seen it, it is archived instead so its view history is kept.')
+        expect(api.callsTo('DELETE', `${PROMOTER_API}ads/live`)).toHaveLength(1)
+        await waitFor(() => expect(api.callsTo('GET', `${PROMOTER_API}ads`).length).toBeGreaterThan(loads))
+    })
+
+    it('sends nothing when the promoter cancels, and shows the server\'s message when a delete fails', async () => {
+        plan()
+        renderPortal()
+        await screen.findByText('Ad live')
+        confirm.mockReturnValueOnce(false)
+        fireEvent.click(within(rowOf('Ad live')).getByRole('button', { name: 'Delete' }))
+        expect(api.callsTo('DELETE', PROMOTER_API)).toHaveLength(0)
+
+        api.on('DELETE', `${PROMOTER_API}ads/live`, { status: 404, body: { message: 'Ad not found' } })
+        fireEvent.click(within(rowOf('Ad live')).getByRole('button', { name: 'Delete' }))
+        expect(await screen.findByRole('alert')).toHaveTextContent('Ad not found')
+        expect(screen.queryByTestId('toast')).not.toBeInTheDocument()
+    })
+
+    it('has no archived list and no Restore: restoring is the administrator\'s', async () => {
+        plan({ canCreate: true })
+        renderPortal()
+        await screen.findByText('Ad live')
+        expect(screen.queryByRole('checkbox', { name: 'Show archived' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: /Restore/ })).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('tab', { name: 'Businesses' }))
+        await screen.findByText('Sparkle Laundry')
+        expect(screen.queryByRole('checkbox', { name: 'Show archived' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: /Restore/ })).not.toBeInTheDocument()
+    })
+
+    describe('businesses', () => {
+        async function openBusinesses(canCreate: boolean) {
+            plan({ canCreate })
+            renderPortal()
+            await screen.findByText('Ad live')
+            fireEvent.click(screen.getByRole('tab', { name: 'Businesses' }))
+            return (await screen.findByText('Sparkle Laundry')).closest('tr') as HTMLElement
+        }
+
+        it('cannot be deleted without the can-create switch', async () => {
+            const row = await openBusinesses(false)
+            expect(within(row).queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+            expect(api.callsTo('DELETE', `${PROMOTER_API}businesses`)).toHaveLength(0)
+        })
+
+        it.each([
+            ['DELETED', 'Deleted'],
+            ['ARCHIVED', 'Archived'],
+        ])('can be deleted with it, toasting "%s" from the outcome and reloading the list', async (outcome, text) => {
+            const row = await openBusinesses(true)
+            api.on('DELETE', `${PROMOTER_API}businesses/b-1`, { body: { outcome } })
+            const loads = api.callsTo('GET', `${PROMOTER_API}businesses`).length
+
+            fireEvent.click(within(row).getByRole('button', { name: 'Delete' }))
+
+            expect(await screen.findByTestId('toast')).toHaveTextContent(text)
+            expect(confirm).toHaveBeenCalledWith(
+                'Delete this business? If it has ads, it is archived instead so its history is kept, and its ads are archived too.')
+            expect(api.callsTo('DELETE', `${PROMOTER_API}businesses/b-1`)).toHaveLength(1)
+            await waitFor(() => expect(api.callsTo('GET', `${PROMOTER_API}businesses`).length).toBeGreaterThan(loads))
+        })
+
+        it('sends nothing when cancelled, and shows the server\'s refusal', async () => {
+            const row = await openBusinesses(true)
+            confirm.mockReturnValueOnce(false)
+            fireEvent.click(within(row).getByRole('button', { name: 'Delete' }))
+            expect(api.callsTo('DELETE', `${PROMOTER_API}businesses`)).toHaveLength(0)
+
+            api.on('DELETE', `${PROMOTER_API}businesses/b-1`, { status: 403, body: { message: 'You cannot create businesses' } })
+            fireEvent.click(within(row).getByRole('button', { name: 'Delete' }))
+            expect(await screen.findByRole('alert')).toHaveTextContent('You cannot create businesses')
+            expect(screen.queryByTestId('toast')).not.toBeInTheDocument()
+        })
+    })
+})
+
