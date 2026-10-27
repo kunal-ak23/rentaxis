@@ -14,6 +14,7 @@ import {
 } from "./RedirectLinkFields";
 import {
     PROMO_CTA_TYPES,
+    isPromoterAd,
     REDIRECT_PARAM_VALUE_MAX,
     REDIRECT_URL_MAX,
     type PromoAdDTO,
@@ -126,8 +127,9 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel, mode = 
     const isPromoter = mode === "promoter";
     // An ad a promoter wrote stays a promoter ad when an admin edits it: the server
     // still refuses one that targets no property (it would otherwise mean "every
-    // property", which a promoter ad can never mean).
-    const promoterWritten = !isPromoter && Boolean(ad?.submittedByName);
+    // property", which a promoter ad can never mean). It stays one after the promoter
+    // is removed too, when the name is gone; hence `writtenByPromoter` first.
+    const promoterWritten = !isPromoter && ad != null && isPromoterAd(ad);
     const needsProperty = isPromoter || promoterWritten;
 
     const [businessId, setBusinessId] = useState(ad?.businessId ?? businesses[0]?.id ?? "");

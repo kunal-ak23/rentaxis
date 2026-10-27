@@ -175,6 +175,34 @@ describe('AdEditor — an ad a promoter wrote, edited by an admin', () => {
         expect(onSave.mock.calls[0][0].propertyIds).toEqual([])
     })
 
+    it('still treats it as a promoter ad after the promoter was removed (the name is gone, writtenByPromoter is not)', () => {
+        const onSave = renderAdmin(promoterAd({ submittedByName: null, writtenByPromoter: true, propertyIds: [] }))
+        expect(screen.getByText("Promoter ads must target at least one of the promoter's properties.")).toBeInTheDocument()
+        fireEvent.click(save())
+        expect(screen.getByRole('alert')).toHaveTextContent(en.Promoter.propertyRequired)
+        expect(onSave).not.toHaveBeenCalled()
+        fireEvent.click(screen.getByLabelText('Palm Tower'))
+        fireEvent.click(save())
+        expect(onSave).toHaveBeenCalledTimes(1)
+    })
+
+    it('trusts writtenByPromoter over the name when the backend sends it', () => {
+        // A name on an ad the backend says no promoter wrote: an admin ad, free to target everyone.
+        const onSave = renderAdmin(promoterAd({ submittedByName: 'Pat Promoter', writtenByPromoter: false, propertyIds: [] }))
+        expect(screen.getByText(en.Promotions.targetingAll)).toBeInTheDocument()
+        fireEvent.click(save())
+        expect(onSave).toHaveBeenCalledTimes(1)
+    })
+
+    it('falls back to the name when the backend does not send writtenByPromoter at all', () => {
+        const ad = promoterAd({ propertyIds: [] })
+        expect('writtenByPromoter' in ad).toBe(false)
+        const onSave = renderAdmin(ad)
+        fireEvent.click(save())
+        expect(onSave).not.toHaveBeenCalled()
+        expect(screen.getByRole('alert')).toHaveTextContent(en.Promoter.propertyRequired)
+    })
+
     it('does not apply to a new admin ad', () => {
         const onSave = renderAdmin(null)
         fireEvent.change(screen.getByLabelText('Title (English)'), { target: { value: 'Offer' } })

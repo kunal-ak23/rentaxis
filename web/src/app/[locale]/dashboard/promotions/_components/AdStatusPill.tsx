@@ -7,6 +7,7 @@ const STATUS_CLASSES: Record<AdDisplayStatus, string> = {
     PENDING: "bg-amber-50 text-amber-800",
     REJECTED: "bg-red-50 text-red-700",
     ARCHIVED: "bg-gray-100 text-gray-600",
+    PROMOTER_REMOVED: "bg-gray-100 text-gray-600",
     LIVE: "bg-green-50 text-green-700",
     SCHEDULED: "bg-blue-50 text-blue-700",
     EXPIRED: "bg-gray-100 text-gray-600",
