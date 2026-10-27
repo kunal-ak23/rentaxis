@@ -2,10 +2,10 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("next-intl", async () => (await import("@/test/intlMock")).englishIntl());
 vi.mock("@/components/finance/useNameLookup", () => ({
-    useNameLookup: () => ({ options: [{ id: "p1", label: "Belle Vue" }, { id: "p2", label: "Marina" }], name: () => "", loading: false }),
+    useNameLookup: () => ({ options: [{ id: "p1", label: "Sample Vista" }, { id: "p2", label: "Marina" }], name: () => "", loading: false }),
 }));
 const accounts = [
-    { id: "a", code: "1101", name: "Belle Vue bank", alias: null, group: false, active: true, accountType: "ASSET", accountSubType: null, propertyId: "p1" },
+    { id: "a", code: "1101", name: "Sample Vista bank", alias: null, group: false, active: true, accountType: "ASSET", accountSubType: null, propertyId: "p1" },
 ];
 vi.mock("@/components/finance/AccountPicker", async orig => {
     const m = await orig<typeof import("@/components/finance/AccountPicker")>();
@@ -62,7 +62,7 @@ describe("General Ledger filters — unit scope", () => {
 
     it("sends the picked unit id up through onChange", async () => {
         api.searchUnits.mockResolvedValue([
-            { id: "u1", unitNumber: "101", propertyId: "p1", propertyName: "Belle Vue", propertyType: "RESIDENTIAL", buildingId: null, buildingName: null, status: "VACANT" },
+            { id: "u1", unitNumber: "101", propertyId: "p1", propertyName: "Sample Vista", propertyType: "RESIDENTIAL", buildingId: null, buildingName: null, status: "VACANT" },
         ]);
         const onChange = vi.fn();
         render(<LedgerFilters value={{ from: "2026-01-01", to: "2026-06-30", propertyId: "p1" }} onChange={onChange}

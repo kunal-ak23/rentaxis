@@ -13,7 +13,7 @@ void main() {
           onPressed: () async {
             result = await showOrganisationPicker(context, const [
               {'tenantId': 't-a', 'tenantName': 'Palm Ridge'},
-              {'tenantId': 't-b', 'tenantName': 'Al Ashram'},
+              {'tenantId': 't-b', 'tenantName': 'Miftah Demo'},
             ], ar: ar);
           },
           child: const Text('open'),
@@ -23,7 +23,7 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     expect(find.text('Palm Ridge'), findsOneWidget);
-    expect(find.text('Al Ashram'), findsOneWidget);
+    expect(find.text('Miftah Demo'), findsOneWidget);
     expect(find.text(ar ? 'اختر المؤسسة' : 'Choose an organisation'), findsOneWidget);
     if (tap != null) {
       await tester.tap(find.text(tap));
@@ -35,7 +35,7 @@ void main() {
   }
 
   testWidgets('returns the organisation picked', (tester) async {
-    expect(await pick(tester, ar: false, tap: 'Al Ashram'), 't-b');
+    expect(await pick(tester, ar: false, tap: 'Miftah Demo'), 't-b');
   });
 
   testWidgets('Arabic title, same choice', (tester) async {

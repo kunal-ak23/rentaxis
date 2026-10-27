@@ -121,9 +121,9 @@ class RevenueRecognitionJobIT extends AbstractPostgresIT {
     @BeforeEach
     void setUp() {
         alpha = newTenant();
-        alphaLease = postGalahLease(alpha);
+        alphaLease = postSampleResidencesLease(alpha);
         beta = newTenant();
-        betaLease = postGalahLease(beta);
+        betaLease = postSampleResidencesLease(beta);
         assertThat(alpha.tenantId()).isNotEqualTo(beta.tenantId());
     }
 
@@ -141,7 +141,7 @@ class RevenueRecognitionJobIT extends AbstractPostgresIT {
     }
 
     /** 51,000 of rent over the client's 365-day term plus a 2,000 admin fee, on the books. */
-    private UUID postGalahLease(LeaseTestFixtures f) {
+    private UUID postSampleResidencesLease(LeaseTestFixtures f) {
         return f.postedLease(CONTRACT_DATE, START, END,
                 List.of(line("RENT", "51000"), line("ADMIN_FEE", "2000")), 4, null)
                 .lease().getId();

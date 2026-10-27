@@ -42,7 +42,7 @@ beforeEach(() => {
             return new Response("{}", { status: 200 });
         }
         const body = url.endsWith("/v1/properties/p1")
-            ? { id: "p1", nameEn: "Belle Vue", emirate: "DUBAI", type: "RESIDENTIAL" }
+            ? { id: "p1", nameEn: "Sample Vista", emirate: "DUBAI", type: "RESIDENTIAL" }
             : [];
         return new Response(JSON.stringify(body), { status: 200 });
     }) as unknown as typeof fetch;

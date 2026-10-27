@@ -4,7 +4,7 @@ import { seed } from './context.mjs';
 export const towerId = seed.properties?.tower;
 export const towerName = seed.properties?.towerName
   || process.env.TUTORIAL_TOWER_NAME
-  || 'Al Ashram Residence Tower';
+  || 'Sandbox Residence Tower';
 export const ahmedLeaseId = seed.leases?.ahmed;
 export const saraLeaseId = seed.leases?.sara;
 export const ticketId = seed.ticketId;

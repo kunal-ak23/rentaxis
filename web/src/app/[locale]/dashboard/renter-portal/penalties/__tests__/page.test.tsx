@@ -22,7 +22,7 @@ import RenterPenaltiesPage from "../page";
 function assessment(over: Partial<PenaltyAssessment> = {}): PenaltyAssessment {
     return {
         id: "pen-1", leaseId: "lease-1", chequeId: "c1", chequeNumber: "000101",
-        renterId: "r1", renterName: "Tenant", propertyId: "p1", propertyName: "L'Olivier",
+        renterId: "r1", renterName: "Tenant", propertyId: "p1", propertyName: "Sample Heights",
         reason: "LATE_PAYMENT", amount: 250, description: "Rent cleared 12 days late",
         status: "APPROVED", proposedBy: "system", proposedAt: "2026-02-01",
         approvedBy: "u1", approvedAt: "2026-02-03", journalId: "j1",

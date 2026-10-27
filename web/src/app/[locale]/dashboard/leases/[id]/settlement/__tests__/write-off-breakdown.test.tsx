@@ -49,7 +49,7 @@ vi.mock("@/lib/api/badDebts", async orig => {
 import SettlementPage from "../page";
 
 const LEASE = {
-    id: "lease-1", unitId: "u1", renterId: "r1", unitIdentifier: "204", renterName: "Prabhjot Singh",
+    id: "lease-1", unitId: "u1", renterId: "r1", unitIdentifier: "204", renterName: "Sample Renter One",
     startDate: "2026-01-01", endDate: "2026-12-31", status: "TERMINATED", propertyId: "p1",
     rentAmount: 120000, depositAmount: 10000, terminatedOn: "2026-06-30", lines: [],
 } as unknown as LeaseDetail;

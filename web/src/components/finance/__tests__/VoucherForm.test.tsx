@@ -73,8 +73,8 @@ type MockUnitOption = {
     propertyType: string | null; buildingId: string | null; buildingName: string | null; status: string | null;
 };
 const UNIT_OPTIONS: Record<string, MockUnitOption> = {
-    "unit-a1": { id: "unit-a1", unitNumber: "A-101", propertyId: "prop-1", propertyName: "L'Olivier", propertyType: null, buildingId: null, buildingName: null, status: null },
-    "unit-a2": { id: "unit-a2", unitNumber: "A-102", propertyId: "prop-1", propertyName: "L'Olivier", propertyType: null, buildingId: null, buildingName: null, status: null },
+    "unit-a1": { id: "unit-a1", unitNumber: "A-101", propertyId: "prop-1", propertyName: "Sample Heights", propertyType: null, buildingId: null, buildingName: null, status: null },
+    "unit-a2": { id: "unit-a2", unitNumber: "A-102", propertyId: "prop-1", propertyName: "Sample Heights", propertyType: null, buildingId: null, buildingName: null, status: null },
     "unit-b1": { id: "unit-b1", unitNumber: "B-201", propertyId: "prop-2", propertyName: "Marina Heights", propertyType: null, buildingId: null, buildingName: null, status: null },
 };
 const lookup = vi.hoisted(() => ({ searchUnits: vi.fn(), searchRenters: vi.fn(), unitNames: vi.fn(), renterNames: vi.fn() }));
@@ -182,13 +182,13 @@ const VENDORS = [
 
 /** `GET /v1/properties` returns portfolio-summary rows that wrap the property. */
 const PROPERTIES = [
-    { property: { id: "prop-1", nameEn: "L'Olivier", nameAr: "لوليفييه" } },
+    { property: { id: "prop-1", nameEn: "Sample Heights", nameAr: "سامبل هايتس" } },
     { property: { id: "prop-2", nameEn: "Marina Heights", nameAr: "مرسى هايتس" } },
 ];
 
 const UNITS = [
-    { id: "unit-a1", unitNumber: "A-101", property: { id: "prop-1", nameEn: "L'Olivier" } },
-    { id: "unit-a2", unitNumber: "A-102", property: { id: "prop-1", nameEn: "L'Olivier" } },
+    { id: "unit-a1", unitNumber: "A-101", property: { id: "prop-1", nameEn: "Sample Heights" } },
+    { id: "unit-a2", unitNumber: "A-102", property: { id: "prop-1", nameEn: "Sample Heights" } },
     { id: "unit-b1", unitNumber: "B-201", property: { id: "prop-2", nameEn: "Marina Heights" } },
 ];
 
@@ -1176,7 +1176,7 @@ describe("VoucherForm — line property", () => {
         fireEvent.change(screen.getByTestId("vendor"), { target: { value: "ven-1" } });
         fillInvoiceNumber();
         fillLine(0, "100", "0");
-        await waitFor(() => expect(screen.getAllByRole("option", { name: "L'Olivier" }).length).toBeGreaterThan(0));
+        await waitFor(() => expect(screen.getAllByRole("option", { name: "Sample Heights" }).length).toBeGreaterThan(0));
         fireEvent.change(screen.getByTestId("line-property-0"), { target: { value: "prop-1" } });
         await waitFor(() => expect(screen.getByTestId("post-voucher")).toBeEnabled());
         fireEvent.click(screen.getByTestId("save-draft"));
@@ -1510,7 +1510,7 @@ describe("VoucherForm — supplier AP (finance-ops spec §2)", () => {
     it("re-derives the header property from the lines until it is chosen by hand", async () => {
         renderForm();
         await screen.findByTestId("line-amount-0");
-        await waitFor(() => expect(screen.getAllByRole("option", { name: "L'Olivier" }).length).toBeGreaterThan(0));
+        await waitFor(() => expect(screen.getAllByRole("option", { name: "Sample Heights" }).length).toBeGreaterThan(0));
         fireEvent.change(screen.getByTestId("line-property-0"), { target: { value: "prop-1" } });
         await waitFor(() => expect(screen.getByTestId("property")).toHaveValue("prop-1"));
         fireEvent.change(screen.getByTestId("line-property-0"), { target: { value: "prop-2" } });
@@ -1540,7 +1540,7 @@ describe("VoucherForm — supplier AP (finance-ops spec §2)", () => {
 
 describe("VoucherForm — deposit refund (F14-36)", () => {
     const REFUND = {
-        settlementId: "stl-1", renterName: "Prabhjot Singh", unitLabel: "A-101", amount: 6164.38,
+        settlementId: "stl-1", renterName: "Sample Renter One", unitLabel: "A-101", amount: 6164.38,
     };
 
     beforeEach(() => {
@@ -1557,8 +1557,8 @@ describe("VoucherForm — deposit refund (F14-36)", () => {
         renderForm("BPV", { refundPrefill: REFUND });
         await waitFor(() => expect(screen.getByTestId("line-amount-0")).toHaveValue("6164.38"));
 
-        expect(screen.getByTestId("narration")).toHaveValue("Deposit refund – Prabhjot Singh – A-101");
-        expect(screen.getByTestId("refund-to")).toHaveTextContent("Refund to Prabhjot Singh");
+        expect(screen.getByTestId("narration")).toHaveValue("Deposit refund – Sample Renter One – A-101");
+        expect(screen.getByTestId("refund-to")).toHaveTextContent("Refund to Sample Renter One");
         expect(screen.queryByTestId("vendor")).not.toBeInTheDocument();
         // The line's account is locked to the resolved refund-payable leaf.
         expect(screen.getByTestId("account-picker")).toBeInTheDocument();

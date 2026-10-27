@@ -1,10 +1,12 @@
 # Accounting v2 — Plan 5: Seed, Golden Ledger Tests, Walkthrough — Implementation Plan
 
+> **Names in this document are placeholders.** Tenant, renter, building and contract-reference names were replaced with synthetic equivalents (issue #304); the figures, dates and document sequences are from the client's own exports.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Prove accounting v2 reproduces the client's own PACT General Ledger line for line by replaying their two real contracts through our API, then re-seed the demo tenant, the Playwright suites and the tutorial library on the v2 endpoints so nothing in the product demo or the recordings is still describing v1 finance.
 
-**Architecture:** Two Testcontainers integration tests (`GoldenLedgerLeBoulevardIT`, `GoldenLedgerGalah2IT`) drive the real services — seed chart of accounts, create a property, map the PACT account names, create a lease with lines + a cheque grid, post, walk the cheques through deposit/clear/bounce on the PACT dates, run recognition to a cut-off — and then diff `LedgerQueryService.renterLedger()` against CSV fixtures transcribed verbatim from the client's exports. Everything else in the plan hangs off the same v2 endpoints: the demo seed script, a dev Playwright spec, a production spec, four tutorial recordings, and a tenant feature flag that hides the untouched mobile finance screens until the web is stable.
+**Architecture:** Two Testcontainers integration tests (`GoldenLedgerSampleTowerIT`, `GoldenLedgerSampleResidences2IT`) drive the real services — seed chart of accounts, create a property, map the PACT account names, create a lease with lines + a cheque grid, post, walk the cheques through deposit/clear/bounce on the PACT dates, run recognition to a cut-off — and then diff `LedgerQueryService.renterLedger()` against CSV fixtures transcribed verbatim from the client's exports. Everything else in the plan hangs off the same v2 endpoints: the demo seed script, a dev Playwright spec, a production spec, four tutorial recordings, and a tenant feature flag that hides the untouched mobile finance screens until the web is stable.
 
 **Tech Stack:** Java 21, Spring Boot 4.0.3, JUnit 5 + Testcontainers (`postgres:16-alpine`), AssertJ; Python 3 + `requests` (`scripts/seed_demo_tenant.py`); Next.js 16 + TypeScript + Playwright (dev suite `web/e2e`, production suite `web/e2e-prod`, recorder `tutorials/capture/record-tutorial.mjs`); Flutter + Riverpod + GoRouter (mobile gating only).
 
@@ -173,8 +175,8 @@ The golden fixtures are PACT's own output. Three columns intentionally differ. E
 |---|---|---|---|---|
 | D-a | `CIL` amount | per-day rule: `rent ÷ actual term days`, monthly slice = day rate × actual days in the month, last slice absorbs the rounding | 30/360: `rent ÷ 12`, first month prorated by `days/30` | spec D10, §8.1, §8.2 — **client hard requirement** |
 | D-b | `CIL` entry date | `period_end` (30 Sep 2025, 31 Oct 2025 …, and the lease end date for the final slice) | the 1st of the following month (5 Sep 2025, 1 Oct 2025 …) | spec D13 |
-| D-c | PDC registration doc type | `PDR` for every contract | `IRV` on the LE BOULEVARD export, `PDR` on the GALAH 2 export — PACT is inconsistent between the two | spec §3 defines exactly one: `PDR`. The fixtures normalise `IRV` → `PDR`. |
-| D-d | Row order on an account that mixes dated and post-dated rows | strict `entry_date` order | PACT's GALAH 2 "Rent Receivable" report prints a main block then a separate "List Of PDCs / Receipts" sub-block, so its 11-09-2026 PDR appears *after* the 16-09-2026 TCO | presentational only. Totals, closing balance and the row set are identical; only the interleaving and therefore the running-balance column differ. The fixture carries our order with the running balances recomputed. |
+| D-c | PDC registration doc type | `PDR` for every contract | `IRV` on the SAMPLE TOWER export, `PDR` on the SAMPLE RESIDENCES 2 export — PACT is inconsistent between the two | spec §3 defines exactly one: `PDR`. The fixtures normalise `IRV` → `PDR`. |
+| D-d | Row order on an account that mixes dated and post-dated rows | strict `entry_date` order | PACT's SAMPLE RESIDENCES 2 "Rent Receivable" report prints a main block then a separate "List Of PDCs / Receipts" sub-block, so its 11-09-2026 PDR appears *after* the 16-09-2026 TCO | presentational only. Totals, closing balance and the row set are identical; only the interleaving and therefore the running-balance column differ. The fixture carries our order with the running balances recomputed. |
 
 Nothing else changes. `TCO` lines, one `PDR` per cheque row, `CRT` `Dr bank / Cr PDC`, `CBR` after clearing `Dr RENT_RECEIVABLE / Cr bank`, per-account running balances and the report total all match PACT exactly.
 
@@ -185,10 +187,10 @@ Nothing else changes. `TCO` lines, one `PDR` per cheque row, `CRT` `Dr bank / Cr
 **Backend — new**
 - `backend/src/test/java/com/datagami/rentaxis/golden/GoldenLedgerFixture.java` — the fixture records and the CSV loader. One responsibility: turn a CSV into typed expectations.
 - `backend/src/test/java/com/datagami/rentaxis/golden/LedgerDiff.java` — the comparator. One responsibility: produce a readable, aligned diff between expected and actual rows.
-- `backend/src/test/java/com/datagami/rentaxis/golden/GoldenLedgerLeBoulevardIT.java` — ISLAM MAMANOV / LE BOULEVARD replay.
-- `backend/src/test/java/com/datagami/rentaxis/golden/GoldenLedgerGalah2IT.java` — ANUM ISHTIAQ / GALAH 2 replay.
-- `backend/src/test/resources/golden/le-boulevard-ledger.csv`, `le-boulevard-recognition.csv`
-- `backend/src/test/resources/golden/galah2-ledger.csv`, `galah2-recognition.csv`
+- `backend/src/test/java/com/datagami/rentaxis/golden/GoldenLedgerSampleTowerIT.java` — SAMPLE RENTER ONE / SAMPLE TOWER replay.
+- `backend/src/test/java/com/datagami/rentaxis/golden/GoldenLedgerSampleResidences2IT.java` — SAMPLE RENTER TWO / SAMPLE RESIDENCES 2 replay.
+- `backend/src/test/resources/golden/le-sample tower-ledger.csv`, `le-sample tower-recognition.csv`
+- `backend/src/test/resources/golden/sampleResidences2-ledger.csv`, `sampleResidences2-recognition.csv`
 - `backend/src/test/java/com/datagami/rentaxis/core/service/TenantFeatureMobileFinanceIT.java`
 
 **Backend — modified**
@@ -255,7 +257,7 @@ The two replay tests are useless if the ledger returns rows in an arbitrary orde
                           String narration, BigDecimal debit, BigDecimal credit, BigDecimal balance) {}
   public record GoldenRecognitionRow(LocalDate periodStart, LocalDate periodEnd, int days, BigDecimal amount) {}
   public final class GoldenLedgerFixture {
-      public static List<GoldenRow> ledger(String resource);                       // "golden/le-boulevard-ledger.csv"
+      public static List<GoldenRow> ledger(String resource);                       // "golden/le-sample tower-ledger.csv"
       public static Map<String, List<GoldenRow>> ledgerByAccount(String resource); // LinkedHashMap, file order
       public static List<GoldenRecognitionRow> recognition(String resource);
       public static BigDecimal reportTotal(List<GoldenRow> rows);                  // Σ debit, which must equal Σ credit
@@ -270,15 +272,15 @@ The two replay tests are useless if the ledger returns rows in an arbitrary orde
   with `interface LineCounterRow { UUID getLineId(); String getNames(); }`.
 - Tag: every class in `com.datagami.rentaxis.golden` carries `@Tag("golden")`. `./gradlew test -PincludeTags=golden` runs only them; a plain `./gradlew test` still runs everything.
 
-- [ ] **Step 1: Write the fixture CSV for LE BOULEVARD**
+- [ ] **Step 1: Write the fixture CSV for SAMPLE TOWER**
 
 The CSV is the client's export, transcribed. Columns: `account,entry_date,doc_type,particular,narration,debit,credit,balance`. `balance` is signed debit-positive (negative = PACT's `Cr`). Blank narration is an empty field. Lines starting with `#` are comments; blank lines are skipped.
 
-Create `backend/src/test/resources/golden/le-boulevard-ledger.csv`:
+Create `backend/src/test/resources/golden/le-sample tower-ledger.csv`:
 
 ```csv
-# PACT General Ledger export, tenant "ISLAM MAMANOV", property LE BOULEVARD,
-# contract TCO-25/251 dated 28-08-2025, term 05-09-2025 -> 04-09-2026 (365 days).
+# PACT General Ledger export, tenant "SAMPLE RENTER ONE", property SAMPLE TOWER,
+# contract SAMPLE-25/001 dated 28-08-2025, term 05-09-2025 -> 04-09-2026 (365 days).
 # Source: ~/Downloads/"General Ledger- tenant1.xlsx".
 # Deviations from the export, all authorised by the spec (see "Deviations from PACT"):
 #   D-a  CIL amounts use the per-day rule (55,000 / 365 = 150.684932/day), not PACT's 30/360.
@@ -286,77 +288,77 @@ Create `backend/src/test/resources/golden/le-boulevard-ledger.csv`:
 #   D-c  PACT wrote these PDC registrations as IRV; spec 3 names the doc type PDR.
 # REPORT TOTAL: debit 248,150.00 = credit 248,150.00 (unchanged by D-a: the CIL rows still sum to 55,000).
 account,entry_date,doc_type,particular,narration,debit,credit,balance
-Security Deposit-Warsan,2025-08-28,TCO,Rent Receivable LE BOULEVARD,,0.00,2750.00,-2750.00
-Rent Receivable LE BOULEVARD,2025-08-28,TCO,Security Deposit-Warsan,,2750.00,0.00,2750.00
-Rent Receivable LE BOULEVARD,2025-08-28,TCO,Advance Rent LE BOULEVARD,,55000.00,0.00,57750.00
-Rent Receivable LE BOULEVARD,2025-08-28,TCO,Admin charge-LE BOULEVERD,,300.00,0.00,58050.00
-Rent Receivable LE BOULEVARD,2025-08-28,PDR,PDC Receivable LE BOULEVARD,Rent - 1st Installment,0.00,9300.00,48750.00
-Rent Receivable LE BOULEVARD,2025-08-28,PDR,PDC Receivable LE BOULEVARD,Security Deposit,0.00,2750.00,46000.00
-Rent Receivable LE BOULEVARD,2025-08-28,PDR,PDC Receivable LE BOULEVARD,Rent - 2nd Installment,0.00,9000.00,37000.00
-Rent Receivable LE BOULEVARD,2025-08-28,PDR,PDC Receivable LE BOULEVARD,Rent - 3rd Installment,0.00,9000.00,28000.00
-Rent Receivable LE BOULEVARD,2025-08-28,PDR,PDC Receivable LE BOULEVARD,Rent - 4th Installment,0.00,9000.00,19000.00
-Rent Receivable LE BOULEVARD,2025-08-28,PDR,PDC Receivable LE BOULEVARD,Rent - 5th Installment,0.00,9000.00,10000.00
-Rent Receivable LE BOULEVARD,2025-08-28,PDR,PDC Receivable LE BOULEVARD,Rent - 6th Installment,0.00,10000.00,0.00
-Rent Receivable LE BOULEVARD,2026-05-05,CBR,Emirates Islamic - LE BOULEVARD,Rent - 5th Installment,9000.00,0.00,9000.00
-Rent Receivable LE BOULEVARD,2026-07-06,CBR,Emirates Islamic - LE BOULEVARD,Rent - 6th Installment,10000.00,0.00,19000.00
-Advance Rent LE BOULEVARD,2025-08-28,TCO,Rent Receivable LE BOULEVARD,,0.00,55000.00,-55000.00
-Advance Rent LE BOULEVARD,2025-09-30,CIL,Rental Income LE BOULEVARD,Advance rent adjustment – Sep 2025,3917.81,0.00,-51082.19
-Advance Rent LE BOULEVARD,2025-10-31,CIL,Rental Income LE BOULEVARD,Advance rent adjustment – Oct 2025,4671.23,0.00,-46410.96
-Advance Rent LE BOULEVARD,2025-11-30,CIL,Rental Income LE BOULEVARD,Advance rent adjustment – Nov 2025,4520.55,0.00,-41890.41
-Advance Rent LE BOULEVARD,2025-12-31,CIL,Rental Income LE BOULEVARD,Advance rent adjustment – Dec 2025,4671.23,0.00,-37219.18
-Advance Rent LE BOULEVARD,2026-01-31,CIL,Rental Income LE BOULEVARD,Advance rent adjustment – Jan 2026,4671.23,0.00,-32547.95
-Advance Rent LE BOULEVARD,2026-02-28,CIL,Rental Income LE BOULEVARD,Advance rent adjustment – Feb 2026,4219.18,0.00,-28328.77
-Advance Rent LE BOULEVARD,2026-03-31,CIL,Rental Income LE BOULEVARD,Advance rent adjustment – Mar 2026,4671.23,0.00,-23657.54
-Advance Rent LE BOULEVARD,2026-04-30,CIL,Rental Income LE BOULEVARD,Advance rent adjustment – Apr 2026,4520.55,0.00,-19136.99
-Advance Rent LE BOULEVARD,2026-05-31,CIL,Rental Income LE BOULEVARD,Advance rent adjustment – May 2026,4671.23,0.00,-14465.76
-Advance Rent LE BOULEVARD,2026-06-30,CIL,Rental Income LE BOULEVARD,Advance rent adjustment – Jun 2026,4520.55,0.00,-9945.21
-Advance Rent LE BOULEVARD,2026-07-31,CIL,Rental Income LE BOULEVARD,Advance rent adjustment – Jul 2026,4671.23,0.00,-5273.98
-Advance Rent LE BOULEVARD,2026-08-31,CIL,Rental Income LE BOULEVARD,Advance rent adjustment – Aug 2026,4671.23,0.00,-602.75
-Advance Rent LE BOULEVARD,2026-09-04,CIL,Rental Income LE BOULEVARD,Advance rent adjustment – Sep 2026,602.75,0.00,0.00
-Rental Income LE BOULEVARD,2025-09-30,CIL,Advance Rent LE BOULEVARD,Advance rent adjustment – Sep 2025,0.00,3917.81,-3917.81
-Rental Income LE BOULEVARD,2025-10-31,CIL,Advance Rent LE BOULEVARD,Advance rent adjustment – Oct 2025,0.00,4671.23,-8589.04
-Rental Income LE BOULEVARD,2025-11-30,CIL,Advance Rent LE BOULEVARD,Advance rent adjustment – Nov 2025,0.00,4520.55,-13109.59
-Rental Income LE BOULEVARD,2025-12-31,CIL,Advance Rent LE BOULEVARD,Advance rent adjustment – Dec 2025,0.00,4671.23,-17780.82
-Rental Income LE BOULEVARD,2026-01-31,CIL,Advance Rent LE BOULEVARD,Advance rent adjustment – Jan 2026,0.00,4671.23,-22452.05
-Rental Income LE BOULEVARD,2026-02-28,CIL,Advance Rent LE BOULEVARD,Advance rent adjustment – Feb 2026,0.00,4219.18,-26671.23
-Rental Income LE BOULEVARD,2026-03-31,CIL,Advance Rent LE BOULEVARD,Advance rent adjustment – Mar 2026,0.00,4671.23,-31342.46
-Rental Income LE BOULEVARD,2026-04-30,CIL,Advance Rent LE BOULEVARD,Advance rent adjustment – Apr 2026,0.00,4520.55,-35863.01
-Rental Income LE BOULEVARD,2026-05-31,CIL,Advance Rent LE BOULEVARD,Advance rent adjustment – May 2026,0.00,4671.23,-40534.24
-Rental Income LE BOULEVARD,2026-06-30,CIL,Advance Rent LE BOULEVARD,Advance rent adjustment – Jun 2026,0.00,4520.55,-45054.79
-Rental Income LE BOULEVARD,2026-07-31,CIL,Advance Rent LE BOULEVARD,Advance rent adjustment – Jul 2026,0.00,4671.23,-49726.02
-Rental Income LE BOULEVARD,2026-08-31,CIL,Advance Rent LE BOULEVARD,Advance rent adjustment – Aug 2026,0.00,4671.23,-54397.25
-Rental Income LE BOULEVARD,2026-09-04,CIL,Advance Rent LE BOULEVARD,Advance rent adjustment – Sep 2026,0.00,602.75,-55000.00
-Emirates Islamic - LE BOULEVARD,2025-09-03,CRT,PDC Receivable LE BOULEVARD,Rent - 1st Installment,9300.00,0.00,9300.00
-Emirates Islamic - LE BOULEVARD,2025-10-06,CRT,PDC Receivable LE BOULEVARD,Security Deposit,2750.00,0.00,12050.00
-Emirates Islamic - LE BOULEVARD,2025-11-05,CRT,PDC Receivable LE BOULEVARD,Rent - 2nd Installment,9000.00,0.00,21050.00
-Emirates Islamic - LE BOULEVARD,2026-01-05,CRT,PDC Receivable LE BOULEVARD,Rent - 3rd Installment,9000.00,0.00,30050.00
-Emirates Islamic - LE BOULEVARD,2026-03-05,CRT,PDC Receivable LE BOULEVARD,Rent - 4th Installment,9000.00,0.00,39050.00
-Emirates Islamic - LE BOULEVARD,2026-05-05,CRT,PDC Receivable LE BOULEVARD,Rent - 5th Installment,9000.00,0.00,48050.00
-Emirates Islamic - LE BOULEVARD,2026-05-05,CBR,Rent Receivable LE BOULEVARD,Rent - 5th Installment,0.00,9000.00,39050.00
-Emirates Islamic - LE BOULEVARD,2026-07-06,CRT,PDC Receivable LE BOULEVARD,Rent - 6th Installment,10000.00,0.00,49050.00
-Emirates Islamic - LE BOULEVARD,2026-07-06,CBR,Rent Receivable LE BOULEVARD,Rent - 6th Installment,0.00,10000.00,39050.00
-PDC Receivable LE BOULEVARD,2025-08-28,PDR,Rent Receivable LE BOULEVARD,Rent - 1st Installment,9300.00,0.00,9300.00
-PDC Receivable LE BOULEVARD,2025-08-28,PDR,Rent Receivable LE BOULEVARD,Security Deposit,2750.00,0.00,12050.00
-PDC Receivable LE BOULEVARD,2025-08-28,PDR,Rent Receivable LE BOULEVARD,Rent - 2nd Installment,9000.00,0.00,21050.00
-PDC Receivable LE BOULEVARD,2025-08-28,PDR,Rent Receivable LE BOULEVARD,Rent - 3rd Installment,9000.00,0.00,30050.00
-PDC Receivable LE BOULEVARD,2025-08-28,PDR,Rent Receivable LE BOULEVARD,Rent - 4th Installment,9000.00,0.00,39050.00
-PDC Receivable LE BOULEVARD,2025-08-28,PDR,Rent Receivable LE BOULEVARD,Rent - 5th Installment,9000.00,0.00,48050.00
-PDC Receivable LE BOULEVARD,2025-08-28,PDR,Rent Receivable LE BOULEVARD,Rent - 6th Installment,10000.00,0.00,58050.00
-PDC Receivable LE BOULEVARD,2025-09-03,CRT,Emirates Islamic - LE BOULEVARD,Rent - 1st Installment,0.00,9300.00,48750.00
-PDC Receivable LE BOULEVARD,2025-10-06,CRT,Emirates Islamic - LE BOULEVARD,Security Deposit,0.00,2750.00,46000.00
-PDC Receivable LE BOULEVARD,2025-11-05,CRT,Emirates Islamic - LE BOULEVARD,Rent - 2nd Installment,0.00,9000.00,37000.00
-PDC Receivable LE BOULEVARD,2026-01-05,CRT,Emirates Islamic - LE BOULEVARD,Rent - 3rd Installment,0.00,9000.00,28000.00
-PDC Receivable LE BOULEVARD,2026-03-05,CRT,Emirates Islamic - LE BOULEVARD,Rent - 4th Installment,0.00,9000.00,19000.00
-PDC Receivable LE BOULEVARD,2026-05-05,CRT,Emirates Islamic - LE BOULEVARD,Rent - 5th Installment,0.00,9000.00,10000.00
-PDC Receivable LE BOULEVARD,2026-07-06,CRT,Emirates Islamic - LE BOULEVARD,Rent - 6th Installment,0.00,10000.00,0.00
-Admin charge-LE BOULEVERD,2025-08-28,TCO,Rent Receivable LE BOULEVARD,,0.00,300.00,-300.00
+Security Deposit-Sample Court,2025-08-28,TCO,Rent Receivable SAMPLE TOWER,,0.00,2750.00,-2750.00
+Rent Receivable SAMPLE TOWER,2025-08-28,TCO,Security Deposit-Sample Court,,2750.00,0.00,2750.00
+Rent Receivable SAMPLE TOWER,2025-08-28,TCO,Advance Rent SAMPLE TOWER,,55000.00,0.00,57750.00
+Rent Receivable SAMPLE TOWER,2025-08-28,TCO,Admin charge-LE BOULEVERD,,300.00,0.00,58050.00
+Rent Receivable SAMPLE TOWER,2025-08-28,PDR,PDC Receivable SAMPLE TOWER,Rent - 1st Installment,0.00,9300.00,48750.00
+Rent Receivable SAMPLE TOWER,2025-08-28,PDR,PDC Receivable SAMPLE TOWER,Security Deposit,0.00,2750.00,46000.00
+Rent Receivable SAMPLE TOWER,2025-08-28,PDR,PDC Receivable SAMPLE TOWER,Rent - 2nd Installment,0.00,9000.00,37000.00
+Rent Receivable SAMPLE TOWER,2025-08-28,PDR,PDC Receivable SAMPLE TOWER,Rent - 3rd Installment,0.00,9000.00,28000.00
+Rent Receivable SAMPLE TOWER,2025-08-28,PDR,PDC Receivable SAMPLE TOWER,Rent - 4th Installment,0.00,9000.00,19000.00
+Rent Receivable SAMPLE TOWER,2025-08-28,PDR,PDC Receivable SAMPLE TOWER,Rent - 5th Installment,0.00,9000.00,10000.00
+Rent Receivable SAMPLE TOWER,2025-08-28,PDR,PDC Receivable SAMPLE TOWER,Rent - 6th Installment,0.00,10000.00,0.00
+Rent Receivable SAMPLE TOWER,2026-05-05,CBR,Emirates Islamic - SAMPLE TOWER,Rent - 5th Installment,9000.00,0.00,9000.00
+Rent Receivable SAMPLE TOWER,2026-07-06,CBR,Emirates Islamic - SAMPLE TOWER,Rent - 6th Installment,10000.00,0.00,19000.00
+Advance Rent SAMPLE TOWER,2025-08-28,TCO,Rent Receivable SAMPLE TOWER,,0.00,55000.00,-55000.00
+Advance Rent SAMPLE TOWER,2025-09-30,CIL,Rental Income SAMPLE TOWER,Advance rent adjustment – Sep 2025,3917.81,0.00,-51082.19
+Advance Rent SAMPLE TOWER,2025-10-31,CIL,Rental Income SAMPLE TOWER,Advance rent adjustment – Oct 2025,4671.23,0.00,-46410.96
+Advance Rent SAMPLE TOWER,2025-11-30,CIL,Rental Income SAMPLE TOWER,Advance rent adjustment – Nov 2025,4520.55,0.00,-41890.41
+Advance Rent SAMPLE TOWER,2025-12-31,CIL,Rental Income SAMPLE TOWER,Advance rent adjustment – Dec 2025,4671.23,0.00,-37219.18
+Advance Rent SAMPLE TOWER,2026-01-31,CIL,Rental Income SAMPLE TOWER,Advance rent adjustment – Jan 2026,4671.23,0.00,-32547.95
+Advance Rent SAMPLE TOWER,2026-02-28,CIL,Rental Income SAMPLE TOWER,Advance rent adjustment – Feb 2026,4219.18,0.00,-28328.77
+Advance Rent SAMPLE TOWER,2026-03-31,CIL,Rental Income SAMPLE TOWER,Advance rent adjustment – Mar 2026,4671.23,0.00,-23657.54
+Advance Rent SAMPLE TOWER,2026-04-30,CIL,Rental Income SAMPLE TOWER,Advance rent adjustment – Apr 2026,4520.55,0.00,-19136.99
+Advance Rent SAMPLE TOWER,2026-05-31,CIL,Rental Income SAMPLE TOWER,Advance rent adjustment – May 2026,4671.23,0.00,-14465.76
+Advance Rent SAMPLE TOWER,2026-06-30,CIL,Rental Income SAMPLE TOWER,Advance rent adjustment – Jun 2026,4520.55,0.00,-9945.21
+Advance Rent SAMPLE TOWER,2026-07-31,CIL,Rental Income SAMPLE TOWER,Advance rent adjustment – Jul 2026,4671.23,0.00,-5273.98
+Advance Rent SAMPLE TOWER,2026-08-31,CIL,Rental Income SAMPLE TOWER,Advance rent adjustment – Aug 2026,4671.23,0.00,-602.75
+Advance Rent SAMPLE TOWER,2026-09-04,CIL,Rental Income SAMPLE TOWER,Advance rent adjustment – Sep 2026,602.75,0.00,0.00
+Rental Income SAMPLE TOWER,2025-09-30,CIL,Advance Rent SAMPLE TOWER,Advance rent adjustment – Sep 2025,0.00,3917.81,-3917.81
+Rental Income SAMPLE TOWER,2025-10-31,CIL,Advance Rent SAMPLE TOWER,Advance rent adjustment – Oct 2025,0.00,4671.23,-8589.04
+Rental Income SAMPLE TOWER,2025-11-30,CIL,Advance Rent SAMPLE TOWER,Advance rent adjustment – Nov 2025,0.00,4520.55,-13109.59
+Rental Income SAMPLE TOWER,2025-12-31,CIL,Advance Rent SAMPLE TOWER,Advance rent adjustment – Dec 2025,0.00,4671.23,-17780.82
+Rental Income SAMPLE TOWER,2026-01-31,CIL,Advance Rent SAMPLE TOWER,Advance rent adjustment – Jan 2026,0.00,4671.23,-22452.05
+Rental Income SAMPLE TOWER,2026-02-28,CIL,Advance Rent SAMPLE TOWER,Advance rent adjustment – Feb 2026,0.00,4219.18,-26671.23
+Rental Income SAMPLE TOWER,2026-03-31,CIL,Advance Rent SAMPLE TOWER,Advance rent adjustment – Mar 2026,0.00,4671.23,-31342.46
+Rental Income SAMPLE TOWER,2026-04-30,CIL,Advance Rent SAMPLE TOWER,Advance rent adjustment – Apr 2026,0.00,4520.55,-35863.01
+Rental Income SAMPLE TOWER,2026-05-31,CIL,Advance Rent SAMPLE TOWER,Advance rent adjustment – May 2026,0.00,4671.23,-40534.24
+Rental Income SAMPLE TOWER,2026-06-30,CIL,Advance Rent SAMPLE TOWER,Advance rent adjustment – Jun 2026,0.00,4520.55,-45054.79
+Rental Income SAMPLE TOWER,2026-07-31,CIL,Advance Rent SAMPLE TOWER,Advance rent adjustment – Jul 2026,0.00,4671.23,-49726.02
+Rental Income SAMPLE TOWER,2026-08-31,CIL,Advance Rent SAMPLE TOWER,Advance rent adjustment – Aug 2026,0.00,4671.23,-54397.25
+Rental Income SAMPLE TOWER,2026-09-04,CIL,Advance Rent SAMPLE TOWER,Advance rent adjustment – Sep 2026,0.00,602.75,-55000.00
+Emirates Islamic - SAMPLE TOWER,2025-09-03,CRT,PDC Receivable SAMPLE TOWER,Rent - 1st Installment,9300.00,0.00,9300.00
+Emirates Islamic - SAMPLE TOWER,2025-10-06,CRT,PDC Receivable SAMPLE TOWER,Security Deposit,2750.00,0.00,12050.00
+Emirates Islamic - SAMPLE TOWER,2025-11-05,CRT,PDC Receivable SAMPLE TOWER,Rent - 2nd Installment,9000.00,0.00,21050.00
+Emirates Islamic - SAMPLE TOWER,2026-01-05,CRT,PDC Receivable SAMPLE TOWER,Rent - 3rd Installment,9000.00,0.00,30050.00
+Emirates Islamic - SAMPLE TOWER,2026-03-05,CRT,PDC Receivable SAMPLE TOWER,Rent - 4th Installment,9000.00,0.00,39050.00
+Emirates Islamic - SAMPLE TOWER,2026-05-05,CRT,PDC Receivable SAMPLE TOWER,Rent - 5th Installment,9000.00,0.00,48050.00
+Emirates Islamic - SAMPLE TOWER,2026-05-05,CBR,Rent Receivable SAMPLE TOWER,Rent - 5th Installment,0.00,9000.00,39050.00
+Emirates Islamic - SAMPLE TOWER,2026-07-06,CRT,PDC Receivable SAMPLE TOWER,Rent - 6th Installment,10000.00,0.00,49050.00
+Emirates Islamic - SAMPLE TOWER,2026-07-06,CBR,Rent Receivable SAMPLE TOWER,Rent - 6th Installment,0.00,10000.00,39050.00
+PDC Receivable SAMPLE TOWER,2025-08-28,PDR,Rent Receivable SAMPLE TOWER,Rent - 1st Installment,9300.00,0.00,9300.00
+PDC Receivable SAMPLE TOWER,2025-08-28,PDR,Rent Receivable SAMPLE TOWER,Security Deposit,2750.00,0.00,12050.00
+PDC Receivable SAMPLE TOWER,2025-08-28,PDR,Rent Receivable SAMPLE TOWER,Rent - 2nd Installment,9000.00,0.00,21050.00
+PDC Receivable SAMPLE TOWER,2025-08-28,PDR,Rent Receivable SAMPLE TOWER,Rent - 3rd Installment,9000.00,0.00,30050.00
+PDC Receivable SAMPLE TOWER,2025-08-28,PDR,Rent Receivable SAMPLE TOWER,Rent - 4th Installment,9000.00,0.00,39050.00
+PDC Receivable SAMPLE TOWER,2025-08-28,PDR,Rent Receivable SAMPLE TOWER,Rent - 5th Installment,9000.00,0.00,48050.00
+PDC Receivable SAMPLE TOWER,2025-08-28,PDR,Rent Receivable SAMPLE TOWER,Rent - 6th Installment,10000.00,0.00,58050.00
+PDC Receivable SAMPLE TOWER,2025-09-03,CRT,Emirates Islamic - SAMPLE TOWER,Rent - 1st Installment,0.00,9300.00,48750.00
+PDC Receivable SAMPLE TOWER,2025-10-06,CRT,Emirates Islamic - SAMPLE TOWER,Security Deposit,0.00,2750.00,46000.00
+PDC Receivable SAMPLE TOWER,2025-11-05,CRT,Emirates Islamic - SAMPLE TOWER,Rent - 2nd Installment,0.00,9000.00,37000.00
+PDC Receivable SAMPLE TOWER,2026-01-05,CRT,Emirates Islamic - SAMPLE TOWER,Rent - 3rd Installment,0.00,9000.00,28000.00
+PDC Receivable SAMPLE TOWER,2026-03-05,CRT,Emirates Islamic - SAMPLE TOWER,Rent - 4th Installment,0.00,9000.00,19000.00
+PDC Receivable SAMPLE TOWER,2026-05-05,CRT,Emirates Islamic - SAMPLE TOWER,Rent - 5th Installment,0.00,9000.00,10000.00
+PDC Receivable SAMPLE TOWER,2026-07-06,CRT,Emirates Islamic - SAMPLE TOWER,Rent - 6th Installment,0.00,10000.00,0.00
+Admin charge-LE BOULEVERD,2025-08-28,TCO,Rent Receivable SAMPLE TOWER,,0.00,300.00,-300.00
 ```
 
 (The misspelling `BOULEVERD` on the admin-fee account is PACT's; keep it verbatim so the mapping test is real.)
 
-- [ ] **Step 2: Write the recognition fixture for LE BOULEVARD**
+- [ ] **Step 2: Write the recognition fixture for SAMPLE TOWER**
 
-`backend/src/test/resources/golden/le-boulevard-recognition.csv` — this is the per-day table the spec's §8.2 rule produces for 55,000 over 05-09-2025 → 04-09-2026 (365 days, day rate 150.684932):
+`backend/src/test/resources/golden/le-sample tower-recognition.csv` — this is the per-day table the spec's §8.2 rule produces for 55,000 over 05-09-2025 → 04-09-2026 (365 days, day rate 150.684932):
 
 ```csv
 # 55,000.00 over 365 days (05-09-2025 .. 04-09-2026 inclusive); day rate 150.684932.
@@ -377,15 +379,15 @@ period_start,period_end,days,amount
 2026-09-01,2026-09-04,4,602.75
 ```
 
-- [ ] **Step 3: Write the two GALAH 2 fixtures**
+- [ ] **Step 3: Write the two SAMPLE RESIDENCES 2 fixtures**
 
-`backend/src/test/resources/golden/galah2-ledger.csv`:
+`backend/src/test/resources/golden/sampleResidences2-ledger.csv`:
 
 ```csv
-# PACT General Ledger export, tenant "ANUM ISHTIAQ ISHTIAQ AHMED KHAN", property GALAH 2,
-# contract TCO-26/1629 dated 16-09-2026, term 24-09-2026 -> 23-09-2027 (365 days).
+# PACT General Ledger export, tenant "SAMPLE RENTER TWO SAMPLE RENTER TWO AHMED KHAN", property SAMPLE RESIDENCES 2,
+# contract SAMPLE-26/001 dated 16-09-2026, term 24-09-2026 -> 23-09-2027 (365 days).
 # Source: ~/Downloads/"General Ledger tenant 2.xlsx".
-# GALAH 2 deliberately shares the generic accounts (spec 5.2): Rent Receivable 105590,
+# SAMPLE RESIDENCES 2 deliberately shares the generic accounts (spec 5.2): Rent Receivable 105590,
 # Advance Rent 125620, PDC Receivable EIB 125636, Rental Income A/c 145661, Admin Fee 145663.
 # Deviations: D-a per-day CIL, D-b CIL entry_date = period_end,
 #   D-d "Rent Receivable" rows are in strict entry_date order; PACT prints the post-dated
@@ -436,7 +438,7 @@ Rental Income A/c,2027-09-23,CIL,Advance Rent,Advance rent adjustment – Sep 20
 Admin Fee,2026-09-16,TCO,Rent Receivable,,0.00,2000.00,-2000.00
 ```
 
-`backend/src/test/resources/golden/galah2-recognition.csv` — this is the spec's own §8.2 reference fixture:
+`backend/src/test/resources/golden/sampleResidences2-recognition.csv` — this is the spec's own §8.2 reference fixture:
 
 ```csv
 # 51,000.00 over 365 days (24-09-2026 .. 23-09-2027 inclusive); day rate 139.726027.
@@ -712,11 +714,11 @@ Append to `backend/src/test/java/com/datagami/rentaxis/core/service/ledger/Ledge
 Also change the existing Plan 1 assertion, which asserted the joined form:
 
 ```java
-        // was: assertThat(l.rows().get(0).particular()).contains("Advance Rent - L'Olivier")
-        //          .contains("Security Deposit L'Olivier").contains("Admin Fee - L'Olivier");
+        // was: assertThat(l.rows().get(0).particular()).contains("Advance Rent - Sample Heights")
+        //          .contains("Security Deposit Sample Heights").contains("Admin Fee - Sample Heights");
         assertThat(l.rows()).extracting(LedgerRowDTO::particular)
-                .containsExactly("Advance Rent - L'Olivier", "Security Deposit L'Olivier", "Admin Fee - L'Olivier",
-                                 "PDC Receivable L'Olivier");
+                .containsExactly("Advance Rent - Sample Heights", "Security Deposit Sample Heights", "Admin Fee - Sample Heights",
+                                 "PDC Receivable Sample Heights");
 ```
 
 - [ ] **Step 7: Run the test to verify it fails**
@@ -846,12 +848,12 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 ---
 
-### Task 2: `GoldenLedgerLeBoulevardIT` — replay ISLAM MAMANOV / LE BOULEVARD
+### Task 2: `GoldenLedgerSampleTowerIT` — replay SAMPLE RENTER ONE / SAMPLE TOWER
 
 The harder of the two contracts: property-scoped named accounts (four of which do **not** match the template pattern, so they exercise manual remapping), seven post-dated cheques all registered on the contract date, seven clearances spread over ten months, and two cheques that bounce *after* clearing.
 
 **Files:**
-- Create: `backend/src/test/java/com/datagami/rentaxis/golden/GoldenLedgerLeBoulevardIT.java`
+- Create: `backend/src/test/java/com/datagami/rentaxis/golden/GoldenLedgerSampleTowerIT.java`
 - Test: itself.
 
 **Interfaces:**
@@ -878,7 +880,7 @@ The harder of the two contracts: property-scoped named accounts (four of which d
 
 - [ ] **Step 1: Write the replay test**
 
-`backend/src/test/java/com/datagami/rentaxis/golden/GoldenLedgerLeBoulevardIT.java`:
+`backend/src/test/java/com/datagami/rentaxis/golden/GoldenLedgerSampleTowerIT.java`:
 
 ```java
 package com.datagami.rentaxis.golden;
@@ -936,7 +938,7 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Replays the client's own contract TCO-25/251 (ISLAM MAMANOV, LE BOULEVARD, 28-08-2025)
+ * Replays the client's own contract SAMPLE-25/001 (SAMPLE RENTER ONE, SAMPLE TOWER, 28-08-2025)
  * through the v2 API and diffs the result against their PACT General Ledger export,
  * line by line.
  *
@@ -944,11 +946,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * can open our Tenant Ledger next to their old one and read the same document numbers,
  * the same counter accounts and the same running balances. Three columns differ on
  * purpose and only three — see "Deviations from PACT" in the plan and the header of
- * {@code golden/le-boulevard-ledger.csv}.
+ * {@code golden/le-sample tower-ledger.csv}.
  *
  * <p>The contract is worth replaying specifically because of its awkward parts: four of
  * its seven ledger accounts are named nothing like the property-account template
- * ("Security Deposit-Warsan", "Admin charge-LE BOULEVERD"), so it proves manual
+ * ("Security Deposit-Sample Court", "Admin charge-LE BOULEVERD"), so it proves manual
  * remapping (spec D2); the first cheque folds the admin fee into the rent installment;
  * and two cheques bounce <em>after</em> clearing, which is the one cheque transition
  * whose journal credits the bank rather than PDC receivable (spec 7.2).
@@ -956,13 +958,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest
 @Testcontainers
 @Tag("golden")
-class GoldenLedgerLeBoulevardIT {
+class GoldenLedgerSampleTowerIT {
 
     @Container @ServiceConnection
     static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
 
-    private static final String LEDGER = "golden/le-boulevard-ledger.csv";
-    private static final String RECOGNITION = "golden/le-boulevard-recognition.csv";
+    private static final String LEDGER = "golden/le-sample tower-ledger.csv";
+    private static final String RECOGNITION = "golden/le-sample tower-recognition.csv";
 
     private static final LocalDate CONTRACT_DATE = LocalDate.of(2025, 8, 28);
     private static final LocalDate TERM_START = LocalDate.of(2025, 9, 5);
@@ -989,7 +991,7 @@ class GoldenLedgerLeBoulevardIT {
     @BeforeEach
     void setUp() {
         LandlordOrg org = new LandlordOrg();
-        org.setName("Al Ashram Golden " + UUID.randomUUID());
+        org.setName("Miftah Demo Golden " + UUID.randomUUID());
         TenantContextHolder.setTenantId(orgRepo.save(org).getId());
 
         accounts.seedDefaultAccounts();
@@ -999,7 +1001,7 @@ class GoldenLedgerLeBoulevardIT {
         fiscal.lockThrough(LocalDate.of(2025, 7, 31));
 
         Property p = new Property();
-        p.setNameEn("LE BOULEVARD");
+        p.setNameEn("SAMPLE TOWER");
         p.setEmirate(Emirate.DUBAI);
         propertyId = properties.createProperty(p).getId();
 
@@ -1008,18 +1010,18 @@ class GoldenLedgerLeBoulevardIT {
 
         // Four of PACT's accounts are named nothing like the template. Create them under the
         // same parent groups and swap the mapping, which is exactly what the Accounts tab does.
-        remap(AccountRole.RENT_RECEIVABLE, "Rent Receivable LE BOULEVARD", "A-02-01");
-        remap(AccountRole.ADVANCE_RENT,    "Advance Rent LE BOULEVARD",    "B");
-        remap(AccountRole.SECURITY_DEPOSIT, "Security Deposit-Warsan",     "B-01-02");
+        remap(AccountRole.RENT_RECEIVABLE, "Rent Receivable SAMPLE TOWER", "A-02-01");
+        remap(AccountRole.ADVANCE_RENT,    "Advance Rent SAMPLE TOWER",    "B");
+        remap(AccountRole.SECURITY_DEPOSIT, "Security Deposit-Sample Court",     "B-01-02");
         remap(AccountRole.ADMIN_FEE,       "Admin charge-LE BOULEVERD",    "C-01-01");
 
         // The remaining three already match PACT because the template patterns match.
         assertThat(resolver.resolve(AccountRole.RENTAL_INCOME, propertyId).getName())
-                .isEqualTo("Rental Income LE BOULEVARD");
+                .isEqualTo("Rental Income SAMPLE TOWER");
         assertThat(resolver.resolve(AccountRole.PDC_RECEIVABLE, propertyId).getName())
-                .isEqualTo("PDC Receivable LE BOULEVARD");
+                .isEqualTo("PDC Receivable SAMPLE TOWER");
         assertThat(resolver.resolve(AccountRole.BANK, propertyId).getName())
-                .isEqualTo("Emirates Islamic - LE BOULEVARD");
+                .isEqualTo("Emirates Islamic - SAMPLE TOWER");
 
         Unit u = new Unit();
         u.setProperty(properties.getPropertyById(propertyId));
@@ -1028,8 +1030,8 @@ class GoldenLedgerLeBoulevardIT {
         UUID unitId = units.createUnit(u).getId();
 
         Renter r = new Renter();
-        r.setNameEn("ISLAM MAMANOV");
-        r.setEmail("islam.mamanov@example.invalid");
+        r.setNameEn("SAMPLE RENTER ONE");
+        r.setEmail("islam.sample renter one@example.invalid");
         renterId = renterRepo.save(r).getId();
 
         leaseId = leases.createDraft(new CreateLeaseRequest(
@@ -1143,12 +1145,12 @@ class GoldenLedgerLeBoulevardIT {
         Map<String, BigDecimal> balance = tb.stream()
                 .collect(Collectors.toMap(TrialBalanceRowDTO::name, TrialBalanceRowDTO::balance));
         // Two bounced cheques (9,000 + 10,000) are still owed; everything else has settled.
-        assertThat(balance.get("Rent Receivable LE BOULEVARD")).isEqualByComparingTo("19000.00");
-        assertThat(balance.get("Emirates Islamic - LE BOULEVARD")).isEqualByComparingTo("39050.00");
-        assertThat(balance.get("PDC Receivable LE BOULEVARD")).isEqualByComparingTo("0.00");
-        assertThat(balance.get("Advance Rent LE BOULEVARD")).isEqualByComparingTo("0.00");
-        assertThat(balance.get("Rental Income LE BOULEVARD")).isEqualByComparingTo("-55000.00");
-        assertThat(balance.get("Security Deposit-Warsan")).isEqualByComparingTo("-2750.00");
+        assertThat(balance.get("Rent Receivable SAMPLE TOWER")).isEqualByComparingTo("19000.00");
+        assertThat(balance.get("Emirates Islamic - SAMPLE TOWER")).isEqualByComparingTo("39050.00");
+        assertThat(balance.get("PDC Receivable SAMPLE TOWER")).isEqualByComparingTo("0.00");
+        assertThat(balance.get("Advance Rent SAMPLE TOWER")).isEqualByComparingTo("0.00");
+        assertThat(balance.get("Rental Income SAMPLE TOWER")).isEqualByComparingTo("-55000.00");
+        assertThat(balance.get("Security Deposit-Sample Court")).isEqualByComparingTo("-2750.00");
         assertThat(balance.get("Admin charge-LE BOULEVERD")).isEqualByComparingTo("-300.00");
     }
 
@@ -1176,15 +1178,15 @@ class GoldenLedgerLeBoulevardIT {
         leases.post(leaseId);
 
         Map<String, AccountLedgerDTO> actual = renterLedgerByAccount();
-        assertThat(actual.get("Rent Receivable LE BOULEVARD").closingBalance()).isEqualByComparingTo("0.00");
-        assertThat(actual.get("PDC Receivable LE BOULEVARD").closingBalance()).isEqualByComparingTo("58050.00");
+        assertThat(actual.get("Rent Receivable SAMPLE TOWER").closingBalance()).isEqualByComparingTo("0.00");
+        assertThat(actual.get("PDC Receivable SAMPLE TOWER").closingBalance()).isEqualByComparingTo("58050.00");
     }
 }
 ```
 
 - [ ] **Step 2: Run it and watch it fail on real numbers, not on wiring**
 
-Run: `cd backend && ./gradlew test --tests 'com.datagami.rentaxis.golden.GoldenLedgerLeBoulevardIT'`
+Run: `cd backend && ./gradlew test --tests 'com.datagami.rentaxis.golden.GoldenLedgerSampleTowerIT'`
 Expected on the first run: compile errors only if a Plan 2/3 name differs from the `Consumes` block above — fix the *call site*, never the fixture. Once it compiles, any assertion failure prints the aligned diff from `LedgerDiff` and names the product bug.
 
 - [ ] **Step 3: Fix what the diff names, one row at a time**
@@ -1206,20 +1208,20 @@ Expected: 5 tests, 0 failures.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/src/test/java/com/datagami/rentaxis/golden/GoldenLedgerLeBoulevardIT.java
-git commit -m "test(golden): replay the client's LE BOULEVARD contract against their PACT ledger
+git add backend/src/test/java/com/datagami/rentaxis/golden/GoldenLedgerSampleTowerIT.java
+git commit -m "test(golden): replay the client's SAMPLE TOWER contract against their PACT ledger
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 3: `GoldenLedgerGalah2IT` — replay ANUM ISHTIAQ / GALAH 2
+### Task 3: `GoldenLedgerSampleResidences2IT` — replay SAMPLE RENTER TWO / SAMPLE RESIDENCES 2
 
-The mirror case: GALAH 2 deliberately shares the generic tenant-wide accounts instead of getting its own set, so this contract proves the resolver's second hop (`property_account_mappings` miss → `tenant_default_account_mappings` hit, spec §4.4/§5.2). No cheque ever clears, so the whole 53,000 sits in PDC Receivable at the end — and one cheque is registered five days *before* the contract is dated, which is what makes the row-ordering deviation D-d visible.
+The mirror case: SAMPLE RESIDENCES 2 deliberately shares the generic tenant-wide accounts instead of getting its own set, so this contract proves the resolver's second hop (`property_account_mappings` miss → `tenant_default_account_mappings` hit, spec §4.4/§5.2). No cheque ever clears, so the whole 53,000 sits in PDC Receivable at the end — and one cheque is registered five days *before* the contract is dated, which is what makes the row-ordering deviation D-d visible.
 
 **Files:**
-- Create: `backend/src/test/java/com/datagami/rentaxis/golden/GoldenLedgerGalah2IT.java`
+- Create: `backend/src/test/java/com/datagami/rentaxis/golden/GoldenLedgerSampleResidences2IT.java`
 - Test: itself.
 
 **Interfaces:**
@@ -1228,7 +1230,7 @@ The mirror case: GALAH 2 deliberately shares the generic tenant-wide accounts in
 
 - [ ] **Step 1: Write the replay test**
 
-`backend/src/test/java/com/datagami/rentaxis/golden/GoldenLedgerGalah2IT.java`:
+`backend/src/test/java/com/datagami/rentaxis/golden/GoldenLedgerSampleResidences2IT.java`:
 
 ```java
 package com.datagami.rentaxis.golden;
@@ -1284,11 +1286,11 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Replays the client's contract TCO-26/1629 (ANUM ISHTIAQ, GALAH 2, 16-09-2026) and diffs
+ * Replays the client's contract SAMPLE-26/001 (SAMPLE RENTER TWO, SAMPLE RESIDENCES 2, 16-09-2026) and diffs
  * it against their PACT General Ledger export.
  *
- * <p>Where {@link GoldenLedgerLeBoulevardIT} covers a property with its own account set,
- * this one covers the opposite arrangement the client actually runs: GALAH 2 posts into the
+ * <p>Where {@link GoldenLedgerSampleTowerIT} covers a property with its own account set,
+ * this one covers the opposite arrangement the client actually runs: SAMPLE RESIDENCES 2 posts into the
  * generic Rent Receivable 105590, Advance Rent 125620, PDC Receivable EIB 125636, Rental
  * Income A/c 145661 and Admin Fee 145663. Nothing is mapped on the property, so every role
  * resolves through the tenant defaults (spec 4.4 second hop). It is also the contract the
@@ -1304,13 +1306,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest
 @Testcontainers
 @Tag("golden")
-class GoldenLedgerGalah2IT {
+class GoldenLedgerSampleResidences2IT {
 
     @Container @ServiceConnection
     static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
 
-    private static final String LEDGER = "golden/galah2-ledger.csv";
-    private static final String RECOGNITION = "golden/galah2-recognition.csv";
+    private static final String LEDGER = "golden/sampleResidences2-ledger.csv";
+    private static final String RECOGNITION = "golden/sampleResidences2-recognition.csv";
 
     private static final LocalDate CONTRACT_DATE = LocalDate.of(2026, 9, 16);
     private static final LocalDate TERM_START = LocalDate.of(2026, 9, 24);
@@ -1337,7 +1339,7 @@ class GoldenLedgerGalah2IT {
     @BeforeEach
     void setUp() {
         LandlordOrg org = new LandlordOrg();
-        org.setName("Al Ashram Golden " + UUID.randomUUID());
+        org.setName("Miftah Demo Golden " + UUID.randomUUID());
         TenantContextHolder.setTenantId(orgRepo.save(org).getId());
 
         accounts.seedDefaultAccounts();
@@ -1347,11 +1349,11 @@ class GoldenLedgerGalah2IT {
         fiscal.lockThrough(LocalDate.of(2026, 8, 31));
 
         Property p = new Property();
-        p.setNameEn("GALAH 2");
+        p.setNameEn("SAMPLE RESIDENCES 2");
         p.setEmirate(Emirate.ABU_DHABI);
         propertyId = properties.createProperty(p).getId();
 
-        // GALAH 2 shares the generic accounts. Drop every property mapping the template made
+        // SAMPLE RESIDENCES 2 shares the generic accounts. Drop every property mapping the template made
         // and point the tenant defaults at the five PACT accounts instead, so each role has to
         // fall through to the second hop of the resolver.
         for (AccountRole role : List.of(AccountRole.RENT_RECEIVABLE, AccountRole.ADVANCE_RENT,
@@ -1371,12 +1373,12 @@ class GoldenLedgerGalah2IT {
         UUID unitId = units.createUnit(u).getId();
 
         Renter r = new Renter();
-        r.setNameEn("ANUM ISHTIAQ ISHTIAQ AHMED KHAN");
-        r.setEmail("anum.ishtiaq@example.invalid");
+        r.setNameEn("SAMPLE RENTER TWO SAMPLE RENTER TWO AHMED KHAN");
+        r.setEmail("anum.sample renter two@example.invalid");
         renterId = renterRepo.save(r).getId();
 
         leaseId = leases.createDraft(new CreateLeaseRequest(
-                unitId, renterId, CONTRACT_DATE, TERM_START, TERM_END, "GLA_B1/681", 0,
+                unitId, renterId, CONTRACT_DATE, TERM_START, TERM_END, "SMP_B1/001", 0,
                 List.of(new LeaseLineRequest("RENT",      new BigDecimal("51000.00"), BigDecimal.ZERO, ""),
                         new LeaseLineRequest("ADMIN_FEE", new BigDecimal("2000.00"),  BigDecimal.ZERO, "")),
                 // Five cheques, each registered on its own posting date rather than all on the
@@ -1498,8 +1500,8 @@ class GoldenLedgerGalah2IT {
 
 - [ ] **Step 2: Run it**
 
-Run: `cd backend && ./gradlew test --tests 'com.datagami.rentaxis.golden.GoldenLedgerGalah2IT'`
-Expected: PASS. The most likely first failure is `recognition.runTo(2027-09-30)` posting nothing because the implementation clamped `to` to the system date — Plan 3's manual run must honour the argument (see the `Consumes (from plan 3)` note). The second most likely is `PDR` all dated the contract date, which is only correct for LE BOULEVARD.
+Run: `cd backend && ./gradlew test --tests 'com.datagami.rentaxis.golden.GoldenLedgerSampleResidences2IT'`
+Expected: PASS. The most likely first failure is `recognition.runTo(2027-09-30)` posting nothing because the implementation clamped `to` to the system date — Plan 3's manual run must honour the argument (see the `Consumes (from plan 3)` note). The second most likely is `PDR` all dated the contract date, which is only correct for SAMPLE TOWER.
 
 - [ ] **Step 3: Run both golden classes together**
 
@@ -1509,8 +1511,8 @@ Expected: 10 tests, 0 failures.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add backend/src/test/java/com/datagami/rentaxis/golden/GoldenLedgerGalah2IT.java
-git commit -m "test(golden): replay the client's GALAH 2 contract on shared tenant-default accounts
+git add backend/src/test/java/com/datagami/rentaxis/golden/GoldenLedgerSampleResidences2IT.java
+git commit -m "test(golden): replay the client's SAMPLE RESIDENCES 2 contract on shared tenant-default accounts
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 ```
@@ -1521,7 +1523,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 ### Task 4: Seed script — chart of accounts, property account sets, and the v1 finance removals
 
-`scripts/seed_demo_tenant.py` is the only way the Al Ashram demo tenant on production gets its data, and it doubles as a smoke test of the prod API (its own docstring says so). Three of its calls no longer exist after Plan 1 — `/api/v1/finance/account-mappings`, `/api/v1/finance/transactions`, `/api/v1/finance/transactions/split` — and a fourth, `/api/v1/payments/*`, no longer exists after Plan 2. This task fixes the finance foundation; Task 5 rewrites the leases and cheques on top of it.
+`scripts/seed_demo_tenant.py` is the only way the Miftah Demo demo tenant on production gets its data, and it doubles as a smoke test of the prod API (its own docstring says so). Three of its calls no longer exist after Plan 1 — `/api/v1/finance/account-mappings`, `/api/v1/finance/transactions`, `/api/v1/finance/transactions/split` — and a fourth, `/api/v1/payments/*`, no longer exists after Plan 2. This task fixes the finance foundation; Task 5 rewrites the leases and cheques on top of it.
 
 Read `~/.claude/projects/-Users-kunalsharma-datagami-rentaxis/memory/project_demo_tenant.md` before running this against production: the demo tenant is also the App Store reviewer's tenant, and the four named renters must not be deleted.
 
@@ -2612,7 +2614,7 @@ Replace those four groups with:
     "tutorials": [20, 37],
     "evidence": [
      "web/e2e/finance/accounting-v2.spec.ts",
-     "backend/src/test/java/com/datagami/rentaxis/golden/GoldenLedgerLeBoulevardIT.java"
+     "backend/src/test/java/com/datagami/rentaxis/golden/GoldenLedgerSampleTowerIT.java"
     ],
     "routes": [
      "/[locale]/dashboard/finance/general-ledger",
@@ -4189,7 +4191,7 @@ gh pr create --base main --title "test(accounting): plan 5 — golden ledger rep
 Plan 5 of the accounting v2 spec (`docs/superpowers/specs/2026-09-17-accounting-v2-design.md` §12, §13.5), and the last of the five. It closes the loop: the client's two real PACT contracts are replayed through our API and diffed against their own General Ledger export line by line, the demo tenant is re-seeded on the v2 endpoints, the Playwright suites and the tutorial library move off the deleted v1 finance screens, and the mobile apps' finance surfaces are hidden until Plan 6 rewrites them.
 
 ## What changed
-- **Golden ledger replays** — `GoldenLedgerLeBoulevardIT` (ISLAM MAMANOV / LE BOULEVARD, TCO-25/251) and `GoldenLedgerGalah2IT` (ANUM ISHTIAQ / GALAH 2, TCO-26/1629), with the exports transcribed as CSV fixtures under `backend/src/test/resources/golden/`. `@Tag("golden")`, so `./gradlew test -PincludeTags=golden` runs the acceptance gate alone.
+- **Golden ledger replays** — `GoldenLedgerSampleTowerIT` (SAMPLE RENTER ONE / SAMPLE TOWER, SAMPLE-25/001) and `GoldenLedgerSampleResidences2IT` (SAMPLE RENTER TWO / SAMPLE RESIDENCES 2, SAMPLE-26/001), with the exports transcribed as CSV fixtures under `backend/src/test/resources/golden/`. `@Tag("golden")`, so `./gradlew test -PincludeTags=golden` runs the acceptance gate alone.
 - **Two ledger fixes the replay exposed** — one counter account per row rather than every counter account on every row of a multi-line contract, and a deterministic `(entry_date, created_at, line_no)` order so a cheque that cleared and bounced the same day reads in that order.
 - **`scripts/seed_demo_tenant.py`** rebuilt on v2: chart of accounts + property account sets + fiscal window, leases as posting documents with charge lines and a cheque grid, post, the cheque lifecycle including a return and a two-row replacement, month-end recognition, and a vendor invoice with its payment voucher. Still API-driven and idempotent.
 - **Playwright** — `web/e2e/finance/accounting-v2.spec.ts` (dev) and `web/e2e-prod/tests/13h-accounting-v2.spec.ts` (production); `02-cheque-lifecycle.spec.ts` shrinks to the PROPERTY_MANAGER role check it uniquely covered, and its obsolete note about account mappings blocking clear/bounce is gone.
@@ -4277,7 +4279,7 @@ These are lookups with a stated fallback, not gaps.
 
 ### 4. One thing worth a second look before execution
 
-Task 3 posts journals dated up to 23 September 2027 on a machine whose clock reads 2026. Nothing in spec §4.2 forbids a future `entry_date` — the only date rule is `entry_date > books_locked_through` — but if Plan 3 or Plan 5's reviewer decides a future-dated journal should be refused, `GoldenLedgerGalah2IT` cannot replay the client's own contract, which is dated in their future too. Settle that before executing Task 3, not during it.
+Task 3 posts journals dated up to 23 September 2027 on a machine whose clock reads 2026. Nothing in spec §4.2 forbids a future `entry_date` — the only date rule is `entry_date > books_locked_through` — but if Plan 3 or Plan 5's reviewer decides a future-dated journal should be refused, `GoldenLedgerSampleResidences2IT` cannot replay the client's own contract, which is dated in their future too. Settle that before executing Task 3, not during it.
 
 ---
 
@@ -4301,4 +4303,4 @@ Plans 2 and 3 now exist. Where a `Consumes` block above differs from this table,
 | `PUT /api/v1/finance/fiscal` | `PUT /api/v1/finance/fiscal-settings` (Plan 1 Task 10) |
 | `GET/POST/PUT /api/v1/finance/properties/{id}/accounts` | `GET /api/v1/properties/{id}/accounts`, `POST …/accounts/generate`, `PUT …/accounts/{role}` (Plan 1 Task 6) |
 
-`ChequeStatus` and `ChequeMode` names, `Cheque` date columns and `PenaltyAssessment` are as guessed. PDR `entry_date` = the row's `postingDate` (Plan 2 Task 6), so a fixture whose PDRs are dated on the cheque date (GALAH 2) must set each row's `postingDate` accordingly — this is the second failure the note at line ~1502 anticipates, and the fix is in the fixture's `ChequeRowInput.postingDate`, not in Plan 2.
+`ChequeStatus` and `ChequeMode` names, `Cheque` date columns and `PenaltyAssessment` are as guessed. PDR `entry_date` = the row's `postingDate` (Plan 2 Task 6), so a fixture whose PDRs are dated on the cheque date (SAMPLE RESIDENCES 2) must set each row's `postingDate` accordingly — this is the second failure the note at line ~1502 anticipates, and the fix is in the fixture's `ChequeRowInput.postingDate`, not in Plan 2.

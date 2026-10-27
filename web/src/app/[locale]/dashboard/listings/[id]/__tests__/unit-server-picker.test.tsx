@@ -45,7 +45,7 @@ import ListingEditPage from "../page";
 const UNBOUNDED = /\/api\/proxy\/v1\/(units|renters)(\?|$)/;
 const urls = () => (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.map(c => String(c[0]));
 
-const UNIT = { id: "u1", unitNumber: "A-102", propertyId: "p1", propertyName: "L'Olivier", propertyType: null, buildingId: null, buildingName: null, status: null };
+const UNIT = { id: "u1", unitNumber: "A-102", propertyId: "p1", propertyName: "Sample Heights", propertyType: null, buildingId: null, buildingName: null, status: null };
 
 function listing(over: Partial<Record<string, unknown>> = {}) {
     return {

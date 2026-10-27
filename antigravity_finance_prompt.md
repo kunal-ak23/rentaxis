@@ -1,5 +1,5 @@
 # Antigravity IDE Prompt: Real Estate Finance Management System
-## Al Ashram Real Estate — Chart of Accounts Integration
+## Miftah Demo Properties — Chart of Accounts Integration
 
 ---
 
@@ -68,25 +68,25 @@ The company manages the following properties (use these names exactly when taggi
 
 | Property Name | Short Code |
 |---|---|
-| Warsan Building | WARSAN |
-| Galah Building | GALAH |
-| MIR 1 | MIR1 |
-| Tara 2 | TARA2 |
-| Liwan 2 | LIWAN2 |
-| L'horizon Residence | LHORIZON |
-| NAS 1 | NAS1 |
-| Grand Residence | GRAND |
-| JVC MIR 5 Building | MIR5 |
-| Belle Vue | BELLEVUE |
-| JS Towers | JSTOWERS |
-| OST-10 | OST10 |
-| Valencia | VALENCIA |
-| Pine | PINE |
-| Victoria | VICTORIA |
-| Constance | CONSTANCE |
-| Le Boulevard | LEBLVD |
-| IMPZ / IMTZ | IMPZ |
-| Rivington | RIVINGTON |
+| Sample Court Building | SMPCRT |
+| Sample Residences | SMPRES |
+| Sample Garden 1 | GARDEN1 |
+| Sample Palm 2 | PALM2 |
+| Sample Creek 2 | CREEK2 |
+| Sample Skyline | SMPSKY |
+| Sample Dune 1 | DUNE1 |
+| Sample Manor | SMPMNR |
+| Sample Crescent 5 Building | CRESCENT5 |
+| Sample Vista | SMPVST |
+| Sample Harbour Towers | HARBOUR |
+| Sample Atrium 10 | ATRIUM10 |
+| Sample Park | SMPPRK |
+| Sample Cedar | CEDAR |
+| Sample Regent | REGENT |
+| Sample Lofts | SMPLFT |
+| Sample Tower | SMPTWR |
+| Sample Quarter | QUARTER |
+| Sample Bridge | BRIDGE |
 
 ---
 Note: the property list will be dynamic and we can use the exsisting property and units for this.
@@ -164,25 +164,25 @@ Apply these rules when processing any transaction:
 - DEWA and utility expenses must be tagged to a specific property
 - Staff salaries assigned to a specific building must use that property's code; shared office staff should use ORGANISATION
 - Output VAT (5%) applies to commercial rentals; residential rentals are typically VAT-exempt — confirm with user when ambiguous
-- Any entry coded to old owner receipt accounts (e.g., "RCVD FROM BELLE VUE OLD OWNER") should be noted as a **transition entry** and flagged for review
+- Any entry coded to old owner receipt accounts (e.g., "RCVD FROM SAMPLE VISTA OLD OWNER") should be noted as a **transition entry** and flagged for review
 
 ---
 
 ## EXAMPLE INTERACTIONS
 
-**User:** "Record a rent payment of AED 45,000 received from a tenant at Belle Vue for January 2025."
+**User:** "Record a rent payment of AED 45,000 received from a tenant at Sample Vista for January 2025."
 
 **You should return:**
 ```json
 {
   "date": "2025-01-01",
-  "description": "Rental income received - Belle Vue tenant January 2025",
+  "description": "Rental income received - Sample Vista tenant January 2025",
   "account_code": "166060",
-  "account_name": "Rental Income Belle Vue",
+  "account_name": "Rental Income Sample Vista",
   "account_type": "Income",
   "debit": 0.00,
   "credit": 45000.00,
-  "property": "BELLEVUE",
+  "property": "SMPVST",
   "vat_applicable": false,
   "vat_amount": 0.00,
   "notes": "Residential rental - VAT exempt"
@@ -191,9 +191,9 @@ Apply these rules when processing any transaction:
 
 ---
 
-**User:** "Show me a P&L for Belle Vue for Q1 2025."
+**User:** "Show me a P&L for Sample Vista for Q1 2025."
 
-**You should return** a property-level P&L report showing all income and expense lines coded to BELLEVUE for the period January–March 2025.
+**You should return** a property-level P&L report showing all income and expense lines coded to SMPVST for the period January–March 2025.
 
 ---
 
@@ -208,6 +208,6 @@ Apply these rules when processing any transaction:
 - Always confirm the property tag before saving any transaction. If it cannot be determined, ask the user.
 - When an expense involves multiple properties (e.g., shared staff cost), split proportionally or ask the user for the allocation.
 - Flag duplicate entries (same vendor, amount, date, and property) for user review.
-- For bank transactions, match to the correct Emirates Islamic Bank account per property (e.g., Emirates Islamic - Belle Vue = account 166064).
+- For bank transactions, match to the correct Emirates Islamic Bank account per property (e.g., Emirates Islamic - Sample Vista = account 166064).
 - Maintain running totals per property for: Rent Receivable, Security Deposits, Advance Rent, and PDCs.
 - All monetary values are in **Tenant specific currency** unless stated otherwise.

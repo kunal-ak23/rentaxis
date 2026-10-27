@@ -94,13 +94,13 @@ class OpeningBalanceControllerIT extends AbstractPostgresIT {
         propertyAccounts.seedDefaultTemplateAndDefaults();
 
         Property p = new Property();
-        p.setNameEn("Tulip Oasis 7");
+        p.setNameEn("Sample Plaza Oasis 7");
         p.setEmirate(Emirate.DUBAI);
         UUID propertyId = propertyRepo.save(p).getId();
 
         cashInHand = accounts.createLeaf("Cash In Hand", accounts.getAccountByCode("A-02"), null);
         vatPayable = accounts.createLeaf("VAT Payable", accounts.getAccountByCode("B-01"), null);
-        rentReceivable = accounts.createLeaf("Rent Receivable - Tulip 7", accounts.getAccountByCode("A-02-01"), propertyId);
+        rentReceivable = accounts.createLeaf("Rent Receivable - Sample Plaza 7", accounts.getAccountByCode("A-02-01"), propertyId);
         obDifference = resolver.resolve(AccountRole.OPENING_BALANCE_DIFFERENCE, null);   // seeded as F-02
 
         PropertyAccountMapping m = new PropertyAccountMapping();

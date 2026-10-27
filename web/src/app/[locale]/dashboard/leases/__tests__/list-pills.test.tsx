@@ -43,7 +43,7 @@ function lease(id: string, status: LeaseStatus, unit: string): LeaseDetail {
         startDate: "2026-01-01", endDate: "2026-12-31", status,
         rentAmount: 60000, depositAmount: null, ejariNumber: null, paymentTerms: 4,
         installmentDistribution: "LAST_LARGER", paymentMethod: "CHEQUE", depositPaymentMethod: "CHEQUE",
-        paymentReferenceNumber: null, propertyId: "11111111-1111-4111-8111-111111111111", propertyName: "L'Olivier", propertyCode: "OLV",
+        paymentReferenceNumber: null, propertyId: "11111111-1111-4111-8111-111111111111", propertyName: "Sample Heights", propertyCode: "SMH",
         hasContract: false, contractNumber: null, displayContractNumber: null,
         agreementDate: null, rentVatApplicable: true, contractDate: "2026-01-01", totalDays: 365,
         gracePeriodDays: 0, firstDueDate: null, renterAcceptedAt: null,
@@ -78,7 +78,7 @@ beforeEach(() => {
     api.statsByLeases.mockImplementation(async () => []);
     global.fetch = vi.fn(async (u: RequestInfo | URL) => ({
         ok: true, status: 200,
-        json: async () => (String(u).endsWith("/v1/properties") ? [{ property: { id: "11111111-1111-4111-8111-111111111111", nameEn: "Marina" } }, { property: { id: "22222222-2222-4222-8222-222222222222", nameEn: "Olivier" } }] : []),
+        json: async () => (String(u).endsWith("/v1/properties") ? [{ property: { id: "11111111-1111-4111-8111-111111111111", nameEn: "Marina" } }, { property: { id: "22222222-2222-4222-8222-222222222222", nameEn: "Sample Heights" } }] : []),
     })) as unknown as typeof fetch;
 });
 

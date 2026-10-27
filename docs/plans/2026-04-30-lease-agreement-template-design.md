@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-30
 **Status:** Approved (brainstorming complete, ready for implementation plan)
-**Source format:** `GH2-603_001.pdf` shared by client (Tarek Mohammed Alashram, Galah Residence 2 sample lease)
+**Source format:** `SR2-603_001.pdf` shared by client (Miftah Demo Properties, Sample Residences 2 sample lease)
 
 ## Goal
 

@@ -2163,7 +2163,7 @@ beforeEach(() => {
     posted.length = 0;
     global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
-        if (url.includes("/v1/properties")) return { ok: true, status: 200, json: async () => [{ property: { id: "p1", nameEn: "Belle Vue" } }] } as unknown as Response;
+        if (url.includes("/v1/properties")) return { ok: true, status: 200, json: async () => [{ property: { id: "p1", nameEn: "Sample Vista" } }] } as unknown as Response;
         if (url.includes("/v1/settings/fines")) return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
         if (url.includes("/v1/rent-settings/") && init?.method === "POST") {
             posted.push(JSON.parse(String(init.body)));
@@ -2178,7 +2178,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 describe("RentSettings inside Settings › Rent & fines", () => {
     it("hides the online-payment switch but saves the value it loaded, so Payments' choice is never clobbered", async () => {
         render(<RentSettings embedded hideOnlinePaymentToggle />);
-        await screen.findByText("Belle Vue");
+        await screen.findByText("Sample Vista");
         fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "p1" } });
         await screen.findByText("Settings");
         expect(screen.queryByRole("switch")).toBeNull();
@@ -2334,7 +2334,7 @@ beforeEach(() => {
     posted.length = 0;
     global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
-        if (url.endsWith("/v1/properties")) return { ok: true, status: 200, json: async () => [{ property: { id: "p1", nameEn: "Belle Vue" } }] } as unknown as Response;
+        if (url.endsWith("/v1/properties")) return { ok: true, status: 200, json: async () => [{ property: { id: "p1", nameEn: "Sample Vista" } }] } as unknown as Response;
         if (init?.method === "POST") { posted.push(JSON.parse(String(init.body))); return { ok: true, status: 200, json: async () => JSON.parse(String(init.body)) } as unknown as Response; }
         return { ok: true, status: 200, json: async () => ({ propertyId: "p1", onlinePaymentEnabled: false, dueDayOfMonth: 9, penaltyType: "PERCENTAGE", penaltyAmount: 2 }) } as unknown as Response;
     }) as unknown as typeof fetch;
@@ -2344,7 +2344,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 describe("OnlinePaymentSwitch", () => {
     it("flips only onlinePaymentEnabled and sends every other rent setting back unchanged", async () => {
         render(<OnlinePaymentSwitch />);
-        await screen.findByText("Belle Vue");
+        await screen.findByText("Sample Vista");
         fireEvent.change(screen.getByRole("combobox"), { target: { value: "p1" } });
         fireEvent.click(await screen.findByRole("switch"));
         await waitFor(() => expect(posted).toHaveLength(1));
@@ -3261,7 +3261,7 @@ const query = { current: "" };
 vi.mock("next-auth/react", () => ({ useSession: () => ({ data: { user: { role: role.current } } }) }));
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(query.current), useRouter: () => ({ replace: vi.fn(), push: vi.fn() }), usePathname: () => "/en/dashboard/collections" }));
 vi.mock("@/i18n/routing", () => ({ Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => <a href={href} {...rest}>{children}</a>, useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }));
-vi.mock("@/components/finance/useNameLookup", () => ({ useNameLookup: () => ({ options: [{ id: "p1", label: "Belle Vue" }], name: () => "", loading: false }) }));
+vi.mock("@/components/finance/useNameLookup", () => ({ useNameLookup: () => ({ options: [{ id: "p1", label: "Sample Vista" }], name: () => "", loading: false }) }));
 for (const [m, id] of [["ToDepositPanel", "deposit"], ["ReturnReplacePanel", "returned"], ["PostDatedPanel", "post-dated"], ["PenaltiesPanel", "penalties"], ["ChequeRegisterPanel", "all"]] as const) {
     vi.doMock(`@/components/collections/${m}`, () => ({ default: (p: { propertyId?: string }) => <div data-testid={`panel-${id}`} data-property={p.propertyId ?? ""} /> }));
 }

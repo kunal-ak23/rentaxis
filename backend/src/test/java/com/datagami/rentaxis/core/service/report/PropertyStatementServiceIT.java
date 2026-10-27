@@ -111,7 +111,7 @@ class PropertyStatementServiceIT extends AbstractPostgresIT {
         fx = new PropertyPnlFixture(orgRepo, accounts, propertyAccounts, properties, posting, vouchers, vendorService,
                 accountRepo, resolver).tenant("STMT-").workedExample();
         Renter r = new Renter();
-        r.setNameEn("Prabhjot Singh");
+        r.setNameEn("Sample Renter One");
         Renter renter = renterRepo.save(r);
         Unit u = new Unit();
         u.setProperty(fx.p1);

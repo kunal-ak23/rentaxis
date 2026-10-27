@@ -12,7 +12,7 @@ void main() {
       final dio = Dio(BaseOptions(baseUrl: 'https://api.example'));
       dio.httpClientAdapter = _StubAdapter(responseBody: [
         {
-          'property': {'id': 'p1', 'nameEn': 'Al Ashram Tower', 'nameAr': 'برج'},
+          'property': {'id': 'p1', 'nameEn': 'Sample Tower', 'nameAr': 'برج'},
           'vacancies': 3,
           'propertyCount': 8,
         },
@@ -22,8 +22,8 @@ void main() {
       final p = list.first as Map<String, dynamic>;
 
       expect(p['id'], 'p1');
-      expect(p['name'], 'Al Ashram Tower');
-      expect(p['nameEn'], 'Al Ashram Tower');
+      expect(p['name'], 'Sample Tower');
+      expect(p['nameEn'], 'Sample Tower');
       expect(p['vacancies'], 3); // summary extras preserved
       expect(p['property'], isNotNull); // legacy unwrap still works
     });

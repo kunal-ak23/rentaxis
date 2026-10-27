@@ -13,7 +13,7 @@ vi.mock("@/components/finance/AccountPicker", () => ({
 function cheque(over: Partial<Cheque> & { id: string; seqNo: number }): Cheque {
     return {
         leaseId: "l1", propertyId: "p1", unitId: "u1", renterId: "r1",
-        propertyName: "L'Olivier", unitIdentifier: "A-101", renterName: "Prabhjot Singh",
+        propertyName: "Sample Heights", unitIdentifier: "A-101", renterName: "Sample Renter One",
         postingDate: "2026-01-01", chequeNumber: "000101", chequeDate: "2026-01-01",
         payeeBank: "ENBD", payerName: null, debitAccountId: "acc-1", debitAccountName: "PDC Receivable",
         amount: 13700, narration: "Rent - 1st Installment", mode: "PDC", status: "REGISTERED",

@@ -12,7 +12,7 @@ import en from "../../../../../../messages/en.json";
  */
 
 vi.mock("next-auth/react", () => ({
-    useSession: () => ({ data: { user: { name: "Prabhjot Singh", role: "RENTER" } } }),
+    useSession: () => ({ data: { user: { name: "Sample Renter One", role: "RENTER" } } }),
 }));
 vi.mock("@/i18n/routing", () => ({
     Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
@@ -27,17 +27,17 @@ import RenterPortalPage from "../page";
 
 const LEASE = {
     id: "lease-1", unitId: "u1", renterId: "r1", unitIdentifier: "A-101",
-    renterName: "Prabhjot Singh", startDate: "2026-01-01", endDate: "2026-12-31",
+    renterName: "Sample Renter One", startDate: "2026-01-01", endDate: "2026-12-31",
     status: "PENDING_SIGNATURE", rentAmount: 60000, depositAmount: 5000, ejariNumber: "E-1",
-    paymentTerms: 3, propertyName: "L'Olivier", hasContract: true,
+    paymentTerms: 3, propertyName: "Sample Heights", hasContract: true,
 };
 
 function payment(over: Record<string, unknown>) {
     return {
         id: "c1", leaseId: "lease-1", installmentNumber: 1, dueDate: "2026-03-01",
         amount: 21000, status: "REGISTERED", mode: "PDC", chequeNumber: "000101",
-        bankName: "ENBD", narration: null, propertyName: "L'Olivier", unitIdentifier: "A-101",
-        renterName: "Prabhjot Singh", due: false, overdue: false, daysOverdue: 0,
+        bankName: "ENBD", narration: null, propertyName: "Sample Heights", unitIdentifier: "A-101",
+        renterName: "Sample Renter One", due: false, overdue: false, daysOverdue: 0,
         gracePeriodDays: 5, penaltyOutstanding: 0, payable: 21000, payableOnline: false,
         onlineEnabled: false, penaltyAssessmentId: null, failureReason: null,
         clearedAt: null, statusChangedAt: null,

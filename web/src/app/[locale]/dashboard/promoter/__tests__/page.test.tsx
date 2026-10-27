@@ -55,7 +55,7 @@ function renderPortal(locale: 'en' | 'ar' = 'en') {
 
 function plan({ canCreate = false, businesses = [business()], ads = ADS }:
     { canCreate?: boolean; businesses?: PromoBusinessDTO[]; ads?: PromoAdDTO[] } = {}) {
-    api.on('GET', `${PROMOTER_API}me`, { body: { canCreateBusinesses: canCreate, organisationName: 'Al Ashram Properties' } })
+    api.on('GET', `${PROMOTER_API}me`, { body: { canCreateBusinesses: canCreate, organisationName: 'Miftah Demo Properties' } })
     api.on('GET', `${PROMOTER_API}properties`, { body: [{ id: 'p-1', nameEn: 'Palm Tower', nameAr: 'برج النخيل' }, { id: 'p-2', nameEn: 'Marina Heights', nameAr: null }] })
     api.on('GET', `${PROMOTER_API}businesses`, { body: businesses })
     api.on('GET', `${PROMOTER_API}ads`, { body: pageOf(ads) })
@@ -79,7 +79,7 @@ describe('promoter portal', () => {
         renderPortal()
         await screen.findByText('Ad live')
 
-        expect(screen.getByText('Your ads for Al Ashram Properties. Nothing reaches tenants until an administrator approves it.')).toBeInTheDocument()
+        expect(screen.getByText('Your ads for Miftah Demo Properties. Nothing reaches tenants until an administrator approves it.')).toBeInTheDocument()
         expect(pill('Ad live')).toHaveTextContent('Live')
         expect(pill('Ad pending')).toHaveTextContent('Pending approval')
         expect(pill('Ad rejected')).toHaveTextContent('Rejected')

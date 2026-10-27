@@ -1956,7 +1956,7 @@ public class LeaseService {
      * row — handing it an already-ACTIVE lease, or a TERMINATED one, would do all
      * three for a contract that is not becoming active at all.</p>
      *
-     * @param notes what the event row records, e.g. {@code "Lease posted TCO-26/1629"}
+     * @param notes what the event row records, e.g. {@code "Lease posted TCO-26/0042"}
      */
     @Transactional
     public Lease markActiveOnPosting(Lease lease, String notes) {
@@ -2686,7 +2686,7 @@ public class LeaseService {
     }
 
     /**
-     * "GLA_B1/681" when the property carries a code, else the bare number. The
+     * "SMP_B1/001" when the property carries a code, else the bare number. The
      * code is nullable and the number is null until a contract is generated, so
      * both absences have to survive this.
      */

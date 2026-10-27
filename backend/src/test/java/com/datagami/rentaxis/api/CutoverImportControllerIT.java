@@ -267,7 +267,7 @@ class CutoverImportControllerIT {
     @Test
     void anAccountantUploadsTheTemplateAndPollsItThroughToABatch() throws Exception {
         ResponseEntity<String> started = upload(accountant, templates.generateCutOverTemplate(),
-                "al-ashram-cutover.xlsx", true);
+                "miftah-demo-cutover.xlsx", true);
         assertThat(started.getStatusCode()).isEqualTo(HttpStatus.OK);
         UUID jobId = UUID.fromString(json(started.getBody()).get("jobId").asText());
 
@@ -297,7 +297,7 @@ class CutoverImportControllerIT {
         JsonNode dto = json(new String(batch.getBody(), StandardCharsets.UTF_8));
         assertThat(dto.get("status").asText()).isEqualTo("DRAFT");
         assertThat(dto.get("leasesImported").asInt()).isEqualTo(2);
-        assertThat(dto.get("label").asText()).contains("al-ashram-cutover.xlsx");
+        assertThat(dto.get("label").asText()).contains("miftah-demo-cutover.xlsx");
     }
 
     @Test

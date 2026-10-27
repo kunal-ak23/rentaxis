@@ -197,7 +197,7 @@ databaseChangeLog:
         # ---- controller rulings folded into 88 ------------------------------
         #
         # PACT'S CONTRACT NUMBER. The client's contracts are identified by strings
-        # like "TLP7/681". `leases.contract_number` is a bigint — our own per-tenant
+        # like "SAMPLE-25/001". `leases.contract_number` is a bigint — our own per-tenant
         # sequence, rendered as "<property code>/<number>" for display — and cannot
         # hold one, and overloading it would put a foreign identifier into the
         # column that generates our next contract number. So the imported reference

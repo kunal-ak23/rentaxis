@@ -85,7 +85,7 @@ class PayloadVarsExtractorChequeNumberTest {
     void unrelatedPayloadDoesNotGainAChequeNumberVar() {
         LeasePayload lease = new LeasePayload(
                 UUID.randomUUID(), UUID.randomUUID(), null,
-                "A-101", "Ocean Residencia", "2026-01-01", "2026-12-31", "72000 AED", null);
+                "A-101", "Sample Oasis", "2026-01-01", "2026-12-31", "72000 AED", null);
 
         Map<String, Object> vars = PayloadVarsExtractor.extract(
                 EmailEventType.LEASE_ACTIVATED, lease, BASE, "en");

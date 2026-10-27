@@ -29,7 +29,7 @@ beforeEach(() => {
     global.fetch = vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
         if (url.endsWith("/v1/properties/p1")) {
-            return { ok: true, status: 200, json: async () => ({ id: "p1", nameEn: "Belle Vue", emirate: "DUBAI", type: "RESIDENTIAL" }) } as unknown as Response;
+            return { ok: true, status: 200, json: async () => ({ id: "p1", nameEn: "Sample Vista", emirate: "DUBAI", type: "RESIDENTIAL" }) } as unknown as Response;
         }
         if (url.endsWith("/contacts")) return { ok: true, status: 200, json: async () => ([contact]) } as unknown as Response;
         return { ok: true, status: 200, json: async () => ([]) } as unknown as Response;

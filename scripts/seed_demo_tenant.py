@@ -48,9 +48,10 @@ Usage:
   PROD_SUPERADMIN_EMAIL=... PROD_SUPERADMIN_PASSWORD=... \
   python3 scripts/seed_demo_tenant.py
 
-  # The older prod demo org (App Store reviewer logins) predates these defaults:
-  DEMO_TENANT_NAME="Al Ashram Demo Account" DEMO_BRAND="Al Ashram" \
-  DEMO_EMAIL_DOMAIN=alashramdemo.com DEMO_ADMIN_NAME="Al Ashram Demo Admin" \
+  # The older prod demo org (App Store reviewer logins) predates these defaults.
+  # Pass its own name, brand and mailbox domain (kept out of this public repo):
+  DEMO_TENANT_NAME="<org name>" DEMO_BRAND="<brand>" \
+  DEMO_EMAIL_DOMAIN=<domain> DEMO_ADMIN_NAME="<brand> Admin" \
   DEMO_EMAIL_NOTIFICATIONS=true DEMO_PHONE_BLOCK=+97155556 python3 scripts/seed_demo_tenant.py
 
   # Split local stack (no Caddy in front): the API and the web app are two
@@ -73,7 +74,7 @@ import requests
 REPO_ROOT = Path(__file__).resolve().parent.parent
 # The organisation this run seeds (and finds again on a re-run). DEMO_ORG_NAME
 # is the name to use; DEMO_TENANT_NAME is its older spelling, still honoured so
-# existing runs (the tutorial stack, the "Al Ashram Demo Account" org) resolve to
+# existing runs (the tutorial stack, the older App Store reviewer org) resolve to
 # the org they seeded. The default is the client sandbox, which must not collide
 # with the "Miftah Demo" org already on prod.
 TENANT_NAME = (os.environ.get("DEMO_ORG_NAME") or os.environ.get("DEMO_TENANT_NAME")

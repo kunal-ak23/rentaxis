@@ -13,7 +13,7 @@ import java.util.Locale;
 import java.util.UUID;
 
 /**
- * Hands out "TCO-26/1629"-style numbers: doc type, two-digit fiscal year,
+ * Hands out "TCO-26/0042"-style numbers: doc type, two-digit fiscal year,
  * per-tenant per-type per-year counter. Runs in the caller's transaction so
  * a rolled-back posting releases its number (gaps are acceptable; duplicates
  * are not — the row lock guarantees that).

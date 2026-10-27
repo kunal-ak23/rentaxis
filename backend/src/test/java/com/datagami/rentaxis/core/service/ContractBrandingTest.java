@@ -124,7 +124,7 @@ class ContractBrandingTest {
 
         Property p = new Property();
         p.setTenantId(tenantId);
-        p.setNameEn("GALAH RESIDENCE 2");
+        p.setNameEn("SAMPLE RESIDENCES 2");
         p.setEmirate(Emirate.DUBAI);
         p.setType(PropertyType.RESIDENTIAL);
         Unit u = new Unit();

@@ -1,7 +1,7 @@
 # Mobile Apps E2E Testing Report — 2026-08-02
 
 Scope: end-to-end screen testing of the three Flutter apps (Renter → Admin/Manager → Security)
-against the local backend (`http://localhost:8081`), using the seeded **Al Ashram Demo Account**
+against the local backend (`http://localhost:8081`), using the seeded **Miftah Demo Account**
 tenant (`1c1ad94e-035e-44c4-9636-1895a984aae7`).
 
 ## Executive summary
@@ -34,11 +34,11 @@ tenant (`1c1ad94e-035e-44c4-9636-1895a984aae7`).
 
 | Account | Role | Data profile |
 |---|---|---|
-| admin@alashramdemo.com | TENANT_ADMIN | full tenant |
-| ahmed@alashramdemo.com | RENTER | quarterly lease, cleared + deposited + awaiting-deposit cheques |
-| fatima@alashramdemo.com | RENTER | bounced Q2 cheque with auto penalty |
-| rajesh@alashramdemo.com | RENTER | monthly lease, June installment overdue |
-| sara@alashramdemo.com | RENTER | lease pending signature |
+| admin@miftahdemo.example | TENANT_ADMIN | full tenant |
+| ahmed@miftahdemo.example | RENTER | quarterly lease, cleared + deposited + awaiting-deposit cheques |
+| fatima@miftahdemo.example | RENTER | bounced Q2 cheque with auto penalty |
+| rajesh@miftahdemo.example | RENTER | monthly lease, June installment overdue |
+| sara@miftahdemo.example | RENTER | lease pending signature |
 
 ## 1. Renter app
 
@@ -94,7 +94,7 @@ bounced-cheque screens captured this way; values match the API.)
 
 Method: `integration_test/client_shots_test.dart` via `flutter drive` — walks 13 routes in all
 four presentation modes (EN/AR × light/dark) plus both login screens (53 screenshots), as
-`admin@alashramdemo.com`. Plus a static review of all screens (incl. cheque_scan/, gatepass/,
+`admin@miftahdemo.example`. Plus a static review of all screens (incl. cheque_scan/, gatepass/,
 listings/) and API cross-checks.
 
 ### Screens verified
@@ -118,7 +118,7 @@ listing statuses, occupancy, cheque counts all correct).
 
 ### Cosmetic / data observations (not fixed)
 
-- Greeting shows "Hi, Al" for user "Al Ashram Demo Admin" — `_firstName` takes the first word; fine
+- Greeting shows "Hi, Al" for user "Miftah Demo Demo Admin" — `_firstName` takes the first word; fine
   for person names, odd for org-style names. Left as-is.
 - Arabic finance screens show chart-of-account names in English — backend seed data is EN-only;
   an app can't translate free-text account names. Data-side gap, not an app bug.
@@ -131,7 +131,7 @@ everywhere.
 
 ## 3. Security (Guard) app
 
-Method: guard user seeded via API (`guard@alashramdemo.com`, SECURITY_GUARD, assigned to both
+Method: guard user seeded via API (`guard@miftahdemo.example`, SECURITY_GUARD, assigned to both
 properties); session established with `session_seed_test.dart` (SEED_USER_ID/SEED_TENANT_ID —
 bypasses Firebase phone auth locally since the backend accepts X-User-* headers); then
 `gate_scan_flow_test.dart` keys an active pass's 8-digit code and asserts the verdict screen.

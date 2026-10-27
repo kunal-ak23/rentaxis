@@ -55,7 +55,7 @@ function schedule(): RecognitionEntry[] {
     ) =>
         rows.push({
             id: `e${rows.length + 1}`, leaseId: "lease-1", segmentId: "seg-1",
-            propertyId: "prop-olv", propertyName: "L'Olivier", unitName: "204",
+            propertyId: "prop-smh", propertyName: "Sample Heights", unitName: "204",
             periodStart, periodEnd, days, amount, status,
             journalId: journalNumber ? `j${rows.length + 1}` : null,
             journalNumber,
@@ -109,7 +109,7 @@ function afterAmend(): RecognitionEntry[] {
         const old: RecognitionStatus = m === "2026-01" ? "REVERSED" : "CANCELLED";
         rows.push({
             id: `old-${++n}`, leaseId: "lease-1", segmentId: "seg-old",
-            propertyId: "prop-olv", propertyName: "L'Olivier", unitName: "204",
+            propertyId: "prop-smh", propertyName: "Sample Heights", unitName: "204",
             periodStart: start, periodEnd: end, days, amount: 4250, status: old,
             journalId: old === "REVERSED" ? "j-old-1" : null,
             journalNumber: old === "REVERSED" ? "CIL/2026/0001" : null,
@@ -117,7 +117,7 @@ function afterAmend(): RecognitionEntry[] {
         });
         rows.push({
             id: `new-${n}`, leaseId: "lease-1", segmentId: "seg-new",
-            propertyId: "prop-olv", propertyName: "L'Olivier", unitName: "204",
+            propertyId: "prop-smh", propertyName: "Sample Heights", unitName: "204",
             periodStart: start, periodEnd: end, days, amount: 5000, status: "PLANNED",
             journalId: null, journalNumber: null, postedAt: null,
         });
