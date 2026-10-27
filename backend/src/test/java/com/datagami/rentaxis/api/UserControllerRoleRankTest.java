@@ -57,4 +57,17 @@ class UserControllerRoleRankTest {
         assertThat(UserController.canAssignRole(UserRole.PROPERTY_MANAGER, UserRole.PROPERTY_MANAGER)).isTrue();
         assertThat(UserController.canAssignRole(UserRole.TENANT_USER, UserRole.TENANT_ADMIN)).isFalse();
     }
+
+    /** Promoter plan: PROMOTER is the least privileged role, assignable by everyone above it. */
+    @Test
+    void promoterRanksBelowEveryOtherRole() {
+        for (UserRole role : UserRole.values()) {
+            if (role != UserRole.PROMOTER) {
+                assertThat(UserController.privilegeRank(role))
+                        .isLessThan(UserController.privilegeRank(UserRole.PROMOTER));
+            }
+        }
+        assertThat(UserController.canAssignRole(UserRole.PROMOTER, UserRole.SECURITY_GUARD)).isFalse();
+        assertThat(UserController.canAssignRole(UserRole.TENANT_ADMIN, UserRole.PROMOTER)).isTrue();
+    }
 }

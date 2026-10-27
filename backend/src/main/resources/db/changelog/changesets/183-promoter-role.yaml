@@ -1,0 +1,104 @@
+# Promoter role (plan docs/superpowers/plans/2026-10-27-promoter-role.md).
+#
+# A PROMOTER is an outside business's login that manages the promo businesses and
+# ads an admin has granted it. Nothing it writes reaches a renter until an admin
+# approves it, so:
+#
+#   - promo_ads.approval_status: PENDING / APPROVED / REJECTED. Existing rows (all
+#     admin-written) default to APPROVED and stay live. The renter feed
+#     (PromoAdRepository.findEligible) shows APPROVED ads only.
+#   - promo_ads.promoter_user_id: the promoter who last wrote the ad (null = an ad
+#     only admins have written). A promoter-written ad shows only at properties it
+#     targets AND that are currently in that promoter's allowed set.
+#   - submitted_at / reviewed_by / reviewed_at / rejection_reason: the review trail.
+#
+# Access (all tenant-scoped, Hibernate tenantFilter like the other promo tables):
+#   - promoter_access: one row per promoter, its home organisation and the
+#     "can create businesses" switch.
+#   - promoter_business: businesses granted to the promoter.
+#   - promoter_property: properties the promoter may see and target.
+#     NOT user_property_assignments: that table drives PROPERTY_MANAGER scoping and
+#     email recipient resolution (lease/cheque emails, the Property Manager card),
+#     so reusing it would hand renter data to a promoter.
+databaseChangeLog:
+  - changeSet:
+      id: 183-promoter-role
+      author: claude
+      changes:
+        - addColumn:
+            tableName: promo_ads
+            columns:
+              - column: { name: approval_status, type: varchar(16), defaultValue: APPROVED, constraints: { nullable: false } }
+              - column: { name: promoter_user_id, type: uuid }
+              - column: { name: submitted_at, type: timestamptz }
+              - column: { name: reviewed_by, type: uuid }
+              - column: { name: reviewed_at, type: timestamptz }
+              - column: { name: rejection_reason, type: varchar(500) }
+        # Both user references survive the user being deleted: the ad is kept, who
+        # wrote or reviewed it is forgotten.
+        - addForeignKeyConstraint:
+            baseTableName: promo_ads
+            baseColumnNames: promoter_user_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_promo_ad_promoter_user
+            onDelete: SET NULL
+        - addForeignKeyConstraint:
+            baseTableName: promo_ads
+            baseColumnNames: reviewed_by
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_promo_ad_reviewed_by
+            onDelete: SET NULL
+        - sql:
+            comment: The three approval states; anything else would be an ad no query recognises.
+            sql: ALTER TABLE promo_ads ADD CONSTRAINT ck_promo_ad_approval_status CHECK (approval_status IN ('PENDING', 'APPROVED', 'REJECTED'));
+        - createIndex:
+            tableName: promo_ads
+            indexName: idx_promo_ads_approval
+            columns:
+              - column: { name: tenant_id }
+              - column: { name: approval_status }
+
+        - createTable:
+            tableName: promoter_access
+            columns:
+              - column: { name: user_id, type: uuid, constraints: { primaryKey: true, primaryKeyName: pk_promoter_access, nullable: false, foreignKeyName: fk_promoter_access_user, referencedTableName: users, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_promoter_access_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: can_create_businesses, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
+              - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: updated_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+        - createIndex: { tableName: promoter_access, indexName: idx_promoter_access_tenant, columns: [ { column: { name: tenant_id } } ] }
+
+        - createTable:
+            tableName: promoter_business
+            columns:
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_promoter_business_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: user_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_promoter_business_user, referencedTableName: users, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: business_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_promoter_business_business, referencedTableName: promo_businesses, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+        - addPrimaryKey: { tableName: promoter_business, columnNames: "user_id, business_id", constraintName: pk_promoter_business }
+        - createIndex: { tableName: promoter_business, indexName: idx_promoter_business_tenant, columns: [ { column: { name: tenant_id } }, { column: { name: business_id } } ] }
+
+        - createTable:
+            tableName: promoter_property
+            columns:
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_promoter_property_tenant, referencedTableName: landlord_org, referencedColumnNames: id } }
+              - column: { name: user_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_promoter_property_user, referencedTableName: users, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: property_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_promoter_property_property, referencedTableName: properties, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: created_at, type: timestamptz, defaultValueComputed: now(), constraints: { nullable: false } }
+        - addPrimaryKey: { tableName: promoter_property, columnNames: "user_id, property_id", constraintName: pk_promoter_property }
+        - createIndex: { tableName: promoter_property, indexName: idx_promoter_property_tenant, columns: [ { column: { name: tenant_id } }, { column: { name: property_id } } ] }
+      rollback:
+        - dropTable: { tableName: promoter_property }
+        - dropTable: { tableName: promoter_business }
+        - dropTable: { tableName: promoter_access }
+        - dropIndex: { tableName: promo_ads, indexName: idx_promo_ads_approval }
+        - sql:
+            sql: ALTER TABLE promo_ads DROP CONSTRAINT IF EXISTS ck_promo_ad_approval_status;
+        - dropColumn: { tableName: promo_ads, columnName: rejection_reason }
+        - dropColumn: { tableName: promo_ads, columnName: reviewed_at }
+        - dropColumn: { tableName: promo_ads, columnName: reviewed_by }
+        - dropColumn: { tableName: promo_ads, columnName: submitted_at }
+        - dropColumn: { tableName: promo_ads, columnName: promoter_user_id }
+        - dropColumn: { tableName: promo_ads, columnName: approval_status }

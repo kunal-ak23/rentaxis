@@ -367,3 +367,5 @@ databaseChangeLog:
       file: db/changelog/changesets/181-bank-import-closing-row-date.yaml
   - include:
       file: db/changelog/changesets/182-lease-original-end-date.yaml
+  - include:
+      file: db/changelog/changesets/183-promoter-role.yaml

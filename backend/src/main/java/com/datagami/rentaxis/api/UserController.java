@@ -44,6 +44,9 @@ public class UserController {
 
     @PostMapping
     public ResponseEntity<UserResponseDTO> createUser(@RequestBody CreateUserRequest request) {
+        if (request.role() == UserRole.PROMOTER) {
+            refusePromoterRole();
+        }
         // Authorize the role the caller is trying to provision and scope the
         // new user to the caller's tenant (non-SUPER_ADMIN callers cannot
         // create privileged roles above their own, nor users in other tenants).
@@ -99,6 +102,14 @@ public class UserController {
         UserRole effectiveRole = request.role() != null ? request.role() : target.getRole();
         String requestedTenant = request.tenantId() != null ? request.tenantId()
                 : target.getTenantId() == null ? null : target.getTenantId().toString();
+        // A promoter is made and unmade only from Promotions → Promoters, and lives
+        // in exactly one organisation: no role change to or from PROMOTER here, and
+        // no move. Its name, email, phone and password stay editable as for anyone.
+        boolean promoterInvolved = target.getRole() == UserRole.PROMOTER || effectiveRole == UserRole.PROMOTER;
+        if (promoterInvolved && (effectiveRole != target.getRole()
+                || !sameTenant(requestedTenant, target.getTenantId()))) {
+            refusePromoterRole();
+        }
         String effectiveTenantId = authorizeRoleAssignment(effectiveRole, requestedTenant);
 
         // Break-it R3 ops3 F4: a panel that loaded other assignments than the user
@@ -222,6 +233,22 @@ public class UserController {
         return ResponseEntity.ok(userService.getAssignedPropertyIds(userId));
     }
 
+    private static boolean sameTenant(String requested, UUID current) {
+        if (requested == null || requested.isBlank()) {
+            return current == null;
+        }
+        try {
+            return UUID.fromString(requested.trim()).equals(current);
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private static void refusePromoterRole() {
+        throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                UserService.PROMOTER_ROLE_MESSAGE, UserService.PROMOTER_ROLE_CODE, java.util.Map.of());
+    }
+
     // --- Role-hierarchy authorization ---------------------------------------
 
     /**
@@ -336,6 +363,7 @@ public class UserController {
             case TENANT_USER -> 4;
             case RENTER -> 5;
             case SECURITY_GUARD -> 6;
+            case PROMOTER -> 7;
         };
     }
 }

@@ -106,7 +106,8 @@ public class UserService {
      */
     private static boolean getsTenantMembership(UserRole role) {
         return switch (role) {
-            case TENANT_ADMIN, PROPERTY_MANAGER, ACCOUNTANT, TENANT_USER, RENTER, SECURITY_GUARD -> true;
+            // PROMOTER: its home organisation only — addTenantMembership refuses any other.
+            case TENANT_ADMIN, PROPERTY_MANAGER, ACCOUNTANT, TENANT_USER, RENTER, SECURITY_GUARD, PROMOTER -> true;
             case SUPER_ADMIN -> false;
         };
     }
@@ -204,7 +205,8 @@ public class UserService {
      */
     static boolean issuesInviteToken(UserRole role, boolean passwordSupplied) {
         return switch (role) {
-            case RENTER, PROPERTY_MANAGER, TENANT_USER -> true;
+            // PROMOTER: always — Promotions → Promoters creates it with no password.
+            case RENTER, PROPERTY_MANAGER, TENANT_USER, PROMOTER -> true;
             case TENANT_ADMIN, ACCOUNTANT -> !passwordSupplied;
             case SUPER_ADMIN, SECURITY_GUARD -> false;
         };
@@ -491,7 +493,10 @@ public class UserService {
     /** Whether rows of this role share the person's password. Exhaustive, like {@link #getsTenantMembership}. */
     static boolean sharesPersonLogin(UserRole role) {
         return switch (role) {
-            case TENANT_ADMIN, PROPERTY_MANAGER, ACCOUNTANT, TENANT_USER, RENTER -> true;
+            // PROMOTER shares: its email had no login when it was invited (PromoterAdminService
+            // refuses one that does), so its rows are one person's, and "Forgot password"
+            // (which reads the shared logins) must reach it.
+            case TENANT_ADMIN, PROPERTY_MANAGER, ACCOUNTANT, TENANT_USER, RENTER, PROMOTER -> true;
             case SUPER_ADMIN, SECURITY_GUARD -> false;
         };
     }
@@ -575,6 +580,10 @@ public class UserService {
 
     public record CreatedUser(User user, boolean existingLogin) {
     }
+
+    /** Promoters are created, re-roled and given properties only from Promotions → Promoters. */
+    public static final String PROMOTER_ROLE_CODE = "user.promoterRole";
+    public static final String PROMOTER_ROLE_MESSAGE = "Promoters are invited from Promotions → Promoters";
 
     @Transactional
     public User createUser(String email, String rawPassword, String name, UserRole role, String tenantId,
@@ -1334,6 +1343,13 @@ public class UserService {
         // query so it holds even if the tenantFilter aspect isn't active.
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        // user_property_assignments drives PROPERTY_MANAGER scoping and email
+        // recipient resolution (lease and cheque mail): a promoter in it would be
+        // sent renter data. A promoter's properties are promoter_property rows.
+        if (user.getRole() == UserRole.PROMOTER) {
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                    PROMOTER_ROLE_MESSAGE, PROMOTER_ROLE_CODE, java.util.Map.of());
+        }
         if (user.getTenantId() == null
                 || !propertyRepository.existsByIdAndTenantId(propertyId, user.getTenantId())) {
             throw new IllegalArgumentException("Property does not belong to the user's tenant.");
@@ -1422,11 +1438,23 @@ public class UserService {
 
     // --- Tenant Membership Methods ---
 
+    public static final String PROMOTER_ONE_ORG_CODE = "user.promoterOneOrganisation";
+
     @Transactional
     public void addTenantMembership(UUID userId, UUID tenantId) {
         if (tenantMembershipRepository.existsByUserIdAndTenantId(userId, tenantId)) {
             return;
         }
+        // A promoter belongs to exactly one organisation (promoter plan): its home
+        // one. A membership elsewhere would let it act there through X-Tenant-Id,
+        // where no admin granted it anything.
+        userRepository.findById(userId).ifPresent(u -> {
+            if (u.getRole() == UserRole.PROMOTER && !tenantId.equals(u.getTenantId())) {
+                throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException(
+                        "A promoter belongs to one organisation only. Invite a separate promoter login instead.",
+                        PROMOTER_ONE_ORG_CODE, java.util.Map.of());
+            }
+        });
         UserTenantMembership membership = new UserTenantMembership();
         membership.setUserId(userId);
         membership.setTenantId(tenantId);

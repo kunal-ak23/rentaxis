@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.domain.entity;
 
+import com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus;
 import com.datagami.rentaxis.domain.entity.enums.PromoCtaType;
 import com.datagami.rentaxis.domain.entity.enums.PromoPlacement;
 import jakarta.persistence.*;
@@ -82,6 +83,32 @@ public class PromoAd extends BaseTenantEntity {
 
     @Column(nullable = false)
     private boolean active = true;
+
+    /**
+     * Only APPROVED ads reach renters (changeset 183). APPROVED by default: an
+     * admin's ad is live on create; a promoter's write sets PENDING explicitly.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "approval_status", nullable = false, length = 16)
+    private PromoApprovalStatus approvalStatus = PromoApprovalStatus.APPROVED;
+
+    /** The promoter who last wrote the ad; null for an ad only admins have written. */
+    @Column(name = "promoter_user_id")
+    private UUID promoterUserId;
+
+    /** When a promoter last sent the ad for approval. */
+    @Column(name = "submitted_at")
+    private Instant submittedAt;
+
+    @Column(name = "reviewed_by")
+    private UUID reviewedBy;
+
+    @Column(name = "reviewed_at")
+    private Instant reviewedAt;
+
+    /** The admin's reason when REJECTED; null otherwise. */
+    @Column(name = "rejection_reason", length = 500)
+    private String rejectionReason;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
