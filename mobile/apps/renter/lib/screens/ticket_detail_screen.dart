@@ -1,4 +1,4 @@
-import 'package:file_picker/file_picker.dart';
+import '../utils/ticket_photo.dart';
 import '../widgets/ticket_attachment_tile.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -739,16 +739,15 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     if (_uploadingAttachment) return;
     setState(() => _uploadingAttachment = true);
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
-      );
-      if (!mounted || result == null || result.files.single.path == null) {
-        return;
-      }
+      // Camera and photo library as well as files: a renter adding to a
+      // request is usually photographing the problem.
+      final source = await chooseTicketAttachmentSource(context);
+      if (!mounted || source == null) return;
+      final path = await pickTicketAttachment(context, source);
+      if (!mounted || path == null) return;
       await ref
           .read(_ticketServiceProvider)
-          .uploadAttachment(widget.ticketId, result.files.single.path!);
+          .uploadAttachment(widget.ticketId, path);
       ref.invalidate(_ticketAttachmentsProvider(widget.ticketId));
     } catch (e) {
       if (mounted) {

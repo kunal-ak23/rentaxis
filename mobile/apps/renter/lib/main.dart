@@ -7,11 +7,16 @@ import 'app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // The production Firebase project currently has only the Resident Android
-  // app registered. Do not let a missing iOS GoogleService-Info.plist prevent
-  // the iOS app (including native Sign in with Apple) from starting.
-  if (defaultTargetPlatform == TargetPlatform.android) {
-    await Firebase.initializeApp();
+  // Push only: a Firebase that cannot start (a build without its config
+  // file) must never stop the app, including native Sign in with Apple,
+  // from launching. Push registration checks Firebase.apps before using it.
+  if (defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS) {
+    try {
+      await Firebase.initializeApp();
+    } catch (e) {
+      debugPrint('Firebase not started; push notifications are off: $e');
+    }
   }
   GoogleFonts.config.allowRuntimeFetching = false;
   runApp(const ProviderScope(child: RenterApp()));

@@ -42,7 +42,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
               Expanded(
                 child: Text(
                   ar ? 'الدفعات' : 'Payments',
-                  style: MiftahType.title(),
+                  style: MiftahType.title(color: context.miftah.textPrimary),
                 ),
               ),
               TextButton(
@@ -260,7 +260,7 @@ class _PaymentCard extends ConsumerWidget {
                 penalty
                     ? (ar ? 'غرامة / رسوم' : 'Penalty / charge')
                     : '${ar ? 'قسط' : 'Instalment'} ${row['installmentNumber'] ?? ''}',
-                style: MiftahType.cardTitle(),
+                style: MiftahType.cardTitle(color: context.miftah.textPrimary),
               ),
               MiftahBadge(
                 paymentStatusLabel(status, ar),
@@ -276,7 +276,7 @@ class _PaymentCard extends ConsumerWidget {
           const SizedBox(height: 10),
           Text(
             Formatters.currency((row['amount'] as num?) ?? 0),
-            style: MiftahType.amount(size: 25),
+            style: MiftahType.amount(size: 25, color: context.miftah.textPrimary),
           ),
           Text('$mode · ${Formatters.date(row['dueDate'] as String?, ar: ar)}'),
           if (isOwedNow(row))
@@ -405,7 +405,7 @@ class _TaxInvoices extends ConsumerWidget {
                   ar
                       ? 'الفواتير الضريبية والإشعارات الدائنة'
                       : 'Tax invoices & credit notes',
-                  style: MiftahType.cardTitle(),
+                  style: MiftahType.cardTitle(color: context.miftah.textPrimary),
                 ),
                 for (final row in rows)
                   ListTile(
