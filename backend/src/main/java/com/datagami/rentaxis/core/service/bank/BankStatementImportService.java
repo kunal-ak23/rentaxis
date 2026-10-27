@@ -269,12 +269,16 @@ public class BankStatementImportService {
         // #97 review P2-2: the stored lines of every day in the file, and which of
         // them each file row is (a duplicate) or is not (a new line).
         Map<LocalDate, List<StoredLine>> stored = storedLines(t, bankAccountId, r.rows());
-        Matched matched = match(bankAccountId, r.rows(), stored);
+        Matched matched = match(bankAccountId, r.rows(), stored, r.openingRow(), r.closingRow());
         List<String> hashes = matched.hashes();
         Set<String> existing = matched.duplicates();
         List<String> warnings = new ArrayList<>(r.warnings());
         continuityWarning(t, bankAccountId, r).ifPresent(warnings::add);
         driftWarning(t, bankAccountId, r.rows(), hashes, existing).ifPresent(warnings::add);
+        Map<String, BigDecimal> moved = matched.moved();
+        Map<String, StoredLine> storedByHash = new HashMap<>();
+        stored.values().forEach(ls -> ls.forEach(l -> storedByHash.put(l.hash(), l)));
+        movedWarning(r.rows(), hashes, moved, storedByHash).ifPresent(warnings::add);
         int dup = 0;
         List<BankRecDTOs.PreviewRow> preview = new ArrayList<>();
         for (int i = 0; i < r.rows().size(); i++) {
@@ -297,6 +301,14 @@ public class BankStatementImportService {
                     inside.add("Row " + row.fileRow() + " (" + row.txnDate().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
                             + ") is a new line inside the reconciliation finalized through "
                             + locked.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")) + "; reopen it first");
+                } else if (moved.containsKey(hashes.get(i)) && !row.txnDate().isAfter(locked)) {
+                    // S25-01: its balance would change inside the finalized period.
+                    StoredLine was = storedByHash.get(hashes.get(i));
+                    inside.add("Row " + row.fileRow() + " (" + dmy(row.txnDate()) + ", " + row.description()
+                            + ") is a line already imported inside the reconciliation finalized through " + dmy(locked)
+                            + " whose running balance the bank has since moved by "
+                            + StatementValues.money(moved.get(hashes.get(i)).subtract(was.balance()))
+                            + " (a line dated on or before it was added later); reopen it first");
                 }
             }
             if (!inside.isEmpty()) {
@@ -348,6 +360,16 @@ public class BankStatementImportService {
                     values (:id, :t, :b, :imp, :seq, :txn, :val, :descr, :ref, :chq, :amt, :bal, :hash, :row)""",
                     batch.toArray(SqlParameterSource[]::new));
         }
+        // S25-01: the lines taken although their balance moved carry the bank's balance now.
+        if (!moved.isEmpty()) {
+            List<SqlParameterSource> updates = new ArrayList<>();
+            moved.forEach((h, bal) -> updates.add(new MapSqlParameterSource("t", t).addValue("b", bankAccountId)
+                    .addValue("h", h).addValue("bal", bal)));
+            jdbc.batchUpdate("""
+                    update bank_statement_lines set running_balance = :bal
+                    where tenant_id = :t and bank_account_id = :b and line_hash = :h""",
+                    updates.toArray(SqlParameterSource[]::new));
+        }
         // Review P2-3/P3-15: which imports brought each line — this one, for the lines it
         // stored and for the stored lines it matched.
         MapSqlParameterSource src = new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("imp", imp.getId());
@@ -365,13 +387,19 @@ public class BankStatementImportService {
         // Review P2-4: StatementMapper trusts boundary rows only when their own dates prove
         // the file's edges (an Opening row dated before the first line's day, a Closing row
         // dated after the last line's day).
-        settleDays(t, bankAccountId, r.rows(), hashes, storedDays, locked, r.openingRow(), r.closingRow());
+        settleDays(t, bankAccountId, r.rows(), hashes, storedDays, locked, r.openingRow(), r.closingRow(),
+                matched.twinned());
         imports.save(imp);
         return result("IMPORTED", null, grid, kind, r, List.of(), warnings, fresh, dup, preview, imp.getId(), detected);
     }
 
     /** A stored statement line, as de-duplication and day ordering need it. */
-    record StoredLine(String hash, BigDecimal amount, String description, BigDecimal balance) { }
+    record StoredLine(String hash, BigDecimal amount, String description, BigDecimal balance, LocalDate valueDate,
+                      String reference) {
+        StoredLine(String hash, BigDecimal amount, String description, BigDecimal balance) {
+            this(hash, amount, description, balance, null, null);
+        }
+    }
 
     /** #97: the lines already stored for each day of this file, in stored {@code seq} order. */
     private Map<LocalDate, List<StoredLine>> storedLines(UUID t, UUID bankAccountId, List<StatementMapper.Row> rows) {
@@ -380,17 +408,31 @@ public class BankStatementImportService {
         Map<LocalDate, List<StoredLine>> out = new HashMap<>();
         if (days.isEmpty()) return out;
         jdbc.query("""
-                select txn_date, line_hash, amount, description, running_balance from bank_statement_lines
+                select txn_date, line_hash, amount, description, running_balance, value_date, reference
+                from bank_statement_lines
                 where tenant_id = :t and bank_account_id = :b and txn_date in (:d) order by txn_date, seq""",
                 new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("d", days),
                 rs -> { out.computeIfAbsent(rs.getObject("txn_date", LocalDate.class), k -> new ArrayList<>())
                         .add(new StoredLine(rs.getString("line_hash"), rs.getBigDecimal("amount"),
-                                rs.getString("description"), rs.getBigDecimal("running_balance"))); });
+                                rs.getString("description"), rs.getBigDecimal("running_balance"),
+                                rs.getObject("value_date", LocalDate.class), rs.getString("reference"))); });
         return out;
     }
 
-    /** Each file row's line hash, in file order, and the hashes of the rows that are already stored. */
-    record Matched(List<String> hashes, Set<String> duplicates) { }
+    /**
+     * Each file row's line hash, in file order, and the hashes of the rows that are already
+     * stored. {@code moved}: the stored lines taken although the bank's running balance on
+     * them has moved since (sim r25 S25-01), each with the file's balance, in file order.
+     */
+    record Matched(List<String> hashes, Set<String> duplicates, Map<String, BigDecimal> moved, Set<String> twinned) {
+        Matched(List<String> hashes, Set<String> duplicates) {
+            this(hashes, duplicates, Map.of(), Set.of());
+        }
+    }
+
+    static Matched match(UUID bankAccountId, List<StatementMapper.Row> rows, Map<LocalDate, List<StoredLine>> stored) {
+        return match(bankAccountId, rows, stored, false, false);
+    }
 
     /**
      * #97 review P2-2: which stored line, if any, each file row is.
@@ -404,17 +446,45 @@ public class BankStatementImportService {
      * file's second fee for a fuller file's first one and silently dropped the
      * genuine first.</p>
      *
+     * <p>Sim r25 S25-01: when the bank back-values a line (adds it with an earlier date),
+     * every later running balance in its exports moves by that line's amount, so a
+     * re-export's rows no longer carry the balances their stored lines were imported
+     * with. Such a row is still the stored line — same date, value date, amount and sign,
+     * description and reference — and is taken for it, never stored twice:</p>
+     * <ul>
+     *   <li>on a day the file holds whole (neither its first nor its last date, or one its
+     *       boundary rows prove): the file has every line of the bank's day, so every
+     *       stored line of the day is one of its rows. A row left over by the exact rule is
+     *       taken for a left-over stored line like it, one for one in order: the count of
+     *       identical lines stays the bank's (two identical charges stay two, a third in
+     *       the file is new);</li>
+     *   <li>never on the file's first or last date (part of a day). There a row matching a
+     *       stored line at a moved balance may be a line the bank inserted in front of an
+     *       identical one, with the export cut right after it; taking it lost that line in
+     *       the property model, where storing it is never worse than before this change.
+     *       Such a row is stored as new, and its day is unproven (below): the paper's day
+     *       totals, or a statement holding the day whole — what the reconciliation names —
+     *       settle it.</li>
+     * </ul>
+     * <p>A row whose balance did not move is matched exactly as before. A row stored as new
+     * while an untaken stored line of its day has its amount and narration at another
+     * balance is listed in {@code twinned}: moved or separate, the import cannot tell, so
+     * the line is kept and its day unproven ({@link #settle}).</p>
+     *
      * <p>A new row gets {@code lineHash(…, n)} with the lowest {@code n} no stored
      * or earlier new line of the day holds, so the hash stays unique per bank
      * account; for a day with nothing stored that is the old in-file occurrence,
      * so exact re-imports still match line for line.</p>
      */
-    static Matched match(UUID bankAccountId, List<StatementMapper.Row> rows, Map<LocalDate, List<StoredLine>> stored) {
-        List<String> hashes = new ArrayList<>(rows.size());
-        Set<String> duplicates = new HashSet<>();
-        Map<LocalDate, Set<String>> occupied = new HashMap<>();
+    static Matched match(UUID bankAccountId, List<StatementMapper.Row> rows, Map<LocalDate, List<StoredLine>> stored,
+                         boolean openingRow, boolean closingRow) {
+        int n = rows.size();
+        StoredLine[] twinOf = new StoredLine[n];
+        // The balance shift of a row taken for a stored line, both with balances (zero: exact).
+        BigDecimal[] shift = new BigDecimal[n];
         Set<StoredLine> claimed = Collections.newSetFromMap(new IdentityHashMap<>());
-        for (StatementMapper.Row row : rows) {
+        for (int i = 0; i < n; i++) {
+            StatementMapper.Row row = rows.get(i);
             List<StoredLine> day = stored.getOrDefault(row.txnDate(), List.of());
             BigDecimal amount = row.amount().setScale(2, java.math.RoundingMode.HALF_UP);
             String desc = StatementValues.normalise(row.description());
@@ -433,21 +503,103 @@ public class BankStatementImportService {
             if (twin == null) twin = anyTwin;
             if (twin != null) {
                 claimed.add(twin);
-                duplicates.add(twin.hash());
-                hashes.add(twin.hash());
+                twinOf[i] = twin;
+                if (row.balance() != null && twin.balance() != null) shift[i] = BigDecimal.ZERO;
+            }
+        }
+        Map<String, BigDecimal> moved = new LinkedHashMap<>();
+        if (n > 0) {
+            LocalDate first = rows.get(0).txnDate(), last = rows.get(0).txnDate();
+            for (StatementMapper.Row row : rows) {
+                if (row.txnDate().isBefore(first)) first = row.txnDate();
+                if (row.txnDate().isAfter(last)) last = row.txnDate();
+            }
+            Pos[] pos = new Pos[n];
+            for (int i = 0; i < n; i++) pos[i] = Pos.of(rows.get(i).txnDate(), first, last, openingRow, closingRow);
+            // Days the file holds whole: a left-over row is a left-over stored line like it.
+            for (int i = 0; i < n; i++) {
+                if (twinOf[i] != null || pos[i] != Pos.INTERIOR || rows.get(i).balance() == null) continue;
+                StoredLine s = movedTwin(rows.get(i), stored, claimed, null);
+                if (s != null) take(i, s, rows, twinOf, shift, claimed);
+            }
+            for (int i = 0; i < n; i++) {
+                if (shift[i] != null && shift[i].signum() != 0) moved.put(twinOf[i].hash(), rows.get(i).balance());
+            }
+        }
+
+        List<String> hashes = new ArrayList<>(n);
+        Set<String> duplicates = new HashSet<>();
+        Set<String> twinned = new HashSet<>();
+        Map<LocalDate, Set<String>> occupied = new HashMap<>();
+        for (int i = 0; i < n; i++) {
+            StatementMapper.Row row = rows.get(i);
+            if (twinOf[i] != null) {
+                duplicates.add(twinOf[i].hash());
+                hashes.add(twinOf[i].hash());
                 continue;
             }
+            boolean twin = row.balance() != null && hasLooseTwin(row, stored, claimed);
+            List<StoredLine> day = stored.getOrDefault(row.txnDate(), List.of());
             Set<String> taken = occupied.computeIfAbsent(row.txnDate(),
                     d -> new HashSet<>(day.stream().map(StoredLine::hash).toList()));
             String h;
-            int n = 0;
+            int k = 0;
             do {
-                h = StatementValues.lineHash(bankAccountId, row.txnDate(), row.amount(), row.description(), n++);
+                h = StatementValues.lineHash(bankAccountId, row.txnDate(), row.amount(), row.description(), k++);
             } while (taken.contains(h));
             taken.add(h);
             hashes.add(h);
+            if (twin) twinned.add(h);
         }
-        return new Matched(hashes, duplicates);
+        return new Matched(hashes, duplicates, moved, twinned);
+    }
+
+    /**
+     * Sim r25 review: whether a row stored as new has an untaken stored line of its day with
+     * its amount and narration at another running balance. Once the bank can back-value, that
+     * may be the same line at a moved balance (stored twice) or a separate one; the import
+     * cannot tell, so it keeps the row and the day is unproven (the paper's day totals, or a
+     * statement holding the day whole, decide). Unflagged, such a false duplicate balanced a
+     * line lost elsewhere and let a typed closing finalize.
+     */
+    private static boolean hasLooseTwin(StatementMapper.Row row, Map<LocalDate, List<StoredLine>> stored,
+                                        Set<StoredLine> claimed) {
+        BigDecimal amount = row.amount().setScale(2, java.math.RoundingMode.HALF_UP);
+        String desc = StatementValues.normalise(row.description());
+        for (StoredLine s : stored.getOrDefault(row.txnDate(), List.of())) {
+            if (!claimed.contains(s) && s.balance() != null && s.amount().compareTo(amount) == 0
+                    && StatementValues.normalise(s.description()).equals(desc)
+                    && s.balance().compareTo(row.balance()) != 0) return true;
+        }
+        return false;
+    }
+
+    /**
+     * S25-01: the first unclaimed stored line of the row's day that is the same line but
+     * for its running balance (both have one), moved by {@code shift} when given.
+     */
+    private static StoredLine movedTwin(StatementMapper.Row row, Map<LocalDate, List<StoredLine>> stored,
+                                        Set<StoredLine> claimed, BigDecimal shift) {
+        BigDecimal amount = row.amount().setScale(2, java.math.RoundingMode.HALF_UP);
+        String desc = StatementValues.normalise(row.description());
+        for (StoredLine s : stored.getOrDefault(row.txnDate(), List.of())) {
+            if (claimed.contains(s) || s.balance() == null || s.amount().compareTo(amount) != 0
+                    || !StatementValues.normalise(s.description()).equals(desc)) continue;
+            if (row.valueDate() != null && s.valueDate() != null && !row.valueDate().equals(s.valueDate())) continue;
+            if (!StatementValues.normalise(row.reference()).isEmpty() && !StatementValues.normalise(s.reference()).isEmpty()
+                    && !StatementValues.normalise(row.reference()).equals(StatementValues.normalise(s.reference()))) continue;
+            BigDecimal moved = row.balance().subtract(s.balance());
+            if (moved.signum() == 0) continue;
+            if (shift == null || moved.compareTo(shift) == 0) return s;
+        }
+        return null;
+    }
+
+    private static void take(int i, StoredLine s, List<StatementMapper.Row> rows, StoredLine[] twinOf, BigDecimal[] shift,
+                             Set<StoredLine> claimed) {
+        claimed.add(s);
+        twinOf[i] = s;
+        shift[i] = rows.get(i).balance().subtract(s.balance());
     }
 
     /**
@@ -473,7 +625,7 @@ public class BankStatementImportService {
      */
     private void settleDays(UUID t, UUID bankAccountId, List<StatementMapper.Row> rows, List<String> hashes,
                             Map<LocalDate, List<String>> storedDays, LocalDate locked, boolean openingRow,
-                            boolean closingRow) {
+                            boolean closingRow, Set<String> twinned) {
         TreeMap<LocalDate, List<String>> fileDays = new TreeMap<>();
         for (int i = 0; i < rows.size(); i++) {
             fileDays.computeIfAbsent(rows.get(i).txnDate(), k -> new ArrayList<>()).add(hashes.get(i));
@@ -494,7 +646,7 @@ public class BankStatementImportService {
             // about where its lines sit in the day, and they were de-duplicated by the
             // old rule.
             DayState was = states.getOrDefault(day.getKey(), DayState.UNKNOWN);
-            Settled s = settle(stored, day.getValue(), pos, was);
+            Settled s = settle(stored, day.getValue(), pos, was, day.getValue().stream().anyMatch(twinned::contains));
             if (s == null) continue;
             // A day inside a finalized reconciliation never takes new lines (refused
             // above); one with nothing new is left alone there too.
@@ -633,9 +785,18 @@ public class BankStatementImportService {
      * typed balances or not.</p>
      */
     static Settled settle(List<String> stored, List<String> file, Pos pos, DayState was) {
+        return settle(stored, file, pos, was, false);
+    }
+
+    /**
+     * As above; {@code twinned}: a new line of the file has an untaken stored look-alike at
+     * another balance (sim r25 review) — on a day the file does not hold whole that unproves
+     * the day like a line taken for an identical one.
+     */
+    static Settled settle(List<String> stored, List<String> file, Pos pos, DayState was, boolean twinned) {
         Set<String> inStored = new HashSet<>(stored);
         boolean addsLines = file.stream().anyMatch(h -> !inStored.contains(h));
-        boolean matched = file.stream().anyMatch(inStored::contains);
+        boolean matched = file.stream().anyMatch(inStored::contains) || twinned;
         if (stored.isEmpty()) {
             return new Settled(List.copyOf(file), List.copyOf(file), true,
                     new DayState(true, false, pos.startsTheDay(), pos.endsTheDay()));
@@ -817,6 +978,27 @@ public class BankStatementImportService {
         }
         return n == 0 ? Optional.empty() : Optional.of(n + " new line(s) have the date, amount and balance of a line "
                 + "already imported, under a different description; check they are not the same lines");
+    }
+
+    /**
+     * S25-01: the stored lines this file holds at a moved running balance — the bank added a
+     * line dated before them after they were imported (a back-valued line).
+     */
+    static Optional<String> movedWarning(List<StatementMapper.Row> rows, List<String> hashes, Map<String, BigDecimal> moved,
+                                         Map<String, StoredLine> storedByHash) {
+        if (moved.isEmpty()) return Optional.empty();
+        // #438 review: each line's own shift — two back-values move later lines by different amounts.
+        List<String> each = new ArrayList<>();
+        for (int i = 0; i < rows.size(); i++) {
+            if (!moved.containsKey(hashes.get(i))) continue;
+            each.add(dmy(rows.get(i).txnDate()) + " " + rows.get(i).description() + " by "
+                    + StatementValues.money(moved.get(hashes.get(i)).subtract(storedByHash.get(hashes.get(i)).balance())));
+        }
+        String list = each.size() > 20 ? String.join("; ", each.subList(0, 20)) + "; and " + (each.size() - 20) + " more"
+                : String.join("; ", each);
+        return Optional.of(moved.size() + " line(s) already imported carry a running balance the bank has since moved ("
+                + list + "): the bank added a line dated before them after they were imported (a back-valued line). They "
+                + "were taken as the same lines, not stored again, and now carry this statement's balances.");
     }
 
     private static String dmy(LocalDate d) {
