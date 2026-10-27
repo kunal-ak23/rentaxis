@@ -4,22 +4,36 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Loader2 } from "lucide-react";
 import { Pagination } from "@/components/ui/Pagination";
-import { ApiError, createAd, deleteAd, fetchAds, updateAd } from "@/lib/api/promotions";
-import { adStatus, type PromoAdDTO, type PromoAdRequest, type PromoBusinessDTO } from "@/types/promotion";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+    ApiError, approveAd, createAd, deleteAd, fetchAds, rejectAd, updateAd,
+} from "@/lib/api/promotions";
+import {
+    adDisplayStatus,
+    type PromoAdDTO,
+    type PromoAdRequest,
+    type PromoApprovalStatus,
+    type PromoBusinessDTO,
+} from "@/types/promotion";
 import { AdEditor, type PropertyOption } from "./AdEditor";
+import { AdStatusPill } from "./AdStatusPill";
 
 const PAGE_SIZE = 10;
 
-const STATUS_CLASSES: Record<string, string> = {
-    LIVE: "bg-green-50 text-green-700",
-    SCHEDULED: "bg-blue-50 text-blue-700",
-    EXPIRED: "bg-gray-100 text-gray-600",
-    PAUSED: "bg-amber-50 text-amber-700",
-};
+/** The server caps a rejection reason at 500 characters (PromotionService). */
+const REJECT_REASON_MAX = 500;
+
+const APPROVAL_FILTERS: { value: "" | PromoApprovalStatus; key: string }[] = [
+    { value: "", key: "approvalAll" },
+    { value: "PENDING", key: "approvalPending" },
+    { value: "REJECTED", key: "approvalRejected" },
+];
 
 interface AdsTabProps {
     businesses: PromoBusinessDTO[];
     properties: PropertyOption[];
+    /** Called after an approve or reject, so the shell can refresh the pending-count badge. */
+    onReviewed?: () => void | Promise<void>;
 }
 
 /**
@@ -30,24 +44,28 @@ interface AdsTabProps {
  * viewers, which only `PromoAdStatsDTO` carries. Show it on the ad detail view,
  * never derive it here.
  */
-export function AdsTab({ businesses, properties }: AdsTabProps) {
+export function AdsTab({ businesses, properties, onReviewed }: AdsTabProps) {
     const t = useTranslations("Promotions");
 
     const [rows, setRows] = useState<PromoAdDTO[]>([]);
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(0);
     const [businessId, setBusinessId] = useState("");
+    const [approval, setApproval] = useState<"" | PromoApprovalStatus>("");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [editing, setEditing] = useState<PromoAdDTO | null | undefined>(undefined);
+    const [rejecting, setRejecting] = useState<PromoAdDTO | null>(null);
+    const [reason, setReason] = useState("");
+    const [reviewBusy, setReviewBusy] = useState(false);
 
     const requestIdRef = useRef(0);
 
-    const load = useCallback(async (p: number, filterBusinessId: string) => {
+    const load = useCallback(async (p: number, filterBusinessId: string, filterApproval: "" | PromoApprovalStatus) => {
         const id = ++requestIdRef.current;
         setLoading(true);
         try {
-            const data = await fetchAds(p, PAGE_SIZE, filterBusinessId || undefined);
+            const data = await fetchAds(p, PAGE_SIZE, filterBusinessId || undefined, filterApproval || undefined);
             if (id !== requestIdRef.current) return;
             setRows(data.content);
             setTotal(data.totalElements);
@@ -60,7 +78,7 @@ export function AdsTab({ businesses, properties }: AdsTabProps) {
         }
     }, [t]);
 
-    useEffect(() => { void load(page, businessId); }, [load, page, businessId]);
+    useEffect(() => { void load(page, businessId, approval); }, [load, page, businessId, approval]);
 
     async function save(body: PromoAdRequest) {
         try {
@@ -70,10 +88,56 @@ export function AdsTab({ businesses, properties }: AdsTabProps) {
                 await createAd(body);
             }
             setEditing(undefined);
-            await load(page, businessId);
+            await load(page, businessId, approval);
         } catch (e) {
             // The backend re-checks the URL allowlist; surface its message verbatim.
             setError(e instanceof ApiError ? e.message : t("saveError"));
+        }
+    }
+
+    /**
+     * Reloads after a review. Under a PENDING filter the reviewed row leaves the
+     * list, so the last page may no longer exist; clamp it as a delete does.
+     */
+    async function reloadAfterReview() {
+        const remaining = approval === "" ? total : total - 1;
+        const lastPage = Math.max(0, Math.ceil(remaining / PAGE_SIZE) - 1);
+        const next = Math.min(page, lastPage);
+        setPage(next);
+        await load(next, businessId, approval);
+        await onReviewed?.();
+    }
+
+    async function approve(row: PromoAdDTO) {
+        setReviewBusy(true);
+        try {
+            await approveAd(row.id);
+            setError(null);
+            await reloadAfterReview();
+        } catch (e) {
+            setError(e instanceof ApiError ? e.message : t("saveError"));
+        } finally {
+            setReviewBusy(false);
+        }
+    }
+
+    async function confirmReject() {
+        // The dialog's button is disabled without a reason; this is the same
+        // rule where the request is made, so no path can send an empty one.
+        const trimmed = reason.trim();
+        if (!rejecting || trimmed === "") return;
+        setReviewBusy(true);
+        try {
+            await rejectAd(rejecting.id, trimmed);
+            setError(null);
+            setRejecting(null);
+            setReason("");
+            await reloadAfterReview();
+        } catch (e) {
+            setRejecting(null);
+            setError(e instanceof ApiError ? e.message : t("saveError"));
+        } finally {
+            setReviewBusy(false);
         }
     }
 
@@ -87,12 +151,19 @@ export function AdsTab({ businesses, properties }: AdsTabProps) {
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between gap-3">
-                <select aria-label={t("business")} className="rounded-lg border px-3 py-2 text-sm"
-                    value={businessId}
-                    onChange={e => { setPage(0); setBusinessId(e.target.value); }}>
-                    <option value="">{t("allBusinesses")}</option>
-                    {businesses.map(b => <option key={b.id} value={b.id}>{b.nameEn}</option>)}
-                </select>
+                <div className="flex flex-wrap items-center gap-2">
+                    <select aria-label={t("business")} className="rounded-lg border px-3 py-2 text-sm"
+                        value={businessId}
+                        onChange={e => { setPage(0); setBusinessId(e.target.value); }}>
+                        <option value="">{t("allBusinesses")}</option>
+                        {businesses.map(b => <option key={b.id} value={b.id}>{b.nameEn}</option>)}
+                    </select>
+                    <select aria-label={t("approvalFilter")} className="rounded-lg border px-3 py-2 text-sm"
+                        value={approval}
+                        onChange={e => { setPage(0); setApproval(e.target.value as "" | PromoApprovalStatus); }}>
+                        {APPROVAL_FILTERS.map(f => <option key={f.value} value={f.value}>{t(f.key)}</option>)}
+                    </select>
+                </div>
                 <button type="button" disabled={businesses.length === 0}
                     onClick={() => setEditing(null)}
                     className="rounded-lg bg-gray-900 px-4 py-2 text-white disabled:opacity-40">
@@ -109,18 +180,20 @@ export function AdsTab({ businesses, properties }: AdsTabProps) {
             {loading ? (
                 <div className="flex justify-center py-10"><Loader2 className="animate-spin" /></div>
             ) : rows.length === 0 ? (
-                <p className="py-10 text-center text-sm text-gray-500">{t("emptyAds")}</p>
+                <p className="py-10 text-center text-sm text-gray-500">
+                    {approval === "" ? t("emptyAds") : t("emptyFilteredAds")}
+                </p>
             ) : (
                 <table className="w-full text-sm">
                     <thead>
-                        <tr className="border-b text-left text-gray-500">
+                        <tr className="border-b text-start text-gray-500">
                             <th className="py-2">{t("adTitle")}</th>
                             <th>{t("business")}</th>
                             <th>{t("ctaType")}</th>
                             <th>{t("priority")}</th>
                             <th>{t("status")}</th>
-                            <th className="text-right">{t("views")}</th>
-                            <th className="text-right">{t("taps")}</th>
+                            <th className="text-end">{t("views")}</th>
+                            <th className="text-end">{t("taps")}</th>
                             <th />
                         </tr>
                     </thead>
@@ -136,28 +209,49 @@ export function AdsTab({ businesses, properties }: AdsTabProps) {
                             // whose business is deactivated. Show nothing rather
                             // than something wrong.
                             const business = businesses.find(b => b.id === row.businessId);
-                            const status = businesses.length === 0
+                            // Approval comes first (adDisplayStatus): a pending or
+                            // rejected ad is not showing whatever its window says,
+                            // and that needs no business lookup.
+                            const status = businesses.length === 0 && row.approvalStatus === "APPROVED"
                                 ? null
-                                : adStatus(row, new Date(), business?.active ?? true);
+                                : adDisplayStatus(row, new Date(), business?.active ?? true);
                             return (
                                 <tr key={row.id} className="border-b">
-                                    <td className="py-2">{row.titleEn ?? row.titleAr}</td>
+                                    <td className="py-2">
+                                        {row.titleEn ?? row.titleAr}
+                                        {row.submittedByName && (
+                                            <span className="block text-xs text-gray-500">
+                                                {t("submittedBy", { name: row.submittedByName })}
+                                            </span>
+                                        )}
+                                    </td>
                                     <td>{row.businessNameEn}</td>
                                     <td>{t(`ctaType${row.ctaType}`)}</td>
                                     <td>{row.priority}</td>
                                     <td>
-                                        {status === null ? (
-                                            <span className="text-xs text-gray-400">—</span>
-                                        ) : (
-                                            <span className={`rounded-full px-2 py-1 text-xs ${STATUS_CLASSES[status]}`}>
-                                                {t(`status${status}`)}
+                                        <AdStatusPill status={status} />
+                                        {row.approvalStatus === "REJECTED" && row.rejectionReason && (
+                                            <span className="mt-1 block max-w-xs text-xs text-gray-500">
+                                                {t("rejectedReason", { reason: row.rejectionReason })}
                                             </span>
                                         )}
                                     </td>
-                                    <td className="text-right">{row.impressions.toLocaleString()}</td>
-                                    <td className="text-right">{row.clicks.toLocaleString()}</td>
-                                    <td className="text-right">
-                                        <button type="button" className="mr-3 underline"
+                                    <td className="text-end">{row.impressions.toLocaleString()}</td>
+                                    <td className="text-end">{row.clicks.toLocaleString()}</td>
+                                    <td className="text-end whitespace-nowrap">
+                                        {row.approvalStatus === "PENDING" && (
+                                            <>
+                                                <button type="button" disabled={reviewBusy}
+                                                    aria-label={`${t("approve")}: ${row.titleEn ?? row.titleAr ?? ""}`}
+                                                    className="me-3 font-medium text-green-700 underline disabled:opacity-40"
+                                                    onClick={() => void approve(row)}>{t("approve")}</button>
+                                                <button type="button" disabled={reviewBusy}
+                                                    aria-label={`${t("reject")}: ${row.titleEn ?? row.titleAr ?? ""}`}
+                                                    className="me-3 font-medium text-red-700 underline disabled:opacity-40"
+                                                    onClick={() => { setReason(""); setRejecting(row); }}>{t("reject")}</button>
+                                            </>
+                                        )}
+                                        <button type="button" className="me-3 underline"
                                             onClick={() => setEditing(row)}>{t("edit")}</button>
                                         <button type="button" className="text-red-600 underline"
                                             onClick={async () => {
@@ -183,7 +277,7 @@ export function AdsTab({ businesses, properties }: AdsTabProps) {
                                                     0, Math.ceil(remaining / PAGE_SIZE) - 1);
                                                 const next = Math.min(page, lastPage);
                                                 setPage(next);
-                                                await load(next, businessId);
+                                                await load(next, businessId, approval);
                                             }}>{t("delete")}</button>
                                     </td>
                                 </tr>
@@ -199,6 +293,28 @@ export function AdsTab({ businesses, properties }: AdsTabProps) {
                 itemsPerPage={PAGE_SIZE}
                 onPageChange={p => setPage(p - 1)}
             />
+
+            <ConfirmDialog
+                isOpen={rejecting !== null}
+                onClose={() => { setRejecting(null); setReason(""); }}
+                onConfirm={() => void confirmReject()}
+                title={t("rejectTitle", { name: rejecting?.titleEn ?? rejecting?.titleAr ?? "" })}
+                description={t("rejectDescription")}
+                confirmText={t("reject")}
+                cancelText={t("cancel")}
+                isDestructive
+                isLoading={reviewBusy}
+                confirmDisabled={reason.trim() === ""}
+                confirmTestId="reject-ad-confirm"
+            >
+                <label className="block">
+                    <span className="mb-1 block text-sm font-medium">{t("rejectReason")}</span>
+                    <textarea aria-label={t("rejectReason")} required maxLength={REJECT_REASON_MAX} rows={3}
+                        className="w-full rounded-lg border px-3 py-2 text-sm"
+                        value={reason} onChange={e => setReason(e.target.value)} />
+                    <span className="text-xs text-gray-500">{t("rejectReasonHint", { max: REJECT_REASON_MAX })}</span>
+                </label>
+            </ConfirmDialog>
         </div>
     );
 }

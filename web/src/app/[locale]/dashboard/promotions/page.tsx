@@ -4,13 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useSession } from "next-auth/react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
-import { fetchBusinesses } from "@/lib/api/promotions";
+import { fetchBusinesses, fetchPendingAdCount } from "@/lib/api/promotions";
 import type { PromoBusinessDTO } from "@/types/promotion";
 import { BusinessesTab } from "./_components/BusinessesTab";
 import { AdsTab } from "./_components/AdsTab";
+import { PromotersTab } from "./_components/PromotersTab";
 import type { PropertyOption } from "./_components/AdEditor";
 
-type Tab = "businesses" | "ads";
+type Tab = "businesses" | "ads" | "promoters";
 
 const BUSINESS_LOOKUP_CAP = 200;
 
@@ -24,6 +25,8 @@ export default function PromotionsPage() {
     const [businesses, setBusinesses] = useState<PromoBusinessDTO[]>([]);
     const [properties, setProperties] = useState<PropertyOption[]>([]);
     const [lookupWarning, setLookupWarning] = useState<string | null>(null);
+    // Ads waiting for an admin's decision: the badge on the Ads tab.
+    const [pendingCount, setPendingCount] = useState(0);
 
     // The ad editor needs the full business list (for the picker and the
     // allowlist hint) and the property list (for targeting), so both are
@@ -43,10 +46,19 @@ export default function PromotionsPage() {
         setBusinesses(page.content);
         const res = await fetch("/api/proxy/v1/properties");
         if (!res.ok || cancelled()) return;
-        const data: Array<{ property: { id: string; nameEn: string } }> = await res.json();
+        const data: Array<{ property: { id: string; nameEn: string; nameAr?: string | null } }> = await res.json();
         if (cancelled()) return;
-        setProperties(data.map(s => ({ id: s.property.id, nameEn: s.property.nameEn })));
+        setProperties(data.map(s => ({ id: s.property.id, nameEn: s.property.nameEn, nameAr: s.property.nameAr ?? null })));
     }, [t]);
+
+    // A failed count only hides the badge; the tab itself shows its own errors.
+    const refreshPending = useCallback(async () => {
+        try {
+            setPendingCount(await fetchPendingAdCount());
+        } catch {
+            setPendingCount(0);
+        }
+    }, []);
 
     useEffect(() => {
         if (sessionStatus !== "authenticated" || !canView) return;
@@ -60,6 +72,16 @@ export default function PromotionsPage() {
         });
         return () => { cancelled = true; };
     }, [sessionStatus, canView, loadLookups]);
+
+    useEffect(() => {
+        if (sessionStatus !== "authenticated" || !canView) return;
+        // Same guard as above: the count is set after an await.
+        let cancelled = false;
+        fetchPendingAdCount()
+            .then(n => { if (!cancelled) setPendingCount(n); })
+            .catch(() => { /* the badge simply stays hidden */ });
+        return () => { cancelled = true; };
+    }, [sessionStatus, canView]);
 
     if (sessionStatus === "loading") return null;
     if (!canView) {
@@ -83,17 +105,31 @@ export default function PromotionsPage() {
                     onClick={() => setTab("ads")}
                     className={`px-4 py-2 text-sm ${tab === "ads" ? "border-b-2 border-gray-900 font-medium" : "text-gray-500"}`}>
                     {t("adsTab")}
+                    {pendingCount > 0 && (
+                        <span data-testid="pending-count-badge"
+                            className="ms-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                            <span aria-hidden="true">{pendingCount}</span>
+                            <span className="sr-only">{t("pendingBadgeLabel", { count: pendingCount })}</span>
+                        </span>
+                    )}
                 </button>
                 <button type="button" role="tab" aria-selected={tab === "businesses"}
                     onClick={() => setTab("businesses")}
                     className={`px-4 py-2 text-sm ${tab === "businesses" ? "border-b-2 border-gray-900 font-medium" : "text-gray-500"}`}>
                     {t("businessesTab")}
                 </button>
+                <button type="button" role="tab" aria-selected={tab === "promoters"}
+                    onClick={() => setTab("promoters")}
+                    className={`px-4 py-2 text-sm ${tab === "promoters" ? "border-b-2 border-gray-900 font-medium" : "text-gray-500"}`}>
+                    {t("promotersTab")}
+                </button>
             </div>
 
             {tab === "ads"
-                ? <AdsTab businesses={businesses} properties={properties} />
-                : <BusinessesTab onChanged={loadLookups} />}
+                ? <AdsTab businesses={businesses} properties={properties} onReviewed={refreshPending} />
+                : tab === "businesses"
+                    ? <BusinessesTab onChanged={loadLookups} />
+                    : <PromotersTab businesses={businesses} properties={properties} />}
         </div>
     );
 }
