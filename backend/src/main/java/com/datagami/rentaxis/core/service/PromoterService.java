@@ -178,6 +178,10 @@ public class PromoterService {
         requireGrantedBusiness(access, businessId, "Business not found");
         requireCanCreate(access);
         requireOwnUploadOrNone(caller, req.logoUrl(), "logoUrl");
+        // Review round 1, I3: the business row first, then its ads — an approval of one
+        // of them in flight (which share-locks this row) is waited for, never slipped past.
+        businessRepository.findForUpdate(caller.tenantId(), businessId)
+                .orElseThrow(() -> new NotFoundException("Business not found"));
         PromoBusiness b = promotionService.updateBusiness(caller.tenantId(), businessId, req);
         Instant now = now();
         for (PromoAd ad : adRepository.findForUpdateByBusinessAndStatusIn(caller.tenantId(), businessId,
@@ -284,12 +288,11 @@ public class PromoterService {
                 .map(PromoterAccess::isCanCreateBusinesses).orElse(false);
         // A granted business that is archived (addendum B) is out of reach like one never
         // granted: not listed, not written to, its ads 404.
+        // Ids only (no entities in the persistence context), so a locked read later in
+        // the same transaction loads the row fresh rather than returning a stale copy.
         List<UUID> grants = grantRepository.findBusinessIds(caller.tenantId(), user.getId());
         Set<UUID> live = grants.isEmpty() ? Set.of()
-                : businessRepository.findByTenantIdAndIdIn(caller.tenantId(), grants).stream()
-                .filter(b -> b.getArchivedAt() == null)
-                .map(PromoBusiness::getId)
-                .collect(Collectors.toSet());
+                : new HashSet<>(businessRepository.findLiveIds(caller.tenantId(), grants));
         return new Access(canCreate, new HashSet<>(live),
                 new HashSet<>(promoterPropertyRepository.findPropertyIds(caller.tenantId(), user.getId())));
     }

@@ -22,6 +22,11 @@ class PromoterReviewFixesIT extends AbstractPromoterIT {
     private static final String CHANGED =
             "This ad was changed after you opened it. Reload to review the latest version.";
 
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.PromoAdApprovalService approvals;
+    @org.springframework.beans.factory.annotation.Autowired
+    org.springframework.transaction.PlatformTransactionManager txManager;
+
     private UUID org;
     private User admin;
     private Property p1;
@@ -95,6 +100,67 @@ class PromoterReviewFixesIT extends AbstractPromoterIT {
         Resp approve = post(admin, "/api/v1/promotions/ads/" + pending.getId() + "/approve",
                 body("expectedSubmittedAt", seen));
         assertThat(approve.status()).isEqualTo(409);
+    }
+
+    // ------------------------------------------------------------------- I3
+
+    /**
+     * The reviewer's probe: an approval held open while the promoter edits the
+     * business. The edit must queue behind the approval on the business row (not slip
+     * past it), and once both commit the ad is back to PENDING — the business change
+     * never goes live unreviewed.
+     */
+    @Test
+    void i3_aBusinessEditWaitsForAnApprovalInFlightAndResubmitsAfterIt() throws Exception {
+        PromoAd ad = ad(org, wash.getId(), PENDING, promoter.getId(), p1.getId());
+        jdbc.update("UPDATE promo_ads SET submitted_at = now() - interval '1 minute' WHERE id = ?", ad.getId());
+        java.time.Instant expected = java.time.Instant.parse(submittedAt(ad.getId()));
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        java.util.concurrent.atomic.AtomicReference<java.util.concurrent.Future<Resp>> edit =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicBoolean queuedOnBusiness = new java.util.concurrent.atomic.AtomicBoolean();
+        try {
+            com.datagami.rentaxis.core.tenant.TenantContextHolder.setTenantId(org);
+            new org.springframework.transaction.support.TransactionTemplate(txManager).executeWithoutResult(tx -> {
+                approvals.approve(org, ad.getId(), admin.getId(), expected);
+                edit.set(pool.submit(() -> put(promoter, "/api/v1/promoter/businesses/" + wash.getId(),
+                        body("nameEn", "QuickWash v2 " + UUID.randomUUID()))));
+                queuedOnBusiness.set(waitForLockWaitOn("promo_businesses"));
+                assertThat(edit.get().isDone()).as("the edit must wait for the approval").isFalse();
+            });
+        } finally {
+            com.datagami.rentaxis.core.tenant.TenantContextHolder.clear();
+        }
+        Resp res = edit.get().get(20, java.util.concurrent.TimeUnit.SECONDS);
+        pool.shutdownNow();
+
+        assertThat(queuedOnBusiness.get()).as("the edit queued on the business row").isTrue();
+        assertThat(res.status()).isEqualTo(200);
+        PromoAd after = reload(ad.getId());
+        assertThat(after.getApprovalStatus()).isEqualTo(PENDING);
+        assertThat(after.getSubmittedAt()).isAfter(expected);
+    }
+
+    /** Whether, within 5 s, some session is waiting for a lock in a statement on {@code table}. */
+    private boolean waitForLockWaitOn(String table) {
+        long until = System.currentTimeMillis() + 5_000;
+        while (System.currentTimeMillis() < until) {
+            // pg_stat_activity is snapshotted per transaction, and this runs inside the
+            // approval's: drop the snapshot so each poll sees the sessions as they are now.
+            jdbc.execute("SELECT pg_stat_clear_snapshot()");
+            Integer waiting = jdbc.queryForObject("SELECT COUNT(*) FROM pg_stat_activity WHERE datname = current_database() "
+                    + "AND wait_event_type = 'Lock' AND query ILIKE ?", Integer.class, "%" + table + "%");
+            if (waiting != null && waiting > 0) {
+                return true;
+            }
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return false;
     }
 
     // -------------------------------------------------------------- helpers

@@ -8,6 +8,7 @@ import com.datagami.rentaxis.domain.entity.PromoAd;
 import com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus;
 import com.datagami.rentaxis.domain.repository.PromoAdPropertyRepository;
 import com.datagami.rentaxis.domain.repository.PromoAdRepository;
+import com.datagami.rentaxis.domain.repository.PromoBusinessRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,13 +37,16 @@ public class PromoAdApprovalService {
 
     private final PromoAdRepository adRepository;
     private final PromoAdPropertyRepository adPropertyRepository;
+    private final PromoBusinessRepository businessRepository;
     private final ApplicationEventPublisher events;
 
     public PromoAdApprovalService(PromoAdRepository adRepository,
                                   PromoAdPropertyRepository adPropertyRepository,
+                                  PromoBusinessRepository businessRepository,
                                   ApplicationEventPublisher events) {
         this.adRepository = adRepository;
         this.adPropertyRepository = adPropertyRepository;
+        this.businessRepository = businessRepository;
         this.events = events;
     }
 
@@ -59,6 +63,13 @@ public class PromoAdApprovalService {
      */
     public PromoAd approve(UUID tenantId, UUID adId, UUID reviewerId, Instant expectedSubmittedAt) {
         requireExpected(expectedSubmittedAt);
+        // Review round 1, I3: the business row first (FOR SHARE), then the ad (FOR
+        // UPDATE) — the order a promoter's business edit takes too, so the two serialise
+        // without deadlocking. The business id is read as a value, not the entity, so the
+        // locked read of the ad below loads it fresh.
+        UUID businessId = adRepository.findBusinessId(tenantId, adId)
+                .orElseThrow(() -> new NotFoundException("Ad not found"));
+        businessRepository.findForShare(tenantId, businessId);
         PromoAd ad = pending(tenantId, adId, "approved", expectedSubmittedAt);
         // A promoter's ad with no targeting would show nowhere once live (it never
         // means "every property" for a promoter): refuse rather than approve a dud.
