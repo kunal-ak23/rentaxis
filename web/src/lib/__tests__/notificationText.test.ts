@@ -97,7 +97,8 @@ describe("notificationText", () => {
 });
 
 describe("promotion ad notifications (promoter role)", () => {
-    const submitted = row("PROMO_AD_SUBMITTED", { promoterName: "Pat Promoter", adTitle: "Wash and fold", businessName: "Sparkle Laundry" });
+    const submitted = row("PROMO_AD_SUBMITTED", { promoterName: "Pat Promoter", adTitle: "Wash and fold", businessName: "Sparkle Laundry", adCount: "1" });
+    const businessEdit = row("PROMO_AD_SUBMITTED", { promoterName: "Pat Promoter", adTitle: "Wash and fold", businessName: "Sparkle Laundry", adCount: "3" });
     const approved = row("PROMO_AD_APPROVED", { adTitle: "Wash and fold", businessName: "Sparkle Laundry" });
     const rejected = row("PROMO_AD_REJECTED", { adTitle: "Wash and fold", businessName: "Sparkle Laundry", reason: "Image is blurry" });
 
@@ -112,13 +113,22 @@ describe("promotion ad notifications (promoter role)", () => {
 
     it("rebuilds each in Arabic, every value isolated", () => {
         const s = notificationText(submitted, arT, "ar");
-        expect(s.title).toBe(ar.Notifications.messages.PROMO_AD_SUBMITTED.title);
+        expect(s.title).toBe("إعلان بانتظار الموافقة");
         expect(s.body).toBe(`أرسل ${FSI}Pat Promoter${PDI} الإعلان «${FSI}Wash and fold${PDI}» (${FSI}Sparkle Laundry${PDI}) للموافقة.`);
         expect(bare(notificationText(approved, arT, "ar").body))
             .toBe("تمت الموافقة على إعلانك «Wash and fold» (Sparkle Laundry) وسيظهر اعتبارًا من تاريخ بدايته.");
         const r = notificationText(rejected, arT, "ar");
         expect(r.title).toBe("تم رفض الإعلان");
         expect(r.body).toBe(`تم رفض إعلانك «${FSI}Wash and fold${PDI}» (${FSI}Sparkle Laundry${PDI}): ${FSI}Image is blurry${PDI}`);
+    });
+
+    it("words a business edit that resubmits several ads as one notice, like the server", () => {
+        const en = notificationText(businessEdit, enT, "en");
+        expect(en.title).toBe("3 ads awaiting approval");
+        expect(bare(en.body)).toBe('Pat Promoter changed Sparkle Laundry, so 3 of its ads (including "Wash and fold") wait for approval.');
+        const a = notificationText(businessEdit, arT, "ar");
+        expect(bare(a.title)).toBe("3 إعلانات بانتظار الموافقة");
+        expect(bare(a.body)).toBe("عدّل Pat Promoter النشاط التجاري Sparkle Laundry، لذا تنتظر 3 من إعلاناته (منها «Wash and fold») الموافقة.");
     });
 
     it("shows a rejection reason as written, even when it looks like a code", () => {

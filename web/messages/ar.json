@@ -4072,7 +4072,7 @@
       "MEETING_CANCELLED_REASON": {"title": "أُلغي الاجتماع", "body": "ألغى {name} الاجتماع: {meeting}. السبب: {note}"},
       "MEETING_COMPLETED": {"title": "اكتمل الاجتماع", "body": "سُجّل اجتماعك في {slot} على أنه مكتمل."},
       "MEETING_NO_SHOW": {"title": "سُجّل عدم الحضور", "body": "سُجّل عدم الحضور لاجتماعك في {slot}."},
-      "PROMO_AD_SUBMITTED": {"title": "إعلان بانتظار الموافقة", "body": "أرسل {promoterName} الإعلان «{adTitle}» ({businessName}) للموافقة."},
+      "PROMO_AD_SUBMITTED": {"title": "{adCount, plural, one {إعلان بانتظار الموافقة} other {# إعلانات بانتظار الموافقة}}", "body": "{adCount, plural, one {أرسل {promoterName} الإعلان «{adTitle}» ({businessName}) للموافقة.} other {عدّل {promoterName} النشاط التجاري {businessName}، لذا تنتظر # من إعلاناته (منها «{adTitle}») الموافقة.}}"},
       "PROMO_AD_APPROVED": {"title": "تمت الموافقة على الإعلان", "body": "تمت الموافقة على إعلانك «{adTitle}» ({businessName}) وسيظهر اعتبارًا من تاريخ بدايته."},
       "PROMO_AD_REJECTED": {"title": "تم رفض الإعلان", "body": "تم رفض إعلانك «{adTitle}» ({businessName}): {reason}"},
       "PAYMENT_DUE": {"title": "تذكير بموعد الدفع", "body": "{ref} بقيمة {amount} مستحق خلال {days, plural, zero {# يوم} one {يوم واحد} two {يومين} few {# أيام} many {# يومًا} other {# يوم}}."},

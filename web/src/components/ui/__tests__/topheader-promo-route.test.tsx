@@ -37,7 +37,7 @@ const PROMO = {
     id: "n1", type: "PROMO_AD_SUBMITTED", title: "Ad awaiting approval",
     message: 'Pat Promoter sent "Wash and fold" (Sparkle Laundry) for approval.',
     messageKey: "PROMO_AD_SUBMITTED",
-    params: { promoterName: "Pat Promoter", adTitle: "Wash and fold", businessName: "Sparkle Laundry" },
+    params: { promoterName: "Pat Promoter", adTitle: "Wash and fold", businessName: "Sparkle Laundry", adCount: "1" },
     referenceType: "PROMO_AD", referenceId: "ad-1", isRead: false, createdAt: new Date().toISOString(),
 };
 
@@ -61,7 +61,7 @@ describe("TopHeader bell — promotion ad notifications", () => {
     it("words it in Arabic from its key and values", async () => {
         renderBell("TENANT_ADMIN", "ar");
         fireEvent.click(await screen.findByText("1"));
-        expect(await screen.findByText(ar.Notifications.messages.PROMO_AD_SUBMITTED.title)).toBeInTheDocument();
+        expect(await screen.findByText("إعلان بانتظار الموافقة")).toBeInTheDocument();
         expect(screen.getByText(/أرسل .*Pat Promoter.* الإعلان/)).toBeInTheDocument();
     });
 

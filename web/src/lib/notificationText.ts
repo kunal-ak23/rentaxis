@@ -21,7 +21,7 @@ type Translator = {
 };
 
 /** Values the sentences carry as numbers, for their plurals. */
-const NUMERIC = new Set(["days", "seq"]);
+const NUMERIC = new Set(["days", "seq", "adCount"]);
 
 /**
  * A notification's title and body in the viewer's language (#81).

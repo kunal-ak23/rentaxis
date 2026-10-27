@@ -4072,7 +4072,7 @@
       "MEETING_CANCELLED_REASON": {"title": "Meeting cancelled", "body": "{name} cancelled the meeting: {meeting}. Reason: {note}"},
       "MEETING_COMPLETED": {"title": "Meeting completed", "body": "Your meeting on {slot} has been marked as completed."},
       "MEETING_NO_SHOW": {"title": "Meeting marked as no-show", "body": "Your meeting on {slot} was marked as no-show."},
-      "PROMO_AD_SUBMITTED": {"title": "Ad awaiting approval", "body": "{promoterName} sent \"{adTitle}\" ({businessName}) for approval."},
+      "PROMO_AD_SUBMITTED": {"title": "{adCount, plural, one {Ad awaiting approval} other {# ads awaiting approval}}", "body": "{adCount, plural, one {{promoterName} sent \"{adTitle}\" ({businessName}) for approval.} other {{promoterName} changed {businessName}, so # of its ads (including \"{adTitle}\") wait for approval.}}"},
       "PROMO_AD_APPROVED": {"title": "Ad approved", "body": "Your ad \"{adTitle}\" ({businessName}) was approved and runs from its start date."},
       "PROMO_AD_REJECTED": {"title": "Ad rejected", "body": "Your ad \"{adTitle}\" ({businessName}) was rejected: {reason}"},
       "PAYMENT_DUE": {"title": "Payment due reminder", "body": "{ref} of {amount} is due in {days, plural, one {# day} other {# days}}."},
