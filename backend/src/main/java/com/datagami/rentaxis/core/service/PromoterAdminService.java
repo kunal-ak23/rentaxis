@@ -165,7 +165,17 @@ public class PromoterAdminService {
         boolean canCreate = Boolean.TRUE.equals(req.canCreateBusinesses());
         access.setCanCreateBusinesses(canCreate);
         accessRepository.save(access);
-        writeGrants(tenantId, userId, businessIds, propertyIds);
+        // Review W-I4: the edit dialog lists live businesses only, so it cannot send a
+        // grant on an archived one back. Those grants are kept, not silently dropped:
+        // restoring the business gives the promoter its access back.
+        List<UUID> granted = grantRepository.findBusinessIds(tenantId, userId);
+        Set<UUID> keep = new LinkedHashSet<>(businessIds);
+        if (!granted.isEmpty()) {
+            businessRepository.findByTenantIdAndIdIn(tenantId, granted).stream()
+                    .filter(b -> b.getArchivedAt() != null)
+                    .forEach(b -> keep.add(b.getId()));
+        }
+        writeGrants(tenantId, userId, keep, propertyIds);
         return new PromoterDTO(user.getId(), user.getName(), user.getEmail(), user.getPhoneNumber(),
                 user.getStatus().name(), canCreate, List.copyOf(businessIds), List.copyOf(propertyIds));
     }

@@ -287,6 +287,25 @@ class PromoterReviewFixesIT extends AbstractPromoterIT {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM users WHERE email = ?", Integer.class, email)).isEqualTo(1);
     }
 
+    // ----------------------------------------------------------------- W-I4
+
+    @Test
+    void wi4_editingAccessKeepsAGrantOnAnArchivedBusiness() {
+        PromoBusiness other = business(org, "Spice");
+        User p = promoter(org, false, List.of(wash.getId(), other.getId()), List.of(p1.getId()));
+        ad(org, wash.getId(), APPROVED, null);
+        assertThat(delete(admin, "/api/v1/promotions/businesses/" + wash.getId()).text("outcome")).isEqualTo("ARCHIVED");
+
+        assertThat(put(admin, "/api/v1/promotions/promoters/" + p.getId(), body("canCreateBusinesses", false,
+                "businessIds", List.of(other.getId().toString()), "propertyIds", List.of(p1.getId().toString())))
+                .status()).isEqualTo(200);
+        assertThat(post(admin, "/api/v1/promotions/businesses/" + wash.getId() + "/restore", null).status())
+                .isEqualTo(200);
+
+        assertThat(get(p, "/api/v1/promoter/businesses").body().findValuesAsText("id"))
+                .containsExactlyInAnyOrder(wash.getId().toString(), other.getId().toString());
+    }
+
     // -------------------------------------------------------------- helpers
 
     private Map<String, Object> ad(String title) {
