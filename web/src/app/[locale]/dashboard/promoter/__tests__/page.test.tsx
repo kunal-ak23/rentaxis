@@ -108,7 +108,7 @@ describe('promoter portal', () => {
         renderPortal()
         await screen.findByText('Ad coupon')
         const summary = within(rowOf('Ad coupon')).getByTestId('redirect-summary')
-        expect(summary).toHaveTextContent('After copy: https://app.sparkle.example.test/open')
+        expect(summary).toHaveTextContent('After copy (Default): https://app.sparkle.example.test/open')
         expect(summary).toHaveTextContent("Parameters: email (Tenant's email)")
     })
 

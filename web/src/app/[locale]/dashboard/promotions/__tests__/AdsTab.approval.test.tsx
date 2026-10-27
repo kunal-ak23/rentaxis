@@ -184,7 +184,7 @@ describe('admin Ads tab — approval', () => {
         await screen.findByText('Ad redirecting')
 
         const summary = within(rowOf('Ad redirecting')).getByTestId('redirect-summary')
-        expect(summary).toHaveTextContent('After copy: https://app.quickwash.example.test/open')
+        expect(summary).toHaveTextContent('After copy (Default): https://app.quickwash.example.test/open')
         expect(summary).toHaveTextContent("Parameters: phone (Tenant's phone), code (Coupon code), promo (Fixed value)")
         expect(summary).toHaveTextContent('Shares tenant details')
         // The values of a fixed parameter are the ad's own text, not renter data: nothing is hidden by the summary.

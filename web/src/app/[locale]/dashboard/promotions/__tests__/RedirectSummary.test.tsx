@@ -40,7 +40,8 @@ describe('RedirectSummary direction', () => {
     it('keeps the translated words outside the isolates, in Arabic', () => {
         renderSummary('ar')
         const summary = screen.getByTestId('redirect-summary')
-        expect(summary).toHaveTextContent(`${ar.Promotions.redirectSummary.replace('<url></url>', ad.redirectUrl)}`)
+        expect(summary).toHaveTextContent(
+            ar.Promotions.redirectSummary.replace('{label}', ar.Promotions.redirectLinkDefault).replace('<url></url>', ad.redirectUrl))
         expect(summary).toHaveTextContent(`(${ar.Promotions.redirectSourceRENTER_PHONE})`)
         for (const bdi of summary.querySelectorAll('bdi')) expect(bdi.textContent).toMatch(/^[\x20-\x7e]+$/)
     })
@@ -48,7 +49,7 @@ describe('RedirectSummary direction', () => {
     it('still reads as one sentence each', () => {
         renderSummary('en')
         const summary = screen.getByTestId('redirect-summary')
-        expect(summary).toHaveTextContent('After copy: https://app.quickwash.example.test/open?src=miftah')
+        expect(summary).toHaveTextContent('After copy (Default): https://app.quickwash.example.test/open?src=miftah')
         expect(summary).toHaveTextContent("Parameters: phone (Tenant's phone), promo (Fixed value)")
         expect(summary).toHaveTextContent('Shares tenant details')
     })
