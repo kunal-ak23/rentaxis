@@ -79,6 +79,21 @@ describe('admin Promotions page — approvals and promoters', () => {
         expect(api.callsTo('GET', '/ads/pending-count').length).toBeGreaterThanOrEqual(2)
     })
 
+    it('refreshes the badge when a business is deleted, because its ads go with it', async () => {
+        vi.spyOn(window, 'confirm').mockReturnValue(true)
+        api.on('DELETE', '/v1/promotions/businesses/b-1', () => { pending = 0; return { body: { outcome: 'ARCHIVED' } } })
+        renderPage()
+        await screen.findByTestId('pending-count-badge')
+        const counted = api.callsTo('GET', '/ads/pending-count').length
+
+        fireEvent.click(screen.getByRole('tab', { name: 'Businesses' }))
+        const row = (await screen.findByText('Sparkle Laundry')).closest('tr') as HTMLElement
+        fireEvent.click(within(row).getByRole('button', { name: 'Delete' }))
+
+        await waitFor(() => expect(api.callsTo('GET', '/ads/pending-count').length).toBeGreaterThan(counted))
+        await waitFor(() => expect(screen.queryByTestId('pending-count-badge')).not.toBeInTheDocument())
+    })
+
     it('has a Promoters tab that loads the organisation\'s promoters', async () => {
         renderPage()
         fireEvent.click(await screen.findByRole('tab', { name: 'Promoters' }))

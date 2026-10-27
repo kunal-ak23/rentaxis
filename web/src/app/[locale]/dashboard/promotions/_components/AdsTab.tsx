@@ -7,7 +7,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Toast, useToast } from "@/components/ui/Toast";
 import {
-    ApiError, approveAd, createAd, deleteAd, fetchAds, rejectAd, restoreAd, updateAd,
+    ApiError, approveAd, createAd, deleteAd, fetchAds, isAdChangedError, rejectAd, restoreAd, updateAd,
 } from "@/lib/api/promotions";
 import {
     adDisplayStatus,
@@ -62,26 +62,31 @@ export function AdsTab({ businesses, properties, onReviewed }: AdsTabProps) {
     const [editing, setEditing] = useState<PromoAdDTO | null | undefined>(undefined);
     const [rejecting, setRejecting] = useState<PromoAdDTO | null>(null);
     const [reason, setReason] = useState("");
+    // A refused reject is shown inside its dialog, which stays open with the typed reason.
+    const [rejectError, setRejectError] = useState<string | null>(null);
     // One flag for every row action (approve, reject, delete, restore): none may overlap another.
     const [reviewBusy, setReviewBusy] = useState(false);
     const { toast, showToast } = useToast();
 
     const requestIdRef = useRef(0);
 
+    /** Loads a page; answers its rows, or null when the request failed or a newer one superseded it. */
     const load = useCallback(async (
         p: number, filterBusinessId: string, filterApproval: "" | PromoApprovalStatus, archived: boolean,
-    ) => {
+    ): Promise<PromoAdDTO[] | null> => {
         const id = ++requestIdRef.current;
         setLoading(true);
         try {
             const data = await fetchAds(p, PAGE_SIZE, filterBusinessId || undefined, filterApproval || undefined, archived);
-            if (id !== requestIdRef.current) return;
+            if (id !== requestIdRef.current) return null;
             setRows(data.content);
             setTotal(data.totalElements);
             setError(null);
+            return data.content;
         } catch (e) {
-            if (id !== requestIdRef.current) return;
+            if (id !== requestIdRef.current) return null;
             setError(e instanceof ApiError ? e.message : t("loadError"));
+            return null;
         } finally {
             if (id === requestIdRef.current) setLoading(false);
         }
@@ -154,14 +159,28 @@ export function AdsTab({ businesses, properties, onReviewed }: AdsTabProps) {
     async function approve(row: PromoAdDTO) {
         setReviewBusy(true);
         try {
-            await approveAd(row.id);
+            // The version the admin is looking at: the server approves only that one.
+            await approveAd(row.id, row.submittedAt);
             setError(null);
             await reloadAfter(approval !== "");
         } catch (e) {
+            if (isAdChangedError(e)) {
+                // The promoter edited the ad after this list loaded. Show the latest
+                // version (and the count), then say why nothing was approved: the
+                // reload clears the banner, so the message goes up after it.
+                await load(page, businessId, approval, showArchived);
+                await onReviewed?.();
+            }
             setError(e instanceof ApiError ? e.message : t("saveError"));
         } finally {
             setReviewBusy(false);
         }
+    }
+
+    function closeReject() {
+        setRejecting(null);
+        setReason("");
+        setRejectError(null);
     }
 
     async function confirmReject() {
@@ -171,14 +190,28 @@ export function AdsTab({ businesses, properties, onReviewed }: AdsTabProps) {
         if (!rejecting || trimmed === "") return;
         setReviewBusy(true);
         try {
-            await rejectAd(rejecting.id, trimmed);
+            await rejectAd(rejecting.id, trimmed, rejecting.submittedAt);
             setError(null);
-            setRejecting(null);
-            setReason("");
+            closeReject();
             await reloadAfter(approval !== "");
         } catch (e) {
-            setRejecting(null);
-            setError(e instanceof ApiError ? e.message : t("saveError"));
+            // Whatever the refusal, the dialog stays open with what was typed.
+            const message = e instanceof ApiError ? e.message : t("saveError");
+            if (isAdChangedError(e)) {
+                const fresh = await load(page, businessId, approval, showArchived);
+                await onReviewed?.();
+                const latest = fresh?.find(r => r.id === rejecting.id);
+                if (latest && latest.approvalStatus === "PENDING") {
+                    // Point the dialog at the latest version so the same reason can be sent again.
+                    setRejecting(latest);
+                } else {
+                    // Gone, or no longer waiting (decided elsewhere): nothing left to reject.
+                    closeReject();
+                    setError(message);
+                    return;
+                }
+            }
+            setRejectError(message);
         } finally {
             setReviewBusy(false);
         }
@@ -186,8 +219,15 @@ export function AdsTab({ businesses, properties, onReviewed }: AdsTabProps) {
 
     if (editing !== undefined) {
         return (
-            <AdEditor businesses={businesses} properties={properties} ad={editing}
-                onSave={save} onCancel={() => setEditing(undefined)} />
+            <div className="space-y-4">
+                {/* The editor replaces the list, so a refusal (a link off the allowlist, an
+                    ad with no property, an ad changed meanwhile) has to be shown here. */}
+                {error && (
+                    <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+                )}
+                <AdEditor businesses={businesses} properties={properties} ad={editing}
+                    onSave={save} onCancel={() => { setError(null); setEditing(undefined); }} />
+            </div>
         );
     }
 
@@ -216,7 +256,7 @@ export function AdsTab({ businesses, properties, onReviewed }: AdsTabProps) {
                 </div>
                 {!showArchived && (
                     <button type="button" disabled={businesses.length === 0}
-                        onClick={() => setEditing(null)}
+                        onClick={() => { setError(null); setEditing(null); }}
                         className="rounded-lg bg-gray-900 px-4 py-2 text-white disabled:opacity-40">
                         {t("addAd")}
                     </button>
@@ -313,11 +353,11 @@ export function AdsTab({ businesses, properties, onReviewed }: AdsTabProps) {
                                                         <button type="button" disabled={reviewBusy}
                                                             aria-label={`${t("reject")}: ${row.titleEn ?? row.titleAr ?? ""}`}
                                                             className="me-3 font-medium text-red-700 underline disabled:opacity-40"
-                                                            onClick={() => { setReason(""); setRejecting(row); }}>{t("reject")}</button>
+                                                            onClick={() => { setReason(""); setRejectError(null); setRejecting(row); }}>{t("reject")}</button>
                                                     </>
                                                 )}
                                                 <button type="button" className="me-3 underline"
-                                                    onClick={() => setEditing(row)}>{t("edit")}</button>
+                                                    onClick={() => { setError(null); setEditing(row); }}>{t("edit")}</button>
                                                 <button type="button" disabled={reviewBusy}
                                                     className="text-red-600 underline disabled:opacity-40"
                                                     onClick={() => void remove(row)}>{t("delete")}</button>
@@ -342,7 +382,7 @@ export function AdsTab({ businesses, properties, onReviewed }: AdsTabProps) {
 
             <ConfirmDialog
                 isOpen={rejecting !== null}
-                onClose={() => { setRejecting(null); setReason(""); }}
+                onClose={closeReject}
                 onConfirm={() => void confirmReject()}
                 title={t("rejectTitle", { name: rejecting?.titleEn ?? rejecting?.titleAr ?? "" })}
                 description={t("rejectDescription")}
@@ -360,6 +400,11 @@ export function AdsTab({ businesses, properties, onReviewed }: AdsTabProps) {
                         value={reason} onChange={e => setReason(e.target.value)} />
                     <span className="text-xs text-gray-500">{t("rejectReasonHint", { max: REJECT_REASON_MAX })}</span>
                 </label>
+                {rejectError && (
+                    <p role="alert" data-testid="reject-error" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                        {rejectError}
+                    </p>
+                )}
             </ConfirmDialog>
         </div>
     );

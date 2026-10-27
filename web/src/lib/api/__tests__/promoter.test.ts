@@ -7,7 +7,7 @@ import {
 } from "../promoter";
 import {
     approveAd, deleteAd, deleteBusiness, fetchAds, fetchBusinesses, fetchPendingAdCount, fetchPromoters,
-    invitePromoter, rejectAd, restoreAd, restoreBusiness, updatePromoterAccess,
+    invitePromoter, isAdChangedError, rejectAd, restoreAd, restoreBusiness, updatePromoterAccess,
 } from "../promotions";
 
 /**
@@ -107,10 +107,40 @@ describe("admin additions on /promotions", () => {
     it("approves with a bare POST and rejects with the reason", async () => {
         api.on("POST", `${A}/ads/ad-1/approve`, { body: {} });
         api.on("POST", `${A}/ads/ad-1/reject`, { body: {} });
-        await approveAd("ad-1");
-        expect(last()).toMatchObject({ method: "POST", url: `${A}/ads/ad-1/approve` });
-        await rejectAd("ad-1", "Blurry");
-        expect(last()).toMatchObject({ method: "POST", url: `${A}/ads/ad-1/reject`, body: { reason: "Blurry" } });
+        await approveAd("ad-1", "2026-10-05T10:11:12.123456Z");
+        expect(last()).toMatchObject({ method: "POST", url: `${A}/ads/ad-1/approve`, body: { expectedSubmittedAt: "2026-10-05T10:11:12.123456Z" } });
+        await rejectAd("ad-1", "Blurry", "2026-10-05T10:11:12.123456Z");
+        expect(last()).toMatchObject({
+            method: "POST", url: `${A}/ads/ad-1/reject`,
+            body: { reason: "Blurry", expectedSubmittedAt: "2026-10-05T10:11:12.123456Z" },
+        });
+    });
+
+    it("sends the submittedAt string untouched (not re-parsed or reformatted), null included", async () => {
+        api.on("POST", `${A}/ads/ad-1/approve`, { body: {} });
+        // Microsecond precision and an offset: a Date round trip would change both.
+        await approveAd("ad-1", "2026-10-05T14:11:12.123456+04:00");
+        expect((last().body as { expectedSubmittedAt: string }).expectedSubmittedAt).toBe("2026-10-05T14:11:12.123456+04:00");
+        await approveAd("ad-1", null);
+        expect(last().body).toEqual({ expectedSubmittedAt: null });
+    });
+
+    it("recognises the 409 promo.changed of a review, and only that", async () => {
+        api.on("POST", `${A}/ads/ad-1/approve`, {
+            status: 409,
+            body: { code: "promo.changed", message: "This ad was changed after you opened it. Reload to review the latest version." },
+        });
+        const changed = await approveAd("ad-1", "x").catch(e => e);
+        expect(isAdChangedError(changed)).toBe(true);
+        expect(changed.message).toBe("This ad was changed after you opened it. Reload to review the latest version.");
+
+        api.on("POST", `${A}/ads/ad-2/approve`, { status: 409, body: { code: "something.else", message: "Conflict" } });
+        api.on("POST", `${A}/ads/ad-3/approve`, { status: 400, body: { code: "promo.changed", message: "x" } });
+        api.on("POST", `${A}/ads/ad-4/approve`, { status: 409, body: { message: "no code" } });
+        for (const id of ["ad-2", "ad-3", "ad-4"]) {
+            expect(isAdChangedError(await approveAd(id, "x").catch(e => e)), id).toBe(false);
+        }
+        expect(isAdChangedError(new Error("network"))).toBe(false);
     });
 
     it("lists, invites and updates promoters", async () => {

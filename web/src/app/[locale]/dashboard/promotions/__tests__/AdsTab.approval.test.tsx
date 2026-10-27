@@ -128,7 +128,7 @@ describe('admin Ads tab — approval', () => {
         await waitFor(() => expect(onReviewed).toHaveBeenCalledTimes(1))
         const sent = api.callsTo('POST', '/promotions/ads/pending/reject')
         expect(sent).toHaveLength(1)
-        expect(sent[0].body).toEqual({ reason: 'Wrong phone number' })
+        expect(sent[0].body).toEqual({ reason: 'Wrong phone number', expectedSubmittedAt: PENDING.submittedAt })
     })
 
     it('caps the reason at the 500 characters the server accepts', async () => {
@@ -198,3 +198,142 @@ describe('admin Ads tab — approval', () => {
         expect(within(rowOf('Ad redirecting')).getByRole('button', { name: /^Approve/ })).toBeInTheDocument()
     })
 })
+
+/**
+ * Review round 1: approve and reject send the ad's submittedAt exactly as loaded; a 409 promo.changed
+ * means the promoter edited the ad since, and nothing is approved or rejected on a stale view.
+ */
+describe('admin Ads tab — reviewing the version that was loaded', () => {
+    const CHANGED = {
+        status: 409,
+        body: { code: 'promo.changed', message: 'This ad was changed after you opened it. Reload to review the latest version.' },
+    }
+    const NEWER = ad('pending', {
+        approvalStatus: 'PENDING', submittedByName: 'Pat Promoter', submittedAt: '2026-10-06T09:30:00.654321Z', titleEn: 'Ad pending',
+    })
+    let shown: PromoAdDTO[]
+
+    beforeEach(() => {
+        shown = [PENDING]
+        api.on('GET', '/v1/promotions/ads?', () => ({ body: page(...shown) }))
+    })
+
+    it('approves with the submittedAt it loaded, byte for byte', async () => {
+        shown = [ad('pending', { approvalStatus: 'PENDING', submittedAt: '2026-10-05T14:11:12.123456+04:00' })]
+        api.on('POST', '/ads/pending/approve', { body: {} })
+        renderTab()
+        await screen.findByText('Ad pending')
+        fireEvent.click(within(rowOf('Ad pending')).getByRole('button', { name: /^Approve/ }))
+        await waitFor(() => expect(api.callsTo('POST', '/ads/pending/approve')).toHaveLength(1))
+        expect(api.callsTo('POST', '/ads/pending/approve')[0].body).toEqual({ expectedSubmittedAt: '2026-10-05T14:11:12.123456+04:00' })
+    })
+
+    it('says the ad changed, reloads the latest version and the count, and approves nothing, when approve answers promo.changed', async () => {
+        api.on('POST', '/ads/pending/approve', CHANGED)
+        const onReviewed = renderTab()
+        await screen.findByText('Ad pending')
+        const loads = api.callsTo('GET', '/v1/promotions/ads?').length
+        shown = [NEWER]
+
+        fireEvent.click(within(rowOf('Ad pending')).getByRole('button', { name: /^Approve/ }))
+
+        // The banner survives the reload that it follows.
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'This ad was changed after you opened it. Reload to review the latest version.')
+        expect(api.callsTo('GET', '/v1/promotions/ads?').length).toBeGreaterThan(loads)
+        expect(onReviewed).toHaveBeenCalledTimes(1)
+        expect(screen.queryByTestId('toast')).not.toBeInTheDocument()
+
+        // Approving again reviews what is now on screen: the newer version's submittedAt.
+        api.on('POST', '/ads/pending/approve', { body: {} })
+        fireEvent.click(within(rowOf('Ad pending')).getByRole('button', { name: /^Approve/ }))
+        await waitFor(() => expect(api.callsTo('POST', '/ads/pending/approve')).toHaveLength(2))
+        expect(api.callsTo('POST', '/ads/pending/approve')[1].body).toEqual({ expectedSubmittedAt: '2026-10-06T09:30:00.654321Z' })
+    })
+
+    it('treats a 409 with some other code as an ordinary refusal: no reload', async () => {
+        api.on('POST', '/ads/pending/approve', { status: 409, body: { code: 'other', message: 'Conflict' } })
+        renderTab()
+        await screen.findByText('Ad pending')
+        const loads = api.callsTo('GET', '/v1/promotions/ads?').length
+        fireEvent.click(within(rowOf('Ad pending')).getByRole('button', { name: /^Approve/ }))
+        expect(await screen.findByRole('alert')).toHaveTextContent('Conflict')
+        expect(api.callsTo('GET', '/v1/promotions/ads?')).toHaveLength(loads)
+    })
+
+    async function openReject(reasonText = 'Wrong phone number') {
+        await screen.findByText('Ad pending')
+        fireEvent.click(within(rowOf('Ad pending')).getByRole('button', { name: /^Reject/ }))
+        const dialog = await screen.findByRole('dialog')
+        fireEvent.change(within(dialog).getByLabelText('Reason'), { target: { value: reasonText } })
+        return dialog
+    }
+
+    it('keeps the reject dialog open, with the reason, and shows a refusal inside it', async () => {
+        api.on('POST', '/ads/pending/reject', { status: 500, body: { message: 'Something went wrong' } })
+        renderTab()
+        const dialog = await openReject()
+
+        fireEvent.click(within(dialog).getByTestId('reject-ad-confirm'))
+
+        expect(await within(dialog).findByTestId('reject-error')).toHaveTextContent('Something went wrong')
+        expect(screen.getByRole('dialog')).toBe(dialog)
+        expect(within(dialog).getByLabelText('Reason')).toHaveValue('Wrong phone number')
+        // The only alert is the dialog's own; nothing is hidden behind the backdrop.
+        expect(screen.getAllByRole('alert')).toHaveLength(1)
+        expect(dialog).toContainElement(screen.getByRole('alert'))
+        // ...and the admin can try again.
+        expect(within(dialog).getByTestId('reject-ad-confirm')).toBeEnabled()
+    })
+
+    it('sends the reason again, against the latest version, after a reject answers promo.changed', async () => {
+        let calls = 0
+        api.on('POST', '/ads/pending/reject', () => (++calls === 1 ? CHANGED : { body: {} }))
+        renderTab()
+        const dialog = await openReject('Wrong phone number')
+        shown = [NEWER]
+
+        fireEvent.click(within(dialog).getByTestId('reject-ad-confirm'))
+
+        expect(await within(dialog).findByTestId('reject-error')).toHaveTextContent(
+            'This ad was changed after you opened it. Reload to review the latest version.')
+        // Still open, reason kept, list reloaded behind it.
+        expect(screen.getByRole('dialog')).toBe(dialog)
+        expect(within(dialog).getByLabelText('Reason')).toHaveValue('Wrong phone number')
+        expect(api.callsTo('GET', '/v1/promotions/ads?').length).toBeGreaterThan(1)
+
+        fireEvent.click(within(dialog).getByTestId('reject-ad-confirm'))
+        await waitFor(() => expect(api.callsTo('POST', '/ads/pending/reject')).toHaveLength(2))
+        expect(api.callsTo('POST', '/ads/pending/reject')[0].body).toEqual({ reason: 'Wrong phone number', expectedSubmittedAt: PENDING.submittedAt })
+        expect(api.callsTo('POST', '/ads/pending/reject')[1].body).toEqual({ reason: 'Wrong phone number', expectedSubmittedAt: '2026-10-06T09:30:00.654321Z' })
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    })
+
+    it('closes the dialog and says why when the ad is no longer waiting for a decision', async () => {
+        api.on('POST', '/ads/pending/reject', CHANGED)
+        renderTab()
+        const dialog = await openReject()
+        shown = [ad('pending', { approvalStatus: 'APPROVED' })]
+
+        fireEvent.click(within(dialog).getByTestId('reject-ad-confirm'))
+
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+        expect(await screen.findByRole('alert')).toHaveTextContent('This ad was changed after you opened it.')
+    })
+
+    it('does not carry a refusal into the next reject dialog', async () => {
+        api.on('POST', '/ads/pending/reject', { status: 500, body: { message: 'Something went wrong' } })
+        renderTab()
+        const dialog = await openReject()
+        fireEvent.click(within(dialog).getByTestId('reject-ad-confirm'))
+        await within(dialog).findByTestId('reject-error')
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+        fireEvent.click(within(rowOf('Ad pending')).getByRole('button', { name: /^Reject/ }))
+        const again = await screen.findByRole('dialog')
+        expect(within(again).queryByTestId('reject-error')).not.toBeInTheDocument()
+        expect(within(again).getByLabelText('Reason')).toHaveValue('')
+    })
+})
+

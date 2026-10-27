@@ -160,18 +160,45 @@ export async function fetchPendingAdCount(): Promise<number> {
   return data.count
 }
 
-/** Approves a PENDING ad: it is live from its window. Any other status is a 400. */
-export async function approveAd(id: string): Promise<void> {
-  const res = await fetch(`${ADS}/${id}/approve`, { method: 'POST' })
+/**
+ * Approves a PENDING ad. `expectedSubmittedAt` is the ad's `submittedAt` exactly
+ * as it was loaded: the server approves only the version the admin looked at, and
+ * answers 409 `promo.changed` if the promoter edited the ad since (see
+ * {@link isAdChangedError}). Any other status than PENDING is a 400.
+ */
+export async function approveAd(id: string, expectedSubmittedAt: string | null): Promise<void> {
+  const res = await fetch(`${ADS}/${id}/approve`, {
+    method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ expectedSubmittedAt }),
+  })
   await throwIfNotOk(res)
 }
 
-/** Rejects a PENDING ad. The reason is required (the promoter reads it) and the server caps it at 500. */
-export async function rejectAd(id: string, reason: string): Promise<void> {
+/**
+ * Rejects a PENDING ad. The reason is required (the promoter reads it) and the
+ * server caps it at 500. `expectedSubmittedAt` is as for {@link approveAd}.
+ */
+export async function rejectAd(
+  id: string, reason: string, expectedSubmittedAt: string | null,
+): Promise<void> {
   const res = await fetch(`${ADS}/${id}/reject`, {
-    method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ reason }),
+    method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ reason, expectedSubmittedAt }),
   })
   await throwIfNotOk(res)
+}
+
+/**
+ * True for the 409 `promo.changed` a review answers when the ad was edited after
+ * the admin loaded it. Its message ("This ad was changed after you opened it.
+ * Reload to review the latest version.") is shown as it comes.
+ */
+export function isAdChangedError(e: unknown): e is ApiError {
+  if (!(e instanceof ApiError) || e.status !== 409) return false
+  try {
+    const body: { code?: unknown } | null = e.body ? JSON.parse(e.body) : null
+    return body?.code === 'promo.changed'
+  } catch {
+    return false
+  }
 }
 
 export async function fetchAdStats(id: string): Promise<PromoAdStatsDTO> {

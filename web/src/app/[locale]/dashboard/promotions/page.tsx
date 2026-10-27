@@ -60,6 +60,12 @@ export default function PromotionsPage() {
         }
     }, []);
 
+    // Deleting (or restoring) a business moves ads with it, and so the pending count:
+    // refresh the pickers and the badge together. The count never throws.
+    const onBusinessesChanged = useCallback(async () => {
+        await Promise.all([loadLookups(), refreshPending()]);
+    }, [loadLookups, refreshPending]);
+
     useEffect(() => {
         if (sessionStatus !== "authenticated" || !canView) return;
         // Guarded rather than fire-and-forget: both setters run after awaits, so
@@ -128,7 +134,7 @@ export default function PromotionsPage() {
             {tab === "ads"
                 ? <AdsTab businesses={businesses} properties={properties} onReviewed={refreshPending} />
                 : tab === "businesses"
-                    ? <BusinessesTab onChanged={loadLookups} />
+                    ? <BusinessesTab onChanged={onBusinessesChanged} />
                     : <PromotersTab businesses={businesses} properties={properties} />}
         </div>
     );
