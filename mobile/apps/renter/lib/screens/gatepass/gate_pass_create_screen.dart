@@ -191,7 +191,7 @@ class _GatePassCreateScreenState extends ConsumerState<GatePassCreateScreen> {
             16,
             16,
             16,
-            32 + MediaQuery.paddingOf(context).bottom,
+            32,
           ),
           children: [
             if (leases.length > 1) ...[

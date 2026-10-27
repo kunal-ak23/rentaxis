@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
-import { AdCardPreview, isDarkAccent, toCssColour } from '../_components/AdCardPreview'
+import { AdCardPreview, toCssColour, whiteReadsBetter } from '../_components/AdCardPreview'
 
 afterEach(() => {
     cleanup()
@@ -103,10 +103,11 @@ describe('AdCardPreview business logo', () => {
 })
 
 describe('AdCardPreview copy colour follows the accent, as on the phone', () => {
-    it('reads a saturated blue as dark and the brass tint as light', () => {
-        expect(isDarkAccent('#2F5FE0')).toBe(true)
-        expect(isDarkAccent('#FF2F5FE0')).toBe(true)
-        expect(isDarkAccent('#FBF3E2')).toBe(false)
+    it('picks white only where it beats ink: a deep blue, not Material blue', () => {
+        expect(whiteReadsBetter('#2F5FE0')).toBe(true)
+        expect(whiteReadsBetter('#FF2F5FE0')).toBe(true)
+        expect(whiteReadsBetter('#2196F3')).toBe(false)
+        expect(whiteReadsBetter('#FBF3E2')).toBe(false)
     })
 
     it('puts white copy and a white pill on a dark accent', () => {

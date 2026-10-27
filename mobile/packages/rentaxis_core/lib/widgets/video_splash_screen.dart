@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
+import '../ui/miftah_theme.dart';
 import '../utils/l10n.dart';
 
 /// Miftah splash: an app-specific property creative under the gold lockup,
@@ -82,8 +84,17 @@ class _VideoSplashScreenState extends State<VideoSplashScreen>
     super.dispose();
   }
 
+  // Always dark: light system bar icons, whatever the theme.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AnnotatedRegion<SystemUiOverlayStyle>(
+    value: MiftahTheme.systemBars(
+      Brightness.dark,
+      navigationBar: AppColors.navyDark,
+    ),
+    child: _screen(context),
+  );
+
+  Widget _screen(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.navyDark,
       body: Stack(

@@ -22,11 +22,7 @@ TextStyle _display(
         fontWeight: weight,
         color: color,
       )
-    : GoogleFonts.plusJakartaSans(
-        fontSize: size,
-        fontWeight: weight,
-        color: color,
-      );
+    : GoogleFonts.plusJakartaSans(fontSize: size, fontWeight: weight, color: color);
 
 TextStyle _body(
   bool ar, {
@@ -226,12 +222,7 @@ class _LeasePenaltiesScreenState extends ConsumerState<LeasePenaltiesScreen> {
       color: AppColors.accent,
       child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.fromLTRB(
-          16,
-          16,
-          16,
-          24 + MediaQuery.paddingOf(context).bottom,
-        ),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 24),
         itemCount: _penalties.length,
         itemBuilder: (context, index) {
           final penalty = _penalties[index];
@@ -293,7 +284,9 @@ class _PenaltyCard extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            l.reasonLabel(penalty['failureReason']?.toString()),
+                            l.reasonLabel(
+                              penalty['failureReason']?.toString(),
+                            ),
                             style: _body(
                               l.ar,
                               size: 14,

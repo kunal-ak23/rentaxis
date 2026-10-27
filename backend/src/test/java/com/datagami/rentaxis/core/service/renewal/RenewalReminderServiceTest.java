@@ -151,6 +151,18 @@ class RenewalReminderServiceTest extends AbstractPostgresIT {
     }
 
     @Test
+    void in_app_reminder_says_day_not_days_with_one_day_left() {
+        RenewalOpportunity o = openOppForLeaseDaysOut(1);
+        service.fireRemindersForOpportunity(o.getId(), LocalDate.of(2026, 6, 1));
+
+        UUID renterUserId = o.getLease().getRenter().getUserId();
+        assertThat(notificationRepo.findByUserIdOrderByCreatedAtDesc(renterUserId))
+                .filteredOn(n -> "LEASE_RENEWAL_REMINDER".equals(n.getType()))
+                .singleElement()
+                .satisfies(n -> assertThat(n.getTitle()).isEqualTo("Your lease ends in 1 day"));
+    }
+
+    @Test
     void DISCUSS_intent_does_NOT_skip_remaining() {
         RenewalOpportunity o = openOppForLeaseDaysOut(85);
         service.fireRemindersForOpportunity(o.getId(), LocalDate.of(2026, 6, 1));

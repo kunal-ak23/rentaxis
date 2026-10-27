@@ -18,6 +18,13 @@ const _maxHeightScale = 1.5;
 /// Space between the lines of the copy block.
 const _copyGap = 3.0;
 
+/// Whether white copy has a higher contrast ratio against [fill] than ink.
+bool _whiteReadsBetter(Color fill) {
+  final l = fill.computeLuminance();
+  final ink = MiftahColors.textPrimary.computeLuminance();
+  return 1.05 / (l + 0.05) > (l + 0.05) / (ink + 0.05);
+}
+
 /// The business logo's tile. No taller than the CTA pill, so a card with both
 /// gives its copy no less room than a card with the pill alone.
 const _logoSize = 28.0;
@@ -52,11 +59,9 @@ class AdCard extends StatelessWidget {
     // reads as deliberate. The border gives it an edge either way, including
     // when a client picks an accent close to the canvas.
     final fill = ad.accentColor ?? MiftahColors.brassTint;
-    // Light copy on a photo or on a dark accent colour; dark copy otherwise.
-    // An admin picks the accent freely, so a saturated blue gets white text
-    // rather than ink it can't be read on.
-    final darkBackdrop = hasImage ||
-        ThemeData.estimateBrightnessForColor(fill) == Brightness.dark;
+    // Light copy on a photo, or on an accent white contrasts with better than
+    // ink does; an admin picks the accent freely.
+    final darkBackdrop = hasImage || _whiteReadsBetter(fill);
     final onFill = darkBackdrop ? Colors.white : MiftahColors.textPrimary;
     final eyebrow = ad.subtitle(isAr) ?? ad.business.name(isAr);
     final ctaLabel = ad.ctaLabel(isAr);
@@ -73,7 +78,9 @@ class AdCard extends StatelessWidget {
     // the Text widgets render with — a style that drifts between the two is a
     // sliced line.
     final eyebrowStyle = MiftahType.sectionLabel(
-      color: darkBackdrop ? MiftahColors.brassPale : MiftahColors.warning,
+      color: hasImage
+          ? MiftahColors.brassPale
+          : (darkBackdrop ? Colors.white70 : MiftahColors.warning),
     );
     final titleStyle =
         MiftahType.cardTitle(color: onFill).copyWith(fontSize: 18, height: 1.1);

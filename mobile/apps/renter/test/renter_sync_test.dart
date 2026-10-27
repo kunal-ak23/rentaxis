@@ -432,36 +432,40 @@ void main() {
     },
   );
 
-  testWidgets(
-    'the contracts list pads its end past a 48pt system navigation bar',
-    (tester) async {
-      // Android 15+ draws the app behind 3-button navigation; a list that sets
-      // its own bottom padding must add the system inset itself.
-      tester.view.padding = const FakeViewPadding(bottom: 48 * 3);
-      addTearDown(tester.view.resetPadding);
-      await pumpScreen(
-        tester,
-        routes: [
-          GoRoute(path: '/', builder: (_, _) => const ContractsScreen()),
-        ],
-        initialLocation: '/',
-        surfaceSize: const Size(390, 420),
-        overrides: [
-          renterLeasesProvider.overrideWith(
-            (ref) async => [
-              {
-                'id': 'l1',
-                'status': 'PENDING_SIGNATURE',
-                'hasContract': true,
-                'contractDocumentId': 'doc-v2',
-              },
-            ],
-          ),
-        ],
-      );
-      final list = tester.widget<ListView>(find.byType(ListView).first);
-      expect(list.padding!.resolve(TextDirection.ltr).bottom, 20 + 48);
-    },
-  );
+  test('a booking is past on Dubai time; an open-ended bay never is', () {
+    // 21:00 UTC on 27 Oct is 01:00 on 28 Oct in Dubai.
+    final now = DateTime.utc(2026, 10, 27, 21);
+    expect(
+      isPastRenterBooking({
+        'resourceType': 'AMENITY',
+        'preferredDate': '2026-10-27',
+        'preferredEndTime': '23:00:00',
+      }, now: now),
+      isTrue,
+    );
+    expect(
+      isPastRenterBooking({
+        'resourceType': 'PARKING_SPOT',
+        'preferredDate': '2026-10-01',
+        'preferredEndDate': '2026-10-28',
+      }, now: now),
+      isFalse,
+    );
+    expect(
+      isPastRenterBooking({
+        'resourceType': 'PARKING_SPOT',
+        'preferredDate': '2026-10-01',
+        'preferredEndDate': '2026-10-27',
+      }, now: now),
+      isTrue,
+    );
+    expect(
+      isPastRenterBooking({
+        'resourceType': 'PARKING_SPOT',
+        'preferredDate': '2026-01-01',
+      }, now: now),
+      isFalse,
+    );
+  });
 }
 

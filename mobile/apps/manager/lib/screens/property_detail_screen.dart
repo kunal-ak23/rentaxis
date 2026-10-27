@@ -130,9 +130,7 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
         color: AppColors.accent,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.only(
-            bottom: 24 + MediaQuery.paddingOf(context).bottom,
-          ),
+          padding: EdgeInsets.only(bottom: 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

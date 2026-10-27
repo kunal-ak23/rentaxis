@@ -201,12 +201,7 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
                   color: m.isDark ? AppColors.accent : AppColors.primary,
                   child: ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      8,
-                      16,
-                      24 + MediaQuery.paddingOf(context).bottom,
-                    ),
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final member = filtered[index];

@@ -90,8 +90,8 @@ void main() {
   });
 
   for (final inset in [0.0, 34.0, 48.0]) {
-    testWidgets('the label sits 8pt above a ${inset}pt system inset, or 8pt '
-        'from the edge with none', (tester) async {
+    testWidgets('a ${inset}pt system inset is the bar\'s whole bottom margin, '
+        'or 8pt with none', (tester) async {
       await tester.binding.setSurfaceSize(const Size(400, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(

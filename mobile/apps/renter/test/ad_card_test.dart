@@ -706,8 +706,18 @@ void main() {
       );
 
       expect(colourOf(tester, 'Twenty percent off'), Colors.white);
-      expect(colourOf(tester, 'COFFEE AND JUICES'), MiftahColors.brassPale);
+      expect(colourOf(tester, 'COFFEE AND JUICES'), Colors.white70);
       expect(colourOf(tester, 'Redeem coupon →'), MiftahColors.ink);
+    });
+
+    testWidgets('a mid-tone accent (Material blue) keeps ink, which reads better',
+        (tester) async {
+      await tester.pumpWidget(host(AdCard(
+        ad: testAd(titleEn: 'Twenty percent off', accentColor: '#2196F3'),
+        onTap: () {},
+      )));
+
+      expect(colourOf(tester, 'Twenty percent off'), MiftahColors.textPrimary);
     });
 
     testWidgets('a light accent keeps dark copy', (tester) async {

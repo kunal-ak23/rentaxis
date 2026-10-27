@@ -163,7 +163,7 @@ public class RenewalReminderService {
                     notificationService.notifyInAppInNewTx(
                             o.getTenantId(), renterUserId,
                             "LEASE_RENEWAL_REMINDER",
-                            "Your lease ends in " + daysRemaining + " days",
+                            "Your lease ends in " + daysRemaining + (daysRemaining == 1 ? " day" : " days"),
                             "Lease ends " + o.getLease().getEndDate()
                                     + ". Choose your renewal option on the Renewals page.",
                             "LEASE", o.getLease().getId(),

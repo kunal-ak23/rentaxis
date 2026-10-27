@@ -25,24 +25,26 @@ const HEX_COLOUR = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
  * This is the whole job of this component — showing the admin what the renter
  * will actually see — so getting it wrong here is worse than not previewing.
  */
-/**
- * Flutter's ThemeData.estimateBrightnessForColor for a stored #RRGGBB or
- * #AARRGGBB accent: the card then picks light or dark copy exactly as the
- * phone does.
- */
-export function isDarkAccent(hex: string): boolean {
-    const rgb = hex.length === 9 ? hex.slice(3) : hex.slice(1);
-    const channel = (i: number) => {
-        const c = parseInt(rgb.slice(i, i + 2), 16) / 255;
-        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-    };
-    const luminance = 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
-    return (luminance + 0.05) * (luminance + 0.05) <= 0.15;
-}
-
 export function toCssColour(hex: string): string {
     if (hex.length !== 9) return hex;
     return `#${hex.slice(3)}${hex.slice(1, 3)}`;
+}
+
+/**
+ * Whether white copy has a higher contrast ratio than ink against a stored
+ * #RRGGBB or #AARRGGBB accent, as the phone decides it (alpha ignored).
+ */
+export function whiteReadsBetter(hex: string): boolean {
+    const luminance = (rgb: string) => {
+        const channel = (i: number) => {
+            const c = parseInt(rgb.slice(i, i + 2), 16) / 255;
+            return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+        };
+        return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+    };
+    const l = luminance(hex.length === 9 ? hex.slice(3) : hex.slice(1));
+    const ink = luminance(INK.slice(1));
+    return 1.05 / (l + 0.05) > (l + 0.05) / (ink + 0.05);
 }
 
 export interface AdCardPreviewProps {
@@ -86,7 +88,7 @@ export function AdCardPreview({
     const usesFallback = !HEX_COLOUR.test(accentColor ?? "");
     const fill = usesFallback ? BRASS_TINT : toCssColour(accentColor!);
     // Light copy on a photo or a dark accent, as the phone decides it.
-    const darkBackdrop = hasImage || (!usesFallback && isDarkAccent(accentColor!));
+    const darkBackdrop = hasImage || (!usesFallback && whiteReadsBetter(accentColor!));
     const fg = darkBackdrop ? "#FFFFFF" : INK;
     const label = (ctaLabel?.trim() || defaultCtaLabel(ctaType, rtl));
 
@@ -139,7 +141,7 @@ export function AdCardPreview({
                     <p
                         style={{
                             ...clampEyebrow,
-                            color: darkBackdrop ? "#E7C883" : WARNING,
+                            color: hasImage ? "#E7C883" : darkBackdrop ? "rgba(255,255,255,0.7)" : WARNING,
                             fontSize: 11,
                             fontWeight: 800,
                             letterSpacing: "0.08em",
