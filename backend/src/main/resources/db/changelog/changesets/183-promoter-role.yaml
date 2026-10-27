@@ -11,6 +11,8 @@
 #     only admins have written). A promoter-written ad shows only at properties it
 #     targets AND that are currently in that promoter's allowed set.
 #   - submitted_at / reviewed_by / reviewed_at / rejection_reason: the review trail.
+#   - redirect_url / redirect_params (plan addendum A): a COUPON ad's link opened
+#     after "Copy code", with custom query parameters filled per renter.
 #
 # Access (all tenant-scoped, Hibernate tenantFilter like the other promo tables):
 #   - promoter_access: one row per promoter, its home organisation and the
@@ -34,6 +36,11 @@ databaseChangeLog:
               - column: { name: reviewed_by, type: uuid }
               - column: { name: reviewed_at, type: timestamptz }
               - column: { name: rejection_reason, type: varchar(500) }
+              # Addendum A: a COUPON ad may open a link after "Copy code", with query
+              # parameters the admin/promoter names and the renter app's data fills
+              # ([{name, source, value}], resolved per renter in the feed).
+              - column: { name: redirect_url, type: varchar(2048) }
+              - column: { name: redirect_params, type: jsonb }
         # Both user references survive the user being deleted: the ad is kept, who
         # wrote or reviewed it is forgotten.
         - addForeignKeyConstraint:
@@ -96,6 +103,8 @@ databaseChangeLog:
         - dropIndex: { tableName: promo_ads, indexName: idx_promo_ads_approval }
         - sql:
             sql: ALTER TABLE promo_ads DROP CONSTRAINT IF EXISTS ck_promo_ad_approval_status;
+        - dropColumn: { tableName: promo_ads, columnName: redirect_params }
+        - dropColumn: { tableName: promo_ads, columnName: redirect_url }
         - dropColumn: { tableName: promo_ads, columnName: rejection_reason }
         - dropColumn: { tableName: promo_ads, columnName: reviewed_at }
         - dropColumn: { tableName: promo_ads, columnName: reviewed_by }

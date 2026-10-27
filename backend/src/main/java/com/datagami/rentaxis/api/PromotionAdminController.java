@@ -262,6 +262,8 @@ public class PromotionAdminController {
                 a.getCouponCode(), a.getCouponTermsEn(), a.getCouponTermsAr(),
                 a.getStartsAt(), a.getEndsAt(), a.getPriority(), a.getPlacement(), a.isActive(),
                 propertyIds, totals.impressions(), totals.clicks(),
-                a.getCreatedAt(), a.getUpdatedAt());
+                a.getCreatedAt(), a.getUpdatedAt(),
+                a.getRedirectUrl(),
+                a.getRedirectParams() == null ? List.of() : a.getRedirectParams());
     }
 }

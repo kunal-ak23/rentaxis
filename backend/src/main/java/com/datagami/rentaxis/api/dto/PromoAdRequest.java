@@ -2,6 +2,7 @@ package com.datagami.rentaxis.api.dto;
 
 import com.datagami.rentaxis.domain.entity.enums.PromoCtaType;
 import com.datagami.rentaxis.domain.entity.enums.PromoPlacement;
+import com.datagami.rentaxis.domain.entity.enums.PromoRedirectSource;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
@@ -48,5 +49,25 @@ public record PromoAdRequest(
         // inserts on promo_ad_properties with no DTO-level backstop. 500 mirrors
         // FacilityService.MAX_BULK_SPOT_NUMBERS.
         @Size(max = 500) List<UUID> propertyIds,
-        Boolean active) {
+        Boolean active,
+        // Addendum A, COUPON only: the link "Copy code" opens, and its query
+        // parameters. Every rule (https + allowlist, ≤10 params, names, STATIC
+        // values) is checked in PromotionService; @Size here only bounds the body.
+        @Size(max = 2048) String redirectUrl,
+        @Size(max = 50) List<RedirectParam> redirectParams) {
+
+    /** The request shape before the coupon redirect (addendum A): no redirect. */
+    public PromoAdRequest(UUID businessId, String titleEn, String titleAr, String subtitleEn, String subtitleAr,
+                          String backgroundImageUrl, String accentColor, PromoCtaType ctaType,
+                          String ctaLabelEn, String ctaLabelAr, String ctaUrl, String couponCode,
+                          String couponTermsEn, String couponTermsAr, Instant startsAt, Instant endsAt,
+                          Integer priority, PromoPlacement placement, List<UUID> propertyIds, Boolean active) {
+        this(businessId, titleEn, titleAr, subtitleEn, subtitleAr, backgroundImageUrl, accentColor, ctaType,
+                ctaLabelEn, ctaLabelAr, ctaUrl, couponCode, couponTermsEn, couponTermsAr, startsAt, endsAt,
+                priority, placement, propertyIds, active, null, null);
+    }
+
+    /** {@code value} is read only for {@code source = STATIC}. */
+    public record RedirectParam(String name, PromoRedirectSource source, String value) {
+    }
 }

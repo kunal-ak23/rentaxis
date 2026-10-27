@@ -51,6 +51,14 @@ public class PromotionFeedService {
         this.images = images;
     }
 
+    /** Coupon redirects resolved per renter (addendum A); optional so unit tests building the service keep working. */
+    private PromotionRedirectService redirects;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setRedirects(PromotionRedirectService redirects) {
+        this.redirects = redirects;
+    }
+
 
     static final int HOME_SLATE_SIZE = 6;
 
@@ -161,14 +169,14 @@ public class PromotionFeedService {
                 .map(id -> java.util.Objects.requireNonNull(
                         byId.get(id), "slate returned an unknown ad id"))
                 .toList();
-        return toCards(tenantId, ordered);
+        return toCards(tenantId, renterUserId, ordered);
     }
 
     /** Every eligible ad, newest business content last, optionally category-filtered. */
     @Transactional(readOnly = true)
     public List<PromoAdCardDTO> offers(UUID tenantId, UUID renterUserId, PromoCategory category) {
         List<PromoAd> eligible = eligible(tenantId, renterUserId, ALL_PLACEMENTS);
-        List<PromoAdCardDTO> cards = toCards(tenantId, eligible);
+        List<PromoAdCardDTO> cards = toCards(tenantId, renterUserId, eligible);
         if (category == null) {
             return cards;
         }
@@ -372,7 +380,7 @@ public class PromotionFeedService {
      * {@code findByTenantIdAndIdIn} exists to prevent — the boundary belongs in
      * the signature, answerable to who is asking.
      */
-    private List<PromoAdCardDTO> toCards(UUID tenantId, List<PromoAd> ads) {
+    private List<PromoAdCardDTO> toCards(UUID tenantId, UUID renterUserId, List<PromoAd> ads) {
         if (ads.isEmpty()) {
             return List.of();
         }
@@ -382,13 +390,16 @@ public class PromotionFeedService {
                 tenantId, businessIds)) {
             businesses.put(b.getId(), b);
         }
+        Map<UUID, PromotionRedirectService.Resolved> resolved = redirects == null
+                ? Map.of() : redirects.resolve(tenantId, renterUserId, ads, businesses);
         return ads.stream()
-                .map(a -> toCard(a, businesses.get(a.getBusinessId())))
+                .map(a -> toCard(a, businesses.get(a.getBusinessId()),
+                        resolved.getOrDefault(a.getId(), PromotionRedirectService.Resolved.NONE)))
                 .filter(java.util.Objects::nonNull)
                 .toList();
     }
 
-    private PromoAdCardDTO toCard(PromoAd a, PromoBusiness b) {
+    private PromoAdCardDTO toCard(PromoAd a, PromoBusiness b, PromotionRedirectService.Resolved redirect) {
         if (b == null) {
             return null;
         }
@@ -408,6 +419,7 @@ public class PromotionFeedService {
                 a.getCtaType() == PromoCtaType.WEBSITE ? a.getCtaUrl() : null,
                 phone,
                 a.getCouponCode(), a.getCouponTermsEn(), a.getCouponTermsAr(),
-                a.getEndsAt());
+                a.getEndsAt(),
+                redirect.url(), redirect.sharedFields());
     }
 }

@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api.dto;
 
+import com.datagami.rentaxis.domain.entity.PromoRedirectParam;
 import com.datagami.rentaxis.domain.entity.enums.PromoCtaType;
 import com.datagami.rentaxis.domain.entity.enums.PromoPlacement;
 
@@ -41,5 +42,9 @@ public record PromoAdDTO(
         long impressions,
         long clicks,
         Instant createdAt,
-        Instant updatedAt) {
+        Instant updatedAt,
+        /** COUPON only (addendum A): the link "Copy code" opens, before per-renter parameters. */
+        String redirectUrl,
+        /** COUPON only: {@code [{name, source, value}]}, value set only for STATIC; empty = none. */
+        List<PromoRedirectParam> redirectParams) {
 }

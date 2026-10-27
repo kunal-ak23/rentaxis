@@ -7,7 +7,11 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -109,6 +113,15 @@ public class PromoAd extends BaseTenantEntity {
     /** The admin's reason when REJECTED; null otherwise. */
     @Column(name = "rejection_reason", length = 500)
     private String rejectionReason;
+
+    /** COUPON only (addendum A): opened after "Copy code"; allowlisted like a WEBSITE ctaUrl. */
+    @Column(name = "redirect_url", length = 2048)
+    private String redirectUrl;
+
+    /** COUPON only (addendum A): query parameters appended per renter; null = none. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "redirect_params", columnDefinition = "jsonb")
+    private List<PromoRedirectParam> redirectParams;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
