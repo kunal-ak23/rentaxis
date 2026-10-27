@@ -622,8 +622,9 @@ class _PenaltyStrip extends StatelessWidget {
             Expanded(
               child: Text(
                 l.openPenalties(count),
+                // A fixed light tile in both themes, so a fixed dark colour.
                 style: l.ar
-                    ? MiftahType.ar(size: 13)
+                    ? MiftahType.ar(size: 13, color: MiftahColors.textSecondary)
                     : MiftahType.body(size: 13.5),
               ),
             ),

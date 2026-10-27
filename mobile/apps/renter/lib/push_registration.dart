@@ -26,6 +26,7 @@ class _PushRegistrationState extends ConsumerState<PushRegistration> {
   StreamSubscription<String>? _tokenRefreshSubscription;
   String? _registeredUserId;
   String? _registeredToken;
+  String? _registering;
 
   @override
   void initState() {
@@ -37,6 +38,13 @@ class _PushRegistrationState extends ConsumerState<PushRegistration> {
     try {
       _tokenRefreshSubscription = FirebaseMessaging.instance.onTokenRefresh
           .listen((token) => _register(token));
+      // iOS shows nothing for a push that lands while the app is open unless
+      // asked to; Android's banner is drawn by the system either way.
+      if (Platform.isIOS) {
+        unawaited(FirebaseMessaging.instance
+            .setForegroundNotificationPresentationOptions(
+                alert: true, badge: true, sound: true));
+      }
     } catch (_) {}
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncForCurrentUser());
   }
@@ -52,7 +60,15 @@ class _PushRegistrationState extends ConsumerState<PushRegistration> {
     }
   }
 
-  Future<void> _syncForCurrentUser() async {
+  /// One sync at a time. The first frame, every auth change and a token
+  /// refresh can all ask at once, and on iOS they all wait for the APNs token
+  /// together — each used to register the device, and the backend stores a
+  /// row per registration, so every push then arrived more than once.
+  Future<void>? _syncing;
+  Future<void> _syncForCurrentUser() =>
+      _syncing ??= _sync().whenComplete(() => _syncing = null);
+
+  Future<void> _sync() async {
     if (!_firebaseReady) return;
     try {
       final auth = ref.read(authProvider);
@@ -93,6 +109,10 @@ class _PushRegistrationState extends ConsumerState<PushRegistration> {
     final userId = auth.userId;
     if (!auth.isAuthenticated || userId == null) return;
     if (_registeredUserId == userId && _registeredToken == token) return;
+    // A token refresh racing the sync with the same token registers once.
+    final key = '$userId|$token';
+    if (_registering == key) return;
+    _registering = key;
 
     try {
       await ref
@@ -103,6 +123,8 @@ class _PushRegistrationState extends ConsumerState<PushRegistration> {
     } catch (_) {
       // Push registration must never prevent a successful sign-in or render
       // the resident app unusable. The next resume/token refresh retries it.
+    } finally {
+      if (_registering == key) _registering = null;
     }
   }
 

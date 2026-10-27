@@ -93,7 +93,12 @@ class MiftahGoldCard extends StatelessWidget {
                 ),
               ),
             ),
-            Padding(padding: padding, child: child),
+            // Ink in either theme: the gold doesn't change in dark mode, so
+            // unstyled text inside it must not take dark mode's light colour.
+            DefaultTextStyle.merge(
+              style: const TextStyle(color: MiftahColors.textPrimary),
+              child: Padding(padding: padding, child: child),
+            ),
           ],
         ),
       ),
