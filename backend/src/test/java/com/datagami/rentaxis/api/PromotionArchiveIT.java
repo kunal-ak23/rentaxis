@@ -76,8 +76,8 @@ class PromotionArchiveIT extends AbstractPromoterIT {
                 "propertyIds", List.of(p1.getId().toString()));
         assertThat(put(admin, "/api/v1/promotions/ads/" + ad.getId(), edit).text("message")).contains("archived");
         assertThat(put(admin, "/api/v1/promotions/ads/" + ad.getId(), edit).status()).isEqualTo(400);
-        assertThat(post(admin, "/api/v1/promotions/ads/" + ad.getId() + "/approve", null).status()).isEqualTo(400);
-        assertThat(post(admin, "/api/v1/promotions/ads/" + ad.getId() + "/reject", Map.of("reason", "no")).status())
+        assertThat(approve(admin, ad.getId()).status()).isEqualTo(400);
+        assertThat(reject(admin, ad.getId(), "no").status())
                 .isEqualTo(400);
         assertThat(get(admin, "/api/v1/promotions/ads/pending-count").body().get("count").asLong()).isZero();
 

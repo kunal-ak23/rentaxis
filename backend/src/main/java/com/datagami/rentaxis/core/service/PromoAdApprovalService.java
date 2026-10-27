@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.api.exception.FiguresChangedException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.event.PromoAdReviewedEvent;
 import com.datagami.rentaxis.domain.entity.PromoAd;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -26,6 +28,11 @@ import java.util.UUID;
 public class PromoAdApprovalService {
 
     static final int MAX_REASON = 500;
+
+    /** Review round 1, I2: the decision was about a submission that has since been replaced. */
+    public static final String CHANGED_CODE = "promo.changed";
+    public static final String CHANGED_MESSAGE =
+            "This ad was changed after you opened it. Reload to review the latest version.";
 
     private final PromoAdRepository adRepository;
     private final PromoAdPropertyRepository adPropertyRepository;
@@ -44,9 +51,15 @@ public class PromoAdApprovalService {
         return adRepository.countByTenantIdAndApprovalStatusAndArchivedAtIsNull(tenantId, PromoApprovalStatus.PENDING);
     }
 
-    /** PENDING → APPROVED: live from its window. The rejection reason, if any, is cleared. */
-    public PromoAd approve(UUID tenantId, UUID adId, UUID reviewerId) {
-        PromoAd ad = pending(tenantId, adId, "approved");
+    /**
+     * PENDING → APPROVED: live from its window. The rejection reason, if any, is cleared.
+     * {@code expectedSubmittedAt} is the {@code submittedAt} the admin reviewed: a
+     * submission since (an edit of the ad or of its business) is a 409 — an admin never
+     * approves content they have not seen.
+     */
+    public PromoAd approve(UUID tenantId, UUID adId, UUID reviewerId, Instant expectedSubmittedAt) {
+        requireExpected(expectedSubmittedAt);
+        PromoAd ad = pending(tenantId, adId, "approved", expectedSubmittedAt);
         // A promoter's ad with no targeting would show nowhere once live (it never
         // means "every property" for a promoter): refuse rather than approve a dud.
         if (ad.getPromoterUserId() != null
@@ -58,8 +71,9 @@ public class PromoAdApprovalService {
         return ad;
     }
 
-    /** PENDING → REJECTED with a reason the promoter reads (required, trimmed, at most 500). */
-    public PromoAd reject(UUID tenantId, UUID adId, UUID reviewerId, String reason) {
+    /** PENDING → REJECTED with a reason the promoter reads (required, trimmed, at most 500). Same 409 as approve. */
+    public PromoAd reject(UUID tenantId, UUID adId, UUID reviewerId, String reason, Instant expectedSubmittedAt) {
+        requireExpected(expectedSubmittedAt);
         String why = reason == null ? null : reason.trim();
         if (why == null || why.isEmpty()) {
             throw new BusinessRuleViolationException("A rejection needs a reason for the promoter.");
@@ -67,19 +81,35 @@ public class PromoAdApprovalService {
         if (why.length() > MAX_REASON) {
             throw new BusinessRuleViolationException("The reason must be at most " + MAX_REASON + " characters.");
         }
-        PromoAd ad = pending(tenantId, adId, "rejected");
+        PromoAd ad = pending(tenantId, adId, "rejected", expectedSubmittedAt);
         review(ad, PromoApprovalStatus.REJECTED, reviewerId, why);
         return ad;
     }
 
-    private PromoAd pending(UUID tenantId, UUID adId, String verb) {
+    private static void requireExpected(Instant expectedSubmittedAt) {
+        if (expectedSubmittedAt == null) {
+            throw new BusinessRuleViolationException(
+                    "expectedSubmittedAt is required: send the submittedAt of the version you reviewed.");
+        }
+    }
+
+    private PromoAd pending(UUID tenantId, UUID adId, String verb, Instant expectedSubmittedAt) {
         PromoAd ad = adRepository.findForUpdate(tenantId, adId)
                 .orElseThrow(() -> new NotFoundException("Ad not found"));
         PromotionService.requireNotArchived(ad);
         if (ad.getApprovalStatus() != PromoApprovalStatus.PENDING) {
             throw new BusinessRuleViolationException("Only an ad awaiting approval can be " + verb + ".");
         }
+        if (!sameMicros(ad.getSubmittedAt(), expectedSubmittedAt)) {
+            throw new FiguresChangedException(CHANGED_CODE, CHANGED_MESSAGE);
+        }
         return ad;
+    }
+
+    /** Postgres keeps microseconds; compare at that precision whatever the client echoes back. */
+    private static boolean sameMicros(Instant a, Instant b) {
+        return a != null && b != null
+                && a.truncatedTo(ChronoUnit.MICROS).equals(b.truncatedTo(ChronoUnit.MICROS));
     }
 
     private void review(PromoAd ad, PromoApprovalStatus status, UUID reviewerId, String reason) {

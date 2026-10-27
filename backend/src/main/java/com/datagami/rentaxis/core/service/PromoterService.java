@@ -169,7 +169,9 @@ public class PromoterService {
     /**
      * Needs the grant (else 404) and "can create businesses" (else 403). The business's
      * name, logo and numbers show on every one of its ads, so each APPROVED ad of it
-     * goes back to PENDING, attributed to this promoter.
+     * goes back to PENDING and each PENDING one is re-submitted, all attributed to this
+     * promoter with a new {@code submittedAt} — an approval of the old content then
+     * meets a 409 (review round 1, I2).
      */
     public PromoBusinessDTO updateBusiness(Caller caller, UUID businessId, PromoBusinessRequest req) {
         Access access = access(caller);
@@ -177,9 +179,9 @@ public class PromoterService {
         requireCanCreate(access);
         requireOwnUploadOrNone(caller, req.logoUrl(), "logoUrl");
         PromoBusiness b = promotionService.updateBusiness(caller.tenantId(), businessId, req);
-        Instant now = Instant.now();
-        for (PromoAd ad : adRepository.findForUpdateByBusinessAndStatus(
-                caller.tenantId(), businessId, PromoApprovalStatus.APPROVED)) {
+        Instant now = now();
+        for (PromoAd ad : adRepository.findForUpdateByBusinessAndStatusIn(caller.tenantId(), businessId,
+                List.of(PromoApprovalStatus.APPROVED, PromoApprovalStatus.PENDING))) {
             markSubmitted(ad, caller, now);
         }
         return PromoAdDtos.business(b, adRepository.countByBusinessId(businessId), images::forDto);
@@ -227,7 +229,7 @@ public class PromoterService {
         requireOwnProperties(access, req.propertyIds());
         requireOwnUploadOrNone(caller, req.backgroundImageUrl(), "backgroundImageUrl");
         PromoAd ad = promotionService.createAd(caller.tenantId(), withRanking(req, null, null));
-        markSubmitted(ad, caller, Instant.now());
+        markSubmitted(ad, caller, now());
         return toDtos(caller, access, List.of(ad)).get(ad.getId());
     }
 
@@ -243,7 +245,7 @@ public class PromoterService {
         requireOwnUploadOrNone(caller, req.backgroundImageUrl(), "backgroundImageUrl");
         PromoAd saved = promotionService.updateAd(caller.tenantId(), adId,
                 withRanking(req, ad.getPriority(), ad.getPlacement()));
-        markSubmitted(saved, caller, Instant.now());
+        markSubmitted(saved, caller, now());
         return toDtos(caller, access, List.of(saved)).get(saved.getId());
     }
 
@@ -345,6 +347,14 @@ public class PromoterService {
             throw new BusinessRuleViolationException(
                     field + " must be an image uploaded here: upload the picture instead of linking to it.");
         }
+    }
+
+    /**
+     * At the database's precision (microseconds), so the {@code submittedAt} a DTO
+     * carries is exactly what an approval compares against.
+     */
+    private static Instant now() {
+        return Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
     }
 
     /** Back in front of an admin: PENDING, written by this promoter now, the last review cleared. */

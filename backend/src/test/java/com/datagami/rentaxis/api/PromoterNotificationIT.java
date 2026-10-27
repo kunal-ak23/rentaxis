@@ -74,8 +74,8 @@ class PromoterNotificationIT extends AbstractPromoterIT {
         String approvedId = post(promoter, "/api/v1/promoter/ads", ad("Approved one")).text("id");
         String rejectedId = post(promoter, "/api/v1/promoter/ads", ad("Rejected one")).text("id");
 
-        post(admin, "/api/v1/promotions/ads/" + approvedId + "/approve", null);
-        post(admin, "/api/v1/promotions/ads/" + rejectedId + "/reject", Map.of("reason", "Logo is blurry"));
+        approve(admin, approvedId);
+        reject(admin, rejectedId, "Logo is blurry");
 
         List<Map<String, Object>> approved = notifications(promoter, approvedId);
         assertThat(approved).hasSize(1);
@@ -94,7 +94,7 @@ class PromoterNotificationIT extends AbstractPromoterIT {
     void eachSubmissionIsMailedWhenTheOrganisationHasEmailOn() {
         features.setEnabled(org, TenantFeature.EMAIL_NOTIFICATIONS, true);
         String adId = post(promoter, "/api/v1/promoter/ads", ad("First")).text("id");
-        post(admin, "/api/v1/promotions/ads/" + adId + "/reject", Map.of("reason", "Too dark"));
+        reject(admin, adId, "Too dark");
         put(promoter, "/api/v1/promoter/ads/" + adId, ad("Second"));
 
         // Two submissions of one ad: two mails to each admin, not one swallowed as a duplicate.

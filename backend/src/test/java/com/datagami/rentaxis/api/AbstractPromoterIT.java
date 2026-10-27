@@ -209,6 +209,26 @@ abstract class AbstractPromoterIT extends AbstractPostgresIT {
         return StreamSupport.stream(res.body().spliterator(), false).map(card -> card.get("id").asText()).toList();
     }
 
+    /**
+     * Review round 1, I2: an approval names the submission the admin looked at. The
+     * ad's current {@code submitted_at}, or a fixed instant for an ad that has none
+     * (or does not exist), so the other refusals still get their turn.
+     */
+    String submittedAt(Object adId) {
+        List<java.sql.Timestamp> at = jdbc.queryForList(
+                "SELECT submitted_at FROM promo_ads WHERE id = ?::uuid", java.sql.Timestamp.class, adId.toString());
+        return at.isEmpty() || at.get(0) == null ? "2026-01-01T00:00:00Z" : at.get(0).toInstant().toString();
+    }
+
+    Resp approve(User admin, Object adId) {
+        return post(admin, "/api/v1/promotions/ads/" + adId + "/approve", body("expectedSubmittedAt", submittedAt(adId)));
+    }
+
+    Resp reject(User admin, Object adId, String reason) {
+        return post(admin, "/api/v1/promotions/ads/" + adId + "/reject",
+                body("reason", reason, "expectedSubmittedAt", submittedAt(adId)));
+    }
+
     PromoAd reload(UUID adId) {
         return adRepo.findById(adId).orElseThrow();
     }

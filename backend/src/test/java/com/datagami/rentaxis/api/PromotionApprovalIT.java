@@ -55,7 +55,7 @@ class PromotionApprovalIT extends AbstractPromoterIT {
         String adId = post(promoter, "/api/v1/promoter/ads", promoterAd("First")).text("id");
         assertThat(offerIds(renter)).doesNotContain(adId);
 
-        assertThat(post(admin, "/api/v1/promotions/ads/" + adId + "/approve", null).status()).isEqualTo(204);
+        assertThat(approve(admin, adId).status()).isEqualTo(204);
         PromoAd approved = reload(UUID.fromString(adId));
         assertThat(approved.getApprovalStatus()).isEqualTo(APPROVED);
         assertThat(approved.getReviewedBy()).isEqualTo(admin.getId());
@@ -71,15 +71,14 @@ class PromotionApprovalIT extends AbstractPromoterIT {
     void aRejectionNeedsAReasonAndThePromoterSeesIt() {
         String adId = post(promoter, "/api/v1/promoter/ads", promoterAd("Wash")).text("id");
 
-        assertThat(post(admin, "/api/v1/promotions/ads/" + adId + "/reject", Map.of("reason", "   ")).status())
+        assertThat(reject(admin, adId, "   ").status())
                 .isEqualTo(400);
         assertThat(post(admin, "/api/v1/promotions/ads/" + adId + "/reject", null).status()).isEqualTo(400);
-        assertThat(post(admin, "/api/v1/promotions/ads/" + adId + "/reject", Map.of("reason", "x".repeat(501)))
+        assertThat(reject(admin, adId, "x".repeat(501))
                 .status()).isEqualTo(400);
         assertThat(reload(UUID.fromString(adId)).getApprovalStatus()).isEqualTo(PENDING);
 
-        assertThat(post(admin, "/api/v1/promotions/ads/" + adId + "/reject",
-                Map.of("reason", "  Logo is blurry  ")).status()).isEqualTo(204);
+        assertThat(reject(admin, adId, "  Logo is blurry  ").status()).isEqualTo(204);
 
         JsonNode mine = find(get(promoter, "/api/v1/promoter/ads").body().get("content"), adId);
         assertThat(mine.get("approvalStatus").asText()).isEqualTo("REJECTED");
@@ -93,7 +92,7 @@ class PromotionApprovalIT extends AbstractPromoterIT {
         assertThat(resubmitted.getApprovalStatus()).isEqualTo(PENDING);
         assertThat(resubmitted.getRejectionReason()).isNull();
         // Approving clears no reason that is not there, and the ad goes live.
-        post(admin, "/api/v1/promotions/ads/" + adId + "/approve", null);
+        approve(admin, adId);
         assertThat(reload(UUID.fromString(adId)).getRejectionReason()).isNull();
     }
 
@@ -102,12 +101,12 @@ class PromotionApprovalIT extends AbstractPromoterIT {
         PromoAd live = ad(org, wash.getId(), APPROVED, null);
         PromoAd rejected = ad(org, wash.getId(), REJECTED, promoter.getId(), p1.getId());
 
-        assertThat(post(admin, "/api/v1/promotions/ads/" + live.getId() + "/approve", null).status()).isEqualTo(400);
-        assertThat(post(admin, "/api/v1/promotions/ads/" + live.getId() + "/reject", Map.of("reason", "no"))
+        assertThat(approve(admin, live.getId()).status()).isEqualTo(400);
+        assertThat(reject(admin, live.getId(), "no")
                 .status()).isEqualTo(400);
-        assertThat(post(admin, "/api/v1/promotions/ads/" + rejected.getId() + "/approve", null).status())
+        assertThat(approve(admin, rejected.getId()).status())
                 .isEqualTo(400);
-        assertThat(post(admin, "/api/v1/promotions/ads/" + UUID.randomUUID() + "/approve", null).status())
+        assertThat(approve(admin, UUID.randomUUID()).status())
                 .isEqualTo(404);
     }
 
@@ -139,7 +138,7 @@ class PromotionApprovalIT extends AbstractPromoterIT {
         assertThat(untarget.status()).isEqualTo(400);
 
         jdbc.update("DELETE FROM promo_ad_properties WHERE ad_id = ?::uuid", adId);
-        assertThat(post(admin, "/api/v1/promotions/ads/" + adId + "/approve", null).status()).isEqualTo(400);
+        assertThat(approve(admin, adId).status()).isEqualTo(400);
     }
 
     @Test
@@ -165,8 +164,8 @@ class PromotionApprovalIT extends AbstractPromoterIT {
         UUID orgB = org();
         User adminB = user(orgB, UserRole.TENANT_ADMIN);
 
-        assertThat(post(adminB, "/api/v1/promotions/ads/" + adId + "/approve", null).status()).isEqualTo(404);
-        assertThat(post(adminB, "/api/v1/promotions/ads/" + adId + "/reject", Map.of("reason", "no")).status())
+        assertThat(approve(adminB, adId).status()).isEqualTo(404);
+        assertThat(reject(adminB, adId, "no").status())
                 .isEqualTo(404);
         assertThat(get(adminB, "/api/v1/promotions/ads/pending-count").body().get("count").asLong()).isZero();
         assertThat(reload(UUID.fromString(adId)).getApprovalStatus()).isEqualTo(PENDING);
@@ -177,8 +176,8 @@ class PromotionApprovalIT extends AbstractPromoterIT {
         String adId = post(promoter, "/api/v1/promoter/ads", promoterAd("Ours")).text("id");
         User manager = user(org, UserRole.PROPERTY_MANAGER);
 
-        assertThat(post(manager, "/api/v1/promotions/ads/" + adId + "/approve", null).status()).isEqualTo(403);
-        assertThat(post(promoter, "/api/v1/promotions/ads/" + adId + "/approve", null).status()).isEqualTo(403);
+        assertThat(approve(manager, adId).status()).isEqualTo(403);
+        assertThat(approve(promoter, adId).status()).isEqualTo(403);
         assertThat(get(manager, "/api/v1/promotions/promoters").status()).isEqualTo(403);
     }
 

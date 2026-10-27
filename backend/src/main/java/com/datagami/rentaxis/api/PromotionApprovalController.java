@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -34,7 +35,11 @@ import java.util.UUID;
 @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
 public class PromotionApprovalController {
 
-    public record RejectRequest(String reason) {
+    /** Review round 1, I2: {@code expectedSubmittedAt} is the ad's {@code submittedAt} the admin reviewed. */
+    public record ApproveRequest(Instant expectedSubmittedAt) {
+    }
+
+    public record RejectRequest(String reason, Instant expectedSubmittedAt) {
     }
 
     private final PromoAdApprovalService approvals;
@@ -51,17 +56,22 @@ public class PromotionApprovalController {
         return ResponseEntity.ok(Map.of("count", approvals.pendingCount(requireTenant())));
     }
 
-    /** No body. 204; a non-PENDING ad is 400, another organisation's 404. */
+    /**
+     * {@code {expectedSubmittedAt}} (required). 204. A missing expectedSubmittedAt, a
+     * non-PENDING or archived ad is 400; a submission since the one reviewed is 409
+     * {@code promo.changed}; another organisation's ad is 404.
+     */
     @PostMapping("/ads/{id}/approve")
-    public ResponseEntity<Void> approve(@PathVariable UUID id) {
-        approvals.approve(requireTenant(), id, callerId());
+    public ResponseEntity<Void> approve(@PathVariable UUID id, @RequestBody(required = false) ApproveRequest body) {
+        approvals.approve(requireTenant(), id, callerId(), body == null ? null : body.expectedSubmittedAt());
         return ResponseEntity.noContent().build();
     }
 
-    /** {@code {reason}} (required, at most 500). 204; a non-PENDING ad is 400. */
+    /** {@code {reason, expectedSubmittedAt}} (both required; reason at most 500). Otherwise as approve. */
     @PostMapping("/ads/{id}/reject")
     public ResponseEntity<Void> reject(@PathVariable UUID id, @RequestBody(required = false) RejectRequest body) {
-        approvals.reject(requireTenant(), id, callerId(), body == null ? null : body.reason());
+        approvals.reject(requireTenant(), id, callerId(), body == null ? null : body.reason(),
+                body == null ? null : body.expectedSubmittedAt());
         return ResponseEntity.noContent().build();
     }
 
