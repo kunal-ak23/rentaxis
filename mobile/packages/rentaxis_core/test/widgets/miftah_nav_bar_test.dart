@@ -120,13 +120,28 @@ void main() {
       await tester.pumpAndSettle();
 
       final bar = tester.getRect(find.byKey(barKey));
-      final row = tester.getRect(find.descendant(
-        of: find.byKey(barKey),
-        matching: find.byType(Row),
-      ).first);
+      final row = tester.getRect(
+        find
+            .descendant(of: find.byKey(barKey), matching: find.byType(Row))
+            .first,
+      );
       // The home indicator / navigation bar is the margin; no 8pt on top of it.
       expect(bar.bottom - row.bottom, inset > 8 ? inset : 8);
     });
   }
-}
 
+  testWidgets('the raised action adds no height to the bar', (tester) async {
+    // Regression: the circle was moved up with Transform.translate, which
+    // left its 52pt in the layout, so the bar was ~30pt taller than its tabs.
+    final plain = await pumpBar(tester, itemCount: 4, withCentre: false);
+    final raised = await pumpBar(tester, itemCount: 4, withCentre: true);
+
+    expect(raised.height, plain.height);
+    final circle = tester.getRect(
+      find.byKey(const Key('miftah-nav-centre-circle')),
+    );
+    expect(circle.size, const Size(52, 52));
+    // It overhangs the bar's top edge, as the design draws it.
+    expect(circle.top, lessThan(raised.top));
+  });
+}
