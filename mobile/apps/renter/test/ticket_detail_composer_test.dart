@@ -99,4 +99,43 @@ void main() {
       reason: 'composer $composerRect vs Pass button $passRect',
     );
   });
+
+  testWidgets('adding to an existing request offers camera, gallery and files', (
+    tester,
+  ) async {
+    // Regression: "+ ADD" went straight to the Files picker, so a renter could
+    // not photograph the problem on a request they had already raised.
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          apiClientProvider.overrideWithValue(_fakeApi()),
+          notificationProvider.overrideWith((ref) => _QuietNotifications()),
+        ],
+        child: MaterialApp.router(
+          theme: MiftahTheme.light,
+          routerConfig: GoRouter(
+            initialLocation: '/tickets/t1',
+            routes: [
+              GoRoute(
+                path: '/tickets/:id',
+                builder: (_, state) =>
+                    TicketDetailScreen(ticketId: state.pathParameters['id']!),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('+ ADD'));
+    await tester.tap(find.text('+ ADD'));
+    await tester.pumpAndSettle();
+
+    for (final source in ['camera', 'gallery', 'document']) {
+      expect(find.byKey(Key('attachment-source-$source')), findsOneWidget);
+    }
+  });
 }

@@ -2,11 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import '../utils/renter_rules.dart';
+import '../utils/ticket_photo.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _ticketServiceProvider = Provider<TicketService>((ref) {
@@ -54,8 +54,6 @@ class _L {
   String get gallery => ar ? 'المعرض' : 'Gallery';
   String get document => ar ? 'مستند' : 'Document';
   String get submitTicket => ar ? 'إرسال الطلب' : 'Submit Ticket';
-  String get cameraPermissionRequired =>
-      ar ? 'إذن الكاميرا مطلوب' : 'Camera permission required';
   String get selectCategory =>
       ar ? 'الرجاء اختيار فئة' : 'Please select a category';
   String get selectPropertyUnit =>
@@ -156,25 +154,9 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
   }
 
   Future<void> _pickFromCamera() async {
-    final status = await Permission.camera.request();
-    if (!status.isGranted) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_L(context.isAr).cameraPermissionRequired)),
-        );
-      }
-      return;
-    }
-
-    final picker = ImagePicker();
-    final image = await picker.pickImage(
-      source: ImageSource.camera,
-      maxWidth: 1920,
-      maxHeight: 1080,
-      imageQuality: 80,
-    );
-    if (image != null) {
-      setState(() => _attachments.add(File(image.path)));
+    final path = await takeTicketPhoto(context);
+    if (path != null && mounted) {
+      setState(() => _attachments.add(File(path)));
     }
   }
 

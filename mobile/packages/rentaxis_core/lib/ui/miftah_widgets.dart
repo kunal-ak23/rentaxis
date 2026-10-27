@@ -93,7 +93,12 @@ class MiftahGoldCard extends StatelessWidget {
                 ),
               ),
             ),
-            Padding(padding: padding, child: child),
+            // Ink in either theme: the gold doesn't change in dark mode, so
+            // unstyled text inside it must not take dark mode's light colour.
+            DefaultTextStyle.merge(
+              style: const TextStyle(color: MiftahColors.textPrimary),
+              child: Padding(padding: padding, child: child),
+            ),
           ],
         ),
       ),
@@ -579,7 +584,7 @@ class MiftahNavBar extends StatelessWidget {
         top: false,
         minimum: const EdgeInsets.only(bottom: 8),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+          padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [for (final s in slots) Expanded(child: s)],
@@ -626,36 +631,48 @@ class MiftahNavBar extends StatelessWidget {
 
   Widget _centre(BuildContext context) {
     final m = context.miftah;
+    // Laid out exactly like a flanking slot (an icon-high box over the label),
+    // so the centre no longer sets the bar's height. It used to: Translate
+    // moved the circle up but its 52pt still counted, which made the bar ~30pt
+    // taller than its tabs. The circle now overhangs the bar's top edge from
+    // an icon-high box instead.
     return InkWell(
       onTap: onCentreTap,
       borderRadius: BorderRadius.circular(30),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Transform.translate(
-            offset: const Offset(0, -30),
-            child: Container(
-              width: 52,
-              height: 52,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: MiftahGradients.goldCompact,
-                boxShadow: MiftahShadows.gold,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 22,
+              child: OverflowBox(
+                minHeight: 52,
+                maxHeight: 52,
+                alignment: Alignment.bottomCenter,
+                child: Container(
+                  key: const Key('miftah-nav-centre-circle'),
+                  width: 52,
+                  height: 52,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: MiftahGradients.goldCompact,
+                    boxShadow: MiftahShadows.gold,
+                  ),
+                  child: Icon(centreIcon!, size: 24, color: MiftahColors.ink),
+                ),
               ),
-              child: Icon(centreIcon!, size: 24, color: MiftahColors.ink),
             ),
-          ),
-          Transform.translate(
-            offset: const Offset(0, -26),
-            child: Text(
+            const SizedBox(height: 5),
+            Text(
               centreLabel ?? '',
               style: MiftahType.meta(
                 color: m.textMuted,
               ).copyWith(fontSize: 10.5, fontWeight: FontWeight.w600),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

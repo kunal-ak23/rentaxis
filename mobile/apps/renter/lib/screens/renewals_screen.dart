@@ -91,7 +91,7 @@ class _RenewalsScreenState extends ConsumerState<RenewalsScreen> {
                           children: [
                             Text(
                               '${row['propertyNameEn'] ?? ''} · ${row['unitNumber'] ?? ''}',
-                              style: MiftahType.cardTitle(),
+                              style: MiftahType.cardTitle(color: context.miftah.textPrimary),
                             ),
                             Text(
                               '${ar ? 'نهاية العقد' : 'Contract ends'}: ${Formatters.date(row['endDate'] as String?, ar: ar)}',
