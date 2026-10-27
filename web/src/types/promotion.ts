@@ -169,7 +169,7 @@ export type AdStatus = 'LIVE' | 'SCHEDULED' | 'EXPIRED' | 'PAUSED'
  * says that rather than "Live" / "Scheduled". Only an APPROVED ad falls
  * through to the window and the active switch.
  */
-export type AdDisplayStatus = 'PENDING' | 'REJECTED' | AdStatus
+export type AdDisplayStatus = 'PENDING' | 'REJECTED' | 'ARCHIVED' | AdStatus
 
 /**
  * Mirrors the server's eligibility rule in `PromoAdRepository.findEligible`,
@@ -191,6 +191,13 @@ export function adStatus(
   if (ad.endsAt && new Date(ad.endsAt) <= now) return 'EXPIRED'
   return 'LIVE'
 }
+
+/**
+ * What a delete did. Nothing referenced the item: DELETED (gone for good).
+ * Otherwise ARCHIVED (soft delete): hidden from every list and from tenants, with
+ * its view and tap history kept, and restorable by an admin.
+ */
+export type DeleteOutcome = 'DELETED' | 'ARCHIVED'
 
 /** The pill an ad's row shows: approval first, then {@link adStatus}. See {@link AdDisplayStatus}. */
 export function adDisplayStatus(

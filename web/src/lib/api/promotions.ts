@@ -1,6 +1,7 @@
 import type { PageResponse } from '@/types/listing'
 import { ApiError, throwIfNotOk } from '@/lib/api/facilities'
 import type {
+  DeleteOutcome,
   PendingAdCountDTO,
   PromoAdDTO,
   PromoAdRequest,
@@ -39,11 +40,25 @@ const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
 export { ApiError }
 
-/** `page` is 0-based, matching Spring Data. The Pagination component is 1-based. */
+/**
+ * Reads a delete's `{ outcome }`. A backend that answers with no body (the
+ * delete from before archiving existed) hard-deleted, so that is what it means.
+ */
+export async function readDeleteOutcome(res: Response): Promise<DeleteOutcome> {
+  const body: { outcome?: string } | null = await res.json().catch(() => null)
+  return body?.outcome === 'ARCHIVED' ? 'ARCHIVED' : 'DELETED'
+}
+
+/**
+ * `page` is 0-based, matching Spring Data. The Pagination component is 1-based.
+ * Archived businesses are left out unless `archived` asks for them (and then
+ * only they are listed).
+ */
 export async function fetchBusinesses(
-  page = 0, size = 10,
+  page = 0, size = 10, archived = false,
 ): Promise<PageResponse<PromoBusinessDTO>> {
   const q = new URLSearchParams({ page: String(page), size: String(size) })
+  if (archived) q.set('archived', 'true')
   const res = await fetch(`${BUSINESSES}?${q}`)
   await throwIfNotOk(res)
   return res.json()
@@ -67,21 +82,39 @@ export async function updateBusiness(
   return res.json()
 }
 
-export async function deleteBusiness(id: string): Promise<void> {
+/**
+ * Always succeeds for the user: a business nothing refers to is deleted;
+ * one with ads is archived along with them (history kept).
+ */
+export async function deleteBusiness(id: string): Promise<DeleteOutcome> {
   const res = await fetch(`${BUSINESSES}/${id}`, { method: 'DELETE' })
+  await throwIfNotOk(res)
+  return readDeleteOutcome(res)
+}
+
+/**
+ * Brings an archived business back, paused (an admin switches it on by editing).
+ * A name now taken by a live business is a 400 whose message says so.
+ */
+export async function restoreBusiness(id: string): Promise<void> {
+  const res = await fetch(`${BUSINESSES}/${id}/restore`, { method: 'POST' })
   await throwIfNotOk(res)
 }
 
 /**
  * `page` is 0-based, matching Spring Data. `approvalStatus` narrows the list to
  * ads awaiting review (PENDING) or sent back (REJECTED); omitted, every ad.
+ * Archived ads are left out unless `archived` asks for them (and then only
+ * they are listed).
  */
 export async function fetchAds(
   page = 0, size = 10, businessId?: string, approvalStatus?: PromoApprovalStatus,
+  archived = false,
 ): Promise<PageResponse<PromoAdDTO>> {
   const q = new URLSearchParams({ page: String(page), size: String(size) })
   if (businessId) q.set('businessId', businessId)
   if (approvalStatus) q.set('approvalStatus', approvalStatus)
+  if (archived) q.set('archived', 'true')
   const res = await fetch(`${ADS}?${q}`)
   await throwIfNotOk(res)
   return res.json()
@@ -103,8 +136,19 @@ export async function updateAd(id: string, body: PromoAdRequest): Promise<PromoA
   return res.json()
 }
 
-export async function deleteAd(id: string): Promise<void> {
+/** Always succeeds for the user: an ad with view history is archived rather than refused. */
+export async function deleteAd(id: string): Promise<DeleteOutcome> {
   const res = await fetch(`${ADS}/${id}`, { method: 'DELETE' })
+  await throwIfNotOk(res)
+  return readDeleteOutcome(res)
+}
+
+/**
+ * Brings an archived ad back, paused. An ad whose business is still archived is
+ * a 400 ("Restore the business first").
+ */
+export async function restoreAd(id: string): Promise<void> {
+  const res = await fetch(`${ADS}/${id}/restore`, { method: 'POST' })
   await throwIfNotOk(res)
 }
 

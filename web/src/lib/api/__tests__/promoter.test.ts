@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchRouter } from "@/test/fetchRouter";
 import {
-    ApiError, createPromoterAd, createPromoterBusiness, deletePromoterAd, fetchPromoterAds,
+    ApiError, createPromoterAd, createPromoterBusiness, deletePromoterAd, deletePromoterBusiness, fetchPromoterAds,
     fetchPromoterBusinesses, fetchPromoterMe, fetchPromoterProperties, updatePromoterAd,
     updatePromoterBusiness, uploadPromoterImage,
 } from "../promoter";
 import {
-    approveAd, fetchAds, fetchPendingAdCount, fetchPromoters, invitePromoter, rejectAd, updatePromoterAccess,
+    approveAd, deleteAd, deleteBusiness, fetchAds, fetchBusinesses, fetchPendingAdCount, fetchPromoters,
+    invitePromoter, rejectAd, restoreAd, restoreBusiness, updatePromoterAccess,
 } from "../promotions";
 
 /**
@@ -124,3 +125,57 @@ describe("admin additions on /promotions", () => {
         expect(last()).toMatchObject({ method: "PUT", url: `${A}/promoters/u-1`, body: { canCreateBusinesses: true, businessIds: ["b-1"], propertyIds: [] } });
     });
 });
+
+describe("delete outcome and archive (Addendum B)", () => {
+    it("reads DELETED or ARCHIVED from every delete", async () => {
+        api.on("DELETE", `${A}/ads/a1`, { body: { outcome: "ARCHIVED" } });
+        api.on("DELETE", `${A}/ads/a2`, { body: { outcome: "DELETED" } });
+        api.on("DELETE", `${A}/businesses/b1`, { body: { outcome: "ARCHIVED" } });
+        api.on("DELETE", `${P}/ads/a1`, { body: { outcome: "ARCHIVED" } });
+        api.on("DELETE", `${P}/businesses/b1`, { body: { outcome: "DELETED" } });
+
+        expect(await deleteAd("a1")).toBe("ARCHIVED");
+        expect(await deleteAd("a2")).toBe("DELETED");
+        expect(await deleteBusiness("b1")).toBe("ARCHIVED");
+        expect(await deletePromoterAd("a1")).toBe("ARCHIVED");
+        expect(await deletePromoterBusiness("b1")).toBe("DELETED");
+        expect(api.calls.map(c => `${c.method} ${c.url}`)).toEqual([
+            `DELETE ${A}/ads/a1`, `DELETE ${A}/ads/a2`, `DELETE ${A}/businesses/b1`,
+            `DELETE ${P}/ads/a1`, `DELETE ${P}/businesses/b1`,
+        ]);
+    });
+
+    it("reads a delete with no body, or an unknown outcome, as a hard delete", async () => {
+        api.on("DELETE", `${A}/ads/a1`, { status: 200 });
+        api.on("DELETE", `${A}/ads/a2`, { body: { outcome: "SOMETHING_ELSE" } });
+        expect(await deleteAd("a1")).toBe("DELETED");
+        expect(await deleteAd("a2")).toBe("DELETED");
+    });
+
+    it("throws the server's message when a delete is refused", async () => {
+        api.on("DELETE", `${P}/businesses/b1`, { status: 403, body: { message: "You cannot create businesses" } });
+        await expect(deletePromoterBusiness("b1")).rejects.toMatchObject({ status: 403, message: "You cannot create businesses" });
+    });
+
+    it("asks for archived ads and businesses only when told to", async () => {
+        api.on("GET", `${A}/ads`, { body: { content: [], totalElements: 0, totalPages: 0, number: 0, size: 10 } });
+        api.on("GET", `${A}/businesses`, { body: { content: [], totalElements: 0, totalPages: 0, number: 0, size: 10 } });
+        await fetchAds(0, 10);
+        expect(last().url).toBe(`${A}/ads?page=0&size=10`);
+        await fetchAds(1, 10, "b-1", undefined, true);
+        expect(last().url).toBe(`${A}/ads?page=1&size=10&businessId=b-1&archived=true`);
+        await fetchBusinesses(0, 10);
+        expect(last().url).toBe(`${A}/businesses?page=0&size=10`);
+        await fetchBusinesses(2, 10, true);
+        expect(last().url).toBe(`${A}/businesses?page=2&size=10&archived=true`);
+    });
+
+    it("restores with a bare POST and throws the refusal", async () => {
+        api.on("POST", `${A}/ads/a1/restore`, { body: {} });
+        api.on("POST", `${A}/businesses/b1/restore`, { status: 400, body: { message: "Name already taken" } });
+        await restoreAd("a1");
+        expect(last()).toMatchObject({ method: "POST", url: `${A}/ads/a1/restore` });
+        await expect(restoreBusiness("b1")).rejects.toMatchObject({ status: 400, message: "Name already taken" });
+    });
+});
+

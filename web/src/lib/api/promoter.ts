@@ -1,7 +1,8 @@
 import type { PageResponse } from '@/types/listing'
 import { ApiError, throwIfNotOk } from '@/lib/api/facilities'
-import { PROMO_IMAGE_MAX_BYTES } from '@/lib/api/promotions'
+import { PROMO_IMAGE_MAX_BYTES, readDeleteOutcome } from '@/lib/api/promotions'
 import type {
+  DeleteOutcome,
   PromoAdDTO,
   PromoAdRequest,
   PromoBusinessDTO,
@@ -106,10 +107,21 @@ export async function updatePromoterAd(id: string, body: PromoAdRequest): Promis
   return res.json()
 }
 
-/** Refused (400) once the ad has view history, as for an admin. */
-export async function deletePromoterAd(id: string): Promise<void> {
+/** Always succeeds: an ad with view history is archived (hidden from the promoter too) instead of refused. */
+export async function deletePromoterAd(id: string): Promise<DeleteOutcome> {
   const res = await fetch(`${BASE}/ads/${id}`, { method: 'DELETE' })
   await throwIfNotOk(res)
+  return readDeleteOutcome(res)
+}
+
+/**
+ * Needs `canCreateBusinesses` and access to the business. One with ads is
+ * archived along with them; an admin can restore it, the promoter cannot.
+ */
+export async function deletePromoterBusiness(id: string): Promise<DeleteOutcome> {
+  const res = await fetch(`${BASE}/businesses/${id}`, { method: 'DELETE' })
+  await throwIfNotOk(res)
+  return readDeleteOutcome(res)
 }
 
 /** Same upload as the admin's (PNG, JPEG, GIF, WebP up to 2 MB), into the organisation's storage. */

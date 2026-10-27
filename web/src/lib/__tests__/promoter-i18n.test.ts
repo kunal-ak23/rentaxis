@@ -50,6 +50,16 @@ describe("promoter copy", () => {
         }
     });
 
+    it("has the delete, archive and restore copy in both languages", () => {
+        const keys = [
+            "confirmDeleteAd", "confirmDeleteBusiness", "toastDeleted", "toastArchived", "toastRestored",
+            "statusARCHIVED", "showArchived", "archivedNote", "restore", "emptyArchivedAds", "emptyArchivedBusinesses",
+        ];
+        for (const cat of [en.Promotions, ar.Promotions] as Record<string, string>[]) {
+            expect(keys.filter(k => !cat[k])).toEqual([]);
+        }
+    });
+
     it("labels the role and its nav link in both languages", () => {
         expect(en.Roles.PROMOTER).toBe("Promoter");
         expect(ar.Roles.PROMOTER).toBe("مروّج");
