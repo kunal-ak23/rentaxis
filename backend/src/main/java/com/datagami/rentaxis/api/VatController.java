@@ -60,6 +60,9 @@ public class VatController {
     private final TaxInvoiceService taxInvoices;
     private final Clock clock;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.datagami.rentaxis.core.service.vat.ExtensionInvoiceBackfill extensionInvoices;
+
     public VatController(VatTaxPointService vatTaxPoints, TaxInvoiceService taxInvoices, Clock clock) {
         this.vatTaxPoints = vatTaxPoints;
         this.taxInvoices = taxInvoices;
@@ -88,6 +91,19 @@ public class VatController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
     public ResponseEntity<List<TaxInvoiceDTO>> issueContractInvoice(@PathVariable UUID id) {
         return ResponseEntity.ok(vatTaxPoints.issueContractInvoice(id));
+    }
+
+    /**
+     * Sim r24 S24-03: issue the tax invoices that extensions of CONTRACT-VAT leases posted
+     * before #425 never issued, for the caller's organisation. {@code dryRun} (the default)
+     * writes nothing. Idempotent; an extension dated inside a filed VAT return is listed for
+     * disclosure and not issued (ruling R11).
+     */
+    @PostMapping("/finance/vat/extension-invoices/backfill")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT')")
+    public ResponseEntity<com.datagami.rentaxis.core.service.vat.ExtensionInvoiceBackfill.Result> backfillExtensionInvoices(
+            @RequestParam(defaultValue = "true") boolean dryRun) {
+        return ResponseEntity.ok(extensionInvoices.run(dryRun));
     }
 
     /** The calling renter's tax invoices, newest first. */

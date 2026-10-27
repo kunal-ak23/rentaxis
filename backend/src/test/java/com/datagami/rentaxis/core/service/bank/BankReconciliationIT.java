@@ -525,6 +525,45 @@ class BankReconciliationIT extends AbstractPostgresIT {
         assertThat(matches.workspace(ei.getId(), SEP_1, SEP_10, "ALL").statementLines()).hasSize(1);
     }
 
+    /**
+     * Sim r23 S23-03: the bank back-dates a charge into the locked books. Booking it on its own
+     * date is refused (the period lock is unchanged); asked to, the line action books it on the
+     * first open day, its narration naming the bank's date, and the locked period's
+     * reconciliation shows it as booked after the period with a difference of 0.00.
+     */
+    @Test
+    void aChargeTheBankDatedInsideTheLockedBooksIsBookedOnTheFirstOpenDay() {
+        imports.saveProfile(ei.getId(), enbdProfile());
+        importText("""
+                x
+                Transaction Date,Value Date,Narration,Reference,Debit,Credit,Running Balance
+                07/09/2026,07/09/2026,SMS ALERT FEE,,25.00,,-25.00
+                """);
+        fiscal.lockThrough(SEP_10);
+        UUID line = ws().statementLines().get(0).id();
+        assertThat(actions.candidates(line).firstOpenDay()).isEqualTo(LocalDate.of(2026, 9, 11));
+
+        assertThatThrownBy(() -> actions.post(new BankRecDTOs.PostLinesInput(List.of(line), "CHARGE", false, null, null,
+                marinaBank.getId(), true, null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .satisfies(e -> assertThat(((BusinessRuleViolationException) e).getCode()).isEqualTo("bankrec.lineDateLocked"));
+        assertThat(count("select count(*) from journal_entries where tenant_id = ? and doc_type = 'BNK'", tenantId)).isZero();
+
+        BankRecDTOs.ActionResult r = actions.post(new BankRecDTOs.PostLinesInput(List.of(line), "CHARGE", false, null, null,
+                marinaBank.getId(), true, null, null, null, true));
+        UUID bnk = r.journalEntryIds().get(0);
+        assertThat(jdbc.queryForObject("select entry_date from journal_entries where id = ?", LocalDate.class, bnk))
+                .isEqualTo(LocalDate.of(2026, 9, 11));
+        assertThat(jdbc.queryForObject("select narration from journal_entries where id = ?", String.class, bnk))
+                .contains("bank date 07/09/2026").contains("books locked through 10/09/2026");
+
+        BankRecDTOs.Reconciliation rec = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_10,
+                BigDecimal.ZERO, new BigDecimal("-25.00")));
+        assertThat(rec.bookedAfterPeriod()).isEqualByComparingTo("-25.00");
+        assertThat(rec.unrecordedDebits()).isZero();
+        assertThat(rec.difference()).isZero();
+    }
+
     @Test
     void undoWithReverseReversesTheCreatedBnkAndFreesTheLine() {
         imports.saveProfile(ei.getId(), enbdProfile());

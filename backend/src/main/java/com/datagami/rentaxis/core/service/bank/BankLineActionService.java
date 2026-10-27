@@ -126,6 +126,14 @@ public class BankLineActionService {
         return new BankRecDTOs.ActionResult(matchId, ids, numbers);
     }
 
+    /** The first day after the locked books when {@code d} is inside them; null when {@code d} is open. */
+    private LocalDate firstOpenDay(UUID t, LocalDate d) {
+        List<LocalDate> locked = jdbc.queryForList("select books_locked_through from tenant_fiscal_settings where tenant_id = :t",
+                new MapSqlParameterSource("t", t), LocalDate.class);
+        LocalDate through = locked.isEmpty() ? null : locked.get(0);
+        return through != null && !d.isAfter(through) ? through.plusDays(1) : null;
+    }
+
     private void requireNotFuture(LocalDate d) {
         // Break-it R3 money3: the shared policy's "not after today", in bank-rec's own coded words.
         if (!new com.datagami.rentaxis.core.service.ledger.ManualPostingDates(clock).allows(com.datagami.rentaxis.core.service.ledger.PostingDatePath.BANK_STATEMENT_LINE, d)) {
@@ -358,8 +366,32 @@ public class BankLineActionService {
         BankAccount bank = ledgers.requireBankAccount(bankAccountId);
         Set<UUID> leaves = ledgers.requireLeafSet(bankAccountId);
         UUID leaf = pickLeaf(leaves, in.bankLeafId());
-        LocalDate date = dateOf(ls);
-        requireNotFuture(date);
+        LocalDate bankDate = dateOf(ls);
+        requireNotFuture(bankDate);
+        // Sim r23 S23-03: a line the bank dated inside the locked books (a charge back-dated
+        // into a closed month) is booked on the first open day, as booked after the period,
+        // the way a manual JV would be; only when asked, and its narration names the bank's
+        // date. The period lock itself is unchanged: nothing is dated inside it.
+        LocalDate date = bankDate;
+        String lockNote = null;
+        LocalDate firstOpen = firstOpenDay(t, bankDate);
+        if (firstOpen != null) {
+            if (!Boolean.TRUE.equals(in.bookOnFirstOpenDay())) {
+                throw BankRecRefusal.refuse("lineDateLocked", "The line is dated " + bankDate.format(DMY)
+                        + ", inside the locked books; book it on " + firstOpen.format(DMY)
+                        + ", the first open day, as booked after the period", "date", bankDate.format(DMY),
+                        "firstOpen", firstOpen.format(DMY));
+            }
+            if (!new com.datagami.rentaxis.core.service.ledger.ManualPostingDates(clock)
+                    .allows(com.datagami.rentaxis.core.service.ledger.PostingDatePath.BANK_STATEMENT_LINE, firstOpen)) {
+                throw BankRecRefusal.refuse("firstOpenDayInFuture", "The books are locked through "
+                        + firstOpen.minusDays(1).format(DMY) + "; the first open day, " + firstOpen.format(DMY)
+                        + ", is in the future, so nothing can be booked from this line yet", "firstOpen", firstOpen.format(DMY));
+            }
+            date = firstOpen;
+            lockNote = " (bank date " + bankDate.format(DMY) + "; booked " + firstOpen.format(DMY) + ", books locked through "
+                    + firstOpen.minusDays(1).format(DMY) + ")";
+        }
         boolean shared = in.shared() != null ? in.shared() : leaves.size() > 1;
         UUID propertyId;
         if (kind == BankStatementPostingService.Kind.OTHER && in.propertyId() != null) {
@@ -374,7 +406,7 @@ public class BankLineActionService {
         JournalEntry e = bnk.post(kind, ls.stream().map(l -> new BankStatementPostingService.Line(l.id(), l.amount(),
                         l.description(), l.reference())).toList(), date, leaf, propertyId,
                 Boolean.TRUE.equals(in.vatIncluded()), bank.getBankTrn() != null && !bank.getBankTrn().isBlank(),
-                in.accountId(), in.narration(), in.net(), in.vat(), leaves);
+                in.accountId(), in.narration(), in.net(), in.vat(), leaves, lockNote);
         BigDecimal total = sum(ls);
         UUID m = matches.recordCreated(bankAccountId, ls.stream().map(L::id).toList(),
                 bankLines(t, e.getId(), Set.of(leaf), total.signum() > 0));
@@ -469,7 +501,7 @@ public class BankLineActionService {
                 join tenant_default_account_mappings d on d.account_id = jl.account_id and d.tenant_id = jl.tenant_id
                 where jl.tenant_id = :t and d.role = 'BANK_SUSPENSE'""", p, BigDecimal.class);
         return new BankRecDTOs.LineCandidates(l.id(), clear, receive, bounce, present, suspense,
-                bank.getBankTrn() != null && !bank.getBankTrn().isBlank(), leafRows, refused);
+                bank.getBankTrn() != null && !bank.getBankTrn().isBlank(), leafRows, refused, firstOpenDay(t, l.date()));
     }
 
     private static final java.time.format.DateTimeFormatter DMY = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");

@@ -751,14 +751,49 @@ public class BankReconciliationService {
     static final class Remedy {
         static final Remedy NONE = new Remedy(new TreeSet<>(), null);
 
+        /** An import's first and last statement dates. */
+        record Span(LocalDate first, LocalDate last) { }
+
         private final TreeSet<LocalDate> complete;
         private final LocalDate locked;
+        private final List<Span> imports;
         /** Sim r22 S22-04: set when a named statement starts inside the finalized period. */
         private LocalDate reopenThrough;
 
         Remedy(TreeSet<LocalDate> complete, LocalDate locked) {
+            this(complete, locked, List.of());
+        }
+
+        Remedy(TreeSet<LocalDate> complete, LocalDate locked, List<Span> imports) {
             this.complete = complete;
             this.locked = locked;
+            this.imports = imports;
+        }
+
+        /**
+         * Sim r23 S23-05: the statement that can replace every import it overlaps. The
+         * imports that brought {@code first}..{@code last}, and, again and again, every import
+         * overlapping the span they reach: a statement over that whole span holds every line
+         * of them, and after they are deleted no other import touches any of its days, so each
+         * is that one statement's stretch (settled). Taking only the imports that brought the
+         * days left an edge day shared with a kept import, which the import then unproved.
+         * Empty when one of them reaches into the finalized reconciliation (its import cannot
+         * be deleted) or none is known.
+         */
+        Optional<LocalDate[]> replacing(LocalDate first, LocalDate last) {
+            LocalDate a = first, z = last;
+            boolean any = false, grew = true;
+            while (grew) {
+                grew = false;
+                for (Span s : imports) {
+                    if (s.first() == null || s.last() == null || s.last().isBefore(a) || s.first().isAfter(z)) continue;
+                    any = true;
+                    if (s.first().isBefore(a)) { a = s.first(); grew = true; }
+                    if (s.last().isAfter(z)) { z = s.last(); grew = true; }
+                }
+            }
+            if (!any || (locked != null && !a.isAfter(locked))) return Optional.empty();
+            return Optional.of(new LocalDate[]{a, z});
         }
 
         /** The finalized period a named statement reaches into, or null (S22-04). */
@@ -794,10 +829,14 @@ public class BankReconciliationService {
                         + ", which holds " + (first.equals(last) ? first.format(DMY) : "those days") + " whole"
                         + lockNote(s.get()[0]);
             }
-            return "; or import one statement that holds every line of the imports that brought "
-                    + (first.equals(last) ? first.format(DMY) + "'s" : "those days'") + " lines, then delete those "
-                    + "imports (the lines it also holds stay, with their matches): no statement can yet hold "
-                    + (first.equals(last) ? "that day" : "them") + " between two settled days";
+            Optional<LocalDate[]> w = replacing(first, last);
+            if (w.isEmpty()) return "";
+            return "; or import one statement that runs from " + w.get()[0].format(DMY) + " to " + w.get()[1].format(DMY)
+                    + " and holds every line of the imports that brought "
+                    + (first.equals(last) ? first.format(DMY) + "'s" : "those days'") + " lines and of every import"
+                    + " dated inside those dates, then delete all of those imports (the lines it also holds stay, with"
+                    + " their matches): no statement can yet hold " + (first.equals(last) ? "that day" : "them")
+                    + " between two settled days";
         }
 
         /** ": one statement that runs from … to … brings them …", or nothing when none can be named. */
@@ -837,7 +876,11 @@ public class BankReconciliationService {
                 rs -> { complete.add(rs.getObject("txn_date", LocalDate.class)); });
         LocalDate locked = jdbc.queryForObject("select reconciled_through from bank_accounts where id = :b and tenant_id = :t",
                 p, LocalDate.class);
-        return new Remedy(complete, locked);
+        List<Remedy.Span> spans = jdbc.query("""
+                select first_date, last_date from bank_statement_imports
+                 where tenant_id = :t and bank_account_id = :b and first_date is not null and last_date is not null""", p,
+                (rs, i) -> new Remedy.Span(rs.getObject("first_date", LocalDate.class), rs.getObject("last_date", LocalDate.class)));
+        return new Remedy(complete, locked, spans);
     }
 
     private static String dayList(Collection<LocalDate> days) {
