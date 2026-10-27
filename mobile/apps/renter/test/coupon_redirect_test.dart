@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 import 'package:renter/providers/promotion_provider.dart';
 import 'package:renter/screens/offers_screen.dart';
+import 'package:renter/utils/promo_url.dart' show chooseRedirectUrl;
 import 'package:renter/widgets/coupon_redirect_sheet.dart';
 import 'package:renter/widgets/coupon_sheet.dart';
 import 'package:renter/widgets/promo_actions.dart';
@@ -31,6 +34,23 @@ class _Launcher {
 
 const _link = 'https://quickwash.example/app?code=MIFTAH25&name=Aisha%20Khan';
 
+// The two platform links differ from `_link` (and from each other) in the
+// path, so a launch of the wrong one cannot pass for the right one.
+const _androidLink =
+    'https://quickwash.example/android?code=MIFTAH25&name=Aisha%20Khan';
+const _iosLink =
+    'https://quickwash.example/ios?code=MIFTAH25&name=Aisha%20Khan';
+
+/// Links the safety check must refuse, by what is wrong with them.
+const _unsafeLinks = {
+  'plain http': 'http://quickwash.example/app?code=MIFTAH25',
+  'an app-scheme deep link': 'quickwash://open?code=MIFTAH25',
+  'a javascript url': 'javascript:alert(1)',
+  'a relative reference': '/app?code=MIFTAH25',
+  'credentials in the authority': 'https://quickwash.example@evil.example/app',
+  'an https url with no host': 'https:///app?code=MIFTAH25',
+};
+
 /// The business name as the sheet sets it into a sentence: wrapped in a
 /// first-strong isolate (FSI ... PDI) so its own direction cannot be bent by
 /// the language of the sentence around it.
@@ -39,6 +59,8 @@ String _iso(String name) => '\u2068$name\u2069';
 /// A COUPON card with the redirect fields the server resolves per renter.
 PromoAd _ad({
   String? redirectUrl,
+  Object? redirectUrlAndroid,
+  Object? redirectUrlIos,
   Object? sharedFields,
   String? nameEn = 'Spice Bazaar',
   String? nameAr = 'سبايس بازار',
@@ -56,6 +78,8 @@ PromoAd _ad({
   'ctaType': 'COUPON',
   'couponCode': withCode ? 'MIFTAH25' : null,
   'redirectUrl': ?redirectUrl,
+  'redirectUrlAndroid': ?redirectUrlAndroid,
+  'redirectUrlIos': ?redirectUrlIos,
   'sharedFields': ?sharedFields,
 });
 
@@ -88,6 +112,7 @@ Future<void> _pump(
   required _Launcher launcher,
   bool ar = false,
   EdgeInsets safePadding = EdgeInsets.zero,
+  TargetPlatform? platform,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -106,7 +131,7 @@ Future<void> _pump(
         child: child!,
       ),
       home: Scaffold(
-        body: CouponSheet(ad: ad, launcher: launcher.call),
+        body: CouponSheet(ad: ad, launcher: launcher.call, platform: platform),
       ),
     ),
   );
@@ -472,17 +497,7 @@ void main() {
   group('an unsafe redirect is never launched', () {
     // The server validates on write; this is the last gate before a renter is
     // sent somewhere, and it must hold on its own.
-    const unsafe = {
-      'plain http': 'http://quickwash.example/app?code=MIFTAH25',
-      'an app-scheme deep link': 'quickwash://open?code=MIFTAH25',
-      'a javascript url': 'javascript:alert(1)',
-      'a relative reference': '/app?code=MIFTAH25',
-      'credentials in the authority':
-          'https://quickwash.example@evil.example/app',
-      'an https url with no host': 'https:///app?code=MIFTAH25',
-    };
-
-    for (final entry in unsafe.entries) {
+    for (final entry in _unsafeLinks.entries) {
       for (final shared in [
         <String>[],
         ['RENTER_NAME'],
@@ -509,6 +524,505 @@ void main() {
         });
       }
     }
+  });
+
+  group('per-platform links: which link opens', () {
+    /// Taps Copy on [ad] as [platform] and returns what was launched.
+    Future<_Launcher> copyOn(
+      WidgetTester tester,
+      TargetPlatform platform,
+      PromoAd ad,
+    ) async {
+      _captureClipboard(tester);
+      final launcher = _Launcher();
+      await _pump(tester, ad: ad, launcher: launcher, platform: platform);
+      await _tapCopy(tester);
+      return launcher;
+    }
+
+    final all = _ad(
+      redirectUrl: _link,
+      redirectUrlAndroid: _androidLink,
+      redirectUrlIos: _iosLink,
+    );
+
+    testWidgets('Android opens the Android link', (tester) async {
+      final launcher = await copyOn(tester, TargetPlatform.android, all);
+
+      expect(launcher.uris, [Uri.parse(_androidLink)]);
+      expect(launcher.modes, [LaunchMode.externalApplication]);
+    });
+
+    testWidgets('iOS opens the iOS link', (tester) async {
+      final launcher = await copyOn(tester, TargetPlatform.iOS, all);
+
+      expect(launcher.uris, [Uri.parse(_iosLink)]);
+      expect(launcher.modes, [LaunchMode.externalApplication]);
+    });
+
+    testWidgets('Android falls back to redirectUrl when it has no link', (
+      tester,
+    ) async {
+      // The iOS link is set; it must not leak onto an Android phone.
+      final launcher = await copyOn(
+        tester,
+        TargetPlatform.android,
+        _ad(redirectUrl: _link, redirectUrlIos: _iosLink),
+      );
+
+      expect(launcher.uris, [Uri.parse(_link)]);
+    });
+
+    testWidgets('iOS falls back to redirectUrl when it has no link', (
+      tester,
+    ) async {
+      final launcher = await copyOn(
+        tester,
+        TargetPlatform.iOS,
+        _ad(redirectUrl: _link, redirectUrlAndroid: _androidLink),
+      );
+
+      expect(launcher.uris, [Uri.parse(_link)]);
+    });
+
+    testWidgets('a platform link alone is enough, with no general link', (
+      tester,
+    ) async {
+      final onAndroid = await copyOn(
+        tester,
+        TargetPlatform.android,
+        _ad(redirectUrlAndroid: _androidLink),
+      );
+      expect(onAndroid.uris, [Uri.parse(_androidLink)]);
+
+      final onIos = await copyOn(
+        tester,
+        TargetPlatform.iOS,
+        _ad(redirectUrlIos: _iosLink),
+      );
+      expect(onIos.uris, [Uri.parse(_iosLink)]);
+    });
+
+    testWidgets('a phone with no link of its own and no general link opens '
+        'nothing, and the code is still copied', (tester) async {
+      final copied = _captureClipboard(tester);
+      final launcher = _Launcher();
+      await _pump(
+        tester,
+        ad: _ad(redirectUrlIos: _iosLink),
+        launcher: launcher,
+        platform: TargetPlatform.android,
+      );
+
+      await _tapCopy(tester);
+
+      expect(launcher.uris, isEmpty);
+      expect(find.byType(CouponRedirectSheet), findsNothing);
+      expect(copied, ['MIFTAH25']);
+    });
+
+    for (final platform in [
+      TargetPlatform.fuchsia,
+      TargetPlatform.linux,
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+    ]) {
+      testWidgets('${platform.name} uses redirectUrl, never a platform link', (
+        tester,
+      ) async {
+        final launcher = await copyOn(tester, platform, all);
+
+        expect(launcher.uris, [Uri.parse(_link)]);
+      });
+
+      testWidgets('${platform.name} with only platform links opens nothing', (
+        tester,
+      ) async {
+        final launcher = await copyOn(
+          tester,
+          platform,
+          _ad(redirectUrlAndroid: _androidLink, redirectUrlIos: _iosLink),
+        );
+
+        expect(launcher.uris, isEmpty);
+      });
+    }
+
+    testWidgets('a blank platform link counts as absent and falls back', (
+      tester,
+    ) async {
+      // Through JSON, where the model trims it away...
+      final fromJson = await copyOn(
+        tester,
+        TargetPlatform.android,
+        _ad(redirectUrl: _link, redirectUrlAndroid: '   '),
+      );
+      expect(fromJson.uris, [Uri.parse(_link)]);
+
+      // ...and on a hand-built ad, where only the chooser stands between a
+      // whitespace string and the fallback.
+      final byHand = await copyOn(
+        tester,
+        TargetPlatform.iOS,
+        const PromoAd(
+          id: 'ad-1',
+          business: PromoBusinessRef(id: 'b-1', nameEn: 'Spice Bazaar'),
+          ctaType: PromoCtaType.coupon,
+          couponCode: 'MIFTAH25',
+          redirectUrl: _link,
+          redirectUrlIos: '   ',
+        ),
+      );
+      expect(byHand.uris, [Uri.parse(_link)]);
+    });
+
+    testWidgets('a platform link of the wrong type counts as absent', (
+      tester,
+    ) async {
+      final launcher = await copyOn(
+        tester,
+        TargetPlatform.android,
+        _ad(redirectUrl: _link, redirectUrlAndroid: 42),
+      );
+
+      expect(launcher.uris, [Uri.parse(_link)]);
+    });
+
+    for (final platform in TargetPlatform.values) {
+      testWidgets(
+        'an older backend (no platform keys) opens redirectUrl on ${platform.name}',
+        (tester) async {
+          final launcher = await copyOn(
+            tester,
+            platform,
+            _ad(redirectUrl: _link),
+          );
+
+          expect(launcher.uris, [Uri.parse(_link)]);
+          expect(launcher.modes, [LaunchMode.externalApplication]);
+        },
+      );
+    }
+
+    testWidgets('without an injected platform it follows the running phone', (
+      tester,
+    ) async {
+      final launcher = _Launcher();
+      _captureClipboard(tester);
+      await _pump(tester, ad: all, launcher: launcher);
+
+      // `debugDefaultTargetPlatformOverride` is what `defaultTargetPlatform`
+      // reads; it has to be put back before the test ends.
+      try {
+        debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+        await _tapCopy(tester);
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        await _tapCopy(tester);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+
+      expect(launcher.uris, [Uri.parse(_iosLink), Uri.parse(_androidLink)]);
+    });
+  });
+
+  group('per-platform links: an unsafe platform link', () {
+    // The platform link is the admin's stated intent for that phone, so when
+    // the safety check refuses it nothing opens — the general link, which the
+    // admin meant for other phones, is not a stand-in.
+    for (final entry in _unsafeLinks.entries) {
+      for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+        for (final shared in [
+          <String>[],
+          ['RENTER_NAME'],
+        ]) {
+          final consent = shared.isEmpty
+              ? 'no consent step'
+              : 'with consent step';
+          testWidgets(
+            '${platform.name}: ${entry.key} launches nothing and does not '
+            'fall back ($consent)',
+            (tester) async {
+              final copied = _captureClipboard(tester);
+              final launcher = _Launcher();
+              final android = platform == TargetPlatform.android;
+              await _pump(
+                tester,
+                // A perfectly good general link sits right there.
+                ad: _ad(
+                  redirectUrl: _link,
+                  redirectUrlAndroid: android ? entry.value : null,
+                  redirectUrlIos: android ? null : entry.value,
+                  sharedFields: shared,
+                ),
+                launcher: launcher,
+                platform: platform,
+              );
+
+              await _tapCopy(tester);
+
+              expect(find.byType(CouponRedirectSheet), findsNothing);
+              expect(launcher.uris, isEmpty);
+              expect(copied, ['MIFTAH25']);
+            },
+          );
+        }
+      }
+    }
+
+    testWidgets('a refused link on the other platform is none of this '
+        "phone's business", (tester) async {
+      _captureClipboard(tester);
+      final launcher = _Launcher();
+      await _pump(
+        tester,
+        ad: _ad(
+          redirectUrl: _link,
+          redirectUrlAndroid: 'http://quickwash.example/android',
+          redirectUrlIos: _iosLink,
+        ),
+        launcher: launcher,
+        platform: TargetPlatform.iOS,
+      );
+
+      await _tapCopy(tester);
+
+      expect(launcher.uris, [Uri.parse(_iosLink)]);
+    });
+
+    testWidgets('a refused platform link does not stop another platform '
+        'using redirectUrl', (tester) async {
+      _captureClipboard(tester);
+      final launcher = _Launcher();
+      await _pump(
+        tester,
+        ad: _ad(
+          redirectUrl: _link,
+          redirectUrlAndroid: 'http://quickwash.example/android',
+          redirectUrlIos: 'http://quickwash.example/ios',
+        ),
+        launcher: launcher,
+        platform: TargetPlatform.macOS,
+      );
+
+      await _tapCopy(tester);
+
+      expect(launcher.uris, [Uri.parse(_link)]);
+    });
+
+    testWidgets('a safe platform link opens even when the general link is '
+        'unsafe', (tester) async {
+      _captureClipboard(tester);
+      final launcher = _Launcher();
+      await _pump(
+        tester,
+        ad: _ad(
+          redirectUrl: 'http://quickwash.example/app',
+          redirectUrlAndroid: _androidLink,
+        ),
+        launcher: launcher,
+        platform: TargetPlatform.android,
+      );
+
+      await _tapCopy(tester);
+
+      expect(launcher.uris, [Uri.parse(_androidLink)]);
+    });
+  });
+
+  group('per-platform links: consent', () {
+    final fields = ['RENTER_NAME', 'RENTER_PHONE'];
+
+    testWidgets('Android asks first, then opens the Android link', (
+      tester,
+    ) async {
+      final copied = _captureClipboard(tester);
+      final launcher = _Launcher();
+      await _pump(
+        tester,
+        ad: _ad(
+          redirectUrl: _link,
+          redirectUrlAndroid: _androidLink,
+          redirectUrlIos: _iosLink,
+          sharedFields: fields,
+        ),
+        launcher: launcher,
+        platform: TargetPlatform.android,
+      );
+
+      await _tapCopy(tester);
+
+      expect(find.byType(CouponRedirectSheet), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('coupon-redirect-fields')))
+            .data,
+        'Name, Phone',
+      );
+      expect(copied, ['MIFTAH25']);
+      expect(launcher.uris, isEmpty);
+
+      await _tapContinue(tester);
+
+      expect(launcher.uris, [Uri.parse(_androidLink)]);
+      expect(launcher.modes, [LaunchMode.externalApplication]);
+      expect(find.byType(CouponRedirectSheet), findsNothing);
+    });
+
+    testWidgets('iOS asks first, and Cancel opens nothing', (tester) async {
+      final copied = _captureClipboard(tester);
+      final launcher = _Launcher();
+      await _pump(
+        tester,
+        ad: _ad(
+          redirectUrl: _link,
+          redirectUrlAndroid: _androidLink,
+          redirectUrlIos: _iosLink,
+          sharedFields: fields,
+        ),
+        launcher: launcher,
+        platform: TargetPlatform.iOS,
+      );
+
+      await _tapCopy(tester);
+      expect(find.byType(CouponRedirectSheet), findsOneWidget);
+      await _tapCancel(tester);
+
+      expect(launcher.uris, isEmpty);
+      expect(copied, ['MIFTAH25']);
+      expect(find.byType(CouponSheet), findsOneWidget);
+    });
+
+    testWidgets('a fallback to redirectUrl asks too', (tester) async {
+      _captureClipboard(tester);
+      final launcher = _Launcher();
+      await _pump(
+        tester,
+        ad: _ad(
+          redirectUrl: _link,
+          redirectUrlIos: _iosLink,
+          sharedFields: fields,
+        ),
+        launcher: launcher,
+        platform: TargetPlatform.android,
+      );
+
+      await _tapCopy(tester);
+      expect(find.byType(CouponRedirectSheet), findsOneWidget);
+      expect(launcher.uris, isEmpty);
+      await _tapContinue(tester);
+
+      expect(launcher.uris, [Uri.parse(_link)]);
+    });
+
+    testWidgets('another platform asks too, then opens redirectUrl', (
+      tester,
+    ) async {
+      _captureClipboard(tester);
+      final launcher = _Launcher();
+      await _pump(
+        tester,
+        ad: _ad(
+          redirectUrl: _link,
+          redirectUrlAndroid: _androidLink,
+          redirectUrlIos: _iosLink,
+          sharedFields: fields,
+        ),
+        launcher: launcher,
+        platform: TargetPlatform.macOS,
+      );
+
+      await _tapCopy(tester);
+      expect(find.byType(CouponRedirectSheet), findsOneWidget);
+      await _tapContinue(tester);
+
+      expect(launcher.uris, [Uri.parse(_link)]);
+    });
+
+    testWidgets(
+      'an unreadable sharedFields still asks before a platform link',
+      (tester) async {
+        _captureClipboard(tester);
+        final launcher = _Launcher();
+        await _pump(
+          tester,
+          ad: _ad(redirectUrlIos: _iosLink, sharedFields: 'RENTER_NAME'),
+          launcher: launcher,
+          platform: TargetPlatform.iOS,
+        );
+
+        await _tapCopy(tester);
+
+        expect(find.byType(CouponRedirectSheet), findsOneWidget);
+        expect(launcher.uris, isEmpty);
+      },
+    );
+
+    testWidgets('nothing personal in it: a platform link opens straight away', (
+      tester,
+    ) async {
+      _captureClipboard(tester);
+      final launcher = _Launcher();
+      await _pump(
+        tester,
+        ad: _ad(
+          redirectUrl: _link,
+          redirectUrlIos: _iosLink,
+          sharedFields: const [],
+        ),
+        launcher: launcher,
+        platform: TargetPlatform.iOS,
+      );
+
+      await _tapCopy(tester);
+
+      expect(find.byType(CouponRedirectSheet), findsNothing);
+      expect(launcher.uris, [Uri.parse(_iosLink)]);
+    });
+  });
+
+  group('chooseRedirectUrl', () {
+    PromoAd ad({String? general, String? android, String? ios}) => PromoAd(
+      id: 'ad-1',
+      business: const PromoBusinessRef(id: 'b-1'),
+      ctaType: PromoCtaType.coupon,
+      redirectUrl: general,
+      redirectUrlAndroid: android,
+      redirectUrlIos: ios,
+    );
+
+    test('prefers the platform link, falls back to the general one', () {
+      final full = ad(general: 'g', android: 'a', ios: 'i');
+      expect(chooseRedirectUrl(full, TargetPlatform.android), 'a');
+      expect(chooseRedirectUrl(full, TargetPlatform.iOS), 'i');
+
+      final bare = ad(general: 'g');
+      expect(chooseRedirectUrl(bare, TargetPlatform.android), 'g');
+      expect(chooseRedirectUrl(bare, TargetPlatform.iOS), 'g');
+    });
+
+    test('every other platform gets the general link and only that', () {
+      final full = ad(general: 'g', android: 'a', ios: 'i');
+      final noGeneral = ad(android: 'a', ios: 'i');
+      for (final p in TargetPlatform.values) {
+        if (p == TargetPlatform.android || p == TargetPlatform.iOS) continue;
+        expect(chooseRedirectUrl(full, p), 'g', reason: p.name);
+        expect(chooseRedirectUrl(noGeneral, p), isNull, reason: p.name);
+      }
+    });
+
+    test('does not look at whether a link is safe', () {
+      // Refusing happens after the choice, so an unsafe platform link is
+      // returned as-is rather than skipped for the general one.
+      final unsafe = ad(general: 'https://ok.example', android: 'http://x');
+      expect(chooseRedirectUrl(unsafe, TargetPlatform.android), 'http://x');
+    });
+
+    test('blank counts as absent, a lone space included', () {
+      final blank = ad(general: 'g', android: ' ', ios: '');
+      expect(chooseRedirectUrl(blank, TargetPlatform.android), 'g');
+      expect(chooseRedirectUrl(blank, TargetPlatform.iOS), 'g');
+    });
   });
 
   group('Arabic', () {
@@ -997,5 +1511,63 @@ void main() {
         expect(clicks.map((e) => e.adId), ['ad-1']);
       },
     );
+
+    for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+      testWidgets(
+        'PromoActions hands its platform to the sheet: ${platform.name} opens '
+        'its own link and still records one click',
+        (tester) async {
+          _captureClipboard(tester);
+          final launcher = _Launcher();
+          final fake = FakePromotionService(
+            offerAds: [
+              _ad(
+                redirectUrl: _link,
+                redirectUrlAndroid: _androidLink,
+                redirectUrlIos: _iosLink,
+                sharedFields: const ['RENTER_NAME'],
+              ),
+            ],
+          );
+          await tester.pumpWidget(
+            ProviderScope(
+              overrides: [
+                promotionServiceProvider.overrideWithValue(fake),
+                promoActionsProvider.overrideWithValue(
+                  PromoActions(launcher: launcher.call, platform: platform),
+                ),
+              ],
+              child: MaterialApp(
+                theme: AppTheme.lightTheme,
+                home: const OffersScreen(),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await tester.tap(find.text('Friday brunch'));
+          await tester.pumpAndSettle();
+          await _tapCopy(tester);
+          expect(find.byType(CouponRedirectSheet), findsOneWidget);
+          await _tapContinue(tester);
+
+          expect(launcher.uris, [
+            Uri.parse(
+              platform == TargetPlatform.android ? _androidLink : _iosLink,
+            ),
+          ]);
+          expect(launcher.modes, [LaunchMode.externalApplication]);
+
+          final container = ProviderScope.containerOf(
+            tester.element(find.byType(CouponSheet)),
+          );
+          await container.read(promoEventQueueProvider).flush();
+          final clicks = fake.postedEvents
+              .where((e) => e.type == PromoEventType.click)
+              .toList();
+          expect(clicks.map((e) => e.adId), ['ad-1']);
+        },
+      );
+    }
   });
 }
