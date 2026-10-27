@@ -130,15 +130,15 @@ describe.each(['admin', 'promoter'] as const)('AdEditor redirect link (%s)', mod
         addRow('promo', 'STATIC', 'SPRING & SAVE')
         addRow('prop', 'PROPERTY_NAME')
         expect(screen.getByTestId('redirect-example').textContent).toBe(
-            `${LINK}&code=SPRING20&phone=%2B971501234567&promo=SPRING+%26+SAVE&prop=Palm+Tower`)
+            `${LINK}&code=SPRING20&phone=%2B971501234567&promo=SPRING%20%26%20SAVE&prop=Palm%20Tower`)
     })
 
-    it('encodes the example the way the server does (Java URLEncoder): a space is +, and ! \' ( ) ~ are percent-encoded', () => {
+    it('encodes the example the way the server does (URLEncoder, then + as %20): a space is %20, and ! \' ( ) ~ are percent-encoded', () => {
         startCoupon(mode)
         fireEvent.change(linkField(), { target: { value: LINK } })
         addRow('promo', 'STATIC', "it's (50%) off! ~now* é")
         expect(screen.getByTestId('redirect-example').textContent)
-            .toBe(`${LINK}&promo=it%27s+%2850%25%29+off%21+%7Enow*+%C3%A9`)
+            .toBe(`${LINK}&promo=it%27s%20%2850%25%29%20off%21%20%7Enow*%20%C3%A9`)
     })
 
     it('builds the example on a link without a query, and before a fragment', () => {
@@ -146,7 +146,7 @@ describe.each(['admin', 'promoter'] as const)('AdEditor redirect link (%s)', mod
         fireEvent.change(linkField(), { target: { value: 'https://quickwash.example.test/app#open' } })
         addRow('name', 'RENTER_NAME')
         expect(screen.getByTestId('redirect-example').textContent)
-            .toBe('https://quickwash.example.test/app?name=Sara+Ahmed#open')
+            .toBe('https://quickwash.example.test/app?name=Sara%20Ahmed#open')
     })
 
     it('says tenants confirm before details are shared, only when a parameter carries them', () => {
@@ -580,7 +580,7 @@ describe.each(['admin', 'promoter'] as const)('AdEditor redirect link (%s)', mod
                 addRow('promo', 'STATIC', "it's (50%) off! ~now* é")
                 addRow('prop', 'PROPERTY_NAME')
 
-                const encoded = 'code=SPRING20&phone=%2B971501234567&promo=it%27s+%2850%25%29+off%21+%7Enow*+%C3%A9&prop=Palm+Tower'
+                const encoded = 'code=SPRING20&phone=%2B971501234567&promo=it%27s%20%2850%25%29%20off%21%20%7Enow*%20%C3%A9&prop=Palm%20Tower'
                 // A link that already has a query gets '&', one without gets '?'.
                 expect(screen.getByTestId('redirect-example').textContent).toBe(`${LINK}&${encoded}`)
                 expect(screen.getByTestId('redirect-example-android').textContent).toBe(`${ANDROID}&${encoded}`)

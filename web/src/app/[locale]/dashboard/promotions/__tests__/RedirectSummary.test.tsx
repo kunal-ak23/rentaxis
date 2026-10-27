@@ -4,7 +4,7 @@ import { NextIntlClientProvider } from 'next-intl'
 import en from '../../../../../../messages/en.json'
 import ar from '../../../../../../messages/ar.json'
 import { RedirectSummary } from '../_components/RedirectSummary'
-import { urlEncodeLikeJava } from '../_components/RedirectLinkFields'
+import { urlEncodeLikeServer } from '../_components/RedirectLinkFields'
 
 afterEach(cleanup)
 
@@ -143,9 +143,9 @@ describe('RedirectSummary with platform links (Addendum C)', () => {
     })
 })
 
-describe('urlEncodeLikeJava (the server builds the link with URLEncoder.encode(value, UTF_8))', () => {
+describe('urlEncodeLikeServer (the server builds the link with URLEncoder.encode(value, UTF_8), + as %20)', () => {
     it.each([
-        ['a b', 'a+b'],
+        ['a b', 'a%20b'],
         ['a+b', 'a%2Bb'],
         ["it's", 'it%27s'],
         ['(x)', '%28x%29'],
@@ -158,6 +158,6 @@ describe('urlEncodeLikeJava (the server builds the link with URLEncoder.encode(v
         ['سارة', '%D8%B3%D8%A7%D8%B1%D8%A9'],
         ['A-Za-z0-9', 'A-Za-z0-9'],
     ])('%j -> %s', (input, expected) => {
-        expect(urlEncodeLikeJava(input)).toBe(expected)
+        expect(urlEncodeLikeServer(input)).toBe(expected)
     })
 })

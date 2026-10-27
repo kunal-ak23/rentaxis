@@ -344,8 +344,9 @@ parameters, populated per tenant, go on whichever link opens.
 ### Renter app (`mobile/`)
 - `PromoAd` gains `redirectUrlAndroid`, `redirectUrlIos` (tolerant of absence).
 - On Copy code the app chooses: Android → `redirectUrlAndroid ?? redirectUrl`;
-  iOS → `redirectUrlIos ?? redirectUrl`; anything else → `redirectUrl`. A blank/unreadable
-  platform link falls back to `redirectUrl`. Then the existing flow: safety check (https,
+  iOS → `redirectUrlIos ?? redirectUrl`; anything else → `redirectUrl`. An absent, blank or
+  wrong-typed platform link falls back to `redirectUrl`; a present platform link that fails
+  the safety check opens nothing (no silent fallback to another link). Then the existing flow: safety check (https,
   host, no userinfo) → consent sheet when `sharedFields` non-empty → launch with
   `externalApplication`. Platform choice behind a seam so tests can force Android/iOS.
 

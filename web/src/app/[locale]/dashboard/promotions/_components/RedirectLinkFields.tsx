@@ -110,14 +110,14 @@ export function redirectErrors(
 }
 
 /**
- * Percent-encodes as Java's `URLEncoder.encode(value, UTF_8)` does, which the
- * server uses to build the link, so the preview matches what a tenant is sent:
- * a space is `+`, and only `A-Z a-z 0-9 . - * _` are left as they are.
- * `encodeURIComponent` alone differs on the space and on `! ' ( ) ~`.
+ * Percent-encodes as the server does when it builds the link
+ * (PromotionRedirectService.encode: `URLEncoder.encode(value, UTF_8)` with `+`
+ * turned into `%20`), so the preview matches what a tenant is sent: a space is
+ * `%20`, and only `A-Z a-z 0-9 . - * _` are left as they are.
+ * `encodeURIComponent` alone differs only on `! ' ( ) ~`.
  */
-export function urlEncodeLikeJava(value: string): string {
+export function urlEncodeLikeServer(value: string): string {
     return encodeURIComponent(value)
-        .replace(/%20/g, "+")
         .replace(/[!'()~]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
@@ -129,7 +129,7 @@ export function exampleRedirectUrl(base: string, pairs: [string, string][]): str
     const head = hash >= 0 ? url.slice(0, hash) : url;
     const fragment = hash >= 0 ? url.slice(hash) : "";
     const sep = !head.includes("?") ? "?" : head.endsWith("?") || head.endsWith("&") ? "" : "&";
-    return head + sep + pairs.map(([k, v]) => `${urlEncodeLikeJava(k)}=${urlEncodeLikeJava(v)}`).join("&") + fragment;
+    return head + sep + pairs.map(([k, v]) => `${urlEncodeLikeServer(k)}=${urlEncodeLikeServer(v)}`).join("&") + fragment;
 }
 
 /** Sample renter data for the preview; real values come from the tenant's account in the app. */

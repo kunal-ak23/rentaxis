@@ -269,6 +269,8 @@ export function adToRequest(ad: PromoAdDTO): PromoAdRequest {
     couponTermsEn: ad.couponTermsEn,
     couponTermsAr: ad.couponTermsAr,
     redirectUrl: ad.redirectUrl ?? null,
+    redirectUrlAndroid: ad.redirectUrlAndroid ?? null,
+    redirectUrlIos: ad.redirectUrlIos ?? null,
     redirectParams: ad.redirectParams ?? [],
     startsAt: ad.startsAt,
     endsAt: ad.endsAt,
