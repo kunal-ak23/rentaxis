@@ -50,6 +50,14 @@ public class PromoBusiness extends BaseTenantEntity {
     @Column(nullable = false)
     private boolean active = true;
 
+    /**
+     * Addendum B: set when a delete found the business has ads, so it was archived
+     * instead (and deactivated, its ads archived with it). An archived business frees
+     * its name ({@code uq_promo_business_name} ignores archived rows).
+     */
+    @Column(name = "archived_at")
+    private Instant archivedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 

@@ -3,12 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../utils/promo_url.dart';
 import 'coupon_sheet.dart';
 
-typedef PromoUrlLauncher = Future<bool> Function(
-  Uri uri, {
-  LaunchMode mode,
-});
+export '../utils/promo_url.dart' show PromoUrlLauncher;
 
 /// What tapping a promotion does, in one place, shared by the home carousel
 /// and the Offers screen.
@@ -19,10 +17,8 @@ typedef PromoUrlLauncher = Future<bool> Function(
 /// business's domain allowlist on write — defence in depth, since this is the
 /// last point before a renter is sent somewhere.
 ///
-/// The client-side checks deliberately mirror `PromotionUrlValidator` on the
-/// server (https only, a real host, no userinfo). The one rule this side
-/// cannot repeat is the per-business domain allowlist: the allowlist is not
-/// part of the renter-facing DTO, so host matching stays server-only.
+/// The client-side checks live in `parseSafePromoUri` (`utils/promo_url.dart`),
+/// shared with the coupon's redirect link.
 class PromoActions {
   PromoActions({PromoUrlLauncher? launcher}) : _launch = launcher ?? launchUrl;
 
@@ -33,7 +29,9 @@ class PromoActions {
       case PromoCtaType.website:
         await _openWebsite(ad.ctaUrl);
       case PromoCtaType.coupon:
-        await CouponSheet.show(context, ad);
+        // The sheet gets this class's launcher, so a coupon redirect opens
+        // through the same seam as every other link out of a promotion.
+        await CouponSheet.show(context, ad, launcher: _launch);
       case PromoCtaType.call:
         await _openPhone(ad.ctaPhone, whatsapp: false);
       case PromoCtaType.whatsapp:
@@ -44,22 +42,8 @@ class PromoActions {
   }
 
   Future<void> _openWebsite(String? raw) async {
-    final url = raw?.trim();
-    if (url == null || url.isEmpty) return;
-    final uri = Uri.tryParse(url);
+    final uri = parseSafePromoUri(raw);
     if (uri == null) return;
-    // https only. `Uri.tryParse` is far more forgiving than the server's
-    // `new URI(...)` — it happily turns junk into a relative reference with an
-    // empty scheme — so every part of the authority is checked explicitly
-    // rather than inferred from "it parsed".
-    if (uri.scheme.toLowerCase() != 'https') return;
-    // `https:///path` parses with an empty host; the server refuses it and so
-    // does this.
-    if (uri.host.isEmpty) return;
-    // Userinfo is refused outright, exactly as the server does:
-    // `https://my-bank.com@spice-bazaar.ae/` reads as the bank in an in-app
-    // browser's minimal URL chrome while navigating somewhere else entirely.
-    if (uri.userInfo.isNotEmpty) return;
     await _safeLaunch(uri, LaunchMode.inAppBrowserView);
   }
 
@@ -84,15 +68,8 @@ class PromoActions {
     );
   }
 
-  /// A device with no browser, no dialer or no WhatsApp must not take the home
-  /// screen down with it — an ad tap is never worth an error dialog.
-  Future<void> _safeLaunch(Uri uri, LaunchMode mode) async {
-    try {
-      await _launch(uri, mode: mode);
-    } catch (_) {
-      // Intentionally ignored. See above.
-    }
-  }
+  Future<void> _safeLaunch(Uri uri, LaunchMode mode) =>
+      launchPromoUri(_launch, uri, mode);
 }
 
 final promoActionsProvider = Provider<PromoActions>((ref) => PromoActions());

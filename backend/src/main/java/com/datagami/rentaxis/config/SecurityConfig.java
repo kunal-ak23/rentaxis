@@ -2,6 +2,7 @@ package com.datagami.rentaxis.config;
 
 import com.datagami.rentaxis.api.AssetController;
 import com.datagami.rentaxis.core.security.ApiSecurityFilter;
+import com.datagami.rentaxis.core.security.PromoterFenceFilter;
 import com.datagami.rentaxis.security.PublicRateLimitFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -57,6 +58,10 @@ public class SecurityConfig {
                 // Order matters: rate limit MUST run before auth so abusive IPs are
                 // throttled before any token parsing / DB lookups happen.
                 .addFilterBefore(apiSecurityFilter, UsernamePasswordAuthenticationFilter.class)
+                // The promoter fence needs the principal ApiSecurityFilter sets, so it runs
+                // right after it. Constructed here, not a @Component, so Boot does not also
+                // register it as a plain servlet filter outside this chain.
+                .addFilterAfter(new PromoterFenceFilter(), ApiSecurityFilter.class)
                 .addFilterBefore(publicRateLimitFilter, ApiSecurityFilter.class);
         return http.build();
     }

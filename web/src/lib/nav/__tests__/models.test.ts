@@ -5,7 +5,7 @@ import { accountingHome, buildAccountingNav, isBooksLive } from "../accountingNa
 import { buildCollectionsTabs } from "../collectionsModel";
 import { buildSettingsSections } from "../settingsModel";
 
-const ROLES: UserRole[] = ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT", "TENANT_USER", "RENTER", "SECURITY_GUARD"];
+const ROLES: UserRole[] = ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT", "TENANT_USER", "RENTER", "SECURITY_GUARD", "PROMOTER"];
 const hrefs = (role: UserRole, booksLive = true) =>
     buildAccountingNav(role, { booksLive }).flatMap(g => g.items.map(i => i.href));
 

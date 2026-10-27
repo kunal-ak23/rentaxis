@@ -21,6 +21,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -54,6 +55,9 @@ public class PromotionService {
 
     /** Migration 71's unique index name — kept in sync with the translation below. */
     static final String UQ_PROMO_BUSINESS_NAME = "uq_promo_business_name";
+
+    /** The code on the name-collision refusal, so the promoter path can word it without the name (review M2). */
+    public static final String BUSINESS_NAME_TAKEN_CODE = "promo.businessNameTaken";
 
     /** Mirrors PromoAdRequest's @Pattern; the column is varchar(9). */
     private static final Pattern ACCENT_COLOR =
@@ -90,9 +94,18 @@ public class PromotionService {
 
     // ------------------------------------------------------------- businesses
 
+    /** Live (not archived) businesses. */
     @Transactional(readOnly = true)
     public Page<PromoBusiness> listBusinesses(UUID tenantId, Pageable pageable) {
-        return businessRepository.findByTenantId(tenantId, pageable);
+        return listBusinesses(tenantId, false, pageable);
+    }
+
+    /** Addendum B: {@code archived} false = live businesses only, true = archived only. */
+    @Transactional(readOnly = true)
+    public Page<PromoBusiness> listBusinesses(UUID tenantId, boolean archived, Pageable pageable) {
+        return archived
+                ? businessRepository.findByTenantIdAndArchivedAtIsNotNull(tenantId, pageable)
+                : businessRepository.findByTenantIdAndArchivedAtIsNull(tenantId, pageable);
     }
 
     @Transactional(readOnly = true)
@@ -114,6 +127,7 @@ public class PromotionService {
 
     public PromoBusiness updateBusiness(UUID tenantId, UUID id, PromoBusinessRequest req) {
         PromoBusiness b = getBusiness(tenantId, id);
+        requireNotArchived(b);
         applyBusiness(b, req);
         return saveBusiness(b);
     }
@@ -133,25 +147,64 @@ public class PromotionService {
             String message = cause != null ? cause.getMessage() : null;
             if (message != null && message.contains(UQ_PROMO_BUSINESS_NAME)) {
                 throw new BusinessRuleViolationException(
-                        "A business named \"" + b.getNameEn() + "\" already exists.");
+                        "A business named \"" + b.getNameEn() + "\" already exists.",
+                        BUSINESS_NAME_TAKEN_CODE, java.util.Map.of());
             }
             throw e;
         }
     }
 
+    /** What a delete did (addendum B): removed outright, or archived because history exists. */
+    public enum DeleteOutcome { DELETED, ARCHIVED }
+
     /**
-     * Hard delete only when nothing references the business — ad history and
-     * event counts must survive, so anything in use is deactivated instead.
+     * Delete always succeeds (addendum B). A business no ad has ever referenced is
+     * deleted outright. One with ads — live or archived; {@code fk_promo_ad_business}
+     * RESTRICTs — is archived instead and deactivated, and every ad of it not yet
+     * archived is archived and deactivated with it (none is hard-deleted here, event
+     * history or not: archiving keeps the business's ads restorable together).
+     * Deleting an archived business again changes nothing.
      */
-    public void deleteBusiness(UUID tenantId, UUID id) {
+    public DeleteOutcome deleteBusiness(UUID tenantId, UUID id) {
         PromoBusiness b = getBusiness(tenantId, id);
-        if (adRepository.countByBusinessId(id) > 0) {
-            // Lowercase "deactivate" is asserted by the test; an em dash keeps it
-            // mid-sentence rather than starting a new one.
-            throw new BusinessRuleViolationException(
-                    "This business has ads — deactivate it instead of deleting it.");
+        if (adRepository.countByBusinessId(id) == 0) {
+            businessRepository.delete(b);
+            return DeleteOutcome.DELETED;
         }
-        businessRepository.delete(b);
+        Instant now = Instant.now();
+        if (b.getArchivedAt() == null) {
+            b.setArchivedAt(now);
+        }
+        b.setActive(false);
+        businessRepository.save(b);
+        for (PromoAd ad : adRepository.findByTenantIdAndBusinessIdAndArchivedAtIsNull(tenantId, id)) {
+            ad.setArchivedAt(now);
+            ad.setActive(false);
+            adRepository.save(ad);
+        }
+        return DeleteOutcome.ARCHIVED;
+    }
+
+    /**
+     * Addendum B: an archived business back in the lists, still inactive (an admin
+     * re-activates it by editing). Its ads stay archived until restored one by one.
+     * Refused (400, the name-collision message) when a live business has taken its
+     * name meanwhile.
+     */
+    public PromoBusiness restoreBusiness(UUID tenantId, UUID id) {
+        PromoBusiness b = getBusiness(tenantId, id);
+        if (b.getArchivedAt() == null) {
+            throw new BusinessRuleViolationException("This business is not archived.");
+        }
+        b.setArchivedAt(null);
+        b.setActive(false);
+        return saveBusiness(b);
+    }
+
+    private static void requireNotArchived(PromoBusiness b) {
+        if (b.getArchivedAt() != null) {
+            throw new BusinessRuleViolationException("This business is archived — restore it first.");
+        }
     }
 
     private void applyBusiness(PromoBusiness b, PromoBusinessRequest req) {
@@ -254,10 +307,46 @@ public class PromotionService {
 
     @Transactional(readOnly = true)
     public Page<PromoAd> listAds(UUID tenantId, UUID businessId, Pageable pageable) {
-        if (businessId != null) {
-            return adRepository.findByTenantIdAndBusinessId(tenantId, businessId, pageable);
+        return listAds(tenantId, businessId, null, false, pageable);
+    }
+
+    /** {@code approvalStatus} null = every state (changeset 183). Live (not archived) ads. */
+    @Transactional(readOnly = true)
+    public Page<PromoAd> listAds(UUID tenantId, UUID businessId,
+                                 com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus approvalStatus,
+                                 Pageable pageable) {
+        return listAds(tenantId, businessId, approvalStatus, false, pageable);
+    }
+
+    /**
+     * The admin ad list: optionally one business, optionally one approval state, and
+     * either the live ads ({@code archived} false, the default) or the archived ones
+     * only (addendum B).
+     */
+    @Transactional(readOnly = true)
+    public Page<PromoAd> listAds(UUID tenantId, UUID businessId,
+                                 com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus approvalStatus,
+                                 boolean archived, Pageable pageable) {
+        if (businessId != null && approvalStatus != null) {
+            return archived
+                    ? adRepository.findByTenantIdAndBusinessIdAndApprovalStatusAndArchivedAtIsNotNull(
+                            tenantId, businessId, approvalStatus, pageable)
+                    : adRepository.findByTenantIdAndBusinessIdAndApprovalStatusAndArchivedAtIsNull(
+                            tenantId, businessId, approvalStatus, pageable);
         }
-        return adRepository.findByTenantId(tenantId, pageable);
+        if (businessId != null) {
+            return archived
+                    ? adRepository.findByTenantIdAndBusinessIdAndArchivedAtIsNotNull(tenantId, businessId, pageable)
+                    : adRepository.findByTenantIdAndBusinessIdAndArchivedAtIsNull(tenantId, businessId, pageable);
+        }
+        if (approvalStatus != null) {
+            return archived
+                    ? adRepository.findByTenantIdAndApprovalStatusAndArchivedAtIsNotNull(tenantId, approvalStatus, pageable)
+                    : adRepository.findByTenantIdAndApprovalStatusAndArchivedAtIsNull(tenantId, approvalStatus, pageable);
+        }
+        return archived
+                ? adRepository.findByTenantIdAndArchivedAtIsNotNull(tenantId, pageable)
+                : adRepository.findByTenantIdAndArchivedAtIsNull(tenantId, pageable);
     }
 
     @Transactional(readOnly = true)
@@ -281,6 +370,14 @@ public class PromotionService {
 
     public PromoAd updateAd(UUID tenantId, UUID id, PromoAdRequest req) {
         PromoAd a = getAd(tenantId, id);
+        requireNotArchived(a);
+        // A promoter-written ad shows only where it is targeted AND the promoter is
+        // allowed (PromoAdRepository.findEligible), so "every property" would quietly
+        // show it nowhere. Said here rather than discovered on the renter's phone.
+        if (a.isWrittenByPromoter() && (req.propertyIds() == null || req.propertyIds().isEmpty())) {
+            throw new BusinessRuleViolationException(
+                    "This ad was written by a promoter: choose at least one of the promoter's properties.");
+        }
         // businessId is assigned inside applyAd, after validation — mutating a
         // managed entity before a check that can throw leaves it dirty in the
         // persistence context, which only rollback saves.
@@ -291,18 +388,48 @@ public class PromotionService {
     }
 
     /**
-     * Hard delete only when the ad never ran. Impression and click history is
-     * the entire point of the analytics, and fk_pae_ad RESTRICTs, so an ad
-     * with events is deactivated instead — the same rule deleteBusiness
-     * applies one level up.
+     * Delete always succeeds (addendum B). An ad that never ran is deleted outright;
+     * one with impression or click history ({@code fk_pae_ad} RESTRICTs, and the
+     * history is the analytics) is archived and deactivated instead, its stats still
+     * readable.
      */
-    public void deleteAd(UUID tenantId, UUID id) {
+    public DeleteOutcome deleteAd(UUID tenantId, UUID id) {
         PromoAd ad = getAd(tenantId, id);
-        if (eventRepository.countByAdId(id) > 0) {
-            throw new BusinessRuleViolationException(
-                    "This ad has view history. Deactivate it instead of deleting it.");
+        if (eventRepository.countByAdId(id) == 0) {
+            adRepository.delete(ad);
+            return DeleteOutcome.DELETED;
         }
-        adRepository.delete(ad);
+        if (ad.getArchivedAt() == null) {
+            ad.setArchivedAt(Instant.now());
+        }
+        ad.setActive(false);
+        adRepository.save(ad);
+        return DeleteOutcome.ARCHIVED;
+    }
+
+    /**
+     * Addendum B: an archived ad back in the lists, still inactive (an admin
+     * re-activates it by editing). Its business must not be archived.
+     */
+    public PromoAd restoreAd(UUID tenantId, UUID id) {
+        PromoAd ad = getAd(tenantId, id);
+        if (ad.getArchivedAt() == null) {
+            throw new BusinessRuleViolationException("This ad is not archived.");
+        }
+        PromoBusiness business = getBusiness(tenantId, ad.getBusinessId());
+        if (business.getArchivedAt() != null) {
+            throw new BusinessRuleViolationException("Restore the business first.");
+        }
+        ad.setArchivedAt(null);
+        ad.setActive(false);
+        return adRepository.save(ad);
+    }
+
+    /** Addendum B: an archived ad is read-only until restored (edit, approve, reject). */
+    public static void requireNotArchived(PromoAd ad) {
+        if (ad.getArchivedAt() != null) {
+            throw new BusinessRuleViolationException("This ad is archived — restore it first.");
+        }
     }
 
     @Transactional(readOnly = true)
@@ -358,6 +485,7 @@ public class PromotionService {
 
     private void applyAd(UUID tenantId, PromoAd a, PromoAdRequest req) {
         PromoBusiness business = getBusiness(tenantId, req.businessId());
+        requireNotArchived(business);
         PromoCtaType ctaType = req.ctaType() == null ? PromoCtaType.NONE : req.ctaType();
 
         String titleEn = trimToNull(req.titleEn());
@@ -389,6 +517,8 @@ public class PromotionService {
 
         String ctaUrl = null;
         String couponCode = null;
+        String redirectUrl = null;
+        List<com.datagami.rentaxis.domain.entity.PromoRedirectParam> redirectParams = null;
         switch (ctaType) {
             case WEBSITE -> {
                 String url = trimToNull(req.ctaUrl());
@@ -406,6 +536,20 @@ public class PromotionService {
                 if (couponCode == null) {
                     throw new BusinessRuleViolationException("couponCode is required for a coupon ad");
                 }
+                redirectUrl = trimToNull(req.redirectUrl());
+                if (redirectUrl != null) {
+                    if (redirectUrl.length() > MAX_REDIRECT_URL) {
+                        throw new BusinessRuleViolationException(
+                                "redirectUrl must be at most " + MAX_REDIRECT_URL + " characters");
+                    }
+                    // The same rule as a WEBSITE ctaUrl: the renter app opens it, with
+                    // the renter's own data appended, so https and allowlisted only.
+                    if (!urlValidator.isAllowed(redirectUrl, business.getAllowedDomains())) {
+                        throw new BusinessRuleViolationException(
+                                "redirectUrl must be https and on one of this business's allowed domains");
+                    }
+                }
+                redirectParams = redirectParams(req.redirectParams(), redirectUrl != null);
             }
             case CALL -> {
                 if (trimToNull(business.getPhoneE164()) == null) {
@@ -438,6 +582,9 @@ public class PromotionService {
         // from a previous edit — a coupon ad must not keep a stale URL.
         a.setCtaUrl(ctaUrl);
         a.setCouponCode(couponCode);
+        // Addendum A: like the URL and code above, cleared for every other CTA type.
+        a.setRedirectUrl(redirectUrl);
+        a.setRedirectParams(redirectParams);
         a.setCouponTermsEn(ctaType == PromoCtaType.COUPON ? trimToNull(req.couponTermsEn()) : null);
         a.setCouponTermsAr(ctaType == PromoCtaType.COUPON ? trimToNull(req.couponTermsAr()) : null);
         a.setStartsAt(req.startsAt());
@@ -447,6 +594,65 @@ public class PromotionService {
         if (req.active() != null) {
             a.setActive(req.active());
         }
+    }
+
+    static final int MAX_REDIRECT_URL = 2048;
+    static final int MAX_REDIRECT_PARAMS = 10;
+    static final int MAX_REDIRECT_STATIC_VALUE = 200;
+    private static final Pattern REDIRECT_PARAM_NAME = Pattern.compile("^[A-Za-z0-9_.\\-]{1,40}$");
+
+    /**
+     * A coupon redirect's parameters (plan addendum A), checked and normalised:
+     * at most ten; each name {@code [A-Za-z0-9_.-]{1,40}} and unique within the ad;
+     * a value (trimmed, at most 200) only for STATIC and dropped for every other
+     * source, whose value the feed fills per renter. Parameters with no redirect
+     * link are refused rather than kept dormant. Null or empty means none (null).
+     */
+    private static List<com.datagami.rentaxis.domain.entity.PromoRedirectParam> redirectParams(
+            List<PromoAdRequest.RedirectParam> requested, boolean hasUrl) {
+        if (requested == null || requested.isEmpty()) {
+            return null;
+        }
+        if (!hasUrl) {
+            throw new BusinessRuleViolationException("Redirect parameters need a redirectUrl");
+        }
+        if (requested.size() > MAX_REDIRECT_PARAMS) {
+            throw new BusinessRuleViolationException(
+                    "A redirect link takes at most " + MAX_REDIRECT_PARAMS + " parameters");
+        }
+        List<com.datagami.rentaxis.domain.entity.PromoRedirectParam> out = new ArrayList<>();
+        java.util.Set<String> names = new java.util.HashSet<>();
+        for (PromoAdRequest.RedirectParam p : requested) {
+            if (p == null) {
+                throw new BusinessRuleViolationException("redirectParams must not contain nulls");
+            }
+            String name = p.name() == null ? null : p.name().trim();
+            if (name == null || !REDIRECT_PARAM_NAME.matcher(name).matches()) {
+                throw new BusinessRuleViolationException("Redirect parameter name \""
+                        + (name == null ? "" : name)
+                        + "\" is not valid: use 1-40 letters, digits, '_', '.' or '-'");
+            }
+            if (!names.add(name)) {
+                throw new BusinessRuleViolationException("Redirect parameter \"" + name + "\" is listed twice");
+            }
+            if (p.source() == null) {
+                throw new BusinessRuleViolationException("Redirect parameter \"" + name + "\" needs a source");
+            }
+            String value = null;
+            if (p.source() == com.datagami.rentaxis.domain.entity.enums.PromoRedirectSource.STATIC) {
+                value = trimToNull(p.value());
+                if (value == null) {
+                    throw new BusinessRuleViolationException(
+                            "Redirect parameter \"" + name + "\" is a fixed value: enter it");
+                }
+                if (value.length() > MAX_REDIRECT_STATIC_VALUE) {
+                    throw new BusinessRuleViolationException("Redirect parameter \"" + name
+                            + "\" value must be at most " + MAX_REDIRECT_STATIC_VALUE + " characters");
+                }
+            }
+            out.add(new com.datagami.rentaxis.domain.entity.PromoRedirectParam(name, p.source(), value));
+        }
+        return out;
     }
 
     private static String trimToNull(String s) {

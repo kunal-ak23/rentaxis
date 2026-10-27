@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { PromoImageField } from "./PromoImageField";
 import {
@@ -12,8 +12,15 @@ import {
 
 interface BusinessEditorProps {
     business: PromoBusinessDTO | null;
-    onSave: (body: PromoBusinessRequest) => void;
+    /** Resolves when the save has finished; Save is disabled and a second click ignored until then. */
+    onSave: (body: PromoBusinessRequest) => void | Promise<void>;
     onCancel: () => void;
+    /**
+     * "promoter" is the portal's editor: images go through the promoter's
+     * routes, and editing an existing business says that its live ads go back
+     * for approval (the server does this on every promoter edit).
+     */
+    mode?: "admin" | "promoter";
 }
 
 /**
@@ -40,8 +47,9 @@ const HOSTNAME = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?
 
 const trimOrNull = (s: string): string | null => (s.trim() === "" ? null : s.trim());
 
-export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorProps) {
+export function BusinessEditor({ business, onSave, onCancel, mode = "admin" }: BusinessEditorProps) {
     const t = useTranslations("Promotions");
+    const tp = useTranslations("Promoter");
 
     const [nameEn, setNameEn] = useState(business?.nameEn ?? "");
     const [nameAr, setNameAr] = useState(business?.nameAr ?? "");
@@ -55,6 +63,8 @@ export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorPro
     const [active, setActive] = useState(business?.active ?? true);
     const [error, setError] = useState<string | null>(null);
     const [uploading, setUploading] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const savingRef = useRef(false);
 
     function addDomain() {
         const host = toHost(domainDraft);
@@ -76,14 +86,14 @@ export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorPro
         setDomainDraft("");
     }
 
-    function submit() {
-        if (uploading) return;
+    async function submit() {
+        if (uploading || savingRef.current) return;
         if (trimOrNull(nameEn) === null) {
             setError(t("saveError"));
             return;
         }
         setError(null);
-        onSave({
+        const body: PromoBusinessRequest = {
             nameEn: nameEn.trim(),
             nameAr: trimOrNull(nameAr),
             logoUrl: trimOrNull(logoUrl),
@@ -92,7 +102,15 @@ export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorPro
             whatsappE164: trimOrNull(whatsappE164),
             allowedDomains: domains,
             active,
-        });
+        };
+        savingRef.current = true;
+        setSaving(true);
+        try {
+            await onSave(body);
+        } finally {
+            savingRef.current = false;
+            setSaving(false);
+        }
     }
 
     return (
@@ -117,7 +135,7 @@ export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorPro
                     </select>
                 </label>
                 <PromoImageField label={t("logo")} value={logoUrl} onChange={setLogoUrl}
-                    onBusyChange={setUploading} sizeHint={t("logoSizeHint")} />
+                    onBusyChange={setUploading} sizeHint={t("logoSizeHint")} scope={mode} />
                 <label className="block">
                     <span className="mb-1 block text-sm font-medium">{t("phone")}</span>
                     <input aria-label={t("phone")} placeholder="+971501234567"
@@ -163,8 +181,15 @@ export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorPro
 
             {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
 
+            {mode === "promoter" && business && (
+                <p role="note" data-testid="business-approval-notice"
+                    className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    {tp("businessEditSendsForApproval")}
+                </p>
+            )}
+
             <div className="flex gap-2">
-                <button type="button" onClick={submit} disabled={uploading}
+                <button type="button" onClick={() => void submit()} disabled={uploading || saving}
                     className="rounded-lg bg-gray-900 px-4 py-2 text-white disabled:opacity-40">{t("save")}</button>
                 <button type="button" onClick={onCancel}
                     className="rounded-lg border px-4 py-2">{t("cancel")}</button>

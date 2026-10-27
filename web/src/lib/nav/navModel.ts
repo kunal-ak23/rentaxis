@@ -46,6 +46,8 @@ function section(id: RailId, key: string, tourId: string, match: string[], group
 export const RENTER_HOME = "/dashboard/renter-portal";
 /** Where a security guard's Home goes (and where one landing on /dashboard is sent). */
 export const GUARD_HOME = "/dashboard/gatepass/gate";
+/** Where a promoter's Home goes (and where one landing on /dashboard is sent). */
+export const PROMOTER_HOME = "/dashboard/promoter";
 
 export function buildNav(ctx: NavModelContext): RailSection[] {
     const { role, isEnabled, tenantSlug, booksLive } = ctx;
@@ -77,6 +79,15 @@ export function buildNav(ctx: NavModelContext): RailSection[] {
             pi("today", GUARD_HOME, N("home"), "sidebar-home", true),
             ...(can("canApproveGatePasses")
                 ? [pi("gatepass-approvals", "/dashboard/gatepass/approvals", GP("navApprovals"), "sidebar-gatepass-approvals")] : []),
+        ]))!];
+    }
+
+    // A promoter is an outside advertiser: their web is the promoter portal and
+    // nothing else (notifications, profile and help live in the header for every
+    // role). Every staff endpoint behind the rest of the rail refuses them.
+    if (can("canUsePromoterPortal")) {
+        return [section("home", "home", "sidebar-home", ["/dashboard"], one("main", [
+            pi("my-ads", PROMOTER_HOME, N("myAds"), "sidebar-promoter", true),
         ]))!];
     }
 

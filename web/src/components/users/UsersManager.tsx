@@ -743,6 +743,9 @@ export default function UsersManager({ embedded = false }: { embedded?: boolean 
                                     <select
                                         value={role}
                                         onChange={(e) => setRole(e.target.value)}
+                                        // A promoter's role is fixed: the backend refuses any change to or
+                                        // from PROMOTER (they are invited from Promotions → Promoters).
+                                        disabled={role === "PROMOTER"}
                                         className="w-full border border-border rounded-lg bg-surface text-foreground p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none focus:border-primary transition-all duration-200 font-medium"
                                     >
                                         {roleOptions.map((o) => (

@@ -61,6 +61,14 @@ const GATEPASS_SCREENS: Partial<Record<UserRole, string[]>> = {
 };
 // Role-gated only, like the report (ruling 2026-09-25): the same set with every flag off.
 const GATEPASS_UNFLAGGED = GATEPASS_SCREENS;
+/**
+ * PROMOTER is a new role with no legacy sidebar, so everything it reaches is new:
+ * the promoter portal (plus the header's help, notifications and profile, which
+ * every role has). Nothing else.
+ */
+const NEW_ROLE_SCREENS: Partial<Record<UserRole, string[]>> = {
+    PROMOTER: ["/dashboard/promoter"],
+};
 const kept = (role: UserRole) => (h: string) => !(REMOVED[role] ?? []).includes(h);
 
 const pathOnly = (h: string) => h.split("?")[0];
@@ -86,6 +94,7 @@ describe("RBAC parity — every role reaches exactly what it reached before", ()
         const gained = [...reachable(role)].filter(h => {
             if (before.has(h)) return false;
             if ((GATEPASS_SCREENS[role] ?? []).includes(h)) return false;
+            if ((NEW_ROLE_SCREENS[role] ?? []).includes(h)) return false;
             const why = NEW_DESTINATIONS[h];
             if (why && before.has(canonical(why, role))) return false;
             // A saved view is a filter on a page the role already had (not a hub, where the query IS the page).
@@ -112,6 +121,7 @@ describe("RBAC parity with every feature flag off", () => {
         const gained = [...after].filter(h => {
             if (before.has(h)) return false;
             if ((GATEPASS_UNFLAGGED[role] ?? []).includes(h)) return false;
+            if ((NEW_ROLE_SCREENS[role] ?? []).includes(h)) return false;
             const why = NEW_DESTINATIONS[h];
             if (why && before.has(canonical(why, role))) return false;
             // Same rule as above: a saved view filters a page the role already had (PR 3's Leasing views).

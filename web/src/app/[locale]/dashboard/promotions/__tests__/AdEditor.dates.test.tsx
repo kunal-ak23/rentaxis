@@ -34,7 +34,9 @@ const ad: PromoAdDTO = {
     ctaUrl: null, couponCode: null, couponTermsEn: null, couponTermsAr: null,
     startsAt: '2026-10-04T20:00:00Z', endsAt: '2026-11-04T19:59:59Z',
     priority: 1, placement: 'HOME_AND_OFFERS', active: true, propertyIds: [],
-    impressions: 0, clicks: 0, createdAt: '2026-10-05T08:00:00Z', updatedAt: '2026-10-05T08:00:00Z',
+    impressions: 0, clicks: 0,
+    approvalStatus: 'APPROVED', rejectionReason: null, submittedAt: null, reviewedAt: null, submittedByName: null,
+    createdAt: '2026-10-05T08:00:00Z', updatedAt: '2026-10-05T08:00:00Z',
 }
 
 function renderEditor(locale: 'en' | 'ar', onSave = vi.fn()) {

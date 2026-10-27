@@ -68,6 +68,10 @@ function backendRoutePath(url: string, prefix: string): string | null {
 
 const PROMO_IMAGE_ROUTE = '/api/v1/public/promo-images/'
 const PROXIED_PROMO_IMAGE_PREFIX = '/api/proxy/v1/promotions/images/'
+const PROXIED_PROMOTER_IMAGE_PREFIX = '/api/proxy/v1/promoter/images/'
+
+/** Which authenticated route previews an uploaded promotion image: the admin's or a promoter's. */
+export type PromoImageScope = 'admin' | 'promoter'
 
 /**
  * Where an admin page loads a promotion image from (ux6 item 2). An uploaded
@@ -76,11 +80,17 @@ const PROXIED_PROMO_IMAGE_PREFIX = '/api/proxy/v1/promotions/images/'
  * it through the organisation-scoped admin route instead. An https link to
  * artwork hosted elsewhere is returned untouched.
  */
-export function promoImageSrc(url: string | null | undefined): string {
+export function promoImageSrc(
+  url: string | null | undefined,
+  scope: PromoImageScope = 'admin',
+): string {
   if (!url) return ''
   const path = backendRoutePath(url, PROMO_IMAGE_ROUTE)
   if (path) {
-    return PROXIED_PROMO_IMAGE_PREFIX + path.slice(PROMO_IMAGE_ROUTE.length)
+    // A promoter is refused every /promotions route, so its previews load
+    // through the promoter's own image route (same files, access-checked).
+    const prefix = scope === 'promoter' ? PROXIED_PROMOTER_IMAGE_PREFIX : PROXIED_PROMO_IMAGE_PREFIX
+    return prefix + path.slice(PROMO_IMAGE_ROUTE.length)
   }
   return url
 }

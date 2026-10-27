@@ -62,7 +62,14 @@ public enum EmailEventType {
     MEETING_APPROVED        (TRANSACTIONAL, NONE,       EnumSet.of(USER)),
     MEETING_CANCELLED       (TRANSACTIONAL, NONE,       EnumSet.of(USER)),
     MEETING_COMPLETED       (TRANSACTIONAL, NONE,       EnumSet.of(USER)),
-    MEETING_NO_SHOW         (TRANSACTIONAL, NONE,       EnumSet.of(USER));
+    MEETING_NO_SHOW         (TRANSACTIONAL, NONE,       EnumSet.of(USER)),
+
+    // Promotions (promoter role). Sent as a LegacyNotificationPayload, so rendered by
+    // the legacy_notification template with the in-app English title and text, the
+    // same path MEETING_* takes; PromoterNotificationService publishes them.
+    PROMO_AD_SUBMITTED      (TRANSACTIONAL, NONE,       EnumSet.of(USER)),
+    PROMO_AD_APPROVED       (TRANSACTIONAL, NONE,       EnumSet.of(USER)),
+    PROMO_AD_REJECTED       (TRANSACTIONAL, NONE,       EnumSet.of(USER));
 
     public enum AttachmentPolicy { NONE, PDF, SIGNED_URL }
 

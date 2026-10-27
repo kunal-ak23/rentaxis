@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from "react";
 import type { PromoCtaType } from "@/types/promotion";
-import { promoImageSrc } from "@/lib/assetUrl";
+import { promoImageSrc, type PromoImageScope } from "@/lib/assetUrl";
 
 /** Miftah mobile tokens — see mobile/packages/rentaxis_core/lib/ui/miftah_tokens.dart. */
 const INK = "#12101A";
@@ -58,6 +58,8 @@ export interface AdCardPreviewProps {
     ctaType: PromoCtaType;
     ctaLabel?: string | null;
     rtl?: boolean;
+    /** Which authenticated route previews uploaded images; a promoter's is not the admin's. */
+    imageScope?: PromoImageScope;
 }
 
 /** Matches AdsCarousel's default labels so the preview never over-promises. */
@@ -73,7 +75,7 @@ export function defaultCtaLabel(type: PromoCtaType, rtl: boolean): string {
 
 export function AdCardPreview({
     title, subtitle, businessName, backgroundImageUrl, logoUrl, accentColor,
-    ctaType, ctaLabel, rtl = false,
+    ctaType, ctaLabel, rtl = false, imageScope = "admin",
 }: AdCardPreviewProps) {
     const hasImage = Boolean(backgroundImageUrl);
     // Accepts what Flutter's parseHexColor accepts — only #RRGGBB / #AARRGGBB —
@@ -127,7 +129,7 @@ export function AdCardPreview({
             {hasImage && (
                 <>
                     <img
-                        src={promoImageSrc(backgroundImageUrl)}
+                        src={promoImageSrc(backgroundImageUrl, imageScope)}
                         alt=""
                         className="absolute inset-0 h-full w-full object-cover"
                     />
@@ -176,7 +178,7 @@ export function AdCardPreview({
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                         data-testid="ad-card-logo"
-                        src={promoImageSrc(logoUrl)}
+                        src={promoImageSrc(logoUrl, imageScope)}
                         alt=""
                         className="h-11 w-11 shrink-0 object-contain"
                         style={{ background: SURFACE, borderRadius: 10, padding: 5 }}
