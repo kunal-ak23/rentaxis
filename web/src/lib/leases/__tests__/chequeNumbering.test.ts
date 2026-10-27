@@ -167,6 +167,16 @@ describe("CSV import", () => {
         expect(late.invalidDates).toEqual([2]);
     });
 
+    /** #438 review: a first line naming a draft (a letters-only key, no date yet) is data, reported — never a title. */
+    it("reports a header-less first line that names a draft, even with letters only", () => {
+        const drafts = [{ draftId: "d1", keys: ["VILLA-A", "RC-1"], rows: [c("r1", "2026-12-01")] }];
+        const r = applyChequeCsv("VILLA-A,,\nRC-1,2026-12-01,500002", drafts, {});
+        expect(r.invalidDates).toEqual([1]);
+        expect(r.edits.r1?.chequeNumber).toBe("500002");
+        // A title still is one (S25-02).
+        expect(applyChequeCsv("Tower A cheques\nRC-1,2026-12-01,500003", drafts, {}).invalidDates).toEqual([]);
+    });
+
     it("reads a semicolon file by its first line", () => {
         const drafts = [{ draftId: "d1", keys: ["07-01"], rows: [c("r1", "2028-01-01")] }];
         const r = applyChequeCsv("contract;due_date;cheque_number;bank\n07-01;01/01/2028;900001;Emirates NBD, Dubai", drafts, {});
