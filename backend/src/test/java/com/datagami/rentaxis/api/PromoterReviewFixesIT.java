@@ -202,6 +202,23 @@ class PromoterReviewFixesIT extends AbstractPromoterIT {
                 .contains("already exists");
     }
 
+    // ------------------------------------------------------------------- M3
+
+    @Test
+    void m3_oneBusinessEditIsOneNotificationPerAdmin() {
+        ad(org, wash.getId(), APPROVED, null, p1.getId());
+        ad(org, wash.getId(), APPROVED, null, p1.getId());
+        ad(org, wash.getId(), PENDING, promoter.getId(), p1.getId());
+
+        put(promoter, "/api/v1/promoter/businesses/" + wash.getId(), body("nameEn", "QuickWash m3 " + UUID.randomUUID()));
+
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT message_key, params::text AS params FROM notifications WHERE user_id = ? AND type = 'PROMO_AD_SUBMITTED'",
+                admin.getId());
+        assertThat(rows).hasSize(1);
+        assertThat(String.valueOf(rows.get(0).get("params"))).contains("\"adCount\": \"3\"");
+    }
+
     // -------------------------------------------------------------- helpers
 
     private Map<String, Object> ad(String title) {

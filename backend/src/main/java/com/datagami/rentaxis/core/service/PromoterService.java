@@ -184,9 +184,15 @@ public class PromoterService {
                 .orElseThrow(() -> new NotFoundException("Business not found"));
         PromoBusiness b = withoutNameOracle(() -> promotionService.updateBusiness(caller.tenantId(), businessId, req));
         Instant now = now();
-        for (PromoAd ad : adRepository.findForUpdateByBusinessAndStatusIn(caller.tenantId(), businessId,
-                List.of(PromoApprovalStatus.APPROVED, PromoApprovalStatus.PENDING))) {
-            markSubmitted(ad, caller, now);
+        List<PromoAd> resubmitted = adRepository.findForUpdateByBusinessAndStatusIn(caller.tenantId(), businessId,
+                List.of(PromoApprovalStatus.APPROVED, PromoApprovalStatus.PENDING));
+        for (PromoAd ad : resubmitted) {
+            resubmit(ad, caller, now);
+        }
+        // Review M3: one notice for the edit, naming one of the ads and how many.
+        if (!resubmitted.isEmpty()) {
+            events.publishEvent(new PromoAdSubmittedEvent(caller.tenantId(), resubmitted.get(0).getId(),
+                    caller.userId(), resubmitted.size()));
         }
         return PromoAdDtos.business(b, adRepository.countByBusinessId(businessId), images::forDto);
     }
@@ -376,8 +382,14 @@ public class PromoterService {
         return Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
     }
 
-    /** Back in front of an admin: PENDING, written by this promoter now, the last review cleared. */
+    /** One ad back in front of an admin ({@link #resubmit}), and the admins told about it. */
     private void markSubmitted(PromoAd ad, Caller caller, Instant now) {
+        resubmit(ad, caller, now);
+        events.publishEvent(new PromoAdSubmittedEvent(caller.tenantId(), ad.getId(), caller.userId(), 1));
+    }
+
+    /** Back in front of an admin: PENDING, written by this promoter now, the last review cleared. */
+    private void resubmit(PromoAd ad, Caller caller, Instant now) {
         ad.setApprovalStatus(PromoApprovalStatus.PENDING);
         ad.setPromoterUserId(caller.userId());
         ad.setSubmittedAt(now);
@@ -385,7 +397,6 @@ public class PromoterService {
         ad.setReviewedAt(null);
         ad.setRejectionReason(null);
         adRepository.save(ad);
-        events.publishEvent(new PromoAdSubmittedEvent(caller.tenantId(), ad.getId(), caller.userId()));
     }
 
     /** {@code req} with the admin's ranking: null/null means the defaults (1, HOME_AND_OFFERS). */

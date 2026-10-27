@@ -85,10 +85,15 @@ public class PromoterNotificationService {
         String business = businessName(event.tenantId(), ad);
         String promoterName = userRepository.findByTenantIdAndIdIn(event.tenantId(), List.of(event.promoterUserId()))
                 .stream().findFirst().map(User::getName).orElse("A promoter");
-        String heading = "Ad awaiting approval";
-        String text = promoterName + " sent \"" + title + "\" (" + business + ") for approval.";
+        // Review M3: a business edit is one notice, however many of its ads it resubmits.
+        int count = Math.max(1, event.adCount());
+        String heading = count > 1 ? count + " ads awaiting approval" : "Ad awaiting approval";
+        String text = count > 1
+                ? promoterName + " changed " + business + ", so " + count + " of its ads (including \""
+                        + title + "\") wait for approval."
+                : promoterName + " sent \"" + title + "\" (" + business + ") for approval.";
         NotificationMessage structured = NotificationMessage.of("PROMO_AD_SUBMITTED",
-                "promoterName", promoterName, "adTitle", title, "businessName", business);
+                "promoterName", promoterName, "adTitle", title, "businessName", business, "adCount", count);
         Instant at = ad.getSubmittedAt() != null ? ad.getSubmittedAt() : Instant.now();
 
         List<User> admins = userRepository.findByTenantIdAndRole(event.tenantId(), UserRole.TENANT_ADMIN).stream()
