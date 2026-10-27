@@ -87,6 +87,61 @@ class EmailRendererTest extends AbstractPostgresIT {
         assertThat(ar.html()).contains("<b>مفتاح</b>").doesNotContain("RentAxis");
     }
 
+    /**
+     * 2026-10-27: an invite from "Miftah Sandbox" arrived as "You're invited to Miftah on
+     * Miftah". The subject read a companyName the invite payload never carries and fell back
+     * to the product name, while the body named the organisation from its branding.
+     */
+    private EmailRenderResult invite(Locale locale, TenantBranding branding, String role) {
+        Map<String, Object> vars = new java.util.HashMap<>(
+                com.datagami.rentaxis.core.email.dispatch.PayloadVarsExtractor.extract(
+                        EmailEventType.USER_INVITED,
+                        new com.datagami.rentaxis.core.email.event.payload.UserInvitedPayload(
+                                UUID.randomUUID(), "Mohamed", "/auth/set-password?token=t", "t", role),
+                        "https://app.test", locale.getLanguage()));
+        return renderer.render(new EmailTemplateContext(
+                EmailEventType.USER_INVITED, locale, UUID.randomUUID(), "Mohamed", "promoter@example.test",
+                "https://app.test", branding, null, vars, null));
+    }
+
+    @Test
+    void anInviteSubjectNamesTheOrganisationLikeItsBody() {
+        EmailRenderResult en = invite(Locale.ENGLISH, new TenantBranding("Miftah Sandbox", null), "TENANT_ADMIN");
+        assertThat(en.subject()).isEqualTo("You're invited to Miftah Sandbox on Miftah");
+        assertThat(en.html()).contains("<b>Miftah Sandbox</b>");
+
+        EmailRenderResult ar = invite(new Locale("ar"), new TenantBranding("Miftah Sandbox", null), "TENANT_ADMIN");
+        assertThat(ar.subject()).contains("Miftah Sandbox");
+    }
+
+    @Test
+    void anInviteWithABlankOrganisationNameStillNamesMiftah() {
+        EmailRenderResult en = invite(Locale.ENGLISH, new TenantBranding("  ", null), "TENANT_ADMIN");
+        assertThat(en.subject()).isEqualTo("You're invited to Miftah on Miftah");
+        assertThat(en.html()).contains("<b>Miftah</b>");
+    }
+
+    @Test
+    void aPromoterInviteSaysWhoInvitedThemAndThatAdsAreApproved() {
+        EmailRenderResult en = invite(Locale.ENGLISH, new TenantBranding("Miftah Sandbox", null), "PROMOTER");
+        assertThat(en.subject()).isEqualTo("Miftah Sandbox invited you to advertise on Miftah");
+        assertThat(en.html())
+                .contains("Promote your business on Miftah")
+                .contains("<b>Miftah Sandbox</b> has invited you to promote your business to its tenants on Miftah")
+                .contains("goes live once Miftah Sandbox approves it")
+                .doesNotContain("Welcome to Miftah");
+
+        EmailRenderResult ar = invite(new Locale("ar"), new TenantBranding("Miftah Sandbox", null), "PROMOTER");
+        assertThat(ar.subject()).isEqualTo("Miftah Sandbox يدعوك للإعلان على مفتاح");
+        assertThat(ar.html()).contains("روّج لنشاطك التجاري على مفتاح").contains("<b>Miftah Sandbox</b>");
+    }
+
+    @Test
+    void anOrganisationNameIsEscapedInTheInviteBody() {
+        EmailRenderResult en = invite(Locale.ENGLISH, new TenantBranding("A&B <Props>", null), "PROMOTER");
+        assertThat(en.html()).contains("<b>A&amp;B &lt;Props&gt;</b>").doesNotContain("<Props>");
+    }
+
     /** Break-it R2 re-review N2: a termination that withdrew a renewal awaiting signature says so, EN and AR. */
     @Test
     void leaseTerminatedNamesAWithdrawnRenewalInEnglishAndArabic() {

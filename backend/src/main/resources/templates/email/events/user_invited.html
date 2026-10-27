@@ -1,8 +1,13 @@
 <th:block xmlns:th="http://www.thymeleaf.org" th:replace="~{${layout} :: layout(~{::content})}">
 <th:block th:fragment="content">
-  <h2 th:text="#{email.user_invited.title}" style="margin:0 0 8px;color:#0F172A;font-size:18px;font-weight:600;"></h2>
+  <!-- The organisation as its branding names it (the product name when it has none), escaped
+       because the body is th:utext. A promoter's invite says who invited them and that ads are approved. -->
+  <th:block th:with="org=${tenantBranding != null and !#strings.isEmpty(#strings.trim(tenantBranding.companyName)) ? #strings.trim(tenantBranding.companyName) : #messages.msg('email.brand')},
+                     promoter=${inviteeRole == 'PROMOTER'}">
+  <h2 th:text="${promoter} ? #{email.user_invited.promoter_title} : #{email.user_invited.title}" style="margin:0 0 8px;color:#0F172A;font-size:18px;font-weight:600;"></h2>
   <p th:text="#{email.user_invited.greeting(${recipient.name})}" style="margin:0 0 16px;color:#475569;font-size:14px;line-height:1.6;"></p>
-  <p th:utext="#{email.user_invited.body(${tenantBranding != null ? tenantBranding.companyName : #messages.msg('email.brand')})}" style="margin:0 0 16px;color:#475569;font-size:14px;line-height:1.6;"></p>
+  <p th:utext="${promoter} ? #{email.user_invited.promoter_body(${#strings.escapeXml(org)})} : #{email.user_invited.body(${#strings.escapeXml(org)})}" style="margin:0 0 16px;color:#475569;font-size:14px;line-height:1.6;"></p>
   <table cellpadding="0" cellspacing="0" style="margin:16px 0;"><tr><td><a th:href="${ctaUrl}" th:text="#{email.user_invited.cta}" style="display:inline-block;background:#0F766E;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;"></a></td></tr></table>
+  </th:block>
 </th:block>
 </th:block>
