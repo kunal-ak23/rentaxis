@@ -101,7 +101,7 @@ class EmailPipelineE2ETest extends AbstractPostgresIT {
         tx.executeWithoutResult(s -> publisher.publishEvent(new EmailEvent(this,
                 EmailEventType.USER_INVITED,
                 tenantId,
-                new UserInvitedPayload(userId, "E2E", "https://app.test/set?t=x", "test-token"),
+                new UserInvitedPayload(userId, "E2E", "https://app.test/set?t=x", "test-token", null),
                 "E2E:" + userId)));
 
         List<EmailOutbox> rows = outboxRepo.findAll().stream()

@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.email.render;
 
+import com.datagami.rentaxis.core.email.EmailEventType;
 import com.datagami.rentaxis.core.email.event.payload.LegacyNotificationPayload;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -37,8 +38,17 @@ public class EmailRenderer {
             subject = legacy.title() == null ? ctx.type().name() : legacy.title();
         } else {
             templateName = "email/events/" + ctx.type().snake();
-            String subjectKey = "email." + ctx.type().snake() + ".subject";
+            String subjectKey = isPromoterInvite(ctx)
+                    ? "email.user_invited.promoter_subject"
+                    : "email." + ctx.type().snake() + ".subject";
             Object[] subjectArgs = (Object[]) ctx.payloadVars().getOrDefault("__subjectArgs", new Object[0]);
+            // An invite names the organisation from its branding, as its body does. The
+            // payload carries no companyName, so the extractor's argument was always the
+            // product name: "You're invited to Miftah on Miftah" (2026-10-27).
+            String orgName = organisationName(ctx);
+            if (ctx.type() == EmailEventType.USER_INVITED && orgName != null) {
+                subjectArgs = new Object[]{orgName};
+            }
             try {
                 subject = messageSource.getMessage(subjectKey, subjectArgs, ctx.locale());
             } catch (NoSuchElementException | org.springframework.context.NoSuchMessageException e) {
@@ -77,5 +87,18 @@ public class EmailRenderer {
 
     private String htmlToPlainText(String html) {
         return html.replaceAll("<[^>]+>", " ").replaceAll("\\s+", " ").trim();
+    }
+
+    /** The organisation's branded name, or null when it has none (the product name stands in). */
+    private static String organisationName(EmailTemplateContext ctx) {
+        if (ctx.tenantBranding() == null || ctx.tenantBranding().companyName() == null) return null;
+        String name = ctx.tenantBranding().companyName().trim();
+        return name.isEmpty() ? null : name;
+    }
+
+    /** A promoter's invite, which gets its own subject and copy (UserInvitedPayload.inviteeRole). */
+    private static boolean isPromoterInvite(EmailTemplateContext ctx) {
+        return ctx.type() == EmailEventType.USER_INVITED
+                && "PROMOTER".equals(ctx.payloadVars().get("inviteeRole"));
     }
 }
