@@ -60,7 +60,7 @@ class EmailDispatcherIntegrationTest extends AbstractPostgresIT {
             publisher.publishEvent(new EmailEvent(this,
                     EmailEventType.USER_INVITED,
                     tenantId,
-                    new UserInvitedPayload(userId, "Invitee", "https://app.test/set?t=x", "test-token"),
+                    new UserInvitedPayload(userId, "Invitee", "https://app.test/set?t=x", "test-token", null),
                     "USER_INVITED:user=" + userId));
         });
 
@@ -93,7 +93,7 @@ class EmailDispatcherIntegrationTest extends AbstractPostgresIT {
                 publisher.publishEvent(new EmailEvent(this,
                         EmailEventType.USER_INVITED,
                         tenantId,
-                        new UserInvitedPayload(userId, "Rb", "https://app.test/set?t=x", "test-token"),
+                        new UserInvitedPayload(userId, "Rb", "https://app.test/set?t=x", "test-token", null),
                         "USER_INVITED:user=" + userId + ":rb"));
                 throw new RuntimeException("force rollback");
             });

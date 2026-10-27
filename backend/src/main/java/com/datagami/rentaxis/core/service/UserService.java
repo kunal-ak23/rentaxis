@@ -217,7 +217,8 @@ public class UserService {
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.USER_INVITED,
                 user.getTenantId(),
-                new UserInvitedPayload(user.getId(), user.getName(), setPasswordUrl, user.getInviteToken()),
+                new UserInvitedPayload(user.getId(), user.getName(), setPasswordUrl, user.getInviteToken(),
+                        user.getRole() == null ? null : user.getRole().name()),
                 dedupKey));
     }
 
