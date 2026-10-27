@@ -25,9 +25,11 @@ bool _whiteReadsBetter(Color fill) {
   return 1.05 / (l + 0.05) > (l + 0.05) / (ink + 0.05);
 }
 
-/// The business logo's tile. No taller than the CTA pill, so a card with both
-/// gives its copy no less room than a card with the pill alone.
-const _logoSize = 28.0;
+/// The business logo's tile, in the card's top-end corner level with the
+/// eyebrow, so the brand is the first thing read. The copy beside it gives
+/// up width for it, never height.
+const _logoSize = 44.0;
+const _logoGap = 10.0;
 
 /// The height an [AdCard] occupies at a given text scale. The carousel needs
 /// this before it builds a card, so it lives here rather than inside the
@@ -133,72 +135,86 @@ class AdCard extends StatelessWidget {
               // that still doesn't fit (a scaler past the clamp, a headline in
               // a face taller than any measured here) from throwing
               // "RenderFlex overflowed by N pixels on the bottom".
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final fit = _CopyFit.measure(
-                    context,
-                    available: constraints.maxHeight,
-                    maxWidth: constraints.maxWidth,
-                    eyebrow: eyebrow.isEmpty ? null : eyebrow.toUpperCase(),
-                    eyebrowStyle: eyebrowStyle,
-                    title: ad.title(isAr),
-                    titleStyle: titleStyle,
-                    businessName: wantsBusinessName ? businessName : null,
-                    businessStyle: businessStyle,
-                  );
+              // The logo takes the top-end corner; the copy is measured at the
+              // width left beside it.
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final fit = _CopyFit.measure(
+                          context,
+                          available: constraints.maxHeight,
+                          maxWidth: constraints.maxWidth,
+                          eyebrow: eyebrow.isEmpty ? null : eyebrow.toUpperCase(),
+                          eyebrowStyle: eyebrowStyle,
+                          title: ad.title(isAr),
+                          titleStyle: titleStyle,
+                          businessName: wantsBusinessName ? businessName : null,
+                          businessStyle: businessStyle,
+                        );
 
-                  final lines = <Widget>[
-                    if (fit.showEyebrow)
-                      Text(
-                        eyebrow.toUpperCase(),
-                        // One line, always. The eyebrow is a tracked uppercase
-                        // label; a second line of it is not a label any more,
-                        // and the fixed height cannot promise one on top of the
-                        // headline and the business name.
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: eyebrowStyle,
-                      ),
-                    Text(
-                      ad.title(isAr),
-                      maxLines: fit.titleMaxLines,
-                      overflow: TextOverflow.ellipsis,
-                      style: titleStyle,
-                    ),
-                    if (fit.showBusinessName)
-                      Text(
-                        businessName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: businessStyle,
-                      ),
-                  ];
+                        final lines = <Widget>[
+                          if (fit.showEyebrow)
+                            Text(
+                              eyebrow.toUpperCase(),
+                              // One line, always. The eyebrow is a tracked uppercase
+                              // label; a second line of it is not a label any more,
+                              // and the fixed height cannot promise one on top of the
+                              // headline and the business name.
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: eyebrowStyle,
+                            ),
+                          Text(
+                            ad.title(isAr),
+                            maxLines: fit.titleMaxLines,
+                            overflow: TextOverflow.ellipsis,
+                            style: titleStyle,
+                          ),
+                          if (fit.showBusinessName)
+                            Text(
+                              businessName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: businessStyle,
+                            ),
+                        ];
 
-                  return ClipRect(
-                    child: OverflowBox(
-                      alignment: isAr ? Alignment.topRight : Alignment.topLeft,
-                      minHeight: 0,
-                      maxHeight: double.infinity,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          for (var i = 0; i < lines.length; i++) ...[
-                            if (i > 0) const SizedBox(height: _copyGap),
-                            lines[i],
-                          ],
-                        ],
-                      ),
+                        return ClipRect(
+                          child: OverflowBox(
+                            alignment: isAr ? Alignment.topRight : Alignment.topLeft,
+                            minHeight: 0,
+                            maxHeight: double.infinity,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                for (var i = 0; i < lines.length; i++) ...[
+                                  if (i > 0) const SizedBox(height: _copyGap),
+                                  lines[i],
+                                ],
+                              ],
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                  );
-                },
+                  ),
+                  if (logoUrl != null) ...[
+                    const SizedBox(width: _logoGap),
+                    _BusinessLogo(
+                      key: const Key('ad-card-logo-slot'),
+                      url: logoUrl,
+                      businessName: businessName,
+                    ),
+                  ],
+                ],
               ),
             ),
-            if (ctaLabel.isNotEmpty || logoUrl != null) ...[
+            if (ctaLabel.isNotEmpty) ...[
               const SizedBox(height: 6),
-              // The pill takes the start, the logo the end: the corner the
-              // copy block's start-aligned lines leave free. Bottom-aligned so
-              // the logo keeps that corner when the label wraps.
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -206,40 +222,30 @@ class AdCard extends StatelessWidget {
                   // natural width but is still bounded by the row, so its label
                   // wraps at large text scales instead of overflowing it.
                   Expanded(
-                    child: ctaLabel.isEmpty
-                        ? const SizedBox.shrink()
-                        : Align(
-                            alignment: AlignmentDirectional.centerStart,
-                            child: Container(
-                              key: const Key('ad-card-cta'),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 7),
-                              decoration: BoxDecoration(
-                                color: darkBackdrop
-                                    ? MiftahColors.surface
-                                    : MiftahColors.ink,
-                                borderRadius:
-                                    BorderRadius.circular(MiftahRadii.pill),
-                              ),
-                              child: Text(
-                                isAr ? '← $ctaLabel' : '$ctaLabel →',
-                                style: MiftahType.badge(
-                                  color: darkBackdrop
-                                      ? MiftahColors.ink
-                                      : MiftahColors.surface,
-                                ).copyWith(fontSize: 11),
-                              ),
-                            ),
-                          ),
-                  ),
-                  if (logoUrl != null) ...[
-                    const SizedBox(width: 8),
-                    _BusinessLogo(
-                      key: const Key('ad-card-logo-slot'),
-                      url: logoUrl,
-                      businessName: businessName,
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Container(
+                        key: const Key('ad-card-cta'),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: darkBackdrop
+                              ? MiftahColors.surface
+                              : MiftahColors.ink,
+                          borderRadius:
+                              BorderRadius.circular(MiftahRadii.pill),
+                        ),
+                        child: Text(
+                          isAr ? '← $ctaLabel' : '$ctaLabel →',
+                          style: MiftahType.badge(
+                            color: darkBackdrop
+                                ? MiftahColors.ink
+                                : MiftahColors.surface,
+                          ).copyWith(fontSize: 11),
+                        ),
+                      ),
                     ),
-                  ],
+                  ),
                 ],
               ),
             ],
@@ -280,14 +286,14 @@ class _BusinessLogo extends StatelessWidget {
           key: const Key('ad-card-logo'),
           width: _logoSize,
           height: _logoSize,
-          padding: const EdgeInsets.all(3),
+          padding: const EdgeInsets.all(5),
           decoration: BoxDecoration(
             color: MiftahColors.surface,
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(10),
           ),
           child: Image(image: image, fit: BoxFit.contain),
         ),
-        // Holds the corner while loading, so the pill doesn't shift when the
+        // Holds the corner while loading, so the copy doesn't reflow when the
         // logo lands.
         placeholder: (context, url) =>
             const SizedBox(width: _logoSize, height: _logoSize),

@@ -80,14 +80,18 @@ describe('AdCardPreview business logo', () => {
     const base = { title: 'Half off shawarma', businessName: 'Spice Bazaar' }
     const route = '/api/v1/public/promo-images/0b0f2c1e-1111-4222-8333-944455556666.png'
 
-    it('shows the logo through the admin image route, after the CTA', () => {
+    it('shows the logo through the admin image route, beside the copy and above the CTA', () => {
         render(<AdCardPreview {...base} ctaType="COUPON" logoUrl={route} />)
         const logo = screen.getByTestId('ad-card-logo')
         expect(logo.getAttribute('src'))
             .toBe('/api/proxy/v1/promotions/images/0b0f2c1e-1111-4222-8333-944455556666.png')
-        // DOM order is start → end; dir="rtl" mirrors it, as Flutter's Row does.
-        expect(screen.getByTestId('ad-card-cta').compareDocumentPosition(logo)
+        // Top row, at its end: after the title in DOM order (dir="rtl" mirrors
+        // it, as Flutter's Row does) and before the CTA's own row.
+        expect(screen.getByText('Half off shawarma').compareDocumentPosition(logo)
             & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        expect(logo.compareDocumentPosition(screen.getByTestId('ad-card-cta'))
+            & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        expect(logo.className).toContain('h-11 w-11')
     })
 
     it('shows the logo on a card with no call to action', () => {
