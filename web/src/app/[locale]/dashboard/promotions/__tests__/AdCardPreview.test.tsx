@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
-import { AdCardPreview, toCssColour } from '../_components/AdCardPreview'
+import { AdCardPreview, isDarkAccent, toCssColour } from '../_components/AdCardPreview'
 
 afterEach(() => {
     cleanup()
@@ -101,3 +101,23 @@ describe('AdCardPreview business logo', () => {
         expect(screen.queryByTestId('ad-card-logo')).toBeNull()
     })
 })
+
+describe('AdCardPreview copy colour follows the accent, as on the phone', () => {
+    it('reads a saturated blue as dark and the brass tint as light', () => {
+        expect(isDarkAccent('#2F5FE0')).toBe(true)
+        expect(isDarkAccent('#FF2F5FE0')).toBe(true)
+        expect(isDarkAccent('#FBF3E2')).toBe(false)
+    })
+
+    it('puts white copy and a white pill on a dark accent', () => {
+        render(<AdCardPreview title="20% off" subtitle="Coffee" ctaType="COUPON" accentColor="#2F5FE0" />)
+        expect(screen.getByText('20% off').style.color).toBe('rgb(255, 255, 255)')
+        expect(screen.getByTestId('ad-card-cta').style.background).toBe('rgb(255, 255, 255)')
+    })
+
+    it('keeps ink copy on a light accent', () => {
+        render(<AdCardPreview title="20% off" subtitle="Coffee" ctaType="COUPON" accentColor="#FBF3E2" />)
+        expect(screen.getByText('20% off').style.color).not.toBe('rgb(255, 255, 255)')
+    })
+})
+

@@ -91,6 +91,13 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppColors.navyDark,
+        // The theme's ink title, back arrow and status icons vanish on navy.
+        iconTheme: const IconThemeData(color: Colors.white),
+        titleTextStyle: MiftahType.title(color: Colors.white),
+        systemOverlayStyle: MiftahTheme.systemBars(
+          Brightness.dark,
+          navigationBar: m.surface,
+        ),
         title: Text(l.title),
         actions: [
           if (notifState.unreadCount > 0)

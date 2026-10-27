@@ -682,4 +682,50 @@ void main() {
       }
     }
   });
+
+  group('copy colour follows the accent', () {
+    Color colourOf(WidgetTester tester, String text) =>
+        tester.widget<Text>(find.text(text)).style!.color!;
+
+    testWidgets('a dark accent (saturated blue) gets light copy', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        host(
+          AdCard(
+            ad: testAd(
+              titleEn: 'Twenty percent off',
+              subtitleEn: 'Coffee and juices',
+              accentColor: '#2F5FE0',
+              ctaType: 'COUPON',
+              couponCode: 'MIFTAH25',
+            ),
+            onTap: () {},
+          ),
+        ),
+      );
+
+      expect(colourOf(tester, 'Twenty percent off'), Colors.white);
+      expect(colourOf(tester, 'COFFEE AND JUICES'), MiftahColors.brassPale);
+      expect(colourOf(tester, 'Redeem coupon →'), MiftahColors.ink);
+    });
+
+    testWidgets('a light accent keeps dark copy', (tester) async {
+      await tester.pumpWidget(
+        host(
+          AdCard(
+            ad: testAd(
+              titleEn: 'Twenty percent off',
+              subtitleEn: 'Coffee and juices',
+              accentColor: '#FBF3E2',
+            ),
+            onTap: () {},
+          ),
+        ),
+      );
+
+      expect(colourOf(tester, 'Twenty percent off'), MiftahColors.textPrimary);
+      expect(colourOf(tester, 'COFFEE AND JUICES'), MiftahColors.warning);
+    });
+  });
 }

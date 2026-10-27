@@ -52,7 +52,12 @@ class AdCard extends StatelessWidget {
     // reads as deliberate. The border gives it an edge either way, including
     // when a client picks an accent close to the canvas.
     final fill = ad.accentColor ?? MiftahColors.brassTint;
-    final onFill = hasImage ? Colors.white : MiftahColors.textPrimary;
+    // Light copy on a photo or on a dark accent colour; dark copy otherwise.
+    // An admin picks the accent freely, so a saturated blue gets white text
+    // rather than ink it can't be read on.
+    final darkBackdrop = hasImage ||
+        ThemeData.estimateBrightnessForColor(fill) == Brightness.dark;
+    final onFill = darkBackdrop ? Colors.white : MiftahColors.textPrimary;
     final eyebrow = ad.subtitle(isAr) ?? ad.business.name(isAr);
     final ctaLabel = ad.ctaLabel(isAr);
     final logoUrl = ad.business.logoUrl;
@@ -68,12 +73,15 @@ class AdCard extends StatelessWidget {
     // the Text widgets render with — a style that drifts between the two is a
     // sliced line.
     final eyebrowStyle = MiftahType.sectionLabel(
-      color: hasImage ? MiftahColors.brassPale : MiftahColors.warning,
+      color: darkBackdrop ? MiftahColors.brassPale : MiftahColors.warning,
     );
     final titleStyle =
         MiftahType.cardTitle(color: onFill).copyWith(fontSize: 18, height: 1.1);
     final businessStyle =
-        MiftahType.body(size: 12, color: MiftahColors.textSecondary);
+        MiftahType.body(
+          size: 12,
+          color: darkBackdrop ? Colors.white70 : MiftahColors.textSecondary,
+        );
 
     return InkWell(
       borderRadius: BorderRadius.circular(MiftahRadii.card),
@@ -200,7 +208,7 @@ class AdCard extends StatelessWidget {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 14, vertical: 7),
                               decoration: BoxDecoration(
-                                color: hasImage
+                                color: darkBackdrop
                                     ? MiftahColors.surface
                                     : MiftahColors.ink,
                                 borderRadius:
@@ -209,7 +217,7 @@ class AdCard extends StatelessWidget {
                               child: Text(
                                 isAr ? '← $ctaLabel' : '$ctaLabel →',
                                 style: MiftahType.badge(
-                                  color: hasImage
+                                  color: darkBackdrop
                                       ? MiftahColors.ink
                                       : MiftahColors.surface,
                                 ).copyWith(fontSize: 11),
