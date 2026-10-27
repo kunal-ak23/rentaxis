@@ -420,8 +420,17 @@ public class BankStatementImportService {
         // Review P2-4: StatementMapper trusts boundary rows only when their own dates prove
         // the file's edges (an Opening row dated before the first line's day, a Closing row
         // dated after the last line's day).
+        // #441 ruling A: once the account has shown a back-value (a line taken at a moved balance,
+        // by this import or any before), a file holding a day whole no longer confirms it alone.
+        Boolean seen = jdbc.queryForObject("select back_value_seen from bank_accounts where id = :b and tenant_id = :t",
+                new MapSqlParameterSource("t", t).addValue("b", bankAccountId), Boolean.class);
+        boolean backValueSeen = Boolean.TRUE.equals(seen) || !moved.isEmpty();
+        if (backValueSeen && !Boolean.TRUE.equals(seen)) {
+            jdbc.update("update bank_accounts set back_value_seen = true where id = :b and tenant_id = :t",
+                    new MapSqlParameterSource("t", t).addValue("b", bankAccountId));
+        }
         settleDays(t, bankAccountId, r.rows(), hashes, storedDays, locked, r.openingRow(), r.closingRow(),
-                matched.twinned());
+                matched.twinned(), moved.keySet(), backValueSeen);
         imports.save(imp);
         return result("IMPORTED", null, grid, kind, r, List.of(), warnings, fresh, dup, preview, imp.getId(), detected);
     }
@@ -791,7 +800,7 @@ public class BankStatementImportService {
      */
     private void settleDays(UUID t, UUID bankAccountId, List<StatementMapper.Row> rows, List<String> hashes,
                             Map<LocalDate, List<String>> storedDays, LocalDate locked, boolean openingRow,
-                            boolean closingRow, Set<String> twinned) {
+                            boolean closingRow, Set<String> twinned, Set<String> movedHashes, boolean backValueSeen) {
         TreeMap<LocalDate, List<String>> fileDays = new TreeMap<>();
         for (int i = 0; i < rows.size(); i++) {
             fileDays.computeIfAbsent(rows.get(i).txnDate(), k -> new ArrayList<>()).add(hashes.get(i));
@@ -812,7 +821,8 @@ public class BankStatementImportService {
             // about where its lines sit in the day, and they were de-duplicated by the
             // old rule.
             DayState was = states.getOrDefault(day.getKey(), DayState.UNKNOWN);
-            Settled s = settle(stored, day.getValue(), pos, was, day.getValue().stream().anyMatch(twinned::contains));
+            Settled s = settle(stored, day.getValue(), pos, was, day.getValue().stream().anyMatch(twinned::contains),
+                    distrustWhole(backValueSeen, was, day.getValue().stream().anyMatch(movedHashes::contains)));
             if (s == null) continue;
             // A day inside a finalized reconciliation never takes new lines (refused
             // above); one with nothing new is left alone there too.
@@ -830,8 +840,9 @@ public class BankStatementImportService {
                     new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("d", day.getKey())
                             .addValue("ok", now.confirmed()).addValue("unproven", now.unproven())
                             .addValue("start", now.startKnown()).addValue("end", now.endKnown()));
-            // #441 review: a statement holding the day whole proved every kept look-alike a line of its own.
-            if (now.confirmed()) {
+            // #441 review: a statement holding the day whole proved every kept look-alike a line of its
+            // own — confirmed, or held whole but left to its totals (ruling A: the totals then decide).
+            if (now.confirmed() || (now.startKnown() && now.endKnown())) {
                 jdbc.update("""
                         update bank_statement_lines set lookalike_kept = false
                         where tenant_id = :t and bank_account_id = :b and txn_date = :d and lookalike_kept""",
@@ -967,6 +978,18 @@ public class BankStatementImportService {
      * the day like a line taken for an identical one.
      */
     static Settled settle(List<String> stored, List<String> file, Pos pos, DayState was, boolean twinned) {
+        return settle(stored, file, pos, was, twinned, false);
+    }
+
+    /**
+     * As above; {@code distrustWhole} (#441 ruling, option A): the account has shown a back-value
+     * and either the day is already unproven or this file took a line of it at a moved balance.
+     * A file holding the day whole then fixes its order but does not confirm it — an older
+     * export of the day looks the same as a current one — so the day stays unproven and the
+     * paper's day totals decide.
+     */
+    static Settled settle(List<String> stored, List<String> file, Pos pos, DayState was, boolean twinned,
+                          boolean distrustWhole) {
         Set<String> inStored = new HashSet<>(stored);
         boolean addsLines = file.stream().anyMatch(h -> !inStored.contains(h));
         boolean matched = file.stream().anyMatch(inStored::contains) || twinned;
@@ -978,7 +1001,7 @@ public class BankStatementImportService {
         List<String> before = addsLines ? appended(stored, file) : stored;
         if (covers && pos == Pos.INTERIOR) {
             return new Settled(before, addsLines ? dayOrder(stored, file) : List.copyOf(file), addsLines,
-                    new DayState(true, false, true, true));
+                    distrustWhole ? new DayState(false, true, true, true) : new DayState(true, false, true, true));
         }
         if (!addsLines && sameLinesAgain(stored, file, pos, was)) return null;
         return new Settled(before, addsLines ? dayOrder(stored, file) : stored, addsLines,
@@ -1008,6 +1031,15 @@ public class BankStatementImportService {
     static boolean sameLinesAgain(List<String> stored, List<String> file, Pos pos, DayState was) {
         if (was.unproven() || file.isEmpty() || file.size() > stored.size()) return false;
         return was.endKnown() && pos.endsTheDay() && stored.subList(stored.size() - file.size(), stored.size()).equals(file);
+    }
+
+    /**
+     * #441 ruling, option A: whether a file holding a day whole may not confirm it on its own —
+     * the account has shown a back-value ({@code bank_accounts.back_value_seen}, or this file
+     * takes a line at a moved balance) and the day is unproven, or this file moved one of its lines.
+     */
+    static boolean distrustWhole(boolean backValueSeen, DayState was, boolean dayMoved) {
+        return backValueSeen && (was.unproven() || dayMoved);
     }
 
     /** Stored lines, then the file's new ones in file order: what an import did before #97. */
@@ -1398,7 +1430,21 @@ public class BankStatementImportService {
                 oneSource = Boolean.TRUE.equals(whole);
             }
             if ((lines != null && lines == 0) || oneSource) {
-                jdbc.update("delete from bank_statement_days where tenant_id = :t and bank_account_id = :b and txn_date = :d", p);
+                boolean distrust = lines != null && lines > 0 && Boolean.TRUE.equals(jdbc.queryForObject(
+                        "select back_value_seen from bank_accounts where id = :b and tenant_id = :t", p, Boolean.class))
+                        && Boolean.TRUE.equals(jdbc.queryForObject("""
+                                select exists (select 1 from bank_statement_days where tenant_id = :t and bank_account_id = :b
+                                               and txn_date = :d and merge_unproven)""", p, Boolean.class));
+                if (distrust) {
+                    // #441 ruling A: one import holding the day whole does not confirm it on an account that
+                    // back-values; the day is left to its paper totals.
+                    jdbc.update("""
+                            update bank_statement_days set order_confirmed = false, merge_unproven = true, start_known = true,
+                                   end_known = true, updated_at = now()
+                            where tenant_id = :t and bank_account_id = :b and txn_date = :d""", p);
+                } else {
+                    jdbc.update("delete from bank_statement_days where tenant_id = :t and bank_account_id = :b and txn_date = :d", p);
+                }
                 jdbc.update("""
                         update bank_statement_lines set lookalike_kept = false
                         where tenant_id = :t and bank_account_id = :b and txn_date = :d and lookalike_kept""", p);

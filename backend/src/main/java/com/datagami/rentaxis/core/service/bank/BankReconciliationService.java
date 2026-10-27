@@ -777,6 +777,22 @@ public class BankReconciliationService {
         private final LocalDate openingDay;
         /** Sim r22 S22-04: set when a named statement starts inside the finalized period. */
         private LocalDate reopenThrough;
+        /** #441 ruling A: the account has shown a back-value ({@code bank_accounts.back_value_seen}). */
+        private boolean backValues;
+
+        Remedy backValues(boolean seen) {
+            this.backValues = seen;
+            return this;
+        }
+
+        boolean backValues() {
+            return backValues;
+        }
+
+        /** #441 ruling A: what a whole-day statement no longer does alone on such an account. */
+        static final String BACK_VALUES = "the bank has back-valued lines on this account (a running balance has moved), "
+                + "so a statement holding a day whole no longer settles an unproven day by itself — an older download "
+                + "would look the same";
 
         Remedy(TreeSet<LocalDate> complete, LocalDate locked) {
             this(complete, locked, List.of());
@@ -873,6 +889,15 @@ public class BankReconciliationService {
         }
 
         /** "; or import one statement that runs from … to …", or how to settle it when none can be named. */
+        /** As {@link #orImport}, for unproven days: on an account that back-values, only their totals settle them. */
+        String orImportUnproven(LocalDate first, LocalDate last) {
+            if (this != NONE && backValues) {
+                return " (" + BACK_VALUES + ": type " + (first.equals(last) ? first.format(DMY) + "'s" : "those days'")
+                        + " totals)";
+            }
+            return orImport(first, last);
+        }
+
         String orImport(LocalDate first, LocalDate last) {
             if (this == NONE) return "";
             Optional<LocalDate[]> s = span(first, last);
@@ -933,9 +958,11 @@ public class BankReconciliationService {
          * front of an identical one there, S25-P1), so that day is left to settle by its paper
          * totals — the one day the statement leaves, said as it is.
          */
-        private static String endDay(LocalDate z) {
+        private String endDay(LocalDate z) {
             return "; it leaves only " + z.format(DMY) + ", the day it ends on, to settle: type that day's total debits"
-                    + " and total credits from the paper statement";
+                    + " and total credits from the paper statement"
+                    + (backValues ? " (" + BACK_VALUES + ": every day it holds whole on which it moves a balance is then "
+                            + "left to its totals too, and the check names each)" : "");
         }
     }
 
@@ -982,7 +1009,9 @@ public class BankReconciliationService {
         LocalDate openingDay = jdbc.queryForObject("""
                 select max(txn_date) from bank_statement_lines where tenant_id = :t and bank_account_id = :b
                 and txn_date < :from""", p.addValue("from", from), LocalDate.class);
-        return new Remedy(complete, locked, spans, openingDay);
+        Boolean seen = jdbc.queryForObject("select back_value_seen from bank_accounts where id = :b and tenant_id = :t", p,
+                Boolean.class);
+        return new Remedy(complete, locked, spans, openingDay).backValues(Boolean.TRUE.equals(seen));
     }
 
     private static String dayList(Collection<LocalDate> days) {
@@ -1020,7 +1049,7 @@ public class BankReconciliationService {
                     + "did not hold the whole day, so it may have been a second, separate line (a fee charged twice, say). "
                     + "A typed closing balance cannot settle this. Type " + (needed.size() == 1 ? "that day's" : "each day's")
                     + " total debits and total credits from the paper statement"
-                    + remedy.orImport(needed.get(0), needed.get(needed.size() - 1)) + "." + AVOID));
+                    + remedy.orImportUnproven(needed.get(0), needed.get(needed.size() - 1)) + "." + AVOID));
         }
         // Review P3-20: only once every unproven day's totals are typed, and only the
         // overall result — no per-day verdict to probe the stored totals with.
@@ -1032,7 +1061,7 @@ public class BankReconciliationService {
                     + "missing" + copied.map(d -> ", or on " + d.format(DMY) + " a line an import kept is a copy of one "
                             + "already imported at another balance").orElse("")
                     + ". Check the figures against the paper statement"
-                    + remedy.orImport(all.get(0), all.get(all.size() - 1))
+                    + remedy.orImportUnproven(all.get(0), all.get(all.size() - 1))
                     + "." + copied.map(d -> " " + copySteps(d, copies.get(d), remedy)).orElse("")));
         }
         // #441 review: totals that agree on a day holding a kept look-alike prove nothing.
@@ -1236,7 +1265,8 @@ public class BankReconciliationService {
                     + "; the copy is removed with an audit record), then type " + d.format(DMY)
                     + "'s total debits and total credits from the paper statement. If it is an older download, import a "
                     + "statement that holds " + d.format(DMY) + " whole, " + fresh + ", instead: it holds the kept line if "
-                    + "that is a separate line, and settles the day.";
+                    + "that is a separate line, and settles the day" + (remedy.backValues() ? " with its totals, typed" : "")
+                    + ".";
         }
         if (k.whole() != null && !k.others().isEmpty()) {
             return "On " + d.format(DMY) + " an import kept a line beside one already imported with the same amount and "
@@ -1248,7 +1278,9 @@ public class BankReconciliationService {
                             + (k.othersBooked().size() == 1 ? "y" : "ies") + " the booking created (only those imports hold "
                             + (k.othersBooked().size() == 1 ? "it" : "them") + "); then ")
                     + "delete " + String.join(", ", k.others()) + " (" + k.whole() + " keeps every line it holds, with its "
-                    + "matches; the lines it left out go, each with an audit record), then the day is settled. If it is an "
+                    + "matches; the lines it left out go, each with an audit record), then "
+                    + (remedy.backValues() ? "type " + d.format(DMY) + "'s total debits and total credits from the paper "
+                            + "statement (" + Remedy.BACK_VALUES + ")" : "the day is settled") + ". If it is an "
                     + "older download, import a statement that holds " + d.format(DMY) + " whole, " + fresh
                     + ", and do the same with that one.";
         }
@@ -1257,8 +1289,9 @@ public class BankReconciliationService {
                 + "so it may be a copy of that line or a separate one, and the paper's totals cannot tell (a copy can stand "
                 + "in for a line missing that day). Import a statement that holds " + d.format(DMY) + " whole, " + fresh
                 + remedy.orImport(d, d).replaceFirst("^; or import", "; for instance")
-                + ". If the kept line is a separate line it holds it and settles the day; if it shows a copy, this check "
-                + "then names the import to delete.";
+                + ". If the kept line is a separate line it holds it and settles the day"
+                + (remedy.backValues() ? " together with the day's totals, typed (" + Remedy.BACK_VALUES + ")" : "")
+                + "; if it shows a copy, this check then names the import to delete.";
     }
 
     /**

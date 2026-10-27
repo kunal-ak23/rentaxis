@@ -16,6 +16,13 @@
 #     it (any line, look-alike or not). Deleting the import that brought such a line removes it
 #     with an audit record even when it has undone match history — the check's "make the day
 #     that statement's alone" step (#441 review r3).
+#   - bank_accounts.back_value_seen (#441 ruling A): true once an import of the account has taken
+#     a line at a moved running balance (the bank back-valued a line). From then on a file holding
+#     a day whole no longer confirms it alone when the day is unproven or the file moved one of
+#     its lines: the paper's day totals decide. Backfilled from the record each such import
+#     already keeps: its warnings name the lines "already imported [that] carry a running balance
+#     the bank has since moved" (#438). Other accounts start false and turn true on the first
+#     moved balance an import sees.
 #   - bank_statement_removed_lines: the audit record of each copy removed — the line as it
 #     was, the matches it had been in (undone; their journal entries stay), who removed it,
 #     when, why, and the import that proved it a copy. Tenant-scoped like the lines.
@@ -34,6 +41,21 @@ databaseChangeLog:
                   constraints: { nullable: false }
               - column: { name: copy_proven_by, type: uuid }
               - column: { name: left_out_by, type: uuid }
+        - addColumn:
+            tableName: bank_accounts
+            columns:
+              - column:
+                  name: back_value_seen
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints: { nullable: false }
+        - sql:
+            comment: Accounts whose imports already took a line at a moved balance (#438's warning)
+            sql: |
+              UPDATE bank_accounts ba SET back_value_seen = true
+               WHERE EXISTS (SELECT 1 FROM bank_statement_imports i
+                              WHERE i.tenant_id = ba.tenant_id AND i.bank_account_id = ba.id
+                                AND i.warnings::text LIKE '%carry a running balance the bank has since moved%')
         - createTable:
             tableName: bank_statement_removed_lines
             columns:
@@ -65,6 +87,7 @@ databaseChangeLog:
               - column: { name: txn_date }
       rollback:
         - dropTable: { tableName: bank_statement_removed_lines }
+        - dropColumn: { tableName: bank_accounts, columnName: back_value_seen }
         - dropColumn: { tableName: bank_statement_lines, columnName: left_out_by }
         - dropColumn: { tableName: bank_statement_lines, columnName: copy_proven_by }
         - dropColumn: { tableName: bank_statement_lines, columnName: lookalike_kept }
