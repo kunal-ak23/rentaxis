@@ -131,6 +131,54 @@ describe("promotion ad notifications (promoter role)", () => {
         expect(bare(a.body)).toBe("عدّل Pat Promoter النشاط التجاري Sparkle Laundry، لذا تنتظر 3 من إعلاناته (منها «Wash and fold») الموافقة.");
     });
 
+    it("gives the Arabic count its own form for every number, not just one and the rest", () => {
+        const at = (n: number) => notificationText(
+            row("PROMO_AD_SUBMITTED", { promoterName: "Pat Promoter", adTitle: "Wash and fold", businessName: "Sparkle Laundry", adCount: String(n) }),
+            arT, "ar");
+        const edit = (tail: string) => `عدّل Pat Promoter النشاط التجاري Sparkle Laundry، ${tail}`;
+
+        // one: a single ad submitted, its own sentence.
+        expect(bare(at(1).title)).toBe("إعلان بانتظار الموافقة");
+        expect(bare(at(1).body)).toBe("أرسل Pat Promoter الإعلان «Wash and fold» (Sparkle Laundry) للموافقة.");
+        // two: the dual.
+        expect(bare(at(2).title)).toBe("إعلانان بانتظار الموافقة");
+        expect(bare(at(2).body)).toBe(edit("لذا ينتظر إعلاناه (ومنهما «Wash and fold») الموافقة."));
+        // few: 3 to 10, a plural noun.
+        for (const n of [3, 10]) {
+            expect(bare(at(n).title), String(n)).toBe(`${n} إعلانات بانتظار الموافقة`);
+            expect(bare(at(n).body), String(n)).toBe(edit(`لذا تنتظر ${n} من إعلاناته (منها «Wash and fold») الموافقة.`));
+        }
+        // many: 11 to 99, a singular accusative noun.
+        for (const n of [11, 25, 99]) {
+            expect(bare(at(n).title), String(n)).toBe(`${n} إعلانًا بانتظار الموافقة`);
+            expect(bare(at(n).body), String(n)).toBe(edit(`لذا ينتظر ${n} إعلانًا من إعلاناته (منها «Wash and fold») الموافقة.`));
+        }
+        // other: 100 and up (CLDR's "other" for Arabic), a singular nominative noun.
+        for (const n of [100, 102]) {
+            expect(bare(at(n).title), String(n)).toBe(`${n} إعلان بانتظار الموافقة`);
+            expect(bare(at(n).body), String(n)).toBe(edit(`لذا ينتظر ${n} إعلان من إعلاناته (منها «Wash and fold») الموافقة.`));
+        }
+        // zero: never sent, but defined like every other Arabic plural in the catalog.
+        expect(bare(at(0).title)).toBe("لا إعلانات بانتظار الموافقة");
+    });
+
+    it("defines every Arabic plural category in the title and the body, as the rest of the catalog does", () => {
+        const m = ar.Notifications.messages.PROMO_AD_SUBMITTED;
+        for (const text of [m.title, m.body]) {
+            for (const category of ["zero", "one", "two", "few", "many", "other"]) {
+                expect(text, category).toMatch(new RegExp(`\\b${category} \\{`));
+            }
+        }
+    });
+
+    it("keeps English to one and other, where English has no more", () => {
+        const a = (n: number) => notificationText(
+            row("PROMO_AD_SUBMITTED", { promoterName: "Pat Promoter", adTitle: "T", businessName: "B", adCount: String(n) }), enT, "en");
+        expect(a(1).title).toBe("Ad awaiting approval");
+        expect(a(2).title).toBe("2 ads awaiting approval");
+        expect(a(11).title).toBe("11 ads awaiting approval");
+    });
+
     it("shows a rejection reason as written, even when it looks like a code", () => {
         // 'OTHER' is a penalty-reason code elsewhere; here it is the admin's own word.
         const odd = row("PROMO_AD_REJECTED", { adTitle: "A", businessName: "B", reason: "OTHER" });

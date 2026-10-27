@@ -72,6 +72,11 @@ describe("promoter copy", () => {
         }
     });
 
+    it("words the removed-promoter pill in both languages", () => {
+        expect(en.Promotions.statusPROMOTER_REMOVED).toBe("Not shown — promoter removed");
+        expect(ar.Promotions.statusPROMOTER_REMOVED).toBe("غير معروض — تمت إزالة المروّج");
+    });
+
     it("labels the role and its nav link in both languages", () => {
         expect(en.Roles.PROMOTER).toBe("Promoter");
         expect(ar.Roles.PROMOTER).toBe("مروّج");
