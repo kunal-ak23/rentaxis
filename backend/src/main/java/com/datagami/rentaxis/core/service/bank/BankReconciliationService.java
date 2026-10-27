@@ -1204,19 +1204,38 @@ public class BankReconciliationService {
             List<UUID> otherIds = new ArrayList<>();
             List<String> others = new ArrayList<>();
             boolean inside = true;
+            boolean later = false;
             for (Map<String, Object> o : jdbc.queryForList("""
-                    select distinct i.id, i.file_name, i.first_date, i.last_date, i.imported_at from bank_statement_lines l
+                    select distinct i.id, i.file_name, i.first_date, i.last_date, i.imported_at,
+                           i.imported_at > (select x.imported_at from bank_statement_imports x where x.id = :w and x.tenant_id = :t)
+                               as after_w
+                    from bank_statement_lines l
                     join bank_statement_line_sources s on s.line_id = l.id and s.tenant_id = l.tenant_id
                     join bank_statement_imports i on i.id = s.import_id and i.tenant_id = s.tenant_id
                     where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date = :d and i.id <> :w
                     order by i.imported_at, i.id""", q)) {
                 LocalDate f = day(o.get("first_date")), z = day(o.get("last_date"));
-                // Deleting it may only drop lines of days the whole statement holds whole.
-                if (!f.isAfter(wf) || !z.isBefore(wl)) inside = false;
+
+                // #441 r5: an import made after the statement cannot be overridden by it (delete would
+                // refuse its lines' history): the check then asks for a newer whole-day export instead.
+                if (Boolean.TRUE.equals(o.get("after_w"))) later = true;
                 otherIds.add((UUID) o.get("id"));
                 others.add(o.get("file_name") + " (" + f.format(DMY) + "–" + z.format(DMY) + ")");
             }
-            if (!inside || otherIds.isEmpty()) continue;
+            if (later || otherIds.isEmpty()) continue;
+            // Deleting them may only drop lines of days the whole statement holds whole: a line only
+            // those imports hold, on any other day, would be lost with them.
+            Integer outside = jdbc.queryForObject("""
+                    select count(*) from bank_statement_lines l
+                    where l.tenant_id = :t and l.bank_account_id = :b
+                      and exists (select 1 from bank_statement_line_sources s where s.line_id = l.id and s.tenant_id = l.tenant_id
+                                    and s.import_id in (:o))
+                      and not exists (select 1 from bank_statement_line_sources s where s.line_id = l.id and s.tenant_id = l.tenant_id
+                                        and s.import_id not in (:o))
+                      and not (l.txn_date > :wf and l.txn_date < :wl)""",
+                    q.addValue("o", otherIds).addValue("wf", wf).addValue("wl", wl), Integer.class);
+            if (outside != null && outside > 0) inside = false;
+            if (!inside) continue;
             // Booked lines only those imports hold: their matches are undone first.
             List<String> othersBooked = new ArrayList<>();
             jdbc.query("""
@@ -1230,7 +1249,7 @@ public class BankReconciliationService {
                                     join bank_matches m on m.id = ml.match_id and m.tenant_id = ml.tenant_id
                                    where ml.statement_line_id = l.id and ml.tenant_id = l.tenant_id and not ml.released
                                      and m.status = 'CONFIRMED')
-                    order by l.txn_date, l.seq""", q.addValue("o", otherIds),
+                    order by l.txn_date, l.seq""", q,
                     rs -> { othersBooked.add(rs.getString("description") + " " + StatementValues.money(rs.getBigDecimal("amount").abs())
                             + " at " + StatementValues.money(rs.getBigDecimal("running_balance")) + " on "
                             + rs.getObject("txn_date", LocalDate.class).format(DMY)); });

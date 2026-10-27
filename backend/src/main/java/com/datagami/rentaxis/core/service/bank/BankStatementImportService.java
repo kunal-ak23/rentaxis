@@ -1334,13 +1334,19 @@ public class BankStatementImportService {
         }
         // #441 review r2: proven copies only this import brought go with it, history or not (their
         // audit record keeps it); none is in a confirmed match (refused above).
-        // #441 r4: a line is left out by a later-held whole day when another import holds its day whole
-        // (its lines run before and after that day) without it; worked out now, against every import.
+        // #441 r4/r5: a line is left out by the whole statement the check names for its day — an
+        // import made after this one, holding lines of that day and the day whole (its lines run
+        // before and after it), that does not hold the line. Worked out now, against that one
+        // statement only; the check told the user this relies on it being exported after this import.
         jdbc.update("""
                 update bank_statement_lines l set copy_proven_by = (
                     select w.id from bank_statement_imports w
                      where w.tenant_id = l.tenant_id and w.bank_account_id = l.bank_account_id and w.id <> :i
+                       and w.imported_at > (select x.imported_at from bank_statement_imports x where x.id = :i and x.tenant_id = :t)
                        and w.first_date < l.txn_date and w.last_date > l.txn_date
+                       and exists (select 1 from bank_statement_line_sources ws
+                                     join bank_statement_lines wl on wl.id = ws.line_id and wl.tenant_id = ws.tenant_id
+                                    where ws.import_id = w.id and ws.tenant_id = w.tenant_id and wl.txn_date = l.txn_date)
                        and not exists (select 1 from bank_statement_line_sources s
                                         where s.line_id = l.id and s.tenant_id = l.tenant_id and s.import_id = w.id)
                      order by w.imported_at desc, w.id limit 1)
@@ -1358,8 +1364,8 @@ public class BankStatementImportService {
                 new MapSqlParameterSource(p.getValues()).addValue("h", copies), LocalDate.class);
         if (!copies.isEmpty()) {
             removeCopies(t, imp.getBankAccountId(), copies, "removed with its import " + imp.getFileName()
-                    + ": a statement holding its day whole showed the day without it (a copy, or a line the bank has since"
-                    + " moved or dropped)");
+                    + " on the user's word that the statement named as proof, imported after it and holding its day whole"
+                    + " without it, is the bank's current one (a copy, or a line the bank has since moved or dropped)");
         }
         Integer history = jdbc.queryForObject("""
                 select count(*) from bank_statement_lines l
