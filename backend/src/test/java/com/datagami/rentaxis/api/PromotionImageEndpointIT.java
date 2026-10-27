@@ -54,6 +54,7 @@ class PromotionImageEndpointIT extends AbstractPostgresIT {
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired UserRepository userRepo;
     @Autowired ObjectMapper json;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private UUID tenantA;
     private UUID tenantB;
@@ -140,6 +141,23 @@ class PromotionImageEndpointIT extends AbstractPostgresIT {
         call(adminA, HttpMethod.PUT, "/api/v1/promotions/ads/" + ad.get("id").asText(), Map.of(
                 "businessId", business.get("id").asText(), "titleEn", "Brunch",
                 "backgroundImageUrl", url, "ctaType", "NONE", "active", false));
+        assertThat(anon(url).getStatusCode().value()).isEqualTo(404);
+    }
+
+    /** Promoter plan: an ad awaiting approval (or rejected) shows nothing to anyone, its artwork included. */
+    @Test
+    void anAdNotApprovedDoesNotMakeItsArtworkPublic() throws Exception {
+        String url = json.readTree(upload(adminA, PNG, "art.png").getBody()).get("url").asText();
+        JsonNode business = json.readTree(call(adminA, HttpMethod.POST, "/api/v1/promotions/businesses",
+                Map.of("nameEn", "Wash " + UUID.randomUUID())).getBody());
+        JsonNode ad = json.readTree(call(adminA, HttpMethod.POST, "/api/v1/promotions/ads", Map.of(
+                "businessId", business.get("id").asText(), "titleEn", "Wash",
+                "backgroundImageUrl", url, "ctaType", "NONE")).getBody());
+        assertThat(anon(url).getStatusCode().value()).isEqualTo(200);
+
+        jdbc.update("UPDATE promo_ads SET approval_status = 'PENDING' WHERE id = ?::uuid", ad.get("id").asText());
+        assertThat(anon(url).getStatusCode().value()).isEqualTo(404);
+        jdbc.update("UPDATE promo_ads SET approval_status = 'REJECTED' WHERE id = ?::uuid", ad.get("id").asText());
         assertThat(anon(url).getStatusCode().value()).isEqualTo(404);
     }
 

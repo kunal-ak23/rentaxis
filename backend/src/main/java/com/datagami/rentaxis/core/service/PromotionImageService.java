@@ -27,7 +27,7 @@ import java.util.regex.Pattern;
  * blob URL, which answers 403 to the renter's phone (bug 26/27).</p>
  *
  * <p>Anyone may load such an image only while something live shows it: an
- * active, unexpired ad of an active business uses it as artwork, or an active
+ * active, unexpired, approved ad of an active business uses it as artwork, or an active
  * business uses it as its logo. Before that (an upload not yet saved, a paused
  * or expired ad) only the organisation's own admins see it, through
  * {@code GET /api/v1/promotions/images/{file}}.</p>
@@ -159,6 +159,8 @@ public class PromotionImageService {
         }
         for (PromoAd ad : ads.findByBackgroundImageUrl(route)) {
             if (!ad.isActive() || (ad.getEndsAt() != null && !ad.getEndsAt().isAfter(now))) continue;
+            // Promoter plan: an ad not approved shows nothing to anyone.
+            if (ad.getApprovalStatus() != com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus.APPROVED) continue;
             boolean businessLive = businesses.findById(ad.getBusinessId())
                     .filter(b -> Objects.equals(b.getTenantId(), ad.getTenantId()))
                     .map(PromoBusiness::isActive)

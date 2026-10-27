@@ -4,6 +4,7 @@ import com.datagami.rentaxis.core.security.AuthTokenService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.PromoAd;
+import com.datagami.rentaxis.domain.entity.PromoAdProperty;
 import com.datagami.rentaxis.domain.entity.PromoBusiness;
 import com.datagami.rentaxis.domain.entity.PromoterAccess;
 import com.datagami.rentaxis.domain.entity.PromoterBusiness;
@@ -12,10 +13,12 @@ import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.Emirate;
+import com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.entity.enums.UserStatus;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import com.datagami.rentaxis.domain.repository.PromoAdPropertyRepository;
 import com.datagami.rentaxis.domain.repository.PromoAdRepository;
 import com.datagami.rentaxis.domain.repository.PromoBusinessRepository;
 import com.datagami.rentaxis.domain.repository.PromoterAccessRepository;
@@ -72,6 +75,7 @@ abstract class AbstractPromoterIT extends AbstractPostgresIT {
     @Autowired LeaseRepository leaseRepo;
     @Autowired PromoBusinessRepository businessRepo;
     @Autowired PromoAdRepository adRepo;
+    @Autowired PromoAdPropertyRepository adPropertyRepo;
     @Autowired PromoterAccessRepository accessRepo;
     @Autowired PromoterBusinessRepository promoterBusinessRepo;
     @Autowired PromoterPropertyRepository promoterPropertyRepo;
@@ -169,6 +173,40 @@ abstract class AbstractPromoterIT extends AbstractPostgresIT {
             TenantContextHolder.clear();
         }
         return p;
+    }
+
+    /** An ad written directly: its approval state, who wrote it (null = admin) and its targeting. */
+    PromoAd ad(UUID tenantId, UUID businessId, PromoApprovalStatus status, UUID promoterUserId, UUID... propertyIds) {
+        TenantContextHolder.setTenantId(tenantId);
+        try {
+            PromoAd a = new PromoAd();
+            a.setTenantId(tenantId);
+            a.setBusinessId(businessId);
+            a.setTitleEn("Offer " + UUID.randomUUID().toString().substring(0, 6));
+            a.setApprovalStatus(status);
+            a.setPromoterUserId(promoterUserId);
+            PromoAd saved = adRepo.save(a);
+            for (UUID p : propertyIds) {
+                PromoAdProperty row = new PromoAdProperty();
+                row.setTenantId(tenantId);
+                row.setAdId(saved.getId());
+                row.setPropertyId(p);
+                adPropertyRepo.save(row);
+            }
+            return saved;
+        } finally {
+            TenantContextHolder.clear();
+        }
+    }
+
+    /** The ad ids the renter's offers screen lists (every placement). */
+    List<String> offerIds(User renter) {
+        Resp res = get(renter, "/api/v1/promotions/offers");
+        if (res.status() != 200) {
+            throw new AssertionError("offers answered " + res.status() + ": " + res.body());
+        }
+        // Top-level ids only: each card also nests its business, which has an id too.
+        return StreamSupport.stream(res.body().spliterator(), false).map(card -> card.get("id").asText()).toList();
     }
 
     PromoAd reload(UUID adId) {

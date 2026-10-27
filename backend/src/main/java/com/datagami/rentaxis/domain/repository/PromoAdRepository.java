@@ -58,11 +58,22 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
      * straight to the client. {@code createdAt} is not unique, so {@code id}
      * breaks ties and keeps paging stable when a seed or bulk import creates
      * several ads in the same instant.
+     *
+     * <p><b>Promoter rules (changeset 183).</b> Only APPROVED ads — nothing a
+     * promoter writes reaches a renter before an admin approves it. And an ad a
+     * promoter wrote ({@code promoterUserId} set) shows only at a property it
+     * targets that is also, right now, in that promoter's {@code promoter_property}
+     * set, matched within this tenant: removing a property from a promoter takes
+     * its ads off that property at once, and "zero targeting rows = every property"
+     * can never apply to a promoter's ad (the EXISTS needs a targeting row).
+     * Every renter-facing read goes through here — home slate, offers, and the
+     * impression/click endpoint, which re-derives its allowed ad ids from it.
      */
     @Query("""
             SELECT a FROM PromoAd a
             WHERE a.tenantId = :tenantId
               AND a.active = true
+              AND a.approvalStatus = com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus.APPROVED
               AND a.placement IN :placements
               AND (a.startsAt IS NULL OR a.startsAt <= :now)
               AND (a.endsAt IS NULL OR a.endsAt > :now)
@@ -71,6 +82,13 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
               AND (NOT EXISTS (SELECT 1 FROM PromoAdProperty p WHERE p.adId = a.id)
                    OR EXISTS (SELECT 1 FROM PromoAdProperty p
                               WHERE p.adId = a.id AND p.propertyId IN :propertyIds))
+              AND (a.promoterUserId IS NULL
+                   OR EXISTS (SELECT 1 FROM PromoAdProperty p, PromoterProperty pp
+                              WHERE p.adId = a.id
+                                AND pp.tenantId = :tenantId
+                                AND pp.userId = a.promoterUserId
+                                AND pp.propertyId = p.propertyId
+                                AND p.propertyId IN :propertyIds))
             ORDER BY a.createdAt ASC, a.id ASC
             """)
     List<PromoAd> findEligible(@Param("tenantId") UUID tenantId,
