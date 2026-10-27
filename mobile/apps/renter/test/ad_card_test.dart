@@ -529,13 +529,18 @@ void main() {
       final load = _logoLoad(ad.business.logoUrl!);
       await tester.pumpWidget(host(AdCard(ad: ad, onTap: () {})));
       final slot = find.byKey(const Key('ad-card-logo-slot'));
-      expect(tester.getSize(slot), const Size(44, 44));
+      // The tile and its 10pt gap to the copy.
+      expect(tester.getSize(slot), const Size(54, 44));
 
       load.completeError(Exception('blob deleted'));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('ad-card-logo')), findsNothing);
       expect(tester.getSize(slot), Size.zero);
+      // The copy gets the whole width back, gap included.
+      final card = tester.getRect(find.byKey(const Key('ad-card-surface')));
+      expect(_copyBlock(tester).clip.width,
+          closeTo(card.width - 2 * _cardInset, 0.5));
     });
 
     testWidgets('names the business for screen readers on a photo card',
@@ -621,15 +626,16 @@ void main() {
         final card = tester.getRect(find.byKey(const Key('ad-card-surface')));
         final slot = tester.getRect(find.byKey(const Key('ad-card-logo-slot')));
         final copy = _copyBlock(tester).clip;
-        expect(slot.size, const Size(44, 44));
+        // The 44pt tile plus its 10pt gap to the copy.
+        expect(slot.size, const Size(54, 44));
         expect(slot.top, closeTo(card.top + _cardInset, 0.5));
         expect(slot.top, closeTo(copy.top, 0.5));
         if (arabic) {
           expect(slot.left, closeTo(card.left + _cardInset, 0.5));
-          expect(copy.left, closeTo(slot.right + 10, 0.5));
+          expect(copy.left, closeTo(slot.right, 0.5));
         } else {
           expect(slot.right, closeTo(card.right - _cardInset, 0.5));
-          expect(copy.right, closeTo(slot.left - 10, 0.5));
+          expect(copy.right, closeTo(slot.left, 0.5));
         }
       });
     }

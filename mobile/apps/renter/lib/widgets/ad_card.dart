@@ -202,14 +202,12 @@ class AdCard extends StatelessWidget {
                       },
                     ),
                   ),
-                  if (logoUrl != null) ...[
-                    const SizedBox(width: _logoGap),
+                  if (logoUrl != null)
                     _BusinessLogo(
                       key: const Key('ad-card-logo-slot'),
                       url: logoUrl,
                       businessName: businessName,
                     ),
-                  ],
                 ],
               ),
             ),
@@ -282,21 +280,26 @@ class _BusinessLogo extends StatelessWidget {
       excludeSemantics: true,
       child: CachedNetworkImage(
         imageUrl: url,
-        imageBuilder: (context, image) => Container(
-          key: const Key('ad-card-logo'),
-          width: _logoSize,
-          height: _logoSize,
-          padding: const EdgeInsets.all(5),
-          decoration: BoxDecoration(
-            color: MiftahColors.surface,
-            borderRadius: BorderRadius.circular(10),
+        // The gap to the copy travels with the tile, so a logo that fails to
+        // load gives the copy back all of its width.
+        imageBuilder: (context, image) => Padding(
+          padding: const EdgeInsetsDirectional.only(start: _logoGap),
+          child: Container(
+            key: const Key('ad-card-logo'),
+            width: _logoSize,
+            height: _logoSize,
+            padding: const EdgeInsets.all(5),
+            decoration: BoxDecoration(
+              color: MiftahColors.surface,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Image(image: image, fit: BoxFit.contain),
           ),
-          child: Image(image: image, fit: BoxFit.contain),
         ),
         // Holds the corner while loading, so the copy doesn't reflow when the
         // logo lands.
         placeholder: (context, url) =>
-            const SizedBox(width: _logoSize, height: _logoSize),
+            const SizedBox(width: _logoGap + _logoSize, height: _logoSize),
         errorWidget: (context, url, error) => const SizedBox.shrink(),
       ),
     );
