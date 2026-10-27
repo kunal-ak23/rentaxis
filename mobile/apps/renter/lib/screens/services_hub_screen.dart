@@ -126,7 +126,7 @@ class ServicesHubScreen extends ConsumerWidget {
       children: [
         Text(
           _L.subtitle(ar),
-          style: ar ? MiftahType.ar(size: 13) : MiftahType.body(),
+          style: ar ? MiftahType.ar(size: 13) : MiftahType.body(color: context.miftah.textSecondary),
         ),
         const SizedBox(height: 18),
         GridView.count(
@@ -181,7 +181,7 @@ class _ServiceTile extends StatelessWidget {
             service.label,
             style: ar
                 ? MiftahType.ar(size: 15, weight: FontWeight.w700)
-                : MiftahType.cardTitle(),
+                : MiftahType.cardTitle(color: context.miftah.textPrimary),
           ),
           const SizedBox(height: 3),
           Text(

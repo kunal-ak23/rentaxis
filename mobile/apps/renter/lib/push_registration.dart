@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -29,7 +30,7 @@ class _PushRegistrationState extends ConsumerState<PushRegistration> {
   @override
   void initState() {
     super.initState();
-    if (!Platform.isAndroid) return;
+    if (!_firebaseReady) return;
     // Widget tests and desktop previews do not initialise a native Firebase
     // app. Keep those surfaces usable; a real Android/iOS session retries
     // registration as soon as Firebase is available.
@@ -40,8 +41,19 @@ class _PushRegistrationState extends ConsumerState<PushRegistration> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncForCurrentUser());
   }
 
+  /// Firebase is started in main() on Android and iOS; anywhere it was not
+  /// (tests, desktop previews, a build without its config file) push is off.
+  bool get _firebaseReady {
+    if (!Platform.isAndroid && !Platform.isIOS) return false;
+    try {
+      return Firebase.apps.isNotEmpty;
+    } catch (_) {
+      return false; // no native Firebase at all (widget tests)
+    }
+  }
+
   Future<void> _syncForCurrentUser() async {
-    if (!Platform.isAndroid) return;
+    if (!_firebaseReady) return;
     try {
       final auth = ref.read(authProvider);
       if (!auth.isAuthenticated || auth.userId == null) {
@@ -58,11 +70,22 @@ class _PushRegistrationState extends ConsumerState<PushRegistration> {
         return;
       }
 
+      // On iOS the FCM token is minted from the APNs token, which arrives a
+      // moment after the permission is granted; asking first fails.
+      if (Platform.isIOS && !await _apnsTokenReady()) return;
       final token = await FirebaseMessaging.instance.getToken();
       if (token != null && token.isNotEmpty) await _register(token);
     } catch (_) {
       // Native Firebase is intentionally absent from widget tests/previews.
     }
+  }
+
+  Future<bool> _apnsTokenReady() async {
+    for (var attempt = 0; attempt < 10; attempt++) {
+      if (await FirebaseMessaging.instance.getAPNSToken() != null) return true;
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+    return false;
   }
 
   Future<void> _register(String token) async {

@@ -334,12 +334,12 @@ class _NoLeaseCard extends StatelessWidget {
             l.noActiveLease,
             style: l.ar
                 ? MiftahType.ar(size: 16, weight: FontWeight.w700)
-                : MiftahType.cardTitle(),
+                : MiftahType.cardTitle(color: context.miftah.textPrimary),
           ),
           const SizedBox(height: 4),
           Text(
             l.noLeaseMessage,
-            style: l.ar ? MiftahType.ar(size: 13) : MiftahType.body(),
+            style: l.ar ? MiftahType.ar(size: 13) : MiftahType.body(color: context.miftah.textSecondary),
           ),
         ],
       ),
@@ -718,10 +718,10 @@ class _QuickAction extends StatelessWidget {
                   ? MiftahType.ar(
                       size: 11,
                       weight: FontWeight.w600,
-                      color: MiftahColors.textPrimary,
+                      color: context.miftah.textPrimary,
                     )
                   : MiftahType.meta(
-                      color: const Color(0xFF3A3448),
+                      color: context.miftah.textSecondary,
                     ).copyWith(fontSize: 11, fontWeight: FontWeight.w600),
             ),
           ),
@@ -820,7 +820,7 @@ class _RecentActivityHeader extends StatelessWidget {
           l.recentActivityTitle,
           style: l.ar
               ? MiftahType.ar(size: 18, weight: FontWeight.w700)
-              : MiftahType.title().copyWith(fontSize: 18),
+              : MiftahType.title(color: context.miftah.textPrimary).copyWith(fontSize: 18),
         ),
         GestureDetector(
           onTap: () => context.go('/payments'),
@@ -947,7 +947,7 @@ class _ActivityRow extends StatelessWidget {
                   spec.title,
                   style: l.ar
                       ? MiftahType.ar(size: 14, weight: FontWeight.w700)
-                      : MiftahType.cardTitle().copyWith(fontSize: 14),
+                      : MiftahType.cardTitle(color: context.miftah.textPrimary).copyWith(fontSize: 14),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -965,7 +965,7 @@ class _ActivityRow extends StatelessWidget {
             style: MiftahType.cardTitle(
               color: status == 'CLEARED'
                   ? MiftahColors.success
-                  : MiftahColors.textPrimary,
+                  : context.miftah.textPrimary,
             ).copyWith(fontSize: 13.5),
           ),
         ],

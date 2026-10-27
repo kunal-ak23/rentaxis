@@ -95,7 +95,7 @@ class _PenaltyList extends ConsumerWidget {
                         children: [
                           Text(
                             _reason(row['reason']?.toString(), ar),
-                            style: MiftahType.cardTitle(),
+                            style: MiftahType.cardTitle(color: context.miftah.textPrimary),
                           ),
                           if (row['propertyName'] != null)
                             Text('${row['propertyName']}'),
@@ -107,7 +107,7 @@ class _PenaltyList extends ConsumerWidget {
                               ((row['amount'] as num?) ?? 0) +
                                   ((row['vatAmount'] as num?) ?? 0),
                             ),
-                            style: MiftahType.amount(size: 26),
+                            style: MiftahType.amount(size: 26, color: context.miftah.textPrimary),
                           ),
                           if (((row['vatAmount'] as num?) ?? 0) > 0)
                             Text(

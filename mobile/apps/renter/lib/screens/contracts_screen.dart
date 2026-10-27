@@ -178,7 +178,7 @@ class _ContractCardState extends ConsumerState<_ContractCard> {
         children: [
           Text(
             '${l['propertyName'] ?? ''} · ${l['unitIdentifier'] ?? ''}',
-            style: MiftahType.cardTitle(),
+            style: MiftahType.cardTitle(color: context.miftah.textPrimary),
           ),
           Text(
             '${ar ? 'العقد' : 'Contract'} ${l['displayContractNumber'] ?? l['contractNumber'] ?? ''}',
