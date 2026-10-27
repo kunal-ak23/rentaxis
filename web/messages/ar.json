@@ -1921,6 +1921,8 @@
     "targeting": "يظهر لـ",
     "targetingAll": "الجميع",
     "targetingSome": "عقارات محددة",
+    "selectAllProperties": "تحديد الكل",
+    "choosePropertyOrAll": "اختر عقارًا واحدًا على الأقل، أو حدّد الكل.",
     "status": "الحالة",
     "statusLIVE": "نشط",
     "statusSCHEDULED": "مجدول",

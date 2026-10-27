@@ -1921,6 +1921,8 @@
     "targeting": "Show to",
     "targetingAll": "Everyone",
     "targetingSome": "Selected properties",
+    "selectAllProperties": "Select all",
+    "choosePropertyOrAll": "Choose at least one property, or select all.",
     "status": "Status",
     "statusLIVE": "Live",
     "statusSCHEDULED": "Scheduled",

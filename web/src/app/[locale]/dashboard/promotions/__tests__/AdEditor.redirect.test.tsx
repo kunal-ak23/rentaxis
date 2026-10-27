@@ -45,7 +45,7 @@ function startCoupon(mode: 'admin' | 'promoter', ad: PromoAdDTO | null = null) {
         type('Title (English)', 'Free dry-clean')
         type('What happens on tap', 'COUPON')
         type('Coupon code', 'SPRING20')
-        if (mode === 'promoter') fireEvent.click(screen.getByLabelText('Palm Tower'))
+        // A promoter's new ad already targets all of their properties ("Select all").
     }
     return onSave
 }

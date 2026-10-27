@@ -152,7 +152,16 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel, mode = 
     const [endsAt, setEndsAt] = useState(gulfDate(ad?.endsAt));
     const [priority, setPriority] = useState(ad?.priority ?? 1);
     const [placement, setPlacement] = useState<PromoPlacement>(ad?.placement ?? "HOME_AND_OFFERS");
+    // "Select all" is where a new ad starts. While it is ticked an admin's ad saves as
+    // no targeting, which the server reads as every property (future ones included),
+    // and a promoter's ad saves as every property they were given, read at save time
+    // so a list that loads after the editor opened is still covered. An existing ad
+    // opens on what it saved.
+    const [targetAll, setTargetAll] = useState(() => ad == null || (!needsProperty && ad.propertyIds.length === 0));
     const [propertyIds, setPropertyIds] = useState<string[]>(ad?.propertyIds ?? []);
+    const allPropertyIds = properties.map(p => p.id);
+    const targetedIds = targetAll ? (needsProperty ? allPropertyIds : []) : propertyIds;
+    const allTicked = targetAll || (allPropertyIds.length > 0 && allPropertyIds.every(id => propertyIds.includes(id)));
     const [active, setActive] = useState(ad?.active ?? true);
     const [previewAr, setPreviewAr] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
@@ -172,7 +181,8 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel, mode = 
     );
 
     // The redirect preview's PROPERTY_NAME sample: the first property picked, else a stand-in.
-    const samplePropertyName = properties.find(p => propertyIds.includes(p.id))?.nameEn ?? "Palm Tower";
+    const samplePropertyName =
+        properties.find(p => targetAll || propertyIds.includes(p.id))?.nameEn ?? "Palm Tower";
 
     function validate(): Record<string, string> {
         const next: Record<string, string> = {};
@@ -224,8 +234,13 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel, mode = 
         }
         // A promoter's ad always targets named properties; with none granted
         // there is nowhere to send it, which is the admin's to fix, not theirs.
-        if (needsProperty && propertyIds.length === 0) {
+        if (needsProperty && targetedIds.length === 0) {
             next.properties = isPromoter && properties.length === 0 ? tp("noPropertiesGranted") : tp("propertyRequired");
+        }
+        // An admin ad with "Select all" cleared and nothing ticked would save as no
+        // targeting, which the server reads as every property: the opposite of intent.
+        if (!needsProperty && !targetAll && propertyIds.length === 0) {
+            next.properties = t("choosePropertyOrAll");
         }
         return next;
     }
@@ -267,7 +282,7 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel, mode = 
             // offset is correct and needs no tz library.
             startsAt: startsAt ? new Date(`${startsAt}T00:00:00${DUBAI_OFFSET}`).toISOString() : null,
             endsAt: endsAt ? new Date(`${endsAt}T23:59:59${DUBAI_OFFSET}`).toISOString() : null,
-            propertyIds,
+            propertyIds: targetedIds,
             active,
         };
         // Priority and placement are the organisation's call. A promoter's body
@@ -470,18 +485,39 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel, mode = 
                             ? tp("propertiesHint")
                             : promoterWritten
                                 ? tp("promoterAdPropertiesHint")
-                                : propertyIds.length === 0 ? t("targetingAll") : t("targetingSome")}
+                                : targetAll ? t("targetingAll") : t("targetingSome")}
                     </p>
+                    {properties.length > 0 && (
+                        <label className="mb-1 flex items-center gap-2 border-b pb-1 text-sm font-medium">
+                            <input
+                                type="checkbox"
+                                checked={allTicked}
+                                onChange={e => {
+                                    setTargetAll(e.target.checked);
+                                    setPropertyIds([]);
+                                }}
+                            />
+                            {t("selectAllProperties")}
+                        </label>
+                    )}
                     <div className="max-h-40 space-y-1 overflow-auto">
                         {properties.map(p => (
                             <label key={p.id} className="flex items-center gap-2 text-sm">
                                 <input
                                     type="checkbox"
-                                    checked={propertyIds.includes(p.id)}
-                                    onChange={e => setPropertyIds(prev =>
-                                        e.target.checked
-                                            ? [...prev, p.id]
-                                            : prev.filter(id => id !== p.id))}
+                                    checked={targetAll || propertyIds.includes(p.id)}
+                                    onChange={e => {
+                                        if (targetAll) {
+                                            // Unticking one under "Select all" keeps the rest.
+                                            setTargetAll(false);
+                                            setPropertyIds(allPropertyIds.filter(id => id !== p.id));
+                                            return;
+                                        }
+                                        setPropertyIds(prev =>
+                                            e.target.checked
+                                                ? [...prev, p.id]
+                                                : prev.filter(id => id !== p.id));
+                                    }}
                                 />
                                 {propertyLabel(p, locale)}
                             </label>

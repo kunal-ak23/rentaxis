@@ -150,13 +150,14 @@ describe('promoter portal', () => {
         // The editor offers the promoter's two properties and nothing from the admin's list.
         const group = screen.getByRole('group', { name: 'Show to' })
         expect(within(group).getAllByRole('checkbox').map(c => c.closest('label')?.textContent))
-            .toEqual(['Palm Tower', 'Marina Heights'])
+            .toEqual([en.Promotions.selectAllProperties, 'Palm Tower', 'Marina Heights'])
         expect(screen.queryByLabelText('Priority')).not.toBeInTheDocument()
         expect(screen.getByTestId('ad-approval-notice')).toBeInTheDocument()
 
         fireEvent.change(screen.getByLabelText('Title (English)'), { target: { value: 'Wash and fold' } })
+        // A new ad starts on "Select all"; cleared, no property is chosen and nothing is sent.
+        fireEvent.click(within(group).getByRole('checkbox', { name: en.Promotions.selectAllProperties }))
         fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-        // No property chosen: nothing is sent.
         expect(await screen.findByText('Choose at least one property.')).toBeInTheDocument()
         expect(api.callsTo('POST', '/promoter/ads')).toHaveLength(0)
 

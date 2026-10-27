@@ -72,6 +72,8 @@ describe('AdEditor in promoter mode', () => {
 
     it('refuses to save an ad that targets no property, and says why', () => {
         const onSave = renderEditor('promoter')
+        // A new ad starts on "Select all"; clearing it leaves no property.
+        fireEvent.click(screen.getByRole('checkbox', { name: en.Promotions.selectAllProperties }))
         fireEvent.change(title(), { target: { value: 'Wash and fold' } })
         fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
@@ -89,6 +91,7 @@ describe('AdEditor in promoter mode', () => {
     it('saves with the chosen properties and without priority or placement', () => {
         const onSave = renderEditor('promoter')
         fireEvent.change(title(), { target: { value: 'Wash and fold' } })
+        fireEvent.click(screen.getByRole('checkbox', { name: en.Promotions.selectAllProperties }))
         fireEvent.click(screen.getByLabelText('Marina Heights'))
         fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
@@ -114,7 +117,7 @@ describe('AdEditor in promoter mode', () => {
         renderEditor('promoter')
         const group = screen.getByRole('group', { name: en.Promotions.targeting })
         expect(within(group).getAllByRole('checkbox').map(c => c.closest('label')?.textContent))
-            .toEqual(['Palm Tower', 'Marina Heights'])
+            .toEqual([en.Promotions.selectAllProperties, 'Palm Tower', 'Marina Heights'])
     })
 
     it('explains when no property has been shared yet, and still blocks the save', () => {
