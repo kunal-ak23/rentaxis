@@ -48,7 +48,8 @@ import java.util.UUID;
  *       ({@code commercialWithoutVat}) for the user to check, not in any box.</li>
  *   <li><b>9</b> standard-rated expenses and recoverable input VAT: every journal
  *       entry dated in the period that moves Input VAT — purchase invoices, supplier
- *       credit notes (negative), bank charges — with the expense it carried.</li>
+ *       credit notes (negative), bank charges — with the net of its standard-rated
+ *       lines.</li>
  *   <li><b>8, 11, 12, 13, 14</b> the totals, due tax, recoverable tax and the net
  *       payable (negative: refundable).</li>
  * </ul>
@@ -421,7 +422,7 @@ public class VatReturnService {
      */
     static final List<String> PURCHASE_DOCS = List.of("PISR", "PCN", "BNK");
 
-    /** Box 9: every purchase document dated in the period that moves Input VAT, with the expense or asset it carried. */
+    /** Box 9: every purchase document dated in the period that moves Input VAT, with the net of its standard-rated lines. */
     private List<Document> inputDocuments(UUID t, LocalDate from, LocalDate to) {
         return inputEntries(t, from, to, true, false);
     }
@@ -436,6 +437,15 @@ public class VatReturnService {
         return inputEntries(t, from, to, true, true);
     }
 
+    /**
+     * The voucher behind an entry is found through the entry it originates from: itself,
+     * or for a reversal the original ({@code PostingService.reverse} sets a reversal's
+     * {@code source_id} to the original journal, not the voucher). Box 9's net is the
+     * voucher's lines at a positive rate — a journal line carries no rate, and a mixed-rate
+     * invoice's 0 % lines are not standard-rated — taken back by a credit note or a
+     * reversal. An entry without a voucher (a bank charge) keeps its expense lines' net:
+     * it moves Input VAT only when the whole charge is standard-rated.
+     */
     private List<Document> inputEntries(UUID t, LocalDate from, LocalDate to, boolean purchases, boolean exemptOnly) {
         List<UUID> vat = inputVatAccounts(t);
         if (vat.isEmpty()) return List.of();
@@ -447,15 +457,22 @@ public class VatReturnService {
                        coalesce(v.invoice_number, e.entry_number) as number,
                        vd.name_en as vendor, vd.name_ar as vendor_ar,
                        sum(case when l.account_id in (:vat) then l.debit - l.credit else 0 end) as vat,
-                       sum(case when l.account_id not in (:vat)
-                                 and (a.account_type = 'EXPENSE'
-                                      or (a.account_type = 'ASSET' and a.account_sub_type in ('FIXED_ASSET', 'OTHER_ASSET')))
-                                then l.debit - l.credit else 0 end) as amount
+                       case when v.id is null
+                            then sum(case when l.account_id not in (:vat)
+                                           and (a.account_type = 'EXPENSE'
+                                                or (a.account_type = 'ASSET' and a.account_sub_type in ('FIXED_ASSET', 'OTHER_ASSET')))
+                                          then l.debit - l.credit else 0 end)
+                            else (select coalesce(sum(vl.amount), 0) from voucher_lines vl
+                                  where vl.voucher_id = v.id and vl.tenant_id = :t and vl.vat_rate > 0)
+                                 * case when v.doc_type = 'PCN' then -1 else 1 end
+                                 * case when e.reversal_of_id is null then 1 else -1 end
+                       end as amount
                 from journal_lines l
                 join journal_entries e on e.id = l.journal_entry_id and e.tenant_id = :t
                 join accounts a on a.id = l.account_id and a.tenant_id = :t
-                left join vouchers v on v.id = e.source_id and v.tenant_id = :t
-                left join vendors vd on vd.id = v.vendor_id
+                join journal_entries src on src.id = coalesce(e.reversal_of_id, e.id) and src.tenant_id = :t
+                left join vouchers v on v.id = src.source_id and src.source_type = 'VOUCHER' and v.tenant_id = :t
+                left join vendors vd on vd.id = v.vendor_id and vd.tenant_id = :t
                 where l.tenant_id = :t and e.entry_date between :from and :to
                   and ((e.doc_type in (:docs)) = :purchases)
                   and exists (select 1 from journal_lines x where x.journal_entry_id = e.id and x.tenant_id = :t
@@ -467,7 +484,8 @@ public class VatReturnService {
                         select 1 from journal_lines x join units u on u.property_id = coalesce(x.property_id, e.property_id)
                         where x.journal_entry_id = e.id and x.tenant_id = :t and x.account_id in (:vat)
                           and coalesce(u.type, 'BHK1') not in (:res)))
-                group by e.id, e.entry_number, e.entry_date, e.doc_type, v.invoice_number, vd.name_en, vd.name_ar
+                group by e.id, e.entry_number, e.entry_date, e.doc_type, e.reversal_of_id,
+                         v.id, v.doc_type, v.invoice_number, vd.name_en, vd.name_ar
                 having sum(case when l.account_id in (:vat) then l.debit - l.credit else 0 end) <> 0
                 order by e.entry_date, e.entry_number
                 """, p, (rs, n) -> new Document(rs.getString("doc_type"), rs.getObject("entry_id", UUID.class),

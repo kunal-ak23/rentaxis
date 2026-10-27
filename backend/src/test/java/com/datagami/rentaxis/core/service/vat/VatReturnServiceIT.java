@@ -107,6 +107,18 @@ class VatReturnServiceIT extends AbstractPostgresIT {
         return id;
     }
 
+    /** A supplier invoice from {@code from}, one AC-service line per {@code serviceLine}. */
+    private VoucherService.VoucherInput pisr(LocalDate date, Vendor from, String number,
+                                             VoucherService.VoucherLineInput... lines) {
+        return new VoucherService.VoucherInput(VoucherType.PISR, date, from.getId(), number, "AC service",
+                null, null, null, null, null, List.of(lines));
+    }
+
+    private VoucherService.VoucherLineInput serviceLine(String amount, String vatRate) {
+        return new VoucherService.VoucherLineInput(accountService.getAccountByCode("D-02-003").getId(), "service",
+                new BigDecimal(amount), new BigDecimal(vatRate), null, null, true);
+    }
+
     private void quarter() {
         // A VAT lease: 120,000 in four instalments; the first tax point, 01/05, declares 1,500 on 30,000.
         fixtures.postedLease(fixtures.unit(), fixtures.renter(), CONTRACT, START, END,
@@ -319,6 +331,93 @@ class VatReturnServiceIT extends AbstractPostgresIT {
         assertThat(service.documents(Q2, "INPUT_OTHER")).singleElement().satisfies(x -> assertThat(x.kind()).isEqualTo("OB"));
         assertThat(r.inputVatOnExempt()).isEqualByComparingTo("50.00");
         assertThat(box(r, "14").vat()).isEqualByComparingTo("-55.00");
+    }
+
+    /**
+     * Box 9 is the net of the standard-rated lines: a supplier invoice of 1,000 at 5 % and
+     * 400 at 0 % declares 1,000 against its 50 of input VAT, not 1,400.
+     */
+    @Test
+    void box9CountsOnlyTheStandardRatedLinesOfAMixedRateInvoice() {
+        vouchers.post(vouchers.createDraft(pisr(LocalDate.of(2026, 5, 20), vendor, "GC-1",
+                serviceLine("1000.00", "5"), serviceLine("400.00", "0"))).getId());
+        VatReturnDTO r = service.get(Q2);
+        assertThat(box(r, "9").amount()).isEqualByComparingTo("1000.00");
+        assertThat(box(r, "9").vat()).isEqualByComparingTo("50.00");
+        assertThat(box(r, "11").amount()).isEqualByComparingTo("1000.00");
+        assertThat(service.documents(Q2, "9")).singleElement()
+                .satisfies(d -> assertThat(d.amount()).isEqualByComparingTo("1000.00"));
+    }
+
+    /** A supplier credit note of 200 at 5 % and 100 at 0 % takes back 200 and its 10 of input VAT. */
+    @Test
+    void aSupplierCreditNoteTakesBackOnlyItsStandardRatedNet() {
+        vouchers.post(vouchers.createDraft(pisr(LocalDate.of(2026, 5, 20), vendor, "GC-1",
+                serviceLine("1000.00", "5"), serviceLine("400.00", "0"))).getId());
+        vouchers.post(vouchers.createDraft(new VoucherService.VoucherInput(VoucherType.PCN, LocalDate.of(2026, 6, 1),
+                vendor.getId(), "CN-1", "Credit note", null, null, null, null, null,
+                List.of(serviceLine("200.00", "5"), serviceLine("100.00", "0")))).getId(), List.of());
+        assertThat(service.documents(Q2, "9")).extracting(d -> d.kind() + " " + d.amount().toPlainString())
+                .containsExactlyInAnyOrder("PISR 1000.00", "PCN -200.00");
+        VatReturnDTO r = service.get(Q2);
+        assertThat(box(r, "9").amount()).isEqualByComparingTo("800.00");
+        assertThat(box(r, "9").vat()).isEqualByComparingTo("40.00");
+    }
+
+    /**
+     * An amended supplier invoice: the reversal of the original (its journal's source is
+     * the original journal, not the voucher) still names the supplier and their invoice
+     * number, and takes back only the standard-rated net the original declared.
+     */
+    @Test
+    void anAmendedInvoiceKeepsItsSupplierAndNumberOnTheReversal() {
+        UUID original = vouchers.createDraft(pisr(LocalDate.of(2026, 5, 20), vendor, "GC-1",
+                serviceLine("1000.00", "5"), serviceLine("400.00", "0"))).getId();
+        vouchers.post(original);
+        vouchers.amend(original, LocalDate.of(2026, 6, 5), "Wrong amount",
+                pisr(LocalDate.of(2026, 6, 5), vendor, "GC-1", serviceLine("800.00", "5")));
+
+        List<VatReturnDTO.Document> docs = service.documents(Q2, "9");
+        assertThat(docs).hasSize(3).allSatisfy(d -> {
+            assertThat(d.number()).isEqualTo("GC-1");
+            assertThat(d.party()).isEqualTo("Gulf Cool LLC");
+        });
+        assertThat(docs).extracting(d -> d.amount().toPlainString() + "/" + d.vat().toPlainString())
+                .containsExactlyInAnyOrder("1000.00/50.00", "-1000.00/-50.00", "800.00/40.00");
+        VatReturnDTO r = service.get(Q2);
+        assertThat(box(r, "9").amount()).isEqualByComparingTo("800.00");
+        assertThat(box(r, "9").vat()).isEqualByComparingTo("40.00");
+    }
+
+    /**
+     * Another organisation with a supplier of the same name: its invoice stays on its own
+     * return, and the vendor join is bound to this organisation — a voucher row pointing at
+     * the other organisation's vendor (a bad import or a hand edit) does not borrow its name.
+     */
+    @Test
+    void anotherOrganisationsSupplierOfTheSameNameStaysOnItsOwnReturn() {
+        UUID mine = fixtures.tenantId();
+        UUID ours = vouchers.createDraft(pisr(LocalDate.of(2026, 5, 20), vendor, "GC-1",
+                serviceLine("1000.00", "5"))).getId();
+        vouchers.post(ours);
+
+        new LeaseTestFixtures(orgRepo, userRepo, renterRepo, unitRepo,
+                propertyService, accountService, propertyAccountService, chargeTypeService).bootstrap();
+        Vendor twin = new Vendor();
+        twin.setNameEn("Gulf Cool LLC");
+        twin.setTrn("100200300400003");
+        twin = vendorService.createVendor(twin);
+        vouchers.post(vouchers.createDraft(pisr(LocalDate.of(2026, 5, 20), twin, "GC-1",
+                serviceLine("5000.00", "5"))).getId());
+        assertThat(box(service.get(Q2), "9").vat()).isEqualByComparingTo("250.00");
+
+        TenantContextHolder.setTenantId(mine);
+        assertThat(box(service.get(Q2), "9").vat()).isEqualByComparingTo("50.00");
+        jdbc.update("update vouchers set vendor_id = ? where id = ?", twin.getId(), ours);
+        assertThat(service.documents(Q2, "9")).singleElement().satisfies(d -> {
+            assertThat(d.number()).isEqualTo("GC-1");
+            assertThat(d.party()).isNull();
+        });
     }
 
     /**
