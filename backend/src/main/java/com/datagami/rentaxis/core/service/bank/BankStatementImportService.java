@@ -766,10 +766,11 @@ public class BankStatementImportService {
      *   <li>The file holds the whole day and every stored line: the day becomes
      *       the file's lines in the file's order, confirmed and complete.</li>
      *   <li>The file adds nothing and its lines are exactly the stored lines at
-     *       the place its position fixes — the day's first lines when the stored
-     *       lines are known to start the day, its last lines when they are known
-     *       to end it, any run of a complete day: the same lines again (a part
-     *       re-import); null, the day is left as it is (S20-03).</li>
+     *       the place its position fixes — the day's last lines when the file and
+     *       the stored lines both run to the day's end, or the day's first line
+     *       alone when both start the day: the same lines again (a part
+     *       re-import); null, the day is left as it is (S20-03, narrowed by
+     *       S25-P1: {@link #sameLinesAgain}).</li>
      *   <li>Otherwise the day is not confirmed. If any of the file's lines was
      *       taken for a stored one, the day is also <em>unproven</em>.</li>
      * </ul>
@@ -812,18 +813,36 @@ public class BankStatementImportService {
                 new DayState(false, was.unproven() || matched, false, false));
     }
 
-    /** S20-03: the file's lines are the stored ones its position pins them to (see {@link #settle}). */
+    /**
+     * S20-03, narrowed by S25-P1: the file's lines are the stored ones its position pins them
+     * to (see {@link #settle}).
+     *
+     * <p>Once the bank can back-value, a line may be added in front of an identical stored
+     * one. The added line carries exactly the balance the stored one had (the stored one moves
+     * on), so an export cut right after it matches the stored lines exactly and brings nothing
+     * new: taking it for the stored line loses it. Only an end the file proves rules that out
+     * for one added line:</p>
+     * <ul>
+     *   <li>the file runs to the end of the day ({@link Pos#endsTheDay}) and its lines are the
+     *       stored day's last ones, stored up to the day's end: a line added in front of one of
+     *       them would be in the file too (a row more than stored), and one added after them
+     *       would carry another balance (two added lines that net to nothing can still
+     *       reproduce those balances exactly — a residue, see the S25-P1 report);</li>
+     *   <li>the file holds the day's start and its only line of the day is the stored first line
+     *       of a day stored from its start (S20-03's last day): only a line put at the very start
+     *       of the day, ahead of an identical first line, looks the same — a residue kept so a
+     *       part re-import across days stays free (see the S25-P1 report).</li>
+     * </ul>
+     * <p>Anything else is unproven: a longer run from the day's start, or any run inside a day
+     * stored whole, may end at such an added line — and the file's bytes are the same either
+     * way, so the line cannot be stored without storing every such re-import twice. The day's
+     * paper totals, or a statement holding the day whole, decide.</p>
+     */
     static boolean sameLinesAgain(List<String> stored, List<String> file, Pos pos, DayState was) {
-        if (was.unproven() || file.size() > stored.size()) return false;
-        if (was.startKnown() && pos.startsTheDay() && stored.subList(0, file.size()).equals(file)) return true;
+        if (was.unproven() || file.isEmpty() || file.size() > stored.size()) return false;
         if (was.endKnown() && pos.endsTheDay()
                 && stored.subList(stored.size() - file.size(), stored.size()).equals(file)) return true;
-        if (was.startKnown() && was.endKnown() && was.confirmed()) {
-            for (int i = 0; i + file.size() <= stored.size(); i++) {
-                if (stored.subList(i, i + file.size()).equals(file)) return true;
-            }
-        }
-        return false;
+        return was.startKnown() && pos.startsTheDay() && file.size() == 1 && stored.get(0).equals(file.get(0));
     }
 
     /** Stored lines, then the file's new ones in file order: what an import did before #97. */

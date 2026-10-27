@@ -1983,7 +1983,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
      * (every later balance moves by −5.00), and two later exports arrive: 10/09 cut right
      * after the new charge, and 11/09 alone. The first one's charge has the narration, amount
      * and balance of the stored one (a re-export of the same lines looks exactly like it), so
-     * it is taken and 10/09 stays settled. The second's FEE D has the stored FEE D's narration
+     * it is taken — and, since S25-P1, 10/09 is unproven rather than left settled (on its own,
+     * {@link #aLineInsertedBeforeAnIdenticalOneOnASettledDayIsStored}). The second's FEE D has the stored FEE D's narration
      * and amount at a moved balance: the import cannot tell a moved line from a new one, so it
      * keeps it (stored, never dropped). Kept silently, that false duplicate balanced the lost
      * charge and a typed closing finalized; now 11/09 is unproven, and the paper's day totals
@@ -2001,12 +2002,11 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 """);
         assertThat(dayRows()).contains("2026-09-10:true:false");
         // After the back-value: 10/09 is CREDIT B 1,020, SMS 1,015 (new), SMS 1,010, FEE C 1,000; 11/09 FEE D 995.
-        // (That the cut export's new SMS charge is taken for the stored one is the known gap S25-P1,
-        // pinned by the disabled test below; here it only sets the stage.)
         importText("""
                 10/09/2026,10/09/2026,CREDIT B,,,10.00,"1,020.00"
                 10/09/2026,10/09/2026,SMS CHARGE,,5.00,,"1,015.00"
                 """);
+        assertThat(dayRows()).as("S25-P1: 10/09 unproven").contains("2026-09-10:false:true");
         BankRecDTOs.ImportResult eleventh = importText("""
                 11/09/2026,11/09/2026,FEE D,,5.00,,995.00
                 """);
@@ -2026,20 +2026,26 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
                 new BigDecimal("995.00"))).id();
         assertThat(check(recs.get(id), "LINE_ORDER").ok()).isFalse();
+        // The paper's totals: 10/09 debits 5 + 5 + 10, credits 10 (the stored lines lack a charge);
+        // 11/09 debits 5 (the stored lines hold FEE D twice).
         BankRecDTOs.Reconciliation r = recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(
+                new BankRecDTOs.DayTotalInput(LocalDate.of(2026, 9, 10), new BigDecimal("20.00"), new BigDecimal("10.00")),
                 new BankRecDTOs.DayTotalInput(LocalDate.of(2026, 9, 11), new BigDecimal("5.00"), BigDecimal.ZERO))));
         assertThat(r.dayTotalsVerdict()).isEqualTo("DISAGREE");
         assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("a line is missing");
     }
 
     /**
-     * Known gap S25-P1 (pre-existing, #438 review): 10/09 is settled; the bank inserts an SMS
-     * charge in front of an identical one, and an export of 10/09 is cut right after it. The
-     * correct outcome is that the inserted charge is stored (or the import refused); today
-     * S20-03's "same lines again" rule takes it for the stored charge and stores nothing.
+     * S25-P1 (#438 review): 10/09 is settled; the bank inserts an SMS charge in front of an
+     * identical one, and an export of 10/09 is cut right after it. S20-03's "same lines again"
+     * rule took the inserted charge for the stored one and left 10/09 settled, so a typed
+     * closing could finalize without it. The cut's rows are byte for byte a re-export of
+     * 10/09's first two lines, so the import cannot store the charge without storing every
+     * such re-export twice (and a false duplicate can balance a line lost elsewhere in the
+     * day's paper totals); instead 10/09 is unproven: no typed closing settles it, and the
+     * statement holding the day whole — what the check names — stores the inserted charge.
      */
     @Test
-    @org.junit.jupiter.api.Disabled("known gap S25-P1: sameLinesAgain drops a line inserted before an identical one on a settled day — follow-up PR")
     void aLineInsertedBeforeAnIdenticalOneOnASettledDayIsStored() {
         jv(AUG_31, marinaBank, "1000.00");
         importText("""
@@ -2049,13 +2055,37 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 10/09/2026,10/09/2026,FEE C,,10.00,,"1,005.00"
                 11/09/2026,11/09/2026,FEE D,,5.00,,"1,000.00"
                 """);
+        assertThat(dayRows()).contains("2026-09-10:true:false");
         BankRecDTOs.ImportResult cut = importText("""
                 10/09/2026,10/09/2026,CREDIT B,,,10.00,"1,020.00"
                 10/09/2026,10/09/2026,SMS CHARGE,,5.00,,"1,015.00"
                 """);
-        assertThat(cut.linesNew()).as("the inserted SMS charge is stored").isEqualTo(1);
+        assertThat(cut.linesNew()).as("the same rows as a re-export of the day's first two lines").isZero();
+        assertThat(dayRows()).as("10/09 unproven, not left settled").contains("2026-09-10:false:true");
+        for (String d : List.of("SMS CHARGE", "FEE C", "FEE D")) book(d, "CHARGE");
+        for (String d : List.of("CREDIT A", "CREDIT B")) book(d, "INTEREST");
+        // The bank's true September after the back-value: opening 1,000.00, closing 995.00; the
+        // lost charge is balanced by a line that never arrived (+5.00), so the typed closing agrees.
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("1000.00"))).id();
+        BankRecDTOs.Reconciliation r = recs.get(id);
+        assertThat(r.unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date).containsExactly(LocalDate.of(2026, 9, 10));
+        assertThat(check(r, "LINE_ORDER").message()).contains("On 10/09/2026").contains("A typed closing balance cannot settle this");
+        assertThatThrownBy(() -> recs.finalizeRec(id)).hasMessageContaining("A typed closing balance cannot settle this");
+        assertThat(reconciledThrough()).isNull();
+
+        // The statement holding 10/09 whole brings the inserted charge in, and settles the day.
+        importText("""
+                09/09/2026,09/09/2026,CREDIT A,,,10.00,"1,010.00"
+                10/09/2026,10/09/2026,CREDIT B,,,10.00,"1,020.00"
+                10/09/2026,10/09/2026,SMS CHARGE,,5.00,,"1,015.00"
+                10/09/2026,10/09/2026,SMS CHARGE,,5.00,,"1,010.00"
+                10/09/2026,10/09/2026,FEE C,,10.00,,"1,000.00"
+                11/09/2026,11/09/2026,FEE D,,5.00,,995.00
+                """);
         assertThat(jdbc.queryForObject("select count(*) from bank_statement_lines where bank_account_id = ? "
-                + "and description = 'SMS CHARGE'", Integer.class, ei.getId())).isEqualTo(2);
+                + "and description = 'SMS CHARGE'", Integer.class, ei.getId())).as("the inserted SMS charge is stored").isEqualTo(2);
+        assertThat(dayRows()).contains("2026-09-10:true:false");
     }
 
     /**
