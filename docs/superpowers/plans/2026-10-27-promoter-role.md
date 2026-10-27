@@ -210,3 +210,57 @@ outside their access → 404 (never 403, no probing).
 3. Review loop (security-focused reviewer on the fence, tenant scoping, feed query;
    general reviewer on web) until no Critical/Important.
 4. PR → merge → deploy (push to main runs deploy.yml) → verify on prod.
+
+## Addendum A — coupon redirect with custom parameters (Kunal, 2026-10-27)
+
+Ruling: for a COUPON ad, **Copy code** copies the code AND then opens a redirect link
+(e.g. QuickWash's app/universal link) with **custom query parameters** whose names the
+admin/promoter chooses and whose values come from our app. The renter confirms what is
+shared before the link opens (only when renter data is in it).
+
+### Ad fields (admin + promoter requests and `PromoAdDTO`)
+- `redirectUrl: string | null` — COUPON ads only (cleared for every other ctaType, like
+  `ctaUrl`/`couponCode` are). https, validated against the business's allowed domains
+  with the same `PromotionUrlValidator` rule as a WEBSITE `ctaUrl`. ≤ 2048 chars.
+- `redirectParams: Array<{ name: string, source: Source, value?: string }>` — ≤ 10
+  entries; `name` matches `^[A-Za-z0-9_.\-]{1,40}$` and is unique within the ad;
+  `value` required (trimmed, ≤ 200) only when `source = "STATIC"`, ignored/cleared
+  otherwise. Params without a `redirectUrl` → 400. Empty list / null = none.
+- `Source` = `COUPON_CODE | RENTER_NAME | RENTER_PHONE | RENTER_EMAIL | PROPERTY_NAME |
+  UNIT_NUMBER | STATIC`.
+- Storage: `promo_ad.redirect_url varchar(2048)`, `promo_ad.redirect_params jsonb`
+  (in changeset 183 — it is not merged anywhere yet).
+- Part of the ad, so a promoter edit of either field → PENDING like any edit, and the
+  admin sees them when approving.
+
+### Renter feed (`PromoAdCardDTO`, `/feed` and `/offers`)
+- `redirectUrl: string | null` — **resolved server-side for the calling renter**:
+  `redirectUrl` + each param appended as `name=value` (URL-encoded, existing query kept).
+  A param whose value is unavailable (no email, no lease) is omitted.
+  `PROPERTY_NAME` / `UNIT_NUMBER` come from the renter's active lease at a property the
+  ad targets (ad targets all → their earliest-starting active lease); English property
+  name; unit number as shown on the lease.
+- `sharedFields: string[]` — the renter-data sources actually present in the resolved
+  URL (subset of RENTER_NAME, RENTER_PHONE, RENTER_EMAIL, PROPERTY_NAME, UNIT_NUMBER),
+  for the consent sheet. COUPON_CODE and STATIC are not renter data.
+- Both null/empty for non-COUPON ads and coupon ads without a redirect.
+
+### Renter app (Flutter, `mobile/apps/renter/lib/widgets/coupon_sheet.dart`,
+`mobile/packages/rentaxis_core/lib/models/promo_ad.dart`)
+- Model gains `redirectUrl` and `sharedFields` (tolerant of their absence — old
+  backends).
+- Copy code: copy to clipboard as today; then if `redirectUrl` is set → if
+  `sharedFields` non-empty show a confirm sheet "Open {business}? {business} will
+  receive your: Name, Phone, …" (EN/AR) with Cancel / Continue; Continue (or no shared
+  fields) → re-check the URL is https with no userinfo, then launch it with
+  `LaunchMode.externalApplication` so a universal link opens the business's app.
+  Cancel leaves the code copied and does nothing else. Record the click as the existing
+  CTA click does.
+- Ships with the next renter app release (not the server deploy). Old app builds ignore
+  the new fields and keep plain copy behaviour.
+
+### Web editor
+- Coupon section of `AdEditor` (both admin and promoter modes): "After copying, open
+  this link (optional)" URL input + parameter rows (name input, source select, value
+  input shown only for STATIC; add/remove; max 10) + a live example URL using sample
+  values. Admin ad list/approval view shows the redirect URL and parameter names.
