@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { PromoImageField } from "./PromoImageField";
 import {
@@ -12,7 +12,8 @@ import {
 
 interface BusinessEditorProps {
     business: PromoBusinessDTO | null;
-    onSave: (body: PromoBusinessRequest) => void;
+    /** Resolves when the save has finished; Save is disabled and a second click ignored until then. */
+    onSave: (body: PromoBusinessRequest) => void | Promise<void>;
     onCancel: () => void;
     /**
      * "promoter" is the portal's editor: images go through the promoter's
@@ -62,6 +63,8 @@ export function BusinessEditor({ business, onSave, onCancel, mode = "admin" }: B
     const [active, setActive] = useState(business?.active ?? true);
     const [error, setError] = useState<string | null>(null);
     const [uploading, setUploading] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const savingRef = useRef(false);
 
     function addDomain() {
         const host = toHost(domainDraft);
@@ -83,14 +86,14 @@ export function BusinessEditor({ business, onSave, onCancel, mode = "admin" }: B
         setDomainDraft("");
     }
 
-    function submit() {
-        if (uploading) return;
+    async function submit() {
+        if (uploading || savingRef.current) return;
         if (trimOrNull(nameEn) === null) {
             setError(t("saveError"));
             return;
         }
         setError(null);
-        onSave({
+        const body: PromoBusinessRequest = {
             nameEn: nameEn.trim(),
             nameAr: trimOrNull(nameAr),
             logoUrl: trimOrNull(logoUrl),
@@ -99,7 +102,15 @@ export function BusinessEditor({ business, onSave, onCancel, mode = "admin" }: B
             whatsappE164: trimOrNull(whatsappE164),
             allowedDomains: domains,
             active,
-        });
+        };
+        savingRef.current = true;
+        setSaving(true);
+        try {
+            await onSave(body);
+        } finally {
+            savingRef.current = false;
+            setSaving(false);
+        }
     }
 
     return (
@@ -178,7 +189,7 @@ export function BusinessEditor({ business, onSave, onCancel, mode = "admin" }: B
             )}
 
             <div className="flex gap-2">
-                <button type="button" onClick={submit} disabled={uploading}
+                <button type="button" onClick={() => void submit()} disabled={uploading || saving}
                     className="rounded-lg bg-gray-900 px-4 py-2 text-white disabled:opacity-40">{t("save")}</button>
                 <button type="button" onClick={onCancel}
                     className="rounded-lg border px-4 py-2">{t("cancel")}</button>

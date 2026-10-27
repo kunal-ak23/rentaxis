@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { NextIntlClientProvider } from 'next-intl'
 import en from '../../../../../../messages/en.json'
 import ar from '../../../../../../messages/ar.json'
@@ -364,3 +364,115 @@ describe('promoter portal — delete', () => {
     })
 })
 
+/** Review round 1 (I3): a double-click on Save used to create the ad twice and email the administrators twice. */
+describe('promoter portal — a double-click on Save', () => {
+    const clickTwiceInOneTick = () => act(() => {
+        const button = screen.getByRole('button', { name: 'Save' })
+        button.click()
+        button.click()
+    })
+
+    it('creates the ad once', async () => {
+        plan()
+        api.on('POST', `${PROMOTER_API}ads`, { status: 201, body: ad('new', { approvalStatus: 'PENDING' }) })
+        renderPortal()
+        await screen.findByText('Ad live')
+        fireEvent.click(screen.getByRole('button', { name: 'Add ad' }))
+        fireEvent.change(screen.getByLabelText('Title (English)'), { target: { value: 'Wash and fold' } })
+        fireEvent.click(screen.getByLabelText('Palm Tower'))
+
+        clickTwiceInOneTick()
+
+        expect(await screen.findByRole('status')).toHaveTextContent('waiting for an administrator\'s approval')
+        expect(api.callsTo('POST', `${PROMOTER_API}ads`)).toHaveLength(1)
+    })
+
+    it('saves an edited ad once', async () => {
+        plan()
+        api.on('PUT', `${PROMOTER_API}ads/live`, { body: ad('live', { approvalStatus: 'PENDING' }) })
+        renderPortal()
+        await screen.findByText('Ad live')
+        fireEvent.click(within(rowOf('Ad live')).getByRole('button', { name: 'Edit' }))
+        clickTwiceInOneTick()
+        await screen.findByRole('status')
+        expect(api.callsTo('PUT', `${PROMOTER_API}ads/live`)).toHaveLength(1)
+    })
+
+    it('creates the business once', async () => {
+        plan({ canCreate: true })
+        api.on('POST', `${PROMOTER_API}businesses`, { status: 201, body: business({ id: 'b-2' }) })
+        renderPortal()
+        await screen.findByText('Ad live')
+        fireEvent.click(screen.getByRole('tab', { name: 'Businesses' }))
+        fireEvent.click(await screen.findByRole('button', { name: 'Add business' }))
+        fireEvent.change(screen.getByLabelText('Name (English)'), { target: { value: 'Shine Car Wash' } })
+
+        clickTwiceInOneTick()
+
+        expect(await screen.findByRole('status')).toHaveTextContent(en.Promoter.businessSaved)
+        expect(api.callsTo('POST', `${PROMOTER_API}businesses`)).toHaveLength(1)
+    })
+})
+
+/** Makes every write wait for `release()`, and records the writes that were started. */
+function slowWrites() {
+    const inner = global.fetch as typeof fetch
+    let release!: () => void
+    const gate = new Promise<void>(r => { release = r })
+    const started: string[] = []
+    global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const method = (init?.method ?? 'GET').toUpperCase()
+        if (method === 'POST' || method === 'PUT') {
+            started.push(`${method} ${String(input)}`)
+            await gate
+        }
+        return inner(input, init)
+    }) as unknown as typeof fetch
+    return { release, started }
+}
+const nextMacrotask = () => new Promise<void>(r => setTimeout(r, 0))
+
+describe('promoter portal — a second click while the server is still answering', () => {
+    it('sends one ad write, however long the first takes', async () => {
+        plan()
+        api.on('POST', `${PROMOTER_API}ads`, { status: 201, body: ad('new', { approvalStatus: 'PENDING' }) })
+        renderPortal()
+        await screen.findByText('Ad live')
+        fireEvent.click(screen.getByRole('button', { name: 'Add ad' }))
+        fireEvent.change(screen.getByLabelText('Title (English)'), { target: { value: 'Wash and fold' } })
+        fireEvent.click(screen.getByLabelText('Palm Tower'))
+        const { release, started } = slowWrites()
+
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+        await act(async () => { await nextMacrotask() })
+        expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+        await act(async () => { await nextMacrotask() })
+        expect(started).toHaveLength(1)
+
+        await act(async () => { release() })
+        expect(await screen.findByRole('status')).toHaveTextContent('waiting for an administrator\'s approval')
+        expect(started).toHaveLength(1)
+    })
+
+    it('sends one business write, however long the first takes', async () => {
+        plan({ canCreate: true })
+        api.on('POST', `${PROMOTER_API}businesses`, { status: 201, body: business({ id: 'b-2' }) })
+        renderPortal()
+        await screen.findByText('Ad live')
+        fireEvent.click(screen.getByRole('tab', { name: 'Businesses' }))
+        fireEvent.click(await screen.findByRole('button', { name: 'Add business' }))
+        fireEvent.change(screen.getByLabelText('Name (English)'), { target: { value: 'Shine Car Wash' } })
+        const { release, started } = slowWrites()
+
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+        await act(async () => { await nextMacrotask() })
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+        await act(async () => { await nextMacrotask() })
+        expect(started).toHaveLength(1)
+
+        await act(async () => { release() })
+        expect(await screen.findByRole('status')).toHaveTextContent(en.Promoter.businessSaved)
+        expect(started).toHaveLength(1)
+    })
+})

@@ -2007,8 +2007,8 @@
     "redirectParamNameInvalid": "Use 1 to 40 letters, numbers, underscores, dots or hyphens.",
     "redirectParamNameDuplicate": "Each parameter name can be used once.",
     "redirectParamValueRequired": "Enter the fixed value (up to {max} characters).",
-    "redirectSummary": "After copy: {url}",
-    "redirectSummaryParams": "Parameters: {list}",
+    "redirectSummary": "After copy: <url></url>",
+    "redirectSummaryParams": "Parameters: <list></list>",
     "redirectSharesBadge": "Shares tenant details",
     "statusARCHIVED": "Archived",
     "showArchived": "Show archived",
@@ -2039,6 +2039,7 @@
     "businessEditSendsForApproval": "Saving changes to this business sends all of its live ads back for approval.",
     "propertiesHint": "Choose where this ad appears. You can only pick properties that have been shared with you.",
     "propertyRequired": "Choose at least one property.",
+    "promoterAdPropertiesHint": "Promoter ads must target at least one of the promoter's properties.",
     "noPropertiesGranted": "No properties have been shared with you yet. Ask your administrator before you create an ad.",
     "rejected": "This ad was rejected. Edit it and save to send it for approval again.",
     "rejectedWithReason": "This ad was rejected: “{reason}”. Edit it and save to send it for approval again."

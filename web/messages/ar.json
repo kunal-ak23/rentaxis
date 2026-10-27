@@ -2007,8 +2007,8 @@
     "redirectParamNameInvalid": "استخدم من 1 إلى 40 حرفًا أو رقمًا أو شرطة سفلية أو نقطة أو شرطة.",
     "redirectParamNameDuplicate": "يمكن استخدام كل اسم معامل مرة واحدة فقط.",
     "redirectParamValueRequired": "أدخل القيمة الثابتة (حتى {max} حرف).",
-    "redirectSummary": "بعد النسخ: {url}",
-    "redirectSummaryParams": "المعاملات: {list}",
+    "redirectSummary": "بعد النسخ: <url></url>",
+    "redirectSummaryParams": "المعاملات: <list></list>",
     "redirectSharesBadge": "يشارك بيانات المستأجر",
     "statusARCHIVED": "مؤرشف",
     "showArchived": "عرض المؤرشف",
@@ -2039,6 +2039,7 @@
     "businessEditSendsForApproval": "يؤدي حفظ التغييرات على هذه الشركة إلى إعادة جميع إعلاناتها النشطة إلى الموافقة.",
     "propertiesHint": "اختر أين يظهر هذا الإعلان. يمكنك اختيار العقارات التي شُورِكت معك فقط.",
     "propertyRequired": "اختر عقارًا واحدًا على الأقل.",
+    "promoterAdPropertiesHint": "يجب أن تستهدف إعلانات المروّج عقارًا واحدًا على الأقل من عقارات المروّج.",
     "noPropertiesGranted": "لم تتم مشاركة أي عقار معك بعد. اطلب ذلك من المسؤول قبل إنشاء إعلان.",
     "rejected": "تم رفض هذا الإعلان. عدّله واحفظه لإرساله للموافقة مرة أخرى.",
     "rejectedWithReason": "تم رفض هذا الإعلان: «{reason}». عدّله واحفظه لإرساله للموافقة مرة أخرى."

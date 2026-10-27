@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { AdCardPreview } from "./AdCardPreview";
 import { PromoImageField } from "./PromoImageField";
@@ -38,7 +38,13 @@ interface AdEditorProps {
     businesses: PromoBusinessDTO[];
     properties: PropertyOption[];
     ad: PromoAdDTO | null;
-    onSave: (body: PromoAdRequest) => void;
+    /**
+     * Resolves when the save has finished, whether it succeeded or the parent
+     * showed its refusal. While it is pending Save is disabled and a second
+     * click is ignored: a double-click used to create the ad twice (and email
+     * the administrators twice).
+     */
+    onSave: (body: PromoAdRequest) => void | Promise<void>;
     onCancel: () => void;
     /**
      * "promoter" is the outside advertiser's editor (the promoter portal):
@@ -118,6 +124,11 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel, mode = 
     const tp = useTranslations("Promoter");
     const locale = useLocale();
     const isPromoter = mode === "promoter";
+    // An ad a promoter wrote stays a promoter ad when an admin edits it: the server
+    // still refuses one that targets no property (it would otherwise mean "every
+    // property", which a promoter ad can never mean).
+    const promoterWritten = !isPromoter && Boolean(ad?.submittedByName);
+    const needsProperty = isPromoter || promoterWritten;
 
     const [businessId, setBusinessId] = useState(ad?.businessId ?? businesses[0]?.id ?? "");
     const [titleEn, setTitleEn] = useState(ad?.titleEn ?? "");
@@ -144,6 +155,9 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel, mode = 
     const [previewAr, setPreviewAr] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [uploading, setUploading] = useState(false);
+    // A ref as well as state: two clicks can land before React re-renders the disabled button.
+    const [saving, setSaving] = useState(false);
+    const savingRef = useRef(false);
 
     // The page can render before businesses load. AdsTab disables "Add ad" in
     // that state, but this component should not post businessId: "" if it is
@@ -208,14 +222,14 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel, mode = 
         }
         // A promoter's ad always targets named properties; with none granted
         // there is nowhere to send it, which is the admin's to fix, not theirs.
-        if (isPromoter && propertyIds.length === 0) {
-            next.properties = properties.length === 0 ? tp("noPropertiesGranted") : tp("propertyRequired");
+        if (needsProperty && propertyIds.length === 0) {
+            next.properties = isPromoter && properties.length === 0 ? tp("noPropertiesGranted") : tp("propertyRequired");
         }
         return next;
     }
 
-    function submit() {
-        if (!hasBusinesses || uploading) return;
+    async function submit() {
+        if (!hasBusinesses || uploading || savingRef.current) return;
         const found = validate();
         setErrors(found);
         if (Object.keys(found).length > 0) return;
@@ -261,7 +275,14 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel, mode = 
             body.priority = priority;
             body.placement = placement;
         }
-        onSave(body);
+        savingRef.current = true;
+        setSaving(true);
+        try {
+            await onSave(body);
+        } finally {
+            savingRef.current = false;
+            setSaving(false);
+        }
     }
 
     // role="alert" so a screen reader announces a failed save instead of the
@@ -445,7 +466,9 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel, mode = 
                     <p className="mb-2 text-xs text-gray-500">
                         {isPromoter
                             ? tp("propertiesHint")
-                            : propertyIds.length === 0 ? t("targetingAll") : t("targetingSome")}
+                            : promoterWritten
+                                ? tp("promoterAdPropertiesHint")
+                                : propertyIds.length === 0 ? t("targetingAll") : t("targetingSome")}
                     </p>
                     <div className="max-h-40 space-y-1 overflow-auto">
                         {properties.map(p => (
@@ -479,7 +502,7 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel, mode = 
                 )}
 
                 <div className="flex gap-2 pt-2">
-                    <button type="button" onClick={submit} disabled={!hasBusinesses || uploading}
+                    <button type="button" onClick={() => void submit()} disabled={!hasBusinesses || uploading || saving}
                         className="rounded-lg bg-gray-900 px-4 py-2 text-white disabled:opacity-40">
                         {t("save")}
                     </button>

@@ -108,7 +108,7 @@ export function PromoterAdsTab({ businesses, properties }: PromoterAdsTabProps) 
                     <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
                 )}
                 <AdEditor mode="promoter" businesses={businesses} properties={properties} ad={editing}
-                    onSave={body => void save(body)} onCancel={() => { setError(null); setEditing(undefined); }} />
+                    onSave={save} onCancel={() => { setError(null); setEditing(undefined); }} />
             </div>
         );
     }

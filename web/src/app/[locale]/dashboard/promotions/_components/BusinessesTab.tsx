@@ -117,7 +117,15 @@ export function BusinessesTab({ onChanged }: { onChanged?: () => void | Promise<
     }
 
     if (editing !== undefined) {
-        return <BusinessEditor business={editing} onSave={save} onCancel={() => setEditing(undefined)} />;
+        return (
+            <div className="space-y-4">
+                {/* The editor replaces the list, so a refusal (a taken name, a bad domain) has to be shown here. */}
+                {error && (
+                    <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+                )}
+                <BusinessEditor business={editing} onSave={save} onCancel={() => { setError(null); setEditing(undefined); }} />
+            </div>
+        );
     }
 
     return (
@@ -129,7 +137,7 @@ export function BusinessesTab({ onChanged }: { onChanged?: () => void | Promise<
                     {t("showArchived")}
                 </label>
                 {!showArchived && (
-                    <button type="button" onClick={() => setEditing(null)}
+                    <button type="button" onClick={() => { setError(null); setEditing(null); }}
                         className="rounded-lg bg-gray-900 px-4 py-2 text-white">{t("addBusiness")}</button>
                 )}
             </div>
@@ -180,7 +188,7 @@ export function BusinessesTab({ onChanged }: { onChanged?: () => void | Promise<
                                     ) : (
                                         <>
                                             <button type="button" className="me-3 underline"
-                                                onClick={() => setEditing(row)}>{t("edit")}</button>
+                                                onClick={() => { setError(null); setEditing(row); }}>{t("edit")}</button>
                                             <button type="button" disabled={busy}
                                                 className="text-red-600 underline disabled:opacity-40"
                                                 onClick={() => void remove(row)}>{t("delete")}</button>
