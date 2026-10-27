@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../gatepass/pass_share_card.dart';
+import '../utils/renter_rules.dart';
 
 /// The renter's own gate passes, over core's shared [gatePassServiceProvider].
 ///
@@ -47,24 +48,15 @@ final passByIdProvider = FutureProvider.autoDispose
       return service.byId(id);
     });
 
-/// The renter's ACTIVE leases — the units they may raise a pass for.
-///
-/// Filtered to ACTIVE and nothing else, deliberately. The backend's
-/// `requireUnitOnActiveLease` accepts a unit only on an ACTIVE lease and answers
-/// **404** otherwise (not 403 — so a renter cannot probe unit ids). A screen that
-/// offered a PENDING_SIGNATURE lease's unit would therefore turn a knowable
-/// "your lease isn't active yet" into an unexplained not-found at submit.
-///
-/// Note this is stricter than the home screen's `_findActiveLease`, which also
-/// accepts PENDING_SIGNATURE — it is picking a lease to *display*, which has no
-/// such server-side rule behind it.
+/// Current resident contracts, including notice and early renewal within term.
 final activeLeasesProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+      ref.watch(authProvider.select((auth) => (auth.userId, auth.tenantId)));
       final service = ref.watch(leaseServiceProvider);
       final leases = await service.getMyLeases();
       return leases
           .whereType<Map<String, dynamic>>()
-          .where((l) => l['status'] == 'ACTIVE')
+          .where(isCurrentRenterLease)
           .toList();
     });
 

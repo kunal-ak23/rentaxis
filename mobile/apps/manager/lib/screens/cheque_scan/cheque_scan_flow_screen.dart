@@ -8,10 +8,13 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
+import 'cheque_register_api.dart';
 import 'steps/step1_capture.dart';
 import 'steps/step2_reading.dart';
 import 'steps/step3_confirm.dart';
+import 'steps/step3_multi_review.dart';
 import 'steps/step4_success.dart';
+import 'widgets/scan_messages.dart';
 
 final _chequeExtractionServiceProvider = Provider<ChequeExtractionService>((
   ref,
@@ -20,29 +23,31 @@ final _chequeExtractionServiceProvider = Provider<ChequeExtractionService>((
   return ChequeExtractionService(client.dio);
 });
 
-final _paymentServiceProvider = Provider<PaymentService>((ref) {
+final _chequeRegisterApiProvider = Provider<ChequeRegisterApi>((ref) {
   final client = ref.watch(apiClientProvider);
-  return PaymentService(client.dio);
+  return ChequeRegisterApi(client.dio);
 });
 
 /// 4-step cheque scan wizard for the manager mobile app.
 ///
 /// Flow:
-///   Step 1 (Capture)  → user takes photo with camera or picks from gallery
-///   Step 2 (Reading)  → upload + extract via /api/v1/cheques/extract;
-///                       fields reveal progressively while we POST,
-///                       and we auto-advance to step 3 on completion
-///   Step 3 (Confirm)  → user reviews extracted fields, picks a payment
-///                       to settle, picks disposition (Hold / Deposit today)
-///                       and submits → PUT /payments/{id}/collect
-///                       (chained with /deposit if Disposition.depositToday)
+///   Step 1 (Capture)  → camera photo, gallery photo, or a PDF / file. One
+///                       photo may hold several cheques.
+///   Step 2 (Reading)  → upload + extract via /api/v1/cheques/extract-many:
+///                       one item per cheque, each with its own server-issued
+///                       image (a crop when the photo held several) and the
+///                       organisation's payee check.
+///   Step 3 (Confirm)  → one cheque: review fields, the payee check, pick the
+///                       register row it is for, pick Hold / Deposit today.
+///                       Several cheques: one card each, mapped onto one
+///                       lease's instalments.
+///                       Both submit POST /leases/{id}/cheques/bulk-attach —
+///                       the web scanner's endpoint, which refuses a payee
+///                       MISMATCH the operator has not confirmed — chained
+///                       with PUT /cheques/{id}/deposit for Deposit today.
 ///   Step 4 (Success)  → receipt + scan-another / done
-///
-/// If [paymentId] is supplied (from payments_screen "Collect" tap), the
-/// payment is pre-selected and the user doesn't need to pick one.
 class ChequeScanFlowScreen extends ConsumerStatefulWidget {
-  final String? paymentId;
-  const ChequeScanFlowScreen({super.key, this.paymentId});
+  const ChequeScanFlowScreen({super.key});
 
   @override
   ConsumerState<ChequeScanFlowScreen> createState() =>
@@ -52,95 +57,73 @@ class ChequeScanFlowScreen extends ConsumerStatefulWidget {
 class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
   int _step = 1;
   File? _captured;
-  ChequeExtractionResult? _extracted;
+  ChequeMultiExtractionResult? _scan;
   String? _extractionError;
-  String? _selectedPaymentId;
-  Map<String, dynamic>? _matchedPayment;
+  Map<String, dynamic>? _target;
   Disposition _disposition = Disposition.depositToday;
   bool _submitting = false;
   String? _submitError;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedPaymentId = widget.paymentId;
-    if (widget.paymentId != null) {
-      _fetchMatchedPayment(widget.paymentId!);
-    }
-  }
-
-  Future<void> _fetchMatchedPayment(String paymentId) async {
-    try {
-      final svc = ref.read(_paymentServiceProvider);
-      // Best-effort: backend has no single-payment endpoint, so walk the
-      // paged list until the row shows up (it is almost always on an early
-      // page — the wizard opens from a row the user just tapped). Capped so
-      // a huge portfolio can't turn this into an unbounded crawl; a miss is
-      // non-fatal because the user can still pick the payment manually.
-      const maxPages = 5;
-      for (var page = 0; page < maxPages; page++) {
-        final result = await svc.getPaymentsPage(page: page, size: 100);
-        if (!mounted) return;
-        final rows = result['content'] as List? ?? const [];
-        final found = rows.firstWhere(
-          (p) => p is Map<String, dynamic> && p['id'] == paymentId,
-          orElse: () => null,
-        );
-        if (found != null) {
-          setState(() => _matchedPayment = Map<String, dynamic>.from(found));
-          return;
-        }
-        final totalPages = (result['totalPages'] as num?)?.toInt() ?? 1;
-        if (page + 1 >= totalPages) return;
-      }
-    } catch (_) {
-      // Non-fatal — user can still pick manually.
-    }
-  }
+  int _attachedCount = 1;
 
   Future<void> _onCaptured(File file) async {
     setState(() {
       _captured = file;
       _step = 2;
-      _extracted = null;
+      _scan = null;
       _extractionError = null;
+      // A new photo is a new match: the previous cheque's row does not carry.
+      _target = null;
+      _submitError = null;
     });
     try {
       final svc = ref.read(_chequeExtractionServiceProvider);
-      final result = await svc.extract(file);
+      final result = await svc.extractMany(file);
       if (!mounted) return;
+      if (result.items.isEmpty) {
+        throw ChequeUploadRefused('No cheque found', null);
+      }
+      setState(() => _scan = result);
       // Hold step 2 long enough for the reveal animation to play out.
       await Future.delayed(const Duration(milliseconds: 1500));
       if (!mounted) return;
-      setState(() {
-        _extracted = result;
-        _step = 3;
-      });
+      setState(() => _step = 3);
     } catch (e) {
       if (!mounted) return;
       final ar = context.isAr;
       setState(() {
-        _extractionError = ar ? 'تعذّرت القراءة: $e' : 'Extraction failed: $e';
+        _extractionError = e is ChequeUploadRefused
+            ? uploadErrorMessage(e.code, e.message, ar)
+            : errorMessage(e, networkErrorMessage(ar));
       });
     }
   }
 
-  Future<void> _pickPayment() async {
-    final picked = await showModalBottomSheet<Map<String, dynamic>>(
+  Future<Map<String, dynamic>?> _openPicker() {
+    return showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (sheetCtx) =>
-          PaymentPickerSheet(service: ref.read(_paymentServiceProvider)),
+          ChequeTargetPickerSheet(api: ref.read(_chequeRegisterApiProvider)),
     );
-    if (picked != null && mounted) {
-      setState(() {
-        _selectedPaymentId = picked['id']?.toString();
-        _matchedPayment = picked;
-      });
+  }
+
+  Future<void> _pickTarget() async {
+    final picked = await _openPicker();
+    if (picked != null && mounted) setState(() => _target = picked);
+  }
+
+  String _attachError(Object e) {
+    final ar = context.isAr;
+    if (e is BulkAttachRefused) {
+      return e.reasons
+          .toSet()
+          .map((r) => attachRefusalMessage(r, ar))
+          .join('\n');
     }
+    return errorMessage(e, networkErrorMessage(ar));
   }
 
   Future<void> _onConfirm({
@@ -149,44 +132,81 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
     required String payerName,
     required DateTime? chequeDate,
     required Disposition disposition,
+    required bool payeeMismatchConfirmed,
   }) async {
-    if (_selectedPaymentId == null || _extracted == null) return;
+    final target = _target;
+    final scan = _scan;
+    if (target == null || scan == null || chequeDate == null) return;
+    final chequeId = target['id'].toString();
     setState(() {
       _submitting = true;
       _submitError = null;
       _disposition = disposition;
     });
+    var attached = false;
     try {
-      final svc = ref.read(_paymentServiceProvider);
-      await svc.collectPayment(_selectedPaymentId!, {
-        'chequeNumber': chequeNumber,
-        'bankName': bankName,
-        'payerName': payerName,
-        'chequeDate': chequeDate != null
-            ? DateFormat('yyyy-MM-dd').format(chequeDate)
-            : null,
-        'chequeImageUrl': _extracted!.imageUrl,
-        'chequeImageBlobPath': _extracted!.imageBlobPath,
-        // Normalize to UTC so the emitted ISO string carries a `Z` suffix.
-        // Backend (Spring + Jackson) deserializes OffsetDateTime strictly: a
-        // string with no offset (Dart's default for non-UTC DateTime) would
-        // be rejected.
-        'chequeImageUploadedAt': _extracted!.uploadedAt
-            .toUtc()
-            .toIso8601String(),
-      });
+      final api = ref.read(_chequeRegisterApiProvider);
+      await api.bulkAttach(target['leaseId'].toString(), [
+        buildAttachItem(
+          chequeId: chequeId,
+          scan: scan.items.first,
+          chequeNumber: chequeNumber,
+          bankName: bankName,
+          payerName: payerName,
+          chequeDate: chequeDate,
+          payeeConfirmed: payeeMismatchConfirmed,
+        ),
+      ]);
+      attached = true;
       if (disposition == Disposition.depositToday) {
-        await svc.depositPayment(_selectedPaymentId!);
+        await api.deposit(chequeId);
       }
       if (!mounted) return;
       setState(() {
+        _attachedCount = 1;
+        _step = 4;
+        _submitting = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      final ar = context.isAr;
+      final msg = _attachError(e);
+      setState(() {
+        // Attaching again is safe (the row keeps the scan it now holds), so
+        // the operator can retry the deposit or switch to Hold.
+        _submitError = attached
+            ? (ar
+                  ? 'تم إرفاق الشيك، لكن تعذّر الإيداع: $msg'
+                  : 'The cheque is attached, but the deposit failed: $msg')
+            : msg;
+        _submitting = false;
+      });
+    }
+  }
+
+  Future<void> _onSubmitMulti(
+    String leaseId,
+    List<Map<String, dynamic>> items,
+    Map<String, dynamic> leaseRow,
+  ) async {
+    setState(() {
+      _submitting = true;
+      _submitError = null;
+    });
+    try {
+      await ref.read(_chequeRegisterApiProvider).bulkAttach(leaseId, items);
+      if (!mounted) return;
+      setState(() {
+        _target = leaseRow;
+        _disposition = Disposition.holdInSafe;
+        _attachedCount = items.length;
         _step = 4;
         _submitting = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _submitError = e.toString();
+        _submitError = _attachError(e);
         _submitting = false;
       });
     }
@@ -196,16 +216,13 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
     setState(() {
       _step = 1;
       _captured = null;
-      _extracted = null;
+      _scan = null;
       _extractionError = null;
       _submitError = null;
       _submitting = false;
+      _attachedCount = 1;
       _disposition = Disposition.depositToday; // reset to default
-      // Keep the matched payment / paymentId IF it was passed in via deep link.
-      if (widget.paymentId == null) {
-        _selectedPaymentId = null;
-        _matchedPayment = null;
-      }
+      _target = null;
     });
   }
 
@@ -251,17 +268,30 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
       case 2:
         return Step2Reading(
           capturedImage: _captured!,
-          result: _extracted,
+          result: _scan?.items.first,
           error: _extractionError,
           onBack: () => setState(() => _step = 1),
           onClose: () => context.pop(),
         );
       case 3:
+        final scan = _scan!;
+        if (scan.items.length > 1) {
+          return Step3MultiReview(
+            scan: scan,
+            onPickLease: _openPicker,
+            loadLeaseRows: ref.read(_chequeRegisterApiProvider).leaseCheques,
+            onSubmit: _onSubmitMulti,
+            submitting: _submitting,
+            submitError: _submitError,
+            onBack: () => setState(() => _step = 1),
+            onClose: () => context.pop(),
+          );
+        }
         return Step3Confirm(
-          result: _extracted!,
-          matchedPayment: _matchedPayment,
-          onPickPayment: _pickPayment,
-          onBack: () => setState(() => _step = 2),
+          result: scan.items.first,
+          matchedCheque: _target,
+          onPickCheque: _pickTarget,
+          onBack: () => setState(() => _step = 1),
           onConfirm: _onConfirm,
           submitting: _submitting,
           submitError: _submitError,
@@ -269,9 +299,10 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
         );
       case 4:
         return Step4Success(
-          result: _extracted!,
-          matchedPayment: _matchedPayment,
+          result: _scan!.items.first,
+          matchedCheque: _target,
           disposition: _disposition,
+          attachedCount: _attachedCount,
           onScanAnother: _resetForAnother,
           onDone: () => context.pop(),
         );
@@ -281,18 +312,19 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
   }
 }
 
-/// Bottom sheet listing PENDING payments so the user can pick which one
-/// the scanned cheque settles. Manual until backend gets an auto-match
-/// endpoint.
-class PaymentPickerSheet extends StatefulWidget {
-  final PaymentService service;
-  const PaymentPickerSheet({super.key, required this.service});
+/// Bottom sheet listing the register's post-dated cheques still waiting for
+/// their paper (REGISTERED PDC rows), so the user can pick which one the
+/// scanned cheque is. Searched server-side.
+class ChequeTargetPickerSheet extends StatefulWidget {
+  final ChequeRegisterApi api;
+  const ChequeTargetPickerSheet({super.key, required this.api});
 
   @override
-  State<PaymentPickerSheet> createState() => _PaymentPickerSheetState();
+  State<ChequeTargetPickerSheet> createState() =>
+      _ChequeTargetPickerSheetState();
 }
 
-class _PaymentPickerSheetState extends State<PaymentPickerSheet> {
+class _ChequeTargetPickerSheetState extends State<ChequeTargetPickerSheet> {
   final _searchController = TextEditingController();
   Timer? _searchDebounce;
   String _query = '';
@@ -331,49 +363,23 @@ class _PaymentPickerSheetState extends State<PaymentPickerSheet> {
     });
   }
 
-  /// Collectable rows — PENDING and OVERDUE, matching the payments screen
-  /// action sheet — fetched server-side (one large soonest-due-first page
-  /// per status) instead of filtering a truncated tenant-wide list
-  /// client-side. `hidden` counts collectable rows the server still holds
-  /// beyond what was fetched, so truncation is visible instead of silent.
+  /// One soonest-cheque-date-first page of scannable rows. `hidden` counts
+  /// rows the server still holds beyond the page, so truncation is visible
+  /// instead of silent.
   Future<({List<Map<String, dynamic>> rows, int hidden})> _load(
     String query,
   ) async {
     const size = 50;
-    const sort = ['dueDate,asc', 'id,asc'];
-    final search = query.trim();
-    final pages = await Future.wait([
-      widget.service.getPaymentsPage(
-        status: 'PENDING',
-        search: search,
-        sort: sort,
-        size: size,
-      ),
-      widget.service.getPaymentsPage(
-        status: 'OVERDUE',
-        search: search,
-        sort: sort,
-        size: size,
-      ),
-    ]);
-    final rows = <Map<String, dynamic>>[];
-    var hidden = 0;
-    for (final page in pages) {
-      final content = (page['content'] as List? ?? const [])
-          .whereType<Map>()
-          .toList();
-      rows.addAll(content.map((r) => Map<String, dynamic>.from(r)));
-      final total = (page['totalElements'] as num?)?.toInt() ?? content.length;
-      if (total > content.length) hidden += total - content.length;
-    }
-    // The two status queries are each sorted; merge them back into one
-    // soonest-due-first list.
-    rows.sort(
-      (a, b) => (a['dueDate']?.toString() ?? '').compareTo(
-        b['dueDate']?.toString() ?? '',
-      ),
+    final page = await widget.api.searchScannable(search: query, size: size);
+    final content = (page['content'] as List? ?? const [])
+        .whereType<Map>()
+        .map((r) => Map<String, dynamic>.from(r))
+        .toList();
+    final total = (page['totalElements'] as num?)?.toInt() ?? content.length;
+    return (
+      rows: content,
+      hidden: total > content.length ? total - content.length : 0,
     );
-    return (rows: rows, hidden: hidden);
   }
 
   @override
@@ -404,7 +410,7 @@ class _PaymentPickerSheetState extends State<PaymentPickerSheet> {
             ),
           ),
           Text(
-            l.pickPayment,
+            l.pickCheque,
             style: l.ar
                 ? GoogleFonts.notoNaskhArabic(
                     fontSize: 18,
@@ -419,12 +425,12 @@ class _PaymentPickerSheetState extends State<PaymentPickerSheet> {
           ),
           const SizedBox(height: 4),
           Text(
-            l.pickPaymentHint,
+            l.pickChequeHint,
             style: bodyFont(fontSize: 12, color: m.textMuted),
           ),
           const SizedBox(height: 14),
           TextField(
-            key: const ValueKey('paymentPickerSearch'),
+            key: const ValueKey('chequePickerSearch'),
             controller: _searchController,
             onChanged: _onSearchChanged,
             textInputAction: TextInputAction.search,
@@ -436,7 +442,7 @@ class _PaymentPickerSheetState extends State<PaymentPickerSheet> {
               suffixIcon: _query.isEmpty
                   ? null
                   : IconButton(
-                      key: const ValueKey('paymentPickerClearSearch'),
+                      key: const ValueKey('chequePickerClearSearch'),
                       tooltip: l.clearSearch,
                       onPressed: _clearSearch,
                       icon: Icon(Icons.close, size: 18, color: m.textMuted),
@@ -534,8 +540,8 @@ class _PaymentPickerSheetState extends State<PaymentPickerSheet> {
                                   Text(
                                     l.rowMeta(
                                       p['renterName']?.toString() ?? '',
-                                      p['installmentNumber'],
-                                      _dueLabel(p['dueDate'], l.ar),
+                                      p['seqNo'],
+                                      _dueLabel(p['chequeDate'], l.ar),
                                     ),
                                     style: bodyFont(
                                       fontSize: 11,
@@ -583,37 +589,38 @@ class _PaymentPickerSheetState extends State<PaymentPickerSheet> {
   }
 }
 
-/// Payment-picker sheet strings (EN/AR). Lightweight per-widget pattern —
+/// Cheque-picker sheet strings (EN/AR). Lightweight per-widget pattern —
 /// see arabic-brief.
 class _PickerL {
   _PickerL(this.ar);
   final bool ar;
 
-  String get pickPayment => ar ? 'اختر دفعة معلّقة' : 'Pick a pending payment';
-  String get pickPaymentHint => ar
-      ? 'سيتم ربط الشيك الممسوح بالقسط المختار.'
-      : 'The scanned cheque will be linked to the selected installment.';
+  String get pickCheque =>
+      ar ? 'اختر شيكًا مؤجلًا' : 'Pick a post-dated cheque';
+  String get pickChequeHint => ar
+      ? 'سيتم إرفاق الشيك الممسوح بالقسط المختار في سجل الشيكات.'
+      : 'The scanned cheque will be attached to the selected instalment on the register.';
   String get searchHint => ar
-      ? 'ابحث بالمستأجر أو العقار أو الوحدة أو القسط أو المبلغ'
-      : 'Search renter, property, unit, installment, or amount';
+      ? 'ابحث بالمستأجر أو رقم الشيك أو الوحدة'
+      : 'Search renter, cheque number, or unit';
   String get clearSearch => ar ? 'مسح البحث' : 'Clear search';
-  String get noPending =>
-      ar ? 'لا توجد دفعات معلّقة للتحصيل.' : 'No pending payments to collect.';
-  String get noMatches => ar
-      ? 'لا توجد دفعات معلّقة تطابق بحثك.'
-      : 'No pending payments match your search.';
+  String get noPending => ar
+      ? 'لا توجد شيكات مؤجلة بانتظار المسح.'
+      : 'No post-dated cheques are waiting for a scan.';
+  String get noMatches =>
+      ar ? 'لا توجد شيكات تطابق بحثك.' : 'No cheques match your search.';
   String moreNotShown(int count) {
     final formatted = NumberFormat.decimalPattern(
       ar ? 'ar' : 'en',
     ).format(count);
     return ar
-        ? '$formatted دفعة مطابقة أخرى — حدّد البحث لعرضها.'
+        ? 'عدد الشيكات المطابقة الأخرى: $formatted — حدّد البحث لعرضها.'
         : '$formatted more matches — refine the search to narrow them down.';
   }
 
   String failedToLoad(String error) =>
-      ar ? 'تعذّر تحميل المدفوعات: $error' : 'Failed to load payments: $error';
+      ar ? 'تعذّر تحميل الشيكات: $error' : 'Failed to load cheques: $error';
   String rowMeta(String renter, dynamic installment, String due) => ar
-      ? '$renter · القسط رقم $installment · الاستحقاق $due'
-      : '$renter · Installment #$installment · Due $due';
+      ? '$renter · القسط رقم $installment · تاريخ الشيك $due'
+      : '$renter · Instalment #$installment · Dated $due';
 }

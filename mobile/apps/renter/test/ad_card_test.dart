@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -97,6 +99,7 @@ PromoAd _arabicAd({
   String title = 'خصم خمسة وعشرين بالمئة على برانش الجمعة في ممشى مارينا دبي',
   String? subtitle,
   String ctaType = 'NONE',
+  String? logoUrl,
 }) =>
     PromoAd.fromJson({
       'id': 'ad-ar',
@@ -104,6 +107,7 @@ PromoAd _arabicAd({
         'id': 'b-1',
         'nameEn': 'Spice Bazaar',
         'nameAr': 'سبايس بازار',
+        'logoUrl': logoUrl,
         'category': 'DINING',
       },
       'titleEn': 'Twenty five percent off every Friday brunch at the marina',
@@ -146,6 +150,18 @@ void _expectNoSlicedLine(WidgetTester tester) {
           '${rect.top} but the card clips from ${block.clip.top}',
     );
   }
+}
+
+/// Serves [url]'s logo from the image cache, which [CachedNetworkImage]
+/// consults before its cache manager: no network, no platform channels. The
+/// test decides when, and whether, the load succeeds.
+Completer<ImageInfo> _logoLoad(String url) {
+  final load = Completer<ImageInfo>();
+  PaintingBinding.instance.imageCache.putIfAbsent(
+    CachedNetworkImageProvider(url),
+    () => OneFrameImageStreamCompleter(load.future),
+  );
+  return load;
 }
 
 void main() {
@@ -467,4 +483,259 @@ void main() {
     expect(decoration.image, isNotNull);
   });
 
+  group('business logo', () {
+    const logo = 'https://example.invalid/logo.png';
+
+    testWidgets('has no logo slot when the business has no logo',
+        (tester) async {
+      await tester.pumpWidget(host(AdCard(
+        ad: testAd(ctaType: 'COUPON', couponCode: 'MIFTAH25'),
+        onTap: () {},
+      )));
+
+      expect(find.byKey(const Key('ad-card-logo-slot')), findsNothing);
+    });
+
+    testWidgets('shows the logo on a white tile once it arrives',
+        (tester) async {
+      final ad = testAd(
+          ctaType: 'COUPON',
+          couponCode: 'MIFTAH25',
+          logoUrl: 'https://example.invalid/arrives.png');
+      final load = _logoLoad(ad.business.logoUrl!);
+      final image = await tester.runAsync(() => createTestImage());
+      await tester.pumpWidget(host(AdCard(ad: ad, onTap: () {})));
+      expect(find.byKey(const Key('ad-card-logo')), findsNothing);
+
+      load.complete(ImageInfo(image: image!));
+      await tester.pumpAndSettle();
+
+      final tile = find.byKey(const Key('ad-card-logo'));
+      expect(tester.getSize(tile), const Size(28, 28));
+      expect(
+        (tester.widget<Container>(tile).decoration! as BoxDecoration).color,
+        MiftahColors.surface,
+      );
+      expect(find.descendant(of: tile, matching: find.byType(Image)),
+          findsOneWidget);
+    });
+
+    testWidgets('leaves the corner empty when the logo fails to load',
+        (tester) async {
+      final ad = testAd(
+          ctaType: 'COUPON',
+          couponCode: 'MIFTAH25',
+          logoUrl: 'https://example.invalid/gone.png');
+      final load = _logoLoad(ad.business.logoUrl!);
+      await tester.pumpWidget(host(AdCard(ad: ad, onTap: () {})));
+      final slot = find.byKey(const Key('ad-card-logo-slot'));
+      expect(tester.getSize(slot), const Size(28, 28));
+
+      load.completeError(Exception('blob deleted'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('ad-card-logo')), findsNothing);
+      expect(tester.getSize(slot), Size.zero);
+    });
+
+    testWidgets('names the business for screen readers on a photo card',
+        (tester) async {
+      final semantics = tester.ensureSemantics();
+      final ad = testAd(
+        backgroundImageUrl: 'https://example.invalid/never-loads.jpg',
+        subtitleEn: 'Marina walk',
+        ctaType: 'COUPON',
+        couponCode: 'MIFTAH25',
+        logoUrl: 'https://example.invalid/named.png',
+      );
+      final load = _logoLoad(ad.business.logoUrl!);
+      // Made before the card is pumped: real async while the photo's cache
+      // manager is running would reach for platform channels.
+      final image = await tester.runAsync(() => createTestImage());
+      await tester.pumpWidget(host(AdCard(ad: ad, onTap: () {})));
+      load.complete(ImageInfo(image: image!));
+      await tester.pumpAndSettle();
+
+      // The eyebrow carries the subtitle and a photo card has no business
+      // line, so the logo is the only place the business is named.
+      expect(find.text('Spice Bazaar'), findsNothing);
+      // The logo's label joins the card's own node, which is the tap target —
+      // so it must not bring an image flag along with it.
+      final card = tester.getSemantics(find.byKey(const Key('ad-card-logo')));
+      expect(card.label, endsWith('Spice Bazaar'));
+      expect(card, containsSemantics(isImage: false));
+      semantics.dispose();
+    });
+
+    for (final scale in [2.0, 3.0]) {
+      testWidgets(
+          'stays in the bottom-end corner when a long CTA wraps at ${scale}x '
+          'on 360pt', (tester) async {
+        await tester.pumpWidget(host(
+          AdCard(
+            ad: testAd(
+              titleEn: 'Twenty five percent off every Friday brunch',
+              subtitleEn: 'Marina walk',
+              ctaType: 'COUPON',
+              couponCode: 'MIFTAH25',
+              ctaLabelEn: 'Show the coupon at the desk to redeem it',
+              logoUrl: logo,
+            ),
+            onTap: () {},
+          ),
+          width: _cardWidths['360pt']!,
+          textScale: scale,
+        ));
+
+        expect(tester.takeException(), isNull);
+        final cta = tester.getRect(find.byKey(const Key('ad-card-cta')));
+        final slot =
+            tester.getRect(find.byKey(const Key('ad-card-logo-slot')));
+        expect(cta.height, greaterThan(2 * slot.height),
+            reason: 'the label must wrap for this test to mean anything');
+        expect(slot.bottom, closeTo(cta.bottom, 0.5));
+        // 3x is past the card's 1.5x height clamp, where the copy's clip is
+        // the documented last resort and the one-line headline is cut.
+        if (scale <= 2.0) _expectNoSlicedLine(tester);
+      });
+    }
+
+    for (final arabic in [false, true]) {
+      testWidgets(
+          'sits at the bottom-end, opposite the CTA (${arabic ? 'RTL' : 'LTR'})',
+          (tester) async {
+        await tester.pumpWidget(host(
+          AdCard(
+            ad: arabic
+                ? _arabicAd(ctaType: 'COUPON', logoUrl: logo)
+                : testAd(
+                    ctaType: 'COUPON', couponCode: 'MIFTAH25', logoUrl: logo),
+            onTap: () {},
+          ),
+          arabic: arabic,
+        ));
+
+        final card = tester.getRect(find.byKey(const Key('ad-card-surface')));
+        final slot = tester.getRect(find.byKey(const Key('ad-card-logo-slot')));
+        final cta = tester.getRect(find.byKey(const Key('ad-card-cta')));
+        expect(slot.size, const Size(28, 28));
+        expect(slot.bottom, lessThanOrEqualTo(card.bottom - _cardInset));
+        expect(slot.bottom, closeTo(cta.bottom, 0.5));
+        if (arabic) {
+          expect(slot.left, closeTo(card.left + _cardInset, 0.5));
+          expect(slot.right, lessThan(cta.left));
+        } else {
+          expect(slot.right, closeTo(card.right - _cardInset, 0.5));
+          expect(slot.left, greaterThan(cta.right));
+        }
+      });
+    }
+
+    testWidgets('takes no room from the copy on a card with a CTA',
+        (tester) async {
+      Future<Rect> clipWith(String? logoUrl) async {
+        await tester.pumpWidget(host(AdCard(
+          ad: testAd(
+            titleEn: 'Twenty five percent off every Friday brunch at the marina',
+            subtitleEn: 'Marina walk',
+            ctaType: 'COUPON',
+            couponCode: 'MIFTAH25',
+            logoUrl: logoUrl,
+          ),
+          onTap: () {},
+        )));
+        return _copyBlock(tester).clip;
+      }
+
+      final without = await clipWith(null);
+      final withLogo = await clipWith(logo);
+      expect(withLogo.height, without.height);
+    });
+
+    for (final entry in _cardWidths.entries) {
+      for (final arabic in [false, true]) {
+        for (final scale in [1.0, 1.5]) {
+          testWidgets(
+              'a logo-only card slices no line at ${entry.key}, '
+              '${arabic ? 'Arabic' : 'English'}, ${scale}x', (tester) async {
+            await tester.pumpWidget(host(
+              AdCard(
+                ad: arabic
+                    ? _arabicAd(logoUrl: logo)
+                    : testAd(
+                        titleEn: 'Twenty five percent off every Friday brunch '
+                            'at the marina walk this month',
+                        subtitleEn: 'Marina walk',
+                        logoUrl: logo,
+                      ),
+                onTap: () {},
+              ),
+              width: entry.value,
+              textScale: scale,
+              arabic: arabic,
+            ));
+
+            expect(find.byKey(const Key('ad-card-logo-slot')), findsOneWidget);
+            _expectNoSlicedLine(tester);
+          });
+        }
+      }
+    }
+  });
+
+  group('copy colour follows the accent', () {
+    Color colourOf(WidgetTester tester, String text) =>
+        tester.widget<Text>(find.text(text)).style!.color!;
+
+    testWidgets('a dark accent (saturated blue) gets light copy', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        host(
+          AdCard(
+            ad: testAd(
+              titleEn: 'Twenty percent off',
+              subtitleEn: 'Coffee and juices',
+              accentColor: '#2F5FE0',
+              ctaType: 'COUPON',
+              couponCode: 'MIFTAH25',
+            ),
+            onTap: () {},
+          ),
+        ),
+      );
+
+      expect(colourOf(tester, 'Twenty percent off'), Colors.white);
+      expect(colourOf(tester, 'COFFEE AND JUICES'), Colors.white70);
+      expect(colourOf(tester, 'Redeem coupon →'), MiftahColors.ink);
+    });
+
+    testWidgets('a mid-tone accent (Material blue) keeps ink, which reads better',
+        (tester) async {
+      await tester.pumpWidget(host(AdCard(
+        ad: testAd(titleEn: 'Twenty percent off', accentColor: '#2196F3'),
+        onTap: () {},
+      )));
+
+      expect(colourOf(tester, 'Twenty percent off'), MiftahColors.textPrimary);
+    });
+
+    testWidgets('a light accent keeps dark copy', (tester) async {
+      await tester.pumpWidget(
+        host(
+          AdCard(
+            ad: testAd(
+              titleEn: 'Twenty percent off',
+              subtitleEn: 'Coffee and juices',
+              accentColor: '#FBF3E2',
+            ),
+            onTap: () {},
+          ),
+        ),
+      );
+
+      expect(colourOf(tester, 'Twenty percent off'), MiftahColors.textPrimary);
+      expect(colourOf(tester, 'COFFEE AND JUICES'), MiftahColors.warning);
+    });
+  });
 }

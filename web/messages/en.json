@@ -3988,7 +3988,7 @@
       "BOOKING_REJECTED": {"title": "Booking update", "body": "Your booking request for {resource} has been rejected.", "bodyShort": "Your booking request has been rejected."},
       "BOOKING_RELEASED": {"title": "Booking update", "body": "Your parking booking for {resource} has been released.", "bodyShort": "Your parking booking has been released."},
       "RENEWAL_INTENT": {"title": "Tenant responded to renewal reminder", "body": "{renterName} chose to {intent} for unit {unit}"},
-      "LEASE_RENEWAL_REMINDER": {"title": "Your contract ends in {days, plural, one {# day} other {# days}}", "body": "Your contract ends {date}. Choose your renewal option in the tenant web portal."},
+      "LEASE_RENEWAL_REMINDER": {"title": "Your contract ends in {days, plural, one {# day} other {# days}}", "body": "Your contract ends {date}. Choose your renewal option on the Renewals page."},
       "PENALTY_INCURRED": {"title": "Penalty incurred", "body": "A penalty of {amount} has been added ({reason}). Please clear it via bank transfer, cheque, or cash."},
       "PENALTY_INCURRED_INSTALMENT": {"title": "Penalty incurred", "body": "A penalty of {amount} has been added for instalment #{seq} ({reason}). Please clear it via bank transfer, cheque, or cash."}
     }

@@ -33,6 +33,31 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
     super.dispose();
   }
 
+  Future<void> _markRead([String? id]) async {
+    try {
+      final notifier = ref.read(notificationProvider.notifier);
+      if (id == null) {
+        await notifier.markAllAsRead();
+      } else {
+        await notifier.markAsRead(id);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            errorMessage(
+              e,
+              context.isAr
+                  ? 'تعذر تحديث الإشعار'
+                  : 'Could not update the notification',
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _loadMore() async {
     if (_isLoadingMore) return;
     setState(() => _isLoadingMore = true);
@@ -40,7 +65,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
     await ref
         .read(notificationProvider.notifier)
         .fetchNotifications(page: _currentPage);
-    if (mounted) setState(() => _isLoadingMore = false);
+    if (mounted) {
+      if (ref.read(notificationProvider).hasError) _currentPage--;
+      setState(() => _isLoadingMore = false);
+    }
   }
 
   Future<void> _refresh() async {
@@ -63,12 +91,18 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppColors.navyDark,
+        // The theme's ink title, back arrow and status icons vanish on navy.
+        iconTheme: const IconThemeData(color: Colors.white),
+        titleTextStyle: MiftahType.title(color: Colors.white),
+        systemOverlayStyle: MiftahTheme.systemBars(
+          Brightness.dark,
+          navigationBar: m.surface,
+        ),
         title: Text(l.title),
         actions: [
           if (notifState.unreadCount > 0)
             TextButton(
-              onPressed: () =>
-                  ref.read(notificationProvider.notifier).markAllAsRead(),
+              onPressed: () => _markRead(),
               child: Text(
                 l.markAllRead,
                 style: const TextStyle(color: AppColors.accent, fontSize: 13),
@@ -226,16 +260,33 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
                       )
                     : null,
                 tileColor: isRead ? null : accentColor.withValues(alpha: 0.05),
-                onTap: () {
+                onTap: () async {
                   if (!isRead && notification['id'] != null) {
-                    ref
-                        .read(notificationProvider.notifier)
-                        .markAsRead(notification['id']);
+                    await _markRead(notification['id'] as String);
                   }
-                  // Deep-link: PENALTY_INCURRED → penalties screen.
-                  if (type.toUpperCase() == 'PENALTY_INCURRED') {
-                    context.push('/penalties');
-                  }
+                  if (!context.mounted) return;
+                  final reference = notification['referenceType']
+                      ?.toString()
+                      .toUpperCase();
+                  final id = notification['referenceId']?.toString();
+                  final route = switch (reference) {
+                    _ when type == 'LEASE_RENEWAL_REMINDER' => '/renewals',
+                    'TICKET' =>
+                      id == null
+                          ? '/tickets'
+                          : '/tickets/${Uri.encodeComponent(id)}',
+                    'MEETING' =>
+                      id == null
+                          ? '/meetings'
+                          : '/meetings/${Uri.encodeComponent(id)}',
+                    'LEASE' => '/contracts',
+                    'CHEQUE' => '/payments',
+                    'PENALTY' => '/penalties',
+                    'BOOKING' => '/facilities/requests',
+                    'GATE_PASS' => '/gatepass',
+                    _ => null,
+                  };
+                  if (route != null) context.push(route);
                 },
               ),
             );

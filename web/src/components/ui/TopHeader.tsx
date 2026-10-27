@@ -141,7 +141,7 @@ export function TopHeader() {
                 LEASE: `/dashboard/leases/${n.referenceId}`,
                 PAYMENT: `/dashboard/collections?tab=all`,
             };
-            const route = routes[n.referenceType];
+            const route = n.type === "LEASE_RENEWAL_REMINDER" ? "/dashboard/renter-portal/renewals" : routes[n.referenceType];
             if (route) {
                 router.push(`/${locale}${route}`);
             }
