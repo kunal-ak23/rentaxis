@@ -1,8 +1,11 @@
 package com.datagami.rentaxis.core.service.bank;
 
 import com.datagami.rentaxis.api.dto.bank.BankRecDTOs;
+import com.datagami.rentaxis.testsupport.PdfWords;
+import com.datagami.rentaxis.testsupport.PdfWords.Word;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -11,7 +14,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static com.datagami.rentaxis.testsupport.PdfWords.x;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 /** The reconciliation PDF: bilingual, RTL in Arabic, masked IBAN, escaped bank text (finance-ops spec §4). */
 class BankReconciliationPdfRendererTest {
@@ -53,6 +58,45 @@ class BankReconciliationPdfRendererTest {
         String en = renderer.html(sample(), "en");
         assertThat(en).contains("IBAN:");
         assertThat(en).contains("<table class=\"meta\"><tr><td>Bank account:</td>");
+    }
+
+    /**
+     * openhtmltopdf does not mirror a table for {@code dir="rtl"}: the Arabic statement writes its cells last column
+     * first, so Date prints rightmost and Amount leftmost, a formula label sits right of its amount, and the header's
+     * label-value tables sit against the right margin (A4 is 595pt wide).
+     */
+    @Test
+    void anArabicPdfPrintsItsColumnsRightToLeft() throws IOException {
+        List<Word> ar = PdfWords.on(renderer.render(sample(), "ar"), 1);
+        // A deposit in transit: Date, Document, Details, Cheque, Amount from the right.
+        List<Word> item = PdfWords.lineOf(ar, "CRT-26/104");
+        assertThat(x(item, "30/09/2026")).isGreaterThan(x(item, "CRT-26/104"));
+        assertThat(x(item, "CRT-26/104")).isGreaterThan(PdfWords.containing(item, "alert").x());
+        assertThat(PdfWords.containing(item, "alert").x()).isGreaterThan(x(item, "000452"));
+        assertThat(x(item, "000452")).isGreaterThan(x(item, "15,000.00"));
+        // The header runs the same way: the Amount heading sits over the amounts.
+        assertThat(PdfWords.leftmost(PdfWords.lineAbove(ar, PdfWords.first(ar, "CRT-26/104"))).x())
+                .isCloseTo(x(item, "15,000.00"), within(1f));
+        // A formula line: the label on the right, its amount on the left.
+        List<Word> unpresented = PdfWords.lineOf(ar, "(8,000.00)");
+        assertThat(PdfWords.leftmost(unpresented).text()).isEqualTo("(8,000.00)");
+        assertThat(PdfWords.rightmost(unpresented).arabic()).isTrue();
+        // The bank line: its label rightmost, the pair against the right margin.
+        List<Word> bank = PdfWords.lineOf(ar, "Islamic");
+        assertThat(PdfWords.rightmost(bank).arabic()).isTrue();
+        assertThat(x(bank, "Emirates")).isGreaterThan(300f);
+    }
+
+    @Test
+    void anEnglishPdfKeepsItsColumnsLeftToRight() throws IOException {
+        List<Word> en = PdfWords.on(renderer.render(sample(), "en"), 1);
+        List<Word> item = PdfWords.lineOf(en, "CRT-26/104");
+        assertThat(x(item, "30/09/2026")).isLessThan(x(item, "CRT-26/104"));
+        assertThat(x(item, "000452")).isLessThan(x(item, "15,000.00"));
+        assertThat(PdfWords.rightmost(PdfWords.lineOf(en, "(8,000.00)")).text()).isEqualTo("(8,000.00)");
+        List<Word> bank = PdfWords.lineOf(en, "Islamic");
+        assertThat(PdfWords.leftmost(bank).text()).isEqualTo("Bank");
+        assertThat(x(bank, "Emirates")).isLessThan(300f);
     }
 
     @Test
