@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { NextIntlClientProvider } from 'next-intl'
 import en from '../../../../../../messages/en.json'
 import ar from '../../../../../../messages/ar.json'
@@ -126,7 +126,15 @@ describe.each(['admin', 'promoter'] as const)('AdEditor redirect link (%s)', mod
         addRow('promo', 'STATIC', 'SPRING & SAVE')
         addRow('prop', 'PROPERTY_NAME')
         expect(screen.getByTestId('redirect-example').textContent).toBe(
-            `${LINK}&code=SPRING20&phone=%2B971501234567&promo=SPRING%20%26%20SAVE&prop=Palm%20Tower`)
+            `${LINK}&code=SPRING20&phone=%2B971501234567&promo=SPRING+%26+SAVE&prop=Palm+Tower`)
+    })
+
+    it('encodes the example the way the server does (Java URLEncoder): a space is +, and ! \' ( ) ~ are percent-encoded', () => {
+        startCoupon(mode)
+        fireEvent.change(linkField(), { target: { value: LINK } })
+        addRow('promo', 'STATIC', "it's (50%) off! ~now* é")
+        expect(screen.getByTestId('redirect-example').textContent)
+            .toBe(`${LINK}&promo=it%27s+%2850%25%29+off%21+%7Enow*+%C3%A9`)
     })
 
     it('builds the example on a link without a query, and before a fragment', () => {
@@ -134,7 +142,7 @@ describe.each(['admin', 'promoter'] as const)('AdEditor redirect link (%s)', mod
         fireEvent.change(linkField(), { target: { value: 'https://quickwash.example.test/app#open' } })
         addRow('name', 'RENTER_NAME')
         expect(screen.getByTestId('redirect-example').textContent)
-            .toBe('https://quickwash.example.test/app?name=Sara%20Ahmed#open')
+            .toBe('https://quickwash.example.test/app?name=Sara+Ahmed#open')
     })
 
     it('says tenants confirm before details are shared, only when a parameter carries them', () => {
@@ -147,7 +155,7 @@ describe.each(['admin', 'promoter'] as const)('AdEditor redirect link (%s)', mod
         expect(screen.getByTestId('redirect-shares-note')).toHaveTextContent(L.redirectSharesDetails)
     })
 
-    it('clears both fields from the request when the tap action is not a coupon', () => {
+    it('clears both fields from the request when the tap action is not a coupon', async () => {
         const onSave = startCoupon(mode)
         fireEvent.change(linkField(), { target: { value: LINK } })
         addRow('code', 'COUPON_CODE')
@@ -155,6 +163,8 @@ describe.each(['admin', 'promoter'] as const)('AdEditor redirect link (%s)', mod
         save()
         expect(onSave).toHaveBeenCalledTimes(1)
         expect(onSave.mock.calls[0][0]).toMatchObject({ ctaType: 'NONE', couponCode: null, redirectUrl: null, redirectParams: [] })
+        // Save is held while a save is in flight; the next one is a second, deliberate save.
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
 
         // A link that would be refused for a coupon does not block an ad that is not one.
         fireEvent.change(screen.getByLabelText('What happens on tap'), { target: { value: 'COUPON' } })

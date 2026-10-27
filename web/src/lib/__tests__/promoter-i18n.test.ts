@@ -39,6 +39,18 @@ describe("promoter copy", () => {
         expect(mismatched).toEqual([]);
     });
 
+    it.each(["Promoter", "Promotions"] as const)("uses the same rich-text tags in both languages (%s)", ns => {
+        const tags = (s: string) => [...s.matchAll(/<(\w+)>/g)].map(m => m[1]).sort().join();
+        const enNs: Record<string, string> = en[ns];
+        const arNs: Record<string, string> = ar[ns];
+        expect(Object.keys(enNs).filter(k => tags(enNs[k]) !== tags(arNs[k]))).toEqual([]);
+        // The redirect summary lines are rich text (their URL and names are isolated in the markup).
+        if (ns === "Promotions") {
+            expect(tags(en.Promotions.redirectSummary)).toBe("url");
+            expect(tags(en.Promotions.redirectSummaryParams)).toBe("list");
+        }
+    });
+
     it("labels every redirect source and every redirect error in both languages", () => {
         const keys = [
             ...["COUPON_CODE", "RENTER_NAME", "RENTER_PHONE", "RENTER_EMAIL", "PROPERTY_NAME", "UNIT_NUMBER", "STATIC"].map(s => `redirectSource${s}`),

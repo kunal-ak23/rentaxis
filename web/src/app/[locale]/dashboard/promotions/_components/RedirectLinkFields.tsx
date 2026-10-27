@@ -75,6 +75,18 @@ export function redirectErrors(
     return errors;
 }
 
+/**
+ * Percent-encodes as Java's `URLEncoder.encode(value, UTF_8)` does, which the
+ * server uses to build the link, so the preview matches what a tenant is sent:
+ * a space is `+`, and only `A-Z a-z 0-9 . - * _` are left as they are.
+ * `encodeURIComponent` alone differs on the space and on `! ' ( ) ~`.
+ */
+export function urlEncodeLikeJava(value: string): string {
+    return encodeURIComponent(value)
+        .replace(/%20/g, "+")
+        .replace(/[!'()~]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
 /** What the tenant would be sent, for the preview: sample values, appended as the server does. */
 export function exampleRedirectUrl(base: string, pairs: [string, string][]): string {
     const url = base.trim();
@@ -83,7 +95,7 @@ export function exampleRedirectUrl(base: string, pairs: [string, string][]): str
     const head = hash >= 0 ? url.slice(0, hash) : url;
     const fragment = hash >= 0 ? url.slice(hash) : "";
     const sep = !head.includes("?") ? "?" : head.endsWith("?") || head.endsWith("&") ? "" : "&";
-    return head + sep + pairs.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&") + fragment;
+    return head + sep + pairs.map(([k, v]) => `${urlEncodeLikeJava(k)}=${urlEncodeLikeJava(v)}`).join("&") + fragment;
 }
 
 /** Sample renter data for the preview; real values come from the tenant's account in the app. */
