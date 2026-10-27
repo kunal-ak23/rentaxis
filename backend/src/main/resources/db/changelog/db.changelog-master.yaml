@@ -369,3 +369,5 @@ databaseChangeLog:
       file: db/changelog/changesets/182-lease-original-end-date.yaml
   - include:
       file: db/changelog/changesets/183-promoter-role.yaml
+  - include:
+      file: db/changelog/changesets/183-bank-line-kept-lookalike.yaml

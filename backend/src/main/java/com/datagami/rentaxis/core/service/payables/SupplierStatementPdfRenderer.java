@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.dto.ledger.LedgerRowDTO;
 import com.datagami.rentaxis.api.dto.payables.AdvanceDTO;
 import com.datagami.rentaxis.api.dto.payables.OpenItemDTO;
 import com.datagami.rentaxis.core.util.PdfResourcePolicy;
+import com.datagami.rentaxis.core.util.PdfRow;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
@@ -34,8 +35,9 @@ import java.util.Map;
  * invoice: openhtmltopdf, the Noto fonts handed over as classpath streams, and
  * {@link PdfResourcePolicy}, so nothing but inline {@code data:} URIs loads.
  * Every user-typed value is escaped. Amounts use Latin digits and sit in LTR spans
- * inside an RTL page. Balances are shown as the supplier reads them: a credit is
- * what we owe.</p>
+ * inside an RTL page. An Arabic table's cells are written last column first
+ * ({@link PdfRow}), so its columns run right to left. Balances are shown as the
+ * supplier reads them: a credit is what we owe.</p>
  */
 @Component
 public class SupplierStatementPdfRenderer {
@@ -177,23 +179,20 @@ public class SupplierStatementPdfRenderer {
         // Account activity.
         AccountLedgerDTO g = s.ledger();
         b.append("<h2>").append(esc(label("ledger", ar))).append("</h2><table><tr>")
-                .append(th(label("date", ar), false)).append(th(label("entry", ar), false)).append(th(label("doc", ar), false))
-                .append(th(label("narration", ar), false)).append(th(label("debit", ar), true))
-                .append(th(label("credit", ar), true)).append(th(label("balance", ar), true)).append("</tr>");
-        b.append("<tr><td colspan=\"6\">").append(esc(label("opening", ar))).append("</td>")
-                .append(num(balance(g.openingBalance(), ar))).append("</tr>");
+                .append(PdfRow.cells(ar, th(label("date", ar), false), th(label("entry", ar), false),
+                        th(label("doc", ar), false), th(label("narration", ar), false), th(label("debit", ar), true),
+                        th(label("credit", ar), true), th(label("balance", ar), true))).append("</tr>");
+        b.append("<tr>").append(PdfRow.cells(ar, "<td colspan=\"6\">" + esc(label("opening", ar)) + "</td>",
+                num(balance(g.openingBalance(), ar)))).append("</tr>");
         for (LedgerRowDTO r : g.rows()) {
             String text = r.narration() != null && !r.narration().isBlank() ? r.narration() : r.particular();
-            b.append("<tr><td><span class=\"ltr\">").append(DAY.format(r.entryDate())).append("</span></td>")
-                    .append("<td>").append(esc(r.entryNumber())).append("</td>")
-                    .append("<td>").append(esc(r.docType())).append("</td>")
-                    .append("<td>").append(esc(text)).append("</td>")
-                    .append(num(amount(r.debit()))).append(num(amount(r.credit())))
-                    .append(num(balance(r.balance(), ar))).append("</tr>");
+            b.append("<tr>").append(PdfRow.cells(ar, "<td><span class=\"ltr\">" + DAY.format(r.entryDate()) + "</span></td>",
+                    "<td>" + esc(r.entryNumber()) + "</td>", "<td>" + esc(r.docType()) + "</td>", "<td>" + esc(text) + "</td>",
+                    num(amount(r.debit())), num(amount(r.credit())), num(balance(r.balance(), ar)))).append("</tr>");
         }
-        b.append("<tr class=\"total\"><td colspan=\"4\">").append(esc(label("closing", ar))).append("</td>")
-                .append(num(amount(g.totalDebit()))).append(num(amount(g.totalCredit())))
-                .append(num(balance(s.closingBalance(), ar))).append("</tr></table>");
+        b.append("<tr class=\"total\">").append(PdfRow.cells(ar, "<td colspan=\"4\">" + esc(label("closing", ar)) + "</td>",
+                num(amount(g.totalDebit())), num(amount(g.totalCredit())), num(balance(s.closingBalance(), ar))))
+                .append("</tr></table>");
         if (g.truncated()) b.append("<div class=\"note\">").append(esc(label("truncated", ar))).append("</div>");
 
         // Open items as of `to`.
@@ -203,33 +202,33 @@ public class SupplierStatementPdfRenderer {
         if (s.openItems().isEmpty()) {
             b.append("<div class=\"note\">").append(esc(label("none", ar))).append("</div>");
         } else {
-            b.append("<table><tr>").append(th(label("invoice", ar), false)).append(th(label("entry", ar), false))
-                    .append(th(label("invoiceDate", ar), false)).append(th(label("dueDate", ar), false))
-                    .append(th(label("daysOverdue", ar), true)).append(th(label("gross", ar), true))
-                    .append(th(label("paid", ar), true)).append(th(label("open", ar), true)).append("</tr>");
+            b.append("<table><tr>").append(PdfRow.cells(ar, th(label("invoice", ar), false), th(label("entry", ar), false),
+                    th(label("invoiceDate", ar), false), th(label("dueDate", ar), false), th(label("daysOverdue", ar), true),
+                    th(label("gross", ar), true), th(label("paid", ar), true), th(label("open", ar), true))).append("</tr>");
             for (OpenItemDTO i : s.openItems()) {
                 totalOpen = totalOpen.add(i.open());
-                b.append("<tr><td>").append(esc(i.invoiceNumber())).append("</td><td>").append(esc(i.docNumber()))
-                        .append("</td><td><span class=\"ltr\">").append(DAY.format(i.invoiceDate()))
-                        .append("</span></td><td><span class=\"ltr\">").append(DAY.format(i.dueDate())).append("</span></td>")
-                        .append(num(String.valueOf(i.daysOverdue()))).append(num(amount(i.gross())))
-                        .append(num(amount(i.allocated()))).append(num(amount(i.open()))).append("</tr>");
+                b.append("<tr>").append(PdfRow.cells(ar, "<td>" + esc(i.invoiceNumber()) + "</td>",
+                        "<td>" + esc(i.docNumber()) + "</td>",
+                        "<td><span class=\"ltr\">" + DAY.format(i.invoiceDate()) + "</span></td>",
+                        "<td><span class=\"ltr\">" + DAY.format(i.dueDate()) + "</span></td>",
+                        num(String.valueOf(i.daysOverdue())), num(amount(i.gross())), num(amount(i.allocated())),
+                        num(amount(i.open())))).append("</tr>");
             }
-            b.append("<tr class=\"total\"><td colspan=\"7\">").append(esc(label("totalOpen", ar))).append("</td>")
-                    .append(num(amount(totalOpen))).append("</tr></table>");
+            b.append("<tr class=\"total\">").append(PdfRow.cells(ar, "<td colspan=\"7\">" + esc(label("totalOpen", ar)) + "</td>",
+                    num(amount(totalOpen)))).append("</tr></table>");
         }
 
         // Unallocated payments.
         BigDecimal totalAdvance = BigDecimal.ZERO;
         if (!s.advances().isEmpty()) {
             b.append("<h2>").append(esc(label("advances", ar))).append("</h2><table><tr>")
-                    .append(th(label("payment", ar), false)).append(th(label("date", ar), false))
-                    .append(th(label("paid", ar), true)).append(th(label("unallocated", ar), true)).append("</tr>");
+                    .append(PdfRow.cells(ar, th(label("payment", ar), false), th(label("date", ar), false),
+                            th(label("paid", ar), true), th(label("unallocated", ar), true))).append("</tr>");
             for (AdvanceDTO a : s.advances()) {
                 totalAdvance = totalAdvance.add(a.unallocated());
-                b.append("<tr><td>").append(esc(a.voucherNumber())).append("</td><td><span class=\"ltr\">")
-                        .append(DAY.format(a.docDate())).append("</span></td>").append(num(amount(a.paid())))
-                        .append(num(amount(a.unallocated()))).append("</tr>");
+                b.append("<tr>").append(PdfRow.cells(ar, "<td>" + esc(a.voucherNumber()) + "</td>",
+                        "<td><span class=\"ltr\">" + DAY.format(a.docDate()) + "</span></td>", num(amount(a.paid())),
+                        num(amount(a.unallocated())))).append("</tr>");
             }
             b.append("</table>");
         }
@@ -238,11 +237,12 @@ public class SupplierStatementPdfRenderer {
         BigDecimal ledgerOwed = (s.closingBalance() == null ? BigDecimal.ZERO : s.closingBalance()).negate();
         BigDecimal diff = ledgerOwed.subtract(net);
         b.append("<h2>").append(esc(label("reconcile", ar))).append("</h2><table>")
-                .append("<tr><td>").append(esc(label("net", ar))).append("</td>").append(num(signed(net))).append("</tr>")
-                .append("<tr><td>").append(esc(label("ledgerOwed", ar))).append("</td>").append(num(signed(ledgerOwed))).append("</tr>");
+                .append("<tr>").append(PdfRow.cells(ar, "<td>" + esc(label("net", ar)) + "</td>", num(signed(net)))).append("</tr>")
+                .append("<tr>").append(PdfRow.cells(ar, "<td>" + esc(label("ledgerOwed", ar)) + "</td>", num(signed(ledgerOwed))))
+                .append("</tr>");
         if (diff.signum() != 0) {
-            b.append("<tr class=\"total\"><td>").append(esc(label("difference", ar))).append("</td>")
-                    .append(num(signed(diff))).append("</tr></table>")
+            b.append("<tr class=\"total\">").append(PdfRow.cells(ar, "<td>" + esc(label("difference", ar)) + "</td>",
+                    num(signed(diff)))).append("</tr></table>")
                     .append("<div class=\"note\">").append(esc(label("differenceNote", ar))).append("</div>");
         } else {
             b.append("</table>");

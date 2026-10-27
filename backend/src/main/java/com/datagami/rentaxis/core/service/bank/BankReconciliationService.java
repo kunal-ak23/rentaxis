@@ -393,7 +393,8 @@ public class BankReconciliationService {
         Map<LocalDate, Boolean> unconfirmed = unconfirmedDays(t, b, from, to);
         // Review P2-3: an unproven day is proven by the day's total debits and total
         // credits typed from the paper statement, when they agree with its stored lines.
-        List<BankRecDTOs.UnprovenDay> dayVerdicts = dayProof(t, r.id(), unconfirmed, period);
+        Map<LocalDate, List<String>> copies = keptLookalikes(t, b, unconfirmed);
+        List<BankRecDTOs.UnprovenDay> dayVerdicts = dayProof(t, r.id(), unconfirmed, period, copies.keySet());
         // P3-20: the page sees only whether a day's totals were entered, not the verdict.
         List<BankRecDTOs.UnprovenDay> unprovenDays = dayVerdicts.stream().map(d -> "NEEDED".equals(d.status()) ? d
                 : new BankRecDTOs.UnprovenDay(d.date(), d.typedDebits(), d.typedCredits(), "ENTERED")).toList();
@@ -403,7 +404,7 @@ public class BankReconciliationService {
         Set<LocalDate> chainSkipped = closingTyped && openingKnown ? unconfirmed.keySet() : Set.of();
         Remedy remedy = remedy(t, b, from, to);
         checks.add(continuity(opening, closing, movement, period, from, chainSkipped, unconfirmed.keySet(), remedy));
-        lineOrder(unconfirmed, dayVerdicts, closingTyped, openingKnown, first && r.opening() != null, remedy)
+        lineOrder(unconfirmed, dayVerdicts, closingTyped, openingKnown, first && r.opening() != null, remedy, copies)
                 .ifPresent(checks::add);
         // Sim r22 S22-03: the derived closing is the last stored line's balance. It is the
         // bank's closing only if nothing was posted after that line up to the period end;
@@ -877,7 +878,7 @@ public class BankReconciliationService {
             if (s.isPresent()) {
                 return "; or import one statement that runs from " + s.get()[0].format(DMY) + " to " + s.get()[1].format(DMY)
                         + ", which holds " + (first.equals(last) ? first.format(DMY) : "those days") + " whole"
-                        + lockNote(s.get()[0]);
+                        + endDay(s.get()[1]) + lockNote(s.get()[0]);
             }
             Optional<Replacement> o = replacement(first, last);
             if (o.isEmpty()) return "";
@@ -916,12 +917,24 @@ public class BankReconciliationService {
             LocalDate z = complete.higher(last);
             LocalDate a = openingDay == null || openingDay.isAfter(first) ? null : complete.lower(openingDay);
             if (a != null && z != null) {
-                return ": one statement that runs from " + a.format(DMY) + " to " + z.format(DMY) + " brings them and"
-                        + " leaves no day to settle (it holds " + openingDay.format(DMY) + ", the day before the period,"
-                        + " whole too, in case the bank has since added a line dated earlier)" + lockNote(a);
+                return ": one statement that runs from " + a.format(DMY) + " to " + z.format(DMY) + " brings them"
+                        + " (it holds " + openingDay.format(DMY) + ", the day before the period,"
+                        + " whole too, in case the bank has since added a line dated earlier)" + endDay(z) + lockNote(a);
             }
             return span(first, last).map(s -> ": one statement that runs from " + s[0].format(DMY) + " to "
-                    + s[1].format(DMY) + " brings them and leaves no day to settle" + lockNote(s[0])).orElse("");
+                    + s[1].format(DMY) + " brings them" + endDay(s[1]) + lockNote(s[0])).orElse("");
+        }
+
+        /**
+         * #441 review: what a named statement leaves. Every day strictly inside it is held whole,
+         * and its first day, already complete, runs to its end in the file; but a file cannot
+         * show that its last day ended where it stops (the bank may since have added a line in
+         * front of an identical one there, S25-P1), so that day is left to settle by its paper
+         * totals — the one day the statement leaves, said as it is.
+         */
+        private static String endDay(LocalDate z) {
+            return "; it leaves only " + z.format(DMY) + ", the day it ends on, to settle: type that day's total debits"
+                    + " and total credits from the paper statement";
         }
     }
 
@@ -993,7 +1006,8 @@ public class BankReconciliationService {
      */
     private static Optional<BankRecDTOs.Check> lineOrder(Map<LocalDate, Boolean> unconfirmed,
                                                         List<BankRecDTOs.UnprovenDay> unprovenDays, boolean closingTyped,
-                                                        boolean openingKnown, boolean typedOpening, Remedy remedy) {
+                                                        boolean openingKnown, boolean typedOpening, Remedy remedy,
+                                                        Map<LocalDate, List<String>> copies) {
         if (unconfirmed.isEmpty()) return Optional.empty();
         List<LocalDate> mismatch = unprovenDays.stream().filter(d -> "MISMATCH".equals(d.status()))
                 .map(BankRecDTOs.UnprovenDay::date).toList();
@@ -1011,10 +1025,30 @@ public class BankReconciliationService {
         // overall result — no per-day verdict to probe the stored totals with.
         if (!mismatch.isEmpty()) {
             List<LocalDate> all = unprovenDays.stream().map(BankRecDTOs.UnprovenDay::date).toList();
+            Optional<LocalDate> copied = mismatch.stream().filter(copies::containsKey).findFirst();
             return Optional.of(new BankRecDTOs.Check("LINE_ORDER", false, "The total debits and credits typed from the "
                     + "paper statement for " + dayList(all) + " do not all agree with the imported lines: a line is "
-                    + "missing. Check the figures against the paper statement"
-                    + remedy.orImport(all.get(0), all.get(all.size() - 1)) + "."));
+                    + "missing" + copied.map(d -> ", or on " + d.format(DMY) + " a line an import kept is a copy of one "
+                            + "already imported at another balance").orElse("")
+                    + ". Check the figures against the paper statement"
+                    + remedy.orImport(all.get(0), all.get(all.size() - 1))
+                    + copied.map(d -> ". If " + d.format(DMY) + " is still not settled after a statement holding it whole, "
+                            + "the kept line is a copy: delete " + String.join(", ", copies.get(d))
+                            + " (every import holding it), then type the day's totals again").orElse("") + "."));
+        }
+        // #441 review: totals that agree on a day holding a kept look-alike prove nothing.
+        List<LocalDate> copy = unprovenDays.stream().filter(d -> "COPY".equals(d.status()))
+                .map(BankRecDTOs.UnprovenDay::date).toList();
+        if (!copy.isEmpty()) {
+            LocalDate d = copy.get(0);
+            return Optional.of(new BankRecDTOs.Check("LINE_ORDER", false, "On " + dayList(copy) + " an import kept a line "
+                    + "beside one already imported with the same amount and narration at another running balance: the bank "
+                    + "may have moved balances since (a line added earlier), so it may be a copy of that line or a separate "
+                    + "one, and agreeing totals cannot tell (a copy can stand in for a line missing that day). Import a "
+                    + "statement that holds " + d.format(DMY) + " whole" + remedy.orImport(d, d).replaceFirst("^; or import", "; for instance")
+                    + ". If the day is still not settled after it, the kept line is a copy: delete "
+                    + String.join(", ", copies.getOrDefault(d, List.of("the import that brought it")))
+                    + " (every import holding it), then type the day's totals again."));
         }
         // Days proven by their typed totals have all their lines, but not a known order:
         // like any unconfirmed day they need the typed closing (an order that chains by
@@ -1045,7 +1079,8 @@ public class BankReconciliationService {
      * some of the bank's lines (a line is stored only from a file), so equal debit
      * and credit totals mean no line with an amount is missing.</p>
      */
-    private List<BankRecDTOs.UnprovenDay> dayProof(UUID t, UUID recId, Map<LocalDate, Boolean> unconfirmed, List<SL> period) {
+    private List<BankRecDTOs.UnprovenDay> dayProof(UUID t, UUID recId, Map<LocalDate, Boolean> unconfirmed, List<SL> period,
+                                                   Set<LocalDate> lookalike) {
         List<LocalDate> unproven = unconfirmed.entrySet().stream().filter(Map.Entry::getValue).map(Map.Entry::getKey).toList();
         if (unproven.isEmpty()) return List.of();
         Map<LocalDate, BigDecimal[]> typed = new HashMap<>();
@@ -1055,6 +1090,9 @@ public class BankReconciliationService {
                 new MapSqlParameterSource("t", t).addValue("r", recId),
                 rs -> { typed.put(rs.getObject("txn_date", LocalDate.class),
                         new BigDecimal[]{rs.getBigDecimal("debit_total"), rs.getBigDecimal("credit_total")}); });
+        // #441 review: on a day holding a line kept beside a look-alike at another balance (it may
+        // be a copy of that line), agreeing totals prove nothing: a copy can stand in for a line
+        // lost that day.
         List<BankRecDTOs.UnprovenDay> out = new ArrayList<>();
         for (LocalDate d : unproven) {
             BigDecimal[] tt = typed.get(d);
@@ -1063,8 +1101,33 @@ public class BankReconciliationService {
                 continue;
             }
             boolean agree = totalsAgree(dayTotals(period, d), tt[0], tt[1]);
-            out.add(new BankRecDTOs.UnprovenDay(d, tt[0], tt[1], agree ? "PROVEN" : "MISMATCH"));
+            out.add(new BankRecDTOs.UnprovenDay(d, tt[0], tt[1], !agree ? "MISMATCH" : lookalike.contains(d) ? "COPY" : "PROVEN"));
         }
+        return out;
+    }
+
+    /**
+     * #441 review (changeset 183): the period's unproven days that hold a line an import kept
+     * beside a stored look-alike at another running balance ({@code lookalike_kept}), each with
+     * the names of the imports that hold such a line (deleting all of them removes it).
+     */
+    private Map<LocalDate, List<String>> keptLookalikes(UUID t, UUID b, Map<LocalDate, Boolean> unconfirmed) {
+        List<LocalDate> unproven = unconfirmed.entrySet().stream().filter(Map.Entry::getValue).map(Map.Entry::getKey).toList();
+        Map<LocalDate, List<String>> out = new TreeMap<>();
+        if (unproven.isEmpty()) return out;
+        jdbc.query("""
+                select l.txn_date, i.file_name, i.first_date, i.last_date from bank_statement_lines l
+                join bank_statement_line_sources s on s.line_id = l.id and s.tenant_id = l.tenant_id
+                join bank_statement_imports i on i.id = s.import_id and i.tenant_id = s.tenant_id
+                where l.tenant_id = :t and l.bank_account_id = :b and l.lookalike_kept and l.txn_date in (:d)
+                order by l.txn_date, i.imported_at, i.id""",
+                new MapSqlParameterSource("t", t).addValue("b", b).addValue("d", unproven),
+                rs -> {
+                    String name = rs.getString("file_name") + " (" + rs.getObject("first_date", LocalDate.class).format(DMY)
+                            + "–" + rs.getObject("last_date", LocalDate.class).format(DMY) + ")";
+                    List<String> names = out.computeIfAbsent(rs.getObject("txn_date", LocalDate.class), k -> new ArrayList<>());
+                    if (!names.contains(name)) names.add(name);
+                });
         return out;
     }
 
@@ -1079,7 +1142,7 @@ public class BankReconciliationService {
     /** P3-21: the overall verdict on the typed day totals, for the page to show without parsing a message. */
     static String dayTotalsVerdict(List<BankRecDTOs.UnprovenDay> verdicts) {
         if (verdicts.isEmpty()) return null;
-        if (verdicts.stream().anyMatch(d -> "NEEDED".equals(d.status()))) return "PENDING";
+        if (verdicts.stream().anyMatch(d -> "NEEDED".equals(d.status()) || "COPY".equals(d.status()))) return "PENDING";
         return verdicts.stream().anyMatch(d -> "MISMATCH".equals(d.status())) ? "DISAGREE" : "AGREE";
     }
 

@@ -1,0 +1,25 @@
+# S25-P1 follow-up (#441 review, ruling 4): a statement line an import kept although a stored
+# line of its day has the same amount and narration at another running balance (#438
+# "twinned": once the bank back-values, it may be that stored line at a moved balance, i.e. a
+# copy, or a separate line). While a day holds such a line its paper day totals cannot prove
+# it: a copy and a line lost elsewhere that day can add up to the paper's totals. Only a
+# statement holding the day whole (which clears the flag) or deleting the import that brought
+# the copy settles it.
+#
+#   - bank_statement_lines.lookalike_kept: true for such a line until its day is confirmed.
+#     Existing rows: false (the pre-#441 behaviour for lines already imported).
+databaseChangeLog:
+  - changeSet:
+      id: 183-bank-line-kept-lookalike
+      author: claude
+      changes:
+        - addColumn:
+            tableName: bank_statement_lines
+            columns:
+              - column:
+                  name: lookalike_kept
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints: { nullable: false }
+      rollback:
+        - dropColumn: { tableName: bank_statement_lines, columnName: lookalike_kept }
