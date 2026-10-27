@@ -3,7 +3,7 @@
  * Central source of truth for role-based access control in the frontend
  */
 
-export type UserRole = 'SUPER_ADMIN' | 'TENANT_ADMIN' | 'PROPERTY_MANAGER' | 'SECURITY_GUARD' | 'TENANT_USER' | 'RENTER' | 'ACCOUNTANT';
+export type UserRole = 'SUPER_ADMIN' | 'TENANT_ADMIN' | 'PROPERTY_MANAGER' | 'SECURITY_GUARD' | 'TENANT_USER' | 'RENTER' | 'ACCOUNTANT' | 'PROMOTER';
 
 export const PERMISSIONS = {
     canManageTenants: ['SUPER_ADMIN'] as UserRole[],
@@ -99,6 +99,11 @@ export const PERMISSIONS = {
     // Promotions are tenant-wide (not scoped to a single property), so
     // PROPERTY_MANAGER is deliberately excluded, unlike canManageFacilities.
     canManagePromotions: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
+    // The promoter's own portal (/dashboard/promoter): their ads and businesses.
+    // Mirrors PromoterController's @PreAuthorize("hasRole('PROMOTER')"). A promoter
+    // is an outside advertiser, so the portal is theirs alone: no staff role gets
+    // it (an admin reviews a promoter's ads from Promotions, not from here).
+    canUsePromoterPortal: ['PROMOTER'] as UserRole[],
     // Posting/reversing journal vouchers. Mirrors JournalController's
     // @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','ACCOUNTANT')").
     canPostJournals: ['SUPER_ADMIN', 'TENANT_ADMIN', 'ACCOUNTANT'] as UserRole[],
@@ -334,6 +339,9 @@ const ROLE_RANK: Record<UserRole, number> = {
     TENANT_USER: 4,
     RENTER: 5,
     SECURITY_GUARD: 6,
+    // Lowest of all, mirroring UserController#privilegeRank: a promoter is an
+    // outside advertiser with no access to the organisation's own data.
+    PROMOTER: 7,
 };
 
 /**
@@ -361,9 +369,15 @@ export function assignableRoles(role: UserRole | undefined): UserRole[] {
  * balances, the period lock and penalty approval on exactly that role — so the
  * finance module was unreachable by anyone but a tenant admin. Derived from
  * ROLE_RANK so a role added there can never silently go missing here again.
+ *
+ * <p>PROMOTER is excluded for the same reason as RENTER: promoters are invited
+ * from Promotions → Promoters, which also sets what they may see (their
+ * businesses, their properties, whether they may create businesses). The staff
+ * form would make a login with no access behind it, and the backend refuses
+ * to create or re-role a PROMOTER through the users API.</p>
  */
 export const PROVISIONABLE_ROLES: UserRole[] = (Object.keys(ROLE_RANK) as UserRole[])
-    .filter((r) => r !== 'RENTER')
+    .filter((r) => r !== 'RENTER' && r !== 'PROMOTER')
     .sort((a, b) => ROLE_RANK[a] - ROLE_RANK[b]);
 
 /**
@@ -407,6 +421,7 @@ export function getRoleLabel(role: UserRole | string): string {
         TENANT_USER: 'Tenant',
         RENTER: 'Renter',
         ACCOUNTANT: 'Accountant',
+        PROMOTER: 'Promoter',
     };
     return labels[role] || role.replace(/_/g, ' ');
 }

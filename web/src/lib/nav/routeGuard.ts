@@ -74,13 +74,14 @@ export function renterHomeRedirect(pathname: string | null, role: UserRole | und
 
 /**
  * The dashboard home is the staff dashboard, whose summary calls refuse a
- * renter and a security guard alike. Each is sent to their own home instead:
- * the renter home (R3 portal3 F10) and the guard's gate desk. Null when no
- * redirect is due.
+ * renter, a security guard and a promoter alike. Each is sent to their own home
+ * instead: the renter home (R3 portal3 F10), the guard's gate desk and the
+ * promoter portal. Null when no redirect is due.
  */
 export function homeRedirect(pathname: string | null, role: UserRole | undefined): string | null {
     if (!isDashboardHome(pathname)) return null;
     if (role === "RENTER") return "/dashboard/renter-portal";
     if (role === "SECURITY_GUARD") return "/dashboard/gatepass/gate";
+    if (role === "PROMOTER") return "/dashboard/promoter";
     return null;
 }

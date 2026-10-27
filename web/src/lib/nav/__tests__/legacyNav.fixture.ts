@@ -28,4 +28,7 @@ export const LEGACY_NAV: Record<UserRole, string[]> = {
     RENTER: [...SHELL, `${D}/renter-portal`, `${D}/renter-portal/payments`, `${D}/renter-portal/penalties`,
         `${D}/tickets`, "/marketplace/acme", `${D}/meetings`],
     SECURITY_GUARD: [...SHELL],
+    // A new role: there was no sidebar before it. Its one screen (the promoter
+    // portal) is listed in rbacParity.test.ts's NEW_ROLE_SCREENS.
+    PROMOTER: [],
 };

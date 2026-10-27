@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { findRoute, homeRedirect, renterHomeRedirect, routeDecision } from "../routeGuard";
 import { buildNav, flattenNav } from "../navModel";
+import { DASHBOARD_ROUTES, routeAllows } from "../routeRegistry";
 import type { UserRole } from "../../rbac";
 
-const ROLES: UserRole[] = ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER", "SECURITY_GUARD", "TENANT_USER", "RENTER", "ACCOUNTANT"];
+const ROLES: UserRole[] = ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER", "SECURITY_GUARD", "TENANT_USER", "RENTER", "ACCOUNTANT", "PROMOTER"];
 
 describe("findRoute", () => {
     it("matches a locale-prefixed path to its registry entry, static segments before [params]", () => {
@@ -139,6 +140,16 @@ describe("homeRedirect", () => {
             expect(homeRedirect(p, "SECURITY_GUARD"), p).toBe("/dashboard/gatepass/gate");
         }
     });
+    it("sends a promoter to the promoter portal from the dashboard home, in either locale", () => {
+        for (const p of ["/dashboard", "/en/dashboard", "/ar/dashboard/"]) {
+            expect(homeRedirect(p, "PROMOTER"), p).toBe("/dashboard/promoter");
+        }
+    });
+    it("leaves a promoter alone everywhere but the dashboard home", () => {
+        for (const p of ["/en/dashboard/promoter", "/en/dashboard/help", "/en/dashboard/notifications", "/en/dashboard/profile"]) {
+            expect(homeRedirect(p, "PROMOTER"), p).toBeNull();
+        }
+    });
     it("leaves every other page and every staff role alone", () => {
         expect(homeRedirect("/en/dashboard/gatepass/gate", "SECURITY_GUARD")).toBeNull();
         expect(homeRedirect("/en/dashboard/help", "SECURITY_GUARD")).toBeNull();
@@ -158,5 +169,49 @@ describe("gate-pass screens (bug 25)", () => {
         expect(allowed("/en/dashboard/gatepass/settings")).toEqual(["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"]);
         // The report keeps its own rule — a tenant and a guard still cannot open it.
         expect(allowed("/en/dashboard/gatepass")).toEqual(["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"]);
+    });
+});
+
+describe("promoter portal", () => {
+    const allowed = (path: string) => ROLES.filter(r => routeDecision(path, r, true) === "allow");
+
+    it("is open to PROMOTER only, in either locale", () => {
+        expect(allowed("/en/dashboard/promoter")).toEqual(["PROMOTER"]);
+        expect(allowed("/ar/dashboard/promoter")).toEqual(["PROMOTER"]);
+        expect(findRoute("/en/dashboard/promoter")?.path).toBe("/dashboard/promoter");
+    });
+
+    it("lets a promoter reach the pages every role has, and no other registered page", () => {
+        const open = DASHBOARD_ROUTES.filter(entry => routeAllows(entry, "PROMOTER")).map(entry => entry.path).sort();
+        // "/dashboard" itself is open to every signed-in role; homeRedirect sends a promoter on to the portal.
+        expect(open).toEqual([
+            "/dashboard", "/dashboard/help", "/dashboard/help/[slug]", "/dashboard/help/videos",
+            "/dashboard/notifications", "/dashboard/profile", "/dashboard/promoter",
+        ]);
+    });
+
+    it.each([
+        "/en/dashboard/promotions",
+        "/en/dashboard/properties",
+        "/en/dashboard/tickets",
+        "/en/dashboard/tickets/t1",
+        "/en/dashboard/meetings",
+        "/en/dashboard/leases",
+        "/en/dashboard/renters",
+        "/en/dashboard/gatepass/approvals",
+        "/en/dashboard/renter-portal",
+        "/en/dashboard/collections",
+        "/en/dashboard/finance/accounts",
+        "/en/dashboard/reports",
+        "/en/dashboard/settings",
+        "/en/dashboard/staff",
+        "/en/superadmin/users",
+        "/en/superadmin/tenants",
+    ])("denies PROMOTER %s", path => {
+        expect(routeDecision(path, "PROMOTER", true)).toBe("denied");
+    });
+
+    it("does not let any other role into the portal's neighbours by accident (promotions stays admin-only)", () => {
+        expect(allowed("/en/dashboard/promotions")).toEqual(["SUPER_ADMIN", "TENANT_ADMIN"]);
     });
 });

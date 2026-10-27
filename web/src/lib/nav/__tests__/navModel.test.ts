@@ -5,7 +5,7 @@ import en from "../../../../messages/en.json";
 import type { UserRole } from "../../rbac";
 import { activeNav, buildNav, flattenNav, type RailSection } from "../navModel";
 
-const ROLES: UserRole[] = ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT", "TENANT_USER", "RENTER", "SECURITY_GUARD"];
+const ROLES: UserRole[] = ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT", "TENANT_USER", "RENTER", "SECURITY_GUARD", "PROMOTER"];
 const FLAGS = ["LISTINGS", "MEETINGS", "GATEPASS"] as const;
 const ctx = (role: UserRole, on: readonly string[] = FLAGS, booksLive = true) =>
     ({ role, isEnabled: (f: string) => on.includes(f), tenantSlug: "acme", booksLive });
@@ -75,6 +75,20 @@ describe("buildNav — rail sections and panel items per role (all flags on)", (
     it("SECURITY_GUARD's Home is the gate desk, with the approvals queue, flag or no flag", () => {
         expect(flattenNav(buildNav(ctx("SECURITY_GUARD")))).toEqual(["/dashboard/gatepass/gate", "/dashboard/gatepass/approvals"]);
         expect(flattenNav(buildNav(ctx("SECURITY_GUARD", [])))).toEqual(["/dashboard/gatepass/gate", "/dashboard/gatepass/approvals"]);
+    });
+
+    it("PROMOTER sees the promoter portal and nothing else, flag or no flag", () => {
+        for (const on of [[...FLAGS], []]) {
+            const rail = buildNav(ctx("PROMOTER", on));
+            expect(shape(rail), `${on}`).toEqual([["home", ["my-ads"]]]);
+            expect(flattenNav(rail), `${on}`).toEqual(["/dashboard/promoter"]);
+        }
+    });
+
+    it("no other role is offered the promoter portal", () => {
+        for (const role of ROLES.filter(r => r !== "PROMOTER")) {
+            expect(flattenNav(buildNav(ctx(role))), role).not.toContain("/dashboard/promoter");
+        }
     });
 
     it("never links a tenant admin to /superadmin/users", () => {

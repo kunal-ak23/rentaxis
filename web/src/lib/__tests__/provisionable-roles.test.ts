@@ -15,8 +15,8 @@ import ar from "../../../messages/ar.json";
  * again exist everywhere except the screen that creates users.
  */
 describe("PROVISIONABLE_ROLES", () => {
-    it("offers every role a SUPER_ADMIN may assign, except RENTER", () => {
-        const expected = assignableRoles("SUPER_ADMIN").filter((r) => r !== "RENTER").sort();
+    it("offers every role a SUPER_ADMIN may assign, except RENTER and PROMOTER", () => {
+        const expected = assignableRoles("SUPER_ADMIN").filter((r) => r !== "RENTER" && r !== "PROMOTER").sort();
 
         expect([...PROVISIONABLE_ROLES].sort()).toEqual(expected);
     });
@@ -31,6 +31,19 @@ describe("PROVISIONABLE_ROLES", () => {
      */
     it("excludes RENTER", () => {
         expect(PROVISIONABLE_ROLES).not.toContain("RENTER");
+    });
+
+    /**
+     * A promoter is invited from Promotions → Promoters, which also sets what
+     * they may see; the backend refuses to create or re-role one through the
+     * users API, so offering PROMOTER here would only produce a 400.
+     */
+    it("excludes PROMOTER, whose access is set from Promotions → Promoters", () => {
+        expect(PROVISIONABLE_ROLES).not.toContain("PROMOTER");
+        // ...but it is still the lowest rung of the ladder, labelled in both languages.
+        expect(assignableRoles("SUPER_ADMIN")).toContain("PROMOTER");
+        expect(assignableRoles("PROMOTER")).toEqual(["PROMOTER"]);
+        expect(getRoleLabel("PROMOTER")).toBe("Promoter");
     });
 
     it("is ordered by privilege, most privileged first", () => {
