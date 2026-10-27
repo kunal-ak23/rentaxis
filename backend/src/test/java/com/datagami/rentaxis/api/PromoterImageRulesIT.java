@@ -58,7 +58,8 @@ class PromoterImageRulesIT extends AbstractPromoterIT {
     void aPromoterCannotPointArtworkOrALogoAtAnotherHost() {
         Resp ad = post(promoter, "/api/v1/promoter/ads", ad("backgroundImageUrl", EXTERNAL));
         assertThat(ad.status()).isEqualTo(400);
-        assertThat(ad.text("message")).contains("uploaded");
+        assertThat(ad.text("message"))
+                .isEqualTo("Replace the current image with an uploaded one — linked images can't be used here.");
 
         PromoAd existing = ad(org, wash.getId(), APPROVED, promoter.getId(), p1.getId());
         assertThat(put(promoter, "/api/v1/promoter/ads/" + existing.getId(), ad("backgroundImageUrl", EXTERNAL))
@@ -101,6 +102,19 @@ class PromoterImageRulesIT extends AbstractPromoterIT {
                 "titleEn", "Admin art", "ctaType", "NONE", "backgroundImageUrl", EXTERNAL)).status()).isEqualTo(201);
         assertThat(post(admin, "/api/v1/promotions/businesses",
                 body("nameEn", "Admin " + UUID.randomUUID(), "logoUrl", EXTERNAL)).status()).isEqualTo(201);
+    }
+
+    /** N6: an admin gave the ad an external image; the promoter saving it is told to replace it. */
+    @Test
+    void n6_aPromoterSavingAnAdWithAnAdminsLinkedImageIsToldWhy() {
+        PromoAd ad = ad(org, wash.getId(), APPROVED, promoter.getId(), p1.getId());
+        jdbc.update("UPDATE promo_ads SET background_image_url = ? WHERE id = ?", EXTERNAL, ad.getId());
+
+        Resp res = put(promoter, "/api/v1/promoter/ads/" + ad.getId(), ad("backgroundImageUrl", EXTERNAL));
+
+        assertThat(res.status()).isEqualTo(400);
+        assertThat(res.text("message"))
+                .isEqualTo("Replace the current image with an uploaded one — linked images can't be used here.");
     }
 
     /** M6: a promoter's logo is public only once one of the business's ads is approved and live. */

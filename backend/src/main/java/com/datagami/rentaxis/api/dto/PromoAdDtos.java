@@ -20,7 +20,7 @@ public final class PromoAdDtos {
     }
 
     /**
-     * 33 positional arguments, several adjacent pairs of the same type. Keep them one
+     * 34 positional arguments, several adjacent pairs of the same type. Keep them one
      * per line-group and in the record's declared order so a transposition is visible
      * in review — the compiler cannot catch one.
      * {@code listAds_mapsEverySwapProneFieldToTheRightSlot} is the backstop.
@@ -44,7 +44,8 @@ public final class PromoAdDtos {
                 a.getRejectionReason(),
                 a.getSubmittedAt(),
                 a.getReviewedAt(),
-                submittedByName);
+                submittedByName,
+                a.isWrittenByPromoter());
     }
 
     public static PromoBusinessDTO business(PromoBusiness b, long adCount, UnaryOperator<String> image) {

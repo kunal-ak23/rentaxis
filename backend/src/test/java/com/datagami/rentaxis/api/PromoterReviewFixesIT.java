@@ -248,6 +248,53 @@ class PromoterReviewFixesIT extends AbstractPromoterIT {
         return res;
     }
 
+    // ------------------------------------------------------------- N3 / N5
+
+    @Test
+    void n3_aBusinessEditCountsAndNamesOnlyLiveAds() {
+        PromoAd live = ad(org, wash.getId(), APPROVED, null, p1.getId());
+        PromoAd archived = ad(org, wash.getId(), APPROVED, null, p1.getId());
+        jdbc.update("UPDATE promo_ads SET archived_at = now(), active = false WHERE id = ?", archived.getId());
+
+        put(promoter, "/api/v1/promoter/businesses/" + wash.getId(), body("nameEn", "QuickWash n3 " + UUID.randomUUID()));
+
+        List<Map<String, Object>> rows = jdbc.queryForList("SELECT reference_id, params::text AS params "
+                + "FROM notifications WHERE user_id = ? AND type = 'PROMO_AD_SUBMITTED'", admin.getId());
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).get("reference_id")).isEqualTo(live.getId());
+        assertThat(String.valueOf(rows.get(0).get("params"))).contains("\"adCount\": \"1\"");
+    }
+
+    @Test
+    void n3_aBusinessEditThatOnlyResubmitsArchivedAdsSendsNoNotice() {
+        PromoAd archived = ad(org, wash.getId(), APPROVED, null, p1.getId());
+        jdbc.update("UPDATE promo_ads SET archived_at = now(), active = false WHERE id = ?", archived.getId());
+
+        put(promoter, "/api/v1/promoter/businesses/" + wash.getId(), body("nameEn", "QuickWash n3b " + UUID.randomUUID()));
+
+        assertThat(reload(archived.getId()).getApprovalStatus()).isEqualTo(PENDING);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM notifications WHERE user_id = ? AND type = 'PROMO_AD_SUBMITTED'",
+                Integer.class, admin.getId())).isZero();
+    }
+
+    @Test
+    void n5_theDtoSaysWhoWroteItAndAnOrphanedAdCannotBeApproved() {
+        String adId = post(promoter, "/api/v1/promoter/ads", ad("Wash day")).text("id");
+        PromoAd adminAd = ad(org, wash.getId(), APPROVED, null);
+        com.fasterxml.jackson.databind.JsonNode list = get(admin, "/api/v1/promotions/ads?size=100").body().get("content");
+        java.util.Map<String, Boolean> written = new java.util.HashMap<>();
+        list.forEach(n -> written.put(n.get("id").asText(),
+                n.hasNonNull("writtenByPromoter") && n.get("writtenByPromoter").asBoolean()));
+        assertThat(written).containsEntry(adId, true).containsEntry(adminAd.getId().toString(), false);
+
+        assertThat(delete(admin, "/api/admin/users/" + promoter.getId()).status()).isEqualTo(200);
+
+        Resp res = approve(admin, adId);
+        assertThat(res.status()).isEqualTo(400);
+        assertThat(res.text("message")).isEqualTo("This ad's promoter was removed — it cannot be shown to tenants.");
+        assertThat(reload(UUID.fromString(adId)).getApprovalStatus()).isEqualTo(PENDING);
+    }
+
     /** Whether, within 5 s, some session is waiting for a lock in a statement on {@code table}. */
     private boolean waitForLockWaitOn(String table) {
         long until = System.currentTimeMillis() + 5_000;

@@ -189,10 +189,13 @@ public class PromoterService {
         for (PromoAd ad : resubmitted) {
             resubmit(ad, caller, now);
         }
-        // Review M3: one notice for the edit, naming one of the ads and how many.
-        if (!resubmitted.isEmpty()) {
-            events.publishEvent(new PromoAdSubmittedEvent(caller.tenantId(), resubmitted.get(0).getId(),
-                    caller.userId(), resubmitted.size()));
+        // Review M3: one notice for the edit, naming one of the ads and how many. Review
+        // N3: only the live ones count and are named — an archived ad was resubmitted so
+        // a restore brings it back PENDING, but it is waiting for nobody now.
+        List<PromoAd> live = resubmitted.stream().filter(a -> a.getArchivedAt() == null).toList();
+        if (!live.isEmpty()) {
+            events.publishEvent(new PromoAdSubmittedEvent(caller.tenantId(), live.get(0).getId(),
+                    caller.userId(), live.size()));
         }
         return PromoAdDtos.business(b, adRepository.countByBusinessIdAndArchivedAtIsNull(businessId), images::forDto);
     }
@@ -359,8 +362,10 @@ public class PromoterService {
         }
         String route = images.normaliseForStorage(url.trim());
         if (PromotionImageService.fileOf(route).isEmpty() || !images.ownedBy(caller.tenantId(), route)) {
+            // Review N6: also what a promoter sees saving a business or ad an admin had
+            // given an external image — the editor sends it back as it is.
             throw new BusinessRuleViolationException(
-                    field + " must be an image uploaded here: upload the picture instead of linking to it.");
+                    "Replace the current image with an uploaded one — linked images can't be used here.");
         }
     }
 
