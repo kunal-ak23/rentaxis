@@ -61,6 +61,8 @@ class PromoAd {
     this.couponCode,
     this.couponTermsEn,
     this.couponTermsAr,
+    this.redirectUrl,
+    this.sharedFields = const [],
     this.endsAt,
   });
 
@@ -80,6 +82,24 @@ class PromoAd {
   final String? couponCode;
   final String? couponTermsEn;
   final String? couponTermsAr;
+
+  /// COUPON ads only: where to send the renter after **Copy code**, already
+  /// resolved by the server for this renter — the admin's link with each
+  /// custom parameter appended as `name=value`. Null when the ad has no
+  /// redirect, and absent altogether from an older backend; either way the
+  /// app behaves exactly as it did before redirects existed.
+  ///
+  /// The string is not validated here. The model only carries it; whoever
+  /// launches it re-checks the scheme and authority first.
+  final String? redirectUrl;
+
+  /// Which kinds of the renter's own data are inside [redirectUrl], as the
+  /// server's source names (`RENTER_NAME`, `RENTER_PHONE`, `RENTER_EMAIL`,
+  /// `PROPERTY_NAME`, `UNIT_NUMBER`). It exists for the consent sheet, so it
+  /// keeps names this app version has never heard of: dropping an unknown one
+  /// would make the sheet under-report what is about to be shared.
+  /// Empty when nothing personal is in the link.
+  final List<String> sharedFields;
   final DateTime? endsAt;
 
   /// Never null — a card always has a headline slot to fill.
@@ -136,6 +156,8 @@ class PromoAd {
         couponCode: json['couponCode'] as String?,
         couponTermsEn: json['couponTermsEn'] as String?,
         couponTermsAr: json['couponTermsAr'] as String?,
+        redirectUrl: _blankToNull(json['redirectUrl']),
+        sharedFields: _parseSharedFields(json['sharedFields']),
         endsAt: DateTime.tryParse(json['endsAt'] as String? ?? ''),
       );
 
@@ -145,6 +167,20 @@ class PromoAd {
       .whereType<Map>()
       .map((r) => PromoAd.fromJson(Map<String, dynamic>.from(r)))
       .toList();
+
+  /// Tolerant on purpose: an older backend omits the key, and a newer one may
+  /// one day send something this version cannot read. Both read as "nothing
+  /// shared" rather than throwing inside the feed parse. Order is kept and
+  /// repeats are dropped, so the consent sheet lists each field once.
+  static List<String> _parseSharedFields(Object? raw) {
+    if (raw is! List) return const [];
+    final seen = <String>{};
+    for (final item in raw) {
+      final name = _blankToNull(item);
+      if (name != null) seen.add(name);
+    }
+    return List.unmodifiable(seen);
+  }
 
   /// An unrecognised value degrades to [PromoCtaType.none] rather than
   /// throwing — a newer backend must never crash an older app.
@@ -162,6 +198,13 @@ class PromoAd {
         return PromoCtaType.none;
     }
   }
+}
+
+/// The trimmed string, or null for anything that is not a non-blank string.
+String? _blankToNull(Object? raw) {
+  if (raw is! String) return null;
+  final t = raw.trim();
+  return t.isEmpty ? null : t;
 }
 
 /// `#RRGGBB` or `#AARRGGBB`; null for anything else.

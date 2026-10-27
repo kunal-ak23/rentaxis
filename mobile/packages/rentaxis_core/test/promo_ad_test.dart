@@ -12,6 +12,7 @@ Map<String, dynamic> json({
   String? ctaLabelEn,
   String? ctaLabelAr,
   String? endsAt,
+  Map<String, dynamic> extra = const {},
 }) => {
   'id': 'ad-1',
   'business': {
@@ -36,6 +37,7 @@ Map<String, dynamic> json({
   'couponTermsEn': null,
   'couponTermsAr': null,
   'endsAt': endsAt,
+  ...extra,
 };
 
 void main() {
@@ -112,6 +114,96 @@ void main() {
       // no pill, and the admin panel's preview hides it too.
       final ad = PromoAd.fromJson(json(ctaType: 'NONE', ctaLabelEn: 'Grab it'));
       expect(ad.ctaLabel(false), '');
+    });
+  });
+
+  group('coupon redirect', () {
+    test('an older backend that sends neither key reads as no redirect', () {
+      // `json()` has no redirect keys at all — the shape every pre-redirect
+      // backend sends. Behaviour must be exactly what it was.
+      final ad = PromoAd.fromJson(json(ctaType: 'COUPON'));
+      expect(ad.redirectUrl, isNull);
+      expect(ad.sharedFields, isEmpty);
+    });
+
+    test('explicit nulls and an empty list read the same way', () {
+      final ad = PromoAd.fromJson(json(
+        ctaType: 'COUPON',
+        extra: {'redirectUrl': null, 'sharedFields': null},
+      ));
+      expect(ad.redirectUrl, isNull);
+      expect(ad.sharedFields, isEmpty);
+
+      final empty = PromoAd.fromJson(json(
+        ctaType: 'COUPON',
+        extra: {'redirectUrl': 'https://quickwash.example/app', 'sharedFields': []},
+      ));
+      expect(empty.redirectUrl, 'https://quickwash.example/app');
+      expect(empty.sharedFields, isEmpty);
+    });
+
+    test('reads the resolved url and the shared fields in order', () {
+      final ad = PromoAd.fromJson(json(
+        ctaType: 'COUPON',
+        extra: {
+          'redirectUrl':
+              'https://quickwash.example/app?code=MIFTAH25&name=Aisha%20Khan',
+          'sharedFields': ['RENTER_NAME', 'UNIT_NUMBER', 'RENTER_EMAIL'],
+        },
+      ));
+      expect(ad.redirectUrl,
+          'https://quickwash.example/app?code=MIFTAH25&name=Aisha%20Khan');
+      expect(ad.sharedFields, ['RENTER_NAME', 'UNIT_NUMBER', 'RENTER_EMAIL']);
+    });
+
+    test('a blank url is no redirect', () {
+      // The admin form saves cleared inputs as empty strings.
+      final ad = PromoAd.fromJson(json(
+        ctaType: 'COUPON',
+        extra: {'redirectUrl': '   '},
+      ));
+      expect(ad.redirectUrl, isNull);
+    });
+
+    test('keeps a field name this version has never heard of', () {
+      // The consent sheet must not under-report what is being shared, so an
+      // unknown source from a newer backend survives parsing.
+      final ad = PromoAd.fromJson(json(
+        ctaType: 'COUPON',
+        extra: {
+          'sharedFields': ['RENTER_NAME', 'RENTER_PASSPORT']
+        },
+      ));
+      expect(ad.sharedFields, ['RENTER_NAME', 'RENTER_PASSPORT']);
+    });
+
+    test('drops repeats, blanks and non-strings from the list', () {
+      final ad = PromoAd.fromJson(json(
+        ctaType: 'COUPON',
+        extra: {
+          'sharedFields': ['RENTER_NAME', 'RENTER_NAME', '', '  ', 7, null, 'UNIT_NUMBER']
+        },
+      ));
+      expect(ad.sharedFields, ['RENTER_NAME', 'UNIT_NUMBER']);
+    });
+
+    test('values of the wrong shape degrade instead of throwing', () {
+      final ad = PromoAd.fromJson(json(
+        ctaType: 'COUPON',
+        extra: {'redirectUrl': 42, 'sharedFields': 'RENTER_NAME'},
+      ));
+      expect(ad.redirectUrl, isNull);
+      expect(ad.sharedFields, isEmpty);
+    });
+
+    test('the parsed list cannot be mutated behind the model', () {
+      final ad = PromoAd.fromJson(json(
+        ctaType: 'COUPON',
+        extra: {
+          'sharedFields': ['RENTER_NAME']
+        },
+      ));
+      expect(() => ad.sharedFields.add('RENTER_PHONE'), throwsUnsupportedError);
     });
   });
 
