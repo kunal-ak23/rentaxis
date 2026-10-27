@@ -253,6 +253,40 @@ class PromoterReviewFixesIT extends AbstractPromoterIT {
                 body("email", "promoter-" + UUID.randomUUID() + "@example.test")).status()).isEqualTo(200);
     }
 
+    // ------------------------------------------------------------------- M7
+
+    @Test
+    void m7_twoOrganisationsInvitingOneEmailAtOnceCreateOneLogin() throws Exception {
+        UUID orgB = org();
+        User adminB = user(orgB, UserRole.TENANT_ADMIN);
+        String email = "promoter-" + UUID.randomUUID() + "@example.test";
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        java.util.concurrent.atomic.AtomicReference<java.util.concurrent.Future<Resp>> second =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        try {
+            com.datagami.rentaxis.core.tenant.TenantContextHolder.setTenantId(org);
+            new org.springframework.transaction.support.TransactionTemplate(txManager).executeWithoutResult(tx -> {
+                promoterAdmin.invite(org, new com.datagami.rentaxis.api.dto.PromoterInviteRequest(
+                        "First", email, null, false, List.of(), List.of()));
+                second.set(pool.submit(() -> post(adminB, "/api/v1/promotions/promoters", body("name", "Second",
+                        "email", email, "canCreateBusinesses", false, "businessIds", List.of(), "propertyIds", List.of()))));
+                try {
+                    Thread.sleep(1500);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+        } finally {
+            com.datagami.rentaxis.core.tenant.TenantContextHolder.clear();
+        }
+        Resp res = second.get().get(20, java.util.concurrent.TimeUnit.SECONDS);
+        pool.shutdownNow();
+
+        assertThat(res.status()).isEqualTo(400);
+        assertThat(res.text("code")).isEqualTo("promoter.existingLogin");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM users WHERE email = ?", Integer.class, email)).isEqualTo(1);
+    }
+
     // -------------------------------------------------------------- helpers
 
     private Map<String, Object> ad(String title) {

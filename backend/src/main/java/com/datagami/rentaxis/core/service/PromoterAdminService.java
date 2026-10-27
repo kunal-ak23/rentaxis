@@ -51,6 +51,10 @@ public class PromoterAdminService {
     private final PromoBusinessRepository businessRepository;
     private final PropertyRepository propertyRepository;
 
+    /** For the per-email advisory lock (review M7); field-injected so the constructor stays as it was. */
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entityManager;
+
     public PromoterAdminService(UserService userService,
                                 UserRepository userRepository,
                                 PromoterAccessRepository accessRepository,
@@ -120,6 +124,12 @@ public class PromoterAdminService {
         }
         Set<UUID> businessIds = requireBusinesses(tenantId, req.businessIds());
         Set<UUID> propertyIds = requireProperties(tenantId, req.propertyIds());
+        // Review M7: two invites of one email (from two organisations) would otherwise
+        // both see "no login" and both create one. A transaction-scoped advisory lock on
+        // the address makes the second wait for the first to commit, then see its row.
+        entityManager.createNativeQuery("SELECT 1 FROM pg_advisory_xact_lock(hashtext(:email))")
+                .setParameter("email", email)
+                .getSingleResult();
         if (userRepository.existsAnyLoginWithEmail(email)) {
             throw new BusinessRuleViolationException(
                     "This email already has a Miftah login. Invite the promoter with another email address.",
