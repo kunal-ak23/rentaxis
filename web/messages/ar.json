@@ -3988,7 +3988,7 @@
       "BOOKING_REJECTED": {"title": "تحديث الحجز", "body": "رُفض طلب حجزك لـ {resource}.", "bodyShort": "رُفض طلب حجزك."},
       "BOOKING_RELEASED": {"title": "تحديث الحجز", "body": "أُنهي حجزك لـ {resource}.", "bodyShort": "أُنهي حجز موقف السيارة الخاص بك."},
       "RENEWAL_INTENT": {"title": "ردّ المستأجر على تذكير التجديد", "body": "اختار {renterName} {intent} للوحدة {unit}"},
-      "LEASE_RENEWAL_REMINDER": {"title": "ينتهي عقد إيجارك خلال {days, plural, zero {# يوم} one {يوم واحد} two {يومين} few {# أيام} many {# يومًا} other {# يوم}}", "body": "ينتهي العقد في {date}. اختر خيار التجديد من بوابة المستأجر على الويب."},
+      "LEASE_RENEWAL_REMINDER": {"title": "ينتهي عقد إيجارك خلال {days, plural, zero {# يوم} one {يوم واحد} two {يومين} few {# أيام} many {# يومًا} other {# يوم}}", "body": "ينتهي العقد في {date}. اختر خيار التجديد من صفحة التجديدات."},
       "PENALTY_INCURRED": {"title": "فُرضت غرامة", "body": "أُضيفت غرامة بقيمة {amount} ({reason}). يُرجى سدادها بتحويل بنكي أو بشيك أو نقدًا."},
       "PENALTY_INCURRED_INSTALMENT": {"title": "فُرضت غرامة", "body": "أُضيفت غرامة بقيمة {amount} على القسط رقم {seq} ({reason}). يُرجى سدادها بتحويل بنكي أو بشيك أو نقدًا."}
     }

@@ -7,6 +7,7 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../../providers/facility_provider.dart';
 import '../../providers/gate_pass_provider.dart' show activeLeasesProvider;
+import '../../utils/renter_rules.dart' show isPastRenterBooking;
 
 /// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
 class _L {
@@ -130,7 +131,8 @@ List<String> _photoUrls(Map<String, dynamic> row) =>
         .toList();
 
 /// The renter's own open request per resource id. PENDING/APPROVED only —
-/// terminal statuses do not block a new request. `/v1/bookings/my` is
+/// terminal statuses do not block a new request, and an APPROVED booking
+/// whose date is over is history, not current. `/v1/bookings/my` is
 /// createdAt ASC, so the last write wins (the newest open request).
 Map<String, Map<String, dynamic>> _openByResource(
   List<Map<String, dynamic>> mine,
@@ -139,6 +141,7 @@ Map<String, Map<String, dynamic>> _openByResource(
   for (final row in mine) {
     final status = row['status']?.toString();
     if (status != 'PENDING' && status != 'APPROVED') continue;
+    if (status == 'APPROVED' && isPastRenterBooking(row)) continue;
     final resourceId = (row['amenityId'] ?? row['parkingSpotId'])?.toString();
     if (resourceId != null) result[resourceId] = row;
   }

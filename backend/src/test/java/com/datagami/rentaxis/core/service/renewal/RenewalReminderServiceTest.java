@@ -133,20 +133,20 @@ class RenewalReminderServiceTest extends AbstractPostgresIT {
     }
 
     @Test
-    void in_app_reminder_copy_directs_to_web_portal_not_a_tap_action() {
-        RenewalOpportunity o = openOppForLeaseDaysOut(85);
+    void in_app_reminder_states_real_days_left_and_points_to_renewals() {
+        // 66 days out sits in the 90-day slot; the copy used to say "90 days".
+        RenewalOpportunity o = openOppForLeaseDaysOut(66);
         service.fireRemindersForOpportunity(o.getId(), LocalDate.of(2026, 6, 1));
 
         UUID renterUserId = o.getLease().getRenter().getUserId();
         List<Notification> notifications = notificationRepo.findByUserIdOrderByCreatedAtDesc(renterUserId);
         assertThat(notifications)
                 .filteredOn(n -> "LEASE_RENEWAL_REMINDER".equals(n.getType()))
-                .isNotEmpty()
-                .allSatisfy(n -> {
-                    // The renter mobile app has no renewal screen, so the copy must not
-                    // instruct a tap action; it points at the renter web portal instead.
-                    assertThat(n.getMessage()).doesNotContain("Tap to");
-                    assertThat(n.getMessage()).contains("renter web portal");
+                .singleElement()
+                .satisfies(n -> {
+                    assertThat(n.getTitle()).isEqualTo("Your lease ends in 66 days");
+                    assertThat(n.getParams()).containsEntry("days", "66");
+                    assertThat(n.getMessage()).contains("Renewals").doesNotContain("web portal");
                 });
     }
 

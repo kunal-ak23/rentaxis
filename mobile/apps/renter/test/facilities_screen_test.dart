@@ -444,6 +444,34 @@ void main() {
       },
     );
 
+    testWidgets('an APPROVED booking whose date is over is not shown as '
+        'current; an upcoming one is', (tester) async {
+      String day(int offset) => DateTime.now()
+          .add(Duration(days: offset))
+          .toIso8601String()
+          .substring(0, 10);
+      Map<String, dynamic> booking(int offset) => {
+        'id': 'bk-$offset',
+        'amenityId': 'am-1',
+        'status': 'APPROVED',
+        'preferredDate': day(offset),
+        'preferredStartTime': '09:00:00',
+        'preferredEndTime': '10:00:00',
+      };
+
+      await pumpScreen(
+        tester,
+        fake: FakeFacilityService(amenities: [pool], bookings: [booking(-2)]),
+      );
+      expect(find.text('APPROVED'), findsNothing);
+
+      await pumpScreen(
+        tester,
+        fake: FakeFacilityService(amenities: [pool], bookings: [booking(2)]),
+      );
+      expect(find.text('APPROVED'), findsOneWidget);
+    });
+
     testWidgets(
       'a PENDING request keys off amenityId/parkingSpotId — it blocks '
       'only the matching parking spot, not a sibling spot',

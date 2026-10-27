@@ -270,6 +270,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
                       .toUpperCase();
                   final id = notification['referenceId']?.toString();
                   final route = switch (reference) {
+                    _ when type == 'LEASE_RENEWAL_REMINDER' => '/renewals',
                     'TICKET' =>
                       id == null
                           ? '/tickets'

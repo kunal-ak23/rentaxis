@@ -104,3 +104,19 @@ bool canCancelRenterBooking(Map<String, dynamic> row, {DateTime? now}) {
   );
   return start != null && (now ?? DateTime.now()).isBefore(start);
 }
+
+/// The booking is over on Dubai's wall clock: a parking range after its last
+/// day, an amenity slot after its end time (after its day when untimed).
+bool isPastRenterBooking(Map<String, dynamic> row, {DateTime? now}) {
+  final lastDay = row['preferredEndDate'] ?? row['preferredDate'];
+  if (lastDay == null) return false;
+  final endTime = row['preferredEndDate'] == null
+      ? row['preferredEndTime']
+      : null;
+  final end = endTime == null
+      ? DateTime.tryParse('${lastDay}T00:00:00+04:00')?.add(
+          const Duration(days: 1),
+        )
+      : DateTime.tryParse('${lastDay}T$endTime+04:00');
+  return end != null && !(now ?? DateTime.now()).isBefore(end);
+}

@@ -776,7 +776,8 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
       padding: EdgeInsets.only(
         left: 16,
         right: 16,
-        bottom: MediaQuery.of(context).padding.bottom + 10,
+        // Clears the shell's raised Pass circle, which rises 17pt above the bar.
+        bottom: MediaQuery.of(context).padding.bottom + 28,
         top: 10,
       ),
       decoration: BoxDecoration(
