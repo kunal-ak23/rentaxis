@@ -26,6 +26,8 @@ class PromoterReviewFixesIT extends AbstractPromoterIT {
     com.datagami.rentaxis.core.service.PromoAdApprovalService approvals;
     @org.springframework.beans.factory.annotation.Autowired
     org.springframework.transaction.PlatformTransactionManager txManager;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.datagami.rentaxis.core.service.PromoterAdminService promoterAdmin;
 
     private UUID org;
     private User admin;
@@ -161,6 +163,24 @@ class PromoterReviewFixesIT extends AbstractPromoterIT {
             }
         }
         return false;
+    }
+
+    // ------------------------------------------------------------------- M1
+
+    /** M1: an archived ad of the business is re-submitted by a business edit too, so a restore brings it back PENDING. */
+    @Test
+    void m1_aRestoredAdDoesNotCarryUnreviewedBusinessChangesLive() {
+        PromoAd ad = ad(org, wash.getId(), APPROVED, promoter.getId(), p1.getId());
+        User renter = renterAt(org, p1);
+        jdbc.update("INSERT INTO promo_ad_events (id, tenant_id, ad_id, renter_user_id, event_type, occurred_at, day) "
+                + "VALUES (?, ?, ?, ?, 'IMPRESSION', now(), (now() AT TIME ZONE 'Asia/Dubai')::date)",
+                UUID.randomUUID(), org, ad.getId(), renter.getId());
+        assertThat(delete(admin, "/api/v1/promotions/ads/" + ad.getId()).text("outcome")).isEqualTo("ARCHIVED");
+
+        put(promoter, "/api/v1/promoter/businesses/" + wash.getId(), body("nameEn", "QuickWash new " + UUID.randomUUID()));
+        assertThat(post(admin, "/api/v1/promotions/ads/" + ad.getId() + "/restore", null).status()).isEqualTo(200);
+
+        assertThat(reload(ad.getId()).getApprovalStatus()).isEqualTo(PENDING);
     }
 
     // -------------------------------------------------------------- helpers

@@ -80,12 +80,13 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
     /**
      * A business's ads in these approval states, row-locked: a promoter's business edit
      * sends the APPROVED ones back and re-submits the PENDING ones (review round 1, I2).
+     * Archived ads included (review M1): one restored later must not come back APPROVED
+     * with business changes nobody reviewed.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             SELECT a FROM PromoAd a
             WHERE a.tenantId = :tenantId AND a.businessId = :businessId AND a.approvalStatus IN :statuses
-              AND a.archivedAt IS NULL
             ORDER BY a.id
             """)
     List<PromoAd> findForUpdateByBusinessAndStatusIn(@Param("tenantId") UUID tenantId,
