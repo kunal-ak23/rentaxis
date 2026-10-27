@@ -351,13 +351,14 @@ public class BankStatementImportService {
                     .addValue("imp", imp.getId()).addValue("seq", ++seq).addValue("txn", row.txnDate())
                     .addValue("val", row.valueDate()).addValue("descr", row.description()).addValue("ref", row.reference())
                     .addValue("chq", row.chequeNo()).addValue("amt", row.amount()).addValue("bal", row.balance())
-                    .addValue("hash", hashes.get(i)).addValue("row", row.fileRow()));
+                    .addValue("hash", hashes.get(i)).addValue("row", row.fileRow())
+                    .addValue("lookalike", matched.twinned().contains(hashes.get(i))));
         }
         if (!batch.isEmpty()) {
             jdbc.batchUpdate("""
                     insert into bank_statement_lines (id, tenant_id, bank_account_id, import_id, seq, txn_date, value_date,
-                        description, reference, cheque_no, amount, running_balance, line_hash, file_row)
-                    values (:id, :t, :b, :imp, :seq, :txn, :val, :descr, :ref, :chq, :amt, :bal, :hash, :row)""",
+                        description, reference, cheque_no, amount, running_balance, line_hash, file_row, lookalike_kept)
+                    values (:id, :t, :b, :imp, :seq, :txn, :val, :descr, :ref, :chq, :amt, :bal, :hash, :row, :lookalike)""",
                     batch.toArray(SqlParameterSource[]::new));
         }
         // S25-01: the lines taken although their balance moved carry the bank's balance now.
@@ -395,9 +396,14 @@ public class BankStatementImportService {
 
     /** A stored statement line, as de-duplication and day ordering need it. */
     record StoredLine(String hash, BigDecimal amount, String description, BigDecimal balance, LocalDate valueDate,
-                      String reference) {
+                      String reference, boolean lookalike) {
         StoredLine(String hash, BigDecimal amount, String description, BigDecimal balance) {
-            this(hash, amount, description, balance, null, null);
+            this(hash, amount, description, balance, null, null, false);
+        }
+
+        StoredLine(String hash, BigDecimal amount, String description, BigDecimal balance, LocalDate valueDate,
+                   String reference) {
+            this(hash, amount, description, balance, valueDate, reference, false);
         }
     }
 
@@ -408,14 +414,15 @@ public class BankStatementImportService {
         Map<LocalDate, List<StoredLine>> out = new HashMap<>();
         if (days.isEmpty()) return out;
         jdbc.query("""
-                select txn_date, line_hash, amount, description, running_balance, value_date, reference
+                select txn_date, line_hash, amount, description, running_balance, value_date, reference, lookalike_kept
                 from bank_statement_lines
                 where tenant_id = :t and bank_account_id = :b and txn_date in (:d) order by txn_date, seq""",
                 new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("d", days),
                 rs -> { out.computeIfAbsent(rs.getObject("txn_date", LocalDate.class), k -> new ArrayList<>())
                         .add(new StoredLine(rs.getString("line_hash"), rs.getBigDecimal("amount"),
                                 rs.getString("description"), rs.getBigDecimal("running_balance"),
-                                rs.getObject("value_date", LocalDate.class), rs.getString("reference"))); });
+                                rs.getObject("value_date", LocalDate.class), rs.getString("reference"),
+                                rs.getBoolean("lookalike_kept"))); });
         return out;
     }
 
@@ -483,6 +490,15 @@ public class BankStatementImportService {
         // The balance shift of a row taken for a stored line, both with balances (zero: exact).
         BigDecimal[] shift = new BigDecimal[n];
         Set<StoredLine> claimed = Collections.newSetFromMap(new IdentityHashMap<>());
+        Pos[] pos = new Pos[n];
+        if (n > 0) {
+            LocalDate first = rows.get(0).txnDate(), last = rows.get(0).txnDate();
+            for (StatementMapper.Row row : rows) {
+                if (row.txnDate().isBefore(first)) first = row.txnDate();
+                if (row.txnDate().isAfter(last)) last = row.txnDate();
+            }
+            for (int i = 0; i < n; i++) pos[i] = Pos.of(rows.get(i).txnDate(), first, last, openingRow, closingRow);
+        }
         for (int i = 0; i < n; i++) {
             StatementMapper.Row row = rows.get(i);
             List<StoredLine> day = stored.getOrDefault(row.txnDate(), List.of());
@@ -491,6 +507,9 @@ public class BankStatementImportService {
             StoredLine twin = null;
             StoredLine anyTwin = null;
             for (StoredLine s : day) {
+                // #441 review: on a day the file holds whole, a line kept beside a look-alike
+                // (it may be a copy) is taken last, after the lines it may be a copy of.
+                if (s.lookalike() && pos[i] == Pos.INTERIOR) continue;
                 if (claimed.contains(s) || s.amount().compareTo(amount) != 0
                         || !StatementValues.normalise(s.description()).equals(desc)) continue;
                 if (row.balance() == null || s.balance() == null) {
@@ -509,17 +528,17 @@ public class BankStatementImportService {
         }
         Map<String, BigDecimal> moved = new LinkedHashMap<>();
         if (n > 0) {
-            LocalDate first = rows.get(0).txnDate(), last = rows.get(0).txnDate();
-            for (StatementMapper.Row row : rows) {
-                if (row.txnDate().isBefore(first)) first = row.txnDate();
-                if (row.txnDate().isAfter(last)) last = row.txnDate();
-            }
-            Pos[] pos = new Pos[n];
-            for (int i = 0; i < n; i++) pos[i] = Pos.of(rows.get(i).txnDate(), first, last, openingRow, closingRow);
             // Days the file holds whole: a left-over row is a left-over stored line like it.
             for (int i = 0; i < n; i++) {
                 if (twinOf[i] != null || pos[i] != Pos.INTERIOR || rows.get(i).balance() == null) continue;
                 StoredLine s = movedTwin(rows.get(i), stored, claimed, null);
+                if (s != null) take(i, s, rows, twinOf, shift, claimed);
+            }
+            // #441 review: then the kept look-alikes, at any balance. Those no row takes were
+            // copies: the day stays unproven and the import that brought them can be deleted.
+            for (int i = 0; i < n; i++) {
+                if (twinOf[i] != null || pos[i] != Pos.INTERIOR || rows.get(i).balance() == null) continue;
+                StoredLine s = keptLookalike(rows.get(i), stored, claimed);
                 if (s != null) take(i, s, rows, twinOf, shift, claimed);
             }
             for (int i = 0; i < n; i++) {
@@ -583,7 +602,7 @@ public class BankStatementImportService {
         BigDecimal amount = row.amount().setScale(2, java.math.RoundingMode.HALF_UP);
         String desc = StatementValues.normalise(row.description());
         for (StoredLine s : stored.getOrDefault(row.txnDate(), List.of())) {
-            if (claimed.contains(s) || s.balance() == null || s.amount().compareTo(amount) != 0
+            if (s.lookalike() || claimed.contains(s) || s.balance() == null || s.amount().compareTo(amount) != 0
                     || !StatementValues.normalise(s.description()).equals(desc)) continue;
             if (row.valueDate() != null && s.valueDate() != null && !row.valueDate().equals(s.valueDate())) continue;
             if (!StatementValues.normalise(row.reference()).isEmpty() && !StatementValues.normalise(s.reference()).isEmpty()
@@ -591,6 +610,18 @@ public class BankStatementImportService {
             BigDecimal moved = row.balance().subtract(s.balance());
             if (moved.signum() == 0) continue;
             if (shift == null || moved.compareTo(shift) == 0) return s;
+        }
+        return null;
+    }
+
+    /** #441 review: the first unclaimed kept look-alike of the row's day with its amount and narration. */
+    private static StoredLine keptLookalike(StatementMapper.Row row, Map<LocalDate, List<StoredLine>> stored,
+                                            Set<StoredLine> claimed) {
+        BigDecimal amount = row.amount().setScale(2, java.math.RoundingMode.HALF_UP);
+        String desc = StatementValues.normalise(row.description());
+        for (StoredLine s : stored.getOrDefault(row.txnDate(), List.of())) {
+            if (s.lookalike() && !claimed.contains(s) && s.balance() != null && s.amount().compareTo(amount) == 0
+                    && StatementValues.normalise(s.description()).equals(desc)) return s;
         }
         return null;
     }
@@ -664,6 +695,13 @@ public class BankStatementImportService {
                     new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("d", day.getKey())
                             .addValue("ok", now.confirmed()).addValue("unproven", now.unproven())
                             .addValue("start", now.startKnown()).addValue("end", now.endKnown()));
+            // #441 review: a statement holding the day whole proved every kept look-alike a line of its own.
+            if (now.confirmed()) {
+                jdbc.update("""
+                        update bank_statement_lines set lookalike_kept = false
+                        where tenant_id = :t and bank_account_id = :b and txn_date = :d and lookalike_kept""",
+                        new MapSqlParameterSource("t", t).addValue("b", bankAccountId).addValue("d", day.getKey()));
+            }
         }
     }
 
@@ -767,9 +805,8 @@ public class BankStatementImportService {
      *       the file's lines in the file's order, confirmed and complete.</li>
      *   <li>The file adds nothing and its lines are exactly the stored lines at
      *       the place its position fixes — the day's last lines when the file and
-     *       the stored lines both run to the day's end, or the day's first line
-     *       alone when both start the day: the same lines again (a part
-     *       re-import); null, the day is left as it is (S20-03, narrowed by
+     *       the stored lines both run to the day's end: the same lines again (a
+     *       part re-import); null, the day is left as it is (S20-03, narrowed by
      *       S25-P1: {@link #sameLinesAgain}).</li>
      *   <li>Otherwise the day is not confirmed. If any of the file's lines was
      *       taken for a stored one, the day is also <em>unproven</em>.</li>
@@ -814,35 +851,28 @@ public class BankStatementImportService {
     }
 
     /**
-     * S20-03, narrowed by S25-P1: the file's lines are the stored ones its position pins them
-     * to (see {@link #settle}).
+     * S20-03, narrowed by S25-P1 (#441 review): the file's lines are the stored ones its
+     * position pins them to (see {@link #settle}).
      *
      * <p>Once the bank can back-value, a line may be added in front of an identical stored
-     * one. The added line carries exactly the balance the stored one had (the stored one moves
-     * on), so an export cut right after it matches the stored lines exactly and brings nothing
-     * new: taking it for the stored line loses it. Only an end the file proves rules that out
-     * for one added line:</p>
-     * <ul>
-     *   <li>the file runs to the end of the day ({@link Pos#endsTheDay}) and its lines are the
-     *       stored day's last ones, stored up to the day's end: a line added in front of one of
-     *       them would be in the file too (a row more than stored), and one added after them
-     *       would carry another balance (two added lines that net to nothing can still
-     *       reproduce those balances exactly — a residue, see the S25-P1 report);</li>
-     *   <li>the file holds the day's start and its only line of the day is the stored first line
-     *       of a day stored from its start (S20-03's last day): only a line put at the very start
-     *       of the day, ahead of an identical first line, looks the same — a residue kept so a
-     *       part re-import across days stays free (see the S25-P1 report).</li>
-     * </ul>
-     * <p>Anything else is unproven: a longer run from the day's start, or any run inside a day
-     * stored whole, may end at such an added line — and the file's bytes are the same either
-     * way, so the line cannot be stored without storing every such re-import twice. The day's
-     * paper totals, or a statement holding the day whole, decide.</p>
+     * one — anywhere in the day, its first line too. The added line carries exactly the
+     * balance the stored one had (the stored one moves on), so an export cut right after it
+     * matches the stored lines exactly and brings nothing new: taking it for the stored line
+     * loses it. Only a file that runs to the end of the day ({@link Pos#endsTheDay}) over the
+     * stored day's last lines, stored up to the day's end, rules that out for one added line:
+     * a line added in front of one of them would be in the file too (a row more than stored),
+     * and one added after them would carry another balance. Two added lines that net to
+     * nothing can still reproduce those balances exactly; the file is then the same bytes as a
+     * re-export, and that residue is kept (the S25-P1 report counts it).</p>
+     *
+     * <p>Anything else is unproven — a run from the day's start (even its first line alone, a
+     * whole-day export ending on the day included) or any run inside a day stored whole: the
+     * bytes are the same either way, so the line cannot be stored without storing every such
+     * re-import twice. The day's paper totals, or a statement holding the day whole, decide.</p>
      */
     static boolean sameLinesAgain(List<String> stored, List<String> file, Pos pos, DayState was) {
         if (was.unproven() || file.isEmpty() || file.size() > stored.size()) return false;
-        if (was.endKnown() && pos.endsTheDay()
-                && stored.subList(stored.size() - file.size(), stored.size()).equals(file)) return true;
-        return was.startKnown() && pos.startsTheDay() && file.size() == 1 && stored.get(0).equals(file.get(0));
+        return was.endKnown() && pos.endsTheDay() && stored.subList(stored.size() - file.size(), stored.size()).equals(file);
     }
 
     /** Stored lines, then the file's new ones in file order: what an import did before #97. */
