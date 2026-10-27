@@ -306,6 +306,21 @@ class PromoterReviewFixesIT extends AbstractPromoterIT {
                 .containsExactlyInAnyOrder(wash.getId().toString(), other.getId().toString());
     }
 
+    // ----------------------------------------------------------------- W-M5
+
+    @Test
+    void wm5_aBusinessCountsOnlyItsLiveAds() {
+        ad(org, wash.getId(), APPROVED, null);
+        PromoAd gone = ad(org, wash.getId(), APPROVED, null);
+        jdbc.update("UPDATE promo_ads SET archived_at = now(), active = false WHERE id = ?", gone.getId());
+
+        com.fasterxml.jackson.databind.JsonNode row = java.util.stream.StreamSupport.stream(
+                        get(admin, "/api/v1/promotions/businesses?size=100").body().get("content").spliterator(), false)
+                .filter(n -> n.get("id").asText().equals(wash.getId().toString())).findFirst().orElseThrow();
+        assertThat(row.get("adCount").asLong()).isEqualTo(1);
+        assertThat(get(promoter, "/api/v1/promoter/businesses").body().get(0).get("adCount").asLong()).isEqualTo(1);
+    }
+
     // -------------------------------------------------------------- helpers
 
     private Map<String, Object> ad(String title) {

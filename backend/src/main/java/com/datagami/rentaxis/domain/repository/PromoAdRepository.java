@@ -30,6 +30,9 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
 
     long countByBusinessId(UUID businessId);
 
+    /** A business's live (not archived) ads — the adCount its DTO shows (review W-M5). */
+    long countByBusinessIdAndArchivedAtIsNull(UUID businessId);
+
     // ---- approval (changeset 183) ----
 
     /** The admins' queue: archived ads (addendum B) wait for nobody. */
@@ -103,11 +106,12 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
      * <p>One query per page. The admin business list would otherwise issue a
      * COUNT per row, and Spring Data's default max page size is 2000 — so a
      * single request could fire 2001 queries. Same shape as
-     * {@code BookingRequestRepository.countByAmenityIdIn}.
+     * {@code BookingRequestRepository.countByAmenityIdIn}. Live ads only: an archived
+     * ad is not one of the business's ads to an admin or a promoter (review W-M5).
      */
     @Query("""
             SELECT a.businessId, COUNT(a) FROM PromoAd a
-            WHERE a.tenantId = :tenantId AND a.businessId IN :businessIds
+            WHERE a.tenantId = :tenantId AND a.businessId IN :businessIds AND a.archivedAt IS NULL
             GROUP BY a.businessId
             """)
     List<Object[]> countByBusinessIdIn(@Param("tenantId") UUID tenantId,

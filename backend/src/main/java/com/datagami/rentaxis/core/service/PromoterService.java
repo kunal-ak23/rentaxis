@@ -194,7 +194,7 @@ public class PromoterService {
             events.publishEvent(new PromoAdSubmittedEvent(caller.tenantId(), resubmitted.get(0).getId(),
                     caller.userId(), resubmitted.size()));
         }
-        return PromoAdDtos.business(b, adRepository.countByBusinessId(businessId), images::forDto);
+        return PromoAdDtos.business(b, adRepository.countByBusinessIdAndArchivedAtIsNull(businessId), images::forDto);
     }
 
     /**

@@ -155,7 +155,7 @@ public class PromotionAdminController {
                                                            @Valid @RequestBody PromoBusinessRequest req) {
         UUID tenantId = requireTenant();
         PromoBusiness updated = promotionService.updateBusiness(tenantId, id, req);
-        return ResponseEntity.ok(toDTO(updated, adRepository.countByBusinessId(updated.getId())));
+        return ResponseEntity.ok(toDTO(updated, adRepository.countByBusinessIdAndArchivedAtIsNull(updated.getId())));
     }
 
     /** Always succeeds (addendum B): {@code {"outcome": "DELETED" | "ARCHIVED"}}. */
@@ -169,7 +169,7 @@ public class PromotionAdminController {
     public ResponseEntity<PromoBusinessDTO> restoreBusiness(@PathVariable UUID id) {
         UUID tenantId = requireTenant();
         PromoBusiness restored = promotionService.restoreBusiness(tenantId, id);
-        return ResponseEntity.ok(toDTO(restored, adRepository.countByBusinessId(restored.getId())));
+        return ResponseEntity.ok(toDTO(restored, adRepository.countByBusinessIdAndArchivedAtIsNull(restored.getId())));
     }
 
     // -------------------------------------------------------------------- ads
