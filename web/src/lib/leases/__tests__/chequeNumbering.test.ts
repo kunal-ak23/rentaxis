@@ -146,6 +146,27 @@ describe("CSV import", () => {
         expect(two.applied).toBe(1);
     });
 
+    /**
+     * Sim r25 S25-02: a one-cell title row with no header under it is preamble (the r22 first-line
+     * fallback), not a line with an invalid date; #435's header rules still hold around it.
+     */
+    it("skips a one-cell title row with no header, and still reports data-looking lines", () => {
+        const drafts = [{ draftId: "d1", keys: ["RC-1"], rows: [c("r1", "2026-12-01"), c("r2", "2027-01-01")] }];
+        const one = applyChequeCsv("Tower A cheques\nRC-1,2026-12-01,500001", drafts, {});
+        expect(one.invalidDates).toEqual([]);
+        expect(one.unmatched).toEqual([]);
+        expect(one.edits.r1?.chequeNumber).toBe("500001");
+        // After blank lines, and in Arabic.
+        const ar = applyChequeCsv("\nشيكات البرج أ\nRC-1,01/01/2027,500002", drafts, {});
+        expect(ar.invalidDates).toEqual([]);
+        expect(ar.edits.r2?.chequeNumber).toBe("500002");
+        // A first line with a digit is not a title: still reported (#435).
+        expect(applyChequeCsv("RC-l,01-12-2026,500003\nRC-1,2026-12-01,500004", drafts, {}).invalidDates).toEqual([1]);
+        // Only the first line can be the title: a words-only line after data is data (reported).
+        const late = applyChequeCsv("RC-1,2026-12-01,500005\nsee notes", drafts, {});
+        expect(late.invalidDates).toEqual([2]);
+    });
+
     it("reads a semicolon file by its first line", () => {
         const drafts = [{ draftId: "d1", keys: ["07-01"], rows: [c("r1", "2028-01-01")] }];
         const r = applyChequeCsv("contract;due_date;cheque_number;bank\n07-01;01/01/2028;900001;Emirates NBD, Dubai", drafts, {});

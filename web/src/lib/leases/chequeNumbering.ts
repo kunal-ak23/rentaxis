@@ -192,6 +192,15 @@ export function applyChequeCsv(text: string, drafts: CsvDraft[], edits: Record<s
     let headerAt = lines.findIndex((l, i) => beforeData(i) && l.trim() !== "" && knownHeader(l));
     if (headerAt < 0) headerAt = lines.findIndex((l, i) => beforeData(i) && l.trim() !== "" && wordy(l) && !hasDigit(l));
     const looksLikeData = (l: string) => cellsOf(l).some(c => DATE_LIKE.test(westernDigits(c)) || NUMERIC.test(westernDigits(c)));
+    // Sim r25 S25-02: the r22 first-line fallback, kept under #435's rules. With no header, a
+    // first line of words (letters, no digit, so no due date) before the data is a title
+    // ("Tower A cheques"), however many cells it has — skipped, not reported as a bad date.
+    if (headerAt < 0) {
+        const first = lines.findIndex(l => l.trim() !== "");
+        if (first >= 0 && beforeData(first) && !hasDigit(lines[first]) && /[a-z\u0600-\u06FF]/i.test(lines[first])) {
+            headerAt = first;
+        }
+    }
     lines.forEach((line, i) => {
         if (!line.trim() || i === headerAt) return;
         if (i < headerAt && !looksLikeData(line)) return;
