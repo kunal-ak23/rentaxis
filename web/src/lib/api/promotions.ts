@@ -1,11 +1,16 @@
 import type { PageResponse } from '@/types/listing'
 import { ApiError, throwIfNotOk } from '@/lib/api/facilities'
 import type {
+  PendingAdCountDTO,
   PromoAdDTO,
   PromoAdRequest,
   PromoAdStatsDTO,
+  PromoApprovalStatus,
   PromoBusinessDTO,
   PromoBusinessRequest,
+  PromoterAccessRequest,
+  PromoterDTO,
+  PromoterInviteRequest,
 } from '@/types/promotion'
 
 // Auth is injected by the Next.js middleware for every /api/proxy/* request
@@ -28,6 +33,7 @@ import type {
 // on it. Machine-readable error codes are tracked as a backend follow-up.
 const BUSINESSES = '/api/proxy/v1/promotions/businesses'
 const ADS = '/api/proxy/v1/promotions/ads'
+const PROMOTERS = '/api/proxy/v1/promotions/promoters'
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
@@ -66,12 +72,16 @@ export async function deleteBusiness(id: string): Promise<void> {
   await throwIfNotOk(res)
 }
 
-/** `page` is 0-based, matching Spring Data. */
+/**
+ * `page` is 0-based, matching Spring Data. `approvalStatus` narrows the list to
+ * ads awaiting review (PENDING) or sent back (REJECTED); omitted, every ad.
+ */
 export async function fetchAds(
-  page = 0, size = 10, businessId?: string,
+  page = 0, size = 10, businessId?: string, approvalStatus?: PromoApprovalStatus,
 ): Promise<PageResponse<PromoAdDTO>> {
   const q = new URLSearchParams({ page: String(page), size: String(size) })
   if (businessId) q.set('businessId', businessId)
+  if (approvalStatus) q.set('approvalStatus', approvalStatus)
   const res = await fetch(`${ADS}?${q}`)
   await throwIfNotOk(res)
   return res.json()
@@ -98,10 +108,60 @@ export async function deleteAd(id: string): Promise<void> {
   await throwIfNotOk(res)
 }
 
+/** How many ads are waiting for an admin's decision (the badge on the Ads tab). */
+export async function fetchPendingAdCount(): Promise<number> {
+  const res = await fetch(`${ADS}/pending-count`)
+  await throwIfNotOk(res)
+  const data: PendingAdCountDTO = await res.json()
+  return data.count
+}
+
+/** Approves a PENDING ad: it is live from its window. Any other status is a 400. */
+export async function approveAd(id: string): Promise<void> {
+  const res = await fetch(`${ADS}/${id}/approve`, { method: 'POST' })
+  await throwIfNotOk(res)
+}
+
+/** Rejects a PENDING ad. The reason is required (the promoter reads it) and the server caps it at 500. */
+export async function rejectAd(id: string, reason: string): Promise<void> {
+  const res = await fetch(`${ADS}/${id}/reject`, {
+    method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ reason }),
+  })
+  await throwIfNotOk(res)
+}
+
 export async function fetchAdStats(id: string): Promise<PromoAdStatsDTO> {
   const res = await fetch(`${ADS}/${id}/stats`)
   await throwIfNotOk(res)
   return res.json()
+}
+
+/** Every promoter of the organisation, oldest first. Not paged. */
+export async function fetchPromoters(): Promise<PromoterDTO[]> {
+  const res = await fetch(PROMOTERS)
+  await throwIfNotOk(res)
+  return res.json()
+}
+
+/**
+ * Creates the promoter's login (the usual set-password invite email goes out)
+ * and records what they may see. An email that already has a Miftah login is a 400.
+ */
+export async function invitePromoter(body: PromoterInviteRequest): Promise<void> {
+  const res = await fetch(PROMOTERS, {
+    method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body),
+  })
+  await throwIfNotOk(res)
+}
+
+/** Replaces a promoter's access in full: send every business and property they should keep. */
+export async function updatePromoterAccess(
+  userId: string, body: PromoterAccessRequest,
+): Promise<void> {
+  const res = await fetch(`${PROMOTERS}/${userId}`, {
+    method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(body),
+  })
+  await throwIfNotOk(res)
 }
 
 /** Largest image the upload accepts (PromotionImageService.MAX_BYTES). */
