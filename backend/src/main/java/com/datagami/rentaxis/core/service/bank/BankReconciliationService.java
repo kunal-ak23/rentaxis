@@ -1106,7 +1106,12 @@ public class BankReconciliationService {
      * showed some of them copies ({@code copy_proven_by}), or null; {@code proven}: those copies;
      * {@code booked}: those of them in a confirmed match.
      */
-    record KeptCopies(List<String> holders, String proof, List<String> proven, List<String> booked) { }
+    record KeptCopies(List<String> holders, String proof, List<String> proven, List<String> booked, String whole,
+                      List<String> others) {
+        KeptCopies(List<String> holders, String proof, List<String> proven, List<String> booked) {
+            this(holders, proof, proven, booked, null, List.of());
+        }
+    }
 
     private Map<LocalDate, KeptCopies> keptLookalikes(UUID t, UUID b, Map<LocalDate, Boolean> unconfirmed) {
         List<LocalDate> unproven = unconfirmed.entrySet().stream().filter(Map.Entry::getValue).map(Map.Entry::getKey).toList();
@@ -1143,37 +1148,82 @@ public class BankReconciliationService {
                                 k.booked()));
                     }
                 });
+        // #441 review r3: a statement holding the day whole imported after the kept lines, which
+        // showed none of them as a copy (it holds them, or the day differs elsewhere): the day is
+        // then settled by making it that statement's alone — deleting every other import holding
+        // its lines (lines it holds stay, with their matches).
+        for (Map.Entry<LocalDate, KeptCopies> e : new ArrayList<>(out.entrySet())) {
+            if (e.getValue().proof() != null) continue;
+            MapSqlParameterSource q = new MapSqlParameterSource("t", t).addValue("b", b).addValue("d", e.getKey());
+            List<Map<String, Object>> whole = jdbc.queryForList("""
+                    select w.id, w.file_name, w.first_date, w.last_date from bank_statement_imports w
+                    where w.tenant_id = :t and w.bank_account_id = :b and w.first_date < :d and w.last_date > :d
+                      and w.imported_at > (select max(i.imported_at) from bank_statement_lines l
+                                             join bank_statement_imports i on i.id = l.import_id and i.tenant_id = l.tenant_id
+                                            where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date = :d and l.lookalike_kept)
+                    order by w.imported_at desc, w.id limit 1""", q);
+            if (whole.isEmpty()) continue;
+            UUID w = (UUID) whole.get(0).get("id");
+            List<String> others = new ArrayList<>();
+            jdbc.query("""
+                    select distinct i.file_name, i.first_date, i.last_date, i.imported_at, i.id from bank_statement_lines l
+                    join bank_statement_line_sources s on s.line_id = l.id and s.tenant_id = l.tenant_id
+                    join bank_statement_imports i on i.id = s.import_id and i.tenant_id = s.tenant_id
+                    where l.tenant_id = :t and l.bank_account_id = :b and l.txn_date = :d and i.id <> :w
+                    order by i.imported_at, i.id""", q.addValue("w", w),
+                    rs -> { others.add(rs.getString("file_name") + " (" + rs.getObject("first_date", LocalDate.class).format(DMY)
+                            + "–" + rs.getObject("last_date", LocalDate.class).format(DMY) + ")"); });
+            KeptCopies k = e.getValue();
+            out.put(e.getKey(), new KeptCopies(k.holders(), null, k.proven(), k.booked(), (String) whole.get(0).get("file_name"),
+                    others));
+        }
         return out;
     }
 
     /**
-     * #441 review r2: the steps that settle a day holding a kept look-alike, in order. Each step
-     * leads to the next or settles the day; none dead-ends: a whole-day statement proves which
-     * kept lines are copies (removing those in no confirmed match, with an audit record); a
-     * booked copy's match is undone; deleting the import holding it removes it (audit record
-     * again, the undone match kept); the day's paper totals then prove it.
+     * #441 review r2/r3: the steps that settle a day holding a kept look-alike, in order. Each step
+     * leads to the next or settles the day; none dead-ends: a whole-day statement exported now
+     * holds a separate kept line (and settles the day) or shows it as a copy; a booked copy's
+     * match is undone; deleting the import holding it removes it (with an audit record, the
+     * undone match kept); the day's paper totals then prove it. When the whole statement settles
+     * nothing and shows no copy, the day is made its alone by deleting the other imports holding
+     * its lines (recomputeDays then confirms it). Every step that removes a line says it relies
+     * on the statement having been exported after the imports it overrides.
      */
     static String copySteps(LocalDate d, KeptCopies k, Remedy remedy) {
         String holders = String.join(", ", k.holders());
+        String fresh = "exported now from the bank (an older download of that day shows it as it was before the line was "
+                + "added and proves nothing)";
         if (k.proof() != null) {
-            return "On " + d.format(DMY) + " the statement " + k.proof() + " held the day whole and showed that "
-                    + String.join(", ", k.proven()) + (k.proven().size() == 1 ? " is a copy" : " are copies")
-                    + " of a line already imported at another balance. "
-                    + (k.booked().isEmpty() ? "" : "Undo the match" + (k.booked().size() == 1 ? "" : "es") + " of "
-                            + String.join(", ", k.booked()) + " first (" + (k.booked().size() == 1 ? "it is" : "they are")
-                            + " booked); then ")
-                    + (k.booked().isEmpty() ? "Delete " : "delete ") + holders
-                    + " (every import holding " + (k.proven().size() == 1 ? "it" : "them")
+            return "On " + d.format(DMY) + " the statement " + k.proof() + " held the day whole and shows "
+                    + String.join(", ", k.proven()) + (k.proven().size() == 1 ? " as a copy" : " as copies")
+                    + " of a line already imported at another balance. If " + k.proof() + " was exported from the bank"
+                    + " after the import that brought " + (k.proven().size() == 1 ? "it" : "them") + ": "
+                    + (k.booked().isEmpty() ? "" : "undo the match" + (k.booked().size() == 1 ? "" : "es") + " of "
+                            + String.join(", ", k.booked()) + " first, reversing the entr" + (k.booked().size() == 1 ? "y" : "ies")
+                            + " the booking created (" + (k.booked().size() == 1 ? "it is" : "they are") + " booked); then ")
+                    + "delete " + holders + " (every import holding " + (k.proven().size() == 1 ? "it" : "them")
                     + "; the copy is removed with an audit record), then type " + d.format(DMY)
-                    + "'s total debits and total credits from the paper statement.";
+                    + "'s total debits and total credits from the paper statement. If it is an older download, import a "
+                    + "statement that holds " + d.format(DMY) + " whole, " + fresh + ", instead: it holds the kept line if "
+                    + "that is a separate line, and settles the day.";
+        }
+        if (k.whole() != null && !k.others().isEmpty()) {
+            return "On " + d.format(DMY) + " an import kept a line beside one already imported with the same amount and "
+                    + "narration at another running balance, and the statement " + k.whole() + ", which holds the day "
+                    + "whole, does not settle it. If " + k.whole() + " was exported from the bank after those imports, "
+                    + "make the day its alone: delete " + String.join(", ", k.others()) + " (" + k.whole() + " keeps every "
+                    + "line it holds, with its matches; booked lines only those imports hold must have their matches undone "
+                    + "first, reversing the entries the booking created). If it is an older download, import a statement "
+                    + "that holds " + d.format(DMY) + " whole, " + fresh + ", and do the same with that one.";
         }
         return "On " + d.format(DMY) + " an import kept a line beside one already imported with the same amount and "
                 + "narration at another running balance: the bank may have moved balances since (a line added earlier), "
                 + "so it may be a copy of that line or a separate one, and the paper's totals cannot tell (a copy can stand "
-                + "in for a line missing that day). Import a statement that holds " + d.format(DMY) + " whole"
+                + "in for a line missing that day). Import a statement that holds " + d.format(DMY) + " whole, " + fresh
                 + remedy.orImport(d, d).replaceFirst("^; or import", "; for instance")
-                + ". It removes every kept line it shows is a copy and is not booked, and settles the day; if a copy is "
-                + "booked, this check then names it and the steps that remove it.";
+                + ". If the kept line is a separate line it holds it and settles the day; if it shows a copy, this check "
+                + "then names the import to delete.";
     }
 
     /**

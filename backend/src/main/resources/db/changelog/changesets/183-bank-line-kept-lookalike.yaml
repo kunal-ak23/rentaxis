@@ -7,10 +7,11 @@
 #   - bank_statement_lines.lookalike_kept: true for such a line until its day is confirmed.
 #     Existing rows: false (lines imported before this changeset are not flagged).
 #   - bank_statement_lines.copy_proven_by: the import that held the line's day whole and left
-#     it unclaimed with every other line of the day matched — the bank's day has one such line
-#     fewer, so the kept line is a copy. A copy in no confirmed match is removed at once; one
-#     in a confirmed match waits until the match is undone and the import that brought it is
-#     deleted.
+#     it unclaimed with every other line of the day matched — if that file was exported after
+#     the back-value, the bank's day has one such line fewer and the kept line is a copy. A file
+#     cannot show when it was exported (an older download looks the same, #441 review r3), so
+#     nothing is removed at import: the check says so, and deleting the import that brought the
+#     line (after undoing any match on it) removes it, undone history or not.
 #   - bank_statement_removed_lines: the audit record of each copy removed — the line as it
 #     was, the matches it had been in (undone; their journal entries stay), who removed it,
 #     when, why, and the import that proved it a copy. Tenant-scoped like the lines.
