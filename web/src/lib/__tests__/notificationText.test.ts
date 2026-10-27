@@ -95,3 +95,47 @@ describe("notificationText", () => {
         expect(timeAgo("2026-09-24T11:55:00Z", enT, "en", now)).toBe("5 min ago");
     });
 });
+
+describe("promotion ad notifications (promoter role)", () => {
+    const submitted = row("PROMO_AD_SUBMITTED", { promoterName: "Pat Promoter", adTitle: "Wash and fold", businessName: "Sparkle Laundry" });
+    const approved = row("PROMO_AD_APPROVED", { adTitle: "Wash and fold", businessName: "Sparkle Laundry" });
+    const rejected = row("PROMO_AD_REJECTED", { adTitle: "Wash and fold", businessName: "Sparkle Laundry", reason: "Image is blurry" });
+
+    it("words each in English like the server's own text", () => {
+        expect(bare(notificationText(submitted, enT, "en").body)).toBe('Pat Promoter sent "Wash and fold" (Sparkle Laundry) for approval.');
+        expect(notificationText(submitted, enT, "en").title).toBe("Ad awaiting approval");
+        expect(bare(notificationText(approved, enT, "en").body)).toBe('Your ad "Wash and fold" (Sparkle Laundry) was approved and runs from its start date.');
+        expect(notificationText(approved, enT, "en").title).toBe("Ad approved");
+        expect(bare(notificationText(rejected, enT, "en").body)).toBe('Your ad "Wash and fold" (Sparkle Laundry) was rejected: Image is blurry');
+        expect(notificationText(rejected, enT, "en").title).toBe("Ad rejected");
+    });
+
+    it("rebuilds each in Arabic, every value isolated", () => {
+        const s = notificationText(submitted, arT, "ar");
+        expect(s.title).toBe(ar.Notifications.messages.PROMO_AD_SUBMITTED.title);
+        expect(s.body).toBe(`أرسل ${FSI}Pat Promoter${PDI} الإعلان «${FSI}Wash and fold${PDI}» (${FSI}Sparkle Laundry${PDI}) للموافقة.`);
+        expect(bare(notificationText(approved, arT, "ar").body))
+            .toBe("تمت الموافقة على إعلانك «Wash and fold» (Sparkle Laundry) وسيظهر اعتبارًا من تاريخ بدايته.");
+        const r = notificationText(rejected, arT, "ar");
+        expect(r.title).toBe("تم رفض الإعلان");
+        expect(r.body).toBe(`تم رفض إعلانك «${FSI}Wash and fold${PDI}» (${FSI}Sparkle Laundry${PDI}): ${FSI}Image is blurry${PDI}`);
+    });
+
+    it("shows a rejection reason as written, even when it looks like a code", () => {
+        // 'OTHER' is a penalty-reason code elsewhere; here it is the admin's own word.
+        const odd = row("PROMO_AD_REJECTED", { adTitle: "A", businessName: "B", reason: "OTHER" });
+        expect(bare(notificationText(odd, enT, "en").body)).toBe('Your ad "A" (B) was rejected: OTHER');
+        expect(notificationText(odd, arT, "ar").body).toContain(`${FSI}OTHER${PDI}`);
+    });
+
+    it("falls back to the stored English when a value is missing", () => {
+        const noReason = row("PROMO_AD_REJECTED", { adTitle: "A", businessName: "B" }, "Ad rejected", "stored english");
+        expect(notificationText(noReason, arT, "ar")).toEqual({ title: "Ad rejected", body: "stored english" });
+    });
+
+    it("labels the reference type in both languages", () => {
+        expect(en.Notifications.referenceType.PROMO_AD).toBe("Promo ad");
+        expect(ar.Notifications.referenceType.PROMO_AD).toBe("إعلان ترويجي");
+    });
+});
+

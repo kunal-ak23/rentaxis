@@ -7,6 +7,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { Pagination } from "@/components/ui/Pagination";
 import { cn } from "@/lib/utils";
 import { notificationText, timeAgo } from "@/lib/notificationText";
+import { notificationRoute } from "@/lib/notificationRoute";
 import {
     Bell, CheckCheck, Loader2,
     Ticket, FileText, CreditCard, Info,
@@ -172,17 +173,10 @@ export default function NotificationsPage() {
             }
         }
 
-        // Navigate based on referenceType
-        if (n.referenceType && n.referenceId) {
-            const routes: Record<string, string> = {
-                TICKET: `/dashboard/tickets/${n.referenceId}`,
-                LEASE: `/dashboard/leases/${n.referenceId}`,
-                PAYMENT: `/dashboard/collections?tab=all`,
-            };
-            const route = n.type === "LEASE_RENEWAL_REMINDER" ? "/dashboard/renter-portal/renewals" : routes[n.referenceType];
-            if (route) {
-                router.push(`/${locale}${route}`);
-            }
+        // Navigate based on referenceType (and, for a promotion ad, on who is asking).
+        const route = notificationRoute(n, session?.user?.role);
+        if (route) {
+            router.push(`/${locale}${route}`);
         }
     };
 

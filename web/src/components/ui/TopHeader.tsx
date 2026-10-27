@@ -8,6 +8,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale } from "next-intl";
 import { cn } from "@/lib/utils";
 import { notificationText, timeAgo } from "@/lib/notificationText";
+import { notificationRoute } from "@/lib/notificationRoute";
 import { LogOut, User, ChevronDown, Bell, HelpCircle, Menu as MenuIcon } from "lucide-react";
 import { getRoleLabel, getRoleLabelKey, type UserRole } from "@/lib/rbac";
 import GlobalSearch from "./GlobalSearch";
@@ -134,17 +135,10 @@ export function TopHeader() {
         }
         setShowDropdown(false);
 
-        // Navigate based on referenceType
-        if (n.referenceType && n.referenceId) {
-            const routes: Record<string, string> = {
-                TICKET: `/dashboard/tickets/${n.referenceId}`,
-                LEASE: `/dashboard/leases/${n.referenceId}`,
-                PAYMENT: `/dashboard/collections?tab=all`,
-            };
-            const route = n.type === "LEASE_RENEWAL_REMINDER" ? "/dashboard/renter-portal/renewals" : routes[n.referenceType];
-            if (route) {
-                router.push(`/${locale}${route}`);
-            }
+        // Navigate based on referenceType (and, for a promotion ad, on who is asking).
+        const route = notificationRoute(n, userRole);
+        if (route) {
+            router.push(`/${locale}${route}`);
         }
     };
 
