@@ -5,7 +5,17 @@ import { useLocale, useTranslations } from "next-intl";
 import { AdCardPreview } from "./AdCardPreview";
 import { PromoImageField } from "./PromoImageField";
 import {
+    RedirectLinkFields,
+    exampleFor,
+    redirectErrors,
+    rowsFromAd,
+    rowsToParams,
+    type RedirectParamRow,
+} from "./RedirectLinkFields";
+import {
     PROMO_CTA_TYPES,
+    REDIRECT_PARAM_VALUE_MAX,
+    REDIRECT_URL_MAX,
     type PromoAdDTO,
     type PromoAdRequest,
     type PromoBusinessDTO,
@@ -123,6 +133,8 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel, mode = 
     const [couponCode, setCouponCode] = useState(ad?.couponCode ?? "");
     const [couponTermsEn, setCouponTermsEn] = useState(ad?.couponTermsEn ?? "");
     const [couponTermsAr, setCouponTermsAr] = useState(ad?.couponTermsAr ?? "");
+    const [redirectUrl, setRedirectUrl] = useState(ad?.redirectUrl ?? "");
+    const [redirectRows, setRedirectRows] = useState<RedirectParamRow[]>(() => rowsFromAd(ad?.redirectParams));
     const [startsAt, setStartsAt] = useState(gulfDate(ad?.startsAt));
     const [endsAt, setEndsAt] = useState(gulfDate(ad?.endsAt));
     const [priority, setPriority] = useState(ad?.priority ?? 1);
@@ -142,6 +154,9 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel, mode = 
         () => businesses.find(b => b.id === businessId) ?? null,
         [businesses, businessId],
     );
+
+    // The redirect preview's PROPERTY_NAME sample: the first property picked, else a stand-in.
+    const samplePropertyName = properties.find(p => propertyIds.includes(p.id))?.nameEn ?? "Palm Tower";
 
     function validate(): Record<string, string> {
         const next: Record<string, string> = {};
@@ -167,6 +182,18 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel, mode = 
         }
         if (ctaType === "COUPON" && trimOrNull(couponCode) === null) {
             next.couponCode = t("couponRequired");
+        }
+        if (ctaType === "COUPON") {
+            // The redirect link follows the WEBSITE link's rules: https, on one of
+            // the business's allowed domains, no userinfo. Anything else on the link
+            // or its parameters is checked by redirectErrors.
+            const link = redirectUrl.trim();
+            const urlProblem = link === "" ? null
+                : !link.toLowerCase().startsWith("https://") ? "https"
+                : !hostIsAllowed(link, business?.allowedDomains ?? []) ? "domain" : null;
+            for (const [key, messageKey] of Object.entries(redirectErrors(redirectUrl, redirectRows, urlProblem))) {
+                next[key] = t(messageKey, { max: messageKey === "redirectUrlTooLong" ? REDIRECT_URL_MAX : REDIRECT_PARAM_VALUE_MAX });
+            }
         }
         if (ctaType === "CALL" && !business?.phoneE164) {
             next.ctaType = t("businessHasNoPhone");
@@ -195,6 +222,7 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel, mode = 
 
         // Fields belonging to other CTA types are dropped, never carried over —
         // the backend clears them too, and the preview must agree with both.
+        const redirectLink = ctaType === "COUPON" ? trimOrNull(redirectUrl) : null;
         const body: PromoAdRequest = {
             businessId,
             titleEn: trimOrNull(titleEn),
@@ -210,6 +238,10 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel, mode = 
             couponCode: ctaType === "COUPON" ? trimOrNull(couponCode) : null,
             couponTermsEn: ctaType === "COUPON" ? trimOrNull(couponTermsEn) : null,
             couponTermsAr: ctaType === "COUPON" ? trimOrNull(couponTermsAr) : null,
+            // Cleared for every other CTA, like the coupon fields: the server clears
+            // them too, and parameters without a link are refused.
+            redirectUrl: redirectLink,
+            redirectParams: redirectLink ? rowsToParams(redirectRows) : [],
             // Anchored to +04, not Z. The window is compared against absolute
             // instants server-side, so a UTC anchor makes "ends 30 September"
             // actually stop at 04:00 on 1 October Dubai time — a Ramadan or
@@ -353,6 +385,12 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel, mode = 
                                     value={couponTermsAr} onChange={e => setCouponTermsAr(e.target.value)} />
                             </label>
                         </div>
+                        <RedirectLinkFields
+                            url={redirectUrl} onUrl={setRedirectUrl}
+                            rows={redirectRows} onRows={setRedirectRows}
+                            allowedDomains={business?.allowedDomains ?? []}
+                            errors={errors}
+                            example={exampleFor(redirectUrl, redirectRows, couponCode, samplePropertyName)} />
                     </div>
                 )}
 
