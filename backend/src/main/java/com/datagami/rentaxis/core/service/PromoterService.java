@@ -160,6 +160,7 @@ public class PromoterService {
     public PromoBusinessDTO createBusiness(Caller caller, PromoBusinessRequest req) {
         Access access = access(caller);
         requireCanCreate(access);
+        requireOwnUploadOrNone(caller, req.logoUrl(), "logoUrl");
         PromoBusiness b = promotionService.createBusiness(caller.tenantId(), req);
         grantRepository.save(PromoterBusiness.of(caller.tenantId(), caller.userId(), b.getId()));
         return PromoAdDtos.business(b, 0L, images::forDto);
@@ -174,6 +175,7 @@ public class PromoterService {
         Access access = access(caller);
         requireGrantedBusiness(access, businessId, "Business not found");
         requireCanCreate(access);
+        requireOwnUploadOrNone(caller, req.logoUrl(), "logoUrl");
         PromoBusiness b = promotionService.updateBusiness(caller.tenantId(), businessId, req);
         Instant now = Instant.now();
         for (PromoAd ad : adRepository.findForUpdateByBusinessAndStatus(
@@ -223,6 +225,7 @@ public class PromoterService {
         Access access = access(caller);
         requireGrantedBusiness(access, req.businessId(), "Business not found");
         requireOwnProperties(access, req.propertyIds());
+        requireOwnUploadOrNone(caller, req.backgroundImageUrl(), "backgroundImageUrl");
         PromoAd ad = promotionService.createAd(caller.tenantId(), withRanking(req, null, null));
         markSubmitted(ad, caller, Instant.now());
         return toDtos(caller, access, List.of(ad)).get(ad.getId());
@@ -237,6 +240,7 @@ public class PromoterService {
         requireGrantedBusiness(access, ad.getBusinessId(), "Ad not found");
         requireGrantedBusiness(access, req.businessId(), "Business not found");
         requireOwnProperties(access, req.propertyIds());
+        requireOwnUploadOrNone(caller, req.backgroundImageUrl(), "backgroundImageUrl");
         PromoAd saved = promotionService.updateAd(caller.tenantId(), adId,
                 withRanking(req, ad.getPriority(), ad.getPlacement()));
         markSubmitted(saved, caller, Instant.now());
@@ -323,6 +327,23 @@ public class PromoterService {
             if (id == null || !access.propertyIds().contains(id)) {
                 throw new BusinessRuleViolationException("An ad can target only the properties you were given.");
             }
+        }
+    }
+
+    /**
+     * Review round 1, I1: a promoter's artwork and logo are images uploaded to this
+     * organisation (its own promotions route) or nothing. An https link to a host the
+     * promoter controls could be swapped after approval and would log every renter
+     * who loads it. Admins keep https links (PromotionService.requireHttpsOrNull).
+     */
+    private void requireOwnUploadOrNone(Caller caller, String url, String field) {
+        if (url == null || url.isBlank()) {
+            return;
+        }
+        String route = images.normaliseForStorage(url.trim());
+        if (PromotionImageService.fileOf(route).isEmpty() || !images.ownedBy(caller.tenantId(), route)) {
+            throw new BusinessRuleViolationException(
+                    field + " must be an image uploaded here: upload the picture instead of linking to it.");
         }
     }
 
