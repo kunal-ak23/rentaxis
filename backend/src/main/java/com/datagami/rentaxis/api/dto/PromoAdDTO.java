@@ -56,5 +56,10 @@ public record PromoAdDTO(
         Instant submittedAt,
         Instant reviewedAt,
         /** The promoter who last wrote the ad; null for an ad only admins have written. */
-        String submittedByName) {
+        String submittedByName,
+        /**
+         * Review N5: a promoter has written this ad. True with {@code submittedByName}
+         * null means that promoter's login was removed — such an ad shows to no renter.
+         */
+        boolean writtenByPromoter) {
 }

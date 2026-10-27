@@ -75,6 +75,10 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
     @Query("SELECT a.businessId FROM PromoAd a WHERE a.tenantId = :tenantId AND a.id = :id")
     Optional<UUID> findBusinessId(@Param("tenantId") UUID tenantId, @Param("id") UUID id);
 
+    /** As {@link #findBusinessId}, for an ad that is not archived (empty otherwise). */
+    @Query("SELECT a.businessId FROM PromoAd a WHERE a.tenantId = :tenantId AND a.id = :id AND a.archivedAt IS NULL")
+    Optional<UUID> findBusinessIdOfLiveAd(@Param("tenantId") UUID tenantId, @Param("id") UUID id);
+
     /**
      * The ad, row-locked, for an approval transition or a promoter's edit: the two
      * serialize, so an approval can neither overwrite an edit that landed after it

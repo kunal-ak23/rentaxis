@@ -73,6 +73,12 @@ public class PromoAdApprovalService {
         PromoAd ad = pending(tenantId, adId, "approved", expectedSubmittedAt);
         // A promoter's ad with no targeting would show nowhere once live (it never
         // means "every property" for a promoter): refuse rather than approve a dud.
+        // Review N5: a promoter's ad whose promoter is gone shows to no renter
+        // (PromoAdRepository.findEligible), so approving it would approve nothing.
+        if (ad.isWrittenByPromoter() && ad.getPromoterUserId() == null) {
+            throw new BusinessRuleViolationException(
+                    "This ad's promoter was removed — it cannot be shown to tenants.");
+        }
         if (ad.isWrittenByPromoter()
                 && adPropertyRepository.findByTenantIdAndAdIdIn(tenantId, List.of(adId)).isEmpty()) {
             throw new BusinessRuleViolationException(

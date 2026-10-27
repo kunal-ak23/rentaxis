@@ -2034,6 +2034,7 @@
     "redirectSummaryParams": "Parameters: <list></list>",
     "redirectSharesBadge": "Shares tenant details",
     "statusARCHIVED": "Archived",
+    "statusPROMOTER_REMOVED": "Not shown — promoter removed",
     "showArchived": "Show archived",
     "archivedNote": "Archived items are hidden from tenants and from the other lists. Restoring one brings it back paused; edit it to switch it on.",
     "restore": "Restore",

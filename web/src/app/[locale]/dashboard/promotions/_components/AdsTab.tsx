@@ -11,6 +11,7 @@ import {
 } from "@/lib/api/promotions";
 import {
     adDisplayStatus,
+    promoterRemoved,
     type AdDisplayStatus,
     type PromoAdDTO,
     type PromoAdRequest,
@@ -307,8 +308,11 @@ export function AdsTab({ businesses, properties, onReviewed }: AdsTabProps) {
                             // rejected ad is not showing whatever its window says,
                             // and that needs no business lookup.
                             // An archived ad is hidden whatever its other state says.
+                            // An ad of a removed promoter is not shown whatever its window says,
+                            // and needs no business lookup to say so.
+                            const removed = promoterRemoved(row);
                             const status: AdDisplayStatus | null = showArchived ? "ARCHIVED"
-                                : businesses.length === 0 && row.approvalStatus === "APPROVED"
+                                : businesses.length === 0 && row.approvalStatus === "APPROVED" && !removed
                                     ? null
                                     : adDisplayStatus(row, new Date(), business?.active ?? true);
                             return (
@@ -344,7 +348,9 @@ export function AdsTab({ businesses, properties, onReviewed }: AdsTabProps) {
                                                 onClick={() => void restore(row)}>{t("restore")}</button>
                                         ) : (
                                             <>
-                                                {row.approvalStatus === "PENDING" && (
+                                                {/* Nobody is left to answer a removed promoter's pending ad, and the feed
+                                                    would not show it if approved: no Approve, no Reject. */}
+                                                {row.approvalStatus === "PENDING" && !removed && (
                                                     <>
                                                         <button type="button" disabled={reviewBusy}
                                                             aria-label={`${t("approve")}: ${row.titleEn ?? row.titleAr ?? ""}`}

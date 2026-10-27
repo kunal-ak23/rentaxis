@@ -189,10 +189,13 @@ public class PromoterService {
         for (PromoAd ad : resubmitted) {
             resubmit(ad, caller, now);
         }
-        // Review M3: one notice for the edit, naming one of the ads and how many.
-        if (!resubmitted.isEmpty()) {
-            events.publishEvent(new PromoAdSubmittedEvent(caller.tenantId(), resubmitted.get(0).getId(),
-                    caller.userId(), resubmitted.size()));
+        // Review M3: one notice for the edit, naming one of the ads and how many. Review
+        // N3: only the live ones count and are named — an archived ad was resubmitted so
+        // a restore brings it back PENDING, but it is waiting for nobody now.
+        List<PromoAd> live = resubmitted.stream().filter(a -> a.getArchivedAt() == null).toList();
+        if (!live.isEmpty()) {
+            events.publishEvent(new PromoAdSubmittedEvent(caller.tenantId(), live.get(0).getId(),
+                    caller.userId(), live.size()));
         }
         return PromoAdDtos.business(b, adRepository.countByBusinessIdAndArchivedAtIsNull(businessId), images::forDto);
     }
@@ -246,11 +249,13 @@ public class PromoterService {
     /** Every edit but priority and placement (kept), and the ad goes back to PENDING. */
     public PromoAdDTO updateAd(Caller caller, UUID adId, PromoAdRequest req) {
         Access access = access(caller);
-        PromoAd ad = adRepository.findForUpdate(caller.tenantId(), adId)
-                .filter(a -> a.getArchivedAt() == null)
+        // Access first, from values only (no entity loaded), then the locks in the order
+        // every ad write takes (review N2): the business row(s) FOR SHARE, then the ad.
+        UUID currentBusiness = adRepository.findBusinessIdOfLiveAd(caller.tenantId(), adId)
                 .orElseThrow(() -> new NotFoundException("Ad not found"));
-        requireGrantedBusiness(access, ad.getBusinessId(), "Ad not found");
+        requireGrantedBusiness(access, currentBusiness, "Ad not found");
         requireGrantedBusiness(access, req.businessId(), "Business not found");
+        PromoAd ad = promotionService.lockForWrite(caller.tenantId(), adId, req.businessId());
         requireOwnProperties(access, req.propertyIds());
         requireOwnUploadOrNone(caller, req.backgroundImageUrl(), "backgroundImageUrl");
         PromoAd saved = promotionService.updateAd(caller.tenantId(), adId,
@@ -261,7 +266,11 @@ public class PromoterService {
 
     /** The admin rule (addendum B): deleted if it never ran, archived if it has view history. */
     public PromotionService.DeleteOutcome deleteAd(Caller caller, UUID adId) {
-        requireAd(caller, access(caller), adId);
+        // Values only before the lock (review N2): loading the ad here would hand the
+        // locked read in deleteAd this unlocked, possibly stale, copy.
+        UUID businessId = adRepository.findBusinessIdOfLiveAd(caller.tenantId(), adId)
+                .orElseThrow(() -> new NotFoundException("Ad not found"));
+        requireGrantedBusiness(access(caller), businessId, "Ad not found");
         return promotionService.deleteAd(caller.tenantId(), adId);
     }
 
@@ -353,8 +362,10 @@ public class PromoterService {
         }
         String route = images.normaliseForStorage(url.trim());
         if (PromotionImageService.fileOf(route).isEmpty() || !images.ownedBy(caller.tenantId(), route)) {
+            // Review N6: also what a promoter sees saving a business or ad an admin had
+            // given an external image — the editor sends it back as it is.
             throw new BusinessRuleViolationException(
-                    field + " must be an image uploaded here: upload the picture instead of linking to it.");
+                    "Replace the current image with an uploaded one — linked images can't be used here.");
         }
     }
 

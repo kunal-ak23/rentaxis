@@ -113,8 +113,14 @@ export interface PromoAdDTO {
   /** When a promoter last sent the ad for approval; null for admin-only ads. */
   submittedAt: string | null
   reviewedAt: string | null
-  /** The promoter who last wrote the ad; null for an ad only admins have written. */
+  /** The promoter who last wrote the ad; null for an ad only admins have written, or once that promoter was removed. */
   submittedByName: string | null
+  /**
+   * True for an ad a promoter wrote, and it stays true after the promoter is
+   * removed (when `submittedByName` goes null). Absent from an older backend,
+   * where `submittedByName` is the only signal.
+   */
+  writtenByPromoter?: boolean
   createdAt: string
   updatedAt: string
 }
@@ -169,7 +175,7 @@ export type AdStatus = 'LIVE' | 'SCHEDULED' | 'EXPIRED' | 'PAUSED'
  * says that rather than "Live" / "Scheduled". Only an APPROVED ad falls
  * through to the window and the active switch.
  */
-export type AdDisplayStatus = 'PENDING' | 'REJECTED' | 'ARCHIVED' | AdStatus
+export type AdDisplayStatus = 'PENDING' | 'REJECTED' | 'ARCHIVED' | 'PROMOTER_REMOVED' | AdStatus
 
 /**
  * Mirrors the server's eligibility rule in `PromoAdRepository.findEligible`,
@@ -199,12 +205,34 @@ export function adStatus(
  */
 export type DeleteOutcome = 'DELETED' | 'ARCHIVED'
 
+/**
+ * An ad a promoter wrote, now that the promoter has been removed. The feed
+ * never shows it (a promoter ad shows only where its promoter is allowed), so
+ * nothing about its window or approval means it is live. Needs `writtenByPromoter`
+ * from the backend; an older one sends neither, and this is false.
+ */
+export function promoterRemoved(ad: Pick<PromoAdDTO, 'writtenByPromoter' | 'submittedByName'>): boolean {
+  return Boolean(ad.writtenByPromoter) && !ad.submittedByName
+}
+
+/**
+ * Whether the ad is a promoter's, for the rules that follow the writer (a promoter
+ * ad must target a property). `writtenByPromoter` when the backend sends it,
+ * else whether a promoter's name is on it.
+ */
+export function isPromoterAd(ad: Pick<PromoAdDTO, 'writtenByPromoter' | 'submittedByName'>): boolean {
+  return ad.writtenByPromoter ?? Boolean(ad.submittedByName)
+}
+
 /** The pill an ad's row shows: approval first, then {@link adStatus}. See {@link AdDisplayStatus}. */
 export function adDisplayStatus(
   ad: PromoAdDTO,
   now: Date = new Date(),
   businessActive = true,
 ): AdDisplayStatus {
+  // A rejection stays a rejection (it carries its reason); anything else of a
+  // removed promoter's ad is simply not shown.
+  if (ad.approvalStatus !== 'REJECTED' && promoterRemoved(ad)) return 'PROMOTER_REMOVED'
   if (ad.approvalStatus === 'PENDING') return 'PENDING'
   if (ad.approvalStatus === 'REJECTED') return 'REJECTED'
   return adStatus(ad, now, businessActive)
