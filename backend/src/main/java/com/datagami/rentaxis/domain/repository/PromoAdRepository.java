@@ -32,15 +32,37 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
 
     // ---- approval (changeset 183) ----
 
-    Page<PromoAd> findByTenantIdAndApprovalStatus(UUID tenantId, PromoApprovalStatus status, Pageable pageable);
+    /** The admins' queue: archived ads (addendum B) wait for nobody. */
+    long countByTenantIdAndApprovalStatusAndArchivedAtIsNull(UUID tenantId, PromoApprovalStatus status);
 
-    Page<PromoAd> findByTenantIdAndBusinessIdAndApprovalStatus(UUID tenantId, UUID businessId,
-                                                              PromoApprovalStatus status, Pageable pageable);
+    /** A promoter's ad list without archived ads (addendum B). */
+    Page<PromoAd> findByTenantIdAndBusinessIdInAndArchivedAtIsNull(UUID tenantId, Collection<UUID> businessIds,
+                                                                  Pageable pageable);
 
-    long countByTenantIdAndApprovalStatus(UUID tenantId, PromoApprovalStatus status);
+    Page<PromoAd> findByTenantIdAndBusinessIdAndArchivedAtIsNull(UUID tenantId, UUID businessId, Pageable pageable);
 
-    /** A promoter's ad list: the ads of the businesses granted to it. */
-    Page<PromoAd> findByTenantIdAndBusinessIdIn(UUID tenantId, Collection<UUID> businessIds, Pageable pageable);
+    // ---- the admin ad list: live (default) or archived only, by business and/or approval state ----
+
+    Page<PromoAd> findByTenantIdAndArchivedAtIsNull(UUID tenantId, Pageable pageable);
+
+    Page<PromoAd> findByTenantIdAndArchivedAtIsNotNull(UUID tenantId, Pageable pageable);
+
+    Page<PromoAd> findByTenantIdAndBusinessIdAndArchivedAtIsNotNull(UUID tenantId, UUID businessId, Pageable pageable);
+
+    Page<PromoAd> findByTenantIdAndApprovalStatusAndArchivedAtIsNull(UUID tenantId, PromoApprovalStatus status,
+                                                                    Pageable pageable);
+
+    Page<PromoAd> findByTenantIdAndApprovalStatusAndArchivedAtIsNotNull(UUID tenantId, PromoApprovalStatus status,
+                                                                       Pageable pageable);
+
+    Page<PromoAd> findByTenantIdAndBusinessIdAndApprovalStatusAndArchivedAtIsNull(
+            UUID tenantId, UUID businessId, PromoApprovalStatus status, Pageable pageable);
+
+    Page<PromoAd> findByTenantIdAndBusinessIdAndApprovalStatusAndArchivedAtIsNotNull(
+            UUID tenantId, UUID businessId, PromoApprovalStatus status, Pageable pageable);
+
+    /** A business's ads not yet archived — what archiving the business archives with it. */
+    List<PromoAd> findByTenantIdAndBusinessIdAndArchivedAtIsNull(UUID tenantId, UUID businessId);
 
     /**
      * The ad, row-locked, for an approval transition or a promoter's edit: the two
@@ -56,6 +78,7 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
     @Query("""
             SELECT a FROM PromoAd a
             WHERE a.tenantId = :tenantId AND a.businessId = :businessId AND a.approvalStatus = :status
+              AND a.archivedAt IS NULL
             ORDER BY a.id
             """)
     List<PromoAd> findForUpdateByBusinessAndStatus(@Param("tenantId") UUID tenantId,
@@ -95,6 +118,9 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
      * breaks ties and keeps paging stable when a seed or bulk import creates
      * several ads in the same instant.
      *
+     * <p>Archived ads and businesses (addendum B) never show, on top of
+     * {@code active} (archiving also deactivates; this is belt and braces).
+     *
      * <p><b>Promoter rules (changeset 183).</b> Only APPROVED ads — nothing a
      * promoter writes reaches a renter before an admin approves it. And an ad a
      * promoter wrote ({@code promoterUserId} set) shows only at a property it
@@ -109,12 +135,13 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
             SELECT a FROM PromoAd a
             WHERE a.tenantId = :tenantId
               AND a.active = true
+              AND a.archivedAt IS NULL
               AND a.approvalStatus = com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus.APPROVED
               AND a.placement IN :placements
               AND (a.startsAt IS NULL OR a.startsAt <= :now)
               AND (a.endsAt IS NULL OR a.endsAt > :now)
               AND EXISTS (SELECT 1 FROM PromoBusiness b
-                          WHERE b.id = a.businessId AND b.active = true)
+                          WHERE b.id = a.businessId AND b.active = true AND b.archivedAt IS NULL)
               AND (NOT EXISTS (SELECT 1 FROM PromoAdProperty p WHERE p.adId = a.id)
                    OR EXISTS (SELECT 1 FROM PromoAdProperty p
                               WHERE p.adId = a.id AND p.propertyId IN :propertyIds))

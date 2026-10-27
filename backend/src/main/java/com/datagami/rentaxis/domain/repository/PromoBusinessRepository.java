@@ -15,6 +15,11 @@ public interface PromoBusinessRepository extends JpaRepository<PromoBusiness, UU
 
     Page<PromoBusiness> findByTenantId(UUID tenantId, Pageable pageable);
 
+    /** Addendum B: the admin list without (default) or with only ({@code ?archived=true}) archived businesses. */
+    Page<PromoBusiness> findByTenantIdAndArchivedAtIsNull(UUID tenantId, Pageable pageable);
+
+    Page<PromoBusiness> findByTenantIdAndArchivedAtIsNotNull(UUID tenantId, Pageable pageable);
+
     /** Businesses using an uploaded image as their logo (any tenant) — see the anonymous image route. */
     List<PromoBusiness> findByLogoUrl(String logoUrl);
 

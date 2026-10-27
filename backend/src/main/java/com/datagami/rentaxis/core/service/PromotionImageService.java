@@ -155,15 +155,16 @@ public class PromotionImageService {
         Instant now = Instant.now();
         java.util.LinkedHashSet<UUID> owners = new java.util.LinkedHashSet<>();
         for (PromoBusiness b : businesses.findByLogoUrl(route)) {
-            if (b.isActive() && b.getTenantId() != null) owners.add(b.getTenantId());
+            if (b.isActive() && b.getArchivedAt() == null && b.getTenantId() != null) owners.add(b.getTenantId());
         }
         for (PromoAd ad : ads.findByBackgroundImageUrl(route)) {
             if (!ad.isActive() || (ad.getEndsAt() != null && !ad.getEndsAt().isAfter(now))) continue;
             // Promoter plan: an ad not approved shows nothing to anyone.
             if (ad.getApprovalStatus() != com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus.APPROVED) continue;
+            if (ad.getArchivedAt() != null) continue;
             boolean businessLive = businesses.findById(ad.getBusinessId())
                     .filter(b -> Objects.equals(b.getTenantId(), ad.getTenantId()))
-                    .map(PromoBusiness::isActive)
+                    .map(b -> b.isActive() && b.getArchivedAt() == null)
                     .orElse(false);
             if (businessLive) owners.add(ad.getTenantId());
         }

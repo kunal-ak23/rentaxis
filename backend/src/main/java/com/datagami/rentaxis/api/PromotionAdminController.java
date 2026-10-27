@@ -122,11 +122,20 @@ public class PromotionAdminController {
         return tenantId;
     }
 
+    /** Live businesses; the shape callers used before addendum B. */
+    public ResponseEntity<Page<PromoBusinessDTO>> listBusinesses(Pageable pageable) {
+        return listBusinesses(false, pageable);
+    }
+
+    /** Live businesses, or with {@code ?archived=true} the archived ones only (addendum B). */
     @GetMapping("/businesses")
     public ResponseEntity<Page<PromoBusinessDTO>> listBusinesses(
+            @RequestParam(defaultValue = "false") boolean archived,
             @PageableDefault(sort = "createdAt", direction = Sort.Direction.ASC) Pageable pageable) {
         UUID tenantId = requireTenant();
-        Page<PromoBusiness> page = promotionService.listBusinesses(tenantId, pageable);
+        Page<PromoBusiness> page = archived
+                ? promotionService.listBusinesses(tenantId, true, pageable)
+                : promotionService.listBusinesses(tenantId, pageable);
         // One grouped query for the page, not a COUNT per row. Spring Data's
         // default max page size is 2000, so per-row counting would let a single
         // request fire 2001 queries.
@@ -149,10 +158,18 @@ public class PromotionAdminController {
         return ResponseEntity.ok(toDTO(updated, adRepository.countByBusinessId(updated.getId())));
     }
 
+    /** Always succeeds (addendum B): {@code {"outcome": "DELETED" | "ARCHIVED"}}. */
     @DeleteMapping("/businesses/{id}")
-    public ResponseEntity<Void> deleteBusiness(@PathVariable UUID id) {
-        promotionService.deleteBusiness(requireTenant(), id);
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<Map<String, String>> deleteBusiness(@PathVariable UUID id) {
+        return ResponseEntity.ok(Map.of("outcome", promotionService.deleteBusiness(requireTenant(), id).name()));
+    }
+
+    /** An archived business back in the lists, still inactive; 400 if its name was taken meanwhile. */
+    @PostMapping("/businesses/{id}/restore")
+    public ResponseEntity<PromoBusinessDTO> restoreBusiness(@PathVariable UUID id) {
+        UUID tenantId = requireTenant();
+        PromoBusiness restored = promotionService.restoreBusiness(tenantId, id);
+        return ResponseEntity.ok(toDTO(restored, adRepository.countByBusinessId(restored.getId())));
     }
 
     // -------------------------------------------------------------------- ads
@@ -163,19 +180,24 @@ public class PromotionAdminController {
 
     /** Every approval state; the shape callers used before changeset 183. */
     public ResponseEntity<Page<PromoAdDTO>> listAds(UUID businessId, Pageable pageable) {
-        return listAds(businessId, null, pageable);
+        return listAds(businessId, null, false, pageable);
     }
 
-    /** {@code approvalStatus} (PENDING / APPROVED / REJECTED) narrows the list; omitted, every ad. */
+    /**
+     * {@code approvalStatus} (PENDING / APPROVED / REJECTED) narrows the list; omitted,
+     * every state. Live ads, or with {@code ?archived=true} the archived ones only
+     * (addendum B).
+     */
     @GetMapping("/ads")
     public ResponseEntity<Page<PromoAdDTO>> listAds(
             @RequestParam(required = false) UUID businessId,
             @RequestParam(required = false) com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus approvalStatus,
+            @RequestParam(defaultValue = "false") boolean archived,
             @PageableDefault(sort = "createdAt", direction = Sort.Direction.ASC) Pageable pageable) {
         UUID tenantId = requireTenant();
-        Page<PromoAd> page = approvalStatus == null
+        Page<PromoAd> page = approvalStatus == null && !archived
                 ? promotionService.listAds(tenantId, businessId, pageable)
-                : promotionService.listAds(tenantId, businessId, approvalStatus, pageable);
+                : promotionService.listAds(tenantId, businessId, approvalStatus, archived, pageable);
 
         List<UUID> adIds = page.getContent().stream().map(PromoAd::getId).toList();
         // Three batched queries for the whole page, never one per row.
@@ -216,10 +238,23 @@ public class PromotionAdminController {
                         : writerNames(tenantId, List.of(updated)).get(updated.getPromoterUserId())));
     }
 
+    /** Always succeeds (addendum B): {@code {"outcome": "DELETED" | "ARCHIVED"}}. */
     @DeleteMapping("/ads/{id}")
-    public ResponseEntity<Void> deleteAd(@PathVariable UUID id) {
-        promotionService.deleteAd(requireTenant(), id);
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<Map<String, String>> deleteAd(@PathVariable UUID id) {
+        return ResponseEntity.ok(Map.of("outcome", promotionService.deleteAd(requireTenant(), id).name()));
+    }
+
+    /** An archived ad back in the lists, still inactive; 400 while its business is archived. */
+    @PostMapping("/ads/{id}/restore")
+    public ResponseEntity<PromoAdDTO> restoreAd(@PathVariable UUID id) {
+        UUID tenantId = requireTenant();
+        PromoAd restored = promotionService.restoreAd(tenantId, id);
+        return ResponseEntity.ok(toDTO(restored,
+                promotionService.getBusiness(tenantId, restored.getBusinessId()).getNameEn(),
+                promotionService.targetedPropertyIds(id),
+                statsService.totals(tenantId, List.of(id)).getOrDefault(id, PromotionStatsService.Totals.EMPTY),
+                restored.getPromoterUserId() == null ? null
+                        : writerNames(tenantId, List.of(restored)).get(restored.getPromoterUserId())));
     }
 
     @GetMapping("/ads/{id}/stats")

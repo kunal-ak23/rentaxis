@@ -77,7 +77,15 @@ public class PromoterAdminService {
         List<UUID> ids = promoters.stream().map(User::getId).toList();
         Map<UUID, PromoterAccess> access = accessRepository.findByTenantIdOrderByCreatedAtAscUserIdAsc(tenantId)
                 .stream().collect(Collectors.toMap(PromoterAccess::getUserId, a -> a));
+        // Grants of archived businesses (addendum B) are not shown; they come back with a restore.
+        Set<UUID> archived = businessRepository.findByTenantIdAndIdIn(tenantId,
+                        grantRepository.findByTenantIdAndUserIdIn(tenantId, ids).stream()
+                                .map(PromoterBusiness::getBusinessId).distinct().toList()).stream()
+                .filter(b -> b.getArchivedAt() != null)
+                .map(com.datagami.rentaxis.domain.entity.PromoBusiness::getId)
+                .collect(Collectors.toSet());
         Map<UUID, List<UUID>> businesses = grantRepository.findByTenantIdAndUserIdIn(tenantId, ids).stream()
+                .filter(g -> !archived.contains(g.getBusinessId()))
                 .collect(Collectors.groupingBy(PromoterBusiness::getUserId,
                         Collectors.mapping(PromoterBusiness::getBusinessId, Collectors.toList())));
         Map<UUID, List<UUID>> properties = promoterPropertyRepository.findByTenantIdAndUserIdIn(tenantId, ids).stream()
@@ -166,7 +174,9 @@ public class PromoterAdminService {
 
     private Set<UUID> requireBusinesses(UUID tenantId, List<UUID> ids) {
         Set<UUID> wanted = distinct(ids, "businessIds");
-        if (!wanted.isEmpty() && businessRepository.findByTenantIdAndIdIn(tenantId, wanted).size() != wanted.size()) {
+        // Only live businesses can be granted; an archived one is "not found" here (addendum B).
+        if (!wanted.isEmpty() && businessRepository.findByTenantIdAndIdIn(tenantId, wanted).stream()
+                .filter(b -> b.getArchivedAt() == null).count() != wanted.size()) {
             throw new NotFoundException("Business not found");
         }
         return wanted;

@@ -226,9 +226,11 @@ class PromoterApiIT extends AbstractPromoterIT {
     }
 
     @Test
-    void deleteFollowsTheAdminRule() {
+    void statsAndDeleteFollowTheAdminRule() {
         PromoAd unused = ad(org, granted.getId(), PENDING, promoter.getId(), p1.getId());
-        assertThat(delete(promoter, "/api/v1/promoter/ads/" + unused.getId()).status()).isEqualTo(204);
+        Resp gone = delete(promoter, "/api/v1/promoter/ads/" + unused.getId());
+        assertThat(gone.status()).isEqualTo(200);
+        assertThat(gone.text("outcome")).isEqualTo("DELETED");
         assertThat(adRepo.findById(unused.getId())).isEmpty();
 
         PromoAd ran = ad(org, granted.getId(), APPROVED, promoter.getId(), p1.getId());
@@ -236,12 +238,15 @@ class PromoterApiIT extends AbstractPromoterIT {
         jdbc.update("INSERT INTO promo_ad_events (id, tenant_id, ad_id, renter_user_id, event_type, occurred_at, day) "
                         + "VALUES (?, ?, ?, ?, 'IMPRESSION', now(), (now() AT TIME ZONE 'Asia/Dubai')::date)",
                 UUID.randomUUID(), org, ran.getId(), renter.getId());
-        assertThat(delete(promoter, "/api/v1/promoter/ads/" + ran.getId()).status()).isEqualTo(400);
         Resp stats = get(promoter, "/api/v1/promoter/ads/" + ran.getId() + "/stats");
         assertThat(stats.status()).isEqualTo(200);
         assertThat(stats.body().get("impressions").asLong()).isEqualTo(1);
         assertThat(find(get(promoter, "/api/v1/promoter/ads?size=50").body().get("content"), ran.getId())
                 .get("impressions").asLong()).isEqualTo(1);
+        // With view history it is archived (addendum B), not refused.
+        Resp archived = delete(promoter, "/api/v1/promoter/ads/" + ran.getId());
+        assertThat(archived.status()).isEqualTo(200);
+        assertThat(archived.text("outcome")).isEqualTo("ARCHIVED");
     }
 
     // ------------------------------------------------------------ cross-tenant

@@ -183,6 +183,17 @@ public class PromoterService {
         return PromoAdDtos.business(b, adRepository.countByBusinessId(businessId), images::forDto);
     }
 
+    /**
+     * Needs the grant (else 404) and "can create businesses" (else 403). The admin rule
+     * (addendum B): deleted if it never had an ad, otherwise archived with its ads.
+     */
+    public PromotionService.DeleteOutcome deleteBusiness(Caller caller, UUID businessId) {
+        Access access = access(caller);
+        requireGrantedBusiness(access, businessId, "Business not found");
+        requireCanCreate(access);
+        return promotionService.deleteBusiness(caller.tenantId(), businessId);
+    }
+
     // ------------------------------------------------------------------ ads
 
     /** Ads of the granted businesses (one of them, with {@code businessId}), paged. */
@@ -192,11 +203,12 @@ public class PromoterService {
         Page<PromoAd> page;
         if (businessId != null) {
             requireGrantedBusiness(access, businessId, "Business not found");
-            page = adRepository.findByTenantIdAndBusinessId(caller.tenantId(), businessId, pageable);
+            page = adRepository.findByTenantIdAndBusinessIdAndArchivedAtIsNull(caller.tenantId(), businessId, pageable);
         } else if (access.businessIds().isEmpty()) {
             return Page.empty(pageable);
         } else {
-            page = adRepository.findByTenantIdAndBusinessIdIn(caller.tenantId(), access.businessIds(), pageable);
+            page = adRepository.findByTenantIdAndBusinessIdInAndArchivedAtIsNull(
+                    caller.tenantId(), access.businessIds(), pageable);
         }
         Map<UUID, PromoAdDTO> dtos = toDtos(caller, access, page.getContent());
         return page.map(a -> dtos.get(a.getId()));
@@ -220,6 +232,7 @@ public class PromoterService {
     public PromoAdDTO updateAd(Caller caller, UUID adId, PromoAdRequest req) {
         Access access = access(caller);
         PromoAd ad = adRepository.findForUpdate(caller.tenantId(), adId)
+                .filter(a -> a.getArchivedAt() == null)
                 .orElseThrow(() -> new NotFoundException("Ad not found"));
         requireGrantedBusiness(access, ad.getBusinessId(), "Ad not found");
         requireGrantedBusiness(access, req.businessId(), "Business not found");
@@ -230,10 +243,10 @@ public class PromoterService {
         return toDtos(caller, access, List.of(saved)).get(saved.getId());
     }
 
-    /** The admin rule: only an ad that never ran (no view history) is deleted. */
-    public void deleteAd(Caller caller, UUID adId) {
+    /** The admin rule (addendum B): deleted if it never ran, archived if it has view history. */
+    public PromotionService.DeleteOutcome deleteAd(Caller caller, UUID adId) {
         requireAd(caller, access(caller), adId);
-        promotionService.deleteAd(caller.tenantId(), adId);
+        return promotionService.deleteAd(caller.tenantId(), adId);
     }
 
     @Transactional(readOnly = true)
@@ -263,8 +276,15 @@ public class PromoterService {
                 .orElseThrow(() -> new AccessDeniedException("Not a promoter of this organisation."));
         boolean canCreate = accessRepository.findByTenantIdAndUserId(caller.tenantId(), user.getId())
                 .map(PromoterAccess::isCanCreateBusinesses).orElse(false);
-        return new Access(canCreate,
-                new HashSet<>(grantRepository.findBusinessIds(caller.tenantId(), user.getId())),
+        // A granted business that is archived (addendum B) is out of reach like one never
+        // granted: not listed, not written to, its ads 404.
+        List<UUID> grants = grantRepository.findBusinessIds(caller.tenantId(), user.getId());
+        Set<UUID> live = grants.isEmpty() ? Set.of()
+                : businessRepository.findByTenantIdAndIdIn(caller.tenantId(), grants).stream()
+                .filter(b -> b.getArchivedAt() == null)
+                .map(PromoBusiness::getId)
+                .collect(Collectors.toSet());
+        return new Access(canCreate, new HashSet<>(live),
                 new HashSet<>(promoterPropertyRepository.findPropertyIds(caller.tenantId(), user.getId())));
     }
 
@@ -283,6 +303,7 @@ public class PromoterService {
     private PromoAd requireAd(Caller caller, Access access, UUID adId) {
         PromoAd ad = adRepository.findById(adId)
                 .filter(a -> Objects.equals(a.getTenantId(), caller.tenantId()))
+                .filter(a -> a.getArchivedAt() == null)
                 .orElseThrow(() -> new NotFoundException("Ad not found"));
         requireGrantedBusiness(access, ad.getBusinessId(), "Ad not found");
         return ad;

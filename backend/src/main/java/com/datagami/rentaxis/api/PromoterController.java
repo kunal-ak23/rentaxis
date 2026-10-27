@@ -87,6 +87,12 @@ public class PromoterController {
         return ResponseEntity.ok(promoters.updateBusiness(caller(), id, req));
     }
 
+    /** Needs can-create and the grant (addendum B): {@code {"outcome": "DELETED" | "ARCHIVED"}}. */
+    @DeleteMapping("/businesses/{id}")
+    public ResponseEntity<Map<String, String>> deleteBusiness(@PathVariable UUID id) {
+        return ResponseEntity.ok(Map.of("outcome", promoters.deleteBusiness(caller(), id).name()));
+    }
+
     // -------------------------------------------------------------------- ads
 
     @GetMapping("/ads")
@@ -106,10 +112,10 @@ public class PromoterController {
         return ResponseEntity.ok(promoters.updateAd(caller(), id, req));
     }
 
+    /** Always succeeds (addendum B): {@code {"outcome": "DELETED" | "ARCHIVED"}}. */
     @DeleteMapping("/ads/{id}")
-    public ResponseEntity<Void> deleteAd(@PathVariable UUID id) {
-        promoters.deleteAd(caller(), id);
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<Map<String, String>> deleteAd(@PathVariable UUID id) {
+        return ResponseEntity.ok(Map.of("outcome", promoters.deleteAd(caller(), id).name()));
     }
 
     @GetMapping("/ads/{id}/stats")

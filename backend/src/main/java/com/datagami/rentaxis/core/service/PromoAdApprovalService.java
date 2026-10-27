@@ -41,7 +41,7 @@ public class PromoAdApprovalService {
 
     @Transactional(readOnly = true)
     public long pendingCount(UUID tenantId) {
-        return adRepository.countByTenantIdAndApprovalStatus(tenantId, PromoApprovalStatus.PENDING);
+        return adRepository.countByTenantIdAndApprovalStatusAndArchivedAtIsNull(tenantId, PromoApprovalStatus.PENDING);
     }
 
     /** PENDING → APPROVED: live from its window. The rejection reason, if any, is cleared. */
@@ -75,6 +75,7 @@ public class PromoAdApprovalService {
     private PromoAd pending(UUID tenantId, UUID adId, String verb) {
         PromoAd ad = adRepository.findForUpdate(tenantId, adId)
                 .orElseThrow(() -> new NotFoundException("Ad not found"));
+        PromotionService.requireNotArchived(ad);
         if (ad.getApprovalStatus() != PromoApprovalStatus.PENDING) {
             throw new BusinessRuleViolationException("Only an ad awaiting approval can be " + verb + ".");
         }

@@ -21,6 +21,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -90,9 +91,18 @@ public class PromotionService {
 
     // ------------------------------------------------------------- businesses
 
+    /** Live (not archived) businesses. */
     @Transactional(readOnly = true)
     public Page<PromoBusiness> listBusinesses(UUID tenantId, Pageable pageable) {
-        return businessRepository.findByTenantId(tenantId, pageable);
+        return listBusinesses(tenantId, false, pageable);
+    }
+
+    /** Addendum B: {@code archived} false = live businesses only, true = archived only. */
+    @Transactional(readOnly = true)
+    public Page<PromoBusiness> listBusinesses(UUID tenantId, boolean archived, Pageable pageable) {
+        return archived
+                ? businessRepository.findByTenantIdAndArchivedAtIsNotNull(tenantId, pageable)
+                : businessRepository.findByTenantIdAndArchivedAtIsNull(tenantId, pageable);
     }
 
     @Transactional(readOnly = true)
@@ -114,6 +124,7 @@ public class PromotionService {
 
     public PromoBusiness updateBusiness(UUID tenantId, UUID id, PromoBusinessRequest req) {
         PromoBusiness b = getBusiness(tenantId, id);
+        requireNotArchived(b);
         applyBusiness(b, req);
         return saveBusiness(b);
     }
@@ -139,19 +150,57 @@ public class PromotionService {
         }
     }
 
+    /** What a delete did (addendum B): removed outright, or archived because history exists. */
+    public enum DeleteOutcome { DELETED, ARCHIVED }
+
     /**
-     * Hard delete only when nothing references the business — ad history and
-     * event counts must survive, so anything in use is deactivated instead.
+     * Delete always succeeds (addendum B). A business no ad has ever referenced is
+     * deleted outright. One with ads — live or archived; {@code fk_promo_ad_business}
+     * RESTRICTs — is archived instead and deactivated, and every ad of it not yet
+     * archived is archived and deactivated with it (none is hard-deleted here, event
+     * history or not: archiving keeps the business's ads restorable together).
+     * Deleting an archived business again changes nothing.
      */
-    public void deleteBusiness(UUID tenantId, UUID id) {
+    public DeleteOutcome deleteBusiness(UUID tenantId, UUID id) {
         PromoBusiness b = getBusiness(tenantId, id);
-        if (adRepository.countByBusinessId(id) > 0) {
-            // Lowercase "deactivate" is asserted by the test; an em dash keeps it
-            // mid-sentence rather than starting a new one.
-            throw new BusinessRuleViolationException(
-                    "This business has ads — deactivate it instead of deleting it.");
+        if (adRepository.countByBusinessId(id) == 0) {
+            businessRepository.delete(b);
+            return DeleteOutcome.DELETED;
         }
-        businessRepository.delete(b);
+        Instant now = Instant.now();
+        if (b.getArchivedAt() == null) {
+            b.setArchivedAt(now);
+        }
+        b.setActive(false);
+        businessRepository.save(b);
+        for (PromoAd ad : adRepository.findByTenantIdAndBusinessIdAndArchivedAtIsNull(tenantId, id)) {
+            ad.setArchivedAt(now);
+            ad.setActive(false);
+            adRepository.save(ad);
+        }
+        return DeleteOutcome.ARCHIVED;
+    }
+
+    /**
+     * Addendum B: an archived business back in the lists, still inactive (an admin
+     * re-activates it by editing). Its ads stay archived until restored one by one.
+     * Refused (400, the name-collision message) when a live business has taken its
+     * name meanwhile.
+     */
+    public PromoBusiness restoreBusiness(UUID tenantId, UUID id) {
+        PromoBusiness b = getBusiness(tenantId, id);
+        if (b.getArchivedAt() == null) {
+            throw new BusinessRuleViolationException("This business is not archived.");
+        }
+        b.setArchivedAt(null);
+        b.setActive(false);
+        return saveBusiness(b);
+    }
+
+    private static void requireNotArchived(PromoBusiness b) {
+        if (b.getArchivedAt() != null) {
+            throw new BusinessRuleViolationException("This business is archived — restore it first.");
+        }
     }
 
     private void applyBusiness(PromoBusiness b, PromoBusinessRequest req) {
@@ -254,23 +303,46 @@ public class PromotionService {
 
     @Transactional(readOnly = true)
     public Page<PromoAd> listAds(UUID tenantId, UUID businessId, Pageable pageable) {
-        return listAds(tenantId, businessId, null, pageable);
+        return listAds(tenantId, businessId, null, false, pageable);
     }
 
-    /** {@code approvalStatus} null = every state (changeset 183). */
+    /** {@code approvalStatus} null = every state (changeset 183). Live (not archived) ads. */
     @Transactional(readOnly = true)
     public Page<PromoAd> listAds(UUID tenantId, UUID businessId,
                                  com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus approvalStatus,
                                  Pageable pageable) {
-        if (approvalStatus != null) {
-            return businessId != null
-                    ? adRepository.findByTenantIdAndBusinessIdAndApprovalStatus(tenantId, businessId, approvalStatus, pageable)
-                    : adRepository.findByTenantIdAndApprovalStatus(tenantId, approvalStatus, pageable);
+        return listAds(tenantId, businessId, approvalStatus, false, pageable);
+    }
+
+    /**
+     * The admin ad list: optionally one business, optionally one approval state, and
+     * either the live ads ({@code archived} false, the default) or the archived ones
+     * only (addendum B).
+     */
+    @Transactional(readOnly = true)
+    public Page<PromoAd> listAds(UUID tenantId, UUID businessId,
+                                 com.datagami.rentaxis.domain.entity.enums.PromoApprovalStatus approvalStatus,
+                                 boolean archived, Pageable pageable) {
+        if (businessId != null && approvalStatus != null) {
+            return archived
+                    ? adRepository.findByTenantIdAndBusinessIdAndApprovalStatusAndArchivedAtIsNotNull(
+                            tenantId, businessId, approvalStatus, pageable)
+                    : adRepository.findByTenantIdAndBusinessIdAndApprovalStatusAndArchivedAtIsNull(
+                            tenantId, businessId, approvalStatus, pageable);
         }
         if (businessId != null) {
-            return adRepository.findByTenantIdAndBusinessId(tenantId, businessId, pageable);
+            return archived
+                    ? adRepository.findByTenantIdAndBusinessIdAndArchivedAtIsNotNull(tenantId, businessId, pageable)
+                    : adRepository.findByTenantIdAndBusinessIdAndArchivedAtIsNull(tenantId, businessId, pageable);
         }
-        return adRepository.findByTenantId(tenantId, pageable);
+        if (approvalStatus != null) {
+            return archived
+                    ? adRepository.findByTenantIdAndApprovalStatusAndArchivedAtIsNotNull(tenantId, approvalStatus, pageable)
+                    : adRepository.findByTenantIdAndApprovalStatusAndArchivedAtIsNull(tenantId, approvalStatus, pageable);
+        }
+        return archived
+                ? adRepository.findByTenantIdAndArchivedAtIsNotNull(tenantId, pageable)
+                : adRepository.findByTenantIdAndArchivedAtIsNull(tenantId, pageable);
     }
 
     @Transactional(readOnly = true)
@@ -294,6 +366,7 @@ public class PromotionService {
 
     public PromoAd updateAd(UUID tenantId, UUID id, PromoAdRequest req) {
         PromoAd a = getAd(tenantId, id);
+        requireNotArchived(a);
         // A promoter-written ad shows only where it is targeted AND the promoter is
         // allowed (PromoAdRepository.findEligible), so "every property" would quietly
         // show it nowhere. Said here rather than discovered on the renter's phone.
@@ -311,18 +384,48 @@ public class PromotionService {
     }
 
     /**
-     * Hard delete only when the ad never ran. Impression and click history is
-     * the entire point of the analytics, and fk_pae_ad RESTRICTs, so an ad
-     * with events is deactivated instead — the same rule deleteBusiness
-     * applies one level up.
+     * Delete always succeeds (addendum B). An ad that never ran is deleted outright;
+     * one with impression or click history ({@code fk_pae_ad} RESTRICTs, and the
+     * history is the analytics) is archived and deactivated instead, its stats still
+     * readable.
      */
-    public void deleteAd(UUID tenantId, UUID id) {
+    public DeleteOutcome deleteAd(UUID tenantId, UUID id) {
         PromoAd ad = getAd(tenantId, id);
-        if (eventRepository.countByAdId(id) > 0) {
-            throw new BusinessRuleViolationException(
-                    "This ad has view history. Deactivate it instead of deleting it.");
+        if (eventRepository.countByAdId(id) == 0) {
+            adRepository.delete(ad);
+            return DeleteOutcome.DELETED;
         }
-        adRepository.delete(ad);
+        if (ad.getArchivedAt() == null) {
+            ad.setArchivedAt(Instant.now());
+        }
+        ad.setActive(false);
+        adRepository.save(ad);
+        return DeleteOutcome.ARCHIVED;
+    }
+
+    /**
+     * Addendum B: an archived ad back in the lists, still inactive (an admin
+     * re-activates it by editing). Its business must not be archived.
+     */
+    public PromoAd restoreAd(UUID tenantId, UUID id) {
+        PromoAd ad = getAd(tenantId, id);
+        if (ad.getArchivedAt() == null) {
+            throw new BusinessRuleViolationException("This ad is not archived.");
+        }
+        PromoBusiness business = getBusiness(tenantId, ad.getBusinessId());
+        if (business.getArchivedAt() != null) {
+            throw new BusinessRuleViolationException("Restore the business first.");
+        }
+        ad.setArchivedAt(null);
+        ad.setActive(false);
+        return adRepository.save(ad);
+    }
+
+    /** Addendum B: an archived ad is read-only until restored (edit, approve, reject). */
+    public static void requireNotArchived(PromoAd ad) {
+        if (ad.getArchivedAt() != null) {
+            throw new BusinessRuleViolationException("This ad is archived — restore it first.");
+        }
     }
 
     @Transactional(readOnly = true)
@@ -378,6 +481,7 @@ public class PromotionService {
 
     private void applyAd(UUID tenantId, PromoAd a, PromoAdRequest req) {
         PromoBusiness business = getBusiness(tenantId, req.businessId());
+        requireNotArchived(business);
         PromoCtaType ctaType = req.ctaType() == null ? PromoCtaType.NONE : req.ctaType();
 
         String titleEn = trimToNull(req.titleEn());

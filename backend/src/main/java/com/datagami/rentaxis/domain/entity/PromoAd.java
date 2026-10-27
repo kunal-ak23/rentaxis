@@ -114,6 +114,14 @@ public class PromoAd extends BaseTenantEntity {
     @Column(name = "rejection_reason", length = 500)
     private String rejectionReason;
 
+    /**
+     * Addendum B: set when a delete found view history, so the ad was archived
+     * instead (and deactivated). Archived ads are hidden from every list and from
+     * renters; an admin can restore one.
+     */
+    @Column(name = "archived_at")
+    private Instant archivedAt;
+
     /** COUPON only (addendum A): opened after "Copy code"; allowlisted like a WEBSITE ctaUrl. */
     @Column(name = "redirect_url", length = 2048)
     private String redirectUrl;

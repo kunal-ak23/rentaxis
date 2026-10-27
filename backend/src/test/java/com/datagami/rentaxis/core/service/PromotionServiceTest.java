@@ -108,15 +108,36 @@ class PromotionServiceTest {
                 .isInstanceOf(NotFoundException.class);
     }
 
+    /** Addendum B: a business with ads is archived (and its ads with it), never refused. */
     @Test
-    void deleteBusiness_refusesWhenAdsExist() {
-        when(businessRepository.findById(businessId)).thenReturn(Optional.of(business()));
+    void deleteBusiness_archivesWhenAdsExist() {
+        PromoBusiness b = business();
+        when(businessRepository.findById(businessId)).thenReturn(Optional.of(b));
         when(adRepository.countByBusinessId(businessId)).thenReturn(3L);
+        PromoAd live = new PromoAd();
+        live.setId(UUID.randomUUID());
+        live.setTenantId(tenantId);
+        when(adRepository.findByTenantIdAndBusinessIdAndArchivedAtIsNull(tenantId, businessId))
+                .thenReturn(List.of(live));
 
-        assertThatThrownBy(() -> service.deleteBusiness(tenantId, businessId))
-                .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("deactivate");
+        assertThat(service.deleteBusiness(tenantId, businessId)).isEqualTo(PromotionService.DeleteOutcome.ARCHIVED);
+
+        assertThat(b.getArchivedAt()).isNotNull();
+        assertThat(b.isActive()).isFalse();
+        assertThat(live.getArchivedAt()).isNotNull();
+        assertThat(live.isActive()).isFalse();
         verify(businessRepository, never()).delete(any());
+        verify(adRepository, never()).delete(any());
+    }
+
+    @Test
+    void deleteBusiness_deletesOneThatNeverHadAnAd() {
+        PromoBusiness b = business();
+        when(businessRepository.findById(businessId)).thenReturn(Optional.of(b));
+        when(adRepository.countByBusinessId(businessId)).thenReturn(0L);
+
+        assertThat(service.deleteBusiness(tenantId, businessId)).isEqualTo(PromotionService.DeleteOutcome.DELETED);
+        verify(businessRepository).delete(b);
     }
 
     // --------------------------------------------------------------------- ad
@@ -235,17 +256,19 @@ class PromotionServiceTest {
         assertThat(saved.getCtaUrl()).isNull();
     }
 
+    /** Addendum B: an ad with view history is archived, so its analytics survive — never refused. */
     @Test
-    void deleteAd_refusesWhenTheAdHasViewHistory() {
+    void deleteAd_archivesWhenTheAdHasViewHistory() {
         PromoAd existing = new PromoAd();
         existing.setId(UUID.randomUUID());
         existing.setTenantId(tenantId);
         when(adRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
         when(eventRepository.countByAdId(existing.getId())).thenReturn(42L);
 
-        assertThatThrownBy(() -> service.deleteAd(tenantId, existing.getId()))
-                .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("Deactivate");
+        assertThat(service.deleteAd(tenantId, existing.getId())).isEqualTo(PromotionService.DeleteOutcome.ARCHIVED);
+
+        assertThat(existing.getArchivedAt()).isNotNull();
+        assertThat(existing.isActive()).isFalse();
         verify(adRepository, never()).delete(any());
     }
 
@@ -257,7 +280,7 @@ class PromotionServiceTest {
         when(adRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
         when(eventRepository.countByAdId(existing.getId())).thenReturn(0L);
 
-        service.deleteAd(tenantId, existing.getId());
+        assertThat(service.deleteAd(tenantId, existing.getId())).isEqualTo(PromotionService.DeleteOutcome.DELETED);
 
         verify(adRepository).delete(existing);
     }

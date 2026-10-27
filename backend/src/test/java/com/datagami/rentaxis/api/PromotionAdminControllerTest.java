@@ -260,11 +260,16 @@ class PromotionAdminControllerTest {
         assertThat(dto.businessNameEn()).isEqualTo("Spice Bazaar");
     }
 
+    /** Addendum B: delete always succeeds and says what it did. */
     @Test
-    void deleteAd_returns204() {
-        assertThat(controller.deleteAd(UUID.randomUUID()).getStatusCode())
-                .isEqualTo(HttpStatus.NO_CONTENT);
-        verify(promotionService).deleteAd(eq(tenantId), any(UUID.class));
+    void deleteAd_answers200WithTheOutcome() {
+        when(promotionService.deleteAd(eq(tenantId), any(UUID.class)))
+                .thenReturn(PromotionService.DeleteOutcome.ARCHIVED);
+
+        ResponseEntity<Map<String, String>> res = controller.deleteAd(UUID.randomUUID());
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(res.getBody()).containsEntry("outcome", "ARCHIVED");
     }
 
     @Test
