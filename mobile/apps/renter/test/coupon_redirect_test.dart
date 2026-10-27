@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -29,6 +30,11 @@ class _Launcher {
 }
 
 const _link = 'https://quickwash.example/app?code=MIFTAH25&name=Aisha%20Khan';
+
+/// The business name as the sheet sets it into a sentence: wrapped in a
+/// first-strong isolate (FSI ... PDI) so its own direction cannot be bent by
+/// the language of the sentence around it.
+String _iso(String name) => '\u2068$name\u2069';
 
 /// A COUPON card with the redirect fields the server resolves per renter.
 PromoAd _ad({
@@ -192,8 +198,11 @@ void main() {
       await _tapCopy(tester);
 
       expect(find.byType(CouponRedirectSheet), findsOneWidget);
-      expect(find.text('Open Spice Bazaar?'), findsOneWidget);
-      expect(find.text('Spice Bazaar will receive your:'), findsOneWidget);
+      expect(find.text('Open ${_iso('Spice Bazaar')}?'), findsOneWidget);
+      expect(
+        find.text('${_iso('Spice Bazaar')} will receive your:'),
+        findsOneWidget,
+      );
       expect(
         tester
             .widget<Text>(find.byKey(const Key('coupon-redirect-fields')))
@@ -528,9 +537,9 @@ void main() {
         TextDirection.rtl,
         reason: 'the fixture must actually be RTL for this to mean anything',
       );
-      expect(find.text('فتح سبايس بازار؟'), findsOneWidget);
+      expect(find.text('فتح ${_iso('سبايس بازار')}؟'), findsOneWidget);
       expect(
-        find.text('سيتلقى سبايس بازار البيانات التالية عنك:'),
+        find.text('سيتلقى ${_iso('سبايس بازار')} البيانات التالية عنك:'),
         findsOneWidget,
       );
       // Joined with the Arabic comma, not the Latin one.
@@ -641,6 +650,298 @@ void main() {
         'بيانات أخرى',
       );
     });
+  });
+
+  group('a sharedFields value the app cannot read', () {
+    // Present-but-garbled is not the same as absent. The link may carry renter
+    // data this app cannot name, so it must still ask — never fall through to
+    // the "nothing personal in it" path that opens without consent.
+    const unreadable = <String, Object>{
+      'a string where a list belongs': 'RENTER_NAME',
+      'a list of objects': [
+        {'field': 'RENTER_NAME'},
+      ],
+      'a list of numbers': [1, 2],
+      'an object': {'RENTER_NAME': true},
+    };
+
+    for (final entry in unreadable.entries) {
+      testWidgets('${entry.key} still asks, listing "Other details"', (
+        tester,
+      ) async {
+        final copied = _captureClipboard(tester);
+        final launcher = _Launcher();
+        await _pump(
+          tester,
+          ad: _ad(redirectUrl: _link, sharedFields: entry.value),
+          launcher: launcher,
+        );
+
+        await _tapCopy(tester);
+
+        expect(find.byType(CouponRedirectSheet), findsOneWidget);
+        expect(
+          tester
+              .widget<Text>(find.byKey(const Key('coupon-redirect-fields')))
+              .data,
+          'Other details',
+        );
+        expect(copied, ['MIFTAH25']);
+        expect(launcher.uris, isEmpty, reason: 'nothing opens before consent');
+
+        await _tapContinue(tester);
+        expect(launcher.uris, [Uri.parse(_link)]);
+      });
+    }
+
+    testWidgets('Cancel on that sheet opens nothing', (tester) async {
+      _captureClipboard(tester);
+      final launcher = _Launcher();
+      await _pump(
+        tester,
+        ad: _ad(redirectUrl: _link, sharedFields: 'RENTER_NAME'),
+        launcher: launcher,
+      );
+
+      await _tapCopy(tester);
+      await _tapCancel(tester);
+
+      expect(launcher.uris, isEmpty);
+    });
+
+    testWidgets(
+      'an unreadable entry beside readable ones is added, not dropped',
+      (tester) async {
+        _captureClipboard(tester);
+        await _pump(
+          tester,
+          ad: _ad(
+            redirectUrl: _link,
+            sharedFields: [
+              'RENTER_NAME',
+              {'field': 'RENTER_PHONE'},
+            ],
+          ),
+          launcher: _Launcher(),
+        );
+
+        await _tapCopy(tester);
+
+        expect(
+          tester
+              .widget<Text>(find.byKey(const Key('coupon-redirect-fields')))
+              .data,
+          'Name, Other details',
+        );
+      },
+    );
+
+    testWidgets('says so in Arabic too', (tester) async {
+      _captureClipboard(tester);
+      await _pump(
+        tester,
+        ad: _ad(redirectUrl: _link, sharedFields: 'RENTER_NAME'),
+        launcher: _Launcher(),
+        ar: true,
+      );
+
+      await _tapCopy(tester);
+
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('coupon-redirect-fields')))
+            .data,
+        'بيانات أخرى',
+      );
+    });
+
+    testWidgets('an absent key, a null and an empty list still skip consent', (
+      tester,
+    ) async {
+      // The other side of the line: these three genuinely mean "nothing
+      // personal", and asking anyway would train renters to tap through.
+      for (final shared in <Object?>[null, const []]) {
+        _captureClipboard(tester);
+        final launcher = _Launcher();
+        await _pump(
+          tester,
+          ad: _ad(redirectUrl: _link, sharedFields: shared),
+          launcher: launcher,
+        );
+
+        await _tapCopy(tester);
+
+        expect(find.byType(CouponRedirectSheet), findsNothing);
+        expect(launcher.uris, [
+          Uri.parse(_link),
+        ], reason: 'sharedFields: $shared');
+      }
+    });
+  });
+
+  group('the business name inside the sentence', () {
+    // The name is someone else's text dropped into our sentence. Bare, the
+    // punctuation and digits next to it take their direction from the sentence
+    // (see `_isolate`), so it paints differently from the same name on its own.
+    // The oracle is exactly that: the name must look inside the sentence the
+    // way it looks standing alone, in its own direction.
+
+    Future<void> pumpSheet(
+      WidgetTester tester, {
+      required String name,
+      required bool ar,
+    }) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.lightTheme,
+          locale: Locale(ar ? 'ar' : 'en'),
+          supportedLocales: const [Locale('en'), Locale('ar')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          home: Scaffold(
+            body: CouponRedirectSheet(
+              businessName: name,
+              fields: const ['RENTER_NAME'],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    /// The characters of [name], read left to right as painted, within the
+    /// paragraph whose text contains it. Geometry rather than the string we
+    /// handed the widget, because bidi reordering happens at layout time.
+    String paintedLeftToRight(
+      WidgetTester tester,
+      Finder paragraph,
+      String name,
+    ) {
+      final render = tester.renderObject<RenderParagraph>(paragraph);
+      final text = tester.widget<Text>(paragraph).data!;
+      final start = text.indexOf(name);
+      expect(start, isNonNegative, reason: '"$name" not found in "$text"');
+      final glyphs = <({double left, String char})>[];
+      for (var i = 0; i < name.length; i++) {
+        final boxes = render.getBoxesForSelection(
+          TextSelection(baseOffset: start + i, extentOffset: start + i + 1),
+        );
+        expect(boxes, isNotEmpty, reason: 'no box for "${name[i]}"');
+        glyphs.add((left: boxes.first.left, char: name[i]));
+      }
+      glyphs.sort((a, b) => a.left.compareTo(b.left));
+      return glyphs.map((g) => g.char).join();
+    }
+
+    Future<String> paintedAlone(
+      WidgetTester tester,
+      String name,
+      TextDirection direction,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Directionality(
+            textDirection: direction,
+            child: Text(name, key: const Key('alone')),
+          ),
+        ),
+      );
+      return paintedLeftToRight(tester, find.byKey(const Key('alone')), name);
+    }
+
+    const cases = <({bool ar, String name, TextDirection dir})>[
+      (ar: true, name: 'Q-Wash 24/7', dir: TextDirection.ltr),
+      (ar: true, name: 'Q-Wash!', dir: TextDirection.ltr),
+      (ar: true, name: '24/7 Wash', dir: TextDirection.ltr),
+      (ar: false, name: 'مغسلة 24/7', dir: TextDirection.rtl),
+      (ar: false, name: 'مغسلة (دبي)', dir: TextDirection.rtl),
+      (ar: false, name: 'سبايس بازار!', dir: TextDirection.rtl),
+    ];
+
+    for (final c in cases) {
+      testWidgets(
+        '"${c.name}" paints as itself in the ${c.ar ? 'Arabic' : 'English'} sentence',
+        (tester) async {
+          await pumpSheet(tester, name: c.name, ar: c.ar);
+          final inTitle = paintedLeftToRight(
+            tester,
+            find.byKey(const Key('coupon-redirect-title')),
+            c.name,
+          );
+          final inLead = paintedLeftToRight(
+            tester,
+            find.byKey(const Key('coupon-redirect-lead')),
+            c.name,
+          );
+
+          final alone = await paintedAlone(tester, c.name, c.dir);
+
+          expect(inTitle, alone, reason: 'in the title');
+          expect(inLead, alone, reason: 'in the lead line');
+        },
+      );
+    }
+
+    testWidgets('wraps the name, and only the name, in an isolate', (
+      tester,
+    ) async {
+      await pumpSheet(tester, name: 'Q-Wash!', ar: true);
+
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('coupon-redirect-title')))
+            .data,
+        'فتح ${_iso('Q-Wash!')}؟',
+      );
+      expect(
+        tester.widget<Text>(find.byKey(const Key('coupon-redirect-lead'))).data,
+        'سيتلقى ${_iso('Q-Wash!')} البيانات التالية عنك:',
+      );
+    });
+
+    testWidgets('the stand-in for a missing name is not isolated', (
+      tester,
+    ) async {
+      // It is our own text, in the sentence's own language.
+      await pumpSheet(tester, name: '   ', ar: false);
+
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('coupon-redirect-title')))
+            .data,
+        'Open this business?',
+      );
+    });
+
+    testWidgets(
+      'bidi controls inside the name cannot break out of the isolate',
+      (tester) async {
+        // A stray PDI would close our isolate early and a stray override would
+        // reorder the rest of the sentence — the very thing it exists to stop.
+        // Built from code points: an unbalanced control written into a source
+        // literal reads differently from how it compiles, and `dart format`
+        // rewrites the escapes into the raw characters.
+        final fsi = String.fromCharCode(0x2068);
+        final pdi = String.fromCharCode(0x2069);
+        final lri = String.fromCharCode(0x2066);
+        final lre = String.fromCharCode(0x202a);
+        final rlo = String.fromCharCode(0x202e);
+        await pumpSheet(tester, name: 'Q-Wash$pdi$rlo evil$lri$lre', ar: true);
+
+        final title = tester
+            .widget<Text>(find.byKey(const Key('coupon-redirect-title')))
+            .data!;
+        expect(title, 'فتح ${_iso('Q-Wash evil')}؟');
+        expect(fsi.allMatches(title), hasLength(1));
+        expect(pdi.allMatches(title), hasLength(1));
+        for (final stray in [rlo, lri, lre]) {
+          expect(title.contains(stray), isFalse);
+        }
+      },
+    );
   });
 
   group('wired through the app', () {

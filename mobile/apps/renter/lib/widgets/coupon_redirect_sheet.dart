@@ -41,9 +41,8 @@ class CouponRedirectSheet extends StatelessWidget {
     final isAr = context.isAr;
     final m = context.miftah;
     final l = _L(isAr);
-    final who = businessName.trim().isEmpty
-        ? l.thisBusiness
-        : businessName.trim();
+    final cleaned = _stripBidiControls(businessName).trim();
+    final who = cleaned.isEmpty ? l.thisBusiness : _isolate(cleaned);
 
     return Container(
       decoration: BoxDecoration(
@@ -126,6 +125,22 @@ class CouponRedirectSheet extends StatelessWidget {
     );
   }
 }
+
+/// First-strong isolate (U+2068) … pop isolate (U+2069). The business name is
+/// someone else's text dropped into our sentence: left bare, its neighbouring
+/// punctuation and digits take their direction from the *sentence*, so
+/// `Q-Wash!` in the Arabic copy paints as `!Q-Wash`, `24/7 Wash` as
+/// `Wash 24/7`, and an Arabic name in the English copy reverses its brackets.
+/// Isolated, it is laid out as if it stood alone, in whichever direction its own
+/// first letter implies, and the sentence flows around it as a single unit.
+String _isolate(String name) => '\u2068$name\u2069';
+
+/// Removes explicit embedding, override and isolate controls (U+202A–202E,
+/// U+2066–2069) from [name]. The name is admin-entered text; a stray PDI in it
+/// would close our isolate early and a stray override would reorder the rest of
+/// the sentence — exactly what the isolate is there to prevent.
+String _stripBidiControls(String name) =>
+    name.replaceAll(RegExp('[\u202A-\u202E\u2066-\u2069]'), '');
 
 class _L {
   const _L(this.ar);
