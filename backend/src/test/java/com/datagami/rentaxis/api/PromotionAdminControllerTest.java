@@ -214,6 +214,10 @@ class PromotionAdminControllerTest {
         a.setBackgroundImageUrl("https://cdn.example.com/a.png");
         a.setAccentColor("#FBF3E2");
         a.setCouponCode("MIFTAH25");
+        // Addendum C: three adjacent-ish String links, each must land in its own slot.
+        a.setRedirectUrl("https://quickwash.example/any");
+        a.setRedirectUrlAndroid("https://quickwash.example/android");
+        a.setRedirectUrlIos("https://quickwash.example/ios");
         a.setPriority(7);
         a.setPlacement(PromoPlacement.OFFERS_ONLY);
         a.setActive(false);
@@ -254,6 +258,9 @@ class PromotionAdminControllerTest {
         assertThat(dto.backgroundImageUrl()).isEqualTo("https://cdn.example.com/a.png");
         assertThat(dto.accentColor()).isEqualTo("#FBF3E2");
         assertThat(dto.couponCode()).isEqualTo("MIFTAH25");
+        assertThat(dto.redirectUrl()).isEqualTo("https://quickwash.example/any");
+        assertThat(dto.redirectUrlAndroid()).isEqualTo("https://quickwash.example/android");
+        assertThat(dto.redirectUrlIos()).isEqualTo("https://quickwash.example/ios");
         assertThat(dto.priority()).isEqualTo(7);
         assertThat(dto.placement()).isEqualTo(PromoPlacement.OFFERS_ONLY);
         assertThat(dto.active()).isFalse();

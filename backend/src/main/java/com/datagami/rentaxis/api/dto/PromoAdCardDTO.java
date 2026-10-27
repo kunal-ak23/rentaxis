@@ -39,9 +39,17 @@ public record PromoAdCardDTO(
          */
         String redirectUrl,
         /**
-         * The renter-data sources present in {@code redirectUrl} (RENTER_NAME,
+         * COUPON only (addendum C): the link to open on Android instead of
+         * {@code redirectUrl}, resolved for the calling renter like it; null when the
+         * ad has none (the app then falls back to {@code redirectUrl}).
+         */
+        String redirectUrlAndroid,
+        /** COUPON only (addendum C): the iPhone link, as {@code redirectUrlAndroid} is for Android. */
+        String redirectUrlIos,
+        /**
+         * The renter-data sources present in any of the resolved links (RENTER_NAME,
          * RENTER_PHONE, RENTER_EMAIL, PROPERTY_NAME, UNIT_NUMBER), for the consent
-         * sheet; empty when none.
+         * sheet; empty when none. The links share their parameters.
          */
         List<String> sharedFields) {
 }

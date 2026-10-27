@@ -371,3 +371,5 @@ databaseChangeLog:
       file: db/changelog/changesets/183-promoter-role.yaml
   - include:
       file: db/changelog/changesets/183-bank-line-kept-lookalike.yaml
+  - include:
+      file: db/changelog/changesets/184-promo-ad-platform-redirects.yaml

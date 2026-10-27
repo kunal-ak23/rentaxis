@@ -149,6 +149,40 @@ class PromoterApiIT extends AbstractPromoterIT {
     }
 
     @Test
+    void anEditOfThePlatformLinksAloneSendsTheAdBackToo() {
+        // Addendum C: the Android/iPhone links are part of the ad, so an edit that changes
+        // nothing else still goes back in front of an admin; both round-trip for a promoter.
+        jdbc.update("UPDATE promo_businesses SET allowed_domains = 'quickwash.example' WHERE id = ?", granted.getId());
+        Map<String, Object> req = adBody(granted.getId(), List.of(p1.getId()),
+                "ctaType", "COUPON", "couponCode", "SAVE10",
+                "redirectUrl", "https://app.quickwash.example/r",
+                "redirectParams", List.of(body("name", "n", "source", "RENTER_NAME", "value", null)));
+        Resp created = post(promoter, "/api/v1/promoter/ads", req);
+        assertThat(created.status()).isEqualTo(201);
+        assertThat(created.body().get("redirectUrlAndroid").isNull()).isTrue();
+        assertThat(created.body().get("redirectUrlIos").isNull()).isTrue();
+        UUID id = UUID.fromString(created.text("id"));
+        assertThat(approve(user(org, UserRole.TENANT_ADMIN), id).status()).isEqualTo(204);
+        assertThat(reload(id).getApprovalStatus()).isEqualTo(APPROVED);
+
+        req.put("redirectUrlAndroid", "https://android.quickwash.example/open");
+        req.put("redirectUrlIos", "https://ios.quickwash.example/open");
+        Resp res = put(promoter, "/api/v1/promoter/ads/" + id, req);
+
+        assertThat(res.status()).isEqualTo(200);
+        assertThat(res.text("redirectUrlAndroid")).isEqualTo("https://android.quickwash.example/open");
+        assertThat(res.text("redirectUrlIos")).isEqualTo("https://ios.quickwash.example/open");
+        assertThat(res.text("approvalStatus")).isEqualTo("PENDING");
+        PromoAd stored = reload(id);
+        assertThat(stored.getApprovalStatus()).isEqualTo(PENDING);
+        assertThat(stored.getRedirectUrlAndroid()).isEqualTo("https://android.quickwash.example/open");
+        assertThat(stored.getRedirectUrlIos()).isEqualTo("https://ios.quickwash.example/open");
+        JsonNode listed = find(get(promoter, "/api/v1/promoter/ads").body().get("content"), id);
+        assertThat(listed.get("redirectUrlAndroid").asText()).isEqualTo("https://android.quickwash.example/open");
+        assertThat(listed.get("redirectUrlIos").asText()).isEqualTo("https://ios.quickwash.example/open");
+    }
+
+    @Test
     void propertiesMustBeOwnAndAtLeastOne() {
         assertThat(post(promoter, "/api/v1/promoter/ads", adBody(granted.getId(), List.of())).status())
                 .isEqualTo(400);

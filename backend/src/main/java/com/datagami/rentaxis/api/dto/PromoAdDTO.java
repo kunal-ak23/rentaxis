@@ -48,6 +48,10 @@ public record PromoAdDTO(
         String redirectUrl,
         /** COUPON only: {@code [{name, source, value}]}, value set only for STATIC; empty = none. */
         List<PromoRedirectParam> redirectParams,
+        /** COUPON only (addendum C): opened on Android instead of {@code redirectUrl}; null = none. */
+        String redirectUrlAndroid,
+        /** COUPON only (addendum C): opened on iPhone instead of {@code redirectUrl}; null = none. */
+        String redirectUrlIos,
         /** PENDING / APPROVED / REJECTED (changeset 183). Only APPROVED ads reach renters. */
         PromoApprovalStatus approvalStatus,
         /** The admin's reason when REJECTED; null otherwise. */

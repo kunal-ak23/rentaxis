@@ -20,7 +20,7 @@ public final class PromoAdDtos {
     }
 
     /**
-     * 34 positional arguments, several adjacent pairs of the same type. Keep them one
+     * 36 positional arguments, several adjacent pairs of the same type. Keep them one
      * per line-group and in the record's declared order so a transposition is visible
      * in review — the compiler cannot catch one.
      * {@code listAds_mapsEverySwapProneFieldToTheRightSlot} is the backstop.
@@ -40,6 +40,8 @@ public final class PromoAdDtos {
                 a.getCreatedAt(), a.getUpdatedAt(),
                 a.getRedirectUrl(),
                 a.getRedirectParams() == null ? List.of() : a.getRedirectParams(),
+                a.getRedirectUrlAndroid(),
+                a.getRedirectUrlIos(),
                 a.getApprovalStatus(),
                 a.getRejectionReason(),
                 a.getSubmittedAt(),

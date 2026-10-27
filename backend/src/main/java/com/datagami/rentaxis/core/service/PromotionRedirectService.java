@@ -35,14 +35,19 @@ import java.util.stream.Collectors;
  * {@code name=value}, URL-encoded, the link's own query kept. A parameter whose
  * value this renter does not have (no email, no lease) is left out.
  *
- * <p>{@code sharedFields} names the renter-data sources that actually made it into
- * the link, so the app can ask before handing them to the business; COUPON_CODE and
- * STATIC are not renter data.
+ * <p>Addendum C: the ad's Android and iPhone links ({@code redirectUrlAndroid},
+ * {@code redirectUrlIos}) are resolved the same way, with the same parameters, each
+ * on its own; the app picks the one for its platform and falls back to the main link.
  *
- * <p>The link is re-checked against the business's allowlist here, at read time,
+ * <p>{@code sharedFields} names the renter-data sources that actually made it into
+ * the links (any of them: they share their parameters), so the app can ask before
+ * handing them to the business; COUPON_CODE and STATIC are not renter data.
+ *
+ * <p>Each link is re-checked against the business's allowlist here, at read time,
  * not only when the ad was written: the renter's own data is about to be sent to
- * that host, so an allowlist narrowed since the ad was saved drops the redirect
- * rather than keeps sending to a domain the business no longer claims.
+ * that host, so an allowlist narrowed since the ad was saved drops that link
+ * rather than keeps sending to a domain the business no longer claims. An ad left
+ * with no link has no redirect at all.
  *
  * <p>PROPERTY_NAME and UNIT_NUMBER come from the renter's active lease at a
  * property the ad targets (for a promoter's ad, one also in that promoter's
@@ -54,9 +59,22 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class PromotionRedirectService {
 
-    /** A card's redirect: the resolved link (null = none) and the renter data in it. */
-    public record Resolved(String url, List<String> sharedFields) {
-        public static final Resolved NONE = new Resolved(null, List.of());
+    /**
+     * A card's redirect: the resolved main, Android and iPhone links (each null = none)
+     * and the renter data in them.
+     */
+    public record Resolved(String url, String urlAndroid, String urlIos, List<String> sharedFields) {
+        public static final Resolved NONE = new Resolved(null, null, null, List.of());
+    }
+
+    /** A coupon ad's links that are on its business's allowlist now; null = unset or dropped. */
+    private record Links(String url, String android, String ios) {
+        boolean none() {
+            return url == null && android == null && ios == null;
+        }
+    }
+
+    private record Candidate(PromoAd ad, Links links) {
     }
 
     private final UserRepository userRepository;
@@ -83,25 +101,32 @@ public class PromotionRedirectService {
     /** The redirect of each coupon ad in {@code ads} that has one, for this renter; absent = none. */
     public Map<UUID, Resolved> resolve(UUID tenantId, UUID renterUserId, List<PromoAd> ads,
                                        Map<UUID, PromoBusiness> businesses) {
-        List<PromoAd> withRedirect = ads.stream()
-                .filter(a -> a.getCtaType() == PromoCtaType.COUPON && a.getRedirectUrl() != null)
-                .filter(a -> {
-                    PromoBusiness b = businesses.get(a.getBusinessId());
-                    return b != null && urlValidator.isAllowed(a.getRedirectUrl(), b.getAllowedDomains());
-                })
-                .toList();
+        List<Candidate> withRedirect = new ArrayList<>();
+        for (PromoAd a : ads) {
+            PromoBusiness b = businesses.get(a.getBusinessId());
+            if (a.getCtaType() != PromoCtaType.COUPON || b == null) {
+                continue;
+            }
+            Links links = new Links(allowedNow(a.getRedirectUrl(), b),
+                    allowedNow(a.getRedirectUrlAndroid(), b),
+                    allowedNow(a.getRedirectUrlIos(), b));
+            if (!links.none()) {
+                withRedirect.add(new Candidate(a, links));
+            }
+        }
         if (withRedirect.isEmpty()) {
             return Map.of();
         }
         RenterData renter = new RenterData(tenantId, renterUserId);
         Map<UUID, Set<UUID>> targeting = adPropertyRepository
-                .findByTenantIdAndAdIdIn(tenantId, withRedirect.stream().map(PromoAd::getId).toList()).stream()
+                .findByTenantIdAndAdIdIn(tenantId, withRedirect.stream().map(c -> c.ad().getId()).toList()).stream()
                 .collect(Collectors.groupingBy(PromoAdProperty::getAdId,
                         Collectors.mapping(PromoAdProperty::getPropertyId, Collectors.toSet())));
         Map<UUID, Set<UUID>> promoterAllowed = new HashMap<>();
 
         Map<UUID, Resolved> out = new HashMap<>();
-        for (PromoAd ad : withRedirect) {
+        for (Candidate c : withRedirect) {
+            PromoAd ad = c.ad();
             // null = the ad targets every property (an admin's untargeted ad only: a
             // promoter's ad never runs untargeted, see PromoAdRepository.findEligible).
             Set<UUID> where = targeting.get(ad.getId());
@@ -111,12 +136,18 @@ public class PromotionRedirectService {
                         uid -> new HashSet<>(promoterPropertyRepository.findPropertyIds(tenantId, uid)));
                 where = where.stream().filter(allowed::contains).collect(Collectors.toSet());
             }
-            out.put(ad.getId(), resolveOne(ad, renter, where));
+            out.put(ad.getId(), resolveOne(ad, c.links(), renter, where));
         }
         return out;
     }
 
-    private Resolved resolveOne(PromoAd ad, RenterData renter, Set<UUID> targetedProperties) {
+    /** {@code link} if it is on the business's allowlist now, else null. */
+    private String allowedNow(String link, PromoBusiness business) {
+        return link != null && urlValidator.isAllowed(link, business.getAllowedDomains()) ? link : null;
+    }
+
+    /** The parameters, filled for this renter once, appended to each of the ad's links. */
+    private Resolved resolveOne(PromoAd ad, Links links, RenterData renter, Set<UUID> targetedProperties) {
         List<PromoRedirectParam> params = ad.getRedirectParams() == null ? List.of() : ad.getRedirectParams();
         List<String> pairs = new ArrayList<>();
         EnumSet<PromoRedirectSource> shared = EnumSet.noneOf(PromoRedirectSource.class);
@@ -141,7 +172,12 @@ public class PromotionRedirectService {
                 shared.add(p.source());
             }
         }
-        return new Resolved(withQuery(ad.getRedirectUrl(), pairs), shared.stream().map(Enum::name).toList());
+        return new Resolved(withQueryOrNull(links.url(), pairs), withQueryOrNull(links.android(), pairs),
+                withQueryOrNull(links.ios(), pairs), shared.stream().map(Enum::name).toList());
+    }
+
+    private static String withQueryOrNull(String url, List<String> pairs) {
+        return url == null ? null : withQuery(url, pairs);
     }
 
     /** {@code url} with {@code pairs} appended to its query, before any fragment; its own query kept. */

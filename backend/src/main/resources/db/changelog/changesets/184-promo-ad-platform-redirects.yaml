@@ -1,0 +1,23 @@
+# Promoter plan addendum C (docs/superpowers/plans/2026-10-27-promoter-role.md): a COUPON
+# ad's redirect may differ by phone. The renter app opens redirect_url_android on Android
+# and redirect_url_ios on iPhone, falling back to redirect_url (changeset 183) when the
+# platform's link is empty. The same redirect_params go on whichever link opens.
+#
+#   - promo_ads.redirect_url_android / redirect_url_ios: nullable, validated like
+#     redirect_url (https, a host, no userinfo, <= 2048, on the business's allowlist),
+#     COUPON only. Existing rows: null (redirect_url alone, as before).
+#
+# A new changeset because 183-promoter-role has already run in production.
+databaseChangeLog:
+  - changeSet:
+      id: 184-promo-ad-platform-redirects
+      author: claude
+      changes:
+        - addColumn:
+            tableName: promo_ads
+            columns:
+              - column: { name: redirect_url_android, type: varchar(2048) }
+              - column: { name: redirect_url_ios, type: varchar(2048) }
+      rollback:
+        - dropColumn: { tableName: promo_ads, columnName: redirect_url_ios }
+        - dropColumn: { tableName: promo_ads, columnName: redirect_url_android }
