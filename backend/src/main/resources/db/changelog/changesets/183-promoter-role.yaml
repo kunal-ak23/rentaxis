@@ -35,6 +35,10 @@ databaseChangeLog:
             columns:
               - column: { name: approval_status, type: varchar(16), defaultValue: APPROVED, constraints: { nullable: false } }
               - column: { name: promoter_user_id, type: uuid }
+              # Review M4: set once a promoter has written the ad, and never cleared.
+              # promoter_user_id goes NULL if that promoter's login is deleted; this keeps
+              # such an ad from turning into an "admin ad" that escapes the promoter rules.
+              - column: { name: written_by_promoter, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
               - column: { name: submitted_at, type: timestamptz }
               - column: { name: reviewed_by, type: uuid }
               - column: { name: reviewed_at, type: timestamptz }
@@ -133,5 +137,6 @@ databaseChangeLog:
         - dropColumn: { tableName: promo_ads, columnName: reviewed_at }
         - dropColumn: { tableName: promo_ads, columnName: reviewed_by }
         - dropColumn: { tableName: promo_ads, columnName: submitted_at }
+        - dropColumn: { tableName: promo_ads, columnName: written_by_promoter }
         - dropColumn: { tableName: promo_ads, columnName: promoter_user_id }
         - dropColumn: { tableName: promo_ads, columnName: approval_status }

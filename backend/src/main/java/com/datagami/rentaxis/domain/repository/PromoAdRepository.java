@@ -136,6 +136,9 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
      * set, matched within this tenant: removing a property from a promoter takes
      * its ads off that property at once, and "zero targeting rows = every property"
      * can never apply to a promoter's ad (the EXISTS needs a targeting row).
+     * An ad a promoter once wrote whose promoter is gone ({@code promoterUserId}
+     * nulled by the login's deletion, {@code writtenByPromoter} still true) shows
+     * nowhere (review M4) — it never falls back to the admin rules.
      * Every renter-facing read goes through here — home slate, offers, and the
      * impression/click endpoint, which re-derives its allowed ad ids from it.
      */
@@ -153,7 +156,7 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
               AND (NOT EXISTS (SELECT 1 FROM PromoAdProperty p WHERE p.adId = a.id)
                    OR EXISTS (SELECT 1 FROM PromoAdProperty p
                               WHERE p.adId = a.id AND p.propertyId IN :propertyIds))
-              AND (a.promoterUserId IS NULL
+              AND ((a.promoterUserId IS NULL AND a.writtenByPromoter = false)
                    OR EXISTS (SELECT 1 FROM PromoAdProperty p, PromoterProperty pp
                               WHERE p.adId = a.id
                                 AND pp.tenantId = :tenantId

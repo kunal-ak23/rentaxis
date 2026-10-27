@@ -100,6 +100,14 @@ public class PromoAd extends BaseTenantEntity {
     @Column(name = "promoter_user_id")
     private UUID promoterUserId;
 
+    /**
+     * Review M4: a promoter has written this ad at some point. Never cleared, and kept
+     * when {@code promoterUserId} goes null (the promoter's login deleted): such an ad
+     * then shows to no renter, rather than becoming an admin ad.
+     */
+    @Column(name = "written_by_promoter", nullable = false)
+    private boolean writtenByPromoter;
+
     /** When a promoter last sent the ad for approval. */
     @Column(name = "submitted_at")
     private Instant submittedAt;

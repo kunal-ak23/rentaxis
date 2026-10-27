@@ -185,6 +185,7 @@ abstract class AbstractPromoterIT extends AbstractPostgresIT {
             a.setTitleEn("Offer " + UUID.randomUUID().toString().substring(0, 6));
             a.setApprovalStatus(status);
             a.setPromoterUserId(promoterUserId);
+            a.setWrittenByPromoter(promoterUserId != null);
             PromoAd saved = adRepo.save(a);
             for (UUID p : propertyIds) {
                 PromoAdProperty row = new PromoAdProperty();

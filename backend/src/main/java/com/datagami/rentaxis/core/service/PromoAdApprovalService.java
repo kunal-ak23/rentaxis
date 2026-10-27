@@ -73,7 +73,7 @@ public class PromoAdApprovalService {
         PromoAd ad = pending(tenantId, adId, "approved", expectedSubmittedAt);
         // A promoter's ad with no targeting would show nowhere once live (it never
         // means "every property" for a promoter): refuse rather than approve a dud.
-        if (ad.getPromoterUserId() != null
+        if (ad.isWrittenByPromoter()
                 && adPropertyRepository.findByTenantIdAndAdIdIn(tenantId, List.of(adId)).isEmpty()) {
             throw new BusinessRuleViolationException(
                     "Choose at least one of the promoter's properties for this ad before approving it.");

@@ -374,7 +374,7 @@ public class PromotionService {
         // A promoter-written ad shows only where it is targeted AND the promoter is
         // allowed (PromoAdRepository.findEligible), so "every property" would quietly
         // show it nowhere. Said here rather than discovered on the renter's phone.
-        if (a.getPromoterUserId() != null && (req.propertyIds() == null || req.propertyIds().isEmpty())) {
+        if (a.isWrittenByPromoter() && (req.propertyIds() == null || req.propertyIds().isEmpty())) {
             throw new BusinessRuleViolationException(
                     "This ad was written by a promoter: choose at least one of the promoter's properties.");
         }

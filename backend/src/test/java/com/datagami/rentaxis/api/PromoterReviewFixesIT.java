@@ -219,6 +219,24 @@ class PromoterReviewFixesIT extends AbstractPromoterIT {
         assertThat(String.valueOf(rows.get(0).get("params"))).contains("\"adCount\": \"3\"");
     }
 
+    // ------------------------------------------------------------------- M4
+
+    @Test
+    void m4_aDeletedPromotersAdsDoNotBecomeAdminAdsInTheFeed() {
+        User renterAtP1 = renterAt(org, p1);
+        Property p2 = property(org, "Creek");
+        User renterAtP2 = renterAt(org, p2);
+        String adId = post(promoter, "/api/v1/promoter/ads", ad("Wash day")).text("id");
+        assertThat(approve(admin, adId).status()).isEqualTo(204);
+        assertThat(offerIds(renterAtP1)).contains(adId);
+
+        assertThat(delete(admin, "/api/admin/users/" + promoter.getId()).status()).isEqualTo(200);
+        assertThat(reload(UUID.fromString(adId)).getPromoterUserId()).isNull();
+
+        assertThat(offerIds(renterAtP1)).doesNotContain(adId);
+        assertThat(offerIds(renterAtP2)).doesNotContain(adId);
+    }
+
     // -------------------------------------------------------------- helpers
 
     private Map<String, Object> ad(String title) {

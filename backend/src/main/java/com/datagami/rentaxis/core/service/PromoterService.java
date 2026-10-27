@@ -392,6 +392,7 @@ public class PromoterService {
     private void resubmit(PromoAd ad, Caller caller, Instant now) {
         ad.setApprovalStatus(PromoApprovalStatus.PENDING);
         ad.setPromoterUserId(caller.userId());
+        ad.setWrittenByPromoter(true);
         ad.setSubmittedAt(now);
         ad.setReviewedBy(null);
         ad.setReviewedAt(null);
