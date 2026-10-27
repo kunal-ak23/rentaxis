@@ -622,7 +622,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         book("FEE AFTER", "CHARGE");
         recs.update(id, new BankRecDTOs.ReconciliationInput(null, SEP_30, new BigDecimal("1000.00"), null));
         r = recs.get(id);
-        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+        r = paperDayTotalsExcept(id); // #441 r4: an unproven day is settled only by its paper totals
         assertThat(jdbc.queryForObject("select count(*) from bank_statement_lines where bank_account_id = ? and txn_date = ?",
                 Integer.class, ei.getId(), LocalDate.of(2026, 9, 10))).isEqualTo(2);
         r = paperClosing(id);
@@ -706,9 +706,12 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         actions.post(new BankRecDTOs.PostLinesInput(List.of(reversal), "INTEREST", false, null, null, marinaBank.getId(), true, null));
         // #441 review: 07/09 is now held whole and settled; the statement's last day (11/09) cannot
         // show it ended there, so it is left to its paper totals — the 07/09 totals typed above now agree.
-        assertThat(dayRows()).contains("2026-09-07:true:false", "2026-09-11:false:true");
+        // #441 r4: 07/09 stays unproven — only its paper totals settle it, and the ones typed above now agree.
+        assertThat(dayRows()).contains("2026-09-07:false:true", "2026-09-11:false:true");
         r = paperDayTotals(id, LocalDate.of(2026, 9, 11));
-        assertThat(r.unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date).containsExactly(LocalDate.of(2026, 9, 11));
+        assertThat(r.unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date)
+                .containsExactly(LocalDate.of(2026, 9, 7), LocalDate.of(2026, 9, 11));
+        assertThat(r.dayTotalsVerdict()).isEqualTo("AGREE");
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
     }
@@ -878,12 +881,13 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         imports.delete(extract.importId());
         assertThat(jdbc.queryForList("select description from bank_statement_lines where bank_account_id = ? order by txn_date, seq",
                 String.class, ei.getId())).containsExactly("FEE ONE", "CREDIT TWO", "FEE THREE");
-        assertThat(jdbc.queryForObject("select count(*) from bank_statement_days where bank_account_id = ? and txn_date = ?",
-                Integer.class, ei.getId(), SEP_1)).as("one import's stretch again: confirmed").isZero();
+        // #441 r4: one import's stretch again, but the day was unproven: its paper totals settle it.
+        assertThat(jdbc.queryForObject("select merge_unproven from bank_statement_days where bank_account_id = ? and txn_date = ?",
+                Boolean.class, ei.getId(), SEP_1)).isTrue();
         for (String d : List.of("FEE ONE", "FEE THREE")) book(d, "CHARGE");
         book("CREDIT TWO", "INTEREST");
-        BankRecDTOs.Reconciliation r = recs.create(ei.getId(), period(SEP_1, SEP_30));
-        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+        BankRecDTOs.Reconciliation r = paperDayTotals(recs.create(ei.getId(), period(SEP_1, SEP_30)).id(), SEP_1);
+        assertThat(r.dayTotalsVerdict()).isEqualTo("AGREE");
     }
 
     /**
@@ -1093,7 +1097,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         recs.update(id, new BankRecDTOs.ReconciliationInput(null, SEP_30, new BigDecimal("1000.00"), null));
         paperClosing(id);
         r = recs.get(id);
-        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+        paperDayTotalsExcept(id); r = recs.get(id); // #441 r4: an unproven day is settled only by its paper totals
         assertThat(r.statementClosing()).isEqualByComparingTo("995.00");
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
@@ -1147,8 +1151,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         book("FEE AFTER", "CHARGE");
         BankRecDTOs.Reconciliation r = recs.get(id);
         assertThat(r.statementOpening()).isEqualByComparingTo("1000.00");
-        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
-        r = paperClosing(id);
+        paperDayTotalsExcept(id); // #441 r4: an unproven day is settled only by its paper totals
+        r = paperBalances(id, "1000.00");
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
     }
@@ -1466,8 +1470,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         BankRecDTOs.Reconciliation r = recs.get(id);
         assertThat(check(r, "CONTINUITY").ok()).isFalse();
         assertThat(check(r, "CONTINUITY").message()).contains("Lines may be missing before 09/09/2026")
-                .contains("one statement that runs from 07/09/2026 to 10/09/2026 brings them; it leaves only 10/09/2026,"
-                        + " the day it ends on, to settle: type that day's total debits and total credits");
+                .contains("one statement that runs from 07/09/2026 to 10/09/2026 brings them; it leaves 10/09/2026,"
+                        + " the day it ends on, and any day it holds that is already unproven, to their paper totals");
 
         importText("""
                 07/09/2026,07/09/2026,FEE A,,5.00,,"1,005.00"
@@ -1477,11 +1481,12 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 10/09/2026,10/09/2026,FEE E,,5.00,,"1,010.00"
                 """);
         assertThat(dayRows()).as("only the day it ends on is left").filteredOn(d -> !d.endsWith(":true:false"))
-                .containsExactly("2026-09-10:false:true");
+                .contains("2026-09-10:false:true");
         book("FEE C", "CHARGE");
         r = recs.get(id);
-        assertThat(r.unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date).containsExactly(LocalDate.of(2026, 9, 10));
-        paperDayTotals(id, LocalDate.of(2026, 9, 10));
+        // #441 r4: 10/09, and any half-held day already unproven that the statement held whole, go to their totals.
+        assertThat(r.unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date).contains(LocalDate.of(2026, 9, 10));
+        paperDayTotalsExcept(id);
         r = paperBalances(id, "1000.00");
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(r.statementClosing()).isEqualByComparingTo("1005.00");
@@ -1521,8 +1526,9 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 10/09/2026,10/09/2026,FEE E,,5.00,,"1,010.00"
                 """);
         r = recs.get(id);
-        assertThat(r.unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date).containsExactly(LocalDate.of(2026, 9, 10));
-        paperDayTotals(id, LocalDate.of(2026, 9, 10));
+        // #441 r4: 10/09, and any half-held day already unproven that the statement held whole, go to their totals.
+        assertThat(r.unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date).contains(LocalDate.of(2026, 9, 10));
+        paperDayTotalsExcept(id);
         r = paperBalances(id, "1000.00");
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
@@ -1574,8 +1580,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(jdbc.queryForObject("select count(*) from bank_matches where bank_account_id = ? and status = 'CONFIRMED'",
                 Integer.class, ei.getId())).as("every match kept").isEqualTo(confirmed + 1);
         BankRecDTOs.Reconciliation r = recs.get(id);
-        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
-        r = paperClosing(id);
+        paperDayTotalsExcept(id); // #441 r4: an unproven day is settled only by its paper totals
+        r = paperBalances(id, "1000.00");
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
     }
@@ -1644,9 +1650,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 """);
         for (BankRecDTOs.ImportResult part : parts) imports.delete(part.importId());
         BankRecDTOs.Reconciliation r = recs.get(id);
-        assertThat(r.unprovenDays()).isEmpty();
-        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
-        r = paperClosing(id);
+        paperDayTotalsExcept(id); // #441 r4: an unproven day is settled only by its paper totals
+        r = paperBalances(id, "1000.00");
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).status()).isEqualTo("FINALIZED");
     }
@@ -1848,8 +1853,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 11/09/2026,11/09/2026,FEE Y,,5.00,,990.00
                 """);
         imports.delete(extract.importId());
-        assertThat(jdbc.queryForObject("select count(*) from bank_statement_days where bank_account_id = ? and txn_date = ?",
-                Integer.class, ei.getId(), SEP_10)).as("the delete dropped 10/09's row").isZero();
+        assertThat(jdbc.queryForObject("select merge_unproven from bank_statement_days where bank_account_id = ? and txn_date = ?",
+                Boolean.class, ei.getId(), SEP_10)).as("#441 r4: 10/09 stays left to its totals").isTrue();
         book("FEE X", "CHARGE");
         BankRecDTOs.Reconciliation r = recs.create(ei.getId(), period(SEP_1, SEP_10));
         assertThat(r.checks()).noneMatch(c -> c.code().equals("CLOSING"));
@@ -1996,7 +2001,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         assertThat(backValueSeen()).isTrue();
         assertThat(dayRows()).filteredOn(d -> !d.endsWith(":true:false")).containsExactly("2026-08-31:false:true",
                 "2026-09-02:false:true", "2026-09-05:false:true", "2026-09-08:false:true", "2026-09-10:false:true",
-                "2026-09-15:false:true");
+                "2026-09-12:false:true", "2026-09-15:false:true");
 
         book("BACK VALUED CHARGE", "CHARGE");
         UUID aug2 = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(AUG_1, AUG_31, new BigDecimal("1000.00"),
@@ -2177,8 +2182,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         UUID id = recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
         BankRecDTOs.Reconciliation r = recs.get(id);
         assertThat(check(r, "CONTINUITY").message())
-                .contains("one statement that runs from 07/09/2026 to 10/09/2026 brings them; it leaves only 10/09/2026,"
-                        + " the day it ends on, to settle");
+                .contains("one statement that runs from 07/09/2026 to 10/09/2026 brings them; it leaves 10/09/2026,"
+                        + " the day it ends on, and any day it holds that is already unproven, to their paper totals");
         importText("""
                 07/09/2026,07/09/2026,FEE A,,5.00,,"1,005.00"
                 08/09/2026,08/09/2026,FEE B,,5.00,,"1,000.00"
@@ -2189,10 +2194,11 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
                 """);
         book("FEE C", "CHARGE");
         assertThat(dayRows()).as("every day but the one named settled").filteredOn(d -> !d.endsWith(":true:false"))
-                .containsExactly("2026-09-10:false:true");
+                .contains("2026-09-10:false:true");
         r = recs.get(id);
-        assertThat(r.unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date).containsExactly(LocalDate.of(2026, 9, 10));
-        paperDayTotals(id, LocalDate.of(2026, 9, 10));
+        // #441 r4: 10/09, and any half-held day already unproven that the statement held whole, go to their totals.
+        assertThat(r.unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date).contains(LocalDate.of(2026, 9, 10));
+        paperDayTotalsExcept(id);
         r = paperBalances(id, "1000.00");
         assertThat(r.dayTotalsVerdict()).isEqualTo("AGREE");
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
@@ -2505,8 +2511,10 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         matches.undo(chqMatch, true, SEP_30, "re-dated by the bank");
         imports.delete(a.importId());
         imports.delete(b.importId());
-        assertThat(dayRows()).filteredOn(d -> !d.endsWith(":true:false")).containsExactly("2026-09-11:false:true",
-                "2026-09-12:false:true");
+        // #441 r4: on an account that back-values, the statement no longer confirms 10/09 either.
+        assertThat(dayRows()).filteredOn(d -> !d.endsWith(":true:false")).containsExactly("2026-09-10:false:true",
+                "2026-09-11:false:true", "2026-09-12:false:true");
+        paperDayTotalsExcept(id, sep11);
         assertThat(jdbc.queryForObject("select count(*) from bank_statement_lines where bank_account_id = ? and lookalike_kept",
                 Integer.class, ei.getId())).isZero();
         assertThat(jdbc.queryForList("select txn_date || ' ' || description || ' ' || running_balance from bank_statement_lines "
@@ -2588,8 +2596,10 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
                 new BigDecimal("970.00"))).id();
         BankRecDTOs.Reconciliation r = recs.get(id);
-        assertThat(check(r, "LINE_ORDER").message()).contains("On 09/09/2026").contains("the bank has back-valued lines on this account");
-        // The paper's 09/09: CREDIT P 5, FEE A 10, FEE B 5, CREDIT C 10, FEE B 5, CREDIT D 10.
+        assertThat(check(r, "LINE_ORDER").message()).contains("On 09/09/2026").contains("no longer settles an unproven day by itself");
+        // The account back-values: 10/09 and 11/09, held whole, are left to their totals too (nothing is
+        // missing there). The paper's 09/09: CREDIT P 5, FEE A 10, FEE B 5, CREDIT C 10, FEE B 5, CREDIT D 10.
+        paperDayTotalsExcept(id, LocalDate.of(2026, 9, 9));
         r = recs.setDayTotals(id, new BankRecDTOs.DayTotalsInput(List.of(new BankRecDTOs.DayTotalInput(LocalDate.of(2026, 9, 9),
                 new BigDecimal("20.00"), new BigDecimal("25.00")))));
         assertThat(r.dayTotalsVerdict()).isEqualTo("DISAGREE");
@@ -2598,31 +2608,82 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
     }
 
     /**
-     * #441 ruling A: an account that never back-valued keeps the old rule. 09/09 is unproven (a
-     * span ending on a half-held day, S21-01); the statement holding it whole confirms it with no
-     * typing, and the flag stays false.
+     * #441 rulings: a day that was never unproven keeps the whole-day rule on an account that never
+     * back-valued. 10/09 came in two exports sharing no line (unconfirmed, not unproven); the
+     * statement holding it whole confirms it with no typing, and the flag stays false.
      */
     @Test
-    void anAccountThatNeverBackValuedKeepsTheWholeDayRule() {
-        headAndTailWithAGapOn0809();
+    void aDayNeverUnprovenIsStillConfirmedByAWholeDayStatement() {
+        jv(AUG_31, marinaBank, "1000.00");
         importText("""
-                07/09/2026,07/09/2026,FEE A,,5.00,,"1,005.00"
-                08/09/2026,08/09/2026,FEE B,,5.00,,"1,000.00"
-                08/09/2026,08/09/2026,FEE C,,5.00,,995.00
-                09/09/2026,09/09/2026,CREDIT D,,,20.00,"1,015.00"
+                10/09/2026,10/09/2026,FEE A,,5.00,,995.00
                 """);
-        assertThat(dayRows()).contains("2026-09-09:false:true");
         importText("""
-                08/09/2026,08/09/2026,FEE B,,5.00,,"1,000.00"
-                08/09/2026,08/09/2026,FEE C,,5.00,,995.00
-                09/09/2026,09/09/2026,CREDIT D,,,20.00,"1,015.00"
-                10/09/2026,10/09/2026,FEE E,,5.00,,"1,010.00"
+                10/09/2026,10/09/2026,CREDIT B,,,10.00,"1,005.00"
+                """);
+        assertThat(dayRows()).contains("2026-09-10:false:false");
+        importText("""
+                09/09/2026,09/09/2026,Opening balance,,,,"1,000.00"
+                10/09/2026,10/09/2026,FEE A,,5.00,,995.00
+                10/09/2026,10/09/2026,CREDIT B,,,10.00,"1,005.00"
+                11/09/2026,11/09/2026,Closing balance,,,,"1,005.00"
                 """);
         assertThat(backValueSeen()).isFalse();
-        assertThat(dayRows()).as("confirmed by the statement alone, as before").contains("2026-09-09:true:false");
+        assertThat(dayRows()).as("confirmed by the statement alone, as before").contains("2026-09-10:true:false");
         UUID id = recs.create(ei.getId(), period(SEP_1, SEP_30)).id();
-        assertThat(recs.get(id).unprovenDays()).extracting(BankRecDTOs.UnprovenDay::date).doesNotContain(LocalDate.of(2026, 9, 9));
-        assertThat(check(recs.get(id), "LINE_ORDER").message()).doesNotContain("back-valued");
+        assertThat(recs.get(id).checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+    }
+
+    /**
+     * #441 review r4 (P2): an older cut imported after the whole statement brings a line the bank
+     * later dropped, and it is booked. Following the text literally — undo its match, delete every
+     * import it names — never dead-ends: the line is left out by the statement holding the day
+     * whole (worked out at delete time), so it goes with an audit record despite its undone match.
+     */
+    @Test
+    void reviewProbeDeleteTheOthersWithALaterImportedStaleBookedLine() {
+        jv(AUG_31, marinaBank, "1000.00");
+        imports.importFile(ei.getId(), "sep-old.csv", (HEAD + """
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,015.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,010.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                11/09/2026,11/09/2026,CHQ 000123,,20.00,,"1,000.00"
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,005.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        imports.importFile(ei.getId(), "cut.csv", (HEAD + """
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,015.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        imports.importFile(ei.getId(), "sep-now.csv", (HEAD + """
+                09/09/2026,09/09/2026,CREDIT V,,,5.00,"1,005.00"
+                10/09/2026,10/09/2026,CREDIT X,,,10.00,"1,015.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,010.00"
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                11/09/2026,11/09/2026,FEE,,5.00,,"1,015.00"
+                12/09/2026,12/09/2026,CHQ 000123,,20.00,,995.00
+                12/09/2026,12/09/2026,CREDIT Y,,,5.00,"1,000.00"
+                13/09/2026,13/09/2026,CREDIT Z,,,5.00,"1,005.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        // An older download (made before sep-now), imported only now: a MISC line the bank later dropped.
+        BankRecDTOs.ImportResult c2 = imports.importFile(ei.getId(), "old-cut.csv", (HEAD + """
+                11/09/2026,11/09/2026,CREDIT R,,,10.00,"1,020.00"
+                11/09/2026,11/09/2026,MISC,,7.00,,"1,013.00"
+                """).getBytes(StandardCharsets.UTF_8), null, false);
+        UUID misc = book("MISC", "CHARGE").matchId();
+        UUID id = recs.create(ei.getId(), new BankRecDTOs.ReconciliationInput(SEP_1, SEP_30, new BigDecimal("1000.00"),
+                new BigDecimal("1005.00"))).id();
+        paperDayTotalsExcept(id, LocalDate.of(2026, 9, 11));
+        String msg = check(recs.get(id), "LINE_ORDER").message();
+        // Literally: undo the booked line's match, then delete the imports named.
+        matches.undo(misc, true, SEP_30, "dropped by the bank");
+        msg = check(recs.get(id), "LINE_ORDER").message();
+        List<String> refusals = new ArrayList<>();
+        for (BankRecDTOs.ImportRow row : imports.history(ei.getId())) {
+            if (row.fileName().equals("sep-now.csv")) continue;
+            if (!msg.contains(row.fileName())) continue;
+            try { imports.delete(row.id()); } catch (RuntimeException e) { refusals.add(row.fileName() + ": " + e.getMessage()); }
+        }
+        assertThat(refusals).as("every import the text names can be deleted").isEmpty();
     }
 
     /**
@@ -2673,8 +2734,8 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         imports.delete(b.importId());
         assertThatThrownBy(() -> imports.delete(boundary.importId())).hasMessageContaining("cannot be deleted");
         BankRecDTOs.Reconciliation r = recs.get(id);
-        assertThat(r.unprovenDays()).isEmpty();
-        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+        r = paperDayTotalsExcept(id); // #441 r4: an unproven day is settled only by its paper totals
+        assertThat(r.dayTotalsVerdict()).isEqualTo("AGREE");
     }
 
     /**
@@ -2722,8 +2783,7 @@ class BankReconciliationStatementIT extends AbstractPostgresIT {
         imports.delete(a.importId());
         imports.delete(b.importId());
         BankRecDTOs.Reconciliation r = recs.get(id);
-        assertThat(r.unprovenDays()).isEmpty();
-        assertThat(r.checks()).noneMatch(c -> c.code().equals("LINE_ORDER"));
+        paperDayTotalsExcept(id); // #441 r4: an unproven day is settled only by its paper totals
         r = paperClosing(id);
         assertThat(r.checks()).allSatisfy(c -> assertThat(c.ok()).as(c.code() + ": " + c.message()).isTrue());
         assertThat(recs.finalizeRec(id).statementClosing()).isEqualByComparingTo("970.00");

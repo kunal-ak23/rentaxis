@@ -12,10 +12,9 @@
 #     cannot show when it was exported (an older download looks the same, #441 review r3), so
 #     nothing is removed at import: the check says so, and deleting the import that brought the
 #     line (after undoing any match on it) removes it, undone history or not.
-#   - bank_statement_lines.left_out_by: the last import that held the line's day whole without
-#     it (any line, look-alike or not). Deleting the import that brought such a line removes it
-#     with an audit record even when it has undone match history — the check's "make the day
-#     that statement's alone" step (#441 review r3).
+#     Deleting an import also sets it, at delete time, on a line only that import holds whose
+#     day another import holds whole without it (the check's "make the day that statement's
+#     alone" step, #441 r3/r4), so such a line goes with an audit record despite undone history.
 #   - bank_accounts.back_value_seen (#441 ruling A): true once an import of the account has taken
 #     a line at a moved running balance (the bank back-valued a line). From then on a file holding
 #     a day whole no longer confirms it alone when the day is unproven or the file moved one of
@@ -40,7 +39,6 @@ databaseChangeLog:
                   defaultValueBoolean: false
                   constraints: { nullable: false }
               - column: { name: copy_proven_by, type: uuid }
-              - column: { name: left_out_by, type: uuid }
         - addColumn:
             tableName: bank_accounts
             columns:
@@ -88,6 +86,5 @@ databaseChangeLog:
       rollback:
         - dropTable: { tableName: bank_statement_removed_lines }
         - dropColumn: { tableName: bank_accounts, columnName: back_value_seen }
-        - dropColumn: { tableName: bank_statement_lines, columnName: left_out_by }
         - dropColumn: { tableName: bank_statement_lines, columnName: copy_proven_by }
         - dropColumn: { tableName: bank_statement_lines, columnName: lookalike_kept }
